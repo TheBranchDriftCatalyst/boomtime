@@ -36,8 +36,11 @@ describe("SpaceRuleForm (P0/P1)", () => {
     const user = userEvent.setup();
     renderWithProviders(<SpaceRuleForm spaceId={5} onDone={onDone} />);
 
-    // Default axis is `project`, default mode is exact.
-    await user.type(screen.getByPlaceholderText(/A project/i), "gakatime");
+    // Default axis is `project`, default mode is exact — value is an
+    // autocomplete combobox of real axis values (with counts). Open it and
+    // pick the "gakatime" option (from the mocked group endpoint).
+    await user.click(screen.getByRole("combobox"));
+    await user.click(await screen.findByRole("button", { name: /gakatime/i }));
     await user.click(screen.getByRole("button", { name: /add rule/i }));
 
     await waitFor(() => expect(onDone).toHaveBeenCalled());

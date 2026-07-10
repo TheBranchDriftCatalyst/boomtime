@@ -9,9 +9,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { axisLabel } from "@/components/heartbeats/axes";
+import { useAxisValues } from "@/hooks/useAxisValues";
 import { useSpaceMutations } from "@/hooks/useSpaces";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -54,6 +56,11 @@ export function SpaceRuleForm({ spaceId, onDone }: SpaceRuleFormProps) {
   const [axis, setAxis] = useState<HeartbeatAxis>(RULE_AXES[0]);
   const [matchValue, setMatchValue] = useState("");
   const [mode, setMode] = useState<SpaceMatchType>("exact");
+
+  // Real values for the selected axis (with heartbeat counts) — feed the exact
+  // mode autocomplete so the user sees the matching values as they pick, the
+  // same affordance as the Settings hidden-projects combobox.
+  const { options: axisOptions, isLoading: axisLoading } = useAxisValues(axis);
 
   // Debounce the value so the live preview doesn't fire on every keystroke.
   const [debounced, setDebounced] = useState("");
@@ -171,14 +178,26 @@ export function SpaceRuleForm({ spaceId, onDone }: SpaceRuleFormProps) {
           <Label className="text-xs">
             {mode === "regex" ? "Value (regex)" : "Value"}
           </Label>
-          <Input
-            value={matchValue}
-            onChange={(e) => setMatchValue(e.target.value)}
-            placeholder={
-              mode === "regex" ? "^catalyst" : `A ${axisLabel(axis).toLowerCase()}…`
-            }
-            className="h-8 font-mono"
-          />
+          {mode === "exact" ? (
+            <Combobox
+              options={axisOptions}
+              value={matchValue || null}
+              onSelect={setMatchValue}
+              loading={axisLoading}
+              creatable
+              placeholder={`A ${axisLabel(axis).toLowerCase()}…`}
+              searchPlaceholder={`Search ${axisLabel(axis).toLowerCase()}s…`}
+              emptyText={`No ${axisLabel(axis).toLowerCase()} values found.`}
+              className="h-8 font-mono"
+            />
+          ) : (
+            <Input
+              value={matchValue}
+              onChange={(e) => setMatchValue(e.target.value)}
+              placeholder="^catalyst"
+              className="h-8 font-mono"
+            />
+          )}
         </div>
 
         <Button

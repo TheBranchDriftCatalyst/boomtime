@@ -37,7 +37,11 @@ describe("RemappingForm (P0/P1)", () => {
       <RemappingForm presetAxis="project" onDone={onDone} submitLabel="Add" />,
     );
 
-    await user.type(screen.getByPlaceholderText(/Meet - Weekly/), "gaka");
+    // Exact mode: the pattern field is an autocomplete combobox of real axis
+    // values (creatable). Open it, type a value not in the list, and commit it.
+    await user.click(screen.getByRole("combobox"));
+    await user.type(screen.getByPlaceholderText(/Search projects/i), "gaka");
+    await user.click(screen.getByRole("button", { name: /Use "gaka"/ }));
     await user.type(screen.getByPlaceholderText("Meeting"), "gakatime");
     await user.click(screen.getByRole("button", { name: /add/i }));
 

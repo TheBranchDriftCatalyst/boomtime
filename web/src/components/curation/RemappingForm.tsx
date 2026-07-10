@@ -8,6 +8,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { axisLabel } from "@/components/heartbeats/axes";
@@ -95,23 +96,56 @@ export function RemappingForm({
   const isRegexLike = mode === "regex" || mode === "template";
   const isTemplate = mode === "template";
 
-  // A few real axis values to preview a capture/template rule against. Only
-  // fetched in template mode.
-  const { options } = useAxisValues(axis, isTemplate);
-  const previewRows = useMemo(() => {
-    if (!isTemplate || !pattern.trim() || !target.trim()) return [];
+  // Real axis values (with heartbeat counts) — power the exact-mode
+  // autocomplete AND the live preview for every mode. Always fetched so the
+  // exact combobox and previews can show matching values as the user types.
+  const { options, isLoading: axisLoading } = useAxisValues(axis);
+
+  // Client-side live preview of what the currently-selected strategy will do,
+  // computed from the real axis values (no backend call), for ALL three modes:
+  //  - exact:    the single matched value + its heartbeat count (if any).
+  //  - regex:    the raw values matching the regex, with counts + a total.
+  //  - template: raw → mapped sample rows (existing behaviour).
+  const previewMatch = useMemo(() => {
+    const trimmed = pattern.trim();
+    if (!trimmed) return null;
+
+    if (mode === "exact") {
+      const hit = options.find((o) => o.value === trimmed);
+      return {
+        kind: "exact" as const,
+        value: trimmed,
+        count: hit?.count ?? 0,
+        found: hit !== undefined,
+      };
+    }
+
     let re: RegExp;
     try {
-      re = new RegExp(pattern.trim());
+      re = new RegExp(trimmed);
     } catch {
-      return [];
+      return { kind: "invalid" as const };
     }
-    const jsTemplate = templateToJs(templateToBackend(target.trim()));
-    return options
-      .filter((o) => re.test(o.value))
-      .slice(0, 5)
-      .map((o) => ({ raw: o.value, mapped: o.value.replace(re, jsTemplate) }));
-  }, [isTemplate, pattern, target, options]);
+    const matched = options.filter((o) => re.test(o.value));
+
+    if (isTemplate) {
+      if (!target.trim()) return null;
+      const jsTemplate = templateToJs(templateToBackend(target.trim()));
+      return {
+        kind: "template" as const,
+        total: matched.length,
+        rows: matched
+          .slice(0, 5)
+          .map((o) => ({ raw: o.value, mapped: o.value.replace(re, jsTemplate) })),
+      };
+    }
+
+    return {
+      kind: "regex" as const,
+      total: matched.length,
+      rows: matched.slice(0, 8).map((o) => ({ value: o.value, count: o.count ?? 0 })),
+    };
+  }, [mode, isTemplate, pattern, target, options]);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -215,18 +249,26 @@ export function RemappingForm({
       <Label className="text-xs">
         {isRegexLike ? "Pattern (regex)" : "Pattern"}
       </Label>
-      <Input
-        value={pattern}
-        onChange={(e) => setPattern(e.target.value)}
-        placeholder={
-          isTemplate
-            ? "^@(.*)$"
-            : isRegexLike
-              ? "^Meet"
-              : "Meet - Weekly All-Hands"
-        }
-        className="h-8 font-mono"
-      />
+      {isRegexLike ? (
+        <Input
+          value={pattern}
+          onChange={(e) => setPattern(e.target.value)}
+          placeholder={isTemplate ? "^@(.*)$" : "^Meet"}
+          className="h-8 font-mono"
+        />
+      ) : (
+        <Combobox
+          options={options}
+          value={pattern || null}
+          onSelect={setPattern}
+          loading={axisLoading}
+          creatable
+          placeholder="Meet - Weekly All-Hands"
+          searchPlaceholder={`Search ${axisLabel(axis).toLowerCase()}s…`}
+          emptyText={`No ${axisLabel(axis).toLowerCase()} values found.`}
+          className="h-8 font-mono"
+        />
+      )}
     </div>
   );
 
@@ -266,20 +308,72 @@ export function RemappingForm({
     </p>
   );
 
-  const preview = isTemplate && previewRows.length > 0 && (
+  const preview = previewMatch && (
     <div className="space-y-1 rounded-md border bg-background/60 p-2">
-      <p className="text-xs font-medium text-muted-foreground">Preview</p>
-      {previewRows.map((row) => (
-        <div key={row.raw} className="flex items-center gap-1.5 text-xs">
-          <span className="truncate font-mono" title={row.raw}>
-            {row.raw}
-          </span>
-          <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
-          <span className="truncate font-mono font-medium" title={row.mapped}>
-            {row.mapped}
-          </span>
-        </div>
-      ))}
+      {previewMatch.kind === "invalid" ? (
+        <p className="text-xs text-muted-foreground">
+          Enter a valid regular expression to preview matches.
+        </p>
+      ) : previewMatch.kind === "exact" ? (
+        previewMatch.found ? (
+          <p className="text-xs text-muted-foreground">
+            Matches{" "}
+            <span className="font-mono font-medium text-foreground">
+              {previewMatch.value}
+            </span>{" "}
+            · {previewMatch.count.toLocaleString()} heartbeat
+            {previewMatch.count === 1 ? "" : "s"}
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            No heartbeats match this value yet.
+          </p>
+        )
+      ) : previewMatch.kind === "regex" ? (
+        <>
+          <p className="text-xs font-medium text-muted-foreground">
+            Matches {previewMatch.total.toLocaleString()} value
+            {previewMatch.total === 1 ? "" : "s"}
+          </p>
+          {previewMatch.rows.map((row) => (
+            <div
+              key={row.value}
+              className="flex items-center justify-between gap-2 text-xs"
+            >
+              <span className="truncate font-mono" title={row.value}>
+                {row.value}
+              </span>
+              <span className="shrink-0 tabular-nums text-muted-foreground">
+                {row.count.toLocaleString()}
+              </span>
+            </div>
+          ))}
+          {previewMatch.total === 0 && (
+            <p className="text-xs text-muted-foreground">No values match yet.</p>
+          )}
+        </>
+      ) : (
+        <>
+          <p className="text-xs font-medium text-muted-foreground">
+            Preview · matches {previewMatch.total.toLocaleString()} value
+            {previewMatch.total === 1 ? "" : "s"}
+          </p>
+          {previewMatch.rows.map((row) => (
+            <div key={row.raw} className="flex items-center gap-1.5 text-xs">
+              <span className="truncate font-mono" title={row.raw}>
+                {row.raw}
+              </span>
+              <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+              <span
+                className="truncate font-mono font-medium"
+                title={row.mapped}
+              >
+                {row.mapped}
+              </span>
+            </div>
+          ))}
+        </>
+      )}
     </div>
   );
 
