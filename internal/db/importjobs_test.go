@@ -2,30 +2,12 @@ package db
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 )
 
-// testDSN returns the dev database DSN, defaulting to the docker-compose values.
-func testDSN() string {
-	if v := os.Getenv("HAKA_TEST_DATABASE_URL"); v != "" {
-		return v
-	}
-	return "postgres://test:test@localhost:5432/test?sslmode=disable"
-}
-
-// openTestDB connects to the dev DB, skipping the test if unreachable.
-func openTestDB(t *testing.T) *DB {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	database, err := New(ctx, testDSN())
-	if err != nil {
-		t.Skipf("skipping: no test database available: %v", err)
-	}
-	return database
-}
+// openTestDB / truncateAll live in main_test.go (they use the isolated
+// gakatime_test database provisioned by TestMain).
 
 // TestOneRunningJobPerOwner verifies GetRunningJobByOwner returns the active job
 // so the handler can avoid starting a second one.

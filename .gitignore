@@ -38,3 +38,11 @@ internal/server/dist/
 /*-council-*.png
 /overview-*.png
 /projects-*.png
+
+# fixturegen --raw output (REAL values; never commit)
+*.local.json
+internal/db/testdata/*.local.json
+
+# stray built binaries
+/fixturegen
+/gakatime

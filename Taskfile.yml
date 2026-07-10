@@ -7,6 +7,10 @@ env:
 
 vars:
   PKG: ./cmd/gakatime
+  # Isolated DB for the Go test suite (never the dev/panda `test` DB).
+  TEST_DB_URL: '{{.HAKA_TEST_DATABASE_URL | default "postgres://test:test@localhost:5432/gakatime_test?sslmode=disable"}}'
+  # Dev DB used ONLY as a read-only source when regenerating fixtures.
+  DEV_DB_URL: '{{.DEV_DB_URL | default "postgres://test:test@localhost:5432/test?sslmode=disable"}}'
 
 tasks:
   default:
@@ -129,9 +133,42 @@ tasks:
       - 'echo "✓ built bin/gakatime"'
 
   test:
-    desc: Run Go tests
+    desc: Run Go tests against the ISOLATED gakatime_test database
     cmds:
-      - go test ./...
+      - task: db:up
+      - 'HAKA_TEST_DATABASE_URL="{{.TEST_DB_URL}}" go test ./...'
+
+  test:db:reset:
+    desc: Drop and recreate the isolated gakatime_test database
+    cmds:
+      - task: db:up
+      - docker compose exec -T db psql -U "$HAKA_DB_USER" -d postgres -c 'DROP DATABASE IF EXISTS gakatime_test;'
+      - docker compose exec -T db psql -U "$HAKA_DB_USER" -d postgres -c 'CREATE DATABASE gakatime_test;'
+      - 'echo "✓ gakatime_test reset (TestMain will re-migrate on next test run)"'
+
+  fixtures:gen:
+    desc: 'Regenerate the anonymized heartbeat fixture from the dev DB (SELECT-only). Vars: SENDER, PROJECTS, DAYS, MAX'
+    cmds:
+      - >-
+        go run ./tools/fixturegen
+        --source "{{.DEV_DB_URL}}"
+        --sender "{{.SENDER | default "panda"}}"
+        --projects {{.PROJECTS | default "12"}}
+        --days {{.DAYS | default "90"}}
+        --max {{.MAX | default "3000"}}
+        --out internal/db/testdata/heartbeats_fixture.json
+      - 'echo "✓ wrote internal/db/testdata/heartbeats_fixture.json (anonymized)"'
+
+  fixtures:gen:raw:
+    desc: Emit a LOCAL (gitignored) fixture with REAL values for debugging
+    cmds:
+      - >-
+        go run ./tools/fixturegen
+        --source "{{.DEV_DB_URL}}"
+        --sender "{{.SENDER | default "panda"}}"
+        --raw
+        --out internal/db/testdata/heartbeats_fixture.local.json
+      - 'echo "✓ wrote internal/db/testdata/heartbeats_fixture.local.json (REAL values, gitignored)"'
 
   fmt:
     desc: Format Go code
