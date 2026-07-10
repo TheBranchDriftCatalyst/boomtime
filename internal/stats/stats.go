@@ -260,8 +260,10 @@ func segmentStat(byDate [][]db.StatRow, field func(db.StatRow) string) []model.R
 	return out
 }
 
-// ToStatsPayload builds the StatsPayload for GET /stats (Stats.toStatsPayload).
-func ToStatsPayload(t0, t1 time.Time, xs []db.StatRow) model.StatsPayload {
+// ToStatsPayload builds the Overview StatsPayload for GET /stats. categoryRows
+// (per-day-per-category time) may be nil; when present it is folded into the
+// Categories segment aligned to the same day series as the other segments.
+func ToStatsPayload(t0, t1 time.Time, xs []db.StatRow, categoryRows []db.CategoryDailyRow) model.StatsPayload {
 	// Clamp the start to the earliest day that actually has data, so wide/"All
 	// time" ranges don't produce a huge empty leading span in the charts.
 	if len(xs) > 0 {
@@ -275,7 +277,8 @@ func ToStatsPayload(t0, t1 time.Time, xs []db.StatRow) model.StatsPayload {
 			t0 = minDay
 		}
 	}
-	byDate := fillMissingStat(genDates(t0, t1), groupStatRowsByDay(xs))
+	days := genDates(t0, t1)
+	byDate := fillMissingStat(days, groupStatRowsByDay(xs))
 
 	var allSecs int64
 	for _, x := range xs {
@@ -301,23 +304,83 @@ func ToStatsPayload(t0, t1 time.Time, xs []db.StatRow) model.StatsPayload {
 	platforms := segmentStat(byDate, func(r db.StatRow) string { return r.Platform })
 	machines := segmentStat(byDate, func(r db.StatRow) string { return r.Machine })
 
-	return model.StatsPayload{
-		StartDate:      t0,
-		EndDate:        t1,
-		TotalSeconds:   allSecs,
-		DailyAvg:       dailyAvg,
-		DailyTotal:     dailyTotal,
-		ProjectsCount:  len(projects),
-		LanguagesCount: len(languages),
-		PlatformsCount: len(platforms),
-		MachinesCount:  len(machines),
-		EditorsCount:   len(editors),
-		Projects:       capWithOther(projects),
-		Editors:        capWithOther(editors),
-		Languages:      capWithOther(languages),
-		Platforms:      capWithOther(platforms),
-		Machines:       capWithOther(machines),
+	// Categories are fetched separately (the StatRow set / rollup carries no
+	// category column) and aligned to the SAME day series as DailyTotal. Since
+	// fillMissingStat truncates byDate at the last day with data, align to
+	// days[:len(byDate)].
+	alignedDays := days
+	if len(byDate) < len(alignedDays) {
+		alignedDays = alignedDays[:len(byDate)]
 	}
+	categories := segmentCategories(alignedDays, categoryRows)
+
+	return model.StatsPayload{
+		StartDate:       t0,
+		EndDate:         t1,
+		TotalSeconds:    allSecs,
+		DailyAvg:        dailyAvg,
+		DailyTotal:      dailyTotal,
+		ProjectsCount:   len(projects),
+		LanguagesCount:  len(languages),
+		PlatformsCount:  len(platforms),
+		MachinesCount:   len(machines),
+		EditorsCount:    len(editors),
+		CategoriesCount: len(categories),
+		Projects:        capWithOther(projects),
+		Editors:         capWithOther(editors),
+		Languages:       capWithOther(languages),
+		Platforms:       capWithOther(platforms),
+		Machines:        capWithOther(machines),
+		Categories:      capWithOther(categories),
+	}
+}
+
+// segmentCategories shapes per-(day,category) rows into per-category ResourceStats
+// aligned to the `days` series (same layout as segmentBranches).
+func segmentCategories(days []time.Time, rows []db.CategoryDailyRow) []model.ResourceStats {
+	dayIndex := make(map[string]int, len(days))
+	for i, d := range days {
+		dayIndex[dayKey(d)] = i
+	}
+	n := len(days)
+
+	type acc struct {
+		total    int64
+		totalPct float64
+		daily    []int64
+		pctDaily []float64
+	}
+	byName := map[string]*acc{}
+	var order []string
+	for _, r := range rows {
+		di, ok := dayIndex[dayKey(r.Day)]
+		if !ok {
+			continue
+		}
+		a := byName[r.Category]
+		if a == nil {
+			a = &acc{daily: make([]int64, n), pctDaily: make([]float64, n)}
+			byName[r.Category] = a
+			order = append(order, r.Category)
+		}
+		a.total += r.TotalSeconds
+		a.totalPct += r.Pct
+		a.daily[di] += r.TotalSeconds
+		a.pctDaily[di] += r.DailyPct
+	}
+
+	out := make([]model.ResourceStats, 0, len(order))
+	for _, name := range order {
+		a := byName[name]
+		out = append(out, model.ResourceStats{
+			Name:         name,
+			TotalSeconds: a.total,
+			TotalPct:     a.totalPct,
+			TotalDaily:   a.daily,
+			PctDaily:     a.pctDaily,
+		})
+	}
+	return out
 }
 
 // resourceTopN is how many resources (by total time) each dimension keeps before

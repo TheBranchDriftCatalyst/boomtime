@@ -26,9 +26,12 @@ import type {
   WakatimeRangePayload,
   LeaderboardEntry,
   LeaderboardsPayload,
+  MomentumPayload,
   ProjectListPayload,
   ProjectStatistics,
+  PunchcardPayload,
   RangeParams,
+  SessionsPayload,
   StatsParams,
   StatsPayload,
   StatusBarPayload,
@@ -195,6 +198,23 @@ export const api = {
 
   getStatusBar: () =>
     request<StatusBarPayload>("/api/v1/users/current/statusbar/today"),
+
+  // --- Council "big-bet" analytics -------------------------------------------
+
+  getPunchcard: (params: { start: string; end: string; timeLimit?: number }) =>
+    request<PunchcardPayload>("/api/v1/users/current/stats/punchcard", {
+      params,
+    }),
+
+  getSessions: (params: { start: string; end: string; timeLimit?: number }) =>
+    request<SessionsPayload>("/api/v1/users/current/stats/sessions", {
+      params,
+    }),
+
+  getMomentum: (params: { start: string; end: string; top?: number }) =>
+    request<MomentumPayload>("/api/v1/users/current/stats/momentum", {
+      params,
+    }),
 
   // --- Projects / Tags -------------------------------------------------------
 

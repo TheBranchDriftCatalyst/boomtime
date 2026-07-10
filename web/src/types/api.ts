@@ -78,12 +78,68 @@ export interface StatsPayload {
   platforms: ResourceStats[];
   machines: ResourceStats[];
   editors: ResourceStats[];
+  // Category time-series (coding/debugging/writing/…). Backend is adding this
+  // alongside the other resource dimensions. Optional so the UI degrades
+  // gracefully until it lands. TODO verify keys against backend report.
+  categories?: ResourceStats[];
+  categoriesCount?: number;
   // True distinct counts (the lists above are capped to top-N + an "Other" bucket).
   projectsCount: number;
   languagesCount: number;
   platformsCount: number;
   machinesCount: number;
   editorsCount: number;
+}
+
+// --- Council "big-bet" analytics endpoints -----------------------------------
+// Bound to the backend agent's intended contract; separate GET endpoints under
+// /api/v1/users/current/stats. TODO verify keys against backend report.
+
+// GET stats/punchcard -> 7x24 day-of-week x hour-of-day grid (UTC).
+export interface PunchcardCell {
+  dow: number; // 0=Sun .. 6=Sat
+  hour: number; // 0..23, UTC
+  seconds: number;
+}
+export interface PunchcardPayload {
+  cells: PunchcardCell[];
+  maxSeconds: number;
+  totalSeconds: number;
+}
+
+// GET stats/sessions -> deep-work focus sessions (runs between >timeLimit gaps).
+export interface SessionsSummary {
+  count: number;
+  totalSeconds: number;
+  avgSeconds: number;
+  maxSeconds: number;
+  medianSeconds: number;
+}
+export interface SessionsDaily {
+  date: string; // YYYY-MM-DD
+  sessions: number;
+  totalSeconds: number;
+  longestSeconds: number;
+}
+export interface SessionsHistogramBin {
+  label: string;
+  count: number;
+}
+export interface SessionsPayload {
+  summary: SessionsSummary;
+  daily: SessionsDaily[];
+  histogram: SessionsHistogramBin[];
+}
+
+// GET stats/momentum?top=N -> project x week activity grid.
+export interface MomentumProject {
+  name: string;
+  weekly: number[]; // seconds per week, aligned to `weeks`
+  totalSeconds: number;
+}
+export interface MomentumPayload {
+  weeks: string[]; // ISO Monday-start dates, one per column
+  projects: MomentumProject[];
 }
 
 export interface ProjectStatistics {

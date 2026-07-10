@@ -40,6 +40,10 @@ var (
 	qGetTimeBetween      = mustQuery("get_time_between.sql")
 	qGetTimeToday        = mustQuery("get_time_today.sql")
 	qGetTotalProject     = mustQuery("get_total_project_time.sql")
+	qGetCategoryDaily    = mustQuery("get_category_daily.sql")
+	qGetPunchcard        = mustQuery("get_punchcard.sql")
+	qGetSessions         = mustQuery("get_sessions.sql")
+	qGetMomentum         = mustQuery("get_momentum.sql")
 )
 
 // DB wraps a pgx pool.

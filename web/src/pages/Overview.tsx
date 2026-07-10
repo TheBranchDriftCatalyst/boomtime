@@ -11,6 +11,10 @@ import { TimelineChart } from "@/components/charts/TimelineChart";
 import { ContributionCalendar } from "@/viz/council/ContributionCalendar";
 import { CumulativeArea } from "@/viz/council/CumulativeArea";
 import { StreakBanner } from "@/viz/council/StreakBanner";
+import { CategoryStreamgraph } from "@/viz/council/CategoryStreamgraph";
+import { Punchcard } from "@/viz/council/Punchcard";
+import { DeepWorkSessions } from "@/viz/council/DeepWorkSessions";
+import { MomentumGrid } from "@/viz/council/MomentumGrid";
 import { PageToolbar } from "@/components/toolbar/PageToolbar";
 import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
 import { TagFilter } from "@/components/toolbar/TagFilter";
@@ -54,6 +58,31 @@ export function Overview() {
       }),
   });
 
+  // Council "big-bet" analytics (separate endpoints; bind to the same range).
+  const punchcardQuery = useQuery({
+    queryKey: ["punchcard", tr.startISO, tr.endISO, tr.timeLimit],
+    queryFn: () =>
+      api.getPunchcard({
+        start: tr.startISO,
+        end: tr.endISO,
+        timeLimit: tr.timeLimit,
+      }),
+  });
+  const sessionsQuery = useQuery({
+    queryKey: ["sessions", tr.startISO, tr.endISO, tr.timeLimit],
+    queryFn: () =>
+      api.getSessions({
+        start: tr.startISO,
+        end: tr.endISO,
+        timeLimit: tr.timeLimit,
+      }),
+  });
+  const momentumQuery = useQuery({
+    queryKey: ["momentum", tr.startISO, tr.endISO],
+    queryFn: () =>
+      api.getMomentum({ start: tr.startISO, end: tr.endISO, top: 8 }),
+  });
+
   const stats = statsQuery.data;
   const dates = useMemo(
     () =>
@@ -81,6 +110,11 @@ export function Overview() {
   );
   const chartLanguages = useMemo(
     () => bucketItems(stats?.languages ?? []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [groups, stats],
+  );
+  const chartCategories = useMemo(
+    () => bucketItems(stats?.categories ?? []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [groups, stats],
   );
@@ -159,9 +193,17 @@ export function Overview() {
             </ChartCard>
           </div>
 
-          <ChartCard title="Cumulative coding time">
-            <CumulativeArea dates={chartDates} values={chartDailyTotal} />
-          </ChartCard>
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <ChartCard title="Cumulative coding time">
+              <CumulativeArea dates={chartDates} values={chartDailyTotal} />
+            </ChartCard>
+            <ChartCard title="Category streamgraph">
+              <CategoryStreamgraph
+                categories={chartCategories}
+                dates={chartDates}
+              />
+            </ChartCard>
+          </div>
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <ChartCard title="Activity per project">
@@ -171,6 +213,28 @@ export function Overview() {
               <HeatmapChart items={chartLanguages} dates={chartDates} />
             </ChartCard>
           </div>
+
+          {/* Patterns: cross-project rhythm & momentum. */}
+          <div className="pt-2">
+            <h2 className="mb-1 text-lg font-semibold">Patterns</h2>
+            <p className="text-sm text-muted-foreground">
+              When you code, how deeply you focus, and which projects are heating
+              up.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <ChartCard title="Coding punchcard">
+              <Punchcard data={punchcardQuery.data} />
+            </ChartCard>
+            <ChartCard title="Project momentum (by week)">
+              <MomentumGrid data={momentumQuery.data} />
+            </ChartCard>
+          </div>
+
+          <ChartCard title="Deep-work sessions">
+            <DeepWorkSessions data={sessionsQuery.data} />
+          </ChartCard>
 
           <ChartCard
             title="Recent timeline"

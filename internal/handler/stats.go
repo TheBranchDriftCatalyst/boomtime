@@ -43,7 +43,13 @@ func (h *Handler) Stats(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		return stats.ToStatsPayload(t0, t1, rows), nil
+		// Categories are fetched separately (no category column in the rollup) and
+		// respect the same hidden-project exclusion + timeLimit as the rest.
+		categories, err := h.DB.GetCategoryDaily(ctx, owner, t0, t1, limit, hidden.Projects)
+		if err != nil {
+			return nil, err
+		}
+		return stats.ToStatsPayload(t0, t1, rows, categories), nil
 	})
 }
 

@@ -36,3 +36,5 @@ internal/server/dist/
 # Playwright verification artifacts
 .playwright-mcp/
 /*-council-*.png
+/overview-*.png
+/projects-*.png

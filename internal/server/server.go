@@ -70,6 +70,11 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	e.GET("/api/v1/users/current/timeline", h.Timeline)
 	e.GET("/api/v1/users/current/statusbar/today", h.StatusbarToday)
 
+	// Stats — big-bet aggregations (council visualizations)
+	e.GET("/api/v1/users/current/stats/punchcard", h.Punchcard)
+	e.GET("/api/v1/users/current/stats/sessions", h.Sessions)
+	e.GET("/api/v1/users/current/stats/momentum", h.Momentum)
+
 	// Projects & tags
 	e.GET("/api/v1/users/current/projects/:project", h.ProjectStats)
 	e.GET("/api/v1/users/current/tags/:tag", h.TagStats)

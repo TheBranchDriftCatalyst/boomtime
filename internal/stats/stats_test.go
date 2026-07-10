@@ -65,7 +65,7 @@ func TestToStatsPayloadShaping(t *testing.T) {
 		{Day: day2, Project: "alpha", Language: "Rust", Editor: "code", Platform: "mac", Machine: "m2", Entity: "c.rs", TotalSeconds: 50, Pct: 0.25, DailyPct: 1.0},
 	}
 
-	p := ToStatsPayload(t0, t1, rows)
+	p := ToStatsPayload(t0, t1, rows, nil)
 
 	if p.TotalSeconds != 200 {
 		t.Fatalf("TotalSeconds = %d, want 200", p.TotalSeconds)
