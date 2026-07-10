@@ -56,7 +56,8 @@ export class ApiError extends Error {
 
 type Params = Record<string, string | number | undefined | null>;
 
-function buildUrl(path: string, params?: Params): string {
+// Exported for unit tests. Drops undefined/null/"" params but keeps 0.
+export function buildUrl(path: string, params?: Params): string {
   if (!params) return path;
   const usp = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {

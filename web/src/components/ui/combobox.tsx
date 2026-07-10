@@ -7,6 +7,10 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  canCreate as canCreateFn,
+  filterOptions,
+} from "@/lib/comboboxFilter";
 import { cn } from "@/lib/utils";
 
 export interface ComboboxOption {
@@ -53,20 +57,14 @@ export function Combobox({
   const [search, setSearch] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const list = q
-      ? options.filter((o) => o.value.toLowerCase().includes(q))
-      : options;
-    return list.slice(0, 200);
-  }, [options, search]);
-
-  const exactExists = useMemo(
-    () =>
-      options.some((o) => o.value.toLowerCase() === search.trim().toLowerCase()),
+  const filtered = useMemo(
+    () => filterOptions(options, search),
     [options, search],
   );
-  const canCreate = creatable && search.trim().length > 0 && !exactExists;
+  const canCreate = useMemo(
+    () => canCreateFn(options, search, creatable),
+    [options, search, creatable],
+  );
 
   function commit(v: string) {
     onSelect(v);

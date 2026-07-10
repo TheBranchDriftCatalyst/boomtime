@@ -31,6 +31,7 @@ import { useTimeRange } from "@/hooks/useTimeRange";
 import { api } from "@/lib/api";
 import { TIMELINE_HOUR_OPTIONS } from "@/lib/config";
 import { daysBetween, removeHours, secondsToHms } from "@/lib/utils";
+import { mostActive } from "@/lib/mostActive";
 import { bucketDates, bucketGroups, bucketSum } from "@/viz/bucket";
 
 export function Overview() {
@@ -120,19 +121,10 @@ export function Overview() {
     [groups, stats],
   );
 
-  // Exclude the aggregated "Other (N more)" bucket AND the literal "Other"
-  // catch-all (browsing/meeting heartbeats have no language, so "Other" would
-  // otherwise win) when picking the single most-active resource.
-  const isOther = (n: string) =>
-    n === "Other" || n.startsWith("Other (");
-  const mostActiveProject =
-    [...(stats?.projects ?? [])]
-      .filter((r) => !isOther(r.name))
-      .sort((a, b) => b.totalSeconds - a.totalSeconds)[0]?.name ?? "-";
-  const mostActiveLang =
-    [...(stats?.languages ?? [])]
-      .filter((r) => !isOther(r.name))
-      .sort((a, b) => b.totalSeconds - a.totalSeconds)[0]?.name ?? "-";
+  // Most-active picks exclude the "Other" catch-all + "Other (N more)" bucket
+  // (see @/lib/mostActive).
+  const mostActiveProject = mostActive(stats?.projects ?? []);
+  const mostActiveLang = mostActive(stats?.languages ?? []);
 
   return (
     <div>

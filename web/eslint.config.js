@@ -29,4 +29,18 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // Test files + the shared harness: not subject to Fast Refresh, and use
+    // vitest globals (configured via `test.globals` in vite.config.ts).
+    files: [
+      "src/**/*.{test,spec}.{ts,tsx}",
+      "src/test/**/*.{ts,tsx}",
+    ],
+    languageOptions: {
+      globals: { ...globals.browser, ...globals.node },
+    },
+    rules: {
+      "react-refresh/only-export-components": "off",
+    },
+  },
 );

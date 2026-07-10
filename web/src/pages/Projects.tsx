@@ -34,18 +34,8 @@ import { SetTagsModal } from "@/modals/SetTagsModal";
 import { useTimeRange } from "@/hooks/useTimeRange";
 import { api } from "@/lib/api";
 import { daysBetween, secondsToHms } from "@/lib/utils";
+import { mostActive as topByName } from "@/lib/mostActive";
 import { bucketAvg, bucketDates, bucketGroups, bucketSum } from "@/viz/bucket";
-
-const isOther = (n: string) => n === "Other" || n.startsWith("Other (");
-
-// Top resource name by tracked time, excluding the "Other" catch-alls.
-function topByName(items: { name: string; totalSeconds: number }[]): string {
-  return (
-    [...items]
-      .filter((r) => !isOther(r.name))
-      .sort((a, b) => b.totalSeconds - a.totalSeconds)[0]?.name ?? "-"
-  );
-}
 
 export function Projects() {
   const tr = useTimeRange();
