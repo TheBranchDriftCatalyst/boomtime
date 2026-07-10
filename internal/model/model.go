@@ -169,6 +169,21 @@ type MomentumProject struct {
 	TotalSeconds int64   `json:"totalSeconds"`
 }
 
+// ActiveFile is one cross-project file: attributed time and the number of
+// DISTINCT projects that touch it. Files with projects>1 are shared lynchpins.
+type ActiveFile struct {
+	Entity   string `json:"entity"`
+	Seconds  int64  `json:"seconds"`
+	Projects int64  `json:"projects"`
+}
+
+// ActiveFilesPayload is GET /api/v1/users/current/files — top files across all
+// of the owner's projects, ordered lynchpins-first (projects desc, seconds desc).
+type ActiveFilesPayload struct {
+	Files     []ActiveFile `json:"files"`
+	Truncated bool         `json:"truncated"`
+}
+
 // DayTextValue is {"text": "..."}.
 type DayTextValue struct {
 	Text string `json:"text"` // tText

@@ -5,14 +5,12 @@ import { baseChart, hoursYAxisLabels } from "@/components/charts/base";
 import { mergeApexTheme, useApexTheme } from "@/theme/apexTheme";
 import { CHART_COLORS, NO_DATA } from "@/lib/config";
 import { secondsToHms } from "@/lib/utils";
+import { shortPath } from "@/lib/pathLabel";
 
-// Shorten a file path to "<parent>/<file>" for the data label.
+// Apex passes label values that may not be strings; guard then shorten.
 function shortLabel(val: string): string {
   if (typeof val !== "string") return val;
-  const parts = val.split("/").filter(Boolean);
-  const filename = parts[parts.length - 1] ?? val;
-  const parent = parts[parts.length - 2];
-  return parent ? `${parent}/${filename}` : filename;
+  return shortPath(val);
 }
 
 /** Most-active files as a horizontal bar chart (top 10). */

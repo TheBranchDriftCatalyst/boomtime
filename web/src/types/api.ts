@@ -468,3 +468,18 @@ export interface RangeParams {
   start: string;
   end: string;
 }
+
+// GET /api/v1/users/current/files — top files across ALL projects. `projects`
+// is the number of distinct projects the file touches; files with projects > 1
+// are cross-project "lynchpins" (shared interfaces / comm channels). Ordered
+// lynchpins-first (projects desc, then time desc).
+export interface CrossProjectFile {
+  entity: string;
+  seconds: number;
+  projects: number;
+}
+
+export interface CrossProjectFilesPayload {
+  files: CrossProjectFile[];
+  truncated?: boolean;
+}

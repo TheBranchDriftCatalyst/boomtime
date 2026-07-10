@@ -77,6 +77,9 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	e.GET("/api/v1/users/current/stats/sessions", h.Sessions)
 	e.GET("/api/v1/users/current/stats/momentum", h.Momentum)
 
+	// Cross-project active files (shared lynchpins spanning multiple projects)
+	e.GET("/api/v1/users/current/files", h.ActiveFiles)
+
 	// Projects & tags
 	e.GET("/api/v1/users/current/projects/:project", h.ProjectStats)
 	e.GET("/api/v1/users/current/tags/:tag", h.TagStats)

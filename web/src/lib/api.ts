@@ -11,6 +11,7 @@ import type {
   DerivedStatus,
   AddCurationRuleBody,
   AddCurationRulePayload,
+  CrossProjectFilesPayload,
   CurationAffectedPayload,
   CurationRulesPayload,
   CancelImportPayload,
@@ -174,6 +175,15 @@ export const api = {
 
   getStats: (params: StatsParams) =>
     request<StatsPayload>("/api/v1/users/current/stats", { params }),
+
+  // Top files across ALL projects (with the # of distinct projects each touches).
+  getCrossProjectFiles: (params: {
+    start: string;
+    end: string;
+    timeLimit?: number;
+    limit?: number;
+  }) =>
+    request<CrossProjectFilesPayload>("/api/v1/users/current/files", { params }),
 
   // Backend emits hakatime's raw TimelinePayload: { timelineLangs: { lang:
   // [{ tName, tRangeStart, tRangeEnd }] } }. Normalize to { langs: {...} }.

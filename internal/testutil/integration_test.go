@@ -484,3 +484,55 @@ func TestBadTemplateThroughHTTP(t *testing.T) {
 		t.Errorf("template+hide status = %d, want 400", rec3.Code)
 	}
 }
+
+// ---- cross-project active files over HTTP ----
+
+type activeFilesResp struct {
+	Files []struct {
+		Entity   string `json:"entity"`
+		Seconds  int64  `json:"seconds"`
+		Projects int64  `json:"projects"`
+	} `json:"files"`
+	Truncated bool `json:"truncated"`
+}
+
+// TestActiveFilesThroughHTTP: seed a lynchpin file spanning two projects and a
+// single-project file, then GET /files and assert lynchpins-first ordering,
+// per-file project counts, and summed attributed time.
+func TestActiveFilesThroughHTTP(t *testing.T) {
+	hz := testutil.NewHarness(t)
+	e := hz.Router()
+	user, token := hz.MintUser("files")
+
+	base := time.Date(2025, 8, 4, 10, 0, 0, 0, time.UTC)
+	sd := hz.Seeder(user).Projects("alpha", "beta")
+	// router.py under alpha (120s) + beta (60s) -> lynchpin (projects=2).
+	sd.Seed(testutil.HB{Project: "alpha", Entity: "router.py", Ty: "file", TS: base, Gap: 120})
+	sd.Seed(testutil.HB{Project: "beta", Entity: "router.py", Ty: "file", TS: base.Add(time.Minute), Gap: 60})
+	// only_a.go single project, more seconds but projects=1.
+	sd.Seed(testutil.HB{Project: "alpha", Entity: "only_a.go", Ty: "file", TS: base.Add(2 * time.Minute), Gap: 200})
+
+	start, end := weekAround(base)
+	rec := do(t, e, http.MethodGet, "/api/v1/users/current/files?start="+url.QueryEscape(start)+"&end="+url.QueryEscape(end), token, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("files status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var af activeFilesResp
+	decode(t, rec, &af)
+	if len(af.Files) < 2 {
+		t.Fatalf("expected >=2 files, got %+v", af.Files)
+	}
+	// Lynchpin first.
+	if af.Files[0].Entity != "router.py" || af.Files[0].Projects != 2 {
+		t.Errorf("first file = %+v, want router.py projects=2", af.Files[0])
+	}
+	if af.Files[0].Seconds != 180 {
+		t.Errorf("router.py seconds = %d, want 180", af.Files[0].Seconds)
+	}
+	if af.Truncated {
+		t.Error("did not expect truncation")
+	}
+	if !strings.Contains(rec.Body.String(), "only_a.go") {
+		t.Errorf("expected only_a.go in payload; got %s", rec.Body.String())
+	}
+}

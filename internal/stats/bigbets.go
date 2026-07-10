@@ -215,3 +215,19 @@ func isoWeekStart(t time.Time) time.Time {
 	monday := time.Date(y, m, d, 0, 0, 0, 0, time.UTC).AddDate(0, 0, -offset)
 	return monday
 }
+
+// ToActiveFilesPayload maps the cross-project active-file rows to the payload.
+// Rows arrive already ordered lynchpins-first (projects desc, seconds desc) and
+// capped by the DB; this shaper only wraps them with the truncation flag and
+// guarantees a non-nil Files slice for a stable JSON array.
+func ToActiveFilesPayload(rows []db.ActiveFile, truncated bool) model.ActiveFilesPayload {
+	files := make([]model.ActiveFile, 0, len(rows))
+	for _, r := range rows {
+		files = append(files, model.ActiveFile{
+			Entity:   r.Entity,
+			Seconds:  r.Seconds,
+			Projects: r.Projects,
+		})
+	}
+	return model.ActiveFilesPayload{Files: files, Truncated: truncated}
+}

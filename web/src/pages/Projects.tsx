@@ -13,6 +13,7 @@ import {
 import { toast } from "sonner";
 import { StatCard } from "@/components/StatCard";
 import { TopProjectsBar } from "@/components/TopProjectsBar";
+import { CrossProjectFilesTable } from "@/components/CrossProjectFilesTable";
 import { Spinner } from "@/components/Spinner";
 import { ChartCard } from "@/components/charts/ChartCard";
 import { ColumnChart } from "@/components/charts/ColumnChart";
@@ -60,6 +61,19 @@ export function Projects() {
       }),
   });
   const agg = aggQuery.data;
+
+  // Top files across ALL projects (lynchpins-first). Bound to the same range +
+  // timeLimit as the rail. Not tag-scoped (a cross-project file view).
+  const filesQuery = useQuery({
+    queryKey: ["cross-project-files", tr.startISO, tr.endISO, tr.timeLimit],
+    queryFn: () =>
+      api.getCrossProjectFiles({
+        start: tr.startISO,
+        end: tr.endISO,
+        timeLimit: tr.timeLimit,
+        limit: 20,
+      }),
+  });
 
   // --- Project list (for the selector) ---------------------------------------
   const projectsQuery = useQuery({
@@ -214,6 +228,17 @@ export function Projects() {
 
             <ChartCard title="Top projects">
               <TopProjectsBar projects={agg.projects} onSelect={selectProject} />
+            </ChartCard>
+
+            <ChartCard title="Active files across all projects">
+              {filesQuery.isLoading ? (
+                <Spinner />
+              ) : (
+                <CrossProjectFilesTable
+                  files={filesQuery.data?.files ?? []}
+                  truncated={filesQuery.data?.truncated}
+                />
+              )}
             </ChartCard>
           </div>
         )}

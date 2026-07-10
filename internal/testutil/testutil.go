@@ -128,6 +128,7 @@ func (hz *Harness) Router() *echo.Echo {
 	// stats / aggregations
 	e.GET("/api/v1/users/current/stats", h.Stats)
 	e.GET("/api/v1/users/current/stats/momentum", h.Momentum)
+	e.GET("/api/v1/users/current/files", h.ActiveFiles)
 	e.GET("/api/v1/users/current/projects/:project", h.ProjectStats)
 	e.GET("/api/v1/projects", h.ProjectList)
 	return e

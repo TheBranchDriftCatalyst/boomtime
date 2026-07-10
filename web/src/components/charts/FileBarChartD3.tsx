@@ -10,15 +10,8 @@ import {
   type TooltipSelection,
 } from "@/viz/d3/tooltip";
 import { EmptyChart } from "@/viz/d3/EmptyChart";
+import { shortPath } from "@/lib/pathLabel";
 import type { FileBarChartProps } from "@/components/charts/types";
-
-// Shorten a file path to "<parent>/<file>" for the in-bar label.
-function shortLabel(val: string): string {
-  const parts = val.split("/").filter(Boolean);
-  const filename = parts[parts.length - 1] ?? val;
-  const parent = parts[parts.length - 2];
-  return parent ? `${parent}/${filename}` : filename;
-}
 
 /** D3 1:1 port of the most-active-files horizontal bar chart (top 10). */
 export function FileBarChartD3({ files, height = 380 }: FileBarChartProps) {
@@ -125,7 +118,7 @@ export function FileBarChartD3({ files, height = 380 }: FileBarChartProps) {
       .style("font-size", "11px")
       .style("pointer-events", "none")
       .each(function (d) {
-        const label = shortLabel(d.name);
+        const label = shortPath(d.name);
         const barW = x(d.totalSeconds);
         const el = d3.select(this).text(label);
         const textW = (el.node() as SVGTextElement).getComputedTextLength();
