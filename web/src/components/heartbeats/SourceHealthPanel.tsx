@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Activity, Cpu, Plug, SquareCode } from "lucide-react";
+import { Activity, Plug } from "lucide-react";
 import { useSourceHealth } from "@/hooks/useSourceHealth";
 import {
   deriveSourceStatus,
@@ -7,7 +7,7 @@ import {
   STATUS_RANK,
   type SourceStatus,
 } from "@/lib/sourceStatus";
-import type { SourceHealth, SourceKind } from "@/types/api";
+import type { SourceHealth } from "@/types/api";
 import { cn } from "@/lib/utils";
 
 // Synthwave-friendly pill styling per status. active = healthy green,
@@ -26,11 +26,8 @@ const STATUS_LABEL: Record<SourceStatus, string> = {
   silent: "silent",
 };
 
-const KIND_ICON: Record<SourceKind, typeof Plug> = {
-  editor: SquareCode,
-  plugin: Plug,
-  machine: Cpu,
-};
+// A source is a (plugin, machine) pair — the compound uniqueness key.
+const sourceKey = (s: SourceHealth) => `${s.plugin}@${s.machine}`;
 
 interface Row extends SourceHealth {
   status: SourceStatus;
@@ -38,15 +35,13 @@ interface Row extends SourceHealth {
 }
 
 function SourceRow({ row }: { row: Row }) {
-  const Icon = KIND_ICON[row.kind];
+  const key = sourceKey(row);
   return (
     <div className="flex items-center gap-3 border-t border-border/50 py-2 first:border-t-0">
-      <Icon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-      <span className="min-w-0 flex-1 truncate font-mono text-sm" title={row.source}>
-        {row.source}
-      </span>
-      <span className="hidden shrink-0 rounded border border-border/60 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground sm:inline">
-        {row.kind}
+      <Plug className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+      <span className="min-w-0 flex-1 truncate text-sm" title={key}>
+        <span className="font-mono">{row.plugin}</span>
+        <span className="text-muted-foreground"> @ {row.machine}</span>
       </span>
       <span
         className="shrink-0 text-xs tabular-nums text-muted-foreground"
@@ -59,7 +54,7 @@ function SourceRow({ row }: { row: Row }) {
           "shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
           STATUS_PILL[row.status],
         )}
-        data-testid={`status-${row.source}`}
+        data-testid={`status-${key}`}
       >
         {STATUS_LABEL[row.status]}
       </span>
@@ -68,10 +63,10 @@ function SourceRow({ row }: { row: Row }) {
 }
 
 /**
- * Compact "Source health" panel: every ingestion source (editor/plugin/machine)
- * with its last check-in and a derived active/idle/stale/silent status, so a
- * wakatime plugin that has stopped reporting is obvious at a glance. Sorted
- * silent/stale first.
+ * Compact "Source health" panel: every ingestion source — a (plugin, machine)
+ * pair — with its last check-in and a derived active/idle/stale/silent status,
+ * so a wakatime plugin that has stopped reporting on a given machine is obvious
+ * at a glance. Sorted silent/stale first.
  */
 export function SourceHealthPanel() {
   const { data, isLoading, isError } = useSourceHealth();
@@ -100,7 +95,7 @@ export function SourceHealthPanel() {
         <Activity className="h-4 w-4 text-primary" aria-hidden />
         <h2 className="text-sm font-medium">Source health</h2>
         <span className="text-xs text-muted-foreground">
-          per plugin / editor / machine last check-in
+          per plugin · machine last check-in
         </span>
       </div>
 
@@ -116,7 +111,7 @@ export function SourceHealthPanel() {
       ) : (
         <div>
           {rows.map((row) => (
-            <SourceRow key={`${row.kind}:${row.source}`} row={row} />
+            <SourceRow key={sourceKey(row)} row={row} />
           ))}
         </div>
       )}

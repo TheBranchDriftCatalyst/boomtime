@@ -6,22 +6,9 @@ import (
 	"time"
 )
 
-// TestSourceHealthKinds pins the code-defined kind→column mapping (the injection
-// guard for the UNION query). It must never grow to accept arbitrary columns.
-func TestSourceHealthKinds(t *testing.T) {
-	want := map[string]string{"editor": "editor", "plugin": "plugin", "machine": "machine"}
-	if len(sourceHealthKinds) != len(want) {
-		t.Fatalf("sourceHealthKinds len = %d, want %d", len(sourceHealthKinds), len(want))
-	}
-	for _, k := range sourceHealthKinds {
-		if want[k.kind] != k.col {
-			t.Fatalf("kind %q maps to %q, want %q", k.kind, k.col, want[k.kind])
-		}
-	}
-}
-
-// TestSourceHealthShape verifies the per-source MAX(time_sent)+count rollup,
-// NULL/empty exclusion, and stalest-first ordering against the isolated test DB.
+// TestSourceHealthShape verifies the per-(plugin, machine) MAX(time_sent)+count
+// rollup, exclusion of plugin-less heartbeats, the 'unknown' machine fallback,
+// and stalest-first ordering against the isolated test DB.
 func TestSourceHealthShape(t *testing.T) {
 	d := openTestDB(t)
 	defer d.Close()
@@ -38,53 +25,63 @@ func TestSourceHealthShape(t *testing.T) {
 
 	// The heartbeats unique constraint is (entity, sender, time_sent); give each
 	// row a distinct entity so no two collide on the same timestamp.
-	insert := func(entity string, ts time.Time, editor, machine *string) {
+	insert := func(entity string, ts time.Time, plugin, machine *string) {
 		_, err := d.Pool.Exec(ctx,
-			`INSERT INTO heartbeats (sender, project, entity, ty, time_sent, user_agent, editor, machine)
+			`INSERT INTO heartbeats (sender, project, entity, ty, time_sent, user_agent, plugin, machine)
 			 VALUES ($1,'proj',$2,'file',$3,'ua',$4,$5)`,
-			sender, entity, ts, editor, machine)
+			sender, entity, ts, plugin, machine)
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	recent := time.Now().UTC().Add(-2 * time.Hour) // vim: most recent
+	recent := time.Now().UTC().Add(-2 * time.Hour)
 	old := time.Now().UTC().Add(-40 * 24 * time.Hour)
-	vim := "vim"
-	vscode := "vscode"
-	box := "laptop"
-	insert("a.go", recent, &vim, &box)
-	insert("b.go", recent.Add(-time.Hour), &vim, &box) // vim second beat (count=2)
-	insert("c.go", old, &vscode, &box)                 // vscode: stale (oldest editor)
-	insert("d.go", recent, nil, &box)                  // NULL editor -> excluded as editor source
+	vscodePlugin := "vscode-wakatime"
+	vimPlugin := "vim-wakatime"
+	laptop := "laptop"
+	desktop := "desktop"
+
+	// Same plugin on two machines => two distinct sources (compound key).
+	insert("a.go", recent, &vscodePlugin, &laptop)
+	insert("b.go", recent.Add(-time.Hour), &vscodePlugin, &laptop) // second beat (count=2)
+	insert("c.go", old, &vscodePlugin, &desktop)                   // vscode on desktop: stale (oldest)
+	insert("d.go", recent, &vimPlugin, &laptop)                    // different plugin, same machine
+	insert("e.go", recent, nil, &laptop)                           // NULL plugin -> excluded
+	insert("f.go", recent, &vimPlugin, nil)                        // NULL machine -> 'unknown'
 
 	got, err := d.SourceHealth(ctx, sender)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Expect editor sources vim+vscode, machine source laptop. No NULL/empty rows.
-	byKindSource := map[string]SourceHealth{}
+	byKey := map[string]SourceHealth{}
 	for _, s := range got {
-		if s.Source == "" {
-			t.Fatalf("empty source leaked into results: %+v", s)
+		if s.Plugin == "" {
+			t.Fatalf("plugin-less heartbeat leaked into results: %+v", s)
 		}
-		byKindSource[s.Kind+"/"+s.Source] = s
+		byKey[s.Plugin+"@"+s.Machine] = s
 	}
 
-	vimHealth, ok := byKindSource["editor/vim"]
-	if !ok || vimHealth.Count != 2 {
-		t.Fatalf("editor/vim = %+v (ok=%v), want count 2", vimHealth, ok)
+	// vscode-wakatime @ laptop: two beats, most recent.
+	v, ok := byKey["vscode-wakatime@laptop"]
+	if !ok || v.Count != 2 {
+		t.Fatalf("vscode-wakatime@laptop = %+v (ok=%v), want count 2", v, ok)
 	}
-	if !vimHealth.LastSeen.Equal(recent) {
-		t.Fatalf("editor/vim lastSeen = %v, want %v", vimHealth.LastSeen, recent)
+	if !v.LastSeen.Equal(recent) {
+		t.Fatalf("vscode-wakatime@laptop lastSeen = %v, want %v", v.LastSeen, recent)
 	}
-	if _, ok := byKindSource["editor/vscode"]; !ok {
-		t.Fatalf("missing editor/vscode source; got %+v", got)
+	// Same plugin on a different machine is a separate source.
+	if _, ok := byKey["vscode-wakatime@desktop"]; !ok {
+		t.Fatalf("missing vscode-wakatime@desktop source; got %+v", got)
 	}
-	laptop, ok := byKindSource["machine/laptop"]
-	if !ok || laptop.Count != 4 {
-		t.Fatalf("machine/laptop = %+v (ok=%v), want count 4", laptop, ok)
+	// Different plugin on the same machine is a separate source.
+	if _, ok := byKey["vim-wakatime@laptop"]; !ok {
+		t.Fatalf("missing vim-wakatime@laptop source; got %+v", got)
+	}
+	// Missing machine collapses to 'unknown'.
+	if _, ok := byKey["vim-wakatime@unknown"]; !ok {
+		t.Fatalf("missing vim-wakatime@unknown source; got %+v", got)
 	}
 
 	// Stalest-first: results are ordered by lastSeen ASC.

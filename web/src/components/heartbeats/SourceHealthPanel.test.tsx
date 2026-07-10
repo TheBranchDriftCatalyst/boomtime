@@ -56,29 +56,35 @@ function mockSources(sources: SourceHealth[]) {
 }
 
 describe("SourceHealthPanel (rendering)", () => {
-  it("renders a status pill per source and sorts silent/stale first", async () => {
+  it("renders a status pill per (plugin,machine) and sorts silent/stale first", async () => {
     const iso = (ms: number) => new Date(Date.now() - ms).toISOString();
     mockSources([
-      { source: "vim", kind: "editor", lastSeen: iso(2 * HOUR), count: 10 },
-      { source: "vscode", kind: "editor", lastSeen: iso(40 * DAY), count: 5 },
-      { source: "laptop", kind: "machine", lastSeen: iso(10 * DAY), count: 3 },
+      { plugin: "vim-wakatime", machine: "laptop", lastSeen: iso(2 * HOUR), count: 10 },
+      { plugin: "vscode-wakatime", machine: "desktop", lastSeen: iso(40 * DAY), count: 5 },
+      { plugin: "chrome-wakatime", machine: "laptop", lastSeen: iso(10 * DAY), count: 3 },
     ]);
 
     renderWithProviders(<SourceHealthPanel />);
 
     await waitFor(() =>
-      expect(screen.getByTestId("status-vscode")).toBeInTheDocument(),
+      expect(
+        screen.getByTestId("status-vscode-wakatime@desktop"),
+      ).toBeInTheDocument(),
     );
 
     // Status derivation surfaced in the pills.
-    expect(screen.getByTestId("status-vscode")).toHaveTextContent(/silent/i);
-    expect(screen.getByTestId("status-laptop")).toHaveTextContent(/stale/i);
-    expect(screen.getByTestId("status-vim")).toHaveTextContent(/active/i);
+    expect(screen.getByTestId("status-vscode-wakatime@desktop")).toHaveTextContent(/silent/i);
+    expect(screen.getByTestId("status-chrome-wakatime@laptop")).toHaveTextContent(/stale/i);
+    expect(screen.getByTestId("status-vim-wakatime@laptop")).toHaveTextContent(/active/i);
 
-    // Silent/stale sort first: vscode (silent) before laptop (stale) before vim.
+    // Silent/stale sort first: vscode@desktop (silent) → chrome@laptop (stale) → vim@laptop (active).
     const pills = screen.getAllByTestId(/^status-/);
     const order = pills.map((p) => p.getAttribute("data-testid"));
-    expect(order).toEqual(["status-vscode", "status-laptop", "status-vim"]);
+    expect(order).toEqual([
+      "status-vscode-wakatime@desktop",
+      "status-chrome-wakatime@laptop",
+      "status-vim-wakatime@laptop",
+    ]);
   });
 
   it("shows an empty hint when there are no sources", async () => {
@@ -95,12 +101,19 @@ describe("SourceHealthPanel (rendering)", () => {
     expect(STATUS_RANK.idle).toBeLessThan(STATUS_RANK.active);
   });
 
-  it("renders the source name", async () => {
+  it("renders the plugin @ machine label", async () => {
     mockSources([
-      { source: "vim", kind: "editor", lastSeen: new Date().toISOString(), count: 1 },
+      {
+        plugin: "vim-wakatime",
+        machine: "laptop",
+        lastSeen: new Date().toISOString(),
+        count: 1,
+      },
     ]);
     renderWithProviders(<SourceHealthPanel />);
-    const row = await screen.findByTestId("status-vim");
-    expect(within(row.parentElement as HTMLElement).getByText("vim")).toBeInTheDocument();
+    const row = await screen.findByTestId("status-vim-wakatime@laptop");
+    const label = row.parentElement as HTMLElement;
+    expect(within(label).getByText("vim-wakatime")).toBeInTheDocument();
+    expect(within(label).getByText(/@ laptop/)).toBeInTheDocument();
   });
 });

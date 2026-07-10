@@ -452,16 +452,15 @@ export interface LatestHeartbeatPayload {
   count: number;
 }
 
-// GET /api/v1/users/current/sources/health -> per ingestion source (an editor,
-// plugin, or machine value) with its last check-in. status (active/idle/stale/
-// silent) is derived CLIENT-side from lastSeen — see deriveSourceStatus.
-export type SourceKind = "editor" | "plugin" | "machine";
-
+// GET /api/v1/users/current/sources/health -> per (plugin, machine) pair with
+// its last check-in. The plugin is what actually sends heartbeats, scoped per
+// machine so each physical setup is a distinct source. status (active/idle/
+// stale/silent) is derived CLIENT-side from lastSeen — see deriveSourceStatus.
 export interface SourceHealth {
-  source: string; // the editor/plugin/machine value
-  kind: SourceKind;
+  plugin: string; // the wakatime plugin (heartbeat source)
+  machine: string; // machine name ('unknown' when unset)
   lastSeen: string; // ISO timestamp of the most recent heartbeat
-  count: number; // total heartbeats from this source
+  count: number; // total heartbeats from this pair
 }
 
 export interface SourceHealthPayload {
