@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useTimeRange } from "@/hooks/useTimeRange";
 import { api } from "@/lib/api";
-import { TIMELINE_HOUR_OPTIONS } from "@/lib/config";
+import { CHART_COLORS, TIMELINE_HOUR_OPTIONS } from "@/lib/config";
 import { daysBetween, removeHours, secondsToHms } from "@/lib/utils";
 import { mostActive } from "@/lib/mostActive";
 import { bucketDates, bucketGroups, bucketSum } from "@/viz/bucket";
@@ -146,6 +146,26 @@ export function OverviewDashboard({
     [groups, stats],
   );
 
+  // Stacked-column series for "Total activity", stacked by category. Uses the
+  // SAME ordering (real categories by total desc, then the "Other (…)" bucket)
+  // and the SAME palette-by-index as the Category streamgraph / breakdown, so
+  // the three charts stay visually consistent. Per-day totals equal the old
+  // single-series `chartDailyTotal`, so nothing regresses.
+  const categoryColumnSeries = useMemo(() => {
+    const isOther = (r: ResourceStats) => r.name.startsWith("Other (");
+    const ordered = [
+      ...chartCategories
+        .filter((c) => !isOther(c))
+        .sort((a, b) => b.totalSeconds - a.totalSeconds),
+      ...chartCategories.filter(isOther),
+    ].filter((c) => c.totalSeconds > 0);
+    return ordered.map((c, i) => ({
+      name: c.name,
+      values: c.totalDaily,
+      color: CHART_COLORS[i % CHART_COLORS.length],
+    }));
+  }, [chartCategories]);
+
   // Most-active picks exclude the "Other" catch-all + "Other (N more)" bucket
   // (see @/lib/mostActive).
   const mostActiveProject = mostActive(stats?.projects ?? []);
@@ -211,7 +231,14 @@ export function OverviewDashboard({
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <div className="lg:col-span-2">
               <ChartCard title="Total activity">
-                <ColumnChart dates={chartDates} values={chartDailyTotal} />
+                {categoryColumnSeries.length > 0 ? (
+                  <ColumnChart
+                    dates={chartDates}
+                    series={categoryColumnSeries}
+                  />
+                ) : (
+                  <ColumnChart dates={chartDates} values={chartDailyTotal} />
+                )}
               </ChartCard>
             </div>
             <ChartCard title="Project breakdown">

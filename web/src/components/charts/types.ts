@@ -2,12 +2,24 @@
 // component; props live here so call sites stay stable.
 import type { ResourceStats, TimelinePayload } from "@/types/api";
 
+// One stacked series (segment) of a stacked column chart. `values` is aligned
+// to the chart's `dates`; `seconds` per bucket.
+export interface ColumnSeries {
+  name: string;
+  values: number[];
+  color: string;
+}
+
 export interface ColumnChartProps {
   // Parallel arrays: ISO dates and per-day totals in seconds.
   dates: string[];
-  values: number[];
+  values?: number[];
   seriesName?: string;
   height?: number;
+  // When provided, render a stacked column chart (one stacked bar per date,
+  // one segment per series) instead of the single-series `values` bars. Each
+  // series carries its own color so callers can share a palette across charts.
+  series?: ColumnSeries[];
 }
 
 export interface PieChartProps {
