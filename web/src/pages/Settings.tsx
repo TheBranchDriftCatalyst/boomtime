@@ -6,7 +6,6 @@ import {
   ChevronDown,
   ChevronRight,
   Loader2,
-  Plus,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -16,23 +15,18 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { RemappingForm } from "@/components/curation/RemappingForm";
 import { axisLabel } from "@/components/heartbeats/axes";
 import { useAxisValues } from "@/hooks/useAxisValues";
 import { useCurationMutations, useCurationRules } from "@/hooks/useCuration";
 import { api } from "@/lib/api";
-import type {
-  CurationMatchType,
-  CurationRule,
-  HeartbeatAxis,
-} from "@/types/api";
+import type { CurationRule, HeartbeatAxis } from "@/types/api";
 
 // Axes exposed in the "hidden sources" picker.
 const SOURCE_AXES = [
@@ -47,20 +41,6 @@ const AXIS_LABEL: Record<string, string> = {
   plugin: "Plugin",
   machine: "Machine",
 };
-
-// Axes that support name remappings (rename rules). Matches the renamable axes
-// in the Heartbeats explorer (excludes synthetic `day` and the file-path
-// `entity`).
-const REMAP_AXES: readonly HeartbeatAxis[] = [
-  "project",
-  "language",
-  "editor",
-  "plugin",
-  "machine",
-  "platform",
-  "branch",
-  "category",
-];
 
 export function Settings() {
   const { data, isLoading } = useCurationRules();
@@ -91,22 +71,6 @@ export function Settings() {
         toast.success(`Removed remapping ${rule.matchValue} → ${rule.newValue}`),
       onError: () => toast.error("Failed to remove remapping"),
     });
-  }
-
-  function addRename(body: {
-    axis: string;
-    matchValue: string;
-    newValue: string;
-    matchType: CurationMatchType;
-  }) {
-    add.mutate(
-      { action: "rename", ...body },
-      {
-        onSuccess: () =>
-          toast.success(`Added remapping ${body.matchValue} → ${body.newValue}`),
-        onError: () => toast.error("Failed to add remapping"),
-      },
-    );
   }
 
   function addHide(axis: string, value: string) {
@@ -161,12 +125,7 @@ export function Settings() {
               onAdd={addHide}
               onRemove={unhide}
             />
-            <NameRemappingsCard
-              rules={renames}
-              onAdd={addRename}
-              onRemove={removeRename}
-              adding={add.isPending}
-            />
+            <NameRemappingsCard rules={renames} onRemove={removeRename} />
           </>
         )}
       </div>
@@ -347,19 +306,10 @@ function HiddenSourcesCard({
 
 function NameRemappingsCard({
   rules,
-  onAdd,
   onRemove,
-  adding,
 }: {
   rules: CurationRule[];
-  onAdd: (body: {
-    axis: string;
-    matchValue: string;
-    newValue: string;
-    matchType: CurationMatchType;
-  }) => void;
   onRemove: (rule: CurationRule) => void;
-  adding: boolean;
 }) {
   // Group rename rules by axis (project/language/editor/branch/…).
   const grouped = useMemo(() => {
@@ -391,7 +341,7 @@ function NameRemappingsCard({
           reversible — raw records are never changed.
         </p>
 
-        <AddRemappingForm onAdd={onAdd} adding={adding} />
+        <RemappingForm layout="inline" />
 
         {grouped.size === 0 ? (
           <p className="text-sm text-muted-foreground">No remappings yet.</p>
@@ -413,132 +363,6 @@ function NameRemappingsCard({
         )}
       </CardContent>
     </Card>
-  );
-}
-
-function AddRemappingForm({
-  onAdd,
-  adding,
-}: {
-  onAdd: (body: {
-    axis: string;
-    matchValue: string;
-    newValue: string;
-    matchType: CurationMatchType;
-  }) => void;
-  adding: boolean;
-}) {
-  const [axis, setAxis] = useState<HeartbeatAxis>(REMAP_AXES[0]);
-  const [pattern, setPattern] = useState("");
-  const [target, setTarget] = useState("");
-  const [regex, setRegex] = useState(false);
-
-  function submit(e: React.FormEvent) {
-    e.preventDefault();
-    const matchValue = pattern.trim();
-    const newValue = target.trim();
-    if (!matchValue || !newValue) {
-      toast.error("Enter both a pattern and a target name");
-      return;
-    }
-    if (regex) {
-      // Validate the regex client-side before sending.
-      try {
-        new RegExp(matchValue);
-      } catch {
-        toast.error("That isn't a valid regular expression");
-        return;
-      }
-    }
-    onAdd({ axis, matchValue, newValue, matchType: regex ? "regex" : "exact" });
-    setPattern("");
-    setTarget("");
-  }
-
-  return (
-    <form
-      onSubmit={submit}
-      className="space-y-3 rounded-md border bg-muted/30 p-3"
-    >
-      <div className="flex flex-wrap items-end gap-2">
-        <div className="space-y-1">
-          <Label className="text-xs">Axis</Label>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="w-32 justify-between"
-              >
-                {axisLabel(axis)}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="max-h-72 overflow-y-auto">
-              {REMAP_AXES.map((a) => (
-                <DropdownMenuItem key={a} onSelect={() => setAxis(a)}>
-                  {axisLabel(a)}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-
-        <div className="min-w-40 flex-1 space-y-1">
-          <div className="flex items-center justify-between">
-            <Label className="text-xs">
-              {regex ? "Pattern (regex)" : "Pattern"}
-            </Label>
-            <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
-              <input
-                type="checkbox"
-                checked={regex}
-                onChange={(e) => setRegex(e.target.checked)}
-                className="h-3.5 w-3.5 accent-primary"
-              />
-              regex
-            </label>
-          </div>
-          <Input
-            value={pattern}
-            onChange={(e) => setPattern(e.target.value)}
-            placeholder={regex ? "^Meet" : "Meet - Weekly All-Hands"}
-            className="h-8 font-mono"
-          />
-        </div>
-
-        <ArrowRight className="mb-2 hidden h-4 w-4 shrink-0 text-muted-foreground sm:block" />
-
-        <div className="min-w-40 flex-1 space-y-1">
-          <Label className="text-xs">Target name</Label>
-          <Input
-            value={target}
-            onChange={(e) => setTarget(e.target.value)}
-            placeholder="Meeting"
-            className="h-8 font-mono"
-          />
-        </div>
-
-        <Button
-          type="submit"
-          size="sm"
-          className="h-8"
-          disabled={adding || !pattern.trim() || !target.trim()}
-        >
-          <Plus className="h-4 w-4" />
-          Add
-        </Button>
-      </div>
-      {regex && (
-        <p className="text-xs text-muted-foreground">
-          The pattern is a regular expression matched against raw{" "}
-          {axisLabel(axis).toLowerCase()} values (e.g.{" "}
-          <span className="font-mono">^Meet</span> or{" "}
-          <span className="font-mono">Meet - .*</span>). Click a rule below to
-          preview what it matches.
-        </p>
-      )}
-    </form>
   );
 }
 
