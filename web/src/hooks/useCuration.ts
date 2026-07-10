@@ -44,5 +44,31 @@ export function useCurationMutations() {
     onSuccess: invalidateDependents,
   });
 
-  return { add, remove };
+  // Edit an existing rename rule. Rule identity is
+  // (axis, action, matchType, matchValue); CreateCurationRule UPSERTs newValue
+  // on that key. So:
+  //  - If the identity is UNCHANGED (only newValue differs), a plain create is
+  //    an upsert that updates the target.
+  //  - If the pattern or matchType CHANGED (new identity), delete the old rule
+  //    and create the new one so no stale rule lingers. Non-destructive: raw
+  //    heartbeat records are never touched.
+  const edit = useMutation({
+    mutationFn: async ({
+      oldId,
+      identityChanged,
+      body,
+    }: {
+      oldId: number;
+      identityChanged: boolean;
+      body: AddCurationRuleBody;
+    }) => {
+      if (identityChanged) {
+        await api.deleteCurationRule(oldId);
+      }
+      return api.addCurationRule(body);
+    },
+    onSuccess: invalidateDependents,
+  });
+
+  return { add, remove, edit };
 }

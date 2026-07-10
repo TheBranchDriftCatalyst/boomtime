@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronRight,
   Loader2,
+  Pencil,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -26,7 +27,12 @@ import { axisLabel } from "@/components/heartbeats/axes";
 import { useAxisValues } from "@/hooks/useAxisValues";
 import { useCurationMutations, useCurationRules } from "@/hooks/useCuration";
 import { api } from "@/lib/api";
-import type { CurationRule, HeartbeatAxis } from "@/types/api";
+import { templateToDisplay } from "@/lib/remapDisplay";
+import type {
+  CurationMatchType,
+  CurationRule,
+  HeartbeatAxis,
+} from "@/types/api";
 
 // Axes exposed in the "hidden sources" picker.
 const SOURCE_AXES = [
@@ -374,6 +380,8 @@ function RemappingRow({
   onRemove: (rule: CurationRule) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const matchType: CurationMatchType = rule.matchType ?? "exact";
   // Badge for non-exact rules ("regex" / "template" capture rules).
   const modeBadge =
     rule.matchType === "regex"
@@ -381,6 +389,28 @@ function RemappingRow({
       : rule.matchType === "template"
         ? "capture"
         : null;
+
+  if (editing) {
+    // Inline-expand the row into a pre-filled edit form. Template targets are
+    // stored with backend `\N` backrefs; convert to the authoring `$N` form.
+    const presetTarget =
+      matchType === "template"
+        ? templateToDisplay(rule.newValue ?? "")
+        : (rule.newValue ?? "");
+    return (
+      <RemappingForm
+        layout="inline"
+        editRuleId={rule.id}
+        presetAxis={rule.axis as HeartbeatAxis}
+        presetValue={rule.matchValue}
+        presetMatchType={matchType}
+        presetTarget={presetTarget}
+        submitLabel="Save"
+        onDone={() => setEditing(false)}
+        onCancel={() => setEditing(false)}
+      />
+    );
+  }
 
   const affected = useQuery({
     queryKey: ["curation-affected", rule.id],
@@ -420,6 +450,13 @@ function RemappingRow({
           )}
           <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <span className="font-mono font-medium">{rule.newValue}</span>
+        </button>
+        <button
+          onClick={() => setEditing(true)}
+          title="Edit this remapping"
+          className="rounded-full p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"
+        >
+          <Pencil className="h-3.5 w-3.5" />
         </button>
         <button
           onClick={() => onRemove(rule)}

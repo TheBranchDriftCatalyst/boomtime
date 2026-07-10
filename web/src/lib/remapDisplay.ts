@@ -21,6 +21,16 @@ export function templateToJs(template: string): string {
   return template.replace(/\\(\d)/g, "$$$1");
 }
 
+/**
+ * Convert a backend-stored template (`\N` backrefs) back to the authoring UI's
+ * `$N` form — the inverse of `templateToBackend`, used to pre-fill the edit
+ * form's target field. (The `\N`→`$N` transform matches `templateToJs`, but the
+ * intent here is "show in the UI", not "run String.replace".)
+ */
+export function templateToDisplay(template: string): string {
+  return template.replace(/\\(\d)/g, "$$$1");
+}
+
 /** Convert authoring `$N` backrefs to backend `\N` (leaving `$$` as literal). */
 export function templateToBackend(template: string): string {
   let out = "";

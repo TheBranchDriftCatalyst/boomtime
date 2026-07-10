@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, Plus } from "lucide-react";
+import { ArrowRight, Check, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { axisLabel } from "@/components/heartbeats/axes";
 import { useAxisValues } from "@/hooks/useAxisValues";
 import { useCurationMutations } from "@/hooks/useCuration";
-import { templateToBackend, templateToJs } from "@/lib/remapDisplay";
+import { templateToBackend, templateToDisplay, templateToJs } from "@/lib/remapDisplay";
 import { cn } from "@/lib/utils";
 import type { CurationMatchType, HeartbeatAxis } from "@/types/api";
 
@@ -44,9 +44,22 @@ interface RemappingFormProps {
   presetAxis?: HeartbeatAxis;
   /** Pre-fill the pattern with the clicked group's raw value. */
   presetValue?: string;
-  /** Called after a successful create (e.g. to close a dialog). */
+  /** Pre-fill the match strategy (edit mode: seed from the rule's matchType). */
+  presetMatchType?: Mode;
+  /**
+   * Pre-fill the target/template. For template rules pass the UI (`$N`) form —
+   * callers convert the backend `\N` via `templateToDisplay`.
+   */
+  presetTarget?: string;
+  /**
+   * Edit mode: the id of the rule being edited. When set, the form saves via
+   * the `edit` mutation (delete-old + create-new when identity changes; upsert
+   * when only the target changes) instead of a plain create.
+   */
+  editRuleId?: number;
+  /** Called after a successful create/edit (e.g. to close the row/dialog). */
   onDone?: () => void;
-  /** Show a Cancel button (dialog use). */
+  /** Show a Cancel button (dialog/edit use). */
   onCancel?: () => void;
   /**
    * "inline" = compact single-row form (Settings card). "stacked" = vertical
@@ -72,26 +85,31 @@ interface RemappingFormProps {
 export function RemappingForm({
   presetAxis,
   presetValue,
+  presetMatchType,
+  presetTarget,
+  editRuleId,
   onDone,
   onCancel,
   layout = "inline",
   submitLabel,
 }: RemappingFormProps) {
-  const { add } = useCurationMutations();
+  const { add, edit } = useCurationMutations();
   const axisLocked = presetAxis !== undefined;
+  const editing = editRuleId !== undefined;
 
   const [axis, setAxis] = useState<HeartbeatAxis>(presetAxis ?? REMAP_AXES[0]);
   const [pattern, setPattern] = useState(presetValue ?? "");
-  const [target, setTarget] = useState("");
-  const [mode, setMode] = useState<Mode>("exact");
+  const [target, setTarget] = useState(presetTarget ?? "");
+  const [mode, setMode] = useState<Mode>(presetMatchType ?? "exact");
 
-  // Re-seed when the preset changes (e.g. the dialog opens for a new group).
+  // Re-seed when the preset changes (e.g. the dialog opens for a new group, or
+  // a different rule enters edit mode).
   useEffect(() => {
     if (presetAxis !== undefined) setAxis(presetAxis);
     setPattern(presetValue ?? "");
-    setTarget("");
-    setMode("exact");
-  }, [presetAxis, presetValue]);
+    setTarget(presetTarget ?? "");
+    setMode(presetMatchType ?? "exact");
+  }, [presetAxis, presetValue, presetTarget, presetMatchType, editRuleId]);
 
   const isRegexLike = mode === "regex" || mode === "template";
   const isTemplate = mode === "template";
@@ -170,24 +188,45 @@ export function RemappingForm({
     }
     // Capture templates: accept `$N` in the UI, send backend `\N` form.
     const newValue = isTemplate ? templateToBackend(rawTarget) : rawTarget;
+    const body = { axis, action: "rename" as const, matchValue, newValue, matchType: mode };
 
-    add.mutate(
-      { axis, action: "rename", matchValue, newValue, matchType: mode },
-      {
-        onSuccess: () => {
-          toast.success(`Remapped ${matchValue} → ${rawTarget}`);
-          setPattern(presetValue ?? "");
-          setTarget("");
-          setMode("exact");
-          onDone?.();
+    if (editing) {
+      // Rule identity is (axis, action, matchType, matchValue). If any of those
+      // changed we must delete the old rule (create alone would upsert a NEW
+      // key and leave the old one). If only the target changed, create upserts
+      // newValue on the existing key.
+      const identityChanged =
+        axis !== presetAxis ||
+        mode !== (presetMatchType ?? "exact") ||
+        matchValue !== (presetValue ?? "");
+      edit.mutate(
+        { oldId: editRuleId, identityChanged, body },
+        {
+          onSuccess: () => {
+            toast.success(`Updated remapping ${matchValue} → ${rawTarget}`);
+            onDone?.();
+          },
+          onError: () => toast.error("Failed to update remapping"),
         },
-        onError: () => toast.error("Failed to add remapping"),
+      );
+      return;
+    }
+
+    add.mutate(body, {
+      onSuccess: () => {
+        toast.success(`Remapped ${matchValue} → ${rawTarget}`);
+        setPattern(presetValue ?? "");
+        setTarget("");
+        setMode("exact");
+        onDone?.();
       },
-    );
+      onError: () => toast.error("Failed to add remapping"),
+    });
   }
 
   const stacked = layout === "stacked";
   const canSubmit = pattern.trim() !== "" && target.trim() !== "";
+  const isPending = add.isPending || edit.isPending;
 
   const axisField = (
     <div className="space-y-1">
@@ -395,8 +434,8 @@ export function RemappingForm({
               Cancel
             </Button>
           )}
-          <Button type="submit" disabled={add.isPending || !canSubmit}>
-            {add.isPending ? "Saving..." : (submitLabel ?? "Save remapping")}
+          <Button type="submit" disabled={isPending || !canSubmit}>
+            {isPending ? "Saving..." : (submitLabel ?? "Save remapping")}
           </Button>
         </div>
       </form>
@@ -416,11 +455,22 @@ export function RemappingForm({
           type="submit"
           size="sm"
           className="h-8"
-          disabled={add.isPending || !canSubmit}
+          disabled={isPending || !canSubmit}
         >
-          <Plus className="h-4 w-4" />
-          {submitLabel ?? "Add"}
+          {editing ? <Check className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+          {submitLabel ?? (editing ? "Save" : "Add")}
         </Button>
+        {onCancel && (
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className="h-8"
+            onClick={onCancel}
+          >
+            Cancel
+          </Button>
+        )}
       </div>
       {hint}
       {preview}
