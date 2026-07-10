@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  BookOpen,
+  Calculator,
   Clock,
   Code,
+  Crown,
   FileText,
   GitBranch,
   Link as LinkIcon,
@@ -11,6 +12,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { StatCard } from "@/components/StatCard";
+import { TopProjectsBar } from "@/components/TopProjectsBar";
 import { Spinner } from "@/components/Spinner";
 import { ChartCard } from "@/components/charts/ChartCard";
 import { ColumnChart } from "@/components/charts/ColumnChart";
@@ -26,12 +28,7 @@ import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
 import { TagFilter } from "@/components/toolbar/TagFilter";
 import { TimeLimitDropdown } from "@/components/toolbar/TimeLimitDropdown";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Combobox } from "@/components/ui/combobox";
 import { CommitListModal } from "@/modals/CommitListModal";
 import { SetTagsModal } from "@/modals/SetTagsModal";
 import { useTimeRange } from "@/hooks/useTimeRange";
@@ -39,21 +36,46 @@ import { api } from "@/lib/api";
 import { daysBetween, secondsToHms } from "@/lib/utils";
 import { bucketAvg, bucketDates, bucketGroups, bucketSum } from "@/viz/bucket";
 
+const isOther = (n: string) => n === "Other" || n.startsWith("Other (");
+
+// Top resource name by tracked time, excluding the "Other" catch-alls.
+function topByName(items: { name: string; totalSeconds: number }[]): string {
+  return (
+    [...items]
+      .filter((r) => !isOther(r.name))
+      .sort((a, b) => b.totalSeconds - a.totalSeconds)[0]?.name ?? "-"
+  );
+}
+
 export function Projects() {
   const tr = useTimeRange();
   const [selected, setSelected] = useState<string | null>(null);
   const [tag, setTag] = useState<string | null>(null);
+  const detailRef = useRef<HTMLDivElement>(null);
 
   // Modal state.
   const [commitsFor, setCommitsFor] = useState<string | null>(null);
   const [tagsFor, setTagsFor] = useState<string | null>(null);
   const [initialTags, setInitialTags] = useState<string[]>([]);
 
+  // --- TOP RAIL: aggregate stats across ALL projects (same data as Overview) --
+  const aggQuery = useQuery({
+    queryKey: ["stats", tr.startISO, tr.endISO, tr.timeLimit, tag],
+    queryFn: () =>
+      api.getStats({
+        start: tr.startISO,
+        end: tr.endISO,
+        timeLimit: tr.timeLimit,
+        tag: tag ?? undefined,
+      }),
+  });
+  const agg = aggQuery.data;
+
+  // --- Project list (for the selector) ---------------------------------------
   const projectsQuery = useQuery({
     queryKey: ["projects", tr.startISO, tr.endISO],
     queryFn: () => api.getUserProjects({ start: tr.startISO, end: tr.endISO }),
   });
-
   const projects = useMemo(
     () => projectsQuery.data?.projects ?? [],
     [projectsQuery.data],
@@ -61,9 +83,10 @@ export function Projects() {
 
   // Default to the first project once the list loads.
   useEffect(() => {
-    if (!selected && !tag && projects.length > 0) setSelected(projects[0]);
-  }, [projects, selected, tag]);
+    if (!selected && projects.length > 0) setSelected(projects[0]);
+  }, [projects, selected]);
 
+  // --- BELOW: per-project (or per-tag) detail --------------------------------
   const statsQuery = useQuery({
     queryKey: ["project-stats", selected, tag, tr.startISO, tr.endISO, tr.timeLimit],
     enabled: Boolean(selected || tag),
@@ -95,10 +118,9 @@ export function Projects() {
     [groups, stats],
   );
 
-  // Bucketed series for the viz-council Projects charts. Ratio is averaged over
-  // each bucket; entities are averaged too (a bucket's mean distinct-files/day,
-  // which is honest — summing daily distinct counts would double-count files
-  // touched on multiple days).
+  // Bucketed series for the viz-council Projects charts. Ratio + entities are
+  // averaged over each bucket (summing daily distinct counts would double-count
+  // files touched on multiple days).
   const chartWriteRatio = useMemo(
     () => bucketAvg(groups, stats?.dailyWriteRatio ?? []),
     [groups, stats],
@@ -108,15 +130,17 @@ export function Projects() {
     [groups, stats],
   );
 
-  const heading = tag ? `#${tag}` : selected ?? "Projects";
+  const detailHeading = tag ? `#${tag}` : selected ?? "-";
+  const mostActiveLang = topByName(stats?.languages ?? []);
 
-  // Exclude the "Other (N more)" aggregate and the literal "Other" catch-all
-  // (no-language browsing/meeting heartbeats) from the most-active pick.
-  const isOther = (n: string) => n === "Other" || n.startsWith("Other (");
-  const mostActiveLang =
-    [...(stats?.languages ?? [])]
-      .filter((l) => !isOther(l.name))
-      .sort((a, b) => b.totalSeconds - a.totalSeconds)[0]?.name ?? "-";
+  function selectProject(p: string) {
+    setTag(null);
+    setSelected(p);
+    // Scroll the per-project detail into view.
+    requestAnimationFrame(() =>
+      detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+    );
+  }
 
   async function openTags() {
     if (!selected) return;
@@ -140,31 +164,14 @@ export function Projects() {
     }
   }
 
+  const projectOptions = useMemo(
+    () => projects.map((p) => ({ value: p })),
+    [projects],
+  );
+
   return (
     <div>
-      <PageToolbar title={heading}>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm">
-              <BookOpen className="h-4 w-4" />
-              Projects
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="max-h-72 overflow-y-auto">
-            {projects.map((p) => (
-              <DropdownMenuItem
-                key={p}
-                onSelect={() => {
-                  setTag(null);
-                  setSelected(p);
-                }}
-              >
-                {p}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-
+      <PageToolbar title="Projects">
         <TagFilter value={tag} onChange={setTag} />
         <TimeLimitDropdown value={tr.timeLimit} onChange={tr.setTimeLimit} />
         <DateRangePicker
@@ -172,124 +179,196 @@ export function Projects() {
           onPreset={tr.setDaysFromToday}
           onRange={tr.setRange}
         />
-
-        <Button
-          variant="secondary"
-          size="icon"
-          title="See time spent per commit"
-          disabled={!selected}
-          onClick={() => selected && setCommitsFor(selected)}
-        >
-          <GitBranch className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="secondary"
-          size="icon"
-          title="Add tags to this project"
-          disabled={!selected}
-          onClick={openTags}
-        >
-          <Tags className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="secondary"
-          size="icon"
-          title="Copy shields.io badge to clipboard"
-          disabled={!selected}
-          onClick={copyBadge}
-        >
-          <LinkIcon className="h-4 w-4" />
-        </Button>
       </PageToolbar>
 
-      {statsQuery.isLoading || !stats ? (
-        <Spinner />
-      ) : (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <StatCard
-              name="Total tracked time"
-              value={secondsToHms(stats.totalSeconds)}
-              icon={Clock}
-              accent="primary"
-            />
-            <StatCard
-              name="Languages"
-              value={stats.languagesCount}
-              icon={Code}
-              accent="info"
-            />
-            <StatCard
-              name="Files touched"
-              value={stats.filesCount}
-              icon={FileText}
-              accent="success"
-            />
-            <StatCard
-              name="Most active language"
-              value={mostActiveLang}
-              icon={Code}
-              accent="warning"
-            />
-          </div>
+      {/* ===== TOP RAIL — aggregate across all projects ===== */}
+      <section className="mb-10">
+        <div className="mb-3">
+          <h2 className="text-lg font-semibold">Across all projects</h2>
+          <p className="text-sm text-muted-foreground">
+            Combined totals for the selected range{tag ? ` · #${tag}` : ""} — the
+            same aggregate as your Overview.
+          </p>
+        </div>
 
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-            <div className="lg:col-span-2">
-              <ChartCard title="Total activity">
-                <ColumnChart
-                  dates={chartDates}
-                  values={chartDailyTotal}
-                  seriesName={heading}
-                />
+        {aggQuery.isLoading || !agg ? (
+          <Spinner />
+        ) : (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <StatCard
+                name="Total tracked time"
+                value={secondsToHms(agg.totalSeconds)}
+                icon={Clock}
+                accent="primary"
+              />
+              <StatCard
+                name="Total projects"
+                value={agg.projectsCount}
+                icon={Calculator}
+                accent="info"
+              />
+              <StatCard
+                name="Most active project"
+                value={topByName(agg.projects)}
+                icon={Crown}
+                accent="success"
+              />
+              <StatCard
+                name="Most active language"
+                value={topByName(agg.languages)}
+                icon={Code}
+                accent="warning"
+              />
+            </div>
+
+            <ChartCard title="Top projects">
+              <TopProjectsBar projects={agg.projects} onSelect={selectProject} />
+            </ChartCard>
+          </div>
+        )}
+      </section>
+
+      {/* ===== BELOW — per-project detail (explicit selection) ===== */}
+      <section ref={detailRef} className="scroll-mt-4">
+        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold">Project detail</h2>
+            <p className="text-sm text-muted-foreground">
+              Pick a project to see its charts, files, and branch activity.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm text-muted-foreground">Project:</span>
+            <Combobox
+              options={projectOptions}
+              value={tag ? `#${tag}` : selected}
+              onSelect={selectProject}
+              fullWidth={false}
+              className="min-w-56"
+              placeholder="Select a project..."
+              searchPlaceholder="Search projects..."
+              emptyText="No projects found."
+            />
+            <Button
+              variant="secondary"
+              size="icon"
+              title="See time spent per commit"
+              disabled={!selected}
+              onClick={() => selected && setCommitsFor(selected)}
+            >
+              <GitBranch className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="secondary"
+              size="icon"
+              title="Add tags to this project"
+              disabled={!selected}
+              onClick={openTags}
+            >
+              <Tags className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="secondary"
+              size="icon"
+              title="Copy shields.io badge to clipboard"
+              disabled={!selected}
+              onClick={copyBadge}
+            >
+              <LinkIcon className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+
+        {statsQuery.isLoading || !stats ? (
+          <Spinner />
+        ) : (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <StatCard
+                name={`${detailHeading} · tracked time`}
+                value={secondsToHms(stats.totalSeconds)}
+                icon={Clock}
+                accent="primary"
+              />
+              <StatCard
+                name="Languages"
+                value={stats.languagesCount}
+                icon={Code}
+                accent="info"
+              />
+              <StatCard
+                name="Files touched"
+                value={stats.filesCount}
+                icon={FileText}
+                accent="success"
+              />
+              <StatCard
+                name="Most active language"
+                value={mostActiveLang}
+                icon={Code}
+                accent="warning"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+              <div className="lg:col-span-2">
+                <ChartCard title="Total activity">
+                  <ColumnChart
+                    dates={chartDates}
+                    values={chartDailyTotal}
+                    seriesName={detailHeading}
+                  />
+                </ChartCard>
+              </div>
+              <ChartCard title="Language breakdown">
+                <PieChart items={stats.languages} />
               </ChartCard>
             </div>
-            <ChartCard title="Language breakdown">
-              <PieChart items={stats.languages} />
-            </ChartCard>
-          </div>
 
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <ChartCard title="Activity per weekday">
-              <RadarChart weekDay={stats.weekDay} />
-            </ChartCard>
-            <ChartCard title="Activity per hour of day">
-              <HourBarChart hour={stats.hour} />
-            </ChartCard>
-          </div>
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              <ChartCard title="Activity per weekday">
+                <RadarChart weekDay={stats.weekDay} />
+              </ChartCard>
+              <ChartCard title="Activity per hour of day">
+                <HourBarChart hour={stats.hour} />
+              </ChartCard>
+            </div>
 
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <ChartCard title="Authoring vs reading">
-              <AuthoringVsReading
-                writeSeconds={stats.writeSeconds}
-                readSeconds={stats.readSeconds}
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              <ChartCard title="Authoring vs reading">
+                <AuthoringVsReading
+                  writeSeconds={stats.writeSeconds}
+                  readSeconds={stats.readSeconds}
+                  dates={chartDates}
+                  ratio={chartWriteRatio}
+                />
+              </ChartCard>
+              <ChartCard
+                title={
+                  stats.branchesCount !== undefined
+                    ? `Branch activity (${stats.branchesCount})`
+                    : "Branch activity"
+                }
+              >
+                <BranchActivity branches={stats.branches} />
+              </ChartCard>
+            </div>
+
+            <ChartCard title="Breadth vs depth (time vs files/day)">
+              <BreadthVsDepth
                 dates={chartDates}
-                ratio={chartWriteRatio}
+                seconds={chartDailyTotal}
+                entities={chartEntities}
               />
             </ChartCard>
-            <ChartCard
-              title={
-                stats.branchesCount !== undefined
-                  ? `Branch activity (${stats.branchesCount})`
-                  : "Branch activity"
-              }
-            >
-              <BranchActivity branches={stats.branches} />
+
+            <ChartCard title="Most active files">
+              <FileBarChart files={stats.files} />
             </ChartCard>
           </div>
-
-          <ChartCard title="Breadth vs depth (time vs files/day)">
-            <BreadthVsDepth
-              dates={chartDates}
-              seconds={chartDailyTotal}
-              entities={chartEntities}
-            />
-          </ChartCard>
-
-          <ChartCard title="Most active files">
-            <FileBarChart files={stats.files} />
-          </ChartCard>
-        </div>
-      )}
+        )}
+      </section>
 
       <CommitListModal
         project={commitsFor}
