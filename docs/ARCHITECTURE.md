@@ -34,7 +34,7 @@ Wakatime-style "time spent" is not stored — it's derived from gaps between hea
 
 - **`gap_seconds`** = seconds to the previous heartbeat for the same sender in global time order. Computed by an anchored window-function `UPDATE` (`RecomputeGaps`) whenever heartbeats land.
 - **Time spent** for a range = `SUM(CASE WHEN gap_seconds ≤ timeLimit*60 THEN gap_seconds ELSE 0 END)` — a **windowless conditional sum**, no per-request session reconstruction.
-- **`hb_rollup_daily`** — a coarse per-(sender, day, project, language, editor, platform, machine) rollup, refreshed for affected days at ingest. The default 15-min path reads the rollup (fast); non-default `timeLimit` or tag filters fall back to the raw scan.
+- **`hb_rollup_daily`** — a coarse per-(sender, day, project, language, editor, platform, machine) rollup, refreshed for affected days at ingest. The default 15-min path reads the rollup (fast); a non-default `timeLimit`, a hide the rollup can't apply, or a Space scope falls back to the raw scan.
 - **Payload bounding** — top-N resources + an aggregated **"Other (N more)"** bucket, and ~weekly bucketing of long time-series (`MAX_CHART_POINTS`), so "All time" over ~440k rows returns quickly and never freezes the browser.
 
 Health of this derived data (gap coverage, rollup vs raw drift, table/DB sizes) is surfaced in the Heartbeats **Derived-data panel**, with a one-click **Resync**.
@@ -51,7 +51,7 @@ Both are threaded through every aggregation path (raw stats, rollup, projects li
 
 ## Frontend
 
-- **Data** — TanStack Query per endpoint, keyed on `(range, timeLimit, tag)`; a shared toolbar drives every page. Auth token is in-memory only, bootstrapped from the HttpOnly refresh cookie on load (60s refresh loop, cross-tab logout).
+- **Data** — TanStack Query per endpoint, keyed on `(range, timeLimit, space)`; a shared toolbar drives every page. Auth token is in-memory only, bootstrapped from the HttpOnly refresh cookie on load (60s refresh loop, cross-tab logout).
 - **Charts** — a strangler-fig `RendererProvider`: each chart is a switcher over `<Name>Apex` and `<Name>D3`, toggled globally. D3 charts read theme tokens and recolor on theme flips via a MutationObserver.
 - **Perf** — the same ~weekly bucketing (`viz/bucket.ts`) feeds all time-series so All-time stays bounded; the contribution calendar is the intentional raw-daily exception.
 

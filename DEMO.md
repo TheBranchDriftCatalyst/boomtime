@@ -17,7 +17,8 @@ coding history, self-hosted off wakatime.com.
 
 Every screenshot below is that dataset, **full-page**, in the default dark theme.
 The top bar on every page: **Apex ↔ D3** renderer toggle · theme toggle · New API token ·
-user menu. The left rail collapses to icons (persisted).
+user menu. The left rail collapses to icons (persisted) and carries a **Spaces** section —
+your own named, scoped dashboards (see below).
 
 ---
 
@@ -37,6 +38,20 @@ The whole coding life on one screen, for any date range (**"All time"** stays fa
 
 ---
 
+## 🗂️ Spaces — `/app/space/:id`
+A **Space** is a named, rule-based **scope**. Pick any axis (project, editor, machine, category…)
+and match values by **exact or regex**; the Space's dashboard is filtered to just those members.
+Each Space is its own sidebar tab + a full Overview scoped to it.
+
+![Space](docs/screenshots/space.png)
+
+- **Rule-based membership, any axis** — e.g. `project ~ ^catalyst` collapses 691 projects to just your work. A heartbeat is in the Space if it matches **any** rule (union).
+- **Its own dashboard** — the entire Overview (cards, calendar, patterns, deep-work sessions…) recomputed for the Space's members, at query time (an inclusion predicate threaded through every aggregation — the mirror of the hide/curation engine).
+- **Managed in place** — create / rename / delete, and add membership rules with a **live "matches N values" preview**, right from the Space header.
+- Spaces **subsume tags** — one scope concept instead of two.
+
+---
+
 ## 📦 Projects — `/app/projects`
 An **aggregate rail** on top (so a young project's total never masquerades as your grand total), then explicit per-project detail.
 
@@ -44,7 +59,7 @@ An **aggregate rail** on top (so a young project's total never masquerades as yo
 
 - **Across all projects** — the aggregate (total tracked time, project count, most-active project/language) + a **Top projects** bar (click a bar to jump to it).
 - **Project detail** — a prominent **project selector**, then: Total activity · Language pie · **Weekday radar** · Hour-of-day · **Authoring vs Reading** donut · **Branch activity** · **Breadth vs depth** (time vs distinct files/day) · **Most active files** (real files only, browsing domains excluded).
-- **Per-project actions** — GitHub commit report · tags · shields.io badge.
+- **Per-project actions** — GitHub commit report · shields.io badge.
 
 ---
 

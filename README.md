@@ -31,6 +31,7 @@ then decommission wakatime.com.
 - **Apex ↔ D3 renderer toggle** (strangler-fig) — every chart has both implementations behind one switch.
 - **Heartbeats Explorer** — a unified TanStack table that groups your firehose by *any* axis (multi-level), drills lazily to raw rows + JSON, and lets you **curate in place**.
 - **Reversible, query-time curation** — hide noisy projects/sources, and rename/**merge** values (exact **or `regex`**, e.g. `^Meet - → Meeting`) — all applied at read time, raw records never mutated, undo anytime.
+- **Spaces** — named, rule-based scopes (any axis, exact/`regex`) that each become a sidebar tab + a full dashboard filtered to their members (e.g. `project ~ ^catalyst` → just your work). One scope concept; replaces tags.
 - **Modern dark-first UI**, collapsible sidebar, derived-data health panel with DB sizes + one-click resync.
 
 See it all in the **[visual tour → DEMO.md](DEMO.md)**.
