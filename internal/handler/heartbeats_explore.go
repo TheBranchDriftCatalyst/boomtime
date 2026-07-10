@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/TheBranchDriftCatalyst/gakatime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/gakatime/internal/db"
@@ -10,7 +11,7 @@ import (
 
 // reservedExploreParams are query keys that are NOT equality filters.
 var reservedExploreParams = map[string]struct{}{
-	"groupBy": {}, "start": {}, "end": {}, "page": {}, "limit": {}, "entity": {},
+	"groupBy": {}, "start": {}, "end": {}, "page": {}, "limit": {}, "entity": {}, "timeLimit": {},
 }
 
 // collectExploreFilters builds validated equality filters from repeated query
@@ -47,6 +48,30 @@ const (
 	exploreRowsMaxLimit = 500
 )
 
+// HeartbeatsLatest: GET /api/v1/users/current/heartbeats/latest
+// Returns the owner's most recent heartbeat timestamp (RFC3339 UTC, or null) and
+// total count. Powers the import "backfill from last heartbeat" button.
+func (h *Handler) HeartbeatsLatest(c *echo.Context) error {
+	_, owner, aerr := h.resolveUser(c)
+	if aerr != nil {
+		return respondErr(c, aerr)
+	}
+	last, count, err := h.DB.LatestHeartbeat(c.Request().Context(), owner)
+	if err != nil {
+		h.Logger.Error("latest heartbeat query failed", "err", err)
+		return respondErr(c, apierr.Generic())
+	}
+	var lastStr *string
+	if last != nil {
+		s := last.Format(time.RFC3339)
+		lastStr = &s
+	}
+	return c.JSON(http.StatusOK, map[string]any{
+		"lastHeartbeat": lastStr,
+		"count":         count,
+	})
+}
+
 // HeartbeatsGroup: GET /api/v1/users/current/heartbeats/group
 // Groups the user's heartbeats by one whitelisted axis with accumulated equality
 // filters. Read-only, owner-scoped.
@@ -68,7 +93,8 @@ func (h *Handler) HeartbeatsGroup(c *echo.Context) error {
 	}
 
 	t0, t1 := defaultWeekRange(c)
-	groups, truncated, err := h.DB.GroupHeartbeats(c.Request().Context(), owner, groupCol, t0, t1, filters, exploreGroupLimit)
+	// timeLimit (default 15) is the gap cutoff for the per-group attributed time.
+	groups, truncated, err := h.DB.GroupHeartbeats(c.Request().Context(), owner, groupCol, t0, t1, filters, exploreGroupLimit, timeLimit(c))
 	if err != nil {
 		h.Logger.Error("heartbeats group query failed", "err", err)
 		return respondErr(c, apierr.Generic())

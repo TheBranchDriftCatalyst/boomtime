@@ -76,24 +76,25 @@ func TestGroupHeartbeatsDayShape(t *testing.T) {
 
 	base := time.Date(2025, 4, 1, 10, 0, 0, 0, time.UTC)
 	// 2 heartbeats on day 1 (Go), 1 on day 2 (Go), 1 with NULL language.
-	insert := func(ts time.Time, lang *string) {
-		_, err := d.Pool.Exec(ctx, `INSERT INTO heartbeats (sender, project, language, entity, ty, time_sent, user_agent) VALUES ($1,'proj',$2,'a.go','file',$3,'ua')`, sender, lang, ts)
+	// gap is the attributed gap_seconds (<= 15*60 counts toward group time).
+	insert := func(ts time.Time, lang *string, gap int) {
+		_, err := d.Pool.Exec(ctx, `INSERT INTO heartbeats (sender, project, language, entity, ty, time_sent, user_agent, gap_seconds) VALUES ($1,'proj',$2,'a.go','file',$3,'ua',$4)`, sender, lang, ts, gap)
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
 	goLang := "Go"
-	insert(base, &goLang)
-	insert(base.Add(time.Minute), &goLang)
-	insert(base.AddDate(0, 0, 1), &goLang)
-	insert(base.Add(2*time.Minute), nil)
+	insert(base, &goLang, 0)                   // first of the day: no prior gap
+	insert(base.Add(time.Minute), &goLang, 60) // +60s attributed
+	insert(base.AddDate(0, 0, 1), &goLang, 0)  // next day, first beat
+	insert(base.Add(2*time.Minute), nil, 5000) // 5000s > 15*60 -> NOT attributed
 
 	start := base.AddDate(0, 0, -1)
 	end := base.AddDate(0, 0, 2)
 
 	// group by day: expect two YYYY-MM-DD buckets.
 	dayCol, _ := ExploreColumn("day")
-	groups, trunc, err := d.GroupHeartbeats(ctx, sender, dayCol, start, end, nil, 500)
+	groups, trunc, err := d.GroupHeartbeats(ctx, sender, dayCol, start, end, nil, 500, 15)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,10 +108,14 @@ func TestGroupHeartbeatsDayShape(t *testing.T) {
 	if groups[0].Value == nil || *groups[0].Value != "2025-04-01" || groups[0].Count != 3 {
 		t.Fatalf("top day group = %+v, want value=2025-04-01 count=3", groups[0])
 	}
+	// Day-1 gaps are 0 + 60 + 5000; only the 60 is within 15*60 -> seconds == 60.
+	if groups[0].Seconds != 60 {
+		t.Fatalf("top day group seconds = %d, want 60 (gaps within cutoff)", groups[0].Seconds)
+	}
 
 	// group by language: Go bucket + a NULL bucket.
 	langCol, _ := ExploreColumn("language")
-	lgroups, _, err := d.GroupHeartbeats(ctx, sender, langCol, start, end, nil, 500)
+	lgroups, _, err := d.GroupHeartbeats(ctx, sender, langCol, start, end, nil, 500, 15)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +133,7 @@ func TestGroupHeartbeatsDayShape(t *testing.T) {
 
 	// Filter by language=Go, group by day: NULL-language row excluded.
 	filters := []ExploreFilter{{Column: langCol, Value: &goLang}}
-	fg, _, err := d.GroupHeartbeats(ctx, sender, dayCol, start, end, filters, 500)
+	fg, _, err := d.GroupHeartbeats(ctx, sender, dayCol, start, end, filters, 500, 15)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,5 +155,51 @@ func TestGroupHeartbeatsDayShape(t *testing.T) {
 	}
 	if items[0].Type != "file" || items[0].Entity != "a.go" {
 		t.Fatalf("row[0] = %+v", items[0])
+	}
+}
+
+func TestLatestHeartbeat(t *testing.T) {
+	d := openTestDB(t)
+	defer d.Close()
+	ctx := context.Background()
+
+	sender := "latest_user_" + time.Now().Format("150405.000000")
+	_, _ = d.Pool.Exec(ctx, `INSERT INTO users (username, hashed_password, salt_used) VALUES ($1,'\x00','\x00') ON CONFLICT DO NOTHING`, sender)
+	_, _ = d.Pool.Exec(ctx, `INSERT INTO projects (owner, name) VALUES ($1,'proj') ON CONFLICT DO NOTHING`, sender)
+	t.Cleanup(func() {
+		_, _ = d.Pool.Exec(ctx, `DELETE FROM heartbeats WHERE sender=$1`, sender)
+		_, _ = d.Pool.Exec(ctx, `DELETE FROM projects WHERE owner=$1`, sender)
+		_, _ = d.Pool.Exec(ctx, `DELETE FROM users WHERE username=$1`, sender)
+	})
+
+	// No heartbeats yet -> nil timestamp, zero count.
+	last, count, err := d.LatestHeartbeat(ctx, sender)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if last != nil || count != 0 {
+		t.Fatalf("empty user: last=%v count=%d, want nil/0", last, count)
+	}
+
+	t1 := time.Date(2025, 4, 1, 10, 0, 0, 0, time.UTC)
+	t2 := time.Date(2025, 4, 3, 12, 30, 0, 0, time.UTC) // latest
+	for _, ts := range []time.Time{t1, t2, t1.Add(time.Hour)} {
+		if _, err := d.Pool.Exec(ctx, `INSERT INTO heartbeats (sender, project, entity, ty, time_sent, user_agent) VALUES ($1,'proj','a.go','file',$2,'ua')`, sender, ts); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	last, count, err = d.LatestHeartbeat(ctx, sender)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 3 {
+		t.Fatalf("count = %d, want 3", count)
+	}
+	if last == nil || !last.Equal(t2) {
+		t.Fatalf("last = %v, want %v", last, t2)
+	}
+	if last.Location() != time.UTC {
+		t.Fatalf("last should be UTC, got %v", last.Location())
 	}
 }

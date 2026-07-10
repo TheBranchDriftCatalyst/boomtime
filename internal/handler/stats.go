@@ -31,21 +31,24 @@ func (h *Handler) Stats(c *echo.Context) error {
 		var rows []db.StatRow
 		switch {
 		case tag != "":
-			// Tag stats are scoped to a chosen tag; leave hide out of this path.
-			rows, err = h.DB.GetUserActivityByTag(ctx, owner, t0, t1, tag, limit)
-		case limit == 15:
-			// Fast path: pre-aggregated rollup (default 15-min limit, no tag).
+			// /stats?tag= is scoped to a chosen tag; apply all-axis hides too.
+			rows, err = h.DB.GetUserActivityByTag(ctx, owner, t0, t1, tag, limit, hidden)
+		case limit == 15 && !hidden.HasHiddenOutside(db.RollupAxes):
+			// Fast path: pre-aggregated rollup (default 15-min limit, no tag). Only
+			// usable when every active hide is on an axis the rollup stores
+			// (project/language/editor/platform/machine); otherwise fall through to
+			// the raw scan so plugin/branch/category hides are honored.
 			rows, err = h.DB.GetUserActivityRollup(ctx, owner, t0, t1, hidden)
 		default:
-			// Non-default limit: recompute from raw gap_seconds.
+			// Raw gap_seconds scan (non-default limit, or a hide the rollup can't apply).
 			rows, err = h.DB.GetUserActivity(ctx, owner, t0, t1, limit, hidden)
 		}
 		if err != nil {
 			return nil, err
 		}
 		// Categories are fetched separately (no category column in the rollup) and
-		// respect the same hidden-project exclusion + timeLimit as the rest.
-		categories, err := h.DB.GetCategoryDaily(ctx, owner, t0, t1, limit, hidden.Projects)
+		// respect the same all-axis hide exclusion + timeLimit as the rest.
+		categories, err := h.DB.GetCategoryDaily(ctx, owner, t0, t1, limit, hidden)
 		if err != nil {
 			return nil, err
 		}
@@ -77,7 +80,12 @@ func (h *Handler) StatusbarToday(c *echo.Context) error {
 	if aerr != nil {
 		return respondErr(c, aerr)
 	}
-	total, err := h.DB.GetTotalTimeToday(c.Request().Context(), owner)
+	ctx := c.Request().Context()
+	hidden, err := h.DB.LoadHiddenSets(ctx, owner)
+	if err != nil {
+		return respondErr(c, apierr.Generic())
+	}
+	total, err := h.DB.GetTotalTimeToday(ctx, owner, hidden)
 	if err != nil {
 		h.Logger.Error("statusbar query failed", "err", err)
 		return respondErr(c, apierr.Generic())

@@ -1,20 +1,21 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Braces, Search, Table2 } from "lucide-react";
 import { PageToolbar } from "@/components/toolbar/PageToolbar";
 import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
+import { TimeLimitDropdown } from "@/components/toolbar/TimeLimitDropdown";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { GroupByBar } from "@/components/heartbeats/GroupByBar";
 import { DerivedStatusPanel } from "@/components/heartbeats/DerivedStatusPanel";
-import { HeartbeatGroupNode } from "@/components/heartbeats/HeartbeatGroupNode";
-import { HeartbeatLeaf } from "@/components/heartbeats/HeartbeatLeaf";
+import { HeartbeatExplorerTable } from "@/components/heartbeats/HeartbeatExplorerTable";
+import { RenameGroupDialog } from "@/components/heartbeats/RenameGroupDialog";
+import { useExplorerTree } from "@/components/heartbeats/useExplorerTree";
 import { DEFAULT_GROUP_BY } from "@/components/heartbeats/axes";
 import { useTimeRange } from "@/hooks/useTimeRange";
-import { api } from "@/lib/api";
 import type { HeartbeatAxis } from "@/types/api";
+import type { GroupNode } from "@/components/heartbeats/explorerModel";
 
 type LeafMode = "table" | "json";
 
@@ -24,18 +25,16 @@ export function Heartbeats() {
   const [entity, setEntity] = useState("");
   const [entityInput, setEntityInput] = useState("");
   const [mode, setMode] = useState<LeafMode>("table");
+  const [renameTarget, setRenameTarget] = useState<GroupNode | null>(null);
 
-  // Root level: groups for the first axis (or the leaf directly if no axes).
-  const rootAxis = groupBy[0];
-  const rootQuery = useQuery({
-    queryKey: ["heartbeats-group", rootAxis, {}, tr.startISO, tr.endISO],
-    queryFn: () =>
-      api.groupHeartbeats({
-        groupBy: rootAxis,
-        start: tr.startISO,
-        end: tr.endISO,
-      }),
-    enabled: Boolean(rootAxis),
+  // The explorer requires at least one group-by axis; the empty case renders a
+  // hint below. The tree hook owns all server-driven expansion + pagination.
+  const ctrl = useExplorerTree({
+    axes: groupBy,
+    start: tr.startISO,
+    end: tr.endISO,
+    timeLimit: tr.timeLimit,
+    entity,
   });
 
   return (
@@ -77,6 +76,7 @@ export function Heartbeats() {
             JSON
           </Button>
         </div>
+        <TimeLimitDropdown value={tr.timeLimit} onChange={tr.setTimeLimit} />
         <DateRangePicker
           numDays={tr.numDays}
           onPreset={tr.setDaysFromToday}
@@ -96,45 +96,44 @@ export function Heartbeats() {
 
       <Card>
         <CardContent className="py-3">
-          {!rootAxis ? (
-            // No grouping: show the raw leaf directly.
-            <HeartbeatLeaf
-              start={tr.startISO}
-              end={tr.endISO}
-              filters={{}}
-              entity={entity}
-              mode={mode}
-            />
-          ) : rootQuery.isLoading ? (
+          {groupBy.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              Add at least one group-by axis to explore heartbeats.
+            </p>
+          ) : ctrl.rootLoading ? (
             <Spinner />
-          ) : rootQuery.isError ? (
+          ) : ctrl.rootError ? (
             <p className="py-6 text-center text-sm text-destructive">
               Failed to load heartbeat groups.
             </p>
-          ) : (rootQuery.data?.groups.length ?? 0) === 0 ? (
+          ) : ctrl.tree.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
               No heartbeats in this range.
             </p>
           ) : (
-            <div className="space-y-0.5">
-              {rootQuery.data?.groups.map((group, i) => (
-                <HeartbeatGroupNode
-                  key={`${group.value ?? "__null__"}-${i}`}
-                  group={group}
-                  axis={rootAxis}
-                  remainingAxes={groupBy.slice(1)}
-                  parentFilters={{}}
-                  start={tr.startISO}
-                  end={tr.endISO}
-                  entity={entity}
-                  mode={mode}
-                  depth={0}
-                />
-              ))}
-            </div>
+            <>
+              {ctrl.rootTruncated && (
+                <p className="mb-2 text-xs text-amber-500">
+                  Showing the top groups only (results truncated).
+                </p>
+              )}
+              <HeartbeatExplorerTable
+                tree={ctrl.tree}
+                ctrl={ctrl}
+                mode={mode}
+                onRename={setRenameTarget}
+              />
+            </>
           )}
         </CardContent>
       </Card>
+
+      <RenameGroupDialog
+        open={renameTarget !== null}
+        axis={renameTarget?.axis ?? "project"}
+        value={renameTarget?.value ?? ""}
+        onClose={() => setRenameTarget(null)}
+      />
     </div>
   );
 }

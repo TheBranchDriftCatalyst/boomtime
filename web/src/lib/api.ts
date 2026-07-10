@@ -17,6 +17,7 @@ import type {
   HeartbeatFilters,
   HeartbeatGroupPayload,
   HeartbeatListPayload,
+  LatestHeartbeatPayload,
   ImportConfigPayload,
   ImportJobDetailPayload,
   ImportJobsListPayload,
@@ -324,6 +325,7 @@ export const api = {
     groupBy: HeartbeatAxis;
     start: string;
     end: string;
+    timeLimit?: number;
     filters?: HeartbeatFilters;
   }) =>
     request<HeartbeatGroupPayload>("/api/v1/users/current/heartbeats/group", {
@@ -331,9 +333,16 @@ export const api = {
         groupBy: opts.groupBy,
         start: opts.start,
         end: opts.end,
+        timeLimit: opts.timeLimit,
         ...(opts.filters ?? {}),
       },
     }),
+
+  // Most-recent heartbeat marker, for the import "backfill from last" button.
+  getLatestHeartbeat: () =>
+    request<LatestHeartbeatPayload>(
+      "/api/v1/users/current/heartbeats/latest",
+    ),
 
   // Paginated raw heartbeat rows for a fully-drilled leaf.
   listHeartbeats: (opts: {

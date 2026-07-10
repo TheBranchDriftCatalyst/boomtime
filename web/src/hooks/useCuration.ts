@@ -11,6 +11,9 @@ const DEPENDENT_KEYS = [
   ["leaderboards"],
   ["heartbeats-group"],
   ["heartbeats-list"],
+  // The new TanStack-table explorer's own query keys.
+  ["hb-explore-group"],
+  ["hb-explore-list"],
   ["derived-status"],
 ];
 

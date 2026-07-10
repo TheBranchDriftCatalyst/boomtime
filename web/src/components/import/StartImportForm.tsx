@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { DateRange } from "react-day-picker";
-import { CalendarDays, Loader2, Play, Wand2 } from "lucide-react";
+import { CalendarDays, History, Loader2, Play, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -37,6 +37,26 @@ export function StartImportForm({ disabled, onStarted }: StartImportFormProps) {
     staleTime: 60_000,
   });
   const hasServerKey = config?.hasServerKey ?? false;
+
+  // Most-recent heartbeat, for "backfill from last import". Null when the user
+  // has no heartbeats yet (button disabled).
+  const { data: latest } = useQuery({
+    queryKey: ["latest-heartbeat"],
+    queryFn: () => api.getLatestHeartbeat(),
+    staleTime: 30_000,
+  });
+  const lastHeartbeat = latest?.lastHeartbeat ?? null;
+
+  function onBackfill() {
+    if (!lastHeartbeat) {
+      toast.info("No heartbeats yet — nothing to backfill from.");
+      return;
+    }
+    // Start = the most recent heartbeat, End = now. Re-importing the last day
+    // is safe because import is idempotent.
+    setRange({ from: new Date(lastHeartbeat), to: new Date() });
+    toast.success("Range set to top up from your most recent heartbeat.");
+  }
 
   async function onDetect() {
     if (!apiToken && !hasServerKey) {
@@ -164,10 +184,30 @@ export function StartImportForm({ disabled, onStarted }: StartImportFormProps) {
                   Detect range
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground">
-                For which dates to fetch heartbeats. Auto-detect your earliest
-                Wakatime data.
-              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={onBackfill}
+                  disabled={!lastHeartbeat}
+                  title={
+                    lastHeartbeat
+                      ? "Set the range from your most recent heartbeat to now"
+                      : "No heartbeats yet — nothing to backfill from"
+                  }
+                >
+                  <History className="h-4 w-4" />
+                  Since last heartbeat
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  {lastHeartbeat
+                    ? `Top up from your most recent heartbeat (${new Date(
+                        lastHeartbeat,
+                      ).toLocaleDateString()}) to now.`
+                    : "For which dates to fetch heartbeats."}
+                </p>
+              </div>
             </div>
           </div>
           <Button type="submit" disabled={submitting || disabled}>

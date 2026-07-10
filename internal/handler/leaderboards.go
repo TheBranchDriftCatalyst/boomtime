@@ -7,15 +7,20 @@ import (
 
 // Leaderboards: GET /api/v1/leaderboards?start&end (default last month).
 func (h *Handler) Leaderboards(c *echo.Context) error {
-	// Requires a valid token (owner unused beyond auth, matching hakatime).
-	if _, _, aerr := h.resolveUser(c); aerr != nil {
+	_, owner, aerr := h.resolveUser(c)
+	if aerr != nil {
 		return respondErr(c, aerr)
 	}
 	t0, t1 := defaultMonthRange(c)
 	ctx := c.Request().Context()
-	// Leaderboards are global (all users); cache under a shared key.
-	return h.cachedJSON(c, cacheKey("*", "leaderboards", t0, t1), func() (any, error) {
-		rows, err := h.DB.GetLeaderboards(ctx, t0, t1)
+	// Leaderboards are cross-user, but the requester's own hidden values are
+	// excluded from their rows, so the response is per-owner — cache per owner.
+	return h.cachedJSON(c, cacheKey(owner, "leaderboards", t0, t1), func() (any, error) {
+		hidden, err := h.DB.LoadHiddenSets(ctx, owner)
+		if err != nil {
+			return nil, err
+		}
+		rows, err := h.DB.GetLeaderboards(ctx, t0, t1, owner, hidden)
 		if err != nil {
 			return nil, err
 		}

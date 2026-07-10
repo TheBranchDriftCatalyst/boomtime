@@ -355,6 +355,8 @@ export interface HeartbeatRow {
 export interface HeartbeatGroup {
   value: string | null;
   count: number;
+  // Attributed coding time for the group (gap-coalesced within timeLimit).
+  seconds: number;
   firstSeen: string;
   lastSeen: string;
 }
@@ -362,6 +364,8 @@ export interface HeartbeatGroup {
 export interface HeartbeatGroupPayload {
   groupBy: HeartbeatAxis;
   groups: HeartbeatGroup[];
+  // The group query is capped server-side; true when more groups were dropped.
+  truncated?: boolean;
 }
 
 export interface HeartbeatListPayload {
@@ -369,6 +373,12 @@ export interface HeartbeatListPayload {
   total: number;
   page: number;
   limit: number;
+}
+
+// GET /api/v1/users/current/heartbeats/latest -> most-recent heartbeat marker.
+export interface LatestHeartbeatPayload {
+  lastHeartbeat: string | null; // ISO timestamp of the newest heartbeat
+  count: number;
 }
 
 export interface SubmitImportResponse {

@@ -62,10 +62,29 @@ func buildFilterClause(filters []ExploreFilter, nextArg int, args []any) (string
 	return b.String(), args, nextArg
 }
 
+// LatestHeartbeat returns MAX(time_sent) (UTC) and the total heartbeat count for
+// a sender. last is nil when the user has no heartbeats. Fast: MAX uses the
+// (sender, time_sent) index and count is owner-scoped.
+func (d *DB) LatestHeartbeat(ctx context.Context, sender string) (last *time.Time, count int64, err error) {
+	var maxTime *time.Time
+	err = d.Pool.QueryRow(ctx,
+		`SELECT max(time_sent), count(*) FROM heartbeats WHERE sender = $1`,
+		sender).Scan(&maxTime, &count)
+	if err != nil {
+		return nil, 0, err
+	}
+	if maxTime != nil {
+		u := maxTime.UTC()
+		return &u, count, nil
+	}
+	return nil, count, nil
+}
+
 // ExploreGroup is one group bucket in the group response.
 type ExploreGroup struct {
 	Value     *string   `json:"value"` // null-able; "YYYY-MM-DD" for the day axis
 	Count     int64     `json:"count"`
+	Seconds   int64     `json:"seconds"` // attributed coding time (gap within timeLimit)
 	FirstSeen time.Time `json:"firstSeen"`
 	LastSeen  time.Time `json:"lastSeen"`
 }
@@ -75,7 +94,11 @@ type ExploreGroup struct {
 // groupCol/filters must already be validated against the whitelist by the caller.
 // Results are ordered by count desc and capped at limit; the second return value
 // reports whether the result was truncated at the cap.
-func (d *DB) GroupHeartbeats(ctx context.Context, sender, groupCol string, start, end time.Time, filters []ExploreFilter, limit int) ([]ExploreGroup, bool, error) {
+//
+// seconds per group is SUM(gap_seconds) where gap_seconds <= limitMinutes*60,
+// matching the dashboards' attributed-time convention. This is the AUDIT view:
+// curation hide-exclusion is deliberately NOT applied (hidden values still show).
+func (d *DB) GroupHeartbeats(ctx context.Context, sender, groupCol string, start, end time.Time, filters []ExploreFilter, limit int, limitMinutes int64) ([]ExploreGroup, bool, error) {
 	// For the day axis, render the value as text 'YYYY-MM-DD'; otherwise cast the
 	// column to text so every group value is a consistent string|null.
 	valueExpr := groupCol + "::text"
@@ -83,18 +106,24 @@ func (d *DB) GroupHeartbeats(ctx context.Context, sender, groupCol string, start
 		valueExpr = "to_char(time_sent::date, 'YYYY-MM-DD')"
 	}
 
+	// $1 sender, $2 start, $3 end, then filter args, then the gap cutoff.
 	args := []any{sender, start, end}
-	filterSQL, args, _ := buildFilterClause(filters, 4, args)
+	filterSQL, args, nextArg := buildFilterClause(filters, 4, args)
+	cutoffArg := nextArg
+	args = append(args, limitMinutes)
 
 	// Cap+1 so we can detect truncation.
 	fetch := limit + 1
 	query := fmt.Sprintf(`
-		SELECT %s AS value, count(*), min(time_sent), max(time_sent)
+		SELECT %s AS value,
+		       count(*),
+		       CAST(sum(CASE WHEN gap_seconds <= ($%d * 60) THEN gap_seconds ELSE 0 END) AS int8) AS seconds,
+		       min(time_sent), max(time_sent)
 		FROM heartbeats
 		WHERE sender = $1 AND time_sent >= $2 AND time_sent <= $3%s
 		GROUP BY %s
 		ORDER BY count(*) DESC
-		LIMIT %d`, valueExpr, filterSQL, groupCol, fetch)
+		LIMIT %d`, valueExpr, cutoffArg, filterSQL, groupCol, fetch)
 
 	rows, err := d.Pool.Query(ctx, query, args...)
 	if err != nil {
@@ -105,7 +134,7 @@ func (d *DB) GroupHeartbeats(ctx context.Context, sender, groupCol string, start
 	out := []ExploreGroup{}
 	for rows.Next() {
 		var g ExploreGroup
-		if err := rows.Scan(&g.Value, &g.Count, &g.FirstSeen, &g.LastSeen); err != nil {
+		if err := rows.Scan(&g.Value, &g.Count, &g.Seconds, &g.FirstSeen, &g.LastSeen); err != nil {
 			return nil, false, err
 		}
 		out = append(out, g)

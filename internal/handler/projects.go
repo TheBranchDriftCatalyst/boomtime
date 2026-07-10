@@ -29,7 +29,11 @@ func (h *Handler) ProjectStats(c *echo.Context) error {
 	t0, t1 := defaultWeekRange(c)
 	limit := timeLimit(c)
 	return h.cachedJSON(c, cacheKey(owner, "project", project, t0, t1, limit), func() (any, error) {
-		rows, err := h.DB.GetProjectStats(ctx, owner, project, t0, t1, limit)
+		hidden, err := h.DB.LoadHiddenSets(ctx, owner)
+		if err != nil {
+			return nil, err
+		}
+		rows, err := h.DB.GetProjectStats(ctx, owner, project, t0, t1, limit, hidden)
 		if err != nil {
 			return nil, err
 		}
@@ -61,7 +65,11 @@ func (h *Handler) TagStats(c *echo.Context) error {
 	t0, t1 := defaultWeekRange(c)
 	limit := timeLimit(c)
 	return h.cachedJSON(c, cacheKey(owner, "tag", tag, t0, t1, limit), func() (any, error) {
-		rows, err := h.DB.GetTagStats(ctx, owner, tag, t0, t1, limit)
+		hidden, err := h.DB.LoadHiddenSets(ctx, owner)
+		if err != nil {
+			return nil, err
+		}
+		rows, err := h.DB.GetTagStats(ctx, owner, tag, t0, t1, limit, hidden)
 		if err != nil {
 			return nil, err
 		}
@@ -143,12 +151,13 @@ func (h *Handler) ProjectList(c *echo.Context) error {
 	}
 	ctx := c.Request().Context()
 	t0, t1 := defaultMonthRange(c)
-	// Exclude the user's hidden projects (reversible query-time hide).
-	hiddenProjects, err := h.DB.HiddenValues(ctx, owner, "project")
+	// Exclude the user's hidden values across all axes (reversible query-time
+	// hide): a project surfaces only if it has non-hidden heartbeats in range.
+	hidden, err := h.DB.LoadHiddenSets(ctx, owner)
 	if err != nil {
 		return respondErr(c, apierr.Generic())
 	}
-	projects, err := h.DB.GetAllProjects(ctx, owner, t0, t1, hiddenProjects)
+	projects, err := h.DB.GetAllProjects(ctx, owner, t0, t1, hidden)
 	if err != nil {
 		return respondErr(c, apierr.Generic())
 	}

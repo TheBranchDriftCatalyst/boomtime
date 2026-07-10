@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"regexp"
 	"strconv"
@@ -380,18 +381,30 @@ GROUP BY sender, time_sent::date, coalesce(project, 'Other'), coalesce(language,
 	return tx.Commit(ctx)
 }
 
+// RollupAxes are the hide axes the pre-aggregated hb_rollup_daily table can
+// exclude (it only stores these columns). A hide on any axis outside this set
+// (plugin/branch/category) requires the raw path — see HasHiddenOutside; the
+// stats handler falls back accordingly.
+var RollupAxes = map[string]bool{
+	"project": true, "language": true, "editor": true, "platform": true, "machine": true,
+}
+
+// rollupCols maps the rollup-available hide axes to their columns.
+var rollupCols = map[string]string{
+	"project": "project", "language": "language", "editor": "editor",
+	"platform": "platform", "machine": "machine",
+}
+
 // GetUserActivityRollup reads the pre-aggregated hb_rollup_daily (fast path for
-// the Overview at the default 15-min limit). $1 user, $2 start, $3 end. Applies
-// the sender's hide exclusions for project/editor/machine (the rollup has no
-// plugin column, so hidden plugins are only excluded on the raw path).
+// the Overview at the default 15-min limit). $1 user, $2 start, $3 end. Excludes
+// the sender's hidden values for the axes the rollup stores (project, language,
+// editor, platform, machine). Callers must not use this path when a hide is
+// active on an axis the rollup lacks (plugin/branch/category) — use the raw path.
 func (d *DB) GetUserActivityRollup(ctx context.Context, user string, start, end time.Time, hs HiddenSets) ([]StatRow, error) {
 	query := qGetUserActivityRoll
 	args := []any{user, start, end}
 	if hs.AnyHidden() {
-		// Rollup lacks a plugin column; drop plugin from the exclusion here.
-		rhs := HiddenSets{Projects: hs.Projects, Editors: hs.Editors, Machines: hs.Machines}
-		cols := struct{ Project, Editor, Plugin, Machine string }{"project", "editor", "", "machine"}
-		pred, argsWith, _ := exclusionPredicate(rhs, cols, 4, args)
+		pred, argsWith, _ := exclusionPredicate(hs, rollupCols, 4, args)
 		query = injectAfter(query, rollupRangeAnchor, pred)
 		args = argsWith
 	}
@@ -447,16 +460,16 @@ func scanStatRows(rows pgx.Rows) ([]StatRow, error) {
 }
 
 // GetUserActivity runs get_user_activity.sql ($1 user, $2 start, $3 end, $4 limit),
-// excluding the sender's hidden project/editor/plugin/machine values (query-time
-// hide) via appended `AND NOT (<col> = ANY($n))` predicates on the inner scan.
+// excluding ALL of the sender's hidden axis values (project, language, editor,
+// plugin, machine, platform, branch, category) via appended `AND NOT (<col> =
+// ANY($n))` predicates on the raw-heartbeats scan.
 func (d *DB) GetUserActivity(ctx context.Context, user string, start, end time.Time, limit int64, hs HiddenSets) ([]StatRow, error) {
 	query := qGetUserActivity
 	args := []any{user, start, end, limit}
 	if hs.AnyHidden() {
 		// Append the exclusion to the inner WHERE (anchored on the range-end
 		// clause) so hidden rows are dropped before aggregation.
-		cols := struct{ Project, Editor, Plugin, Machine string }{"heartbeats.project", "heartbeats.editor", "heartbeats.plugin", "heartbeats.machine"}
-		pred, argsWith, _ := exclusionPredicate(hs, cols, 5, args)
+		pred, argsWith, _ := exclusionPredicate(hs, rawHeartbeatCols, 5, args)
 		query = injectAfter(query, activityRangeAnchor, pred)
 		args = argsWith
 	}
@@ -475,9 +488,20 @@ func (d *DB) GetUserActivity(ctx context.Context, user string, start, end time.T
 const activityRangeAnchor = "AND time_sent <= $3"
 
 // GetUserActivityByTag runs get_user_activity_by_tags.sql ($1 user,$2 start,$3 end,$4 tag,$5 limit).
-func (d *DB) GetUserActivityByTag(ctx context.Context, user string, start, end time.Time, tag string, limit int64) ([]StatRow, error) {
+// userActivityTagRangeAnchor is the inner range-end clause of
+// get_user_activity_by_tags.sql (raw heartbeats scan; $1..$5, exclusion at $6).
+const userActivityTagRangeAnchor = "AND time_sent <= $3"
+
+func (d *DB) GetUserActivityByTag(ctx context.Context, user string, start, end time.Time, tag string, limit int64, hs HiddenSets) ([]StatRow, error) {
+	query := qGetUserActivityTag
+	args := []any{user, start, end, tag, limit}
+	if hs.AnyHidden() {
+		pred, argsWith, _ := exclusionPredicate(hs, rawHeartbeatCols, 6, args)
+		query = injectAfter(query, userActivityTagRangeAnchor, pred)
+		args = argsWith
+	}
 	var out []StatRow
-	err := d.aggQuery(ctx, qGetUserActivityTag, []any{user, start, end, tag, limit}, func(rows pgx.Rows) (e error) {
+	err := d.aggQuery(ctx, query, args, func(rows pgx.Rows) (e error) {
 		out, e = scanStatRows(rows)
 		return
 	})
@@ -501,20 +525,49 @@ func scanProjectStatRows(rows pgx.Rows) ([]ProjectStatRow, error) {
 	return out, rows.Err()
 }
 
-// GetProjectStats runs get_projects_stats.sql ($1 user,$2 project,$3 start,$4 end,$5 limit).
-func (d *DB) GetProjectStats(ctx context.Context, user, project string, start, end time.Time, limit int64) ([]ProjectStatRow, error) {
+// projectStatsRangeAnchor / tagStatsRangeAnchor are the inner range-end clauses
+// where the hide exclusion is spliced. Both scan raw heartbeats, so all axes are
+// available. tag-stats qualifies columns with `heartbeats.` (it joins tags).
+const projectStatsRangeAnchor = "AND time_sent <= $4"
+const tagStatsRangeAnchor = "AND heartbeats.time_sent <= $4"
+
+var tagStatsCols = map[string]string{
+	"project": "heartbeats.project", "language": "heartbeats.language",
+	"editor": "heartbeats.editor", "plugin": "heartbeats.plugin",
+	"machine": "heartbeats.machine", "platform": "heartbeats.platform",
+	"branch": "heartbeats.branch", "category": "heartbeats.category",
+}
+
+// GetProjectStats runs get_projects_stats.sql ($1 user,$2 project,$3 start,$4 end,$5 limit),
+// excluding the sender's hidden axis values within the project.
+func (d *DB) GetProjectStats(ctx context.Context, user, project string, start, end time.Time, limit int64, hs HiddenSets) ([]ProjectStatRow, error) {
+	query := qGetProjectsStats
+	args := []any{user, project, start, end, limit}
+	if hs.AnyHidden() {
+		pred, argsWith, _ := exclusionPredicate(hs, rawHeartbeatCols, 6, args)
+		query = injectAfter(query, projectStatsRangeAnchor, pred)
+		args = argsWith
+	}
 	var out []ProjectStatRow
-	err := d.aggQuery(ctx, qGetProjectsStats, []any{user, project, start, end, limit}, func(rows pgx.Rows) (e error) {
+	err := d.aggQuery(ctx, query, args, func(rows pgx.Rows) (e error) {
 		out, e = scanProjectStatRows(rows)
 		return
 	})
 	return out, err
 }
 
-// GetTagStats runs get_tag_stats.sql ($1 user,$2 tag,$3 start,$4 end,$5 limit).
-func (d *DB) GetTagStats(ctx context.Context, user, tag string, start, end time.Time, limit int64) ([]ProjectStatRow, error) {
+// GetTagStats runs get_tag_stats.sql ($1 user,$2 tag,$3 start,$4 end,$5 limit),
+// excluding the sender's hidden axis values within the tag's projects.
+func (d *DB) GetTagStats(ctx context.Context, user, tag string, start, end time.Time, limit int64, hs HiddenSets) ([]ProjectStatRow, error) {
+	query := qGetTagStats
+	args := []any{user, tag, start, end, limit}
+	if hs.AnyHidden() {
+		pred, argsWith, _ := exclusionPredicate(hs, tagStatsCols, 6, args)
+		query = injectAfter(query, tagStatsRangeAnchor, pred)
+		args = argsWith
+	}
 	var out []ProjectStatRow
-	err := d.aggQuery(ctx, qGetTagStats, []any{user, tag, start, end, limit}, func(rows pgx.Rows) (e error) {
+	err := d.aggQuery(ctx, query, args, func(rows pgx.Rows) (e error) {
 		out, e = scanProjectStatRows(rows)
 		return
 	})
@@ -539,9 +592,35 @@ func (d *DB) GetTimeline(ctx context.Context, user string, start, end time.Time,
 }
 
 // GetLeaderboards runs get_leaderboards.sql ($1 start,$2 end).
-func (d *DB) GetLeaderboards(ctx context.Context, start, end time.Time) ([]LeaderboardRow, error) {
+// leaderboardsRangeAnchor is the inner range-end clause of get_leaderboards.sql.
+const leaderboardsRangeAnchor = "AND time_sent <= $2"
+
+// GetLeaderboards aggregates coding time across ALL users. requester's hidden
+// values are excluded from THEIR OWN rows only (multi-user safe: one user's hide
+// must not remove data from other users' leaderboard contributions). Achieved
+// with `AND NOT (sender = $requester AND <col> = ANY($n))` per hidden axis.
+func (d *DB) GetLeaderboards(ctx context.Context, start, end time.Time, requester string, hs HiddenSets) ([]LeaderboardRow, error) {
+	query := qGetLeaderboards
+	args := []any{start, end}
+	if hs.AnyHidden() {
+		requesterArg := len(args) + 1 // $3
+		args = append(args, requester)
+		nextArg := len(args) + 1 // $4
+		var pred string
+		for _, axis := range hiddenAxes {
+			vals := hs.Values(axis)
+			col := rawHeartbeatCols[axis]
+			if len(vals) == 0 || col == "" {
+				continue
+			}
+			pred += fmt.Sprintf(" AND NOT (sender = $%d AND %s = ANY($%d))", requesterArg, col, nextArg)
+			args = append(args, vals)
+			nextArg++
+		}
+		query = injectAfter(query, leaderboardsRangeAnchor, pred)
+	}
 	out := []LeaderboardRow{}
-	err := d.aggQuery(ctx, qGetLeaderboards, []any{start, end}, func(rows pgx.Rows) error {
+	err := d.aggQuery(ctx, query, args, func(rows pgx.Rows) error {
 		defer rows.Close()
 		for rows.Next() {
 			var r LeaderboardRow
@@ -556,9 +635,22 @@ func (d *DB) GetLeaderboards(ctx context.Context, start, end time.Time) ([]Leade
 }
 
 // GetTotalTimeToday runs get_time_today.sql ($1 user).
-func (d *DB) GetTotalTimeToday(ctx context.Context, user string) (int64, error) {
+// timeTodayRangeAnchor is the inner day-bound clause of get_time_today.sql; the
+// hide exclusion is spliced after it (raw heartbeats scan, all axes available).
+const timeTodayRangeAnchor = "time_sent < (current_date + interval '1' day)"
+
+// GetTotalTimeToday returns today's attributed coding time, excluding the sender's
+// hidden axis values (so the statusbar total matches the hidden dashboards).
+func (d *DB) GetTotalTimeToday(ctx context.Context, user string, hs HiddenSets) (int64, error) {
+	query := qGetTimeToday
+	args := []any{user}
+	if hs.AnyHidden() {
+		pred, argsWith, _ := exclusionPredicate(hs, rawHeartbeatCols, 2, args)
+		query = injectAfter(query, timeTodayRangeAnchor, pred)
+		args = argsWith
+	}
 	var total int64
-	err := d.Pool.QueryRow(ctx, qGetTimeToday, user).Scan(&total)
+	err := d.Pool.QueryRow(ctx, query, args...).Scan(&total)
 	return total, err
 }
 
@@ -645,16 +737,28 @@ func (d *DB) GetAllTags(ctx context.Context, user string) ([]string, error) {
 	return collectStrings(rows)
 }
 
-// GetAllProjects returns a user's projects with heartbeats in [t0,t1], most active first.
-func (d *DB) GetAllProjects(ctx context.Context, user string, t0, t1 time.Time, hiddenProjects []string) ([]string, error) {
+// projectListCols maps hide axes to their heartbeats-qualified columns for the
+// projects-list join. A project only surfaces if it has heartbeats not matching
+// any hidden value, so a project consisting solely of hidden activity disappears.
+var projectListCols = map[string]string{
+	"project": "heartbeats.project", "language": "heartbeats.language",
+	"editor": "heartbeats.editor", "plugin": "heartbeats.plugin",
+	"machine": "heartbeats.machine", "platform": "heartbeats.platform",
+	"branch": "heartbeats.branch", "category": "heartbeats.category",
+}
+
+// GetAllProjects returns a user's projects with (non-hidden) heartbeats in
+// [t0,t1], most active first. All hide axes are excluded on the heartbeats join.
+func (d *DB) GetAllProjects(ctx context.Context, user string, t0, t1 time.Time, hs HiddenSets) ([]string, error) {
 	query := `
 		SELECT name FROM projects
 		INNER JOIN heartbeats ON heartbeats.project = projects.name AND heartbeats.sender = projects.owner
 		WHERE heartbeats.sender = $1 AND heartbeats.time_sent >= $2 AND heartbeats.time_sent <= $3`
 	args := []any{user, t0, t1}
-	if len(hiddenProjects) > 0 {
-		query += ` AND NOT (projects.name = ANY($4))`
-		args = append(args, hiddenProjects)
+	if hs.AnyHidden() {
+		pred, argsWith, _ := exclusionPredicate(hs, projectListCols, 4, args)
+		query += pred
+		args = argsWith
 	}
 	query += ` GROUP BY projects.name ORDER BY COUNT(*) DESC`
 	rows, err := d.Pool.Query(ctx, query, args...)

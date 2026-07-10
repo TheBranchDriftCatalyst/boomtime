@@ -6,7 +6,7 @@ import (
 )
 
 // Punchcard: GET /api/v1/users/current/stats/punchcard?start&end&timeLimit.
-// Day-of-week x hour-of-day intensity (UTC). Excludes hidden projects.
+// Day-of-week x hour-of-day intensity (UTC). Excludes all hidden axis values.
 func (h *Handler) Punchcard(c *echo.Context) error {
 	_, owner, aerr := h.resolveUser(c)
 	if aerr != nil {
@@ -16,7 +16,7 @@ func (h *Handler) Punchcard(c *echo.Context) error {
 	t0, t1 := defaultWeekRange(c)
 	limit := timeLimit(c)
 	return h.cachedJSON(c, cacheKey(owner, "punchcard", t0, t1, limit), func() (any, error) {
-		hidden, err := h.DB.HiddenValues(ctx, owner, "project")
+		hidden, err := h.DB.LoadHiddenSets(ctx, owner)
 		if err != nil {
 			return nil, err
 		}
@@ -29,7 +29,7 @@ func (h *Handler) Punchcard(c *echo.Context) error {
 }
 
 // Sessions: GET /api/v1/users/current/stats/sessions?start&end&timeLimit.
-// Sessionized activity (summary + daily + histogram). Excludes hidden projects.
+// Sessionized activity (summary + daily + histogram). Excludes all hidden axis values.
 func (h *Handler) Sessions(c *echo.Context) error {
 	_, owner, aerr := h.resolveUser(c)
 	if aerr != nil {
@@ -39,7 +39,7 @@ func (h *Handler) Sessions(c *echo.Context) error {
 	t0, t1 := defaultWeekRange(c)
 	limit := timeLimit(c)
 	return h.cachedJSON(c, cacheKey(owner, "sessions", t0, t1, limit), func() (any, error) {
-		hidden, err := h.DB.HiddenValues(ctx, owner, "project")
+		hidden, err := h.DB.LoadHiddenSets(ctx, owner)
 		if err != nil {
 			return nil, err
 		}
@@ -52,7 +52,7 @@ func (h *Handler) Sessions(c *echo.Context) error {
 }
 
 // Momentum: GET /api/v1/users/current/stats/momentum?start&end&timeLimit&top=8.
-// Top-N projects' weekly time series. Excludes hidden projects.
+// Top-N projects' weekly time series. Excludes all hidden axis values.
 func (h *Handler) Momentum(c *echo.Context) error {
 	_, owner, aerr := h.resolveUser(c)
 	if aerr != nil {
@@ -66,7 +66,7 @@ func (h *Handler) Momentum(c *echo.Context) error {
 		top = 8
 	}
 	return h.cachedJSON(c, cacheKey(owner, "momentum", t0, t1, limit, top), func() (any, error) {
-		hidden, err := h.DB.HiddenValues(ctx, owner, "project")
+		hidden, err := h.DB.LoadHiddenSets(ctx, owner)
 		if err != nil {
 			return nil, err
 		}

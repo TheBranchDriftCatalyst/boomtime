@@ -255,58 +255,87 @@ func (d *DB) HiddenValues(ctx context.Context, sender, axis string) ([]string, e
 	return out, rows.Err()
 }
 
-// HiddenSets bundles the hidden-value arrays for the axes excluded from dashboards
-// (v1 scope: project, editor, plugin, machine). Empty arrays mean "exclude none".
+// hiddenAxes is the definitive set of curation-hide axes excluded from the
+// aggregate dashboards. Suppressing a value on any of these axes removes it from
+// stats/projects/big-bet dashboards. Ordered for deterministic SQL/arg building.
+var hiddenAxes = []string{
+	"project", "language", "editor", "plugin", "machine", "platform", "branch", "category",
+}
+
+// HiddenSets holds the hidden values per axis (axis name -> match_values). Empty
+// or absent slices mean "exclude nothing" for that axis.
 type HiddenSets struct {
-	Projects []string
-	Editors  []string
-	Plugins  []string
-	Machines []string
+	byAxis map[string][]string
 }
 
-// AnyHidden reports whether any exclusion is present (lets callers skip the extra
-// predicate work when the user has no hide rules).
+// Values returns the hidden values for one axis (nil if none).
+func (h HiddenSets) Values(axis string) []string { return h.byAxis[axis] }
+
+// Projects is a convenience accessor for the project axis (project-only paths).
+func (h HiddenSets) Projects() []string { return h.byAxis["project"] }
+
+// AnyHidden reports whether any axis has a hidden value.
 func (h HiddenSets) AnyHidden() bool {
-	return len(h.Projects) > 0 || len(h.Editors) > 0 || len(h.Plugins) > 0 || len(h.Machines) > 0
+	for _, v := range h.byAxis {
+		if len(v) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
-// exclusionPredicate builds `AND NOT (<col> = ANY($n))` clauses for each non-empty
-// hidden set, using the provided column names and appending the arrays to args
-// starting at nextArg. Returns the SQL fragment, the grown args slice, and the
-// next free arg index. Passing arrays as params keeps it injection-safe and lets
-// the same embedded .sql be reused for filtered and unfiltered reads.
-func exclusionPredicate(hs HiddenSets, cols struct{ Project, Editor, Plugin, Machine string }, nextArg int, args []any) (string, []any, int) {
-	add := func(sql *string, col string, vals []string) {
-		if len(vals) == 0 {
-			return
+// HasHiddenOutside reports whether any hidden axis is NOT in the provided
+// available set. Used to decide whether a pre-aggregated path (e.g. the rollup,
+// which lacks some columns) must fall back to the raw heartbeats scan.
+func (h HiddenSets) HasHiddenOutside(available map[string]bool) bool {
+	for axis, vals := range h.byAxis {
+		if len(vals) > 0 && !available[axis] {
+			return true
 		}
-		*sql += fmt.Sprintf(" AND NOT (%s = ANY($%d))", col, nextArg)
+	}
+	return false
+}
+
+// exclusionPredicate builds `AND NOT (<col> = ANY($n))` clauses for each hidden
+// axis present in cols (axis -> SQL column expression). Axes absent from cols are
+// skipped (e.g. columns a pre-aggregated table lacks). Values are passed as array
+// params, so this is injection-safe. Returns the SQL fragment, grown args, and
+// next free arg index.
+func exclusionPredicate(hs HiddenSets, cols map[string]string, nextArg int, args []any) (string, []any, int) {
+	var sql string
+	for _, axis := range hiddenAxes { // deterministic order
+		vals := hs.byAxis[axis]
+		col := cols[axis]
+		if len(vals) == 0 || col == "" {
+			continue
+		}
+		sql += fmt.Sprintf(" AND NOT (%s = ANY($%d))", col, nextArg)
 		args = append(args, vals)
 		nextArg++
 	}
-	var sql string
-	add(&sql, cols.Project, hs.Projects)
-	add(&sql, cols.Editor, hs.Editors)
-	add(&sql, cols.Plugin, hs.Plugins)
-	add(&sql, cols.Machine, hs.Machines)
 	return sql, args, nextArg
 }
 
-// LoadHiddenSets fetches the hidden values for the dashboard-excluded axes.
+// rawHeartbeatCols maps every hidden axis to its column on the raw heartbeats
+// table. Used by all queries whose innermost scan is `heartbeats` (all axes are
+// available). `type` is stored in the ty column but is not a hide axis here.
+var rawHeartbeatCols = map[string]string{
+	"project": "project", "language": "language", "editor": "editor",
+	"plugin": "plugin", "machine": "machine", "platform": "platform",
+	"branch": "branch", "category": "category",
+}
+
+// LoadHiddenSets fetches the hidden values for every dashboard-excluded axis.
 func (d *DB) LoadHiddenSets(ctx context.Context, sender string) (HiddenSets, error) {
-	var hs HiddenSets
-	var err error
-	if hs.Projects, err = d.HiddenValues(ctx, sender, "project"); err != nil {
-		return hs, err
-	}
-	if hs.Editors, err = d.HiddenValues(ctx, sender, "editor"); err != nil {
-		return hs, err
-	}
-	if hs.Plugins, err = d.HiddenValues(ctx, sender, "plugin"); err != nil {
-		return hs, err
-	}
-	if hs.Machines, err = d.HiddenValues(ctx, sender, "machine"); err != nil {
-		return hs, err
+	hs := HiddenSets{byAxis: make(map[string][]string, len(hiddenAxes))}
+	for _, axis := range hiddenAxes {
+		vals, err := d.HiddenValues(ctx, sender, axis)
+		if err != nil {
+			return hs, err
+		}
+		if len(vals) > 0 {
+			hs.byAxis[axis] = vals
+		}
 	}
 	return hs, nil
 }

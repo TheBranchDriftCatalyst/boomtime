@@ -6,12 +6,26 @@ import (
 	"time"
 )
 
-func TestExclusionPredicateShape(t *testing.T) {
-	cols := struct{ Project, Editor, Plugin, Machine string }{"project", "editor", "plugin", "machine"}
-	hs := HiddenSets{Projects: []string{"secret"}, Machines: []string{"laptop", "desktop"}}
-	args := []any{"sender", time.Now(), time.Now(), int64(15)}
-	sql, outArgs, next := exclusionPredicate(hs, cols, 5, args)
+// mkHiddenSets builds a HiddenSets from an axis->values map (test helper).
+func mkHiddenSets(byAxis map[string][]string) HiddenSets {
+	m := make(map[string][]string, len(byAxis))
+	for k, v := range byAxis {
+		if len(v) > 0 {
+			m[k] = v
+		}
+	}
+	return HiddenSets{byAxis: m}
+}
 
+func TestExclusionPredicateShape(t *testing.T) {
+	hs := mkHiddenSets(map[string][]string{
+		"project": {"secret"},
+		"machine": {"laptop", "desktop"},
+	})
+	args := []any{"sender", time.Now(), time.Now(), int64(15)}
+	sql, outArgs, next := exclusionPredicate(hs, rawHeartbeatCols, 5, args)
+
+	// hiddenAxes order puts project before machine, so $5=project, $6=machine.
 	want := " AND NOT (project = ANY($5)) AND NOT (machine = ANY($6))"
 	if sql != want {
 		t.Fatalf("exclusion SQL = %q, want %q", sql, want)
@@ -19,15 +33,14 @@ func TestExclusionPredicateShape(t *testing.T) {
 	if next != 7 {
 		t.Fatalf("next arg = %d, want 7", next)
 	}
-	// Two array args appended (project set, machine set); editor/plugin empty → skipped.
+	// Two array args appended (project set, machine set); others empty → skipped.
 	if len(outArgs) != 6 {
 		t.Fatalf("args len = %d, want 6", len(outArgs))
 	}
 }
 
 func TestExclusionPredicateEmpty(t *testing.T) {
-	cols := struct{ Project, Editor, Plugin, Machine string }{"project", "editor", "plugin", "machine"}
-	sql, args, next := exclusionPredicate(HiddenSets{}, cols, 5, []any{"x"})
+	sql, args, next := exclusionPredicate(HiddenSets{}, rawHeartbeatCols, 5, []any{"x"})
 	if sql != "" || next != 5 || len(args) != 1 {
 		t.Fatalf("empty exclusion: sql=%q next=%d args=%d, want ''/5/1", sql, next, len(args))
 	}
@@ -39,11 +52,27 @@ func TestExclusionPredicateEmpty(t *testing.T) {
 func TestInjectAfterAnchorsExist(t *testing.T) {
 	// The hide exclusion is spliced after these anchors; if the embedded .sql
 	// drifts and drops them, the exclusion silently no-ops — guard against that.
-	if got := injectAfter(qGetUserActivity, activityRangeAnchor, "X"); got == qGetUserActivity {
-		t.Fatal("activityRangeAnchor not found in get_user_activity.sql — exclusion would be a no-op")
+	anchors := []struct {
+		name  string
+		query string
+		anch  string
+	}{
+		{"activity", qGetUserActivity, activityRangeAnchor},
+		{"rollup", qGetUserActivityRoll, rollupRangeAnchor},
+		{"activity_by_tag", qGetUserActivityTag, userActivityTagRangeAnchor},
+		{"projects_stats", qGetProjectsStats, projectStatsRangeAnchor},
+		{"tag_stats", qGetTagStats, tagStatsRangeAnchor},
+		{"leaderboards", qGetLeaderboards, leaderboardsRangeAnchor},
+		{"time_today", qGetTimeToday, timeTodayRangeAnchor},
+		{"category_daily", qGetCategoryDaily, bigBetRangeAnchor},
+		{"punchcard", qGetPunchcard, bigBetRangeAnchor},
+		{"sessions", qGetSessions, bigBetRangeAnchor},
+		{"momentum", qGetMomentum, bigBetRangeAnchor},
 	}
-	if got := injectAfter(qGetUserActivityRoll, rollupRangeAnchor, "X"); got == qGetUserActivityRoll {
-		t.Fatal("rollupRangeAnchor not found in get_user_activity_rollup.sql — exclusion would be a no-op")
+	for _, a := range anchors {
+		if got := injectAfter(a.query, a.anch, "X"); got == a.query {
+			t.Fatalf("%s: anchor %q not found — exclusion would be a silent no-op", a.name, a.anch)
+		}
 	}
 	// Empty addition is a no-op.
 	if got := injectAfter(qGetUserActivity, activityRangeAnchor, ""); got != qGetUserActivity {
@@ -223,7 +252,7 @@ func TestHideExclusionInStats(t *testing.T) {
 	}
 
 	// Projects list excludes it.
-	projects, err := d.GetAllProjects(ctx, sender, start, end, hs.Projects)
+	projects, err := d.GetAllProjects(ctx, sender, start, end, hs)
 	if err != nil {
 		t.Fatal(err)
 	}

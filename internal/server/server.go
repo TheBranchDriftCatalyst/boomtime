@@ -54,6 +54,7 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 
 	// Heartbeats Explorer (read-only audit views)
 	e.GET("/api/v1/users/current/heartbeats/group", h.HeartbeatsGroup)
+	e.GET("/api/v1/users/current/heartbeats/latest", h.HeartbeatsLatest)
 	e.GET("/api/v1/users/current/heartbeats", h.HeartbeatsList)
 
 	// Data curation (hide / rename labels)

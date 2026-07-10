@@ -2,25 +2,25 @@ package db
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// bigBetRangeAnchor is the inner range-end clause shared by the big-bet queries;
-// the hidden-project exclusion is spliced in right after it.
+// bigBetRangeAnchor is the inner range-end clause shared by the big-bet queries
+// (all scan raw heartbeats); the all-axis hide exclusion is spliced in after it.
 const bigBetRangeAnchor = "AND time_sent <= $3"
 
-// hiddenProjectPredicate returns `AND NOT (project = ANY($n))` (+ the arg) when
-// there are hidden projects, else an empty fragment. nextArg is the next free
-// positional parameter index.
-func hiddenProjectPredicate(hidden []string, nextArg int, args []any) (string, []any) {
-	if len(hidden) == 0 {
-		return "", args
+// applyBigBetHides splices the all-axis exclusion after the range anchor. All
+// big-bet queries scan raw heartbeats with unqualified columns, so every hide
+// axis is available. args already hold $1..$4; the exclusion starts at $5.
+func applyBigBetHides(query string, hs HiddenSets, args []any) (string, []any) {
+	if !hs.AnyHidden() {
+		return query, args
 	}
-	return fmt.Sprintf(" AND NOT (project = ANY($%d))", nextArg), append(args, hidden)
+	pred, argsWith, _ := exclusionPredicate(hs, rawHeartbeatCols, 5, args)
+	return injectAfter(query, bigBetRangeAnchor, pred), argsWith
 }
 
 // CategoryDailyRow is one (day, category) coding-time bucket.
@@ -32,15 +32,14 @@ type CategoryDailyRow struct {
 	DailyPct     float64
 }
 
-// GetCategoryDaily returns per-day-per-category time (excluding hidden projects),
-// for folding into the Overview stats payload. $4 limit is the gap cutoff minutes.
-func (d *DB) GetCategoryDaily(ctx context.Context, sender string, start, end time.Time, limit int64, hiddenProjects []string) ([]CategoryDailyRow, error) {
+// GetCategoryDaily returns per-day-per-category time (excluding all hidden axis
+// values), for folding into the Overview stats payload. $4 limit is the gap
+// cutoff minutes. Note: a category hidden here disappears entirely (the whole
+// category axis is excluded when that category is hidden).
+func (d *DB) GetCategoryDaily(ctx context.Context, sender string, start, end time.Time, limit int64, hs HiddenSets) ([]CategoryDailyRow, error) {
 	query := qGetCategoryDaily
 	args := []any{sender, start, end, limit}
-	if pred, a := hiddenProjectPredicate(hiddenProjects, 5, args); pred != "" {
-		query = injectAfter(query, bigBetRangeAnchor, pred)
-		args = a
-	}
+	query, args = applyBigBetHides(query, hs, args)
 	var out []CategoryDailyRow
 	err := d.aggQuery(ctx, query, args, func(rows pgx.Rows) error {
 		defer rows.Close()
@@ -66,14 +65,11 @@ type PunchcardCell struct {
 	Seconds int64 `json:"seconds"`
 }
 
-// GetPunchcard returns dow x hour coding-time cells (excluding hidden projects).
-func (d *DB) GetPunchcard(ctx context.Context, sender string, start, end time.Time, limit int64, hiddenProjects []string) ([]PunchcardCell, error) {
+// GetPunchcard returns dow x hour coding-time cells (excluding all hidden axis values).
+func (d *DB) GetPunchcard(ctx context.Context, sender string, start, end time.Time, limit int64, hs HiddenSets) ([]PunchcardCell, error) {
 	query := qGetPunchcard
 	args := []any{sender, start, end, limit}
-	if pred, a := hiddenProjectPredicate(hiddenProjects, 5, args); pred != "" {
-		query = injectAfter(query, bigBetRangeAnchor, pred)
-		args = a
-	}
+	query, args = applyBigBetHides(query, hs, args)
 	var out []PunchcardCell
 	err := d.aggQuery(ctx, query, args, func(rows pgx.Rows) error {
 		defer rows.Close()
@@ -95,16 +91,13 @@ type SessionRow struct {
 	Seconds int64
 }
 
-// GetSessions returns one row per session (excluding hidden projects). The gap
-// cutoff that both bounds in-session time and defines a session break is
+// GetSessions returns one row per session (excluding all hidden axis values). The
+// gap cutoff that both bounds in-session time and defines a session break is
 // limit*60 seconds.
-func (d *DB) GetSessions(ctx context.Context, sender string, start, end time.Time, limit int64, hiddenProjects []string) ([]SessionRow, error) {
+func (d *DB) GetSessions(ctx context.Context, sender string, start, end time.Time, limit int64, hs HiddenSets) ([]SessionRow, error) {
 	query := qGetSessions
 	args := []any{sender, start, end, limit}
-	if pred, a := hiddenProjectPredicate(hiddenProjects, 5, args); pred != "" {
-		query = injectAfter(query, bigBetRangeAnchor, pred)
-		args = a
-	}
+	query, args = applyBigBetHides(query, hs, args)
 	var out []SessionRow
 	err := d.aggQuery(ctx, query, args, func(rows pgx.Rows) error {
 		defer rows.Close()
@@ -127,15 +120,12 @@ type MomentumRow struct {
 	Seconds   int64
 }
 
-// GetMomentum returns per-project weekly time (excluding hidden projects). The Go
-// shaper picks the top-N projects and gap-fills the week series.
-func (d *DB) GetMomentum(ctx context.Context, sender string, start, end time.Time, limit int64, hiddenProjects []string) ([]MomentumRow, error) {
+// GetMomentum returns per-project weekly time (excluding all hidden axis values).
+// The Go shaper picks the top-N projects and gap-fills the week series.
+func (d *DB) GetMomentum(ctx context.Context, sender string, start, end time.Time, limit int64, hs HiddenSets) ([]MomentumRow, error) {
 	query := qGetMomentum
 	args := []any{sender, start, end, limit}
-	if pred, a := hiddenProjectPredicate(hiddenProjects, 5, args); pred != "" {
-		query = injectAfter(query, bigBetRangeAnchor, pred)
-		args = a
-	}
+	query, args = applyBigBetHides(query, hs, args)
 	var out []MomentumRow
 	err := d.aggQuery(ctx, query, args, func(rows pgx.Rows) error {
 		defer rows.Close()
