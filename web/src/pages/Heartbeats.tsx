@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { GroupByBar } from "@/components/heartbeats/GroupByBar";
 import { DerivedStatusPanel } from "@/components/heartbeats/DerivedStatusPanel";
+import { SourceHealthPanel } from "@/components/heartbeats/SourceHealthPanel";
 import { HeartbeatExplorerTable } from "@/components/heartbeats/HeartbeatExplorerTable";
 import { RenameGroupDialog } from "@/components/heartbeats/RenameGroupDialog";
 import { useExplorerTree } from "@/components/heartbeats/useExplorerTree";
@@ -86,6 +87,10 @@ export function Heartbeats() {
 
       <div className="mb-4">
         <DerivedStatusPanel />
+      </div>
+
+      <div className="mb-4">
+        <SourceHealthPanel />
       </div>
 
       <Card className="mb-4">

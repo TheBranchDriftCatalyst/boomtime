@@ -34,6 +34,9 @@ export const handlers = [
   http.get("/api/v1/users/current/heartbeats/group", () =>
     HttpResponse.json(groupPayload()),
   ),
+  http.get("/api/v1/users/current/sources/health", () =>
+    HttpResponse.json({ sources: [] }),
+  ),
   http.get("/api/v1/users/current/spaces", () =>
     HttpResponse.json({ spaces: [] }),
   ),

@@ -34,6 +34,14 @@ type Config struct {
 	DBUser string
 	DBPass string
 
+	// DB observability (see internal/db/observability.go). Query logging is
+	// off by default; arg logging is redacted and off by default.
+	DBLogQueries    bool // HAKA_DB_LOG_QUERIES: structured per-query slog logging
+	DBLogArgs       bool // HAKA_DB_LOG_ARGS: log (redacted) query args
+	DBN1Threshold   int  // HAKA_DB_N1_THRESHOLD: queries/request to WARN
+	DBN1DupThresh   int  // HAKA_DB_N1_DUP_THRESHOLD: identical normalized statements/request to WARN
+	DBExplainSlowMs int  // HAKA_DB_EXPLAIN_SLOW_MS: dev-only auto-EXPLAIN for reads slower than this (0=off)
+
 	RemoteWrite *RemoteWriteConfig
 	GithubToken string
 
@@ -90,6 +98,12 @@ func Load() *Config {
 		DBName: getEnv("HAKA_DB_NAME", "test"),
 		DBUser: getEnv("HAKA_DB_USER", "test"),
 		DBPass: getEnv("HAKA_DB_PASS", "test"),
+
+		DBLogQueries:    getEnvBool("HAKA_DB_LOG_QUERIES", false),
+		DBLogArgs:       getEnvBool("HAKA_DB_LOG_ARGS", false),
+		DBN1Threshold:   getEnvInt("HAKA_DB_N1_THRESHOLD", 20),
+		DBN1DupThresh:   getEnvInt("HAKA_DB_N1_DUP_THRESHOLD", 10),
+		DBExplainSlowMs: getEnvInt("HAKA_DB_EXPLAIN_SLOW_MS", 0),
 
 		GithubToken: getEnv("GITHUB_TOKEN", ""),
 	}

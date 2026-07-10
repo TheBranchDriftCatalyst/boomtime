@@ -20,6 +20,7 @@ import type {
   HeartbeatGroupPayload,
   HeartbeatListPayload,
   LatestHeartbeatPayload,
+  SourceHealthPayload,
   ImportConfigPayload,
   ImportJobDetailPayload,
   ImportJobsListPayload,
@@ -312,6 +313,11 @@ export const api = {
     }),
 
   // --- Derived-data health (gap_seconds + rollup) ----------------------------
+
+  // --- Source health (ingestion / "is my plugin still reporting" view) -------
+
+  getSourceHealth: () =>
+    request<SourceHealthPayload>("/api/v1/users/current/sources/health"),
 
   getDerivedStatus: () =>
     request<DerivedStatus>("/api/v1/users/current/derived/status"),

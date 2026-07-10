@@ -40,6 +40,9 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *impor
 	if cfg.HTTPLog {
 		e.Use(requestLogger(logger))
 	}
+	if cfg.DBN1Threshold > 0 || cfg.DBN1DupThresh > 0 {
+		e.Use(n1Middleware(logger, cfg.DBN1Threshold, cfg.DBN1DupThresh))
+	}
 
 	h := handler.New(database, cfg, logger, worker, hub)
 	registerRoutes(e, h)
@@ -56,6 +59,9 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	e.GET("/api/v1/users/current/heartbeats/group", h.HeartbeatsGroup)
 	e.GET("/api/v1/users/current/heartbeats/latest", h.HeartbeatsLatest)
 	e.GET("/api/v1/users/current/heartbeats", h.HeartbeatsList)
+
+	// Source health (per plugin/editor/machine last check-in — ingestion health)
+	e.GET("/api/v1/users/current/sources/health", h.SourceHealth)
 
 	// Data curation (hide / rename labels)
 	e.GET("/api/v1/users/current/curation", h.ListCuration)

@@ -452,6 +452,22 @@ export interface LatestHeartbeatPayload {
   count: number;
 }
 
+// GET /api/v1/users/current/sources/health -> per ingestion source (an editor,
+// plugin, or machine value) with its last check-in. status (active/idle/stale/
+// silent) is derived CLIENT-side from lastSeen — see deriveSourceStatus.
+export type SourceKind = "editor" | "plugin" | "machine";
+
+export interface SourceHealth {
+  source: string; // the editor/plugin/machine value
+  kind: SourceKind;
+  lastSeen: string; // ISO timestamp of the most recent heartbeat
+  count: number; // total heartbeats from this source
+}
+
+export interface SourceHealthPayload {
+  sources: SourceHealth[];
+}
+
 export interface SubmitImportResponse {
   jobId: number;
   jobStatus: string;
