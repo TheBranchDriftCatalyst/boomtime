@@ -22,33 +22,37 @@ func (h *Handler) Stats(c *echo.Context) error {
 	tag := c.QueryParam("tag")
 
 	return h.cachedJSON(c, cacheKey(owner, "stats", t0, t1, limit, tag), func() (any, error) {
-		// Apply the user's query-time hide exclusions (reversible; audit views
-		// stay unfiltered).
+		// Apply the user's query-time hide exclusions + rename remaps (both
+		// reversible; audit views stay unfiltered/un-remapped).
 		hidden, err := h.DB.LoadHiddenSets(ctx, owner)
+		if err != nil {
+			return nil, err
+		}
+		renames, err := h.DB.LoadRenameSets(ctx, owner)
 		if err != nil {
 			return nil, err
 		}
 		var rows []db.StatRow
 		switch {
 		case tag != "":
-			// /stats?tag= is scoped to a chosen tag; apply all-axis hides too.
-			rows, err = h.DB.GetUserActivityByTag(ctx, owner, t0, t1, tag, limit, hidden)
+			// /stats?tag= is scoped to a chosen tag; apply all-axis hides + remaps.
+			rows, err = h.DB.GetUserActivityByTag(ctx, owner, t0, t1, tag, limit, hidden, renames)
 		case limit == 15 && !hidden.HasHiddenOutside(db.RollupAxes):
 			// Fast path: pre-aggregated rollup (default 15-min limit, no tag). Only
-			// usable when every active hide is on an axis the rollup stores
-			// (project/language/editor/platform/machine); otherwise fall through to
-			// the raw scan so plugin/branch/category hides are honored.
-			rows, err = h.DB.GetUserActivityRollup(ctx, owner, t0, t1, hidden)
+			// gated on hide (rename needs no rollup fallback — it relabels output
+			// columns without removing rows, and the rollup stores exactly the
+			// remappable output axes).
+			rows, err = h.DB.GetUserActivityRollup(ctx, owner, t0, t1, hidden, renames)
 		default:
 			// Raw gap_seconds scan (non-default limit, or a hide the rollup can't apply).
-			rows, err = h.DB.GetUserActivity(ctx, owner, t0, t1, limit, hidden)
+			rows, err = h.DB.GetUserActivity(ctx, owner, t0, t1, limit, hidden, renames)
 		}
 		if err != nil {
 			return nil, err
 		}
 		// Categories are fetched separately (no category column in the rollup) and
-		// respect the same all-axis hide exclusion + timeLimit as the rest.
-		categories, err := h.DB.GetCategoryDaily(ctx, owner, t0, t1, limit, hidden)
+		// respect the same all-axis hide exclusion + rename remap + timeLimit.
+		categories, err := h.DB.GetCategoryDaily(ctx, owner, t0, t1, limit, hidden, renames)
 		if err != nil {
 			return nil, err
 		}

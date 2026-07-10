@@ -70,7 +70,11 @@ func (h *Handler) Momentum(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		rows, err := h.DB.GetMomentum(ctx, owner, t0, t1, limit, hidden)
+		renames, err := h.DB.LoadRenameSets(ctx, owner)
+		if err != nil {
+			return nil, err
+		}
+		rows, err := h.DB.GetMomentum(ctx, owner, t0, t1, limit, hidden, renames)
 		if err != nil {
 			return nil, err
 		}

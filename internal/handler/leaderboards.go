@@ -13,14 +13,18 @@ func (h *Handler) Leaderboards(c *echo.Context) error {
 	}
 	t0, t1 := defaultMonthRange(c)
 	ctx := c.Request().Context()
-	// Leaderboards are cross-user, but the requester's own hidden values are
-	// excluded from their rows, so the response is per-owner — cache per owner.
+	// Leaderboards are cross-user, but the requester's own hide + rename apply to
+	// THEIR rows only, so the response is per-owner — cache per owner.
 	return h.cachedJSON(c, cacheKey(owner, "leaderboards", t0, t1), func() (any, error) {
 		hidden, err := h.DB.LoadHiddenSets(ctx, owner)
 		if err != nil {
 			return nil, err
 		}
-		rows, err := h.DB.GetLeaderboards(ctx, t0, t1, owner, hidden)
+		renames, err := h.DB.LoadRenameSets(ctx, owner)
+		if err != nil {
+			return nil, err
+		}
+		rows, err := h.DB.GetLeaderboards(ctx, t0, t1, owner, hidden, renames)
 		if err != nil {
 			return nil, err
 		}

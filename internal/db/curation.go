@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -88,149 +90,201 @@ func (d *DB) DeleteCurationRule(ctx context.Context, sender string, id int) (int
 	return ct.RowsAffected(), nil
 }
 
-// ---- Rename application (backfill existing rows; merges into new_value) ----
+// ---- Query-time rename remap (non-destructive, reversible) ----
+//
+// A rename rule is applied at QUERY TIME only: raw heartbeats/projects/badges/
+// rollup are never mutated. Dashboards SELECT/GROUP BY a CASE remap of the raw
+// column (match_value -> new_value), which merges source values into the display
+// value. Deleting the rule reverts dashboards instantly. Audit surfaces (Explorer
+// group/list, latest, timeline) do NOT use the remap — they show the raw value.
 
-// ApplyRename renames all of a sender's heartbeats where <col>=matchValue to
-// new_value, then rebuilds derived data (gaps + rollup). For axis=project it also
-// migrates projects/project_tags/badges so the heartbeats FK stays satisfied and
-// the old project row is removed (merge). Returns the number of heartbeats moved.
-func (d *DB) ApplyRename(ctx context.Context, sender, axis, matchValue, newValue string) (int64, error) {
-	col, ok := ExploreColumn(axis)
-	if !ok {
-		return 0, fmt.Errorf("axis %q is not renamable", axis)
-	}
-	if axis == "day" {
-		return 0, errors.New("the day axis cannot be renamed")
-	}
-
-	var moved int64
-	tx, err := d.Pool.Begin(ctx)
-	if err != nil {
-		return 0, err
-	}
-	defer tx.Rollback(ctx)
-
-	if axis == "project" {
-		// Ensure the target project row exists so the heartbeats FK (ON UPDATE
-		// CASCADE) is satisfied when we point rows at new_value.
-		if _, err := tx.Exec(ctx,
-			`INSERT INTO projects (owner, name) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-			sender, newValue); err != nil {
-			return 0, err
-		}
-		// Move heartbeats to the new project name (merge if it already existed).
-		ct, err := tx.Exec(ctx,
-			`UPDATE heartbeats SET project = $3 WHERE sender = $1 AND project = $2`,
-			sender, matchValue, newValue)
-		if err != nil {
-			return 0, err
-		}
-		moved = ct.RowsAffected()
-
-		// Re-point project_tags to the new name, de-duplicating on conflict.
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO project_tags (project_name, project_owner, tag_id)
-			SELECT $3, project_owner, tag_id FROM project_tags
-			WHERE project_owner = $1 AND project_name = $2
-			ON CONFLICT DO NOTHING`, sender, matchValue, newValue); err != nil {
-			return 0, err
-		}
-		if _, err := tx.Exec(ctx,
-			`DELETE FROM project_tags WHERE project_owner = $1 AND project_name = $2`,
-			sender, matchValue); err != nil {
-			return 0, err
-		}
-		// Move/dedupe badges (badges have a unique (username,project) constraint).
-		if _, err := tx.Exec(ctx, `
-			UPDATE badges SET project = $3
-			WHERE username = $1 AND project = $2
-			  AND NOT EXISTS (SELECT 1 FROM badges WHERE username = $1 AND project = $3)`,
-			sender, matchValue, newValue); err != nil {
-			return 0, err
-		}
-		if _, err := tx.Exec(ctx,
-			`DELETE FROM badges WHERE username = $1 AND project = $2`,
-			sender, matchValue); err != nil {
-			return 0, err
-		}
-		// Remove the now-empty old project row (FK-safe: no heartbeats/tags/badges
-		// reference it anymore).
-		if _, err := tx.Exec(ctx,
-			`DELETE FROM projects WHERE owner = $1 AND name = $2`, sender, matchValue); err != nil {
-			return 0, err
-		}
-	} else {
-		// Non-project axes have no FK — a plain UPDATE merges naturally.
-		q := fmt.Sprintf(`UPDATE heartbeats SET %s = $3 WHERE sender = $1 AND %s = $2`, col, col)
-		ct, err := tx.Exec(ctx, q, sender, matchValue, newValue)
-		if err != nil {
-			return 0, err
-		}
-		moved = ct.RowsAffected()
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return 0, err
-	}
-
-	// Renames don't change time order, so gap_seconds is unaffected — but the
-	// rollup groups by project/language/editor/platform/machine, so rebuild it
-	// fully from the epoch for this sender.
-	if err := d.RefreshRollup(ctx, sender, time.Unix(0, 0).UTC()); err != nil {
-		return moved, err
-	}
-	return moved, nil
+// RenameSets holds the sender's active rename rules per axis (axis -> match -> new).
+type RenameSets struct {
+	byAxis map[string]map[string]string
 }
 
-// ---- Rename canonicalization on ingest ----
+// Any reports whether the sender has any rename rule.
+func (r RenameSets) Any() bool {
+	for _, m := range r.byAxis {
+		if len(m) > 0 {
+			return true
+		}
+	}
+	return false
+}
 
-// renameRule is a compact (axis -> match -> new) lookup for canonicalizing beats.
-type renameMap map[string]map[string]string
+// HasAxis reports whether any rename rule targets the given axis.
+func (r RenameSets) HasAxis(axis string) bool { return len(r.byAxis[axis]) > 0 }
 
-// loadRenameMap builds the sender's active rename rules keyed by axis then match.
-func (d *DB) loadRenameMap(ctx context.Context, sender string) (renameMap, error) {
+// HasAxisOutside reports whether a rename targets an axis NOT in `available`.
+// Mirrors HiddenSets.HasHiddenOutside so a pre-aggregated path can decide whether
+// it can serve a remapped read (the rollup only outputs project/language/editor/
+// platform/machine, so a rename on those is fine; other axes aren't in its output
+// at all, so they never affect it — see RenamedRollupAxis).
+func (r RenameSets) HasAxisOutside(available map[string]bool) bool {
+	for axis, m := range r.byAxis {
+		if len(m) > 0 && !available[axis] {
+			return true
+		}
+	}
+	return false
+}
+
+// LoadRenameSets fetches the sender's rename rules (action='rename') per axis.
+func (d *DB) LoadRenameSets(ctx context.Context, sender string) (RenameSets, error) {
+	rs := RenameSets{byAxis: map[string]map[string]string{}}
 	rows, err := d.Pool.Query(ctx,
-		`SELECT axis, match_value, new_value FROM curation_rules WHERE sender = $1 AND action = 'rename' AND new_value IS NOT NULL`,
-		sender)
+		`SELECT axis, match_value, new_value FROM curation_rules
+		 WHERE sender = $1 AND action = 'rename' AND new_value IS NOT NULL`, sender)
 	if err != nil {
-		return nil, err
+		return rs, err
 	}
 	defer rows.Close()
-	m := renameMap{}
 	for rows.Next() {
 		var axis, match, newv string
 		if err := rows.Scan(&axis, &match, &newv); err != nil {
-			return nil, err
+			return rs, err
 		}
-		if m[axis] == nil {
-			m[axis] = map[string]string{}
+		if rs.byAxis[axis] == nil {
+			rs.byAxis[axis] = map[string]string{}
 		}
-		m[axis][match] = newv
+		rs.byAxis[axis][match] = newv
 	}
-	return m, rows.Err()
+	return rs, rows.Err()
 }
 
-func strPtr(s string) *string { return &s }
-
-func deref(s *string) string {
-	if s == nil {
-		return ""
+// remapExpr returns an SQL expression that maps `col` to its display value per the
+// rename rules for `axis`, appending the match/new values as $-params (injection
+// safe, using `= ANY($arr)` like exclusionPredicate). When the axis has no rules
+// it returns `col` unchanged with no new args. Sources are grouped by target so
+// A,B→M collapse into one WHEN, and targets are emitted in sorted order so the
+// SQL/args are deterministic.
+//
+//	CASE WHEN col = ANY($arr1) THEN $t1 [WHEN col = ANY($arr2) THEN $t2 ...] ELSE col END
+//
+// extraCond, if non-empty, is ANDed into every WHEN (used by leaderboards to scope
+// the remap to the requester's own rows: `sender = $req`).
+func (r RenameSets) remapExpr(axis, col, extraCond string, nextArg int, args []any) (string, []any, int) {
+	rules := r.byAxis[axis]
+	if len(rules) == 0 {
+		return col, args, nextArg
 	}
-	return *s
+	// Invert match->new into new->[]match so multiple sources share one WHEN.
+	byTarget := map[string][]string{}
+	for match, tgt := range rules {
+		byTarget[tgt] = append(byTarget[tgt], match)
+	}
+	targets := make([]string, 0, len(byTarget))
+	for t := range byTarget {
+		targets = append(targets, t)
+	}
+	sort.Strings(targets)
+
+	var b strings.Builder
+	b.WriteString("CASE")
+	for _, tgt := range targets {
+		sources := byTarget[tgt]
+		sort.Strings(sources)
+		b.WriteString(" WHEN ")
+		if extraCond != "" {
+			b.WriteString(extraCond)
+			b.WriteString(" AND ")
+		}
+		fmt.Fprintf(&b, "%s = ANY($%d)", col, nextArg)
+		args = append(args, sources)
+		nextArg++
+		fmt.Fprintf(&b, " THEN $%d", nextArg)
+		args = append(args, tgt)
+		nextArg++
+	}
+	b.WriteString(" ELSE ")
+	b.WriteString(col)
+	b.WriteString(" END")
+	return b.String(), args, nextArg
 }
 
-// canonicalize rewrites a value for one axis per the rename map (or returns it
-// unchanged). Operates on the pointer targets used by HeartbeatPayload.
-func (m renameMap) apply(axis string, v *string) *string {
-	if v == nil {
-		return nil
+// trimSQL strips trailing whitespace and a trailing ';' so a query can be safely
+// embedded as a subquery `( <inner> ) base`.
+func trimSQL(q string) string {
+	return strings.TrimRight(strings.TrimSpace(q), ";")
+}
+
+// statRowRemapAxes are the StatRow columns that carry a renamable axis (day and
+// entity are passthrough grouping columns; total_seconds is re-summed).
+var statRowRemapAxes = []struct{ axis, col string }{
+	{"project", "project"}, {"language", "language"}, {"editor", "editor"},
+	{"branch", "branch"}, {"platform", "platform"}, {"machine", "machine"},
+}
+
+// regroupStatRows wraps `inner` (a query that outputs the StatRow columns:
+// day, project, language, editor, branch, platform, machine, entity,
+// total_seconds, pct, daily_pct) in an outer re-group that applies the rename
+// remap to the six renamable columns, re-sums total_seconds, and recomputes the
+// pct/daily_pct windows. Column ORDER matches scanStatRows exactly. nextArg is the
+// first free positional param after the inner query's params. When no rename
+// applies it returns `inner` unchanged.
+func (rs RenameSets) regroupStatRows(inner string, nextArg int, args []any) (string, []any) {
+	if !rs.Any() {
+		return inner, args
 	}
-	if byMatch, ok := m[axis]; ok {
-		if nv, ok := byMatch[*v]; ok {
-			return &nv
-		}
+	inner = trimSQL(inner)
+	exprs := make([]string, len(statRowRemapAxes))
+	for i, a := range statRowRemapAxes {
+		var e string
+		e, args, nextArg = rs.remapExpr(a.axis, a.col, "", nextArg, args)
+		exprs[i] = e
 	}
-	return v
+	q := fmt.Sprintf(`WITH regrouped AS (
+    SELECT
+        day,
+        %s AS project,
+        %s AS language,
+        %s AS editor,
+        %s AS branch,
+        %s AS platform,
+        %s AS machine,
+        entity,
+        CAST(SUM(total_seconds) AS int8) AS total_seconds
+    FROM ( %s ) base
+    GROUP BY day, %s, %s, %s, %s, %s, %s, entity
+)
+SELECT
+    day, project, language, editor, branch, platform, machine, entity, total_seconds,
+    coalesce(CAST(1.0 * total_seconds / nullif(sum(total_seconds) OVER (), 0) AS numeric(13, 12)), 0) AS pct,
+    coalesce(CAST(1.0 * total_seconds / nullif(sum(total_seconds) OVER (PARTITION BY day), 0) AS numeric(13, 12)), 0) AS daily_pct
+FROM regrouped`,
+		exprs[0], exprs[1], exprs[2], exprs[3], exprs[4], exprs[5], inner,
+		exprs[0], exprs[1], exprs[2], exprs[3], exprs[4], exprs[5])
+	return q, args
+}
+
+// regroupProjectStatRows wraps a query outputting the ProjectStatRow columns
+// (day, dayofweek, hourofday, language, entity, ty, total_seconds, pct, daily_pct)
+// and remaps ONLY the language axis (the query is already project/tag scoped, and
+// dayofweek/hourofday/entity/ty are passthrough). Column order matches
+// scanProjectStatRows. Returns `inner` unchanged when no language rename applies.
+func (rs RenameSets) regroupProjectStatRows(inner string, nextArg int, args []any) (string, []any) {
+	if !rs.HasAxis("language") {
+		return inner, args
+	}
+	inner = trimSQL(inner)
+	var langExpr string
+	langExpr, args, nextArg = rs.remapExpr("language", "language", "", nextArg, args)
+	q := fmt.Sprintf(`WITH regrouped AS (
+    SELECT
+        day, dayofweek, hourofday,
+        %s AS language,
+        entity, ty,
+        CAST(SUM(total_seconds) AS int8) AS total_seconds
+    FROM ( %s ) base
+    GROUP BY day, dayofweek, hourofday, %s, entity, ty
+)
+SELECT
+    day, dayofweek, hourofday, language, entity, ty, total_seconds,
+    coalesce(CAST(1.0 * total_seconds / nullif(sum(total_seconds) OVER (), 0) AS numeric(13, 12)), 0) AS pct,
+    coalesce(CAST(1.0 * total_seconds / nullif(sum(total_seconds) OVER (PARTITION BY day), 0) AS numeric(13, 12)), 0) AS daily_pct
+FROM regrouped`, langExpr, inner, langExpr)
+	return q, args
 }
 
 // ---- Hide exclusion helpers ----

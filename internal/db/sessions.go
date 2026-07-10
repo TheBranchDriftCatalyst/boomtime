@@ -229,41 +229,9 @@ func (d *DB) SaveHeartbeats(ctx context.Context, hbs []model.HeartbeatPayload) (
 		return []int64{}, nil
 	}
 
-	// Canonicalize label values via the sender's active rename rules so re-imports
-	// and live heartbeats stay renamed (persistence). Loaded once per distinct
-	// sender in the batch.
-	renameBySender := map[string]renameMap{}
-	for i := range hbs {
-		s := hbs[i].Sender
-		if s == nil {
-			continue
-		}
-		rm, ok := renameBySender[*s]
-		if !ok {
-			loaded, err := d.loadRenameMap(ctx, *s)
-			if err != nil {
-				return nil, err
-			}
-			rm = loaded
-			renameBySender[*s] = rm
-		}
-		if len(rm) == 0 {
-			continue
-		}
-		hbs[i].Project = rm.apply("project", hbs[i].Project)
-		hbs[i].Language = rm.apply("language", hbs[i].Language)
-		hbs[i].Editor = rm.apply("editor", hbs[i].Editor)
-		hbs[i].Plugin = rm.apply("plugin", hbs[i].Plugin)
-		hbs[i].Platform = rm.apply("platform", hbs[i].Platform)
-		hbs[i].Machine = rm.apply("machine", hbs[i].Machine)
-		hbs[i].Branch = rm.apply("branch", hbs[i].Branch)
-		hbs[i].Category = rm.apply("category", hbs[i].Category)
-		// entity and type are also renamable axes.
-		hbs[i].Entity = deref(rm.apply("entity", &hbs[i].Entity))
-		if ty := rm.apply("type", strPtr(string(hbs[i].Type))); ty != nil {
-			hbs[i].Type = model.EntityType(*ty)
-		}
-	}
+	// Ingest stores RAW values. Rename rules are applied at query time only (a
+	// non-destructive, reversible remap), so heartbeats keep their original label
+	// values forever — no canonicalization here.
 
 	// Insert unique (owner, project) pairs first.
 	seen := map[[2]string]struct{}{}
@@ -400,14 +368,21 @@ var rollupCols = map[string]string{
 // the sender's hidden values for the axes the rollup stores (project, language,
 // editor, platform, machine). Callers must not use this path when a hide is
 // active on an axis the rollup lacks (plugin/branch/category) — use the raw path.
-func (d *DB) GetUserActivityRollup(ctx context.Context, user string, start, end time.Time, hs HiddenSets) ([]StatRow, error) {
+// A rename needs NO rollup fallback: rename only RELABELS output columns (it never
+// removes rows), and the rollup's output columns are project/language/editor/
+// platform/machine — exactly the axes it stores. A rename on plugin/branch/
+// category has no output column here, so it can't mis-display; re-summing the
+// pre-aggregated rows by the remapped value merges correctly.
+func (d *DB) GetUserActivityRollup(ctx context.Context, user string, start, end time.Time, hs HiddenSets, rs RenameSets) ([]StatRow, error) {
 	query := qGetUserActivityRoll
 	args := []any{user, start, end}
+	next := 4
 	if hs.AnyHidden() {
-		pred, argsWith, _ := exclusionPredicate(hs, rollupCols, 4, args)
+		var pred string
+		pred, args, next = exclusionPredicate(hs, rollupCols, next, args)
 		query = injectAfter(query, rollupRangeAnchor, pred)
-		args = argsWith
 	}
+	query, args = rs.regroupStatRows(query, next, args)
 	var out []StatRow
 	err := d.aggQuery(ctx, query, args, func(rows pgx.Rows) (e error) {
 		out, e = scanStatRows(rows)
@@ -463,16 +438,19 @@ func scanStatRows(rows pgx.Rows) ([]StatRow, error) {
 // excluding ALL of the sender's hidden axis values (project, language, editor,
 // plugin, machine, platform, branch, category) via appended `AND NOT (<col> =
 // ANY($n))` predicates on the raw-heartbeats scan.
-func (d *DB) GetUserActivity(ctx context.Context, user string, start, end time.Time, limit int64, hs HiddenSets) ([]StatRow, error) {
+func (d *DB) GetUserActivity(ctx context.Context, user string, start, end time.Time, limit int64, hs HiddenSets, rs RenameSets) ([]StatRow, error) {
 	query := qGetUserActivity
 	args := []any{user, start, end, limit}
+	next := 5
 	if hs.AnyHidden() {
 		// Append the exclusion to the inner WHERE (anchored on the range-end
-		// clause) so hidden rows are dropped before aggregation.
-		pred, argsWith, _ := exclusionPredicate(hs, rawHeartbeatCols, 5, args)
+		// clause) so hidden rows are dropped (by RAW value) before aggregation.
+		var pred string
+		pred, args, next = exclusionPredicate(hs, rawHeartbeatCols, next, args)
 		query = injectAfter(query, activityRangeAnchor, pred)
-		args = argsWith
 	}
+	// Rename remap re-groups the surviving rows by display value (merges A,B→M).
+	query, args = rs.regroupStatRows(query, next, args)
 	var out []StatRow
 	err := d.aggQuery(ctx, query, args, func(rows pgx.Rows) (e error) {
 		out, e = scanStatRows(rows)
@@ -492,14 +470,16 @@ const activityRangeAnchor = "AND time_sent <= $3"
 // get_user_activity_by_tags.sql (raw heartbeats scan; $1..$5, exclusion at $6).
 const userActivityTagRangeAnchor = "AND time_sent <= $3"
 
-func (d *DB) GetUserActivityByTag(ctx context.Context, user string, start, end time.Time, tag string, limit int64, hs HiddenSets) ([]StatRow, error) {
+func (d *DB) GetUserActivityByTag(ctx context.Context, user string, start, end time.Time, tag string, limit int64, hs HiddenSets, rs RenameSets) ([]StatRow, error) {
 	query := qGetUserActivityTag
 	args := []any{user, start, end, tag, limit}
+	next := 6
 	if hs.AnyHidden() {
-		pred, argsWith, _ := exclusionPredicate(hs, rawHeartbeatCols, 6, args)
+		var pred string
+		pred, args, next = exclusionPredicate(hs, rawHeartbeatCols, next, args)
 		query = injectAfter(query, userActivityTagRangeAnchor, pred)
-		args = argsWith
 	}
+	query, args = rs.regroupStatRows(query, next, args)
 	var out []StatRow
 	err := d.aggQuery(ctx, query, args, func(rows pgx.Rows) (e error) {
 		out, e = scanStatRows(rows)
@@ -531,6 +511,12 @@ func scanProjectStatRows(rows pgx.Rows) ([]ProjectStatRow, error) {
 const projectStatsRangeAnchor = "AND time_sent <= $4"
 const tagStatsRangeAnchor = "AND heartbeats.time_sent <= $4"
 
+// projectStatsMatchClause is the raw project filter in get_projects_stats.sql. The
+// $2 param is now a DISPLAY name, so a project rename replaces this with a
+// remap-then-match so a merged name selects all its source rows. Kept as a
+// constant so a drift in the .sql fails loudly.
+const projectStatsMatchClause = "AND project = $2"
+
 var tagStatsCols = map[string]string{
 	"project": "heartbeats.project", "language": "heartbeats.language",
 	"editor": "heartbeats.editor", "plugin": "heartbeats.plugin",
@@ -538,16 +524,28 @@ var tagStatsCols = map[string]string{
 	"branch": "heartbeats.branch", "category": "heartbeats.category",
 }
 
-// GetProjectStats runs get_projects_stats.sql ($1 user,$2 project,$3 start,$4 end,$5 limit),
-// excluding the sender's hidden axis values within the project.
-func (d *DB) GetProjectStats(ctx context.Context, user, project string, start, end time.Time, limit int64, hs HiddenSets) ([]ProjectStatRow, error) {
+// GetProjectStats runs get_projects_stats.sql ($1 user,$2 project,$3 start,$4 end,$5 limit).
+// The incoming `project` is a DISPLAY name: when a project rename is active the
+// raw `project = $2` filter is replaced with `remap(project) = $2` so a merged
+// name aggregates all its source projects (and identity still works). Hidden axis
+// values are excluded within the project; the output `language` axis is remapped.
+func (d *DB) GetProjectStats(ctx context.Context, user, project string, start, end time.Time, limit int64, hs HiddenSets, rs RenameSets) ([]ProjectStatRow, error) {
 	query := qGetProjectsStats
 	args := []any{user, project, start, end, limit}
+	next := 6
 	if hs.AnyHidden() {
-		pred, argsWith, _ := exclusionPredicate(hs, rawHeartbeatCols, 6, args)
+		var pred string
+		pred, args, next = exclusionPredicate(hs, rawHeartbeatCols, next, args)
 		query = injectAfter(query, projectStatsRangeAnchor, pred)
-		args = argsWith
 	}
+	// Match the display name against the remapped raw project.
+	if rs.HasAxis("project") {
+		var expr string
+		expr, args, next = rs.remapExpr("project", "project", "", next, args)
+		query = strings.Replace(query, projectStatsMatchClause, "AND ("+expr+") = $2", 1)
+	}
+	// Remap the output language axis (project axis isn't an output column here).
+	query, args = rs.regroupProjectStatRows(query, next, args)
 	var out []ProjectStatRow
 	err := d.aggQuery(ctx, query, args, func(rows pgx.Rows) (e error) {
 		out, e = scanProjectStatRows(rows)
@@ -557,15 +555,20 @@ func (d *DB) GetProjectStats(ctx context.Context, user, project string, start, e
 }
 
 // GetTagStats runs get_tag_stats.sql ($1 user,$2 tag,$3 start,$4 end,$5 limit),
-// excluding the sender's hidden axis values within the tag's projects.
-func (d *DB) GetTagStats(ctx context.Context, user, tag string, start, end time.Time, limit int64, hs HiddenSets) ([]ProjectStatRow, error) {
+// excluding the sender's hidden axis values within the tag's projects. Tag
+// membership is a RAW-project fact (project_tags keys on the raw project name), so
+// the join stays on raw projects — a project rename does NOT move tags. Only the
+// output `language` axis is remapped for display.
+func (d *DB) GetTagStats(ctx context.Context, user, tag string, start, end time.Time, limit int64, hs HiddenSets, rs RenameSets) ([]ProjectStatRow, error) {
 	query := qGetTagStats
 	args := []any{user, tag, start, end, limit}
+	next := 6
 	if hs.AnyHidden() {
-		pred, argsWith, _ := exclusionPredicate(hs, tagStatsCols, 6, args)
+		var pred string
+		pred, args, next = exclusionPredicate(hs, tagStatsCols, next, args)
 		query = injectAfter(query, tagStatsRangeAnchor, pred)
-		args = argsWith
 	}
+	query, args = rs.regroupProjectStatRows(query, next, args)
 	var out []ProjectStatRow
 	err := d.aggQuery(ctx, query, args, func(rows pgx.Rows) (e error) {
 		out, e = scanProjectStatRows(rows)
@@ -595,17 +598,28 @@ func (d *DB) GetTimeline(ctx context.Context, user string, start, end time.Time,
 // leaderboardsRangeAnchor is the inner range-end clause of get_leaderboards.sql.
 const leaderboardsRangeAnchor = "AND time_sent <= $2"
 
-// GetLeaderboards aggregates coding time across ALL users. requester's hidden
-// values are excluded from THEIR OWN rows only (multi-user safe: one user's hide
-// must not remove data from other users' leaderboard contributions). Achieved
-// with `AND NOT (sender = $requester AND <col> = ANY($n))` per hidden axis.
-func (d *DB) GetLeaderboards(ctx context.Context, start, end time.Time, requester string, hs HiddenSets) ([]LeaderboardRow, error) {
+// GetLeaderboards aggregates coding time across ALL users. Both hide and rename
+// apply to the REQUESTER's own rows only (multi-user safe: one user's curation
+// must not alter other users' leaderboard contributions). Hide excludes with
+// `AND NOT (sender = $req AND <col> = ANY($n))`; rename re-groups the requester's
+// project/language via `CASE WHEN sender = $req AND col = ANY(..) THEN ..`.
+func (d *DB) GetLeaderboards(ctx context.Context, start, end time.Time, requester string, hs HiddenSets, rs RenameSets) ([]LeaderboardRow, error) {
 	query := qGetLeaderboards
 	args := []any{start, end}
+
+	// A single $req param is reused by both hide and rename when either is active.
+	requesterArg := 0
+	next := 3
+	ensureRequester := func() {
+		if requesterArg == 0 {
+			args = append(args, requester)
+			requesterArg = len(args)
+			next = len(args) + 1
+		}
+	}
+
 	if hs.AnyHidden() {
-		requesterArg := len(args) + 1 // $3
-		args = append(args, requester)
-		nextArg := len(args) + 1 // $4
+		ensureRequester()
 		var pred string
 		for _, axis := range hiddenAxes {
 			vals := hs.Values(axis)
@@ -613,12 +627,26 @@ func (d *DB) GetLeaderboards(ctx context.Context, start, end time.Time, requeste
 			if len(vals) == 0 || col == "" {
 				continue
 			}
-			pred += fmt.Sprintf(" AND NOT (sender = $%d AND %s = ANY($%d))", requesterArg, col, nextArg)
+			pred += fmt.Sprintf(" AND NOT (sender = $%d AND %s = ANY($%d))", requesterArg, col, next)
 			args = append(args, vals)
-			nextArg++
+			next++
 		}
 		query = injectAfter(query, leaderboardsRangeAnchor, pred)
 	}
+
+	// Requester-scoped rename: re-group by remapped project/language (only the
+	// requester's rows relabel; every other sender's project/language pass through).
+	if rs.HasAxis("project") || rs.HasAxis("language") {
+		ensureRequester()
+		reqCond := fmt.Sprintf("sender = $%d", requesterArg)
+		projExpr, langExpr := "project", "language"
+		projExpr, args, next = rs.remapExpr("project", "project", reqCond, next, args)
+		langExpr, args, next = rs.remapExpr("language", "language", reqCond, next, args)
+		query = fmt.Sprintf(`SELECT %s AS project, %s AS language, sender, CAST(SUM(total_seconds) AS int8) AS total_seconds
+FROM ( %s ) base
+GROUP BY %s, %s, sender`, projExpr, langExpr, trimSQL(query), projExpr, langExpr)
+	}
+
 	out := []LeaderboardRow{}
 	err := d.aggQuery(ctx, query, args, func(rows pgx.Rows) error {
 		defer rows.Close()
@@ -749,18 +777,32 @@ var projectListCols = map[string]string{
 
 // GetAllProjects returns a user's projects with (non-hidden) heartbeats in
 // [t0,t1], most active first. All hide axes are excluded on the heartbeats join.
-func (d *DB) GetAllProjects(ctx context.Context, user string, t0, t1 time.Time, hs HiddenSets) ([]string, error) {
+// A project rename relabels names at read time (raw rows untouched): merged names
+// collapse to one entry, most active first.
+func (d *DB) GetAllProjects(ctx context.Context, user string, t0, t1 time.Time, hs HiddenSets, rs RenameSets) ([]string, error) {
 	query := `
-		SELECT name FROM projects
+		SELECT name, count(*) AS cnt FROM projects
 		INNER JOIN heartbeats ON heartbeats.project = projects.name AND heartbeats.sender = projects.owner
 		WHERE heartbeats.sender = $1 AND heartbeats.time_sent >= $2 AND heartbeats.time_sent <= $3`
 	args := []any{user, t0, t1}
+	next := 4
 	if hs.AnyHidden() {
-		pred, argsWith, _ := exclusionPredicate(hs, projectListCols, 4, args)
+		var pred string
+		pred, args, next = exclusionPredicate(hs, projectListCols, next, args)
 		query += pred
-		args = argsWith
 	}
-	query += ` GROUP BY projects.name ORDER BY COUNT(*) DESC`
+	query += ` GROUP BY projects.name`
+
+	// Always re-project to exactly `name` (collectStrings reads one column). When a
+	// project rename is active, remap+re-group so merged names collapse into one
+	// entry ordered by summed activity; otherwise pass names through by count.
+	nameExpr := "name"
+	if rs.HasAxis("project") {
+		nameExpr, args, next = rs.remapExpr("project", "name", "", next, args)
+	}
+	query = fmt.Sprintf(`SELECT %s AS name FROM ( %s ) base GROUP BY %s ORDER BY SUM(cnt) DESC`,
+		nameExpr, trimSQL(query), nameExpr)
+
 	rows, err := d.Pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err

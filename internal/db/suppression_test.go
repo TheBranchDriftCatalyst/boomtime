@@ -200,7 +200,7 @@ func TestSuppressedValuesExcludedFromAggregations(t *testing.T) {
 
 			// Baseline (no hide): both values present, total = keep+sup.
 			noHide := HiddenSets{}
-			rawBefore, err := d.GetUserActivity(ctx, sender, start, end, 15, noHide)
+			rawBefore, err := d.GetUserActivity(ctx, sender, start, end, 15, noHide, RenameSets{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -223,7 +223,7 @@ func TestSuppressedValuesExcludedFromAggregations(t *testing.T) {
 			// ---- EXCLUDED from every aggregation/stats path ----
 
 			// 1. Raw activity path.
-			raw, err := d.GetUserActivity(ctx, sender, start, end, 15, hs)
+			raw, err := d.GetUserActivity(ctx, sender, start, end, 15, hs, RenameSets{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -245,7 +245,7 @@ func TestSuppressedValuesExcludedFromAggregations(t *testing.T) {
 			//    back to raw — assert that HasHiddenOutside reports the fallback.
 			rollupHas := RollupAxes[axis]
 			if rollupHas {
-				roll, err := d.GetUserActivityRollup(ctx, sender, start, end, hs)
+				roll, err := d.GetUserActivityRollup(ctx, sender, start, end, hs, RenameSets{})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -270,7 +270,7 @@ func TestSuppressedValuesExcludedFromAggregations(t *testing.T) {
 			//    The ToStatsPayload SHAPING assertion lives in the stats package
 			//    (TestSuppressionShapingExcluded) to avoid a db<-stats import cycle;
 			//    here we assert the DB layer that feeds it excludes SUPPRESS.
-			categories, err := d.GetCategoryDaily(ctx, sender, start, end, 15, hs)
+			categories, err := d.GetCategoryDaily(ctx, sender, start, end, 15, hs, RenameSets{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -304,7 +304,7 @@ func TestSuppressedValuesExcludedFromAggregations(t *testing.T) {
 			if got := sumSessions(sess); got != keepSecs {
 				t.Fatalf("[sessions] total = %d, want %d", got, keepSecs)
 			}
-			mom, err := d.GetMomentum(ctx, sender, start, end, 15, hs)
+			mom, err := d.GetMomentum(ctx, sender, start, end, 15, hs, RenameSets{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -321,7 +321,7 @@ func TestSuppressedValuesExcludedFromAggregations(t *testing.T) {
 
 			// 5. Project list (project axis) excludes the hidden project.
 			if axis == "project" {
-				projects, err := d.GetAllProjects(ctx, sender, start, end, hs)
+				projects, err := d.GetAllProjects(ctx, sender, start, end, hs, RenameSets{})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -333,7 +333,7 @@ func TestSuppressedValuesExcludedFromAggregations(t *testing.T) {
 			}
 
 			// 6. Leaderboards: requester's SUPPRESS row excluded.
-			lb, err := d.GetLeaderboards(ctx, start, end, sender, hs)
+			lb, err := d.GetLeaderboards(ctx, start, end, sender, hs, RenameSets{})
 			if err != nil {
 				t.Fatal(err)
 			}

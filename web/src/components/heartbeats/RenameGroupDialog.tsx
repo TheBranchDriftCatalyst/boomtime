@@ -71,8 +71,9 @@ export function RenameGroupDialog({
         <DialogHeader>
           <DialogTitle>Rename {axisLabel(axis).toLowerCase()}</DialogTitle>
           <DialogDescription>
-            Renames every heartbeat with this value (merges if the name already
-            exists) and applies to future imports too.
+            Remaps this value in your dashboards (merging into the target if it
+            already exists). This is reversible — raw records are preserved;
+            remove it anytime under Settings → Name remappings.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-4">

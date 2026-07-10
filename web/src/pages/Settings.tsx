@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
-import { X } from "lucide-react";
+import { ArrowRight, X } from "lucide-react";
 import { toast } from "sonner";
 import { PageToolbar } from "@/components/toolbar/PageToolbar";
 import { Spinner } from "@/components/Spinner";
@@ -14,6 +14,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { axisLabel } from "@/components/heartbeats/axes";
 import { useAxisValues } from "@/hooks/useAxisValues";
 import { useCurationMutations, useCurationRules } from "@/hooks/useCuration";
 import type { CurationRule, HeartbeatAxis } from "@/types/api";
@@ -43,10 +44,23 @@ export function Settings() {
   const hiddenProjects = hides.filter((r) => r.axis === "project");
   const hiddenSources = hides.filter((r) => r.axis !== "project");
 
+  const renames = useMemo(
+    () => (data?.rules ?? []).filter((r) => r.action === "rename"),
+    [data],
+  );
+
   function unhide(rule: CurationRule) {
     remove.mutate(rule.id, {
       onSuccess: () => toast.success(`Unhid ${rule.matchValue}`),
       onError: () => toast.error("Failed to unhide"),
+    });
+  }
+
+  function removeRename(rule: CurationRule) {
+    remove.mutate(rule.id, {
+      onSuccess: () =>
+        toast.success(`Removed remapping ${rule.matchValue} → ${rule.newValue}`),
+      onError: () => toast.error("Failed to remove remapping"),
     });
   }
 
@@ -102,6 +116,7 @@ export function Settings() {
               onAdd={addHide}
               onRemove={unhide}
             />
+            <NameRemappingsCard rules={renames} onRemove={removeRename} />
           </>
         )}
       </div>
@@ -269,6 +284,79 @@ function HiddenSourcesCard({
                         <X className="h-3 w-3" />
                       </button>
                     </Badge>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function NameRemappingsCard({
+  rules,
+  onRemove,
+}: {
+  rules: CurationRule[];
+  onRemove: (rule: CurationRule) => void;
+}) {
+  // Group rename rules by axis (project/language/editor/branch/…).
+  const grouped = useMemo(() => {
+    const map = new Map<string, CurationRule[]>();
+    for (const r of rules) {
+      const arr = map.get(r.axis) ?? [];
+      arr.push(r);
+      map.set(r.axis, arr);
+    }
+    return map;
+  }, [rules]);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Name remappings</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Rename or merge values from the{" "}
+          <Link
+            to="/app/heartbeats"
+            className="font-medium text-primary hover:underline"
+          >
+            Heartbeats
+          </Link>{" "}
+          explorer. Remappings are applied to your dashboards at query-time and
+          are reversible — raw records are never changed.
+        </p>
+
+        {grouped.size === 0 ? (
+          <p className="text-sm text-muted-foreground">No remappings yet.</p>
+        ) : (
+          <div className="space-y-3">
+            {[...grouped.entries()].map(([groupAxis, items]) => (
+              <div key={groupAxis}>
+                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {axisLabel(groupAxis as HeartbeatAxis)}
+                </p>
+                <div className="space-y-1.5">
+                  {items.map((r) => (
+                    <div
+                      key={r.id}
+                      className="flex items-center gap-2 rounded-md border bg-secondary/40 px-2.5 py-1.5 text-sm"
+                    >
+                      <span className="font-mono">{r.matchValue}</span>
+                      <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="font-mono font-medium">{r.newValue}</span>
+                      <button
+                        onClick={() => onRemove(r)}
+                        title="Remove remapping (reverts the merge)"
+                        className="ml-auto rounded-full p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   ))}
                 </div>
               </div>

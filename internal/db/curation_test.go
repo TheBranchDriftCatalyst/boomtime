@@ -90,88 +90,6 @@ func seedHB(t *testing.T, d *DB, ctx context.Context, sender, project, lang stri
 	}
 }
 
-func TestApplyRenameProjectMerges(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	ctx := context.Background()
-
-	sender := "curate_" + time.Now().Format("150405.000000")
-	_, _ = d.Pool.Exec(ctx, `INSERT INTO users (username, hashed_password, salt_used) VALUES ($1,'\x00','\x00') ON CONFLICT DO NOTHING`, sender)
-	_, _ = d.Pool.Exec(ctx, `INSERT INTO projects (owner,name) VALUES ($1,'old'),($1,'new') ON CONFLICT DO NOTHING`, sender)
-	t.Cleanup(func() {
-		_, _ = d.Pool.Exec(ctx, `DELETE FROM heartbeats WHERE sender=$1`, sender)
-		_, _ = d.Pool.Exec(ctx, `DELETE FROM curation_rules WHERE sender=$1`, sender)
-		_, _ = d.Pool.Exec(ctx, `DELETE FROM projects WHERE owner=$1`, sender)
-		_, _ = d.Pool.Exec(ctx, `DELETE FROM users WHERE username=$1`, sender)
-	})
-
-	base := time.Date(2025, 5, 1, 10, 0, 0, 0, time.UTC)
-	seedHB(t, d, ctx, sender, "old", "Go", base)
-	seedHB(t, d, ctx, sender, "old", "Go", base.Add(time.Minute))
-	seedHB(t, d, ctx, sender, "new", "Go", base.Add(2*time.Minute))
-
-	moved, err := d.ApplyRename(ctx, sender, "project", "old", "new")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if moved != 2 {
-		t.Fatalf("moved = %d, want 2", moved)
-	}
-
-	// All 3 heartbeats now on 'new'; 'old' project row removed (merged).
-	var onNew, onOld int
-	if err := d.Pool.QueryRow(ctx, `SELECT count(*) FROM heartbeats WHERE sender=$1 AND project='new'`, sender).Scan(&onNew); err != nil {
-		t.Fatal(err)
-	}
-	if err := d.Pool.QueryRow(ctx, `SELECT count(*) FROM heartbeats WHERE sender=$1 AND project='old'`, sender).Scan(&onOld); err != nil {
-		t.Fatal(err)
-	}
-	if onNew != 3 || onOld != 0 {
-		t.Fatalf("after rename: new=%d old=%d, want 3/0", onNew, onOld)
-	}
-	var oldProjRows int
-	if err := d.Pool.QueryRow(ctx, `SELECT count(*) FROM projects WHERE owner=$1 AND name='old'`, sender).Scan(&oldProjRows); err != nil {
-		t.Fatal(err)
-	}
-	if oldProjRows != 0 {
-		t.Fatalf("old project row should be deleted, got %d", oldProjRows)
-	}
-}
-
-func TestApplyRenameNonProject(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	ctx := context.Background()
-
-	sender := "curate2_" + time.Now().Format("150405.000000")
-	_, _ = d.Pool.Exec(ctx, `INSERT INTO users (username, hashed_password, salt_used) VALUES ($1,'\x00','\x00') ON CONFLICT DO NOTHING`, sender)
-	_, _ = d.Pool.Exec(ctx, `INSERT INTO projects (owner,name) VALUES ($1,'p') ON CONFLICT DO NOTHING`, sender)
-	t.Cleanup(func() {
-		_, _ = d.Pool.Exec(ctx, `DELETE FROM heartbeats WHERE sender=$1`, sender)
-		_, _ = d.Pool.Exec(ctx, `DELETE FROM projects WHERE owner=$1`, sender)
-		_, _ = d.Pool.Exec(ctx, `DELETE FROM users WHERE username=$1`, sender)
-	})
-
-	base := time.Date(2025, 5, 2, 10, 0, 0, 0, time.UTC)
-	seedHB(t, d, ctx, sender, "p", "golang", base)
-	seedHB(t, d, ctx, sender, "p", "Go", base.Add(time.Minute))
-
-	moved, err := d.ApplyRename(ctx, sender, "language", "golang", "Go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if moved != 1 {
-		t.Fatalf("moved = %d, want 1", moved)
-	}
-	var goCount int
-	if err := d.Pool.QueryRow(ctx, `SELECT count(*) FROM heartbeats WHERE sender=$1 AND language='Go'`, sender).Scan(&goCount); err != nil {
-		t.Fatal(err)
-	}
-	if goCount != 2 {
-		t.Fatalf("Go count = %d, want 2 (merged)", goCount)
-	}
-}
-
 func TestHideExclusionInStats(t *testing.T) {
 	d := openTestDB(t)
 	defer d.Close()
@@ -207,7 +125,7 @@ func TestHideExclusionInStats(t *testing.T) {
 	end := base.AddDate(0, 0, 1)
 
 	// No hide: both projects appear on the raw path.
-	rows, err := d.GetUserActivity(ctx, sender, start, end, 15, HiddenSets{})
+	rows, err := d.GetUserActivity(ctx, sender, start, end, 15, HiddenSets{}, RenameSets{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +146,7 @@ func TestHideExclusionInStats(t *testing.T) {
 	}
 
 	// Raw path excludes it.
-	rows, err = d.GetUserActivity(ctx, sender, start, end, 15, hs)
+	rows, err = d.GetUserActivity(ctx, sender, start, end, 15, hs, RenameSets{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +158,7 @@ func TestHideExclusionInStats(t *testing.T) {
 	}
 
 	// Rollup fast path excludes it too.
-	rrows, err := d.GetUserActivityRollup(ctx, sender, start, end, hs)
+	rrows, err := d.GetUserActivityRollup(ctx, sender, start, end, hs, RenameSets{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +170,7 @@ func TestHideExclusionInStats(t *testing.T) {
 	}
 
 	// Projects list excludes it.
-	projects, err := d.GetAllProjects(ctx, sender, start, end, hs)
+	projects, err := d.GetAllProjects(ctx, sender, start, end, hs, RenameSets{})
 	if err != nil {
 		t.Fatal(err)
 	}

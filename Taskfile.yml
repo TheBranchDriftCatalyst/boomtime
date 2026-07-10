@@ -68,6 +68,16 @@ tasks:
     cmds:
       - docker compose exec db psql -U "$HAKA_DB_USER" -d "$HAKA_DB_NAME"
 
+  db:mermaid:
+    desc: Generate a Mermaid ERD (docs/db-erd.mmd) from the dev database schema
+    cmds:
+      - task: db:up
+      # mermerd (github.com/KarnerTh/mermerd) does 90% of the work — auto-install if absent
+      - 'test -x "$(go env GOPATH)/bin/mermerd" || go install github.com/KarnerTh/mermerd@latest'
+      - mkdir -p docs
+      - '"$(go env GOPATH)/bin/mermerd" -c "{{.DEV_DB_URL}}" -s public --useAllTables --showAllConstraints -o docs/db-erd.mmd'
+      - 'echo "OK ERD written to docs/db-erd.mmd - paste into any Mermaid viewer"'
+
   migrate:
     desc: Apply pending database migrations
     cmds:

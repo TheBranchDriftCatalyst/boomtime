@@ -63,29 +63,26 @@ func (h *Handler) CreateCuration(c *echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
+	// Both hide and rename are stored as rules and applied at QUERY TIME — creating
+	// the rule mutates no raw data. Rename is a non-destructive, reversible remap:
+	// heartbeats keep their original values and dashboards show the merged value.
 	rule, err := h.DB.CreateCurationRule(ctx, owner, req.Axis, req.Action, req.MatchValue, req.NewValue)
 	if err != nil {
 		h.Logger.Error("create curation rule failed", "err", err)
 		return respondErr(c, apierr.Generic())
 	}
 
-	if req.Action == db.CurationRename {
-		if _, err := h.DB.ApplyRename(ctx, owner, req.Axis, req.MatchValue, *req.NewValue); err != nil {
-			h.Logger.Error("apply rename failed", "err", err)
-			return respondErr(c, apierr.Generic())
-		}
-	}
-
 	// Both hide and rename change what dashboards show → drop this user's cached
-	// aggregations.
+	// aggregations so the new rule takes effect immediately.
 	h.invalidateOwnerCache(owner)
 
 	return c.JSON(http.StatusOK, map[string]any{"rule": rule})
 }
 
 // DeleteCuration: DELETE /api/v1/users/current/curation/:id → 204.
-// Deleting a hide rule un-hides; deleting a rename rule stops future
-// canonicalization but does NOT reverse already-applied renames.
+// Both hide and rename are query-time and fully reversible: deleting a hide rule
+// un-hides, and deleting a rename rule instantly reverts the dashboards to the
+// raw (un-merged) values (raw records were never mutated).
 func (h *Handler) DeleteCuration(c *echo.Context) error {
 	_, owner, aerr := h.resolveUser(c)
 	if aerr != nil {

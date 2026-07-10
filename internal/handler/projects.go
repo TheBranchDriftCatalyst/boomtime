@@ -33,7 +33,13 @@ func (h *Handler) ProjectStats(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		rows, err := h.DB.GetProjectStats(ctx, owner, project, t0, t1, limit, hidden)
+		renames, err := h.DB.LoadRenameSets(ctx, owner)
+		if err != nil {
+			return nil, err
+		}
+		// `project` is a DISPLAY name; GetProjectStats remap-matches it so a merged
+		// name aggregates all its source projects.
+		rows, err := h.DB.GetProjectStats(ctx, owner, project, t0, t1, limit, hidden, renames)
 		if err != nil {
 			return nil, err
 		}
@@ -69,7 +75,11 @@ func (h *Handler) TagStats(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		rows, err := h.DB.GetTagStats(ctx, owner, tag, t0, t1, limit, hidden)
+		renames, err := h.DB.LoadRenameSets(ctx, owner)
+		if err != nil {
+			return nil, err
+		}
+		rows, err := h.DB.GetTagStats(ctx, owner, tag, t0, t1, limit, hidden, renames)
 		if err != nil {
 			return nil, err
 		}
@@ -151,13 +161,18 @@ func (h *Handler) ProjectList(c *echo.Context) error {
 	}
 	ctx := c.Request().Context()
 	t0, t1 := defaultMonthRange(c)
-	// Exclude the user's hidden values across all axes (reversible query-time
-	// hide): a project surfaces only if it has non-hidden heartbeats in range.
+	// Exclude hidden values (a project surfaces only if it has non-hidden
+	// heartbeats) and relabel renamed projects (merged names collapse to one),
+	// both reversible query-time transforms.
 	hidden, err := h.DB.LoadHiddenSets(ctx, owner)
 	if err != nil {
 		return respondErr(c, apierr.Generic())
 	}
-	projects, err := h.DB.GetAllProjects(ctx, owner, t0, t1, hidden)
+	renames, err := h.DB.LoadRenameSets(ctx, owner)
+	if err != nil {
+		return respondErr(c, apierr.Generic())
+	}
+	projects, err := h.DB.GetAllProjects(ctx, owner, t0, t1, hidden, renames)
 	if err != nil {
 		return respondErr(c, apierr.Generic())
 	}
