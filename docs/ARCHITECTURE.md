@@ -49,6 +49,8 @@ Rules live in `curation_rules` (`sender, axis, action, match_value, new_value, m
 
 Both are threaded through every aggregation path (raw stats, rollup, projects list, leaderboards, category/punchcard/sessions/momentum, project detail) and validated by DB + handler integration tests.
 
+For a full walkthrough of the aggregation engine — the gap model, rollup fast-path, the hide/rename/Space predicate-splicing layer, the ~11 aggregation functions, and the response cache — see [QUERY_ENGINE.md](QUERY_ENGINE.md).
+
 ## Frontend
 
 - **Data** — TanStack Query per endpoint, keyed on `(range, timeLimit, space)`; a shared toolbar drives every page. Auth token is in-memory only, bootstrapped from the HttpOnly refresh cookie on load (60s refresh loop, cross-tab logout).
