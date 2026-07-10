@@ -58,15 +58,27 @@ func (h *Handler) CreateCuration(c *echo.Context) error {
 	if matchType == "" {
 		matchType = db.MatchExact
 	}
-	if matchType != db.MatchExact && matchType != db.MatchRegex {
-		return respondErr(c, apierr.New(http.StatusBadRequest, "matchType must be 'exact' or 'regex'", nil))
+	if matchType != db.MatchExact && matchType != db.MatchRegex && matchType != db.MatchTemplate {
+		return respondErr(c, apierr.New(http.StatusBadRequest, "matchType must be 'exact', 'regex', or 'template'", nil))
 	}
+	// A template rule's target is a capture-group replacement template — it only
+	// makes sense for rename (hide has no target).
+	if matchType == db.MatchTemplate && req.Action != db.CurationRename {
+		return respondErr(c, apierr.New(http.StatusBadRequest, "matchType 'template' is only valid for a rename rule", nil))
+	}
+	newValue := req.NewValue
 	if req.Action == db.CurationRename {
-		if req.NewValue == nil || *req.NewValue == "" {
+		if newValue == nil || *newValue == "" {
 			return respondErr(c, apierr.New(http.StatusBadRequest, "newValue is required for a rename rule", nil))
 		}
 		if req.Axis == "day" {
 			return respondErr(c, apierr.New(http.StatusBadRequest, "the day axis cannot be renamed", nil))
+		}
+		// Accept both Postgres `\1` and shell-style `$1` backrefs in a template;
+		// normalize `$N` -> `\N` before storing/using so either works.
+		if matchType == db.MatchTemplate {
+			normalized := db.NormalizeTemplate(*newValue)
+			newValue = &normalized
 		}
 	}
 
@@ -77,11 +89,18 @@ func (h *Handler) CreateCuration(c *echo.Context) error {
 			return respondErr(c, apierr.New(http.StatusBadRequest, "invalid regex pattern", nil))
 		}
 	}
+	// For a template rule, validate the pattern compiles AND the template is a
+	// valid regexp_replace replacement (guards bad backrefs like `\9`).
+	if matchType == db.MatchTemplate {
+		if err := h.DB.ValidateTemplate(ctx, req.MatchValue, *newValue); err != nil {
+			return respondErr(c, apierr.New(http.StatusBadRequest, "invalid template rename", nil))
+		}
+	}
 
 	// Both hide and rename are stored as rules and applied at QUERY TIME — creating
 	// the rule mutates no raw data. Rename is a non-destructive, reversible remap:
 	// heartbeats keep their original values and dashboards show the merged value.
-	rule, err := h.DB.CreateCurationRule(ctx, owner, req.Axis, req.Action, matchType, req.MatchValue, req.NewValue)
+	rule, err := h.DB.CreateCurationRule(ctx, owner, req.Axis, req.Action, matchType, req.MatchValue, newValue)
 	if err != nil {
 		h.Logger.Error("create curation rule failed", "err", err)
 		return respondErr(c, apierr.Generic())

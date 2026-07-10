@@ -18,11 +18,43 @@ const (
 
 	MatchExact = "exact"
 	MatchRegex = "regex"
+	// MatchTemplate is a regex whose NewValue is a replacement template referencing
+	// capture groups (e.g. pattern `^@(.*)$` + template `\1` strips a leading `@`).
+	// Applied non-destructively at query time via Postgres regexp_replace.
+	MatchTemplate = "template"
 )
 
+// NormalizeTemplate accepts both Postgres backrefs (`\1`) and shell-style (`$1`)
+// and normalizes `$N` -> `\N` so either input works. A literal `$$` is left as a
+// single `$` (it is not a backref). Only `$` followed by a digit is rewritten.
+func NormalizeTemplate(tmpl string) string {
+	var b strings.Builder
+	b.Grow(len(tmpl))
+	for i := 0; i < len(tmpl); i++ {
+		c := tmpl[i]
+		if c == '$' && i+1 < len(tmpl) {
+			n := tmpl[i+1]
+			if n == '$' { // `$$` -> literal `$`
+				b.WriteByte('$')
+				i++
+				continue
+			}
+			if n >= '0' && n <= '9' { // `$N` -> `\N`
+				b.WriteByte('\\')
+				b.WriteByte(n)
+				i++
+				continue
+			}
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
+}
+
 // CurationRule is a per-user data-curation rule (hide or rename) on a label axis.
-// MatchType is "exact" (MatchValue is a literal) or "regex" (MatchValue is a
-// Postgres regex applied to the raw column via ~).
+// MatchType is "exact" (MatchValue is a literal), "regex" (MatchValue is a
+// Postgres regex applied to the raw column via ~), or "template" (MatchValue is a
+// regex and NewValue is a regexp_replace template referencing capture groups).
 type CurationRule struct {
 	ID         int       `json:"id"`
 	Axis       string    `json:"axis"`
@@ -99,10 +131,14 @@ func (d *DB) DeleteCurationRule(ctx context.Context, sender string, id int) (int
 	return ct.RowsAffected(), nil
 }
 
-// AffectedValue is one distinct RAW value a rule matches, with its heartbeat count.
+// AffectedValue is one distinct RAW value a rule matches, with its heartbeat
+// count and (for rename rules) the display value it maps to. MappedTo is the
+// fixed new_value for exact/regex renames, or regexp_replace(value,pattern,
+// template) for template renames; it is empty for hide rules (no target).
 type AffectedValue struct {
-	Value string `json:"value"`
-	Count int64  `json:"count"`
+	Value    string `json:"value"`
+	Count    int64  `json:"count"`
+	MappedTo string `json:"mappedTo"`
 }
 
 // CurationAffectedValues returns the DISTINCT RAW values (with heartbeat counts)
@@ -126,19 +162,33 @@ func (d *DB) CurationAffectedValues(ctx context.Context, sender string, rule *Cu
 	}
 
 	pred := col + " = $2"
-	if rule.MatchType == MatchRegex {
+	if rule.MatchType == MatchRegex || rule.MatchType == MatchTemplate {
 		pred = col + " ~ $2"
 	}
+
+	// mappedExpr is the display value each matched raw value maps to (rename
+	// preview). $3 carries new_value (fixed target, or the regexp_replace template
+	// for a template rule). For a hide rule (new_value NULL) it is '' — no target.
+	mappedExpr := "$3::text"
+	if rule.MatchType == MatchTemplate {
+		mappedExpr = fmt.Sprintf("regexp_replace(%s, $2, $3)", col)
+	}
+	newVal := ""
+	if rule.NewValue != nil {
+		newVal = *rule.NewValue
+	}
+
 	// Fetch limit+1 to detect truncation.
 	q := fmt.Sprintf(`
-		SELECT %s::text AS value, count(*) AS cnt
+		SELECT %s::text AS value, count(*) AS cnt,
+		       coalesce(%s, '') AS mapped
 		FROM heartbeats
 		WHERE sender = $1 AND %s IS NOT NULL AND %s
 		GROUP BY %s
 		ORDER BY cnt DESC, value ASC
-		LIMIT %d`, col, col, pred, col, limit+1)
+		LIMIT %d`, col, mappedExpr, col, pred, col, limit+1)
 
-	rows, err := d.Pool.Query(ctx, q, sender, rule.MatchValue)
+	rows, err := d.Pool.Query(ctx, q, sender, rule.MatchValue, newVal)
 	if err != nil {
 		return nil, false, err
 	}
@@ -146,7 +196,7 @@ func (d *DB) CurationAffectedValues(ctx context.Context, sender string, rule *Cu
 	out := []AffectedValue{}
 	for rows.Next() {
 		var v AffectedValue
-		if err := rows.Scan(&v.Value, &v.Count); err != nil {
+		if err := rows.Scan(&v.Value, &v.Count, &v.MappedTo); err != nil {
 			return nil, false, err
 		}
 		out = append(out, v)
@@ -174,6 +224,56 @@ func (d *DB) ValidateRegex(ctx context.Context, pattern string) error {
 	return nil
 }
 
+// ValidateTemplate checks that `pattern` compiles as a Postgres regex AND every
+// capture-group backref in `template` (already normalized to `\N`) refers to a
+// group the pattern actually defines — guarding bad backrefs like `\9` for a
+// single-group pattern. `template` should already be normalized (`$N`->`\N`).
+//
+// Note: Postgres only raises "invalid reference number" for a bad backref when
+// the pattern MATCHES the input, so a `regexp_replace(”, ...)` probe misses it
+// (the empty string rarely matches). We instead ask Postgres for the pattern's
+// capture-group count (via regexp_match against a self-matching input) and check
+// each backref against it — reusing Postgres's own regex engine for both the
+// compile check and the group count. Returns nil when valid, else an error.
+func (d *DB) ValidateTemplate(ctx context.Context, pattern, template string) error {
+	// 1. Compile check (also rejects an uncompilable pattern).
+	if err := d.ValidateRegex(ctx, pattern); err != nil {
+		return err
+	}
+	// 2. Capture-group count. Build `(?:(?:PATTERN)|)()`: the `|` makes it always
+	//    match (so regexp_match returns a row) and the trailing empty group `()` is
+	//    a sentinel, so the returned array length is exactly PATTERN's group count
+	//    PLUS ONE. (Without the sentinel, a 0-group pattern and a 1-group pattern
+	//    both report length 1, since regexp_match returns the whole match when
+	//    there are no groups.) Real group count = reported - 1.
+	var arrLen *int
+	err := d.Pool.QueryRow(ctx,
+		`SELECT array_length(regexp_match('', '(?:(?:' || $1 || ')|)()'), 1)`, pattern).Scan(&arrLen)
+	if err != nil {
+		return fmt.Errorf("invalid template rename: %w", err)
+	}
+	n := 0
+	if arrLen != nil && *arrLen > 1 {
+		n = *arrLen - 1
+	}
+	// 3. Every `\N` backref (N>=1) must be <= group count. `\0` (whole match) and
+	//    `\\` (escaped backslash) are always fine.
+	for i := 0; i < len(template); i++ {
+		if template[i] != '\\' || i+1 >= len(template) {
+			continue
+		}
+		c := template[i+1]
+		i++ // consume the escaped char
+		if c < '1' || c > '9' {
+			continue // \0, \\, \&, etc.
+		}
+		if int(c-'0') > n {
+			return fmt.Errorf("invalid template rename: backref \\%c but pattern has %d capture group(s)", c, n)
+		}
+	}
+	return nil
+}
+
 // ---- Query-time rename remap (non-destructive, reversible) ----
 //
 // A rename rule is applied at QUERY TIME only: raw heartbeats/projects/badges/
@@ -183,19 +283,24 @@ func (d *DB) ValidateRegex(ctx context.Context, pattern string) error {
 // group/list, latest, timeline) do NOT use the remap — they show the raw value.
 
 // regexRename is one compiled-at-query-time regex rename (pattern -> new_value).
+// For a template rule, newVal is a regexp_replace template (`\1`,`\2` backrefs).
 type regexRename struct {
 	pattern string
 	newVal  string
 }
 
 // axisRenames holds an axis's rename rules split by match type. Exact rules are
-// grouped by target (match -> new); regex rules are an ordered list.
+// grouped by target (match -> new); regex rules are an ordered list; template
+// rules are an ordered list of (pattern -> replacement-template) pairs.
 type axisRenames struct {
-	exact map[string]string // match_value -> new_value
-	regex []regexRename     // pattern ~ -> new_value
+	exact    map[string]string // match_value -> new_value
+	regex    []regexRename     // pattern ~ -> new_value
+	template []regexRename     // pattern ~ -> regexp_replace template
 }
 
-func (a axisRenames) empty() bool { return len(a.exact) == 0 && len(a.regex) == 0 }
+func (a axisRenames) empty() bool {
+	return len(a.exact) == 0 && len(a.regex) == 0 && len(a.template) == 0
+}
 
 // RenameSets holds the sender's active rename rules per axis.
 type RenameSets struct {
@@ -236,9 +341,12 @@ func (d *DB) LoadRenameSets(ctx context.Context, sender string) (RenameSets, err
 			return rs, err
 		}
 		a := rs.byAxis[axis]
-		if mtype == MatchRegex {
+		switch mtype {
+		case MatchRegex:
 			a.regex = append(a.regex, regexRename{pattern: match, newVal: newv})
-		} else {
+		case MatchTemplate:
+			a.template = append(a.template, regexRename{pattern: match, newVal: newv})
+		default:
 			if a.exact == nil {
 				a.exact = map[string]string{}
 			}
@@ -252,11 +360,16 @@ func (d *DB) LoadRenameSets(ctx context.Context, sender string) (RenameSets, err
 // remapExpr returns an SQL expression that maps `col` to its display value per the
 // rename rules for `axis`, appending match/new values as $-params (injection safe).
 // Exact rules use `col = ANY($arr)` grouped by target so A,B→M collapse into one
-// WHEN; regex rules use `col ~ $pattern` (one WHEN each). Exact WHENs precede
-// regex WHENs (deterministic ordering). When the axis has no rules it returns
-// `col` unchanged with no new args.
+// WHEN; regex rules use `col ~ $pattern` THEN a fixed target; template rules use
+// `col ~ $pattern` THEN `regexp_replace(col, $pattern, $template)` (capture-group
+// backrefs). WHEN order is exact → regex → template (deterministic; first match
+// wins per CASE). When the axis has no rules it returns `col` unchanged with no
+// new args.
 //
-//	CASE WHEN col = ANY($arr) THEN $t [WHEN col ~ $pat THEN $t2 ...] ELSE col END
+//	CASE WHEN col = ANY($arr) THEN $t
+//	     [WHEN col ~ $pat THEN $t2 ...]
+//	     [WHEN col ~ $pat THEN regexp_replace(col, $pat, $tmpl) ...]
+//	ELSE col END
 //
 // extraCond, if non-empty, is ANDed into every WHEN (leaderboards scope the remap
 // to the requester's own rows: `sender = $req`).
@@ -307,6 +420,20 @@ func (r RenameSets) remapExpr(axis, col, extraCond string, nextArg int, args []a
 		nextArg++
 		fmt.Fprintf(&b, " THEN $%d", nextArg)
 		args = append(args, rr.newVal)
+		nextArg++
+	}
+
+	// Template rules, in load order. WHEN col ~ $pat THEN regexp_replace(col,$pat,$tmpl).
+	// The pattern is bound once as $p and reused in both the WHEN and the THEN so
+	// only matching rows are rewritten (Postgres backrefs \1,\2 in the template).
+	for _, tr := range a.template {
+		whenPrefix(&b)
+		fmt.Fprintf(&b, "%s ~ $%d", col, nextArg)
+		patArg := nextArg
+		args = append(args, tr.pattern)
+		nextArg++
+		fmt.Fprintf(&b, " THEN regexp_replace(%s, $%d, $%d)", col, patArg, nextArg)
+		args = append(args, tr.newVal)
 		nextArg++
 	}
 

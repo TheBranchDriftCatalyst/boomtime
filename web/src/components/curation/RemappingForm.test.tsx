@@ -51,15 +51,15 @@ describe("RemappingForm (P0/P1)", () => {
     });
   });
 
-  it("sends matchType=regex when the regex toggle is on", async () => {
+  it("sends matchType=regex when the Regex mode is selected", async () => {
     const body = capturePost();
     const user = userEvent.setup();
     renderWithProviders(<RemappingForm presetAxis="category" submitLabel="Add" />);
 
-    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("button", { name: "Regex" }));
     await user.type(screen.getByPlaceholderText("^Meet"), "^Meet");
     await user.type(screen.getByPlaceholderText("Meeting"), "Meeting");
-    await user.click(screen.getByRole("button", { name: /add/i }));
+    await user.click(screen.getByRole("button", { name: /^add$/i }));
 
     await waitFor(() =>
       expect((body.current as { matchType?: string })?.matchType).toBe("regex"),
@@ -68,6 +68,28 @@ describe("RemappingForm (P0/P1)", () => {
       matchValue: "^Meet",
       newValue: "Meeting",
       matchType: "regex",
+    });
+  });
+
+  it("Capture mode sends matchType=template with $N translated to \\N", async () => {
+    const body = capturePost();
+    const user = userEvent.setup();
+    renderWithProviders(<RemappingForm presetAxis="project" submitLabel="Add" />);
+
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.type(screen.getByPlaceholderText("^@(.*)$"), "^@(.*)$");
+    await user.type(screen.getByPlaceholderText("$1"), "$1");
+    await user.click(screen.getByRole("button", { name: /^add$/i }));
+
+    await waitFor(() =>
+      expect((body.current as { matchType?: string })?.matchType).toBe(
+        "template",
+      ),
+    );
+    expect(body.current).toMatchObject({
+      matchValue: "^@(.*)$",
+      newValue: "\\1", // `$1` -> backend `\1`
+      matchType: "template",
     });
   });
 
@@ -83,10 +105,10 @@ describe("RemappingForm (P0/P1)", () => {
     const user = userEvent.setup();
     renderWithProviders(<RemappingForm presetAxis="category" submitLabel="Add" />);
 
-    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("button", { name: "Regex" }));
     await user.type(screen.getByPlaceholderText("^Meet"), "(unclosed");
     await user.type(screen.getByPlaceholderText("Meeting"), "Meeting");
-    await user.click(screen.getByRole("button", { name: /add/i }));
+    await user.click(screen.getByRole("button", { name: /^add$/i }));
 
     await waitFor(() =>
       expect(toastError).toHaveBeenCalledWith(

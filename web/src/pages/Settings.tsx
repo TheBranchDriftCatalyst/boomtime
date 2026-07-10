@@ -374,7 +374,13 @@ function RemappingRow({
   onRemove: (rule: CurationRule) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const isRegex = rule.matchType === "regex";
+  // Badge for non-exact rules ("regex" / "template" capture rules).
+  const modeBadge =
+    rule.matchType === "regex"
+      ? "regex"
+      : rule.matchType === "template"
+        ? "capture"
+        : null;
 
   const affected = useQuery({
     queryKey: ["curation-affected", rule.id],
@@ -404,12 +410,12 @@ function RemappingRow({
             )}
           </span>
           <span className="font-mono">{rule.matchValue}</span>
-          {isRegex && (
+          {modeBadge && (
             <Badge
               variant="outline"
               className="shrink-0 border-violet-500/40 text-[10px] uppercase text-violet-400"
             >
-              regex
+              {modeBadge}
             </Badge>
           )}
           <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -451,11 +457,22 @@ function RemappingRow({
                 {affected.data!.values.map((v) => (
                   <div
                     key={v.value}
-                    className="flex items-center gap-2 rounded px-1.5 py-0.5"
+                    className="flex items-center gap-1.5 rounded px-1.5 py-0.5"
                   >
                     <span className="truncate font-mono text-xs" title={v.value}>
                       {v.value}
                     </span>
+                    {v.mappedTo != null && v.mappedTo !== v.value && (
+                      <>
+                        <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+                        <span
+                          className="truncate font-mono text-xs font-medium text-violet-400"
+                          title={v.mappedTo}
+                        >
+                          {v.mappedTo}
+                        </span>
+                      </>
+                    )}
                     <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground">
                       {v.count.toLocaleString()}
                     </span>

@@ -370,3 +370,117 @@ func itoa(n int) string {
 	}
 	return string(b[i:])
 }
+
+// ---- template rename (capture/replace groups) over HTTP ----
+
+// affectedResp is the /affected JSON shape (now with mappedTo per value).
+type affectedResp struct {
+	Values []struct {
+		Value    string `json:"value"`
+		Count    int64  `json:"count"`
+		MappedTo string `json:"mappedTo"`
+	} `json:"values"`
+	Truncated bool `json:"truncated"`
+}
+
+// TestTemplateRenameThroughHTTP: POST a template rule (`^@(.*)$` -> `$1`, using the
+// shell-style `$1` to also exercise normalization), then assert /stats strips the
+// '@' and merges the buckets, and /affected previews value -> mappedTo.
+func TestTemplateRenameThroughHTTP(t *testing.T) {
+	hz := testutil.NewHarness(t)
+	e := hz.Router()
+	user, token := hz.MintUser("tmpl")
+
+	base := time.Date(2025, 6, 25, 9, 0, 0, 0, time.UTC)
+	sd := hz.Seeder(user).Projects("@swarm-graph", "@drogon", "web")
+	sw := sd.Block(testutil.HB{Project: "@swarm-graph", Language: "Go"}, base, 2, 120)
+	dr := sd.Block(testutil.HB{Project: "@drogon", Language: "Go"}, base.Add(time.Hour), 2, 120)
+	w := sd.Block(testutil.HB{Project: "web", Language: "Go"}, base.Add(2*time.Hour), 2, 120)
+	sd.RefreshRollup(base.AddDate(0, 0, -1))
+	start, end := weekAround(base)
+
+	// Use `$1` on the wire — the server must normalize it to `\1`.
+	rec := do(t, e, http.MethodPost, "/api/v1/users/current/curation", token, map[string]any{
+		"axis": "project", "action": "rename", "matchType": "template", "matchValue": "^@(.*)$", "newValue": "$1",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create template status = %d; body=%s", rec.Code, rec.Body.String())
+	}
+	var created struct {
+		Rule struct {
+			ID       int    `json:"id"`
+			NewValue string `json:"newValue"`
+		} `json:"rule"`
+	}
+	decode(t, rec, &created)
+	if created.Rule.NewValue != `\1` {
+		t.Errorf("stored newValue = %q, want normalized %q", created.Rule.NewValue, `\1`)
+	}
+
+	// /stats: '@' stripped, totals conserved, 'web' untouched.
+	statsURL := "/api/v1/users/current/stats?start=" + url.QueryEscape(start) + "&end=" + url.QueryEscape(end)
+	var sp statsPayload
+	decode(t, do(t, e, http.MethodGet, statsURL, token, nil), &sp)
+	got := sp.projSeconds()
+	if got["swarm-graph"] != sw {
+		t.Errorf("'swarm-graph' = %d, want %d", got["swarm-graph"], sw)
+	}
+	if got["drogon"] != dr {
+		t.Errorf("'drogon' = %d, want %d", got["drogon"], dr)
+	}
+	if got["web"] != w {
+		t.Errorf("'web' = %d, want %d (unaffected)", got["web"], w)
+	}
+	if _, ok := got["@swarm-graph"]; ok {
+		t.Error("'@swarm-graph' should be relabeled away in /stats")
+	}
+
+	// /affected: value -> mappedTo preview.
+	arec := do(t, e, http.MethodGet, "/api/v1/users/current/curation/"+itoa(created.Rule.ID)+"/affected", token, nil)
+	if arec.Code != http.StatusOK {
+		t.Fatalf("affected status = %d; body=%s", arec.Code, arec.Body.String())
+	}
+	var av affectedResp
+	decode(t, arec, &av)
+	mapped := map[string]string{}
+	for _, v := range av.Values {
+		mapped[v.Value] = v.MappedTo
+	}
+	if mapped["@swarm-graph"] != "swarm-graph" || mapped["@drogon"] != "drogon" {
+		t.Errorf("affected mappedTo = %+v, want @swarm-graph->swarm-graph, @drogon->drogon", mapped)
+	}
+	if _, ok := mapped["web"]; ok {
+		t.Error("'web' does not match ^@ and must not appear in affected values")
+	}
+}
+
+// TestBadTemplateThroughHTTP: a template with a backref the pattern can't satisfy
+// (`\9` for a single-group pattern) is rejected with 400.
+func TestBadTemplateThroughHTTP(t *testing.T) {
+	hz := testutil.NewHarness(t)
+	e := hz.Router()
+	_, token := hz.MintUser("badtmpl")
+
+	rec := do(t, e, http.MethodPost, "/api/v1/users/current/curation", token, map[string]any{
+		"axis": "project", "action": "rename", "matchType": "template", "matchValue": "^@(.*)$", "newValue": `\9`,
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("bad template status = %d, want 400; body=%s", rec.Code, rec.Body.String())
+	}
+
+	// An uncompilable pattern is also 400.
+	rec2 := do(t, e, http.MethodPost, "/api/v1/users/current/curation", token, map[string]any{
+		"axis": "project", "action": "rename", "matchType": "template", "matchValue": "(unterminated", "newValue": `\1`,
+	})
+	if rec2.Code != http.StatusBadRequest {
+		t.Errorf("uncompilable pattern status = %d, want 400", rec2.Code)
+	}
+
+	// template on a hide action is rejected (no target).
+	rec3 := do(t, e, http.MethodPost, "/api/v1/users/current/curation", token, map[string]any{
+		"axis": "project", "action": "hide", "matchType": "template", "matchValue": "^@(.*)$",
+	})
+	if rec3.Code != http.StatusBadRequest {
+		t.Errorf("template+hide status = %d, want 400", rec3.Code)
+	}
+}

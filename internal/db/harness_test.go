@@ -233,6 +233,19 @@ func createRegexRename(t *testing.T, d *DB, ctx context.Context, sender, axis, p
 	return rule.ID
 }
 
+// createTemplateRename stores a TEMPLATE rename rule (regex pattern + a
+// regexp_replace replacement template referencing capture groups) and returns
+// its id. `tmpl` is normalized (`$N`->`\N`) exactly as the handler would.
+func createTemplateRename(t *testing.T, d *DB, ctx context.Context, sender, axis, pattern, tmpl string) int {
+	t.Helper()
+	norm := NormalizeTemplate(tmpl)
+	rule, err := d.CreateCurationRule(ctx, sender, axis, "rename", "template", pattern, &norm)
+	if err != nil {
+		t.Fatalf("createTemplateRename %s /%s/->%q: %v", axis, pattern, tmpl, err)
+	}
+	return rule.ID
+}
+
 func loadRenames(t *testing.T, d *DB, ctx context.Context, sender string) RenameSets {
 	t.Helper()
 	rs, err := d.LoadRenameSets(ctx, sender)
