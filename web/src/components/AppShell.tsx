@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router";
 import {
   Award,
@@ -9,6 +9,8 @@ import {
   LayoutDashboard,
   ListTree,
   LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
   Settings2,
   User,
 } from "lucide-react";
@@ -39,11 +41,34 @@ const NAV = [
   { name: "Settings", icon: Settings2, to: "/app/settings", end: false },
 ];
 
+const SIDEBAR_STORAGE_KEY = "gakatime-sidebar-collapsed";
+
+function readStoredCollapsed(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(SIDEBAR_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
 export function AppShell() {
   const { username, logout } = useAuth();
   const navigate = useNavigate();
   const [newToken, setNewToken] = useState<string | null>(null);
   const [tokensOpen, setTokensOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState<boolean>(readStoredCollapsed);
+
+  // Persist the collapsed preference so it survives reloads.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SIDEBAR_STORAGE_KEY, String(collapsed));
+    } catch {
+      // ignore storage failures
+    }
+  }, [collapsed]);
+
+  const toggleCollapsed = useCallback(() => setCollapsed((c) => !c), []);
 
   async function createToken() {
     try {
@@ -61,41 +86,81 @@ export function AppShell() {
 
   return (
     <div className="flex h-full min-h-screen bg-background">
-      {/* Sidebar */}
-      <aside className="hidden w-60 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground md:flex">
-        <div className="flex h-16 items-center gap-2 border-b px-6">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+      {/* Sidebar — collapsible to an icon-only rail. */}
+      <aside
+        className={cn(
+          "hidden shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground transition-[width] duration-200 ease-in-out md:flex",
+          collapsed ? "w-16" : "w-60",
+        )}
+      >
+        <div
+          className={cn(
+            "flex h-16 items-center border-b",
+            collapsed ? "justify-center px-0" : "gap-2 px-6",
+          )}
+        >
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <Code2 className="h-5 w-5" />
           </div>
-          <span className="text-lg font-semibold">Gakatime</span>
+          {!collapsed && (
+            <span className="text-lg font-semibold">Gakatime</span>
+          )}
         </div>
+
         <nav className="flex-1 space-y-1 p-3">
           {NAV.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               end={item.end}
+              title={collapsed ? item.name : undefined}
+              aria-label={item.name}
               className={({ isActive }) =>
                 cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                  "flex items-center rounded-lg py-2 text-sm font-medium transition-colors",
+                  collapsed ? "justify-center px-0" : "gap-3 px-3",
                   isActive
                     ? "bg-sidebar-primary text-sidebar-primary-foreground"
                     : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                 )
               }
             >
-              <item.icon className="h-4 w-4" />
-              {item.name}
+              <item.icon className="h-4 w-4 shrink-0" />
+              {!collapsed && item.name}
             </NavLink>
           ))}
         </nav>
-        <div className="border-t p-3">
+
+        <div className="space-y-1 border-t p-3">
           <button
             onClick={handleLogout}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            title={collapsed ? "Logout" : undefined}
+            aria-label="Logout"
+            className={cn(
+              "flex w-full items-center rounded-lg py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+              collapsed ? "justify-center px-0" : "gap-3 px-3",
+            )}
           >
-            <LogOut className="h-4 w-4" />
-            Logout
+            <LogOut className="h-4 w-4 shrink-0" />
+            {!collapsed && "Logout"}
+          </button>
+
+          <button
+            onClick={toggleCollapsed}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-expanded={!collapsed}
+            className={cn(
+              "flex w-full items-center rounded-lg py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+              collapsed ? "justify-center px-0" : "gap-3 px-3",
+            )}
+          >
+            {collapsed ? (
+              <PanelLeftOpen className="h-4 w-4 shrink-0" />
+            ) : (
+              <PanelLeftClose className="h-4 w-4 shrink-0" />
+            )}
+            {!collapsed && "Collapse"}
           </button>
         </div>
       </aside>
