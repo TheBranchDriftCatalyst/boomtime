@@ -34,6 +34,12 @@ export const handlers = [
   http.get("/api/v1/users/current/heartbeats/group", () =>
     HttpResponse.json(groupPayload()),
   ),
+  http.get("/api/v1/users/current/spaces", () =>
+    HttpResponse.json({ spaces: [] }),
+  ),
+  http.get("/api/v1/users/current/spaces/preview", () =>
+    HttpResponse.json({ values: [], truncated: false }),
+  ),
 ];
 
 export { http, HttpResponse };

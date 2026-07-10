@@ -15,12 +15,17 @@ func (h *Handler) Punchcard(c *echo.Context) error {
 	ctx := c.Request().Context()
 	t0, t1 := defaultWeekRange(c)
 	limit := timeLimit(c)
-	return h.cachedJSON(c, cacheKey(owner, "punchcard", t0, t1, limit), func() (any, error) {
+	spaceParam := c.QueryParam("space")
+	return h.cachedJSON(c, cacheKey(owner, "punchcard", t0, t1, limit, "space:"+spaceParam), func() (any, error) {
 		hidden, err := h.DB.LoadHiddenSets(ctx, owner)
 		if err != nil {
 			return nil, err
 		}
-		cells, err := h.DB.GetPunchcard(ctx, owner, t0, t1, limit, hidden)
+		members, spaceRequested, err := h.loadSpace(ctx, spaceParam)
+		if err != nil {
+			return nil, err
+		}
+		cells, err := h.DB.GetPunchcard(ctx, owner, t0, t1, limit, hidden, members, spaceRequested)
 		if err != nil {
 			return nil, err
 		}
@@ -38,12 +43,17 @@ func (h *Handler) Sessions(c *echo.Context) error {
 	ctx := c.Request().Context()
 	t0, t1 := defaultWeekRange(c)
 	limit := timeLimit(c)
-	return h.cachedJSON(c, cacheKey(owner, "sessions", t0, t1, limit), func() (any, error) {
+	spaceParam := c.QueryParam("space")
+	return h.cachedJSON(c, cacheKey(owner, "sessions", t0, t1, limit, "space:"+spaceParam), func() (any, error) {
 		hidden, err := h.DB.LoadHiddenSets(ctx, owner)
 		if err != nil {
 			return nil, err
 		}
-		rows, err := h.DB.GetSessions(ctx, owner, t0, t1, limit, hidden)
+		members, spaceRequested, err := h.loadSpace(ctx, spaceParam)
+		if err != nil {
+			return nil, err
+		}
+		rows, err := h.DB.GetSessions(ctx, owner, t0, t1, limit, hidden, members, spaceRequested)
 		if err != nil {
 			return nil, err
 		}
@@ -65,7 +75,8 @@ func (h *Handler) Momentum(c *echo.Context) error {
 	if top < 1 {
 		top = 8
 	}
-	return h.cachedJSON(c, cacheKey(owner, "momentum", t0, t1, limit, top), func() (any, error) {
+	spaceParam := c.QueryParam("space")
+	return h.cachedJSON(c, cacheKey(owner, "momentum", t0, t1, limit, top, "space:"+spaceParam), func() (any, error) {
 		hidden, err := h.DB.LoadHiddenSets(ctx, owner)
 		if err != nil {
 			return nil, err
@@ -74,7 +85,11 @@ func (h *Handler) Momentum(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		rows, err := h.DB.GetMomentum(ctx, owner, t0, t1, limit, hidden, renames)
+		members, spaceRequested, err := h.loadSpace(ctx, spaceParam)
+		if err != nil {
+			return nil, err
+		}
+		rows, err := h.DB.GetMomentum(ctx, owner, t0, t1, limit, hidden, renames, members, spaceRequested)
 		if err != nil {
 			return nil, err
 		}

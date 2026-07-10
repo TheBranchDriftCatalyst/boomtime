@@ -39,7 +39,12 @@ import type {
   StatsPayload,
   StatusBarPayload,
   StoredApiToken,
-  TagsPayload,
+  Space,
+  SpaceDetail,
+  SpaceRule,
+  AddSpaceRuleBody,
+  SpaceMatchType,
+  SpacePreview,
   TimelinePayload,
   TimelineRange,
 } from "@/types/api";
@@ -182,6 +187,7 @@ export const api = {
     end: string;
     timeLimit?: number;
     limit?: number;
+    space?: string | number;
   }) =>
     request<CrossProjectFilesPayload>("/api/v1/users/current/files", { params }),
 
@@ -191,6 +197,7 @@ export const api = {
     start: string;
     end: string;
     timeLimit?: number;
+    space?: string | number;
   }): Promise<TimelinePayload> => {
     const raw = await request<{
       timelineLangs: Record<
@@ -214,22 +221,37 @@ export const api = {
 
   // --- Council "big-bet" analytics -------------------------------------------
 
-  getPunchcard: (params: { start: string; end: string; timeLimit?: number }) =>
+  getPunchcard: (params: {
+    start: string;
+    end: string;
+    timeLimit?: number;
+    space?: string | number;
+  }) =>
     request<PunchcardPayload>("/api/v1/users/current/stats/punchcard", {
       params,
     }),
 
-  getSessions: (params: { start: string; end: string; timeLimit?: number }) =>
+  getSessions: (params: {
+    start: string;
+    end: string;
+    timeLimit?: number;
+    space?: string | number;
+  }) =>
     request<SessionsPayload>("/api/v1/users/current/stats/sessions", {
       params,
     }),
 
-  getMomentum: (params: { start: string; end: string; top?: number }) =>
+  getMomentum: (params: {
+    start: string;
+    end: string;
+    top?: number;
+    space?: string | number;
+  }) =>
     request<MomentumPayload>("/api/v1/users/current/stats/momentum", {
       params,
     }),
 
-  // --- Projects / Tags -------------------------------------------------------
+  // --- Projects --------------------------------------------------------------
 
   getProject: (project: string, params: StatsParams) =>
     request<ProjectStatistics>(
@@ -237,27 +259,8 @@ export const api = {
       { params },
     ),
 
-  getTagStats: (tag: string, params: StatsParams) =>
-    request<ProjectStatistics>(
-      `/api/v1/users/current/tags/${encodeURIComponent(tag)}`,
-      { params },
-    ),
-
   getUserProjects: (params: RangeParams) =>
     request<ProjectListPayload>("/api/v1/projects", { params }),
-
-  getUserTags: () => request<TagsPayload>("/api/v1/tags"),
-
-  getProjectTags: (project: string) =>
-    request<TagsPayload>(
-      `/api/v1/projects/${encodeURIComponent(project)}/tags`,
-    ),
-
-  setProjectTags: (project: string, tags: string[]) =>
-    request<TagsPayload>(
-      `/api/v1/projects/${encodeURIComponent(project)}/tags`,
-      { method: "POST", body: { tags } },
-    ),
 
   // --- Leaderboards ----------------------------------------------------------
 
@@ -397,4 +400,65 @@ export const api = {
     request<CurationAffectedPayload>(
       `/api/v1/users/current/curation/${id}/affected`,
     ),
+
+  // --- Spaces (named, rule-based scopes) -------------------------------------
+
+  // Backend wraps the list in { spaces: [...] } (curation convention); unwrap
+  // so the public shape stays a bare Space[].
+  getSpaces: async (): Promise<Space[]> => {
+    const raw = await request<{ spaces: Space[] }>(
+      "/api/v1/users/current/spaces",
+    );
+    return raw.spaces ?? [];
+  },
+
+  getSpace: (id: number | string) =>
+    request<SpaceDetail>(`/api/v1/users/current/spaces/${id}`),
+
+  // Backend wraps the created space in { space: {...} }; unwrap to a bare Space.
+  createSpace: async (name: string): Promise<Space> => {
+    const raw = await request<{ space: Space }>(
+      "/api/v1/users/current/spaces",
+      { method: "POST", body: { name } },
+    );
+    return raw.space;
+  },
+
+  // PATCH returns 204 No Content.
+  renameSpace: (
+    id: number | string,
+    body: { name?: string; position?: number },
+  ) =>
+    request<void>(`/api/v1/users/current/spaces/${id}`, {
+      method: "PATCH",
+      body,
+    }),
+
+  deleteSpace: (id: number | string) =>
+    request<void>(`/api/v1/users/current/spaces/${id}`, { method: "DELETE" }),
+
+  // Backend wraps the created rule in { rule: {...} }; unwrap to a bare SpaceRule.
+  addSpaceRule: async (
+    id: number | string,
+    body: AddSpaceRuleBody,
+  ): Promise<SpaceRule> => {
+    const raw = await request<{ rule: SpaceRule }>(
+      `/api/v1/users/current/spaces/${id}/rules`,
+      { method: "POST", body },
+    );
+    return raw.rule;
+  },
+
+  deleteSpaceRule: (id: number | string, rid: number | string) =>
+    request<void>(`/api/v1/users/current/spaces/${id}/rules/${rid}`, {
+      method: "DELETE",
+    }),
+
+  // Live preview of the raw values an unsaved rule would match.
+  getSpacePreview: (params: {
+    axis: string;
+    matchValue: string;
+    matchType: SpaceMatchType;
+  }) =>
+    request<SpacePreview>("/api/v1/users/current/spaces/preview", { params }),
 };

@@ -26,7 +26,7 @@ type ActiveFile struct {
 // The remap is applied per raw row in an inner select, then the outer query
 // groups by entity: SUM(seconds) and COUNT(DISTINCT remapped-project). All
 // match/new/hide values are bound params (injection-safe).
-func (d *DB) GetActiveFiles(ctx context.Context, sender string, start, end time.Time, timeLimit int64, limit int, hs HiddenSets, rs RenameSets) ([]ActiveFile, bool, error) {
+func (d *DB) GetActiveFiles(ctx context.Context, sender string, start, end time.Time, timeLimit int64, limit int, hs HiddenSets, rs RenameSets, ms MemberSets, spaceRequested bool) ([]ActiveFile, bool, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -37,6 +37,11 @@ func (d *DB) GetActiveFiles(ctx context.Context, sender string, start, end time.
 	// Hide-exclusion on the raw project column (and any other hidden axis present
 	// on heartbeats), applied in the inner WHERE.
 	hidePred, args, nextArg := exclusionPredicate(hs, rawHeartbeatCols, nextArg, args)
+
+	// Space scope (?space=): keep only rows matching the Space's membership rules.
+	var spacePred string
+	spacePred, args, nextArg = spaceScopePredicate(ms, rawHeartbeatCols, nextArg, args, spaceRequested)
+	hidePred += spacePred
 
 	// Project rename remap, applied per raw row before the DISTINCT count.
 	projExpr := "project"

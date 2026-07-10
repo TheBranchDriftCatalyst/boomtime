@@ -34,14 +34,19 @@ func (h *Handler) ProjectStats(c *echo.Context) error {
 
 	t0, t1 := defaultWeekRange(c)
 	limit := timeLimit(c)
-	return h.cachedJSON(c, cacheKey(owner, "project", project, t0, t1, limit), func() (any, error) {
+	spaceParam := c.QueryParam("space")
+	return h.cachedJSON(c, cacheKey(owner, "project", project, t0, t1, limit, "space:"+spaceParam), func() (any, error) {
 		hidden, err := h.DB.LoadHiddenSets(ctx, owner)
+		if err != nil {
+			return nil, err
+		}
+		members, spaceRequested, err := h.loadSpace(ctx, spaceParam)
 		if err != nil {
 			return nil, err
 		}
 		// `project` is a DISPLAY name; GetProjectStats remap-matches it so a merged
 		// name aggregates all its source projects.
-		rows, err := h.DB.GetProjectStats(ctx, owner, project, t0, t1, limit, hidden, renames)
+		rows, err := h.DB.GetProjectStats(ctx, owner, project, t0, t1, limit, hidden, renames, members, spaceRequested)
 		if err != nil {
 			return nil, err
 		}
@@ -51,108 +56,6 @@ func (h *Handler) ProjectStats(c *echo.Context) error {
 		}
 		return stats.ToProjectStatistics(t0, t1, rows, extras), nil
 	})
-}
-
-// TagStats: GET /api/v1/users/current/tags/:tag?start&end&timeLimit.
-func (h *Handler) TagStats(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
-	if aerr != nil {
-		return respondErr(c, aerr)
-	}
-	tag := c.Param("tag")
-	ctx := c.Request().Context()
-
-	ok, err := h.DB.CheckTagOwner(ctx, owner, tag)
-	if err != nil {
-		return respondErr(c, apierr.Generic())
-	}
-	if !ok {
-		return respondErr(c, apierr.InvalidTagRelation(owner, tag))
-	}
-
-	t0, t1 := defaultWeekRange(c)
-	limit := timeLimit(c)
-	return h.cachedJSON(c, cacheKey(owner, "tag", tag, t0, t1, limit), func() (any, error) {
-		hidden, err := h.DB.LoadHiddenSets(ctx, owner)
-		if err != nil {
-			return nil, err
-		}
-		renames, err := h.DB.LoadRenameSets(ctx, owner)
-		if err != nil {
-			return nil, err
-		}
-		rows, err := h.DB.GetTagStats(ctx, owner, tag, t0, t1, limit, hidden, renames)
-		if err != nil {
-			return nil, err
-		}
-		// Tag path keeps the extras nil for now (per-project viz metrics only).
-		return stats.ToProjectStatistics(t0, t1, rows, nil), nil
-	})
-}
-
-// SetProjectTags: POST /api/v1/projects/:project/tags.
-func (h *Handler) SetProjectTags(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
-	if aerr != nil {
-		return respondErr(c, aerr)
-	}
-	project := c.Param("project")
-	ctx := c.Request().Context()
-
-	ok, err := h.DB.CheckProjectOwner(ctx, owner, project)
-	if err != nil {
-		return respondErr(c, apierr.Generic())
-	}
-	if !ok {
-		return respondErr(c, apierr.InvalidRelation(owner, project))
-	}
-
-	var payload model.TagsPayload
-	if err := c.Bind(&payload); err != nil {
-		return respondErr(c, apierr.Generic())
-	}
-	if _, err := h.DB.SetTags(ctx, owner, project, payload.Tags); err != nil {
-		h.Logger.Error("set tags failed", "err", err)
-		return respondErr(c, apierr.Generic())
-	}
-	return noContent(c)
-}
-
-// GetProjectTags: GET /api/v1/projects/:project/tags.
-func (h *Handler) GetProjectTags(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
-	if aerr != nil {
-		return respondErr(c, aerr)
-	}
-	project := c.Param("project")
-	ctx := c.Request().Context()
-
-	ok, err := h.DB.CheckProjectOwner(ctx, owner, project)
-	if err != nil {
-		return respondErr(c, apierr.Generic())
-	}
-	if !ok {
-		return respondErr(c, apierr.InvalidRelation(owner, project))
-	}
-
-	tags, err := h.DB.GetTags(ctx, owner, project)
-	if err != nil {
-		return respondErr(c, apierr.Generic())
-	}
-	return c.JSON(http.StatusOK, model.TagsPayload{Tags: tags})
-}
-
-// GetUserTags: GET /api/v1/tags.
-func (h *Handler) GetUserTags(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
-	if aerr != nil {
-		return respondErr(c, aerr)
-	}
-	tags, err := h.DB.GetAllTags(c.Request().Context(), owner)
-	if err != nil {
-		return respondErr(c, apierr.Generic())
-	}
-	return c.JSON(http.StatusOK, model.TagsPayload{Tags: tags})
 }
 
 // ProjectList: GET /api/v1/projects?start&end.
@@ -174,7 +77,11 @@ func (h *Handler) ProjectList(c *echo.Context) error {
 	if err != nil {
 		return respondErr(c, apierr.Generic())
 	}
-	projects, err := h.DB.GetAllProjects(ctx, owner, t0, t1, hidden, renames)
+	members, spaceRequested, err := h.loadSpace(ctx, c.QueryParam("space"))
+	if err != nil {
+		return respondErr(c, apierr.Generic())
+	}
+	projects, err := h.DB.GetAllProjects(ctx, owner, t0, t1, hidden, renames, members, spaceRequested)
 	if err != nil {
 		return respondErr(c, apierr.Generic())
 	}

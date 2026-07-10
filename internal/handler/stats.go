@@ -19,9 +19,9 @@ func (h *Handler) Stats(c *echo.Context) error {
 	ctx := c.Request().Context()
 	t0, t1 := defaultWeekRange(c)
 	limit := timeLimit(c)
-	tag := c.QueryParam("tag")
+	spaceParam := c.QueryParam("space")
 
-	return h.cachedJSON(c, cacheKey(owner, "stats", t0, t1, limit, tag), func() (any, error) {
+	return h.cachedJSON(c, cacheKey(owner, "stats", t0, t1, limit, "space:"+spaceParam), func() (any, error) {
 		// Apply the user's query-time hide exclusions + rename remaps (both
 		// reversible; audit views stay unfiltered/un-remapped).
 		hidden, err := h.DB.LoadHiddenSets(ctx, owner)
@@ -32,27 +32,30 @@ func (h *Handler) Stats(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
+		members, spaceRequested, err := h.loadSpace(ctx, spaceParam)
+		if err != nil {
+			return nil, err
+		}
 		var rows []db.StatRow
 		switch {
-		case tag != "":
-			// /stats?tag= is scoped to a chosen tag; apply all-axis hides + remaps.
-			rows, err = h.DB.GetUserActivityByTag(ctx, owner, t0, t1, tag, limit, hidden, renames)
-		case limit == 15 && !hidden.HasHiddenOutside(db.RollupAxes):
-			// Fast path: pre-aggregated rollup (default 15-min limit, no tag). Only
+		case limit == 15 && !spaceRequested && !hidden.HasHiddenOutside(db.RollupAxes):
+			// Fast path: pre-aggregated rollup (default 15-min limit, no space). Only
 			// gated on hide (rename needs no rollup fallback — it relabels output
 			// columns without removing rows, and the rollup stores exactly the
-			// remappable output axes).
-			rows, err = h.DB.GetUserActivityRollup(ctx, owner, t0, t1, hidden, renames)
+			// remappable output axes). A space scope may target a non-rollup axis, so
+			// scoped requests always use the raw path.
+			rows, err = h.DB.GetUserActivityRollup(ctx, owner, t0, t1, hidden, renames, members, false)
 		default:
-			// Raw gap_seconds scan (non-default limit, or a hide the rollup can't apply).
-			rows, err = h.DB.GetUserActivity(ctx, owner, t0, t1, limit, hidden, renames)
+			// Raw gap_seconds scan (non-default limit, a hide the rollup can't apply,
+			// or a space scope).
+			rows, err = h.DB.GetUserActivity(ctx, owner, t0, t1, limit, hidden, renames, members, spaceRequested)
 		}
 		if err != nil {
 			return nil, err
 		}
 		// Categories are fetched separately (no category column in the rollup) and
-		// respect the same all-axis hide exclusion + rename remap + timeLimit.
-		categories, err := h.DB.GetCategoryDaily(ctx, owner, t0, t1, limit, hidden, renames)
+		// respect the same all-axis hide exclusion + rename remap + timeLimit + space.
+		categories, err := h.DB.GetCategoryDaily(ctx, owner, t0, t1, limit, hidden, renames, members, spaceRequested)
 		if err != nil {
 			return nil, err
 		}
@@ -69,8 +72,13 @@ func (h *Handler) Timeline(c *echo.Context) error {
 	ctx := c.Request().Context()
 	t0, t1 := defaultWeekRange(c)
 	limit := timeLimit(c)
-	return h.cachedJSON(c, cacheKey(owner, "timeline", t0, t1, limit), func() (any, error) {
-		rows, err := h.DB.GetTimeline(ctx, owner, t0, t1, limit)
+	spaceParam := c.QueryParam("space")
+	return h.cachedJSON(c, cacheKey(owner, "timeline", t0, t1, limit, "space:"+spaceParam), func() (any, error) {
+		members, spaceRequested, err := h.loadSpace(ctx, spaceParam)
+		if err != nil {
+			return nil, err
+		}
+		rows, err := h.DB.GetTimeline(ctx, owner, t0, t1, limit, members, spaceRequested)
 		if err != nil {
 			return nil, err
 		}

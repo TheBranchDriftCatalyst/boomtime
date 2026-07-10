@@ -8,7 +8,6 @@ import {
   FileText,
   GitBranch,
   Link as LinkIcon,
-  Tags,
 } from "lucide-react";
 import { toast } from "sonner";
 import { StatCard } from "@/components/StatCard";
@@ -26,12 +25,10 @@ import { BranchActivity } from "@/viz/council/BranchActivity";
 import { BreadthVsDepth } from "@/viz/council/BreadthVsDepth";
 import { PageToolbar } from "@/components/toolbar/PageToolbar";
 import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
-import { TagFilter } from "@/components/toolbar/TagFilter";
 import { TimeLimitDropdown } from "@/components/toolbar/TimeLimitDropdown";
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
 import { CommitListModal } from "@/modals/CommitListModal";
-import { SetTagsModal } from "@/modals/SetTagsModal";
 import { useTimeRange } from "@/hooks/useTimeRange";
 import { api } from "@/lib/api";
 import { daysBetween, secondsToHms } from "@/lib/utils";
@@ -41,23 +38,19 @@ import { bucketAvg, bucketDates, bucketGroups, bucketSum } from "@/viz/bucket";
 export function Projects() {
   const tr = useTimeRange();
   const [selected, setSelected] = useState<string | null>(null);
-  const [tag, setTag] = useState<string | null>(null);
   const detailRef = useRef<HTMLDivElement>(null);
 
   // Modal state.
   const [commitsFor, setCommitsFor] = useState<string | null>(null);
-  const [tagsFor, setTagsFor] = useState<string | null>(null);
-  const [initialTags, setInitialTags] = useState<string[]>([]);
 
   // --- TOP RAIL: aggregate stats across ALL projects (same data as Overview) --
   const aggQuery = useQuery({
-    queryKey: ["stats", tr.startISO, tr.endISO, tr.timeLimit, tag],
+    queryKey: ["stats", tr.startISO, tr.endISO, tr.timeLimit],
     queryFn: () =>
       api.getStats({
         start: tr.startISO,
         end: tr.endISO,
         timeLimit: tr.timeLimit,
-        tag: tag ?? undefined,
       }),
   });
   const agg = aggQuery.data;
@@ -90,20 +83,16 @@ export function Projects() {
     if (!selected && projects.length > 0) setSelected(projects[0]);
   }, [projects, selected]);
 
-  // --- BELOW: per-project (or per-tag) detail --------------------------------
+  // --- BELOW: per-project detail ---------------------------------------------
   const statsQuery = useQuery({
-    queryKey: ["project-stats", selected, tag, tr.startISO, tr.endISO, tr.timeLimit],
-    enabled: Boolean(selected || tag),
-    queryFn: () => {
-      const params = {
+    queryKey: ["project-stats", selected, tr.startISO, tr.endISO, tr.timeLimit],
+    enabled: Boolean(selected),
+    queryFn: () =>
+      api.getProject(selected as string, {
         start: tr.startISO,
         end: tr.endISO,
         timeLimit: tr.timeLimit,
-      };
-      return tag
-        ? api.getTagStats(tag, params)
-        : api.getProject(selected as string, params);
-    },
+      }),
   });
 
   const stats = statsQuery.data;
@@ -134,27 +123,15 @@ export function Projects() {
     [groups, stats],
   );
 
-  const detailHeading = tag ? `#${tag}` : selected ?? "-";
+  const detailHeading = selected ?? "-";
   const mostActiveLang = topByName(stats?.languages ?? []);
 
   function selectProject(p: string) {
-    setTag(null);
     setSelected(p);
     // Scroll the per-project detail into view.
     requestAnimationFrame(() =>
       detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
     );
-  }
-
-  async function openTags() {
-    if (!selected) return;
-    try {
-      const res = await api.getProjectTags(selected);
-      setInitialTags(res.tags);
-      setTagsFor(selected);
-    } catch {
-      toast.error("Failed to fetch tags");
-    }
   }
 
   async function copyBadge() {
@@ -176,7 +153,6 @@ export function Projects() {
   return (
     <div>
       <PageToolbar title="Projects">
-        <TagFilter value={tag} onChange={setTag} />
         <TimeLimitDropdown value={tr.timeLimit} onChange={tr.setTimeLimit} />
         <DateRangePicker
           numDays={tr.numDays}
@@ -190,8 +166,8 @@ export function Projects() {
         <div className="mb-3">
           <h2 className="text-lg font-semibold">Across all projects</h2>
           <p className="text-sm text-muted-foreground">
-            Combined totals for the selected range{tag ? ` · #${tag}` : ""} — the
-            same aggregate as your Overview.
+            Combined totals for the selected range — the same aggregate as your
+            Overview.
           </p>
         </div>
 
@@ -257,7 +233,7 @@ export function Projects() {
             <span className="text-sm text-muted-foreground">Project:</span>
             <Combobox
               options={projectOptions}
-              value={tag ? `#${tag}` : selected}
+              value={selected}
               onSelect={selectProject}
               fullWidth={false}
               className="min-w-56"
@@ -273,15 +249,6 @@ export function Projects() {
               onClick={() => selected && setCommitsFor(selected)}
             >
               <GitBranch className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="secondary"
-              size="icon"
-              title="Add tags to this project"
-              disabled={!selected}
-              onClick={openTags}
-            >
-              <Tags className="h-4 w-4" />
             </Button>
             <Button
               variant="secondary"
@@ -388,11 +355,6 @@ export function Projects() {
       <CommitListModal
         project={commitsFor}
         onClose={() => setCommitsFor(null)}
-      />
-      <SetTagsModal
-        project={tagsFor}
-        initialTags={initialTags}
-        onClose={() => setTagsFor(null)}
       />
     </div>
   );

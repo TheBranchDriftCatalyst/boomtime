@@ -2,7 +2,7 @@ package db
 
 import "time"
 
-// StatRow mirrors Types.hs StatRow (columns from get_user_activity[_by_tags]).
+// StatRow mirrors Types.hs StatRow (columns from get_user_activity).
 type StatRow struct {
 	Day          time.Time
 	Project      string
@@ -17,7 +17,7 @@ type StatRow struct {
 	DailyPct     float64
 }
 
-// ProjectStatRow mirrors Types.hs ProjectStatRow (get_projects_stats / get_tag_stats).
+// ProjectStatRow mirrors Types.hs ProjectStatRow (get_projects_stats).
 type ProjectStatRow struct {
 	Day          time.Time
 	Weekday      string

@@ -11,11 +11,19 @@ import {
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
+  Plus,
   Settings2,
   User,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,11 +32,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { CreateTokenModal } from "@/modals/CreateTokenModal";
 import { TokenListModal } from "@/modals/TokenListModal";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { RendererToggle } from "@/viz/RendererToggle";
 import { useAuth } from "@/hooks/useAuth";
+import { useSpaces, useSpaceMutations } from "@/hooks/useSpaces";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -58,6 +69,26 @@ export function AppShell() {
   const [newToken, setNewToken] = useState<string | null>(null);
   const [tokensOpen, setTokensOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<boolean>(readStoredCollapsed);
+
+  // Spaces sidebar group + create flow.
+  const { data: spaces } = useSpaces();
+  const { create: createSpace } = useSpaceMutations();
+  const [createOpen, setCreateOpen] = useState(false);
+  const [spaceName, setSpaceName] = useState("");
+
+  function submitCreateSpace(e: React.FormEvent) {
+    e.preventDefault();
+    const name = spaceName.trim();
+    if (!name) return;
+    createSpace.mutate(name, {
+      onSuccess: (space) => {
+        setCreateOpen(false);
+        setSpaceName("");
+        navigate(`/app/space/${space.id}`);
+      },
+      onError: () => toast.error("Failed to create space"),
+    });
+  }
 
   // Persist the collapsed preference so it survives reloads.
   useEffect(() => {
@@ -129,6 +160,59 @@ export function AppShell() {
               {!collapsed && item.name}
             </NavLink>
           ))}
+
+          {/* Spaces — dynamic, user-created scoped dashboards. */}
+          <div className="pt-4">
+            {!collapsed && (
+              <div className="flex items-center justify-between px-3 pb-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Spaces
+                </span>
+              </div>
+            )}
+            {collapsed && (
+              <div className="mx-3 mb-1 border-t border-sidebar-border" />
+            )}
+
+            {(spaces ?? []).map((space) => {
+              const initial = space.name.trim().charAt(0).toUpperCase() || "S";
+              return (
+                <NavLink
+                  key={space.id}
+                  to={`/app/space/${space.id}`}
+                  title={collapsed ? space.name : undefined}
+                  aria-label={space.name}
+                  className={({ isActive }) =>
+                    cn(
+                      "flex items-center rounded-lg py-2 text-sm font-medium transition-colors",
+                      collapsed ? "justify-center px-0" : "gap-3 px-3",
+                      isActive
+                        ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                        : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                    )
+                  }
+                >
+                  <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm bg-secondary text-[10px] font-semibold text-secondary-foreground">
+                    {initial}
+                  </span>
+                  {!collapsed && <span className="truncate">{space.name}</span>}
+                </NavLink>
+              );
+            })}
+
+            <button
+              onClick={() => setCreateOpen(true)}
+              title={collapsed ? "New space" : undefined}
+              aria-label="New space"
+              className={cn(
+                "flex w-full items-center rounded-lg py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                collapsed ? "justify-center px-0" : "gap-3 px-3",
+              )}
+            >
+              <Plus className="h-4 w-4 shrink-0" />
+              {!collapsed && "New space"}
+            </button>
+          </div>
         </nav>
 
         <div className="space-y-1 border-t p-3">
@@ -217,6 +301,47 @@ export function AppShell() {
 
       <CreateTokenModal token={newToken} onClose={() => setNewToken(null)} />
       <TokenListModal open={tokensOpen} onClose={() => setTokensOpen(false)} />
+
+      <Dialog
+        open={createOpen}
+        onOpenChange={(o) => {
+          setCreateOpen(o);
+          if (!o) setSpaceName("");
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>New space</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={submitCreateSpace} className="space-y-4">
+            <div className="space-y-1">
+              <Label htmlFor="space-name">Name</Label>
+              <Input
+                id="space-name"
+                value={spaceName}
+                onChange={(e) => setSpaceName(e.target.value)}
+                placeholder="Work"
+                autoFocus
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setCreateOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={createSpace.isPending || spaceName.trim() === ""}
+              >
+                {createSpace.isPending ? "Creating..." : "Create"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

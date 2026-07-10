@@ -27,7 +27,7 @@ func cleanupSender(t *testing.T, d *DB, ctx context.Context, sender string) {
 		_, _ = d.Pool.Exec(ctx, `DELETE FROM heartbeats WHERE sender=$1`, sender)
 		_, _ = d.Pool.Exec(ctx, `DELETE FROM curation_rules WHERE sender=$1`, sender)
 		_, _ = d.Pool.Exec(ctx, `DELETE FROM hb_rollup_daily WHERE sender=$1`, sender)
-		_, _ = d.Pool.Exec(ctx, `DELETE FROM project_tags WHERE project_owner=$1`, sender)
+		_, _ = d.Pool.Exec(ctx, `DELETE FROM spaces WHERE owner=$1`, sender)
 		_, _ = d.Pool.Exec(ctx, `DELETE FROM badges WHERE username=$1`, sender)
 		_, _ = d.Pool.Exec(ctx, `DELETE FROM projects WHERE owner=$1`, sender)
 		_, _ = d.Pool.Exec(ctx, `DELETE FROM auth_tokens WHERE owner=$1`, sender)

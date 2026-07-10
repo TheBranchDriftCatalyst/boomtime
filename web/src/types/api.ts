@@ -188,8 +188,52 @@ export interface ProjectListPayload {
   projects: string[];
 }
 
-export interface TagsPayload {
-  tags: string[];
+// ---------------------------------------------------------------------------
+// Spaces — — named, rule-based scopes (a Space per context: work/personal/…).
+// ---------------------------------------------------------------------------
+
+// How a Space rule's matchValue is interpreted. Membership is exact|regex only
+// (template is a transform, meaningless for membership).
+export type SpaceMatchType = "exact" | "regex";
+
+export interface SpaceRule {
+  id: number;
+  axis: string;
+  matchValue: string;
+  matchType: SpaceMatchType;
+}
+
+// GET /spaces — the list rows.
+export interface Space {
+  id: number;
+  name: string;
+  position: number;
+  ruleCount: number;
+}
+
+// GET /spaces/:id — a single Space with its membership rules.
+export interface SpaceDetail {
+  id: number;
+  name: string;
+  position: number;
+  rules: SpaceRule[];
+}
+
+export interface AddSpaceRuleBody {
+  axis: string;
+  matchValue: string;
+  matchType: SpaceMatchType;
+}
+
+// GET /spaces/preview — the raw values an (unsaved) rule currently matches.
+export interface SpacePreviewValue {
+  value: string;
+  count: number;
+}
+
+export interface SpacePreview {
+  values: SpacePreviewValue[];
+  truncated: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -461,12 +505,15 @@ export interface StatsParams {
   start: string;
   end: string;
   timeLimit?: number;
-  tag?: string;
+  // When set, scopes the dashboard to a Space's members.
+  space?: string | number;
 }
 
 export interface RangeParams {
   start: string;
   end: string;
+  // When set, scopes the results to a Space's members.
+  space?: string | number;
 }
 
 // GET /api/v1/users/current/files — top files across ALL projects. `projects`

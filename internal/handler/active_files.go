@@ -34,7 +34,8 @@ func (h *Handler) ActiveFiles(c *echo.Context) error {
 		limit = activeFilesMaxLimit
 	}
 
-	return h.cachedJSON(c, cacheKey(owner, "files", t0, t1, limitMin, limit), func() (any, error) {
+	spaceParam := c.QueryParam("space")
+	return h.cachedJSON(c, cacheKey(owner, "files", t0, t1, limitMin, limit, "space:"+spaceParam), func() (any, error) {
 		hidden, err := h.DB.LoadHiddenSets(ctx, owner)
 		if err != nil {
 			return nil, err
@@ -43,7 +44,11 @@ func (h *Handler) ActiveFiles(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		rows, truncated, err := h.DB.GetActiveFiles(ctx, owner, t0, t1, limitMin, limit, hidden, renames)
+		members, spaceRequested, err := h.loadSpace(ctx, spaceParam)
+		if err != nil {
+			return nil, err
+		}
+		rows, truncated, err := h.DB.GetActiveFiles(ctx, owner, t0, t1, limitMin, limit, hidden, renames, members, spaceRequested)
 		if err != nil {
 			return nil, err
 		}

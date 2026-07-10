@@ -53,11 +53,6 @@ func InvalidRelation(user, project string) *Error {
 		"The user "+user+" doesn't have access to project "+project, nil)
 }
 
-func InvalidTagRelation(user, tag string) *Error {
-	return New(http.StatusNotFound,
-		"The user "+user+" doesn't have access to the tag named '"+tag+"'", nil)
-}
-
 func ExpiredRefreshToken() *Error {
 	return New(http.StatusForbidden, "The given api token has expired", nil)
 }

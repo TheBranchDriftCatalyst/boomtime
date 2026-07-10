@@ -85,7 +85,7 @@ func TestSuppressedValuesExcludedFromAggregations(t *testing.T) {
 
 			// Baseline (no hide): both values present, total = keep+sup.
 			noHide := HiddenSets{}
-			rawBefore, err := d.GetUserActivity(ctx, sender, start, end, 15, noHide, RenameSets{})
+			rawBefore, err := d.GetUserActivity(ctx, sender, start, end, 15, noHide, RenameSets{}, MemberSets{}, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -108,7 +108,7 @@ func TestSuppressedValuesExcludedFromAggregations(t *testing.T) {
 			// ---- EXCLUDED from every aggregation/stats path ----
 
 			// 1. Raw activity path.
-			raw, err := d.GetUserActivity(ctx, sender, start, end, 15, hs, RenameSets{})
+			raw, err := d.GetUserActivity(ctx, sender, start, end, 15, hs, RenameSets{}, MemberSets{}, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -130,7 +130,7 @@ func TestSuppressedValuesExcludedFromAggregations(t *testing.T) {
 			//    back to raw — assert that HasHiddenOutside reports the fallback.
 			rollupHas := RollupAxes[axis]
 			if rollupHas {
-				roll, err := d.GetUserActivityRollup(ctx, sender, start, end, hs, RenameSets{})
+				roll, err := d.GetUserActivityRollup(ctx, sender, start, end, hs, RenameSets{}, MemberSets{}, false)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -155,7 +155,7 @@ func TestSuppressedValuesExcludedFromAggregations(t *testing.T) {
 			//    The ToStatsPayload SHAPING assertion lives in the stats package
 			//    (TestSuppressionShapingExcluded) to avoid a db<-stats import cycle;
 			//    here we assert the DB layer that feeds it excludes SUPPRESS.
-			categories, err := d.GetCategoryDaily(ctx, sender, start, end, 15, hs, RenameSets{})
+			categories, err := d.GetCategoryDaily(ctx, sender, start, end, 15, hs, RenameSets{}, MemberSets{}, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -175,21 +175,21 @@ func TestSuppressedValuesExcludedFromAggregations(t *testing.T) {
 			}
 
 			// 4. Big-bet endpoints: SUPPRESS's time excluded.
-			punch, err := d.GetPunchcard(ctx, sender, start, end, 15, hs)
+			punch, err := d.GetPunchcard(ctx, sender, start, end, 15, hs, MemberSets{}, false)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if got := sumPunch(punch); got != keepSecs {
 				t.Fatalf("[punchcard] total = %d, want %d", got, keepSecs)
 			}
-			sess, err := d.GetSessions(ctx, sender, start, end, 15, hs)
+			sess, err := d.GetSessions(ctx, sender, start, end, 15, hs, MemberSets{}, false)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if got := sumSessions(sess); got != keepSecs {
 				t.Fatalf("[sessions] total = %d, want %d", got, keepSecs)
 			}
-			mom, err := d.GetMomentum(ctx, sender, start, end, 15, hs, RenameSets{})
+			mom, err := d.GetMomentum(ctx, sender, start, end, 15, hs, RenameSets{}, MemberSets{}, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -206,7 +206,7 @@ func TestSuppressedValuesExcludedFromAggregations(t *testing.T) {
 
 			// 5. Project list (project axis) excludes the hidden project.
 			if axis == "project" {
-				projects, err := d.GetAllProjects(ctx, sender, start, end, hs, RenameSets{})
+				projects, err := d.GetAllProjects(ctx, sender, start, end, hs, RenameSets{}, MemberSets{}, false)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -218,7 +218,7 @@ func TestSuppressedValuesExcludedFromAggregations(t *testing.T) {
 			}
 
 			// 6. Leaderboards: requester's SUPPRESS row excluded.
-			lb, err := d.GetLeaderboards(ctx, start, end, sender, hs, RenameSets{})
+			lb, err := d.GetLeaderboards(ctx, start, end, sender, hs, RenameSets{}, MemberSets{}, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -287,7 +287,7 @@ func TestSuppressedValuesExcludedFromAggregations(t *testing.T) {
 			// Timeline is unfiltered; it should still surface SUPPRESS activity for
 			// the language axis (timeline groups by language). Just assert no error
 			// and it returns rows (audit stays unfiltered).
-			if _, err := d.GetTimeline(ctx, sender, start, end, 15); err != nil {
+			if _, err := d.GetTimeline(ctx, sender, start, end, 15, MemberSets{}, false); err != nil {
 				t.Fatal(err)
 			}
 		})

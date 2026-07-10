@@ -50,7 +50,7 @@ func TestTemplateRenameStripsPrefix(t *testing.T) {
 	t1 := base.AddDate(0, 0, 1)
 
 	// --- Baseline (no rule): raw prefixed names, no merge. ---
-	baseRows, err := d.GetUserActivity(ctx, sender, t0, t1, 15, HiddenSets{}, RenameSets{})
+	baseRows, err := d.GetUserActivity(ctx, sender, t0, t1, 15, HiddenSets{}, RenameSets{}, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,21 +91,21 @@ func TestTemplateRenameStripsPrefix(t *testing.T) {
 	}
 
 	// --- Raw-scan path (limit != 15 forces GetUserActivity). ---
-	rawRows, err := d.GetUserActivity(ctx, sender, t0, t1, 30, HiddenSets{}, rs)
+	rawRows, err := d.GetUserActivity(ctx, sender, t0, t1, 30, HiddenSets{}, rs, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	assertMerged("GetUserActivity", rawRows)
 
 	// --- Rollup path (default 15-min, no hides). ---
-	rollRows, err := d.GetUserActivityRollup(ctx, sender, t0, t1, HiddenSets{}, rs)
+	rollRows, err := d.GetUserActivityRollup(ctx, sender, t0, t1, HiddenSets{}, rs, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	assertMerged("GetUserActivityRollup", rollRows)
 
 	// --- Projects list path. ---
-	projs, err := d.GetAllProjects(ctx, sender, t0, t1, HiddenSets{}, rs)
+	projs, err := d.GetAllProjects(ctx, sender, t0, t1, HiddenSets{}, rs, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestTemplateRenameStripsPrefix(t *testing.T) {
 		t.Fatal(err)
 	}
 	rs2 := loadRenames(t, d, ctx, sender)
-	revRows, err := d.GetUserActivity(ctx, sender, t0, t1, 15, HiddenSets{}, rs2)
+	revRows, err := d.GetUserActivity(ctx, sender, t0, t1, 15, HiddenSets{}, rs2, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

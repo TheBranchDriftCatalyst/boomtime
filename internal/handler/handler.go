@@ -3,6 +3,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -211,4 +212,25 @@ func timeLimit(c *echo.Context) int64 {
 // noContent renders a 204 (PostNoContent / DeleteNoContent).
 func noContent(c *echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
+}
+
+// loadSpace resolves the optional ?space=<id> scope for a dashboard request. It
+// returns the space's MemberSets, whether a space was requested (spaceParam was a
+// valid id), and any load error. An absent/blank/invalid param means "unscoped"
+// (spaceRequested=false). Membership is loaded by id only; an id that isn't the
+// requester's simply yields an empty MemberSets, which — with spaceRequested=true —
+// scopes the dashboard to nothing (match-nothing), never another owner's data.
+func (h *Handler) loadSpace(ctx context.Context, spaceParam string) (db.MemberSets, bool, error) {
+	if spaceParam == "" {
+		return db.MemberSets{}, false, nil
+	}
+	id, err := strconv.Atoi(spaceParam)
+	if err != nil {
+		return db.MemberSets{}, false, nil
+	}
+	ms, err := h.DB.LoadMemberSets(ctx, id)
+	if err != nil {
+		return db.MemberSets{}, false, err
+	}
+	return ms, true, nil
 }

@@ -38,7 +38,7 @@ func TestActiveFilesCrossProject(t *testing.T) {
 	t0 := base.AddDate(0, 0, -1)
 	t1 := base.AddDate(0, 0, 1)
 
-	files, trunc, err := d.GetActiveFiles(ctx, sender, t0, t1, 15, 20, HiddenSets{}, RenameSets{})
+	files, trunc, err := d.GetActiveFiles(ctx, sender, t0, t1, 15, 20, HiddenSets{}, RenameSets{}, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestActiveFilesRespectsGapCutoff(t *testing.T) {
 	f.Seed(hbSeed{project: "alpha", entity: "x.go", ts: base, gap: 120})                     // counted
 	f.Seed(hbSeed{project: "alpha", entity: "x.go", ts: base.Add(time.Minute), gap: 999999}) // over cutoff, dropped
 
-	files, _, err := d.GetActiveFiles(ctx, sender, base.AddDate(0, 0, -1), base.AddDate(0, 0, 1), 15, 20, HiddenSets{}, RenameSets{})
+	files, _, err := d.GetActiveFiles(ctx, sender, base.AddDate(0, 0, -1), base.AddDate(0, 0, 1), 15, 20, HiddenSets{}, RenameSets{}, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestActiveFilesHiddenProjectExcluded(t *testing.T) {
 	t1 := base.AddDate(0, 0, 1)
 
 	// Without hiding: projects=2, seconds=180.
-	all, _, err := d.GetActiveFiles(ctx, sender, t0, t1, 15, 20, HiddenSets{}, RenameSets{})
+	all, _, err := d.GetActiveFiles(ctx, sender, t0, t1, 15, 20, HiddenSets{}, RenameSets{}, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestActiveFilesHiddenProjectExcluded(t *testing.T) {
 
 	// Hide 'secret': shared.go drops to projects=1, seconds=120.
 	hs := mkHiddenSets(map[string][]string{"project": {"secret"}})
-	hidden, _, err := d.GetActiveFiles(ctx, sender, t0, t1, 15, 20, hs, RenameSets{})
+	hidden, _, err := d.GetActiveFiles(ctx, sender, t0, t1, 15, 20, hs, RenameSets{}, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +167,7 @@ func TestActiveFilesRenameMergesProjectCount(t *testing.T) {
 	createRename(t, d, ctx, sender, "project", "web-new", "web")
 	rs := loadRenames(t, d, ctx, sender)
 
-	files, _, err := d.GetActiveFiles(ctx, sender, t0, t1, 15, 20, HiddenSets{}, rs)
+	files, _, err := d.GetActiveFiles(ctx, sender, t0, t1, 15, 20, HiddenSets{}, rs, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +195,7 @@ func TestActiveFilesTruncation(t *testing.T) {
 		f.Seed(hbSeed{project: "alpha", entity: "f" + string(rune('a'+i)) + ".go", ts: base.Add(time.Duration(i) * time.Minute), gap: 60})
 	}
 
-	files, trunc, err := d.GetActiveFiles(ctx, sender, base.AddDate(0, 0, -1), base.AddDate(0, 0, 1), 15, 3, HiddenSets{}, RenameSets{})
+	files, trunc, err := d.GetActiveFiles(ctx, sender, base.AddDate(0, 0, -1), base.AddDate(0, 0, 1), 15, 3, HiddenSets{}, RenameSets{}, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

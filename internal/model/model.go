@@ -247,11 +247,6 @@ type ProjectStatistics struct {
 	EntitiesCount int     `json:"entitiesCount"`
 }
 
-// TagsPayload is {"tags": [...]}.
-type TagsPayload struct {
-	Tags []string `json:"tags"`
-}
-
 // ProjectListPayload is {"projects": [...]}.
 type ProjectListPayload struct {
 	Projects []string `json:"projects"`

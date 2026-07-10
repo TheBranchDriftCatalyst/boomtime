@@ -38,11 +38,16 @@ type CategoryDailyRow struct {
 // values), for folding into the Overview stats payload. $4 limit is the gap
 // cutoff minutes. Note: a category hidden here disappears entirely (the whole
 // category axis is excluded when that category is hidden).
-func (d *DB) GetCategoryDaily(ctx context.Context, sender string, start, end time.Time, limit int64, hs HiddenSets, rs RenameSets) ([]CategoryDailyRow, error) {
+func (d *DB) GetCategoryDaily(ctx context.Context, sender string, start, end time.Time, limit int64, hs HiddenSets, rs RenameSets, ms MemberSets, spaceRequested bool) ([]CategoryDailyRow, error) {
 	query := qGetCategoryDaily
 	args := []any{sender, start, end, limit}
 	var next int
 	query, args, next = applyBigBetHides(query, hs, args)
+	if spaceRequested {
+		var pred string
+		pred, args, next = spaceScopePredicate(ms, rawHeartbeatCols, next, args, spaceRequested)
+		query = injectAfter(query, bigBetRangeAnchor, pred)
+	}
 	// Rename remap: re-group (day, category) by the remapped category.
 	if rs.HasAxis("category") {
 		var expr string
@@ -84,10 +89,16 @@ type PunchcardCell struct {
 
 // GetPunchcard returns dow x hour coding-time cells (excluding all hidden axis
 // values). No renamable axis in the output (dow/hour), so no rename remap applies.
-func (d *DB) GetPunchcard(ctx context.Context, sender string, start, end time.Time, limit int64, hs HiddenSets) ([]PunchcardCell, error) {
+func (d *DB) GetPunchcard(ctx context.Context, sender string, start, end time.Time, limit int64, hs HiddenSets, ms MemberSets, spaceRequested bool) ([]PunchcardCell, error) {
 	query := qGetPunchcard
 	args := []any{sender, start, end, limit}
-	query, args, _ = applyBigBetHides(query, hs, args)
+	var next int
+	query, args, next = applyBigBetHides(query, hs, args)
+	if spaceRequested {
+		var pred string
+		pred, args, next = spaceScopePredicate(ms, rawHeartbeatCols, next, args, spaceRequested)
+		query = injectAfter(query, bigBetRangeAnchor, pred)
+	}
 	var out []PunchcardCell
 	err := d.aggQuery(ctx, query, args, func(rows pgx.Rows) error {
 		defer rows.Close()
@@ -112,10 +123,16 @@ type SessionRow struct {
 // GetSessions returns one row per session (excluding all hidden axis values). The
 // gap cutoff that both bounds in-session time and defines a session break is
 // limit*60 seconds. No renamable axis in the output (session_day), so no remap.
-func (d *DB) GetSessions(ctx context.Context, sender string, start, end time.Time, limit int64, hs HiddenSets) ([]SessionRow, error) {
+func (d *DB) GetSessions(ctx context.Context, sender string, start, end time.Time, limit int64, hs HiddenSets, ms MemberSets, spaceRequested bool) ([]SessionRow, error) {
 	query := qGetSessions
 	args := []any{sender, start, end, limit}
-	query, args, _ = applyBigBetHides(query, hs, args)
+	var next int
+	query, args, next = applyBigBetHides(query, hs, args)
+	if spaceRequested {
+		var pred string
+		pred, args, next = spaceScopePredicate(ms, rawHeartbeatCols, next, args, spaceRequested)
+		query = injectAfter(query, bigBetRangeAnchor, pred)
+	}
 	var out []SessionRow
 	err := d.aggQuery(ctx, query, args, func(rows pgx.Rows) error {
 		defer rows.Close()
@@ -141,11 +158,16 @@ type MomentumRow struct {
 // GetMomentum returns per-project weekly time (excluding all hidden axis values).
 // The Go shaper picks the top-N projects and gap-fills the week series. A project
 // rename re-groups the (project, week) rows by the remapped project (merges).
-func (d *DB) GetMomentum(ctx context.Context, sender string, start, end time.Time, limit int64, hs HiddenSets, rs RenameSets) ([]MomentumRow, error) {
+func (d *DB) GetMomentum(ctx context.Context, sender string, start, end time.Time, limit int64, hs HiddenSets, rs RenameSets, ms MemberSets, spaceRequested bool) ([]MomentumRow, error) {
 	query := qGetMomentum
 	args := []any{sender, start, end, limit}
 	var next int
 	query, args, next = applyBigBetHides(query, hs, args)
+	if spaceRequested {
+		var pred string
+		pred, args, next = spaceScopePredicate(ms, rawHeartbeatCols, next, args, spaceRequested)
+		query = injectAfter(query, bigBetRangeAnchor, pred)
+	}
 	if rs.HasAxis("project") {
 		var expr string
 		expr, args, next = rs.remapExpr("project", "project", "", next, args)

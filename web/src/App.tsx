@@ -11,6 +11,7 @@ import { Overview } from "@/pages/Overview";
 import { Projects } from "@/pages/Projects";
 import { Register } from "@/pages/Register";
 import { Settings } from "@/pages/Settings";
+import { SpaceView } from "@/pages/SpaceView";
 
 function RootRedirect() {
   const { isLoggedIn, bootstrapping } = useAuth();
@@ -42,6 +43,7 @@ export function App() {
         <Route path="projects" element={<Projects />} />
         <Route path="leaderboards" element={<Leaderboards />} />
         <Route path="heartbeats" element={<Heartbeats />} />
+        <Route path="space/:id" element={<SpaceView />} />
         <Route path="import" element={<Import />} />
         <Route path="settings" element={<Settings />} />
       </Route>

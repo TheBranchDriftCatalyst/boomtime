@@ -125,6 +125,15 @@ func (hz *Harness) Router() *echo.Echo {
 	e.POST("/api/v1/users/current/curation", h.CreateCuration)
 	e.DELETE("/api/v1/users/current/curation/:id", h.DeleteCuration)
 	e.GET("/api/v1/users/current/curation/:id/affected", h.CurationAffected)
+	// spaces
+	e.GET("/api/v1/users/current/spaces", h.ListSpaces)
+	e.POST("/api/v1/users/current/spaces", h.CreateSpace)
+	e.GET("/api/v1/users/current/spaces/preview", h.SpacePreview)
+	e.GET("/api/v1/users/current/spaces/:id", h.GetSpace)
+	e.PATCH("/api/v1/users/current/spaces/:id", h.UpdateSpace)
+	e.DELETE("/api/v1/users/current/spaces/:id", h.DeleteSpace)
+	e.POST("/api/v1/users/current/spaces/:id/rules", h.AddSpaceRule)
+	e.DELETE("/api/v1/users/current/spaces/:id/rules/:rid", h.DeleteSpaceRule)
 	// stats / aggregations
 	e.GET("/api/v1/users/current/stats", h.Stats)
 	e.GET("/api/v1/users/current/stats/momentum", h.Momentum)
@@ -164,7 +173,7 @@ func (hz *Harness) Cleanup(sender string) {
 			`DELETE FROM heartbeats WHERE sender=$1`,
 			`DELETE FROM curation_rules WHERE sender=$1`,
 			`DELETE FROM hb_rollup_daily WHERE sender=$1`,
-			`DELETE FROM project_tags WHERE project_owner=$1`,
+			`DELETE FROM spaces WHERE owner=$1`,
 			`DELETE FROM badges WHERE username=$1`,
 			`DELETE FROM projects WHERE owner=$1`,
 			`DELETE FROM auth_tokens WHERE owner=$1`,

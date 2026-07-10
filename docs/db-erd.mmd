@@ -19,6 +19,7 @@ erDiagram
         text axis 
         timestamp_with_time_zone created_at 
         integer id PK 
+        text match_type 
         text match_value 
         text new_value 
         text sender 
@@ -91,12 +92,6 @@ erDiagram
         jsonb value 
     }
 
-    project_tags {
-        text project_name PK,FK 
-        text project_owner PK,FK 
-        uuid tag_id PK,FK 
-    }
-
     projects {
         ARRAY dependencies 
         text description 
@@ -111,9 +106,20 @@ erDiagram
         timestamp_without_time_zone token_expiry 
     }
 
-    tags {
-        uuid id UK 
-        text name PK 
+    space_rules {
+        text axis 
+        integer id PK 
+        text match_type 
+        text match_value 
+        integer space_id FK 
+    }
+
+    spaces {
+        timestamp_with_time_zone created_at 
+        integer id PK 
+        text name UK 
+        text owner UK 
+        integer position 
     }
 
     users {
@@ -130,8 +136,6 @@ erDiagram
     heartbeats }o--|| projects : "sender"
     heartbeats }o--|| users : "sender"
     import_job_logs }o--|| import_jobs : "job_id"
-    project_tags }o--|| projects : "project_name"
-    project_tags }o--|| projects : "project_owner"
-    project_tags }o--|| tags : "tag_id"
     projects }o--|| users : "owner"
     refresh_tokens }o--|| users : "owner"
+    space_rules }o--|| spaces : "space_id"

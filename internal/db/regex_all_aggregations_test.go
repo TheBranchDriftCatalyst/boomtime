@@ -83,7 +83,7 @@ func TestRegexRemapAcrossAllAggregations(t *testing.T) {
 	end := w3.AddDate(0, 0, 7)
 
 	// ---- Baseline (no rule): the three Meet projects are distinct. ----
-	rawBefore, err := d.GetUserActivity(ctx, sender, start, end, 30, HiddenSets{}, RenameSets{})
+	rawBefore, err := d.GetUserActivity(ctx, sender, start, end, 30, HiddenSets{}, RenameSets{}, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,14 +131,14 @@ func TestRegexRemapAcrossAllAggregations(t *testing.T) {
 	}
 
 	// ---- PATH 1: GetUserActivity (raw path, limit=30 ≠ 15). ----
-	rawRows, err := d.GetUserActivity(ctx, sender, start, end, 30, HiddenSets{}, rs)
+	rawRows, err := d.GetUserActivity(ctx, sender, start, end, 30, HiddenSets{}, rs, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	assertMerged("raw activity", rawRows)
 
 	// ---- PATH 2: GetUserActivityRollup (fast path, limit=15). ----
-	rollRows, err := d.GetUserActivityRollup(ctx, sender, start, end, HiddenSets{}, rs)
+	rollRows, err := d.GetUserActivityRollup(ctx, sender, start, end, HiddenSets{}, rs, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestRegexRemapAcrossAllAggregations(t *testing.T) {
 		}
 		return s
 	}
-	meetingDetail, err := d.GetProjectStats(ctx, sender, "Meeting", start, end, 30, HiddenSets{}, rs)
+	meetingDetail, err := d.GetProjectStats(ctx, sender, "Meeting", start, end, 30, HiddenSets{}, rs, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +160,7 @@ func TestRegexRemapAcrossAllAggregations(t *testing.T) {
 		t.Fatalf("[project detail Meeting] total = %d, want %d", got, merged)
 	}
 	// identity: real-proj detail unchanged.
-	realDetail, err := d.GetProjectStats(ctx, sender, "real-proj", start, end, 30, HiddenSets{}, rs)
+	realDetail, err := d.GetProjectStats(ctx, sender, "real-proj", start, end, 30, HiddenSets{}, rs, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,14 +168,14 @@ func TestRegexRemapAcrossAllAggregations(t *testing.T) {
 		t.Fatalf("[project detail real-proj] total = %d, want %d", got, tR)
 	}
 	// A raw source name is no longer addressable (keyed by display name).
-	if rows, err := d.GetProjectStats(ctx, sender, "Meet - A", start, end, 30, HiddenSets{}, rs); err != nil {
+	if rows, err := d.GetProjectStats(ctx, sender, "Meet - A", start, end, 30, HiddenSets{}, rs, MemberSets{}, false); err != nil {
 		t.Fatal(err)
 	} else if len(rows) != 0 {
 		t.Fatalf("[project detail Meet - A] should be empty under merge, got %d rows", len(rows))
 	}
 
 	// ---- PATH 4: GetAllProjects — one "Meeting" entry, no raw Meet-*. ----
-	projects, err := d.GetAllProjects(ctx, sender, start, end, HiddenSets{}, rs)
+	projects, err := d.GetAllProjects(ctx, sender, start, end, HiddenSets{}, rs, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func TestRegexRemapAcrossAllAggregations(t *testing.T) {
 	}
 
 	// ---- PATH 5: GetLeaderboards — requester-scoped merge. ----
-	lb, err := d.GetLeaderboards(ctx, start, end, sender, HiddenSets{}, rs)
+	lb, err := d.GetLeaderboards(ctx, start, end, sender, HiddenSets{}, rs, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +216,7 @@ func TestRegexRemapAcrossAllAggregations(t *testing.T) {
 	}
 
 	// ---- PATH 6: GetMomentum — one "Meeting" series, weekly sums combined. ----
-	mom, err := d.GetMomentum(ctx, sender, start, end, 15, HiddenSets{}, rs)
+	mom, err := d.GetMomentum(ctx, sender, start, end, 15, HiddenSets{}, rs, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,7 +250,7 @@ func TestRegexRemapAcrossAllAggregations(t *testing.T) {
 
 	// ---- PATH 7: GetCategoryDaily — project remap doesn't change category totals. ----
 	catTotal := func(rs RenameSets) int64 {
-		cats, err := d.GetCategoryDaily(ctx, sender, start, end, 15, HiddenSets{}, rs)
+		cats, err := d.GetCategoryDaily(ctx, sender, start, end, 15, HiddenSets{}, rs, MemberSets{}, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -385,7 +385,7 @@ func TestRegexRemapAcrossAllAggregations(t *testing.T) {
 		t.Fatal("rename set should be empty after delete")
 	}
 
-	revert, err := d.GetUserActivity(ctx, sender, start, end, 30, HiddenSets{}, rs2)
+	revert, err := d.GetUserActivity(ctx, sender, start, end, 30, HiddenSets{}, rs2, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -397,14 +397,14 @@ func TestRegexRemapAcrossAllAggregations(t *testing.T) {
 		t.Fatal("[revert raw] 'Meeting' should be gone after deleting the rule")
 	}
 	// Rollup + projects list + momentum revert too.
-	revRoll, err := d.GetUserActivityRollup(ctx, sender, start, end, HiddenSets{}, rs2)
+	revRoll, err := d.GetUserActivityRollup(ctx, sender, start, end, HiddenSets{}, rs2, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if rr := axisTotals(revRoll, "project"); rr["Meet - A"] != tA || rr["Meeting"] != 0 {
 		t.Fatalf("[revert rollup] = %+v, want raw Meet-* restored, no Meeting", rr)
 	}
-	revProjects, err := d.GetAllProjects(ctx, sender, start, end, HiddenSets{}, rs2)
+	revProjects, err := d.GetAllProjects(ctx, sender, start, end, HiddenSets{}, rs2, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

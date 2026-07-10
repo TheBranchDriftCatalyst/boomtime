@@ -180,7 +180,7 @@ func truncateAll(t *testing.T, d *DB) {
 	_, err := d.Pool.Exec(ctx, `TRUNCATE
 		import_job_logs, import_jobs,
 		hb_rollup_daily, heartbeats,
-		project_tags, tags, badges,
+		badges, space_rules, spaces,
 		curation_rules, projects,
 		auth_tokens, refresh_tokens, users
 		RESTART IDENTITY CASCADE`)

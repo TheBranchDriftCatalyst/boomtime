@@ -298,6 +298,73 @@ func TestProjectDetailByDisplayName(t *testing.T) {
 	}
 }
 
+// TestSpaceScopedStatsThroughHTTP: create a Space, add a project regex rule
+// `^catalyst`, then GET /stats?space=<id> returns ONLY the catalyst-* projects,
+// while the unscoped /stats is unchanged.
+func TestSpaceScopedStatsThroughHTTP(t *testing.T) {
+	hz := testutil.NewHarness(t)
+	e := hz.Router()
+	user, token := hz.MintUser("space")
+
+	base := time.Date(2025, 9, 10, 9, 0, 0, 0, time.UTC)
+	sd := hz.Seeder(user).Projects("catalyst-web", "catalyst-api", "personal")
+	cw := sd.Block(testutil.HB{Project: "catalyst-web", Language: "Go"}, base, 2, 120)
+	ca := sd.Block(testutil.HB{Project: "catalyst-api", Language: "Go"}, base.Add(time.Hour), 3, 120)
+	pe := sd.Block(testutil.HB{Project: "personal", Language: "Go"}, base.Add(2*time.Hour), 4, 120)
+	sd.RefreshRollup(base.AddDate(0, 0, -1))
+	start, end := weekAround(base)
+
+	// Create the Space.
+	crec := do(t, e, http.MethodPost, "/api/v1/users/current/spaces", token, map[string]any{"name": "Work"})
+	if crec.Code != http.StatusOK {
+		t.Fatalf("create space status = %d; body=%s", crec.Code, crec.Body.String())
+	}
+	var created struct {
+		Space struct {
+			ID int `json:"id"`
+		} `json:"space"`
+	}
+	decode(t, crec, &created)
+	if created.Space.ID == 0 {
+		t.Fatal("space id should be non-zero")
+	}
+	spaceID := itoa(created.Space.ID)
+
+	// Add a project regex rule ^catalyst.
+	rrec := do(t, e, http.MethodPost, "/api/v1/users/current/spaces/"+spaceID+"/rules", token, map[string]any{
+		"axis": "project", "matchValue": "^catalyst", "matchType": "regex",
+	})
+	if rrec.Code != http.StatusOK {
+		t.Fatalf("add rule status = %d; body=%s", rrec.Code, rrec.Body.String())
+	}
+
+	// Unscoped /stats: all three projects present, full total.
+	statsURL := "/api/v1/users/current/stats?start=" + url.QueryEscape(start) + "&end=" + url.QueryEscape(end)
+	var unscoped statsPayload
+	decode(t, do(t, e, http.MethodGet, statsURL, token, nil), &unscoped)
+	if unscoped.TotalSeconds != cw+ca+pe {
+		t.Errorf("unscoped total = %d, want %d", unscoped.TotalSeconds, cw+ca+pe)
+	}
+	if _, ok := unscoped.projSeconds()["personal"]; !ok {
+		t.Error("unscoped /stats should include 'personal'")
+	}
+
+	// Scoped /stats?space=<id>: only catalyst-* projects, personal excluded.
+	scopedURL := statsURL + "&space=" + spaceID
+	var scoped statsPayload
+	decode(t, do(t, e, http.MethodGet, scopedURL, token, nil), &scoped)
+	got := scoped.projSeconds()
+	if got["catalyst-web"] != cw || got["catalyst-api"] != ca {
+		t.Errorf("scoped catalyst = %d/%d, want %d/%d", got["catalyst-web"], got["catalyst-api"], cw, ca)
+	}
+	if _, ok := got["personal"]; ok {
+		t.Error("scoped /stats must exclude 'personal'")
+	}
+	if scoped.TotalSeconds != cw+ca {
+		t.Errorf("scoped total = %d, want %d (catalyst only)", scoped.TotalSeconds, cw+ca)
+	}
+}
+
 // TestAuthRegisterLoginRefresh drives the full auth cycle over HTTP.
 func TestAuthRegisterLoginRefresh(t *testing.T) {
 	hz := testutil.NewHarness(t)

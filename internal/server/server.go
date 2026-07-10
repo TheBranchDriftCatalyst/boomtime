@@ -34,7 +34,7 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *impor
 			return origin, true, nil
 		},
 		AllowHeaders:     []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAuthorization, "X-Machine-Name"},
-		AllowMethods:     []string{http.MethodGet, http.MethodPost, http.MethodDelete, http.MethodOptions},
+		AllowMethods:     []string{http.MethodGet, http.MethodPost, http.MethodPatch, http.MethodDelete, http.MethodOptions},
 		AllowCredentials: true,
 	}))
 	if cfg.HTTPLog {
@@ -63,6 +63,17 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	e.DELETE("/api/v1/users/current/curation/:id", h.DeleteCuration)
 	e.GET("/api/v1/users/current/curation/:id/affected", h.CurationAffected)
 
+	// Spaces (named, scoped dashboards). The static `/spaces/preview` route is
+	// registered before `/spaces/:id` so it is not shadowed by the param route.
+	e.GET("/api/v1/users/current/spaces", h.ListSpaces)
+	e.POST("/api/v1/users/current/spaces", h.CreateSpace)
+	e.GET("/api/v1/users/current/spaces/preview", h.SpacePreview)
+	e.GET("/api/v1/users/current/spaces/:id", h.GetSpace)
+	e.PATCH("/api/v1/users/current/spaces/:id", h.UpdateSpace)
+	e.DELETE("/api/v1/users/current/spaces/:id", h.DeleteSpace)
+	e.POST("/api/v1/users/current/spaces/:id/rules", h.AddSpaceRule)
+	e.DELETE("/api/v1/users/current/spaces/:id/rules/:rid", h.DeleteSpaceRule)
+
 	// Derived-data health (gap_seconds + rollup status / resync)
 	e.GET("/api/v1/users/current/derived/status", h.DerivedStatus)
 	e.POST("/api/v1/users/current/derived/resync", h.DerivedResync)
@@ -80,12 +91,8 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	// Cross-project active files (shared lynchpins spanning multiple projects)
 	e.GET("/api/v1/users/current/files", h.ActiveFiles)
 
-	// Projects & tags
+	// Projects
 	e.GET("/api/v1/users/current/projects/:project", h.ProjectStats)
-	e.GET("/api/v1/users/current/tags/:tag", h.TagStats)
-	e.POST("/api/v1/projects/:project/tags", h.SetProjectTags)
-	e.GET("/api/v1/projects/:project/tags", h.GetProjectTags)
-	e.GET("/api/v1/tags", h.GetUserTags)
 	e.GET("/api/v1/projects", h.ProjectList)
 
 	// Auth

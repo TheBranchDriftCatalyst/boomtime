@@ -48,9 +48,7 @@ func TestInjectAfterAnchorsExist(t *testing.T) {
 	}{
 		{"activity", qGetUserActivity, activityRangeAnchor},
 		{"rollup", qGetUserActivityRoll, rollupRangeAnchor},
-		{"activity_by_tag", qGetUserActivityTag, userActivityTagRangeAnchor},
 		{"projects_stats", qGetProjectsStats, projectStatsRangeAnchor},
-		{"tag_stats", qGetTagStats, tagStatsRangeAnchor},
 		{"leaderboards", qGetLeaderboards, leaderboardsRangeAnchor},
 		{"time_today", qGetTimeToday, timeTodayRangeAnchor},
 		{"category_daily", qGetCategoryDaily, bigBetRangeAnchor},
@@ -106,7 +104,7 @@ func TestHideExclusionInStats(t *testing.T) {
 	end := base.AddDate(0, 0, 1)
 
 	// No hide: both projects appear on the raw path.
-	rows, err := d.GetUserActivity(ctx, sender, start, end, 15, HiddenSets{}, RenameSets{})
+	rows, err := d.GetUserActivity(ctx, sender, start, end, 15, HiddenSets{}, RenameSets{}, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +125,7 @@ func TestHideExclusionInStats(t *testing.T) {
 	}
 
 	// Raw path excludes it.
-	rows, err = d.GetUserActivity(ctx, sender, start, end, 15, hs, RenameSets{})
+	rows, err = d.GetUserActivity(ctx, sender, start, end, 15, hs, RenameSets{}, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +137,7 @@ func TestHideExclusionInStats(t *testing.T) {
 	}
 
 	// Rollup fast path excludes it too.
-	rrows, err := d.GetUserActivityRollup(ctx, sender, start, end, hs, RenameSets{})
+	rrows, err := d.GetUserActivityRollup(ctx, sender, start, end, hs, RenameSets{}, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +149,7 @@ func TestHideExclusionInStats(t *testing.T) {
 	}
 
 	// Projects list excludes it.
-	projects, err := d.GetAllProjects(ctx, sender, start, end, hs, RenameSets{})
+	projects, err := d.GetAllProjects(ctx, sender, start, end, hs, RenameSets{}, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

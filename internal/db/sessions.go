@@ -373,13 +373,18 @@ var rollupCols = map[string]string{
 // platform/machine — exactly the axes it stores. A rename on plugin/branch/
 // category has no output column here, so it can't mis-display; re-summing the
 // pre-aggregated rows by the remapped value merges correctly.
-func (d *DB) GetUserActivityRollup(ctx context.Context, user string, start, end time.Time, hs HiddenSets, rs RenameSets) ([]StatRow, error) {
+func (d *DB) GetUserActivityRollup(ctx context.Context, user string, start, end time.Time, hs HiddenSets, rs RenameSets, ms MemberSets, spaceRequested bool) ([]StatRow, error) {
 	query := qGetUserActivityRoll
 	args := []any{user, start, end}
 	next := 4
 	if hs.AnyHidden() {
 		var pred string
 		pred, args, next = exclusionPredicate(hs, rollupCols, next, args)
+		query = injectAfter(query, rollupRangeAnchor, pred)
+	}
+	if spaceRequested {
+		var pred string
+		pred, args, next = spaceScopePredicate(ms, rollupCols, next, args, spaceRequested)
 		query = injectAfter(query, rollupRangeAnchor, pred)
 	}
 	query, args = rs.regroupStatRows(query, next, args)
@@ -438,7 +443,7 @@ func scanStatRows(rows pgx.Rows) ([]StatRow, error) {
 // excluding ALL of the sender's hidden axis values (project, language, editor,
 // plugin, machine, platform, branch, category) via appended `AND NOT (<col> =
 // ANY($n))` predicates on the raw-heartbeats scan.
-func (d *DB) GetUserActivity(ctx context.Context, user string, start, end time.Time, limit int64, hs HiddenSets, rs RenameSets) ([]StatRow, error) {
+func (d *DB) GetUserActivity(ctx context.Context, user string, start, end time.Time, limit int64, hs HiddenSets, rs RenameSets, ms MemberSets, spaceRequested bool) ([]StatRow, error) {
 	query := qGetUserActivity
 	args := []any{user, start, end, limit}
 	next := 5
@@ -447,6 +452,12 @@ func (d *DB) GetUserActivity(ctx context.Context, user string, start, end time.T
 		// clause) so hidden rows are dropped (by RAW value) before aggregation.
 		var pred string
 		pred, args, next = exclusionPredicate(hs, rawHeartbeatCols, next, args)
+		query = injectAfter(query, activityRangeAnchor, pred)
+	}
+	// Space scope (?space=): keep only rows matching the Space's membership rules.
+	if spaceRequested {
+		var pred string
+		pred, args, next = spaceScopePredicate(ms, rawHeartbeatCols, next, args, spaceRequested)
 		query = injectAfter(query, activityRangeAnchor, pred)
 	}
 	// Rename remap re-groups the surviving rows by display value (merges A,B→M).
@@ -465,29 +476,6 @@ func (d *DB) GetUserActivity(ctx context.Context, user string, start, end time.T
 // tests catch the missing exclusion).
 const activityRangeAnchor = "AND time_sent <= $3"
 
-// GetUserActivityByTag runs get_user_activity_by_tags.sql ($1 user,$2 start,$3 end,$4 tag,$5 limit).
-// userActivityTagRangeAnchor is the inner range-end clause of
-// get_user_activity_by_tags.sql (raw heartbeats scan; $1..$5, exclusion at $6).
-const userActivityTagRangeAnchor = "AND time_sent <= $3"
-
-func (d *DB) GetUserActivityByTag(ctx context.Context, user string, start, end time.Time, tag string, limit int64, hs HiddenSets, rs RenameSets) ([]StatRow, error) {
-	query := qGetUserActivityTag
-	args := []any{user, start, end, tag, limit}
-	next := 6
-	if hs.AnyHidden() {
-		var pred string
-		pred, args, next = exclusionPredicate(hs, rawHeartbeatCols, next, args)
-		query = injectAfter(query, userActivityTagRangeAnchor, pred)
-	}
-	query, args = rs.regroupStatRows(query, next, args)
-	var out []StatRow
-	err := d.aggQuery(ctx, query, args, func(rows pgx.Rows) (e error) {
-		out, e = scanStatRows(rows)
-		return
-	})
-	return out, err
-}
-
 func scanProjectStatRows(rows pgx.Rows) ([]ProjectStatRow, error) {
 	defer rows.Close()
 	out := []ProjectStatRow{}
@@ -505,11 +493,9 @@ func scanProjectStatRows(rows pgx.Rows) ([]ProjectStatRow, error) {
 	return out, rows.Err()
 }
 
-// projectStatsRangeAnchor / tagStatsRangeAnchor are the inner range-end clauses
-// where the hide exclusion is spliced. Both scan raw heartbeats, so all axes are
-// available. tag-stats qualifies columns with `heartbeats.` (it joins tags).
+// projectStatsRangeAnchor is the inner range-end clause where the hide exclusion
+// is spliced. It scans raw heartbeats, so all axes are available.
 const projectStatsRangeAnchor = "AND time_sent <= $4"
-const tagStatsRangeAnchor = "AND heartbeats.time_sent <= $4"
 
 // projectStatsMatchClause is the raw project filter in get_projects_stats.sql. The
 // $2 param is now a DISPLAY name, so a project rename replaces this with a
@@ -517,25 +503,23 @@ const tagStatsRangeAnchor = "AND heartbeats.time_sent <= $4"
 // constant so a drift in the .sql fails loudly.
 const projectStatsMatchClause = "AND project = $2"
 
-var tagStatsCols = map[string]string{
-	"project": "heartbeats.project", "language": "heartbeats.language",
-	"editor": "heartbeats.editor", "plugin": "heartbeats.plugin",
-	"machine": "heartbeats.machine", "platform": "heartbeats.platform",
-	"branch": "heartbeats.branch", "category": "heartbeats.category",
-}
-
 // GetProjectStats runs get_projects_stats.sql ($1 user,$2 project,$3 start,$4 end,$5 limit).
 // The incoming `project` is a DISPLAY name: when a project rename is active the
 // raw `project = $2` filter is replaced with `remap(project) = $2` so a merged
 // name aggregates all its source projects (and identity still works). Hidden axis
 // values are excluded within the project; the output `language` axis is remapped.
-func (d *DB) GetProjectStats(ctx context.Context, user, project string, start, end time.Time, limit int64, hs HiddenSets, rs RenameSets) ([]ProjectStatRow, error) {
+func (d *DB) GetProjectStats(ctx context.Context, user, project string, start, end time.Time, limit int64, hs HiddenSets, rs RenameSets, ms MemberSets, spaceRequested bool) ([]ProjectStatRow, error) {
 	query := qGetProjectsStats
 	args := []any{user, project, start, end, limit}
 	next := 6
 	if hs.AnyHidden() {
 		var pred string
 		pred, args, next = exclusionPredicate(hs, rawHeartbeatCols, next, args)
+		query = injectAfter(query, projectStatsRangeAnchor, pred)
+	}
+	if spaceRequested {
+		var pred string
+		pred, args, next = spaceScopePredicate(ms, rawHeartbeatCols, next, args, spaceRequested)
 		query = injectAfter(query, projectStatsRangeAnchor, pred)
 	}
 	// Match the display name against the remapped raw project.
@@ -554,33 +538,22 @@ func (d *DB) GetProjectStats(ctx context.Context, user, project string, start, e
 	return out, err
 }
 
-// GetTagStats runs get_tag_stats.sql ($1 user,$2 tag,$3 start,$4 end,$5 limit),
-// excluding the sender's hidden axis values within the tag's projects. Tag
-// membership is a RAW-project fact (project_tags keys on the raw project name), so
-// the join stays on raw projects — a project rename does NOT move tags. Only the
-// output `language` axis is remapped for display.
-func (d *DB) GetTagStats(ctx context.Context, user, tag string, start, end time.Time, limit int64, hs HiddenSets, rs RenameSets) ([]ProjectStatRow, error) {
-	query := qGetTagStats
-	args := []any{user, tag, start, end, limit}
-	next := 6
-	if hs.AnyHidden() {
-		var pred string
-		pred, args, next = exclusionPredicate(hs, tagStatsCols, next, args)
-		query = injectAfter(query, tagStatsRangeAnchor, pred)
-	}
-	query, args = rs.regroupProjectStatRows(query, next, args)
-	var out []ProjectStatRow
-	err := d.aggQuery(ctx, query, args, func(rows pgx.Rows) (e error) {
-		out, e = scanProjectStatRows(rows)
-		return
-	})
-	return out, err
-}
+// timelineRangeAnchor is the inner range-end clause of get_timeline.sql (raw
+// heartbeats scan, unqualified columns); the space inclusion is spliced after it.
+const timelineRangeAnchor = "AND time_sent < $3"
 
-// GetTimeline runs get_timeline.sql ($1 user,$2 start,$3 end,$4 limit).
-func (d *DB) GetTimeline(ctx context.Context, user string, start, end time.Time, limit int64) ([]TimelineRow, error) {
+// GetTimeline runs get_timeline.sql ($1 user,$2 start,$3 end,$4 limit). When a
+// Space is requested it keeps only rows matching the Space's membership rules.
+func (d *DB) GetTimeline(ctx context.Context, user string, start, end time.Time, limit int64, ms MemberSets, spaceRequested bool) ([]TimelineRow, error) {
+	query := qGetTimeline
+	args := []any{user, start, end, limit}
+	if spaceRequested {
+		var pred string
+		pred, args, _ = spaceScopePredicate(ms, rawHeartbeatCols, 5, args, spaceRequested)
+		query = injectAfter(query, timelineRangeAnchor, pred)
+	}
 	out := []TimelineRow{}
-	err := d.aggQuery(ctx, qGetTimeline, []any{user, start, end, limit}, func(rows pgx.Rows) error {
+	err := d.aggQuery(ctx, query, args, func(rows pgx.Rows) error {
 		defer rows.Close()
 		for rows.Next() {
 			var r TimelineRow
@@ -603,11 +576,11 @@ const leaderboardsRangeAnchor = "AND time_sent <= $2"
 // must not alter other users' leaderboard contributions). Hide excludes with
 // `AND NOT (sender = $req AND <col> = ANY($n))`; rename re-groups the requester's
 // project/language via `CASE WHEN sender = $req AND col = ANY(..) THEN ..`.
-func (d *DB) GetLeaderboards(ctx context.Context, start, end time.Time, requester string, hs HiddenSets, rs RenameSets) ([]LeaderboardRow, error) {
+func (d *DB) GetLeaderboards(ctx context.Context, start, end time.Time, requester string, hs HiddenSets, rs RenameSets, ms MemberSets, spaceRequested bool) ([]LeaderboardRow, error) {
 	query := qGetLeaderboards
 	args := []any{start, end}
 
-	// A single $req param is reused by both hide and rename when either is active.
+	// A single $req param is reused by hide, rename, and space scope when active.
 	requesterArg := 0
 	next := 3
 	ensureRequester := func() {
@@ -631,6 +604,37 @@ func (d *DB) GetLeaderboards(ctx context.Context, start, end time.Time, requeste
 			args = append(args, vals)
 			next++
 		}
+		query = injectAfter(query, leaderboardsRangeAnchor, pred)
+	}
+
+	// Space scope (?space=): the requester's OWN rows are restricted to those
+	// matching the Space's membership; other users' rows pass through unchanged.
+	if spaceRequested {
+		ensureRequester()
+		var arms []string
+		for _, axis := range hiddenAxes {
+			a := ms.byAxis[axis]
+			col := rawHeartbeatCols[axis]
+			if col == "" || (len(a.exact) == 0 && len(a.regex) == 0) {
+				continue
+			}
+			if len(a.exact) > 0 {
+				arms = append(arms, fmt.Sprintf("%s = ANY($%d)", col, next))
+				args = append(args, a.exact)
+				next++
+			}
+			for _, pat := range a.regex {
+				arms = append(arms, fmt.Sprintf("%s ~ $%d", col, next))
+				args = append(args, pat)
+				next++
+			}
+		}
+		// An empty (or column-less) scope matches nothing for the requester.
+		inner := "FALSE"
+		if len(arms) > 0 {
+			inner = "(" + strings.Join(arms, " OR ") + ")"
+		}
+		pred := fmt.Sprintf(" AND (sender <> $%d OR %s)", requesterArg, inner)
 		query = injectAfter(query, leaderboardsRangeAnchor, pred)
 	}
 
@@ -716,7 +720,7 @@ func (d *DB) GetTotalTimeBetween(ctx context.Context, users, projects []string, 
 	return out, nil
 }
 
-// ---- Projects, tags, badges ----
+// ---- Projects & badges ----
 
 // CheckProjectOwner reports whether the user owns the given project.
 func (d *DB) CheckProjectOwner(ctx context.Context, user, project string) (bool, error) {
@@ -749,43 +753,6 @@ func (d *DB) CheckProjectDisplayOwner(ctx context.Context, user, display string,
 	return err == nil, err
 }
 
-// CheckTagOwner reports whether the user owns the given tag.
-func (d *DB) CheckTagOwner(ctx context.Context, user, tag string) (bool, error) {
-	var name string
-	err := d.Pool.QueryRow(ctx, `
-		SELECT name FROM tags
-		INNER JOIN project_tags ON tags.id = project_tags.tag_id
-		WHERE name = $1 AND project_owner = $2 LIMIT 1`, tag, user).Scan(&name)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return false, nil
-	}
-	return err == nil, err
-}
-
-// GetTags returns tags on a project.
-func (d *DB) GetTags(ctx context.Context, user, project string) ([]string, error) {
-	rows, err := d.Pool.Query(ctx, `
-		SELECT name FROM project_tags
-		INNER JOIN tags ON project_tags.tag_id = tags.id
-		WHERE project_name = $1 AND project_owner = $2`, project, user)
-	if err != nil {
-		return nil, err
-	}
-	return collectStrings(rows)
-}
-
-// GetAllTags returns all distinct tags for a user.
-func (d *DB) GetAllTags(ctx context.Context, user string) ([]string, error) {
-	rows, err := d.Pool.Query(ctx, `
-		SELECT DISTINCT name FROM project_tags
-		INNER JOIN tags ON project_tags.tag_id = tags.id
-		WHERE project_owner = $1`, user)
-	if err != nil {
-		return nil, err
-	}
-	return collectStrings(rows)
-}
-
 // projectListCols maps hide axes to their heartbeats-qualified columns for the
 // projects-list join. A project only surfaces if it has heartbeats not matching
 // any hidden value, so a project consisting solely of hidden activity disappears.
@@ -800,7 +767,7 @@ var projectListCols = map[string]string{
 // [t0,t1], most active first. All hide axes are excluded on the heartbeats join.
 // A project rename relabels names at read time (raw rows untouched): merged names
 // collapse to one entry, most active first.
-func (d *DB) GetAllProjects(ctx context.Context, user string, t0, t1 time.Time, hs HiddenSets, rs RenameSets) ([]string, error) {
+func (d *DB) GetAllProjects(ctx context.Context, user string, t0, t1 time.Time, hs HiddenSets, rs RenameSets, ms MemberSets, spaceRequested bool) ([]string, error) {
 	query := `
 		SELECT name, count(*) AS cnt FROM projects
 		INNER JOIN heartbeats ON heartbeats.project = projects.name AND heartbeats.sender = projects.owner
@@ -810,6 +777,11 @@ func (d *DB) GetAllProjects(ctx context.Context, user string, t0, t1 time.Time, 
 	if hs.AnyHidden() {
 		var pred string
 		pred, args, next = exclusionPredicate(hs, projectListCols, next, args)
+		query += pred
+	}
+	if spaceRequested {
+		var pred string
+		pred, args, next = spaceScopePredicate(ms, projectListCols, next, args, spaceRequested)
 		query += pred
 	}
 	query += ` GROUP BY projects.name`
@@ -829,43 +801,6 @@ func (d *DB) GetAllProjects(ctx context.Context, user string, t0, t1 time.Time, 
 		return nil, err
 	}
 	return collectStrings(rows)
-}
-
-// SetTags replaces the tags on a project and returns the number added.
-func (d *DB) SetTags(ctx context.Context, user, project string, tags []string) (int64, error) {
-	tx, err := d.Pool.Begin(ctx)
-	if err != nil {
-		return 0, err
-	}
-	defer tx.Rollback(ctx)
-
-	tagIDs := make([]uuid.UUID, 0, len(tags))
-	for _, t := range tags {
-		var id uuid.UUID
-		if err := tx.QueryRow(ctx,
-			`INSERT INTO tags (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name RETURNING id`,
-			t).Scan(&id); err != nil {
-			return 0, err
-		}
-		tagIDs = append(tagIDs, id)
-	}
-	if _, err := tx.Exec(ctx, `DELETE FROM project_tags WHERE project_name = $1 AND project_owner = $2`, project, user); err != nil {
-		return 0, err
-	}
-	var added int64
-	for _, id := range tagIDs {
-		ct, err := tx.Exec(ctx,
-			`INSERT INTO project_tags (project_name, project_owner, tag_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-			project, user, id)
-		if err != nil {
-			return 0, err
-		}
-		added += ct.RowsAffected()
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return 0, err
-	}
-	return added, nil
 }
 
 // CreateBadgeLink upserts a badge link and returns its id.

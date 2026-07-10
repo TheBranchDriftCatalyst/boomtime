@@ -16,7 +16,6 @@ func TestPredefinedErrorStatuses(t *testing.T) {
 		{"MissingRefreshTokenCookie", MissingRefreshTokenCookie(), http.StatusBadRequest}, // 400
 		{"InvalidToken", InvalidToken(), http.StatusForbidden},                            // 403
 		{"InvalidRelation", InvalidRelation("u", "p"), http.StatusNotFound},               // 404
-		{"InvalidTagRelation", InvalidTagRelation("u", "t"), http.StatusNotFound},         // 404
 		{"ExpiredRefreshToken", ExpiredRefreshToken(), http.StatusForbidden},              // 403
 		{"DisabledRegistration", DisabledRegistration(), http.StatusForbidden},            // 403
 		{"UsernameExists", UsernameExists("bob"), http.StatusConflict},                    // 409
