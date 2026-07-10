@@ -1,0 +1,213 @@
+package db
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+)
+
+// exploreColumns maps FE-facing axis names to the real (trusted) SQL expression.
+// This is the ONLY place a group/filter axis is turned into SQL — the raw client
+// value is never interpolated, so the whitelist is the injection guard. Reused by
+// both the group and rows endpoints (and reserved for future v2 remap/rename).
+var exploreColumns = map[string]string{
+	"day":       "time_sent::date",
+	"project":   "project",
+	"language":  "language",
+	"editor":    "editor",
+	"plugin":    "plugin",
+	"platform":  "platform",
+	"machine":   "machine",
+	"branch":    "branch",
+	"category":  "category",
+	"type":      "ty",
+	"entity":    "entity",
+	"isWrite":   "is_write",
+	"userAgent": "user_agent",
+}
+
+// ExploreColumn returns the trusted SQL expression for a whitelisted axis name
+// and whether it is allowed. Exported for handler-side validation + tests.
+func ExploreColumn(name string) (string, bool) {
+	col, ok := exploreColumns[name]
+	return col, ok
+}
+
+// ExploreFilter is a validated equality filter: Column is a trusted SQL
+// expression (from the whitelist) and Value is the user-supplied comparand.
+// A nil Value means "IS NULL".
+type ExploreFilter struct {
+	Column string
+	Value  *string
+}
+
+// buildFilterClause appends "AND <col> = $n" (or "IS NULL") clauses for each
+// filter, casting to text so heterogeneous column types (bool, date) compare
+// against string params safely. It starts numbering args at nextArg and returns
+// the SQL fragment, the appended args, and the next free arg index.
+func buildFilterClause(filters []ExploreFilter, nextArg int, args []any) (string, []any, int) {
+	var b strings.Builder
+	for _, f := range filters {
+		if f.Value == nil {
+			fmt.Fprintf(&b, " AND %s IS NULL", f.Column)
+			continue
+		}
+		fmt.Fprintf(&b, " AND %s::text = $%d", f.Column, nextArg)
+		args = append(args, *f.Value)
+		nextArg++
+	}
+	return b.String(), args, nextArg
+}
+
+// ExploreGroup is one group bucket in the group response.
+type ExploreGroup struct {
+	Value     *string   `json:"value"` // null-able; "YYYY-MM-DD" for the day axis
+	Count     int64     `json:"count"`
+	FirstSeen time.Time `json:"firstSeen"`
+	LastSeen  time.Time `json:"lastSeen"`
+}
+
+// GroupHeartbeats groups a user's heartbeats by a whitelisted axis within a time
+// range, applying any equality filters (the accumulated parent-group values).
+// groupCol/filters must already be validated against the whitelist by the caller.
+// Results are ordered by count desc and capped at limit; the second return value
+// reports whether the result was truncated at the cap.
+func (d *DB) GroupHeartbeats(ctx context.Context, sender, groupCol string, start, end time.Time, filters []ExploreFilter, limit int) ([]ExploreGroup, bool, error) {
+	// For the day axis, render the value as text 'YYYY-MM-DD'; otherwise cast the
+	// column to text so every group value is a consistent string|null.
+	valueExpr := groupCol + "::text"
+	if groupCol == "time_sent::date" {
+		valueExpr = "to_char(time_sent::date, 'YYYY-MM-DD')"
+	}
+
+	args := []any{sender, start, end}
+	filterSQL, args, _ := buildFilterClause(filters, 4, args)
+
+	// Cap+1 so we can detect truncation.
+	fetch := limit + 1
+	query := fmt.Sprintf(`
+		SELECT %s AS value, count(*), min(time_sent), max(time_sent)
+		FROM heartbeats
+		WHERE sender = $1 AND time_sent >= $2 AND time_sent <= $3%s
+		GROUP BY %s
+		ORDER BY count(*) DESC
+		LIMIT %d`, valueExpr, filterSQL, groupCol, fetch)
+
+	rows, err := d.Pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+
+	out := []ExploreGroup{}
+	for rows.Next() {
+		var g ExploreGroup
+		if err := rows.Scan(&g.Value, &g.Count, &g.FirstSeen, &g.LastSeen); err != nil {
+			return nil, false, err
+		}
+		out = append(out, g)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+
+	truncated := false
+	if len(out) > limit {
+		out = out[:limit]
+		truncated = true
+	}
+	return out, truncated, nil
+}
+
+// ExploreRow is the full raw heartbeat record with FE JSON keys.
+type ExploreRow struct {
+	ID           int64     `json:"id"`
+	Time         time.Time `json:"time"` // time_sent
+	Entity       string    `json:"entity"`
+	Type         string    `json:"type"` // ty
+	Project      *string   `json:"project"`
+	Language     *string   `json:"language"`
+	Editor       *string   `json:"editor"`
+	Plugin       *string   `json:"plugin"`
+	Platform     *string   `json:"platform"`
+	Machine      *string   `json:"machine"`
+	Branch       *string   `json:"branch"`
+	Category     *string   `json:"category"`
+	IsWrite      *bool     `json:"isWrite"` // is_write
+	Lineno       *int64    `json:"lineno"`
+	Cursorpos    *string   `json:"cursorpos"` // TEXT column
+	FileLines    *int64    `json:"fileLines"` // file_lines
+	Dependencies []string  `json:"dependencies"`
+	UserAgent    *string   `json:"userAgent"` // user_agent
+}
+
+// ListHeartbeats returns a page of raw heartbeats (newest first) plus the total
+// row count for the same filters. filters must already be whitelist-validated.
+// entitySubstr, when non-empty, applies an ILIKE '%..%' on entity.
+func (d *DB) ListHeartbeats(ctx context.Context, sender string, start, end time.Time, filters []ExploreFilter, entitySubstr string, page, limit int) ([]ExploreRow, int64, error) {
+	if page < 1 {
+		page = 1
+	}
+	args := []any{sender, start, end}
+	filterSQL, args, nextArg := buildFilterClause(filters, 4, args)
+
+	if entitySubstr != "" {
+		filterSQL += fmt.Sprintf(" AND entity ILIKE $%d", nextArg)
+		args = append(args, "%"+entitySubstr+"%")
+		nextArg++
+	}
+
+	where := fmt.Sprintf(`FROM heartbeats WHERE sender = $1 AND time_sent >= $2 AND time_sent <= $3%s`, filterSQL)
+
+	// Total count for the same predicate.
+	var total int64
+	if err := d.Pool.QueryRow(ctx, "SELECT count(*) "+where, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	offset := (page - 1) * limit
+	listArgs := append(append([]any{}, args...), limit, offset)
+	query := fmt.Sprintf(`
+		SELECT id, time_sent, entity, ty, project, language, editor, plugin, platform,
+		       machine, branch, category, is_write, lineno, cursorpos, file_lines,
+		       dependencies, user_agent
+		%s
+		ORDER BY time_sent DESC
+		LIMIT $%d OFFSET $%d`, where, nextArg, nextArg+1)
+
+	rows, err := d.Pool.Query(ctx, query, listArgs...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	items := []ExploreRow{}
+	for rows.Next() {
+		var r ExploreRow
+		if err := scanExploreRow(rows, &r); err != nil {
+			return nil, 0, err
+		}
+		items = append(items, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
+}
+
+func scanExploreRow(rows pgx.Rows, r *ExploreRow) error {
+	// dependencies is text[]; scan into a []string that stays nil when NULL.
+	var deps []string
+	if err := rows.Scan(
+		&r.ID, &r.Time, &r.Entity, &r.Type, &r.Project, &r.Language, &r.Editor,
+		&r.Plugin, &r.Platform, &r.Machine, &r.Branch, &r.Category, &r.IsWrite,
+		&r.Lineno, &r.Cursorpos, &r.FileLines, &deps, &r.UserAgent,
+	); err != nil {
+		return err
+	}
+	r.Dependencies = deps
+	return nil
+}

@@ -1,0 +1,17 @@
+# Dev image: Go toolchain + air for live-reload. Source is bind-mounted by
+# docker-compose, so this image only needs the toolchain, not the code.
+FROM golang:1.25-alpine
+
+RUN apk add --no-cache git ca-certificates curl bash
+
+# air (live reload). Pinned to the version validated for this project.
+RUN go install github.com/air-verse/air@v1.65.2
+
+WORKDIR /src
+
+# Warm the module cache when go.mod/go.sum are present at build time.
+COPY go.mod go.sum* ./
+RUN go mod download || true
+
+EXPOSE 8080
+CMD ["air", "-c", ".air.toml"]

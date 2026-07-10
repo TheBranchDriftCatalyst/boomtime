@@ -1,0 +1,734 @@
+package db
+
+import (
+	"context"
+	"errors"
+	"os"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/TheBranchDriftCatalyst/gakatime/internal/model"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+// statsWorkMem is applied via `SET LOCAL work_mem` to the heavy aggregation
+// queries so their sorts stay in RAM instead of spilling to disk (on ~438k rows
+// the disk spill roughly doubled latency). It is transaction-scoped, so it never
+// leaks to other pooled connections. Tunable via HAKA_STATS_WORK_MEM (e.g. 128MB).
+var statsWorkMem = "256MB"
+
+var workMemPattern = regexp.MustCompile(`^[0-9]+(kB|MB|GB)$`)
+
+func init() {
+	if v := os.Getenv("HAKA_STATS_WORK_MEM"); workMemPattern.MatchString(v) {
+		statsWorkMem = v
+	}
+}
+
+// aggQuery runs a read-only aggregation query inside a transaction with an
+// elevated work_mem, handing the rows to scan (which must consume/close them).
+// The SET LOCAL is discarded by the read-only rollback.
+func (d *DB) aggQuery(ctx context.Context, sql string, args []any, scan func(pgx.Rows) error) error {
+	tx, err := d.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, "SET LOCAL work_mem = '"+statsWorkMem+"'"); err != nil {
+		return err
+	}
+	rows, err := tx.Query(ctx, sql, args...)
+	if err != nil {
+		return err
+	}
+	return scan(rows)
+}
+
+// numToFloat converts a scanned pgtype.Numeric to float64 (numeric(13,12) percentages).
+func numToFloat(n pgtype.Numeric) float64 {
+	if !n.Valid {
+		return 0
+	}
+	f, err := n.Float64Value()
+	if err != nil || !f.Valid {
+		return 0
+	}
+	return f.Float64
+}
+
+// ---- Users & tokens ----
+
+// GetUserByName returns the stored user credentials or (nil,nil) if absent.
+func (d *DB) GetUserByName(ctx context.Context, name string) (*StoredUser, error) {
+	row := d.Pool.QueryRow(ctx, `SELECT username, hashed_password, salt_used FROM users WHERE username = $1`, name)
+	var u StoredUser
+	if err := row.Scan(&u.Username, &u.HashedPassword, &u.SaltUsed); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &u, nil
+}
+
+// InsertUser inserts a new user; returns false if the username already exists.
+func (d *DB) InsertUser(ctx context.Context, u StoredUser) (bool, error) {
+	existing, err := d.GetUserByName(ctx, u.Username)
+	if err != nil {
+		return false, err
+	}
+	if existing != nil {
+		return false, nil
+	}
+	_, err = d.Pool.Exec(ctx,
+		`INSERT INTO users (username, hashed_password, salt_used) VALUES ($1, $2, $3)`,
+		u.Username, u.HashedPassword, u.SaltUsed)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// GetUserByToken returns the owner of an API token, honoring token_expiry
+// (CLI/api tokens have null expiry and never expire), and bumps last_usage.
+func (d *DB) GetUserByToken(ctx context.Context, token string) (string, bool, error) {
+	row := d.Pool.QueryRow(ctx, `
+		SELECT owner FROM auth_tokens
+		WHERE  token = $1
+		AND    COALESCE(token_expiry, (NOW() + interval '1 hours')::timestamp without time zone) > $2`,
+		token, time.Now().UTC())
+	var owner string
+	if err := row.Scan(&owner); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	// Bump last usage (best-effort; ignore error impact on the read path).
+	_, _ = d.Pool.Exec(ctx, `UPDATE auth_tokens SET last_usage = now()::timestamp WHERE token = $1`, token)
+	return owner, true, nil
+}
+
+// GetUserByRefreshToken returns the owner of a non-expired refresh token.
+func (d *DB) GetUserByRefreshToken(ctx context.Context, token string) (string, bool, error) {
+	row := d.Pool.QueryRow(ctx,
+		`SELECT owner FROM refresh_tokens WHERE refresh_token = $1 AND token_expiry > $2`,
+		token, time.Now().UTC())
+	var owner string
+	if err := row.Scan(&owner); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	return owner, true, nil
+}
+
+// CreateAccessTokens inserts an access token (30 min) and a refresh token
+// (expiry hours) then deletes any expired tokens for the owner.
+func (d *DB) CreateAccessTokens(ctx context.Context, td TokenData, expiryHours int64) error {
+	tx, err := d.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err = tx.Exec(ctx,
+		`INSERT INTO auth_tokens(owner, token, token_expiry) VALUES ($1, $2, NOW() + interval '30 minutes')`,
+		td.Owner, td.Token); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx,
+		`INSERT INTO refresh_tokens(owner, refresh_token, token_expiry) VALUES ($1, $2, NOW() + interval '1' hour * $3)`,
+		td.Owner, td.RefreshToken, expiryHours); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `DELETE FROM auth_tokens WHERE owner = $1 AND token_expiry < NOW()`, td.Owner); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `DELETE FROM refresh_tokens WHERE owner = $1 AND token_expiry < NOW()`, td.Owner); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// InsertAPIToken stores a base64(uuid) token with a null expiry (never expires).
+func (d *DB) InsertAPIToken(ctx context.Context, owner, token string) error {
+	_, err := d.Pool.Exec(ctx, `INSERT INTO auth_tokens(owner, token) VALUES ($1, $2)`, owner, token)
+	return err
+}
+
+// DeleteTokens removes an auth token and refresh token, returning rows affected.
+func (d *DB) DeleteTokens(ctx context.Context, token, refreshToken string) (int64, error) {
+	tx, err := d.Pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+	t1, err := tx.Exec(ctx, `DELETE FROM auth_tokens WHERE token = $1`, token)
+	if err != nil {
+		return 0, err
+	}
+	t2, err := tx.Exec(ctx, `DELETE FROM refresh_tokens WHERE refresh_token = $1`, refreshToken)
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+	return t1.RowsAffected() + t2.RowsAffected(), nil
+}
+
+// DeleteAuthToken deletes an API token by its value.
+func (d *DB) DeleteAuthToken(ctx context.Context, token string) error {
+	_, err := d.Pool.Exec(ctx, `DELETE FROM auth_tokens WHERE token = $1`, token)
+	return err
+}
+
+// ListApiTokens returns the non-expiring API tokens for a user.
+func (d *DB) ListApiTokens(ctx context.Context, owner string) ([]model.StoredApiToken, error) {
+	rows, err := d.Pool.Query(ctx, `
+		SELECT token, last_usage::timestamptz, token_name, token_description
+		FROM auth_tokens
+		WHERE owner = $1 AND token_expiry IS NULL`, owner)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []model.StoredApiToken{}
+	for rows.Next() {
+		var t model.StoredApiToken
+		var lu *time.Time
+		if err := rows.Scan(&t.ID, &lu, &t.Name, &t.Desc); err != nil {
+			return nil, err
+		}
+		t.LastUsage = lu
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// UpdateTokenMetadata renames a token (POST /auth/token).
+func (d *DB) UpdateTokenMetadata(ctx context.Context, owner string, m model.TokenMetadata) error {
+	_, err := d.Pool.Exec(ctx,
+		`UPDATE auth_tokens SET token_name = $3 WHERE token = $1 AND owner = $2`,
+		m.TokenID, owner, m.TokenName)
+	return err
+}
+
+// ---- Heartbeats ----
+
+// SaveHeartbeats inserts unique projects then upserts heartbeats, returning ids.
+func (d *DB) SaveHeartbeats(ctx context.Context, hbs []model.HeartbeatPayload) ([]int64, error) {
+	if len(hbs) == 0 {
+		return []int64{}, nil
+	}
+
+	// Canonicalize label values via the sender's active rename rules so re-imports
+	// and live heartbeats stay renamed (persistence). Loaded once per distinct
+	// sender in the batch.
+	renameBySender := map[string]renameMap{}
+	for i := range hbs {
+		s := hbs[i].Sender
+		if s == nil {
+			continue
+		}
+		rm, ok := renameBySender[*s]
+		if !ok {
+			loaded, err := d.loadRenameMap(ctx, *s)
+			if err != nil {
+				return nil, err
+			}
+			rm = loaded
+			renameBySender[*s] = rm
+		}
+		if len(rm) == 0 {
+			continue
+		}
+		hbs[i].Project = rm.apply("project", hbs[i].Project)
+		hbs[i].Language = rm.apply("language", hbs[i].Language)
+		hbs[i].Editor = rm.apply("editor", hbs[i].Editor)
+		hbs[i].Plugin = rm.apply("plugin", hbs[i].Plugin)
+		hbs[i].Platform = rm.apply("platform", hbs[i].Platform)
+		hbs[i].Machine = rm.apply("machine", hbs[i].Machine)
+		hbs[i].Branch = rm.apply("branch", hbs[i].Branch)
+		hbs[i].Category = rm.apply("category", hbs[i].Category)
+		// entity and type are also renamable axes.
+		hbs[i].Entity = deref(rm.apply("entity", &hbs[i].Entity))
+		if ty := rm.apply("type", strPtr(string(hbs[i].Type))); ty != nil {
+			hbs[i].Type = model.EntityType(*ty)
+		}
+	}
+
+	// Insert unique (owner, project) pairs first.
+	seen := map[[2]string]struct{}{}
+	for _, hb := range hbs {
+		if hb.Sender != nil && hb.Project != nil {
+			key := [2]string{*hb.Sender, *hb.Project}
+			if _, ok := seen[key]; !ok {
+				seen[key] = struct{}{}
+				if _, err := d.Pool.Exec(ctx,
+					`INSERT INTO projects (owner, name) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+					*hb.Sender, *hb.Project); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+
+	ids := make([]int64, 0, len(hbs))
+	for _, hb := range hbs {
+		var id int64
+		// cursorpos is a TEXT column (hakatime encodes the int via `show`), so
+		// send the decimal string, not an *int64 — pgx can't encode int into text.
+		var cursor *string
+		if hb.Cursorpos != nil {
+			s := strconv.FormatInt(*hb.Cursorpos, 10)
+			cursor = &s
+		}
+		row := d.Pool.QueryRow(ctx, qInsertHeartbeat,
+			hb.Editor, hb.Plugin, hb.Platform, hb.Machine, hb.Sender,
+			hb.UserAgent, hb.Branch, hb.Category, cursor, hb.Dependencies,
+			hb.Entity, hb.IsWrite, hb.Language, hb.Lineno, hb.FileLines,
+			hb.Project, string(hb.Type), unixToTime(hb.TimeSent),
+		)
+		if err := row.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+
+	// Phase A: maintain the precomputed gap_seconds for each affected sender,
+	// starting from the earliest inserted timestamp (so the next existing beat's
+	// gap is also corrected on out-of-order inserts).
+	minBySender := map[string]time.Time{}
+	for _, hb := range hbs {
+		if hb.Sender == nil {
+			continue
+		}
+		t := unixToTime(hb.TimeSent)
+		if cur, ok := minBySender[*hb.Sender]; !ok || t.Before(cur) {
+			minBySender[*hb.Sender] = t
+		}
+	}
+	for sender, since := range minBySender {
+		if err := d.RecomputeGaps(ctx, sender, since); err != nil {
+			return nil, err
+		}
+		if err := d.RefreshRollup(ctx, sender, since); err != nil {
+			return nil, err
+		}
+	}
+	return ids, nil
+}
+
+// RecomputeGaps recomputes gap_seconds (seconds to the previous heartbeat for the
+// same sender, in global time order) for that sender's rows at or after `since`.
+// It anchors on the row immediately before `since` so the first affected row —
+// and any existing beat that now follows a freshly inserted one — is correct.
+func (d *DB) RecomputeGaps(ctx context.Context, sender string, since time.Time) error {
+	_, err := d.Pool.Exec(ctx, `
+WITH anchor AS (
+    SELECT COALESCE(max(time_sent), '-infinity'::timestamptz) AS t
+    FROM heartbeats WHERE sender = $1 AND time_sent < $2
+),
+seq AS (
+    SELECT h.id, h.time_sent,
+        lag(h.time_sent) OVER (ORDER BY h.time_sent) AS prev
+    FROM heartbeats h, anchor
+    WHERE h.sender = $1 AND h.time_sent >= anchor.t
+)
+UPDATE heartbeats h
+SET gap_seconds = CASE
+        WHEN seq.prev IS NULL THEN NULL
+        ELSE EXTRACT(EPOCH FROM (seq.time_sent - seq.prev))::int
+    END
+FROM seq
+WHERE h.id = seq.id AND h.time_sent >= $2`, sender, since)
+	return err
+}
+
+// RefreshRollup recomputes hb_rollup_daily for a sender's affected days (>= the
+// date of `since`) from the raw heartbeats. Called after each ingest batch so the
+// rollup stays current; bounded to the touched days.
+func (d *DB) RefreshRollup(ctx context.Context, sender string, since time.Time) error {
+	tx, err := d.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM hb_rollup_daily WHERE sender = $1 AND day >= $2::date`, sender, since); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
+INSERT INTO hb_rollup_daily (sender, day, project, language, editor, platform, machine, total_seconds)
+SELECT sender, time_sent::date,
+    coalesce(project, 'Other'), coalesce(language, 'Other'), coalesce(editor, 'Other'),
+    coalesce(platform, 'Other'), coalesce(machine, 'Other'),
+    sum(CASE WHEN gap_seconds <= 900 THEN gap_seconds ELSE 0 END)
+FROM heartbeats
+WHERE sender = $1 AND time_sent >= $2::date
+GROUP BY sender, time_sent::date, coalesce(project, 'Other'), coalesce(language, 'Other'),
+    coalesce(editor, 'Other'), coalesce(platform, 'Other'), coalesce(machine, 'Other')`, sender, since); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// GetUserActivityRollup reads the pre-aggregated hb_rollup_daily (fast path for
+// the Overview at the default 15-min limit). $1 user, $2 start, $3 end. Applies
+// the sender's hide exclusions for project/editor/machine (the rollup has no
+// plugin column, so hidden plugins are only excluded on the raw path).
+func (d *DB) GetUserActivityRollup(ctx context.Context, user string, start, end time.Time, hs HiddenSets) ([]StatRow, error) {
+	query := qGetUserActivityRoll
+	args := []any{user, start, end}
+	if hs.AnyHidden() {
+		// Rollup lacks a plugin column; drop plugin from the exclusion here.
+		rhs := HiddenSets{Projects: hs.Projects, Editors: hs.Editors, Machines: hs.Machines}
+		cols := struct{ Project, Editor, Plugin, Machine string }{"project", "editor", "", "machine"}
+		pred, argsWith, _ := exclusionPredicate(rhs, cols, 4, args)
+		query = injectAfter(query, rollupRangeAnchor, pred)
+		args = argsWith
+	}
+	var out []StatRow
+	err := d.aggQuery(ctx, query, args, func(rows pgx.Rows) (e error) {
+		out, e = scanStatRows(rows)
+		return
+	})
+	return out, err
+}
+
+// rollupRangeAnchor is the inner range-end clause of get_user_activity_rollup.sql.
+const rollupRangeAnchor = "AND day <= $3::date"
+
+// injectAfter splices addition into query immediately after the first occurrence
+// of anchor. If anchor is absent it returns query unchanged (so a drifted .sql is
+// caught by the exclusion tests rather than producing broken SQL).
+func injectAfter(query, anchor, addition string) string {
+	if addition == "" {
+		return query
+	}
+	idx := strings.Index(query, anchor)
+	if idx < 0 {
+		return query
+	}
+	pos := idx + len(anchor)
+	return query[:pos] + addition + query[pos:]
+}
+
+func unixToTime(sec float64) time.Time {
+	s := int64(sec)
+	ns := int64((sec - float64(s)) * 1e9)
+	return time.Unix(s, ns).UTC()
+}
+
+// ---- Stats queries ----
+
+func scanStatRows(rows pgx.Rows) ([]StatRow, error) {
+	defer rows.Close()
+	out := []StatRow{}
+	for rows.Next() {
+		var r StatRow
+		var pct, dpct pgtype.Numeric
+		if err := rows.Scan(&r.Day, &r.Project, &r.Language, &r.Editor, &r.Branch,
+			&r.Platform, &r.Machine, &r.Entity, &r.TotalSeconds, &pct, &dpct); err != nil {
+			return nil, err
+		}
+		r.Pct = numToFloat(pct)
+		r.DailyPct = numToFloat(dpct)
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// GetUserActivity runs get_user_activity.sql ($1 user, $2 start, $3 end, $4 limit),
+// excluding the sender's hidden project/editor/plugin/machine values (query-time
+// hide) via appended `AND NOT (<col> = ANY($n))` predicates on the inner scan.
+func (d *DB) GetUserActivity(ctx context.Context, user string, start, end time.Time, limit int64, hs HiddenSets) ([]StatRow, error) {
+	query := qGetUserActivity
+	args := []any{user, start, end, limit}
+	if hs.AnyHidden() {
+		// Append the exclusion to the inner WHERE (anchored on the range-end
+		// clause) so hidden rows are dropped before aggregation.
+		cols := struct{ Project, Editor, Plugin, Machine string }{"heartbeats.project", "heartbeats.editor", "heartbeats.plugin", "heartbeats.machine"}
+		pred, argsWith, _ := exclusionPredicate(hs, cols, 5, args)
+		query = injectAfter(query, activityRangeAnchor, pred)
+		args = argsWith
+	}
+	var out []StatRow
+	err := d.aggQuery(ctx, query, args, func(rows pgx.Rows) (e error) {
+		out, e = scanStatRows(rows)
+		return
+	})
+	return out, err
+}
+
+// activityRangeAnchor is the inner range-end clause of get_user_activity.sql; the
+// hide exclusion is spliced in right after it. Kept as a constant so a change to
+// the .sql that removes this line fails loudly (injectAfter returns unchanged and
+// tests catch the missing exclusion).
+const activityRangeAnchor = "AND time_sent <= $3"
+
+// GetUserActivityByTag runs get_user_activity_by_tags.sql ($1 user,$2 start,$3 end,$4 tag,$5 limit).
+func (d *DB) GetUserActivityByTag(ctx context.Context, user string, start, end time.Time, tag string, limit int64) ([]StatRow, error) {
+	var out []StatRow
+	err := d.aggQuery(ctx, qGetUserActivityTag, []any{user, start, end, tag, limit}, func(rows pgx.Rows) (e error) {
+		out, e = scanStatRows(rows)
+		return
+	})
+	return out, err
+}
+
+func scanProjectStatRows(rows pgx.Rows) ([]ProjectStatRow, error) {
+	defer rows.Close()
+	out := []ProjectStatRow{}
+	for rows.Next() {
+		var r ProjectStatRow
+		var pct, dpct pgtype.Numeric
+		if err := rows.Scan(&r.Day, &r.Weekday, &r.Hour, &r.Language, &r.Entity,
+			&r.TotalSeconds, &pct, &dpct); err != nil {
+			return nil, err
+		}
+		r.Pct = numToFloat(pct)
+		r.DailyPct = numToFloat(dpct)
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// GetProjectStats runs get_projects_stats.sql ($1 user,$2 project,$3 start,$4 end,$5 limit).
+func (d *DB) GetProjectStats(ctx context.Context, user, project string, start, end time.Time, limit int64) ([]ProjectStatRow, error) {
+	var out []ProjectStatRow
+	err := d.aggQuery(ctx, qGetProjectsStats, []any{user, project, start, end, limit}, func(rows pgx.Rows) (e error) {
+		out, e = scanProjectStatRows(rows)
+		return
+	})
+	return out, err
+}
+
+// GetTagStats runs get_tag_stats.sql ($1 user,$2 tag,$3 start,$4 end,$5 limit).
+func (d *DB) GetTagStats(ctx context.Context, user, tag string, start, end time.Time, limit int64) ([]ProjectStatRow, error) {
+	var out []ProjectStatRow
+	err := d.aggQuery(ctx, qGetTagStats, []any{user, tag, start, end, limit}, func(rows pgx.Rows) (e error) {
+		out, e = scanProjectStatRows(rows)
+		return
+	})
+	return out, err
+}
+
+// GetTimeline runs get_timeline.sql ($1 user,$2 start,$3 end,$4 limit).
+func (d *DB) GetTimeline(ctx context.Context, user string, start, end time.Time, limit int64) ([]TimelineRow, error) {
+	out := []TimelineRow{}
+	err := d.aggQuery(ctx, qGetTimeline, []any{user, start, end, limit}, func(rows pgx.Rows) error {
+		defer rows.Close()
+		for rows.Next() {
+			var r TimelineRow
+			if err := rows.Scan(&r.Lang, &r.Project, &r.RangeStart, &r.RangeEnd); err != nil {
+				return err
+			}
+			out = append(out, r)
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
+// GetLeaderboards runs get_leaderboards.sql ($1 start,$2 end).
+func (d *DB) GetLeaderboards(ctx context.Context, start, end time.Time) ([]LeaderboardRow, error) {
+	out := []LeaderboardRow{}
+	err := d.aggQuery(ctx, qGetLeaderboards, []any{start, end}, func(rows pgx.Rows) error {
+		defer rows.Close()
+		for rows.Next() {
+			var r LeaderboardRow
+			if err := rows.Scan(&r.Project, &r.Language, &r.Sender, &r.TotalSeconds); err != nil {
+				return err
+			}
+			out = append(out, r)
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
+// GetTotalTimeToday runs get_time_today.sql ($1 user).
+func (d *DB) GetTotalTimeToday(ctx context.Context, user string) (int64, error) {
+	var total int64
+	err := d.Pool.QueryRow(ctx, qGetTimeToday, user).Scan(&total)
+	return total, err
+}
+
+// GetTotalActivityTime runs get_total_project_time.sql ($1 user,$2 days,$3 project).
+func (d *DB) GetTotalActivityTime(ctx context.Context, user string, days int64, project string) (int64, error) {
+	var total int64
+	err := d.Pool.QueryRow(ctx, qGetTotalProject, user, days, project).Scan(&total)
+	return total, err
+}
+
+// GetTotalTimeBetween runs get_time_between.sql for a set of (user,project,min,max)
+// ranges. Returns results in ascending order (reverse of the DESC insert order),
+// matching hakatime's Database.getTotalTimeBetween.
+func (d *DB) GetTotalTimeBetween(ctx context.Context, users, projects []string, mins, maxs []time.Time) ([]int64, error) {
+	rows, err := d.Pool.Query(ctx, qGetTimeBetween, users, projects, mins, maxs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var v int64
+		if err := rows.Scan(&v); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// reverse
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out, nil
+}
+
+// ---- Projects, tags, badges ----
+
+// CheckProjectOwner reports whether the user owns the given project.
+func (d *DB) CheckProjectOwner(ctx context.Context, user, project string) (bool, error) {
+	var name string
+	err := d.Pool.QueryRow(ctx, `SELECT name FROM projects WHERE name = $1 AND owner = $2`, project, user).Scan(&name)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// CheckTagOwner reports whether the user owns the given tag.
+func (d *DB) CheckTagOwner(ctx context.Context, user, tag string) (bool, error) {
+	var name string
+	err := d.Pool.QueryRow(ctx, `
+		SELECT name FROM tags
+		INNER JOIN project_tags ON tags.id = project_tags.tag_id
+		WHERE name = $1 AND project_owner = $2 LIMIT 1`, tag, user).Scan(&name)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// GetTags returns tags on a project.
+func (d *DB) GetTags(ctx context.Context, user, project string) ([]string, error) {
+	rows, err := d.Pool.Query(ctx, `
+		SELECT name FROM project_tags
+		INNER JOIN tags ON project_tags.tag_id = tags.id
+		WHERE project_name = $1 AND project_owner = $2`, project, user)
+	if err != nil {
+		return nil, err
+	}
+	return collectStrings(rows)
+}
+
+// GetAllTags returns all distinct tags for a user.
+func (d *DB) GetAllTags(ctx context.Context, user string) ([]string, error) {
+	rows, err := d.Pool.Query(ctx, `
+		SELECT DISTINCT name FROM project_tags
+		INNER JOIN tags ON project_tags.tag_id = tags.id
+		WHERE project_owner = $1`, user)
+	if err != nil {
+		return nil, err
+	}
+	return collectStrings(rows)
+}
+
+// GetAllProjects returns a user's projects with heartbeats in [t0,t1], most active first.
+func (d *DB) GetAllProjects(ctx context.Context, user string, t0, t1 time.Time, hiddenProjects []string) ([]string, error) {
+	query := `
+		SELECT name FROM projects
+		INNER JOIN heartbeats ON heartbeats.project = projects.name AND heartbeats.sender = projects.owner
+		WHERE heartbeats.sender = $1 AND heartbeats.time_sent >= $2 AND heartbeats.time_sent <= $3`
+	args := []any{user, t0, t1}
+	if len(hiddenProjects) > 0 {
+		query += ` AND NOT (projects.name = ANY($4))`
+		args = append(args, hiddenProjects)
+	}
+	query += ` GROUP BY projects.name ORDER BY COUNT(*) DESC`
+	rows, err := d.Pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	return collectStrings(rows)
+}
+
+// SetTags replaces the tags on a project and returns the number added.
+func (d *DB) SetTags(ctx context.Context, user, project string, tags []string) (int64, error) {
+	tx, err := d.Pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+
+	tagIDs := make([]uuid.UUID, 0, len(tags))
+	for _, t := range tags {
+		var id uuid.UUID
+		if err := tx.QueryRow(ctx,
+			`INSERT INTO tags (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name RETURNING id`,
+			t).Scan(&id); err != nil {
+			return 0, err
+		}
+		tagIDs = append(tagIDs, id)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM project_tags WHERE project_name = $1 AND project_owner = $2`, project, user); err != nil {
+		return 0, err
+	}
+	var added int64
+	for _, id := range tagIDs {
+		ct, err := tx.Exec(ctx,
+			`INSERT INTO project_tags (project_name, project_owner, tag_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+			project, user, id)
+		if err != nil {
+			return 0, err
+		}
+		added += ct.RowsAffected()
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+	return added, nil
+}
+
+// CreateBadgeLink upserts a badge link and returns its id.
+func (d *DB) CreateBadgeLink(ctx context.Context, user, project string) (uuid.UUID, error) {
+	var id uuid.UUID
+	err := d.Pool.QueryRow(ctx, `
+		INSERT INTO badges(username, project) VALUES ($1, $2)
+		ON CONFLICT (username, project) DO UPDATE SET username=EXCLUDED.username
+		RETURNING link_id`, user, project).Scan(&id)
+	return id, err
+}
+
+// GetBadgeLinkInfo returns the (username, project) for a badge id.
+func (d *DB) GetBadgeLinkInfo(ctx context.Context, id uuid.UUID) (string, string, error) {
+	var user, project string
+	err := d.Pool.QueryRow(ctx, `SELECT username, project FROM badges WHERE link_id = $1`, id).Scan(&user, &project)
+	return user, project, err
+}
+
+func collectStrings(rows pgx.Rows) ([]string, error) {
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+// Import-job storage lives in importjobs.go (durable, resumable job records).

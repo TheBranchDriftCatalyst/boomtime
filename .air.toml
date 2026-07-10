@@ -1,0 +1,21 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  # Build the server binary; run it with the `run` subcommand (auto-migrates then serves).
+  cmd = "go build -o ./tmp/gakatime ./cmd/gakatime"
+  bin = "./tmp/gakatime"
+  full_bin = "./tmp/gakatime run"
+  include_ext = ["go", "sql", "tmpl"]
+  include_dir = ["cmd", "internal", "tools"]
+  exclude_dir = ["tmp", "web", "bin", ".git", "dist"]
+  exclude_regex = ["_test.go"]
+  delay = 400
+  stop_on_error = true
+  kill_delay = "1s"
+
+[log]
+  time = true
+
+[misc]
+  clean_on_exit = true

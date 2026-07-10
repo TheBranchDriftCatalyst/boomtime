@@ -1,0 +1,126 @@
+// Package config parses the HAKA_* environment variables into a Config struct.
+// It mirrors hakatime's ServerSettings (App.hs) and CLI DB settings (Cli.hs).
+package config
+
+import (
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+)
+
+// RemoteWriteConfig configures forwarding heartbeats to another Wakatime server.
+type RemoteWriteConfig struct {
+	URL   string
+	Token string
+}
+
+// Config holds all runtime configuration.
+type Config struct {
+	Port               int
+	APIPrefix          string
+	BadgeURL           string
+	DashboardPath      string
+	ShieldsIOURL       string
+	EnableRegistration bool
+	SessionExpiry      int64 // hours
+	LogLevel           string
+	Env                string // "dev" or "prod"
+	HTTPLog            bool
+
+	DBHost string
+	DBPort int
+	DBName string
+	DBUser string
+	DBPass string
+
+	RemoteWrite *RemoteWriteConfig
+	GithubToken string
+
+	// WakatimeAPIKey is the server-configured key used to import history from
+	// wakatime.com when the request body omits apiToken. Sourced from
+	// WAKATIME_API_KEY, falling back to HAKA_REMOTE_WRITE_TOKEN. Never exposed.
+	WakatimeAPIKey string
+}
+
+func getEnv(key, def string) string {
+	if v, ok := os.LookupEnv(key); ok {
+		return v
+	}
+	return def
+}
+
+func getEnvInt(key string, def int) int {
+	if v, ok := os.LookupEnv(key); ok {
+		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+			return n
+		}
+	}
+	return def
+}
+
+func getEnvBool(key string, def bool) bool {
+	if v, ok := os.LookupEnv(key); ok {
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "1", "true", "yes", "on":
+			return true
+		case "0", "false", "no", "off":
+			return false
+		}
+	}
+	return def
+}
+
+// Load reads configuration from the environment, applying hakatime's defaults.
+func Load() *Config {
+	c := &Config{
+		Port:               getEnvInt("HAKA_PORT", 8080),
+		APIPrefix:          getEnv("HAKA_API_PREFIX", ""),
+		BadgeURL:           getEnv("HAKA_BADGE_URL", ""),
+		DashboardPath:      getEnv("HAKA_DASHBOARD_PATH", ""),
+		ShieldsIOURL:       getEnv("HAKA_SHIELDS_IO_URL", "https://img.shields.io"),
+		EnableRegistration: getEnvBool("HAKA_ENABLE_REGISTRATION", true),
+		SessionExpiry:      int64(getEnvInt("HAKA_SESSION_EXPIRY", 24)),
+		LogLevel:           getEnv("HAKA_LOG_LEVEL", "info"),
+		Env:                getEnv("HAKA_ENV", "prod"),
+		HTTPLog:            getEnvBool("HAKA_HTTP_LOG", true),
+
+		DBHost: getEnv("HAKA_DB_HOST", "localhost"),
+		DBPort: getEnvInt("HAKA_DB_PORT", 5432),
+		DBName: getEnv("HAKA_DB_NAME", "test"),
+		DBUser: getEnv("HAKA_DB_USER", "test"),
+		DBPass: getEnv("HAKA_DB_PASS", "test"),
+
+		GithubToken: getEnv("GITHUB_TOKEN", ""),
+	}
+
+	rwURL := getEnv("HAKA_REMOTE_WRITE_URL", "")
+	rwToken := getEnv("HAKA_REMOTE_WRITE_TOKEN", "")
+	if rwURL != "" && rwToken != "" {
+		c.RemoteWrite = &RemoteWriteConfig{URL: rwURL, Token: rwToken}
+	}
+
+	// Effective import key: WAKATIME_API_KEY, else HAKA_REMOTE_WRITE_TOKEN.
+	c.WakatimeAPIKey = getEnv("WAKATIME_API_KEY", "")
+	if c.WakatimeAPIKey == "" {
+		c.WakatimeAPIKey = rwToken
+	}
+
+	return c
+}
+
+// HasServerWakatimeKey reports whether a server-configured import key is present.
+func (c *Config) HasServerWakatimeKey() bool {
+	return c.WakatimeAPIKey != ""
+}
+
+// DatabaseURL returns a pgx-compatible connection string.
+func (c *Config) DatabaseURL() string {
+	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
+		c.DBUser, c.DBPass, c.DBHost, c.DBPort, c.DBName)
+}
+
+// IsDev reports whether the server runs in development mode (text logs).
+func (c *Config) IsDev() bool {
+	return strings.EqualFold(c.Env, "dev")
+}

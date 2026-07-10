@@ -1,0 +1,14 @@
+.git
+tmp/
+bin/
+.env
+.env.local
+.direnv/
+web/node_modules/
+web/dist/
+web/.vite/
+internal/server/dist/
+.dolt/
+.beads/
+*.db
+.DS_Store
