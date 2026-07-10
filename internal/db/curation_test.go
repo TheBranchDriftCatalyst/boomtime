@@ -6,17 +6,6 @@ import (
 	"time"
 )
 
-// mkHiddenSets builds a HiddenSets from an axis->values map (test helper).
-func mkHiddenSets(byAxis map[string][]string) HiddenSets {
-	m := make(map[string][]string, len(byAxis))
-	for k, v := range byAxis {
-		if len(v) > 0 {
-			m[k] = v
-		}
-	}
-	return HiddenSets{byAxis: m}
-}
-
 func TestExclusionPredicateShape(t *testing.T) {
 	hs := mkHiddenSets(map[string][]string{
 		"project": {"secret"},
@@ -81,14 +70,6 @@ func TestInjectAfterAnchorsExist(t *testing.T) {
 }
 
 // --- DB-backed tests (skip when no dev DB) ---
-
-func seedHB(t *testing.T, d *DB, ctx context.Context, sender, project, lang string, ts time.Time) {
-	t.Helper()
-	_, err := d.Pool.Exec(ctx, `INSERT INTO heartbeats (sender, project, language, entity, ty, time_sent, user_agent) VALUES ($1,$2,$3,'a.go','file',$4,'ua')`, sender, project, lang, ts)
-	if err != nil {
-		t.Fatal(err)
-	}
-}
 
 func TestHideExclusionInStats(t *testing.T) {
 	d := openTestDB(t)
@@ -179,13 +160,4 @@ func TestHideExclusionInStats(t *testing.T) {
 			t.Fatal("project list should exclude the hidden project")
 		}
 	}
-}
-
-func hasProject(rows []StatRow, p string) bool {
-	for _, r := range rows {
-		if r.Project == p {
-			return true
-		}
-	}
-	return false
 }
