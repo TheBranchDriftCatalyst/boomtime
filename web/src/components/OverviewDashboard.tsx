@@ -119,7 +119,7 @@ export function OverviewDashboard({
 
   // Bucket the day-by-day series into ~weekly groups for long ranges so the
   // time charts (column + heatmaps) stay bounded (~60 points) instead of
-  // rendering hundreds of daily x-points, which freezes ApexCharts on all-time.
+  // rendering hundreds of daily x-points on all-time.
   const groups = useMemo(() => bucketGroups(dates.length), [dates.length]);
   const chartDates = useMemo(() => bucketDates(groups, dates), [groups, dates]);
   const bucketNums = (arr: number[]) => bucketSum(groups, arr);

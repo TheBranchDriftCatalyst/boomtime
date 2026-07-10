@@ -6,7 +6,6 @@ import { Toaster } from "sonner";
 import { App } from "@/App";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ThemeProvider } from "@/theme/ThemeProvider";
-import { RendererProvider } from "@/viz/RendererProvider";
 import { authStore } from "@/lib/auth";
 import "@/index.css";
 
@@ -28,16 +27,14 @@ const queryClient = new QueryClient({
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ThemeProvider>
-      <RendererProvider>
-        <QueryClientProvider client={queryClient}>
-          <BrowserRouter>
-            <AuthProvider>
-              <App />
-              <Toaster position="top-right" richColors />
-            </AuthProvider>
-          </BrowserRouter>
-        </QueryClientProvider>
-      </RendererProvider>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <AuthProvider>
+            <App />
+            <Toaster position="top-right" richColors />
+          </AuthProvider>
+        </BrowserRouter>
+      </QueryClientProvider>
     </ThemeProvider>
   </StrictMode>,
 );

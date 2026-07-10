@@ -1,4 +1,4 @@
-/** Shared "No data available" placeholder, matching the Apex noData text. */
+/** Shared "No data available" placeholder. */
 export function EmptyChart({ height }: { height: number }) {
   return (
     <div

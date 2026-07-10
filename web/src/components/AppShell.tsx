@@ -37,7 +37,6 @@ import { Label } from "@/components/ui/label";
 import { CreateTokenModal } from "@/modals/CreateTokenModal";
 import { TokenListModal } from "@/modals/TokenListModal";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { RendererToggle } from "@/viz/RendererToggle";
 import { useAuth } from "@/hooks/useAuth";
 import { useSpaces, useSpaceMutations } from "@/hooks/useSpaces";
 import { api } from "@/lib/api";
@@ -252,7 +251,6 @@ export function AppShell() {
       {/* Main */}
       <div className="flex flex-1 flex-col overflow-hidden">
         <header className="flex h-16 items-center justify-end gap-3 border-b bg-card px-6">
-          <RendererToggle />
           <ThemeToggle />
           <Button
             variant="outline"

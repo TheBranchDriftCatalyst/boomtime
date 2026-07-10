@@ -1,6 +1,5 @@
-// Shared prop contracts for every chart. Each chart has a switcher, an Apex
-// implementation, and a D3 implementation — all three use the SAME props from
-// here so the switcher is a pure drop-in and call sites never change.
+// Shared prop contracts for every chart. Every chart is a single D3-rendered
+// component; props live here so call sites stay stable.
 import type { ResourceStats, TimelinePayload } from "@/types/api";
 
 export interface ColumnChartProps {

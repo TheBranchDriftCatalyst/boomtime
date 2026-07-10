@@ -195,25 +195,3 @@
     0 0 0 1px oklch(0.72 0.24 350 / 0.1),
     0 8px 30px oklch(0.1 0.04 300 / 0.6);
 }
-
-/* ApexCharts: make it play nice with the theme */
-.apexcharts-tooltip {
-  background: var(--popover) !important;
-  color: var(--popover-foreground) !important;
-  border: 1px solid var(--border) !important;
-  box-shadow: 0 4px 12px rgb(0 0 0 / 0.15) !important;
-}
-.apexcharts-tooltip-title {
-  background: var(--muted) !important;
-  border-bottom: 1px solid var(--border) !important;
-}
-.apexcharts-menu {
-  background: var(--popover) !important;
-  color: var(--popover-foreground) !important;
-  border: 1px solid var(--border) !important;
-}
-.apexcharts-text,
-.apexcharts-legend-text {
-  fill: var(--muted-foreground);
-  color: var(--muted-foreground) !important;
-}

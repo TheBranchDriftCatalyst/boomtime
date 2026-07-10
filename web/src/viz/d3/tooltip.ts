@@ -1,7 +1,6 @@
 import * as d3 from "d3";
 
-// A single shared tooltip element, styled to match the ApexCharts tooltip
-// (see .apexcharts-tooltip rules in index.css) using theme tokens.
+// A single shared tooltip element, styled with theme tokens.
 export type TooltipSelection = d3.Selection<
   HTMLDivElement,
   unknown,

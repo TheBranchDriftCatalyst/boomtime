@@ -3,7 +3,6 @@ import { render, type RenderOptions } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
 import { ThemeProvider } from "@/theme/ThemeProvider";
-import { RendererProvider } from "@/viz/RendererProvider";
 import { AuthProvider } from "@/hooks/useAuth";
 
 /** A QueryClient with retries + refetch off, so tests are deterministic. */
@@ -37,20 +36,16 @@ export function Providers({
 
   let tree: ReactNode = (
     <ThemeProvider>
-      <RendererProvider>
-        <QueryClientProvider client={qc}>{children}</QueryClientProvider>
-      </RendererProvider>
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
     </ThemeProvider>
   );
 
   if (withAuth) {
     tree = (
       <ThemeProvider>
-        <RendererProvider>
-          <QueryClientProvider client={qc}>
-            <AuthProvider>{children}</AuthProvider>
-          </QueryClientProvider>
-        </RendererProvider>
+        <QueryClientProvider client={qc}>
+          <AuthProvider>{children}</AuthProvider>
+        </QueryClientProvider>
       </ThemeProvider>
     );
   }

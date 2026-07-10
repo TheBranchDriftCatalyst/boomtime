@@ -8,8 +8,8 @@ export interface ChartFrame {
 }
 
 /**
- * Measures a container via ResizeObserver and re-renders on resize, mirroring
- * ApexCharts' auto-sizing. Also watches the document root's class list (which
+ * Measures a container via ResizeObserver and re-renders on resize.
+ * Also watches the document root's class list (which
  * the ThemeProvider toggles between light/dark) via a MutationObserver and
  * bumps `themeKey` AFTER the class actually changes — so D3 draw effects that
  * depend on it re-run and re-read the (now-updated) CSS custom properties.

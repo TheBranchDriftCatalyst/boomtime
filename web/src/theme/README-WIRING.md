@@ -8,7 +8,6 @@ New files created:
 
 - `web/src/theme/ThemeProvider.tsx` — context + `useTheme()` hook
 - `web/src/theme/theme.css` — light/dark design tokens (standalone)
-- `web/src/theme/apexTheme.ts` — `useApexTheme()` + `mergeApexTheme()`
 - `web/src/components/ThemeToggle.tsx` — sun/moon toggle button
 - `web/src/theme/README-WIRING.md` — this file
 
@@ -26,8 +25,8 @@ Preference persists in `localStorage["gakatime-theme"]` as `dark` | `light`
 So you have two clean options — pick ONE:
 
 **Option 1 (recommended): keep `index.css` as-is, do NOT import `theme.css`.**
-The provider/toggle/apex helpers work against whatever tokens exist. The only
-improvement worth porting from `theme.css` is the dark-variant selector:
+The D3 charts read whatever tokens exist. The only improvement worth porting
+from `theme.css` is the dark-variant selector:
 
 ```css
 /* in index.css, replace: */
@@ -39,7 +38,7 @@ improvement worth porting from `theme.css` is the dark-variant selector:
 **Option 2: make `theme.css` the single source of truth.** Delete the
 duplicated blocks from `index.css` (the `:root`, `.dark`, `@custom-variant dark`,
 and `@theme inline` blocks), keep `@import "tailwindcss";` and the
-`@layer base` / `.apexcharts-*` rules in `index.css`, then add **below** the
+`@layer base` rules in `index.css`, then add **below** the
 Tailwind import in `index.css`:
 
 ```css
@@ -112,45 +111,14 @@ border-input, hover:bg-accent), so it aligns with the existing controls.
 
 ---
 
-## (d) Make charts merge `useApexTheme()` into their ApexCharts options
+## (d) Charts are D3-native and theme automatically
 
-For each chart under `web/src/components/charts/` (e.g. `ColumnChart.tsx`,
-`PieChart.tsx`, `RadarChart.tsx`, `HeatmapChart.tsx`, `HourBarChart.tsx`,
-`FileBarChart.tsx`, `TimelineChart.tsx`, `ColumnChart.tsx`):
-
-1. Import the hook + merge helper:
-
-```tsx
-import { useApexTheme, mergeApexTheme } from "@/theme/apexTheme";
-```
-
-2. Inside the component, read the fragment and merge it LAST into the options
-   you already build:
-
-```tsx
-const apexTheme = useApexTheme();
-const options: ApexOptions = mergeApexTheme(
-  {
-    chart: { ...baseChart, type: "bar" },
-    // ...the chart's existing options...
-    grid: { borderColor: "var(--border)", strokeDashArray: 4 },
-  },
-  apexTheme,
-);
-```
-
-`mergeApexTheme` shallow-merges `chart`, `grid`, `tooltip`, and `theme` one
-level deep, so it overrides `theme.mode` / `foreColor` / grid color while
-preserving each chart's own `chart.type` and other settings. Because
-`useApexTheme()` subscribes to the theme context, charts re-render and re-theme
-automatically when the mode flips.
-
-Optionally, `web/src/components/charts/base.ts` currently hard-codes
-`theme: { mode: "light" }` in `commonOptions`. That value is harmless once each
-chart merges `useApexTheme()` last (the hook wins), but you may drop it from
-`commonOptions` for clarity. Do NOT rely on editing `base.ts` alone to theme
-charts — Apex needs the per-chart merge because most charts build `options`
-locally rather than spreading `commonOptions`.
+Charts under `web/src/components/charts/` are rendered directly with D3 and read
+theme tokens live from CSS custom properties (via `cssVar(...)` in
+`web/src/viz/d3/useChartFrame.ts`). No per-chart theme wiring is required: the
+`useChartFrame` hook watches the `.dark` class on `<html>` with a
+`MutationObserver` and re-runs each chart's D3 draw effect when the mode flips,
+so charts re-read the updated tokens and re-theme automatically.
 
 ---
 
