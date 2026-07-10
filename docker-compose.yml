@@ -4,6 +4,7 @@
 services:
   db:
     container_name: gakatime_db
+    restart: unless-stopped
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: ${HAKA_DB_NAME:-test}
@@ -22,6 +23,7 @@ services:
   # Go API server with live reload (air). Source is bind-mounted.
   app:
     container_name: gakatime_app
+    restart: unless-stopped
     build:
       context: .
       dockerfile: Dockerfile.dev
@@ -43,6 +45,7 @@ services:
   # Vite dev server with HMR; proxies /api,/auth,/badge,/import to the app.
   web:
     container_name: gakatime_web
+    restart: unless-stopped
     image: node:22-alpine
     working_dir: /src/web
     depends_on: [app]
