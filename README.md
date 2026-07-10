@@ -66,6 +66,7 @@ Single-binary prod build: `task build` embeds the SPA (`go:embed web/dist`) into
 
 Start high-level and drill down:
 
+0. **[WHY.md](WHY.md)** — the origin story: why it exists, what it fixes about Wakatime, and how it was built (agentic engineering, ~5 hours).
 1. **[DEMO.md](DEMO.md)** — the visual tour: a full-page screenshot + feature list for every page.
 2. **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — how it fits together: request flow, the duration/rollup model, curation, layout.
 3. **[docs/testing/TEST_MATRIX.md](docs/testing/TEST_MATRIX.md)** — the 2-layer test pyramid (backend unit + handler HTTP, frontend Vitest, e2e) and coverage matrices.
