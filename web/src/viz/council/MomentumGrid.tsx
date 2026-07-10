@@ -37,8 +37,9 @@ export function MomentumGrid({ data, rowHeight = 26 }: MomentumGridProps) {
       return;
 
     const fg = cssVar("--muted-foreground");
-    const card = cssVar("--card");
     const base = cssVar("--primary");
+    const dark = document.documentElement.classList.contains("dark");
+    const emptyFloor = dark ? "#232a36" : "#eceef2";
     const width = frame.width;
     const margin = { top: 6, right: 8, bottom: 26, left: 110 };
     const innerW = width - margin.left - margin.right;
@@ -53,27 +54,30 @@ export function MomentumGrid({ data, rowHeight = 26 }: MomentumGridProps) {
     const x = d3.scaleBand<number>().domain(d3.range(weeks.length)).range([0, innerW]).padding(0.08);
     const y = d3.scaleBand<string>().domain(rows.map((r) => r.name)).range([0, innerH]).padding(0.12);
 
-    // Per-row color scale: card background -> primary at the row's own max.
-    const rowScale = new Map<string, d3.ScaleLinear<string, string>>();
+    // Per-row opacity ramp over --primary so even small weeks are visible (0 =>
+    // empty floor; smallest active => ~0.2; row max => 1.0). Using opacity of a
+    // solid primary fill avoids interpolating the oklch theme tokens (which
+    // d3.interpolateRgb can't parse and would collapse to black).
+    const rowOpacity = new Map<string, (v: number) => number>();
     for (const p of rows) {
       const max = d3.max(p.weekly) ?? 0;
-      rowScale.set(
-        p.name,
-        d3
-          .scaleLinear<string>()
-          .domain([0, max || 1])
-          .range([card, base])
-          .interpolate(d3.interpolateRgb),
-      );
+      const scale = d3
+        .scaleLinear()
+        .domain([0, max || 1])
+        .range([0.2, 1])
+        .clamp(true);
+      rowOpacity.set(p.name, (v: number) => (v <= 0 ? 0 : scale(v)));
     }
 
-    // Row labels (project names, truncated).
+    // Row labels (project names, truncated; full name on hover).
     g.append("g")
       .call(d3.axisLeft(y).tickSize(0).tickFormat((d) => truncate(String(d), 14)))
       .call((sel) => sel.select(".domain").remove())
-      .selectAll("text")
+      .selectAll<SVGTextElement, string>("text")
       .attr("fill", fg)
-      .style("font-size", "11px");
+      .style("font-size", "11px")
+      .append("title")
+      .text((d) => String(d));
 
     // Week axis (thinned to ~8 labels).
     const tickEvery = Math.ceil(weeks.length / 8) || 1;
@@ -99,6 +103,18 @@ export function MomentumGrid({ data, rowHeight = 26 }: MomentumGridProps) {
       });
     }
 
+    // Empty-floor background so the grid reads even where activity is 0.
+    g.selectAll("rect.floor")
+      .data(cells)
+      .join("rect")
+      .attr("class", "floor")
+      .attr("x", (c) => x(c.wi) ?? 0)
+      .attr("y", (c) => y(c.project) ?? 0)
+      .attr("width", x.bandwidth())
+      .attr("height", y.bandwidth())
+      .attr("rx", 2)
+      .attr("fill", emptyFloor);
+
     g.selectAll("rect.cell")
       .data(cells)
       .join("rect")
@@ -108,7 +124,8 @@ export function MomentumGrid({ data, rowHeight = 26 }: MomentumGridProps) {
       .attr("width", x.bandwidth())
       .attr("height", y.bandwidth())
       .attr("rx", 2)
-      .attr("fill", (c) => rowScale.get(c.project)!(c.seconds))
+      .attr("fill", base)
+      .attr("fill-opacity", (c) => rowOpacity.get(c.project)!(c.seconds))
       .on("mousemove", (event, c) => {
         showTooltip(
           tip,

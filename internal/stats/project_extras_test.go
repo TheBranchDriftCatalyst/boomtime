@@ -161,3 +161,61 @@ func TestProjectExtrasBranchesCap(t *testing.T) {
 		t.Fatalf("Other total = %d, want 12", last.TotalSeconds)
 	}
 }
+
+// TestProjectFilesExcludesNonFileEntities is the regression for the "Most active
+// files" bug: browsing domains/apps (ty != 'file') must NOT appear in the files
+// list or count, but their time still counts toward the total-time card.
+func TestProjectFilesExcludesNonFileEntities(t *testing.T) {
+	d1 := day(2025, 5, 1)
+	xs := []db.ProjectStatRow{
+		// Real files.
+		{Day: d1, Language: "Go", Entity: "src/main.go", Ty: "file", TotalSeconds: 100, Weekday: "4", Hour: "10"},
+		{Day: d1, Language: "TypeScript", Entity: "web/app.ts", Ty: "file", TotalSeconds: 60, Weekday: "4", Hour: "10"},
+		// Browsing domains / apps that were leaking into "files".
+		{Day: d1, Language: "Other", Entity: "github.com", Ty: "domain", TotalSeconds: 40, Weekday: "4", Hour: "10"},
+		{Day: d1, Language: "Other", Entity: "https://app.vanta.com", Ty: "domain", TotalSeconds: 25, Weekday: "4", Hour: "10"},
+		{Day: d1, Language: "Other", Entity: "Slack", Ty: "app", TotalSeconds: 15, Weekday: "4", Hour: "10"},
+	}
+
+	p := ToProjectStatistics(d1, d1, xs, nil)
+
+	// Files list contains ONLY the two real files, no domains/apps.
+	fileNames := map[string]bool{}
+	for _, f := range p.Files {
+		fileNames[f.Name] = true
+	}
+	for _, bad := range []string{"github.com", "https://app.vanta.com", "Slack"} {
+		if fileNames[bad] {
+			t.Fatalf("files list leaked non-file entity %q", bad)
+		}
+	}
+	if !fileNames["src/main.go"] || !fileNames["web/app.ts"] {
+		t.Fatalf("files list missing a real file: %+v", p.Files)
+	}
+	if len(p.Files) != 2 {
+		t.Fatalf("files len = %d, want 2 (only ty='file' entities)", len(p.Files))
+	}
+
+	// filesCount / entitiesCount reflect distinct file entities only.
+	if p.FilesCount != 2 {
+		t.Fatalf("FilesCount = %d, want 2 (distinct ty='file' entities)", p.FilesCount)
+	}
+	if p.EntitiesCount != 2 {
+		t.Fatalf("EntitiesCount = %d, want 2", p.EntitiesCount)
+	}
+
+	// Total-time card is UNAFFECTED: it includes domains/apps too.
+	if p.TotalSeconds != 100+60+40+25+15 {
+		t.Fatalf("TotalSeconds = %d, want 240 (all entities, unaffected by files filter)", p.TotalSeconds)
+	}
+	// Languages breakdown also still sees every entity (Other from the domains/app).
+	var haveOther bool
+	for _, l := range p.Languages {
+		if l.Name == "Other" {
+			haveOther = true
+		}
+	}
+	if !haveOther {
+		t.Fatal("languages breakdown should still include 'Other' from the domain/app rows")
+	}
+}

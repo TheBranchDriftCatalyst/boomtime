@@ -8,6 +8,7 @@ import { ColumnChart } from "@/components/charts/ColumnChart";
 import { HeatmapChart } from "@/components/charts/HeatmapChart";
 import { PieChart } from "@/components/charts/PieChart";
 import { TimelineChart } from "@/components/charts/TimelineChart";
+import { CategoryBreakdown } from "@/viz/council/CategoryBreakdown";
 import { ContributionCalendar } from "@/viz/council/ContributionCalendar";
 import { CumulativeArea } from "@/viz/council/CumulativeArea";
 import { StreakBanner } from "@/viz/council/StreakBanner";
@@ -119,9 +120,11 @@ export function Overview() {
     [groups, stats],
   );
 
-  // Exclude the aggregated "Other (N more)" bucket when picking the single most
-  // active resource.
-  const isOther = (n: string) => n.startsWith("Other (");
+  // Exclude the aggregated "Other (N more)" bucket AND the literal "Other"
+  // catch-all (browsing/meeting heartbeats have no language, so "Other" would
+  // otherwise win) when picking the single most-active resource.
+  const isOther = (n: string) =>
+    n === "Other" || n.startsWith("Other (");
   const mostActiveProject =
     [...(stats?.projects ?? [])]
       .filter((r) => !isOther(r.name))
@@ -149,7 +152,7 @@ export function Overview() {
         <div className="space-y-6">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard
-              name="Total coding time"
+              name="Total tracked time"
               value={secondsToHms(stats.totalSeconds)}
               icon={Clock}
               accent="primary"
@@ -173,6 +176,12 @@ export function Overview() {
               accent="warning"
             />
           </div>
+
+          {/* Category breakdown — first-class, near the top: "tracked time" is
+              more than coding (browsing/meetings/etc). */}
+          <ChartCard title="Category breakdown">
+            <CategoryBreakdown categories={stats.categories ?? []} />
+          </ChartCard>
 
           {/* Streak & consistency (raw daily; current streak excludes today). */}
           <StreakBanner dailyTotal={stats.dailyTotal} />

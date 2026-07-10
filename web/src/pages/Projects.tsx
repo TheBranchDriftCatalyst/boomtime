@@ -110,7 +110,9 @@ export function Projects() {
 
   const heading = tag ? `#${tag}` : selected ?? "Projects";
 
-  const isOther = (n: string) => n.startsWith("Other (");
+  // Exclude the "Other (N more)" aggregate and the literal "Other" catch-all
+  // (no-language browsing/meeting heartbeats) from the most-active pick.
+  const isOther = (n: string) => n === "Other" || n.startsWith("Other (");
   const mostActiveLang =
     [...(stats?.languages ?? [])]
       .filter((l) => !isOther(l.name))
@@ -206,7 +208,7 @@ export function Projects() {
         <div className="space-y-6">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard
-              name="Total coding time"
+              name="Total tracked time"
               value={secondsToHms(stats.totalSeconds)}
               icon={Clock}
               accent="primary"

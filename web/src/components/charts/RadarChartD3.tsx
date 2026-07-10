@@ -39,7 +39,10 @@ export function RadarChartD3({ weekDay, height = 320 }: RadarChartProps) {
     }
 
     const fg = cssVar("--muted-foreground");
-    const border = cssVar("--border");
+    // The --border token is nearly invisible on dark; use muted-foreground at a
+    // low opacity for legible-but-subtle grid rings and spokes.
+    const grid = fg;
+    const gridOpacity = 0.35;
     const width = frame.width;
     const cx = width / 2;
     const cy = height / 2;
@@ -66,7 +69,8 @@ export function RadarChartD3({ weekDay, height = 320 }: RadarChartProps) {
       g.append("polygon")
         .attr("points", pts.map((p) => p.join(",")).join(" "))
         .attr("fill", "none")
-        .attr("stroke", border);
+        .attr("stroke", grid)
+        .attr("stroke-opacity", gridOpacity);
     }
 
     // Spokes + axis labels.
@@ -78,14 +82,16 @@ export function RadarChartD3({ weekDay, height = 320 }: RadarChartProps) {
         .attr("y1", 0)
         .attr("x2", lx)
         .attr("y2", ly)
-        .attr("stroke", border);
+        .attr("stroke", grid)
+        .attr("stroke-opacity", gridOpacity);
       g.append("text")
-        .attr("x", Math.cos(angle(i)) * (radius + 16))
-        .attr("y", Math.sin(angle(i)) * (radius + 16))
+        .attr("x", Math.cos(angle(i)) * (radius + 18))
+        .attr("y", Math.sin(angle(i)) * (radius + 18))
         .attr("text-anchor", "middle")
         .attr("dominant-baseline", "central")
         .attr("fill", fg)
-        .style("font-size", "10px")
+        .style("font-size", "11px")
+        .style("font-weight", "500")
         .text(WEEKDAYS[i].slice(0, 3));
     });
 
@@ -98,9 +104,9 @@ export function RadarChartD3({ weekDay, height = 320 }: RadarChartProps) {
     g.append("polygon")
       .attr("points", dataPts.map((p) => p.join(",")).join(" "))
       .attr("fill", color)
-      .attr("fill-opacity", 0.3)
+      .attr("fill-opacity", 0.5)
       .attr("stroke", color)
-      .attr("stroke-width", 2);
+      .attr("stroke-width", 2.5);
 
     const tip: TooltipSelection = createTooltip(container);
 

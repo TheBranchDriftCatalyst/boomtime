@@ -498,6 +498,24 @@ func segmentProj(byDate [][]db.ProjectStatRow, field func(db.ProjectStatRow) str
 	return out
 }
 
+// segmentProjWhere is segmentProj restricted to rows matching keep. Used for the
+// "files" breakdown so only ty='file' entities are aggregated (browsing
+// domains/apps are excluded). The resulting count equals the number of distinct
+// file entities.
+func segmentProjWhere(byDate [][]db.ProjectStatRow, keep func(db.ProjectStatRow) bool, field func(db.ProjectStatRow) string) []model.ResourceStats {
+	filtered := make([][]db.ProjectStatRow, len(byDate))
+	for i, day := range byDate {
+		var kept []db.ProjectStatRow
+		for _, r := range day {
+			if keep(r) {
+				kept = append(kept, r)
+			}
+		}
+		filtered[i] = kept
+	}
+	return segmentProj(filtered, field)
+}
+
 // ToProjectStatistics builds ProjectStatistics for project/tag stats (Projects.toStatsPayload).
 // extras carries the per-project viz metrics (authoring/reading, branches,
 // breadth) and may be nil (e.g. the tag path), in which case those fields stay
@@ -531,7 +549,13 @@ func ToProjectStatistics(t0, t1 time.Time, xs []db.ProjectStatRow, extras *db.Pr
 		dailyTotal[i] = s
 	}
 	languages := segmentProj(byDate, func(r db.ProjectStatRow) string { return r.Language })
-	files := segmentProj(byDate, func(r db.ProjectStatRow) string { return r.Entity })
+	// "Most active files" must contain only real file entities — exclude browsing
+	// domains/apps (ty='domain'/'app'/'url') so github.com / https://… never show
+	// up as files. Other segments (languages/weekDay/hour/dailyTotal/total) still
+	// aggregate over every entity, so the total-time card is unaffected.
+	files := segmentProjWhere(byDate,
+		func(r db.ProjectStatRow) bool { return r.Ty == "file" },
+		func(r db.ProjectStatRow) string { return r.Entity })
 
 	out := model.ProjectStatistics{
 		StartDate:      t0,

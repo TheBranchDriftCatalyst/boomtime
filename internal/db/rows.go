@@ -24,6 +24,7 @@ type ProjectStatRow struct {
 	Hour         string
 	Language     string
 	Entity       string
+	Ty           string // entity type (file/app/domain/url); the "files" list filters to 'file'
 	TotalSeconds int64
 	Pct          float64
 	DailyPct     float64

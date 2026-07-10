@@ -7,6 +7,7 @@ WITH stats AS (
         (CAST(extract(hour FROM time_sent) AS int8))::text AS hourofday,
         coalesce(language, 'Other') AS LANGUAGE,
         entity,
+        ty,
         CAST(sum(CASE WHEN gap_seconds <= ($5 * 60) THEN gap_seconds ELSE 0 END) AS int8) AS total_seconds
     FROM
         heartbeats
@@ -20,7 +21,8 @@ WITH stats AS (
         extract(dow FROM (time_sent::date + interval '0h')),
         extract(hour FROM time_sent),
         language,
-        entity
+        entity,
+        ty
     ORDER BY
         day
 )

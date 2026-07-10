@@ -1,20 +1,23 @@
-// Chart color palette carried over verbatim from hakatime's config.js so charts
-// keep the same look, applied within the modernized Tailwind design.
+// Categorical chart palette: 14 maximally-distinct, dark-mode-legible hues,
+// ordered so CONSECUTIVE indices are clearly different (no two blues/greens
+// adjacent) — important for stacked bands (streamgraph), adjacent heatmap rows,
+// and pie slices. Every color reads clearly on the near-black dark card while
+// staying cohesive. This palette feeds every chart.
 export const CHART_COLORS = [
-  "#03a9f4",
-  "#B0DAF1",
-  "#84B082",
-  "#775DD0",
-  "#FF9800",
-  "#A5978B",
-  "#FD6A6A",
-  "#69D2E7",
-  "#C5D86D",
-  "#3E1929",
-  "#60E1E0",
-  "#F7C1BB",
-  "#E2C044",
-  "#C4BBAF",
+  "#38bdf8", // sky blue
+  "#f472b6", // pink
+  "#34d399", // emerald
+  "#fbbf24", // amber
+  "#a78bfa", // violet
+  "#fb7185", // rose
+  "#22d3ee", // cyan
+  "#a3e635", // lime
+  "#fb923c", // orange
+  "#818cf8", // indigo
+  "#f0abfc", // fuchsia
+  "#2dd4bf", // teal
+  "#facc15", // yellow
+  "#e879f9", // magenta
 ];
 
 export const NO_DATA = {

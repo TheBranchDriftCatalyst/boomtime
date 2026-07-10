@@ -115,16 +115,27 @@ export function FileBarChartD3({ files, height = 380 }: FileBarChartProps) {
       })
       .on("mouseleave", () => hideTooltip(tip));
 
-    // In-bar white labels (path basename), matching the Apex dataLabels.
+    // Basename labels: inside the bar (white) when it fits, otherwise just
+    // outside the bar end (foreground color) so short bars stay readable and
+    // labels never spill unreadably over the plot background.
     rows
       .append("text")
-      .attr("x", 8)
       .attr("y", y.bandwidth() / 2)
       .attr("dominant-baseline", "central")
-      .attr("fill", "#fff")
       .style("font-size", "11px")
       .style("pointer-events", "none")
-      .text((d) => shortLabel(d.name));
+      .each(function (d) {
+        const label = shortLabel(d.name);
+        const barW = x(d.totalSeconds);
+        const el = d3.select(this).text(label);
+        const textW = (el.node() as SVGTextElement).getComputedTextLength();
+        const fitsInside = barW >= textW + 16;
+        if (fitsInside) {
+          el.attr("x", 8).attr("text-anchor", "start").attr("fill", "#fff");
+        } else {
+          el.attr("x", barW + 6).attr("text-anchor", "start").attr("fill", fg);
+        }
+      });
 
     return () => {
       tip.remove();

@@ -45,7 +45,11 @@ export function HeatmapChartD3({
     if (!container || frame.width === 0 || rows.length === 0) return;
 
     const fg = cssVar("--muted-foreground");
-    const card = cssVar("--card");
+    const dark = document.documentElement.classList.contains("dark");
+    // Empty-cell floor: a subtle tone clearly above --card so the grid is
+    // visible but 0-value cells read as "empty". A fixed rgb (not the oklch
+    // --card token) so d3.interpolateRgb can parse both ends of the ramp.
+    const emptyFloor = dark ? "#232a36" : "#eceef2";
     const width = frame.width;
     const margin = { top: 6, right: 8, bottom: 24, left: 96 };
     const innerW = width - margin.left - margin.right;
@@ -68,28 +72,33 @@ export function HeatmapChartD3({
       .range([0, innerH])
       .padding(0.12);
 
-    // Per-row color scale: card background → series base color.
-    const rowScale = new Map<string, d3.ScaleLinear<string, string>>();
+    // Per-row color scale by VALUE: empty floor → series base color at row max.
+    // A tiny non-zero low anchor keeps the smallest active day just above the
+    // empty floor so it's distinguishable, while 0 stays exactly on the floor.
+    const rowScale = new Map<string, (v: number) => string>();
     rows.forEach((r, i) => {
       const base = CHART_COLORS[i % CHART_COLORS.length];
       const max = d3.max(r.totalDaily) ?? 0;
-      rowScale.set(
-        r.name,
-        d3
-          .scaleLinear<string>()
-          .domain([0, max || 1])
-          .range([card, base])
-          .interpolate(d3.interpolateRgb),
+      const ramp = d3
+        .scaleLinear<string>()
+        .domain([0, max || 1])
+        .range([emptyFloor, base])
+        .interpolate(d3.interpolateRgb)
+        .clamp(true);
+      rowScale.set(r.name, (v: number) =>
+        v <= 0 ? emptyFloor : ramp(Math.max(v, (max || 1) * 0.06)),
       );
     });
 
-    // Y labels (truncated to 12 chars like the Apex formatter).
+    // Y labels (truncated to 12 chars like the Apex formatter, full name on hover).
     g.append("g")
       .call(d3.axisLeft(y).tickSize(0).tickFormat((d) => truncate(String(d), 12)))
       .call((sel) => sel.select(".domain").remove())
-      .selectAll("text")
+      .selectAll<SVGTextElement, string>("text")
       .attr("fill", fg)
-      .style("font-size", "11px");
+      .style("font-size", "11px")
+      .append("title")
+      .text((d) => String(d));
 
     // X labels — thinned dates.
     const tickEvery = Math.ceil(dates.length / 8) || 1;

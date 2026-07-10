@@ -82,13 +82,15 @@ export function TimelineChartD3({ timeline, height = 350 }: TimelineChartProps) 
       .attr("stroke", border)
       .attr("stroke-dasharray", "3");
 
-    // Lane labels (truncated to 10 like the Apex yaxis formatter).
+    // Lane labels (truncated to 10 like the Apex yaxis formatter; full on hover).
     g.append("g")
       .call(d3.axisLeft(y).tickSize(0).tickFormat((d) => truncate(String(d), 10)))
       .call((sel) => sel.select(".domain").remove())
-      .selectAll("text")
+      .selectAll<SVGTextElement, string>("text")
       .attr("fill", fg)
-      .style("font-size", "11px");
+      .style("font-size", "11px")
+      .append("title")
+      .text((d) => String(d));
 
     const tip: TooltipSelection = createTooltip(container);
 

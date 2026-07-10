@@ -45,7 +45,17 @@ export function FileBarChartApex({ files, height = 380 }: FileBarChartProps) {
       enabled: true,
       textAnchor: "start",
       offsetX: 0,
-      style: { colors: ["#fff"] },
+      style: { colors: ["#fff"], fontSize: "11px" },
+      // A dark drop-shadow keeps the white basename legible even when a short
+      // bar's label extends past the bar onto the plot background.
+      dropShadow: {
+        enabled: true,
+        left: 0,
+        top: 0,
+        blur: 2,
+        color: "#000",
+        opacity: 0.85,
+      },
       formatter: (_val, opt) => {
         const label = opt.w.globals.labels[opt.dataPointIndex];
         return shortLabel(label);
