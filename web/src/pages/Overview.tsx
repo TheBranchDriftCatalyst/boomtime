@@ -8,6 +8,9 @@ import { ColumnChart } from "@/components/charts/ColumnChart";
 import { HeatmapChart } from "@/components/charts/HeatmapChart";
 import { PieChart } from "@/components/charts/PieChart";
 import { TimelineChart } from "@/components/charts/TimelineChart";
+import { ContributionCalendar } from "@/viz/council/ContributionCalendar";
+import { CumulativeArea } from "@/viz/council/CumulativeArea";
+import { StreakBanner } from "@/viz/council/StreakBanner";
 import { PageToolbar } from "@/components/toolbar/PageToolbar";
 import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
 import { TagFilter } from "@/components/toolbar/TagFilter";
@@ -23,6 +26,7 @@ import { useTimeRange } from "@/hooks/useTimeRange";
 import { api } from "@/lib/api";
 import { TIMELINE_HOUR_OPTIONS } from "@/lib/config";
 import { daysBetween, removeHours, secondsToHms } from "@/lib/utils";
+import { bucketDates, bucketGroups, bucketSum } from "@/viz/bucket";
 
 export function Overview() {
   const tr = useTimeRange();
@@ -60,20 +64,9 @@ export function Overview() {
   // Bucket the day-by-day series into ~weekly groups for long ranges so the
   // time charts (column + heatmaps) stay bounded (~60 points) instead of
   // rendering hundreds of daily x-points, which freezes ApexCharts on all-time.
-  const MAX_CHART_POINTS = 62;
-  const groups = useMemo<number[][]>(() => {
-    const n = dates.length;
-    if (n <= MAX_CHART_POINTS) return dates.map((_, i) => [i]);
-    const size = Math.ceil(n / MAX_CHART_POINTS);
-    const g: number[][] = [];
-    for (let i = 0; i < n; i += size) {
-      g.push(Array.from({ length: Math.min(size, n - i) }, (_, k) => i + k));
-    }
-    return g;
-  }, [dates]);
-  const chartDates = useMemo(() => groups.map((gr) => dates[gr[0]]), [groups, dates]);
-  const bucketNums = (arr: number[]) =>
-    groups.map((gr) => gr.reduce((s, i) => s + (arr[i] ?? 0), 0));
+  const groups = useMemo(() => bucketGroups(dates.length), [dates.length]);
+  const chartDates = useMemo(() => bucketDates(groups, dates), [groups, dates]);
+  const bucketNums = (arr: number[]) => bucketSum(groups, arr);
   const chartDailyTotal = useMemo(
     () => bucketNums(stats?.dailyTotal ?? []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -147,6 +140,14 @@ export function Overview() {
             />
           </div>
 
+          {/* Streak & consistency (raw daily; current streak excludes today). */}
+          <StreakBanner dailyTotal={stats.dailyTotal} />
+
+          {/* Flagship: GitHub-style contribution calendar from RAW daily data. */}
+          <ChartCard title="Contribution calendar">
+            <ContributionCalendar dates={dates} values={stats.dailyTotal} />
+          </ChartCard>
+
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <div className="lg:col-span-2">
               <ChartCard title="Total activity">
@@ -157,6 +158,10 @@ export function Overview() {
               <PieChart items={stats.projects} />
             </ChartCard>
           </div>
+
+          <ChartCard title="Cumulative coding time">
+            <CumulativeArea dates={chartDates} values={chartDailyTotal} />
+          </ChartCard>
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <ChartCard title="Activity per project">

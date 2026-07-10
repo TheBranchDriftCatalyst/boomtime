@@ -18,6 +18,9 @@ import { FileBarChart } from "@/components/charts/FileBarChart";
 import { HourBarChart } from "@/components/charts/HourBarChart";
 import { PieChart } from "@/components/charts/PieChart";
 import { RadarChart } from "@/components/charts/RadarChart";
+import { AuthoringVsReading } from "@/viz/council/AuthoringVsReading";
+import { BranchActivity } from "@/viz/council/BranchActivity";
+import { BreadthVsDepth } from "@/viz/council/BreadthVsDepth";
 import { PageToolbar } from "@/components/toolbar/PageToolbar";
 import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
 import { TagFilter } from "@/components/toolbar/TagFilter";
@@ -34,6 +37,7 @@ import { SetTagsModal } from "@/modals/SetTagsModal";
 import { useTimeRange } from "@/hooks/useTimeRange";
 import { api } from "@/lib/api";
 import { daysBetween, secondsToHms } from "@/lib/utils";
+import { bucketAvg, bucketDates, bucketGroups, bucketSum } from "@/viz/bucket";
 
 export function Projects() {
   const tr = useTimeRange();
@@ -84,20 +88,23 @@ export function Projects() {
 
   // Bucket the daily activity into ~weekly groups on long ranges so the column
   // chart stays bounded (~60 points) instead of freezing on "All time".
-  const MAX_CHART_POINTS = 62;
-  const groups = useMemo<number[][]>(() => {
-    const n = dates.length;
-    if (n <= MAX_CHART_POINTS) return dates.map((_, i) => [i]);
-    const size = Math.ceil(n / MAX_CHART_POINTS);
-    const g: number[][] = [];
-    for (let i = 0; i < n; i += size) {
-      g.push(Array.from({ length: Math.min(size, n - i) }, (_, k) => i + k));
-    }
-    return g;
-  }, [dates]);
-  const chartDates = useMemo(() => groups.map((gr) => dates[gr[0]]), [groups, dates]);
+  const groups = useMemo(() => bucketGroups(dates.length), [dates.length]);
+  const chartDates = useMemo(() => bucketDates(groups, dates), [groups, dates]);
   const chartDailyTotal = useMemo(
-    () => groups.map((gr) => gr.reduce((s, i) => s + (stats?.dailyTotal[i] ?? 0), 0)),
+    () => bucketSum(groups, stats?.dailyTotal ?? []),
+    [groups, stats],
+  );
+
+  // Bucketed series for the viz-council Projects charts. Ratio is averaged over
+  // each bucket; entities are averaged too (a bucket's mean distinct-files/day,
+  // which is honest — summing daily distinct counts would double-count files
+  // touched on multiple days).
+  const chartWriteRatio = useMemo(
+    () => bucketAvg(groups, stats?.dailyWriteRatio ?? []),
+    [groups, stats],
+  );
+  const chartEntities = useMemo(
+    () => bucketAvg(groups, stats?.dailyEntities ?? []).map(Math.round),
     [groups, stats],
   );
 
@@ -247,6 +254,34 @@ export function Projects() {
               <HourBarChart hour={stats.hour} />
             </ChartCard>
           </div>
+
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <ChartCard title="Authoring vs reading">
+              <AuthoringVsReading
+                writeSeconds={stats.writeSeconds}
+                readSeconds={stats.readSeconds}
+                dates={chartDates}
+                ratio={chartWriteRatio}
+              />
+            </ChartCard>
+            <ChartCard
+              title={
+                stats.branchesCount !== undefined
+                  ? `Branch activity (${stats.branchesCount})`
+                  : "Branch activity"
+              }
+            >
+              <BranchActivity branches={stats.branches} />
+            </ChartCard>
+          </div>
+
+          <ChartCard title="Breadth vs depth (time vs files/day)">
+            <BreadthVsDepth
+              dates={chartDates}
+              seconds={chartDailyTotal}
+              entities={chartEntities}
+            />
+          </ChartCard>
 
           <ChartCard title="Most active files">
             <FileBarChart files={stats.files} />

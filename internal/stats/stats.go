@@ -436,7 +436,10 @@ func segmentProj(byDate [][]db.ProjectStatRow, field func(db.ProjectStatRow) str
 }
 
 // ToProjectStatistics builds ProjectStatistics for project/tag stats (Projects.toStatsPayload).
-func ToProjectStatistics(t0, t1 time.Time, xs []db.ProjectStatRow) model.ProjectStatistics {
+// extras carries the per-project viz metrics (authoring/reading, branches,
+// breadth) and may be nil (e.g. the tag path), in which case those fields stay
+// zero-valued.
+func ToProjectStatistics(t0, t1 time.Time, xs []db.ProjectStatRow, extras *db.ProjectExtras) model.ProjectStatistics {
 	// Clamp the start to the earliest day with data (avoids a huge empty leading
 	// span on "All time").
 	if len(xs) > 0 {
@@ -450,7 +453,8 @@ func ToProjectStatistics(t0, t1 time.Time, xs []db.ProjectStatRow) model.Project
 			t0 = minDay
 		}
 	}
-	byDate := fillMissingProj(genDates(t0, t1), groupProjRowsByDay(xs))
+	days := genDates(t0, t1)
+	byDate := fillMissingProj(days, groupProjRowsByDay(xs))
 	var allSecs int64
 	for _, x := range xs {
 		allSecs += x.TotalSeconds
@@ -465,19 +469,122 @@ func ToProjectStatistics(t0, t1 time.Time, xs []db.ProjectStatRow) model.Project
 	}
 	languages := segmentProj(byDate, func(r db.ProjectStatRow) string { return r.Language })
 	files := segmentProj(byDate, func(r db.ProjectStatRow) string { return r.Entity })
-	return model.ProjectStatistics{
+
+	out := model.ProjectStatistics{
 		StartDate:      t0,
 		EndDate:        t1,
 		TotalSeconds:   allSecs,
 		DailyTotal:     dailyTotal,
 		LanguagesCount: len(languages),
 		FilesCount:     len(files),
+		EntitiesCount:  len(files), // distinct files == distinct entities (same set)
 		Languages:      capWithOther(languages),
 		Files:          capWithOther(files),
 		// WeekDay (7) and Hour (24) are already bounded.
 		WeekDay: segmentProj(byDate, func(r db.ProjectStatRow) string { return r.Weekday }),
 		Hour:    segmentProj(byDate, func(r db.ProjectStatRow) string { return r.Hour }),
 	}
+
+	// Align the extra daily arrays to the SAME day series as DailyTotal.
+	// fillMissingProj truncates byDate at the last day with data, so the aligned
+	// days are days[:len(byDate)] (byDate[i] corresponds to days[i]).
+	alignedDays := days
+	if len(byDate) < len(alignedDays) {
+		alignedDays = alignedDays[:len(byDate)]
+	}
+	applyProjectExtras(&out, alignedDays, extras)
+	return out
+}
+
+// applyProjectExtras fills the authoring/reading, branch, and breadth fields,
+// aligning the daily arrays to the same `days` series as DailyTotal. Always
+// initializes the daily arrays (length len(days)) so the FE can bind directly,
+// even when extras is nil or empty.
+func applyProjectExtras(out *model.ProjectStatistics, days []time.Time, extras *db.ProjectExtras) {
+	n := len(days)
+	out.DailyWriteRatio = make([]float64, n)
+	out.DailyEntities = make([]int64, n)
+	out.Branches = []model.ResourceStats{}
+
+	if extras == nil {
+		return
+	}
+
+	// Index the per-day extras by day for O(1) alignment.
+	dailyByDay := make(map[string]db.ProjectDailyExtra, len(extras.Daily))
+	for _, e := range extras.Daily {
+		dailyByDay[dayKey(e.Day)] = e
+	}
+	for i, day := range days {
+		e, ok := dailyByDay[dayKey(day)]
+		if !ok {
+			continue
+		}
+		out.WriteSeconds += e.WriteSeconds
+		out.ReadSeconds += e.ReadSeconds
+		out.DailyEntities[i] = e.DistinctEntities
+		if fileSecs := e.WriteSeconds + e.ReadSeconds; fileSecs > 0 {
+			out.DailyWriteRatio[i] = float64(e.WriteSeconds) / float64(fileSecs)
+		}
+	}
+
+	branches := segmentBranches(days, extras.Branches)
+	out.BranchesCount = len(branches)
+	out.Branches = capWithOther(branches)
+}
+
+// segmentBranches shapes per-(day,branch) rows into per-branch ResourceStats
+// aligned to the `days` series (same layout as segmentProj), preserving
+// first-seen order.
+func segmentBranches(days []time.Time, rows []db.ProjectBranchRow) []model.ResourceStats {
+	dayIndex := make(map[string]int, len(days))
+	for i, d := range days {
+		dayIndex[dayKey(d)] = i
+	}
+	n := len(days)
+
+	type acc struct {
+		total    int64
+		totalPct float64
+		daily    []int64
+		pctDaily []float64
+	}
+	byName := map[string]*acc{}
+	var order []string
+	for _, r := range rows {
+		di, ok := dayIndex[dayKey(r.Day)]
+		if !ok {
+			continue // day outside the clamped series
+		}
+		a := byName[r.Branch]
+		if a == nil {
+			a = &acc{daily: make([]int64, n), pctDaily: make([]float64, n)}
+			byName[r.Branch] = a
+			order = append(order, r.Branch)
+		}
+		a.total += r.TotalSeconds
+		a.totalPct += r.Pct
+		a.daily[di] += r.TotalSeconds
+		a.pctDaily[di] += r.DailyPct
+	}
+
+	out := make([]model.ResourceStats, 0, len(order))
+	for _, name := range order {
+		a := byName[name]
+		out = append(out, model.ResourceStats{
+			Name:         name,
+			TotalSeconds: a.total,
+			TotalPct:     a.totalPct,
+			TotalDaily:   a.daily,
+			PctDaily:     a.pctDaily,
+		})
+	}
+	return out
+}
+
+// dayKey normalizes a timestamp to a UTC calendar-day key.
+func dayKey(t time.Time) string {
+	return t.UTC().Format("2006-01-02")
 }
 
 // ---- Timeline (Stats.hs) ----

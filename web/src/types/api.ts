@@ -97,6 +97,15 @@ export interface ProjectStatistics {
   hour: ResourceStats[];
   languagesCount: number;
   filesCount: number;
+  // Authoring/reading + branch/breadth fields the backend agent is adding.
+  // Optional so the UI compiles and degrades gracefully until they land.
+  // TODO verify keys against backend report.
+  writeSeconds?: number;
+  readSeconds?: number;
+  dailyWriteRatio?: number[]; // per-day write/(write+read), 0..1, aligned to dailyTotal
+  branches?: ResourceStats[]; // top-N + "Other (N more)" like other resource lists
+  branchesCount?: number; // true distinct branch count
+  dailyEntities?: number[]; // distinct files touched per day, aligned to dailyTotal
 }
 
 // Normalized shape returned by api.getTimeline(). Backend emits hakatime's raw

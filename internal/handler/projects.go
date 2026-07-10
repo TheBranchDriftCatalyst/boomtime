@@ -33,7 +33,11 @@ func (h *Handler) ProjectStats(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		return stats.ToProjectStatistics(t0, t1, rows), nil
+		extras, err := h.DB.GetProjectExtras(ctx, owner, project, t0, t1, limit)
+		if err != nil {
+			return nil, err
+		}
+		return stats.ToProjectStatistics(t0, t1, rows, extras), nil
 	})
 }
 
@@ -61,7 +65,8 @@ func (h *Handler) TagStats(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		return stats.ToProjectStatistics(t0, t1, rows), nil
+		// Tag path keeps the extras nil for now (per-project viz metrics only).
+		return stats.ToProjectStatistics(t0, t1, rows, nil), nil
 	})
 }
 
