@@ -1,23 +1,23 @@
-// Categorical chart palette: 14 maximally-distinct, dark-mode-legible hues,
-// ordered so CONSECUTIVE indices are clearly different (no two blues/greens
-// adjacent) — important for stacked bands (streamgraph), adjacent heatmap rows,
-// and pie slices. Every color reads clearly on the near-black dark card while
-// staying cohesive. This palette feeds every chart.
+// SYNTHWAVE / OUTRUN categorical chart palette: 14 vivid neon hues tuned to
+// pop on the near-black violet dark cards while staying cohesive. Ordered so
+// CONSECUTIVE indices are clearly different (no two similar neons adjacent) —
+// important for stacked bands (streamgraph), adjacent heatmap rows, and pie
+// slices. This palette feeds every chart.
 export const CHART_COLORS = [
-  "#38bdf8", // sky blue
-  "#f472b6", // pink
-  "#34d399", // emerald
-  "#fbbf24", // amber
-  "#a78bfa", // violet
-  "#fb7185", // rose
-  "#22d3ee", // cyan
-  "#a3e635", // lime
-  "#fb923c", // orange
-  "#818cf8", // indigo
-  "#f0abfc", // fuchsia
-  "#2dd4bf", // teal
-  "#facc15", // yellow
-  "#e879f9", // magenta
+  "#05d9e8", // electric cyan
+  "#ff2d95", // neon magenta
+  "#a3ff3c", // neon lime
+  "#b967ff", // electric purple
+  "#ffb13d", // amber
+  "#3b7bff", // neon blue
+  "#ff5e7e", // hot pink
+  "#2dffb3", // spring aqua
+  "#ff8f1f", // neon orange
+  "#e94bff", // fuchsia
+  "#00f0ff", // cyan glow
+  "#ffe94d", // acid yellow
+  "#7a5cff", // indigo violet
+  "#ff3caa", // magenta rose
 ];
 
 export const NO_DATA = {

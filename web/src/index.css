@@ -33,34 +33,49 @@
   --sidebar-ring: oklch(0.58 0.19 255);
 }
 
+/*
+ * SYNTHWAVE / OUTRUN dark theme — Miami-at-night, retro-futuristic.
+ * Deep purple-to-near-black backgrounds, neon magenta primary + electric cyan
+ * accent, faint neon-tinted borders and restrained glow. Legible first.
+ */
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.185 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.185 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.62 0.19 255);
-  --primary-foreground: oklch(0.145 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.62 0.19 255);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.62 0.19 255);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.62 0.19 255);
+  /* Near-black indigo/violet base (~#0b0616). */
+  --background: oklch(0.16 0.045 295);
+  /* Bright pale-lavender off-white text. */
+  --foreground: oklch(0.965 0.012 300);
+  /* Cards: a touch lighter with a faint violet cast. */
+  --card: oklch(0.205 0.05 293);
+  --card-foreground: oklch(0.965 0.012 300);
+  --popover: oklch(0.205 0.05 293);
+  --popover-foreground: oklch(0.965 0.012 300);
+  /* Neon magenta/pink primary (~#ff2d95). */
+  --primary: oklch(0.665 0.263 3);
+  --primary-foreground: oklch(0.14 0.03 300);
+  /* Secondary: a deep desaturated violet panel. */
+  --secondary: oklch(0.29 0.06 290);
+  --secondary-foreground: oklch(0.965 0.012 300);
+  --muted: oklch(0.27 0.045 291);
+  /* Desaturated lavender-grey, kept readable on the dark bg. */
+  --muted-foreground: oklch(0.74 0.045 292);
+  /* Accent: electric cyan (~#05d9e8). */
+  --accent: oklch(0.82 0.145 202);
+  --accent-foreground: oklch(0.14 0.03 240);
+  --destructive: oklch(0.7 0.235 18);
+  --destructive-foreground: oklch(0.985 0.01 300);
+  /* Faint glowing neon-magenta card edges. */
+  --border: oklch(0.72 0.24 350 / 22%);
+  --input: oklch(0.72 0.24 350 / 28%);
+  /* Focus halo: neon magenta. */
+  --ring: oklch(0.665 0.263 3);
+  /* Sidebar: darkest violet slab. */
+  --sidebar: oklch(0.18 0.05 294);
+  --sidebar-foreground: oklch(0.965 0.012 300);
+  --sidebar-primary: oklch(0.665 0.263 3);
+  --sidebar-primary-foreground: oklch(0.14 0.03 300);
+  --sidebar-accent: oklch(0.82 0.145 202);
+  --sidebar-accent-foreground: oklch(0.14 0.03 240);
+  --sidebar-border: oklch(0.7 0.2 200 / 20%);
+  --sidebar-ring: oklch(0.665 0.263 3);
 }
 
 @theme inline {
@@ -106,6 +121,79 @@
     color: var(--foreground);
     font-feature-settings: "rlig" 1, "calt" 1;
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * SYNTHWAVE atmosphere + neon glow (dark mode only).
+ * Subtle: a deep vertical violet gradient + a faint perspective-less
+ * neon grid wash behind the app, plus restrained magenta/cyan halos.
+ * ------------------------------------------------------------------ */
+.dark body {
+  background-color: var(--background);
+  background-image:
+    radial-gradient(
+      ellipse 120% 80% at 50% -10%,
+      oklch(0.3 0.12 320 / 0.35),
+      transparent 60%
+    ),
+    radial-gradient(
+      ellipse 90% 60% at 100% 105%,
+      oklch(0.4 0.13 200 / 0.18),
+      transparent 55%
+    ),
+    linear-gradient(
+      to bottom,
+      oklch(0.18 0.055 295),
+      oklch(0.13 0.04 298)
+    ),
+    linear-gradient(
+      oklch(0.72 0.24 350 / 0.04) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      90deg,
+      oklch(0.7 0.2 200 / 0.04) 1px,
+      transparent 1px
+    );
+  background-size:
+    100% 100%,
+    100% 100%,
+    100% 100%,
+    40px 40px,
+    40px 40px;
+  background-attachment: fixed;
+}
+
+/* Neon halo on primary-colored buttons/badges. */
+.dark button.bg-primary,
+.dark a.bg-primary,
+.dark .bg-sidebar-primary {
+  box-shadow:
+    0 0 0 1px oklch(0.665 0.263 3 / 0.5),
+    0 0 18px oklch(0.665 0.263 3 / 0.45),
+    0 0 4px oklch(0.665 0.263 3 / 0.35);
+}
+
+/* Active nav item (NavLink sets aria-current="page"): magenta glow. */
+.dark a[aria-current="page"] {
+  box-shadow:
+    0 0 0 1px oklch(0.665 0.263 3 / 0.45),
+    0 0 16px oklch(0.665 0.263 3 / 0.45);
+}
+
+/* Neon focus halos (magenta), overriding the plain ring shadow. */
+.dark *:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--ring),
+    0 0 14px oklch(0.665 0.263 3 / 0.55);
+}
+
+/* Cards get a whisper of a violet-lit edge. */
+.dark .bg-card {
+  box-shadow:
+    0 0 0 1px oklch(0.72 0.24 350 / 0.1),
+    0 8px 30px oklch(0.1 0.04 300 / 0.6);
 }
 
 /* ApexCharts: make it play nice with the theme */
