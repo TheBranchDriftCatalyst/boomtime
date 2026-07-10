@@ -728,6 +728,27 @@ func (d *DB) CheckProjectOwner(ctx context.Context, user, project string) (bool,
 	return err == nil, err
 }
 
+// CheckProjectDisplayOwner reports whether the user owns a project whose DISPLAY
+// name (after applying the project rename remap) equals `display`. This lets a
+// merged/regex display name pass the project-detail ownership check even though no
+// raw `projects` row carries that exact name. Falls back to the raw check when no
+// project rename is active.
+func (d *DB) CheckProjectDisplayOwner(ctx context.Context, user, display string, rs RenameSets) (bool, error) {
+	if !rs.HasAxis("project") {
+		return d.CheckProjectOwner(ctx, user, display)
+	}
+	// $1 = user, $2 = display; the remap's pattern/target params start at $3.
+	args := []any{user, display}
+	expr, args, _ := rs.remapExpr("project", "name", "", 3, args)
+	q := fmt.Sprintf(`SELECT 1 FROM projects WHERE owner = $1 AND (%s) = $2 LIMIT 1`, expr)
+	var one int
+	err := d.Pool.QueryRow(ctx, q, args...).Scan(&one)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
 // CheckTagOwner reports whether the user owns the given tag.
 func (d *DB) CheckTagOwner(ctx context.Context, user, tag string) (bool, error) {
 	var name string

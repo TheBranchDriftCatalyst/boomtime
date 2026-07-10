@@ -11,6 +11,7 @@ import type {
   DerivedStatus,
   AddCurationRuleBody,
   AddCurationRulePayload,
+  CurationAffectedPayload,
   CurationRulesPayload,
   CancelImportPayload,
   HeartbeatAxis,
@@ -379,4 +380,10 @@ export const api = {
     request<void>(`/api/v1/users/current/curation/${id}`, {
       method: "DELETE",
     }),
+
+  // Raw values a rule currently matches (for previewing a regex remapping).
+  getCurationRuleAffected: (id: number) =>
+    request<CurationAffectedPayload>(
+      `/api/v1/users/current/curation/${id}/affected`,
+    ),
 };

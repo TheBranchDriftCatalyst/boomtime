@@ -53,9 +53,19 @@ func seedAxisBlock(t *testing.T, d *DB, ctx context.Context, sender, axis, val s
 // rename in the non-destructive model. It writes no raw data.
 func createRename(t *testing.T, d *DB, ctx context.Context, sender, axis, match, newVal string) int {
 	t.Helper()
-	rule, err := d.CreateCurationRule(ctx, sender, axis, "rename", match, &newVal)
+	rule, err := d.CreateCurationRule(ctx, sender, axis, "rename", "exact", match, &newVal)
 	if err != nil {
 		t.Fatalf("createRename %s %s->%s: %v", axis, match, newVal, err)
+	}
+	return rule.ID
+}
+
+// createRegexRename stores a REGEX rename rule (query-time, non-destructive).
+func createRegexRename(t *testing.T, d *DB, ctx context.Context, sender, axis, pattern, newVal string) int {
+	t.Helper()
+	rule, err := d.CreateCurationRule(ctx, sender, axis, "rename", "regex", pattern, &newVal)
+	if err != nil {
+		t.Fatalf("createRegexRename %s /%s/->%s: %v", axis, pattern, newVal, err)
 	}
 	return rule.ID
 }
@@ -501,7 +511,7 @@ func TestRenameHidePrecedence(t *testing.T) {
 
 	createRename(t, d, ctx, sender, "project", "A", "M")
 	createRename(t, d, ctx, sender, "project", "B", "M")
-	if _, err := d.CreateCurationRule(ctx, sender, "project", "hide", "A", nil); err != nil {
+	if _, err := d.CreateCurationRule(ctx, sender, "project", "hide", "exact", "A", nil); err != nil {
 		t.Fatal(err)
 	}
 	hs, err := d.LoadHiddenSets(ctx, sender)
@@ -632,5 +642,270 @@ func TestRenameMomentumAndCategory(t *testing.T) {
 	}
 	if catZ != 240 {
 		t.Fatalf("category Z seconds = %d, want 240 (X+Y merged)", catZ)
+	}
+}
+
+// TestRegexRenameMerge: a regex rule `^Meet` on project merges every Meet*
+// project into one 'Meeting' aggregate (time+counts summed), raw untouched,
+// reversible on delete.
+func TestRegexRenameMerge(t *testing.T) {
+	d := openTestDB(t)
+	defer d.Close()
+	ctx := context.Background()
+
+	sender := mkSender("renrx")
+	_, _ = d.Pool.Exec(ctx, `INSERT INTO users (username, hashed_password, salt_used) VALUES ($1,'\x00','\x00') ON CONFLICT DO NOTHING`, sender)
+	cleanupSender(t, d, ctx, sender)
+	ensureProjects(t, d, ctx, sender, "Meet - Standup", "Meet - Planning", "Meet - Retro", "real-project")
+
+	day := time.Date(2025, 6, 12, 9, 0, 0, 0, time.UTC)
+	t1, _ := seedAxisBlock(t, d, ctx, sender, "project", "Meet - Standup", day, 2, 100)                      // 200
+	t2, _ := seedAxisBlock(t, d, ctx, sender, "project", "Meet - Planning", day.Add(20*time.Minute), 3, 100) // 300
+	t3, _ := seedAxisBlock(t, d, ctx, sender, "project", "Meet - Retro", day.Add(40*time.Minute), 1, 100)    // 100
+	tk, _ := seedAxisBlock(t, d, ctx, sender, "project", "real-project", day.Add(60*time.Minute), 2, 100)    // 200 (not matched)
+	start, end := day.AddDate(0, 0, -1), day.AddDate(0, 0, 1)
+
+	ruleID := createRegexRename(t, d, ctx, sender, "project", "^Meet", "Meeting")
+	rs := loadRenames(t, d, ctx, sender)
+	if !rs.HasAxis("project") {
+		t.Fatal("regex rule should register on the project axis")
+	}
+
+	rows, err := d.GetUserActivity(ctx, sender, start, end, 15, HiddenSets{}, rs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secs := axisTotals(rows, "project")
+	for _, v := range []string{"Meet - Standup", "Meet - Planning", "Meet - Retro"} {
+		if _, ok := secs[v]; ok {
+			t.Fatalf("regex merge still shows raw %q", v)
+		}
+	}
+	if secs["Meeting"] != t1+t2+t3 {
+		t.Fatalf("Meeting = %d, want %d (all Meet* merged)", secs["Meeting"], t1+t2+t3)
+	}
+	if secs["real-project"] != tk {
+		t.Fatalf("non-matching project altered: %d, want %d", secs["real-project"], tk)
+	}
+
+	// Raw heartbeats untouched — the source project names still exist.
+	if rawCount(t, d, ctx, sender, "project", "Meet - Standup") == 0 {
+		t.Fatal("raw 'Meet - Standup' rows removed by regex rename (should be untouched)")
+	}
+	if rawCount(t, d, ctx, sender, "project", "Meeting") != 0 {
+		t.Fatal("regex rename created raw 'Meeting' rows (should be 0)")
+	}
+
+	// Reversible: delete the rule -> Meet* projects come back distinctly.
+	if _, err := d.DeleteCurationRule(ctx, sender, ruleID); err != nil {
+		t.Fatal(err)
+	}
+	rs = loadRenames(t, d, ctx, sender)
+	reverted, err := d.GetUserActivity(ctx, sender, start, end, 15, HiddenSets{}, rs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rv := axisTotals(reverted, "project")
+	if rv["Meet - Standup"] != t1 || rv["Meet - Planning"] != t2 || rv["Meet - Retro"] != t3 {
+		t.Fatalf("after delete, expected raw Meet* restored, got %+v", rv)
+	}
+	if _, ok := rv["Meeting"]; ok {
+		t.Fatal("'Meeting' should be gone after deleting the regex rule")
+	}
+}
+
+// TestCurationAffectedValues: regex returns all matching raw values (with counts);
+// exact returns the single value.
+func TestCurationAffectedValues(t *testing.T) {
+	d := openTestDB(t)
+	defer d.Close()
+	ctx := context.Background()
+
+	sender := mkSender("renaff")
+	_, _ = d.Pool.Exec(ctx, `INSERT INTO users (username, hashed_password, salt_used) VALUES ($1,'\x00','\x00') ON CONFLICT DO NOTHING`, sender)
+	cleanupSender(t, d, ctx, sender)
+	ensureProjects(t, d, ctx, sender, "Meet - Standup", "Meet - Planning", "real-project")
+
+	day := time.Date(2025, 6, 13, 9, 0, 0, 0, time.UTC)
+	// 3 raw rows for Standup, 2 for Planning, 1 for real-project.
+	for i := 0; i < 3; i++ {
+		insertSeed(t, d, ctx, sender, hbSeed{project: "Meet - Standup", language: "Go", entity: "a.go", ts: day.Add(time.Duration(i) * time.Minute), gap: 60})
+	}
+	for i := 0; i < 2; i++ {
+		insertSeed(t, d, ctx, sender, hbSeed{project: "Meet - Planning", language: "Go", entity: "b.go", ts: day.Add(time.Duration(10+i) * time.Minute), gap: 60})
+	}
+	insertSeed(t, d, ctx, sender, hbSeed{project: "real-project", language: "Go", entity: "c.go", ts: day.Add(30 * time.Minute), gap: 60})
+
+	// Regex rule: affected = both Meet* values with their counts, sorted by count desc.
+	rxID := createRegexRename(t, d, ctx, sender, "project", "^Meet", "Meeting")
+	rxRule, _, err := d.GetCurationRule(ctx, rxID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	vals, trunc, err := d.CurationAffectedValues(ctx, sender, rxRule, 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trunc {
+		t.Fatal("did not expect truncation")
+	}
+	byVal := map[string]int64{}
+	for _, v := range vals {
+		byVal[v.Value] = v.Count
+	}
+	if byVal["Meet - Standup"] != 3 || byVal["Meet - Planning"] != 2 {
+		t.Fatalf("regex affected = %+v, want Standup=3 Planning=2", vals)
+	}
+	if _, ok := byVal["real-project"]; ok {
+		t.Fatal("regex ^Meet must not match 'real-project'")
+	}
+	if len(vals) != 2 {
+		t.Fatalf("regex affected len = %d, want 2", len(vals))
+	}
+	// Ordered by count desc: Standup(3) before Planning(2).
+	if vals[0].Value != "Meet - Standup" {
+		t.Fatalf("expected count-desc order, got %+v", vals)
+	}
+
+	// Exact rule: affected = just the one literal.
+	exID := createRename(t, d, ctx, sender, "project", "real-project", "Misc")
+	exRule, _, err := d.GetCurationRule(ctx, exID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evals, _, err := d.CurationAffectedValues(ctx, sender, exRule, 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evals) != 1 || evals[0].Value != "real-project" || evals[0].Count != 1 {
+		t.Fatalf("exact affected = %+v, want [{real-project 1}]", evals)
+	}
+}
+
+// TestRenameProjectExtras: GetProjectExtras keyed by a merged/regex display name
+// aggregates the source projects' write/read/branch/entity data; a branch rename
+// merges the branches[] output. Raw heartbeats untouched.
+func TestRenameProjectExtras(t *testing.T) {
+	d := openTestDB(t)
+	defer d.Close()
+	ctx := context.Background()
+
+	sender := mkSender("renext")
+	_, _ = d.Pool.Exec(ctx, `INSERT INTO users (username, hashed_password, salt_used) VALUES ($1,'\x00','\x00') ON CONFLICT DO NOTHING`, sender)
+	cleanupSender(t, d, ctx, sender)
+	ensureProjects(t, d, ctx, sender, "Meet - A", "Meet - B", "Meeting")
+
+	day := time.Date(2025, 6, 14, 9, 0, 0, 0, time.UTC)
+	// insertFile sets is_write explicitly (insertSeed leaves it NULL) so the
+	// daily-extras write/read split is exercised.
+	insertFile := func(project, branch, entity string, isWrite bool, ts time.Time, gap int64) {
+		t.Helper()
+		if _, err := d.Pool.Exec(ctx, `
+			INSERT INTO heartbeats (sender, project, branch, entity, ty, is_write, time_sent, user_agent, gap_seconds)
+			VALUES ($1,$2,$3,$4,'file',$5,$6,'ua',$7)`,
+			sender, project, branch, entity, isWrite, ts, gap); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Project "Meet - A": file writes on branch "feature-x".
+	insertFile("Meet - A", "feature-x", "a.go", true, day, 999999)
+	insertFile("Meet - A", "feature-x", "a.go", true, day.Add(time.Minute), 120)
+	// Project "Meet - B": file reads on branch "feature-y".
+	insertFile("Meet - B", "feature-y", "b.go", false, day.Add(2*time.Minute), 999999)
+	insertFile("Meet - B", "feature-y", "b.go", false, day.Add(3*time.Minute), 120)
+	start, end := day.AddDate(0, 0, -1), day.AddDate(0, 0, 1)
+
+	// Regex merge Meet* -> Meeting.
+	createRegexRename(t, d, ctx, sender, "project", "^Meet", "Meeting")
+	rs := loadRenames(t, d, ctx, sender)
+
+	// Querying the DISPLAY name "Meeting" must aggregate BOTH source projects.
+	ex, err := d.GetProjectExtras(ctx, sender, "Meeting", start, end, 15, rs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var write, read int64
+	for _, e := range ex.Daily {
+		write += e.WriteSeconds
+		read += e.ReadSeconds
+	}
+	if write != 120 || read != 120 {
+		t.Fatalf("extras write/read = %d/%d, want 120/120 (both source projects aggregated)", write, read)
+	}
+	// Branches[] must include both source branches (2 branches, one from each project).
+	branchSet := map[string]int64{}
+	for _, b := range ex.Branches {
+		branchSet[b.Branch] += b.TotalSeconds
+	}
+	if branchSet["feature-x"] != 120 || branchSet["feature-y"] != 120 {
+		t.Fatalf("branches under merged project = %+v, want feature-x=120 feature-y=120", branchSet)
+	}
+
+	// Raw untouched: the source project rows still exist, no 'Meeting' rows.
+	if rawCount(t, d, ctx, sender, "project", "Meet - A") == 0 {
+		t.Fatal("raw 'Meet - A' removed by extras query (should be untouched)")
+	}
+	if rawCount(t, d, ctx, sender, "project", "Meeting") != 0 {
+		t.Fatal("extras created raw 'Meeting' rows (should be 0)")
+	}
+
+	// Now add a BRANCH rename and confirm branches[] merges.
+	createRename(t, d, ctx, sender, "branch", "feature-x", "features")
+	createRename(t, d, ctx, sender, "branch", "feature-y", "features")
+	rs = loadRenames(t, d, ctx, sender)
+	ex2, err := d.GetProjectExtras(ctx, sender, "Meeting", start, end, 15, rs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	merged := map[string]int64{}
+	for _, b := range ex2.Branches {
+		merged[b.Branch] += b.TotalSeconds
+	}
+	if _, ok := merged["feature-x"]; ok {
+		t.Fatal("branch 'feature-x' should be merged away")
+	}
+	if merged["features"] != 240 {
+		t.Fatalf("merged branch 'features' = %d, want 240 (feature-x + feature-y)", merged["features"])
+	}
+}
+
+// TestCheckProjectDisplayOwner: a merged/regex display name resolves ownership
+// through the remap even though no raw projects row carries that name.
+func TestCheckProjectDisplayOwner(t *testing.T) {
+	d := openTestDB(t)
+	defer d.Close()
+	ctx := context.Background()
+
+	sender := mkSender("rendispown")
+	_, _ = d.Pool.Exec(ctx, `INSERT INTO users (username, hashed_password, salt_used) VALUES ($1,'\x00','\x00') ON CONFLICT DO NOTHING`, sender)
+	cleanupSender(t, d, ctx, sender)
+	ensureProjects(t, d, ctx, sender, "Meet - A", "Meet - B", "keep")
+
+	// No rename yet: raw names resolve, a merged name does not.
+	empty := RenameSets{}
+	if ok, err := d.CheckProjectDisplayOwner(ctx, sender, "Meet - A", empty); err != nil || !ok {
+		t.Fatalf("raw 'Meet - A' should be owned: ok=%v err=%v", ok, err)
+	}
+	if ok, err := d.CheckProjectDisplayOwner(ctx, sender, "Meeting", empty); err != nil || ok {
+		t.Fatalf("'Meeting' should NOT resolve without a rename: ok=%v err=%v", ok, err)
+	}
+
+	// Regex merge Meet* -> Meeting: the display name now resolves via a source.
+	createRegexRename(t, d, ctx, sender, "project", "^Meet", "Meeting")
+	rs := loadRenames(t, d, ctx, sender)
+	if ok, err := d.CheckProjectDisplayOwner(ctx, sender, "Meeting", rs); err != nil || !ok {
+		t.Fatalf("merged 'Meeting' should resolve through remap: ok=%v err=%v", ok, err)
+	}
+	// A raw source name no longer resolves (it's now displayed as Meeting).
+	if ok, err := d.CheckProjectDisplayOwner(ctx, sender, "Meet - A", rs); err != nil || ok {
+		t.Fatalf("raw source 'Meet - A' should not resolve under rename (keyed by display): ok=%v err=%v", ok, err)
+	}
+	// A non-matching project still resolves by identity.
+	if ok, err := d.CheckProjectDisplayOwner(ctx, sender, "keep", rs); err != nil || !ok {
+		t.Fatalf("'keep' should still resolve by identity: ok=%v err=%v", ok, err)
+	}
+	// A bogus name does not.
+	if ok, _ := d.CheckProjectDisplayOwner(ctx, sender, "nope", rs); ok {
+		t.Fatal("'nope' should not resolve")
 	}
 }

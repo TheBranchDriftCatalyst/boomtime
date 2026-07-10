@@ -61,6 +61,7 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	e.GET("/api/v1/users/current/curation", h.ListCuration)
 	e.POST("/api/v1/users/current/curation", h.CreateCuration)
 	e.DELETE("/api/v1/users/current/curation/:id", h.DeleteCuration)
+	e.GET("/api/v1/users/current/curation/:id/affected", h.CurationAffected)
 
 	// Derived-data health (gap_seconds + rollup status / resync)
 	e.GET("/api/v1/users/current/derived/status", h.DerivedStatus)

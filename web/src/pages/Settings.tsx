@@ -1,6 +1,14 @@
 import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
-import { ArrowRight, X } from "lucide-react";
+import {
+  ArrowRight,
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+  Plus,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 import { PageToolbar } from "@/components/toolbar/PageToolbar";
 import { Spinner } from "@/components/Spinner";
@@ -8,6 +16,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,7 +27,12 @@ import {
 import { axisLabel } from "@/components/heartbeats/axes";
 import { useAxisValues } from "@/hooks/useAxisValues";
 import { useCurationMutations, useCurationRules } from "@/hooks/useCuration";
-import type { CurationRule, HeartbeatAxis } from "@/types/api";
+import { api } from "@/lib/api";
+import type {
+  CurationMatchType,
+  CurationRule,
+  HeartbeatAxis,
+} from "@/types/api";
 
 // Axes exposed in the "hidden sources" picker.
 const SOURCE_AXES = [
@@ -32,6 +47,20 @@ const AXIS_LABEL: Record<string, string> = {
   plugin: "Plugin",
   machine: "Machine",
 };
+
+// Axes that support name remappings (rename rules). Matches the renamable axes
+// in the Heartbeats explorer (excludes synthetic `day` and the file-path
+// `entity`).
+const REMAP_AXES: readonly HeartbeatAxis[] = [
+  "project",
+  "language",
+  "editor",
+  "plugin",
+  "machine",
+  "platform",
+  "branch",
+  "category",
+];
 
 export function Settings() {
   const { data, isLoading } = useCurationRules();
@@ -62,6 +91,22 @@ export function Settings() {
         toast.success(`Removed remapping ${rule.matchValue} → ${rule.newValue}`),
       onError: () => toast.error("Failed to remove remapping"),
     });
+  }
+
+  function addRename(body: {
+    axis: string;
+    matchValue: string;
+    newValue: string;
+    matchType: CurationMatchType;
+  }) {
+    add.mutate(
+      { action: "rename", ...body },
+      {
+        onSuccess: () =>
+          toast.success(`Added remapping ${body.matchValue} → ${body.newValue}`),
+        onError: () => toast.error("Failed to add remapping"),
+      },
+    );
   }
 
   function addHide(axis: string, value: string) {
@@ -116,7 +161,12 @@ export function Settings() {
               onAdd={addHide}
               onRemove={unhide}
             />
-            <NameRemappingsCard rules={renames} onRemove={removeRename} />
+            <NameRemappingsCard
+              rules={renames}
+              onAdd={addRename}
+              onRemove={removeRename}
+              adding={add.isPending}
+            />
           </>
         )}
       </div>
@@ -297,10 +347,19 @@ function HiddenSourcesCard({
 
 function NameRemappingsCard({
   rules,
+  onAdd,
   onRemove,
+  adding,
 }: {
   rules: CurationRule[];
+  onAdd: (body: {
+    axis: string;
+    matchValue: string;
+    newValue: string;
+    matchType: CurationMatchType;
+  }) => void;
   onRemove: (rule: CurationRule) => void;
+  adding: boolean;
 }) {
   // Group rename rules by axis (project/language/editor/branch/…).
   const grouped = useMemo(() => {
@@ -320,16 +379,19 @@ function NameRemappingsCard({
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-sm text-muted-foreground">
-          Rename or merge values from the{" "}
+          Rename or merge values into a single name. Add a rule below, or rename
+          a single value from the{" "}
           <Link
             to="/app/heartbeats"
             className="font-medium text-primary hover:underline"
           >
             Heartbeats
           </Link>{" "}
-          explorer. Remappings are applied to your dashboards at query-time and
-          are reversible — raw records are never changed.
+          explorer. Remappings apply to your dashboards at query-time and are
+          reversible — raw records are never changed.
         </p>
+
+        <AddRemappingForm onAdd={onAdd} adding={adding} />
 
         {grouped.size === 0 ? (
           <p className="text-sm text-muted-foreground">No remappings yet.</p>
@@ -342,21 +404,7 @@ function NameRemappingsCard({
                 </p>
                 <div className="space-y-1.5">
                   {items.map((r) => (
-                    <div
-                      key={r.id}
-                      className="flex items-center gap-2 rounded-md border bg-secondary/40 px-2.5 py-1.5 text-sm"
-                    >
-                      <span className="font-mono">{r.matchValue}</span>
-                      <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      <span className="font-mono font-medium">{r.newValue}</span>
-                      <button
-                        onClick={() => onRemove(r)}
-                        title="Remove remapping (reverts the merge)"
-                        className="ml-auto rounded-full p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
+                    <RemappingRow key={r.id} rule={r} onRemove={onRemove} />
                   ))}
                 </div>
               </div>
@@ -365,5 +413,235 @@ function NameRemappingsCard({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function AddRemappingForm({
+  onAdd,
+  adding,
+}: {
+  onAdd: (body: {
+    axis: string;
+    matchValue: string;
+    newValue: string;
+    matchType: CurationMatchType;
+  }) => void;
+  adding: boolean;
+}) {
+  const [axis, setAxis] = useState<HeartbeatAxis>(REMAP_AXES[0]);
+  const [pattern, setPattern] = useState("");
+  const [target, setTarget] = useState("");
+  const [regex, setRegex] = useState(false);
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const matchValue = pattern.trim();
+    const newValue = target.trim();
+    if (!matchValue || !newValue) {
+      toast.error("Enter both a pattern and a target name");
+      return;
+    }
+    if (regex) {
+      // Validate the regex client-side before sending.
+      try {
+        new RegExp(matchValue);
+      } catch {
+        toast.error("That isn't a valid regular expression");
+        return;
+      }
+    }
+    onAdd({ axis, matchValue, newValue, matchType: regex ? "regex" : "exact" });
+    setPattern("");
+    setTarget("");
+  }
+
+  return (
+    <form
+      onSubmit={submit}
+      className="space-y-3 rounded-md border bg-muted/30 p-3"
+    >
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="space-y-1">
+          <Label className="text-xs">Axis</Label>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-32 justify-between"
+              >
+                {axisLabel(axis)}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="max-h-72 overflow-y-auto">
+              {REMAP_AXES.map((a) => (
+                <DropdownMenuItem key={a} onSelect={() => setAxis(a)}>
+                  {axisLabel(a)}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        <div className="min-w-40 flex-1 space-y-1">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">
+              {regex ? "Pattern (regex)" : "Pattern"}
+            </Label>
+            <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={regex}
+                onChange={(e) => setRegex(e.target.checked)}
+                className="h-3.5 w-3.5 accent-primary"
+              />
+              regex
+            </label>
+          </div>
+          <Input
+            value={pattern}
+            onChange={(e) => setPattern(e.target.value)}
+            placeholder={regex ? "^Meet" : "Meet - Weekly All-Hands"}
+            className="h-8 font-mono"
+          />
+        </div>
+
+        <ArrowRight className="mb-2 hidden h-4 w-4 shrink-0 text-muted-foreground sm:block" />
+
+        <div className="min-w-40 flex-1 space-y-1">
+          <Label className="text-xs">Target name</Label>
+          <Input
+            value={target}
+            onChange={(e) => setTarget(e.target.value)}
+            placeholder="Meeting"
+            className="h-8 font-mono"
+          />
+        </div>
+
+        <Button
+          type="submit"
+          size="sm"
+          className="h-8"
+          disabled={adding || !pattern.trim() || !target.trim()}
+        >
+          <Plus className="h-4 w-4" />
+          Add
+        </Button>
+      </div>
+      {regex && (
+        <p className="text-xs text-muted-foreground">
+          The pattern is a regular expression matched against raw{" "}
+          {axisLabel(axis).toLowerCase()} values (e.g.{" "}
+          <span className="font-mono">^Meet</span> or{" "}
+          <span className="font-mono">Meet - .*</span>). Click a rule below to
+          preview what it matches.
+        </p>
+      )}
+    </form>
+  );
+}
+
+function RemappingRow({
+  rule,
+  onRemove,
+}: {
+  rule: CurationRule;
+  onRemove: (rule: CurationRule) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const isRegex = rule.matchType === "regex";
+
+  const affected = useQuery({
+    queryKey: ["curation-affected", rule.id],
+    queryFn: () => api.getCurationRuleAffected(rule.id),
+    enabled: open,
+    staleTime: 30_000,
+  });
+
+  const total = useMemo(
+    () => (affected.data?.values ?? []).reduce((s, v) => s + v.count, 0),
+    [affected.data],
+  );
+
+  return (
+    <div className="rounded-md border bg-secondary/40 text-sm">
+      <div className="flex items-center gap-2 px-2.5 py-1.5">
+        <button
+          className="flex flex-1 items-center gap-2 text-left"
+          onClick={() => setOpen((o) => !o)}
+          title="View the raw values this rule matches"
+        >
+          <span className="flex h-4 w-4 items-center justify-center text-muted-foreground">
+            {open ? (
+              <ChevronDown className="h-4 w-4" />
+            ) : (
+              <ChevronRight className="h-4 w-4" />
+            )}
+          </span>
+          <span className="font-mono">{rule.matchValue}</span>
+          {isRegex && (
+            <Badge
+              variant="outline"
+              className="shrink-0 border-violet-500/40 text-[10px] uppercase text-violet-400"
+            >
+              regex
+            </Badge>
+          )}
+          <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <span className="font-mono font-medium">{rule.newValue}</span>
+        </button>
+        <button
+          onClick={() => onRemove(rule)}
+          title="Remove remapping (reverts the merge)"
+          className="rounded-full p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {open && (
+        <div className="border-t px-3 py-2">
+          {affected.isLoading ? (
+            <p className="flex items-center gap-2 py-2 text-xs text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading matched
+              values…
+            </p>
+          ) : affected.isError ? (
+            <p className="py-2 text-xs text-destructive">
+              Failed to load matched values.
+            </p>
+          ) : (affected.data?.values.length ?? 0) === 0 ? (
+            <p className="py-2 text-xs text-muted-foreground">
+              No current values match this pattern.
+            </p>
+          ) : (
+            <>
+              <p className="mb-1.5 text-xs text-muted-foreground">
+                Matches {affected.data!.values.length.toLocaleString()} value
+                {affected.data!.values.length === 1 ? "" : "s"} ·{" "}
+                {total.toLocaleString()} heartbeats
+                {affected.data!.truncated ? " (showing top matches)" : ""}
+              </p>
+              <div className="max-h-56 space-y-1 overflow-y-auto">
+                {affected.data!.values.map((v) => (
+                  <div
+                    key={v.value}
+                    className="flex items-center gap-2 rounded px-1.5 py-0.5"
+                  >
+                    <span className="truncate font-mono text-xs" title={v.value}>
+                      {v.value}
+                    </span>
+                    <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground">
+                      {v.count.toLocaleString()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

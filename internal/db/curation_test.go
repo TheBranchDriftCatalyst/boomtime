@@ -134,7 +134,7 @@ func TestHideExclusionInStats(t *testing.T) {
 	}
 
 	// Add a hide rule and reload the hidden sets.
-	if _, err := d.CreateCurationRule(ctx, sender, "project", "hide", "hideme", nil); err != nil {
+	if _, err := d.CreateCurationRule(ctx, sender, "project", "hide", "exact", "hideme", nil); err != nil {
 		t.Fatal(err)
 	}
 	hs, err := d.LoadHiddenSets(ctx, sender)

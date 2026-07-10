@@ -18,7 +18,13 @@ func (h *Handler) ProjectStats(c *echo.Context) error {
 	project := c.Param("project")
 	ctx := c.Request().Context()
 
-	ok, err := h.DB.CheckProjectOwner(ctx, owner, project)
+	// `project` is a DISPLAY name — validate ownership through the rename remap so
+	// a merged/regex display name (which has no raw projects row) still resolves.
+	renames, err := h.DB.LoadRenameSets(ctx, owner)
+	if err != nil {
+		return respondErr(c, apierr.Generic())
+	}
+	ok, err := h.DB.CheckProjectDisplayOwner(ctx, owner, project, renames)
 	if err != nil {
 		return respondErr(c, apierr.Generic())
 	}
@@ -33,17 +39,13 @@ func (h *Handler) ProjectStats(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		renames, err := h.DB.LoadRenameSets(ctx, owner)
-		if err != nil {
-			return nil, err
-		}
 		// `project` is a DISPLAY name; GetProjectStats remap-matches it so a merged
 		// name aggregates all its source projects.
 		rows, err := h.DB.GetProjectStats(ctx, owner, project, t0, t1, limit, hidden, renames)
 		if err != nil {
 			return nil, err
 		}
-		extras, err := h.DB.GetProjectExtras(ctx, owner, project, t0, t1, limit)
+		extras, err := h.DB.GetProjectExtras(ctx, owner, project, t0, t1, limit, renames)
 		if err != nil {
 			return nil, err
 		}

@@ -11,17 +11,23 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// Curation actions.
+// Curation actions and match types.
 const (
 	CurationHide   = "hide"
 	CurationRename = "rename"
+
+	MatchExact = "exact"
+	MatchRegex = "regex"
 )
 
 // CurationRule is a per-user data-curation rule (hide or rename) on a label axis.
+// MatchType is "exact" (MatchValue is a literal) or "regex" (MatchValue is a
+// Postgres regex applied to the raw column via ~).
 type CurationRule struct {
 	ID         int       `json:"id"`
 	Axis       string    `json:"axis"`
 	Action     string    `json:"action"`
+	MatchType  string    `json:"matchType"`
 	MatchValue string    `json:"matchValue"`
 	NewValue   *string   `json:"newValue"`
 	CreatedAt  time.Time `json:"createdAt"`
@@ -30,7 +36,7 @@ type CurationRule struct {
 // ListCurationRules returns a user's rules, newest first.
 func (d *DB) ListCurationRules(ctx context.Context, sender string) ([]CurationRule, error) {
 	rows, err := d.Pool.Query(ctx, `
-		SELECT id, axis, action, match_value, new_value, created_at
+		SELECT id, axis, action, match_type, match_value, new_value, created_at
 		FROM curation_rules WHERE sender = $1 ORDER BY id DESC`, sender)
 	if err != nil {
 		return nil, err
@@ -39,7 +45,7 @@ func (d *DB) ListCurationRules(ctx context.Context, sender string) ([]CurationRu
 	out := []CurationRule{}
 	for rows.Next() {
 		var r CurationRule
-		if err := rows.Scan(&r.ID, &r.Axis, &r.Action, &r.MatchValue, &r.NewValue, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.Axis, &r.Action, &r.MatchType, &r.MatchValue, &r.NewValue, &r.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -47,18 +53,21 @@ func (d *DB) ListCurationRules(ctx context.Context, sender string) ([]CurationRu
 	return out, rows.Err()
 }
 
-// CreateCurationRule inserts a rule (deduped on sender,axis,action,match_value)
-// and returns it. On an existing duplicate it returns the current row.
-func (d *DB) CreateCurationRule(ctx context.Context, sender, axis, action, matchValue string, newValue *string) (*CurationRule, error) {
+// CreateCurationRule inserts a rule (deduped on sender,axis,action,match_type,
+// match_value) and returns it. On an existing duplicate it updates new_value.
+func (d *DB) CreateCurationRule(ctx context.Context, sender, axis, action, matchType, matchValue string, newValue *string) (*CurationRule, error) {
+	if matchType == "" {
+		matchType = MatchExact
+	}
 	row := d.Pool.QueryRow(ctx, `
-		INSERT INTO curation_rules (sender, axis, action, match_value, new_value)
-		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (sender, axis, action, match_value)
+		INSERT INTO curation_rules (sender, axis, action, match_type, match_value, new_value)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (sender, axis, action, match_type, match_value)
 		DO UPDATE SET new_value = EXCLUDED.new_value
-		RETURNING id, axis, action, match_value, new_value, created_at`,
-		sender, axis, action, matchValue, newValue)
+		RETURNING id, axis, action, match_type, match_value, new_value, created_at`,
+		sender, axis, action, matchType, matchValue, newValue)
 	var r CurationRule
-	if err := row.Scan(&r.ID, &r.Axis, &r.Action, &r.MatchValue, &r.NewValue, &r.CreatedAt); err != nil {
+	if err := row.Scan(&r.ID, &r.Axis, &r.Action, &r.MatchType, &r.MatchValue, &r.NewValue, &r.CreatedAt); err != nil {
 		return nil, err
 	}
 	return &r, nil
@@ -69,9 +78,9 @@ func (d *DB) GetCurationRule(ctx context.Context, id int) (*CurationRule, string
 	var r CurationRule
 	var sender string
 	err := d.Pool.QueryRow(ctx, `
-		SELECT id, axis, action, match_value, new_value, created_at, sender
+		SELECT id, axis, action, match_type, match_value, new_value, created_at, sender
 		FROM curation_rules WHERE id = $1`, id).
-		Scan(&r.ID, &r.Axis, &r.Action, &r.MatchValue, &r.NewValue, &r.CreatedAt, &sender)
+		Scan(&r.ID, &r.Axis, &r.Action, &r.MatchType, &r.MatchValue, &r.NewValue, &r.CreatedAt, &sender)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, "", nil
 	}
@@ -90,6 +99,81 @@ func (d *DB) DeleteCurationRule(ctx context.Context, sender string, id int) (int
 	return ct.RowsAffected(), nil
 }
 
+// AffectedValue is one distinct RAW value a rule matches, with its heartbeat count.
+type AffectedValue struct {
+	Value string `json:"value"`
+	Count int64  `json:"count"`
+}
+
+// CurationAffectedValues returns the DISTINCT RAW values (with heartbeat counts)
+// that a rule matches on its axis, owner-scoped and UNFILTERED (audit). Exact
+// rules match the single literal; regex rules match every value where the raw
+// column ~ the pattern. Ordered by count desc, capped at `limit`; the second
+// return reports truncation. Injection-safe: the axis maps to a whitelisted
+// column and match_value is a bound param.
+func (d *DB) CurationAffectedValues(ctx context.Context, sender string, rule *CurationRule, limit int) ([]AffectedValue, bool, error) {
+	col, ok := rawHeartbeatCols[rule.Axis]
+	if !ok {
+		// Non-remap axes (e.g. day/entity for hide) have no heartbeats column here.
+		if c, whok := ExploreColumn(rule.Axis); whok {
+			col = c // e.g. "time_sent::date" for day, "entity", "ty"
+		} else {
+			return nil, false, fmt.Errorf("axis %q has no affected-values column", rule.Axis)
+		}
+	}
+	if limit <= 0 {
+		limit = 200
+	}
+
+	pred := col + " = $2"
+	if rule.MatchType == MatchRegex {
+		pred = col + " ~ $2"
+	}
+	// Fetch limit+1 to detect truncation.
+	q := fmt.Sprintf(`
+		SELECT %s::text AS value, count(*) AS cnt
+		FROM heartbeats
+		WHERE sender = $1 AND %s IS NOT NULL AND %s
+		GROUP BY %s
+		ORDER BY cnt DESC, value ASC
+		LIMIT %d`, col, col, pred, col, limit+1)
+
+	rows, err := d.Pool.Query(ctx, q, sender, rule.MatchValue)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	out := []AffectedValue{}
+	for rows.Next() {
+		var v AffectedValue
+		if err := rows.Scan(&v.Value, &v.Count); err != nil {
+			return nil, false, err
+		}
+		out = append(out, v)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	truncated := false
+	if len(out) > limit {
+		out = out[:limit]
+		truncated = true
+	}
+	return out, truncated, nil
+}
+
+// ValidateRegex checks that a pattern compiles as a Postgres regex (guarded).
+// Returns nil when valid, else a user-facing error.
+func (d *DB) ValidateRegex(ctx context.Context, pattern string) error {
+	var ok bool
+	// `'' ~ $1` forces Postgres to compile the pattern without scanning any rows.
+	err := d.Pool.QueryRow(ctx, `SELECT ''::text ~ $1`, pattern).Scan(&ok)
+	if err != nil {
+		return fmt.Errorf("invalid regex pattern: %w", err)
+	}
+	return nil
+}
+
 // ---- Query-time rename remap (non-destructive, reversible) ----
 //
 // A rename rule is applied at QUERY TIME only: raw heartbeats/projects/badges/
@@ -98,80 +182,104 @@ func (d *DB) DeleteCurationRule(ctx context.Context, sender string, id int) (int
 // value. Deleting the rule reverts dashboards instantly. Audit surfaces (Explorer
 // group/list, latest, timeline) do NOT use the remap — they show the raw value.
 
-// RenameSets holds the sender's active rename rules per axis (axis -> match -> new).
+// regexRename is one compiled-at-query-time regex rename (pattern -> new_value).
+type regexRename struct {
+	pattern string
+	newVal  string
+}
+
+// axisRenames holds an axis's rename rules split by match type. Exact rules are
+// grouped by target (match -> new); regex rules are an ordered list.
+type axisRenames struct {
+	exact map[string]string // match_value -> new_value
+	regex []regexRename     // pattern ~ -> new_value
+}
+
+func (a axisRenames) empty() bool { return len(a.exact) == 0 && len(a.regex) == 0 }
+
+// RenameSets holds the sender's active rename rules per axis.
 type RenameSets struct {
-	byAxis map[string]map[string]string
+	byAxis map[string]axisRenames
 }
 
 // Any reports whether the sender has any rename rule.
 func (r RenameSets) Any() bool {
-	for _, m := range r.byAxis {
-		if len(m) > 0 {
+	for _, a := range r.byAxis {
+		if !a.empty() {
 			return true
 		}
 	}
 	return false
 }
 
-// HasAxis reports whether any rename rule targets the given axis.
-func (r RenameSets) HasAxis(axis string) bool { return len(r.byAxis[axis]) > 0 }
-
-// HasAxisOutside reports whether a rename targets an axis NOT in `available`.
-// Mirrors HiddenSets.HasHiddenOutside so a pre-aggregated path can decide whether
-// it can serve a remapped read (the rollup only outputs project/language/editor/
-// platform/machine, so a rename on those is fine; other axes aren't in its output
-// at all, so they never affect it — see RenamedRollupAxis).
-func (r RenameSets) HasAxisOutside(available map[string]bool) bool {
-	for axis, m := range r.byAxis {
-		if len(m) > 0 && !available[axis] {
-			return true
-		}
-	}
-	return false
+// HasAxis reports whether any rename rule (exact or regex) targets the given axis.
+func (r RenameSets) HasAxis(axis string) bool {
+	a, ok := r.byAxis[axis]
+	return ok && !a.empty()
 }
 
-// LoadRenameSets fetches the sender's rename rules (action='rename') per axis.
+// LoadRenameSets fetches the sender's rename rules (action='rename') per axis,
+// split into exact and regex kinds.
 func (d *DB) LoadRenameSets(ctx context.Context, sender string) (RenameSets, error) {
-	rs := RenameSets{byAxis: map[string]map[string]string{}}
+	rs := RenameSets{byAxis: map[string]axisRenames{}}
 	rows, err := d.Pool.Query(ctx,
-		`SELECT axis, match_value, new_value FROM curation_rules
-		 WHERE sender = $1 AND action = 'rename' AND new_value IS NOT NULL`, sender)
+		`SELECT axis, match_type, match_value, new_value FROM curation_rules
+		 WHERE sender = $1 AND action = 'rename' AND new_value IS NOT NULL
+		 ORDER BY id ASC`, sender)
 	if err != nil {
 		return rs, err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var axis, match, newv string
-		if err := rows.Scan(&axis, &match, &newv); err != nil {
+		var axis, mtype, match, newv string
+		if err := rows.Scan(&axis, &mtype, &match, &newv); err != nil {
 			return rs, err
 		}
-		if rs.byAxis[axis] == nil {
-			rs.byAxis[axis] = map[string]string{}
+		a := rs.byAxis[axis]
+		if mtype == MatchRegex {
+			a.regex = append(a.regex, regexRename{pattern: match, newVal: newv})
+		} else {
+			if a.exact == nil {
+				a.exact = map[string]string{}
+			}
+			a.exact[match] = newv
 		}
-		rs.byAxis[axis][match] = newv
+		rs.byAxis[axis] = a
 	}
 	return rs, rows.Err()
 }
 
 // remapExpr returns an SQL expression that maps `col` to its display value per the
-// rename rules for `axis`, appending the match/new values as $-params (injection
-// safe, using `= ANY($arr)` like exclusionPredicate). When the axis has no rules
-// it returns `col` unchanged with no new args. Sources are grouped by target so
-// A,B→M collapse into one WHEN, and targets are emitted in sorted order so the
-// SQL/args are deterministic.
+// rename rules for `axis`, appending match/new values as $-params (injection safe).
+// Exact rules use `col = ANY($arr)` grouped by target so A,B→M collapse into one
+// WHEN; regex rules use `col ~ $pattern` (one WHEN each). Exact WHENs precede
+// regex WHENs (deterministic ordering). When the axis has no rules it returns
+// `col` unchanged with no new args.
 //
-//	CASE WHEN col = ANY($arr1) THEN $t1 [WHEN col = ANY($arr2) THEN $t2 ...] ELSE col END
+//	CASE WHEN col = ANY($arr) THEN $t [WHEN col ~ $pat THEN $t2 ...] ELSE col END
 //
-// extraCond, if non-empty, is ANDed into every WHEN (used by leaderboards to scope
-// the remap to the requester's own rows: `sender = $req`).
+// extraCond, if non-empty, is ANDed into every WHEN (leaderboards scope the remap
+// to the requester's own rows: `sender = $req`).
 func (r RenameSets) remapExpr(axis, col, extraCond string, nextArg int, args []any) (string, []any, int) {
-	rules := r.byAxis[axis]
-	if len(rules) == 0 {
+	a := r.byAxis[axis]
+	if a.empty() {
 		return col, args, nextArg
 	}
-	// Invert match->new into new->[]match so multiple sources share one WHEN.
+
+	whenPrefix := func(b *strings.Builder) {
+		b.WriteString(" WHEN ")
+		if extraCond != "" {
+			b.WriteString(extraCond)
+			b.WriteString(" AND ")
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString("CASE")
+
+	// Exact rules, grouped by target (deterministic target + source ordering).
 	byTarget := map[string][]string{}
-	for match, tgt := range rules {
+	for match, tgt := range a.exact {
 		byTarget[tgt] = append(byTarget[tgt], match)
 	}
 	targets := make([]string, 0, len(byTarget))
@@ -179,17 +287,10 @@ func (r RenameSets) remapExpr(axis, col, extraCond string, nextArg int, args []a
 		targets = append(targets, t)
 	}
 	sort.Strings(targets)
-
-	var b strings.Builder
-	b.WriteString("CASE")
 	for _, tgt := range targets {
 		sources := byTarget[tgt]
 		sort.Strings(sources)
-		b.WriteString(" WHEN ")
-		if extraCond != "" {
-			b.WriteString(extraCond)
-			b.WriteString(" AND ")
-		}
+		whenPrefix(&b)
 		fmt.Fprintf(&b, "%s = ANY($%d)", col, nextArg)
 		args = append(args, sources)
 		nextArg++
@@ -197,6 +298,18 @@ func (r RenameSets) remapExpr(axis, col, extraCond string, nextArg int, args []a
 		args = append(args, tgt)
 		nextArg++
 	}
+
+	// Regex rules, in load order (rule id asc); first match wins (CASE semantics).
+	for _, rr := range a.regex {
+		whenPrefix(&b)
+		fmt.Fprintf(&b, "%s ~ $%d", col, nextArg)
+		args = append(args, rr.pattern)
+		nextArg++
+		fmt.Fprintf(&b, " THEN $%d", nextArg)
+		args = append(args, rr.newVal)
+		nextArg++
+	}
+
 	b.WriteString(" ELSE ")
 	b.WriteString(col)
 	b.WriteString(" END")

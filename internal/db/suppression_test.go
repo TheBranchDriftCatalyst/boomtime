@@ -212,7 +212,7 @@ func TestSuppressedValuesExcludedFromAggregations(t *testing.T) {
 			}
 
 			// Add the hide rule and reload the sets.
-			if _, err := d.CreateCurationRule(ctx, sender, axis, "hide", supVal, nil); err != nil {
+			if _, err := d.CreateCurationRule(ctx, sender, axis, "hide", "exact", supVal, nil); err != nil {
 				t.Fatal(err)
 			}
 			hs, err := d.LoadHiddenSets(ctx, sender)

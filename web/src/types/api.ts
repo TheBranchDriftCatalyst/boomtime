@@ -285,12 +285,17 @@ export interface ImportLogLine {
 
 export type CurationAction = "hide" | "rename";
 
+// How a rename rule's matchValue is interpreted. Hide rules are always exact.
+export type CurationMatchType = "exact" | "regex";
+
 export interface CurationRule {
   id: number;
   axis: string;
   action: CurationAction;
   matchValue: string;
   newValue: string | null;
+  // Defaults to "exact" when the backend omits it (older rules / hide rules).
+  matchType?: CurationMatchType;
   createdAt: string;
 }
 
@@ -303,10 +308,23 @@ export interface AddCurationRuleBody {
   action: CurationAction;
   matchValue: string;
   newValue?: string;
+  matchType?: CurationMatchType;
 }
 
 export interface AddCurationRulePayload {
   rule: CurationRule;
+}
+
+// GET /api/v1/users/current/curation/:id/affected — the raw values a rule
+// currently matches, with their heartbeat counts.
+export interface CurationAffectedValue {
+  value: string;
+  count: number;
+}
+
+export interface CurationAffectedPayload {
+  values: CurationAffectedValue[];
+  truncated?: boolean;
 }
 
 // --- Heartbeats Explorer -----------------------------------------------------

@@ -13,6 +13,7 @@ import (
 type curationRequest struct {
 	Axis       string  `json:"axis"`
 	Action     string  `json:"action"`
+	MatchType  string  `json:"matchType"` // "exact" (default) | "regex"
 	MatchValue string  `json:"matchValue"`
 	NewValue   *string `json:"newValue"`
 }
@@ -53,6 +54,13 @@ func (h *Handler) CreateCuration(c *echo.Context) error {
 	if req.MatchValue == "" {
 		return respondErr(c, apierr.New(http.StatusBadRequest, "matchValue is required", nil))
 	}
+	matchType := req.MatchType
+	if matchType == "" {
+		matchType = db.MatchExact
+	}
+	if matchType != db.MatchExact && matchType != db.MatchRegex {
+		return respondErr(c, apierr.New(http.StatusBadRequest, "matchType must be 'exact' or 'regex'", nil))
+	}
 	if req.Action == db.CurationRename {
 		if req.NewValue == nil || *req.NewValue == "" {
 			return respondErr(c, apierr.New(http.StatusBadRequest, "newValue is required for a rename rule", nil))
@@ -63,10 +71,17 @@ func (h *Handler) CreateCuration(c *echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
+	// For a regex rule, validate the pattern compiles (Postgres regex) up front.
+	if matchType == db.MatchRegex {
+		if err := h.DB.ValidateRegex(ctx, req.MatchValue); err != nil {
+			return respondErr(c, apierr.New(http.StatusBadRequest, "invalid regex pattern", nil))
+		}
+	}
+
 	// Both hide and rename are stored as rules and applied at QUERY TIME — creating
 	// the rule mutates no raw data. Rename is a non-destructive, reversible remap:
 	// heartbeats keep their original values and dashboards show the merged value.
-	rule, err := h.DB.CreateCurationRule(ctx, owner, req.Axis, req.Action, req.MatchValue, req.NewValue)
+	rule, err := h.DB.CreateCurationRule(ctx, owner, req.Axis, req.Action, matchType, req.MatchValue, req.NewValue)
 	if err != nil {
 		h.Logger.Error("create curation rule failed", "err", err)
 		return respondErr(c, apierr.Generic())
@@ -101,6 +116,37 @@ func (h *Handler) DeleteCuration(c *echo.Context) error {
 	}
 	h.invalidateOwnerCache(owner)
 	return noContent(c)
+}
+
+// CurationAffected: GET /api/v1/users/current/curation/:id/affected →
+// {values:[{value,count}], truncated}. The DISTINCT RAW values (with heartbeat
+// counts) a rule matches on its axis — the one literal for an exact rule, every
+// matching value for a regex rule. Owner-scoped, UNFILTERED (audit).
+func (h *Handler) CurationAffected(c *echo.Context) error {
+	_, owner, aerr := h.resolveUser(c)
+	if aerr != nil {
+		return respondErr(c, aerr)
+	}
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		return respondErr(c, apierr.New(http.StatusBadRequest, "Invalid rule id", nil))
+	}
+	ctx := c.Request().Context()
+
+	rule, ruleOwner, err := h.DB.GetCurationRule(ctx, id)
+	if err != nil {
+		return respondErr(c, apierr.Generic())
+	}
+	if rule == nil || ruleOwner != owner {
+		return respondErr(c, apierr.New(http.StatusNotFound, "Curation rule not found", nil))
+	}
+
+	values, truncated, err := h.DB.CurationAffectedValues(ctx, owner, rule, 200)
+	if err != nil {
+		h.Logger.Error("curation affected values failed", "err", err)
+		return respondErr(c, apierr.Generic())
+	}
+	return c.JSON(http.StatusOK, map[string]any{"values": values, "truncated": truncated})
 }
 
 // invalidateOwnerCache drops all cached aggregation payloads for a user so hide/
