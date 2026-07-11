@@ -4,3 +4,9 @@ coverage
 *.local
 .DS_Store
 *.tsbuildinfo
+
+# Playwright e2e artifacts + captured auth state
+e2e/.auth/
+test-results
+playwright-report
+.playwright/
