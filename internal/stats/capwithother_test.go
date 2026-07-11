@@ -67,6 +67,82 @@ func TestCapWithOtherCollapsesTail(t *testing.T) {
 	}
 }
 
+// gaka-7m4: the synthesized "Other" entry must carry the tail members so
+// tooltips can render a breakdown.
+func TestCapWithOtherCarriesOtherMembers(t *testing.T) {
+	var in []model.ResourceStats
+	for i := 0; i < 14; i++ {
+		in = append(in, model.ResourceStats{
+			Name:         string(rune('A' + i)),
+			TotalSeconds: int64(1400 - i*100),
+			TotalPct:     float64(i + 1),
+			TotalDaily:   []int64{int64(i)},
+			PctDaily:     []float64{float64(i)},
+		})
+	}
+	out := capWithOther(in)
+	other := out[len(out)-1]
+
+	if other.OtherCount != 2 {
+		t.Errorf("Other.OtherCount = %d, want 2 (len(tail))", other.OtherCount)
+	}
+	if len(other.OtherMembers) != 2 {
+		t.Fatalf("len(Other.OtherMembers) = %d, want 2", len(other.OtherMembers))
+	}
+	// Tail is desc by TotalSeconds: i=12 ('M', 200s, 13%), then i=13 ('N', 100s, 14%).
+	if other.OtherMembers[0].Name != "M" || other.OtherMembers[0].TotalSeconds != 200 || other.OtherMembers[0].TotalPct != 13 {
+		t.Errorf("OtherMembers[0] = %+v, want {M 200 13}", other.OtherMembers[0])
+	}
+	if other.OtherMembers[1].Name != "N" || other.OtherMembers[1].TotalSeconds != 100 || other.OtherMembers[1].TotalPct != 14 {
+		t.Errorf("OtherMembers[1] = %+v, want {N 100 14}", other.OtherMembers[1])
+	}
+}
+
+// The cap bounds the payload — a tail bigger than otherMembersCap only carries
+// the top otherMembersCap members, but OtherCount reflects the true tail size.
+func TestCapWithOtherRespectsMembersCap(t *testing.T) {
+	// resourceTopN = 12; otherMembersCap = 20. Use 12+25 = 37 entries so the
+	// tail (25) exceeds the cap.
+	var in []model.ResourceStats
+	for i := 0; i < 37; i++ {
+		in = append(in, model.ResourceStats{
+			Name:         string(rune('a' + i%26)) + string(rune('0'+i/26)),
+			TotalSeconds: int64(3700 - i*100), // strictly desc
+			TotalDaily:   []int64{0},
+			PctDaily:     []float64{0},
+		})
+	}
+	out := capWithOther(in)
+	other := out[len(out)-1]
+
+	if other.OtherCount != 25 {
+		t.Errorf("Other.OtherCount = %d, want 25 (len(tail))", other.OtherCount)
+	}
+	if len(other.OtherMembers) != 20 {
+		t.Fatalf("len(Other.OtherMembers) = %d, want %d (otherMembersCap)", len(other.OtherMembers), 20)
+	}
+	// The first member is the highest-TotalSeconds tail entry (index 12 in the
+	// desc-sorted list).
+	if other.OtherMembers[0].TotalSeconds != 2500 {
+		t.Errorf("OtherMembers[0].TotalSeconds = %d, want 2500 (first tail entry)", other.OtherMembers[0].TotalSeconds)
+	}
+}
+
+// Small (<= resourceTopN) lists take the fast path — no synthesized Other, and
+// no OtherMembers / OtherCount anywhere.
+func TestCapWithOtherSmallListHasNoOtherMembers(t *testing.T) {
+	in := []model.ResourceStats{
+		{Name: "a", TotalSeconds: 30},
+		{Name: "b", TotalSeconds: 20},
+	}
+	out := capWithOther(in)
+	for i, r := range out {
+		if r.OtherCount != 0 || r.OtherMembers != nil {
+			t.Errorf("out[%d] = %+v, want no Other* fields on small-list rows", i, r)
+		}
+	}
+}
+
 func TestCapWithOtherDoesNotMutateInput(t *testing.T) {
 	// 14 entries in ASCENDING TotalSeconds order (so the internal sort would
 	// reorder them), backed by an array with one spare sentinel slot (so an

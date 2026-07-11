@@ -154,6 +154,10 @@ export function OverviewDashboard({
       name: c.name,
       values: c.totalDaily,
       color: palette.get(c.name)!,
+      // gaka-7m4: forward the collapsed-tail members on the Other segment so
+      // the stacked-column tooltip can break down what "Other" contains.
+      otherMembers: c.otherMembers,
+      otherCount: c.otherCount,
     }));
   }, [chartCategories]);
 

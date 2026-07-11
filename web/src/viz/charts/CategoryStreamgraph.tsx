@@ -5,7 +5,11 @@ import { cssVar } from "@/viz/d3/useChartFrame";
 import { useD3Surface } from "@/viz/d3/useD3Surface";
 import { ChartSurface } from "@/viz/d3/ChartSurface";
 import { tooltipHtml } from "@/viz/d3/tooltip";
-import { fmtDateRange, fmtPct } from "@/viz/d3/tooltipContent";
+import {
+  fmtDateRange,
+  fmtPct,
+  otherBreakdownContent,
+} from "@/viz/d3/tooltipContent";
 import { formatDay, styleAxis, thinnedDateTicks } from "@/viz/d3/axes";
 import { orderCategories, paletteByName } from "@/viz/d3/color";
 import { renderLegend } from "@/viz/d3/legend";
@@ -108,16 +112,31 @@ export function CategoryStreamgraph({
             rng && rng.start && rng.end && rng.start !== rng.end
               ? fmtDateRange(rng.start, rng.end)
               : formatDay(new Date(dates[i]));
+          // gaka-7m4: on the "Other" layer, append a range-total breakdown
+          // of the collapsed categories. Look them up on the source
+          // ResourceStats (series is orderCategories(categories)).
+          const source = series.find((s) => s.name === layer.key);
+          const rows0: { label: string; value: string; muted?: boolean; swatch?: string }[] = [
+            { label: "Time", value: secondsToHms(bucketVal) },
+            { label: "Share of bucket", value: fmtPct(share) },
+          ];
+          let footer: string | undefined;
+          if (source?.otherMembers && source.otherMembers.length > 0) {
+            const { rows: memberRows, footer: overflowFooter } =
+              otherBreakdownContent(source, secondsToHms);
+            rows0.push(
+              ...memberRows.map((r) => ({ ...r, muted: true })),
+            );
+            footer = overflowFooter || "Range totals per member";
+          }
           showTip(
             event,
             tooltipHtml({
               title: layer.key,
               titleSwatch: palette.get(layer.key)!,
               subtitle,
-              rows: [
-                { label: "Time", value: secondsToHms(bucketVal) },
-                { label: "Share of bucket", value: fmtPct(share) },
-              ],
+              rows: rows0,
+              footer,
             }),
           );
         })

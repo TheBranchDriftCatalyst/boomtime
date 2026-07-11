@@ -230,10 +230,18 @@ func segmentAligned[T any](days []time.Time, rows []T, day func(T) time.Time, na
 // while the aggregate row still carries real (summed) day-by-day data.
 const resourceTopN = 12
 
+// otherMembersCap is the max number of tail members carried on the synthesized
+// "Other" entry for FE tooltip breakdown (gaka-7m4). Sized to comfortably
+// cover typical long-tail cardinality (a dozen editors, a few dozen languages)
+// while keeping the payload bounded.
+const otherMembersCap = 20
+
 // capWithOther returns the top-N resources by total time plus, if there are more,
 // a single "Other (N more)" entry whose TotalSeconds and per-day arrays are the
-// element-wise sums of the remaining tail. The caller's slice is never mutated:
-// sorting happens on a clone, and the returned slice has its own backing array.
+// element-wise sums of the remaining tail. On the Other entry we also carry the
+// top otherMembersCap tail members (name/totalSeconds/totalPct only) so the FE
+// can render a breakdown tooltip. The caller's slice is never mutated: sorting
+// happens on a clone, and the returned slice has its own backing array.
 func capWithOther(list []model.ResourceStats) []model.ResourceStats {
 	if len(list) <= resourceTopN {
 		return list
@@ -245,7 +253,10 @@ func capWithOther(list []model.ResourceStats) []model.ResourceStats {
 	top := sorted[:resourceTopN:resourceTopN]
 	tail := sorted[resourceTopN:]
 
-	other := model.ResourceStats{Name: fmt.Sprintf("Other (%d more)", len(tail))}
+	other := model.ResourceStats{
+		Name:       fmt.Sprintf("Other (%d more)", len(tail)),
+		OtherCount: len(tail),
+	}
 	// Derive the array length from a top entry (all share the day count).
 	n := 0
 	if len(top) > 0 {
@@ -259,6 +270,20 @@ func capWithOther(list []model.ResourceStats) []model.ResourceStats {
 		for i := 0; i < n && i < len(r.TotalDaily); i++ {
 			other.TotalDaily[i] += r.TotalDaily[i]
 			other.PctDaily[i] += r.PctDaily[i]
+		}
+	}
+	// Tail is already sorted desc by TotalSeconds (sorted was sorted before the
+	// top/tail split). Carry the top otherMembersCap members for the FE tooltip.
+	memberCount := len(tail)
+	if memberCount > otherMembersCap {
+		memberCount = otherMembersCap
+	}
+	other.OtherMembers = make([]model.OtherMember, memberCount)
+	for i := 0; i < memberCount; i++ {
+		other.OtherMembers[i] = model.OtherMember{
+			Name:         tail[i].Name,
+			TotalSeconds: tail[i].TotalSeconds,
+			TotalPct:     tail[i].TotalPct,
 		}
 	}
 	return append(top, other)

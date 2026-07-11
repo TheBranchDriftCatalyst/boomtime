@@ -5,6 +5,7 @@ import {
   fmtDelta,
   fmtPct,
   fmtRank,
+  otherBreakdownContent,
   tooltipHtml,
   type TooltipSpec,
 } from "./tooltipContent";
@@ -203,5 +204,83 @@ describe("fmtDelta", () => {
   });
   it("shows 'no change' when diff is zero but activity exists", () => {
     expect(fmtDelta(3600, 3600)).toContain("no change");
+  });
+});
+
+describe("otherBreakdownContent (gaka-7m4)", () => {
+  const hms = (s: number) => `${s}s`;
+
+  it("returns one row per member with a time + intra-Other share", () => {
+    const { rows } = otherBreakdownContent(
+      {
+        otherMembers: [
+          { name: "python", totalSeconds: 300, totalPct: 3 },
+          { name: "ruby", totalSeconds: 100, totalPct: 1 },
+        ],
+        otherCount: 2,
+      },
+      hms,
+    );
+    expect(rows).toHaveLength(2);
+    expect(rows[0].label).toBe("python");
+    expect(rows[0].value).toBe("300s (75.0%)");
+    expect(rows[1].label).toBe("ruby");
+    expect(rows[1].value).toBe("100s (25.0%)");
+  });
+
+  it("uses caller-provided formatTime for the duration part", () => {
+    const iso = (s: number) => `${Math.floor(s / 60)}m`;
+    const { rows } = otherBreakdownContent(
+      { otherMembers: [{ name: "go", totalSeconds: 180, totalPct: 0 }], otherCount: 1 },
+      iso,
+    );
+    expect(rows[0].value.startsWith("3m")).toBe(true);
+  });
+
+  it("attaches swatches when a swatchAt is provided", () => {
+    const { rows } = otherBreakdownContent(
+      {
+        otherMembers: [
+          { name: "a", totalSeconds: 1, totalPct: 0 },
+          { name: "b", totalSeconds: 1, totalPct: 0 },
+        ],
+        otherCount: 2,
+      },
+      hms,
+      (i) => (i === 0 ? "#f0f" : "#0ff"),
+    );
+    expect(rows[0].swatch).toBe("#f0f");
+    expect(rows[1].swatch).toBe("#0ff");
+  });
+
+  it("footer notes overflow when OtherCount > len(members)", () => {
+    const { footer } = otherBreakdownContent(
+      { otherMembers: [{ name: "a", totalSeconds: 1, totalPct: 0 }], otherCount: 5 },
+      hms,
+    );
+    expect(footer).toBe("+4 more not shown");
+  });
+
+  it("footer is empty when OtherCount matches len(members)", () => {
+    const { footer } = otherBreakdownContent(
+      { otherMembers: [{ name: "a", totalSeconds: 1, totalPct: 0 }], otherCount: 1 },
+      hms,
+    );
+    expect(footer).toBe("");
+  });
+
+  it("empty members yield empty rows and no overflow footer", () => {
+    const { rows, footer } = otherBreakdownContent(
+      { otherMembers: [], otherCount: 0 },
+      hms,
+    );
+    expect(rows).toHaveLength(0);
+    expect(footer).toBe("");
+  });
+
+  it("survives a missing otherMembers field (safe on non-Other rows)", () => {
+    const { rows, footer } = otherBreakdownContent({}, hms);
+    expect(rows).toHaveLength(0);
+    expect(footer).toBe("");
   });
 });

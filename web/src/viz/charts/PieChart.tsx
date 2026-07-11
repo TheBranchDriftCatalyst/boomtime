@@ -5,7 +5,11 @@ import { cssVar } from "@/viz/d3/useChartFrame";
 import { useD3Surface } from "@/viz/d3/useD3Surface";
 import { ChartSurface } from "@/viz/d3/ChartSurface";
 import { tooltipHtml } from "@/viz/d3/tooltip";
-import { fmtPct, fmtRank } from "@/viz/d3/tooltipContent";
+import {
+  fmtPct,
+  fmtRank,
+  otherBreakdownContent,
+} from "@/viz/d3/tooltipContent";
 import { MIN_SLICE_SECONDS, paletteByName } from "@/viz/d3/color";
 import { EmptyChart } from "@/viz/d3/EmptyChart";
 import type { ResourceStats } from "@/types/api";
@@ -74,6 +78,24 @@ export function PieChart({ items, height = 320 }: PieChartProps) {
         .on("mousemove", (event, d) => {
           const share = (d.data.totalSeconds / total) * 100;
           const rank = sortedIndex.get(d.data.name) ?? 0;
+          // gaka-7m4: the synthesized "Other (N more)" slice carries the tail
+          // in otherMembers. Show the per-member breakdown instead of the
+          // generic Time/Share row so hovers reveal what got collapsed.
+          if (d.data.otherMembers && d.data.otherMembers.length > 0) {
+            const { rows: breakdownRows, footer: overflowFooter } =
+              otherBreakdownContent(d.data, secondsToHms);
+            showTip(
+              event,
+              tooltipHtml({
+                title: d.data.name,
+                titleSwatch: palette.get(d.data.name)!,
+                subtitle: `${secondsToHms(d.data.totalSeconds)} · ${fmtPct(share)}`,
+                rows: breakdownRows,
+                footer: overflowFooter,
+              }),
+            );
+            return;
+          }
           showTip(
             event,
             tooltipHtml({

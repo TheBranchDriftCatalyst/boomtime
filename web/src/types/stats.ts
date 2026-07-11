@@ -9,6 +9,19 @@ export interface ResourceStats {
   totalPct: number;
   totalDaily: number[];
   pctDaily: number[];
+  // gaka-7m4: populated only on the synthesized "Other (N more)" entry —
+  // top otherMembersCap tail members so tooltips can break down what "Other"
+  // contains. Non-Other rows serialize without these keys.
+  otherMembers?: OtherMember[];
+  otherCount?: number;
+}
+
+// One tail entry carried on a synthesized "Other" ResourceStats. Range-total
+// only — no per-day arrays (would defeat the capWithOther payload cap).
+export interface OtherMember {
+  name: string;
+  totalSeconds: number;
+  totalPct: number;
 }
 
 export interface StatsPayload {

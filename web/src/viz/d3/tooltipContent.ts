@@ -1,3 +1,4 @@
+import type { OtherMember } from "@/types/stats";
 // Structured tooltip content — pure functions, no DOM. Every chart in the app
 // builds its hover tooltip through this module so structure and styling stay
 // consistent (bold title, muted subtitle, label→value rows with optional color
@@ -124,6 +125,38 @@ export function fmtPct(x: number): string {
   if (!Number.isFinite(x)) return "0.0%";
   const clamped = Math.max(0, Math.min(100, x));
   return `${clamped.toFixed(1)}%`;
+}
+
+/**
+ * gaka-7m4: build the tooltip rows + footer for a synthesized "Other (N more)"
+ * entry — a per-member breakdown of what "Other" contains. Every member row
+ * shows its label (escaped by tooltipHtml) with a `time (share%)` value and an
+ * optional swatch color. If the backend truncated the tail (OtherCount >
+ * len(OtherMembers)) the footer notes the overflow.
+ *
+ * The share is over the members' own totalSeconds sum (not the parent chart's
+ * total), so percentages inside the breakdown sum to ~100 — reads as "of the
+ * Other slice, X% is member A" rather than "of the whole chart".
+ *
+ * `formatTime(seconds)` is caller-provided so consumers pick their own
+ * duration format (`secondsToHms`, ISO H:MM, etc.) without dragging a lib dep
+ * into this file.
+ */
+export function otherBreakdownContent(
+  other: { otherMembers?: OtherMember[]; otherCount?: number },
+  formatTime: (seconds: number) => string,
+  swatchAt?: (i: number) => string | undefined,
+): { rows: TooltipRow[]; footer: string } {
+  const members = other.otherMembers ?? [];
+  const memberTotal = members.reduce((s, m) => s + m.totalSeconds, 0) || 1;
+  const rows: TooltipRow[] = members.map((m, i) => ({
+    label: m.name,
+    value: `${formatTime(m.totalSeconds)} (${fmtPct((m.totalSeconds / memberTotal) * 100)})`,
+    swatch: swatchAt?.(i),
+  }));
+  const overflow = Math.max(0, (other.otherCount ?? members.length) - members.length);
+  const footer = overflow > 0 ? `+${overflow} more not shown` : "";
+  return { rows, footer };
 }
 
 /** "#3 of 14". Rank is 1-indexed; returns "" when either arg is non-positive. */

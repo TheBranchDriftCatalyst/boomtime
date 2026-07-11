@@ -4,7 +4,11 @@ import { cssVar } from "@/viz/d3/useChartFrame";
 import { useD3Surface } from "@/viz/d3/useD3Surface";
 import { ChartSurface } from "@/viz/d3/ChartSurface";
 import { tooltipHtml } from "@/viz/d3/tooltip";
-import { fmtDateRange, fmtPct } from "@/viz/d3/tooltipContent";
+import {
+  fmtDateRange,
+  fmtPct,
+  otherBreakdownContent,
+} from "@/viz/d3/tooltipContent";
 import {
   formatDay,
   gridlines,
@@ -21,6 +25,12 @@ export interface ColumnSeries {
   name: string;
   values: number[];
   color: string;
+  // gaka-7m4: when this series is the synthesized "Other (N more)" segment,
+  // the caller carries the collapsed tail members so the stacked-segment
+  // tooltip can render a breakdown of what's inside Other (range-total, not
+  // per-day — the per-day breakdown would defeat the payload cap).
+  otherMembers?: { name: string; totalSeconds: number; totalPct: number }[];
+  otherCount?: number;
 }
 
 interface ColumnChartBaseProps {
@@ -156,6 +166,32 @@ export function ColumnChart(props: ColumnChartProps) {
               .attr("stroke", card)
               .attr("stroke-width", 0.5)
               .on("mousemove", (event) => {
+                // gaka-7m4: hovering the Other segment reveals the collapsed
+                // members. Breakdown is range-total (not per-day) — labelled
+                // so the user knows this row totals across the whole range,
+                // not just this day. The day-scoped Time/Share stays visible.
+                if (ser.otherMembers && ser.otherMembers.length > 0) {
+                  const { rows: memberRows, footer: overflowFooter } =
+                    otherBreakdownContent(
+                      { otherMembers: ser.otherMembers, otherCount: ser.otherCount },
+                      secondsToHms,
+                    );
+                  showTip(
+                    event,
+                    tooltipHtml({
+                      title: ser.name,
+                      titleSwatch: ser.color,
+                      subtitle: subtitleFor(col.i, col.date),
+                      rows: [
+                        { label: "Time (day)", value: secondsToHms(v) },
+                        { label: "Share of day", value: fmtPct(share) },
+                        ...memberRows.map((r) => ({ ...r, muted: true })),
+                      ],
+                      footer: overflowFooter || "Range totals per member",
+                    }),
+                  );
+                  return;
+                }
                 showTip(
                   event,
                   tooltipHtml({

@@ -5,7 +5,11 @@ import { cssVar } from "@/viz/d3/useChartFrame";
 import { useD3Surface } from "@/viz/d3/useD3Surface";
 import { ChartSurface } from "@/viz/d3/ChartSurface";
 import { tooltipHtml } from "@/viz/d3/tooltip";
-import { fmtDateRange, fmtPct } from "@/viz/d3/tooltipContent";
+import {
+  fmtDateRange,
+  fmtPct,
+  otherBreakdownContent,
+} from "@/viz/d3/tooltipContent";
 import { formatDay, styleAxis, thinnedDateTicks } from "@/viz/d3/axes";
 import { colorAt, emptyFloor } from "@/viz/d3/color";
 import { EmptyChart } from "@/viz/d3/EmptyChart";
@@ -158,6 +162,18 @@ export function HeatmapChart({
               value: fmtPct(shareOfRowPeak),
               muted: true,
             });
+          // gaka-7m4: on the "Other" row, append a range-total breakdown of
+          // the collapsed members. Explicitly labelled so the user knows
+          // those totals span the whole range, not just this day/bucket.
+          let footer: string | undefined;
+          if (d.row.otherMembers && d.row.otherMembers.length > 0) {
+            const { rows: memberRows, footer: overflowFooter } =
+              otherBreakdownContent(d.row, secondsToHms);
+            rows0.push(
+              ...memberRows.map((r) => ({ ...r, muted: true })),
+            );
+            footer = overflowFooter || "Range totals per member";
+          }
           showTip(
             event,
             tooltipHtml({
@@ -165,6 +181,7 @@ export function HeatmapChart({
               titleSwatch: rowColor.get(d.row.name),
               subtitle,
               rows: rows0,
+              footer,
             }),
           );
         })

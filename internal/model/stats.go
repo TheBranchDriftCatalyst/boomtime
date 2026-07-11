@@ -11,6 +11,26 @@ type ResourceStats struct {
 	TotalPct     float64   `json:"totalPct"`     // pTotalPct
 	TotalDaily   []int64   `json:"totalDaily"`   // pTotalDaily
 	PctDaily     []float64 `json:"pctDaily"`     // pPctDaily
+
+	// OtherMembers is populated only on the synthesized "Other (N more)" entry
+	// produced by capWithOther. It carries the top otherMembersCap tail members
+	// (by TotalSeconds desc) so tooltips can break down what "Other" contains.
+	// omitempty keeps every non-Other payload byte-identical.
+	OtherMembers []OtherMember `json:"otherMembers,omitempty"`
+	// OtherCount is the total number of tail members Other collapsed (i.e.
+	// len(tail), which is >= len(OtherMembers) when the cap kicks in). Also
+	// omitempty so non-Other rows stay unchanged.
+	OtherCount int `json:"otherCount,omitempty"`
+}
+
+// OtherMember is one tail entry carried on a synthesized "Other (N more)"
+// ResourceStats. Name / TotalSeconds / TotalPct only — no per-day arrays, since
+// carrying a per-day matrix for the tail would defeat capWithOther's purpose
+// (bound the payload size).
+type OtherMember struct {
+	Name         string  `json:"name"`
+	TotalSeconds int64   `json:"totalSeconds"`
+	TotalPct     float64 `json:"totalPct"`
 }
 
 // LanguageDaily is one language's per-day coding-time series (seconds), aligned

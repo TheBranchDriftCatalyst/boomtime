@@ -32,15 +32,26 @@ export function useProjectCharts(stats: ProjectStatistics | undefined) {
     const colorByName = paletteByName(stats?.languages ?? [], {
       minSeconds: MIN_SLICE_SECONDS,
     });
+    // gaka-7m4: languagesDaily doesn't carry otherMembers (Name+Daily only),
+    // but stats.languages (the capped ResourceStats list) does. Look each
+    // name up so the "Other (N more)" stacked segment can render a breakdown.
+    const langByName = new Map(
+      (stats?.languages ?? []).map((l) => [l.name, l]),
+    );
     return langsDaily
-      .map((ld, i) => ({
-        name: ld.name,
-        values: sum(ld.daily),
-        // Fall back to the by-index color (matches the pie's positional
-        // palette) for names the pie filtered out (<60s), so every segment
-        // stays colored.
-        color: colorByName.get(ld.name) ?? colorAt(i),
-      }))
+      .map((ld, i) => {
+        const source = langByName.get(ld.name);
+        return {
+          name: ld.name,
+          values: sum(ld.daily),
+          // Fall back to the by-index color (matches the pie's positional
+          // palette) for names the pie filtered out (<60s), so every segment
+          // stays colored.
+          color: colorByName.get(ld.name) ?? colorAt(i),
+          otherMembers: source?.otherMembers,
+          otherCount: source?.otherCount,
+        };
+      })
       .filter((s) => s.values.some((v) => v > 0));
   }, [sum, stats?.languagesDaily, stats?.languages]);
 
