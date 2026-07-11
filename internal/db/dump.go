@@ -47,7 +47,7 @@ var dumpTables = []dumpTable{
 		"language", "lineno", "file_lines", "project", "ty", "time_sent", "gap_seconds",
 	}},
 	{"badges", []string{"link_id", "username", "project"}},
-	{"hb_rollup_daily", []string{"sender", "day", "project", "language", "editor", "platform", "machine", "total_seconds"}},
+	{"hb_rollup_daily", []string{"sender", "day", "project", "language", "editor", "platform", "machine", "category", "plugin", "branch", "total_seconds"}},
 	{"curation_rules", []string{"id", "sender", "axis", "action", "match_value", "new_value", "created_at", "match_type"}},
 	{"spaces", []string{"id", "owner", "name", "position", "created_at"}},
 	{"space_rules", []string{"id", "space_id", "axis", "match_value", "match_type"}},

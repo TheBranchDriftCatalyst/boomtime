@@ -143,11 +143,12 @@ recur (see the comment in that file).
 ## 2. The rollup fast-path: `hb_rollup_daily`
 
 Scanning ~440k raw rows for the Overview on every load is wasteful when the
-answer rarely changes. Migration `00009_hb_rollup_daily.sql` adds a coarse daily
-rollup:
+answer rarely changes. Migration `00009_hb_rollup_daily.sql` added a coarse
+daily rollup; migration `00014_widen_rollup_axes.sql` widened it from 5 axes to
+8 (+ `category`, `plugin`, `branch`):
 
 ```sql
-CREATE TABLE IF NOT EXISTS hb_rollup_daily (
+CREATE TABLE hb_rollup_daily (
     sender text NOT NULL,
     day date NOT NULL,
     project text NOT NULL,
@@ -155,15 +156,21 @@ CREATE TABLE IF NOT EXISTS hb_rollup_daily (
     editor text NOT NULL,
     platform text NOT NULL,
     machine text NOT NULL,
+    category text NOT NULL,
+    plugin text NOT NULL,
+    branch text NOT NULL,
     total_seconds bigint NOT NULL,
-    PRIMARY KEY (sender, day, project, language, editor, platform, machine)
+    PRIMARY KEY (sender, day, project, language, editor, platform, machine, category, plugin, branch)
 );
 ```
 
-It stores **exactly five breakdown axes** — `project, language, editor, platform,
-machine` — plus `day` and a pre-summed `total_seconds` at the default 15-minute
-gap cutoff (`gap_seconds <= 900`). No `branch`, `entity`, `category`, `plugin`.
-Low cardinality by design.
+It stores **eight breakdown axes** — `project, language, editor, platform,
+machine, category, plugin, branch` — plus `day` and a pre-summed `total_seconds`
+at the default 15-minute gap cutoff (`gap_seconds <= 900`). Only `entity` stays
+out (per-file cardinality would blow up the rollup to near-raw size). The
+output shape of `get_user_activity_rollup.sql` is unchanged — the finer stored
+axes exist for FILTERING only (hide/Space predicates splice on them), then a CTE
+`GROUP BY` collapses them back to the 5-axis output grain the payload expects.
 
 It is maintained incrementally: `RefreshRollup` (`internal/db/ingest.go`) is
 called after every ingest batch and re-derives the touched days
@@ -177,12 +184,16 @@ the lazily loaded curation/scope set (see `dashboardScope.load` in
 
 ```go
 switch {
-case s.limit == 15 && !l.spaceRequested && !l.hidden.HasHiddenOutside(db.RollupAxes):
-	// Fast path: pre-aggregated rollup (default 15-min limit, no space).
-	rows, err = h.DB.GetUserActivityRollup(s.ctx, s.owner, s.t0, s.t1, l.hidden, l.renames, l.members, false)
+case s.limit == 15 &&
+	!l.hidden.HasHiddenOutside(db.RollupAxes) &&
+	(!l.spaceRequested || !l.members.HasMemberOutside(db.RollupAxes)):
+	// Fast path: pre-aggregated rollup (default 15-min limit, no rollup-external
+	// hide, no rollup-external Space rule). spaceRequested passes through — the
+	// rollup query splices the same inclusion predicate as raw.
+	rows, err = h.DB.GetUserActivityRollup(s.ctx, s.owner, s.t0, s.t1, l.hidden, l.renames, l.members, l.spaceRequested)
 default:
-	// Raw gap_seconds scan (non-default limit, a hide the rollup can't apply,
-	// or a space scope).
+	// Raw gap_seconds scan (non-default limit, or a Space rule on entity/other
+	// non-rollup axis).
 	rows, err = h.DB.GetUserActivity(s.ctx, s.owner, s.t0, s.t1, s.limit, l.hidden, l.renames, l.members, l.spaceRequested)
 }
 ```
@@ -195,19 +206,19 @@ pre-aggregated table structurally cannot express:
 flowchart TD
     A["GetUserActivity request<br/>(owner, range, limit, ?space)"] --> B{"limit == 15 ?"}
     B -- "no (custom timeLimit)" --> R["Raw path:<br/>GetUserActivity<br/>fresh conditional SUM over raw gaps"]
-    B -- yes --> C{"!spaceRequested ?"}
-    C -- "no (a Space was requested)" --> R
-    C -- yes --> D{"!hidden.HasHiddenOutside(RollupAxes) ?"}
-    D -- "no (hide on plugin/branch/category)" --> R
-    D -- yes --> F["Fast path:<br/>GetUserActivityRollup<br/>reads hb_rollup_daily"]
+    B -- yes --> D{"!hidden.HasHiddenOutside(RollupAxes) ?"}
+    D -- "no (rollup-external hide axis)" --> R
+    D -- yes --> C{"!spaceRequested OR<br/>!members.HasMemberOutside(RollupAxes) ?"}
+    C -- "no (Space rule on rollup-external axis, e.g. entity)" --> R
+    C -- yes --> F["Fast path:<br/>GetUserActivityRollup<br/>reads hb_rollup_daily"]
 
     B -. "rollup is pre-summed at a fixed<br/>900s cutoff; another limit needs<br/>a different conditional SUM" .-> R
-    C -. "a Space rule may target branch/entity/...<br/>axes the rollup lacks" .-> R
-    D -. "rollup has no plugin/branch/category<br/>column to exclude on" .-> R
+    D -. "unreachable today — every hiddenAxis<br/>is in the rollup after 00014" .-> R
+    C -. "entity is the only remaining rollup-external<br/>axis; a Space rule there forces raw for correctness" .-> R
 ```
 
 Renames never appear in the gate: a rename only relabels output columns (Section
-3.3), and the rollup stores exactly the five remappable axes, so re-summing
+3.3), and the rollup stores exactly the five remappable output axes, so re-summing
 pre-aggregated rows by the remapped value merges correctly — no fallback needed.
 
 The three fall-back-to-raw conditions:
@@ -215,8 +226,8 @@ The three fall-back-to-raw conditions:
 | Condition | Why the rollup can't serve it |
 |---|---|
 | `limit != 15` | The rollup is pre-summed at a 900s cutoff; a different `timeLimit` needs a fresh conditional SUM over raw gaps. |
-| `spaceRequested` | A Space rule may target an axis the rollup lacks (`branch`/`entity`/…), so scoped requests always use raw. See `HasMemberOutside`. |
-| `hidden.HasHiddenOutside(db.RollupAxes)` | A hide on `plugin`/`branch`/`category` can't be applied — the rollup has no such column. |
+| `hidden.HasHiddenOutside(db.RollupAxes)` | A hide on a rollup-external axis can't be applied. Unreachable today (every hiddenAxis is in the rollup after 00014); kept for future axes. |
+| `spaceRequested && members.HasMemberOutside(db.RollupAxes)` | A Space rule on `entity` (or a future non-rollup axis) can't be spliced — the union arm would silently drop. |
 
 `RollupAxes` and the gate helpers. `RollupAxes` is not a hand-maintained literal
 — it is **derived from the axis registry** in `internal/db/axes.go` (every axis
@@ -229,15 +240,15 @@ var axes = []axisDef{
 	{name: "project", rawCol: "project", inRollup: true},
 	{name: "language", rawCol: "language", inRollup: true},
 	{name: "editor", rawCol: "editor", inRollup: true},
-	{name: "plugin", rawCol: "plugin", inRollup: false},
+	{name: "plugin", rawCol: "plugin", inRollup: true},
 	{name: "machine", rawCol: "machine", inRollup: true},
 	{name: "platform", rawCol: "platform", inRollup: true},
-	{name: "branch", rawCol: "branch", inRollup: false},
-	{name: "category", rawCol: "category", inRollup: false},
+	{name: "branch", rawCol: "branch", inRollup: true},
+	{name: "category", rawCol: "category", inRollup: true},
 }
 
 // RollupAxes = {axis: true for every axes[i] with inRollup == true}
-// => project, language, editor, machine, platform
+// => project, language, editor, machine, platform, plugin, branch, category
 ```
 
 ```go
@@ -250,10 +261,10 @@ func (h HiddenSets) HasHiddenOutside(available map[string]bool) bool {
 }
 ```
 
-`MemberSets.HasMemberOutside` is the exact mirror for Space scopes. (It is defined
-but note that the current handler gates the rollup on `!spaceRequested` outright —
-any Space request already takes raw — so `HasMemberOutside` is the belt-and-braces
-check available to future callers that might want a rollup-with-space path.)
+`MemberSets.HasMemberOutside` is the exact mirror for Space scopes. Since 00014
+widened the rollup, the handler gates Space requests on `HasMemberOutside` (not
+`!spaceRequested`): a Space rule that lives entirely on rollup axes takes the
+fast path, and only an `entity` rule (or a future non-rollup axis) forces raw.
 
 **Renames need no rollup fallback.** A rename only *relabels* output columns; it
 never removes rows. The rollup's output columns are exactly the five remappable
@@ -912,10 +923,12 @@ Say heartbeats gain a `repo` column you want to hide/rename/scope on.
 
 ## 10. Gotchas
 
-- **The rollup only stores 5 axes.** `hb_rollup_daily` has no `branch`, `entity`,
-  `category`, or `plugin`. A hide/scope on those *must* force the raw path
-  (`HasHiddenOutside` / `!spaceRequested`). If you add a rollup consumer, gate it
-  the same way or you will silently ignore a hide the user asked for.
+- **The rollup stores 8 axes; only `entity` stays out.** After migration 00014,
+  `hb_rollup_daily` covers every axis except `entity` (per-file cardinality would
+  balloon it). A hide is currently impossible on `entity` (not a hiddenAxis) and
+  a Space rule on `entity` (or any future non-rollup axis) *must* force the raw
+  path (`HasHiddenOutside` / `HasMemberOutside`). If you add a rollup consumer,
+  gate it the same way or you will silently drop a Space-rule union arm.
 
 - **Template rename is transform, not match.** An `exact`/`regex` rename maps to a
   *fixed* `NewValue`; a `template` rename maps to `regexp_replace(col, $pat,

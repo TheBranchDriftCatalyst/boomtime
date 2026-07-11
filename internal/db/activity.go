@@ -15,14 +15,16 @@ import (
 
 // GetUserActivityRollup reads the pre-aggregated hb_rollup_daily (fast path for
 // the Overview at the default 15-min limit). $1 user, $2 start, $3 end. Excludes
-// the sender's hidden values for the axes the rollup stores (project, language,
-// editor, platform, machine). Callers must not use this path when a hide is
-// active on an axis the rollup lacks (plugin/branch/category) — use the raw path.
-// A rename needs NO rollup fallback: rename only RELABELS output columns (it never
-// removes rows), and the rollup's output columns are project/language/editor/
-// platform/machine — exactly the axes it stores. A rename on plugin/branch/
-// category has no output column here, so it can't mis-display; re-summing the
-// pre-aggregated rows by the remapped value merges correctly.
+// the sender's hidden values and includes a Space scope's members for the axes
+// the rollup stores (project, language, editor, platform, machine, category,
+// plugin, branch). Callers must not use this path when a hide or Space rule is
+// active on an axis the rollup lacks (entity today) — use the raw path.
+// A rename needs NO rollup fallback: rename only RELABELS output columns (it
+// never removes rows), and the rollup's OUTPUT columns are still project/
+// language/editor/platform/machine — the finer stored axes (category/plugin/
+// branch) are used only for filtering, then collapsed back by a CTE GROUP BY.
+// A rename on branch has no output column here (branch is 'Other' in the output),
+// so it can't mis-display.
 func (d *DB) GetUserActivityRollup(ctx context.Context, user string, start, end time.Time, hs HiddenSets, rs RenameSets, ms MemberSets, spaceRequested bool) ([]StatRow, error) {
 	query, args, next := applyScopes(qGetUserActivityRoll, rollupRangeAnchor,
 		hs, ms, spaceRequested, rollupCols, []any{user, start, end}, 4)

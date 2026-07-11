@@ -27,6 +27,7 @@ func TestAxisRegistryDerivations(t *testing.T) {
 
 	wantRollupAxes := map[string]bool{
 		"project": true, "language": true, "editor": true, "platform": true, "machine": true,
+		"plugin": true, "branch": true, "category": true,
 	}
 	if !reflect.DeepEqual(RollupAxes, wantRollupAxes) {
 		t.Fatalf("RollupAxes = %v, want %v", RollupAxes, wantRollupAxes)
@@ -35,6 +36,7 @@ func TestAxisRegistryDerivations(t *testing.T) {
 	wantRollupCols := map[string]string{
 		"project": "project", "language": "language", "editor": "editor",
 		"platform": "platform", "machine": "machine",
+		"plugin": "plugin", "branch": "branch", "category": "category",
 	}
 	if !reflect.DeepEqual(rollupCols, wantRollupCols) {
 		t.Fatalf("rollupCols = %v, want %v", rollupCols, wantRollupCols)
