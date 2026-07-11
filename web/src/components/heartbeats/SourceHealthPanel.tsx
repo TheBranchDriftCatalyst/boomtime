@@ -44,6 +44,12 @@ function SourceRow({ row }: { row: Row }) {
         <span className="text-muted-foreground"> @ {row.machine}</span>
       </span>
       <span
+        className="shrink-0 text-xs tabular-nums text-muted-foreground/70"
+        title={`${row.count.toLocaleString()} heartbeats from this source`}
+      >
+        {row.count.toLocaleString()} hb
+      </span>
+      <span
         className="shrink-0 text-xs tabular-nums text-muted-foreground"
         title={new Date(row.lastSeen).toLocaleString()}
       >
