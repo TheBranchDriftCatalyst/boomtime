@@ -1,14 +1,74 @@
+# Build-context hygiene. Keep this list broad — everything that enters the
+# `docker build` context can land in builder-stage layers or the build cache,
+# which is leakable via `--target server` or `docker buildx build --cache-to`.
+# Anything remotely secret MUST be listed here (secrets stay as RUNTIME env,
+# never build args). See gaka-o5k for the full rationale.
+
+# ── VCS / build outputs ─────────────────────────────────────────────────────
 .git
 tmp/
 bin/
+.dolt/
+*.db
+
+# ── env & credentials ───────────────────────────────────────────────────────
+# .envrc (direnv), .env and every .env.* variant, plus assorted local key/state
+# files. We whitelist .env.example so the runtime image documentation is available
+# in the build context if ever needed (nothing in the current build uses it).
+.envrc
 .env
-.env.local
-.direnv/
+.env.*
+!.env.example
+*.local.json
+.beads-credential-key
+
+# ── agent / tooling state (may contain local settings, tokens, prompts) ─────
+.claude/
+.serena/
+.agents/
+.codex/
+.playwright-mcp/
+.beads/
+
+# ── Node / frontend intermediates (rebuilt in the multi-stage image) ────────
 web/node_modules/
 web/dist/
 web/.vite/
+web/coverage/
+
+# ── Embedded SPA output (rebuilt in the multi-stage image) ──────────────────
 internal/server/dist/
-.dolt/
-.beads/
-*.db
+
+# ── Bloat / non-code (never needed at build time) ───────────────────────────
+.github/
+docs/
+*.png
+*.md
+# CHANGELOG.md is embedded via //go:embed — keep it in the context.
+!CHANGELOG.md
+ov.md
+.air.toml
+docker-compose*.yml
+Dockerfile*
+Taskfile.yml
+.travis.yml
+default.nix
+release.nix
+shell.nix
+
+# ── Editor / OS ─────────────────────────────────────────────────────────────
 .DS_Store
+.idea/
+.vscode/
+*.swp
+
+# ── Playwright verification artifacts ───────────────────────────────────────
+/*-council-*.png
+/overview-*.png
+/projects-*.png
+/audit-*.png
+/fixed-*.png
+
+# ── Stray built binaries ────────────────────────────────────────────────────
+/fixturegen
+/boomtime

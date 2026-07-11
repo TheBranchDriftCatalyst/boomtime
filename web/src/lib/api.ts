@@ -47,6 +47,7 @@ import type {
   SpacePreview,
   TimelinePayload,
   TimelineRange,
+  VersionResponse,
 } from "@/types/api";
 
 export class ApiError extends Error {
@@ -500,4 +501,16 @@ export const api = {
     matchType: SpaceMatchType;
   }) =>
     request<SpacePreview>("/api/v1/users/current/spaces/preview", { params }),
+
+  // --- Meta (version + changelog) -------------------------------------------
+
+  // Running app version — the git-describe string stamped by ldflags. Falls
+  // back to "dev" for a bare `go build` in an untagged tree.
+  getVersion: () =>
+    request<VersionResponse>("/api/v1/version", { auth: false }),
+
+  // Raw CHANGELOG.md as text (request() falls through to raw text when the
+  // response isn't JSON, so this "just works").
+  getChangelog: () =>
+    request<string>("/api/v1/changelog", { auth: false }),
 };

@@ -24,13 +24,22 @@ import (
 	"golang.org/x/term"
 )
 
+// version is stamped in via ldflags at build time:
+//
+//	go build -ldflags "-X main.version=$(git describe --tags --always --dirty)"
+//
+// The Dockerfile and Taskfile both pass VERSION. Defaults to "dev" for a
+// bare `go run` / `go build` in an untagged working tree.
+var version = "dev"
+
 func main() {
 	// Load .env if present (dev convenience; direnv handles .envrc in the shell).
 	_ = godotenv.Load()
 
 	root := &cobra.Command{
-		Use:   "boomtime",
-		Short: "Wakatime-compatible coding-time tracker",
+		Use:     "boomtime",
+		Short:   "Wakatime-compatible coding-time tracker",
+		Version: version,
 	}
 	root.AddCommand(runCmd(), runMigrationsCmd(), createUserCmd(), createTokenCmd())
 
@@ -46,6 +55,7 @@ func runCmd() *cobra.Command {
 		Short: "Start the server (runs migrations, serves, starts the import worker)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg := config.Load()
+			cfg.Version = version
 			logger := logging.Setup(cfg)
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()
@@ -53,7 +63,7 @@ func runCmd() *cobra.Command {
 			if err := db.MigrateURL(ctx, cfg.DatabaseURL()); err != nil {
 				return fmt.Errorf("migrations: %w", err)
 			}
-			logger.Info("migrations applied")
+			logger.Info("migrations applied", "version", cfg.Version)
 
 			database, err := db.NewWithObservability(ctx, cfg.DatabaseURL(), db.Options{
 				LogQueries:  cfg.DBLogQueries,

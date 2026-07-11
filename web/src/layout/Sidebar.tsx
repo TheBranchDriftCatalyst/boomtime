@@ -1,9 +1,11 @@
 import { NavLink } from "react-router";
+import { useQuery } from "@tanstack/react-query";
 import {
   Award,
   BookOpen,
   Code2,
   Download,
+  History,
   LayoutDashboard,
   ListTree,
   LogOut,
@@ -14,6 +16,8 @@ import {
   Settings2,
 } from "lucide-react";
 import { useSpaces } from "@/features/spaces/useSpaces";
+import { api } from "@/lib/api";
+import { qk } from "@/lib/queryKeys";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -23,6 +27,7 @@ const NAV = [
   { name: "Heartbeats", icon: ListTree, to: "/app/heartbeats", end: false },
   { name: "Import", icon: Download, to: "/app/import", end: false },
   { name: "Logs", icon: ScrollText, to: "/app/logs", end: false },
+  { name: "Changelog", icon: History, to: "/app/changelog", end: false },
   { name: "Settings", icon: Settings2, to: "/app/settings", end: false },
 ];
 
@@ -171,7 +176,30 @@ export function Sidebar({
           )}
           {!collapsed && "Collapse"}
         </button>
+
+        {!collapsed && <SidebarVersion />}
       </div>
     </aside>
+  );
+}
+
+/** Small running-version chip at the sidebar footer. Fails silently if the
+ * endpoint is unreachable (never blocks the layout). */
+function SidebarVersion() {
+  const { data } = useQuery({
+    queryKey: qk.version(),
+    queryFn: () => api.getVersion(),
+    staleTime: Infinity,
+    retry: false,
+  });
+  if (!data?.version) return null;
+  return (
+    <NavLink
+      to="/app/changelog"
+      className="mt-1 block text-center font-mono text-[10px] text-muted-foreground hover:text-foreground"
+      title="View changelog"
+    >
+      {data.version}
+    </NavLink>
   );
 }

@@ -11,6 +11,13 @@ vars:
   TEST_DB_URL: '{{.BOOM_TEST_DATABASE_URL | default "postgres://test:test@localhost:5432/boomtime_test?sslmode=disable"}}'
   # Dev DB used ONLY as a read-only source when regenerating fixtures.
   DEV_DB_URL: '{{.DEV_DB_URL | default "postgres://test:test@localhost:5432/boomtime?sslmode=disable"}}'
+  # Version stamped into the binary at build time. `--always` returns the short
+  # SHA before we cut the first tag; `--dirty` appends -dirty on uncommitted
+  # trees. Override with VERSION=vX.Y.Z on the command line.
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo dev
+  # GHCR image reference. Override with IMAGE=ghcr.io/<owner>/<name>.
+  IMAGE: '{{.IMAGE | default "ghcr.io/thebranchdriftcatalyst/boomtime"}}'
 
 tasks:
   default:
@@ -52,9 +59,21 @@ tasks:
       - docker compose down
 
   docker:build:
-    desc: Build the production image (single binary with embedded SPA)
+    desc: 'Build the production image, version-tagged. Vars: IMAGE, VERSION'
     cmds:
-      - docker build -t boomtime:latest .
+      - >-
+        docker build
+        --build-arg VERSION={{.VERSION}}
+        -t {{.IMAGE}}:{{.VERSION}}
+        -t {{.IMAGE}}:latest
+        .
+      - 'echo "✓ built {{.IMAGE}}:{{.VERSION}} (+ :latest)"'
+
+  docker:push:
+    desc: 'Push the version + latest tags to GHCR (docker login ghcr.io first). Vars: IMAGE, VERSION'
+    cmds:
+      - docker push {{.IMAGE}}:{{.VERSION}}
+      - docker push {{.IMAGE}}:latest
 
   db:reset:
     desc: Destroy and recreate the dev database (drops all data)
@@ -135,12 +154,50 @@ tasks:
 
   # ── Build & quality ──────────────────────────────────────────────────────────
   build:
-    desc: Build the single self-contained binary (embeds the built SPA)
+    desc: Build the single self-contained binary (embeds the built SPA + version)
     deps: [web:build]
     cmds:
       - rm -rf internal/server/dist && cp -r web/dist internal/server/dist
-      - go build -o bin/boomtime {{.PKG}}
-      - 'echo "✓ built bin/boomtime"'
+      - go build -ldflags "-s -w -X main.version={{.VERSION}}" -o bin/boomtime {{.PKG}}
+      - 'echo "✓ built bin/boomtime ({{.VERSION}})"'
+
+  version:
+    desc: Print the version that a `task build` would stamp into the binary
+    cmds:
+      - 'echo "{{.VERSION}}"'
+    silent: true
+
+  changelog:
+    desc: Regenerate CHANGELOG.md from conventional-commit history (requires git-cliff)
+    cmds:
+      - 'command -v git-cliff >/dev/null || { echo "install git-cliff: brew install git-cliff (macOS) or https://git-cliff.org/docs/installation"; exit 1; }'
+      - git-cliff -o CHANGELOG.md
+      - 'echo "✓ regenerated CHANGELOG.md"'
+
+  release:
+    desc: 'Bump version from commit history, regen changelog, commit, tag. Vars: VERSION=vX.Y.Z to override the bump'
+    preconditions:
+      - sh: '[ -z "$(git status --porcelain)" ]'
+        msg: working tree must be clean before cutting a release
+      - sh: 'command -v git-cliff >/dev/null'
+        msg: git-cliff is required (brew install git-cliff)
+    cmds:
+      # A single shell so $NEXT scopes across the whole sequence (Task runs each
+      # `cmds` entry in its own shell otherwise).
+      - |
+        set -eu
+        NEXT="{{.VERSION}}"
+        # If the caller didn't override VERSION, ask git-cliff to compute the
+        # next semver from the commit history since the last tag.
+        if [ -z "$NEXT" ] || [ "$NEXT" = "dev" ]; then
+          NEXT=$(git-cliff --bumped-version)
+        fi
+        echo "cutting release: $NEXT"
+        git-cliff --tag "$NEXT" -o CHANGELOG.md
+        git add CHANGELOG.md
+        git commit -m "chore(release): $NEXT"
+        git tag -a "$NEXT" -m "$NEXT"
+        echo "✓ tagged $NEXT — push with: git push --follow-tags"
 
   test:
     desc: Run Go tests against the ISOLATED boomtime_test database

@@ -17,6 +17,11 @@ type RemoteWriteConfig struct {
 
 // Config holds all runtime configuration.
 type Config struct {
+	// Version is the git-describe string stamped into the binary at build time
+	// (see cmd/boomtime/main.go and the ldflags used by the Dockerfile /
+	// Taskfile). Never loaded from the env — the CLI sets it after Load().
+	Version string
+
 	Port               int
 	APIPrefix          string
 	BadgeURL           string
@@ -48,6 +53,8 @@ type Config struct {
 	// WakatimeAPIKey is the server-configured key used to import history from
 	// wakatime.com when the request body omits apiToken. Sourced from
 	// WAKATIME_API_KEY, falling back to BOOM_REMOTE_WRITE_TOKEN. Never exposed.
+  // TODO: Change this so its gone entirely, this needs to come form the user, and 
+  // probably be stored encrypted and secure per user
 	WakatimeAPIKey string
 }
 

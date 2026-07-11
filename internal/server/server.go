@@ -62,6 +62,14 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	registerMiscRoutes(e, h)
 	registerImportRoutes(e, h)
 	registerLogRoutes(e, h)
+	registerMetaRoutes(e, h)
+}
+
+// registerMetaRoutes: build/version disclosure + embedded changelog. Both are
+// intentionally unauthenticated (see internal/handler/meta.go).
+func registerMetaRoutes(e *echo.Echo, h *handler.Handler) {
+	e.GET("/api/v1/version", h.Version)
+	e.GET("/api/v1/changelog", h.Changelog)
 }
 
 // registerHeartbeatRoutes: ingest, the read-only explorer, and source health.
