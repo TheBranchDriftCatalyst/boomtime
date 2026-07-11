@@ -3,6 +3,7 @@ import { AppShell } from "@/layout/AppShell";
 import { ProtectedRoute } from "@/app/ProtectedRoute";
 import { useAuth } from "@/features/auth/useAuth";
 import { Spinner } from "@/components/Spinner";
+import { Changelog } from "@/features/changelog/Changelog";
 import { Heartbeats } from "@/features/heartbeats/Heartbeats";
 import { Import } from "@/features/import/Import";
 import { Leaderboards } from "@/features/leaderboards/Leaderboards";
@@ -47,6 +48,7 @@ export function App() {
         <Route path="space/:id" element={<SpaceView />} />
         <Route path="import" element={<Import />} />
         <Route path="logs" element={<Logs />} />
+        <Route path="changelog" element={<Changelog />} />
         <Route path="settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

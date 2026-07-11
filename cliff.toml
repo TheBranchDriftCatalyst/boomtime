@@ -1,0 +1,64 @@
+# git-cliff configuration for boomtime.
+#
+# The output is machine-parsed by web/src/lib/changelog.ts. If you change the
+# `body` template or the group names, update that parser (and its tests) too.
+
+[changelog]
+# The literal header is stripped by the parser but kept here for a nice
+# stand-alone CHANGELOG.md.
+header = """
+# Changelog
+
+All notable changes to boomtime are documented here. This file is generated
+by [git-cliff](https://git-cliff.org) from conventional-commit history.
+"""
+
+# Deterministic Markdown shape the FE parser depends on:
+#   ## [<version>] - <date>          (or "## [unreleased]" for un-tagged work)
+#   ### <group>
+#   - <optional **scope:**> <message>
+body = """
+{% if version %}\
+## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else %}\
+## [unreleased]
+{% endif %}\
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group }}
+{% for commit in commits %}
+- {% if commit.scope %}**{{ commit.scope }}:** {% endif %}{{ commit.message | upper_first }}\
+{% endfor %}
+{% endfor %}\n
+"""
+trim = true
+footer = ""
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+split_commits = false
+# Match `v1.2.3` tags produced by `task release`.
+tag_pattern = "v[0-9].*"
+# Skip merge commits and revert-of-revert noise.
+filter_commits = false
+sort_commits = "newest"
+topo_order = false
+
+# Order dictates the group order in the rendered changelog.
+commit_parsers = [
+    { message = "^feat", group = "Features" },
+    { message = "^fix", group = "Bug Fixes" },
+    { message = "^perf", group = "Performance" },
+    { message = "^refactor", group = "Refactoring" },
+    { message = "^docs", group = "Documentation" },
+    { message = "^test", group = "Tests" },
+    { message = "^style", group = "Style" },
+    { message = "^ci", group = "CI" },
+    { message = "^build", group = "Build" },
+    # Housekeeping noise we never want in a user-facing changelog.
+    { message = "^chore\\(beads\\)", skip = true },
+    { message = "^chore\\(release\\)", skip = true },
+    { message = "^bd init", skip = true },
+    { message = "^chore", group = "Chores" },
+    { body = ".*BREAKING", group = "Breaking Changes" },
+]

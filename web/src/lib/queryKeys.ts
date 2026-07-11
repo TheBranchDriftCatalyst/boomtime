@@ -136,4 +136,10 @@ export const qk = {
   importJobs: () => ["import-jobs"] as const,
   importJob: (id: number) => ["import-job", id] as const,
   importConfig: () => ["import-config"] as const,
+
+  // --- Meta (version + changelog) ---------------------------------------------
+  // Both cache forever — the FE only refetches on a manual reload; a new
+  // release replaces the whole SPA anyway.
+  version: () => ["meta", "version"] as const,
+  changelog: () => ["meta", "changelog"] as const,
 };

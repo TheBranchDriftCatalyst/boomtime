@@ -10,3 +10,4 @@ export * from "./curation";
 export * from "./heartbeats";
 export * from "./import";
 export * from "./commits";
+export * from "./meta";

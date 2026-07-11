@@ -1,0 +1,73 @@
+# Builds + pushes a versioned image to GHCR on every semver tag (v*), then cuts
+# a GitHub Release with git-cliff notes. Uses only the ephemeral GITHUB_TOKEN
+# — no PATs, no baked secrets. Runtime secrets stay as env / env_file on the
+# deploy target; nothing sensitive is passed as a --build-arg.
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# The workflow needs to write GHCR packages and (optionally) create a GH
+# Release; that's the minimum permissions surface.
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0 keeps the full tag history so git-cliff can render
+      # release notes across every release, not just the just-pushed tag.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Derives {{version}} + latest tags and OCI labels for the just-pushed
+      # tag. Uses `github.repository` so the image path self-heals if the repo
+      # gets renamed.
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: |
+            VERSION=${{ github.ref_name }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      # Generate the release-notes body from the conventional commits landed
+      # since the previous tag (cliff.toml is the source of truth for grouping).
+      - name: Generate release notes
+        id: notes
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --latest --strip header
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: ${{ steps.notes.outputs.content }}
+          tag_name: ${{ github.ref_name }}
