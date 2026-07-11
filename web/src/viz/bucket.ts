@@ -26,6 +26,22 @@ export function bucketDates(groups: number[][], dates: string[]): string[] {
   return groups.map((gr) => dates[gr[0]]);
 }
 
+/**
+ * The `{ start, end }` ISO date range each bucket covers. Bucketed tooltips
+ * (weekly bars, streamgraph layers, momentum cells) surface this range instead
+ * of the first day so hovers read "12–18 Jan" rather than the misleading
+ * "12 Jan". Falls back to identity spans when the group has a single day.
+ */
+export function bucketRanges(
+  groups: number[][],
+  dates: string[],
+): { start: string; end: string }[] {
+  return groups.map((gr) => {
+    if (gr.length === 0) return { start: "", end: "" };
+    return { start: dates[gr[0]] ?? "", end: dates[gr[gr.length - 1]] ?? "" };
+  });
+}
+
 /** Sum a daily numeric series into bucket totals. */
 export function bucketSum(groups: number[][], arr: number[]): number[] {
   return groups.map((gr) => gr.reduce((s, i) => s + (arr[i] ?? 0), 0));

@@ -5,6 +5,7 @@ import { cssVar } from "@/viz/d3/useChartFrame";
 import { useD3Surface } from "@/viz/d3/useD3Surface";
 import { ChartSurface } from "@/viz/d3/ChartSurface";
 import { tooltipHtml } from "@/viz/d3/tooltip";
+import { fmtDelta, fmtPct } from "@/viz/d3/tooltipContent";
 import { formatDay, styleAxis, thinnedDateTicks } from "@/viz/d3/axes";
 import { emptyFloor } from "@/viz/d3/color";
 import { EmptyChart } from "@/viz/d3/EmptyChart";
@@ -99,6 +100,10 @@ export function MomentumGrid({ data, rowHeight = 26 }: MomentumGridProps) {
         .attr("rx", 2)
         .attr("fill", floor);
 
+      // Per-project weekly max — used for "share of project peak" context.
+      const projMax = new Map<string, number>();
+      for (const p of rows) projMax.set(p.name, d3.max(p.weekly) ?? 0);
+
       g.selectAll("rect.cell")
         .data(cells)
         .join("rect")
@@ -111,12 +116,37 @@ export function MomentumGrid({ data, rowHeight = 26 }: MomentumGridProps) {
         .attr("fill", base)
         .attr("fill-opacity", (c) => rowOpacity.get(c.project)!(c.seconds))
         .on("mousemove", (event, c) => {
+          // Week starts covered by this cell. Ranges implied from adjacent
+          // weeks (weeks[i+1] - 1 day) would over-specify — the week label is
+          // enough context here.
+          const weekLabel = d3.timeFormat("%d %b %Y")(new Date(weeks[c.wi]));
+          const proj = rows.find((r) => r.name === c.project);
+          const prev = c.wi > 0 ? proj?.weekly[c.wi - 1] ?? 0 : 0;
+          const projPeak = projMax.get(c.project) ?? 0;
+          const shareOfPeak =
+            projPeak > 0 ? (c.seconds / projPeak) * 100 : 0;
+          const rows0: { label: string; value: string; muted?: boolean }[] = [
+            {
+              label: "Time",
+              value: c.seconds > 0 ? secondsToHms(c.seconds) : "0",
+            },
+          ];
+          if (c.seconds > 0)
+            rows0.push({
+              label: "Share of peak",
+              value: fmtPct(shareOfPeak),
+              muted: true,
+            });
+          const delta = c.wi > 0 ? fmtDelta(c.seconds, prev) : "";
           showTip(
             event,
-            tooltipHtml(c.project, [
-              d3.timeFormat("%d %b %Y")(new Date(weeks[c.wi])),
-              secondsToHms(c.seconds),
-            ]),
+            tooltipHtml({
+              title: c.project,
+              titleSwatch: base,
+              subtitle: `Week of ${weekLabel}`,
+              rows: rows0,
+              footer: delta || undefined,
+            }),
           );
         })
         .on("mouseleave", hideTip);

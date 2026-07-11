@@ -4,6 +4,7 @@ import { cssVar } from "@/viz/d3/useChartFrame";
 import { useD3Surface } from "@/viz/d3/useD3Surface";
 import { ChartSurface } from "@/viz/d3/ChartSurface";
 import { tooltipHtml } from "@/viz/d3/tooltip";
+import { fmtPct } from "@/viz/d3/tooltipContent";
 import { styleAxis } from "@/viz/d3/axes";
 import { colorAt } from "@/viz/d3/color";
 import { EmptyChart } from "@/viz/d3/EmptyChart";
@@ -57,6 +58,9 @@ export function Punchcard({ data, height = 260 }: PunchcardProps) {
         { fontSize: "10px" },
       );
 
+      const total = d3.sum(data.cells, (c) => c.seconds) || 1;
+      const color = colorAt(0);
+
       g.selectAll("circle.punch")
         .data(data.cells.filter((c) => c.seconds > 0))
         .join("circle")
@@ -64,15 +68,22 @@ export function Punchcard({ data, height = 260 }: PunchcardProps) {
         .attr("cx", (c) => (x(c.hour) ?? 0) + x.bandwidth() / 2)
         .attr("cy", (c) => (y(c.dow) ?? 0) + y.bandwidth() / 2)
         .attr("r", (c) => Math.max(1.5, r(c.seconds)))
-        .attr("fill", colorAt(0))
+        .attr("fill", color)
         .attr("fill-opacity", 0.85)
         .on("mousemove", (event, c) => {
+          const share = (c.seconds / total) * 100;
+          const nextH = (c.hour + 1) % 24;
           showTip(
             event,
-            tooltipHtml(
-              `${DOW[c.dow]} ${String(c.hour).padStart(2, "0")}:00 UTC`,
-              secondsToHms(c.seconds),
-            ),
+            tooltipHtml({
+              title: `${DOW[c.dow]} ${String(c.hour).padStart(2, "0")}:00–${String(nextH).padStart(2, "0")}:00`,
+              titleSwatch: color,
+              rows: [
+                { label: "Time", value: secondsToHms(c.seconds) },
+                { label: "Share of week", value: fmtPct(share) },
+              ],
+              footer: "UTC",
+            }),
           );
         })
         .on("mouseleave", hideTip);

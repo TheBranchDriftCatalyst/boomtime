@@ -5,6 +5,7 @@ import { cssVar } from "@/viz/d3/useChartFrame";
 import { useD3Surface } from "@/viz/d3/useD3Surface";
 import { ChartSurface } from "@/viz/d3/ChartSurface";
 import { tooltipHtml } from "@/viz/d3/tooltip";
+import { fmtDateRange, fmtPct } from "@/viz/d3/tooltipContent";
 import {
   formatDay,
   gridlines,
@@ -20,6 +21,8 @@ interface CumulativeAreaProps {
   dates: string[];
   values: number[]; // seconds per bucket
   height?: number;
+  /** Optional per-bucket ranges — tooltips read as "12–18 Jan 2026". */
+  ranges?: { start: string; end: string }[];
 }
 
 const MARGIN = { top: 10, right: 16, bottom: 28, left: 52 };
@@ -29,12 +32,14 @@ export function CumulativeArea({
   dates,
   values,
   height = 300,
+  ranges,
 }: CumulativeAreaProps) {
   const data = useMemo(() => {
     let acc = 0;
     return dates.map((d, i) => {
-      acc += values[i] ?? 0;
-      return { date: new Date(d), cum: acc };
+      const bucket = values[i] ?? 0;
+      acc += bucket;
+      return { date: new Date(d), cum: acc, bucket, i };
     });
   }, [dates, values]);
 
@@ -102,6 +107,8 @@ export function CumulativeArea({
         .attr("stroke", color)
         .attr("stroke-width", 2);
 
+      const grandTotal = data[data.length - 1]?.cum || 1;
+
       // Hover dots.
       g.selectAll("circle.pt")
         .data(data)
@@ -112,17 +119,28 @@ export function CumulativeArea({
         .attr("r", 8)
         .attr("fill", "transparent")
         .on("mousemove", (event, d) => {
+          const rng = ranges?.[d.i];
+          const subtitle =
+            rng && rng.start && rng.end && rng.start !== rng.end
+              ? fmtDateRange(rng.start, rng.end)
+              : d3.timeFormat("%d %b %Y")(d.date);
+          const share = grandTotal > 0 ? (d.cum / grandTotal) * 100 : 0;
           showTip(
             event,
-            tooltipHtml(d3.timeFormat("%d %b %Y")(d.date), [
-              "Total",
-              secondsToHms(d.cum),
-            ]),
+            tooltipHtml({
+              title: subtitle,
+              titleSwatch: color,
+              rows: [
+                { label: "Total so far", value: secondsToHms(d.cum) },
+                { label: "This bucket", value: secondsToHms(d.bucket) },
+                { label: "Progress", value: fmtPct(share), muted: true },
+              ],
+            }),
           );
         })
         .on("mouseleave", hideTip);
     },
-    [data],
+    [data, ranges],
   );
 
   if (data.length === 0) return <EmptyChart height={height} />;

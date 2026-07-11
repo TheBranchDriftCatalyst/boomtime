@@ -5,6 +5,7 @@ import { cssVar } from "@/viz/d3/useChartFrame";
 import { useD3Surface } from "@/viz/d3/useD3Surface";
 import { ChartSurface } from "@/viz/d3/ChartSurface";
 import { tooltipHtml } from "@/viz/d3/tooltip";
+import { fmtPct } from "@/viz/d3/tooltipContent";
 import { formatDay, styleAxis } from "@/viz/d3/axes";
 import { colorAt } from "@/viz/d3/color";
 import { EmptyChart } from "@/viz/d3/EmptyChart";
@@ -80,12 +81,17 @@ export function AuthoringVsReading({
         .attr("stroke", card)
         .attr("stroke-width", 1)
         .on("mousemove", (event, d) => {
+          const share = total > 0 ? (d.data.value / total) * 100 : 0;
           showTip(
             event,
-            tooltipHtml(
-              d.data.label,
-              `${secondsToHms(d.data.value)} (${Math.round((d.data.value / total) * 100)}%)`,
-            ),
+            tooltipHtml({
+              title: d.data.label,
+              titleSwatch: d.data.color,
+              rows: [
+                { label: "Time", value: secondsToHms(d.data.value) },
+                { label: "Share", value: fmtPct(share) },
+              ],
+            }),
           );
         })
         .on("mouseleave", hideTip);

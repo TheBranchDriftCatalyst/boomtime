@@ -5,6 +5,7 @@ import { cssVar } from "@/viz/d3/useChartFrame";
 import { useD3Surface } from "@/viz/d3/useD3Surface";
 import { ChartSurface } from "@/viz/d3/ChartSurface";
 import { tooltipHtml } from "@/viz/d3/tooltip";
+import { fmtDateRange, fmtPct } from "@/viz/d3/tooltipContent";
 import { formatDay, styleAxis, thinnedDateTicks } from "@/viz/d3/axes";
 import { orderCategories, paletteByName } from "@/viz/d3/color";
 import { renderLegend } from "@/viz/d3/legend";
@@ -17,6 +18,8 @@ interface CategoryStreamgraphProps {
   categories: ResourceStats[];
   dates: string[];
   height?: number;
+  /** Optional per-bucket ranges — tooltips read as "12–18 Jan 2026". */
+  ranges?: { start: string; end: string }[];
 }
 
 const LEGEND_H = 22;
@@ -31,6 +34,7 @@ export function CategoryStreamgraph({
   categories,
   dates,
   height = 320,
+  ranges,
 }: CategoryStreamgraphProps) {
   // Shared category ordering (real categories by total desc, "Other (…)" last)
   // — the SAME contract OverviewDashboard's stacked columns replay.
@@ -86,8 +90,36 @@ export function CategoryStreamgraph({
         .attr("stroke", card)
         .attr("stroke-width", 0.5)
         .on("mousemove", (event, layer) => {
-          const total = series.find((s) => s.name === layer.key)?.totalSeconds ?? 0;
-          showTip(event, tooltipHtml(layer.key, secondsToHms(total)));
+          // Invert x -> bucket index (round; curveBasis smoothing means the
+          // visual band at cursor can differ slightly from the bucket value —
+          // acceptable per DESIGN, but round rather than interpolate).
+          const [mx] = d3.pointer(event, g.node() as SVGGElement);
+          const rawIdx = x.invert(mx);
+          const i = Math.max(0, Math.min(dates.length - 1, Math.round(rawIdx)));
+          const bucketVal =
+            series.find((s) => s.name === layer.key)?.totalDaily[i] ?? 0;
+          const bucketTotal = series.reduce(
+            (s, ser) => s + (ser.totalDaily[i] ?? 0),
+            0,
+          );
+          const share = bucketTotal > 0 ? (bucketVal / bucketTotal) * 100 : 0;
+          const rng = ranges?.[i];
+          const subtitle =
+            rng && rng.start && rng.end && rng.start !== rng.end
+              ? fmtDateRange(rng.start, rng.end)
+              : formatDay(new Date(dates[i]));
+          showTip(
+            event,
+            tooltipHtml({
+              title: layer.key,
+              titleSwatch: palette.get(layer.key)!,
+              subtitle,
+              rows: [
+                { label: "Time", value: secondsToHms(bucketVal) },
+                { label: "Share of bucket", value: fmtPct(share) },
+              ],
+            }),
+          );
         })
         .on("mouseleave", hideTip);
 
@@ -113,7 +145,7 @@ export function CategoryStreamgraph({
         { x: MARGIN.left, y: 2, fg, maxWidth: innerW, gap: 28 },
       );
     },
-    [series, dates],
+    [series, dates, ranges],
   );
 
   if (series.length === 0) return <EmptyChart height={height} />;

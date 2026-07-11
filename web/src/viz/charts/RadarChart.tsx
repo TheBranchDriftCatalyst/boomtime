@@ -4,6 +4,7 @@ import { cssVar } from "@/viz/d3/useChartFrame";
 import { useD3Surface } from "@/viz/d3/useD3Surface";
 import { ChartSurface } from "@/viz/d3/ChartSurface";
 import { tooltipHtml } from "@/viz/d3/tooltip";
+import { fmtPct, fmtRank } from "@/viz/d3/tooltipContent";
 import { colorAt } from "@/viz/d3/color";
 import { EmptyChart } from "@/viz/d3/EmptyChart";
 import type { ResourceStats } from "@/types/api";
@@ -102,6 +103,16 @@ export function RadarChart({ weekDay, height = 320 }: RadarChartProps) {
 
       // Bind {i, value} objects (not raw numbers): duplicate values (e.g. two
       // zero days) would otherwise make indexOf resolve the wrong weekday.
+      // Total across all weekdays + per-weekday rank (by seconds desc).
+      const total = d3.sum(values);
+      const rank = new Map<number, number>();
+      values
+        .map((v, i) => ({ i, v }))
+        .filter((d) => d.v > 0)
+        .sort((a, b) => b.v - a.v)
+        .forEach((d, k) => rank.set(d.i, k + 1));
+      const activeDays = values.filter((v) => v > 0).length;
+
       rg.selectAll("circle.pt")
         .data(values.map((value, i) => ({ i, value })))
         .join("circle")
@@ -111,9 +122,22 @@ export function RadarChart({ weekDay, height = 320 }: RadarChartProps) {
         .attr("r", 3)
         .attr("fill", color)
         .on("mousemove", (event, d) => {
+          const share = total > 0 ? (d.value / total) * 100 : 0;
+          const r = rank.get(d.i);
           showTip(
             event,
-            tooltipHtml(WEEKDAYS[d.i], ["Activity", secondsToHms(d.value)]),
+            tooltipHtml({
+              title: WEEKDAYS[d.i],
+              titleSwatch: color,
+              rows:
+                d.value > 0
+                  ? [
+                      { label: "Activity", value: secondsToHms(d.value) },
+                      { label: "Share of week", value: fmtPct(share) },
+                    ]
+                  : [{ label: "Activity", value: "0" }],
+              footer: r ? fmtRank(r, activeDays) : undefined,
+            }),
           );
         })
         .on("mouseleave", hideTip);

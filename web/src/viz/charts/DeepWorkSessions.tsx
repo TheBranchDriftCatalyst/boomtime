@@ -6,10 +6,11 @@ import { cssVar } from "@/viz/d3/useChartFrame";
 import { useD3Surface } from "@/viz/d3/useD3Surface";
 import { ChartSurface } from "@/viz/d3/ChartSurface";
 import { tooltipHtml } from "@/viz/d3/tooltip";
+import { fmtDateRange, fmtPct } from "@/viz/d3/tooltipContent";
 import { formatDay, styleAxis, thinnedDateTicks } from "@/viz/d3/axes";
 import { colorAt } from "@/viz/d3/color";
 import { EmptyChart } from "@/viz/d3/EmptyChart";
-import { bucketGroups, bucketSum } from "@/viz/bucket";
+import { bucketGroups, bucketRanges, bucketSum } from "@/viz/bucket";
 import type { SessionsPayload } from "@/types/api";
 
 interface DeepWorkSessionsProps {
@@ -101,6 +102,9 @@ function Histogram({
         .attr("transform", "rotate(-30)")
         .style("text-anchor", "end");
 
+      const totalSessions = d3.sum(bins, (b) => b.count) || 1;
+      const color = colorAt(3);
+
       g.selectAll("rect.bar")
         .data(bins)
         .join("rect")
@@ -110,9 +114,21 @@ function Histogram({
         .attr("y", (b) => y(b.count))
         .attr("height", (b) => innerH - y(b.count))
         .attr("rx", 2)
-        .attr("fill", colorAt(3))
+        .attr("fill", color)
         .on("mousemove", (event, b) => {
-          showTip(event, tooltipHtml(b.label, `${b.count} sessions`));
+          const share = (b.count / totalSessions) * 100;
+          showTip(
+            event,
+            tooltipHtml({
+              title: b.label,
+              titleSwatch: color,
+              subtitle: "Session length bin",
+              rows: [
+                { label: "Sessions", value: String(b.count) },
+                { label: "Share", value: fmtPct(share) },
+              ],
+            }),
+          );
         })
         .on("mouseleave", hideTip);
     },
@@ -134,7 +150,15 @@ function DailyStrip({
     const groups = bucketGroups(daily.length);
     const counts = bucketSum(groups, daily.map((d) => d.sessions));
     const labels = groups.map((gr) => daily[gr[0]]?.date ?? "");
-    return counts.map((c, i) => ({ date: labels[i], sessions: c }));
+    const ranges = bucketRanges(
+      groups,
+      daily.map((d) => d.date ?? ""),
+    );
+    return counts.map((c, i) => ({
+      date: labels[i],
+      sessions: c,
+      range: ranges[i],
+    }));
   }, [daily]);
 
   const surface = useD3Surface(
@@ -171,6 +195,9 @@ function DailyStrip({
         { fontSize: "10px" },
       );
 
+      const totalSessions = d3.sum(bucketed, (d) => d.sessions) || 1;
+      const color = colorAt(2);
+
       g.selectAll("rect.bar")
         .data(bucketed)
         .join("rect")
@@ -180,14 +207,27 @@ function DailyStrip({
         .attr("y", (d) => y(d.sessions))
         .attr("height", (d) => innerH - y(d.sessions))
         .attr("rx", 2)
-        .attr("fill", colorAt(2))
+        .attr("fill", color)
         .on("mousemove", (event, d) => {
+          const share = (d.sessions / totalSessions) * 100;
+          const rng = d.range;
+          const dayFmt = d.date
+            ? d3.timeFormat("%d %b %Y")(new Date(d.date))
+            : "";
+          const title =
+            rng && rng.start && rng.end && rng.start !== rng.end
+              ? fmtDateRange(rng.start, rng.end)
+              : dayFmt;
           showTip(
             event,
-            tooltipHtml(
-              d.date ? d3.timeFormat("%d %b %Y")(new Date(d.date)) : "",
-              `${d.sessions} sessions`,
-            ),
+            tooltipHtml({
+              title,
+              titleSwatch: color,
+              rows: [
+                { label: "Sessions", value: String(d.sessions) },
+                { label: "Share", value: fmtPct(share) },
+              ],
+            }),
           );
         })
         .on("mouseleave", hideTip);

@@ -4,6 +4,7 @@ import { cssVar } from "@/viz/d3/useChartFrame";
 import { useD3Surface } from "@/viz/d3/useD3Surface";
 import { ChartSurface } from "@/viz/d3/ChartSurface";
 import { tooltipHtml } from "@/viz/d3/tooltip";
+import { fmtDateRange, fmtPct } from "@/viz/d3/tooltipContent";
 import {
   formatDay,
   gridlines,
@@ -27,6 +28,13 @@ interface ColumnChartBaseProps {
   dates: string[];
   seriesName?: string;
   height?: number;
+  /**
+   * Optional per-bucket ranges (start/end ISO). When the caller has bucketed
+   * daily data (weekly bars on long ranges) this makes tooltips read
+   * "12–18 Jan 2026" instead of the misleading "12 Jan 2026" (bucket start).
+   * Length must match `dates`; ignored otherwise.
+   */
+  ranges?: { start: string; end: string }[];
 }
 
 // Discriminated union: either single-series `values` bars, or a stacked
@@ -45,8 +53,19 @@ const MARGIN = { top: 10, right: 12, bottom: 28, left: 44 };
 /** D3 1:1 port of the daily-activity column chart, with an optional stacked
  * (multi-series) mode driven by the `series` prop. */
 export function ColumnChart(props: ColumnChartProps) {
-  const { dates, seriesName = "Coding time", height = 320, series } = props;
+  const { dates, seriesName = "Coding time", height = 320, series, ranges } = props;
   const values = props.values ?? EMPTY;
+
+  // Choose the tooltip's date/date-range subtitle for a given index. When
+  // ranges are supplied and > 1 day, format as a compact range; otherwise
+  // fall back to the bucket's representative day.
+  const subtitleFor = (i: number, d: Date): string => {
+    const r = ranges?.[i];
+    if (r && r.start && r.end && r.start !== r.end) {
+      return fmtDateRange(r.start, r.end);
+    }
+    return formatDay(d);
+  };
 
   const surface = useD3Surface(
     { height, margin: MARGIN },
@@ -118,6 +137,7 @@ export function ColumnChart(props: ColumnChartProps) {
 
         dateGroups.each(function (col) {
           const cell = d3.select(this);
+          const colTotal = totals[col.i] || 0;
           let acc = 0; // running seconds from the bottom of the bar
           for (const ser of series) {
             const v = ser.values[col.i] ?? 0;
@@ -125,6 +145,7 @@ export function ColumnChart(props: ColumnChartProps) {
             const y0 = acc;
             const y1 = acc + v;
             acc = y1;
+            const share = colTotal > 0 ? (v / colTotal) * 100 : 0;
             cell
               .append("rect")
               .attr("x", 0)
@@ -137,7 +158,16 @@ export function ColumnChart(props: ColumnChartProps) {
               .on("mousemove", (event) => {
                 showTip(
                   event,
-                  tooltipHtml(ser.name, [formatDay(col.date), secondsToHms(v)]),
+                  tooltipHtml({
+                    title: ser.name,
+                    titleSwatch: ser.color,
+                    subtitle: subtitleFor(col.i, col.date),
+                    rows: [
+                      { label: "Time", value: secondsToHms(v) },
+                      { label: "Share of day", value: fmtPct(share) },
+                      { label: "Day total", value: secondsToHms(colTotal), muted: true },
+                    ],
+                  }),
                 );
               })
               .on("mouseleave", hideTip);
@@ -155,15 +185,25 @@ export function ColumnChart(props: ColumnChartProps) {
           .attr("rx", 4)
           .attr("fill", colorAt(0))
           .on("mousemove", (event, d) => {
+            const i = data.indexOf(d);
+            const rng = i >= 0 ? ranges?.[i] : undefined;
+            const subtitle =
+              rng && rng.start && rng.end && rng.start !== rng.end
+                ? fmtDateRange(rng.start, rng.end)
+                : undefined;
             showTip(
               event,
-              tooltipHtml(formatDay(d.date), [seriesName, secondsToHms(d.y)]),
+              tooltipHtml({
+                title: formatDay(d.date),
+                subtitle,
+                rows: [{ label: seriesName, value: secondsToHms(d.y) }],
+              }),
             );
           })
           .on("mouseleave", hideTip);
       }
     },
-    [dates, values, series, seriesName],
+    [dates, values, series, seriesName, ranges],
   );
 
   if (dates.length === 0) return <EmptyChart height={height} />;

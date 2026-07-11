@@ -5,6 +5,7 @@ import { cssVar } from "@/viz/d3/useChartFrame";
 import { useD3Surface } from "@/viz/d3/useD3Surface";
 import { ChartSurface } from "@/viz/d3/ChartSurface";
 import { tooltipHtml } from "@/viz/d3/tooltip";
+import { fmtDateRange } from "@/viz/d3/tooltipContent";
 import {
   formatDay,
   hoursTickFormat,
@@ -20,6 +21,8 @@ interface BreadthVsDepthProps {
   seconds: number[]; // time per bucket (depth)
   entities: number[]; // distinct files per bucket (breadth)
   height?: number;
+  /** Optional per-bucket ranges — tooltips read as "12–18 Jan 2026". */
+  ranges?: { start: string; end: string }[];
 }
 
 const TIME_COLOR = colorAt(0);
@@ -33,6 +36,7 @@ export function BreadthVsDepth({
   seconds,
   entities,
   height = 300,
+  ranges,
 }: BreadthVsDepthProps) {
   const data = useMemo(
     () =>
@@ -40,6 +44,7 @@ export function BreadthVsDepth({
         date: new Date(d),
         secs: seconds[i] ?? 0,
         files: entities[i] ?? 0,
+        i,
       })),
     [dates, seconds, entities],
   );
@@ -160,18 +165,34 @@ export function BreadthVsDepth({
         .attr("height", innerH)
         .attr("fill", "transparent")
         .on("mousemove", (event, d) => {
+          const rng = ranges?.[d.i];
+          const subtitle =
+            rng && rng.start && rng.end && rng.start !== rng.end
+              ? fmtDateRange(rng.start, rng.end)
+              : undefined;
+          const rate = d.files > 0 ? d.secs / d.files : 0;
           showTip(
             event,
-            tooltipHtml(
-              d3.timeFormat("%d %b %Y")(d.date),
-              ["Time", secondsToHms(d.secs)],
-              ["Files", String(d.files)],
-            ),
+            tooltipHtml({
+              title: d3.timeFormat("%d %b %Y")(d.date),
+              subtitle,
+              rows: [
+                { label: "Time", value: secondsToHms(d.secs), swatch: TIME_COLOR },
+                { label: "Files", value: String(d.files), swatch: FILES_COLOR },
+                d.files > 0
+                  ? {
+                      label: "Time / file",
+                      value: secondsToHms(Math.round(rate)),
+                      muted: true,
+                    }
+                  : { label: "Time / file", value: "-", muted: true },
+              ],
+            }),
           );
         })
         .on("mouseleave", hideTip);
     },
-    [data, hasData],
+    [data, hasData, ranges],
   );
 
   if (!hasData) return <EmptyChart height={height} />;
