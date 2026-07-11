@@ -65,16 +65,19 @@ func TestSpaceScopePredicateEmpty(t *testing.T) {
 	}
 }
 
-// TestHasMemberOutside: a rule on a non-rollup axis (editor is a rollup axis;
-// plugin is not) forces the raw path.
+// TestHasMemberOutside: a rule on a non-rollup axis (project is a rollup axis;
+// entity is not — it's the only rollup-external axis after 00014 widened the
+// rollup to include category/plugin/branch) forces the raw path.
 func TestHasMemberOutside(t *testing.T) {
 	inRollup := mkMembers(map[string][]string{"project": {"p"}}, nil)
 	if inRollup.HasMemberOutside(RollupAxes) {
 		t.Fatal("project is a rollup axis; HasMemberOutside should be false")
 	}
-	outside := mkMembers(map[string][]string{"plugin": {"vim-wakatime"}}, nil)
+	// entity is intentionally not in the rollup (per-file cardinality would blow
+	// it up), so a Space rule on entity must force the raw path.
+	outside := mkMembers(map[string][]string{"entity": {"main.go"}}, nil)
 	if !outside.HasMemberOutside(RollupAxes) {
-		t.Fatal("plugin is NOT a rollup axis; HasMemberOutside should be true")
+		t.Fatal("entity is NOT a rollup axis; HasMemberOutside should be true")
 	}
 }
 

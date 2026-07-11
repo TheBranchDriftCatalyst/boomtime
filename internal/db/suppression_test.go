@@ -124,10 +124,11 @@ func TestSuppressedValuesExcludedFromAggregations(t *testing.T) {
 				t.Fatalf("[raw] total = %d, want %d (SUPPRESS's %d dropped)", got, keepSecs, supSecs)
 			}
 
-			// 2. Rollup fast path. The rollup stores project/language/editor/
-			//    platform/machine; for those it excludes directly. For plugin/
-			//    branch/category the rollup lacks the column, so the handler falls
-			//    back to raw — assert that HasHiddenOutside reports the fallback.
+			// 2. Rollup fast path. Since 00014 the rollup stores every hiddenAxis
+			//    (project/language/editor/platform/machine/category/plugin/branch),
+			//    so it excludes on all of them directly and HasHiddenOutside is
+			//    always false. The else arm is currently unreachable — kept for
+			//    future rollup-external hide axes and to document the invariant.
 			rollupHas := RollupAxes[axis]
 			if rollupHas {
 				roll, err := d.GetUserActivityRollup(ctx, sender, start, end, hs, RenameSets{}, MemberSets{}, false)
@@ -144,8 +145,9 @@ func TestSuppressedValuesExcludedFromAggregations(t *testing.T) {
 					t.Fatalf("[rollup] axis %s is a rollup axis; HasHiddenOutside should be false", axis)
 				}
 			} else {
-				// plugin/branch/category: rollup can't exclude -> handler must fall
-				// back to raw. Prove the signal that drives that fallback.
+				// Unreachable today (every hiddenAxis is in the rollup). Kept as a
+				// guard: if a future axis lands with inRollup=false, this arm proves
+				// the raw fallback signal fires.
 				if !hs.HasHiddenOutside(RollupAxes) {
 					t.Fatalf("[rollup] axis %s not in rollup; HasHiddenOutside must be true (raw fallback)", axis)
 				}

@@ -16,15 +16,19 @@ type axisDef struct {
 
 // axes is the registry, in the deterministic order the exclusion/inclusion
 // predicates are built in (ordered for stable SQL/arg building).
+//
+// inRollup marks the axes stored on hb_rollup_daily: project/language/editor/
+// platform/machine/category/plugin/branch. Entity is intentionally excluded
+// (per-file, near raw cardinality — storing it would defeat the rollup).
 var axes = []axisDef{
 	{name: "project", rawCol: "project", inRollup: true},
 	{name: "language", rawCol: "language", inRollup: true},
 	{name: "editor", rawCol: "editor", inRollup: true},
-	{name: "plugin", rawCol: "plugin", inRollup: false},
+	{name: "plugin", rawCol: "plugin", inRollup: true},
 	{name: "machine", rawCol: "machine", inRollup: true},
 	{name: "platform", rawCol: "platform", inRollup: true},
-	{name: "branch", rawCol: "branch", inRollup: false},
-	{name: "category", rawCol: "category", inRollup: false},
+	{name: "branch", rawCol: "branch", inRollup: true},
+	{name: "category", rawCol: "category", inRollup: true},
 }
 
 // hiddenAxes is the definitive set of curation-hide axes excluded from the
@@ -49,10 +53,11 @@ var rawHeartbeatCols = func() map[string]string {
 	return m
 }()
 
-// RollupAxes are the hide axes the pre-aggregated hb_rollup_daily table can
-// exclude (it only stores these columns). A hide on any axis outside this set
-// (plugin/branch/category) requires the raw path — see HasHiddenOutside; the
-// stats handler falls back accordingly.
+// RollupAxes are the hide/scope axes the pre-aggregated hb_rollup_daily table
+// can exclude or include (it stores these columns). Today that's every axis
+// except entity, so only an entity hide (impossible — not a hiddenAxis) or an
+// entity Space rule forces the raw path — see HasHiddenOutside/HasMemberOutside;
+// the stats handler falls back accordingly.
 var RollupAxes = func() map[string]bool {
 	m := map[string]bool{}
 	for _, a := range axes {

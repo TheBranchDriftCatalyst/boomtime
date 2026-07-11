@@ -202,15 +202,17 @@ func refreshRollup(ctx context.Context, q execer, sender string, since time.Time
 		return err
 	}
 	_, err := q.Exec(ctx, `
-INSERT INTO hb_rollup_daily (sender, day, project, language, editor, platform, machine, total_seconds)
+INSERT INTO hb_rollup_daily (sender, day, project, language, editor, platform, machine, category, plugin, branch, total_seconds)
 SELECT sender, time_sent::date,
     coalesce(project, 'Other'), coalesce(language, 'Other'), coalesce(editor, 'Other'),
     coalesce(platform, 'Other'), coalesce(machine, 'Other'),
+    coalesce(category, 'Other'), coalesce(plugin, 'Other'), coalesce(branch, 'Other'),
     sum(CASE WHEN gap_seconds <= 900 THEN gap_seconds ELSE 0 END)
 FROM heartbeats
 WHERE sender = $1 AND time_sent >= $2::date
 GROUP BY sender, time_sent::date, coalesce(project, 'Other'), coalesce(language, 'Other'),
-    coalesce(editor, 'Other'), coalesce(platform, 'Other'), coalesce(machine, 'Other')`, sender, since)
+    coalesce(editor, 'Other'), coalesce(platform, 'Other'), coalesce(machine, 'Other'),
+    coalesce(category, 'Other'), coalesce(plugin, 'Other'), coalesce(branch, 'Other')`, sender, since)
 	return err
 }
 

@@ -25,23 +25,31 @@ func (h *Handler) Stats(c *echo.Context) error {
 		}
 		var rows []db.StatRow
 		switch {
-		case s.limit == 15 && !l.spaceRequested && !l.hidden.HasHiddenOutside(db.RollupAxes):
-			// Fast path: pre-aggregated rollup (default 15-min limit, no space). Only
-			// gated on hide (rename needs no rollup fallback — it relabels output
-			// columns without removing rows, and the rollup stores exactly the
-			// remappable output axes). A space scope may target a non-rollup axis, so
-			// scoped requests always use the raw path.
-			rows, err = h.DB.GetUserActivityRollup(s.ctx, s.owner, s.t0, s.t1, l.hidden, l.renames, l.members, false)
+		case s.limit == 15 &&
+			!l.hidden.HasHiddenOutside(db.RollupAxes) &&
+			(!l.spaceRequested || !l.members.HasMemberOutside(db.RollupAxes)):
+			// Fast path: pre-aggregated rollup (default 15-min limit, no rollup-
+			// external hide, and no rollup-external Space rule). The rollup stores
+			// project/language/editor/platform/machine + category/plugin/branch, so
+			// only a Space rule on entity (or a future non-rollup axis) forces raw.
+			// spaceRequested is passed through — the rollup query splices the same
+			// inclusion predicate (or ` AND FALSE` for a rule-less requested space).
+			// Rename needs no rollup fallback: rename relabels output columns without
+			// removing rows, and the rollup's output columns match the remappable set.
+			rows, err = h.DB.GetUserActivityRollup(s.ctx, s.owner, s.t0, s.t1, l.hidden, l.renames, l.members, l.spaceRequested)
 		default:
-			// Raw gap_seconds scan (non-default limit, a hide the rollup can't apply,
-			// or a space scope).
+			// Raw gap_seconds scan (non-default limit, a hide the rollup can't
+			// apply — impossible today, all hiddenAxes are rollup axes — or a Space
+			// rule on entity/other non-rollup axis).
 			rows, err = h.DB.GetUserActivity(s.ctx, s.owner, s.t0, s.t1, s.limit, l.hidden, l.renames, l.members, l.spaceRequested)
 		}
 		if err != nil {
 			return nil, err
 		}
-		// Categories are fetched separately (no category column in the rollup) and
-		// respect the same all-axis hide exclusion + rename remap + timeLimit + space.
+		// Categories are fetched separately (get_user_activity_rollup collapses
+		// category back to the 5-axis output grain; a category-broken-down series
+		// still needs its own scan) and respect the same all-axis hide exclusion +
+		// rename remap + timeLimit + space.
 		categories, err := h.DB.GetCategoryDaily(s.ctx, s.owner, s.t0, s.t1, s.limit, l.hidden, l.renames, l.members, l.spaceRequested)
 		if err != nil {
 			return nil, err
