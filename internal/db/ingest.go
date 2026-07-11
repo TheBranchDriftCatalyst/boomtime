@@ -8,11 +8,23 @@ import (
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
+
+// execer is the shared surface of pgxpool.Pool and pgx.Tx that RecomputeGaps
+// and RefreshRollup need — lets the same helpers run standalone or inside the
+// SaveHeartbeats transaction.
+type execer interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
 
 // ---- Heartbeats ----
 
-// SaveHeartbeats inserts unique projects then upserts heartbeats, returning ids.
+// SaveHeartbeats runs the full ingest atomically: project upserts + heartbeat
+// upserts + per-sender gap/rollup recompute all commit or roll back together.
+// Insert phases use pgx.Batch (pipelined) so N heartbeats cost one round trip
+// instead of N. Returns the assigned heartbeat ids in input order.
 func (d *DB) SaveHeartbeats(ctx context.Context, hbs []model.HeartbeatPayload) ([]int64, error) {
 	if len(hbs) == 0 {
 		return []int64{}, nil
@@ -22,47 +34,29 @@ func (d *DB) SaveHeartbeats(ctx context.Context, hbs []model.HeartbeatPayload) (
 	// non-destructive, reversible remap), so heartbeats keep their original label
 	// values forever — no canonicalization here.
 
-	// Insert unique (owner, project) pairs first.
-	seen := map[[2]string]struct{}{}
-	for _, hb := range hbs {
-		if hb.Sender != nil && hb.Project != nil {
-			key := [2]string{*hb.Sender, *hb.Project}
-			if _, ok := seen[key]; !ok {
-				seen[key] = struct{}{}
-				if _, err := d.Pool.Exec(ctx,
-					`INSERT INTO projects (owner, name) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-					*hb.Sender, *hb.Project); err != nil {
-					return nil, err
-				}
-			}
-		}
+	tx, err := d.Pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	// Phase 1: batched (owner, project) upserts. One round trip for all unique
+	// pairs, even if the batch touches thousands of new projects.
+	if err := insertProjectsBatch(ctx, tx, hbs); err != nil {
+		return nil, err
 	}
 
-	ids := make([]int64, 0, len(hbs))
-	for _, hb := range hbs {
-		var id int64
-		// cursorpos is a TEXT column (hakatime encodes the int via `show`), so
-		// send the decimal string, not an *int64 — pgx can't encode int into text.
-		var cursor *string
-		if hb.Cursorpos != nil {
-			s := strconv.FormatInt(*hb.Cursorpos, 10)
-			cursor = &s
-		}
-		row := d.Pool.QueryRow(ctx, qInsertHeartbeat,
-			hb.Editor, hb.Plugin, hb.Platform, hb.Machine, hb.Sender,
-			hb.UserAgent, hb.Branch, hb.Category, cursor, hb.Dependencies,
-			hb.Entity, hb.IsWrite, hb.Language, hb.Lineno, hb.FileLines,
-			hb.Project, string(hb.Type), unixToTime(hb.TimeSent),
-		)
-		if err := row.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
+	// Phase 2: batched heartbeat upserts; RETURNING id preserves input order.
+	ids, err := insertHeartbeatsBatch(ctx, tx, hbs)
+	if err != nil {
+		return nil, err
 	}
 
-	// Phase A: maintain the precomputed gap_seconds for each affected sender,
+	// Phase 3: maintain gap_seconds + hb_rollup_daily for each affected sender,
 	// starting from the earliest inserted timestamp (so the next existing beat's
-	// gap is also corrected on out-of-order inserts).
+	// gap is also corrected on out-of-order inserts). Runs inside the same tx —
+	// a failure here rolls back the raw inserts too, so derived data can never
+	// silently disagree with what was ingested.
 	minBySender := map[string]time.Time{}
 	for _, hb := range hbs {
 		if hb.Sender == nil {
@@ -74,12 +68,81 @@ func (d *DB) SaveHeartbeats(ctx context.Context, hbs []model.HeartbeatPayload) (
 		}
 	}
 	for sender, since := range minBySender {
-		if err := d.RecomputeGaps(ctx, sender, since); err != nil {
+		if err := recomputeGaps(ctx, tx, sender, since); err != nil {
 			return nil, err
 		}
-		if err := d.RefreshRollup(ctx, sender, since); err != nil {
+		if err := refreshRollup(ctx, tx, sender, since); err != nil {
 			return nil, err
 		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
+// insertProjectsBatch pipelines project upserts for every unique (sender, project)
+// pair in `hbs`. Sends one pgx.Batch so N unique pairs cost one round trip.
+func insertProjectsBatch(ctx context.Context, tx pgx.Tx, hbs []model.HeartbeatPayload) error {
+	seen := map[[2]string]struct{}{}
+	var b pgx.Batch
+	for _, hb := range hbs {
+		if hb.Sender == nil || hb.Project == nil {
+			continue
+		}
+		key := [2]string{*hb.Sender, *hb.Project}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		b.Queue(`INSERT INTO projects (owner, name) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+			*hb.Sender, *hb.Project)
+	}
+	if b.Len() == 0 {
+		return nil
+	}
+	br := tx.SendBatch(ctx, &b)
+	defer br.Close()
+	for i := 0; i < b.Len(); i++ {
+		if _, err := br.Exec(); err != nil {
+			return err
+		}
+	}
+	return br.Close()
+}
+
+// insertHeartbeatsBatch pipelines the heartbeat upserts and returns ids in input
+// order. Order is preserved because pgx.Batch consumes results in enqueue order.
+func insertHeartbeatsBatch(ctx context.Context, tx pgx.Tx, hbs []model.HeartbeatPayload) ([]int64, error) {
+	var b pgx.Batch
+	for _, hb := range hbs {
+		// cursorpos is a TEXT column (hakatime encodes the int via `show`), so
+		// send the decimal string, not an *int64 — pgx can't encode int into text.
+		var cursor *string
+		if hb.Cursorpos != nil {
+			s := strconv.FormatInt(*hb.Cursorpos, 10)
+			cursor = &s
+		}
+		b.Queue(qInsertHeartbeat,
+			hb.Editor, hb.Plugin, hb.Platform, hb.Machine, hb.Sender,
+			hb.UserAgent, hb.Branch, hb.Category, cursor, hb.Dependencies,
+			hb.Entity, hb.IsWrite, hb.Language, hb.Lineno, hb.FileLines,
+			hb.Project, string(hb.Type), unixToTime(hb.TimeSent),
+		)
+	}
+	br := tx.SendBatch(ctx, &b)
+	defer br.Close()
+	ids := make([]int64, 0, len(hbs))
+	for i := 0; i < len(hbs); i++ {
+		var id int64
+		if err := br.QueryRow().Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := br.Close(); err != nil {
+		return nil, err
 	}
 	return ids, nil
 }
@@ -89,7 +152,12 @@ func (d *DB) SaveHeartbeats(ctx context.Context, hbs []model.HeartbeatPayload) (
 // It anchors on the row immediately before `since` so the first affected row —
 // and any existing beat that now follows a freshly inserted one — is correct.
 func (d *DB) RecomputeGaps(ctx context.Context, sender string, since time.Time) error {
-	_, err := d.Pool.Exec(ctx, `
+	return recomputeGaps(ctx, d.Pool, sender, since)
+}
+
+// recomputeGaps runs the gap SQL against any pool or in-flight tx.
+func recomputeGaps(ctx context.Context, q execer, sender string, since time.Time) error {
+	_, err := q.Exec(ctx, `
 WITH anchor AS (
     SELECT COALESCE(max(time_sent), '-infinity'::timestamptz) AS t
     FROM heartbeats WHERE sender = $1 AND time_sent < $2
@@ -112,18 +180,28 @@ WHERE h.id = seq.id AND h.time_sent >= $2`, sender, since)
 
 // RefreshRollup recomputes hb_rollup_daily for a sender's affected days (>= the
 // date of `since`) from the raw heartbeats. Called after each ingest batch so the
-// rollup stays current; bounded to the touched days.
+// rollup stays current; bounded to the touched days. Opens its own tx when
+// called standalone; inside SaveHeartbeats the tx-scoped helper is used instead.
 func (d *DB) RefreshRollup(ctx context.Context, sender string, since time.Time) error {
 	tx, err := d.Pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
-	if _, err := tx.Exec(ctx,
+	if err := refreshRollup(ctx, tx, sender, since); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// refreshRollup runs the DELETE+INSERT rollup rebuild against any pool or
+// in-flight tx. Must run inside a tx to keep the DELETE and INSERT atomic.
+func refreshRollup(ctx context.Context, q execer, sender string, since time.Time) error {
+	if _, err := q.Exec(ctx,
 		`DELETE FROM hb_rollup_daily WHERE sender = $1 AND day >= $2::date`, sender, since); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `
+	_, err := q.Exec(ctx, `
 INSERT INTO hb_rollup_daily (sender, day, project, language, editor, platform, machine, total_seconds)
 SELECT sender, time_sent::date,
     coalesce(project, 'Other'), coalesce(language, 'Other'), coalesce(editor, 'Other'),
@@ -132,10 +210,8 @@ SELECT sender, time_sent::date,
 FROM heartbeats
 WHERE sender = $1 AND time_sent >= $2::date
 GROUP BY sender, time_sent::date, coalesce(project, 'Other'), coalesce(language, 'Other'),
-    coalesce(editor, 'Other'), coalesce(platform, 'Other'), coalesce(machine, 'Other')`, sender, since); err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
+    coalesce(editor, 'Other'), coalesce(platform, 'Other'), coalesce(machine, 'Other')`, sender, since)
+	return err
 }
 
 func unixToTime(sec float64) time.Time {
