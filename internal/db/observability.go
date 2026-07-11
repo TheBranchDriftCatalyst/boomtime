@@ -121,7 +121,10 @@ func newSlogTraceLogger(logArgs bool) tracelog.Logger {
 	})
 }
 
-// mapLevel converts a tracelog level to an slog level.
+// mapLevel converts a tracelog level to an slog level. pgx emits successful
+// per-query logs at Info; we map that to Debug so the query firehose doesn't
+// clutter stdout/INFO — it's still captured by the LogHub (the Logs tab keeps
+// DEBUG) and filterable there. pgx warnings/errors keep their real levels.
 func mapLevel(l tracelog.LogLevel) slog.Level {
 	switch l {
 	case tracelog.LogLevelError:
@@ -129,7 +132,7 @@ func mapLevel(l tracelog.LogLevel) slog.Level {
 	case tracelog.LogLevelWarn:
 		return slog.LevelWarn
 	case tracelog.LogLevelInfo:
-		return slog.LevelInfo
+		return slog.LevelDebug // per-query traces -> Debug (see comment above)
 	default: // Debug, Trace
 		return slog.LevelDebug
 	}
