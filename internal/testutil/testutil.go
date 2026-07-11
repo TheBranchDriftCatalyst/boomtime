@@ -85,6 +85,35 @@ func OpenDB(t *testing.T) *db.DB {
 	return database
 }
 
+// OpenIsolatedDB provisions/migrates then connects to a DEDICATED database
+// named "<testdb>_<suffix>". Tests that mutate global state (the whole-DB
+// backup restore TRUNCATEs every table) must use this instead of OpenDB —
+// `go test ./...` runs packages in parallel against the shared test DB, so a
+// TRUNCATE there would race other packages' seeds.
+func OpenIsolatedDB(t *testing.T, suffix string) *db.DB {
+	t.Helper()
+	url := maintenanceURLFor(DatabaseURL(), dbNameFromURL(DatabaseURL())+"_"+suffix)
+	ctx := context.Background()
+	skipOrFatal := func(format string, args ...any) {
+		if os.Getenv("BOOM_REQUIRE_DB") == "1" {
+			t.Fatalf(format, args...)
+		}
+		t.Skipf("skipping: "+format, args...)
+	}
+	if err := ensureDatabase(ctx, url); err != nil {
+		skipOrFatal("isolated test DB %s unavailable: %v", dbNameFromURL(url), err)
+	}
+	if err := db.MigrateURL(ctx, url); err != nil {
+		skipOrFatal("migrate isolated test DB %s: %v", dbNameFromURL(url), err)
+	}
+	database, err := db.New(ctx, url)
+	if err != nil {
+		skipOrFatal("connect isolated test DB %s: %v", dbNameFromURL(url), err)
+	}
+	t.Cleanup(database.Close)
+	return database
+}
+
 // Harness bundles a live Handler + DB for HTTP integration tests.
 type Harness struct {
 	T   *testing.T
@@ -97,7 +126,13 @@ type Harness struct {
 // and an empty importer Hub. Registration is enabled so /auth/register works.
 func NewHarness(t *testing.T) *Harness {
 	t.Helper()
-	database := OpenDB(t)
+	return NewHarnessWithDB(t, OpenDB(t))
+}
+
+// NewHarnessWithDB builds a Harness on an explicit database (e.g. an
+// OpenIsolatedDB one for destructive whole-DB tests).
+func NewHarnessWithDB(t *testing.T, database *db.DB) *Harness {
+	t.Helper()
 	cfg := &config.Config{
 		Port:               8080,
 		EnableRegistration: true,
@@ -134,6 +169,9 @@ func (hz *Harness) Router() *echo.Echo {
 	e.DELETE("/api/v1/users/current/spaces/:id", h.DeleteSpace)
 	e.POST("/api/v1/users/current/spaces/:id/rules", h.AddSpaceRule)
 	e.DELETE("/api/v1/users/current/spaces/:id/rules/:rid", h.DeleteSpaceRule)
+	// whole-database backup (dump download + destructive restore)
+	e.GET("/api/v1/users/current/db/export", h.DBExport)
+	e.POST("/api/v1/users/current/db/import", h.DBImport)
 	// stats / aggregations
 	e.GET("/api/v1/users/current/stats", h.Stats)
 	e.GET("/api/v1/users/current/stats/momentum", h.Momentum)

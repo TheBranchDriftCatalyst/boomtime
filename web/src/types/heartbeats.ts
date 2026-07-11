@@ -96,3 +96,10 @@ export interface DerivedStatus {
   rollupBytes: number;
   dbBytes: number;
 }
+
+// POST /api/v1/users/current/db/import — what a whole-database restore loaded.
+export interface RestoreSummary {
+  gooseVersion: number;
+  totalRows: number;
+  tables: Record<string, number>;
+}

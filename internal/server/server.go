@@ -108,6 +108,11 @@ func registerStatsRoutes(e *echo.Echo, h *handler.Handler) {
 	e.GET("/api/v1/users/current/derived/status", h.DerivedStatus)
 	e.POST("/api/v1/users/current/derived/resync", h.DerivedResync)
 
+	// Whole-database backup: streaming dump download + destructive restore
+	// (requires ?confirm=replace-all-data; see handler/backup.go).
+	e.GET("/api/v1/users/current/db/export", h.DBExport)
+	e.POST("/api/v1/users/current/db/import", h.DBImport)
+
 	// Stats
 	e.GET("/api/v1/users/current/stats", h.Stats)
 	e.GET("/api/v1/users/current/timeline", h.Timeline)

@@ -34,6 +34,7 @@ import type {
   ProjectStatistics,
   PunchcardPayload,
   RangeParams,
+  RestoreSummary,
   SessionsPayload,
   StatsParams,
   StatsPayload,
@@ -316,6 +317,52 @@ export const api = {
     request<DerivedStatus>("/api/v1/users/current/derived/resync", {
       method: "POST",
     }),
+
+  // --- Whole-database backup (Save DB / Load DB) -----------------------------
+
+  // Raw fetch (not request()): the response body is a zip Blob, not JSON.
+  exportDb: async (): Promise<Blob> => {
+    const headers: Record<string, string> = {};
+    const h = authStore.authHeader();
+    if (h) headers["Authorization"] = h;
+    const res = await fetch("/api/v1/users/current/db/export", {
+      headers,
+      credentials: "include",
+    });
+    if (!res.ok) {
+      throw new ApiError(res.status, res.statusText || "Export failed", undefined);
+    }
+    return res.blob();
+  },
+
+  // Uploads the backup archive as the raw request body and REPLACES the entire
+  // database with it. The confirm param is the server-side accident guard; the
+  // typed-REPLACE modal is the human one.
+  importDb: async (file: File): Promise<RestoreSummary> => {
+    const headers: Record<string, string> = { "Content-Type": "application/zip" };
+    const h = authStore.authHeader();
+    if (h) headers["Authorization"] = h;
+    const res = await fetch(
+      buildUrl("/api/v1/users/current/db/import", { confirm: "replace-all-data" }),
+      { method: "POST", headers, body: file, credentials: "include" },
+    );
+    const text = await res.text();
+    let data: unknown;
+    try {
+      data = text ? JSON.parse(text) : undefined;
+    } catch {
+      data = text;
+    }
+    if (!res.ok) {
+      const message =
+        (data as { message?: string; error?: string })?.message ||
+        (data as { error?: string })?.error ||
+        res.statusText ||
+        "Restore failed";
+      throw new ApiError(res.status, message, data);
+    }
+    return data as RestoreSummary;
+  },
 
   // --- Commits ---------------------------------------------------------------
 
