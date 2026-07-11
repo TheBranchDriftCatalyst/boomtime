@@ -5,6 +5,7 @@ import { cssVar } from "@/viz/d3/useChartFrame";
 import { useD3Surface } from "@/viz/d3/useD3Surface";
 import { ChartSurface } from "@/viz/d3/ChartSurface";
 import { tooltipHtml } from "@/viz/d3/tooltip";
+import { fmtDateRange, fmtPct } from "@/viz/d3/tooltipContent";
 import { formatDay, styleAxis, thinnedDateTicks } from "@/viz/d3/axes";
 import { colorAt, emptyFloor } from "@/viz/d3/color";
 import { EmptyChart } from "@/viz/d3/EmptyChart";
@@ -16,6 +17,12 @@ export interface HeatmapChartProps {
   dates: string[];
   topN?: number;
   height?: number;
+  /**
+   * Optional per-column ranges (matches `dates`). When a column represents a
+   * bucketed range (weekly on long time-windows) the tooltip shows the range
+   * rather than the bucket's first day.
+   */
+  ranges?: { start: string; end: string }[];
 }
 
 const MARGIN = { top: 6, right: 8, bottom: 24, left: 96 };
@@ -31,6 +38,7 @@ export function HeatmapChart({
   dates,
   topN = 7,
   height = 260,
+  ranges,
 }: HeatmapChartProps) {
   const rows = useMemo(() => {
     const isOther = (r: ResourceStats) => r.name.startsWith("Other (");
@@ -109,12 +117,19 @@ export function HeatmapChart({
         { fontSize: "10px" },
       );
 
-      const cells: { row: ResourceStats; date: string; value: number }[] = [];
+      const cells: { row: ResourceStats; date: string; value: number; i: number }[] = [];
       for (const row of rows) {
         dates.forEach((date, i) => {
-          cells.push({ row, date, value: row.totalDaily[i] ?? 0 });
+          cells.push({ row, date, value: row.totalDaily[i] ?? 0, i });
         });
       }
+
+      // Per-row max seconds — used to surface "peak" context in the tooltip.
+      const rowMax = new Map<string, number>();
+      for (const r of rows)
+        rowMax.set(r.name, d3.max(r.totalDaily) ?? 0);
+      const rowColor = new Map<string, string>();
+      rows.forEach((r, i) => rowColor.set(r.name, colorAt(i)));
 
       g.selectAll("rect.cell")
         .data(cells)
@@ -127,17 +142,35 @@ export function HeatmapChart({
         .attr("rx", 2)
         .attr("fill", (d) => rowScale.get(d.row.name)!(d.value))
         .on("mousemove", (event, d) => {
+          const rng = ranges?.[d.i];
+          const subtitle =
+            rng && rng.start && rng.end && rng.start !== rng.end
+              ? fmtDateRange(rng.start, rng.end)
+              : formatDay(new Date(d.date));
+          const rowMx = rowMax.get(d.row.name) ?? 0;
+          const shareOfRowPeak = rowMx > 0 ? (d.value / rowMx) * 100 : 0;
+          const rows0: { label: string; value: string; muted?: boolean }[] = [
+            { label: "Time", value: d.value > 0 ? secondsToHms(d.value) : "0" },
+          ];
+          if (d.value > 0)
+            rows0.push({
+              label: "Share of row peak",
+              value: fmtPct(shareOfRowPeak),
+              muted: true,
+            });
           showTip(
             event,
-            tooltipHtml(d.row.name, [
-              formatDay(new Date(d.date)),
-              secondsToHms(d.value),
-            ]),
+            tooltipHtml({
+              title: d.row.name,
+              titleSwatch: rowColor.get(d.row.name),
+              subtitle,
+              rows: rows0,
+            }),
           );
         })
         .on("mouseleave", hideTip);
     },
-    [rows, dates],
+    [rows, dates, ranges],
   );
 
   if (rows.length === 0 || dates.length === 0) {

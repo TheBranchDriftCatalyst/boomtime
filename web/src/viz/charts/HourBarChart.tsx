@@ -4,6 +4,7 @@ import { cssVar } from "@/viz/d3/useChartFrame";
 import { useD3Surface } from "@/viz/d3/useD3Surface";
 import { ChartSurface } from "@/viz/d3/ChartSurface";
 import { tooltipHtml } from "@/viz/d3/tooltip";
+import { fmtPct } from "@/viz/d3/tooltipContent";
 import { gridlines, hoursTickFormat, styleAxis } from "@/viz/d3/axes";
 import { colorAt } from "@/viz/d3/color";
 import { EmptyChart } from "@/viz/d3/EmptyChart";
@@ -67,6 +68,9 @@ export function HourBarChart({ hour, height = 320 }: HourBarChartProps) {
         { domain: "line" },
       );
 
+      const total = d3.sum(values);
+      const color = colorAt(0);
+
       g.selectAll("rect.bar")
         .data(data)
         .join("rect")
@@ -76,9 +80,25 @@ export function HourBarChart({ hour, height = 320 }: HourBarChartProps) {
         .attr("y", (d) => y(d.y))
         .attr("height", (d) => innerH - y(d.y))
         .attr("rx", 3)
-        .attr("fill", colorAt(0))
+        .attr("fill", color)
         .on("mousemove", (event, d) => {
-          showTip(event, tooltipHtml(`${d.h}:00`, ["Activity", secondsToHms(d.y)]));
+          const share = total > 0 ? (d.y / total) * 100 : 0;
+          const nextH = (d.h + 1) % 24;
+          showTip(
+            event,
+            tooltipHtml({
+              title: `${String(d.h).padStart(2, "0")}:00–${String(nextH).padStart(2, "0")}:00`,
+              titleSwatch: color,
+              rows:
+                d.y > 0
+                  ? [
+                      { label: "Activity", value: secondsToHms(d.y) },
+                      { label: "Share of day", value: fmtPct(share) },
+                    ]
+                  : [{ label: "Activity", value: "0" }],
+              footer: "Local time",
+            }),
+          );
         })
         .on("mouseleave", hideTip);
     },

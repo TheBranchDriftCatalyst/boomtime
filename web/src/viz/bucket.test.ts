@@ -4,6 +4,7 @@ import {
   bucketAvg,
   bucketDates,
   bucketGroups,
+  bucketRanges,
   bucketSum,
 } from "@/viz/bucket";
 
@@ -60,5 +61,48 @@ describe("bucket aggregators", () => {
   it("bucketDates picks the first index of each group", () => {
     const dates = ["a", "b", "c", "d"];
     expect(bucketDates(groups, dates)).toEqual(["a", "c"]);
+  });
+});
+
+describe("bucketRanges", () => {
+  it("returns { start, end } spanning first and last day of each group", () => {
+    const dates = ["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04"];
+    expect(
+      bucketRanges(
+        [
+          [0, 1],
+          [2, 3],
+        ],
+        dates,
+      ),
+    ).toEqual([
+      { start: "2026-01-01", end: "2026-01-02" },
+      { start: "2026-01-03", end: "2026-01-04" },
+    ]);
+  });
+
+  it("single-day buckets have identical start and end", () => {
+    const dates = ["2026-01-01", "2026-01-02", "2026-01-03"];
+    expect(bucketRanges([[0], [1], [2]], dates)).toEqual([
+      { start: "2026-01-01", end: "2026-01-01" },
+      { start: "2026-01-02", end: "2026-01-02" },
+      { start: "2026-01-03", end: "2026-01-03" },
+    ]);
+  });
+
+  it("handles long ranges (large buckets)", () => {
+    const n = 200;
+    const dates = Array.from({ length: n }, (_, i) => `2026-01-${i}`);
+    const groups = bucketGroups(n);
+    const ranges = bucketRanges(groups, dates);
+    expect(ranges).toHaveLength(groups.length);
+    for (let i = 0; i < ranges.length; i++) {
+      expect(ranges[i].start).toBe(dates[groups[i][0]]);
+      expect(ranges[i].end).toBe(dates[groups[i][groups[i].length - 1]]);
+    }
+  });
+
+  it("empty group is an empty range", () => {
+    expect(bucketRanges([[]], [])).toEqual([{ start: "", end: "" }]);
   });
 });

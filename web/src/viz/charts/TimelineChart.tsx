@@ -6,6 +6,7 @@ import { useD3Surface } from "@/viz/d3/useD3Surface";
 import { ChartSurface } from "@/viz/d3/ChartSurface";
 import { tooltipHtml } from "@/viz/d3/tooltip";
 import { styleAxis } from "@/viz/d3/axes";
+
 import { colorAt } from "@/viz/d3/color";
 import { renderLegend } from "@/viz/d3/legend";
 import { EmptyChart } from "@/viz/d3/EmptyChart";
@@ -105,13 +106,16 @@ export function TimelineChart({ timeline, height = 350 }: TimelineChartProps) {
         .attr("fill", (d) => colorAt(d.colorIndex))
         .on("mousemove", (event, d) => {
           const dur = (d.end.getTime() - d.start.getTime()) / 1000;
+          const startFmt = d3.timeFormat("%d %b, %H:%M")(d.start);
+          const endFmt = d3.timeFormat("%H:%M")(d.end);
           showTip(
             event,
-            tooltipHtml(
-              d.lang,
-              `${d3.timeFormat("%d %b, %H:%M")(d.start)} → ${d3.timeFormat("%H:%M")(d.end)}`,
-              secondsToHms(dur),
-            ),
+            tooltipHtml({
+              title: d.lang,
+              titleSwatch: colorAt(d.colorIndex),
+              subtitle: `${startFmt} → ${endFmt}`,
+              rows: [{ label: "Duration", value: secondsToHms(dur) }],
+            }),
           );
         })
         .on("mouseleave", hideTip);

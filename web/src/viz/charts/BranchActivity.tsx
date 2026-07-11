@@ -5,6 +5,7 @@ import { cssVar } from "@/viz/d3/useChartFrame";
 import { useD3Surface } from "@/viz/d3/useD3Surface";
 import { ChartSurface } from "@/viz/d3/ChartSurface";
 import { tooltipHtml } from "@/viz/d3/tooltip";
+import { fmtPct, fmtRank } from "@/viz/d3/tooltipContent";
 import { gridlines, hoursTickFormat } from "@/viz/d3/axes";
 import { colorAt } from "@/viz/d3/color";
 import { EmptyChart } from "@/viz/d3/EmptyChart";
@@ -13,12 +14,18 @@ import type { ResourceStats } from "@/types/api";
 interface BranchActivityProps {
   branches: ResourceStats[] | undefined;
   height?: number;
+  /** Total distinct branches (for "#N of branches" rank context). */
+  branchesCount?: number;
 }
 
 const MARGIN = { top: 8, right: 16, bottom: 28, left: 8 };
 
 /** Horizontal bar of time per git branch (top-N, aggregate "Other" excluded). */
-export function BranchActivity({ branches, height = 320 }: BranchActivityProps) {
+export function BranchActivity({
+  branches,
+  height = 320,
+  branchesCount,
+}: BranchActivityProps) {
   const top = useMemo(
     () =>
       [...(branches ?? [])]
@@ -61,6 +68,10 @@ export function BranchActivity({ branches, height = 320 }: BranchActivityProps) 
         .attr("class", "row")
         .attr("transform", (_d, i) => `translate(0,${y(i) ?? 0})`);
 
+      const grandTotal =
+        d3.sum(branches ?? [], (b) => b.totalSeconds) || 1;
+      const totalBranches = branchesCount ?? top.length;
+
       rows
         .append("rect")
         .attr("height", y.bandwidth())
@@ -68,7 +79,20 @@ export function BranchActivity({ branches, height = 320 }: BranchActivityProps) 
         .attr("rx", 3)
         .attr("fill", (_d, i) => colorAt(i))
         .on("mousemove", (event, d) => {
-          showTip(event, tooltipHtml(d.name, secondsToHms(d.totalSeconds)));
+          const rank = top.indexOf(d) + 1;
+          const share = (d.totalSeconds / grandTotal) * 100;
+          showTip(
+            event,
+            tooltipHtml({
+              title: d.name,
+              titleSwatch: colorAt(rank - 1),
+              rows: [
+                { label: "Time", value: secondsToHms(d.totalSeconds) },
+                { label: "Share", value: fmtPct(share) },
+              ],
+              footer: fmtRank(rank, totalBranches),
+            }),
+          );
         })
         .on("mouseleave", hideTip);
 
@@ -82,7 +106,7 @@ export function BranchActivity({ branches, height = 320 }: BranchActivityProps) 
         .style("pointer-events", "none")
         .text((d) => d.name);
     },
-    [top],
+    [top, branches, branchesCount],
   );
 
   if (top.length === 0) return <EmptyChart height={height} />;

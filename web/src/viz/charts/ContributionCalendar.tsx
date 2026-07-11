@@ -5,6 +5,7 @@ import { useD3Surface } from "@/viz/d3/useD3Surface";
 import { ChartSurface } from "@/viz/d3/ChartSurface";
 import { secondsToHms } from "@/lib/utils";
 import { tooltipHtml } from "@/viz/d3/tooltip";
+import { fmtPct } from "@/viz/d3/tooltipContent";
 import { emptyFloor } from "@/viz/d3/color";
 import { EmptyChart } from "@/viz/d3/EmptyChart";
 
@@ -68,6 +69,7 @@ export function ContributionCalendar({ dates, values }: ContributionCalendarProp
       // Intensity via opacity of --primary (avoids interpolating oklch tokens):
       // empty => floor; active days ramp 0.25 → 1.0 across 4 quantized buckets.
       const maxVal = d3.max(days, (d) => d.value) ?? 0;
+      const total = d3.sum(days, (d) => d.value);
       const opacity = (v: number): number => {
         if (v <= 0) return 0;
         const t = maxVal > 0 ? v / maxVal : 0;
@@ -101,12 +103,23 @@ export function ContributionCalendar({ dates, values }: ContributionCalendarProp
         .attr("fill", base)
         .attr("fill-opacity", (d) => opacity(d.value))
         .on("mousemove", (event, d) => {
+          const share = total > 0 ? (d.value / total) * 100 : 0;
+          const rows0 =
+            d.value > 0
+              ? [
+                  { label: "Time", value: secondsToHms(d.value) },
+                  { label: "Share of window", value: fmtPct(share) },
+                ]
+              : [{ label: "Activity", value: "No activity" }];
+          const isPeak = d.value > 0 && d.value === maxVal;
           showTip(
             event,
-            tooltipHtml(
-              d3.timeFormat("%a %d %b %Y")(d.date),
-              d.value > 0 ? secondsToHms(d.value) : "No activity",
-            ),
+            tooltipHtml({
+              title: d3.timeFormat("%a %d %b %Y")(d.date),
+              titleSwatch: d.value > 0 ? base : undefined,
+              rows: rows0,
+              footer: isPeak ? "Peak day in this window" : undefined,
+            }),
           );
         })
         .on("mouseleave", hideTip);

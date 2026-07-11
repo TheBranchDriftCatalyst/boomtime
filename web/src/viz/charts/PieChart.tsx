@@ -5,6 +5,7 @@ import { cssVar } from "@/viz/d3/useChartFrame";
 import { useD3Surface } from "@/viz/d3/useD3Surface";
 import { ChartSurface } from "@/viz/d3/ChartSurface";
 import { tooltipHtml } from "@/viz/d3/tooltip";
+import { fmtPct, fmtRank } from "@/viz/d3/tooltipContent";
 import { MIN_SLICE_SECONDS, paletteByName } from "@/viz/d3/color";
 import { EmptyChart } from "@/viz/d3/EmptyChart";
 import type { ResourceStats } from "@/types/api";
@@ -38,7 +39,16 @@ export function PieChart({ items, height = 320 }: PieChartProps) {
         .sort(null)
         .value((d) => d.totalSeconds);
       const arcs = pie(filtered);
+      // Recompute share over the *rendered* set: backend `totalPct` counts
+      // slices below `MIN_SLICE_SECONDS` we filter out here, so using it would
+      // never sum to 100% in the tooltip.
       const total = d3.sum(filtered, (d) => d.totalSeconds) || 1;
+
+      // Rank: 1-based position in the sorted (by seconds desc) rendered set.
+      const sortedIndex = new Map<string, number>();
+      [...filtered]
+        .sort((a, b) => b.totalSeconds - a.totalSeconds)
+        .forEach((r, i) => sortedIndex.set(r.name, i + 1));
 
       // Slice colors via the shared positional-palette contract (same filter
       // + order as `filtered`), so callers replaying the pie's palette
@@ -62,7 +72,20 @@ export function PieChart({ items, height = 320 }: PieChartProps) {
         .attr("stroke", card)
         .attr("stroke-width", 1)
         .on("mousemove", (event, d) => {
-          showTip(event, tooltipHtml(d.data.name, secondsToHms(d.data.totalSeconds)));
+          const share = (d.data.totalSeconds / total) * 100;
+          const rank = sortedIndex.get(d.data.name) ?? 0;
+          showTip(
+            event,
+            tooltipHtml({
+              title: d.data.name,
+              titleSwatch: palette.get(d.data.name)!,
+              rows: [
+                { label: "Time", value: secondsToHms(d.data.totalSeconds) },
+                { label: "Share", value: fmtPct(share) },
+              ],
+              footer: fmtRank(rank, filtered.length),
+            }),
+          );
         })
         .on("mouseleave", hideTip);
 
