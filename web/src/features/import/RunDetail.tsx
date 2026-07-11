@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { QueryGate } from "@/components/QueryGate";
 import { ImportStateBadge } from "@/features/import/ImportStateBadge";
+import { DriftBanner } from "@/features/import/DriftBanner";
 import { LogTerminal } from "@/components/LogTerminal";
 import { LabeledStat } from "@/components/LabeledStat";
 import { api } from "@/lib/api";
@@ -64,6 +65,7 @@ export function RunDetail({ jobId, onClose }: RunDetailProps) {
                 {data.job.error}
               </div>
             )}
+            <DriftBanner findings={data.job.drift} />
             <LogTerminal logs={data.logs} />
           </>
           )}

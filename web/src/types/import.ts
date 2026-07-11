@@ -46,6 +46,26 @@ export interface ImportJob {
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;
+  // gaka-unq.1: wakatime.com API schema-drift findings observed during the
+  // run. Undefined/null when clean. Warning severity => banner; error severity
+  // => banner + red tint.
+  drift?: DriftFinding[] | null;
+}
+
+// gaka-unq.1: one wakatime.com API schema-drift finding. Mirrors the Go
+// DriftFinding struct in internal/importer/drift.go.
+export interface DriftFinding {
+  endpoint: string;
+  kind:
+    | "unknown_field"
+    | "missing_required"
+    | "type_changed"
+    | "envelope_changed";
+  field: string; // "" when kind == envelope_changed
+  detail: string;
+  severity: "warning" | "error";
+  firstSeenDay?: string; // "" for lookups
+  count: number;
 }
 
 export interface ImportLogLine {

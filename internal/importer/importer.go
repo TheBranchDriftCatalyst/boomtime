@@ -55,9 +55,22 @@ type Worker struct {
 	Logger *slog.Logger
 	Hub    *Hub
 
+	// BaseURL overrides the wakatime.com base for tests (httptest.Server). If
+	// empty the wakatimeAPI constant is used. Kept exported for the importer
+	// integration tests without leaking into the public config.
+	BaseURL string
+
 	mu      sync.Mutex
 	running map[int]context.CancelFunc // jobID -> cancel
 	base    context.Context            // parent context (server lifetime)
+}
+
+// baseURL returns the effective wakatime.com base URL for this worker.
+func (w *Worker) baseURL() string {
+	if w.BaseURL != "" {
+		return w.BaseURL
+	}
+	return wakatimeAPI
 }
 
 // NewWorker constructs a Worker bound to a base context (server lifetime).
@@ -133,6 +146,32 @@ func (w *Worker) run(ctx context.Context, jobID int, item QueueItem) {
 		}
 	}
 
+	// gaka-unq.1: per-job schema-drift collector. Emits a "warn" log on first
+	// occurrence of each finding (dedupe by endpoint+kind+field so repeated
+	// drift across many days produces one finding with count). Persisted onto
+	// the job row before every terminal transition so historical runs show the
+	// warning banner in the FE.
+	drift := newDriftCollector()
+	flushDriftLogs := func() {
+		for _, msg := range drift.drainNewLogs() {
+			log("warn", msg)
+		}
+	}
+	persistDrift := func(persistCtx context.Context) {
+		findings := drift.findings()
+		if findings == nil {
+			return
+		}
+		buf, err := json.Marshal(findings)
+		if err != nil {
+			w.Logger.Warn("marshal drift findings", "job", jobID, "err", err)
+			return
+		}
+		if err := w.DB.SetJobDrift(persistCtx, jobID, buf); err != nil {
+			w.Logger.Warn("persist drift findings", "job", jobID, "err", err)
+		}
+	}
+
 	// Transition to running.
 	job, err := w.DB.MarkJobRunning(ctx, jobID)
 	if err != nil {
@@ -148,14 +187,18 @@ func (w *Worker) run(ctx context.Context, jobID int, item QueueItem) {
 
 	// Resolve user_agents and machine_names once up front.
 	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(p.APIToken))
-	uaByID, mnByID, err := w.fetchLookups(ctx, authHeader)
+	uaByID, mnByID, err := w.fetchLookups(ctx, authHeader, drift)
+	flushDriftLogs()
 	if err != nil {
 		if ctx.Err() != nil {
+			// Persist drift on best-effort background ctx (job ctx is done).
+			withBackgroundTimeout(5*time.Second, persistDrift)
 			w.finishCancelled(jobID, publishJob)
 			return
 		}
 		msg := err.Error()
 		log("error", "failed to fetch wakatime metadata: "+msg)
+		persistDrift(ctx)
 		j, _ := w.DB.FinishImportJob(ctx, jobID, db.JobStateFailed, &msg)
 		publishJob("state", j)
 		return
@@ -164,13 +207,16 @@ func (w *Worker) run(ctx context.Context, jobID int, item QueueItem) {
 	var importedTotal int64
 	for i, day := range days {
 		if ctx.Err() != nil {
+			withBackgroundTimeout(5*time.Second, persistDrift)
 			w.finishCancelled(jobID, publishJob)
 			return
 		}
 
-		n, dayErr := w.importDay(ctx, authHeader, item.Requester, day, mnByID, uaByID)
+		n, dayErr := w.importDay(ctx, authHeader, item.Requester, day, mnByID, uaByID, drift)
+		flushDriftLogs()
 		if dayErr != nil {
 			if ctx.Err() != nil {
+				withBackgroundTimeout(5*time.Second, persistDrift)
 				w.finishCancelled(jobID, publishJob)
 				return
 			}
@@ -184,6 +230,7 @@ func (w *Worker) run(ctx context.Context, jobID int, item QueueItem) {
 		j, upErr := w.DB.UpdateJobProgress(ctx, jobID, i+1, importedTotal, day)
 		if upErr != nil {
 			if ctx.Err() != nil {
+				withBackgroundTimeout(5*time.Second, persistDrift)
 				w.finishCancelled(jobID, publishJob)
 				return
 			}
@@ -194,6 +241,9 @@ func (w *Worker) run(ctx context.Context, jobID int, item QueueItem) {
 	}
 
 	log("info", fmt.Sprintf("imported %d heartbeats across %d days", importedTotal, len(days)))
+	// Persist drift BEFORE FinishImportJob so the returned terminal snapshot
+	// (and the "state" WS event) carries drift[].
+	persistDrift(ctx)
 	final, err := w.DB.FinishImportJob(ctx, jobID, db.JobStateCompleted, nil)
 	if err != nil {
 		w.Logger.Error("failed to finalize job", "job", jobID, "err", err)
@@ -201,6 +251,16 @@ func (w *Worker) run(ctx context.Context, jobID int, item QueueItem) {
 	}
 	publishJob("state", final)
 	w.Logger.Info("import completed", "job", jobID, "user", item.Requester, "imported", importedTotal)
+}
+
+// withBackgroundTimeout runs fn with a short-lived background context used
+// when the job's own context is already done (cancellation path) but we still
+// need to write terminal state / drift to the DB. The cancel is deferred so
+// nothing leaks.
+func withBackgroundTimeout(d time.Duration, fn func(context.Context)) {
+	ctx, cancel := context.WithTimeout(context.Background(), d)
+	defer cancel()
+	fn(ctx)
 }
 
 // finishCancelled records a cancelled terminal state using a background context
@@ -221,15 +281,45 @@ func (w *Worker) finishCancelled(jobID int, publishJob func(string, *db.Job)) {
 }
 
 // fetchLookups resolves the user_agent and machine-name id maps.
-func (w *Worker) fetchLookups(ctx context.Context, authHeader string) (uaByID, mnByID map[string]string, err error) {
-	var uaList userAgentList
-	if err = getJSON(ctx, wakatimeAPI+"/api/v1/users/current/user_agents", authHeader, nil, &uaList); err != nil {
+//
+// gaka-unq.1: raw body is decoded twice — once into the typed struct (existing
+// behavior) and once against the schemaSpec for drift checks. The typed decode
+// is deliberately independent of the drift check so a benign new field never
+// interferes with importer functionality. If the drift check turns up any
+// error-severity finding on these small lookup lists (missing id/value or
+// broken envelope), we return an error so the job fails fast — heartbeat
+// ingestion depends on these maps.
+func (w *Worker) fetchLookups(ctx context.Context, authHeader string, drift *driftCollector) (uaByID, mnByID map[string]string, err error) {
+	uaBody, err := getRawJSON(ctx, w.baseURL()+"/api/v1/users/current/user_agents", authHeader, nil)
+	if err != nil {
 		return nil, nil, fmt.Errorf("fetch user_agents: %w", err)
 	}
-	var mnList machineNameList
-	if err = getJSON(ctx, wakatimeAPI+"/api/v1/users/current/machine_names", authHeader, nil, &mnList); err != nil {
+	var uaList userAgentList
+	if err := json.Unmarshal(uaBody, &uaList); err != nil {
+		return nil, nil, fmt.Errorf("decode user_agents: %w", err)
+	}
+	if data, ok := drift.checkEnvelope("user_agents", uaBody, jtArray); ok {
+		drift.checkList("user_agents", "", data, lookupSpec, -1)
+	}
+	if drift.hasError() {
+		return nil, nil, fmt.Errorf("fetch user_agents: schema drift breaks required fields")
+	}
+
+	mnBody, err := getRawJSON(ctx, w.baseURL()+"/api/v1/users/current/machine_names", authHeader, nil)
+	if err != nil {
 		return nil, nil, fmt.Errorf("fetch machine_names: %w", err)
 	}
+	var mnList machineNameList
+	if err := json.Unmarshal(mnBody, &mnList); err != nil {
+		return nil, nil, fmt.Errorf("decode machine_names: %w", err)
+	}
+	if data, ok := drift.checkEnvelope("machine_names", mnBody, jtArray); ok {
+		drift.checkList("machine_names", "", data, lookupSpec, -1)
+	}
+	if drift.hasError() {
+		return nil, nil, fmt.Errorf("fetch machine_names: schema drift breaks required fields")
+	}
+
 	uaByID = map[string]string{}
 	for _, ua := range uaList.Data {
 		uaByID[ua.ID] = ua.Value
@@ -244,12 +334,37 @@ func (w *Worker) fetchLookups(ctx context.Context, authHeader string) (uaByID, m
 // importDay fetches and stores one day's heartbeats, returning the count stored.
 // Re-importing an overlapping range does not duplicate: SaveHeartbeats upserts on
 // the unique_heartbeats constraint.
-func (w *Worker) importDay(ctx context.Context, authHeader, user, day string, mnByID, uaByID map[string]string) (int64, error) {
-	var hbList heartbeatList
+//
+// gaka-unq.1: raw body is decoded twice (typed struct + envelope map) so we
+// can warn on unknown/missing/type-changed fields without breaking the import
+// on benign additions. Per the design, a missing_required finding on
+// heartbeats surfaces as an error-severity finding + skipped day insert
+// (this function returns a synthetic error so the outer loop logs it), but
+// the job KEEPS RUNNING — matching existing per-day resilience.
+func (w *Worker) importDay(ctx context.Context, authHeader, user, day string, mnByID, uaByID map[string]string, drift *driftCollector) (int64, error) {
 	q := url.Values{"date": {day}}
-	if err := getJSON(ctx, wakatimeAPI+"/api/v1/users/current/heartbeats", authHeader, q, &hbList); err != nil {
+	body, err := getRawJSON(ctx, w.baseURL()+"/api/v1/users/current/heartbeats", authHeader, q)
+	if err != nil {
 		return 0, err
 	}
+	var hbList heartbeatList
+	if err := json.Unmarshal(body, &hbList); err != nil {
+		return 0, fmt.Errorf("decode heartbeats: %w", err)
+	}
+
+	// Envelope + sampled item drift check. Uniform per-day schema means we
+	// only need to sample the first N items (driftSampleSizeDay).
+	if data, ok := drift.checkEnvelope("heartbeats", body, jtArray); ok {
+		before := drift.hasError()
+		drift.checkList("heartbeats", day, data, heartbeatSpec, driftSampleSizeDay)
+		// If a NEW error-severity finding just appeared for heartbeats
+		// (required field missing/type-changed at the sampled items), skip
+		// this day's insert — the ingest would silently mangle rows.
+		if !before && drift.hasError() {
+			return 0, fmt.Errorf("skipping insert: required heartbeat field(s) missing or type-changed (see drift findings)")
+		}
+	}
+
 	hbs := convertForDB(user, mnByID, uaByID, hbList.Data)
 	if len(hbs) == 0 {
 		return 0, nil
@@ -383,11 +498,29 @@ type allTimeResponse struct {
 // FetchAllTimeRange queries wakatime.com for how far back a user's data goes.
 // apiToken is the raw (already base64-encoded by the client) token; it is used
 // verbatim as the Basic credential, identical to how the import worker auths.
+//
+// gaka-unq.1: this call runs standalone (from a handler, not a job), so drift
+// findings are logged at slog "warn" but not persisted anywhere. That's fine
+// — the primary drift surface is the import run; this endpoint is only a UX
+// helper for auto-populating the date range.
 func FetchAllTimeRange(ctx context.Context, apiToken string) (*AllTimeRange, error) {
 	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(apiToken))
-	var resp allTimeResponse
-	if err := getJSON(ctx, wakatimeAPI+"/api/v1/users/current/all_time_since_today", authHeader, nil, &resp); err != nil {
+	body, err := getRawJSON(ctx, wakatimeAPI+"/api/v1/users/current/all_time_since_today", authHeader, nil)
+	if err != nil {
 		return nil, err
+	}
+	var resp allTimeResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, err
+	}
+	// Best-effort drift check; no worker/log surface here, so we swallow the
+	// findings. The primary drift surface is import job runs.
+	drift := newDriftCollector()
+	var env struct {
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(body, &env); err == nil && len(env.Data) > 0 {
+		drift.checkObject("all_time_since_today", env.Data, allTimeSpec)
 	}
 	return &AllTimeRange{
 		StartDate:    resp.Data.Range.StartDate,
@@ -398,23 +531,29 @@ func FetchAllTimeRange(ctx context.Context, apiToken string) (*AllTimeRange, err
 	}, nil
 }
 
-func getJSON(ctx context.Context, endpoint, authHeader string, query url.Values, out any) error {
+// getRawJSON returns the raw response body (bytes) so callers can decode it
+// twice — once into the typed struct, once via json.RawMessage for drift
+// checks. Reading the body once is important because http.Response.Body is
+// single-use.
+func getRawJSON(ctx context.Context, endpoint, authHeader string, query url.Values) ([]byte, error) {
 	if query != nil {
 		endpoint += "?" + query.Encode()
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("Authorization", authHeader)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return fmt.Errorf("wakatime returned %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("wakatime returned %d: %s", resp.StatusCode, string(body))
 	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	// Cap body reads defensively (wakatime heartbeat days can be a few MB but
+	// nowhere near this). 32 MB matches typical HTTP body caps.
+	return io.ReadAll(io.LimitReader(resp.Body, 32<<20))
 }
