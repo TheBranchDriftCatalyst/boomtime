@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/testutil"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
 )
 
 // do issues an HTTP request against the harness router and returns the recorder.

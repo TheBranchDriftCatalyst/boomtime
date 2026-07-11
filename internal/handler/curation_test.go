@@ -3,7 +3,7 @@ package handler
 import (
 	"testing"
 
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 )
 
 // TestCurationAxisWhitelist confirms the create handler shares the Heartbeats

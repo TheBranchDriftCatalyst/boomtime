@@ -1,4 +1,4 @@
-// Command gendata posts N fake heartbeats to a gakatime instance's bulk endpoint
+// Command gendata posts N fake heartbeats to a boomtime instance's bulk endpoint
 // (port of hakatime tools/Main.hs). Used for local verification.
 package main
 

@@ -111,7 +111,7 @@ export function SourceHealthPanel() {
         <p className="py-4 text-sm text-destructive">Failed to load source health.</p>
       ) : rows.length === 0 ? (
         <p className="py-4 text-sm text-muted-foreground">
-          No ingestion sources yet — point an editor plugin at gakatime to start
+          No ingestion sources yet — point an editor plugin at boomtime to start
           reporting.
         </p>
       ) : (

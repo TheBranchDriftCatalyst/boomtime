@@ -1,6 +1,6 @@
 # Architecture
 
-How gakatime fits together. For the visual tour see [DEMO.md](../DEMO.md); for the schema see [db-erd.mmd](db-erd.mmd).
+How boomtime fits together. For the visual tour see [DEMO.md](../DEMO.md); for the schema see [db-erd.mmd](db-erd.mmd).
 
 ## Stack
 
@@ -9,10 +9,10 @@ How gakatime fits together. For the visual tour see [DEMO.md](../DEMO.md); for t
 | Language / HTTP | Go 1.25 · Echo v5 |
 | DB / driver / migrations | PostgreSQL 16 · pgx v5 + pgxpool · goose (embedded, auto-run at startup) |
 | Auth | Argon2id password hash · UUID API tokens stored `base64(uuid)` · HttpOnly refresh cookie |
-| CLI / config / logs | cobra (`run`/`create-user`/`create-token`/`run-migrations`) · `HAKA_*` env · `log/slog` |
+| CLI / config / logs | cobra (`run`/`create-user`/`create-token`/`run-migrations`) · `BOOM_*` env · `log/slog` |
 | Frontend | React 19 · Vite 8 · Tailwind v4 · TanStack Query + Table · react-router v7 · D3 v7 + ApexCharts · shadcn/Radix |
 
-The SPA is embedded into the Go binary (`go:embed web/dist`) and served as the fallback route, so production is a **single binary** (`HAKA_DASHBOARD_PATH` overrides to serve from disk).
+The SPA is embedded into the Go binary (`go:embed web/dist`) and served as the fallback route, so production is a **single binary** (`BOOM_DASHBOARD_PATH` overrides to serve from disk).
 
 ## Request flow
 
@@ -30,7 +30,7 @@ wakatime import┘        │
 
 ## The duration & rollup model (why it's fast)
 
-Wakatime-style "time spent" is not stored — it's derived from gaps between heartbeats. gakatime precomputes that at ingest:
+Wakatime-style "time spent" is not stored — it's derived from gaps between heartbeats. boomtime precomputes that at ingest:
 
 - **`gap_seconds`** = seconds to the previous heartbeat for the same sender in global time order. Computed by an anchored window-function `UPDATE` (`RecomputeGaps`) whenever heartbeats land.
 - **Time spent** for a range = `SUM(CASE WHEN gap_seconds ≤ timeLimit*60 THEN gap_seconds ELSE 0 END)` — a **windowless conditional sum**, no per-request session reconstruction.
@@ -60,10 +60,10 @@ For a full walkthrough of the aggregation engine — the gap model, rollup fast-
 ## Repo layout
 
 ```
-cmd/gakatime            cobra entrypoint (run | create-user | create-token | run-migrations)
+cmd/boomtime            cobra entrypoint (run | create-user | create-token | run-migrations)
 internal/
   config logging server db handler stats auth apierr wakatime importer model
-  db/migrations  db/queries(*.sql, embedded)  db/main_test.go(isolated gakatime_test)
+  db/migrations  db/queries(*.sql, embedded)  db/main_test.go(isolated boomtime_test)
   testutil       handler-level HTTP integration harness
 tools/gendata          fake-heartbeat generator   tools/fixturegen  anonymized fixture
 web/                   React SPA (src/{pages,components,viz,hooks,lib,test})

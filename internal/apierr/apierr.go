@@ -6,7 +6,7 @@ package apierr
 import (
 	"net/http"
 
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/model"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 	"github.com/labstack/echo/v5"
 )
 

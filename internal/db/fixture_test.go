@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/fixture"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/model"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/fixture"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 )
 
 //go:embed testdata/heartbeats_fixture.json

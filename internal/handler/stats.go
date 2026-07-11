@@ -3,10 +3,10 @@ package handler
 import (
 	"net/http"
 
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/apierr"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/db"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/model"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/stats"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
 	"github.com/labstack/echo/v5"
 )
 

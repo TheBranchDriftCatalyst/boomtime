@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/model"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -19,13 +19,13 @@ import (
 // statsWorkMem is applied via `SET LOCAL work_mem` to the heavy aggregation
 // queries so their sorts stay in RAM instead of spilling to disk (on ~438k rows
 // the disk spill roughly doubled latency). It is transaction-scoped, so it never
-// leaks to other pooled connections. Tunable via HAKA_STATS_WORK_MEM (e.g. 128MB).
+// leaks to other pooled connections. Tunable via BOOM_STATS_WORK_MEM (e.g. 128MB).
 var statsWorkMem = "256MB"
 
 var workMemPattern = regexp.MustCompile(`^[0-9]+(kB|MB|GB)$`)
 
 func init() {
-	if v := os.Getenv("HAKA_STATS_WORK_MEM"); workMemPattern.MatchString(v) {
+	if v := os.Getenv("BOOM_STATS_WORK_MEM"); workMemPattern.MatchString(v) {
 		statsWorkMem = v
 	}
 }

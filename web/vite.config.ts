@@ -6,7 +6,7 @@ import path from "node:path";
 
 // Proxy the Go backend's path prefixes so the SPA can use same-origin
 // relative URLs in dev.
-const backend = process.env.HAKA_BACKEND_URL || "http://localhost:8080";
+const backend = process.env.BOOM_BACKEND_URL || "http://localhost:8080";
 const proxy = Object.fromEntries(
   ["/api", "/auth", "/badge", "/import"].map((p) => [
     p,

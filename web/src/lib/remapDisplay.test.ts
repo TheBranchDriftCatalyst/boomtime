@@ -45,8 +45,8 @@ describe("remapDisplay", () => {
   });
 
   it("exact rule maps the literal value", () => {
-    const rules = [rule({ matchValue: "gaka", newValue: "gakatime" })];
-    expect(remapDisplay("project", "gaka", rules)).toBe("gakatime");
+    const rules = [rule({ matchValue: "gaka", newValue: "boomtime" })];
+    expect(remapDisplay("project", "gaka", rules)).toBe("boomtime");
     expect(remapDisplay("project", "other", rules)).toBeNull();
   });
 
@@ -76,7 +76,7 @@ describe("remapDisplay", () => {
     ];
     expect(remapDisplay("project", "@swarm-graph", rules)).toBe("swarm-graph");
     // No leading @ -> pattern doesn't match -> null.
-    expect(remapDisplay("project", "gakatime", rules)).toBeNull();
+    expect(remapDisplay("project", "boomtime", rules)).toBeNull();
   });
 
   it("template rule with a literal prefix template", () => {

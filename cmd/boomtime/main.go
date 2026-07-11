@@ -1,4 +1,4 @@
-// Command gakatime is the CLI entrypoint (mirrors Cli.hs): run, run-migrations,
+// Command boomtime is the CLI entrypoint (mirrors Cli.hs): run, run-migrations,
 // create-user, create-token.
 package main
 
@@ -13,12 +13,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/auth"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/config"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/db"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/importer"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/logging"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/server"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/server"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -29,7 +29,7 @@ func main() {
 	_ = godotenv.Load()
 
 	root := &cobra.Command{
-		Use:   "gakatime",
+		Use:   "boomtime",
 		Short: "Wakatime-compatible coding-time tracker",
 	}
 	root.AddCommand(runCmd(), runMigrationsCmd(), createUserCmd(), createTokenCmd())
@@ -137,7 +137,7 @@ func createUserCmd() *cobra.Command {
 				return fmt.Errorf("user %q already exists", username)
 			}
 			fmt.Printf("User %q created.\n", username)
-			fmt.Printf("Run \"gakatime create-token -u %s\" to generate a token.\n", username)
+			fmt.Printf("Run \"boomtime create-token -u %s\" to generate a token.\n", username)
 			return nil
 		},
 	}

@@ -83,7 +83,7 @@ export function curationRule(over: Partial<{
     axis: "project",
     action: "rename" as const,
     matchValue: "gaka",
-    newValue: "gakatime",
+    newValue: "boomtime",
     matchType: "exact" as const,
     createdAt: "2026-07-01T00:00:00.000Z",
     ...over,
@@ -103,7 +103,7 @@ export function statsPayload(over: Record<string, unknown> = {}) {
     totalSeconds: 52320,
     dailyAvg: 3600,
     dailyTotal: [0, 3600, 0, 7200],
-    projects: [{ name: "gakatime", totalSeconds: 40000, totalPct: 0.8, totalDaily: [], pctDaily: [] }],
+    projects: [{ name: "boomtime", totalSeconds: 40000, totalPct: 0.8, totalDaily: [], pctDaily: [] }],
     languages: [{ name: "TypeScript", totalSeconds: 30000, totalPct: 0.6, totalDaily: [], pctDaily: [] }],
     platforms: [],
     machines: [],
@@ -154,7 +154,7 @@ export function groupPayload(over: Record<string, unknown> = {}) {
   return {
     groupBy: "project",
     groups: [
-      { value: "gakatime", count: 100, seconds: 3600, firstSeen: "2026-06-01T00:00:00Z", lastSeen: "2026-07-01T00:00:00Z" },
+      { value: "boomtime", count: 100, seconds: 3600, firstSeen: "2026-06-01T00:00:00Z", lastSeen: "2026-07-01T00:00:00Z" },
       { value: null, count: 5, seconds: 60, firstSeen: "2026-06-01T00:00:00Z", lastSeen: "2026-06-02T00:00:00Z" },
     ],
     truncated: false,

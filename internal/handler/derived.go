@@ -3,7 +3,7 @@ package handler
 import (
 	"net/http"
 
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/labstack/echo/v5"
 )
 

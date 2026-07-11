@@ -42,7 +42,7 @@ describe("RemappingForm (P0/P1)", () => {
     await user.click(screen.getByRole("combobox"));
     await user.type(screen.getByPlaceholderText(/Search projects/i), "gaka");
     await user.click(screen.getByRole("button", { name: /Use "gaka"/ }));
-    await user.type(screen.getByPlaceholderText("Meeting"), "gakatime");
+    await user.type(screen.getByPlaceholderText("Meeting"), "boomtime");
     await user.click(screen.getByRole("button", { name: /add/i }));
 
     await waitFor(() => expect(onDone).toHaveBeenCalled());
@@ -50,7 +50,7 @@ describe("RemappingForm (P0/P1)", () => {
       axis: "project",
       action: "rename",
       matchValue: "gaka",
-      newValue: "gakatime",
+      newValue: "boomtime",
       matchType: "exact",
     });
   });

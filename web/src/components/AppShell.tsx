@@ -51,7 +51,7 @@ const NAV = [
   { name: "Settings", icon: Settings2, to: "/app/settings", end: false },
 ];
 
-const SIDEBAR_STORAGE_KEY = "gakatime-sidebar-collapsed";
+const SIDEBAR_STORAGE_KEY = "boomtime-sidebar-collapsed";
 
 function readStoredCollapsed(): boolean {
   if (typeof window === "undefined") return false;
@@ -133,7 +133,7 @@ export function AppShell() {
             <Code2 className="h-5 w-5" />
           </div>
           {!collapsed && (
-            <span className="text-lg font-semibold">Gakatime</span>
+            <span className="text-lg font-semibold">Boomtime</span>
           )}
         </div>
 

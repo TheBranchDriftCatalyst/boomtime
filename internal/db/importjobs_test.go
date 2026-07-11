@@ -7,7 +7,7 @@ import (
 )
 
 // openTestDB / truncateAll live in main_test.go (they use the isolated
-// gakatime_test database provisioned by TestMain).
+// boomtime_test database provisioned by TestMain).
 
 // TestOneRunningJobPerOwner verifies GetRunningJobByOwner returns the active job
 // so the handler can avoid starting a second one.

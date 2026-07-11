@@ -3,7 +3,7 @@ package stats
 import (
 	"testing"
 
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/model"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 )
 
 func TestCapWithOtherSmallListUnchanged(t *testing.T) {

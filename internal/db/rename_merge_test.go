@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/model"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 )
 
 // TestRenameRawPreservation: creating a rename rule mutates NO raw data — the

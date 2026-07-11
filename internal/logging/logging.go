@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/config"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 )
 
 func parseLevel(s string) slog.Level {

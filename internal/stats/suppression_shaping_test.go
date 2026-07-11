@@ -3,7 +3,7 @@ package stats
 import (
 	"testing"
 
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 )
 
 // TestSuppressionShapingExcluded documents the shaping guarantee that pairs with

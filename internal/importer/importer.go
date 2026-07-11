@@ -16,9 +16,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/db"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/model"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/wakatime"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/wakatime"
 )
 
 // JobStatus JSON strings returned to the client for back-compat (Import.hs).

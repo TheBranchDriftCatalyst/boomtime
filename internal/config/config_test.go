@@ -12,11 +12,11 @@ import (
 func clearConfigEnv(t *testing.T) {
 	t.Helper()
 	for _, k := range []string{
-		"HAKA_PORT", "HAKA_API_PREFIX", "HAKA_BADGE_URL", "HAKA_DASHBOARD_PATH",
-		"HAKA_SHIELDS_IO_URL", "HAKA_ENABLE_REGISTRATION", "HAKA_SESSION_EXPIRY",
-		"HAKA_LOG_LEVEL", "HAKA_ENV", "HAKA_HTTP_LOG",
-		"HAKA_DB_HOST", "HAKA_DB_PORT", "HAKA_DB_NAME", "HAKA_DB_USER", "HAKA_DB_PASS",
-		"HAKA_REMOTE_WRITE_URL", "HAKA_REMOTE_WRITE_TOKEN",
+		"BOOM_PORT", "BOOM_API_PREFIX", "BOOM_BADGE_URL", "BOOM_DASHBOARD_PATH",
+		"BOOM_SHIELDS_IO_URL", "BOOM_ENABLE_REGISTRATION", "BOOM_SESSION_EXPIRY",
+		"BOOM_LOG_LEVEL", "BOOM_ENV", "BOOM_HTTP_LOG",
+		"BOOM_DB_HOST", "BOOM_DB_PORT", "BOOM_DB_NAME", "BOOM_DB_USER", "BOOM_DB_PASS",
+		"BOOM_REMOTE_WRITE_URL", "BOOM_REMOTE_WRITE_TOKEN",
 		"WAKATIME_API_KEY", "GITHUB_TOKEN",
 	} {
 		t.Setenv(k, "") // registers restore of the pre-test value
@@ -49,7 +49,7 @@ func TestWakatimeAPIKeyPrecedence(t *testing.T) {
 	t.Run("WAKATIME_API_KEY wins", func(t *testing.T) {
 		clearConfigEnv(t)
 		t.Setenv("WAKATIME_API_KEY", "primary")
-		t.Setenv("HAKA_REMOTE_WRITE_TOKEN", "fallback")
+		t.Setenv("BOOM_REMOTE_WRITE_TOKEN", "fallback")
 		c := Load()
 		if c.WakatimeAPIKey != "primary" {
 			t.Errorf("WakatimeAPIKey = %q, want primary", c.WakatimeAPIKey)
@@ -61,7 +61,7 @@ func TestWakatimeAPIKeyPrecedence(t *testing.T) {
 
 	t.Run("falls back to remote write token", func(t *testing.T) {
 		clearConfigEnv(t)
-		t.Setenv("HAKA_REMOTE_WRITE_TOKEN", "fallback")
+		t.Setenv("BOOM_REMOTE_WRITE_TOKEN", "fallback")
 		c := Load()
 		if c.WakatimeAPIKey != "fallback" {
 			t.Errorf("WakatimeAPIKey = %q, want fallback", c.WakatimeAPIKey)
@@ -86,19 +86,19 @@ func TestWakatimeAPIKeyPrecedence(t *testing.T) {
 func TestGetEnvInt(t *testing.T) {
 	t.Run("unset -> default", func(t *testing.T) {
 		clearConfigEnv(t)
-		if got := getEnvInt("HAKA_PORT", 8080); got != 8080 {
+		if got := getEnvInt("BOOM_PORT", 8080); got != 8080 {
 			t.Errorf("got %d, want default 8080", got)
 		}
 	})
 	t.Run("invalid -> default", func(t *testing.T) {
-		t.Setenv("HAKA_PORT", "notanumber")
-		if got := getEnvInt("HAKA_PORT", 8080); got != 8080 {
+		t.Setenv("BOOM_PORT", "notanumber")
+		if got := getEnvInt("BOOM_PORT", 8080); got != 8080 {
 			t.Errorf("got %d, want default 8080 on invalid", got)
 		}
 	})
 	t.Run("valid (trimmed) -> parsed", func(t *testing.T) {
-		t.Setenv("HAKA_PORT", "  9090  ")
-		if got := getEnvInt("HAKA_PORT", 8080); got != 9090 {
+		t.Setenv("BOOM_PORT", "  9090  ")
+		if got := getEnvInt("BOOM_PORT", 8080); got != 9090 {
 			t.Errorf("got %d, want 9090", got)
 		}
 	})
@@ -107,32 +107,32 @@ func TestGetEnvInt(t *testing.T) {
 func TestGetEnvBool(t *testing.T) {
 	trueVals := []string{"true", "1", "yes", "on", "TRUE", "On"}
 	for _, v := range trueVals {
-		t.Setenv("HAKA_HTTP_LOG", v)
-		if !getEnvBool("HAKA_HTTP_LOG", false) {
+		t.Setenv("BOOM_HTTP_LOG", v)
+		if !getEnvBool("BOOM_HTTP_LOG", false) {
 			t.Errorf("getEnvBool(%q) = false, want true", v)
 		}
 	}
 	falseVals := []string{"false", "0", "no", "off", "FALSE", "Off"}
 	for _, v := range falseVals {
-		t.Setenv("HAKA_HTTP_LOG", v)
-		if getEnvBool("HAKA_HTTP_LOG", true) {
+		t.Setenv("BOOM_HTTP_LOG", v)
+		if getEnvBool("BOOM_HTTP_LOG", true) {
 			t.Errorf("getEnvBool(%q) = true, want false", v)
 		}
 	}
 
 	t.Run("unset -> default", func(t *testing.T) {
 		clearConfigEnv(t)
-		if !getEnvBool("HAKA_HTTP_LOG", true) {
+		if !getEnvBool("BOOM_HTTP_LOG", true) {
 			t.Error("unset should return default true")
 		}
-		if getEnvBool("HAKA_HTTP_LOG", false) {
+		if getEnvBool("BOOM_HTTP_LOG", false) {
 			t.Error("unset should return default false")
 		}
 	})
 
 	t.Run("invalid -> default", func(t *testing.T) {
-		t.Setenv("HAKA_HTTP_LOG", "maybe")
-		if !getEnvBool("HAKA_HTTP_LOG", true) {
+		t.Setenv("BOOM_HTTP_LOG", "maybe")
+		if !getEnvBool("BOOM_HTTP_LOG", true) {
 			t.Error("invalid should return default true")
 		}
 	})

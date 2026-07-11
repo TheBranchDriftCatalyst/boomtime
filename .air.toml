@@ -3,9 +3,9 @@ tmp_dir = "tmp"
 
 [build]
   # Build the server binary; run it with the `run` subcommand (auto-migrates then serves).
-  cmd = "go build -o ./tmp/gakatime ./cmd/gakatime"
-  bin = "./tmp/gakatime"
-  full_bin = "./tmp/gakatime run"
+  cmd = "go build -o ./tmp/boomtime ./cmd/boomtime"
+  bin = "./tmp/boomtime"
+  full_bin = "./tmp/boomtime run"
   include_ext = ["go", "sql", "tmpl"]
   include_dir = ["cmd", "internal", "tools"]
   exclude_dir = ["tmp", "web", "bin", ".git", "dist"]

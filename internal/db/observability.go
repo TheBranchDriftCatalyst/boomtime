@@ -3,8 +3,8 @@
 // every d.Pool.Query/QueryRow/Exec (and tx.Exec) already flows, so there are no
 // call-site changes. Three tracers are composed with pgx/v5/multitracer:
 //
-//  1. tracelog.TraceLog — structured per-query slog logging (env HAKA_DB_LOG_QUERIES),
-//     with mandatory redaction of sensitive args (HAKA_DB_LOG_ARGS gates args at all).
+//  1. tracelog.TraceLog — structured per-query slog logging (env BOOM_DB_LOG_QUERIES),
+//     with mandatory redaction of sensitive args (BOOM_DB_LOG_ARGS gates args at all).
 //  2. n1Tracer — request-scoped query counter that flags N+1 patterns (WARN).
 //  3. planTracer — dev-only auto-EXPLAIN of slow SELECTs on a fresh conn.
 //
@@ -26,7 +26,7 @@ import (
 )
 
 // Options controls the optional DB observability tracers. The zero value is a
-// no-op (plain pool, identical to New). cmd/gakatime/main.go builds this from
+// no-op (plain pool, identical to New). cmd/boomtime/main.go builds this from
 // env-driven config; tests keep the plain path via New.
 type Options struct {
 	LogQueries  bool          // enable tracelog structured query logging

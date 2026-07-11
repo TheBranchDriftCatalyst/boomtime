@@ -27,7 +27,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/fixture"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/fixture"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -41,7 +41,7 @@ func main() {
 		maxProj   = flag.Int("projects", 10, "number of top projects to include")
 		maxRows   = flag.Int("max", 3000, "max heartbeats in the fixture")
 		days      = flag.Int("days", 75, "trailing window (days) of the source user's most recent data")
-		salt      = flag.String("salt", "gakatime-fixture-v1", "hash salt for deterministic anonymization")
+		salt      = flag.String("salt", "boomtime-fixture-v1", "hash salt for deterministic anonymization")
 	)
 	flag.Parse()
 

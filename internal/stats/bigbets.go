@@ -4,8 +4,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/db"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/model"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 )
 
 // ToPunchcardPayload maps raw dow/hour cells to the payload, computing the max

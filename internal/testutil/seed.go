@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 )
 
 // HB is a fully-specified heartbeat for the external seed builder. Empty string

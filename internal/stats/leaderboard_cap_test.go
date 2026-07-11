@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 )
 
 func TestToLeaderboardsPayloadGlobalCapAndSort(t *testing.T) {

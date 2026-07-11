@@ -15,15 +15,15 @@ RUN go mod download
 COPY . .
 # Embed the built SPA (server package embeds internal/server/dist).
 COPY --from=web /web/dist ./internal/server/dist
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/gakatime ./cmd/gakatime
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/boomtime ./cmd/boomtime
 
 # ── Stage 3: minimal runtime ─────────────────────────────────────────────────
 FROM alpine:3.20
-RUN apk add --no-cache ca-certificates tzdata && adduser -D -u 10001 gakatime
-COPY --from=server /out/gakatime /usr/local/bin/gakatime
-USER gakatime
-ENV HAKA_PORT=8080
+RUN apk add --no-cache ca-certificates tzdata && adduser -D -u 10001 boomtime
+COPY --from=server /out/boomtime /usr/local/bin/boomtime
+USER boomtime
+ENV BOOM_PORT=8080
 EXPOSE 8080
 # `run` applies migrations then serves (and starts the import worker).
-ENTRYPOINT ["gakatime"]
+ENTRYPOINT ["boomtime"]
 CMD ["run"]

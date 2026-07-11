@@ -1,4 +1,4 @@
-# gakatime Test Pyramid — Coverage Matrices (design, not yet implemented)
+# boomtime Test Pyramid — Coverage Matrices (design, not yet implemented)
 
 > Status: **reviewed, implementation deferred.** Produced by 3 background design agents
 > (backend-unit, frontend-unit, e2e). No tests written yet. When we resume, this is the spec.
@@ -17,7 +17,7 @@ security guards; P1 = important feature/repository behavior; P2 = edges, thin wr
 - **BE tooling:** stdlib `go test`, **two tiers**:
   - Tier A = pure/logic (no DB) — runs everywhere with `go test ./...`. Bulk of P0/P1 value.
   - Tier B = repository/DB — keep existing `openTestDB` → `t.Skipf` when Postgres unreachable.
-    In **CI**: `postgres:16` service, migrate in a new `internal/db` `TestMain`, set `HAKA_REQUIRE_DB=1`
+    In **CI**: `postgres:16` service, migrate in a new `internal/db` `TestMain`, set `BOOM_REQUIRE_DB=1`
     to turn silent Skip into Fatal so DB tests can't no-op. Do **not** hard-depend on testcontainers.
 - **E2E:** `@playwright/test` in `web/e2e/`, Chromium for P0/P1. **Single-origin binary mode** for CI:
   `task build` → run embedded binary on `:8080` (API+WS same origin). Seed only via `tools/gendata`
@@ -100,7 +100,7 @@ P0 pure BE (`capWithOther`, start-clamp/`fillMissing`, `cache.TTL`, date-default
 ### apierr / config / cache / logging (pure)
 - `cache.TTL` Get/Set expiry+evict+InvalidatePrefix (inject `now`) — **P0, N**
 - `apierr.*` codes (MissingAuth **400** not 401, InvalidToken 403…) — P1
-- `config.Load` defaults + WakatimeAPIKey precedence (WAKATIME_API_KEY else HAKA_REMOTE_WRITE_TOKEN), `getEnvInt/Bool` — P1
+- `config.Load` defaults + WakatimeAPIKey precedence (WAKATIME_API_KEY else BOOM_REMOTE_WRITE_TOKEN), `getEnvInt/Bool` — P1
 - `logging.parseLevel` — P2
 
 **Top gaps:** capWithOther, start-clamp/fillMissing, RefreshRollup/RecomputeGaps, cache.TTL,
@@ -141,8 +141,8 @@ Test-type key: pure / hook (renderHook) / cmp (RTL) / msw (API-boundary).
 - switcher (7 files) renderer→impl — P1; base.ts formatters — P2
 
 ### viz renderer + theme (pure store)
-- `readStoredRenderer` key `gakatime-renderer`, invalid/SSR→"apex"; toggle persists — P1
-- `readStoredTheme` `gakatime-theme`, system→matchMedia, default **dark**; `applyThemeToDocument` `.dark` class — P1/P2
+- `readStoredRenderer` key `boomtime-renderer`, invalid/SSR→"apex"; toggle persists — P1
+- `readStoredTheme` `boomtime-theme`, system→matchMedia, default **dark**; `applyThemeToDocument` `.dark` class — P1/P2
 
 ### utils
 - `secondsToHms` (52320→"14 hrs 32 min", singular, <60, 0/null→"0 mins") — **P0**
@@ -165,7 +165,7 @@ the `Basic <token>` invariant is a P0 first-batch test.
 
 **Setup:** `web/e2e/{fixtures,helpers,specs}` + `global-setup.ts` (db reset → create-user → create-token →
 `gendata --num 120` over last 60 days + fixed fixture) + `auth.setup.ts` (storageState w/ cookie).
-`playwright.config.ts` webServer boots `bin/gakatime`, `trace:'on-first-retry'`, `retries:2` in CI.
+`playwright.config.ts` webServer boots `bin/boomtime`, `trace:'on-first-retry'`, `retries:2` in CI.
 **Prereq:** add data-testids + `data-chart-ready` (0 exist today).
 
 ### P0 smoke path (merge gate)

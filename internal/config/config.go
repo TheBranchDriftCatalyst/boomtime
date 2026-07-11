@@ -1,4 +1,4 @@
-// Package config parses the HAKA_* environment variables into a Config struct.
+// Package config parses the BOOM_* environment variables into a Config struct.
 // It mirrors hakatime's ServerSettings (App.hs) and CLI DB settings (Cli.hs).
 package config
 
@@ -36,18 +36,18 @@ type Config struct {
 
 	// DB observability (see internal/db/observability.go). Query logging is
 	// off by default; arg logging is redacted and off by default.
-	DBLogQueries    bool // HAKA_DB_LOG_QUERIES: structured per-query slog logging
-	DBLogArgs       bool // HAKA_DB_LOG_ARGS: log (redacted) query args
-	DBN1Threshold   int  // HAKA_DB_N1_THRESHOLD: queries/request to WARN
-	DBN1DupThresh   int  // HAKA_DB_N1_DUP_THRESHOLD: identical normalized statements/request to WARN
-	DBExplainSlowMs int  // HAKA_DB_EXPLAIN_SLOW_MS: dev-only auto-EXPLAIN for reads slower than this (0=off)
+	DBLogQueries    bool // BOOM_DB_LOG_QUERIES: structured per-query slog logging
+	DBLogArgs       bool // BOOM_DB_LOG_ARGS: log (redacted) query args
+	DBN1Threshold   int  // BOOM_DB_N1_THRESHOLD: queries/request to WARN
+	DBN1DupThresh   int  // BOOM_DB_N1_DUP_THRESHOLD: identical normalized statements/request to WARN
+	DBExplainSlowMs int  // BOOM_DB_EXPLAIN_SLOW_MS: dev-only auto-EXPLAIN for reads slower than this (0=off)
 
 	RemoteWrite *RemoteWriteConfig
 	GithubToken string
 
 	// WakatimeAPIKey is the server-configured key used to import history from
 	// wakatime.com when the request body omits apiToken. Sourced from
-	// WAKATIME_API_KEY, falling back to HAKA_REMOTE_WRITE_TOKEN. Never exposed.
+	// WAKATIME_API_KEY, falling back to BOOM_REMOTE_WRITE_TOKEN. Never exposed.
 	WakatimeAPIKey string
 }
 
@@ -82,39 +82,39 @@ func getEnvBool(key string, def bool) bool {
 // Load reads configuration from the environment, applying hakatime's defaults.
 func Load() *Config {
 	c := &Config{
-		Port:               getEnvInt("HAKA_PORT", 8080),
-		APIPrefix:          getEnv("HAKA_API_PREFIX", ""),
-		BadgeURL:           getEnv("HAKA_BADGE_URL", ""),
-		DashboardPath:      getEnv("HAKA_DASHBOARD_PATH", ""),
-		ShieldsIOURL:       getEnv("HAKA_SHIELDS_IO_URL", "https://img.shields.io"),
-		EnableRegistration: getEnvBool("HAKA_ENABLE_REGISTRATION", true),
-		SessionExpiry:      int64(getEnvInt("HAKA_SESSION_EXPIRY", 24)),
-		LogLevel:           getEnv("HAKA_LOG_LEVEL", "info"),
-		Env:                getEnv("HAKA_ENV", "prod"),
-		HTTPLog:            getEnvBool("HAKA_HTTP_LOG", true),
+		Port:               getEnvInt("BOOM_PORT", 8080),
+		APIPrefix:          getEnv("BOOM_API_PREFIX", ""),
+		BadgeURL:           getEnv("BOOM_BADGE_URL", ""),
+		DashboardPath:      getEnv("BOOM_DASHBOARD_PATH", ""),
+		ShieldsIOURL:       getEnv("BOOM_SHIELDS_IO_URL", "https://img.shields.io"),
+		EnableRegistration: getEnvBool("BOOM_ENABLE_REGISTRATION", true),
+		SessionExpiry:      int64(getEnvInt("BOOM_SESSION_EXPIRY", 24)),
+		LogLevel:           getEnv("BOOM_LOG_LEVEL", "info"),
+		Env:                getEnv("BOOM_ENV", "prod"),
+		HTTPLog:            getEnvBool("BOOM_HTTP_LOG", true),
 
-		DBHost: getEnv("HAKA_DB_HOST", "localhost"),
-		DBPort: getEnvInt("HAKA_DB_PORT", 5432),
-		DBName: getEnv("HAKA_DB_NAME", "test"),
-		DBUser: getEnv("HAKA_DB_USER", "test"),
-		DBPass: getEnv("HAKA_DB_PASS", "test"),
+		DBHost: getEnv("BOOM_DB_HOST", "localhost"),
+		DBPort: getEnvInt("BOOM_DB_PORT", 5432),
+		DBName: getEnv("BOOM_DB_NAME", "test"),
+		DBUser: getEnv("BOOM_DB_USER", "test"),
+		DBPass: getEnv("BOOM_DB_PASS", "test"),
 
-		DBLogQueries:    getEnvBool("HAKA_DB_LOG_QUERIES", false),
-		DBLogArgs:       getEnvBool("HAKA_DB_LOG_ARGS", false),
-		DBN1Threshold:   getEnvInt("HAKA_DB_N1_THRESHOLD", 20),
-		DBN1DupThresh:   getEnvInt("HAKA_DB_N1_DUP_THRESHOLD", 10),
-		DBExplainSlowMs: getEnvInt("HAKA_DB_EXPLAIN_SLOW_MS", 0),
+		DBLogQueries:    getEnvBool("BOOM_DB_LOG_QUERIES", false),
+		DBLogArgs:       getEnvBool("BOOM_DB_LOG_ARGS", false),
+		DBN1Threshold:   getEnvInt("BOOM_DB_N1_THRESHOLD", 20),
+		DBN1DupThresh:   getEnvInt("BOOM_DB_N1_DUP_THRESHOLD", 10),
+		DBExplainSlowMs: getEnvInt("BOOM_DB_EXPLAIN_SLOW_MS", 0),
 
 		GithubToken: getEnv("GITHUB_TOKEN", ""),
 	}
 
-	rwURL := getEnv("HAKA_REMOTE_WRITE_URL", "")
-	rwToken := getEnv("HAKA_REMOTE_WRITE_TOKEN", "")
+	rwURL := getEnv("BOOM_REMOTE_WRITE_URL", "")
+	rwToken := getEnv("BOOM_REMOTE_WRITE_TOKEN", "")
 	if rwURL != "" && rwToken != "" {
 		c.RemoteWrite = &RemoteWriteConfig{URL: rwURL, Token: rwToken}
 	}
 
-	// Effective import key: WAKATIME_API_KEY, else HAKA_REMOTE_WRITE_TOKEN.
+	// Effective import key: WAKATIME_API_KEY, else BOOM_REMOTE_WRITE_TOKEN.
 	c.WakatimeAPIKey = getEnv("WAKATIME_API_KEY", "")
 	if c.WakatimeAPIKey == "" {
 		c.WakatimeAPIKey = rwToken

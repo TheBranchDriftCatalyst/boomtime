@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/stats"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
 	"github.com/labstack/echo/v5"
 )
 

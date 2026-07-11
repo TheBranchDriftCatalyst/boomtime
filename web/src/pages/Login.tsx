@@ -57,7 +57,7 @@ export function Login() {
             </div>
             <h1 className="text-xl font-semibold">Welcome back</h1>
             <p className="text-sm text-muted-foreground">
-              Sign in to your Gakatime account
+              Sign in to your Boomtime account
             </p>
           </div>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">

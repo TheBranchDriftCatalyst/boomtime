@@ -5,14 +5,14 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/apierr"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/model"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/stats"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
 )
 
-// BadgeLink: GET /badge/link/:project (auth) -> {"badgeUrl": "<HAKA_BADGE_URL>/badge/svg/<uuid>"}.
+// BadgeLink: GET /badge/link/:project (auth) -> {"badgeUrl": "<BOOM_BADGE_URL>/badge/svg/<uuid>"}.
 func (h *Handler) BadgeLink(c *echo.Context) error {
 	_, owner, aerr := h.resolveUser(c)
 	if aerr != nil {

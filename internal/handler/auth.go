@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/apierr"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/auth"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/db"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/model"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 	"github.com/labstack/echo/v5"
 )
 

@@ -3,26 +3,26 @@
 # use `task db:up` (only the db) + `task dev` (air + vite on the host).
 services:
   db:
-    container_name: gakatime_db
+    container_name: boomtime_db
     restart: unless-stopped
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: ${HAKA_DB_NAME:-test}
-      POSTGRES_USER: ${HAKA_DB_USER:-test}
-      POSTGRES_PASSWORD: ${HAKA_DB_PASS:-test}
+      POSTGRES_DB: ${BOOM_DB_NAME:-test}
+      POSTGRES_USER: ${BOOM_DB_USER:-test}
+      POSTGRES_PASSWORD: ${BOOM_DB_PASS:-test}
     ports:
-      - "${HAKA_DB_PORT:-5432}:5432"
+      - "${BOOM_DB_PORT:-5432}:5432"
     volumes:
-      - gakatime_db_data:/var/lib/postgresql/data
+      - boomtime_db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${HAKA_DB_USER:-test} -d ${HAKA_DB_NAME:-test}"]
+      test: ["CMD-SHELL", "pg_isready -U ${BOOM_DB_USER:-test} -d ${BOOM_DB_NAME:-test}"]
       interval: 3s
       timeout: 3s
       retries: 10
 
   # Go API server with live reload (air). Source is bind-mounted.
   app:
-    container_name: gakatime_app
+    container_name: boomtime_app
     restart: unless-stopped
     build:
       context: .
@@ -32,9 +32,9 @@ services:
         condition: service_healthy
     env_file: [.env]
     environment:
-      HAKA_DB_HOST: db          # reach the db container, not localhost
-      HAKA_DB_PORT: 5432
-      HAKA_PORT: 8080
+      BOOM_DB_HOST: db          # reach the db container, not localhost
+      BOOM_DB_PORT: 5432
+      BOOM_PORT: 8080
     volumes:
       - .:/src                  # live source
       - go_mod_cache:/go/pkg/mod
@@ -44,13 +44,13 @@ services:
 
   # Vite dev server with HMR; proxies /api,/auth,/badge,/import to the app.
   web:
-    container_name: gakatime_web
+    container_name: boomtime_web
     restart: unless-stopped
     image: node:22-alpine
     working_dir: /src/web
     depends_on: [app]
     environment:
-      HAKA_BACKEND_URL: http://app:8080   # vite proxy target inside the network
+      BOOM_BACKEND_URL: http://app:8080   # vite proxy target inside the network
     command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
     volumes:
       - .:/src
@@ -59,7 +59,7 @@ services:
       - "5173:5173"
 
 volumes:
-  gakatime_db_data: {}
+  boomtime_db_data: {}
   go_mod_cache: {}
   go_build_cache: {}
   web_node_modules: {}

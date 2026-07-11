@@ -67,7 +67,7 @@ export function Register() {
             </div>
             <h1 className="text-xl font-semibold">Create an account</h1>
             <p className="text-sm text-muted-foreground">
-              Get started with Gakatime
+              Get started with Boomtime
             </p>
           </div>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">

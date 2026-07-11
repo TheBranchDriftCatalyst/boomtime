@@ -10,10 +10,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/config"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/db"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/handler"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/importer"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
 )
@@ -133,7 +133,7 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	e.GET("/import/jobs/:id/ws", h.ImportJobWS)
 }
 
-// registerStatic serves the SPA: from HAKA_DASHBOARD_PATH on disk if set, else
+// registerStatic serves the SPA: from BOOM_DASHBOARD_PATH on disk if set, else
 // from the embedded dist FS. Non-API routes fall back to index.html.
 func registerStatic(e *echo.Echo, cfg *config.Config, logger *slog.Logger) {
 	var fsys fs.FS

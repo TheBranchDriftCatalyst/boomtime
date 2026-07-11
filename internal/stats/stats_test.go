@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 )
 
 func TestCountDuration(t *testing.T) {

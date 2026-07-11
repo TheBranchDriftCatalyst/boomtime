@@ -1,4 +1,4 @@
-<h1 align="center">gakatime</h1>
+<h1 align="center">boomtime</h1>
 
 <p align="center">
   <b>Self-hosted, Wakatime-compatible coding-time tracker.</b><br>
@@ -8,7 +8,7 @@
 
 <p align="center"><i>A real instance: 439,683 heartbeats · 691 projects · 68 languages · 3,571 hrs over 465 days.</i></p>
 
-<p align="center"><a href="DEMO.md"><img src="docs/screenshots/overview.png" width="820" alt="gakatime Overview dashboard"></a></p>
+<p align="center"><a href="DEMO.md"><img src="docs/screenshots/overview.png" width="820" alt="boomtime Overview dashboard"></a></p>
 
 <p align="center"><a href="DEMO.md"><b>→ Full visual tour of every page (DEMO.md)</b></a></p>
 
@@ -16,7 +16,7 @@
 
 ## What it is
 
-gakatime is a from-scratch reimplementation of [hakatime](https://github.com/mujx/hakatime)
+boomtime is a from-scratch reimplementation of [hakatime](https://github.com/mujx/hakatime)
 in Go + React. The **HTTP API is wire-compatible with Wakatime** (paths, JSON field names,
 `Authorization: Basic <token>`), so existing editor plugins keep working unchanged — just
 set `api_url` in `~/.wakatime.cfg`. Bring your data over with the first-class **/import**,
@@ -47,7 +47,7 @@ docker compose up            # app on :8080, dashboard proxied on :5173
 task create-user  -- -u you
 task create-token -- -u you        # prints a UUID token
 
-# 3. point your editor at gakatime  (~/.wakatime.cfg)
+# 3. point your editor at boomtime  (~/.wakatime.cfg)
 #    api_url = http://localhost:8080/api/v1/users/current/heartbeats.bulk
 #    api_key = <the UUID token>
 
@@ -77,7 +77,7 @@ Start high-level and drill down:
 
 ```bash
 task dev            # air (Go live-reload) + Vite HMR
-task test           # go test ./... against an isolated gakatime_test DB (TestMain migrates it)
+task test           # go test ./... against an isolated boomtime_test DB (TestMain migrates it)
 task db:mermaid     # regenerate docs/db-erd.mmd from the live schema (mermerd)
 task build          # web build + single embedded Go binary
 ```

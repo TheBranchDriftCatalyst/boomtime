@@ -24,7 +24,7 @@ export function CreateTokenModal({ token, onClose }: CreateTokenModalProps) {
           <DialogTitle>Your new API token</DialogTitle>
           <DialogDescription>
             Use this token to set up your Wakatime client. Point the client's
-            upstream API URL at this Gakatime instance
+            upstream API URL at this Boomtime instance
             (<code>/api/v1</code>).
           </DialogDescription>
         </DialogHeader>

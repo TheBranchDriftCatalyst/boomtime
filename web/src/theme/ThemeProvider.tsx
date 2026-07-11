@@ -20,10 +20,10 @@ import {
 export type { Theme, ThemeContextValue } from "@/theme/themeContext";
 
 /**
- * Theme system for gakatime.
+ * Theme system for boomtime.
  *
  * Dark is the DEFAULT: on first visit (nothing stored) the app renders dark.
- * The chosen theme persists to localStorage under `gakatime-theme` and is
+ * The chosen theme persists to localStorage under `boomtime-theme` and is
  * applied by toggling the `.dark` class (and `color-scheme`) on <html>.
  */
 export function ThemeProvider({ children }: { children: ReactNode }) {

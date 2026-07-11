@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/apierr"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/model"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/wakatime"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/wakatime"
 	"github.com/labstack/echo/v5"
 )
 

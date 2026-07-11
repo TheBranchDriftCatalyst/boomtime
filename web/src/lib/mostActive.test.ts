@@ -17,10 +17,10 @@ describe("mostActive", () => {
     const items = [
       { name: "Other", totalSeconds: 9999 },
       { name: "Other (3 more)", totalSeconds: 8888 },
-      { name: "gakatime", totalSeconds: 400 },
+      { name: "boomtime", totalSeconds: 400 },
       { name: "docs", totalSeconds: 100 },
     ];
-    expect(mostActive(items)).toBe("gakatime");
+    expect(mostActive(items)).toBe("boomtime");
   });
 
   it("returns '-' when nothing is left after excluding Other", () => {

@@ -1,4 +1,4 @@
-module github.com/TheBranchDriftCatalyst/gakatime
+module github.com/TheBranchDriftCatalyst/boomtime
 
 go 1.25.7
 

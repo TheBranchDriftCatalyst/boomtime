@@ -38,15 +38,15 @@ describe("SpaceRuleForm (P0/P1)", () => {
 
     // Default axis is `project`, default mode is exact — value is an
     // autocomplete combobox of real axis values (with counts). Open it and
-    // pick the "gakatime" option (from the mocked group endpoint).
+    // pick the "boomtime" option (from the mocked group endpoint).
     await user.click(screen.getByRole("combobox"));
-    await user.click(await screen.findByRole("button", { name: /gakatime/i }));
+    await user.click(await screen.findByRole("button", { name: /boomtime/i }));
     await user.click(screen.getByRole("button", { name: /add rule/i }));
 
     await waitFor(() => expect(onDone).toHaveBeenCalled());
     expect(body.current).toEqual({
       axis: "project",
-      matchValue: "gakatime",
+      matchValue: "boomtime",
       matchType: "exact",
     });
   });

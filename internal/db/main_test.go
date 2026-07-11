@@ -12,20 +12,20 @@ import (
 )
 
 // dbReady is set by TestMain once the isolated test database exists and has been
-// migrated. When false, DB-backed tests Skip (unless HAKA_REQUIRE_DB=1).
+// migrated. When false, DB-backed tests Skip (unless BOOM_REQUIRE_DB=1).
 var (
 	dbReady    bool
 	dbSkipMsg  string
-	testDBName = "gakatime_test"
+	testDBName = "boomtime_test"
 )
 
 // defaultTestDatabaseURL points at an ISOLATED database, NOT the dev `test` DB,
-// so tests never touch real/panda data. Override with HAKA_TEST_DATABASE_URL.
-const defaultTestDatabaseURL = "postgres://test:test@localhost:5432/gakatime_test?sslmode=disable"
+// so tests never touch real/panda data. Override with BOOM_TEST_DATABASE_URL.
+const defaultTestDatabaseURL = "postgres://test:test@localhost:5432/boomtime_test?sslmode=disable"
 
 // testDatabaseURL resolves the isolated test DB DSN.
 func testDatabaseURL() string {
-	if v := os.Getenv("HAKA_TEST_DATABASE_URL"); v != "" {
+	if v := os.Getenv("BOOM_TEST_DATABASE_URL"); v != "" {
 		return v
 	}
 	return defaultTestDatabaseURL
@@ -59,15 +59,15 @@ func dbNameFromURL(dsn string) string {
 }
 
 // TestMain provisions the isolated test database once for the whole package:
-// connect to a maintenance DB, CREATE DATABASE gakatime_test (idempotent), then
-// migrate it. If Postgres is unreachable the DB tests Skip, unless HAKA_REQUIRE_DB=1.
+// connect to a maintenance DB, CREATE DATABASE boomtime_test (idempotent), then
+// migrate it. If Postgres is unreachable the DB tests Skip, unless BOOM_REQUIRE_DB=1.
 func TestMain(m *testing.M) {
 	setup()
 	os.Exit(m.Run())
 }
 
 func setup() {
-	require := os.Getenv("HAKA_REQUIRE_DB") == "1"
+	require := os.Getenv("BOOM_REQUIRE_DB") == "1"
 	url := testDatabaseURL()
 	name := dbNameFromURL(url)
 	if name != "" {
@@ -77,7 +77,7 @@ func setup() {
 	fail := func(format string, args ...any) {
 		msg := fmt.Sprintf(format, args...)
 		if require {
-			fmt.Fprintln(os.Stderr, "HAKA_REQUIRE_DB=1 but test DB setup failed:", msg)
+			fmt.Fprintln(os.Stderr, "BOOM_REQUIRE_DB=1 but test DB setup failed:", msg)
 			os.Exit(1)
 		}
 		dbSkipMsg = msg
@@ -152,8 +152,8 @@ func quoteIdent(id string) string {
 	return `"` + strings.ReplaceAll(id, `"`, `""`) + `"`
 }
 
-// openTestDB connects to the ISOLATED test database (gakatime_test), Skipping the
-// test when the DB is unavailable (unless HAKA_REQUIRE_DB=1 already failed setup).
+// openTestDB connects to the ISOLATED test database (boomtime_test), Skipping the
+// test when the DB is unavailable (unless BOOM_REQUIRE_DB=1 already failed setup).
 // This can NEVER hit the dev/panda `test` DB.
 func openTestDB(t *testing.T) *DB {
 	t.Helper()

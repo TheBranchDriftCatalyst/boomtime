@@ -8,8 +8,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/db"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/model"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 )
 
 // ---- Utils.hs: countDuration / compoundDuration ----

@@ -3,7 +3,7 @@ package server
 import (
 	"log/slog"
 
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/labstack/echo/v5"
 )
 

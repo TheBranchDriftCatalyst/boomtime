@@ -1,4 +1,4 @@
-# Why gakatime exists
+# Why boomtime exists
 
 **We built this in ~5 hours.** Not a weekend, not a sprint — an afternoon. This is
 **agentic engineering** — a human directing a fleet of subagents against a real 440k-heartbeat
@@ -37,7 +37,7 @@ things that always bugged me about time trackers:
 Using Wakatime for years, two things always felt broken. We rebuilt both from the ground up:
 
 ### 1. Surfacing all-time history is painful
-Wakatime hides your deep history behind its UI and its plan. gakatime treats **"All time"**
+Wakatime hides your deep history behind its UI and its plan. boomtime treats **"All time"**
 as a first-class range and keeps it fast — the same `gap_seconds` + rollup + bucketing that
 powers a 7-day view powers a two-year view.
 

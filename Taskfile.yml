@@ -3,12 +3,12 @@ version: "3"
 dotenv: [".env"]
 
 env:
-  HAKA_PORT: '{{.HAKA_PORT | default "8080"}}'
+  BOOM_PORT: '{{.BOOM_PORT | default "8080"}}'
 
 vars:
-  PKG: ./cmd/gakatime
+  PKG: ./cmd/boomtime
   # Isolated DB for the Go test suite (never the dev/panda `test` DB).
-  TEST_DB_URL: '{{.HAKA_TEST_DATABASE_URL | default "postgres://test:test@localhost:5432/gakatime_test?sslmode=disable"}}'
+  TEST_DB_URL: '{{.BOOM_TEST_DATABASE_URL | default "postgres://test:test@localhost:5432/boomtime_test?sslmode=disable"}}'
   # Dev DB used ONLY as a read-only source when regenerating fixtures.
   DEV_DB_URL: '{{.DEV_DB_URL | default "postgres://test:test@localhost:5432/test?sslmode=disable"}}'
 
@@ -32,8 +32,8 @@ tasks:
     desc: Start the Postgres dev database (docker compose)
     cmds:
       - docker compose up -d db
-      - 'echo "waiting for postgres..." && until docker compose exec -T db pg_isready -U "$HAKA_DB_USER" >/dev/null 2>&1; do sleep 1; done'
-      - echo "✓ db ready on port $HAKA_DB_PORT"
+      - 'echo "waiting for postgres..." && until docker compose exec -T db pg_isready -U "$BOOM_DB_USER" >/dev/null 2>&1; do sleep 1; done'
+      - echo "✓ db ready on port $BOOM_DB_PORT"
 
   db:down:
     desc: Stop the dev database
@@ -54,7 +54,7 @@ tasks:
   docker:build:
     desc: Build the production image (single binary with embedded SPA)
     cmds:
-      - docker build -t gakatime:latest .
+      - docker build -t boomtime:latest .
 
   db:reset:
     desc: Destroy and recreate the dev database (drops all data)
@@ -66,7 +66,7 @@ tasks:
   db:psql:
     desc: Open a psql shell on the dev database
     cmds:
-      - docker compose exec db psql -U "$HAKA_DB_USER" -d "$HAKA_DB_NAME"
+      - docker compose exec db psql -U "$BOOM_DB_USER" -d "$BOOM_DB_NAME"
 
   db:mermaid:
     desc: Generate a Mermaid ERD (docs/db-erd.mmd) from the dev database schema
@@ -139,22 +139,22 @@ tasks:
     deps: [web:build]
     cmds:
       - rm -rf internal/server/dist && cp -r web/dist internal/server/dist
-      - go build -o bin/gakatime {{.PKG}}
-      - 'echo "✓ built bin/gakatime"'
+      - go build -o bin/boomtime {{.PKG}}
+      - 'echo "✓ built bin/boomtime"'
 
   test:
-    desc: Run Go tests against the ISOLATED gakatime_test database
+    desc: Run Go tests against the ISOLATED boomtime_test database
     cmds:
       - task: db:up
-      - 'HAKA_TEST_DATABASE_URL="{{.TEST_DB_URL}}" go test ./...'
+      - 'BOOM_TEST_DATABASE_URL="{{.TEST_DB_URL}}" go test ./...'
 
   test:db:reset:
-    desc: Drop and recreate the isolated gakatime_test database
+    desc: Drop and recreate the isolated boomtime_test database
     cmds:
       - task: db:up
-      - docker compose exec -T db psql -U "$HAKA_DB_USER" -d postgres -c 'DROP DATABASE IF EXISTS gakatime_test;'
-      - docker compose exec -T db psql -U "$HAKA_DB_USER" -d postgres -c 'CREATE DATABASE gakatime_test;'
-      - 'echo "✓ gakatime_test reset (TestMain will re-migrate on next test run)"'
+      - docker compose exec -T db psql -U "$BOOM_DB_USER" -d postgres -c 'DROP DATABASE IF EXISTS boomtime_test;'
+      - docker compose exec -T db psql -U "$BOOM_DB_USER" -d postgres -c 'CREATE DATABASE boomtime_test;'
+      - 'echo "✓ boomtime_test reset (TestMain will re-migrate on next test run)"'
 
   fixtures:gen:
     desc: 'Regenerate the anonymized heartbeat fixture from the dev DB (SELECT-only). Vars: SENDER, PROJECTS, DAYS, MAX'

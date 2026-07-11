@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/apierr"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/labstack/echo/v5"
 )
 

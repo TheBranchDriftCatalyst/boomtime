@@ -12,7 +12,7 @@ New files created:
 - `web/src/theme/README-WIRING.md` — this file
 
 **Dark is the default** (first visit with nothing stored renders dark).
-Preference persists in `localStorage["gakatime-theme"]` as `dark` | `light`
+Preference persists in `localStorage["boomtime-theme"]` as `dark` | `light`
 (`system` is also accepted on read). The theme is applied by toggling the
 `.dark` class on `<html>` plus `document.documentElement.style.colorScheme`.
 
@@ -132,7 +132,7 @@ To avoid a light→dark flash before React mounts, add this to
 <script>
   (function () {
     try {
-      var t = localStorage.getItem("gakatime-theme");
+      var t = localStorage.getItem("boomtime-theme");
       if (t === "system") {
         t = window.matchMedia("(prefers-color-scheme: light)").matches
           ? "light"

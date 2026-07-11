@@ -1,7 +1,7 @@
 import { createContext, useContext } from "react";
 
 /**
- * Theme context, types, constants, and hook for the gakatime theme system.
+ * Theme context, types, constants, and hook for the boomtime theme system.
  *
  * These non-component exports live in their own module (separate from
  * `ThemeProvider.tsx`) so the provider file only exports a component — which
@@ -11,7 +11,7 @@ import { createContext, useContext } from "react";
 export type Theme = "dark" | "light";
 
 /** localStorage key that holds the persisted preference. */
-export const THEME_STORAGE_KEY = "gakatime-theme";
+export const THEME_STORAGE_KEY = "boomtime-theme";
 
 /** Dark is the default theme when nothing is stored. */
 export const DEFAULT_THEME: Theme = "dark";

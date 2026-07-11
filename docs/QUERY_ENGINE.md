@@ -1,6 +1,6 @@
 # The Query Engine
 
-> How gakatime turns ~440k raw heartbeats into the numbers on a dashboard.
+> How boomtime turns ~440k raw heartbeats into the numbers on a dashboard.
 
 This is a deep dive for a new contributor who needs to touch stats aggregation,
 curation (hide/rename), Space scoping, or the response cache. It documents the
@@ -398,7 +398,7 @@ The five beats, in order every time:
 3. **Splice the space predicate** after the same anchor (keep only in-scope rows).
 4. **Wrap in the rename re-group** (merge + relabel + recompute % windows).
 5. **Execute via `aggQuery`** — a read-only transaction that first runs
-   `SET LOCAL work_mem = '256MB'` (tunable via `HAKA_STATS_WORK_MEM`) so the big
+   `SET LOCAL work_mem = '256MB'` (tunable via `BOOM_STATS_WORK_MEM`) so the big
    sorts stay in RAM; the `SET LOCAL` is discarded by the read-only rollback, so
    it never leaks to another pooled connection.
 
@@ -600,7 +600,7 @@ non-default-limit request never collides with the unscoped default:
 cacheKey(owner, "stats", t0, t1, limit, "space:"+spaceParam)
 ```
 
-**TTL** — `statsCacheTTL()` defaults to 30s (tunable via `HAKA_STATS_CACHE_TTL`
+**TTL** — `statsCacheTTL()` defaults to 30s (tunable via `BOOM_STATS_CACHE_TTL`
 seconds; `0` disables). `cachedJSON` serves the cached blob on a hit, else computes
 + marshals + `Cache.Set`s.
 

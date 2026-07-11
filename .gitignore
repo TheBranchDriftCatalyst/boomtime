@@ -44,6 +44,10 @@ internal/db/testdata/*.local.json
 
 # stray built binaries
 /fixturegen
-/gakatime
+/boomtime
 /audit-*.png
 /fixed-*.png
+
+# Generated artifacts
+web/coverage/
+/ov.md

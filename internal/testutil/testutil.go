@@ -1,5 +1,5 @@
-// Package testutil is the external (out-of-package) test harness for gakatime.
-// It provisions and migrates the ISOLATED gakatime_test database, builds a real
+// Package testutil is the external (out-of-package) test harness for boomtime.
+// It provisions and migrates the ISOLATED boomtime_test database, builds a real
 // *handler.Handler wired to an Echo router, mints auth tokens for seeded users,
 // and offers the same seed builders the in-package internal/db tests use — so
 // handler-level HTTP integration tests reuse one source of seeding truth.
@@ -24,14 +24,14 @@ import (
 
 	"github.com/labstack/echo/v5"
 
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/auth"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/config"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/db"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/handler"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/importer"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
 )
 
-const defaultTestDatabaseURL = "postgres://test:test@localhost:5432/gakatime_test?sslmode=disable"
+const defaultTestDatabaseURL = "postgres://test:test@localhost:5432/boomtime_test?sslmode=disable"
 
 var (
 	provisionOnce sync.Once
@@ -39,9 +39,9 @@ var (
 	provisionErr  error
 )
 
-// DatabaseURL resolves the isolated test DB DSN (HAKA_TEST_DATABASE_URL override).
+// DatabaseURL resolves the isolated test DB DSN (BOOM_TEST_DATABASE_URL override).
 func DatabaseURL() string {
-	if v := os.Getenv("HAKA_TEST_DATABASE_URL"); v != "" {
+	if v := os.Getenv("BOOM_TEST_DATABASE_URL"); v != "" {
 		return v
 	}
 	return defaultTestDatabaseURL
@@ -65,18 +65,18 @@ func ensure() error {
 }
 
 // OpenDB provisions/migrates then connects to the isolated test DB. It Skips the
-// test when Postgres is unreachable, unless HAKA_REQUIRE_DB=1 (then it Fatals).
+// test when Postgres is unreachable, unless BOOM_REQUIRE_DB=1 (then it Fatals).
 func OpenDB(t *testing.T) *db.DB {
 	t.Helper()
 	if err := ensure(); err != nil {
-		if os.Getenv("HAKA_REQUIRE_DB") == "1" {
+		if os.Getenv("BOOM_REQUIRE_DB") == "1" {
 			t.Fatalf("test DB required but unavailable: %v", err)
 		}
 		t.Skipf("skipping: isolated test DB unavailable: %v", err)
 	}
 	database, err := db.New(context.Background(), DatabaseURL())
 	if err != nil {
-		if os.Getenv("HAKA_REQUIRE_DB") == "1" {
+		if os.Getenv("BOOM_REQUIRE_DB") == "1" {
 			t.Fatalf("connect test DB: %v", err)
 		}
 		t.Skipf("skipping: connect test DB: %v", err)

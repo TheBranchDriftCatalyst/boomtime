@@ -1,4 +1,4 @@
-# gakatime — Live Demo Tour 🔥
+# boomtime — Live Demo Tour 🔥
 
 A page-by-page walkthrough of a **real, heavily-used instance** — one developer's entire
 coding history, self-hosted off wakatime.com.

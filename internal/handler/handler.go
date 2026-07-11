@@ -13,12 +13,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/apierr"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/auth"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/cache"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/config"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/db"
-	"github.com/TheBranchDriftCatalyst/gakatime/internal/importer"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/cache"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
 	"github.com/labstack/echo/v5"
 )
 
@@ -38,11 +38,11 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *impor
 }
 
 // statsCacheTTL is the TTL for cached aggregation payloads (stats/timeline/
-// projects/leaderboards). Default 30s; tunable via HAKA_STATS_CACHE_TTL (seconds,
+// projects/leaderboards). Default 30s; tunable via BOOM_STATS_CACHE_TTL (seconds,
 // 0 disables). Short enough that dashboards stay near-live, long enough to absorb
 // repeated loads and re-renders.
 func statsCacheTTL() time.Duration {
-	if v := os.Getenv("HAKA_STATS_CACHE_TTL"); v != "" {
+	if v := os.Getenv("BOOM_STATS_CACHE_TTL"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 			return time.Duration(n) * time.Second
 		}
