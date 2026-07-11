@@ -10,20 +10,10 @@ import (
 )
 
 // bigBetRangeAnchor is the inner range-end clause shared by the big-bet queries
-// (all scan raw heartbeats); the all-axis hide exclusion is spliced in after it.
+// (all scan raw heartbeats with unqualified columns, so every hide axis is
+// available); the hide exclusion + space scope are spliced in after it via
+// applyScopes. args already hold $1..$4, so the predicates start at $5.
 const bigBetRangeAnchor = "AND time_sent <= $3"
-
-// applyBigBetHides splices the all-axis exclusion after the range anchor. All
-// big-bet queries scan raw heartbeats with unqualified columns, so every hide
-// axis is available. args already hold $1..$4; the exclusion starts at $5. Returns
-// the query, grown args, and the next free positional param (for a following remap).
-func applyBigBetHides(query string, hs HiddenSets, args []any) (string, []any, int) {
-	if !hs.AnyHidden() {
-		return query, args, 5
-	}
-	pred, argsWith, next := exclusionPredicate(hs, rawHeartbeatCols, 5, args)
-	return injectAfter(query, bigBetRangeAnchor, pred), argsWith, next
-}
 
 // CategoryDailyRow is one (day, category) coding-time bucket.
 type CategoryDailyRow struct {
@@ -39,15 +29,8 @@ type CategoryDailyRow struct {
 // cutoff minutes. Note: a category hidden here disappears entirely (the whole
 // category axis is excluded when that category is hidden).
 func (d *DB) GetCategoryDaily(ctx context.Context, sender string, start, end time.Time, limit int64, hs HiddenSets, rs RenameSets, ms MemberSets, spaceRequested bool) ([]CategoryDailyRow, error) {
-	query := qGetCategoryDaily
-	args := []any{sender, start, end, limit}
-	var next int
-	query, args, next = applyBigBetHides(query, hs, args)
-	if spaceRequested {
-		var pred string
-		pred, args, next = spaceScopePredicate(ms, rawHeartbeatCols, next, args, spaceRequested)
-		query = injectAfter(query, bigBetRangeAnchor, pred)
-	}
+	query, args, next := applyScopes(qGetCategoryDaily, bigBetRangeAnchor,
+		hs, ms, spaceRequested, rawHeartbeatCols, []any{sender, start, end, limit}, 5)
 	// Rename remap: re-group (day, category) by the remapped category.
 	if rs.HasAxis("category") {
 		var expr string
@@ -90,15 +73,8 @@ type PunchcardCell struct {
 // GetPunchcard returns dow x hour coding-time cells (excluding all hidden axis
 // values). No renamable axis in the output (dow/hour), so no rename remap applies.
 func (d *DB) GetPunchcard(ctx context.Context, sender string, start, end time.Time, limit int64, hs HiddenSets, ms MemberSets, spaceRequested bool) ([]PunchcardCell, error) {
-	query := qGetPunchcard
-	args := []any{sender, start, end, limit}
-	var next int
-	query, args, next = applyBigBetHides(query, hs, args)
-	if spaceRequested {
-		var pred string
-		pred, args, next = spaceScopePredicate(ms, rawHeartbeatCols, next, args, spaceRequested)
-		query = injectAfter(query, bigBetRangeAnchor, pred)
-	}
+	query, args, _ := applyScopes(qGetPunchcard, bigBetRangeAnchor,
+		hs, ms, spaceRequested, rawHeartbeatCols, []any{sender, start, end, limit}, 5)
 	var out []PunchcardCell
 	err := d.aggQuery(ctx, query, args, func(rows pgx.Rows) error {
 		defer rows.Close()
@@ -124,15 +100,8 @@ type SessionRow struct {
 // gap cutoff that both bounds in-session time and defines a session break is
 // limit*60 seconds. No renamable axis in the output (session_day), so no remap.
 func (d *DB) GetSessions(ctx context.Context, sender string, start, end time.Time, limit int64, hs HiddenSets, ms MemberSets, spaceRequested bool) ([]SessionRow, error) {
-	query := qGetSessions
-	args := []any{sender, start, end, limit}
-	var next int
-	query, args, next = applyBigBetHides(query, hs, args)
-	if spaceRequested {
-		var pred string
-		pred, args, next = spaceScopePredicate(ms, rawHeartbeatCols, next, args, spaceRequested)
-		query = injectAfter(query, bigBetRangeAnchor, pred)
-	}
+	query, args, _ := applyScopes(qGetSessions, bigBetRangeAnchor,
+		hs, ms, spaceRequested, rawHeartbeatCols, []any{sender, start, end, limit}, 5)
 	var out []SessionRow
 	err := d.aggQuery(ctx, query, args, func(rows pgx.Rows) error {
 		defer rows.Close()
@@ -159,15 +128,8 @@ type MomentumRow struct {
 // The Go shaper picks the top-N projects and gap-fills the week series. A project
 // rename re-groups the (project, week) rows by the remapped project (merges).
 func (d *DB) GetMomentum(ctx context.Context, sender string, start, end time.Time, limit int64, hs HiddenSets, rs RenameSets, ms MemberSets, spaceRequested bool) ([]MomentumRow, error) {
-	query := qGetMomentum
-	args := []any{sender, start, end, limit}
-	var next int
-	query, args, next = applyBigBetHides(query, hs, args)
-	if spaceRequested {
-		var pred string
-		pred, args, next = spaceScopePredicate(ms, rawHeartbeatCols, next, args, spaceRequested)
-		query = injectAfter(query, bigBetRangeAnchor, pred)
-	}
+	query, args, next := applyScopes(qGetMomentum, bigBetRangeAnchor,
+		hs, ms, spaceRequested, rawHeartbeatCols, []any{sender, start, end, limit}, 5)
 	if rs.HasAxis("project") {
 		var expr string
 		expr, args, next = rs.remapExpr("project", "project", "", next, args)

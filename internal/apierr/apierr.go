@@ -77,6 +77,14 @@ func MissingGithubToken() *Error {
 	return New(http.StatusInternalServerError, "The environment variable GITHUB_TOKEN is not set", nil)
 }
 
+func BadRequest(msg string) *Error {
+	return New(http.StatusBadRequest, msg, nil)
+}
+
+func NotFound(msg string) *Error {
+	return New(http.StatusNotFound, msg, nil)
+}
+
 func Generic() *Error {
 	return New(http.StatusInternalServerError, "An internal error occurred", nil)
 }

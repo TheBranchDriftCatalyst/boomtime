@@ -31,7 +31,7 @@ func TestInclusionPredicateShape(t *testing.T) {
 		map[string][]string{"editor": {"^vim", "code"}},
 	)
 	args := []any{"sender", time.Now(), time.Now(), int64(15)}
-	sql, outArgs, next := inclusionPredicate(ms, rawHeartbeatCols, 5, args)
+	sql, outArgs, next := inclusionPredicate(ms, rawHeartbeatCols, "", 5, args)
 
 	// hiddenAxes order: project before editor. project exact -> $5; editor regex
 	// -> $6, $7 (in load order).
@@ -51,12 +51,12 @@ func TestInclusionPredicateShape(t *testing.T) {
 // match NOTHING (` AND FALSE`); an unrequested scope adds no predicate.
 func TestSpaceScopePredicateEmpty(t *testing.T) {
 	// Requested but no members -> AND FALSE.
-	sql, _, next := spaceScopePredicate(MemberSets{}, rawHeartbeatCols, 5, []any{"x"}, true)
+	sql, _, next := spaceScopePredicate(MemberSets{}, rawHeartbeatCols, "", 5, []any{"x"}, true)
 	if sql != " AND FALSE" || next != 5 {
 		t.Fatalf("empty requested scope: sql=%q next=%d, want ' AND FALSE'/5", sql, next)
 	}
 	// Not requested -> no predicate.
-	sql2, _, _ := spaceScopePredicate(MemberSets{}, rawHeartbeatCols, 5, []any{"x"}, false)
+	sql2, _, _ := spaceScopePredicate(MemberSets{}, rawHeartbeatCols, "", 5, []any{"x"}, false)
 	if sql2 != "" {
 		t.Fatalf("unrequested scope: sql=%q, want ''", sql2)
 	}

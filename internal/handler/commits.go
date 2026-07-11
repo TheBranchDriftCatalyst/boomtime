@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -75,7 +76,7 @@ func (h *Handler) Commits(c *echo.Context) error {
 	if len(users) > 0 {
 		timeSpent, err = h.DB.GetTotalTimeBetween(ctx, users, projects, mins, maxs)
 		if err != nil {
-			return respondErr(c, apierr.Generic())
+			return h.internalErr(c, "commit time aggregation failed", err)
 		}
 	}
 
@@ -116,11 +117,14 @@ func (h *Handler) fetchCommits(owner, name string, perPage int64) ([]model.Commi
 	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(h.Cfg.GithubToken)))
 	req.Header.Set("User-Agent", "Hakatime Server")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("github API returned status %d for %s/%s", resp.StatusCode, owner, name)
+	}
 
 	var commits []model.CommitPayload
 	if err := json.NewDecoder(resp.Body).Decode(&commits); err != nil {

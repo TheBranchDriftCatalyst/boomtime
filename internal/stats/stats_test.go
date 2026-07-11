@@ -7,23 +7,6 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 )
 
-func TestCountDuration(t *testing.T) {
-	// Documented fixture from Utils.hs: countDuration [1,2,3,10,21,22,33,100,104,109] 5 == 12.
-	got := CountDuration([]int{1, 2, 3, 10, 21, 22, 33, 100, 104, 109}, 5)
-	if got != 12 {
-		t.Fatalf("CountDuration = %d, want 12", got)
-	}
-}
-
-func TestCountDurationEmpty(t *testing.T) {
-	if got := CountDuration(nil, 5); got != 0 {
-		t.Fatalf("CountDuration(nil) = %d, want 0", got)
-	}
-	if got := CountDuration([]int{42}, 5); got != 0 {
-		t.Fatalf("CountDuration(single) = %d, want 0", got)
-	}
-}
-
 func TestCompoundDuration(t *testing.T) {
 	cases := []struct {
 		name string

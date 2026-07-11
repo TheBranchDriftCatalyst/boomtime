@@ -66,13 +66,6 @@ func (d *DB) CreateImportJob(ctx context.Context, owner string, payload []byte, 
 	return scanJob(row)
 }
 
-// GetJobValue returns the raw value JSON for a job (the QueueItem payload).
-func (d *DB) GetJobValue(ctx context.Context, id int) ([]byte, error) {
-	var raw []byte
-	err := d.Pool.QueryRow(ctx, `SELECT value FROM import_jobs WHERE id = $1`, id).Scan(&raw)
-	return raw, err
-}
-
 // GetJobByID returns a single job (no owner filter; caller must own-check).
 func (d *DB) GetJobByID(ctx context.Context, id int) (*Job, error) {
 	row := d.Pool.QueryRow(ctx, `SELECT `+jobColumns+` FROM import_jobs WHERE id = $1`, id)
@@ -145,7 +138,7 @@ func (d *DB) FinishImportJob(ctx context.Context, id int, state string, errMsg *
 	return scanJob(row)
 }
 
-// CancelQueuedJob marks a job cancelled only if it is still queued/running.
+// CancelJob marks a job cancelled only if it is still queued/running.
 // Returns the updated job, or nil if it was already terminal.
 func (d *DB) CancelJob(ctx context.Context, id int) (*Job, error) {
 	row := d.Pool.QueryRow(ctx, `

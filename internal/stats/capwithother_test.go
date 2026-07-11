@@ -66,3 +66,35 @@ func TestCapWithOtherCollapsesTail(t *testing.T) {
 		t.Errorf("Other.PctDaily = %v, want [25 12.5]", other.PctDaily)
 	}
 }
+
+func TestCapWithOtherDoesNotMutateInput(t *testing.T) {
+	// 14 entries in ASCENDING TotalSeconds order (so the internal sort would
+	// reorder them), backed by an array with one spare sentinel slot (so an
+	// append into the caller's backing array would clobber it).
+	backing := make([]model.ResourceStats, 15)
+	for i := 0; i < 14; i++ {
+		backing[i] = model.ResourceStats{
+			Name:         string(rune('A' + i)),
+			TotalSeconds: int64(100 * (i + 1)),
+		}
+	}
+	backing[14] = model.ResourceStats{Name: "sentinel", TotalSeconds: -1}
+	in := backing[:14]
+
+	out := capWithOther(in)
+	if len(out) != 13 {
+		t.Fatalf("len(out) = %d, want 13 (top-12 + Other)", len(out))
+	}
+
+	for i := 0; i < 14; i++ {
+		wantName := string(rune('A' + i))
+		wantSecs := int64(100 * (i + 1))
+		if in[i].Name != wantName || in[i].TotalSeconds != wantSecs {
+			t.Errorf("input[%d] mutated: got {%q %d}, want {%q %d}",
+				i, in[i].Name, in[i].TotalSeconds, wantName, wantSecs)
+		}
+	}
+	if backing[14].Name != "sentinel" || backing[14].TotalSeconds != -1 {
+		t.Errorf("caller's backing array written past len: %+v", backing[14])
+	}
+}

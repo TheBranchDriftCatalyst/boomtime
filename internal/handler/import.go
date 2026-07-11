@@ -36,7 +36,7 @@ func (h *Handler) ImportRequest(c *echo.Context) error {
 	}
 	var payload model.ImportRequestPayload
 	if err := c.Bind(&payload); err != nil {
-		return respondErr(c, apierr.Generic())
+		return respondErr(c, apierr.BadRequest("Invalid request body"))
 	}
 	payload.APIToken = h.effectiveImportToken(payload.APIToken)
 	ctx := c.Request().Context()
@@ -86,26 +86,42 @@ func (h *Handler) ImportJobs(c *echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]any{"jobs": jobs})
 }
 
+// jobForOwner parses the :id param and loads the job, enforcing that it
+// belongs to owner. An unparseable id is a 400; a missing or foreign job is a
+// 404 (never leaks another owner's job).
+func (h *Handler) jobForOwner(c *echo.Context, owner string) (*db.Job, *apierr.Error) {
+	id, ok := parseJobID(c)
+	if !ok {
+		return nil, apierr.New(http.StatusBadRequest, "Invalid job id", nil)
+	}
+	job, err := h.DB.GetJobByID(c.Request().Context(), id)
+	if err != nil {
+		return nil, apierr.Generic()
+	}
+	if job == nil || job.Owner != owner {
+		return nil, apierr.New(http.StatusNotFound, "Import job not found", nil)
+	}
+	return job, nil
+}
+
+// ownedJob authenticates via the Authorization header (resolveUser) and
+// returns the owner-checked job for :id. ImportJobWS cannot use this — it
+// authenticates via cookie — so it calls jobForOwner directly.
+func (h *Handler) ownedJob(c *echo.Context) (*db.Job, *apierr.Error) {
+	_, owner, aerr := h.resolveUser(c)
+	if aerr != nil {
+		return nil, aerr
+	}
+	return h.jobForOwner(c, owner)
+}
+
 // ImportJob: GET /import/jobs/:id — one job plus its logs (owner-scoped).
 func (h *Handler) ImportJob(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	job, aerr := h.ownedJob(c)
 	if aerr != nil {
 		return respondErr(c, aerr)
 	}
-	id, ok := parseJobID(c)
-	if !ok {
-		return respondErr(c, apierr.Generic())
-	}
-	ctx := c.Request().Context()
-
-	job, err := h.DB.GetJobByID(ctx, id)
-	if err != nil {
-		return respondErr(c, apierr.Generic())
-	}
-	if job == nil || job.Owner != owner {
-		return respondErr(c, apierr.New(http.StatusNotFound, "Import job not found", nil))
-	}
-	logs, err := h.DB.GetJobLogs(ctx, id, 0, 1000)
+	logs, err := h.DB.GetJobLogs(c.Request().Context(), job.ID, 0, 1000)
 	if err != nil {
 		return respondErr(c, apierr.Generic())
 	}
@@ -114,25 +130,12 @@ func (h *Handler) ImportJob(c *echo.Context) error {
 
 // ImportJobLogs: GET /import/jobs/:id/logs?afterId=<n> — REST fallback tail.
 func (h *Handler) ImportJobLogs(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	job, aerr := h.ownedJob(c)
 	if aerr != nil {
 		return respondErr(c, aerr)
 	}
-	id, ok := parseJobID(c)
-	if !ok {
-		return respondErr(c, apierr.Generic())
-	}
-	ctx := c.Request().Context()
-
-	job, err := h.DB.GetJobByID(ctx, id)
-	if err != nil {
-		return respondErr(c, apierr.Generic())
-	}
-	if job == nil || job.Owner != owner {
-		return respondErr(c, apierr.New(http.StatusNotFound, "Import job not found", nil))
-	}
 	afterID := queryInt64(c, "afterId", 0)
-	logs, err := h.DB.GetJobLogs(ctx, id, afterID, 1000)
+	logs, err := h.DB.GetJobLogs(c.Request().Context(), job.ID, afterID, 1000)
 	if err != nil {
 		return respondErr(c, apierr.Generic())
 	}
@@ -141,23 +144,12 @@ func (h *Handler) ImportJobLogs(c *echo.Context) error {
 
 // ImportJobCancel: POST /import/jobs/:id/cancel — cancel a running job.
 func (h *Handler) ImportJobCancel(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	job, aerr := h.ownedJob(c)
 	if aerr != nil {
 		return respondErr(c, aerr)
 	}
-	id, ok := parseJobID(c)
-	if !ok {
-		return respondErr(c, apierr.Generic())
-	}
+	id := job.ID
 	ctx := c.Request().Context()
-
-	job, err := h.DB.GetJobByID(ctx, id)
-	if err != nil {
-		return respondErr(c, apierr.Generic())
-	}
-	if job == nil || job.Owner != owner {
-		return respondErr(c, apierr.New(http.StatusNotFound, "Import job not found", nil))
-	}
 
 	// Signal the in-process worker (if running here); the worker records the
 	// cancelled terminal state. If it isn't running in this process (e.g. queued
@@ -219,26 +211,17 @@ func (h *Handler) WakatimeRange(c *echo.Context) error {
 // ImportJobWS: GET /import/jobs/:id/ws — live, resumable job stream.
 // Auth uses the HttpOnly refresh_token cookie (WS handshakes can't set headers).
 func (h *Handler) ImportJobWS(c *echo.Context) error {
-	owner, ok, err := h.resolveUserFromCookie(c)
-	if err != nil {
-		return respondErr(c, apierr.Generic())
+	// An absent cookie is reported like an expired one here (the WS client
+	// can't distinguish them anyway).
+	owner, aerr := h.resolveOwnerFromCookie(c, apierr.ExpiredRefreshToken())
+	if aerr != nil {
+		return respondErr(c, aerr)
 	}
-	if !ok {
-		return respondErr(c, apierr.ExpiredRefreshToken())
+	job, aerr := h.jobForOwner(c, owner)
+	if aerr != nil {
+		return respondErr(c, aerr)
 	}
-	id, valid := parseJobID(c)
-	if !valid {
-		return respondErr(c, apierr.Generic())
-	}
-
-	reqCtx := c.Request().Context()
-	job, err := h.DB.GetJobByID(reqCtx, id)
-	if err != nil {
-		return respondErr(c, apierr.Generic())
-	}
-	if job == nil || job.Owner != owner {
-		return respondErr(c, apierr.New(http.StatusNotFound, "Import job not found", nil))
-	}
+	id := job.ID
 
 	conn, err := websocket.Accept(c.Response(), c.Request(), &websocket.AcceptOptions{
 		InsecureSkipVerify: true, // same-origin; CORS handled elsewhere

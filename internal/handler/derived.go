@@ -35,7 +35,7 @@ func (h *Handler) DerivedResync(c *echo.Context) error {
 		return respondErr(c, apierr.Generic())
 	}
 	// Bust cached aggregates so the dashboard reflects the resynced data.
-	h.Cache.InvalidatePrefix(owner + "|")
+	h.invalidateOwnerCache(owner)
 	s, err := h.DB.GetDerivedStatus(ctx, owner)
 	if err != nil {
 		return respondErr(c, apierr.Generic())

@@ -50,7 +50,22 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *impor
 	return e
 }
 
+// registerRoutes wires all API routes, one registration func per domain. The
+// call order (and the order within each func) preserves the original flat
+// registration sequence.
 func registerRoutes(e *echo.Echo, h *handler.Handler) {
+	registerHeartbeatRoutes(e, h)
+	registerCurationRoutes(e, h)
+	registerSpaceRoutes(e, h)
+	registerStatsRoutes(e, h)
+	registerAuthRoutes(e, h)
+	registerMiscRoutes(e, h)
+	registerImportRoutes(e, h)
+	registerLogRoutes(e, h)
+}
+
+// registerHeartbeatRoutes: ingest, the read-only explorer, and source health.
+func registerHeartbeatRoutes(e *echo.Echo, h *handler.Handler) {
 	// Heartbeats (ingest)
 	e.POST("/api/v1/users/current/heartbeats", h.Heartbeat)
 	e.POST("/api/v1/users/current/heartbeats.bulk", h.HeartbeatBulk)
@@ -62,15 +77,20 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 
 	// Source health (per plugin/editor/machine last check-in — ingestion health)
 	e.GET("/api/v1/users/current/sources/health", h.SourceHealth)
+}
 
-	// Data curation (hide / rename labels)
+// registerCurationRoutes: data curation (hide / rename labels).
+func registerCurationRoutes(e *echo.Echo, h *handler.Handler) {
 	e.GET("/api/v1/users/current/curation", h.ListCuration)
 	e.POST("/api/v1/users/current/curation", h.CreateCuration)
 	e.DELETE("/api/v1/users/current/curation/:id", h.DeleteCuration)
 	e.GET("/api/v1/users/current/curation/:id/affected", h.CurationAffected)
+}
 
-	// Spaces (named, scoped dashboards). The static `/spaces/preview` route is
-	// registered before `/spaces/:id` so it is not shadowed by the param route.
+// registerSpaceRoutes: spaces (named, scoped dashboards). The static
+// `/spaces/preview` route is registered before `/spaces/:id` so it is not
+// shadowed by the param route.
+func registerSpaceRoutes(e *echo.Echo, h *handler.Handler) {
 	e.GET("/api/v1/users/current/spaces", h.ListSpaces)
 	e.POST("/api/v1/users/current/spaces", h.CreateSpace)
 	e.GET("/api/v1/users/current/spaces/preview", h.SpacePreview)
@@ -79,7 +99,11 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	e.DELETE("/api/v1/users/current/spaces/:id", h.DeleteSpace)
 	e.POST("/api/v1/users/current/spaces/:id/rules", h.AddSpaceRule)
 	e.DELETE("/api/v1/users/current/spaces/:id/rules/:rid", h.DeleteSpaceRule)
+}
 
+// registerStatsRoutes: derived-data health plus every dashboard aggregation
+// (stats, timeline, big bets, active files, projects).
+func registerStatsRoutes(e *echo.Echo, h *handler.Handler) {
 	// Derived-data health (gap_seconds + rollup status / resync)
 	e.GET("/api/v1/users/current/derived/status", h.DerivedStatus)
 	e.POST("/api/v1/users/current/derived/resync", h.DerivedResync)
@@ -100,8 +124,10 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	// Projects
 	e.GET("/api/v1/users/current/projects/:project", h.ProjectStats)
 	e.GET("/api/v1/projects", h.ProjectList)
+}
 
-	// Auth
+// registerAuthRoutes: login/register/refresh + API token management.
+func registerAuthRoutes(e *echo.Echo, h *handler.Handler) {
 	e.POST("/auth/login", h.Login)
 	e.POST("/auth/register", h.Register)
 	e.POST("/auth/refresh_token", h.RefreshToken)
@@ -111,7 +137,10 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	e.DELETE("/auth/token/:id", h.DeleteToken)
 	e.POST("/auth/token", h.UpdateToken)
 	e.GET("/auth/users/current", h.CurrentUser)
+}
 
+// registerMiscRoutes: badges, leaderboards, and commits.
+func registerMiscRoutes(e *echo.Echo, h *handler.Handler) {
 	// Badges
 	e.GET("/badge/link/:project", h.BadgeLink)
 	e.GET("/badge/svg/:svg", h.BadgeSvg)
@@ -121,8 +150,10 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 
 	// Commits
 	e.GET("/api/v1/commits/:project/report", h.Commits)
+}
 
-	// Import (durable, resumable jobs)
+// registerImportRoutes: durable, resumable import jobs.
+func registerImportRoutes(e *echo.Echo, h *handler.Handler) {
 	e.POST("/import", h.ImportRequest)
 	e.GET("/import/config", h.ImportConfig)
 	e.POST("/import/wakatime-range", h.WakatimeRange)
@@ -131,8 +162,10 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	e.POST("/import/jobs/:id/cancel", h.ImportJobCancel)
 	e.GET("/import/jobs/:id/logs", h.ImportJobLogs)
 	e.GET("/import/jobs/:id/ws", h.ImportJobWS)
+}
 
-	// Server process logs (live slog stream + REST tail fallback)
+// registerLogRoutes: server process logs (live slog stream + REST tail fallback).
+func registerLogRoutes(e *echo.Echo, h *handler.Handler) {
 	e.GET("/api/v1/logs", h.ServerLogs)
 	e.GET("/api/v1/logs/ws", h.ServerLogsWS)
 }

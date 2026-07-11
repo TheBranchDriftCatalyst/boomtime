@@ -61,7 +61,15 @@ func statsCacheTTL() time.Duration {
 	return 30 * time.Second
 }
 
-// cacheKey builds a stable cache key: "owner|name|part|part...".
+// cacheKeyTimeBucket is the granularity time.Time parts are truncated to when
+// building cache keys. Without bucketing, default-range requests (whose end is
+// time.Now()) mint a fresh key every second, so the TTL cache never hits and
+// only accumulates dead entries. Aligned with the default 30s stats TTL. Only
+// the KEY is bucketed — the actual query range is untouched.
+const cacheKeyTimeBucket = 30 * time.Second
+
+// cacheKey builds a stable cache key: "owner|name|part|part...". time.Time
+// parts are truncated to cacheKeyTimeBucket (see above).
 func cacheKey(owner, name string, parts ...any) string {
 	var b strings.Builder
 	b.WriteString(owner)
@@ -70,7 +78,7 @@ func cacheKey(owner, name string, parts ...any) string {
 	for _, p := range parts {
 		b.WriteByte('|')
 		if t, ok := p.(time.Time); ok {
-			fmt.Fprintf(&b, "%d", t.Unix())
+			fmt.Fprintf(&b, "%d", t.Truncate(cacheKeyTimeBucket).Unix())
 		} else {
 			fmt.Fprint(&b, p)
 		}
@@ -97,14 +105,26 @@ func (h *Handler) cachedJSON(c *echo.Context, key string, compute func() (any, e
 	return c.JSONBlob(http.StatusOK, b)
 }
 
-// resolveUserFromCookie resolves the owner from the HttpOnly refresh_token cookie
-// (used by the WebSocket handshake, which cannot carry an Authorization header).
-func (h *Handler) resolveUserFromCookie(c *echo.Context) (string, bool, error) {
+// resolveOwnerFromCookie resolves the owner from the HttpOnly refresh_token
+// cookie (used by /auth/refresh_token, /auth/users/current, and the WebSocket
+// handshake, which cannot carry an Authorization header). missingErr is the
+// error returned when the cookie is absent — the auth endpoints report
+// MissingRefreshTokenCookie while the WS handshake treats an absent cookie the
+// same as an expired one. An unknown/expired token is always ExpiredRefreshToken.
+func (h *Handler) resolveOwnerFromCookie(c *echo.Context, missingErr *apierr.Error) (string, *apierr.Error) {
 	refresh, ok := auth.ParseRefreshCookie(c.Request().Header.Get("Cookie"))
 	if !ok {
-		return "", false, nil
+		return "", missingErr
 	}
-	return h.DB.GetUserByRefreshToken(c.Request().Context(), refresh)
+	owner, ok, err := h.DB.GetUserByRefreshToken(c.Request().Context(), refresh)
+	if err != nil {
+		h.Logger.Error("refresh token lookup failed", "path", c.Request().URL.Path, "err", err)
+		return "", apierr.Generic()
+	}
+	if !ok {
+		return "", apierr.ExpiredRefreshToken()
+	}
+	return owner, nil
 }
 
 // resolveUserFromQueryToken resolves the owner from a `token` query parameter.
@@ -151,6 +171,27 @@ func respondErr(c *echo.Context, e *apierr.Error) error {
 	return e.Write(c)
 }
 
+// internalErr logs the underlying error with request context and renders the
+// generic 500 envelope. Use it wherever an internal failure would otherwise be
+// swallowed silently — the raw error never reaches the client.
+func (h *Handler) internalErr(c *echo.Context, msg string, err error) error {
+	h.Logger.Error(msg, "path", c.Request().URL.Path, "err", err)
+	return respondErr(c, apierr.Generic())
+}
+
+// httpClient is the shared client for all outbound HTTP calls (shields.io,
+// GitHub, remote-write). http.DefaultClient has no timeout and can hang a
+// handler forever on a stuck upstream.
+var httpClient = &http.Client{Timeout: 15 * time.Second}
+
+// invalidateOwnerCache drops all cached aggregation payloads for a user so hide/
+// rename changes take effect immediately.
+func (h *Handler) invalidateOwnerCache(owner string) {
+	if h.Cache != nil {
+		h.Cache.InvalidatePrefix(owner + "|")
+	}
+}
+
 // ---- Date-range helpers (shared by stats/projects/leaderboards) ----
 
 func removeDays(t time.Time, n int) time.Time {
@@ -178,40 +219,33 @@ func parseTimeParam(c *echo.Context, name string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-// defaultWeekRange = last 7 days (Stats.defaultTimeRange).
-func defaultWeekRange(c *echo.Context) (time.Time, time.Time) {
+// defaultRange resolves the start/end query params, filling the missing side(s)
+// with a `days`-long window ending now.
+func defaultRange(c *echo.Context, days int) (time.Time, time.Time) {
 	now := time.Now().UTC()
 	t0, has0 := parseTimeParam(c, "start")
 	t1, has1 := parseTimeParam(c, "end")
 	switch {
 	case !has0 && !has1:
-		return removeDays(now, 7), now
+		return removeDays(now, days), now
 	case !has0 && has1:
-		return removeDays(t1, 7), t1
+		return removeDays(t1, days), t1
 	case has0 && !has1:
-		return t0, addDays(t0, 7)
+		return t0, addDays(t0, days)
 	default:
 		// Honor the explicit range (supports "All time"); no 1-year clamp.
 		return t0, t1
 	}
 }
 
+// defaultWeekRange = last 7 days (Stats.defaultTimeRange).
+func defaultWeekRange(c *echo.Context) (time.Time, time.Time) {
+	return defaultRange(c, 7)
+}
+
 // defaultMonthRange = last 30 days (leaderboards / project list).
 func defaultMonthRange(c *echo.Context) (time.Time, time.Time) {
-	now := time.Now().UTC()
-	t0, has0 := parseTimeParam(c, "start")
-	t1, has1 := parseTimeParam(c, "end")
-	switch {
-	case !has0 && !has1:
-		return removeDays(now, 30), now
-	case !has0 && has1:
-		return removeDays(t1, 30), t1
-	case has0 && !has1:
-		return t0, addDays(t0, 30)
-	default:
-		// Honor the explicit range (supports "All time"); no 1-year clamp.
-		return t0, t1
-	}
+	return defaultRange(c, 30)
 }
 
 // queryInt64 parses an int64 query parameter with a default.

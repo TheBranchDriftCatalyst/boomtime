@@ -17,7 +17,7 @@ func (h *Handler) SourceHealth(c *echo.Context) error {
 	}
 	key := cacheKey(owner, "sources-health")
 	return h.cachedJSON(c, key, func() (any, error) {
-		sources, err := h.DB.SourceHealth(c.Request().Context(), owner)
+		sources, err := h.DB.ListSourceHealth(c.Request().Context(), owner)
 		if err != nil {
 			return nil, err
 		}

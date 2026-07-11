@@ -19,12 +19,12 @@ type SourceHealth struct {
 	Count    int64     `json:"count"`    // total heartbeats from this pair
 }
 
-// SourceHealth returns, per (plugin, machine) pair, MAX(time_sent) and the
+// ListSourceHealth returns, per (plugin, machine) pair, MAX(time_sent) and the
 // heartbeat count for the owner. Heartbeats with no plugin are excluded (they
 // have no real source); a missing machine collapses to 'unknown'. Ordered
 // stalest-first (oldest lastSeen) so a silent source surfaces at the top.
 // Owner-scoped.
-func (d *DB) SourceHealth(ctx context.Context, sender string) ([]SourceHealth, error) {
+func (d *DB) ListSourceHealth(ctx context.Context, sender string) ([]SourceHealth, error) {
 	const query = `
 		SELECT plugin,
 		       COALESCE(NULLIF(machine, ''), 'unknown') AS machine,

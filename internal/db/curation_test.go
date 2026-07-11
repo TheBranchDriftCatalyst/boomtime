@@ -12,7 +12,7 @@ func TestExclusionPredicateShape(t *testing.T) {
 		"machine": {"laptop", "desktop"},
 	})
 	args := []any{"sender", time.Now(), time.Now(), int64(15)}
-	sql, outArgs, next := exclusionPredicate(hs, rawHeartbeatCols, 5, args)
+	sql, outArgs, next := exclusionPredicate(hs, rawHeartbeatCols, "", 5, args)
 
 	// hiddenAxes order puts project before machine, so $5=project, $6=machine.
 	want := " AND NOT (project = ANY($5)) AND NOT (machine = ANY($6))"
@@ -29,7 +29,7 @@ func TestExclusionPredicateShape(t *testing.T) {
 }
 
 func TestExclusionPredicateEmpty(t *testing.T) {
-	sql, args, next := exclusionPredicate(HiddenSets{}, rawHeartbeatCols, 5, []any{"x"})
+	sql, args, next := exclusionPredicate(HiddenSets{}, rawHeartbeatCols, "", 5, []any{"x"})
 	if sql != "" || next != 5 || len(args) != 1 {
 		t.Fatalf("empty exclusion: sql=%q next=%d args=%d, want ''/5/1", sql, next, len(args))
 	}

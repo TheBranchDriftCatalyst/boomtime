@@ -32,20 +32,9 @@ func (d *DB) GetActiveFiles(ctx context.Context, sender string, start, end time.
 	}
 	// $1 sender, $2 start, $3 end, $4 timeLimit (gap cutoff minutes).
 	args := []any{sender, start, end, timeLimit}
-	nextArg := 5
-
-	// Hide-exclusion on the raw project column (and any other hidden axis present
-	// on heartbeats), applied in the inner WHERE.
-	hidePred, args, nextArg := exclusionPredicate(hs, rawHeartbeatCols, nextArg, args)
-
-	// Space scope (?space=): keep only rows matching the Space's membership rules.
-	var spacePred string
-	spacePred, args, nextArg = spaceScopePredicate(ms, rawHeartbeatCols, nextArg, args, spaceRequested)
-	hidePred += spacePred
 
 	// Project rename remap, applied per raw row before the DISTINCT count.
-	projExpr := "project"
-	projExpr, args, nextArg = rs.remapExpr("project", "project", "", nextArg, args)
+	projExpr, args, nextArg := rs.remapExpr("project", "project", "", 5, args)
 
 	// Cap+1 to detect truncation.
 	fetch := limit + 1
@@ -56,7 +45,7 @@ WITH per_row AS (
            CASE WHEN gap_seconds <= ($4 * 60) THEN gap_seconds ELSE 0 END AS secs
     FROM heartbeats
     WHERE sender = $1 AND ty = 'file' AND entity IS NOT NULL
-      AND time_sent >= $2 AND time_sent <= $3%s
+      AND time_sent >= $2 AND time_sent <= $3
 )
 SELECT entity,
        CAST(coalesce(sum(secs), 0) AS int8) AS seconds,
@@ -64,7 +53,12 @@ SELECT entity,
 FROM per_row
 GROUP BY entity
 ORDER BY projects DESC, seconds DESC, entity ASC
-LIMIT %d`, projExpr, hidePred, fetch)
+LIMIT %d`, projExpr, fetch)
+
+	// Hide exclusion + space scope on the inner raw scan (spliced after the
+	// range-end clause). Their args follow the remap's.
+	query, args, _ = applyScopes(query, "AND time_sent <= $3",
+		hs, ms, spaceRequested, rawHeartbeatCols, args, nextArg)
 
 	rows, err := d.Pool.Query(ctx, query, args...)
 	if err != nil {

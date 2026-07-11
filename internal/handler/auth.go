@@ -49,13 +49,13 @@ func loginResponse(td db.TokenData, now time.Time) model.LoginResponse {
 func (h *Handler) Login(c *echo.Context) error {
 	var creds model.AuthRequest
 	if err := c.Bind(&creds); err != nil {
-		return respondErr(c, apierr.Generic())
+		return respondErr(c, apierr.BadRequest("Invalid request body"))
 	}
 	ctx := c.Request().Context()
 
 	user, err := h.DB.GetUserByName(ctx, creds.Username)
 	if err != nil {
-		return respondErr(c, apierr.Generic())
+		return h.internalErr(c, "user lookup failed", err)
 	}
 	if user == nil || !auth.VerifyPassword(creds.Password, user.HashedPassword, user.SaltUsed) {
 		return respondErr(c, apierr.InvalidCredentials())
@@ -63,7 +63,7 @@ func (h *Handler) Login(c *echo.Context) error {
 
 	td := mkTokenData(creds.Username)
 	if err := h.DB.CreateAccessTokens(ctx, td, h.Cfg.SessionExpiry); err != nil {
-		return respondErr(c, apierr.Generic())
+		return h.internalErr(c, "access token creation failed", err)
 	}
 	h.setRefreshCookie(c, td)
 	return c.JSON(http.StatusOK, loginResponse(td, time.Now().UTC()))
@@ -76,7 +76,7 @@ func (h *Handler) Register(c *echo.Context) error {
 	}
 	var creds model.AuthRequest
 	if err := c.Bind(&creds); err != nil {
-		return respondErr(c, apierr.Generic())
+		return respondErr(c, apierr.BadRequest("Invalid request body"))
 	}
 	ctx := c.Request().Context()
 
@@ -88,7 +88,7 @@ func (h *Handler) Register(c *echo.Context) error {
 		Username: creds.Username, HashedPassword: hash, SaltUsed: salt,
 	})
 	if err != nil {
-		return respondErr(c, apierr.Generic())
+		return h.internalErr(c, "user insert failed", err)
 	}
 	if !created {
 		return respondErr(c, apierr.UsernameExists(creds.Username))
@@ -96,7 +96,7 @@ func (h *Handler) Register(c *echo.Context) error {
 
 	td := mkTokenData(creds.Username)
 	if err := h.DB.CreateAccessTokens(ctx, td, h.Cfg.SessionExpiry); err != nil {
-		return respondErr(c, apierr.Generic())
+		return h.internalErr(c, "access token creation failed", err)
 	}
 	h.setRefreshCookie(c, td)
 	return c.JSON(http.StatusOK, loginResponse(td, time.Now().UTC()))
@@ -104,23 +104,14 @@ func (h *Handler) Register(c *echo.Context) error {
 
 // RefreshToken: POST /auth/refresh_token (reads refresh_token cookie).
 func (h *Handler) RefreshToken(c *echo.Context) error {
-	refresh, ok := auth.ParseRefreshCookie(c.Request().Header.Get("Cookie"))
-	if !ok {
-		return respondErr(c, apierr.MissingRefreshTokenCookie())
-	}
-	ctx := c.Request().Context()
-
-	owner, ok, err := h.DB.GetUserByRefreshToken(ctx, refresh)
-	if err != nil {
-		return respondErr(c, apierr.Generic())
-	}
-	if !ok {
-		return respondErr(c, apierr.ExpiredRefreshToken())
+	owner, aerr := h.resolveOwnerFromCookie(c, apierr.MissingRefreshTokenCookie())
+	if aerr != nil {
+		return respondErr(c, aerr)
 	}
 
 	td := mkTokenData(owner)
-	if err := h.DB.CreateAccessTokens(ctx, td, h.Cfg.SessionExpiry); err != nil {
-		return respondErr(c, apierr.Generic())
+	if err := h.DB.CreateAccessTokens(c.Request().Context(), td, h.Cfg.SessionExpiry); err != nil {
+		return h.internalErr(c, "access token creation failed", err)
 	}
 	h.setRefreshCookie(c, td)
 	return c.JSON(http.StatusOK, loginResponse(td, time.Now().UTC()))
@@ -138,7 +129,7 @@ func (h *Handler) Logout(c *echo.Context) error {
 	}
 	n, err := h.DB.DeleteTokens(c.Request().Context(), tkn, refresh)
 	if err != nil {
-		return respondErr(c, apierr.Generic())
+		return h.internalErr(c, "token deletion failed", err)
 	}
 	if n < 2 {
 		return respondErr(c, apierr.InvalidCredentials())
@@ -154,7 +145,7 @@ func (h *Handler) CreateAPIToken(c *echo.Context) error {
 	}
 	raw := auth.NewRawToken()
 	if err := h.DB.InsertAPIToken(c.Request().Context(), owner, auth.ToBase64(raw)); err != nil {
-		return respondErr(c, apierr.Generic())
+		return h.internalErr(c, "api token insert failed", err)
 	}
 	return c.JSON(http.StatusOK, model.TokenResponse{APIToken: raw})
 }
@@ -167,20 +158,22 @@ func (h *Handler) ListAPITokens(c *echo.Context) error {
 	}
 	tokens, err := h.DB.ListApiTokens(c.Request().Context(), owner)
 	if err != nil {
-		return respondErr(c, apierr.Generic())
+		return h.internalErr(c, "api token list failed", err)
 	}
 	return c.JSON(http.StatusOK, tokens)
 }
 
-// DeleteToken: DELETE /auth/token/:id.
+// DeleteToken: DELETE /auth/token/:id. Deletion is scoped to the requesting
+// owner; the response is the same whether or not a row matched (no oracle for
+// probing other users' token values).
 func (h *Handler) DeleteToken(c *echo.Context) error {
-	_, _, aerr := h.resolveUser(c)
+	_, owner, aerr := h.resolveUser(c)
 	if aerr != nil {
 		return respondErr(c, aerr)
 	}
 	id := c.Param("id")
-	if err := h.DB.DeleteAuthToken(c.Request().Context(), id); err != nil {
-		return respondErr(c, apierr.Generic())
+	if err := h.DB.DeleteAuthToken(c.Request().Context(), id, owner); err != nil {
+		return h.internalErr(c, "api token deletion failed", err)
 	}
 	return noContent(c)
 }
@@ -193,26 +186,19 @@ func (h *Handler) UpdateToken(c *echo.Context) error {
 	}
 	var meta model.TokenMetadata
 	if err := c.Bind(&meta); err != nil {
-		return respondErr(c, apierr.Generic())
+		return respondErr(c, apierr.BadRequest("Invalid request body"))
 	}
 	if err := h.DB.UpdateTokenMetadata(c.Request().Context(), owner, meta); err != nil {
-		return respondErr(c, apierr.Generic())
+		return h.internalErr(c, "token metadata update failed", err)
 	}
 	return noContent(c)
 }
 
 // CurrentUser: GET /auth/users/current (Users.hs).
 func (h *Handler) CurrentUser(c *echo.Context) error {
-	refresh, ok := auth.ParseRefreshCookie(c.Request().Header.Get("Cookie"))
-	if !ok {
-		return respondErr(c, apierr.MissingRefreshTokenCookie())
-	}
-	owner, ok, err := h.DB.GetUserByRefreshToken(c.Request().Context(), refresh)
-	if err != nil {
-		return respondErr(c, apierr.Generic())
-	}
-	if !ok {
-		return respondErr(c, apierr.ExpiredRefreshToken())
+	owner, aerr := h.resolveOwnerFromCookie(c, apierr.MissingRefreshTokenCookie())
+	if aerr != nil {
+		return respondErr(c, aerr)
 	}
 	return c.JSON(http.StatusOK, model.UserStatusResponse{
 		Data: model.UserStatus{

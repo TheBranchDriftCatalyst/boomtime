@@ -17,7 +17,7 @@ import (
 func (h *Handler) Heartbeat(c *echo.Context) error {
 	var hb model.HeartbeatPayload
 	if err := c.Bind(&hb); err != nil {
-		return respondErr(c, apierr.Generic())
+		return respondErr(c, apierr.BadRequest("Invalid request body"))
 	}
 	return h.storeAndRespond(c, []model.HeartbeatPayload{hb})
 }
@@ -26,25 +26,17 @@ func (h *Handler) Heartbeat(c *echo.Context) error {
 func (h *Handler) HeartbeatBulk(c *echo.Context) error {
 	var hbs []model.HeartbeatPayload
 	if err := c.Bind(&hbs); err != nil {
-		return respondErr(c, apierr.Generic())
+		return respondErr(c, apierr.BadRequest("Invalid request body"))
 	}
 	return h.storeAndRespond(c, hbs)
 }
 
 func (h *Handler) storeAndRespond(c *echo.Context, hbs []model.HeartbeatPayload) error {
-	tkn, aerr := tokenFromHeader(c)
+	_, owner, aerr := h.resolveUser(c)
 	if aerr != nil {
 		return respondErr(c, aerr)
 	}
 	ctx := c.Request().Context()
-
-	owner, ok, err := h.DB.GetUserByToken(ctx, tkn)
-	if err != nil {
-		return respondErr(c, apierr.Generic())
-	}
-	if !ok {
-		return respondErr(c, apierr.InvalidToken())
-	}
 
 	machine := headerPtr(c, "X-Machine-Name")
 
@@ -113,7 +105,7 @@ func (h *Handler) remoteWrite(hbs []model.HeartbeatPayload, machine *string) {
 	if machine != nil {
 		req.Header.Set("X-Machine-Name", *machine)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		h.Logger.Debug("remote write failed", "err", err)
 		return

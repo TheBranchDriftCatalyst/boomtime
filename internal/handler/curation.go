@@ -167,11 +167,3 @@ func (h *Handler) CurationAffected(c *echo.Context) error {
 	}
 	return c.JSON(http.StatusOK, map[string]any{"values": values, "truncated": truncated})
 }
-
-// invalidateOwnerCache drops all cached aggregation payloads for a user so hide/
-// rename changes take effect immediately.
-func (h *Handler) invalidateOwnerCache(owner string) {
-	if h.Cache != nil {
-		h.Cache.InvalidatePrefix(owner + "|")
-	}
-}

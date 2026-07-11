@@ -13,21 +13,21 @@ import (
 // This is the ONLY place a group/filter axis is turned into SQL — the raw client
 // value is never interpolated, so the whitelist is the injection guard. Reused by
 // both the group and rows endpoints (and reserved for future v2 remap/rename).
-var exploreColumns = map[string]string{
-	"day":       "time_sent::date",
-	"project":   "project",
-	"language":  "language",
-	"editor":    "editor",
-	"plugin":    "plugin",
-	"platform":  "platform",
-	"machine":   "machine",
-	"branch":    "branch",
-	"category":  "category",
-	"type":      "ty",
-	"entity":    "entity",
-	"isWrite":   "is_write",
-	"userAgent": "user_agent",
-}
+// It is a superset of the axis registry: every registry axis (raw column) plus
+// the audit-only axes below.
+var exploreColumns = func() map[string]string {
+	m := map[string]string{
+		"day":       "time_sent::date",
+		"type":      "ty",
+		"entity":    "entity",
+		"isWrite":   "is_write",
+		"userAgent": "user_agent",
+	}
+	for _, a := range axes {
+		m[a.name] = a.rawCol
+	}
+	return m
+}()
 
 // ExploreColumn returns the trusted SQL expression for a whitelisted axis name
 // and whether it is allowed. Exported for handler-side validation + tests.

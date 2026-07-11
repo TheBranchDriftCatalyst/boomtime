@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -101,10 +102,12 @@ func (d *DB) LoadMemberSets(ctx context.Context, spaceID int) (MemberSets, error
 // Per axis: exact values become one `col = ANY($n)` arm (bound as a text[] arg);
 // each regex becomes a `col ~ $n` arm. Axes are iterated in the deterministic
 // hiddenAxes order. All values are bound params (injection-safe); the axis -> column
-// mapping comes only from cols. Callers must guard with AnyMember() — an empty
-// MemberSets here returns no predicate (use spaceScopePredicate for the
-// match-nothing semantics).
-func inclusionPredicate(ms MemberSets, cols map[string]string, nextArg int, args []any) (string, []any, int) {
+// mapping comes only from cols. passCond, if non-empty, is a bypass condition ORed
+// in as the first arm (mirrors remapExpr's extraCond; leaderboards pass
+// `sender <> $req` so only the requester's own rows are restricted to the scope).
+// Callers must guard with AnyMember() — an empty MemberSets here returns no
+// predicate (use spaceScopePredicate for the match-nothing semantics).
+func inclusionPredicate(ms MemberSets, cols map[string]string, passCond string, nextArg int, args []any) (string, []any, int) {
 	var arms []string
 	for _, axis := range hiddenAxes { // deterministic order
 		a := ms.byAxis[axis]
@@ -126,33 +129,35 @@ func inclusionPredicate(ms MemberSets, cols map[string]string, nextArg int, args
 	if len(arms) == 0 {
 		return "", args, nextArg
 	}
-	sql := " AND ("
-	for i, arm := range arms {
-		if i > 0 {
-			sql += " OR "
-		}
-		sql += arm
+	inner := strings.Join(arms, " OR ")
+	if passCond != "" {
+		inner = passCond + " OR " + inner
 	}
-	sql += ")"
-	return sql, args, nextArg
+	return " AND (" + inner + ")", args, nextArg
 }
 
 // spaceScopePredicate returns the inclusion predicate to splice into an aggregation
 // query for a scoped (?space=) request. When a Space is requested but has no rules
 // (or none map onto cols), the scope must match NOTHING — it emits ` AND FALSE` so
 // a rule-less Space renders an empty dashboard, not the full unscoped one. When no
-// Space is requested it returns no predicate (the normal unscoped path).
-func spaceScopePredicate(ms MemberSets, cols map[string]string, nextArg int, args []any, spaceRequested bool) (string, []any, int) {
+// Space is requested it returns no predicate (the normal unscoped path). passCond
+// is forwarded to inclusionPredicate as a bypass arm; it also guards the
+// match-nothing case (` AND (passCond OR FALSE)`) so leaderboards keep other
+// users' rows even when the requester's scope matches nothing.
+func spaceScopePredicate(ms MemberSets, cols map[string]string, passCond string, nextArg int, args []any, spaceRequested bool) (string, []any, int) {
 	if !spaceRequested {
 		return "", args, nextArg
 	}
-	if !ms.AnyMember() {
-		return " AND FALSE", args, nextArg
+	var pred string
+	if ms.AnyMember() {
+		pred, args, nextArg = inclusionPredicate(ms, cols, passCond, nextArg, args)
 	}
-	pred, args, nextArg := inclusionPredicate(ms, cols, nextArg, args)
 	if pred == "" {
-		// Rules exist but none map onto this query's columns (e.g. an axis the
-		// pre-aggregated table lacks). The scope still can't include anything here.
+		// No rules, or rules exist but none map onto this query's columns (e.g. an
+		// axis the pre-aggregated table lacks). The scope can't include anything.
+		if passCond != "" {
+			return " AND (" + passCond + " OR FALSE)", args, nextArg
+		}
 		return " AND FALSE", args, nextArg
 	}
 	return pred, args, nextArg

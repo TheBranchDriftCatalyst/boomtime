@@ -50,7 +50,7 @@ func TestSourceHealthShape(t *testing.T) {
 	insert("e.go", recent, nil, &laptop)                           // NULL plugin -> excluded
 	insert("f.go", recent, &vimPlugin, nil)                        // NULL machine -> 'unknown'
 
-	got, err := d.SourceHealth(ctx, sender)
+	got, err := d.ListSourceHealth(ctx, sender)
 	if err != nil {
 		t.Fatal(err)
 	}

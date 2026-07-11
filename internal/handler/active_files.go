@@ -18,14 +18,10 @@ const (
 // excluded and rename rules are applied before the distinct-project count, so the
 // aggregate matches the dashboards.
 func (h *Handler) ActiveFiles(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	s, aerr := h.dashboardScope(c, 7)
 	if aerr != nil {
 		return respondErr(c, aerr)
 	}
-	ctx := c.Request().Context()
-	t0, t1 := defaultWeekRange(c)
-	limitMin := timeLimit(c)
-
 	limit := int(queryInt64(c, "limit", activeFilesDefaultLimit))
 	if limit < 1 {
 		limit = activeFilesDefaultLimit
@@ -34,21 +30,12 @@ func (h *Handler) ActiveFiles(c *echo.Context) error {
 		limit = activeFilesMaxLimit
 	}
 
-	spaceParam := c.QueryParam("space")
-	return h.cachedJSON(c, cacheKey(owner, "files", t0, t1, limitMin, limit, "space:"+spaceParam), func() (any, error) {
-		hidden, err := h.DB.LoadHiddenSets(ctx, owner)
+	return h.cachedJSON(c, s.cacheKey("files", s.t0, s.t1, s.limit, limit), func() (any, error) {
+		l, err := s.load(loadHidden | loadRenames)
 		if err != nil {
 			return nil, err
 		}
-		renames, err := h.DB.LoadRenameSets(ctx, owner)
-		if err != nil {
-			return nil, err
-		}
-		members, spaceRequested, err := h.loadSpace(ctx, spaceParam)
-		if err != nil {
-			return nil, err
-		}
-		rows, truncated, err := h.DB.GetActiveFiles(ctx, owner, t0, t1, limitMin, limit, hidden, renames, members, spaceRequested)
+		rows, truncated, err := h.DB.GetActiveFiles(s.ctx, s.owner, s.t0, s.t1, s.limit, limit, l.hidden, l.renames, l.members, l.spaceRequested)
 		if err != nil {
 			return nil, err
 		}

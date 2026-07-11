@@ -35,7 +35,7 @@ func (h *Handler) ListSpaces(c *echo.Context) error {
 	}
 	spaces, err := h.DB.ListSpaces(c.Request().Context(), owner)
 	if err != nil {
-		return respondErr(c, apierr.Generic())
+		return h.internalErr(c, "list spaces failed", err)
 	}
 	return c.JSON(http.StatusOK, map[string]any{"spaces": spaces})
 }
@@ -99,7 +99,7 @@ func (h *Handler) DeleteSpace(c *echo.Context) error {
 	}
 	n, err := h.DB.DeleteSpace(c.Request().Context(), owner, id)
 	if err != nil {
-		return respondErr(c, apierr.Generic())
+		return h.internalErr(c, "delete space failed", err)
 	}
 	if n == 0 {
 		return respondErr(c, apierr.New(http.StatusNotFound, "Space not found", nil))
@@ -121,7 +121,7 @@ func (h *Handler) GetSpace(c *echo.Context) error {
 	}
 	space, rules, err := h.DB.GetSpace(c.Request().Context(), owner, id)
 	if err != nil {
-		return respondErr(c, apierr.Generic())
+		return h.internalErr(c, "get space failed", err)
 	}
 	if space == nil {
 		return respondErr(c, apierr.New(http.StatusNotFound, "Space not found", nil))
@@ -165,7 +165,10 @@ func (h *Handler) AddSpaceRule(c *echo.Context) error {
 	}
 	rule, err := h.DB.AddSpaceRule(c.Request().Context(), owner, id, req.Axis, req.MatchValue, matchType)
 	if err != nil {
-		return respondErr(c, apierr.New(http.StatusBadRequest, err.Error(), nil))
+		// Fixed message only — the raw DB error (e.g. pg regex diagnostics) is
+		// logged, never sent to the client.
+		h.Logger.Error("add space rule failed", "err", err)
+		return respondErr(c, apierr.BadRequest("Could not add space rule (invalid pattern?)"))
 	}
 	if rule == nil {
 		return respondErr(c, apierr.New(http.StatusNotFound, "Space not found", nil))
