@@ -77,7 +77,7 @@ function seedSpaces() {
 }
 
 describe("useSpaceMembership", () => {
-  it("badges a value only via EXACT membership rules, not regex", async () => {
+  it("badges a value via EXACT and REGEX membership rules", async () => {
     seedSpaces();
     const qc = makeQC();
     const { result } = renderHook(() => useSpaceMembership(), {
@@ -92,14 +92,53 @@ describe("useSpaceMembership", () => {
     expect(result.current.getSpacesFor(node("project", "catalyst"))).toEqual([
       { spaceId: 1, spaceName: "Work", ruleId: 10 },
     ]);
-    // A value matched only by the regex rule is NOT badged.
-    expect(result.current.getSpacesFor(node("project", "exp-thing"))).toEqual([]);
+    // A value matched by the regex rule (^exp-) IS badged, via that rule.
+    expect(result.current.getSpacesFor(node("project", "exp-thing"))).toEqual([
+      { spaceId: 1, spaceName: "Work", ruleId: 11 },
+    ]);
+    // A value the regex does not match is not badged.
+    expect(result.current.getSpacesFor(node("project", "not-exp"))).toEqual([]);
     // Exact language rule -> Personal.
     expect(result.current.getSpacesFor(node("language", "Go"))).toEqual([
       { spaceId: 2, spaceName: "Personal", ruleId: 20 },
     ]);
     // A value in no space.
     expect(result.current.getSpacesFor(node("project", "other"))).toEqual([]);
+  });
+
+  it("shows one badge per Space when a value matches both an exact and a regex rule", async () => {
+    // "Work" gets an extra regex rule (^catalyst) that also matches "catalyst",
+    // which already has the exact rule (id 10). The badge must not duplicate.
+    server.use(
+      http.get("/api/v1/users/current/spaces", () =>
+        HttpResponse.json({
+          spaces: [{ id: 1, name: "Work", position: 0, ruleCount: 3 }],
+        }),
+      ),
+      http.get("/api/v1/users/current/spaces/1", () =>
+        HttpResponse.json({
+          id: 1,
+          name: "Work",
+          position: 0,
+          rules: [
+            { id: 10, axis: "project", matchValue: "catalyst", matchType: "exact" },
+            { id: 12, axis: "project", matchValue: "^catalyst", matchType: "regex" },
+            // An unparseable pattern must be skipped, not throw.
+            { id: 13, axis: "project", matchValue: "(", matchType: "regex" },
+          ],
+        }),
+      ),
+    );
+    const qc = makeQC();
+    const { result } = renderHook(() => useSpaceMembership(), {
+      wrapper: wrapper(qc),
+    });
+    await waitFor(() => expect(result.current.spaceOptions).toHaveLength(1));
+
+    // Matched by both the exact and the regex rule -> exactly one badge.
+    expect(result.current.getSpacesFor(node("project", "catalyst"))).toEqual([
+      { spaceId: 1, spaceName: "Work", ruleId: 10 },
+    ]);
   });
 
   it("gates add-to-Space to concrete values on curatable axes", async () => {
