@@ -20,6 +20,7 @@ import {
 } from "@/features/heartbeats/rows/explorerRowContext";
 import { useLeafSort } from "@/features/heartbeats/useLeafSort";
 import { useSuppression } from "@/features/heartbeats/useSuppression";
+import { useSpaceMembership } from "@/features/heartbeats/useSpaceMembership";
 import { cn } from "@/lib/utils";
 import type {
   ExplorerNode,
@@ -99,6 +100,11 @@ export function HeartbeatExplorerTable({ ctrl, mode, onRename }: Props) {
   const { getSuppressInfo, getRenamedTo, toggleSuppress, suppressBusy } =
     useSuppression();
 
+  // Space membership: badges for the Spaces a value already belongs to + an
+  // "add to Space" action (both driven by exact Space membership rules).
+  const { spaceOptions, getSpacesFor, canAddToSpace, addToSpace, spaceBusy } =
+    useSpaceMembership();
+
   const visibleLeafCols = useMemo(
     () => LEAF_COLUMNS.filter((c) => columnVisibility[c.id] !== false),
     [columnVisibility],
@@ -111,9 +117,26 @@ export function HeartbeatExplorerTable({ ctrl, mode, onRename }: Props) {
       suppressBusy,
       getRenamedTo,
       onRename,
+      getSpacesFor,
+      canAddToSpace,
+      spaceOptions,
+      addToSpace,
+      spaceBusy,
       visibleLeafColIds: visibleLeafCols.map((c) => c.id),
     }),
-    [getSuppressInfo, toggleSuppress, suppressBusy, getRenamedTo, onRename, visibleLeafCols],
+    [
+      getSuppressInfo,
+      toggleSuppress,
+      suppressBusy,
+      getRenamedTo,
+      onRename,
+      getSpacesFor,
+      canAddToSpace,
+      spaceOptions,
+      addToSpace,
+      spaceBusy,
+      visibleLeafCols,
+    ],
   );
 
   return (
