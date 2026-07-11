@@ -153,6 +153,11 @@ export interface ProjectStatistics {
   hour: ResourceStats[];
   languagesCount: number;
   filesCount: number;
+  // Per-day-per-language matrix for the SAME top-N (+ "Other (N more)") set as
+  // `languages`, each `daily` aligned index-for-index to `dailyTotal`. Summing
+  // across series for a day equals dailyTotal[day]. Powers the language-stacked
+  // "Total activity" column. Optional so the UI degrades until the backend lands.
+  languagesDaily?: { name: string; daily: number[] }[];
   // Authoring/reading + branch/breadth fields the backend agent is adding.
   // Optional so the UI compiles and degrades gracefully until they land.
   // TODO verify keys against backend report.

@@ -86,6 +86,14 @@ type ResourceStats struct {
 	PctDaily     []float64 `json:"pctDaily"`     // pPctDaily
 }
 
+// LanguageDaily is one language's per-day coding-time series (seconds), aligned
+// index-for-index to a ProjectStatistics.DailyTotal day axis. Name mirrors the
+// matching Languages entry (incl. the "Other (N more)" bucket).
+type LanguageDaily struct {
+	Name  string  `json:"name"`
+	Daily []int64 `json:"daily"`
+}
+
 // StatsPayload is GET /api/v1/users/current/stats (StatsPayload, default options).
 type StatsPayload struct {
 	StartDate    time.Time       `json:"startDate"`
@@ -223,7 +231,13 @@ type ProjectStatistics struct {
 	TotalSeconds int64           `json:"totalSeconds"`
 	DailyTotal   []int64         `json:"dailyTotal"`
 	Languages    []ResourceStats `json:"languages"`
-	Files        []ResourceStats `json:"files"`
+	// LanguagesDaily is the per-day-per-language matrix for the SAME top-N (+
+	// "Other (N more)") set as Languages, each series aligned index-for-index to
+	// DailyTotal's day axis. Invariant: summing daily across all series for a
+	// given day equals DailyTotal[day]. Powers the language-stacked "Total
+	// activity" column chart. Additive/backward-compatible.
+	LanguagesDaily []LanguageDaily `json:"languagesDaily"`
+	Files          []ResourceStats `json:"files"`
 	WeekDay      []ResourceStats `json:"weekDay"`
 	Hour         []ResourceStats `json:"hour"`
 	// True distinct counts (languages/files lists are capped to top-N + "Other").

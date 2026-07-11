@@ -31,6 +31,7 @@ import { Combobox } from "@/components/ui/combobox";
 import { CommitListModal } from "@/modals/CommitListModal";
 import { useTimeRange } from "@/hooks/useTimeRange";
 import { api } from "@/lib/api";
+import { CHART_COLORS } from "@/lib/config";
 import { daysBetween, secondsToHms } from "@/lib/utils";
 import { mostActive as topByName } from "@/lib/mostActive";
 import { bucketAvg, bucketDates, bucketGroups, bucketSum } from "@/viz/bucket";
@@ -110,6 +111,35 @@ export function Projects() {
     () => bucketSum(groups, stats?.dailyTotal ?? []),
     [groups, stats],
   );
+
+  // Stacked-column series for the project "Total activity", stacked by language.
+  // Buckets each language's per-day series with the SAME bucketSum/bucketGroups
+  // as chartDailyTotal so the x-axis aligns and All-time stays bounded, and per-
+  // day column sums still equal chartDailyTotal. Colors are keyed to the SAME
+  // scale the Language pie uses: PieChart colors stats.languages (filtered to
+  // >=60s) by index into CHART_COLORS, so we replay that indexing to build a
+  // name -> color map, and the pie and stacked bars agree.
+  const languageColumnSeries = useMemo(() => {
+    const langsDaily = stats?.languagesDaily;
+    if (!langsDaily || langsDaily.length === 0) return [];
+    // Mirror PieChart's coloring: same >=60s filter, same order as stats.languages.
+    const colorByName = new Map<string, string>();
+    (stats?.languages ?? [])
+      .filter((l) => l.totalSeconds >= 60)
+      .forEach((l, i) => {
+        colorByName.set(l.name, CHART_COLORS[i % CHART_COLORS.length]);
+      });
+    return langsDaily
+      .map((ld, i) => ({
+        name: ld.name,
+        values: bucketSum(groups, ld.daily),
+        // Fall back to the by-index color (matches the pie's positional palette)
+        // for names the pie filtered out (<60s), so every segment stays colored.
+        color:
+          colorByName.get(ld.name) ?? CHART_COLORS[i % CHART_COLORS.length],
+      }))
+      .filter((s) => s.values.some((v) => v > 0));
+  }, [groups, stats]);
 
   // Bucketed series for the viz-council Projects charts. Ratio + entities are
   // averaged over each bucket (summing daily distinct counts would double-count
@@ -296,11 +326,19 @@ export function Projects() {
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
               <div className="lg:col-span-2">
                 <ChartCard title="Total activity">
-                  <ColumnChart
-                    dates={chartDates}
-                    values={chartDailyTotal}
-                    seriesName={detailHeading}
-                  />
+                  {languageColumnSeries.length > 0 ? (
+                    <ColumnChart
+                      dates={chartDates}
+                      series={languageColumnSeries}
+                      seriesName={detailHeading}
+                    />
+                  ) : (
+                    <ColumnChart
+                      dates={chartDates}
+                      values={chartDailyTotal}
+                      seriesName={detailHeading}
+                    />
+                  )}
                 </ChartCard>
               </div>
               <ChartCard title="Language breakdown">

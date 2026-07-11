@@ -219,3 +219,106 @@ func TestProjectFilesExcludesNonFileEntities(t *testing.T) {
 		t.Fatal("languages breakdown should still include 'Other' from the domain/app rows")
 	}
 }
+
+// TestProjectLanguagesDailySumsToDailyTotal is the core invariant for the
+// language-stacked "Total activity" column: summing LanguagesDaily across every
+// language for a given day must equal DailyTotal[day], every series must align
+// to DailyTotal's length, and the set of series names must exactly match the
+// (top-N + "Other") Languages breakdown.
+func TestProjectLanguagesDailySumsToDailyTotal(t *testing.T) {
+	d1 := day(2025, 5, 1)
+	d2 := day(2025, 5, 2)
+	d3 := day(2025, 5, 3)
+	xs := []db.ProjectStatRow{
+		{Day: d1, Language: "Go", Entity: "a.go", Ty: "file", TotalSeconds: 100, Weekday: "4", Hour: "10"},
+		{Day: d1, Language: "TypeScript", Entity: "app.ts", Ty: "file", TotalSeconds: 40, Weekday: "4", Hour: "10"},
+		// d2 has only TypeScript.
+		{Day: d2, Language: "TypeScript", Entity: "app.ts", Ty: "file", TotalSeconds: 60, Weekday: "5", Hour: "11"},
+		// d3 has Go + a browsing "Other" (still counts toward totals).
+		{Day: d3, Language: "Go", Entity: "b.go", Ty: "file", TotalSeconds: 30, Weekday: "6", Hour: "12"},
+		{Day: d3, Language: "Other", Entity: "github.com", Ty: "domain", TotalSeconds: 20, Weekday: "6", Hour: "12"},
+	}
+
+	p := ToProjectStatistics(d1, d3, xs, nil)
+
+	n := len(p.DailyTotal)
+	if n != 3 {
+		t.Fatalf("DailyTotal len = %d, want 3", n)
+	}
+	if len(p.LanguagesDaily) == 0 {
+		t.Fatal("LanguagesDaily is empty")
+	}
+
+	// Names must match the Languages breakdown exactly (same order / same set,
+	// including any "Other (N more)" bucket).
+	if len(p.LanguagesDaily) != len(p.Languages) {
+		t.Fatalf("LanguagesDaily len %d != Languages len %d", len(p.LanguagesDaily), len(p.Languages))
+	}
+	for i := range p.Languages {
+		if p.LanguagesDaily[i].Name != p.Languages[i].Name {
+			t.Fatalf("LanguagesDaily[%d].Name=%q != Languages[%d].Name=%q",
+				i, p.LanguagesDaily[i].Name, i, p.Languages[i].Name)
+		}
+		if len(p.LanguagesDaily[i].Daily) != n {
+			t.Fatalf("LanguagesDaily[%d] len = %d, want %d (aligned to DailyTotal)",
+				i, len(p.LanguagesDaily[i].Daily), n)
+		}
+	}
+
+	// The stacked-column invariant: per-day sum over languages == DailyTotal[day].
+	for di := 0; di < n; di++ {
+		var s int64
+		for _, ld := range p.LanguagesDaily {
+			s += ld.Daily[di]
+		}
+		if s != p.DailyTotal[di] {
+			t.Fatalf("day %d: sum(LanguagesDaily)=%d != DailyTotal=%d", di, s, p.DailyTotal[di])
+		}
+	}
+}
+
+// TestProjectLanguagesDailyTopNBucketing verifies that with more than resourceTopN
+// languages the matrix caps to the same top-N + "Other (N more)" set as Languages,
+// and the grand total across every series still equals the sum of DailyTotal.
+func TestProjectLanguagesDailyTopNBucketing(t *testing.T) {
+	d1 := day(2025, 5, 1)
+	// resourceTopN+3 distinct languages; language i has i+1 seconds on d1.
+	var xs []db.ProjectStatRow
+	numLangs := resourceTopN + 3
+	var grand int64
+	for i := 0; i < numLangs; i++ {
+		secs := int64(i + 1)
+		grand += secs
+		xs = append(xs, db.ProjectStatRow{
+			Day:          d1,
+			Language:     fmt.Sprintf("lang-%02d", i),
+			Entity:       fmt.Sprintf("f%02d.x", i),
+			Ty:           "file",
+			TotalSeconds: secs,
+			Weekday:      "4",
+			Hour:         "10",
+		})
+	}
+
+	p := ToProjectStatistics(d1, d1, xs, nil)
+
+	// Capped to top-N + one "Other (N more)" bucket.
+	if len(p.LanguagesDaily) != resourceTopN+1 {
+		t.Fatalf("LanguagesDaily len = %d, want %d (top-N + Other)", len(p.LanguagesDaily), resourceTopN+1)
+	}
+	if got := p.LanguagesDaily[len(p.LanguagesDaily)-1].Name; got != fmt.Sprintf("Other (%d more)", numLangs-resourceTopN) {
+		t.Fatalf("last series name = %q, want Other bucket", got)
+	}
+
+	// Sum across every series on d1 equals the grand total (nothing dropped).
+	var s int64
+	for _, ld := range p.LanguagesDaily {
+		s += ld.Daily[0]
+	}
+	if s != grand {
+		t.Fatalf("sum(LanguagesDaily[d1]) = %d, want %d", s, grand)
+	}
+	if s != p.DailyTotal[0] {
+		t.Fatalf("sum(LanguagesDaily[d1]) = %d != DailyTotal[0] = %d", s, p.DailyTotal[0])
+	}
+}

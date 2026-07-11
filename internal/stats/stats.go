@@ -549,6 +549,10 @@ func ToProjectStatistics(t0, t1 time.Time, xs []db.ProjectStatRow, extras *db.Pr
 		dailyTotal[i] = s
 	}
 	languages := segmentProj(byDate, func(r db.ProjectStatRow) string { return r.Language })
+	// Cap to top-N + "Other (N more)" ONCE, then reuse the same list for both the
+	// Languages breakdown and the per-day LanguagesDaily matrix so their day
+	// arrays (and the front-end colors keyed by list order) stay in lockstep.
+	cappedLanguages := capWithOther(languages)
 	// "Most active files" must contain only real file entities — exclude browsing
 	// domains/apps (ty='domain'/'app'/'url') so github.com / https://… never show
 	// up as files. Other segments (languages/weekDay/hour/dailyTotal/total) still
@@ -565,7 +569,8 @@ func ToProjectStatistics(t0, t1 time.Time, xs []db.ProjectStatRow, extras *db.Pr
 		LanguagesCount: len(languages),
 		FilesCount:     len(files),
 		EntitiesCount:  len(files), // distinct files == distinct entities (same set)
-		Languages:      capWithOther(languages),
+		Languages:      cappedLanguages,
+		LanguagesDaily: languagesDaily(cappedLanguages),
 		Files:          capWithOther(files),
 		// WeekDay (7) and Hour (24) are already bounded.
 		WeekDay: segmentProj(byDate, func(r db.ProjectStatRow) string { return r.Weekday }),
@@ -580,6 +585,20 @@ func ToProjectStatistics(t0, t1 time.Time, xs []db.ProjectStatRow, extras *db.Pr
 		alignedDays = alignedDays[:len(byDate)]
 	}
 	applyProjectExtras(&out, alignedDays, extras)
+	return out
+}
+
+// languagesDaily projects the already-capped (top-N + "Other") language list
+// into the per-day-per-language matrix used by the stacked "Total activity"
+// column chart. Each series' Daily copies the language's TotalDaily, so it stays
+// aligned to DailyTotal's day axis and the per-day column sum equals DailyTotal.
+func languagesDaily(languages []model.ResourceStats) []model.LanguageDaily {
+	out := make([]model.LanguageDaily, 0, len(languages))
+	for _, l := range languages {
+		daily := make([]int64, len(l.TotalDaily))
+		copy(daily, l.TotalDaily)
+		out = append(out, model.LanguageDaily{Name: l.Name, Daily: daily})
+	}
 	return out
 }
 
