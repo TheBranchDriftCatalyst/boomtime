@@ -81,6 +81,14 @@ func getEnvBool(key string, def bool) bool {
 
 // Load reads configuration from the environment, applying hakatime's defaults.
 func Load() *Config {
+	env := getEnv("BOOM_ENV", "prod")
+	dev := env == "dev"
+	// In dev, default the DB query tracer + slow-query EXPLAIN on so they're
+	// visible in the Logs tab; both remain overridable via their BOOM_DB_* vars.
+	explainSlowDefault := 0
+	if dev {
+		explainSlowDefault = 250
+	}
 	c := &Config{
 		Port:               getEnvInt("BOOM_PORT", 8080),
 		APIPrefix:          getEnv("BOOM_API_PREFIX", ""),
@@ -90,20 +98,20 @@ func Load() *Config {
 		EnableRegistration: getEnvBool("BOOM_ENABLE_REGISTRATION", true),
 		SessionExpiry:      int64(getEnvInt("BOOM_SESSION_EXPIRY", 24)),
 		LogLevel:           getEnv("BOOM_LOG_LEVEL", "info"),
-		Env:                getEnv("BOOM_ENV", "prod"),
+		Env:                env,
 		HTTPLog:            getEnvBool("BOOM_HTTP_LOG", true),
 
 		DBHost: getEnv("BOOM_DB_HOST", "localhost"),
 		DBPort: getEnvInt("BOOM_DB_PORT", 5432),
-		DBName: getEnv("BOOM_DB_NAME", "test"),
+		DBName: getEnv("BOOM_DB_NAME", "boomtime"),
 		DBUser: getEnv("BOOM_DB_USER", "test"),
 		DBPass: getEnv("BOOM_DB_PASS", "test"),
 
-		DBLogQueries:    getEnvBool("BOOM_DB_LOG_QUERIES", false),
+		DBLogQueries:    getEnvBool("BOOM_DB_LOG_QUERIES", dev),
 		DBLogArgs:       getEnvBool("BOOM_DB_LOG_ARGS", false),
 		DBN1Threshold:   getEnvInt("BOOM_DB_N1_THRESHOLD", 20),
 		DBN1DupThresh:   getEnvInt("BOOM_DB_N1_DUP_THRESHOLD", 10),
-		DBExplainSlowMs: getEnvInt("BOOM_DB_EXPLAIN_SLOW_MS", 0),
+		DBExplainSlowMs: getEnvInt("BOOM_DB_EXPLAIN_SLOW_MS", explainSlowDefault),
 
 		GithubToken: getEnv("GITHUB_TOKEN", ""),
 	}
