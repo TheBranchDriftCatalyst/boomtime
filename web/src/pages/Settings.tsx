@@ -390,6 +390,20 @@ function RemappingRow({
         ? "capture"
         : null;
 
+  // All hooks must run before any conditional return (Rules of Hooks) — the
+  // edit-mode early return lives below these, not above them.
+  const affected = useQuery({
+    queryKey: ["curation-affected", rule.id],
+    queryFn: () => api.getCurationRuleAffected(rule.id),
+    enabled: open,
+    staleTime: 30_000,
+  });
+
+  const total = useMemo(
+    () => (affected.data?.values ?? []).reduce((s, v) => s + v.count, 0),
+    [affected.data],
+  );
+
   if (editing) {
     // Inline-expand the row into a pre-filled edit form. Template targets are
     // stored with backend `\N` backrefs; convert to the authoring `$N` form.
@@ -411,18 +425,6 @@ function RemappingRow({
       />
     );
   }
-
-  const affected = useQuery({
-    queryKey: ["curation-affected", rule.id],
-    queryFn: () => api.getCurationRuleAffected(rule.id),
-    enabled: open,
-    staleTime: 30_000,
-  });
-
-  const total = useMemo(
-    () => (affected.data?.values ?? []).reduce((s, v) => s + v.count, 0),
-    [affected.data],
-  );
 
   return (
     <div className="rounded-md border bg-secondary/40 text-sm">
