@@ -7,7 +7,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ImportStateBadge } from "@/components/import/ImportStateBadge";
+import { ImportStateBadge } from "@/features/import/ImportStateBadge";
 import { cn, formatElapsed } from "@/lib/utils";
 import type { ImportJob } from "@/types/api";
 

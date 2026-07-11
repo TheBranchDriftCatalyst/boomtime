@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
-import { Spinner } from "@/components/Spinner";
+import { QueryGate } from "@/components/QueryGate";
 import { PageToolbar } from "@/components/toolbar/PageToolbar";
 import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/table";
 import { useTimeRange } from "@/hooks/useTimeRange";
 import { api } from "@/lib/api";
+import { qk } from "@/lib/queryKeys";
 import { secondsToHms } from "@/lib/utils";
 import type { LeaderboardEntry } from "@/types/api";
 
@@ -55,7 +56,7 @@ export function Leaderboards() {
   const [lang, setLang] = useState<string | null>(null);
 
   const query = useQuery({
-    queryKey: ["leaderboards", tr.startISO, tr.endISO],
+    queryKey: qk.leaderboards(tr.startISO, tr.endISO),
     queryFn: () => api.getLeaderboards({ start: tr.startISO, end: tr.endISO }),
   });
 
@@ -79,9 +80,8 @@ export function Leaderboards() {
         />
       </PageToolbar>
 
-      {query.isLoading || !data ? (
-        <Spinner />
-      ) : (
+      <QueryGate query={query} errorMessage="Failed to load leaderboards.">
+        {(data) => (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <Card>
             <CardHeader>
@@ -123,7 +123,8 @@ export function Leaderboards() {
             </CardContent>
           </Card>
         </div>
-      )}
+        )}
+      </QueryGate>
     </div>
   );
 }

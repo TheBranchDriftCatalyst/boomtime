@@ -1,6 +1,6 @@
 // Typed fetch client for every backend endpoint. All key/URL/shape tweaks live
 // here or in src/types/api.ts so backend key changes are one-line edits.
-import { authStore } from "@/lib/auth";
+import { authStore } from "@/features/auth/auth";
 import type {
   AuthResponse,
   BadgeLinkPayload,
@@ -11,21 +11,20 @@ import type {
   DerivedStatus,
   AddCurationRuleBody,
   AddCurationRulePayload,
-  CrossProjectFilesPayload,
+  CrossProjectFile,
   CurationAffectedPayload,
-  CurationRulesPayload,
+  CurationRule,
   CancelImportPayload,
   HeartbeatAxis,
   HeartbeatFilters,
   HeartbeatGroupPayload,
   HeartbeatListPayload,
   LatestHeartbeatPayload,
-  SourceHealthPayload,
+  SourceHealth,
   ImportConfigPayload,
-  ImportJobDetailPayload,
-  ImportJobsListPayload,
+  ImportJob,
+  ImportLogLine,
   ImportRequest,
-  ImportStatusPayload,
   SubmitImportResponse,
   WakatimeRangePayload,
   LeaderboardEntry,
@@ -38,7 +37,6 @@ import type {
   SessionsPayload,
   StatsParams,
   StatsPayload,
-  StatusBarPayload,
   StoredApiToken,
   Space,
   SpaceDetail,
@@ -46,7 +44,6 @@ import type {
   AddSpaceRuleBody,
   SpaceMatchType,
   SpacePreview,
-  ServerLogsPayload,
   TimelinePayload,
   TimelineRange,
 } from "@/types/api";
@@ -121,6 +118,27 @@ async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
   return data as T;
 }
 
+// Several backend GETs wrap their result in a single-key envelope
+// ({ rules: [...] }, { jobs: [...] }, { spaces: [...] }, …). `unwrap` fetches
+// and returns the bare value (Style A: unwrap at the client boundary) so
+// consumers never see the envelope, falling back when the key is absent.
+async function unwrap<T>(path: string, key: string, fallback: T): Promise<T> {
+  const raw = await request<Record<string, T | undefined>>(path);
+  return raw?.[key] ?? fallback;
+}
+
+// Envelopes that carry a meaningful second field stay wrapped (they are
+// composite payloads, not single-key envelopes), but their types live here.
+interface ImportJobDetailPayload {
+  job: ImportJob;
+  logs: ImportLogLine[];
+}
+
+interface CrossProjectFilesPayload {
+  files: CrossProjectFile[];
+  truncated?: boolean;
+}
+
 // --- Auth --------------------------------------------------------------------
 
 export const api = {
@@ -184,23 +202,12 @@ export const api = {
     request<StatsPayload>("/api/v1/users/current/stats", { params }),
 
   // Top files across ALL projects (with the # of distinct projects each touches).
-  getCrossProjectFiles: (params: {
-    start: string;
-    end: string;
-    timeLimit?: number;
-    limit?: number;
-    space?: string | number;
-  }) =>
+  getCrossProjectFiles: (params: StatsParams & { limit?: number }) =>
     request<CrossProjectFilesPayload>("/api/v1/users/current/files", { params }),
 
   // Backend emits hakatime's raw TimelinePayload: { timelineLangs: { lang:
   // [{ tName, tRangeStart, tRangeEnd }] } }. Normalize to { langs: {...} }.
-  getTimeline: async (params: {
-    start: string;
-    end: string;
-    timeLimit?: number;
-    space?: string | number;
-  }): Promise<TimelinePayload> => {
+  getTimeline: async (params: StatsParams): Promise<TimelinePayload> => {
     const raw = await request<{
       timelineLangs: Record<
         string,
@@ -218,37 +225,19 @@ export const api = {
     return { langs };
   },
 
-  getStatusBar: () =>
-    request<StatusBarPayload>("/api/v1/users/current/statusbar/today"),
-
   // --- Council "big-bet" analytics -------------------------------------------
 
-  getPunchcard: (params: {
-    start: string;
-    end: string;
-    timeLimit?: number;
-    space?: string | number;
-  }) =>
+  getPunchcard: (params: StatsParams) =>
     request<PunchcardPayload>("/api/v1/users/current/stats/punchcard", {
       params,
     }),
 
-  getSessions: (params: {
-    start: string;
-    end: string;
-    timeLimit?: number;
-    space?: string | number;
-  }) =>
+  getSessions: (params: StatsParams) =>
     request<SessionsPayload>("/api/v1/users/current/stats/sessions", {
       params,
     }),
 
-  getMomentum: (params: {
-    start: string;
-    end: string;
-    top?: number;
-    space?: string | number;
-  }) =>
+  getMomentum: (params: RangeParams & { top?: number }) =>
     request<MomentumPayload>("/api/v1/users/current/stats/momentum", {
       params,
     }),
@@ -299,11 +288,9 @@ export const api = {
   submitImport: (body: ImportRequest) =>
     request<SubmitImportResponse>("/import", { method: "POST", body }),
 
-  checkImportStatus: (body: ImportRequest) =>
-    request<ImportStatusPayload>("/import/status", { method: "POST", body }),
-
-  // First-class import jobs.
-  getImportJobs: () => request<ImportJobsListPayload>("/import/jobs"),
+  // First-class import jobs. The backend wraps the list in { jobs: [...] };
+  // unwrap to a bare ImportJob[].
+  getImportJobs: () => unwrap<ImportJob[]>("/import/jobs", "jobs", []),
 
   getImportJob: (id: number) =>
     request<ImportJobDetailPayload>(`/import/jobs/${id}`),
@@ -313,17 +300,14 @@ export const api = {
       method: "POST",
     }),
 
-  // --- Server process logs (Logs tab REST tail fallback) ---------------------
-
-  getServerLogs: (afterId = 0) =>
-    request<ServerLogsPayload>("/api/v1/logs", { params: { afterId } }),
-
   // --- Derived-data health (gap_seconds + rollup) ----------------------------
 
   // --- Source health (ingestion / "is my plugin still reporting" view) -------
 
+  // Backend wraps the list in { sources: [...] }; unwrap to a bare
+  // SourceHealth[].
   getSourceHealth: () =>
-    request<SourceHealthPayload>("/api/v1/users/current/sources/health"),
+    unwrap<SourceHealth[]>("/api/v1/users/current/sources/health", "sources", []),
 
   getDerivedStatus: () =>
     request<DerivedStatus>("/api/v1/users/current/derived/status"),
@@ -393,8 +377,9 @@ export const api = {
 
   // --- Data curation ---------------------------------------------------------
 
+  // Backend wraps the list in { rules: [...] }; unwrap to a bare CurationRule[].
   getCurationRules: () =>
-    request<CurationRulesPayload>("/api/v1/users/current/curation"),
+    unwrap<CurationRule[]>("/api/v1/users/current/curation", "rules", []),
 
   addCurationRule: (body: AddCurationRuleBody) =>
     request<AddCurationRulePayload>("/api/v1/users/current/curation", {
@@ -417,12 +402,7 @@ export const api = {
 
   // Backend wraps the list in { spaces: [...] } (curation convention); unwrap
   // so the public shape stays a bare Space[].
-  getSpaces: async (): Promise<Space[]> => {
-    const raw = await request<{ spaces: Space[] }>(
-      "/api/v1/users/current/spaces",
-    );
-    return raw.spaces ?? [];
-  },
+  getSpaces: () => unwrap<Space[]>("/api/v1/users/current/spaces", "spaces", []),
 
   getSpace: (id: number | string) =>
     request<SpaceDetail>(`/api/v1/users/current/spaces/${id}`),

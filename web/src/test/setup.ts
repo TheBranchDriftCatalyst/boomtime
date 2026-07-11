@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { afterAll, afterEach, beforeAll, beforeEach } from "vitest";
 import { cleanup } from "@testing-library/react";
 import { server } from "@/test/msw/server";
-import { authStore } from "@/lib/auth";
+import { authStore } from "@/features/auth/auth";
 
 // --- msw lifecycle -----------------------------------------------------------
 beforeAll(() =>

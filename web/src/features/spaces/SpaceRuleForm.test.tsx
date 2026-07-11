@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { SpaceRuleForm } from "@/components/spaces/SpaceRuleForm";
+import { SpaceRuleForm } from "@/features/spaces/SpaceRuleForm";
 import { renderWithProviders } from "@/test/renderWithProviders";
 import { server } from "@/test/msw/server";
 import { http, HttpResponse } from "@/test/msw/handlers";

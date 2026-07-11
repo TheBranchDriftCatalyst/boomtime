@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useCurationMutations } from "@/hooks/useCuration";
+import { useCurationMutations } from "@/features/curation/useCuration";
 import { server } from "@/test/msw/server";
 import { http, HttpResponse } from "@/test/msw/handlers";
 
@@ -13,11 +13,15 @@ const EXPECTED_KEYS = [
   ["project-stats"],
   ["projects"],
   ["leaderboards"],
-  ["heartbeats-group"],
-  ["heartbeats-list"],
+  ["timeline"],
+  ["punchcard"],
+  ["sessions"],
+  ["momentum"],
+  ["cross-project-files"],
   ["hb-explore-group"],
   ["hb-explore-list"],
   ["derived-status"],
+  ["axis-values"],
 ];
 
 function wrapper(qc: QueryClient) {
@@ -74,6 +78,12 @@ describe("useCurationMutations invalidation (P0)", () => {
 
     result.current.remove.mutate(1);
     await waitFor(() => expect(result.current.remove.isSuccess).toBe(true));
-    expect(spy).toHaveBeenCalledTimes(EXPECTED_KEYS.length);
+
+    // Removing a rule also invalidates the affected-heartbeats previews.
+    const invalidatedKeys = spy.mock.calls.map((c) => c[0]?.queryKey);
+    for (const key of [...EXPECTED_KEYS, ["curation-affected"]]) {
+      expect(invalidatedKeys).toContainEqual(key);
+    }
+    expect(spy).toHaveBeenCalledTimes(EXPECTED_KEYS.length + 1);
   });
 });

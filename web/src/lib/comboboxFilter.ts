@@ -1,7 +1,7 @@
 // Pure filter/creatable logic for the Combobox, extracted so it can be unit
 // tested without rendering. The component re-uses these directly.
 
-export interface FilterableOption {
+interface FilterableOption {
   value: string;
 }
 

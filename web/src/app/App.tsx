@@ -1,18 +1,18 @@
 import { Navigate, Route, Routes } from "react-router";
-import { AppShell } from "@/components/AppShell";
-import { ProtectedRoute } from "@/components/ProtectedRoute";
-import { useAuth } from "@/hooks/useAuth";
+import { AppShell } from "@/layout/AppShell";
+import { ProtectedRoute } from "@/app/ProtectedRoute";
+import { useAuth } from "@/features/auth/useAuth";
 import { Spinner } from "@/components/Spinner";
-import { Heartbeats } from "@/pages/Heartbeats";
-import { Import } from "@/pages/Import";
-import { Leaderboards } from "@/pages/Leaderboards";
-import { Logs } from "@/pages/Logs";
-import { Login } from "@/pages/Login";
-import { Overview } from "@/pages/Overview";
-import { Projects } from "@/pages/Projects";
-import { Register } from "@/pages/Register";
-import { Settings } from "@/pages/Settings";
-import { SpaceView } from "@/pages/SpaceView";
+import { Heartbeats } from "@/features/heartbeats/Heartbeats";
+import { Import } from "@/features/import/Import";
+import { Leaderboards } from "@/features/leaderboards/Leaderboards";
+import { Logs } from "@/features/logs/Logs";
+import { Login } from "@/features/auth/Login";
+import { Overview } from "@/features/overview/Overview";
+import { Projects } from "@/features/projects/Projects";
+import { Register } from "@/features/auth/Register";
+import { Settings } from "@/features/curation/Settings";
+import { SpaceView } from "@/features/spaces/SpaceView";
 
 function RootRedirect() {
   const { isLoggedIn, bootstrapping } = useAuth();

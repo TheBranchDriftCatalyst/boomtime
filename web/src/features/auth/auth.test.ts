@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { authStore } from "@/lib/auth";
+import { authStore } from "@/features/auth/auth";
 import { authResponse } from "@/test/factories";
 
 // authStore is reset between tests by src/test/setup.ts (authStore.clear()).

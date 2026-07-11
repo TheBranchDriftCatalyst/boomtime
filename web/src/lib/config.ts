@@ -20,11 +20,6 @@ export const CHART_COLORS = [
   "#ff3caa", // magenta rose
 ];
 
-export const NO_DATA = {
-  text: "No data available",
-  style: { fontSize: "16px" },
-};
-
 // Date-range presets (in days) shown in the toolbar.
 export const DATE_RANGE_PRESETS = [7, 15, 30, 60];
 

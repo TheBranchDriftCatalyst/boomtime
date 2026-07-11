@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { RemappingForm } from "@/components/curation/RemappingForm";
+import { RemappingForm } from "@/features/curation/RemappingForm";
 import { renderWithProviders } from "@/test/renderWithProviders";
 import { server } from "@/test/msw/server";
 import { http, HttpResponse } from "@/test/msw/handlers";

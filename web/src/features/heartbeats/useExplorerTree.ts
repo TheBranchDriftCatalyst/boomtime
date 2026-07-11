@@ -1,20 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { qk } from "@/lib/queryKeys";
 import type {
   HeartbeatAxis,
   HeartbeatFilters,
   HeartbeatGroupPayload,
   HeartbeatListPayload,
 } from "@/types/api";
-import { LEAF_PAGE_SIZE } from "@/components/heartbeats/axes";
+import { LEAF_PAGE_SIZE } from "@/features/heartbeats/axes";
 import {
   groupNodeId,
   type ExplorerNode,
   type GroupNode,
   type LeafGroupNode,
   type LeafRowNode,
-} from "@/components/heartbeats/explorerModel";
+} from "@/features/heartbeats/explorerModel";
 
 interface Params {
   axes: HeartbeatAxis[];
@@ -24,7 +25,7 @@ interface Params {
   entity: string;
 }
 
-interface ChildState {
+export interface ChildState {
   loading: boolean;
   error: boolean;
   children?: ExplorerNode[];
@@ -32,7 +33,7 @@ interface ChildState {
 }
 
 // Leaf pagination is tracked per leaf-group id.
-interface LeafPageState {
+export interface LeafPageState {
   page: number; // 1-based (matches backend)
   total: number;
   limit: number;
@@ -72,14 +73,7 @@ export function useExplorerTree({ axes, start, end, timeLimit, entity }: Params)
   const fetchGroup = useCallback(
     (axis: HeartbeatAxis, filters: HeartbeatFilters) =>
       qc.fetchQuery({
-        queryKey: [
-          "hb-explore-group",
-          axis,
-          filters,
-          start,
-          end,
-          timeLimit,
-        ],
+        queryKey: qk.hbExploreGroup(axis, filters, start, end, timeLimit),
         queryFn: () =>
           api.groupHeartbeats({ groupBy: axis, start, end, timeLimit, filters }),
         staleTime: 30_000,
@@ -90,7 +84,7 @@ export function useExplorerTree({ axes, start, end, timeLimit, entity }: Params)
   const fetchLeaf = useCallback(
     (filters: HeartbeatFilters, page: number) =>
       qc.fetchQuery({
-        queryKey: ["hb-explore-list", filters, entity, start, end, page],
+        queryKey: qk.hbExploreList(filters, entity, start, end, page),
         queryFn: () =>
           api.listHeartbeats({
             start,

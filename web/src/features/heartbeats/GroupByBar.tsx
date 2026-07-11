@@ -5,7 +5,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { AXES, axisLabel } from "@/components/heartbeats/axes";
+import { AXES, axisLabel } from "@/lib/axes";
 import type { HeartbeatAxis } from "@/types/api";
 
 interface GroupByBarProps {

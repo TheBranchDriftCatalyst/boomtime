@@ -14,6 +14,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { api } from "@/lib/api";
+import { qk } from "@/lib/queryKeys";
 import { removeDays } from "@/lib/utils";
 import type { ImportRequest } from "@/types/api";
 
@@ -32,7 +33,7 @@ export function StartImportForm({ disabled, onStarted }: StartImportFormProps) {
   const [detecting, setDetecting] = useState(false);
 
   const { data: config } = useQuery({
-    queryKey: ["import-config"],
+    queryKey: qk.importConfig(),
     queryFn: () => api.getImportConfig(),
     staleTime: 60_000,
   });
@@ -41,7 +42,7 @@ export function StartImportForm({ disabled, onStarted }: StartImportFormProps) {
   // Most-recent heartbeat, for "backfill from last import". Null when the user
   // has no heartbeats yet (button disabled).
   const { data: latest } = useQuery({
-    queryKey: ["latest-heartbeat"],
+    queryKey: qk.latestHeartbeat(),
     queryFn: () => api.getLatestHeartbeat(),
     staleTime: 30_000,
   });

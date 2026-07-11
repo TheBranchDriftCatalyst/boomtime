@@ -19,10 +19,6 @@ const MEASUREMENT_ID: string | undefined = import.meta.env.VITE_GA_MEASUREMENT_I
 
 let initialized = false;
 
-export function isAnalyticsEnabled(): boolean {
-  return initialized;
-}
-
 /** Inject gtag.js and configure GA. Safe to call unconditionally; no-ops
  *  without a measurement ID and on repeat calls. */
 export function initAnalytics(measurementId: string | undefined = MEASUREMENT_ID): void {
@@ -52,10 +48,4 @@ export function trackPageview(path: string, title?: string): void {
     page_location: window.location.origin + path,
     ...(title ? { page_title: title } : {}),
   });
-}
-
-/** Report a custom event, e.g. trackEvent("import_started", { source: "wakatime" }). */
-export function trackEvent(name: string, params?: Record<string, unknown>): void {
-  if (!initialized) return;
-  window.gtag("event", name, params ?? {});
 }

@@ -20,6 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { api } from "@/lib/api";
+import { qk } from "@/lib/queryKeys";
 import { copyToClipboard, formatDate } from "@/lib/utils";
 import type { StoredApiToken } from "@/types/api";
 
@@ -40,7 +41,7 @@ function decodeToken(id: string): string {
 export function TokenListModal({ open, onClose }: TokenListModalProps) {
   const qc = useQueryClient();
   const { data: tokens = [] } = useQuery({
-    queryKey: ["tokens"],
+    queryKey: qk.tokens(),
     queryFn: () => api.getTokens(),
     enabled: open,
   });
@@ -48,13 +49,13 @@ export function TokenListModal({ open, onClose }: TokenListModalProps) {
   const rename = useMutation({
     mutationFn: (v: { tokenId: string; tokenName: string }) =>
       api.renameToken(v),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["tokens"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.tokens() }),
     onError: () => toast.error("Failed to update the token"),
   });
 
   const remove = useMutation({
     mutationFn: (id: string) => api.deleteToken(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["tokens"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.tokens() }),
     onError: () => toast.error("Failed to delete the token"),
   });
 

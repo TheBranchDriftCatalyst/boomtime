@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { useLogsSocket } from "@/hooks/useLogsSocket";
+import { useLogsSocket } from "@/features/logs/useLogsSocket";
 import { mockLogsWs, type MockLogsWs } from "@/test/ws";
 import type { ServerLogEntry } from "@/types/api";
 

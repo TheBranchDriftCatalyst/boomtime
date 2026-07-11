@@ -3,7 +3,7 @@ import {
   remapDisplay,
   templateToBackend,
   templateToJs,
-} from "@/lib/remapDisplay";
+} from "@/features/curation/remapDisplay";
 import type { CurationRule } from "@/types/api";
 
 function rule(over: Partial<CurationRule>): CurationRule {

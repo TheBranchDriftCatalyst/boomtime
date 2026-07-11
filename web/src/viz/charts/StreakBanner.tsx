@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useMemo } from "react";
 import * as d3 from "d3";
 import { Card, CardContent } from "@/components/ui/card";
-import { cssVar, useChartFrame } from "@/viz/d3/useChartFrame";
+import { cssVar } from "@/viz/d3/useChartFrame";
+import { useD3Surface } from "@/viz/d3/useD3Surface";
+import { ChartSurface } from "@/viz/d3/ChartSurface";
 
 interface StreakBannerProps {
   // RAW daily seconds (aligned to dates). The last entry is today (partial).
@@ -89,54 +91,48 @@ function StreakStat({
 
 function Sparkline({ values }: { values: number[] }) {
   const height = 36;
-  const { ref, frame } = useChartFrame(height);
-  const svgRef = useRef<SVGSVGElement | null>(null);
 
-  useEffect(() => {
-    const svg = d3.select(svgRef.current);
-    svg.selectAll("*").remove();
-    if (frame.width === 0 || values.length === 0) return;
+  const surface = useD3Surface(
+    { height },
+    ({ svg, width }) => {
+      if (values.length === 0) return;
 
-    const primary = cssVar("--primary");
-    const width = frame.width;
-    const x = d3
-      .scaleLinear()
-      .domain([0, Math.max(1, values.length - 1)])
-      .range([1, width - 1]);
-    const yMax = d3.max(values) ?? 0;
-    const y = d3.scaleLinear().domain([0, yMax || 1]).range([height - 2, 2]);
+      const primary = cssVar("--primary");
+      const x = d3
+        .scaleLinear()
+        .domain([0, Math.max(1, values.length - 1)])
+        .range([1, width - 1]);
+      const yMax = d3.max(values) ?? 0;
+      const y = d3.scaleLinear().domain([0, yMax || 1]).range([height - 2, 2]);
 
-    const area = d3
-      .area<number>()
-      .x((_d, i) => x(i))
-      .y0(height)
-      .y1((d) => y(d))
-      .curve(d3.curveMonotoneX);
-    const line = d3
-      .line<number>()
-      .x((_d, i) => x(i))
-      .y((d) => y(d))
-      .curve(d3.curveMonotoneX);
+      const area = d3
+        .area<number>()
+        .x((_d, i) => x(i))
+        .y0(height)
+        .y1((d) => y(d))
+        .curve(d3.curveMonotoneX);
+      const line = d3
+        .line<number>()
+        .x((_d, i) => x(i))
+        .y((d) => y(d))
+        .curve(d3.curveMonotoneX);
 
-    svg.attr("width", width).attr("height", height);
-    svg
-      .append("path")
-      .datum(values)
-      .attr("d", area)
-      .attr("fill", primary)
-      .attr("fill-opacity", 0.15);
-    svg
-      .append("path")
-      .datum(values)
-      .attr("d", line)
-      .attr("fill", "none")
-      .attr("stroke", primary)
-      .attr("stroke-width", 1.5);
-  }, [values, frame.width, frame.themeKey]);
-
-  return (
-    <div ref={ref} style={{ width: "100%", height }}>
-      <svg ref={svgRef} />
-    </div>
+      svg
+        .append("path")
+        .datum(values)
+        .attr("d", area)
+        .attr("fill", primary)
+        .attr("fill-opacity", 0.15);
+      svg
+        .append("path")
+        .datum(values)
+        .attr("d", line)
+        .attr("fill", "none")
+        .attr("stroke", primary)
+        .attr("stroke-width", 1.5);
+    },
+    [values],
   );
+
+  return <ChartSurface surface={surface} />;
 }

@@ -7,16 +7,16 @@ import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { GroupByBar } from "@/components/heartbeats/GroupByBar";
-import { DerivedStatusPanel } from "@/components/heartbeats/DerivedStatusPanel";
-import { SourceHealthPanel } from "@/components/heartbeats/SourceHealthPanel";
-import { HeartbeatExplorerTable } from "@/components/heartbeats/HeartbeatExplorerTable";
-import { RenameGroupDialog } from "@/components/heartbeats/RenameGroupDialog";
-import { useExplorerTree } from "@/components/heartbeats/useExplorerTree";
-import { DEFAULT_GROUP_BY } from "@/components/heartbeats/axes";
+import { GroupByBar } from "@/features/heartbeats/GroupByBar";
+import { DerivedStatusPanel } from "@/features/heartbeats/DerivedStatusPanel";
+import { SourceHealthPanel } from "@/features/heartbeats/SourceHealthPanel";
+import { HeartbeatExplorerTable } from "@/features/heartbeats/HeartbeatExplorerTable";
+import { RenameGroupDialog } from "@/features/heartbeats/RenameGroupDialog";
+import { useExplorerTree } from "@/features/heartbeats/useExplorerTree";
+import { DEFAULT_GROUP_BY } from "@/features/heartbeats/axes";
 import { useTimeRange } from "@/hooks/useTimeRange";
 import type { HeartbeatAxis } from "@/types/api";
-import type { GroupNode } from "@/components/heartbeats/explorerModel";
+import type { GroupNode } from "@/features/heartbeats/explorerModel";
 
 type LeafMode = "table" | "json";
 
@@ -108,9 +108,18 @@ export function Heartbeats() {
           ) : ctrl.rootLoading ? (
             <Spinner />
           ) : ctrl.rootError ? (
-            <p className="py-6 text-center text-sm text-destructive">
-              Failed to load heartbeat groups.
-            </p>
+            <div className="space-y-2 py-6 text-center">
+              <p className="text-sm text-destructive">
+                Failed to load heartbeat groups.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void ctrl.reloadRoot()}
+              >
+                Retry
+              </Button>
+            </div>
           ) : ctrl.tree.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
               No heartbeats in this range.
@@ -123,7 +132,6 @@ export function Heartbeats() {
                 </p>
               )}
               <HeartbeatExplorerTable
-                tree={ctrl.tree}
                 ctrl={ctrl}
                 mode={mode}
                 onRename={setRenameTarget}
@@ -134,9 +142,7 @@ export function Heartbeats() {
       </Card>
 
       <RenameGroupDialog
-        open={renameTarget !== null}
-        axis={renameTarget?.axis ?? "project"}
-        value={renameTarget?.value ?? ""}
+        node={renameTarget}
         onClose={() => setRenameTarget(null)}
       />
     </div>

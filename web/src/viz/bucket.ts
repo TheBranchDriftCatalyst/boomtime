@@ -39,10 +39,3 @@ export function bucketAvg(groups: number[][], arr: number[]): number[] {
     return sum / gr.length;
   });
 }
-
-/** Max of a daily numeric series over each bucket (for distinct-count-per-day). */
-export function bucketMax(groups: number[][], arr: number[]): number[] {
-  return groups.map((gr) =>
-    gr.reduce((m, i) => Math.max(m, arr[i] ?? 0), 0),
-  );
-}

@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { qk } from "@/lib/queryKeys";
 import type { ComboboxOption } from "@/components/ui/combobox";
 import type { HeartbeatAxis } from "@/types/api";
 
@@ -17,7 +18,7 @@ export function useAxisValues(
   enabled = true,
 ): { options: ComboboxOption[]; isLoading: boolean } {
   const query = useQuery({
-    queryKey: ["axis-values", axis],
+    queryKey: qk.axisValues(axis),
     enabled: enabled && axis !== null,
     // Distinct values change slowly; cache generously.
     staleTime: 5 * 60_000,

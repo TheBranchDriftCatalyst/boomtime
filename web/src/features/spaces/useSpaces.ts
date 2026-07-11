@@ -1,32 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { qk } from "@/lib/queryKeys";
 import type { AddSpaceRuleBody } from "@/types/api";
-
-// Dashboard query keys whose results are scoped by a Space (?space=…). Any
-// Space/rule change invalidates these so open scoped views refetch. Mirrors the
-// curation DEPENDENT_KEYS.
-const DEPENDENT_KEYS = [
-  ["stats"],
-  ["project-stats"],
-  ["projects"],
-  ["leaderboards"],
-  ["timeline"],
-  ["punchcard"],
-  ["sessions"],
-  ["momentum"],
-  ["cross-project-files"],
-];
 
 export function useSpaces() {
   return useQuery({
-    queryKey: ["spaces"],
+    queryKey: qk.spaces(),
     queryFn: () => api.getSpaces(),
   });
 }
 
 export function useSpace(id: number | string | null | undefined) {
   return useQuery({
-    queryKey: ["space", id != null ? String(id) : null],
+    queryKey: qk.space(id),
     enabled: id != null,
     queryFn: () => api.getSpace(id as number | string),
   });
@@ -35,13 +21,14 @@ export function useSpace(id: number | string | null | undefined) {
 export function useSpaceMutations() {
   const qc = useQueryClient();
 
-  // Invalidate the space list, one space's detail, and every scoped dashboard.
+  // Invalidate the space list, one space's detail, and every Space-scoped
+  // dashboard (?space=…) so open scoped views refetch after any rule change.
   function invalidateForSpace(id?: number | string) {
-    qc.invalidateQueries({ queryKey: ["spaces"] });
+    qc.invalidateQueries({ queryKey: qk.spaces() });
     if (id != null) {
-      qc.invalidateQueries({ queryKey: ["space", String(id)] });
+      qc.invalidateQueries({ queryKey: qk.space(id) });
     }
-    for (const key of DEPENDENT_KEYS) {
+    for (const key of qk.dashboardDependents) {
       qc.invalidateQueries({ queryKey: key });
     }
   }

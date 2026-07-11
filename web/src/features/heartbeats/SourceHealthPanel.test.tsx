@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
-import { SourceHealthPanel } from "@/components/heartbeats/SourceHealthPanel";
+import { SourceHealthPanel } from "@/features/heartbeats/SourceHealthPanel";
 import {
   deriveSourceStatus,
   relativeTime,

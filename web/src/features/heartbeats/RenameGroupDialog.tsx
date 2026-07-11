@@ -5,44 +5,43 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { RemappingForm } from "@/components/curation/RemappingForm";
-import { axisLabel } from "@/components/heartbeats/axes";
-import type { HeartbeatAxis } from "@/types/api";
+import { RemappingForm } from "@/features/curation/RemappingForm";
+import { axisLabel } from "@/lib/axes";
+import type { GroupNode } from "@/features/heartbeats/explorerModel";
 
 interface RenameGroupDialogProps {
-  open: boolean;
-  axis: HeartbeatAxis;
-  value: string;
+  /** The group being renamed; null = dialog closed. */
+  node: GroupNode | null;
   onClose: () => void;
 }
 
-export function RenameGroupDialog({
-  open,
-  axis,
-  value,
-  onClose,
-}: RenameGroupDialogProps) {
+export function RenameGroupDialog({ node, onClose }: RenameGroupDialogProps) {
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+    <Dialog open={node !== null} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Rename {axisLabel(axis).toLowerCase()}</DialogTitle>
-          <DialogDescription>
-            Remaps this value in your dashboards (merging into the target if it
-            already exists). This is reversible — raw records are preserved;
-            remove it anytime under Settings → Name remappings.
-          </DialogDescription>
-        </DialogHeader>
-        {/* Shared form: axis is locked to this group's axis, pattern pre-filled
-            with the clicked value (user can still switch to regex + edit). */}
-        <RemappingForm
-          presetAxis={axis}
-          presetValue={value}
-          onDone={onClose}
-          onCancel={onClose}
-          layout="stacked"
-          submitLabel="Rename"
-        />
+        {node !== null && (
+          <>
+            <DialogHeader>
+              <DialogTitle>Rename {axisLabel(node.axis).toLowerCase()}</DialogTitle>
+              <DialogDescription>
+                Remaps this value in your dashboards (merging into the target if
+                it already exists). This is reversible — raw records are
+                preserved; remove it anytime under Settings → Name remappings.
+              </DialogDescription>
+            </DialogHeader>
+            {/* Shared form: axis is locked to this group's axis, pattern
+                pre-filled with the clicked value (user can still switch to
+                regex + edit). */}
+            <RemappingForm
+              presetAxis={node.axis}
+              presetValue={node.value ?? ""}
+              onDone={onClose}
+              onCancel={onClose}
+              layout="stacked"
+              submitLabel="Rename"
+            />
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );

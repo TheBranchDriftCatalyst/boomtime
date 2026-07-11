@@ -3,12 +3,13 @@ import { Ban, Wifi, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { ImportStateBadge } from "@/components/import/ImportStateBadge";
-import { LogTerminal } from "@/components/import/LogTerminal";
+import { ImportStateBadge } from "@/features/import/ImportStateBadge";
+import { LogTerminal } from "@/components/LogTerminal";
+import { LabeledStat } from "@/components/LabeledStat";
 import { formatElapsed } from "@/lib/utils";
 import { isTerminalState } from "@/types/api";
 import type { ImportJob, ImportLogLine } from "@/types/api";
-import type { SocketStatus } from "@/hooks/useImportJobSocket";
+import type { SocketStatus } from "@/features/import/useImportJobSocket";
 
 interface CurrentRunPanelProps {
   job: ImportJob;
@@ -16,17 +17,6 @@ interface CurrentRunPanelProps {
   status: SocketStatus;
   onCancel: () => void;
   cancelling: boolean;
-}
-
-function Stat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div>
-      <p className="text-xs uppercase tracking-wide text-muted-foreground">
-        {label}
-      </p>
-      <p className="mt-0.5 font-mono text-sm font-medium">{value}</p>
-    </div>
-  );
 }
 
 export function CurrentRunPanel({
@@ -86,10 +76,13 @@ export function CurrentRunPanel({
         </div>
 
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <Stat label="Imported" value={job.importedCount.toLocaleString()} />
-          <Stat label="Current day" value={job.currentDay ?? "-"} />
-          <Stat label="Elapsed" value={elapsed} />
-          <Stat
+          <LabeledStat
+            label="Imported"
+            value={job.importedCount.toLocaleString()}
+          />
+          <LabeledStat label="Current day" value={job.currentDay ?? "-"} />
+          <LabeledStat label="Elapsed" value={elapsed} />
+          <LabeledStat
             label="Range"
             value={`${job.startDate.slice(0, 10)} → ${job.endDate.slice(0, 10)}`}
           />

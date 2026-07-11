@@ -3,34 +3,18 @@ import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Combobox } from "@/components/ui/combobox";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { axisLabel } from "@/components/heartbeats/axes";
-import { useAxisValues } from "@/hooks/useAxisValues";
-import { useSpaceMutations } from "@/hooks/useSpaces";
+import { AxisSelect } from "@/features/rules/AxisSelect";
+import { AxisValueField } from "@/features/rules/AxisValueField";
+import { MatchTypeToggle } from "@/features/rules/MatchTypeToggle";
+import { MatchPreviewList } from "@/features/rules/MatchPreviewList";
+import { CURATABLE_AXES } from "@/features/rules/axes";
+import { axisLabel } from "@/lib/axes";
+import { useSpaceMutations } from "@/features/spaces/useSpaces";
 import { api } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { qk } from "@/lib/queryKeys";
 import type { HeartbeatAxis, SpaceMatchType } from "@/types/api";
 
-// Axes a Space membership rule can target. Mirrors the suppressible/curatable
-// axes (excludes synthetic `day`/`isWrite` and file-path `entity`/`userAgent`).
-const RULE_AXES: readonly HeartbeatAxis[] = [
-  "project",
-  "language",
-  "editor",
-  "plugin",
-  "machine",
-  "platform",
-  "branch",
-  "category",
-];
+const MODES: readonly SpaceMatchType[] = ["exact", "regex"];
 
 const MODE_LABEL: Record<SpaceMatchType, string> = {
   exact: "Exact",
@@ -45,22 +29,18 @@ interface SpaceRuleFormProps {
 }
 
 /**
- * Form for adding a membership rule to a Space. Modeled on RemappingForm:
- * axis dropdown + exact/regex segmented toggle + value input, plus a LIVE
- * "matches N values" preview (debounced) via getSpacePreview. Owns the
- * useSpaceMutations().addRule mutation (which invalidates the scoped dashboards).
+ * Form for adding a membership rule to a Space. Built from the same shared
+ * rule-form subcomponents as RemappingForm (axis dropdown + exact/regex
+ * segmented toggle + value field), plus a LIVE "matches N values" preview
+ * (debounced) via getSpacePreview. Owns the useSpaceMutations().addRule
+ * mutation (which invalidates the scoped dashboards).
  */
 export function SpaceRuleForm({ spaceId, onDone }: SpaceRuleFormProps) {
   const { addRule } = useSpaceMutations();
 
-  const [axis, setAxis] = useState<HeartbeatAxis>(RULE_AXES[0]);
+  const [axis, setAxis] = useState<HeartbeatAxis>(CURATABLE_AXES[0]);
   const [matchValue, setMatchValue] = useState("");
   const [mode, setMode] = useState<SpaceMatchType>("exact");
-
-  // Real values for the selected axis (with heartbeat counts) — feed the exact
-  // mode autocomplete so the user sees the matching values as they pick, the
-  // same affordance as the Settings hidden-projects combobox.
-  const { options: axisOptions, isLoading: axisLoading } = useAxisValues(axis);
 
   // Debounce the value so the live preview doesn't fire on every keystroke.
   const [debounced, setDebounced] = useState("");
@@ -81,7 +61,7 @@ export function SpaceRuleForm({ spaceId, onDone }: SpaceRuleFormProps) {
   }, [mode, debounced]);
 
   const previewQuery = useQuery({
-    queryKey: ["space-preview", axis, mode, debounced],
+    queryKey: qk.spacePreview(axis, mode, debounced),
     enabled: debounced !== "" && regexValid,
     queryFn: () =>
       api.getSpacePreview({ axis, matchValue: debounced, matchType: mode }),
@@ -126,79 +106,33 @@ export function SpaceRuleForm({ spaceId, onDone }: SpaceRuleFormProps) {
       className="space-y-3 rounded-md border bg-muted/30 p-3"
     >
       <div className="flex flex-wrap items-end gap-2">
-        <div className="space-y-1">
-          <Label className="text-xs">Axis</Label>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="w-32 justify-between"
-              >
-                {axisLabel(axis)}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="start"
-              className="max-h-72 overflow-y-auto"
-            >
-              {RULE_AXES.map((a) => (
-                <DropdownMenuItem key={a} onSelect={() => setAxis(a)}>
-                  {axisLabel(a)}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+        <AxisSelect
+          axes={CURATABLE_AXES}
+          value={axis}
+          onChange={setAxis}
+          triggerClassName="w-32"
+        />
 
-        <div className="space-y-1">
-          <Label className="text-xs">Match</Label>
-          <div className="inline-flex h-8 items-center rounded-md border p-0.5">
-            {(["exact", "regex"] as SpaceMatchType[]).map((m) => (
-              <button
-                key={m}
-                type="button"
-                aria-pressed={mode === m}
-                onClick={() => setMode(m)}
-                className={cn(
-                  "h-full rounded px-2 text-xs font-medium transition-colors",
-                  mode === m
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {MODE_LABEL[m]}
-              </button>
-            ))}
-          </div>
-        </div>
+        <MatchTypeToggle
+          modes={MODES}
+          labels={MODE_LABEL}
+          value={mode}
+          onChange={setMode}
+        />
 
-        <div className="min-w-40 flex-1 space-y-1">
-          <Label className="text-xs">
-            {mode === "regex" ? "Value (regex)" : "Value"}
-          </Label>
-          {mode === "exact" ? (
-            <Combobox
-              options={axisOptions}
-              value={matchValue || null}
-              onSelect={setMatchValue}
-              loading={axisLoading}
-              creatable
-              placeholder={`A ${axisLabel(axis).toLowerCase()}…`}
-              searchPlaceholder={`Search ${axisLabel(axis).toLowerCase()}s…`}
-              emptyText={`No ${axisLabel(axis).toLowerCase()} values found.`}
-              className="h-8 font-mono"
-            />
-          ) : (
-            <Input
-              value={matchValue}
-              onChange={(e) => setMatchValue(e.target.value)}
-              placeholder="^catalyst"
-              className="h-8 font-mono"
-            />
-          )}
-        </div>
+        <AxisValueField
+          axis={axis}
+          exact={mode === "exact"}
+          value={matchValue}
+          onChange={setMatchValue}
+          label={mode === "regex" ? "Value (regex)" : "Value"}
+          placeholder={
+            mode === "regex"
+              ? "^catalyst"
+              : `A ${axisLabel(axis).toLowerCase()}…`
+          }
+          className="min-w-40 flex-1"
+        />
 
         <Button
           type="submit"
@@ -221,33 +155,19 @@ export function SpaceRuleForm({ spaceId, onDone }: SpaceRuleFormProps) {
       )}
 
       {debounced !== "" && regexValid && (
-        <div className="space-y-1 rounded-md border bg-background/60 p-2">
-          <p className="text-xs font-medium text-muted-foreground">
-            {previewQuery.isLoading
+        <MatchPreviewList
+          title={
+            previewQuery.isLoading
               ? "Matching…"
               : `Matches ${preview?.values.length ?? 0} value${
                   (preview?.values.length ?? 0) === 1 ? "" : "s"
-                }${preview?.truncated ? "+" : ""}`}
-          </p>
-          {preview?.values.slice(0, 8).map((v) => (
-            <div
-              key={v.value}
-              className="flex items-center justify-between gap-2 text-xs"
-            >
-              <span className="truncate font-mono" title={v.value}>
-                {v.value}
-              </span>
-              <span className="shrink-0 tabular-nums text-muted-foreground">
-                {v.count}
-              </span>
-            </div>
-          ))}
-          {preview && preview.values.length === 0 && !previewQuery.isLoading && (
-            <p className="text-xs text-muted-foreground">
-              No values match yet.
-            </p>
-          )}
-        </div>
+                }${preview?.truncated ? "+" : ""}`
+          }
+          rows={preview?.values.slice(0, 8) ?? []}
+          emptyText={
+            preview && !previewQuery.isLoading ? "No values match yet." : null
+          }
+        />
       )}
     </form>
   );

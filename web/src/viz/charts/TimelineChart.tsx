@@ -1,15 +1,20 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useMemo } from "react";
 import * as d3 from "d3";
-import { CHART_COLORS } from "@/lib/config";
 import { secondsToHms, truncate } from "@/lib/utils";
-import { cssVar, useChartFrame } from "@/viz/d3/useChartFrame";
-import {
-  createTooltip,
-  hideTooltip,
-  showTooltip,
-  type TooltipSelection,
-} from "@/viz/d3/tooltip";
-import type { TimelineChartProps } from "@/components/charts/types";
+import { cssVar } from "@/viz/d3/useChartFrame";
+import { useD3Surface } from "@/viz/d3/useD3Surface";
+import { ChartSurface } from "@/viz/d3/ChartSurface";
+import { tooltipHtml } from "@/viz/d3/tooltip";
+import { styleAxis } from "@/viz/d3/axes";
+import { colorAt } from "@/viz/d3/color";
+import { renderLegend } from "@/viz/d3/legend";
+import { EmptyChart } from "@/viz/d3/EmptyChart";
+import type { TimelinePayload } from "@/types/api";
+
+export interface TimelineChartProps {
+  timeline: TimelinePayload | undefined;
+  height?: number;
+}
 
 interface Segment {
   lang: string;
@@ -18,24 +23,19 @@ interface Segment {
   colorIndex: number;
 }
 
+const LEGEND_H = 24;
+const MARGIN = { top: LEGEND_H + 6, right: 16, bottom: 26, left: 80 };
+
 /** D3 1:1 port of the recent-timeline rangeBar (lanes by language). */
 export function TimelineChart({ timeline, height = 350 }: TimelineChartProps) {
-  const { ref, frame } = useChartFrame(height);
-  const svgRef = useRef<SVGSVGElement | null>(null);
-
   const langs = useMemo(() => timeline?.langs ?? {}, [timeline]);
   const langNames = useMemo(() => Object.keys(langs), [langs]);
 
-  useEffect(() => {
-    const svg = d3.select(svgRef.current);
-    svg.selectAll("*").remove();
-    const container = ref.current;
-    if (!container || frame.width === 0 || langNames.length === 0) return;
-
-    const segments: Segment[] = [];
+  const segments = useMemo(() => {
+    const segs: Segment[] = [];
     langNames.forEach((lang, i) => {
       for (const v of langs[lang]) {
-        segments.push({
+        segs.push({
           lang,
           start: new Date(v.rangeStart),
           end: new Date(v.rangeEnd),
@@ -43,114 +43,90 @@ export function TimelineChart({ timeline, height = 350 }: TimelineChartProps) {
         });
       }
     });
-    if (segments.length === 0) return;
+    return segs;
+  }, [langs, langNames]);
 
-    const fg = cssVar("--muted-foreground");
-    const border = cssVar("--border");
-    const width = frame.width;
-    const legendH = 24;
-    const margin = { top: legendH + 6, right: 16, bottom: 26, left: 80 };
-    const innerW = width - margin.left - margin.right;
-    const innerH = height - margin.top - margin.bottom;
+  const surface = useD3Surface(
+    { height, margin: MARGIN },
+    ({ svg, g, innerW, innerH, showTip, hideTip }) => {
+      if (segments.length === 0) return;
 
-    const svgRoot = svg.attr("width", width).attr("height", height);
-    const g = svgRoot
-      .append("g")
-      .attr("transform", `translate(${margin.left},${margin.top})`);
+      const fg = cssVar("--muted-foreground");
+      const border = cssVar("--border");
 
-    const tMin = d3.min(segments, (s) => s.start) as Date;
-    const tMax = d3.max(segments, (s) => s.end) as Date;
-    const x = d3.scaleTime().domain([tMin, tMax]).range([0, innerW]);
-    const y = d3
-      .scaleBand<string>()
-      .domain(langNames)
-      .range([0, innerH])
-      .padding(0.3);
+      const tMin = d3.min(segments, (s) => s.start) as Date;
+      const tMax = d3.max(segments, (s) => s.end) as Date;
+      const x = d3.scaleTime().domain([tMin, tMax]).range([0, innerW]);
+      const y = d3
+        .scaleBand<string>()
+        .domain(langNames)
+        .range([0, innerH])
+        .padding(0.3);
 
-    // Vertical gridlines + time axis.
-    const xAxis = g
-      .append("g")
-      .attr("transform", `translate(0,${innerH})`)
-      .call(d3.axisBottom(x).ticks(6).tickFormat((d) => d3.timeFormat("%H:%M")(d as Date)));
-    xAxis.select(".domain").attr("stroke", border);
-    xAxis.selectAll("text").attr("fill", fg).style("font-size", "11px");
-    xAxis
-      .selectAll(".tick")
-      .append("line")
-      .attr("y1", 0)
-      .attr("y2", -innerH)
-      .attr("stroke", border)
-      .attr("stroke-dasharray", "3");
+      // Vertical gridlines + time axis.
+      const xAxis = styleAxis(
+        g
+          .append("g")
+          .attr("transform", `translate(0,${innerH})`)
+          .call(
+            d3.axisBottom(x).ticks(6).tickFormat((d) => d3.timeFormat("%H:%M")(d as Date)),
+          ),
+        { fg, border },
+        { domain: "line" },
+      );
+      xAxis
+        .selectAll(".tick")
+        .append("line")
+        .attr("y1", 0)
+        .attr("y2", -innerH)
+        .attr("stroke", border)
+        .attr("stroke-dasharray", "3");
 
-    // Lane labels (truncated to 10; full on hover).
-    g.append("g")
-      .call(d3.axisLeft(y).tickSize(0).tickFormat((d) => truncate(String(d), 10)))
-      .call((sel) => sel.select(".domain").remove())
-      .selectAll<SVGTextElement, string>("text")
-      .attr("fill", fg)
-      .style("font-size", "11px")
-      .append("title")
-      .text((d) => String(d));
+      // Lane labels (truncated to 10; full on hover).
+      styleAxis(
+        g
+          .append("g")
+          .call(d3.axisLeft(y).tickSize(0).tickFormat((d) => truncate(String(d), 10))),
+        { fg },
+      )
+        .selectAll<SVGTextElement, string>("text")
+        .append("title")
+        .text((d) => String(d));
 
-    const tip: TooltipSelection = createTooltip(container);
-
-    g.selectAll("rect.seg")
-      .data(segments)
-      .join("rect")
-      .attr("class", "seg")
-      .attr("x", (d) => x(d.start))
-      .attr("y", (d) => y(d.lang) ?? 0)
-      .attr("width", (d) => Math.max(1, x(d.end) - x(d.start)))
-      .attr("height", y.bandwidth())
-      .attr("rx", 2)
-      .attr("fill", (d) => CHART_COLORS[d.colorIndex % CHART_COLORS.length])
-      .on("mousemove", (event, d) => {
-        const dur = (d.end.getTime() - d.start.getTime()) / 1000;
-        showTooltip(
-          tip,
-          container,
-          event,
-          `<div style="font-weight:600">${d.lang}</div>` +
-            `${d3.timeFormat("%d %b, %H:%M")(d.start)} → ${d3.timeFormat("%H:%M")(
-              d.end,
-            )}<br/>${secondsToHms(dur)}`,
-        );
-      })
-      .on("mouseleave", () => hideTooltip(tip));
-
-    // Legend (top-left).
-    const legend = svgRoot
-      .append("g")
-      .attr("transform", `translate(${margin.left},4)`);
-    let offset = 0;
-    langNames.forEach((lang, i) => {
-      const item = legend.append("g").attr("transform", `translate(${offset},0)`);
-      item
-        .append("rect")
-        .attr("width", 10)
-        .attr("height", 10)
+      g.selectAll("rect.seg")
+        .data(segments)
+        .join("rect")
+        .attr("class", "seg")
+        .attr("x", (d) => x(d.start))
+        .attr("y", (d) => y(d.lang) ?? 0)
+        .attr("width", (d) => Math.max(1, x(d.end) - x(d.start)))
+        .attr("height", y.bandwidth())
         .attr("rx", 2)
-        .attr("y", 3)
-        .attr("fill", CHART_COLORS[i % CHART_COLORS.length]);
-      const label = item
-        .append("text")
-        .attr("x", 14)
-        .attr("y", 12)
-        .attr("fill", fg)
-        .style("font-size", "11px")
-        .text(lang);
-      const w = (label.node()?.getComputedTextLength() ?? 40) + 30;
-      offset += w;
-    });
+        .attr("fill", (d) => colorAt(d.colorIndex))
+        .on("mousemove", (event, d) => {
+          const dur = (d.end.getTime() - d.start.getTime()) / 1000;
+          showTip(
+            event,
+            tooltipHtml(
+              d.lang,
+              `${d3.timeFormat("%d %b, %H:%M")(d.start)} → ${d3.timeFormat("%H:%M")(d.end)}`,
+              secondsToHms(dur),
+            ),
+          );
+        })
+        .on("mouseleave", hideTip);
 
-    return () => {
-      tip.remove();
-    };
-  }, [ref, langs, langNames, height, frame.width, frame.themeKey]);
-
-  return (
-    <div ref={ref} style={{ position: "relative", width: "100%", height }}>
-      <svg ref={svgRef} />
-    </div>
+      // Legend (top-left), overflow collapsed to "+N more".
+      renderLegend(
+        svg,
+        langNames.map((lang, i) => ({ label: lang, color: colorAt(i) })),
+        { x: MARGIN.left, y: 4, fg, maxWidth: innerW, gap: 30 },
+      );
+    },
+    [segments, langNames],
   );
+
+  if (segments.length === 0) return <EmptyChart height={height} />;
+
+  return <ChartSurface surface={surface} />;
 }

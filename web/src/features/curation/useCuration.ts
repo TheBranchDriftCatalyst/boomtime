@@ -1,25 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { qk } from "@/lib/queryKeys";
 import type { AddCurationRuleBody } from "@/types/api";
-
-// Query keys whose results depend on curation rules (hides filter dashboards;
-// renames rewrite heartbeat values). Invalidated after any rule change.
-const DEPENDENT_KEYS = [
-  ["stats"],
-  ["project-stats"],
-  ["projects"],
-  ["leaderboards"],
-  ["heartbeats-group"],
-  ["heartbeats-list"],
-  // The new TanStack-table explorer's own query keys.
-  ["hb-explore-group"],
-  ["hb-explore-list"],
-  ["derived-status"],
-];
 
 export function useCurationRules() {
   return useQuery({
-    queryKey: ["curation"],
+    queryKey: qk.curation(),
     queryFn: () => api.getCurationRules(),
   });
 }
@@ -27,9 +13,13 @@ export function useCurationRules() {
 export function useCurationMutations() {
   const qc = useQueryClient();
 
+  // Query keys whose results depend on curation rules (hides filter
+  // dashboards; renames rewrite heartbeat values). The backend applies renames
+  // to ALL aggregations, so every dashboard query key plus the explorer /
+  // derived-status / per-axis value keys is invalidated after any rule change.
   function invalidateDependents() {
-    qc.invalidateQueries({ queryKey: ["curation"] });
-    for (const key of DEPENDENT_KEYS) {
+    qc.invalidateQueries({ queryKey: qk.curation() });
+    for (const key of qk.curationDependents) {
       qc.invalidateQueries({ queryKey: key });
     }
   }
@@ -41,7 +31,11 @@ export function useCurationMutations() {
 
   const remove = useMutation({
     mutationFn: (id: number) => api.deleteCurationRule(id),
-    onSuccess: invalidateDependents,
+    onSuccess: () => {
+      invalidateDependents();
+      // Existing rules' affected-heartbeats previews may be stale.
+      qc.invalidateQueries({ queryKey: qk.prefix.curationAffected });
+    },
   });
 
   // Edit an existing rename rule. Rule identity is
@@ -67,7 +61,11 @@ export function useCurationMutations() {
       }
       return api.addCurationRule(body);
     },
-    onSuccess: invalidateDependents,
+    onSuccess: () => {
+      invalidateDependents();
+      // The edited rule's affected-heartbeats preview may be stale.
+      qc.invalidateQueries({ queryKey: qk.prefix.curationAffected });
+    },
   });
 
   return { add, remove, edit };

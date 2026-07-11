@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { ApiError, api, buildUrl } from "@/lib/api";
-import { authStore } from "@/lib/auth";
+import { authStore } from "@/features/auth/auth";
 import { server } from "@/test/msw/server";
 import { http, HttpResponse } from "@/test/msw/handlers";
 import {
   authResponse,
+  curationRule,
+  curationRules,
+  importJob,
   rawLeaderboards,
   rawTimeline,
   rawToken,
@@ -95,6 +98,70 @@ describe("api normalizers (msw, raw hakatime shapes) — P0", () => {
     const lb = await api.getLeaderboards({ start: "a", end: "b" });
     expect(lb.global).toEqual([]);
     expect(lb.languages).toEqual({});
+  });
+
+  it("getCurationRules unwraps { rules } -> bare array", async () => {
+    const rule = curationRule({ id: 9 });
+    server.use(
+      http.get("/api/v1/users/current/curation", () =>
+        HttpResponse.json(curationRules([rule])),
+      ),
+    );
+    expect(await api.getCurationRules()).toEqual([rule]);
+  });
+
+  it("getCurationRules: absent rules key -> []", async () => {
+    server.use(
+      http.get("/api/v1/users/current/curation", () => HttpResponse.json({})),
+    );
+    expect(await api.getCurationRules()).toEqual([]);
+  });
+
+  it("getImportJobs unwraps { jobs } -> bare array", async () => {
+    const job = importJob({ id: 3 });
+    server.use(
+      http.get("/import/jobs", () => HttpResponse.json({ jobs: [job] })),
+    );
+    expect(await api.getImportJobs()).toEqual([job]);
+  });
+
+  it("getImportJobs: absent jobs key -> []", async () => {
+    server.use(http.get("/import/jobs", () => HttpResponse.json({})));
+    expect(await api.getImportJobs()).toEqual([]);
+  });
+
+  it("getSourceHealth unwraps { sources } -> bare array", async () => {
+    const source = {
+      plugin: "vscode/1.0",
+      machine: "laptop",
+      lastSeen: "2026-07-09T00:00:00Z",
+      count: 42,
+    };
+    server.use(
+      http.get("/api/v1/users/current/sources/health", () =>
+        HttpResponse.json({ sources: [source] }),
+      ),
+    );
+    expect(await api.getSourceHealth()).toEqual([source]);
+  });
+
+  it("getSourceHealth: absent sources key -> []", async () => {
+    server.use(
+      http.get("/api/v1/users/current/sources/health", () =>
+        HttpResponse.json({}),
+      ),
+    );
+    expect(await api.getSourceHealth()).toEqual([]);
+  });
+
+  it("getSpaces unwraps { spaces } -> bare array", async () => {
+    const space = { id: 1, name: "Work", position: 0, ruleCount: 2 };
+    server.use(
+      http.get("/api/v1/users/current/spaces", () =>
+        HttpResponse.json({ spaces: [space] }),
+      ),
+    );
+    expect(await api.getSpaces()).toEqual([space]);
   });
 });
 

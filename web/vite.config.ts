@@ -1,5 +1,17 @@
-/// <reference types="vitest/config" />
 import { defineConfig } from "vite";
+import type { ViteUserConfig } from "vitest/config";
+
+// Vitest 3 bundles its own vite 7 for typing, so its built-in
+// `declare module "vite"` augmentation (which adds the `test` key) lands on
+// that nested copy — never on this project's vite 8. Re-apply the same
+// augmentation against our vite here, typed by vitest's real InlineConfig, so
+// the `test` block below is fully type-checked without any casts.
+declare module "vite" {
+  interface UserConfig {
+    /** Options for Vitest. */
+    test?: ViteUserConfig["test"];
+  }
+}
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";

@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from "react";
-import { authStore } from "@/lib/auth";
+import { useRef, useState } from "react";
+import { authStore } from "@/features/auth/auth";
+import {
+  capLines,
+  useDurableSocket,
+  type SocketStatus,
+} from "@/hooks/useDurableSocket";
 import type { ServerLogEntry, ServerLogSocketMessage } from "@/types/api";
 
-// Keep the terminal from growing unbounded.
-const MAX_LOG_LINES = 2000;
-
-export type SocketStatus = "connecting" | "open" | "reconnecting" | "closed";
+export type { SocketStatus } from "@/hooks/useDurableSocket";
 
 export interface LogsStream {
   logs: ServerLogEntry[];
@@ -42,120 +44,43 @@ function mergeLogs(
       next.push(line);
     }
   }
-  return next.length > MAX_LOG_LINES
-    ? next.slice(next.length - MAX_LOG_LINES)
-    : next;
+  return capLines(next);
 }
 
 /**
  * Subscribes to the server process's own log stream over WebSocket.
  *
- * Mirrors useImportJobSocket: on (re)connect the server sends a `snapshot`
- * (ring-buffer backfill after the last-seen id) followed by live `log` entries.
- * Entries are de-duplicated by their monotonic `id`, so reconnecting with an
- * `afterId` resumes seamlessly across reloads and dropped connections.
- * Reconnects with exponential backoff indefinitely (the log stream never ends).
+ * On (re)connect the server sends a `snapshot` (ring-buffer backfill after the
+ * last-seen id) followed by live `log` entries. Entries are de-duplicated by
+ * their monotonic `id`, so reconnecting with an `afterId` resumes seamlessly
+ * across reloads and dropped connections. Reconnects with exponential backoff
+ * indefinitely (the log stream never ends) — see useDurableSocket.
  */
 export function useLogsSocket(enabled = true): LogsStream {
   const [logs, setLogs] = useState<ServerLogEntry[]>([]);
-  const [status, setStatus] = useState<SocketStatus>("closed");
-
-  // Refs let the reconnect closure read current values without re-subscribing.
-  const socketRef = useRef<WebSocket | null>(null);
-  const reconnectTimer = useRef<number | null>(null);
-  const attemptRef = useRef(0);
   // Highest entry id we've applied — used as afterId on reconnect.
   const lastIdRef = useRef(0);
 
-  useEffect(() => {
-    if (!enabled) {
-      setStatus("closed");
-      return;
-    }
+  const applyEntry = (line: ServerLogEntry) => {
+    if (line.id > lastIdRef.current) lastIdRef.current = line.id;
+  };
 
-    let cancelled = false;
-    attemptRef.current = 0;
-
-    const clearReconnect = () => {
-      if (reconnectTimer.current != null) {
-        window.clearTimeout(reconnectTimer.current);
-        reconnectTimer.current = null;
+  const status = useDurableSocket<ServerLogSocketMessage>({
+    enabled,
+    buildUrl: () => wsUrl(lastIdRef.current),
+    onMessage: (msg) => {
+      switch (msg.type) {
+        case "snapshot":
+          msg.logs.forEach(applyEntry);
+          setLogs((prev) => mergeLogs(prev, msg.logs));
+          break;
+        case "log":
+          applyEntry(msg.log);
+          setLogs((prev) => mergeLogs(prev, [msg.log]));
+          break;
       }
-    };
-
-    const scheduleReconnect = () => {
-      if (cancelled) return;
-      const attempt = attemptRef.current++;
-      // 0.5s, 1s, 2s, 4s ... capped at 15s.
-      const delay = Math.min(500 * 2 ** attempt, 15_000);
-      setStatus("reconnecting");
-      reconnectTimer.current = window.setTimeout(connect, delay);
-    };
-
-    const applyEntry = (line: ServerLogEntry) => {
-      if (line.id > lastIdRef.current) lastIdRef.current = line.id;
-    };
-
-    const connect = () => {
-      if (cancelled) return;
-      setStatus((s) => (s === "reconnecting" ? s : "connecting"));
-
-      const ws = new WebSocket(wsUrl(lastIdRef.current));
-      socketRef.current = ws;
-
-      ws.onopen = () => {
-        if (cancelled) return;
-        attemptRef.current = 0;
-        setStatus("open");
-      };
-
-      ws.onmessage = (event) => {
-        if (cancelled) return;
-        let msg: ServerLogSocketMessage;
-        try {
-          msg = JSON.parse(event.data as string) as ServerLogSocketMessage;
-        } catch {
-          return;
-        }
-
-        switch (msg.type) {
-          case "snapshot":
-            msg.logs.forEach(applyEntry);
-            setLogs((prev) => mergeLogs(prev, msg.logs));
-            break;
-          case "log":
-            applyEntry(msg.log);
-            setLogs((prev) => mergeLogs(prev, [msg.log]));
-            break;
-        }
-      };
-
-      ws.onclose = () => {
-        if (cancelled) return;
-        socketRef.current = null;
-        scheduleReconnect();
-      };
-
-      ws.onerror = () => {
-        // onclose fires next and drives the reconnect.
-        ws.close();
-      };
-    };
-
-    connect();
-
-    return () => {
-      cancelled = true;
-      clearReconnect();
-      if (socketRef.current) {
-        socketRef.current.onclose = null;
-        socketRef.current.onerror = null;
-        socketRef.current.close();
-        socketRef.current = null;
-      }
-      setStatus("closed");
-    };
-  }, [enabled]);
+    },
+  });
 
   return {
     logs,

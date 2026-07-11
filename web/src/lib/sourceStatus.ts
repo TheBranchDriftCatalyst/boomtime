@@ -10,7 +10,7 @@ const DAY = 24 * HOUR;
 
 // Age thresholds (inclusive upper bound), stalest-last:
 //   active ≤ 24h, idle ≤ 7d, stale ≤ 30d, silent > 30d.
-export const STATUS_THRESHOLDS = {
+const STATUS_THRESHOLDS = {
   active: 1 * DAY,
   idle: 7 * DAY,
   stale: 30 * DAY,

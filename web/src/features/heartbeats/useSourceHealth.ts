@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { qk } from "@/lib/queryKeys";
 
 /**
  * Per-source ingestion health (editor/plugin/machine last check-in). Powers the
@@ -9,7 +10,7 @@ import { api } from "@/lib/api";
  */
 export function useSourceHealth() {
   return useQuery({
-    queryKey: ["sources-health"],
+    queryKey: qk.sourcesHealth(),
     queryFn: api.getSourceHealth,
     refetchInterval: 60_000,
   });

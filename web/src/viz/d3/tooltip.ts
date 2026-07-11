@@ -30,6 +30,38 @@ export function createTooltip(container: HTMLElement): TooltipSelection {
   return tip as unknown as TooltipSelection;
 }
 
+/** Escape a string for safe interpolation into tooltip HTML. */
+export function escapeHtml(s: string): string {
+  return s
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+/**
+ * Build the standard tooltip markup — a bold title line followed by plain
+ * rows — escaping ALL interpolated text. Rows are either a plain string or a
+ * `[label, value]` pair rendered as `label: value`. Chart data (names, branch
+ * names, file paths, languages…) derives from heartbeats and is
+ * attacker-influenceable, so every call site must go through this builder
+ * (or escapeHtml) rather than hand-concatenating HTML.
+ */
+export function tooltipHtml(
+  title: string,
+  ...rows: Array<string | [label: string, value: string]>
+): string {
+  const body = rows
+    .map((r) =>
+      typeof r === "string"
+        ? escapeHtml(r)
+        : `${escapeHtml(r[0])}: ${escapeHtml(r[1])}`,
+    )
+    .join("<br/>");
+  return `<div style="font-weight:600">${escapeHtml(title)}</div>${body}`;
+}
+
 export function showTooltip(
   tip: TooltipSelection,
   container: HTMLElement,

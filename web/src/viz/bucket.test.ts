@@ -4,7 +4,6 @@ import {
   bucketAvg,
   bucketDates,
   bucketGroups,
-  bucketMax,
   bucketSum,
 } from "@/viz/bucket";
 
@@ -56,10 +55,6 @@ describe("bucket aggregators", () => {
 
   it("bucketAvg averages over the bucket length", () => {
     expect(bucketAvg(groups, [2, 4, 10, 0])).toEqual([3, 5]);
-  });
-
-  it("bucketMax takes the max (holes -> 0)", () => {
-    expect(bucketMax(groups, [1, 9, 3])).toEqual([9, 3]);
   });
 
   it("bucketDates picks the first index of each group", () => {

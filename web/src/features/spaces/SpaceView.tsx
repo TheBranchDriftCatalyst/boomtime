@@ -2,14 +2,14 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { Check, Pencil, Settings2, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
-import { OverviewDashboard } from "@/components/OverviewDashboard";
-import { SpaceRuleForm } from "@/components/spaces/SpaceRuleForm";
-import { Spinner } from "@/components/Spinner";
+import { OverviewDashboard } from "@/features/overview/OverviewDashboard";
+import { SpaceRuleForm } from "@/features/spaces/SpaceRuleForm";
+import { QueryGate } from "@/components/QueryGate";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { axisLabel } from "@/components/heartbeats/axes";
-import { useSpace, useSpaceMutations } from "@/hooks/useSpaces";
+import { axisLabel } from "@/lib/axes";
+import { useSpace, useSpaceMutations } from "@/features/spaces/useSpaces";
 import type { HeartbeatAxis } from "@/types/api";
 
 export function SpaceView() {
@@ -34,10 +34,6 @@ export function SpaceView() {
     setManaging(false);
     setEditingName(false);
   }, [id]);
-
-  if (spaceQuery.isLoading || !space) {
-    return <Spinner />;
-  }
 
   function saveName() {
     const next = nameDraft.trim();
@@ -81,6 +77,8 @@ export function SpaceView() {
   );
 
   return (
+    <QueryGate query={spaceQuery} errorMessage="Failed to load space.">
+      {(space) => (
     <div className="space-y-6">
       {managing && (
         <Card>
@@ -241,5 +239,7 @@ export function SpaceView() {
         />
       )}
     </div>
+      )}
+    </QueryGate>
   );
 }

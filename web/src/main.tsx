@@ -3,11 +3,11 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
-import { App } from "@/App";
-import { AnalyticsTracker } from "@/components/AnalyticsTracker";
-import { AuthProvider } from "@/hooks/useAuth";
+import { App } from "@/app/App";
+import { AnalyticsTracker } from "@/app/AnalyticsTracker";
+import { AuthProvider } from "@/features/auth/useAuth";
 import { ThemeProvider } from "@/theme/ThemeProvider";
-import { authStore } from "@/lib/auth";
+import { authStore } from "@/features/auth/auth";
 import "@/index.css";
 
 // Cross-tab logout: when another tab writes the "logout" key, clear this tab.

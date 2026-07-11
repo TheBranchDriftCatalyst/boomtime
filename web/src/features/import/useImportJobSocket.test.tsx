@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { useImportJobSocket } from "@/hooks/useImportJobSocket";
+import { useImportJobSocket } from "@/features/import/useImportJobSocket";
 import { mockImportWs, type MockImportWs } from "@/test/ws";
 import { importJob, importLog } from "@/test/factories";
 import type { ImportJob } from "@/types/api";

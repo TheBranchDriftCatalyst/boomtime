@@ -51,6 +51,19 @@ export function formatElapsed(
   return `${s}s`;
 }
 
+/** Human-readable byte size, e.g. 2048 -> "2.0 KB". */
+export function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  const u = ["KB", "MB", "GB", "TB"];
+  let v = n / 1024;
+  let i = 0;
+  while (v >= 1024 && i < u.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v.toFixed(1)} ${u[i]}`;
+}
+
 export function removeDays(d: Date, num: number): Date {
   const d1 = new Date(d);
   d1.setDate(d.getDate() - num);

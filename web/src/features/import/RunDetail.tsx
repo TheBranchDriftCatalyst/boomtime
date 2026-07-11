@@ -2,10 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Spinner } from "@/components/Spinner";
-import { ImportStateBadge } from "@/components/import/ImportStateBadge";
-import { LogTerminal } from "@/components/import/LogTerminal";
+import { QueryGate } from "@/components/QueryGate";
+import { ImportStateBadge } from "@/features/import/ImportStateBadge";
+import { LogTerminal } from "@/components/LogTerminal";
+import { LabeledStat } from "@/components/LabeledStat";
 import { api } from "@/lib/api";
+import { qk } from "@/lib/queryKeys";
 import { formatElapsed } from "@/lib/utils";
 
 interface RunDetailProps {
@@ -15,10 +17,11 @@ interface RunDetailProps {
 
 /** Read-only view of a past run's job details and logs. */
 export function RunDetail({ jobId, onClose }: RunDetailProps) {
-  const { data, isLoading } = useQuery({
-    queryKey: ["import-job", jobId],
+  const query = useQuery({
+    queryKey: qk.importJob(jobId),
     queryFn: () => api.getImportJob(jobId),
   });
+  const data = query.data;
 
   return (
     <Card>
@@ -32,24 +35,23 @@ export function RunDetail({ jobId, onClose }: RunDetailProps) {
         </Button>
       </CardHeader>
       <CardContent className="space-y-4">
-        {isLoading || !data ? (
-          <Spinner />
-        ) : (
+        <QueryGate query={query} errorMessage="Failed to load import run.">
+          {(data) => (
           <>
             <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
-              <Field
+              <LabeledStat
                 label="Range"
                 value={`${data.job.startDate.slice(0, 10)} → ${data.job.endDate.slice(0, 10)}`}
               />
-              <Field
+              <LabeledStat
                 label="Imported"
                 value={data.job.importedCount.toLocaleString()}
               />
-              <Field
+              <LabeledStat
                 label="Days"
                 value={`${data.job.processedDays} / ${data.job.totalDays}`}
               />
-              <Field
+              <LabeledStat
                 label="Duration"
                 value={formatElapsed(
                   data.job.startedAt ?? data.job.createdAt,
@@ -64,19 +66,9 @@ export function RunDetail({ jobId, onClose }: RunDetailProps) {
             )}
             <LogTerminal logs={data.logs} />
           </>
-        )}
+          )}
+        </QueryGate>
       </CardContent>
     </Card>
-  );
-}
-
-function Field({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="text-xs uppercase tracking-wide text-muted-foreground">
-        {label}
-      </p>
-      <p className="mt-0.5 font-mono font-medium">{value}</p>
-    </div>
   );
 }

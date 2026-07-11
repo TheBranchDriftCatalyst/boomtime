@@ -1,15 +1,13 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useMemo } from "react";
 import * as d3 from "d3";
 import { Card, CardContent } from "@/components/ui/card";
-import { CHART_COLORS } from "@/lib/config";
 import { secondsToHms } from "@/lib/utils";
-import { cssVar, useChartFrame } from "@/viz/d3/useChartFrame";
-import {
-  createTooltip,
-  hideTooltip,
-  showTooltip,
-  type TooltipSelection,
-} from "@/viz/d3/tooltip";
+import { cssVar } from "@/viz/d3/useChartFrame";
+import { useD3Surface } from "@/viz/d3/useD3Surface";
+import { ChartSurface } from "@/viz/d3/ChartSurface";
+import { tooltipHtml } from "@/viz/d3/tooltip";
+import { formatDay, styleAxis, thinnedDateTicks } from "@/viz/d3/axes";
+import { colorAt } from "@/viz/d3/color";
 import { EmptyChart } from "@/viz/d3/EmptyChart";
 import { bucketGroups, bucketSum } from "@/viz/bucket";
 import type { SessionsPayload } from "@/types/api";
@@ -74,74 +72,54 @@ function Histogram({
   bins: SessionsPayload["histogram"];
   height: number;
 }) {
-  const { ref, frame } = useChartFrame(height);
-  const svgRef = useRef<SVGSVGElement | null>(null);
+  const surface = useD3Surface(
+    { height, margin: { top: 8, right: 8, bottom: 34, left: 30 } },
+    ({ g, innerW, innerH, showTip, hideTip }) => {
+      if (bins.length === 0) return;
 
-  useEffect(() => {
-    const svg = d3.select(svgRef.current);
-    svg.selectAll("*").remove();
-    const container = ref.current;
-    if (!container || frame.width === 0 || bins.length === 0) return;
+      const fg = cssVar("--muted-foreground");
 
-    const fg = cssVar("--muted-foreground");
-    const width = frame.width;
-    const margin = { top: 8, right: 8, bottom: 34, left: 30 };
-    const innerW = width - margin.left - margin.right;
-    const innerH = height - margin.top - margin.bottom;
+      const x = d3.scaleBand<string>().domain(bins.map((b) => b.label)).range([0, innerW]).padding(0.25);
+      const yMax = d3.max(bins, (b) => b.count) ?? 0;
+      const y = d3.scaleLinear().domain([0, yMax || 1]).nice().range([innerH, 0]);
 
-    const g = svg
-      .attr("width", width)
-      .attr("height", height)
-      .append("g")
-      .attr("transform", `translate(${margin.left},${margin.top})`);
+      styleAxis(
+        g.append("g").call(d3.axisLeft(y).ticks(4).tickFormat((v) => String(v))),
+        { fg },
+        { fontSize: "10px" },
+      );
 
-    const x = d3.scaleBand<string>().domain(bins.map((b) => b.label)).range([0, innerW]).padding(0.25);
-    const yMax = d3.max(bins, (b) => b.count) ?? 0;
-    const y = d3.scaleLinear().domain([0, yMax || 1]).nice().range([innerH, 0]);
+      styleAxis(
+        g
+          .append("g")
+          .attr("transform", `translate(0,${innerH})`)
+          .call(d3.axisBottom(x)),
+        { fg },
+        { fontSize: "9px" },
+      )
+        .selectAll("text")
+        .attr("transform", "rotate(-30)")
+        .style("text-anchor", "end");
 
-    g.append("g")
-      .call(d3.axisLeft(y).ticks(4).tickFormat((v) => String(v)))
-      .call((sel) => sel.select(".domain").remove())
-      .selectAll("text")
-      .attr("fill", fg)
-      .style("font-size", "10px");
-
-    g.append("g")
-      .attr("transform", `translate(0,${innerH})`)
-      .call(d3.axisBottom(x))
-      .call((sel) => sel.select(".domain").remove())
-      .selectAll("text")
-      .attr("fill", fg)
-      .style("font-size", "9px")
-      .attr("transform", "rotate(-30)")
-      .style("text-anchor", "end");
-
-    const tip: TooltipSelection = createTooltip(container);
-    g.selectAll("rect.bar")
-      .data(bins)
-      .join("rect")
-      .attr("class", "bar")
-      .attr("x", (b) => x(b.label) ?? 0)
-      .attr("width", x.bandwidth())
-      .attr("y", (b) => y(b.count))
-      .attr("height", (b) => innerH - y(b.count))
-      .attr("rx", 2)
-      .attr("fill", CHART_COLORS[3])
-      .on("mousemove", (event, b) => {
-        showTooltip(tip, container, event, `<div style="font-weight:600">${b.label}</div>${b.count} sessions`);
-      })
-      .on("mouseleave", () => hideTooltip(tip));
-
-    return () => {
-      tip.remove();
-    };
-  }, [bins, height, frame.width, frame.themeKey, ref]);
-
-  return (
-    <div ref={ref} style={{ position: "relative", width: "100%", height }}>
-      <svg ref={svgRef} />
-    </div>
+      g.selectAll("rect.bar")
+        .data(bins)
+        .join("rect")
+        .attr("class", "bar")
+        .attr("x", (b) => x(b.label) ?? 0)
+        .attr("width", x.bandwidth())
+        .attr("y", (b) => y(b.count))
+        .attr("height", (b) => innerH - y(b.count))
+        .attr("rx", 2)
+        .attr("fill", colorAt(3))
+        .on("mousemove", (event, b) => {
+          showTip(event, tooltipHtml(b.label, `${b.count} sessions`));
+        })
+        .on("mouseleave", hideTip);
+    },
+    [bins],
   );
+
+  return <ChartSurface surface={surface} />;
 }
 
 function DailyStrip({
@@ -151,9 +129,6 @@ function DailyStrip({
   daily: SessionsPayload["daily"];
   height: number;
 }) {
-  const { ref, frame } = useChartFrame(height);
-  const svgRef = useRef<SVGSVGElement | null>(null);
-
   // Bucket the daily session counts so long ranges stay bounded.
   const bucketed = useMemo(() => {
     const groups = bucketGroups(daily.length);
@@ -162,81 +137,63 @@ function DailyStrip({
     return counts.map((c, i) => ({ date: labels[i], sessions: c }));
   }, [daily]);
 
-  useEffect(() => {
-    const svg = d3.select(svgRef.current);
-    svg.selectAll("*").remove();
-    const container = ref.current;
-    if (!container || frame.width === 0 || bucketed.length === 0) return;
+  const surface = useD3Surface(
+    { height, margin: { top: 8, right: 8, bottom: 22, left: 24 } },
+    ({ g, innerW, innerH, showTip, hideTip }) => {
+      if (bucketed.length === 0) return;
 
-    const fg = cssVar("--muted-foreground");
-    const width = frame.width;
-    const margin = { top: 8, right: 8, bottom: 22, left: 24 };
-    const innerW = width - margin.left - margin.right;
-    const innerH = height - margin.top - margin.bottom;
+      const fg = cssVar("--muted-foreground");
 
-    const g = svg
-      .attr("width", width)
-      .attr("height", height)
-      .append("g")
-      .attr("transform", `translate(${margin.left},${margin.top})`);
+      const x = d3.scaleBand<number>().domain(d3.range(bucketed.length)).range([0, innerW]).padding(0.2);
+      const yMax = d3.max(bucketed, (d) => d.sessions) ?? 0;
+      const y = d3.scaleLinear().domain([0, yMax || 1]).nice().range([innerH, 0]);
 
-    const x = d3.scaleBand<number>().domain(d3.range(bucketed.length)).range([0, innerW]).padding(0.2);
-    const yMax = d3.max(bucketed, (d) => d.sessions) ?? 0;
-    const y = d3.scaleLinear().domain([0, yMax || 1]).nice().range([innerH, 0]);
+      styleAxis(
+        g.append("g").call(d3.axisLeft(y).ticks(3).tickFormat((v) => String(v))),
+        { fg },
+        { fontSize: "10px" },
+      );
 
-    g.append("g")
-      .call(d3.axisLeft(y).ticks(3).tickFormat((v) => String(v)))
-      .call((sel) => sel.select(".domain").remove())
-      .selectAll("text")
-      .attr("fill", fg)
-      .style("font-size", "10px");
+      styleAxis(
+        g
+          .append("g")
+          .attr("transform", `translate(0,${innerH})`)
+          .call(
+            d3
+              .axisBottom(x)
+              .tickValues(thinnedDateTicks(d3.range(bucketed.length), 6))
+              .tickFormat((i) => {
+                const d = bucketed[Number(i)]?.date;
+                return d ? formatDay(new Date(d)) : "";
+              }),
+          ),
+        { fg },
+        { fontSize: "10px" },
+      );
 
-    const tickEvery = Math.ceil(bucketed.length / 6) || 1;
-    g.append("g")
-      .attr("transform", `translate(0,${innerH})`)
-      .call(
-        d3
-          .axisBottom(x)
-          .tickValues(d3.range(bucketed.length).filter((i) => i % tickEvery === 0))
-          .tickFormat((i) => {
-            const d = bucketed[Number(i)]?.date;
-            return d ? d3.timeFormat("%d %b")(new Date(d)) : "";
-          }),
-      )
-      .call((sel) => sel.select(".domain").remove())
-      .selectAll("text")
-      .attr("fill", fg)
-      .style("font-size", "10px");
-
-    const tip: TooltipSelection = createTooltip(container);
-    g.selectAll("rect.bar")
-      .data(bucketed)
-      .join("rect")
-      .attr("class", "bar")
-      .attr("x", (_d, i) => x(i) ?? 0)
-      .attr("width", x.bandwidth())
-      .attr("y", (d) => y(d.sessions))
-      .attr("height", (d) => innerH - y(d.sessions))
-      .attr("rx", 2)
-      .attr("fill", CHART_COLORS[2])
-      .on("mousemove", (event, d) => {
-        showTooltip(
-          tip,
-          container,
-          event,
-          `<div style="font-weight:600">${d.date ? d3.timeFormat("%d %b %Y")(new Date(d.date)) : ""}</div>${d.sessions} sessions`,
-        );
-      })
-      .on("mouseleave", () => hideTooltip(tip));
-
-    return () => {
-      tip.remove();
-    };
-  }, [bucketed, height, frame.width, frame.themeKey, ref]);
-
-  return (
-    <div ref={ref} style={{ position: "relative", width: "100%", height }}>
-      <svg ref={svgRef} />
-    </div>
+      g.selectAll("rect.bar")
+        .data(bucketed)
+        .join("rect")
+        .attr("class", "bar")
+        .attr("x", (_d, i) => x(i) ?? 0)
+        .attr("width", x.bandwidth())
+        .attr("y", (d) => y(d.sessions))
+        .attr("height", (d) => innerH - y(d.sessions))
+        .attr("rx", 2)
+        .attr("fill", colorAt(2))
+        .on("mousemove", (event, d) => {
+          showTip(
+            event,
+            tooltipHtml(
+              d.date ? d3.timeFormat("%d %b %Y")(new Date(d.date)) : "",
+              `${d.sessions} sessions`,
+            ),
+          );
+        })
+        .on("mouseleave", hideTip);
+    },
+    [bucketed],
   );
+
+  return <ChartSurface surface={surface} />;
 }

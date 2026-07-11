@@ -9,7 +9,7 @@ import {
 } from "react";
 import { useSyncExternalStore } from "react";
 import { api, ApiError } from "@/lib/api";
-import { authStore, broadcastLogout } from "@/lib/auth";
+import { authStore, broadcastLogout } from "@/features/auth/auth";
 import type { Credentials } from "@/types/api";
 
 interface AuthContextValue {

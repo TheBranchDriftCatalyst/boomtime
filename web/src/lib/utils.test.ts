@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { formatElapsed, secondsToHms } from "@/lib/utils";
+import { formatBytes, formatElapsed, secondsToHms } from "@/lib/utils";
 
 describe("secondsToHms", () => {
   it("formats hours + minutes (14 hrs 32 min)", () => {
@@ -23,6 +23,17 @@ describe("secondsToHms", () => {
     expect(secondsToHms(0)).toBe("0 mins");
     expect(secondsToHms(null)).toBe("0 mins");
     expect(secondsToHms(undefined)).toBe("0 mins");
+  });
+});
+
+describe("formatBytes", () => {
+  it("formats bytes across unit boundaries", () => {
+    expect(formatBytes(0)).toBe("0 B");
+    expect(formatBytes(512)).toBe("512 B");
+    expect(formatBytes(2048)).toBe("2.0 KB");
+    expect(formatBytes(5 * 1024 * 1024)).toBe("5.0 MB");
+    expect(formatBytes(3.5 * 1024 * 1024 * 1024)).toBe("3.5 GB");
+    expect(formatBytes(2 * 1024 ** 4)).toBe("2.0 TB");
   });
 });
 

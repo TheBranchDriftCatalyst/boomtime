@@ -1,21 +1,21 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Calculator, Clock, Code, Crown } from "lucide-react";
 import { StatCard } from "@/components/StatCard";
-import { Spinner } from "@/components/Spinner";
-import { ChartCard } from "@/components/charts/ChartCard";
-import { ColumnChart } from "@/components/charts/ColumnChart";
-import { HeatmapChart } from "@/components/charts/HeatmapChart";
-import { PieChart } from "@/components/charts/PieChart";
-import { TimelineChart } from "@/components/charts/TimelineChart";
-import { CategoryBreakdown } from "@/viz/council/CategoryBreakdown";
-import { ContributionCalendar } from "@/viz/council/ContributionCalendar";
-import { CumulativeArea } from "@/viz/council/CumulativeArea";
-import { StreakBanner } from "@/viz/council/StreakBanner";
-import { CategoryStreamgraph } from "@/viz/council/CategoryStreamgraph";
-import { Punchcard } from "@/viz/council/Punchcard";
-import { DeepWorkSessions } from "@/viz/council/DeepWorkSessions";
-import { MomentumGrid } from "@/viz/council/MomentumGrid";
+import { QueryGate } from "@/components/QueryGate";
+import { ChartCard } from "@/components/ChartCard";
+import { ColumnChart } from "@/viz/charts/ColumnChart";
+import { HeatmapChart } from "@/viz/charts/HeatmapChart";
+import { PieChart } from "@/viz/charts/PieChart";
+import { TimelineChart } from "@/viz/charts/TimelineChart";
+import { CategoryBreakdown } from "@/viz/charts/CategoryBreakdown";
+import { ContributionCalendar } from "@/viz/charts/ContributionCalendar";
+import { CumulativeArea } from "@/viz/charts/CumulativeArea";
+import { StreakBanner } from "@/viz/charts/StreakBanner";
+import { CategoryStreamgraph } from "@/viz/charts/CategoryStreamgraph";
+import { Punchcard } from "@/viz/charts/Punchcard";
+import { DeepWorkSessions } from "@/viz/charts/DeepWorkSessions";
+import { MomentumGrid } from "@/viz/charts/MomentumGrid";
 import { PageToolbar } from "@/components/toolbar/PageToolbar";
 import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
 import { TimeLimitDropdown } from "@/components/toolbar/TimeLimitDropdown";
@@ -28,10 +28,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useTimeRange } from "@/hooks/useTimeRange";
 import { api } from "@/lib/api";
-import { CHART_COLORS, TIMELINE_HOUR_OPTIONS } from "@/lib/config";
-import { daysBetween, removeHours, secondsToHms } from "@/lib/utils";
+import { qk } from "@/lib/queryKeys";
+import { TIMELINE_HOUR_OPTIONS } from "@/lib/config";
+import { orderCategories, paletteByName } from "@/viz/d3/color";
+import { removeHours, secondsToHms } from "@/lib/utils";
 import { mostActive } from "@/lib/mostActive";
-import { bucketDates, bucketGroups, bucketSum } from "@/viz/bucket";
+import { useBucketedDaily } from "@/viz/useBucketedDaily";
 import type { ResourceStats } from "@/types/api";
 
 interface OverviewDashboardProps {
@@ -62,7 +64,7 @@ export function OverviewDashboard({
   const [timelineHours, setTimelineHours] = useState(12);
 
   const statsQuery = useQuery({
-    queryKey: ["stats", tr.startISO, tr.endISO, tr.timeLimit, space],
+    queryKey: qk.stats(tr.startISO, tr.endISO, tr.timeLimit, space),
     queryFn: () =>
       api.getStats({
         start: tr.startISO,
@@ -73,7 +75,7 @@ export function OverviewDashboard({
   });
 
   const timelineQuery = useQuery({
-    queryKey: ["timeline", timelineHours, tr.timeLimit, space],
+    queryKey: qk.timeline(timelineHours, tr.timeLimit, space),
     queryFn: () =>
       api.getTimeline({
         start: removeHours(new Date(), timelineHours).toISOString(),
@@ -85,7 +87,7 @@ export function OverviewDashboard({
 
   // Council "big-bet" analytics (separate endpoints; bind to the same range).
   const punchcardQuery = useQuery({
-    queryKey: ["punchcard", tr.startISO, tr.endISO, tr.timeLimit, space],
+    queryKey: qk.punchcard(tr.startISO, tr.endISO, tr.timeLimit, space),
     queryFn: () =>
       api.getPunchcard({
         start: tr.startISO,
@@ -95,7 +97,7 @@ export function OverviewDashboard({
       }),
   });
   const sessionsQuery = useQuery({
-    queryKey: ["sessions", tr.startISO, tr.endISO, tr.timeLimit, space],
+    queryKey: qk.sessions(tr.startISO, tr.endISO, tr.timeLimit, space),
     queryFn: () =>
       api.getSessions({
         start: tr.startISO,
@@ -105,64 +107,53 @@ export function OverviewDashboard({
       }),
   });
   const momentumQuery = useQuery({
-    queryKey: ["momentum", tr.startISO, tr.endISO, space],
+    queryKey: qk.momentum(tr.startISO, tr.endISO, space),
     queryFn: () =>
       api.getMomentum({ start: tr.startISO, end: tr.endISO, top: 8, space }),
   });
 
   const stats = statsQuery.data;
-  const dates = useMemo(
-    () =>
-      stats ? daysBetween(new Date(stats.startDate), new Date(stats.endDate)) : [],
-    [stats],
-  );
 
   // Bucket the day-by-day series into ~weekly groups for long ranges so the
   // time charts (column + heatmaps) stay bounded (~60 points) instead of
   // rendering hundreds of daily x-points on all-time.
-  const groups = useMemo(() => bucketGroups(dates.length), [dates.length]);
-  const chartDates = useMemo(() => bucketDates(groups, dates), [groups, dates]);
-  const bucketNums = (arr: number[]) => bucketSum(groups, arr);
-  const chartDailyTotal = useMemo(
-    () => bucketNums(stats?.dailyTotal ?? []),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [groups, stats],
+  const { dates, chartDates, sum } = useBucketedDaily(
+    stats?.startDate,
+    stats?.endDate,
   );
-  const bucketItems = (items: ResourceStats[]) =>
-    items.map((it) => ({ ...it, totalDaily: bucketNums(it.totalDaily) }));
+  const chartDailyTotal = useMemo(
+    () => sum(stats?.dailyTotal ?? []),
+    [sum, stats?.dailyTotal],
+  );
+  const bucketItems = useCallback(
+    (items: ResourceStats[]) =>
+      items.map((it) => ({ ...it, totalDaily: sum(it.totalDaily) })),
+    [sum],
+  );
   const chartProjects = useMemo(
     () => bucketItems(stats?.projects ?? []),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [groups, stats],
+    [bucketItems, stats?.projects],
   );
   const chartLanguages = useMemo(
     () => bucketItems(stats?.languages ?? []),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [groups, stats],
+    [bucketItems, stats?.languages],
   );
   const chartCategories = useMemo(
     () => bucketItems(stats?.categories ?? []),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [groups, stats],
+    [bucketItems, stats?.categories],
   );
 
   // Stacked-column series for "Total activity", stacked by category. Uses the
-  // SAME ordering (real categories by total desc, then the "Other (…)" bucket)
-  // and the SAME palette-by-index as the Category streamgraph / breakdown, so
-  // the three charts stay visually consistent. Per-day totals equal the old
-  // single-series `chartDailyTotal`, so nothing regresses.
+  // SAME `orderCategories` + `paletteByName` contract as the Category
+  // streamgraph, so the two charts' order/colors cannot desync. Per-day totals
+  // equal the old single-series `chartDailyTotal`, so nothing regresses.
   const categoryColumnSeries = useMemo(() => {
-    const isOther = (r: ResourceStats) => r.name.startsWith("Other (");
-    const ordered = [
-      ...chartCategories
-        .filter((c) => !isOther(c))
-        .sort((a, b) => b.totalSeconds - a.totalSeconds),
-      ...chartCategories.filter(isOther),
-    ].filter((c) => c.totalSeconds > 0);
-    return ordered.map((c, i) => ({
+    const ordered = orderCategories(chartCategories);
+    const palette = paletteByName(ordered);
+    return ordered.map((c) => ({
       name: c.name,
       values: c.totalDaily,
-      color: CHART_COLORS[i % CHART_COLORS.length],
+      color: palette.get(c.name)!,
     }));
   }, [chartCategories]);
 
@@ -183,9 +174,8 @@ export function OverviewDashboard({
         />
       </PageToolbar>
 
-      {statsQuery.isLoading || !stats ? (
-        <Spinner />
-      ) : (
+      <QueryGate query={statsQuery} errorMessage="Failed to load overview stats.">
+        {(stats) => (
         <div className="space-y-6">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard
@@ -314,7 +304,8 @@ export function OverviewDashboard({
             <TimelineChart timeline={timelineQuery.data} />
           </ChartCard>
         </div>
-      )}
+        )}
+      </QueryGate>
     </div>
   );
 }

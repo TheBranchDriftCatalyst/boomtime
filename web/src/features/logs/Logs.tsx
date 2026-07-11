@@ -1,31 +1,14 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { PageToolbar } from "@/components/toolbar/PageToolbar";
 import { Button } from "@/components/ui/button";
-import { useLogsSocket, type SocketStatus } from "@/hooks/useLogsSocket";
+import { LogTerminal, type LogTerminalLine } from "@/components/LogTerminal";
+import { useLogsSocket, type SocketStatus } from "@/features/logs/useLogsSocket";
 import { cn } from "@/lib/utils";
-import type { ServerLogEntry } from "@/types/api";
 
 // Level filter options (ordered by severity). "all" shows everything.
 const LEVELS = ["all", "debug", "info", "warn", "error"] as const;
 type LevelFilter = (typeof LEVELS)[number];
-
-function levelColor(level: string): string {
-  switch (level.toLowerCase()) {
-    case "error":
-    case "fatal":
-      return "text-red-400";
-    case "warn":
-    case "warning":
-      return "text-amber-400";
-    case "debug":
-      return "text-slate-500";
-    case "info":
-      return "text-sky-400";
-    default:
-      return "text-slate-300";
-  }
-}
 
 function normalizeLevel(level: string): LevelFilter | "other" {
   const l = level.toLowerCase();
@@ -33,18 +16,6 @@ function normalizeLevel(level: string): LevelFilter | "other" {
   if (l === "fatal") return "error";
   if (l === "debug" || l === "info" || l === "warn" || l === "error") return l;
   return "other";
-}
-
-function formatTs(ts: string): string {
-  const d = new Date(ts);
-  return Number.isNaN(d.getTime()) ? ts : d.toLocaleTimeString();
-}
-
-function formatAttrs(attrs?: Record<string, string> | null): string {
-  if (!attrs) return "";
-  return Object.entries(attrs)
-    .map(([k, v]) => `${k}=${v}`)
-    .join(" ");
 }
 
 const statusStyles: Record<SocketStatus, { label: string; dot: string }> = {
@@ -64,27 +35,19 @@ export function Logs() {
   const { logs, status, clear } = useLogsSocket();
   const [filter, setFilter] = useState<LevelFilter>("all");
 
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [pinned, setPinned] = useState(true);
-
-  const visible = useMemo(() => {
-    if (filter === "all") return logs;
-    return logs.filter((l) => normalizeLevel(l.level) === filter);
+  const visible = useMemo<LogTerminalLine[]>(() => {
+    const matching =
+      filter === "all"
+        ? logs
+        : logs.filter((l) => normalizeLevel(l.level) === filter);
+    return matching.map((l) => ({
+      id: l.id,
+      ts: l.time,
+      level: l.level,
+      message: l.msg,
+      attrs: l.attrs,
+    }));
   }, [logs, filter]);
-
-  // Track whether the user is scrolled to (near) the bottom.
-  function onScroll() {
-    const el = containerRef.current;
-    if (!el) return;
-    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
-    setPinned(distance < 40);
-  }
-
-  // Auto-scroll to the bottom on new/visible logs while pinned.
-  useLayoutEffect(() => {
-    const el = containerRef.current;
-    if (el && pinned) el.scrollTop = el.scrollHeight;
-  }, [visible, pinned]);
 
   const st = statusStyles[status];
 
@@ -119,56 +82,15 @@ export function Logs() {
         </Button>
       </PageToolbar>
 
-      {!pinned && (
-        <div className="mb-2 flex justify-end">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setPinned(true)}
-            title="Resume auto-scroll"
-          >
-            Jump to latest
-          </Button>
-        </div>
-      )}
-
-      <div
-        ref={containerRef}
-        onScroll={onScroll}
-        className="h-[70vh] overflow-y-auto rounded-md border bg-slate-950 p-3 font-mono text-xs leading-relaxed"
-      >
-        {visible.length === 0 ? (
-          <p className="text-slate-500">
-            {logs.length === 0
-              ? "Waiting for server logs..."
-              : "No logs match this filter."}
-          </p>
-        ) : (
-          visible.map((line: ServerLogEntry) => {
-            const attrs = formatAttrs(line.attrs);
-            return (
-              <div
-                key={line.id}
-                className="whitespace-pre-wrap break-words"
-              >
-                <span className="text-slate-600">{formatTs(line.time)} </span>
-                <span
-                  className={cn(
-                    "font-semibold uppercase",
-                    levelColor(line.level),
-                  )}
-                >
-                  [{line.level}]
-                </span>{" "}
-                <span className="text-slate-200">{line.msg}</span>
-                {attrs && (
-                  <span className="text-slate-500"> {attrs}</span>
-                )}
-              </div>
-            );
-          })
-        )}
-      </div>
+      <LogTerminal
+        logs={visible}
+        height="h-[70vh]"
+        emptyText={
+          logs.length === 0
+            ? "Waiting for server logs..."
+            : "No logs match this filter."
+        }
+      />
     </div>
   );
 }

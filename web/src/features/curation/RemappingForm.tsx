@@ -2,36 +2,26 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, Check, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { axisLabel } from "@/components/heartbeats/axes";
-import { useAxisValues } from "@/hooks/useAxisValues";
-import { useCurationMutations } from "@/hooks/useCuration";
-import { templateToBackend, templateToDisplay, templateToJs } from "@/lib/remapDisplay";
+import { AxisSelect } from "@/features/rules/AxisSelect";
+import { AxisValueField } from "@/features/rules/AxisValueField";
+import { MatchTypeToggle } from "@/features/rules/MatchTypeToggle";
+import {
+  MatchPreviewContainer,
+  MatchPreviewList,
+} from "@/features/rules/MatchPreviewList";
+import { CURATABLE_AXES } from "@/features/rules/axes";
+import { axisLabel } from "@/lib/axes";
+import { useAxisValues } from "@/features/rules/useAxisValues";
+import { useCurationMutations } from "@/features/curation/useCuration";
+import { templateToBackend, templateToJs } from "@/features/curation/remapDisplay";
 import { cn } from "@/lib/utils";
 import type { CurationMatchType, HeartbeatAxis } from "@/types/api";
 
-// Axes that support name remappings (rename rules) — matches the renamable axes
-// in the Heartbeats explorer (excludes synthetic `day` and file-path `entity`).
-const REMAP_AXES: readonly HeartbeatAxis[] = [
-  "project",
-  "language",
-  "editor",
-  "plugin",
-  "machine",
-  "platform",
-  "branch",
-  "category",
-];
-
 type Mode = CurationMatchType; // "exact" | "regex" | "template"
+
+const MODES: readonly Mode[] = ["exact", "regex", "template"];
 
 const MODE_LABEL: Record<Mode, string> = {
   exact: "Exact",
@@ -97,7 +87,9 @@ export function RemappingForm({
   const axisLocked = presetAxis !== undefined;
   const editing = editRuleId !== undefined;
 
-  const [axis, setAxis] = useState<HeartbeatAxis>(presetAxis ?? REMAP_AXES[0]);
+  const [axis, setAxis] = useState<HeartbeatAxis>(
+    presetAxis ?? CURATABLE_AXES[0],
+  );
   const [pattern, setPattern] = useState(presetValue ?? "");
   const [target, setTarget] = useState(presetTarget ?? "");
   const [mode, setMode] = useState<Mode>(presetMatchType ?? "exact");
@@ -114,10 +106,10 @@ export function RemappingForm({
   const isRegexLike = mode === "regex" || mode === "template";
   const isTemplate = mode === "template";
 
-  // Real axis values (with heartbeat counts) — power the exact-mode
-  // autocomplete AND the live preview for every mode. Always fetched so the
-  // exact combobox and previews can show matching values as the user types.
-  const { options, isLoading: axisLoading } = useAxisValues(axis);
+  // Real axis values (with heartbeat counts) — power the live preview for
+  // every mode (the exact-mode autocomplete in AxisValueField shares the same
+  // React Query cache entry, so this is a single fetch).
+  const { options } = useAxisValues(axis);
 
   // Client-side live preview of what the currently-selected strategy will do,
   // computed from the real axis values (no backend call), for ALL three modes:
@@ -229,86 +221,36 @@ export function RemappingForm({
   const isPending = add.isPending || edit.isPending;
 
   const axisField = (
-    <div className="space-y-1">
-      <Label className="text-xs">Axis</Label>
-      {axisLocked ? (
-        <div className="flex h-8 w-32 items-center rounded-md border bg-muted px-3 text-sm text-muted-foreground">
-          {axisLabel(axis)}
-        </div>
-      ) : (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className={cn("justify-between", stacked ? "w-full" : "w-32")}
-            >
-              {axisLabel(axis)}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="max-h-72 overflow-y-auto">
-            {REMAP_AXES.map((a) => (
-              <DropdownMenuItem key={a} onSelect={() => setAxis(a)}>
-                {axisLabel(a)}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
-    </div>
+    <AxisSelect
+      axes={CURATABLE_AXES}
+      value={axis}
+      onChange={setAxis}
+      locked={axisLocked}
+      triggerClassName={stacked ? "w-full" : "w-32"}
+    />
   );
 
   const modeField = (
-    <div className="space-y-1">
-      <Label className="text-xs">Match</Label>
-      <div className="inline-flex h-8 items-center rounded-md border p-0.5">
-        {(["exact", "regex", "template"] as Mode[]).map((m) => (
-          <button
-            key={m}
-            type="button"
-            aria-pressed={mode === m}
-            onClick={() => setMode(m)}
-            className={cn(
-              "h-full rounded px-2 text-xs font-medium transition-colors",
-              mode === m
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {MODE_LABEL[m]}
-          </button>
-        ))}
-      </div>
-    </div>
+    <MatchTypeToggle
+      modes={MODES}
+      labels={MODE_LABEL}
+      value={mode}
+      onChange={setMode}
+    />
   );
 
   const patternField = (
-    <div className={cn("space-y-1", !stacked && "min-w-40 flex-1")}>
-      <Label className="text-xs">
-        {isRegexLike ? "Pattern (regex)" : "Pattern"}
-      </Label>
-      {isRegexLike ? (
-        <Input
-          value={pattern}
-          onChange={(e) => setPattern(e.target.value)}
-          placeholder={isTemplate ? "^@(.*)$" : "^Meet"}
-          className="h-8 font-mono"
-        />
-      ) : (
-        <Combobox
-          options={options}
-          value={pattern || null}
-          onSelect={setPattern}
-          loading={axisLoading}
-          creatable
-          placeholder="Meet - Weekly All-Hands"
-          searchPlaceholder={`Search ${axisLabel(axis).toLowerCase()}s…`}
-          emptyText={`No ${axisLabel(axis).toLowerCase()} values found.`}
-          className="h-8 font-mono"
-        />
-      )}
-    </div>
+    <AxisValueField
+      axis={axis}
+      exact={!isRegexLike}
+      value={pattern}
+      onChange={setPattern}
+      label={isRegexLike ? "Pattern (regex)" : "Pattern"}
+      placeholder={
+        isTemplate ? "^@(.*)$" : isRegexLike ? "^Meet" : "Meet - Weekly All-Hands"
+      }
+      className={cn(!stacked && "min-w-40 flex-1")}
+    />
   );
 
   const targetField = (
@@ -347,14 +289,17 @@ export function RemappingForm({
     </p>
   );
 
-  const preview = previewMatch && (
-    <div className="space-y-1 rounded-md border bg-background/60 p-2">
-      {previewMatch.kind === "invalid" ? (
+  const preview =
+    previewMatch &&
+    (previewMatch.kind === "invalid" ? (
+      <MatchPreviewContainer>
         <p className="text-xs text-muted-foreground">
           Enter a valid regular expression to preview matches.
         </p>
-      ) : previewMatch.kind === "exact" ? (
-        previewMatch.found ? (
+      </MatchPreviewContainer>
+    ) : previewMatch.kind === "exact" ? (
+      <MatchPreviewContainer>
+        {previewMatch.found ? (
           <p className="text-xs text-muted-foreground">
             Matches{" "}
             <span className="font-mono font-medium text-foreground">
@@ -367,54 +312,46 @@ export function RemappingForm({
           <p className="text-xs text-muted-foreground">
             No heartbeats match this value yet.
           </p>
-        )
-      ) : previewMatch.kind === "regex" ? (
-        <>
-          <p className="text-xs font-medium text-muted-foreground">
+        )}
+      </MatchPreviewContainer>
+    ) : previewMatch.kind === "regex" ? (
+      <MatchPreviewList
+        title={
+          <>
             Matches {previewMatch.total.toLocaleString()} value
             {previewMatch.total === 1 ? "" : "s"}
-          </p>
-          {previewMatch.rows.map((row) => (
-            <div
-              key={row.value}
-              className="flex items-center justify-between gap-2 text-xs"
-            >
-              <span className="truncate font-mono" title={row.value}>
-                {row.value}
-              </span>
-              <span className="shrink-0 tabular-nums text-muted-foreground">
-                {row.count.toLocaleString()}
-              </span>
-            </div>
-          ))}
-          {previewMatch.total === 0 && (
-            <p className="text-xs text-muted-foreground">No values match yet.</p>
-          )}
-        </>
-      ) : (
-        <>
-          <p className="text-xs font-medium text-muted-foreground">
+          </>
+        }
+        rows={previewMatch.rows}
+        emptyText="No values match yet."
+      />
+    ) : (
+      <MatchPreviewList
+        title={
+          <>
             Preview · matches {previewMatch.total.toLocaleString()} value
             {previewMatch.total === 1 ? "" : "s"}
-          </p>
-          {previewMatch.rows.map((row) => (
-            <div key={row.raw} className="flex items-center gap-1.5 text-xs">
-              <span className="truncate font-mono" title={row.raw}>
-                {row.raw}
-              </span>
-              <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
-              <span
-                className="truncate font-mono font-medium"
-                title={row.mapped}
-              >
-                {row.mapped}
-              </span>
-            </div>
-          ))}
-        </>
-      )}
-    </div>
-  );
+          </>
+        }
+        rows={previewMatch.rows}
+        emptyText={null}
+        rowKey={(row) => row.raw}
+        renderRow={(row) => (
+          <div className="flex items-center gap-1.5 text-xs">
+            <span className="truncate font-mono" title={row.raw}>
+              {row.raw}
+            </span>
+            <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+            <span
+              className="truncate font-mono font-medium"
+              title={row.mapped}
+            >
+              {row.mapped}
+            </span>
+          </div>
+        )}
+      />
+    ));
 
   if (stacked) {
     return (

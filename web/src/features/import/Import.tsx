@@ -3,12 +3,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { PageToolbar } from "@/components/toolbar/PageToolbar";
 import { Spinner } from "@/components/Spinner";
-import { CurrentRunPanel } from "@/components/import/CurrentRunPanel";
-import { HistoryList } from "@/components/import/HistoryList";
-import { RunDetail } from "@/components/import/RunDetail";
-import { StartImportForm } from "@/components/import/StartImportForm";
-import { useImportJobSocket } from "@/hooks/useImportJobSocket";
+import { CurrentRunPanel } from "@/features/import/CurrentRunPanel";
+import { HistoryList } from "@/features/import/HistoryList";
+import { RunDetail } from "@/features/import/RunDetail";
+import { StartImportForm } from "@/features/import/StartImportForm";
+import { useImportJobSocket } from "@/features/import/useImportJobSocket";
 import { api } from "@/lib/api";
+import { qk } from "@/lib/queryKeys";
 import { isTerminalState } from "@/types/api";
 
 export function Import() {
@@ -22,13 +23,13 @@ export function Import() {
   const [autoBound, setAutoBound] = useState(false);
 
   const jobsQuery = useQuery({
-    queryKey: ["import-jobs"],
+    queryKey: qk.importJobs(),
     queryFn: () => api.getImportJobs(),
     // Poll the list so history/counters refresh even without a socket.
     refetchInterval: 15_000,
   });
 
-  const jobs = useMemo(() => jobsQuery.data?.jobs ?? [], [jobsQuery.data]);
+  const jobs = useMemo(() => jobsQuery.data ?? [], [jobsQuery.data]);
 
   // Auto-bind on load: if a queued/running job exists, resume its stream.
   useEffect(() => {
@@ -45,7 +46,7 @@ export function Import() {
   // When the active job reaches a terminal state, refresh the history list.
   useEffect(() => {
     if (stream.job && isTerminalState(stream.job.state)) {
-      qc.invalidateQueries({ queryKey: ["import-jobs"] });
+      qc.invalidateQueries({ queryKey: qk.importJobs() });
     }
   }, [stream.job, qc]);
 
@@ -53,7 +54,7 @@ export function Import() {
     mutationFn: (id: number) => api.cancelImportJob(id),
     onSuccess: () => {
       toast.success("Cancellation requested");
-      qc.invalidateQueries({ queryKey: ["import-jobs"] });
+      qc.invalidateQueries({ queryKey: qk.importJobs() });
     },
     onError: () => toast.error("Failed to cancel the import job"),
   });
@@ -61,7 +62,7 @@ export function Import() {
   function onStarted(jobId: number) {
     setInspectId(null);
     setActiveJobId(jobId);
-    qc.invalidateQueries({ queryKey: ["import-jobs"] });
+    qc.invalidateQueries({ queryKey: qk.importJobs() });
   }
 
   return (

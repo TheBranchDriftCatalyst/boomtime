@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { CHART_COLORS } from "@/lib/config";
+import { colorAt } from "@/viz/d3/color";
 import { secondsToHms } from "@/lib/utils";
 import { EmptyChart } from "@/viz/d3/EmptyChart";
 import type { ResourceStats } from "@/types/api";
@@ -28,7 +28,7 @@ export function CategoryBreakdown({ categories }: CategoryBreakdownProps) {
         name: c.name,
         seconds: c.totalSeconds,
         pct: (c.totalSeconds / total) * 100,
-        color: CHART_COLORS[i % CHART_COLORS.length],
+        color: colorAt(i),
       }));
   }, [categories]);
 
