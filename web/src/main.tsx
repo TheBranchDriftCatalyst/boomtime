@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
 import { App } from "@/App";
+import { AnalyticsTracker } from "@/components/AnalyticsTracker";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ThemeProvider } from "@/theme/ThemeProvider";
 import { authStore } from "@/lib/auth";
@@ -29,6 +30,7 @@ createRoot(document.getElementById("root")!).render(
     <ThemeProvider>
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
+          <AnalyticsTracker />
           <AuthProvider>
             <App />
             <Toaster position="top-right" richColors />
