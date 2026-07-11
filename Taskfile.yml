@@ -10,7 +10,7 @@ vars:
   # Isolated DB for the Go test suite (never the dev/panda `test` DB).
   TEST_DB_URL: '{{.BOOM_TEST_DATABASE_URL | default "postgres://test:test@localhost:5432/boomtime_test?sslmode=disable"}}'
   # Dev DB used ONLY as a read-only source when regenerating fixtures.
-  DEV_DB_URL: '{{.DEV_DB_URL | default "postgres://test:test@localhost:5432/test?sslmode=disable"}}'
+  DEV_DB_URL: '{{.DEV_DB_URL | default "postgres://test:test@localhost:5432/boomtime?sslmode=disable"}}'
 
 tasks:
   default:
