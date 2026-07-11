@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -32,6 +33,10 @@ type Job struct {
 	CreatedAt     time.Time  `json:"createdAt"`
 	StartedAt     *time.Time `json:"startedAt"`
 	FinishedAt    *time.Time `json:"finishedAt"`
+	// Drift is a JSON array of wakatime.com API schema-drift findings observed
+	// during the run (gaka-unq.1). Stored as raw JSON so this package doesn't
+	// import the importer package. Nil when no drift was recorded.
+	Drift json.RawMessage `json:"drift,omitempty"`
 }
 
 // LogLine is one durable log entry for a job.
@@ -45,14 +50,20 @@ type LogLine struct {
 // jobColumns is the shared SELECT list; current_day is rendered as text.
 const jobColumns = `id, owner, state, start_date, end_date,
 	COALESCE(total_days, 0), processed_days, imported_count,
-	to_char(current_day, 'YYYY-MM-DD'), error, created_at, started_at, finished_at`
+	to_char(current_day, 'YYYY-MM-DD'), error, created_at, started_at, finished_at, drift`
 
 func scanJob(row pgx.Row) (*Job, error) {
 	var j Job
+	// drift is JSONB and nullable; scan into a *[]byte then normalize to
+	// RawMessage so JSON round-trips as null (not "" / base64) when absent.
+	var drift *[]byte
 	if err := row.Scan(&j.ID, &j.Owner, &j.State, &j.StartDate, &j.EndDate,
 		&j.TotalDays, &j.ProcessedDays, &j.ImportedCount,
-		&j.CurrentDay, &j.Error, &j.CreatedAt, &j.StartedAt, &j.FinishedAt); err != nil {
+		&j.CurrentDay, &j.Error, &j.CreatedAt, &j.StartedAt, &j.FinishedAt, &drift); err != nil {
 		return nil, err
+	}
+	if drift != nil {
+		j.Drift = json.RawMessage(*drift)
 	}
 	return &j, nil
 }
@@ -151,6 +162,21 @@ func (d *DB) CancelJob(ctx context.Context, id int) (*Job, error) {
 		return nil, nil
 	}
 	return j, err
+}
+
+// SetJobDrift persists a JSON-encoded array of schema-drift findings on the
+// job row. The importer package builds the payload (see internal/importer/drift.go).
+// Passing nil clears the column. Called before FinishImportJob so terminal
+// snapshots carry drift for historical runs and WS clients.
+func (d *DB) SetJobDrift(ctx context.Context, id int, drift []byte) error {
+	// drift is nullable JSONB. json.RawMessage / []byte is emitted by pgx as
+	// bytea if we don't tell it otherwise; cast on the server side.
+	if len(drift) == 0 {
+		_, err := d.Pool.Exec(ctx, `UPDATE import_jobs SET drift = NULL, updated_at = now() WHERE id = $1`, id)
+		return err
+	}
+	_, err := d.Pool.Exec(ctx, `UPDATE import_jobs SET drift = $2::jsonb, updated_at = now() WHERE id = $1`, id, string(drift))
+	return err
 }
 
 // MarkRunningJobsFailed marks any leftover queued/running jobs as failed on

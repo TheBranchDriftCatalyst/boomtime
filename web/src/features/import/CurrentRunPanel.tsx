@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { ImportStateBadge } from "@/features/import/ImportStateBadge";
+import { DriftBanner } from "@/features/import/DriftBanner";
 import { LogTerminal } from "@/components/LogTerminal";
 import { LabeledStat } from "@/components/LabeledStat";
 import { formatElapsed } from "@/lib/utils";
@@ -93,6 +94,8 @@ export function CurrentRunPanel({
             {job.error}
           </div>
         )}
+
+        <DriftBanner findings={job.drift} />
 
         <p className="text-xs text-muted-foreground">
           Re-running an import is safe: already-imported heartbeats are
