@@ -6,6 +6,7 @@ import { Spinner } from "@/components/Spinner";
 import { Heartbeats } from "@/pages/Heartbeats";
 import { Import } from "@/pages/Import";
 import { Leaderboards } from "@/pages/Leaderboards";
+import { Logs } from "@/pages/Logs";
 import { Login } from "@/pages/Login";
 import { Overview } from "@/pages/Overview";
 import { Projects } from "@/pages/Projects";
@@ -45,6 +46,7 @@ export function App() {
         <Route path="heartbeats" element={<Heartbeats />} />
         <Route path="space/:id" element={<SpaceView />} />
         <Route path="import" element={<Import />} />
+        <Route path="logs" element={<Logs />} />
         <Route path="settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

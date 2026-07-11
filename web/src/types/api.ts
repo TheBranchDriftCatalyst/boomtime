@@ -503,6 +503,27 @@ export function isTerminalState(state: ImportJobState): boolean {
   );
 }
 
+// --- Server process logs (the "Logs" tab) ------------------------------------
+
+// One captured slog record from the running server process. `id` is a
+// process-monotonic cursor used for backfill/resume (afterId).
+export interface ServerLogEntry {
+  id: number;
+  time: string;
+  level: string;
+  msg: string;
+  attrs?: Record<string, string> | null;
+}
+
+export interface ServerLogsPayload {
+  logs: ServerLogEntry[];
+}
+
+// WebSocket messages the server pushes on /api/v1/logs/ws.
+export type ServerLogSocketMessage =
+  | { type: "snapshot"; logs: ServerLogEntry[] }
+  | { type: "log"; log: ServerLogEntry };
+
 export interface Commit {
   html_url: string;
   total_seconds: number;

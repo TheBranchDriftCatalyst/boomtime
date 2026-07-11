@@ -19,6 +19,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
 	"github.com/labstack/echo/v5"
 )
 
@@ -29,12 +30,22 @@ type Handler struct {
 	Logger *slog.Logger
 	Worker *importer.Worker
 	Hub    *importer.Hub
+	// LogHub streams the server process's own slog records to the Logs tab.
+	LogHub *logging.LogHub
 	Cache  *cache.TTL
 }
 
 // New constructs a Handler.
 func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *importer.Worker, hub *importer.Hub) *Handler {
-	return &Handler{DB: database, Cfg: cfg, Logger: logger, Worker: worker, Hub: hub, Cache: cache.New(statsCacheTTL())}
+	return &Handler{
+		DB:     database,
+		Cfg:    cfg,
+		Logger: logger,
+		Worker: worker,
+		Hub:    hub,
+		LogHub: logging.Hub(),
+		Cache:  cache.New(statsCacheTTL()),
+	}
 }
 
 // statsCacheTTL is the TTL for cached aggregation payloads (stats/timeline/
@@ -94,6 +105,18 @@ func (h *Handler) resolveUserFromCookie(c *echo.Context) (string, bool, error) {
 		return "", false, nil
 	}
 	return h.DB.GetUserByRefreshToken(c.Request().Context(), refresh)
+}
+
+// resolveUserFromQueryToken resolves the owner from a `token` query parameter.
+// Browsers cannot set an Authorization header on a WebSocket handshake, so the
+// Logs WS/REST endpoints authenticate via ?token=<access token> (the same
+// base64(uuid) access token used in the Authorization header elsewhere).
+func (h *Handler) resolveUserFromQueryToken(c *echo.Context) (string, bool, error) {
+	tkn := c.QueryParam("token")
+	if tkn == "" {
+		return "", false, nil
+	}
+	return h.DB.GetUserByToken(c.Request().Context(), tkn)
 }
 
 // tokenFromHeader extracts the base64(uuid) token from the Authorization header,

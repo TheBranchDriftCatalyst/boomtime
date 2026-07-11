@@ -1,14 +1,25 @@
 // Package logging configures the stdlib slog logger (text for dev, JSON for prod)
-// replacing hakatime's katip setup.
+// replacing hakatime's katip setup. It also tees every log record into a LogHub
+// (an in-process ring buffer + WS fan-out) so the dashboard's Logs tab can view
+// the running server's own logs live and durably across reloads.
 package logging
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"strings"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 )
+
+// hub is the process-wide LogHub the tee handler publishes to. It is created in
+// Setup and exposed via Hub() so the server can wire the same instance into the
+// WebSocket/REST endpoints. A nil hub makes the tee a no-op.
+var hub *LogHub
+
+// Hub returns the process-wide LogHub (nil until Setup runs).
+func Hub() *LogHub { return hub }
 
 func parseLevel(s string) slog.Level {
 	switch strings.ToLower(strings.TrimSpace(s)) {
@@ -23,16 +34,75 @@ func parseLevel(s string) slog.Level {
 	}
 }
 
-// Setup builds a slog.Logger and installs it as the default.
+// Setup builds a slog.Logger and installs it as the default. The base handler
+// (text in dev, JSON in prod) still writes to os.Stdout unchanged; a teeHandler
+// wraps it so every record is ALSO published to the LogHub.
 func Setup(c *config.Config) *slog.Logger {
 	opts := &slog.HandlerOptions{Level: parseLevel(c.LogLevel)}
-	var h slog.Handler
+	var base slog.Handler
 	if c.IsDev() {
-		h = slog.NewTextHandler(os.Stdout, opts)
+		base = slog.NewTextHandler(os.Stdout, opts)
 	} else {
-		h = slog.NewJSONHandler(os.Stdout, opts)
+		base = slog.NewJSONHandler(os.Stdout, opts)
 	}
-	l := slog.New(h)
+	hub = NewLogHub(DefaultLogHubCapacity)
+	l := slog.New(&teeHandler{base: base, hub: hub})
 	slog.SetDefault(l)
 	return l
+}
+
+// teeHandler wraps a base slog.Handler: it delegates to base.Handle (keeping
+// stdout output identical) and then best-effort publishes the record to the hub.
+// Publishing is non-blocking (see LogHub.Publish), so the logging path is never
+// slowed by a WS subscriber. Safe when hub is nil.
+type teeHandler struct {
+	base  slog.Handler
+	hub   *LogHub
+	attrs []slog.Attr // accumulated via WithAttrs
+	group string      // last group name (for prefixing, best-effort)
+}
+
+func (t *teeHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return t.base.Enabled(ctx, level)
+}
+
+func (t *teeHandler) Handle(ctx context.Context, r slog.Record) error {
+	// Always write to stdout first (unchanged behavior).
+	err := t.base.Handle(ctx, r)
+
+	if t.hub != nil {
+		attrs := make(map[string]string)
+		for _, a := range t.attrs {
+			attrs[a.Key] = a.Value.String()
+		}
+		r.Attrs(func(a slog.Attr) bool {
+			key := a.Key
+			if t.group != "" {
+				key = t.group + "." + key
+			}
+			attrs[key] = a.Value.String()
+			return true
+		})
+		if len(attrs) == 0 {
+			attrs = nil
+		}
+		t.hub.Publish(LogEntry{
+			Time:  r.Time,
+			Level: r.Level.String(),
+			Msg:   r.Message,
+			Attrs: attrs,
+		})
+	}
+	return err
+}
+
+func (t *teeHandler) WithAttrs(as []slog.Attr) slog.Handler {
+	merged := make([]slog.Attr, 0, len(t.attrs)+len(as))
+	merged = append(merged, t.attrs...)
+	merged = append(merged, as...)
+	return &teeHandler{base: t.base.WithAttrs(as), hub: t.hub, attrs: merged, group: t.group}
+}
+
+func (t *teeHandler) WithGroup(name string) slog.Handler {
+	return &teeHandler{base: t.base.WithGroup(name), hub: t.hub, attrs: t.attrs, group: name}
 }

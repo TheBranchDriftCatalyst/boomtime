@@ -46,6 +46,7 @@ import type {
   AddSpaceRuleBody,
   SpaceMatchType,
   SpacePreview,
+  ServerLogsPayload,
   TimelinePayload,
   TimelineRange,
 } from "@/types/api";
@@ -311,6 +312,11 @@ export const api = {
     request<CancelImportPayload>(`/import/jobs/${id}/cancel`, {
       method: "POST",
     }),
+
+  // --- Server process logs (Logs tab REST tail fallback) ---------------------
+
+  getServerLogs: (afterId = 0) =>
+    request<ServerLogsPayload>("/api/v1/logs", { params: { afterId } }),
 
   // --- Derived-data health (gap_seconds + rollup) ----------------------------
 

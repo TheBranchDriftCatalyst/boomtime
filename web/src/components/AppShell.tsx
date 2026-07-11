@@ -12,6 +12,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
+  ScrollText,
   Settings2,
   User,
 } from "lucide-react";
@@ -48,6 +49,7 @@ const NAV = [
   { name: "Leaderboards", icon: Award, to: "/app/leaderboards", end: false },
   { name: "Heartbeats", icon: ListTree, to: "/app/heartbeats", end: false },
   { name: "Import", icon: Download, to: "/app/import", end: false },
+  { name: "Logs", icon: ScrollText, to: "/app/logs", end: false },
   { name: "Settings", icon: Settings2, to: "/app/settings", end: false },
 ];
 

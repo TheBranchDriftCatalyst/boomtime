@@ -131,6 +131,10 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	e.POST("/import/jobs/:id/cancel", h.ImportJobCancel)
 	e.GET("/import/jobs/:id/logs", h.ImportJobLogs)
 	e.GET("/import/jobs/:id/ws", h.ImportJobWS)
+
+	// Server process logs (live slog stream + REST tail fallback)
+	e.GET("/api/v1/logs", h.ServerLogs)
+	e.GET("/api/v1/logs/ws", h.ServerLogsWS)
 }
 
 // registerStatic serves the SPA: from BOOM_DASHBOARD_PATH on disk if set, else

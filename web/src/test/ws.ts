@@ -1,5 +1,8 @@
 import { Server } from "mock-socket";
-import type { ImportSocketMessage } from "@/types/api";
+import type {
+  ImportSocketMessage,
+  ServerLogSocketMessage,
+} from "@/types/api";
 
 // The URL useImportJobSocket builds from window.location. In vitest/jsdom the
 // origin is http://localhost:3000, so the socket connects to
@@ -63,6 +66,87 @@ export function mockImportWs(jobId: number): MockImportWs {
     closeClient() {
       socket?.close();
       socket = null;
+    },
+    connected() {
+      if (socket) return Promise.resolve();
+      return new Promise<void>((resolve) => {
+        connectResolve = resolve;
+      });
+    },
+    stop() {
+      server.stop();
+      Object.defineProperty(globalThis, "WebSocket", {
+        value: realWebSocket,
+        writable: true,
+        configurable: true,
+      });
+    },
+  };
+}
+
+// The base URL useLogsSocket builds (without query params — mock-socket matches
+// on the path, and the hook appends ?token=&afterId=).
+export function serverLogsWsUrl(): string {
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${window.location.host}/api/v1/logs/ws`;
+}
+
+export interface MockLogsWs {
+  server: Server;
+  /** Send a typed server-log message to the connected client. */
+  send: (msg: ServerLogSocketMessage) => void;
+  /** Send raw (e.g. malformed) text. */
+  sendRaw: (data: string) => void;
+  /** Close the current client socket (triggers reconnect logic). */
+  closeClient: () => void;
+  /** The query string the last client connected with (for asserting afterId). */
+  lastUrl: () => string | undefined;
+  /** Resolves when a client connects (or immediately if already connected). */
+  connected: () => Promise<void>;
+  stop: () => void;
+}
+
+/**
+ * Installs a mock-socket server for the server-logs WS and swaps the global
+ * WebSocket. Mirrors mockImportWs.
+ */
+export function mockLogsWs(): MockLogsWs {
+  const url = serverLogsWsUrl();
+  const realWebSocket = globalThis.WebSocket;
+
+  Object.defineProperty(globalThis, "WebSocket", {
+    value: realWebSocket,
+    writable: true,
+    configurable: true,
+  });
+
+  const server = new Server(url);
+
+  let socket: import("mock-socket").Client | null = null;
+  let connectResolve: (() => void) | null = null;
+  let lastUrl: string | undefined;
+
+  server.on("connection", (s) => {
+    socket = s;
+    lastUrl = s.url;
+    connectResolve?.();
+    connectResolve = null;
+  });
+
+  return {
+    server,
+    send(msg) {
+      socket?.send(JSON.stringify(msg));
+    },
+    sendRaw(data) {
+      socket?.send(data);
+    },
+    closeClient() {
+      socket?.close();
+      socket = null;
+    },
+    lastUrl() {
+      return lastUrl;
     },
     connected() {
       if (socket) return Promise.resolve();
