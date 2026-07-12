@@ -56,7 +56,7 @@ func runCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg := config.Load()
 			cfg.Version = version
-			logger := logging.Setup(cfg)
+			logger, logHub := logging.Setup(cfg)
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()
 
@@ -84,7 +84,7 @@ func runCmd() *cobra.Command {
 			worker := importer.NewWorker(ctx, database, logger, hub)
 			worker.RecoverInterrupted(ctx)
 
-			e := server.New(database, cfg, logger, worker, hub)
+			e := server.New(database, cfg, logger, worker, hub, logHub)
 			addr := fmt.Sprintf(":%d", cfg.Port)
 			logger.Info("starting server", "addr", addr, "env", cfg.Env)
 
@@ -104,7 +104,10 @@ func runMigrationsCmd() *cobra.Command {
 		Short: "Apply database migrations and exit",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg := config.Load()
-			logger := logging.Setup(cfg)
+			// run-migrations doesn't serve HTTP so it doesn't need the LogHub —
+			// discard it. Setup is still called so the tee handler is installed
+			// for the migration logs.
+			logger, _ := logging.Setup(cfg)
 			ctx := context.Background()
 			if err := db.MigrateURL(ctx, cfg.DatabaseURL()); err != nil {
 				return err

@@ -13,13 +13,11 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 )
 
-// hub is the process-wide LogHub the tee handler publishes to. It is created in
-// Setup and exposed via Hub() so the server can wire the same instance into the
-// WebSocket/REST endpoints. A nil hub makes the tee a no-op.
-var hub *LogHub
-
-// Hub returns the process-wide LogHub (nil until Setup runs).
-func Hub() *LogHub { return hub }
+// The package used to expose a process-wide LogHub via a package-global +
+// Hub() accessor (audit gaka-yzs). That's gone — Setup returns the hub
+// explicitly and callers thread it through server.New / handler.New. Same
+// pattern importer.Hub already follows: dependency-injected, testable,
+// no hidden order dependency between Setup and handler.New.
 
 func parseLevel(s string) slog.Level {
 	switch strings.ToLower(strings.TrimSpace(s)) {
@@ -34,10 +32,13 @@ func parseLevel(s string) slog.Level {
 	}
 }
 
-// Setup builds a slog.Logger and installs it as the default. The base handler
-// (text in dev, JSON in prod) still writes to os.Stdout unchanged; a teeHandler
-// wraps it so every record is ALSO published to the LogHub.
-func Setup(c *config.Config) *slog.Logger {
+// Setup builds a slog.Logger and installs it as the default, PLUS the
+// LogHub the tee handler publishes to. Callers thread the returned hub
+// through server.New → handler.New so the Logs endpoint reads the same
+// instance. The base handler (text in dev, JSON in prod) still writes to
+// os.Stdout unchanged; the teeHandler wraps it so every record is ALSO
+// published to the hub.
+func Setup(c *config.Config) (*slog.Logger, *LogHub) {
 	stdoutLevel := parseLevel(c.LogLevel)
 	// The base handler accepts everything down to Debug; the teeHandler decides
 	// what reaches stdout (>= stdoutLevel) vs the LogHub (everything down to
@@ -50,10 +51,10 @@ func Setup(c *config.Config) *slog.Logger {
 	} else {
 		base = slog.NewJSONHandler(os.Stdout, opts)
 	}
-	hub = NewLogHub(DefaultLogHubCapacity)
+	hub := NewLogHub(DefaultLogHubCapacity)
 	l := slog.New(&teeHandler{base: base, hub: hub, stdoutLevel: stdoutLevel})
 	slog.SetDefault(l)
-	return l
+	return l, hub
 }
 
 // teeHandler wraps a base slog.Handler: it delegates to base.Handle (keeping

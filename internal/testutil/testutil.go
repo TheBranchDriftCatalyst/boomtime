@@ -140,7 +140,9 @@ func NewHarnessWithDB(t *testing.T, database *db.DB) *Harness {
 		DBPort:             5432,
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	h := handler.New(database, cfg, logger, nil, importer.NewHub())
+	// LogHub is optional for handlers under test — nil disables the Logs live
+	// stream, which the harness router doesn't register anyway.
+	h := handler.New(database, cfg, logger, nil, importer.NewHub(), nil)
 	return &Harness{T: t, DB: database, H: h, Cfg: cfg}
 }
 

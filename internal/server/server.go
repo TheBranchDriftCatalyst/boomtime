@@ -14,6 +14,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
 )
@@ -21,8 +22,9 @@ import (
 //go:embed dist
 var distFS embed.FS
 
-// New builds a configured Echo server.
-func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *importer.Worker, hub *importer.Hub) *echo.Echo {
+// New builds a configured Echo server. logHub streams server-process slog
+// records to the Logs tab; pass nil to disable that endpoint's live stream.
+func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *importer.Worker, hub *importer.Hub, logHub *logging.LogHub) *echo.Echo {
 	e := echo.New()
 
 	e.Use(middleware.Recover())
@@ -44,7 +46,7 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *impor
 		e.Use(n1Middleware(logger, cfg.DBN1Threshold, cfg.DBN1DupThresh))
 	}
 
-	h := handler.New(database, cfg, logger, worker, hub)
+	h := handler.New(database, cfg, logger, worker, hub, logHub)
 	registerRoutes(e, h)
 	registerStatic(e, cfg, logger)
 	return e

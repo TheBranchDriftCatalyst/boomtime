@@ -35,15 +35,17 @@ type Handler struct {
 	Cache  *cache.TTL
 }
 
-// New constructs a Handler.
-func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *importer.Worker, hub *importer.Hub) *Handler {
+// New constructs a Handler. logHub streams server-process slog records to the
+// Logs tab; pass nil to disable (Logs endpoints handle a nil hub — see
+// handler/logs.go).
+func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *importer.Worker, hub *importer.Hub, logHub *logging.LogHub) *Handler {
 	return &Handler{
 		DB:     database,
 		Cfg:    cfg,
 		Logger: logger,
 		Worker: worker,
 		Hub:    hub,
-		LogHub: logging.Hub(),
+		LogHub: logHub,
 		Cache:  cache.New(statsCacheTTL()),
 	}
 }
