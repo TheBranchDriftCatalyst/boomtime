@@ -104,15 +104,27 @@ describe("useTimeRange", () => {
     expect(result.current.numDays).toBe(9);
   });
 
-  it("falls back to localStorage when the URL has no range params", () => {
-    const start = new Date("2026-04-01T00:00:00Z").getTime();
-    const end = new Date("2026-04-08T00:00:00Z").getTime();
-    localStorage.setItem(
-      "boomtime-timerange",
-      JSON.stringify({ start, end, timeLimit: 60 }),
-    );
+  it("slides the localStorage range so end == now, preserving duration + timeLimit", () => {
+    // Persisted ranges are almost always rolling "last N days" — sliding the
+    // window on hydration fixes the "Patterns/recent timeline empty until you
+    // touch the picker" bug (a stale absolute end left over from a previous
+    // session pointed queries at an empty window).
+    const oneWeekMs = 7 * 24 * 60 * 60 * 1000;
+    const stored = {
+      start: new Date("2026-04-01T00:00:00Z").getTime(),
+      end: new Date("2026-04-08T00:00:00Z").getTime(),
+      timeLimit: 60,
+    };
+    localStorage.setItem("boomtime-timerange", JSON.stringify(stored));
+    const before = Date.now();
     const { result } = renderHook(() => useTimeRange(), { wrapper: wrapper() });
-    expect(result.current.startISO).toBe(new Date(start).toISOString());
+    const after = Date.now();
+    // End slides to now; duration + timeLimit are preserved.
+    expect(result.current.end.getTime()).toBeGreaterThanOrEqual(before);
+    expect(result.current.end.getTime()).toBeLessThanOrEqual(after);
+    expect(
+      result.current.end.getTime() - result.current.start.getTime(),
+    ).toBe(oneWeekMs);
     expect(result.current.timeLimit).toBe(60);
     expect(result.current.numDays).toBe(7);
   });

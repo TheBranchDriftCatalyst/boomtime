@@ -224,7 +224,16 @@ export function OverviewDashboard({
           <StreakBanner dailyTotal={stats.dailyTotal} />
 
           {/* Flagship: GitHub-style contribution calendar from RAW daily data. */}
-          <ChartCard title="Contribution calendar">
+          <ChartCard
+            title="Contribution calendar"
+            embedAction={
+              <EmbedLinkButton
+                kind="activity-heatmap"
+                scopeType={space ? "space" : "user"}
+                scopeRef={space ?? ""}
+              />
+            }
+          >
             <ContributionCalendar dates={dates} values={stats.dailyTotal} />
           </ChartCard>
 
@@ -304,10 +313,28 @@ export function OverviewDashboard({
           </div>
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <ChartCard title="Coding punchcard">
+            <ChartCard
+              title="Coding punchcard"
+              embedAction={
+                <EmbedLinkButton
+                  kind="punchcard"
+                  scopeType={space ? "space" : "user"}
+                  scopeRef={space ?? ""}
+                />
+              }
+            >
               <Punchcard data={punchcardQuery.data} />
             </ChartCard>
-            <ChartCard title="Project momentum (by week)">
+            <ChartCard
+              title="Project momentum (by week)"
+              embedAction={
+                <EmbedLinkButton
+                  kind="momentum"
+                  scopeType={space ? "space" : "user"}
+                  scopeRef={space ?? ""}
+                />
+              }
+            >
               <MomentumGrid data={momentumQuery.data} />
             </ChartCard>
           </div>

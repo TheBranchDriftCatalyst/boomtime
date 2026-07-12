@@ -1,26 +1,19 @@
-// Package widget renders the public embeddable SVG stats widgets (gaka-hsj).
-// Every renderer is a pure function over a model.StatsPayload — no DB, no
-// network, no JS, no external resources (GitHub camo-safe). All user strings
-// (project/language names, titles) are XML-escaped in the view-model builders;
-// the templates only ever see pre-escaped, pre-measured values.
+// Package widget renders the public embeddable SVG stats widgets (gaka-hsj +
+// gaka-unq.2). Every renderer is a pure function over a Data bundle — no DB,
+// no network, no JS, no external resources (GitHub camo-safe). Chrome +
+// styles are shared via Frame; each viz element is a primitive in
+// primitives.go, so single-viz twins and composite (3-panel) cards use the
+// same building blocks.
 package widget
 
 import (
-	"bytes"
-	"embed"
 	"fmt"
 	"sort"
 	"strings"
-	"text/template"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
 )
-
-//go:embed templates/*.svg.tmpl
-var templateFS embed.FS
-
-var tmpl = template.Must(template.ParseFS(templateFS, "templates/*.svg.tmpl"))
 
 // Options are the per-request render knobs (from URL params on the public
 // endpoint). Title overrides the kind's default headline; Subtitle is the
@@ -31,23 +24,42 @@ type Options struct {
 	Subtitle string
 }
 
-type renderFunc func(p *model.StatsPayload, g *stats.GradeResult, th Theme, opts Options) ([]byte, error)
+// Data is the input bundle for renderers. Only fields the requested kind
+// declares in Needs() are populated by the handler; everything else is nil.
+type Data struct {
+	Payload   *model.StatsPayload
+	Grade     *stats.GradeResult
+	Punchcard *model.PunchcardPayload
+	Momentum  *model.MomentumPayload
+	Sessions  *model.SessionsPayload
+}
+
+// Requirements declares which optional data blobs a kind consumes. The handler
+// gates its DB queries on these so a badge render never fetches punchcard.
+type Requirements struct {
+	Grade, Punchcard, Momentum, Sessions bool
+}
+
+type renderFunc func(*Data, Theme, Options) ([]byte, error)
 
 // kinds is the dispatch table AND the whitelist for the public :kind path
 // param. The FE widget catalog (web/src/features/widgets/catalog.ts) must list
-// exactly these kinds — a drift-guard test asserts the set.
-var kinds = map[string]renderFunc{
-	"stats-card": func(p *model.StatsPayload, _ *stats.GradeResult, th Theme, o Options) ([]byte, error) {
-		return renderStatsCard(p, nil, th, o)
-	},
-	"stats-card-with-grade": renderStatsCardWithGrade,
-	"top-langs": func(p *model.StatsPayload, _ *stats.GradeResult, th Theme, o Options) ([]byte, error) {
-		return renderTopList(p.Languages, "Top Languages", th, o)
-	},
-	"top-projects": func(p *model.StatsPayload, _ *stats.GradeResult, th Theme, o Options) ([]byte, error) {
-		return renderTopList(p.Projects, "Top Projects", th, o)
-	},
-	"badge": renderBadge,
+// exactly these kinds — TestKindsMatchFrontendCatalog guards the two lists
+// against drift.
+var kinds = map[string]struct {
+	Render renderFunc
+	Needs  Requirements
+}{
+	"stats-card":            {Render: renderStatsCard},
+	"stats-card-with-grade": {Render: renderStatsCardWithGrade, Needs: Requirements{Grade: true}},
+	"top-langs":             {Render: renderTopLangs},
+	"top-projects":          {Render: renderTopProjects},
+	"badge":                 {Render: renderBadge},
+	// gaka-unq.2 — new twins + composite:
+	"activity-heatmap": {Render: renderActivityHeatmap},
+	"punchcard":        {Render: renderPunchcard, Needs: Requirements{Punchcard: true}},
+	"momentum":         {Render: renderMomentum, Needs: Requirements{Momentum: true}},
+	"profile-summary":  {Render: renderProfileSummary, Needs: Requirements{Grade: true}},
 }
 
 // Kinds returns the sorted whitelist of renderable widget kinds.
@@ -63,32 +75,33 @@ func Kinds() []string {
 // IsKind reports whether kind is renderable.
 func IsKind(kind string) bool { _, ok := kinds[kind]; return ok }
 
-// NeedsGrade reports whether the kind consumes a stats.GradeResult (lets the
-// handler skip the computation otherwise).
-func NeedsGrade(kind string) bool { return kind == "stats-card-with-grade" }
+// Needs reports which optional Data fields a kind wants populated — the
+// handler uses this to skip expensive fetches (punchcard/momentum/sessions
+// each own their own DB round-trip).
+func Needs(kind string) Requirements {
+	if k, ok := kinds[kind]; ok {
+		return k.Needs
+	}
+	return Requirements{}
+}
 
-// Render dispatches to the kind's renderer. Unknown kinds are the caller's
-// responsibility to reject first (IsKind) — this returns an error defensively.
-func Render(kind string, p *model.StatsPayload, g *stats.GradeResult, opts Options) ([]byte, error) {
-	fn, ok := kinds[kind]
+// Render dispatches to the kind's renderer.
+func Render(kind string, d *Data, opts Options) ([]byte, error) {
+	k, ok := kinds[kind]
 	if !ok {
 		return nil, fmt.Errorf("unknown widget kind %q", kind)
 	}
-	return fn(p, g, themeFor(opts.Theme), opts)
+	return k.Render(d, themeFor(opts.Theme), opts)
 }
 
-// ---- shared view-model pieces ----
+// ---- shared string helpers ----
 
-// xmlEscape escapes every XML metacharacter. ALL user-controlled strings pass
-// through here before entering a template.
 var xmlEscaper = strings.NewReplacer(
 	"&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&apos;",
 )
 
 func xmlEscape(s string) string { return xmlEscaper.Replace(s) }
 
-// truncate cuts s to at most n runes, appending an ellipsis when cut. Escape
-// AFTER truncation so an entity is never sliced in half.
 func truncate(s string, n int) string {
 	r := []rune(s)
 	if len(r) <= n {
@@ -97,23 +110,10 @@ func truncate(s string, n int) string {
 	return string(r[:n-1]) + "…"
 }
 
-// barRow is one pre-measured label/bar/value line.
-type barRow struct {
-	Y       int
-	Label   string // escaped
-	Value   string // escaped
-	Tooltip string // escaped; native <title> hover (direct view / <object> embeds)
-	BarX    int
-	BarW    int
-	BarWMax int
-	Color   string
-	// Delay staggers each row's entrance animation ("0.45s").
-	Delay string
-}
+func compound(seconds int64) string { return stats.CompoundDuration(&seconds) }
 
 // topEntries sorts a (possibly capped) resource list by seconds desc, drops
-// the synthesized "Other (N more)" row (identified by OtherCount — real rows
-// never carry it), and returns up to n entries.
+// the synthesized "Other (N more)" row, and returns up to n entries.
 func topEntries(list []model.ResourceStats, n int) []model.ResourceStats {
 	sorted := make([]model.ResourceStats, 0, len(list))
 	for _, r := range list {
@@ -129,179 +129,157 @@ func topEntries(list []model.ResourceStats, n int) []model.ResourceStats {
 	return sorted
 }
 
-func compound(seconds int64) string { return stats.CompoundDuration(&seconds) }
+// ---- renderers: single-viz cards ----
 
-// buildBarRows lays out rows for a top-list: label column, proportional bar,
-// pct column. Bars scale against the largest shown entry. Percentages are
-// normalized over the SHOWN set (they sum to ~100 across the card) — a
-// top-6-of-12 list showing payload-global pcts would confusingly sum to ~70.
-func buildBarRows(entries []model.ResourceStats, th Theme, yStart, yStep, barX, barWMax int) []barRow {
-	var maxSecs, shownTotal int64
-	for _, e := range entries {
-		shownTotal += e.TotalSeconds
-		if e.TotalSeconds > maxSecs {
-			maxSecs = e.TotalSeconds
-		}
+func renderStatsCard(d *Data, th Theme, opts Options) ([]byte, error) {
+	title := defaultString(opts.Title, "Coding Stats")
+	f := OpenFrame(495, 195, th, title, opts.Subtitle)
+	if d.Payload.TotalSeconds == 0 {
+		f.Empty("No coding activity in this range yet")
+		return f.Close(), nil
 	}
-	if maxSecs < 1 {
-		maxSecs = 1
+	// Left column: total + daily avg.
+	EmitMetric(f, 25, 78, "Total", compound(d.Payload.TotalSeconds))
+	EmitMetric(f, 25, 118, "Daily avg", compound(int64(d.Payload.DailyAvg)))
+	// Right column: top-5 languages bars.
+	barWMax := 190
+	if d.Grade != nil {
+		barWMax = 150
 	}
-	if shownTotal < 1 {
-		shownTotal = 1
-	}
-	rows := make([]barRow, 0, len(entries))
-	for i, e := range entries {
-		w := int(float64(barWMax) * float64(e.TotalSeconds) / float64(maxSecs))
-		if w < 2 {
-			w = 2
-		}
-		pct := float64(e.TotalSeconds) / float64(shownTotal) * 100
-		rows = append(rows, barRow{
-			Y:       yStart + i*yStep,
-			Label:   xmlEscape(truncate(e.Name, 18)),
-			Value:   xmlEscape(fmt.Sprintf("%.1f%%", pct)),
-			Tooltip: xmlEscape(fmt.Sprintf("%s — %s (%.1f%%)", e.Name, compound(e.TotalSeconds), pct)),
-			BarX:    barX,
-			BarW:    w,
-			BarWMax: barWMax,
-			Color:   th.colorAt(i),
-			Delay:   fmt.Sprintf("%.2fs", 0.15*float64(i)),
-		})
-	}
-	return rows
+	EmitBars(f, topEntries(d.Payload.Languages, 5), BarsOpts{
+		X: 150, Y: 82, YStep: 18, BarX: 260, BarWMax: barWMax, IncludeValueText: true,
+	})
+	// Grade circle (top-right).
+	EmitGradeRing(f, 425, 60, 40, d.Grade)
+	return f.Close(), nil
 }
 
-// ---- stats card ----
-
-type gradeVM struct {
-	Level         string
-	CX, CY, R     int
-	Circumference float64
-	// DashFill is the stroke-dasharray fill length: ring fill % = 100-percentile
-	// (lower percentile = better = fuller ring), matching github-readme-stats.
-	DashFill float64
+func renderStatsCardWithGrade(d *Data, th Theme, opts Options) ([]byte, error) {
+	if d.Grade == nil {
+		g := stats.Grade(d.Payload)
+		d = &Data{Payload: d.Payload, Grade: &g}
+	}
+	return renderStatsCard(d, th, opts)
 }
 
-type statsCardVM struct {
-	Width, Height int
-	Theme         Theme
-	Title         string // escaped
-	Subtitle      string // escaped
-	TotalLabel    string // escaped
-	AvgLabel      string // escaped
-	Rows          []barRow
-	Grade         *gradeVM
-	Empty         bool
+func renderTopLangs(d *Data, th Theme, opts Options) ([]byte, error) {
+	return renderTopList(d.Payload.Languages, defaultString(opts.Title, "Top Languages"), th, opts)
 }
 
-func renderStatsCard(p *model.StatsPayload, g *stats.GradeResult, th Theme, opts Options) ([]byte, error) {
-	title := opts.Title
-	if title == "" {
-		title = "Coding Stats"
-	}
-	vm := statsCardVM{
-		Width: 495, Height: 195, Theme: th,
-		Title:    xmlEscape(truncate(title, 30)),
-		Subtitle: xmlEscape(truncate(opts.Subtitle, 30)),
-		Empty:    p.TotalSeconds == 0,
-	}
-	if !vm.Empty {
-		avg := int64(p.DailyAvg)
-		vm.TotalLabel = xmlEscape("Total: " + compound(p.TotalSeconds))
-		vm.AvgLabel = xmlEscape("Daily avg: " + compound(avg))
-		barWMax := 190
-		if g != nil {
-			barWMax = 150 // leave room for the grade ring
-		}
-		vm.Rows = buildBarRows(topEntries(p.Languages, 5), th, 100, 18, 150, barWMax)
-	}
-	if g != nil {
-		const r = 40
-		circ := 2 * 3.14159265 * r
-		vm.Grade = &gradeVM{
-			Level: xmlEscape(g.Level),
-			CX:    vm.Width - 70, CY: 60, R: r,
-			Circumference: circ,
-			DashFill:      circ * (100 - g.Percentile) / 100,
-		}
-	}
-	var b bytes.Buffer
-	if err := tmpl.ExecuteTemplate(&b, "stats_card.svg.tmpl", vm); err != nil {
-		return nil, err
-	}
-	return b.Bytes(), nil
+func renderTopProjects(d *Data, th Theme, opts Options) ([]byte, error) {
+	return renderTopList(d.Payload.Projects, defaultString(opts.Title, "Top Projects"), th, opts)
 }
 
-func renderStatsCardWithGrade(p *model.StatsPayload, g *stats.GradeResult, th Theme, opts Options) ([]byte, error) {
-	if g == nil {
-		computed := stats.Grade(p)
-		g = &computed
-	}
-	return renderStatsCard(p, g, th, opts)
-}
-
-// ---- top list (top-langs / top-projects) ----
-
-type topListVM struct {
-	Width, Height int
-	Theme         Theme
-	Title         string // escaped
-	Subtitle      string // escaped
-	Rows          []barRow
-	Empty         bool
-}
-
-func renderTopList(list []model.ResourceStats, defaultTitle string, th Theme, opts Options) ([]byte, error) {
-	title := opts.Title
-	if title == "" {
-		title = defaultTitle
-	}
+func renderTopList(list []model.ResourceStats, title string, th Theme, opts Options) ([]byte, error) {
+	f := OpenFrame(300, 200, th, title, opts.Subtitle)
 	entries := topEntries(list, 6)
-	vm := topListVM{
-		Width: 300, Height: 200, Theme: th,
-		Title:    xmlEscape(truncate(title, 24)),
-		Subtitle: xmlEscape(truncate(opts.Subtitle, 24)),
-		Empty:    len(entries) == 0,
-		Rows:     buildBarRows(entries, th, 62, 22, 120, 120),
+	if len(entries) == 0 {
+		f.Empty("No data in this range yet")
+		return f.Close(), nil
 	}
-	var b bytes.Buffer
-	if err := tmpl.ExecuteTemplate(&b, "top_list.svg.tmpl", vm); err != nil {
-		return nil, err
+	EmitBars(f, entries, BarsOpts{
+		X: 20, Y: 62, YStep: 22, BarX: 130, BarWMax: 120, IncludeValueText: true,
+	})
+	return f.Close(), nil
+}
+
+func renderActivityHeatmap(d *Data, th Theme, opts Options) ([]byte, error) {
+	f := OpenFrame(720, 170, th,
+		defaultString(opts.Title, "Coding activity"),
+		opts.Subtitle)
+	if len(d.Payload.DailyTotal) == 0 {
+		f.Empty("No activity in this range yet")
+		return f.Close(), nil
 	}
-	return b.Bytes(), nil
+	EmitCalendar(f, 20, 55, 680, 100, d.Payload.StartDate, d.Payload.DailyTotal)
+	return f.Close(), nil
+}
+
+func renderPunchcard(d *Data, th Theme, opts Options) ([]byte, error) {
+	f := OpenFrame(560, 220, th,
+		defaultString(opts.Title, "Coding punchcard"),
+		opts.Subtitle)
+	if d.Punchcard == nil || len(d.Punchcard.Cells) == 0 {
+		f.Empty("No punchcard data yet")
+		return f.Close(), nil
+	}
+	EmitPunchcard(f, 20, 55, 520, 150, d.Punchcard.Cells)
+	return f.Close(), nil
+}
+
+func renderMomentum(d *Data, th Theme, opts Options) ([]byte, error) {
+	f := OpenFrame(560, 220, th,
+		defaultString(opts.Title, "Project momentum"),
+		opts.Subtitle)
+	if d.Momentum == nil || len(d.Momentum.Projects) == 0 {
+		f.Empty("No momentum data yet")
+		return f.Close(), nil
+	}
+	EmitMomentum(f, 20, 55, 520, 150, d.Momentum)
+	return f.Close(), nil
+}
+
+// ---- renderer: composite 3-panel card (gaka-unq.2) ----
+
+// renderProfileSummary is the "3-graphs-in-a-card" composite — the profile-
+// summary-cards direction. Panel 1: contribution calendar. Panel 2: top
+// languages. Panel 3: grade + total-time summary. Each panel calls the same
+// primitives the single-viz cards do — that's the whole point of the DRY
+// refactor: adding a new composite means picking panels + coordinates.
+func renderProfileSummary(d *Data, th Theme, opts Options) ([]byte, error) {
+	f := OpenFrame(820, 240, th,
+		defaultString(opts.Title, "Coding profile"),
+		opts.Subtitle)
+	if d.Payload.TotalSeconds == 0 {
+		f.Empty("No coding activity in this range yet")
+		return f.Close(), nil
+	}
+	// Panel 1: contribution calendar (left, 380 wide).
+	EmitCalendar(f, 20, 60, 360, 160, d.Payload.StartDate, d.Payload.DailyTotal)
+	// Divider.
+	f.Printf(`<rect x="400" y="55" width="1" height="170" fill="%s"/>`, th.Border)
+	// Panel 2: top-langs (middle, 250 wide).
+	EmitBars(f, topEntries(d.Payload.Languages, 5), BarsOpts{
+		X: 420, Y: 78, YStep: 18, BarX: 520, BarWMax: 130, IncludeValueText: true,
+	})
+	// Divider.
+	f.Printf(`<rect x="680" y="55" width="1" height="170" fill="%s"/>`, th.Border)
+	// Panel 3: grade + total (right).
+	EmitGradeRing(f, 750, 100, 42, d.Grade)
+	EmitMetric(f, 700, 160, "Total", compound(d.Payload.TotalSeconds))
+	EmitMetric(f, 700, 195, "Daily avg", compound(int64(d.Payload.DailyAvg)))
+	return f.Close(), nil
 }
 
 // ---- badge (native flat pill; the shields.io proxy at /badge/svg stays) ----
 
-type badgeVM struct {
-	Width, LabelW, MsgW int
-	Label, Msg          string // escaped
-	LabelX, MsgX        int
-	Theme               Theme
-}
-
-// badgeCharW approximates Verdana/DejaVu 11px average character width.
 const badgeCharW = 6.6
 
-func renderBadge(p *model.StatsPayload, _ *stats.GradeResult, th Theme, opts Options) ([]byte, error) {
+func renderBadge(d *Data, th Theme, opts Options) ([]byte, error) {
 	label := opts.Title
 	if label == "" {
 		label = "boomtime"
 	}
 	label = truncate(label, 24)
-	msg := compound(p.TotalSeconds)
+	msg := compound(d.Payload.TotalSeconds)
 	labelW := int(badgeCharW*float64(len([]rune(label)))) + 20
 	msgW := int(badgeCharW*float64(len([]rune(msg)))) + 20
-	vm := badgeVM{
-		Width: labelW + msgW, LabelW: labelW, MsgW: msgW,
-		Label:  xmlEscape(label),
-		Msg:    xmlEscape(msg),
-		LabelX: labelW / 2, MsgX: labelW + msgW/2,
-		Theme: th,
+	total := labelW + msgW
+	var b []byte
+	b = append(b, []byte(fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="20" role="img" aria-label="%s: %s">`,
+		total, xmlEscape(label), xmlEscape(msg)))...)
+	b = append(b, []byte(`<linearGradient id="s" x2="0" y2="100%"><stop offset="0" stop-color="#bbb" stop-opacity=".1"/><stop offset="1" stop-opacity=".1"/></linearGradient>`)...)
+	b = append(b, []byte(fmt.Sprintf(`<clipPath id="r"><rect width="%d" height="20" rx="3" fill="#fff"/></clipPath><g clip-path="url(#r)">`, total))...)
+	b = append(b, []byte(fmt.Sprintf(`<rect width="%d" height="20" fill="#555"/><rect x="%d" width="%d" height="20" fill="%s"/><rect width="%d" height="20" fill="url(#s)"/></g>`,
+		labelW, labelW, msgW, th.Accent, total))...)
+	b = append(b, []byte(fmt.Sprintf(`<g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11"><text x="%d" y="14">%s</text><text x="%d" y="14">%s</text></g></svg>`,
+		labelW/2, xmlEscape(label), labelW+msgW/2, xmlEscape(msg)))...)
+	return b, nil
+}
+
+func defaultString(s, def string) string {
+	if s == "" {
+		return def
 	}
-	var b bytes.Buffer
-	if err := tmpl.ExecuteTemplate(&b, "badge.svg.tmpl", vm); err != nil {
-		return nil, err
-	}
-	return b.Bytes(), nil
+	return s
 }

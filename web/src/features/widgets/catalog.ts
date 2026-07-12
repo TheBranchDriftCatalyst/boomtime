@@ -55,6 +55,36 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
     scopes: ["user", "project", "space"],
     primitives: ["badge", "label"],
   },
+  // gaka-unq.2 — new twins + composite:
+  {
+    kind: "activity-heatmap",
+    title: "Contribution Calendar",
+    description: "Per-day coding activity, GitHub contributions style",
+    scopes: ["user", "project", "space"],
+    primitives: ["graph"],
+  },
+  {
+    kind: "punchcard",
+    title: "Coding Punchcard",
+    description: "Hour-of-day × day-of-week intensity grid",
+    scopes: ["user", "project", "space"],
+    primitives: ["graph"],
+  },
+  {
+    kind: "momentum",
+    title: "Project Momentum",
+    description: "Weekly per-project heatmap — who is heating up",
+    scopes: ["user", "space"],
+    primitives: ["graph", "label"],
+  },
+  {
+    kind: "profile-summary",
+    title: "Profile Summary",
+    description:
+      "Composite 3-panel card: contribution calendar + top languages + grade",
+    scopes: ["user"],
+    primitives: ["graph", "graph", "grade", "label"],
+  },
 ];
 
 /** Catalog entries offered for a page scope. */

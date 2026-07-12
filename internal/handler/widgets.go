@@ -198,12 +198,37 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 		}
 
 		payload := stats.ToStatsPayload(t0, t1, rows, nil)
-		var grade *stats.GradeResult
-		if widget.NeedsGrade(kind) {
+		data := &widget.Data{Payload: &payload}
+		needs := widget.Needs(kind)
+		if needs.Grade {
 			g := stats.Grade(&payload)
-			grade = &g
+			data.Grade = &g
 		}
-		return widget.Render(kind, &payload, grade, widget.Options{
+		if needs.Punchcard {
+			cells, err := h.DB.GetPunchcard(ctx, owner, t0, t1, widgetTimeLimit, hidden, members, scoped)
+			if err != nil {
+				return nil, err
+			}
+			pc := stats.ToPunchcardPayload(cells)
+			data.Punchcard = &pc
+		}
+		if needs.Momentum {
+			mrows, err := h.DB.GetMomentum(ctx, owner, t0, t1, widgetTimeLimit, hidden, renames, members, scoped)
+			if err != nil {
+				return nil, err
+			}
+			mp := stats.ToMomentumPayload(t0, t1, mrows, 6)
+			data.Momentum = &mp
+		}
+		if needs.Sessions {
+			srows, err := h.DB.GetSessions(ctx, owner, t0, t1, widgetTimeLimit, hidden, members, scoped)
+			if err != nil {
+				return nil, err
+			}
+			sp := stats.ToSessionsPayload(t0, t1, srows)
+			data.Sessions = &sp
+		}
+		return widget.Render(kind, data, widget.Options{
 			Theme:    theme,
 			Title:    title,
 			Subtitle: fmt.Sprintf("last %d days", days),
