@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { PageToolbar } from "@/components/toolbar/PageToolbar";
+import { WidgetsPanel } from "@/features/widgets/WidgetsPanel";
 import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
 import { TimeLimitDropdown } from "@/components/toolbar/TimeLimitDropdown";
 import { CommitListModal } from "@/features/projects/CommitListModal";
@@ -44,6 +45,7 @@ export function Projects() {
   return (
     <div>
       <PageToolbar title="Projects">
+        {selected && <WidgetsPanel scopeType="project" scopeRef={selected} />}
         <TimeLimitDropdown value={tr.timeLimit} onChange={tr.setTimeLimit} />
         <DateRangePicker
           numDays={tr.numDays}

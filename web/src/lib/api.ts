@@ -48,6 +48,9 @@ import type {
   TimelinePayload,
   TimelineRange,
   VersionResponse,
+  WidgetLinkPayload,
+  WidgetLinksPayload,
+  WidgetScope,
 } from "@/types/api";
 
 export class ApiError extends Error {
@@ -272,6 +275,22 @@ export const api = {
   getBadgeLink: (project: string) =>
     request<BadgeLinkPayload>(
       `/badge/link/${encodeURIComponent(project)}`,
+    ),
+
+  // --- Embeddable widgets ------------------------------------------------------
+
+  getWidgetLink: (scopeType: WidgetScope, scopeRef = "") =>
+    request<WidgetLinkPayload>(
+      `/api/v1/users/current/widgets/link?scopeType=${encodeURIComponent(scopeType)}&scopeRef=${encodeURIComponent(scopeRef)}`,
+    ),
+
+  listWidgetLinks: () =>
+    request<WidgetLinksPayload>("/api/v1/users/current/widgets/links"),
+
+  deleteWidgetLink: (linkId: string) =>
+    request<void>(
+      `/api/v1/users/current/widgets/link/${encodeURIComponent(linkId)}`,
+      { method: "DELETE" },
     ),
 
   // --- Import ----------------------------------------------------------------

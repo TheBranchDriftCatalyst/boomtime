@@ -142,4 +142,9 @@ export const qk = {
   // release replaces the whole SPA anyway.
   version: () => ["meta", "version"] as const,
   changelog: () => ["meta", "changelog"] as const,
+
+  // --- Embeddable widgets --------------------------------------------------------
+  widgetLink: (scopeType: string, scopeRef: string) =>
+    ["widget-link", scopeType, scopeRef] as const,
+  widgetLinks: () => ["widget-links"] as const,
 };

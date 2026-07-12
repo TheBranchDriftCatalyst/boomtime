@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { StatCard } from "@/components/StatCard";
 import { QueryGate } from "@/components/QueryGate";
 import { ChartCard } from "@/components/ChartCard";
+import { EmbedLinkButton } from "@/features/widgets/EmbedActions";
 import { ColumnChart } from "@/viz/charts/ColumnChart";
 import { FileBarChart } from "@/viz/charts/FileBarChart";
 import { HourBarChart } from "@/viz/charts/HourBarChart";
@@ -162,7 +163,18 @@ export function ProjectDetail({
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <div className="lg:col-span-2">
-              <ChartCard title="Total activity">
+              <ChartCard
+                title="Total activity"
+                embedAction={
+                  project ? (
+                    <EmbedLinkButton
+                      kind="stats-card"
+                      scopeType="project"
+                      scopeRef={project}
+                    />
+                  ) : undefined
+                }
+              >
                 {languageColumnSeries.length > 0 ? (
                   <ColumnChart
                     dates={chartDates}
@@ -178,7 +190,18 @@ export function ProjectDetail({
                 )}
               </ChartCard>
             </div>
-            <ChartCard title="Language breakdown">
+            <ChartCard
+              title="Language breakdown"
+              embedAction={
+                project ? (
+                  <EmbedLinkButton
+                    kind="top-langs"
+                    scopeType="project"
+                    scopeRef={project}
+                  />
+                ) : undefined
+              }
+            >
               <PieChart items={stats.languages} />
             </ChartCard>
           </div>

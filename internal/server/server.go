@@ -152,11 +152,17 @@ func registerAuthRoutes(e *echo.Echo, h *handler.Handler) {
 	e.GET("/auth/users/current", h.CurrentUser)
 }
 
-// registerMiscRoutes: badges, leaderboards, and commits.
+// registerMiscRoutes: badges, widgets, leaderboards, and commits.
 func registerMiscRoutes(e *echo.Echo, h *handler.Handler) {
 	// Badges
 	e.GET("/badge/link/:project", h.BadgeLink)
 	e.GET("/badge/svg/:svg", h.BadgeSvg)
+
+	// Embeddable widgets (gaka-hsj): auth'd link CRUD + PUBLIC SVG renderer.
+	e.GET("/api/v1/users/current/widgets/link", h.WidgetLink)
+	e.GET("/api/v1/users/current/widgets/links", h.WidgetLinkList)
+	e.DELETE("/api/v1/users/current/widgets/link/:id", h.WidgetLinkDelete)
+	e.GET("/widget/svg/:uuid/:kind", h.WidgetSvg)
 
 	// Leaderboards
 	e.GET("/api/v1/leaderboards", h.Leaderboards)

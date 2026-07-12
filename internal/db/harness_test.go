@@ -20,20 +20,27 @@ func mkSender(prefix string) string {
 	return prefix + "_" + time.Now().Format("150405.000000000")
 }
 
-// cleanupSender registers a t.Cleanup that deletes every row a sender owns across
-// the mutable tables (children before parents).
+// deleteSenderRows deletes every row a sender owns across the mutable tables
+// (children before parents). Sender-scoped on purpose: internal/db and
+// internal/testutil are separate test binaries sharing boomtime_test in a
+// parallel `go test ./...` run, so a table-wide TRUNCATE here races the other
+// binary's in-flight tests (users CASCADE nukes their minted rows mid-test).
+func deleteSenderRows(d *DB, ctx context.Context, sender string) {
+	_, _ = d.Pool.Exec(ctx, `DELETE FROM heartbeats WHERE sender=$1`, sender)
+	_, _ = d.Pool.Exec(ctx, `DELETE FROM curation_rules WHERE sender=$1`, sender)
+	_, _ = d.Pool.Exec(ctx, `DELETE FROM hb_rollup_daily WHERE sender=$1`, sender)
+	_, _ = d.Pool.Exec(ctx, `DELETE FROM spaces WHERE owner=$1`, sender)
+	_, _ = d.Pool.Exec(ctx, `DELETE FROM badges WHERE username=$1`, sender)
+	_, _ = d.Pool.Exec(ctx, `DELETE FROM widget_links WHERE username=$1`, sender)
+	_, _ = d.Pool.Exec(ctx, `DELETE FROM projects WHERE owner=$1`, sender)
+	_, _ = d.Pool.Exec(ctx, `DELETE FROM auth_tokens WHERE owner=$1`, sender)
+	_, _ = d.Pool.Exec(ctx, `DELETE FROM refresh_tokens WHERE owner=$1`, sender)
+	_, _ = d.Pool.Exec(ctx, `DELETE FROM users WHERE username=$1`, sender)
+}
+
+// cleanupSender registers a t.Cleanup that deletes every row a sender owns.
 func cleanupSender(t *testing.T, d *DB, ctx context.Context, sender string) {
-	t.Cleanup(func() {
-		_, _ = d.Pool.Exec(ctx, `DELETE FROM heartbeats WHERE sender=$1`, sender)
-		_, _ = d.Pool.Exec(ctx, `DELETE FROM curation_rules WHERE sender=$1`, sender)
-		_, _ = d.Pool.Exec(ctx, `DELETE FROM hb_rollup_daily WHERE sender=$1`, sender)
-		_, _ = d.Pool.Exec(ctx, `DELETE FROM spaces WHERE owner=$1`, sender)
-		_, _ = d.Pool.Exec(ctx, `DELETE FROM badges WHERE username=$1`, sender)
-		_, _ = d.Pool.Exec(ctx, `DELETE FROM projects WHERE owner=$1`, sender)
-		_, _ = d.Pool.Exec(ctx, `DELETE FROM auth_tokens WHERE owner=$1`, sender)
-		_, _ = d.Pool.Exec(ctx, `DELETE FROM refresh_tokens WHERE owner=$1`, sender)
-		_, _ = d.Pool.Exec(ctx, `DELETE FROM users WHERE username=$1`, sender)
-	})
+	t.Cleanup(func() { deleteSenderRows(d, ctx, sender) })
 }
 
 // ensureUser inserts the users row a heartbeat's sender FK requires.

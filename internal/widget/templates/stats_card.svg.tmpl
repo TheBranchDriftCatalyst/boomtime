@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="{{.Width}}" height="{{.Height}}" viewBox="0 0 {{.Width}} {{.Height}}" fill="none" role="img" aria-label="Coding stats card">
+  <style>
+    @keyframes fadeInUp { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes growBar { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+    @keyframes ringFill { from { stroke-dasharray: 0 10000; } }
+    .row { opacity: 0; animation: fadeInUp 0.5s ease-out forwards; }
+    .fade { opacity: 0; animation: fadeInUp 0.6s ease-out forwards; }
+    .bar-fill { transform: scaleX(0); transform-box: fill-box; transform-origin: left center; animation: growBar 0.8s ease-out forwards; }
+    .row:hover .bar-fill { filter: brightness(1.25); }
+    .row:hover text { filter: brightness(1.2); }
+    .ring { animation: ringFill 1.2s ease-out forwards; }
+    text { font-family: 'Segoe UI', Ubuntu, Sans-Serif; }
+  </style>
+  <rect x="0.5" y="0.5" width="{{.Width}}" height="{{.Height}}" rx="4.5" fill="{{.Theme.Background}}" stroke="{{.Theme.Border}}" stroke-opacity="1"/>
+  <text x="25" y="35" font-size="18" font-weight="600" fill="{{.Theme.Title}}">{{.Title}}</text>
+  {{- if .Subtitle}}
+  <text x="25" y="52" font-size="11" fill="{{.Theme.TextMuted}}">{{.Subtitle}}</text>
+  {{- end}}
+  {{- if .Empty}}
+  <text x="25" y="105" font-size="14" fill="{{.Theme.TextMuted}}">No coding activity in this range yet</text>
+  {{- else}}
+  <text class="fade" x="25" y="80" font-size="13" font-weight="600" fill="{{.Theme.Text}}">{{.TotalLabel}}</text>
+  <text class="fade" x="25" y="98" font-size="12" fill="{{.Theme.TextMuted}}" style="animation-delay: 0.1s">{{.AvgLabel}}</text>
+  {{- range .Rows}}
+  <g class="row" style="animation-delay: {{.Delay}}">
+    <title>{{.Tooltip}}</title>
+    <text x="25" y="{{.Y}}" font-size="11" fill="{{$.Theme.Text}}" dominant-baseline="middle">{{.Label}}</text>
+    <rect x="{{.BarX}}" y="{{.Y}}" width="{{.BarWMax}}" height="8" rx="4" fill="{{$.Theme.TrackBg}}" transform="translate(0,-4)"/>
+    <rect class="bar-fill" x="{{.BarX}}" y="{{.Y}}" width="{{.BarW}}" height="8" rx="4" fill="{{.Color}}" transform="translate(0,-4)" style="animation-delay: {{.Delay}}"/>
+    <text x="{{.BarX}}" y="{{.Y}}" dx="{{.BarWMax}}" font-size="10" fill="{{$.Theme.TextMuted}}" dominant-baseline="middle" text-anchor="start" transform="translate(8,0)">{{.Value}}</text>
+  </g>
+  {{- end}}
+  {{- end}}
+  {{- with .Grade}}
+  <g class="fade" style="animation-delay: 0.3s">
+    <title>Grade {{.Level}} — github-readme-stats scale, lower percentile is better</title>
+    <circle cx="{{.CX}}" cy="{{.CY}}" r="{{.R}}" stroke="{{$.Theme.TrackBg}}" stroke-width="6" fill="none"/>
+    <circle class="ring" cx="{{.CX}}" cy="{{.CY}}" r="{{.R}}" stroke="{{$.Theme.Title}}" stroke-width="6" fill="none"
+      stroke-linecap="round" stroke-dasharray="{{printf "%.2f" .DashFill}} {{printf "%.2f" .Circumference}}"
+      transform="rotate(-90 {{.CX}} {{.CY}})"/>
+    <text x="{{.CX}}" y="{{.CY}}" font-size="24" font-weight="700" fill="{{$.Theme.Text}}" text-anchor="middle" dominant-baseline="central">{{.Level}}</text>
+  </g>
+  {{- end}}
+</svg>

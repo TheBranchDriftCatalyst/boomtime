@@ -4,6 +4,8 @@ import { Calculator, Clock, Code, Crown } from "lucide-react";
 import { StatCard } from "@/components/StatCard";
 import { QueryGate } from "@/components/QueryGate";
 import { ChartCard } from "@/components/ChartCard";
+import { WidgetsPanel } from "@/features/widgets/WidgetsPanel";
+import { EmbedLinkButton } from "@/features/widgets/EmbedActions";
 import { ColumnChart } from "@/viz/charts/ColumnChart";
 import { HeatmapChart } from "@/viz/charts/HeatmapChart";
 import { PieChart } from "@/viz/charts/PieChart";
@@ -170,6 +172,10 @@ export function OverviewDashboard({
     <div>
       <PageToolbar title={title}>
         {toolbarActions}
+        <WidgetsPanel
+          scopeType={space ? "space" : "user"}
+          scopeRef={space ?? ""}
+        />
         <TimeLimitDropdown value={tr.timeLimit} onChange={tr.setTimeLimit} />
         <DateRangePicker
           numDays={tr.numDays}
@@ -224,7 +230,16 @@ export function OverviewDashboard({
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <div className="lg:col-span-2">
-              <ChartCard title="Total activity">
+              <ChartCard
+                title="Total activity"
+                embedAction={
+                  <EmbedLinkButton
+                    kind="stats-card"
+                    scopeType={space ? "space" : "user"}
+                    scopeRef={space ?? ""}
+                  />
+                }
+              >
                 {categoryColumnSeries.length > 0 ? (
                   <ColumnChart
                     dates={chartDates}
@@ -235,7 +250,16 @@ export function OverviewDashboard({
                 )}
               </ChartCard>
             </div>
-            <ChartCard title="Project breakdown">
+            <ChartCard
+              title="Project breakdown"
+              embedAction={
+                <EmbedLinkButton
+                  kind="top-projects"
+                  scopeType={space ? "space" : "user"}
+                  scopeRef={space ?? ""}
+                />
+              }
+            >
               <PieChart items={stats.projects} />
             </ChartCard>
           </div>
@@ -256,7 +280,16 @@ export function OverviewDashboard({
             <ChartCard title="Activity per project">
               <HeatmapChart items={chartProjects} dates={chartDates} />
             </ChartCard>
-            <ChartCard title="Activity per language">
+            <ChartCard
+              title="Activity per language"
+              embedAction={
+                <EmbedLinkButton
+                  kind="top-langs"
+                  scopeType={space ? "space" : "user"}
+                  scopeRef={space ?? ""}
+                />
+              }
+            >
               <HeatmapChart items={chartLanguages} dates={chartDates} />
             </ChartCard>
           </div>

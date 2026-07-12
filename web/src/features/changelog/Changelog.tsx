@@ -49,7 +49,7 @@ const CARD_HIGHLIGHT: Record<ReleaseStatus, string> = {
  * Both the version and changelog endpoints are unauthenticated; the page
  * itself is behind ProtectedRoute like every other /app child (App.tsx).
  */
-export function Changelog() {
+export function Changelog({ embedded = false }: { embedded?: boolean }) {
   const versionQuery = useQuery({
     queryKey: qk.version(),
     queryFn: () => api.getVersion(),
@@ -71,21 +71,25 @@ export function Changelog() {
     [releases, runningVersion],
   );
 
+  const versionChip = runningVersion && (
+    <span className="flex items-center gap-2 text-sm text-muted-foreground">
+      <span>Running</span>
+      <code
+        data-testid="running-version"
+        className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground"
+      >
+        {runningVersion}
+      </code>
+    </span>
+  );
+
   return (
     <div>
-      <PageToolbar title="Changelog">
-        {runningVersion && (
-          <span className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span>Running</span>
-            <code
-              data-testid="running-version"
-              className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground"
-            >
-              {runningVersion}
-            </code>
-          </span>
-        )}
-      </PageToolbar>
+      {embedded ? (
+        <div className="mb-4 flex items-center justify-end">{versionChip}</div>
+      ) : (
+        <PageToolbar title="Changelog">{versionChip}</PageToolbar>
+      )}
 
       <QueryGate query={changelogQuery} errorMessage="Failed to load changelog.">
         {() => {

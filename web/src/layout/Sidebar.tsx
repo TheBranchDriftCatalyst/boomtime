@@ -5,14 +5,12 @@ import {
   BookOpen,
   Code2,
   Download,
-  History,
   LayoutDashboard,
   ListTree,
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
-  ScrollText,
   Settings2,
 } from "lucide-react";
 import { useSpaces } from "@/features/spaces/useSpaces";
@@ -26,8 +24,7 @@ const NAV = [
   { name: "Leaderboards", icon: Award, to: "/app/leaderboards", end: false },
   { name: "Heartbeats", icon: ListTree, to: "/app/heartbeats", end: false },
   { name: "Import", icon: Download, to: "/app/import", end: false },
-  { name: "Logs", icon: ScrollText, to: "/app/logs", end: false },
-  { name: "Changelog", icon: History, to: "/app/changelog", end: false },
+  // Logs + Changelog live inside Settings tabs now.
   { name: "Settings", icon: Settings2, to: "/app/settings", end: false },
 ];
 

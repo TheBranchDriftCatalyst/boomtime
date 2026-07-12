@@ -87,10 +87,14 @@ func TestFixturePipeline(t *testing.T) {
 	defer d.Close()
 	ctx := context.Background()
 
-	// Clean slate on the ISOLATED db (safe — dedicated to tests).
-	truncateAll(t, d)
-
+	// Clean slate for THIS sender only. Do NOT truncateAll here: internal/db and
+	// internal/testutil are separate test binaries sharing boomtime_test under a
+	// parallel `go test ./...`, and TRUNCATE users CASCADE nukes the other
+	// binary's minted users mid-test (flaky FK failures). All of this test's
+	// assertions are sender-scoped, so a sender purge is a sufficient reset.
 	sender := "fixture_user"
+	deleteSenderRows(d, ctx, sender)
+	cleanupSender(t, d, ctx, sender)
 	doc := loadFixture(t, d, sender)
 
 	// The fixture must actually be anonymized (never commit real data).

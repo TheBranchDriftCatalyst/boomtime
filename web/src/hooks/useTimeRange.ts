@@ -80,9 +80,24 @@ function sameRange(a: RangeState, b: RangeState): boolean {
 export function useTimeRange(): TimeRangeControls {
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const [state, setState] = useState<RangeState>(
-    () => fromParams(searchParams) ?? loadStored<RangeState | null>(STORAGE_KEY, null) ?? defaults(),
-  );
+  const [state, setState] = useState<RangeState>(() => {
+    const fromURL = fromParams(searchParams);
+    if (fromURL) return fromURL;
+    const stored = loadStored<RangeState | null>(STORAGE_KEY, null);
+    if (stored) {
+      // Slide the window so end == now, preserving the chosen duration +
+      // timeLimit. Persisted ranges are almost always rolling "last N days"
+      // presets; without this, the previous session's absolute end sticks
+      // around and the Patterns/Timeline queries silently return empty for a
+      // stale window until the user touches the picker. Shared/bookmarked
+      // links bypass storage (URL wins) so an explicit historical range
+      // stays intact there.
+      const duration = Math.max(0, stored.end - stored.start);
+      const now = Date.now();
+      return { start: now - duration, end: now, timeLimit: stored.timeLimit };
+    }
+    return defaults();
+  });
 
   // Latest state for setters/effects that must not re-run on every change.
   const stateRef = useRef(state);

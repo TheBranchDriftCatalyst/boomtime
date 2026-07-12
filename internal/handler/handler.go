@@ -105,6 +105,23 @@ func (h *Handler) cachedJSON(c *echo.Context, key string, compute func() (any, e
 	return c.JSONBlob(http.StatusOK, b)
 }
 
+// cachedBlob is cachedJSON's non-JSON sibling: serve a cached byte blob for
+// key, or compute+cache it. Used by the public widget SVG endpoint — the key
+// is owner-prefixed, so invalidateOwnerCache busts stale widget renders after
+// curation changes just like it busts dashboard payloads.
+func (h *Handler) cachedBlob(c *echo.Context, key, contentType string, compute func() ([]byte, error)) error {
+	if b, ok := h.Cache.Get(key); ok {
+		return c.Blob(http.StatusOK, contentType, b)
+	}
+	b, err := compute()
+	if err != nil {
+		h.Logger.Error("blob compute failed", "key", key, "err", err)
+		return respondErr(c, apierr.Generic())
+	}
+	h.Cache.Set(key, b)
+	return c.Blob(http.StatusOK, contentType, b)
+}
+
 // resolveOwnerFromCookie resolves the owner from the HttpOnly refresh_token
 // cookie (used by /auth/refresh_token, /auth/users/current, and the WebSocket
 // handshake, which cannot carry an Authorization header). missingErr is the

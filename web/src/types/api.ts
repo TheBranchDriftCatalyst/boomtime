@@ -11,3 +11,4 @@ export * from "./heartbeats";
 export * from "./import";
 export * from "./commits";
 export * from "./meta";
+export * from "./widgets";

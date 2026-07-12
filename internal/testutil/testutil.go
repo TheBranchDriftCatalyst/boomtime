@@ -178,6 +178,11 @@ func (hz *Harness) Router() *echo.Echo {
 	e.GET("/api/v1/users/current/files", h.ActiveFiles)
 	e.GET("/api/v1/users/current/projects/:project", h.ProjectStats)
 	e.GET("/api/v1/projects", h.ProjectList)
+	// embeddable widgets (auth'd link CRUD + public SVG)
+	e.GET("/api/v1/users/current/widgets/link", h.WidgetLink)
+	e.GET("/api/v1/users/current/widgets/links", h.WidgetLinkList)
+	e.DELETE("/api/v1/users/current/widgets/link/:id", h.WidgetLinkDelete)
+	e.GET("/widget/svg/:uuid/:kind", h.WidgetSvg)
 	return e
 }
 
@@ -213,6 +218,7 @@ func (hz *Harness) Cleanup(sender string) {
 			`DELETE FROM hb_rollup_daily WHERE sender=$1`,
 			`DELETE FROM spaces WHERE owner=$1`,
 			`DELETE FROM badges WHERE username=$1`,
+			`DELETE FROM widget_links WHERE username=$1`,
 			`DELETE FROM projects WHERE owner=$1`,
 			`DELETE FROM auth_tokens WHERE owner=$1`,
 			`DELETE FROM refresh_tokens WHERE owner=$1`,

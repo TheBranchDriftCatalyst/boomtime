@@ -3,16 +3,14 @@ import { AppShell } from "@/layout/AppShell";
 import { ProtectedRoute } from "@/app/ProtectedRoute";
 import { useAuth } from "@/features/auth/useAuth";
 import { Spinner } from "@/components/Spinner";
-import { Changelog } from "@/features/changelog/Changelog";
 import { Heartbeats } from "@/features/heartbeats/Heartbeats";
 import { Import } from "@/features/import/Import";
 import { Leaderboards } from "@/features/leaderboards/Leaderboards";
-import { Logs } from "@/features/logs/Logs";
 import { Login } from "@/features/auth/Login";
 import { Overview } from "@/features/overview/Overview";
 import { Projects } from "@/features/projects/Projects";
 import { Register } from "@/features/auth/Register";
-import { Settings } from "@/features/curation/Settings";
+import { Settings } from "@/features/settings/Settings";
 import { SpaceView } from "@/features/spaces/SpaceView";
 
 function RootRedirect() {
@@ -47,8 +45,15 @@ export function App() {
         <Route path="heartbeats" element={<Heartbeats />} />
         <Route path="space/:id" element={<SpaceView />} />
         <Route path="import" element={<Import />} />
-        <Route path="logs" element={<Logs />} />
-        <Route path="changelog" element={<Changelog />} />
+        {/* Logs + Changelog moved into Settings tabs; keep old URLs working. */}
+        <Route
+          path="logs"
+          element={<Navigate to="/app/settings?tab=logs" replace />}
+        />
+        <Route
+          path="changelog"
+          element={<Navigate to="/app/settings?tab=changelog" replace />}
+        />
         <Route path="settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

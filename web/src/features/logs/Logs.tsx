@@ -31,7 +31,7 @@ const statusStyles: Record<SocketStatus, { label: string; dot: string }> = {
  * ring buffer on (re)connect). Auto-scrolls to the newest line unless the user
  * scrolls up; supports a level filter and clearing the local buffer.
  */
-export function Logs() {
+export function Logs({ embedded = false }: { embedded?: boolean }) {
   const { logs, status, clear } = useLogsSocket();
   const [filter, setFilter] = useState<LevelFilter>("all");
 
@@ -51,36 +51,44 @@ export function Logs() {
 
   const st = statusStyles[status];
 
+  const controls = (
+    <>
+      <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+        <span className={cn("h-2 w-2 rounded-full", st.dot)} />
+        {st.label}
+      </span>
+
+      <div className="flex items-center gap-1 rounded-md border p-0.5">
+        {LEVELS.map((lvl) => (
+          <button
+            key={lvl}
+            onClick={() => setFilter(lvl)}
+            className={cn(
+              "rounded px-2 py-1 text-xs font-medium capitalize transition-colors",
+              filter === lvl
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+            )}
+          >
+            {lvl}
+          </button>
+        ))}
+      </div>
+
+      <Button variant="outline" size="sm" onClick={clear} title="Clear the view">
+        <Trash2 className="h-4 w-4" />
+        Clear
+      </Button>
+    </>
+  );
+
   return (
     <div>
-      <PageToolbar title="Logs">
-        <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
-          <span className={cn("h-2 w-2 rounded-full", st.dot)} />
-          {st.label}
-        </span>
-
-        <div className="flex items-center gap-1 rounded-md border p-0.5">
-          {LEVELS.map((lvl) => (
-            <button
-              key={lvl}
-              onClick={() => setFilter(lvl)}
-              className={cn(
-                "rounded px-2 py-1 text-xs font-medium capitalize transition-colors",
-                filter === lvl
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-              )}
-            >
-              {lvl}
-            </button>
-          ))}
-        </div>
-
-        <Button variant="outline" size="sm" onClick={clear} title="Clear the view">
-          <Trash2 className="h-4 w-4" />
-          Clear
-        </Button>
-      </PageToolbar>
+      {embedded ? (
+        <div className="mb-4 flex items-center justify-end gap-3">{controls}</div>
+      ) : (
+        <PageToolbar title="Logs">{controls}</PageToolbar>
+      )}
 
       <LogTerminal
         logs={visible}
