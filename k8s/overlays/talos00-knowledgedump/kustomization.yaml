@@ -10,3 +10,11 @@ resources:
   - postgres-cluster.yaml
   - external-secret.yaml
   - ingressroute.yaml
+
+# Temporary while the Argo Application tracks the `gakatime` branch — the
+# docker-publish workflow only tags `:latest` on default-branch pushes.
+# Flip back to `:latest` after gakatime → master merge, or let the
+# ImageUpdater CRD (gaka-xwt) manage it.
+images:
+  - name: ghcr.io/thebranchdriftcatalyst/hakatime
+    newTag: gakatime
