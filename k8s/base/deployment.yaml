@@ -1,0 +1,71 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: boomtime
+  labels:
+    app: boomtime
+    app.kubernetes.io/name: boomtime
+    app.kubernetes.io/part-of: catalyst
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: boomtime
+  template:
+    metadata:
+      labels:
+        app: boomtime
+        app.kubernetes.io/name: boomtime
+    spec:
+      containers:
+        - name: boomtime
+          image: ghcr.io/thebranchdriftcatalyst/boomtime:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: boomtime-config
+            - secretRef:
+                name: boomtime-secrets
+                optional: true
+          env:
+            # DB credentials come from the CNPG-managed (prod) or overlay-provided
+            # (local) `boomtime-postgres-app` Secret. CNPG populates username/password
+            # on that Secret automatically.
+            - name: BOOM_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: boomtime-postgres-app
+                  key: username
+            - name: BOOM_DB_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: boomtime-postgres-app
+                  key: password
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3

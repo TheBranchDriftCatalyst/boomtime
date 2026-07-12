@@ -1,0 +1,70 @@
+---
+# Plain Postgres for local k3s (no CNPG operator).
+# Uses hostPath-ish emptyDir by default; swap for a PVC if you want persistence
+# across `tilt down`.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: boomtime-postgres
+  labels:
+    app: boomtime-postgres
+    app.kubernetes.io/component: database
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: boomtime-postgres
+  template:
+    metadata:
+      labels:
+        app: boomtime-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: boomtime
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: boomtime-postgres-app
+                  key: username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: boomtime-postgres-app
+                  key: password
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+              subPath: pgdata
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+      volumes:
+        - name: pgdata
+          emptyDir: {}
+---
+# Matches the CNPG service name so the base ConfigMap
+# (BOOM_DB_HOST=boomtime-postgres-rw) is portable.
+apiVersion: v1
+kind: Service
+metadata:
+  name: boomtime-postgres-rw
+  labels:
+    app: boomtime-postgres
+spec:
+  type: ClusterIP
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+  selector:
+    app: boomtime-postgres

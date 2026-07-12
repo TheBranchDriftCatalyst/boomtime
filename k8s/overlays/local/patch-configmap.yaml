@@ -1,0 +1,12 @@
+---
+# Local overrides for BOOM_* config: dev-friendly logging, allow registration
+# on empty local DB, point BADGE_URL at local host.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: boomtime-config
+data:
+  BOOM_ENV: "dev"
+  BOOM_LOG_LEVEL: "debug"
+  BOOM_ENABLE_REGISTRATION: "true"
+  BOOM_BADGE_URL: "http://boomtime.local"

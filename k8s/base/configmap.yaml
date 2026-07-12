@@ -1,0 +1,25 @@
+---
+# Non-secret BOOM_* runtime config. Overlays patch env-specific values
+# (BOOM_ENV, BOOM_BADGE_URL, BOOM_ENABLE_REGISTRATION).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: boomtime-config
+  labels:
+    app.kubernetes.io/name: boomtime
+data:
+  BOOM_PORT: "8080"
+  BOOM_ENV: "prod"
+  BOOM_LOG_LEVEL: "info"
+  BOOM_HTTP_LOG: "true"
+  BOOM_API_PREFIX: ""
+  BOOM_ENABLE_REGISTRATION: "false"
+  BOOM_SESSION_EXPIRY: "24"
+  BOOM_DASHBOARD_PATH: ""
+  BOOM_BADGE_URL: "https://boomtime.knowledgedump.space"
+  BOOM_SHIELDS_IO_URL: "https://img.shields.io"
+  BOOM_STATS_WORK_MEM: "256MB"
+  BOOM_STATS_CACHE_TTL: "30"
+  BOOM_DB_HOST: "boomtime-postgres-rw"
+  BOOM_DB_PORT: "5432"
+  BOOM_DB_NAME: "boomtime"

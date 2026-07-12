@@ -1,0 +1,65 @@
+---
+# LAN HTTP: boomtime.talos00 (local LAN only, no TLS).
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: boomtime-lan
+  labels:
+    app: boomtime
+spec:
+  entryPoints:
+    - web
+  routes:
+    - kind: Rule
+      match: Host(`boomtime.talos00`)
+      middlewares:
+        - name: lan-only
+          namespace: traefik
+      services:
+        - name: boomtime
+          port: 8080
+---
+# External HTTPS: boomtime.knowledgedump.space.
+# `tls: {}` uses Traefik's TLSStore default certificate, which is the
+# pre-provisioned wildcard `knowledgedump-wildcard-tls` in the traefik ns.
+# external-dns annotations create the Cloudflare A/CNAME record.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: boomtime
+  labels:
+    app: boomtime
+  annotations:
+    external-dns.alpha.kubernetes.io/hostname: boomtime.knowledgedump.space
+    external-dns.alpha.kubernetes.io/target: knowledgedump.space
+    external-dns.alpha.kubernetes.io/cloudflare-proxied: "true"
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - kind: Rule
+      match: Host(`boomtime.knowledgedump.space`)
+      services:
+        - name: boomtime
+          port: 8080
+  tls: {}
+---
+# HTTP→HTTPS redirect for the external hostname.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: boomtime-http-redirect
+  labels:
+    app: boomtime
+spec:
+  entryPoints:
+    - web
+  routes:
+    - kind: Rule
+      match: Host(`boomtime.knowledgedump.space`)
+      middlewares:
+        - name: redirect-https
+          namespace: traefik
+      services:
+        - name: boomtime
+          port: 8080

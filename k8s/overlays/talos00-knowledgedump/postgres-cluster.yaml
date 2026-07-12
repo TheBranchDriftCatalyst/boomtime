@@ -1,0 +1,56 @@
+---
+# CloudNativePG Cluster for boomtime.
+# CNPG auto-creates:
+#   - Secret `boomtime-postgres-app` (keys: username, password, dbname, host,
+#     port, pgpass, uri, jdbc-uri) — referenced by the Deployment for
+#     BOOM_DB_USER / BOOM_DB_PASS.
+#   - Secret `boomtime-postgres-superuser` (if superuserSecret unset, no external
+#     access to the `postgres` role — safer default).
+#   - Services `boomtime-postgres-rw` (primary), `-ro` (replicas), `-r` (any).
+# The Deployment's ConfigMap points BOOM_DB_HOST at `boomtime-postgres-rw`.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: boomtime-postgres
+  labels:
+    app.kubernetes.io/name: boomtime-postgres
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: boomtime
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+
+  bootstrap:
+    initdb:
+      database: boomtime
+      owner: boomtime
+      postInitSQL:
+        - CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+
+  storage:
+    size: 10Gi
+    storageClass: fatboy-nfs-appdata
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+  monitoring:
+    enablePodMonitor: true
+
+  postgresql:
+    parameters:
+      shared_buffers: "256MB"
+      effective_cache_size: "512MB"
+      work_mem: "16MB"
+      maintenance_work_mem: "64MB"
+      archive_mode: "on"
+      archive_timeout: "5min"
+      log_min_duration_statement: "1000"
+    pg_hba:
+      - host all all 10.0.0.0/8 md5
+      - host all all 192.168.0.0/16 md5
