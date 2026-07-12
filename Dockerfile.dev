@@ -13,5 +13,10 @@ WORKDIR /src
 COPY go.mod go.sum* ./
 RUN go mod download || true
 
+# Baseline source snapshot so `tilt up` works without a bind-mount. docker-
+# compose still shadows this via `.:/src`; Tilt live_update sync() overwrites
+# on file changes.
+COPY . .
+
 EXPOSE 8080
 CMD ["air", "-c", ".air.toml"]
