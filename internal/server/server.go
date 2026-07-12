@@ -14,6 +14,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/openapi"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
 )
@@ -65,11 +66,17 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	registerMetaRoutes(e, h)
 }
 
-// registerMetaRoutes: build/version disclosure + embedded changelog. Both are
-// intentionally unauthenticated (see internal/handler/meta.go).
+// registerMetaRoutes: build/version disclosure + embedded changelog + the
+// self-hosted OpenAPI spec and Swagger UI (gaka-lfc). Everything registered
+// here is intentionally unauthenticated (see internal/handler/meta.go and
+// internal/openapi).
 func registerMetaRoutes(e *echo.Echo, h *handler.Handler) {
 	e.GET("/api/v1/version", h.Version)
 	e.GET("/api/v1/changelog", h.Changelog)
+	// OpenAPI 3 spec + embedded Swagger UI. Public: the spec + docs are
+	// self-hosted transparency, not user data. Auth'd endpoints inside the
+	// spec still require the Authorize dialog to be filled in for Try-it-out.
+	openapi.Register(e)
 }
 
 // registerHeartbeatRoutes: ingest, the read-only explorer, and source health.
