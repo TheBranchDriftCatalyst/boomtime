@@ -49,6 +49,34 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    // gaka-4hv: split heavyweight vendor libs off the main entry. d3 is by
+    // far the biggest single dep (~120kB min); react + react-router + react-
+    // query are all long-lived and can share a chunk that browsers cache
+    // across dashboard reloads. Route-level pages are chunked separately
+    // via React.lazy in src/app/App.tsx.
+    rolldownOptions: {
+      output: {
+        manualChunks: (id) => {
+          if (!id.includes("node_modules")) return undefined;
+          if (id.includes("d3-") || id.match(/node_modules\/d3\//)) {
+            return "vendor-d3";
+          }
+          if (
+            id.includes("react-router") ||
+            id.includes("@tanstack/react-query") ||
+            /node_modules\/react-dom\//.test(id) ||
+            /node_modules\/react\//.test(id)
+          ) {
+            return "vendor-react";
+          }
+          if (id.includes("@radix-ui")) {
+            return "vendor-radix";
+          }
+          return undefined;
+        },
+      },
+    },
+    chunkSizeWarningLimit: 600,
   },
   test: {
     globals: true,
