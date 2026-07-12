@@ -21,25 +21,10 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/wakatime"
 )
 
-// JobStatus JSON strings returned to the client for back-compat (Import.hs).
-const (
-	JobSubmitted = "JobSubmitted"
-	JobPending   = "JobPending"
-	JobFailed    = "JobFailed"
-	JobFinished  = "JobFinished"
-)
-
-// MapState maps an import_jobs.state to a legacy client-facing JobStatus.
-func MapState(state string) string {
-	switch state {
-	case db.JobStateFailed, db.JobStateCancelled:
-		return JobFailed
-	case db.JobStateCompleted:
-		return JobFinished
-	default: // queued, running
-		return JobPending
-	}
-}
+// JobSubmitted is the sole remaining legacy status label still used by the
+// submit endpoint's response envelope. MapState + JobPending/Failed/Finished
+// were audit-dead (gaka-al6) and were removed.
+const JobSubmitted = "JobSubmitted"
 
 // QueueItem is the JSON stored in import_jobs.value (the request + requester).
 type QueueItem struct {
@@ -49,11 +34,26 @@ type QueueItem struct {
 
 const wakatimeAPI = "https://wakatime.com"
 
+// httpClient is the shared client for outbound wakatime.com fetches. A hung
+// upstream read would otherwise stall an entire import job goroutine forever
+// (gaka-al6). 60s is generous — wakatime's biggest response (heartbeats for
+// one day) rarely exceeds a few hundred KB — while still bounded.
+var httpClient = &http.Client{Timeout: 60 * time.Second}
+
+// runningJob is one in-flight job's cancel handle plus a done channel that
+// closes when the worker goroutine exits (finishCancelled or finishError
+// already ran). Cancel returns done so the handler can wait for the terminal
+// DB write to land instead of racing it with a 150ms sleep.
+type runningJob struct {
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
 // Worker owns the running-job registry and the event hub.
 type Worker struct {
-	DB     *db.DB
-	Logger *slog.Logger
-	Hub    *Hub
+	db     *db.DB
+	logger *slog.Logger
+	hub    *Hub
 
 	// BaseURL overrides the wakatime.com base for tests (httptest.Server). If
 	// empty the wakatimeAPI constant is used. Kept exported for the importer
@@ -61,8 +61,8 @@ type Worker struct {
 	BaseURL string
 
 	mu      sync.Mutex
-	running map[int]context.CancelFunc // jobID -> cancel
-	base    context.Context            // parent context (server lifetime)
+	running map[int]*runningJob // jobID -> cancel+done
+	base    context.Context     // parent context (server lifetime)
 }
 
 // baseURL returns the effective wakatime.com base URL for this worker.
@@ -76,10 +76,10 @@ func (w *Worker) baseURL() string {
 // NewWorker constructs a Worker bound to a base context (server lifetime).
 func NewWorker(base context.Context, database *db.DB, logger *slog.Logger, hub *Hub) *Worker {
 	return &Worker{
-		DB:      database,
-		Logger:  logger,
-		Hub:     hub,
-		running: make(map[int]context.CancelFunc),
+		db:      database,
+		logger:  logger,
+		hub:     hub,
+		running: make(map[int]*runningJob),
 		base:    base,
 	}
 }
@@ -87,13 +87,13 @@ func NewWorker(base context.Context, database *db.DB, logger *slog.Logger, hub *
 // RecoverInterrupted marks any queued/running jobs (from a previous process) as
 // failed. Called once at startup so a crash/restart never leaves a zombie job.
 func (w *Worker) RecoverInterrupted(ctx context.Context) {
-	ids, err := w.DB.MarkRunningJobsFailed(ctx, "interrupted by restart")
+	ids, err := w.db.MarkRunningJobsFailed(ctx, "interrupted by restart")
 	if err != nil {
-		w.Logger.Error("failed to recover interrupted import jobs", "err", err)
+		w.logger.Error("failed to recover interrupted import jobs", "err", err)
 		return
 	}
 	for _, id := range ids {
-		w.Logger.Warn("marked interrupted import job as failed", "id", id)
+		w.logger.Warn("marked interrupted import job as failed", "id", id)
 	}
 }
 
@@ -101,9 +101,10 @@ func (w *Worker) RecoverInterrupted(ctx context.Context) {
 // The job's context is registered for cancellation.
 func (w *Worker) StartJob(job *db.Job, item QueueItem) {
 	jobCtx, cancel := context.WithCancel(w.base)
+	rj := &runningJob{cancel: cancel, done: make(chan struct{})}
 
 	w.mu.Lock()
-	w.running[job.ID] = cancel
+	w.running[job.ID] = rj
 	w.mu.Unlock()
 
 	go func() {
@@ -112,37 +113,48 @@ func (w *Worker) StartJob(job *db.Job, item QueueItem) {
 			delete(w.running, job.ID)
 			w.mu.Unlock()
 			cancel()
+			// Signal Cancel waiters AFTER the deferred DB-write path (run's
+			// own defers, incl. finishCancelled) has completed — the whole
+			// point of the ack channel is that a caller can read the fresh
+			// job state and see the terminal write.
+			close(rj.done)
 		}()
 		w.run(jobCtx, job.ID, item)
 	}()
 }
 
-// Cancel requests cancellation of a running job. Returns true if it was running
-// in this process. Callers should also update the DB state for durability.
-func (w *Worker) Cancel(jobID int) bool {
+// Cancel requests cancellation of a running job. Returns a done channel that
+// closes AFTER the worker goroutine's terminal DB write lands (finishCancelled
+// / finishError), and ok=true if the job was running in this process. When
+// ok=false, done is a pre-closed channel (immediate) so callers can wait
+// uniformly. The old 150ms sleep in the handler is now `<-done` (gaka-al6).
+func (w *Worker) Cancel(jobID int) (<-chan struct{}, bool) {
 	w.mu.Lock()
-	cancel, ok := w.running[jobID]
+	rj, ok := w.running[jobID]
 	w.mu.Unlock()
-	if ok {
-		cancel()
+	if !ok {
+		ch := make(chan struct{})
+		close(ch)
+		return ch, false
 	}
-	return ok
+	rj.cancel()
+	return rj.done, true
 }
 
 // run executes a job day-by-day with durable progress and live event publishing.
 func (w *Worker) run(ctx context.Context, jobID int, item QueueItem) {
 	log := func(level, msg string) {
-		l, err := w.DB.InsertJobLog(ctx, jobID, level, msg)
+		l, err := w.db.InsertJobLog(ctx, jobID, level, msg)
 		if err != nil {
 			// Context cancellation aborts DB writes; still surface at debug.
-			w.Logger.Debug("failed to persist job log", "job", jobID, "err", err)
+			w.logger.Debug("failed to persist job log", "job", jobID, "err", err)
 			return
 		}
-		w.Hub.Publish(jobID, Event{Type: "log", Log: l})
+		w.hub.Publish(jobID, Event{Type: "log", Log: l})
 	}
 	publishJob := func(kind string, job *db.Job) {
 		if job != nil {
-			w.Hub.Publish(jobID, Event{Type: kind, Job: job})
+			w.hub.Publish(jobID, Event{Type: kind, Job: job})
 		}
 	}
 
@@ -164,18 +176,18 @@ func (w *Worker) run(ctx context.Context, jobID int, item QueueItem) {
 		}
 		buf, err := json.Marshal(findings)
 		if err != nil {
-			w.Logger.Warn("marshal drift findings", "job", jobID, "err", err)
+			w.logger.Warn("marshal drift findings", "job", jobID, "err", err)
 			return
 		}
-		if err := w.DB.SetJobDrift(persistCtx, jobID, buf); err != nil {
-			w.Logger.Warn("persist drift findings", "job", jobID, "err", err)
+		if err := w.db.SetJobDrift(persistCtx, jobID, buf); err != nil {
+			w.logger.Warn("persist drift findings", "job", jobID, "err", err)
 		}
 	}
 
 	// Transition to running.
-	job, err := w.DB.MarkJobRunning(ctx, jobID)
+	job, err := w.db.MarkJobRunning(ctx, jobID)
 	if err != nil {
-		w.Logger.Error("failed to mark job running", "job", jobID, "err", err)
+		w.logger.Error("failed to mark job running", "job", jobID, "err", err)
 		return
 	}
 	publishJob("state", job)
@@ -199,7 +211,7 @@ func (w *Worker) run(ctx context.Context, jobID int, item QueueItem) {
 		msg := err.Error()
 		log("error", "failed to fetch wakatime metadata: "+msg)
 		persistDrift(ctx)
-		j, _ := w.DB.FinishImportJob(ctx, jobID, db.JobStateFailed, &msg)
+		j, _ := w.db.FinishImportJob(ctx, jobID, db.JobStateFailed, &msg)
 		publishJob("state", j)
 		return
 	}
@@ -227,14 +239,14 @@ func (w *Worker) run(ctx context.Context, jobID int, item QueueItem) {
 			log("info", fmt.Sprintf("imported %d heartbeats for %s", n, day))
 		}
 
-		j, upErr := w.DB.UpdateJobProgress(ctx, jobID, i+1, importedTotal, day)
+		j, upErr := w.db.UpdateJobProgress(ctx, jobID, i+1, importedTotal, day)
 		if upErr != nil {
 			if ctx.Err() != nil {
 				withBackgroundTimeout(5*time.Second, persistDrift)
 				w.finishCancelled(jobID, publishJob)
 				return
 			}
-			w.Logger.Error("failed to persist progress", "job", jobID, "err", upErr)
+			w.logger.Error("failed to persist progress", "job", jobID, "err", upErr)
 			continue
 		}
 		publishJob("progress", j)
@@ -244,13 +256,13 @@ func (w *Worker) run(ctx context.Context, jobID int, item QueueItem) {
 	// Persist drift BEFORE FinishImportJob so the returned terminal snapshot
 	// (and the "state" WS event) carries drift[].
 	persistDrift(ctx)
-	final, err := w.DB.FinishImportJob(ctx, jobID, db.JobStateCompleted, nil)
+	final, err := w.db.FinishImportJob(ctx, jobID, db.JobStateCompleted, nil)
 	if err != nil {
-		w.Logger.Error("failed to finalize job", "job", jobID, "err", err)
+		w.logger.Error("failed to finalize job", "job", jobID, "err", err)
 		return
 	}
 	publishJob("state", final)
-	w.Logger.Info("import completed", "job", jobID, "user", item.Requester, "imported", importedTotal)
+	w.logger.Info("import completed", "job", jobID, "user", item.Requester, "imported", importedTotal)
 }
 
 // withBackgroundTimeout runs fn with a short-lived background context used
@@ -268,13 +280,13 @@ func withBackgroundTimeout(d time.Duration, fn func(context.Context)) {
 func (w *Worker) finishCancelled(jobID int, publishJob func(string, *db.Job)) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	l, _ := w.DB.InsertJobLog(ctx, jobID, "info", "cancelled by user")
+	l, _ := w.db.InsertJobLog(ctx, jobID, "info", "cancelled by user")
 	if l != nil {
-		w.Hub.Publish(jobID, Event{Type: "log", Log: l})
+		w.hub.Publish(jobID, Event{Type: "log", Log: l})
 	}
-	j, err := w.DB.CancelJob(ctx, jobID)
+	j, err := w.db.CancelJob(ctx, jobID)
 	if err != nil {
-		w.Logger.Error("failed to mark job cancelled", "job", jobID, "err", err)
+		w.logger.Error("failed to mark job cancelled", "job", jobID, "err", err)
 		return
 	}
 	publishJob("state", j)
@@ -369,7 +381,7 @@ func (w *Worker) importDay(ctx context.Context, authHeader, user, day string, mn
 	if len(hbs) == 0 {
 		return 0, nil
 	}
-	ids, err := w.DB.SaveHeartbeats(ctx, hbs)
+	ids, err := w.db.SaveHeartbeats(ctx, hbs)
 	if err != nil {
 		return 0, err
 	}
@@ -544,7 +556,7 @@ func getRawJSON(ctx context.Context, endpoint, authHeader string, query url.Valu
 		return nil, err
 	}
 	req.Header.Set("Authorization", authHeader)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

@@ -151,10 +151,12 @@ func (h *Handler) ImportJobCancel(c *echo.Context) error {
 	id := job.ID
 	ctx := c.Request().Context()
 
-	// Signal the in-process worker (if running here); the worker records the
-	// cancelled terminal state. If it isn't running in this process (e.g. queued
-	// but not yet started, or already terminal), cancel durably in the DB.
-	if !h.Worker.Cancel(id) {
+	// Signal the in-process worker. Cancel returns a done channel that closes
+	// AFTER the worker goroutine's terminal DB write (finishCancelled) — no
+	// race, no sleep (gaka-al6). If the job isn't running here (queued or
+	// already terminal), we cancel durably in the DB and skip the wait.
+	done, running := h.Worker.Cancel(id)
+	if !running {
 		updated, err := h.DB.CancelJob(ctx, id)
 		if err != nil {
 			return respondErr(c, apierr.Generic())
@@ -163,9 +165,13 @@ func (h *Handler) ImportJobCancel(c *echo.Context) error {
 			job = updated
 		}
 	} else {
-		// Give the worker a brief moment to persist the cancelled state, then
-		// re-read so the response reflects it.
-		time.Sleep(150 * time.Millisecond)
+		// Bound the wait so a stuck goroutine can't hold the response open
+		// indefinitely — 5s ceiling; request-context cancellation still wins.
+		select {
+		case <-done:
+		case <-ctx.Done():
+		case <-time.After(5 * time.Second):
+		}
 		if fresh, err := h.DB.GetJobByID(ctx, id); err == nil && fresh != nil {
 			job = fresh
 		}

@@ -1,6 +1,7 @@
 package importer
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -38,17 +39,51 @@ func TestDayRangeMultiDay(t *testing.T) {
 	}
 }
 
-func TestMapState(t *testing.T) {
-	cases := map[string]string{
-		"queued":    JobPending,
-		"running":   JobPending,
-		"completed": JobFinished,
-		"failed":    JobFailed,
-		"cancelled": JobFailed,
+// TestMapState was removed with MapState + JobPending/Failed/Finished (gaka-al6).
+
+// gaka-al6: Cancel returns a done channel so callers can wait for the worker
+// goroutine's terminal DB write instead of racing it with a fixed sleep. When
+// the job isn't running in this process the channel is pre-closed — one call
+// site, one wait pattern.
+func TestCancelReturnsPreClosedChannelForUnknownJob(t *testing.T) {
+	w := NewWorker(context.Background(), nil, nil, nil)
+	done, running := w.Cancel(42)
+	if running {
+		t.Fatal("Cancel of unknown job should report running=false")
 	}
-	for state, want := range cases {
-		if got := MapState(state); got != want {
-			t.Fatalf("MapState(%q) = %q, want %q", state, got, want)
-		}
+	select {
+	case <-done:
+		// Expected: pre-closed so callers can `<-done` uniformly.
+	case <-time.After(50 * time.Millisecond):
+		t.Fatal("done channel should be pre-closed for a not-running job")
+	}
+}
+
+func TestCancelDoneChannelClosesAfterWorkerExit(t *testing.T) {
+	// Register a runningJob by hand so we don't need the full DB harness — the
+	// contract under test is StartJob's post-return defers (cancel, close(done))
+	// and Cancel's plumbing, both of which live in importer.go's plain sync
+	// bookkeeping.
+	w := NewWorker(context.Background(), nil, nil, nil)
+	rj := &runningJob{done: make(chan struct{})}
+	rj.cancel = func() {}
+	w.mu.Lock()
+	w.running[7] = rj
+	w.mu.Unlock()
+
+	done, running := w.Cancel(7)
+	if !running {
+		t.Fatal("Cancel of registered job should report running=true")
+	}
+	select {
+	case <-done:
+		t.Fatal("done should NOT close until we close it explicitly")
+	case <-time.After(10 * time.Millisecond):
+	}
+	close(rj.done)
+	select {
+	case <-done:
+	case <-time.After(50 * time.Millisecond):
+		t.Fatal("done should close as soon as the worker's defer fires")
 	}
 }
