@@ -92,25 +92,34 @@ func (h *Handler) WidgetLinkList(c *echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]any{"links": links})
 }
 
-// WidgetLinkDelete: DELETE /api/v1/users/current/widgets/link/:id (auth).
-// Owner-scoped: someone else's id 404s, never deletes.
-func (h *Handler) WidgetLinkDelete(c *echo.Context) error {
+// WidgetLinkRoll: POST /api/v1/users/current/widgets/link/:id/roll (auth).
+// Mints a new uuid for the same (user, scope). Returns the new URL — old id
+// immediately 404s (existing embeds break; the point is exactly to break
+// them). Owner-scoped: cross-owner ids 404.
+func (h *Handler) WidgetLinkRoll(c *echo.Context) error {
 	_, owner, aerr := h.resolveUser(c)
 	if aerr != nil {
 		return respondErr(c, aerr)
 	}
-	id, err := uuid.Parse(c.Param("id"))
+	oldID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		return respondErr(c, apierr.BadRequest("Invalid widget link id"))
 	}
-	deleted, err := h.DB.DeleteWidgetLink(c.Request().Context(), owner, id)
+	newID, ok, err := h.DB.RollWidgetLink(c.Request().Context(), owner, oldID)
 	if err != nil {
-		return h.internalErr(c, "widget link delete failed", err)
+		return h.internalErr(c, "widget link roll failed", err)
 	}
-	if !deleted {
+	if !ok {
 		return respondErr(c, apierr.NotFound("Widget link not found"))
 	}
-	return noContent(c)
+	// Any previously-cached bytes lived under the old id in the cache key, so
+	// they can't accidentally be served post-roll — but invalidate defensively
+	// (cheap; owner-prefixed sweep).
+	h.invalidateOwnerCache(owner)
+	return c.JSON(http.StatusOK, model.WidgetLinkResponse{
+		WidgetBaseURL: h.Cfg.BadgeURL + "/widget/svg/" + newID.String(),
+		LinkID:        newID.String(),
+	})
 }
 
 // WidgetSvg: GET /widget/svg/:uuid/:kind?days=30&theme=dark (PUBLIC).
@@ -144,6 +153,13 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 	}
 	if !ok {
 		return respondErr(c, apierr.NotFound("Widget link not found"))
+	}
+
+	// Track the request so the Settings badge can show "last requested Nm ago"
+	// and its click-through popover can list unique origins. Best-effort:
+	// don't fail the render if the hit-record write hits an issue.
+	if err := h.DB.RecordWidgetLinkHit(ctx, id, c.Request().Referer()); err != nil {
+		h.Logger.Debug("record widget hit failed", "id", id, "err", err)
 	}
 
 	days := queryInt64(c, "days", widgetDaysDefault)

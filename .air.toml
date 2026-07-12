@@ -10,9 +10,18 @@ tmp_dir = "tmp"
   include_dir = ["cmd", "internal", "tools"]
   exclude_dir = ["tmp", "web", "bin", ".git", "dist"]
   exclude_regex = ["_test.go"]
-  delay = 400
+  # Under the macOS→Linux bind mount fsnotify buffers events; multi-file save
+  # storms (typical when an editor writes several files back-to-back) can
+  # otherwise stack rebuilds and leave "./tmp/boomtime: not found" from a
+  # partially-written binary. 1.5s debounce coalesces those into one rebuild.
+  # SIGINT (send_interrupt=true) + 3s kill_delay lets the old process drop
+  # its listen socket cleanly before the new binary starts.
+  delay = 1500
   stop_on_error = true
-  kill_delay = "1s"
+  send_interrupt = true
+  kill_delay = "3s"
+  rerun = false
+  rerun_delay = 0
 
 [log]
   time = true

@@ -3,6 +3,7 @@ package testutil_test
 import (
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -158,37 +159,140 @@ func TestWidgetSvgHiddenLeak(t *testing.T) {
 	}
 }
 
-func TestWidgetLinkListAndDelete(t *testing.T) {
+func TestWidgetLinkList(t *testing.T) {
 	hz := testutil.NewHarness(t)
 	e := hz.Router()
-	_, tokenA := hz.MintUser("widget_del_a")
-	_, tokenB := hz.MintUser("widget_del_b")
+	_, token := hz.MintUser("widget_list")
 
-	link := mintWidgetLink(t, e, tokenA, "user", "")
+	link := mintWidgetLink(t, e, token, "user", "")
 
-	// List shows it.
 	var list struct {
 		Links []struct {
 			LinkID    string `json:"linkId"`
 			ScopeType string `json:"scopeType"`
+			ScopeName string `json:"scopeName"`
 		} `json:"links"`
 	}
-	rec := do(t, e, "GET", "/api/v1/users/current/widgets/links", tokenA, nil)
+	rec := do(t, e, "GET", "/api/v1/users/current/widgets/links", token, nil)
 	decode(t, rec, &list)
 	if len(list.Links) != 1 || list.Links[0].LinkID != link.LinkID {
 		t.Fatalf("list = %+v, want the one minted link", list)
 	}
+	// user-scope carries no scopeName (empty is fine).
+	if list.Links[0].ScopeName != "" {
+		t.Errorf("user-scope scopeName = %q, want empty", list.Links[0].ScopeName)
+	}
+}
 
-	// B cannot delete A's link.
-	if rec := do(t, e, "DELETE", "/api/v1/users/current/widgets/link/"+link.LinkID, tokenB, nil); rec.Code != http.StatusNotFound {
-		t.Errorf("cross-owner delete: status %d, want 404", rec.Code)
+// gaka-hsj follow-up: every public SVG fetch bumps last_used_at and merges
+// the Referer (or "direct") into a bounded origins set. Settings' badge
+// reads this to show "last requested Nm ago" + a click-through popover.
+func TestWidgetLinkTracksHitsAndOrigins(t *testing.T) {
+	hz := testutil.NewHarness(t)
+	e := hz.Router()
+	_, token := hz.MintUser("widget_hits")
+
+	link := mintWidgetLink(t, e, token, "user", "")
+
+	// Hit with two distinct Referers and one Referer twice.
+	fire := func(ref string) {
+		req := httptest.NewRequest("GET", "/widget/svg/"+link.LinkID+"/stats-card", nil)
+		if ref != "" {
+			req.Header.Set("Referer", ref)
+		}
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		if rec.Code != 200 {
+			t.Fatalf("SVG hit: %d", rec.Code)
+		}
 	}
-	// A can; the public URL then 404s.
-	if rec := do(t, e, "DELETE", "/api/v1/users/current/widgets/link/"+link.LinkID, tokenA, nil); rec.Code != http.StatusNoContent {
-		t.Errorf("owner delete: status %d, want 204", rec.Code)
+	fire("https://github.com/DJ/repo")
+	fire("https://github.com/DJ/repo")
+	fire("https://blog.example.com/post")
+	fire("") // "direct"
+
+	var list struct {
+		Links []struct {
+			LinkID     string     `json:"linkId"`
+			LastUsedAt *time.Time `json:"lastUsedAt"`
+			Origins    []struct {
+				Origin string `json:"origin"`
+				Count  int    `json:"count"`
+			} `json:"origins"`
+		} `json:"links"`
 	}
-	if rec := do(t, e, "GET", "/widget/svg/"+link.LinkID+"/stats-card", "", nil); rec.Code != http.StatusNotFound {
-		t.Errorf("revoked link render: status %d, want 404", rec.Code)
+	rec := do(t, e, "GET", "/api/v1/users/current/widgets/links", token, nil)
+	decode(t, rec, &list)
+	if len(list.Links) != 1 {
+		t.Fatalf("list len = %d", len(list.Links))
+	}
+	got := list.Links[0]
+	if got.LastUsedAt == nil {
+		t.Fatal("last_used_at should be set after a fetch")
+	}
+	origins := map[string]int{}
+	for _, o := range got.Origins {
+		origins[o.Origin] = o.Count
+	}
+	if origins["https://github.com/DJ/repo"] != 2 {
+		t.Errorf("github origin count = %d, want 2", origins["https://github.com/DJ/repo"])
+	}
+	if origins["https://blog.example.com/post"] != 1 {
+		t.Errorf("blog origin count = %d, want 1", origins["https://blog.example.com/post"])
+	}
+	if origins["direct"] != 1 {
+		t.Errorf("direct origin count = %d, want 1", origins["direct"])
+	}
+}
+
+// gaka-hsj follow-up: rolling a link mints a new uuid for the same scope.
+// The old id immediately 404s; the new id serves. Cross-owner rolls 404.
+func TestWidgetLinkRoll(t *testing.T) {
+	hz := testutil.NewHarness(t)
+	e := hz.Router()
+	_, tokenA := hz.MintUser("widget_roll_a")
+	_, tokenB := hz.MintUser("widget_roll_b")
+
+	orig := mintWidgetLink(t, e, tokenA, "user", "")
+
+	// B cannot roll A's link.
+	if rec := do(t, e, "POST", "/api/v1/users/current/widgets/link/"+orig.LinkID+"/roll", tokenB, nil); rec.Code != http.StatusNotFound {
+		t.Errorf("cross-owner roll: status %d, want 404", rec.Code)
+	}
+
+	// A rolls it.
+	rec := do(t, e, "POST", "/api/v1/users/current/widgets/link/"+orig.LinkID+"/roll", tokenA, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("roll: status %d body=%s", rec.Code, rec.Body.String())
+	}
+	var rolled widgetLinkResp
+	decode(t, rec, &rolled)
+	if rolled.LinkID == orig.LinkID {
+		t.Fatal("roll should mint a new uuid")
+	}
+
+	// Old id → 404 on the public endpoint (the point of rolling: kill any
+	// leaked/embedded URL immediately).
+	if rec := do(t, e, "GET", "/widget/svg/"+orig.LinkID+"/stats-card", "", nil); rec.Code != http.StatusNotFound {
+		t.Errorf("old link post-roll: status %d, want 404", rec.Code)
+	}
+	// New id → 200.
+	if rec := do(t, e, "GET", "/widget/svg/"+rolled.LinkID+"/stats-card", "", nil); rec.Code != http.StatusOK {
+		t.Errorf("new link post-roll: status %d, want 200", rec.Code)
+	}
+
+	// list still shows exactly one link (same scope), the new id — rolling
+	// preserves the scope row, only the uuid changes.
+	var list struct {
+		Links []struct{ LinkID, ScopeType, ScopeRef string } `json:"links"`
+	}
+	rec = do(t, e, "GET", "/api/v1/users/current/widgets/links", tokenA, nil)
+	decode(t, rec, &list)
+	if len(list.Links) != 1 {
+		t.Fatalf("list len = %d after roll, want 1", len(list.Links))
+	}
+	if list.Links[0].LinkID != rolled.LinkID {
+		t.Errorf("list shows %q, want the rolled id %q", list.Links[0].LinkID, rolled.LinkID)
 	}
 }
 

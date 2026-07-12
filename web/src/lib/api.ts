@@ -287,10 +287,13 @@ export const api = {
   listWidgetLinks: () =>
     request<WidgetLinksPayload>("/api/v1/users/current/widgets/links"),
 
-  deleteWidgetLink: (linkId: string) =>
-    request<void>(
-      `/api/v1/users/current/widgets/link/${encodeURIComponent(linkId)}`,
-      { method: "DELETE" },
+  // Delete was removed: rolling covers the "invalidate a leaked URL" use case
+  // without leaving a scope in a link-less state (see internal/db/widgets.go).
+
+  rollWidgetLink: (linkId: string) =>
+    request<WidgetLinkPayload>(
+      `/api/v1/users/current/widgets/link/${encodeURIComponent(linkId)}/roll`,
+      { method: "POST" },
     ),
 
   // --- Import ----------------------------------------------------------------

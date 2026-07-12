@@ -161,7 +161,7 @@ func registerMiscRoutes(e *echo.Echo, h *handler.Handler) {
 	// Embeddable widgets (gaka-hsj): auth'd link CRUD + PUBLIC SVG renderer.
 	e.GET("/api/v1/users/current/widgets/link", h.WidgetLink)
 	e.GET("/api/v1/users/current/widgets/links", h.WidgetLinkList)
-	e.DELETE("/api/v1/users/current/widgets/link/:id", h.WidgetLinkDelete)
+	e.POST("/api/v1/users/current/widgets/link/:id/roll", h.WidgetLinkRoll)
 	e.GET("/widget/svg/:uuid/:kind", h.WidgetSvg)
 
 	// Leaderboards

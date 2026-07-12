@@ -181,7 +181,7 @@ func (hz *Harness) Router() *echo.Echo {
 	// embeddable widgets (auth'd link CRUD + public SVG)
 	e.GET("/api/v1/users/current/widgets/link", h.WidgetLink)
 	e.GET("/api/v1/users/current/widgets/links", h.WidgetLinkList)
-	e.DELETE("/api/v1/users/current/widgets/link/:id", h.WidgetLinkDelete)
+	e.POST("/api/v1/users/current/widgets/link/:id/roll", h.WidgetLinkRoll)
 	e.GET("/widget/svg/:uuid/:kind", h.WidgetSvg)
 	return e
 }
