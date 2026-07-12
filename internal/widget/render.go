@@ -99,6 +99,18 @@ func Render(kind string, d *Data, opts Options) ([]byte, error) {
 	return k.Render(d, themeFor(opts.Theme), opts)
 }
 
+// RenderCustom dispatches the builder-composed "custom" widget (gaka-567).
+// The Def is passed inline in the URL — no saved-def table for v1. Kept
+// separate from Render so a caller can't mint a custom widget without
+// providing the spec.
+func RenderCustom(d *Data, def Def, opts Options) ([]byte, error) {
+	return renderCustom(d, themeFor(opts.Theme), opts, def)
+}
+
+// IsCustomKind reports whether the URL kind is the builder-driven custom
+// composition. The handler branches on it to parse the ?spec= param.
+func IsCustomKind(kind string) bool { return kind == "custom" }
+
 // ---- shared string helpers ----
 
 var xmlEscaper = strings.NewReplacer(

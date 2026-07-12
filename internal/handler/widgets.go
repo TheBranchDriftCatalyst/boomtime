@@ -124,7 +124,16 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 		return respondErr(c, apierr.BadRequest("Invalid widget link id"))
 	}
 	kind := c.Param("kind")
-	if !widget.IsKind(kind) {
+	// gaka-567: "custom" is the builder-composed kind — spec is inline in the
+	// URL as ?spec=<base64>. Every other kind is on the fixed whitelist.
+	var customDef *widget.Def
+	if widget.IsCustomKind(kind) {
+		def, err := widget.DecodeDef(c.QueryParam("spec"))
+		if err != nil {
+			return respondErr(c, apierr.BadRequest("Invalid widget spec: "+err.Error()))
+		}
+		customDef = &def
+	} else if !widget.IsKind(kind) {
 		return respondErr(c, apierr.NotFound("Unknown widget kind"))
 	}
 	ctx := c.Request().Context()
@@ -146,12 +155,13 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 	}
 	theme := c.QueryParam("theme")
 	title := c.QueryParam("title")
+	spec := c.QueryParam("spec") // empty for non-custom; part of the cache key
 
 	// GitHub camo respects these; the in-process cache below absorbs repeats
 	// that arrive within the TTL anyway.
 	c.Response().Header().Set("Cache-Control", "public, max-age=300, s-maxage=300")
 
-	key := cacheKey(owner, "widget", id.String(), kind, days, theme, title)
+	key := cacheKey(owner, "widget", id.String(), kind, days, theme, title, spec)
 	return h.cachedBlob(c, key, "image/svg+xml", func() ([]byte, error) {
 		t1 := time.Now().UTC()
 		t0 := removeDays(t1, int(days))
@@ -200,6 +210,9 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 		payload := stats.ToStatsPayload(t0, t1, rows, nil)
 		data := &widget.Data{Payload: &payload}
 		needs := widget.Needs(kind)
+		if customDef != nil {
+			needs = widget.NeedsForDef(*customDef)
+		}
 		if needs.Grade {
 			g := stats.Grade(&payload)
 			data.Grade = &g
@@ -228,10 +241,14 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 			sp := stats.ToSessionsPayload(t0, t1, srows)
 			data.Sessions = &sp
 		}
-		return widget.Render(kind, data, widget.Options{
+		opts := widget.Options{
 			Theme:    theme,
 			Title:    title,
 			Subtitle: fmt.Sprintf("last %d days", days),
-		})
+		}
+		if customDef != nil {
+			return widget.RenderCustom(data, *customDef, opts)
+		}
+		return widget.Render(kind, data, opts)
 	})
 }

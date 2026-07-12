@@ -12,6 +12,7 @@ import {
 import type { WidgetScope } from "@/types/api";
 import { catalogFor } from "./catalog";
 import { useWidgetLink } from "./useWidgetLink";
+import { WidgetBuilder } from "./WidgetBuilder";
 import { WidgetCard } from "./WidgetCard";
 
 interface WidgetsPanelProps {
@@ -52,6 +53,9 @@ export function WidgetsPanel({ scopeType, scopeRef = "" }: WidgetsPanelProps) {
             use Markdown or the image URL there.)
           </SheetDescription>
         </SheetHeader>
+        <div>
+          <WidgetBuilder scopeType={scopeType} scopeRef={scopeRef} />
+        </div>
 
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1">
