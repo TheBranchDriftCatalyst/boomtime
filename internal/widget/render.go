@@ -60,6 +60,11 @@ var kinds = map[string]struct {
 	"punchcard":        {Render: renderPunchcard, Needs: Requirements{Punchcard: true}},
 	"momentum":         {Render: renderMomentum, Needs: Requirements{Momentum: true}},
 	"profile-summary":  {Render: renderProfileSummary, Needs: Requirements{Grade: true}},
+	// gaka-unq.3 — remaining chart twins (each ~30 LOC over the primitives):
+	"cumulative-area":   {Render: renderCumulativeArea},
+	"deep-work":         {Render: renderDeepWork, Needs: Requirements{Sessions: true}},
+	"heatmap-projects":  {Render: renderHeatmapProjects},
+	"heatmap-languages": {Render: renderHeatmapLanguages},
 }
 
 // Kinds returns the sorted whitelist of renderable widget kinds.
@@ -248,6 +253,82 @@ func renderProfileSummary(d *Data, th Theme, opts Options) ([]byte, error) {
 	EmitGradeRing(f, 750, 100, 42, d.Grade)
 	EmitMetric(f, 700, 160, "Total", compound(d.Payload.TotalSeconds))
 	EmitMetric(f, 700, 195, "Daily avg", compound(int64(d.Payload.DailyAvg)))
+	return f.Close(), nil
+}
+
+// ---- gaka-unq.3 twins ----
+
+// renderCumulativeArea — filled-area line of accumulating coding time. Reads
+// "how the total grew day-by-day" at a glance. Uses only StatsPayload.
+func renderCumulativeArea(d *Data, th Theme, opts Options) ([]byte, error) {
+	f := OpenFrame(560, 200, th,
+		defaultString(opts.Title, "Cumulative coding time"),
+		opts.Subtitle)
+	if len(d.Payload.DailyTotal) < 2 {
+		f.Empty("Not enough days in this range yet")
+		return f.Close(), nil
+	}
+	EmitAreaLine(f, 20, 60, 520, 120, d.Payload.DailyTotal)
+	// Also show the final cumulative in the corner as a strong metric label.
+	var total int64
+	for _, v := range d.Payload.DailyTotal {
+		total += v
+	}
+	EmitMetric(f, 470, 55, "Total", compound(total))
+	return f.Close(), nil
+}
+
+// renderDeepWork — session summary card: count + median + longest session,
+// plus a mini area-line of the daily total_seconds series so the shape of
+// deep-work time is visible. Consumes SessionsPayload.
+func renderDeepWork(d *Data, th Theme, opts Options) ([]byte, error) {
+	f := OpenFrame(495, 195, th,
+		defaultString(opts.Title, "Deep-work sessions"),
+		opts.Subtitle)
+	if d.Sessions == nil || d.Sessions.Summary.Count == 0 {
+		f.Empty("No sessions in this range yet")
+		return f.Close(), nil
+	}
+	sm := d.Sessions.Summary
+	EmitMetric(f, 25, 78, "Sessions", fmt.Sprintf("%d", sm.Count))
+	EmitMetric(f, 25, 118, "Median length", compound(sm.MedianSeconds))
+	EmitMetric(f, 25, 158, "Longest", compound(sm.MaxSeconds))
+	// Right side: daily totals area line so growth-vs-decay reads at a glance.
+	daily := make([]int64, len(d.Sessions.Daily))
+	for i, day := range d.Sessions.Daily {
+		daily[i] = day.TotalSeconds
+	}
+	EmitAreaLine(f, 190, 60, 285, 125, daily)
+	return f.Close(), nil
+}
+
+// renderHeatmapProjects / renderHeatmapLanguages — day×resource intensity
+// grid. Rows are the top-6 by TotalSeconds (dropping the synthesized "Other"
+// bucket); columns are days aligned to StartDate. Same primitive powers both.
+func renderHeatmapProjects(d *Data, th Theme, opts Options) ([]byte, error) {
+	return renderDayHeatmap(d, th, opts, d.Payload.Projects,
+		defaultString(opts.Title, "Activity per project"))
+}
+
+func renderHeatmapLanguages(d *Data, th Theme, opts Options) ([]byte, error) {
+	return renderDayHeatmap(d, th, opts, d.Payload.Languages,
+		defaultString(opts.Title, "Activity per language"))
+}
+
+func renderDayHeatmap(d *Data, th Theme, opts Options, list []model.ResourceStats, title string) ([]byte, error) {
+	f := OpenFrame(720, 240, th, title, opts.Subtitle)
+	top := topEntries(list, 6)
+	if len(top) == 0 || len(d.Payload.DailyTotal) == 0 {
+		f.Empty("No activity in this range yet")
+		return f.Close(), nil
+	}
+	rows := make([]DayRow, 0, len(top))
+	for _, e := range top {
+		// ResourceStats.TotalDaily is the per-day series aligned to
+		// StatsPayload.StartDate — same axis the calendar twin uses.
+		rows = append(rows, DayRow{Name: e.Name, Daily: e.TotalDaily})
+	}
+	EmitDayHeatmap(f, 20, 55, 680, 170, d.Payload.StartDate, rows)
 	return f.Close(), nil
 }
 

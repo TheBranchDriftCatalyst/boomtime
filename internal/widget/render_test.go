@@ -49,7 +49,23 @@ func dataFixture() *Data {
 			{Name: "boomtime", Weekly: []int64{3600, 5400, 1800}, TotalSeconds: 10800},
 		},
 	}
-	return &Data{Payload: p, Grade: &g, Punchcard: &pc, Momentum: &m}
+	s := model.SessionsPayload{
+		Summary: model.SessionSummary{
+			Count: 12, TotalSeconds: 43200, AvgSeconds: 3600,
+			MaxSeconds: 7200, MedianSeconds: 2400,
+		},
+		Daily: []model.SessionDaily{
+			{Date: "2026-06-01", Sessions: 3, TotalSeconds: 5400, LongestSeconds: 3600},
+			{Date: "2026-06-02", Sessions: 2, TotalSeconds: 3600, LongestSeconds: 2400},
+			{Date: "2026-06-03", Sessions: 5, TotalSeconds: 12600, LongestSeconds: 4200},
+		},
+	}
+	// Give the payload Languages/Projects per-day series so heatmap-* twins
+	// have real cells to draw.
+	p.Languages[0].TotalDaily = []int64{3600, 1800, 5400, 0, 3600, 2400, 0}
+	p.Languages[1].TotalDaily = []int64{0, 1800, 3600, 1800, 0, 0, 3600}
+	p.Projects[0].TotalDaily = []int64{3600, 3600, 3600, 1800, 3600, 2400, 3600}
+	return &Data{Payload: p, Grade: &g, Punchcard: &pc, Momentum: &m, Sessions: &s}
 }
 
 // assertValidXML round-trips the SVG through encoding/xml — a malformed escape
@@ -294,6 +310,10 @@ func TestNeedsMatchesRendererUsage(t *testing.T) {
 		{"punchcard", Requirements{Punchcard: true}},
 		{"momentum", Requirements{Momentum: true}},
 		{"profile-summary", Requirements{Grade: true}},
+		{"cumulative-area", Requirements{}},
+		{"deep-work", Requirements{Sessions: true}},
+		{"heatmap-projects", Requirements{}},
+		{"heatmap-languages", Requirements{}},
 	}
 	for _, tc := range cases {
 		if got := Needs(tc.kind); got != tc.want {
@@ -317,6 +337,10 @@ func TestKindsMatchFrontendCatalog(t *testing.T) {
 	want := []string{
 		"activity-heatmap",
 		"badge",
+		"cumulative-area",
+		"deep-work",
+		"heatmap-languages",
+		"heatmap-projects",
 		"momentum",
 		"profile-summary",
 		"punchcard",

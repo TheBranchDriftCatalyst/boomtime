@@ -85,6 +85,35 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
     scopes: ["user"],
     primitives: ["graph", "graph", "grade", "label"],
   },
+  // gaka-unq.3 — remaining chart twins:
+  {
+    kind: "cumulative-area",
+    title: "Cumulative Coding Time",
+    description: "Filled area of accumulating total time — the growth shape",
+    scopes: ["user", "project", "space"],
+    primitives: ["graph", "label"],
+  },
+  {
+    kind: "deep-work",
+    title: "Deep-Work Sessions",
+    description: "Session count + median + longest + daily shape",
+    scopes: ["user", "project", "space"],
+    primitives: ["label", "graph"],
+  },
+  {
+    kind: "heatmap-projects",
+    title: "Activity per Project",
+    description: "Day × top-6-projects intensity grid",
+    scopes: ["user", "space"],
+    primitives: ["graph"],
+  },
+  {
+    kind: "heatmap-languages",
+    title: "Activity per Language",
+    description: "Day × top-6-languages intensity grid",
+    scopes: ["user", "project", "space"],
+    primitives: ["graph"],
+  },
 ];
 
 /** Catalog entries offered for a page scope. */

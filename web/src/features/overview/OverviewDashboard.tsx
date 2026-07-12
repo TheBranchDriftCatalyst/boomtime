@@ -274,7 +274,16 @@ export function OverviewDashboard({
           </div>
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <ChartCard title="Cumulative coding time">
+            <ChartCard
+              title="Cumulative coding time"
+              embedAction={
+                <EmbedLinkButton
+                  kind="cumulative-area"
+                  scopeType={space ? "space" : "user"}
+                  scopeRef={space ?? ""}
+                />
+              }
+            >
               <CumulativeArea dates={chartDates} values={chartDailyTotal} />
             </ChartCard>
             <ChartCard title="Category streamgraph">
@@ -286,14 +295,23 @@ export function OverviewDashboard({
           </div>
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <ChartCard title="Activity per project">
+            <ChartCard
+              title="Activity per project"
+              embedAction={
+                <EmbedLinkButton
+                  kind="heatmap-projects"
+                  scopeType={space ? "space" : "user"}
+                  scopeRef={space ?? ""}
+                />
+              }
+            >
               <HeatmapChart items={chartProjects} dates={chartDates} />
             </ChartCard>
             <ChartCard
               title="Activity per language"
               embedAction={
                 <EmbedLinkButton
-                  kind="top-langs"
+                  kind="heatmap-languages"
                   scopeType={space ? "space" : "user"}
                   scopeRef={space ?? ""}
                 />
@@ -339,7 +357,16 @@ export function OverviewDashboard({
             </ChartCard>
           </div>
 
-          <ChartCard title="Deep-work sessions">
+          <ChartCard
+            title="Deep-work sessions"
+            embedAction={
+              <EmbedLinkButton
+                kind="deep-work"
+                scopeType={space ? "space" : "user"}
+                scopeRef={space ?? ""}
+              />
+            }
+          >
             <DeepWorkSessions data={sessionsQuery.data} />
           </ChartCard>
 

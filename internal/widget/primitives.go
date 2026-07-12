@@ -8,6 +8,7 @@ package widget
 import (
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
@@ -287,6 +288,114 @@ func EmitMomentum(f *Frame, x, y, w, h int, m *model.MomentumPayload) {
 			cy := y + r*(cellH+gap)
 			f.Printf(`<rect class="cell" x="%d" y="%d" width="%d" height="%d" rx="1.5" fill="%s"><title>%s — %s: %s</title></rect>`,
 				cx, cy, cellW, cellH, fill, xmlEscape(p.Name), xmlEscape(m.Weeks[c]), xmlEscape(compound(v)))
+		}
+	}
+	f.WriteString(`</g>`)
+}
+
+// ---- area line (cumulative-area, sparkline-style) ----
+
+// EmitAreaLine draws a monotonically-non-decreasing cumulative series as a
+// filled area under a stroked line, fitting the (x, y, w, h) box. Reads as
+// "how the total grew" at a glance — the shape of a coder's momentum.
+func EmitAreaLine(f *Frame, x, y, w, h int, values []int64) {
+	th := f.Theme
+	if len(values) < 2 {
+		f.Printf(`<text x="%d" y="%d" font-size="11" fill="%s">Not enough data</text>`,
+			x, y+h/2, th.TextMuted)
+		return
+	}
+	cum := make([]int64, len(values))
+	var s int64
+	for i, v := range values {
+		s += v
+		cum[i] = s
+	}
+	mx := cum[len(cum)-1]
+	if mx == 0 {
+		f.Printf(`<text x="%d" y="%d" font-size="11" fill="%s">No activity yet</text>`,
+			x, y+h/2, th.TextMuted)
+		return
+	}
+	nSpan := len(cum) - 1
+	pt := func(i int, v int64) (int, int) {
+		px := x + i*w/nSpan
+		py := y + h - int(float64(v)/float64(mx)*float64(h-4))
+		return px, py
+	}
+	var pathLine, pathArea strings.Builder
+	startX, startY := pt(0, cum[0])
+	fmt.Fprintf(&pathLine, "M %d %d", startX, startY)
+	fmt.Fprintf(&pathArea, "M %d %d L %d %d", startX, y+h, startX, startY)
+	for i := 1; i < len(cum); i++ {
+		px, py := pt(i, cum[i])
+		fmt.Fprintf(&pathLine, " L %d %d", px, py)
+		fmt.Fprintf(&pathArea, " L %d %d", px, py)
+	}
+	endX := x + w
+	fmt.Fprintf(&pathArea, " L %d %d Z", endX, y+h)
+	f.Printf(`<g class="fade" style="animation-delay: 0.2s"><title>Cumulative — %s total</title>`,
+		xmlEscape(compound(mx)))
+	f.Printf(`<path d="%s" fill="%s" opacity="0.35"/>`, pathArea.String(), th.Accent)
+	f.Printf(`<path d="%s" fill="none" stroke="%s" stroke-width="2"/>`, pathLine.String(), th.Accent)
+	f.WriteString(`</g>`)
+}
+
+// ---- day × row heatmap (heatmap-projects / heatmap-languages) ----
+
+// DayRow is one row of the day×row heatmap: a label + per-day-of-range
+// seconds aligned to a shared date axis. Callers hand a resource's Name +
+// TotalDaily.
+type DayRow struct {
+	Name  string
+	Daily []int64
+}
+
+// EmitDayHeatmap draws rows × days of intensity cells within (x, y, w, h),
+// with per-row labels at the left. Each row is scaled against its OWN peak
+// so a busy row doesn't wash out a quiet one — same convention EmitMomentum
+// uses. Cells carry <title> hover with row + day label + duration.
+func EmitDayHeatmap(f *Frame, x, y, w, h int, startDate time.Time, rows []DayRow) {
+	th := f.Theme
+	if len(rows) == 0 || len(rows[0].Daily) == 0 {
+		f.Printf(`<text x="%d" y="%d" font-size="11" fill="%s">No data</text>`,
+			x, y+h/2, th.TextMuted)
+		return
+	}
+	labelW := 90
+	gap := 2
+	cols := len(rows[0].Daily)
+	gridW := w - labelW
+	cellW := (gridW - (cols-1)*gap) / cols
+	cellH := (h - (len(rows)-1)*gap) / len(rows)
+	if cellW < 2 {
+		cellW = 2
+	}
+	if cellH < 8 {
+		cellH = 8
+	}
+	f.WriteString(`<g class="fade" style="animation-delay: 0.2s">`)
+	for r, row := range rows {
+		f.Printf(`<text x="%d" y="%d" font-size="10" fill="%s" dominant-baseline="middle">%s</text>`,
+			x, y+r*(cellH+gap)+cellH/2, th.Text, xmlEscape(truncate(row.Name, 14)))
+		var mx int64
+		for _, v := range row.Daily {
+			if v > mx {
+				mx = v
+			}
+		}
+		if mx == 0 {
+			mx = 1
+		}
+		for c := 0; c < cols && c < len(row.Daily); c++ {
+			v := row.Daily[c]
+			q := float64(v) / float64(mx)
+			fill := mixHex(th.TrackBg, th.colorAt(r), q)
+			cx := x + labelW + c*(cellW+gap)
+			cy := y + r*(cellH+gap)
+			day := startDate.AddDate(0, 0, c)
+			f.Printf(`<rect class="cell" x="%d" y="%d" width="%d" height="%d" rx="1.5" fill="%s"><title>%s — %s: %s</title></rect>`,
+				cx, cy, cellW, cellH, fill, xmlEscape(row.Name), day.Format("2 Jan"), xmlEscape(compound(v)))
 		}
 	}
 	f.WriteString(`</g>`)
