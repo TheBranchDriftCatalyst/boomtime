@@ -1,7 +1,15 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { DateRange } from "react-day-picker";
-import { CalendarDays, History, Loader2, Play, Wand2 } from "lucide-react";
+import {
+  CalendarDays,
+  Eye,
+  EyeOff,
+  History,
+  Loader2,
+  Play,
+  Wand2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -25,6 +33,7 @@ interface StartImportFormProps {
 
 export function StartImportForm({ disabled, onStarted }: StartImportFormProps) {
   const [apiToken, setApiToken] = useState("");
+  const [showToken, setShowToken] = useState(false);
   const [range, setRange] = useState<DateRange | undefined>({
     from: removeDays(new Date(), 10),
     to: new Date(),
@@ -66,7 +75,10 @@ export function StartImportForm({ disabled, onStarted }: StartImportFormProps) {
     }
     setDetecting(true);
     try {
-      const body = apiToken ? { apiToken: btoa(apiToken) } : {};
+      // Send the raw wakatime api_key — the server does the single Basic
+      // base64-encode into Authorization. Any client-side btoa() here would
+      // double-encode and wakatime.com would reject with 401 (gaka-f2l).
+      const body = apiToken ? { apiToken } : {};
       const res = await api.detectWakatimeRange(body);
       if (res.hasData) {
         // Parse as local dates (the response is a plain YYYY-MM-DD).
@@ -101,7 +113,8 @@ export function StartImportForm({ disabled, onStarted }: StartImportFormProps) {
       endDate: range.to.toISOString(),
     };
     // Only send a token when typed; blank falls back to the server's env key.
-    if (apiToken) req.apiToken = btoa(apiToken);
+    // Send raw — server does the single Basic base64-encode (gaka-f2l).
+    if (apiToken) req.apiToken = apiToken;
 
     setSubmitting(true);
     try {
@@ -133,17 +146,36 @@ export function StartImportForm({ disabled, onStarted }: StartImportFormProps) {
               <Label htmlFor="wakatime-token">
                 Wakatime API token{hasServerKey ? " (optional)" : ""}
               </Label>
-              <Input
-                id="wakatime-token"
-                type="password"
-                required={!hasServerKey}
-                value={apiToken}
-                onChange={(e) => setApiToken(e.target.value)}
-              />
+              <div className="relative">
+                <Input
+                  id="wakatime-token"
+                  type={showToken ? "text" : "password"}
+                  required={!hasServerKey}
+                  value={apiToken}
+                  onChange={(e) => setApiToken(e.target.value)}
+                  className="pr-9 font-mono"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowToken((v) => !v)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-label={showToken ? "Hide token" : "Show token"}
+                  aria-pressed={showToken}
+                  tabIndex={-1}
+                >
+                  {showToken ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
               <p className="text-xs text-muted-foreground">
                 {hasServerKey
                   ? "Using the server-configured Wakatime key — leave blank or override."
-                  : "Used to authenticate with wakatime.com."}
+                  : "Paste your wakatime.com API key (looks like waka_… or a bare UUID)."}
               </p>
             </div>
             <div className="space-y-1.5">

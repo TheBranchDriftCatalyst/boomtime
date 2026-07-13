@@ -508,8 +508,11 @@ type allTimeResponse struct {
 }
 
 // FetchAllTimeRange queries wakatime.com for how far back a user's data goes.
-// apiToken is the raw (already base64-encoded by the client) token; it is used
-// verbatim as the Basic credential, identical to how the import worker auths.
+// apiToken is the RAW wakatime.com api_key as the user copied it from
+// wakatime.com (e.g. "waka_<uuid>" or a bare UUID) — this function does the
+// single Basic base64-encode into Authorization. Any caller that base64-
+// encodes it first would double-encode and wakatime would 401 (gaka-f2l).
+// Identical convention to how the import worker auths (fetchLookups).
 //
 // gaka-unq.1: this call runs standalone (from a handler, not a job), so drift
 // findings are logged at slog "warn" but not persisted anywhere. That's fine

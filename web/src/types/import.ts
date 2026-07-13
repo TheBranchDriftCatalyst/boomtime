@@ -2,8 +2,11 @@
 // backend JSON payloads.
 
 export interface ImportRequest {
-  // base64-encoded before sending. Omitted entirely when the user leaves the
-  // token blank so the server falls back to its env-configured key.
+  // Raw wakatime.com api_key exactly as pasted by the user (waka_<uuid> or a
+  // bare UUID). The server does the single Basic base64-encode into the
+  // Authorization header; any client-side btoa() here would double-encode
+  // and wakatime.com would 401 (gaka-f2l). Omitted entirely when the user
+  // leaves the token blank so the server falls back to its env-configured key.
   apiToken?: string;
   startDate: string; // ISO
   endDate: string; // ISO
