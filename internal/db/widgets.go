@@ -230,3 +230,21 @@ func ProjectMemberSet(project string) MemberSets {
 		"project": {exact: []string{project}},
 	}}
 }
+
+// ProjectMemberSetWithRenames is ProjectMemberSet expanded via the owner's
+// rename map so a scope pinned to a renamed/merged project name matches raw
+// heartbeats stored under the source name(s) (gaka-xuc). The `project` arm
+// becomes `[project] ∪ ExactSourcesFor("project", project)` — the display
+// name plus every raw name that renames to it. Regex/template renames are
+// intentionally left out (see ExactSourcesFor comment).
+func ProjectMemberSetWithRenames(project string, rs RenameSets) MemberSets {
+	exact := []string{project}
+	for _, src := range rs.ExactSourcesFor("project", project) {
+		if src != project {
+			exact = append(exact, src)
+		}
+	}
+	return MemberSets{byAxis: map[string]axisMembers{
+		"project": {exact: exact},
+	}}
+}

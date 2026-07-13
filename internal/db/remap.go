@@ -58,6 +58,26 @@ func (r RenameSets) HasAxis(axis string) bool {
 	return ok && !a.empty()
 }
 
+// ExactSourcesFor returns every raw value on the given axis that this rename
+// map maps to `target` via an EXACT rule. Used by the widget-link path
+// (gaka-xuc) so a scope pinned to a renamed/merged project name expands to
+// the raw source names actually stored in heartbeats. Regex + template
+// renames are intentionally ignored — reverse-engineering a pattern to enum
+// its inputs is unreliable; the common merge case is exact-rules only.
+func (r RenameSets) ExactSourcesFor(axis, target string) []string {
+	a, ok := r.byAxis[axis]
+	if !ok || len(a.exact) == 0 {
+		return nil
+	}
+	var out []string
+	for raw, mapped := range a.exact {
+		if mapped == target {
+			out = append(out, raw)
+		}
+	}
+	return out
+}
+
 // LoadRenameSets fetches the sender's rename rules (action='rename') per axis,
 // split into exact and regex kinds.
 func (d *DB) LoadRenameSets(ctx context.Context, sender string) (RenameSets, error) {

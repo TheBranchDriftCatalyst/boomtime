@@ -51,7 +51,18 @@ func (h *Handler) WidgetLink(c *echo.Context) error {
 			return h.internalErr(c, "widget link project check failed", err)
 		}
 		if !ok {
-			return respondErr(c, apierr.NotFound("Unknown project"))
+			// gaka-xuc: the FE gets remapped project names from ProjectList
+			// (which applies loadRenames), but the raw projects table only
+			// carries source names. Accept scopeRef when it is the target of
+			// an exact rename rule — the widget renderer expands the
+			// scope-ref back to the source project(s) at query time.
+			rs, err := h.DB.LoadRenameSets(ctx, owner)
+			if err != nil {
+				return h.internalErr(c, "widget link rename load failed", err)
+			}
+			if len(rs.ExactSourcesFor("project", scopeRef)) == 0 {
+				return respondErr(c, apierr.NotFound("Unknown project"))
+			}
 		}
 	case db.WidgetScopeSpace:
 		id, err := strconv.Atoi(scopeRef)
@@ -194,12 +205,15 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 
 		// Scope: project reuses the Space inclusion path via a synthesized
 		// single-project member set; space loads its rules by id (ownership was
-		// validated at mint time and spaces cannot change owner).
+		// validated at mint time and spaces cannot change owner). For project
+		// scopes the member set is EXPANDED via the rename map (gaka-xuc) so
+		// scopeRef="B" (a rename target) also matches raw heartbeats stored
+		// under the original name "A" that maps A -> B.
 		var members db.MemberSets
 		scoped := false
 		switch scopeType {
 		case db.WidgetScopeProject:
-			members = db.ProjectMemberSet(scopeRef)
+			members = db.ProjectMemberSetWithRenames(scopeRef, renames)
 			scoped = true
 		case db.WidgetScopeSpace:
 			sid, err := strconv.Atoi(scopeRef)
