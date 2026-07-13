@@ -6,8 +6,12 @@ import { RemappingsTab } from "@/features/curation/RemappingsTab";
 import { WidgetLinksCard } from "@/features/widgets/WidgetLinksCard";
 import { Changelog } from "@/features/changelog/Changelog";
 import { Logs } from "@/features/logs/Logs";
+import { PluginSetup } from "@/features/settings/PluginSetup";
 
+// Plugin Setup goes first — highest-value first-run info (how to actually
+// stream heartbeats here). Existing tabs follow in their original order.
 const TABS = [
+  { id: "plugin", label: "Plugin setup", render: () => <PluginSetup /> },
   { id: "curation", label: "Hidden data", render: () => <CurationTab /> },
   { id: "remappings", label: "Remappings", render: () => <RemappingsTab /> },
   { id: "widgets", label: "Widgets", render: () => <WidgetLinksCard /> },
@@ -19,13 +23,14 @@ type TabID = (typeof TABS)[number]["id"];
 
 // Settings: one page, horizontal top tab bar. The active tab lives in
 // ?tab=<id> so tabs are linkable/bookmarkable (old /app/logs and
-// /app/changelog routes redirect here).
+// /app/changelog routes redirect here). Default lands on Plugin Setup so a
+// first-run user sees the ingest URL immediately.
 export function Settings() {
   const [params, setParams] = useSearchParams();
   const raw = params.get("tab");
   const active: TabID = TABS.some((t) => t.id === raw)
     ? (raw as TabID)
-    : "curation";
+    : "plugin";
   const tab = TABS.find((t) => t.id === active)!;
 
   return (
