@@ -85,7 +85,7 @@ export function mockImportWs(jobId: number): MockImportWs {
 }
 
 // The base URL useLogsSocket builds (without query params — mock-socket matches
-// on the path, and the hook appends ?token=&afterId=).
+// on the path, and the hook may append ?afterId=).
 export function serverLogsWsUrl(): string {
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
   return `${proto}//${window.location.host}/api/v1/logs/ws`;

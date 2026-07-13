@@ -54,7 +54,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Silent-refresh loop.
+  // Silent-refresh loop. A refresh failure only nukes the session when the
+  // server explicitly says the refresh token is no longer valid (401/403). A
+  // network blip, 5xx, or DNS hiccup leaves the in-memory token alone — the
+  // next tick retries and the request layer still has a valid access token
+  // until true expiry.
   useEffect(() => {
     function tick() {
       if (!authStore.isLoggedIn()) return;
@@ -63,9 +67,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         api
           .refreshToken()
           .then((r) => authStore.update(r))
-          .catch(() => {
-            authStore.clear();
-            broadcastLogout();
+          .catch((e: unknown) => {
+            if (
+              e instanceof ApiError &&
+              (e.status === 401 || e.status === 403)
+            ) {
+              authStore.clear();
+              broadcastLogout();
+            }
+            // Otherwise: leave state alone; the next tick will retry.
           });
       }
     }

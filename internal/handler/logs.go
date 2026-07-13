@@ -29,19 +29,18 @@ func (h *Handler) ServerLogs(c *echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]any{"logs": logs})
 }
 
-// ServerLogsWS: GET /api/v1/logs/ws?afterId=<n>&token=<access token> — live,
-// resumable stream of the server's own log records.
+// ServerLogsWS: GET /api/v1/logs/ws?afterId=<n> — live, resumable stream of
+// the server's own log records.
 //
-// Auth uses a query-param token (browsers can't set an Authorization header on a
-// WS handshake). On connect the server backfills the ring buffer after afterId
-// (making reload/resume seamless), then tails live entries.
+// Auth uses the HttpOnly refresh_token cookie (WS handshakes can't set an
+// Authorization header, and a query-param access token would leak into
+// server/proxy logs). On connect the server backfills the ring buffer after
+// afterId (making reload/resume seamless), then tails live entries.
+//
+// NOTE: any authenticated user sees ALL server logs (no per-user filtering).
 func (h *Handler) ServerLogsWS(c *echo.Context) error {
-	_, ok, err := h.resolveUserFromQueryToken(c)
-	if err != nil {
-		return respondErr(c, apierr.Generic())
-	}
-	if !ok {
-		return respondErr(c, apierr.InvalidToken())
+	if _, aerr := h.resolveOwnerFromCookie(c, apierr.ExpiredRefreshToken()); aerr != nil {
+		return respondErr(c, aerr)
 	}
 	if h.LogHub == nil {
 		return respondErr(c, apierr.Generic())

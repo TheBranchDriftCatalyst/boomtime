@@ -1,5 +1,4 @@
 import { useRef, useState } from "react";
-import { authStore } from "@/features/auth/auth";
 import {
   capLines,
   useDurableSocket,
@@ -17,17 +16,15 @@ export interface LogsStream {
 }
 
 // Build the WS URL from window.location so it works behind the vite proxy and
-// in prod. The access token goes in a query param because browsers can't set an
-// Authorization header on a WS handshake. afterId resumes after the last-seen
-// entry so a reconnect only backfills what we missed.
+// in prod. The HttpOnly refresh_token cookie authenticates the handshake
+// automatically (same-origin), so no token appears in the URL — an access
+// token in the query string would leak into server/proxy logs. afterId
+// resumes after the last-seen entry so a reconnect only backfills what we
+// missed.
 function wsUrl(afterId: number): string {
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const params = new URLSearchParams();
-  const token = authStore.getSnapshot().token;
-  if (token) params.set("token", token);
-  if (afterId > 0) params.set("afterId", String(afterId));
-  const qs = params.toString();
-  return `${proto}//${window.location.host}/api/v1/logs/ws${qs ? `?${qs}` : ""}`;
+  const qs = afterId > 0 ? `?afterId=${afterId}` : "";
+  return `${proto}//${window.location.host}/api/v1/logs/ws${qs}`;
 }
 
 // Append a batch of entries, de-duplicating by monotonic id and capping length.

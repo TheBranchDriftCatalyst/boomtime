@@ -33,6 +33,8 @@ type Handler struct {
 	// LogHub streams the server process's own slog records to the Logs tab.
 	LogHub *logging.LogHub
 	Cache  *cache.TTL
+	// StartTime is set at handler construction; /healthz reports uptime from it.
+	StartTime time.Time
 }
 
 // New constructs a Handler. logHub streams server-process slog records to the
@@ -40,13 +42,14 @@ type Handler struct {
 // handler/logs.go).
 func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *importer.Worker, hub *importer.Hub, logHub *logging.LogHub) *Handler {
 	return &Handler{
-		DB:     database,
-		Cfg:    cfg,
-		Logger: logger,
-		Worker: worker,
-		Hub:    hub,
-		LogHub: logHub,
-		Cache:  cache.New(statsCacheTTL()),
+		DB:        database,
+		Cfg:       cfg,
+		Logger:    logger,
+		Worker:    worker,
+		Hub:       hub,
+		LogHub:    logHub,
+		Cache:     cache.New(statsCacheTTL()),
+		StartTime: time.Now(),
 	}
 }
 
@@ -144,18 +147,6 @@ func (h *Handler) resolveOwnerFromCookie(c *echo.Context, missingErr *apierr.Err
 		return "", apierr.ExpiredRefreshToken()
 	}
 	return owner, nil
-}
-
-// resolveUserFromQueryToken resolves the owner from a `token` query parameter.
-// Browsers cannot set an Authorization header on a WebSocket handshake, so the
-// Logs WS/REST endpoints authenticate via ?token=<access token> (the same
-// base64(uuid) access token used in the Authorization header elsewhere).
-func (h *Handler) resolveUserFromQueryToken(c *echo.Context) (string, bool, error) {
-	tkn := c.QueryParam("token")
-	if tkn == "" {
-		return "", false, nil
-	}
-	return h.DB.GetUserByToken(c.Request().Context(), tkn)
 }
 
 // tokenFromHeader extracts the base64(uuid) token from the Authorization header,

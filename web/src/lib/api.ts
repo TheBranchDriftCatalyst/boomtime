@@ -9,6 +9,9 @@ import type {
   Credentials,
   CurrentUser,
   DerivedStatus,
+  EntityListPayload,
+  EntityRedactPayload,
+  EntityType,
   AddCurationRuleBody,
   AddCurationRulePayload,
   CrossProjectFile,
@@ -84,8 +87,48 @@ interface RequestOpts {
   auth?: boolean;
 }
 
+// Single-flight refresh: concurrent 401s all await the same refresh call.
+// Direct fetch (not request()) to avoid recursion when the refresh itself 401s.
+let refreshInFlight: Promise<boolean> | null = null;
+async function sharedRefresh(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      try {
+        const res = await fetch("/auth/refresh_token", {
+          method: "POST",
+          credentials: "include",
+        });
+        if (!res.ok) return false;
+        const text = await res.text();
+        try {
+          const data = text ? (JSON.parse(text) as AuthResponse) : null;
+          if (data) authStore.update(data);
+          return !!data;
+        } catch {
+          return false;
+        }
+      } catch {
+        // Network error: don't treat as auth failure.
+        return false;
+      } finally {
+        refreshInFlight = null;
+      }
+    })();
+  }
+  return refreshInFlight;
+}
+
 async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
   const { method = "GET", params, body, auth = true } = opts;
+  return doRequest<T>(path, { method, params, body, auth }, /* retried */ false);
+}
+
+async function doRequest<T>(
+  path: string,
+  opts: Required<Pick<RequestOpts, "method" | "auth">> & Pick<RequestOpts, "params" | "body">,
+  retried: boolean,
+): Promise<T> {
+  const { method, params, body, auth } = opts;
   const headers: Record<string, string> = {};
 
   if (body !== undefined) headers["Content-Type"] = "application/json";
@@ -108,6 +151,16 @@ async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
       data = JSON.parse(text);
     } catch {
       data = text;
+    }
+  }
+
+  // 401 on an authenticated request: attempt one silent refresh + retry so a
+  // just-expired access token doesn't surface as a user-facing failure. The
+  // refresh is single-flight so a burst of parallel requests waits on one call.
+  if (res.status === 401 && auth && !retried) {
+    const ok = await sharedRefresh();
+    if (ok) {
+      return doRequest<T>(path, opts, /* retried */ true);
     }
   }
 
@@ -401,13 +454,17 @@ export const api = {
   // --- Heartbeats explorer ---------------------------------------------------
 
   // Group heartbeats by a single axis, filtered by the accumulated drill path.
-  // Each accumulated filter is sent as its own query param.
+  // Each accumulated filter is sent as its own query param. entity is an
+  // ILIKE substring narrower applied server-side to BOTH the group listing
+  // AND the leaf rows (mirrors listHeartbeats), so the Explorer search box
+  // narrows the visible tree, not just leaves.
   groupHeartbeats: (opts: {
     groupBy: HeartbeatAxis;
     start: string;
     end: string;
     timeLimit?: number;
     filters?: HeartbeatFilters;
+    entity?: string;
   }) =>
     request<HeartbeatGroupPayload>("/api/v1/users/current/heartbeats/group", {
       params: {
@@ -415,6 +472,7 @@ export const api = {
         start: opts.start,
         end: opts.end,
         timeLimit: opts.timeLimit,
+        entity: opts.entity,
         ...(opts.filters ?? {}),
       },
     }),
@@ -423,6 +481,27 @@ export const api = {
   getLatestHeartbeat: () =>
     request<LatestHeartbeatPayload>(
       "/api/v1/users/current/heartbeats/latest",
+    ),
+
+  // --- Entity Explorer (gaka-90x) --------------------------------------------
+
+  // Per-ty flat list of every entity the owner has, with count + first/last seen.
+  listEntitiesByType: (ty: EntityType, limit = 500) =>
+    request<EntityListPayload>(
+      "/api/v1/users/current/heartbeats/entities",
+      { params: { type: ty, limit } },
+    ),
+
+  // Blank the entity column on every heartbeat matching (ty, entity ∈
+  // entities). Heartbeat rows stay — only the entity value is scrubbed, so
+  // per-project/language/machine totals are unchanged. Owner-scoped
+  // server-side. The ?confirm= sentinel is the accident guard.
+  redactEntities: (ty: EntityType, entities: string[]) =>
+    request<EntityRedactPayload>(
+      buildUrl("/api/v1/users/current/heartbeats/entities/redact", {
+        confirm: "redact-entities",
+      }),
+      { method: "POST", body: { ty, entities } },
     ),
 
   // Paginated raw heartbeat rows for a fully-drilled leaf.
