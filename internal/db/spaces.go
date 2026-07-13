@@ -100,13 +100,17 @@ func (d *DB) LoadMemberSets(ctx context.Context, spaceID int) (MemberSets, error
 // inclusionPredicate builds ` AND ( <arm> OR <arm> ... )` — the union of every
 // membership rule across axes present in cols (axis -> SQL column expression).
 // Per axis: exact values become one `col = ANY($n)` arm (bound as a text[] arg);
-// each regex becomes a `col ~ $n` arm. Axes are iterated in the deterministic
-// hiddenAxes order. All values are bound params (injection-safe); the axis -> column
-// mapping comes only from cols. passCond, if non-empty, is a bypass condition ORed
-// in as the first arm (mirrors remapExpr's extraCond; leaderboards pass
-// `sender <> $req` so only the requester's own rows are restricted to the scope).
-// Callers must guard with AnyMember() — an empty MemberSets here returns no
-// predicate (use spaceScopePredicate for the match-nothing semantics).
+// each regex becomes a `col ~ $n` arm — except that anchored-literal patterns
+// (^lit, ^lit$) are rewritten to indexable `col LIKE 'lit%'` / `col = 'lit'`
+// so a text_pattern_ops btree or the pg_trgm GIN can serve them (see
+// migrations/00019_heartbeats_regex_perf.sql, gaka-o4m). Axes are iterated in
+// the deterministic hiddenAxes order. All values are bound params
+// (injection-safe); the axis -> column mapping comes only from cols. passCond,
+// if non-empty, is a bypass condition ORed in as the first arm (mirrors
+// remapExpr's extraCond; leaderboards pass `sender <> $req` so only the
+// requester's own rows are restricted to the scope). Callers must guard with
+// AnyMember() — an empty MemberSets here returns no predicate (use
+// spaceScopePredicate for the match-nothing semantics).
 func inclusionPredicate(ms MemberSets, cols map[string]string, passCond string, nextArg int, args []any) (string, []any, int) {
 	var arms []string
 	for _, axis := range hiddenAxes { // deterministic order
@@ -121,8 +125,9 @@ func inclusionPredicate(ms MemberSets, cols map[string]string, passCond string, 
 			nextArg++
 		}
 		for _, pat := range a.regex {
-			arms = append(arms, fmt.Sprintf("%s ~ $%d", col, nextArg))
-			args = append(args, pat)
+			op, bound := rewriteAnchoredRegex(pat)
+			arms = append(arms, fmt.Sprintf("%s %s $%d", col, op, nextArg))
+			args = append(args, bound)
 			nextArg++
 		}
 	}
@@ -134,6 +139,56 @@ func inclusionPredicate(ms MemberSets, cols map[string]string, passCond string, 
 		inner = passCond + " OR " + inner
 	}
 	return " AND (" + inner + ")", args, nextArg
+}
+
+// rewriteAnchoredRegex picks the fastest safe SQL operator for a regex membership
+// pattern. Returns (op, bound) where op is one of "~", "LIKE", or "=" and bound
+// is the value to bind at the next positional param:
+//
+//	"^foo"       -> ("LIKE", "foo%")  // btree text_pattern_ops or trigram GIN
+//	"^foo$"      -> ("=",    "foo")   // exact-match; plain btree serves it
+//	"foo"        -> ("~",    "foo")   // unanchored — needs trigram GIN
+//	"^foo.bar"   -> ("~",    "^foo.bar") // '.' is a regex metachar → not safe
+//	"^svc-(a|b)" -> ("~",    "^svc-(a|b)")
+//
+// Only literal-safe characters (letters, digits, `-`, `_`, `/`, `:`) are
+// eligible for rewrite — anything that could carry regex meaning (`.`, `*`,
+// `+`, `?`, `[`, `(`, `\`, `|`, `{`, whitespace, etc.) forces the fallback
+// to the raw `~` operator. That keeps the rewrite conservative: worst case
+// we miss a rewrite opportunity, we never mis-scope.
+func rewriteAnchoredRegex(pattern string) (op, bound string) {
+	if !strings.HasPrefix(pattern, "^") {
+		return "~", pattern
+	}
+	body := pattern[1:]
+	exact := strings.HasSuffix(body, "$")
+	if exact {
+		body = body[:len(body)-1]
+	}
+	if body == "" || !isLiteralRun(body) {
+		return "~", pattern
+	}
+	if exact {
+		return "=", body
+	}
+	return "LIKE", body + "%"
+}
+
+// isLiteralRun reports whether every rune in s is a "safe literal" character
+// with no regex meaning — the whitelist of chars that appear in typical
+// project / branch identifiers.
+func isLiteralRun(s string) bool {
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= 'A' && r <= 'Z':
+		case r >= '0' && r <= '9':
+		case r == '-', r == '_', r == '/', r == ':':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // spaceScopePredicate returns the inclusion predicate to splice into an aggregation

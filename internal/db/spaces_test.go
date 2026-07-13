@@ -24,7 +24,9 @@ func mkMembers(exact map[string][]string, regex map[string][]string) MemberSets 
 }
 
 // TestInclusionPredicateShape asserts the SQL/arg shape of inclusionPredicate:
-// one OR-group across axes (deterministic order), exact -> ANY, each regex -> ~.
+// one OR-group across axes (deterministic order), exact -> ANY. Regex arms
+// are picked per-pattern by rewriteAnchoredRegex: `^vim` is safe-anchored so
+// it becomes `LIKE 'vim%'`; `code` has no anchor so it stays as `~`.
 func TestInclusionPredicateShape(t *testing.T) {
 	ms := mkMembers(
 		map[string][]string{"project": {"a", "b"}},
@@ -33,9 +35,10 @@ func TestInclusionPredicateShape(t *testing.T) {
 	args := []any{"sender", time.Now(), time.Now(), int64(15)}
 	sql, outArgs, next := inclusionPredicate(ms, rawHeartbeatCols, "", 5, args)
 
-	// hiddenAxes order: project before editor. project exact -> $5; editor regex
-	// -> $6, $7 (in load order).
-	want := " AND (project = ANY($5) OR editor ~ $6 OR editor ~ $7)"
+	// hiddenAxes order: project before editor. project exact -> $5; editor
+	// rewrites: ^vim -> LIKE $6 (bound "vim%"); code stays as ~ $7 (bound
+	// "code" verbatim).
+	want := " AND (project = ANY($5) OR editor LIKE $6 OR editor ~ $7)"
 	if sql != want {
 		t.Fatalf("inclusion SQL = %q, want %q", sql, want)
 	}
@@ -44,6 +47,60 @@ func TestInclusionPredicateShape(t *testing.T) {
 	}
 	if len(outArgs) != 7 {
 		t.Fatalf("args len = %d, want 7", len(outArgs))
+	}
+	// The rewrite must bind "vim%" (not "^vim") at $6 and "code" (not
+	// touched) at $7 — a wrong bound value would mis-scope silently.
+	if got, want := outArgs[5], "vim%"; got != want {
+		t.Errorf("$6 bound = %q, want %q", got, want)
+	}
+	if got, want := outArgs[6], "code"; got != want {
+		t.Errorf("$7 bound = %q, want %q", got, want)
+	}
+}
+
+// TestRewriteAnchoredRegex covers the full pattern matrix — rewrites for
+// safe anchored literals, fallback to `~` for anything with metachars, and
+// the ^lit$ -> = rewrite for exact-match regexes.
+func TestRewriteAnchoredRegex(t *testing.T) {
+	cases := []struct {
+		pat, op, bound string
+	}{
+		// Safe anchored prefix → LIKE.
+		{"^foo", "LIKE", "foo%"},
+		{"^svc-", "LIKE", "svc-%"},
+		{"^catalyst-web", "LIKE", "catalyst-web%"},
+		{"^some/path", "LIKE", "some/path%"},
+		{"^ns:name", "LIKE", "ns:name%"},
+
+		// Safe anchored + $-terminated → =.
+		{"^foo$", "=", "foo"},
+		{"^svc-auth$", "=", "svc-auth"},
+
+		// No anchor → passthrough.
+		{"foo", "~", "foo"},
+		{"teak", "~", "teak"},
+		{"protecht", "~", "protecht"},
+
+		// Anchored but with regex metachars → passthrough (safety).
+		{"^foo.bar", "~", "^foo.bar"},
+		{"^foo\\.bar", "~", "^foo\\.bar"},
+		{"^svc-(a|b)", "~", "^svc-(a|b)"},
+		{"^foo*", "~", "^foo*"},
+		{"^foo+", "~", "^foo+"},
+		{"^foo?", "~", "^foo?"},
+		{"^foo[a-z]", "~", "^foo[a-z]"},
+		{"^foo bar", "~", "^foo bar"},
+
+		// Degenerate: bare "^" or "^$" — nothing to bind.
+		{"^", "~", "^"},
+		{"^$", "~", "^$"},
+	}
+	for _, tc := range cases {
+		op, bound := rewriteAnchoredRegex(tc.pat)
+		if op != tc.op || bound != tc.bound {
+			t.Errorf("rewriteAnchoredRegex(%q) = (%q, %q), want (%q, %q)",
+				tc.pat, op, bound, tc.op, tc.bound)
+		}
 	}
 }
 
