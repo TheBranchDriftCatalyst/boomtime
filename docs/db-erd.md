@@ -1,3 +1,4 @@
+```mermaid
 erDiagram
     auth_tokens {
         timestamp_without_time_zone last_usage 
@@ -139,3 +140,4 @@ erDiagram
     projects }o--|| users : "owner"
     refresh_tokens }o--|| users : "owner"
     space_rules }o--|| spaces : "space_id"
+```

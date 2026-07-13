@@ -16,6 +16,8 @@
 
 ## What it is
 
+![Coding profile](https://boomtime.knowledgedump.space/widget/svg/64401dfd-84ab-48bc-9dd9-4f699ba6025a/custom?spec=eyJsYXlvdXQiOiIzLXBhbmVsLWgiLCJ0aXRsZSI6IkNvZGluZyBwcm9maWxlIiwicGFuZWxzIjpbeyJraW5kIjoiY2FsZW5kYXIifSx7ImtpbmQiOiJncmFkZSJ9LHsia2luZCI6InRvcC1sYW5ncyJ9XX0&days=90&theme=dark)
+
 boomtime is a from-scratch reimplementation of [hakatime](https://github.com/mujx/hakatime)
 in Go + React. The **HTTP API is wire-compatible with Wakatime** (paths, JSON field names,
 `Authorization: Basic <token>`), so existing editor plugins keep working unchanged — just
