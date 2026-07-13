@@ -31,6 +31,16 @@ type HeartbeatPayload struct {
 	Project      *string    `json:"project"`
 	Type         EntityType `json:"type"` // ty -> type
 	TimeSent     float64    `json:"time"` // time_sent -> time
+	// gaka-1l9: AI-assistance fields wakatime.com started emitting 2026-07-03.
+	// Kept optional (`,omitempty` so heartbeats from non-AI plugins don't
+	// re-encode a bunch of null keys and blow up on-wire size).
+	AIInputTokens      *int64  `json:"ai_input_tokens,omitempty"`
+	AIOutputTokens     *int64  `json:"ai_output_tokens,omitempty"`
+	AILineChanges      *int64  `json:"ai_line_changes,omitempty"`
+	HumanLineChanges   *int64  `json:"human_line_changes,omitempty"`
+	AIPromptLength     *int64  `json:"ai_prompt_length,omitempty"`
+	AISession          *string `json:"ai_session,omitempty"`
+	AISubscriptionPlan *string `json:"ai_subscription_plan,omitempty"`
 }
 
 // HeartbeatID is the inner {"id": "..."} object.

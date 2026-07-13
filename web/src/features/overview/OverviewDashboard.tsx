@@ -6,6 +6,7 @@ import { QueryGate } from "@/components/QueryGate";
 import { ChartCard } from "@/components/ChartCard";
 import { WidgetsPanel } from "@/features/widgets/WidgetsPanel";
 import { EmbedLinkButton } from "@/features/widgets/EmbedActions";
+import { AIAssistanceCard } from "@/features/overview/AIAssistanceCard";
 import { ColumnChart } from "@/viz/charts/ColumnChart";
 import { HeatmapChart } from "@/viz/charts/HeatmapChart";
 import { PieChart } from "@/viz/charts/PieChart";
@@ -113,6 +114,14 @@ export function OverviewDashboard({
     queryFn: () =>
       api.getMomentum({ start: tr.startISO, end: tr.endISO, top: 8, space }),
   });
+  // gaka-1l9: AI-assistance metrics — the endpoint returns hasData=false when
+  // the user has no AI-tagged heartbeats in the range, so the card just
+  // early-returns. Not scoped by Space (AI usage is cross-cutting per user).
+  const aiActivityQuery = useQuery({
+    queryKey: qk.aiActivity(tr.startISO, tr.endISO),
+    queryFn: () =>
+      api.getAIActivity({ start: tr.startISO, end: tr.endISO }),
+  });
 
   const stats = statsQuery.data;
 
@@ -213,6 +222,11 @@ export function OverviewDashboard({
               accent="warning"
             />
           </div>
+
+          {/* gaka-1l9: AI-assistance strip — self-hides when the range has no
+              AI-tagged heartbeats (user is on a non-AI plugin, or range is
+              pre-2026-07-03 when wakatime.com started emitting these). */}
+          <AIAssistanceCard data={aiActivityQuery.data} />
 
           {/* Category breakdown — first-class, near the top: "tracked time" is
               more than coding (browsing/meetings/etc). */}

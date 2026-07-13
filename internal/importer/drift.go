@@ -123,6 +123,15 @@ var heartbeatSpec = schemaSpec{
 		"project":         jtStringOrNull,
 		"type":            jtString,
 		"time":            jtNumber,
+		// gaka-1l9: wakatime.com's AI-assistance heartbeat fields (first seen
+		// 2026-07-03). Persisted to matching heartbeats columns.
+		"ai_input_tokens":      jtNumberOrNull,
+		"ai_output_tokens":     jtNumberOrNull,
+		"ai_line_changes":      jtNumberOrNull,
+		"human_line_changes":   jtNumberOrNull,
+		"ai_prompt_length":     jtNumberOrNull,
+		"ai_session":           jtStringOrNull,
+		"ai_subscription_plan": jtStringOrNull,
 	},
 	// Baseline: fields wakatime.com currently returns on heartbeats that we
 	// deliberately don't map. Seeded conservatively so a real response wouldn't
@@ -159,6 +168,17 @@ var lookupSpec = schemaSpec{
 		"language":         {},
 		"is_browser_extension": {},
 		"is_desktop_app":       {},
+		// gaka-1l9: per-lookup metadata added by wakatime.com. Not persisted
+		// per-heartbeat — the important AI signal is on the heartbeat itself.
+		// Listed here to silence unknown_field warnings.
+		"cli_version":          {}, // user_agents
+		"ai_agent":             {}, // user_agents
+		"ai_agent_version":     {}, // user_agents
+		"ai_agent_complexity":  {}, // user_agents
+		"go_version":           {}, // user_agents
+		"name":                 {}, // machine_names
+		"ip":                   {}, // machine_names
+		"timezone":             {}, // machine_names
 	},
 	required:         []string{"id", "value"},
 	requiredSeverity: driftSeverityError, // ua/machine resolution is load-bearing

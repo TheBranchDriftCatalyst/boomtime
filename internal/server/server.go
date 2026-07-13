@@ -142,6 +142,9 @@ func registerStatsRoutes(e *echo.Echo, h *handler.Handler) {
 	e.GET("/api/v1/users/current/stats/sessions", h.Sessions)
 	e.GET("/api/v1/users/current/stats/momentum", h.Momentum)
 
+	// gaka-1l9: wakatime.com AI-assistance metrics (heartbeats.ai_*).
+	e.GET("/api/v1/users/current/stats/ai", h.AIActivity)
+
 	// Cross-project active files (shared lynchpins spanning multiple projects)
 	e.GET("/api/v1/users/current/files", h.ActiveFiles)
 

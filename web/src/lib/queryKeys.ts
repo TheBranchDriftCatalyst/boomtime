@@ -24,6 +24,7 @@ const prefix = {
   punchcard: ["punchcard"] as const,
   sessions: ["sessions"] as const,
   momentum: ["momentum"] as const,
+  aiActivity: ["ai-activity"] as const,
   crossProjectFiles: ["cross-project-files"] as const,
   hbExploreGroup: ["hb-explore-group"] as const,
   hbExploreList: ["hb-explore-list"] as const,
@@ -88,6 +89,8 @@ export const qk = {
   ) => ["sessions", start, end, timeLimit, space] as const,
   momentum: (start: string, end: string, space?: SpaceScope) =>
     ["momentum", start, end, space] as const,
+  aiActivity: (start: string, end: string) =>
+    ["ai-activity", start, end] as const,
   leaderboards: (start: string, end: string) =>
     ["leaderboards", start, end] as const,
 

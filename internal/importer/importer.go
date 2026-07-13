@@ -405,6 +405,15 @@ type importHeartbeat struct {
 	Project       *string  `json:"project"`
 	Type          string   `json:"type"`
 	Time          float64  `json:"time"`
+	// gaka-1l9: AI-assistance fields wakatime.com started sending on 2026-07-03.
+	// All nullable — plugins that don't emit them (older / non-AI) simply omit.
+	AIInputTokens      *int64  `json:"ai_input_tokens"`
+	AIOutputTokens     *int64  `json:"ai_output_tokens"`
+	AILineChanges      *int64  `json:"ai_line_changes"`
+	HumanLineChanges   *int64  `json:"human_line_changes"`
+	AIPromptLength     *int64  `json:"ai_prompt_length"`
+	AISession          *string `json:"ai_session"`
+	AISubscriptionPlan *string `json:"ai_subscription_plan"`
 }
 
 type heartbeatList struct {
@@ -462,6 +471,14 @@ func convertForDB(user string, machines, agents map[string]string, hbs []importH
 			Sender:       &u,
 			TimeSent:     hb.Time,
 			Type:         model.EntityType(hb.Type),
+			// gaka-1l9: AI-assistance fields — pass through as-is (nullable).
+			AIInputTokens:      hb.AIInputTokens,
+			AIOutputTokens:     hb.AIOutputTokens,
+			AILineChanges:      hb.AILineChanges,
+			HumanLineChanges:   hb.HumanLineChanges,
+			AIPromptLength:     hb.AIPromptLength,
+			AISession:          hb.AISession,
+			AISubscriptionPlan: hb.AISubscriptionPlan,
 		})
 	}
 	return out

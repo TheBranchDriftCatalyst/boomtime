@@ -129,6 +129,11 @@ func insertHeartbeatsBatch(ctx context.Context, tx pgx.Tx, hbs []model.Heartbeat
 			hb.UserAgent, hb.Branch, hb.Category, cursor, hb.Dependencies,
 			hb.Entity, hb.IsWrite, hb.Language, hb.Lineno, hb.FileLines,
 			hb.Project, string(hb.Type), unixToTime(hb.TimeSent),
+			// gaka-1l9: AI-assistance fields ($19..$25). Nullable at every
+			// layer — heartbeats from plugins that don't emit them bind NULL.
+			hb.AIInputTokens, hb.AIOutputTokens, hb.AILineChanges,
+			hb.HumanLineChanges, hb.AIPromptLength, hb.AISession,
+			hb.AISubscriptionPlan,
 		)
 	}
 	br := tx.SendBatch(ctx, &b)

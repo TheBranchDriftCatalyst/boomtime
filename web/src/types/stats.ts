@@ -24,6 +24,30 @@ export interface OtherMember {
   totalPct: number;
 }
 
+// gaka-1l9: wakatime.com AI-assistance metrics aggregated per day + summary.
+// hasData=false when the user has no AI-tagged heartbeats in the range so the
+// FE card can skip render.
+export interface AIActivityDay {
+  day: string; // ISO date
+  aiInputTokens: number;
+  aiOutputTokens: number;
+  aiLineChanges: number;
+  humanLineChanges: number;
+  aiSessions: number;
+}
+
+export interface AIActivityPayload {
+  days: AIActivityDay[];
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalAILineChanges: number;
+  totalHumanLineChanges: number;
+  totalSessions: number;
+  heartbeatsWithAI: number;
+  latestPlan?: string;
+  hasData: boolean;
+}
+
 export interface StatsPayload {
   startDate: string;
   endDate: string;

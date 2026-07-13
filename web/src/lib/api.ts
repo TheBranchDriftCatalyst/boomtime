@@ -32,6 +32,7 @@ import type {
   WakatimeRangePayload,
   LeaderboardEntry,
   LeaderboardsPayload,
+  AIActivityPayload,
   MomentumPayload,
   ProjectListPayload,
   ProjectStatistics,
@@ -299,6 +300,11 @@ export const api = {
     request<MomentumPayload>("/api/v1/users/current/stats/momentum", {
       params,
     }),
+
+  // gaka-1l9: AI-assistance per-day metrics + range summary (input/output
+  // tokens, AI vs human line changes, distinct sessions, latest plan).
+  getAIActivity: (params: RangeParams) =>
+    request<AIActivityPayload>("/api/v1/users/current/stats/ai", { params }),
 
   // --- Projects --------------------------------------------------------------
 
