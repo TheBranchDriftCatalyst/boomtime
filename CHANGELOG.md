@@ -2,6 +2,16 @@
 
 All notable changes to boomtime are documented here. This file is generated
 by [git-cliff](https://git-cliff.org) from conventional-commit history.
+## [0.5.2] - 2026-07-13
+
+### Bug Fixes
+
+- **import:** Drop client-side base64 on wakatime api_key; add show/hide toggle (gaka-f2l)
+
+### Features
+
+- **brand:** 'Made by Catalyst Development' attribution (gaka-486)
+
 ## [0.5.1] - 2026-07-13
 
 ### Bug Fixes
