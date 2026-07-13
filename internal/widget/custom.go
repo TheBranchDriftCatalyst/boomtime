@@ -79,21 +79,31 @@ func DecodeDef(encoded string) (Def, error) {
 	if err := json.Unmarshal(raw, &d); err != nil {
 		return Def{}, fmt.Errorf("spec is not JSON: %w", err)
 	}
+	if err := ValidateDef(d); err != nil {
+		return Def{}, err
+	}
+	return d, nil
+}
+
+// ValidateDef runs the layout + panel whitelist checks against a parsed Def.
+// Extracted from DecodeDef so widget_defs (which stores Def as JSON) can
+// reuse the exact same guardrails without a base64 round-trip.
+func ValidateDef(d Def) error {
 	switch d.Layout {
 	case Layout1, Layout2Horz, Layout3Horz, Layout2Vert:
 	default:
-		return Def{}, fmt.Errorf("unknown layout %q", d.Layout)
+		return fmt.Errorf("unknown layout %q", d.Layout)
 	}
 	want := layoutPanelCount(d.Layout)
 	if len(d.Panels) != want {
-		return Def{}, fmt.Errorf("layout %s wants %d panels, got %d", d.Layout, want, len(d.Panels))
+		return fmt.Errorf("layout %s wants %d panels, got %d", d.Layout, want, len(d.Panels))
 	}
 	for _, p := range d.Panels {
 		if !isKnownPanel(p.Kind) {
-			return Def{}, fmt.Errorf("unknown panel kind %q", p.Kind)
+			return fmt.Errorf("unknown panel kind %q", p.Kind)
 		}
 	}
-	return d, nil
+	return nil
 }
 
 func layoutPanelCount(l Layout) int {
