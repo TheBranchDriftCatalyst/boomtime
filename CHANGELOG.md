@@ -2,6 +2,21 @@
 
 All notable changes to boomtime are documented here. This file is generated
 by [git-cliff](https://git-cliff.org) from conventional-commit history.
+## [0.5.3] - 2026-07-13
+
+### Bug Fixes
+
+- **widgets:** Project scope now handles renamed/merged names (gaka-xuc)
+
+### Chores
+
+- **docs:** README self-embed widget + rename db-erd.mmd -> db-erd.md
+
+### Features
+
+- **ai:** Capture wakatime.com AI-assistance fields + Overview AI card (gaka-1l9)
+- **import:** Copy drift findings for schema-update feedback loop (gaka-rl6)
+
 ## [0.5.2] - 2026-07-13
 
 ### Bug Fixes
