@@ -358,7 +358,7 @@ func TestRenameAuditUnaffected(t *testing.T) {
 	createRename(t, d, ctx, sender, "project", "B", "M")
 
 	col, _ := ExploreColumn("project")
-	groups, _, err := d.GroupHeartbeats(ctx, sender, col, start, end, nil, 500, 15)
+	groups, _, err := d.GroupHeartbeats(ctx, sender, col, start, end, nil, "", 500, 15)
 	if err != nil {
 		t.Fatal(err)
 	}

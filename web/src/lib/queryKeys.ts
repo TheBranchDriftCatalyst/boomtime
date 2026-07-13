@@ -30,6 +30,7 @@ const prefix = {
   derivedStatus: ["derived-status"] as const,
   axisValues: ["axis-values"] as const,
   curationAffected: ["curation-affected"] as const,
+  entitiesByType: ["entities-by-type"] as const,
 };
 
 // Dashboard keys whose results are scoped by a Space (?space=…) and rewritten
@@ -120,7 +121,9 @@ export const qk = {
     start: string,
     end: string,
     timeLimit: number,
-  ) => ["hb-explore-group", axis, filters, start, end, timeLimit] as const,
+    entity: string,
+  ) =>
+    ["hb-explore-group", axis, filters, start, end, timeLimit, entity] as const,
   hbExploreList: (
     filters: HeartbeatFilters,
     entity: string,
@@ -129,6 +132,7 @@ export const qk = {
     page: number,
   ) => ["hb-explore-list", filters, entity, start, end, page] as const,
   derivedStatus: () => ["derived-status"] as const,
+  entitiesByType: (ty: string) => ["entities-by-type", ty] as const,
   sourcesHealth: () => ["sources-health"] as const,
   latestHeartbeat: () => ["latest-heartbeat"] as const,
 

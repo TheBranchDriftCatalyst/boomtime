@@ -330,7 +330,7 @@ func TestRegexRemapAcrossAllAggregations(t *testing.T) {
 
 	// ---- RAW PRESERVED: audit surfaces show raw Meet-*, never "Meeting". ----
 	col, _ := ExploreColumn("project")
-	groups, _, err := d.GroupHeartbeats(ctx, sender, col, start, end, nil, 500, 15)
+	groups, _, err := d.GroupHeartbeats(ctx, sender, col, start, end, nil, "", 500, 15)
 	if err != nil {
 		t.Fatal(err)
 	}

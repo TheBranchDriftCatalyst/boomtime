@@ -100,6 +100,50 @@ export function DerivedStatusPanel() {
             />
           </div>
         )}
+        {data && data.heartbeatsIndexes && data.heartbeatsIndexes.length > 0 && (
+          <details className="mt-4 rounded border border-border/60 bg-muted/20 p-2 text-xs">
+            <summary className="cursor-pointer select-none text-muted-foreground hover:text-foreground">
+              Indexes on <code className="font-mono">heartbeats</code>{" "}
+              <span className="text-muted-foreground/70">
+                ({data.heartbeatsIndexes.length} indexes,{" "}
+                {formatBytes(
+                  data.heartbeatsIndexes.reduce((s, i) => s + i.bytes, 0),
+                )}{" "}
+                total)
+              </span>
+            </summary>
+            <ul className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
+              {data.heartbeatsIndexes.map((idx) => {
+                const perf =
+                  idx.name.includes("_trgm_idx") ||
+                  idx.name.includes("_pattern_idx");
+                return (
+                  <li
+                    key={idx.name}
+                    className="flex items-center justify-between gap-2 rounded px-1 py-0.5 tabular-nums hover:bg-muted/40"
+                  >
+                    <span className="flex min-w-0 items-center gap-1.5 truncate">
+                      <code className="truncate font-mono text-[11px] text-foreground/90">
+                        {idx.name}
+                      </code>
+                      {perf && (
+                        <span
+                          className="rounded bg-primary/15 px-1 text-[10px] font-medium uppercase tracking-wide text-primary"
+                          title="Perf index for Space regex queries (gaka-o4m)"
+                        >
+                          perf
+                        </span>
+                      )}
+                    </span>
+                    <span className="shrink-0 text-muted-foreground">
+                      {formatBytes(idx.bytes)}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </details>
+        )}
         {!inSync && !isLoading && (
           <p className="mt-2 text-xs text-amber-500/90">
             The rollup total differs from the raw heartbeats (or gaps are

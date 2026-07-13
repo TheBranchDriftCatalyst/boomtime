@@ -94,7 +94,7 @@ func TestGroupHeartbeatsDayShape(t *testing.T) {
 
 	// group by day: expect two YYYY-MM-DD buckets.
 	dayCol, _ := ExploreColumn("day")
-	groups, trunc, err := d.GroupHeartbeats(ctx, sender, dayCol, start, end, nil, 500, 15)
+	groups, trunc, err := d.GroupHeartbeats(ctx, sender, dayCol, start, end, nil, "", 500, 15)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestGroupHeartbeatsDayShape(t *testing.T) {
 
 	// group by language: Go bucket + a NULL bucket.
 	langCol, _ := ExploreColumn("language")
-	lgroups, _, err := d.GroupHeartbeats(ctx, sender, langCol, start, end, nil, 500, 15)
+	lgroups, _, err := d.GroupHeartbeats(ctx, sender, langCol, start, end, nil, "", 500, 15)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestGroupHeartbeatsDayShape(t *testing.T) {
 
 	// Filter by language=Go, group by day: NULL-language row excluded.
 	filters := []ExploreFilter{{Column: langCol, Value: &goLang}}
-	fg, _, err := d.GroupHeartbeats(ctx, sender, dayCol, start, end, filters, 500, 15)
+	fg, _, err := d.GroupHeartbeats(ctx, sender, dayCol, start, end, filters, "", 500, 15)
 	if err != nil {
 		t.Fatal(err)
 	}

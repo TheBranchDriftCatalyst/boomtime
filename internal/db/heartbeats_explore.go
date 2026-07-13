@@ -95,10 +95,15 @@ type ExploreGroup struct {
 // Results are ordered by count desc and capped at limit; the second return value
 // reports whether the result was truncated at the cap.
 //
+// entitySubstr is an optional case-insensitive substring on the entity column
+// (ILIKE '%…%'); an empty string is a no-op. Same semantics as ListHeartbeats
+// so the Explorer search box narrows BOTH the group listing AND the drilled
+// leaf rows (previously it only narrowed leaves — gaka-90x sibling fix).
+//
 // seconds per group is SUM(gap_seconds) where gap_seconds <= limitMinutes*60,
 // matching the dashboards' attributed-time convention. This is the AUDIT view:
 // curation hide-exclusion is deliberately NOT applied (hidden values still show).
-func (d *DB) GroupHeartbeats(ctx context.Context, sender, groupCol string, start, end time.Time, filters []ExploreFilter, limit int, limitMinutes int64) ([]ExploreGroup, bool, error) {
+func (d *DB) GroupHeartbeats(ctx context.Context, sender, groupCol string, start, end time.Time, filters []ExploreFilter, entitySubstr string, limit int, limitMinutes int64) ([]ExploreGroup, bool, error) {
 	// For the day axis, render the value as text 'YYYY-MM-DD'; otherwise cast the
 	// column to text so every group value is a consistent string|null.
 	valueExpr := groupCol + "::text"
@@ -109,6 +114,11 @@ func (d *DB) GroupHeartbeats(ctx context.Context, sender, groupCol string, start
 	// $1 sender, $2 start, $3 end, then filter args, then the gap cutoff.
 	args := []any{sender, start, end}
 	filterSQL, args, nextArg := buildFilterClause(filters, 4, args)
+	if entitySubstr != "" {
+		filterSQL += fmt.Sprintf(" AND entity ILIKE $%d", nextArg)
+		args = append(args, "%"+entitySubstr+"%")
+		nextArg++
+	}
 	cutoffArg := nextArg
 	args = append(args, limitMinutes)
 

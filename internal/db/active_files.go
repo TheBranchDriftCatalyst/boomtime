@@ -44,7 +44,7 @@ WITH per_row AS (
            %s AS project,
            CASE WHEN gap_seconds <= ($4 * 60) THEN gap_seconds ELSE 0 END AS secs
     FROM heartbeats
-    WHERE sender = $1 AND ty = 'file' AND entity IS NOT NULL
+    WHERE sender = $1 AND ty = 'file' AND entity IS NOT NULL AND entity <> ''
       AND time_sent >= $2 AND time_sent <= $3
 )
 SELECT entity,

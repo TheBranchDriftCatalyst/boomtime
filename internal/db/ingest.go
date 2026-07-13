@@ -236,6 +236,18 @@ type DerivedStatus struct {
 	HeartbeatsBytes int64 `json:"heartbeatsBytes"` // heartbeats table incl. indexes/toast
 	RollupBytes     int64 `json:"rollupBytes"`     // hb_rollup_daily table incl. indexes
 	DBBytes         int64 `json:"dbBytes"`         // whole database on disk
+	// HeartbeatsIndexes lists each index on the heartbeats table with its
+	// on-disk size, largest first. Surfaced on the Heartbeats page so the
+	// operator can see the storage cost of the perf indexes added in
+	// migrations 00019/00020 (project/branch/entity trigram + project
+	// text_pattern_ops) alongside the older sender/time btrees.
+	HeartbeatsIndexes []IndexSize `json:"heartbeatsIndexes"`
+}
+
+// IndexSize is one row of the heartbeats index inventory.
+type IndexSize struct {
+	Name  string `json:"name"`
+	Bytes int64  `json:"bytes"`
 }
 
 // GetDerivedStatus computes the derived-data health for a sender.
@@ -260,7 +272,40 @@ func (d *DB) GetDerivedStatus(ctx context.Context, sender string) (DerivedStatus
 	// In sync when the rollup total equals the raw total and at most one heartbeat
 	// (the sender's first beat) legitimately lacks a gap.
 	s.InSync = s.RollupSeconds == s.RawSeconds && s.GapMissing <= 1
+
+	idx, err := d.heartbeatsIndexSizes(ctx)
+	if err != nil {
+		// Best-effort: an environment where pg_indexes is restricted shouldn't
+		// blank the whole panel. Log-and-continue by returning what we have.
+		return s, nil
+	}
+	s.HeartbeatsIndexes = idx
 	return s, nil
+}
+
+// heartbeatsIndexSizes returns every index on the heartbeats table with its
+// on-disk size, largest first. Used by GetDerivedStatus to surface the
+// storage cost of each index — the trigram / text_pattern_ops indexes shipped
+// for gaka-o4m are the biggest cost line items.
+func (d *DB) heartbeatsIndexSizes(ctx context.Context) ([]IndexSize, error) {
+	rows, err := d.Pool.Query(ctx, `
+		SELECT indexname, pg_relation_size((schemaname || '.' || indexname)::regclass) AS bytes
+		FROM pg_indexes
+		WHERE tablename = 'heartbeats'
+		ORDER BY bytes DESC, indexname`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []IndexSize{}
+	for rows.Next() {
+		var i IndexSize
+		if err := rows.Scan(&i.Name, &i.Bytes); err != nil {
+			return nil, err
+		}
+		out = append(out, i)
+	}
+	return out, rows.Err()
 }
 
 // ResyncDerived fully rebuilds gap_seconds and the rollup for a sender from the

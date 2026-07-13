@@ -257,7 +257,7 @@ func TestSuppressedValuesExcludedFromAggregations(t *testing.T) {
 			// ---- STILL PRESENT in AUDIT surfaces ----
 
 			col, _ := ExploreColumn(axis)
-			groups, _, err := d.GroupHeartbeats(ctx, sender, col, start, end, nil, 500, 15)
+			groups, _, err := d.GroupHeartbeats(ctx, sender, col, start, end, nil, "", 500, 15)
 			if err != nil {
 				t.Fatal(err)
 			}

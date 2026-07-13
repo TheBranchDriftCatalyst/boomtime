@@ -73,12 +73,19 @@ export function useExplorerTree({ axes, start, end, timeLimit, entity }: Params)
   const fetchGroup = useCallback(
     (axis: HeartbeatAxis, filters: HeartbeatFilters) =>
       qc.fetchQuery({
-        queryKey: qk.hbExploreGroup(axis, filters, start, end, timeLimit),
+        queryKey: qk.hbExploreGroup(axis, filters, start, end, timeLimit, entity),
         queryFn: () =>
-          api.groupHeartbeats({ groupBy: axis, start, end, timeLimit, filters }),
+          api.groupHeartbeats({
+            groupBy: axis,
+            start,
+            end,
+            timeLimit,
+            filters,
+            entity,
+          }),
         staleTime: 30_000,
       }),
-    [qc, start, end, timeLimit],
+    [qc, start, end, timeLimit, entity],
   );
 
   const fetchLeaf = useCallback(

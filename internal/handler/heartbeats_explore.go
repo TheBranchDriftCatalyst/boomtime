@@ -94,7 +94,11 @@ func (h *Handler) HeartbeatsGroup(c *echo.Context) error {
 
 	t0, t1 := defaultWeekRange(c)
 	// timeLimit (default 15) is the gap cutoff for the per-group attributed time.
-	groups, truncated, err := h.DB.GroupHeartbeats(c.Request().Context(), owner, groupCol, t0, t1, filters, exploreGroupLimit, timeLimit(c))
+	// entity is an optional ILIKE substring on the entity column; empty is a
+	// no-op. Threading it here fixes the Explorer search box, which previously
+	// only narrowed the leaf-row endpoint (gaka-90x sibling fix).
+	entity := c.QueryParam("entity")
+	groups, truncated, err := h.DB.GroupHeartbeats(c.Request().Context(), owner, groupCol, t0, t1, filters, entity, exploreGroupLimit, timeLimit(c))
 	if err != nil {
 		h.Logger.Error("heartbeats group query failed", "err", err)
 		return respondErr(c, apierr.Generic())

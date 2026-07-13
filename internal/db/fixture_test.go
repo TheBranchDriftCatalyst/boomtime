@@ -139,7 +139,7 @@ func TestFixturePipeline(t *testing.T) {
 	// The fixture covers 12 projects (> the top-12 cap only if >12); assert we get
 	// the documented number of distinct projects and that language capping applies
 	// when there are more than the cap.
-	langGroups, _, err := d.GroupHeartbeats(ctx, sender, "language", start, end, nil, 500, 15)
+	langGroups, _, err := d.GroupHeartbeats(ctx, sender, "language", start, end, nil, "", 500, 15)
 	if err != nil {
 		t.Fatal(err)
 	}

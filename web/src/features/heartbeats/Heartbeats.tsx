@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Braces, Search, Table2 } from "lucide-react";
+import { Braces, Files, Search, Table2 } from "lucide-react";
 import { PageToolbar } from "@/components/toolbar/PageToolbar";
 import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
 import { TimeLimitDropdown } from "@/components/toolbar/TimeLimitDropdown";
@@ -13,6 +13,7 @@ import { BackupPanel } from "@/features/heartbeats/BackupPanel";
 import { SourceHealthPanel } from "@/features/heartbeats/SourceHealthPanel";
 import { HeartbeatExplorerTable } from "@/features/heartbeats/HeartbeatExplorerTable";
 import { RenameGroupDialog } from "@/features/heartbeats/RenameGroupDialog";
+import { EntityExplorer } from "@/features/heartbeats/EntityExplorer";
 import { useExplorerTree } from "@/features/heartbeats/useExplorerTree";
 import { DEFAULT_GROUP_BY } from "@/features/heartbeats/axes";
 import { useTimeRange } from "@/hooks/useTimeRange";
@@ -20,9 +21,11 @@ import type { HeartbeatAxis } from "@/types/api";
 import type { GroupNode } from "@/features/heartbeats/explorerModel";
 
 type LeafMode = "table" | "json";
+type Tab = "explorer" | "entities";
 
 export function Heartbeats() {
   const tr = useTimeRange();
+  const [tab, setTab] = useState<Tab>("explorer");
   const [groupBy, setGroupBy] = useState<HeartbeatAxis[]>(DEFAULT_GROUP_BY);
   const [entity, setEntity] = useState("");
   const [entityInput, setEntityInput] = useState("");
@@ -42,48 +45,75 @@ export function Heartbeats() {
   return (
     <div>
       <PageToolbar title="Heartbeats">
-        <form
-          className="relative"
-          onSubmit={(e) => {
-            e.preventDefault();
-            setEntity(entityInput.trim());
-          }}
-        >
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={entityInput}
-            onChange={(e) => setEntityInput(e.target.value)}
-            onBlur={() => setEntity(entityInput.trim())}
-            placeholder="Search entity..."
-            className="h-8 w-52 pl-8"
-          />
-        </form>
         <div className="flex items-center rounded-md border p-0.5">
           <Button
-            variant={mode === "table" ? "secondary" : "ghost"}
+            variant={tab === "explorer" ? "secondary" : "ghost"}
             size="sm"
             className="h-7"
-            onClick={() => setMode("table")}
+            onClick={() => setTab("explorer")}
           >
-            <Table2 className="h-4 w-4" />
-            Table
+            <Search className="h-4 w-4" />
+            Explorer
           </Button>
           <Button
-            variant={mode === "json" ? "secondary" : "ghost"}
+            variant={tab === "entities" ? "secondary" : "ghost"}
             size="sm"
             className="h-7"
-            onClick={() => setMode("json")}
+            onClick={() => setTab("entities")}
           >
-            <Braces className="h-4 w-4" />
-            JSON
+            <Files className="h-4 w-4" />
+            Entities
           </Button>
         </div>
-        <TimeLimitDropdown value={tr.timeLimit} onChange={tr.setTimeLimit} />
-        <DateRangePicker
-          numDays={tr.numDays}
-          onPreset={tr.setDaysFromToday}
-          onRange={tr.setRange}
-        />
+        {tab === "explorer" && (
+          <>
+            <form
+              className="relative"
+              onSubmit={(e) => {
+                e.preventDefault();
+                setEntity(entityInput.trim());
+              }}
+            >
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={entityInput}
+                onChange={(e) => setEntityInput(e.target.value)}
+                onBlur={() => setEntity(entityInput.trim())}
+                placeholder="Search entity..."
+                className="h-8 w-52 pl-8"
+              />
+            </form>
+            <div className="flex items-center rounded-md border p-0.5">
+              <Button
+                variant={mode === "table" ? "secondary" : "ghost"}
+                size="sm"
+                className="h-7"
+                onClick={() => setMode("table")}
+              >
+                <Table2 className="h-4 w-4" />
+                Table
+              </Button>
+              <Button
+                variant={mode === "json" ? "secondary" : "ghost"}
+                size="sm"
+                className="h-7"
+                onClick={() => setMode("json")}
+              >
+                <Braces className="h-4 w-4" />
+                JSON
+              </Button>
+            </div>
+            <TimeLimitDropdown
+              value={tr.timeLimit}
+              onChange={tr.setTimeLimit}
+            />
+            <DateRangePicker
+              numDays={tr.numDays}
+              onPreset={tr.setDaysFromToday}
+              onRange={tr.setRange}
+            />
+          </>
+        )}
       </PageToolbar>
 
       <div className="mb-4">
@@ -98,53 +128,59 @@ export function Heartbeats() {
         <SourceHealthPanel />
       </div>
 
-      <Card className="mb-4">
-        <CardContent className="py-4">
-          <GroupByBar groupBy={groupBy} onChange={setGroupBy} />
-        </CardContent>
-      </Card>
+      {tab === "explorer" ? (
+        <>
+          <Card className="mb-4">
+            <CardContent className="py-4">
+              <GroupByBar groupBy={groupBy} onChange={setGroupBy} />
+            </CardContent>
+          </Card>
 
-      <Card>
-        <CardContent className="py-3">
-          {groupBy.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              Add at least one group-by axis to explore heartbeats.
-            </p>
-          ) : ctrl.rootLoading ? (
-            <Spinner />
-          ) : ctrl.rootError ? (
-            <div className="space-y-2 py-6 text-center">
-              <p className="text-sm text-destructive">
-                Failed to load heartbeat groups.
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void ctrl.reloadRoot()}
-              >
-                Retry
-              </Button>
-            </div>
-          ) : ctrl.tree.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              No heartbeats in this range.
-            </p>
-          ) : (
-            <>
-              {ctrl.rootTruncated && (
-                <p className="mb-2 text-xs text-amber-500">
-                  Showing the top groups only (results truncated).
+          <Card>
+            <CardContent className="py-3">
+              {groupBy.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  Add at least one group-by axis to explore heartbeats.
                 </p>
+              ) : ctrl.rootLoading ? (
+                <Spinner />
+              ) : ctrl.rootError ? (
+                <div className="space-y-2 py-6 text-center">
+                  <p className="text-sm text-destructive">
+                    Failed to load heartbeat groups.
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void ctrl.reloadRoot()}
+                  >
+                    Retry
+                  </Button>
+                </div>
+              ) : ctrl.tree.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  No heartbeats in this range.
+                </p>
+              ) : (
+                <>
+                  {ctrl.rootTruncated && (
+                    <p className="mb-2 text-xs text-amber-500">
+                      Showing the top groups only (results truncated).
+                    </p>
+                  )}
+                  <HeartbeatExplorerTable
+                    ctrl={ctrl}
+                    mode={mode}
+                    onRename={setRenameTarget}
+                  />
+                </>
               )}
-              <HeartbeatExplorerTable
-                ctrl={ctrl}
-                mode={mode}
-                onRename={setRenameTarget}
-              />
-            </>
-          )}
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+        </>
+      ) : (
+        <EntityExplorer />
+      )}
 
       <RenameGroupDialog
         node={renameTarget}
