@@ -51,3 +51,6 @@ internal/db/testdata/*.local.json
 # Generated artifacts
 web/coverage/
 /ov.md
+
+# Claude Code scratch (agent worktrees, session state)
+.claude/

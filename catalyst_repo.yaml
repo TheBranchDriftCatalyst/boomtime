@@ -1,0 +1,18 @@
+# Catalyst repo descriptor — drives the operator cockpit + profile generator.
+version: "0.1.1"
+name: "boomtime"
+description: ""
+repo_url: "git@github.com:TheBranchDriftCatalyst/hakatime.git"
+
+# Repository Status
+status: "active"  # Options: active, archived, wip, experimental
+
+# Grouping / Categories (for organizing on profile page)
+groups:
+  []
+
+# Tech stack (auto-detected from package.json / pyproject.toml; supplement here)
+tech_stack:
+  languages: []
+  frameworks: []
+  tools: []
