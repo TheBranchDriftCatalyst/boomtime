@@ -85,6 +85,18 @@ export function WelcomeModal() {
           </Button>
           <Button onClick={goImport}>Import Wakatime data</Button>
         </DialogFooter>
+
+        <p className="mt-2 text-center text-[11px] text-muted-foreground/70">
+          Made by{" "}
+          <a
+            href="https://github.com/TheBranchDriftCatalyst"
+            target="_blank"
+            rel="noreferrer"
+            className="underline-offset-2 hover:text-foreground hover:underline"
+          >
+            Catalyst Development
+          </a>
+        </p>
       </DialogContent>
     </Dialog>
   );

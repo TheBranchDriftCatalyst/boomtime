@@ -174,7 +174,12 @@ export function Sidebar({
           {!collapsed && "Collapse"}
         </button>
 
-        {!collapsed && <SidebarVersion />}
+        {!collapsed && (
+          <>
+            <SidebarVersion />
+            <SidebarAttribution />
+          </>
+        )}
       </div>
     </aside>
   );
@@ -198,5 +203,21 @@ function SidebarVersion() {
     >
       {data.version}
     </NavLink>
+  );
+}
+
+// Small OSS-style attribution under the version chip. Low-contrast + centered
+// so it doesn't compete with nav. Links to the org's GitHub in a new tab.
+function SidebarAttribution() {
+  return (
+    <a
+      href="https://github.com/TheBranchDriftCatalyst"
+      target="_blank"
+      rel="noreferrer"
+      className="mt-0.5 block text-center text-[10px] text-muted-foreground/70 hover:text-foreground"
+      title="github.com/TheBranchDriftCatalyst"
+    >
+      Made by Catalyst Development
+    </a>
   );
 }
