@@ -36,3 +36,13 @@ func migrateDB(ctx context.Context, sqldb *sql.DB) error {
 	}
 	return goose.UpContext(ctx, sqldb, "migrations")
 }
+
+// SchemaVersion returns the highest applied migration version from goose's
+// bookkeeping table. Zero when the table is empty. Used by /healthz.
+func (d *DB) SchemaVersion(ctx context.Context) (int64, error) {
+	var v int64
+	err := d.Pool.QueryRow(ctx,
+		`SELECT COALESCE(MAX(version_id), 0) FROM goose_db_version`,
+	).Scan(&v)
+	return v, err
+}

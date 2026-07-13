@@ -7,13 +7,17 @@ COPY web/ ./
 RUN npm run build
 
 # ── Stage 2: build the Go binary with the SPA embedded ───────────────────────
-# VERSION is not a secret. It's the git-describe string that gets stamped into
-# the binary via ldflags (-X main.version). Passed by CI (release.yml) or
-# `task docker:build` — defaults to "dev" for a bare local build.
-# NEVER add secret build args here. All BOOM_* / WAKATIME_API_KEY / GITHUB_TOKEN
-# stay as RUNTIME env, injected via docker run -e / compose env_file.
+# VERSION / BRANCH / COMMIT / BUILDTIME are not secrets — they're build
+# metadata stamped into the binary via ldflags and surfaced by /healthz.
+# Passed by CI (release.yml) or `task docker:build`. Safe defaults for a bare
+# local build. NEVER add secret build args here. All BOOM_* / WAKATIME_API_KEY
+# / GITHUB_TOKEN stay as RUNTIME env, injected via docker run -e / compose
+# env_file.
 FROM golang:1.25-alpine AS server
 ARG VERSION=dev
+ARG BRANCH=""
+ARG COMMIT=""
+ARG BUILDTIME=""
 RUN apk add --no-cache git
 WORKDIR /src
 COPY go.mod go.sum* ./
@@ -25,7 +29,7 @@ COPY . .
 # Embed the built SPA (server package embeds internal/server/dist).
 COPY --from=web /web/dist ./internal/server/dist
 RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags "-s -w -X main.version=${VERSION}" \
+    -ldflags "-s -w -X main.version=${VERSION} -X main.branch=${BRANCH} -X main.commit=${COMMIT} -X main.buildTime=${BUILDTIME}" \
     -o /out/boomtime ./cmd/boomtime
 
 # ── Stage 3: minimal runtime ─────────────────────────────────────────────────

@@ -3,9 +3,11 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -19,18 +21,27 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/server"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
 
-// version is stamped in via ldflags at build time:
+// version, branch, commit, buildTime are stamped in via ldflags at build time:
 //
-//	go build -ldflags "-X main.version=$(git describe --tags --always --dirty)"
+//	go build -ldflags "-X main.version=$(git describe --tags --always --dirty) \
+//	                   -X main.branch=$(git branch --show-current) \
+//	                   -X main.commit=$(git rev-parse HEAD) \
+//	                   -X main.buildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 //
-// The Dockerfile and Taskfile both pass VERSION. Defaults to "dev" for a
-// bare `go run` / `go build` in an untagged working tree.
-var version = "dev"
+// The Dockerfile and Taskfile both pass these. Empty defaults for a bare
+// `go run` / `go build` in an untagged working tree. Surfaced by /healthz.
+var (
+	version   = "dev"
+	branch    = ""
+	commit    = ""
+	buildTime = ""
+)
 
 func main() {
 	// Load .env if present (dev convenience; direnv handles .envrc in the shell).
@@ -56,6 +67,13 @@ func runCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg := config.Load()
 			cfg.Version = version
+			cfg.Branch = branch
+			cfg.Commit = commit
+			cfg.BuildTime = buildTime
+			// Apply BOOM_GRADE_* overrides once at boot so every downstream
+			// stats.Grade() picks up the operator's calibration without threading
+			// cfg through every renderer.
+			stats.DefaultGradeConfig = cfg.Grade
 			logger, logHub := logging.Setup(cfg)
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()
@@ -136,18 +154,11 @@ func createUserCmd() *cobra.Command {
 			}
 			defer database.Close()
 
-			hash, salt, err := auth.HashPassword(password)
-			if err != nil {
+			if err := auth.CreateUser(ctx, database, username, password); err != nil {
+				if errors.Is(err, auth.ErrUserExists) {
+					return fmt.Errorf("user %q already exists", username)
+				}
 				return err
-			}
-			created, err := database.InsertUser(ctx, db.StoredUser{
-				Username: username, HashedPassword: hash, SaltUsed: salt,
-			})
-			if err != nil {
-				return err
-			}
-			if !created {
-				return fmt.Errorf("user %q already exists", username)
 			}
 			fmt.Printf("User %q created.\n", username)
 			fmt.Printf("Run \"boomtime create-token -u %s\" to generate a token.\n", username)
@@ -177,15 +188,11 @@ func createTokenCmd() *cobra.Command {
 			}
 			defer database.Close()
 
-			user, err := database.GetUserByName(ctx, username)
-			if err != nil {
+			if err := auth.VerifyUserCredentials(ctx, database, username, password); err != nil {
 				return err
 			}
-			if user == nil || !auth.VerifyPassword(password, user.HashedPassword, user.SaltUsed) {
-				return errors.New("Wrong username or password")
-			}
-			raw := auth.NewRawToken()
-			if err := database.InsertAPIToken(ctx, username, auth.ToBase64(raw)); err != nil {
+			raw, err := auth.CreateAPIToken(ctx, database, username)
+			if err != nil {
 				return err
 			}
 			fmt.Println("Please save the token. You won't be able to retrieve it again.")
@@ -209,10 +216,13 @@ func promptPassword(prompt string) (string, error) {
 		}
 		return string(b), nil
 	}
-	// Non-interactive fallback: read a line from stdin.
-	var line string
-	if _, err := fmt.Scanln(&line); err != nil {
+	// Non-interactive fallback: read one line via bufio (gaka-0tb). fmt.Scanln
+	// splits on whitespace, so a piped password with spaces was silently
+	// truncated at the first space and login/create-token failed with a
+	// wrong-password error the user couldn't debug.
+	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil && err != io.EOF {
 		return "", err
 	}
-	return strings.TrimSpace(line), nil
+	return strings.TrimRight(line, "\r\n"), nil
 }

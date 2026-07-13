@@ -54,7 +54,9 @@ type GradeConfig struct {
 	MinRangeDays int
 }
 
-// DefaultGradeConfig is the shipped calibration (see gaka-hsj plan).
+// DefaultGradeConfig is the shipped calibration (see gaka-hsj plan). Kept as a
+// package-level var so cmd/boomtime (via ApplyGradeConfigFromEnv) can tune it
+// once at boot without threading a config value through every renderer.
 var DefaultGradeConfig = GradeConfig{
 	StreakMedian: 5, StreakWeight: 2,
 	ActiveMedian: 50, ActiveWeight: 3,

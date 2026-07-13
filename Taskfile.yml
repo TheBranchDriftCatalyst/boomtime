@@ -16,6 +16,14 @@ vars:
   # trees. Override with VERSION=vX.Y.Z on the command line.
   VERSION:
     sh: git describe --tags --always --dirty 2>/dev/null || echo dev
+  # BRANCH / COMMIT / BUILDTIME feed /healthz alongside VERSION. Silent
+  # fallbacks keep bare `task build` working outside a git worktree.
+  BRANCH:
+    sh: git branch --show-current 2>/dev/null || echo ""
+  COMMIT:
+    sh: git rev-parse HEAD 2>/dev/null || echo ""
+  BUILDTIME:
+    sh: date -u +%Y-%m-%dT%H:%M:%SZ
   # GHCR image reference. Override with IMAGE=ghcr.io/<owner>/<name>.
   IMAGE: '{{.IMAGE | default "ghcr.io/thebranchdriftcatalyst/boomtime"}}'
 
@@ -64,6 +72,9 @@ tasks:
       - >-
         docker build
         --build-arg VERSION={{.VERSION}}
+        --build-arg BRANCH={{.BRANCH}}
+        --build-arg COMMIT={{.COMMIT}}
+        --build-arg BUILDTIME={{.BUILDTIME}}
         -t {{.IMAGE}}:{{.VERSION}}
         -t {{.IMAGE}}:latest
         .
@@ -158,7 +169,10 @@ tasks:
     deps: [web:build]
     cmds:
       - rm -rf internal/server/dist && cp -r web/dist internal/server/dist
-      - go build -ldflags "-s -w -X main.version={{.VERSION}}" -o bin/boomtime {{.PKG}}
+      - >-
+        go build
+        -ldflags "-s -w -X main.version={{.VERSION}} -X main.branch={{.BRANCH}} -X main.commit={{.COMMIT}} -X main.buildTime={{.BUILDTIME}}"
+        -o bin/boomtime {{.PKG}}
       - 'echo "✓ built bin/boomtime ({{.VERSION}})"'
 
   version:

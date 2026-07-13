@@ -6,6 +6,7 @@ import { Sidebar } from "@/layout/Sidebar";
 import { CreateSpaceDialog } from "@/features/spaces/CreateSpaceDialog";
 import { CreateTokenModal } from "@/features/tokens/CreateTokenModal";
 import { TokenListModal } from "@/features/tokens/TokenListModal";
+import { WelcomeModal } from "@/features/onboarding/WelcomeModal";
 import { useAuth } from "@/features/auth/useAuth";
 import { useCollapsedSidebar } from "@/layout/useCollapsedSidebar";
 import { api } from "@/lib/api";
@@ -61,6 +62,7 @@ export function AppShell() {
         open={createSpaceOpen}
         onOpenChange={setCreateSpaceOpen}
       />
+      <WelcomeModal />
     </div>
   );
 }

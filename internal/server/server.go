@@ -67,11 +67,13 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	registerMetaRoutes(e, h)
 }
 
-// registerMetaRoutes: build/version disclosure + embedded changelog. Both are
-// intentionally unauthenticated (see internal/handler/meta.go).
+// registerMetaRoutes: build/version disclosure + embedded changelog + the
+// public health probe. All three are intentionally unauthenticated (see
+// internal/handler/meta.go, internal/handler/healthz.go).
 func registerMetaRoutes(e *echo.Echo, h *handler.Handler) {
 	e.GET("/api/v1/version", h.Version)
 	e.GET("/api/v1/changelog", h.Changelog)
+	e.GET("/healthz", h.Healthz)
 }
 
 // registerHeartbeatRoutes: ingest, the read-only explorer, and source health.
@@ -84,6 +86,13 @@ func registerHeartbeatRoutes(e *echo.Echo, h *handler.Handler) {
 	e.GET("/api/v1/users/current/heartbeats/group", h.HeartbeatsGroup)
 	e.GET("/api/v1/users/current/heartbeats/latest", h.HeartbeatsLatest)
 	e.GET("/api/v1/users/current/heartbeats", h.HeartbeatsList)
+
+	// Entity Explorer (gaka-90x): per-ty flat list + per-entity redact (blanks
+	// the entity column on matching heartbeat rows — row itself stays,
+	// contributing to project/language/machine totals). Redact requires
+	// ?confirm=redact-entities as an accident guard.
+	e.GET("/api/v1/users/current/heartbeats/entities", h.ListEntitiesByType)
+	e.POST("/api/v1/users/current/heartbeats/entities/redact", h.RedactEntities)
 
 	// Source health (per plugin/editor/machine last check-in — ingestion health)
 	e.GET("/api/v1/users/current/sources/health", h.SourceHealth)
@@ -164,7 +173,18 @@ func registerMiscRoutes(e *echo.Echo, h *handler.Handler) {
 	e.GET("/api/v1/users/current/widgets/link", h.WidgetLink)
 	e.GET("/api/v1/users/current/widgets/links", h.WidgetLinkList)
 	e.POST("/api/v1/users/current/widgets/link/:id/roll", h.WidgetLinkRoll)
+
+	// Named/saved custom widget defs (gaka-3nu): auth'd CRUD + PUBLIC named
+	// renderer. Register the "named" public route BEFORE the generic
+	// :uuid/:kind route so it wins path matching. Ordering matters — Echo
+	// picks the first registered matcher for overlapping patterns.
+	e.GET("/widget/svg/:uuid/named", h.WidgetDefSvg)
 	e.GET("/widget/svg/:uuid/:kind", h.WidgetSvg)
+
+	e.GET("/api/v1/users/current/widget-defs", h.ListWidgetDefs)
+	e.POST("/api/v1/users/current/widget-defs", h.CreateWidgetDef)
+	e.PATCH("/api/v1/users/current/widget-defs/:name", h.UpdateWidgetDef)
+	e.DELETE("/api/v1/users/current/widget-defs/:name", h.DeleteWidgetDef)
 
 	// Leaderboards
 	e.GET("/api/v1/leaderboards", h.Leaderboards)

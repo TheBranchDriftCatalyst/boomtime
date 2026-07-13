@@ -7,6 +7,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
 )
 
 // RemoteWriteConfig configures forwarding heartbeats to another Wakatime server.
@@ -21,6 +23,13 @@ type Config struct {
 	// (see cmd/boomtime/main.go and the ldflags used by the Dockerfile /
 	// Taskfile). Never loaded from the env — the CLI sets it after Load().
 	Version string
+
+	// Branch, Commit, BuildTime are stamped into the binary at build time
+	// alongside Version. Empty when unset (e.g. bare `go run`). Surfaced by
+	// the public /healthz endpoint.
+	Branch    string
+	Commit    string
+	BuildTime string
 
 	Port               int
 	APIPrefix          string
@@ -53,9 +62,16 @@ type Config struct {
 	// WakatimeAPIKey is the server-configured key used to import history from
 	// wakatime.com when the request body omits apiToken. Sourced from
 	// WAKATIME_API_KEY, falling back to BOOM_REMOTE_WRITE_TOKEN. Never exposed.
-  // TODO: Change this so its gone entirely, this needs to come form the user, and 
+  // TODO: Change this so its gone entirely, this needs to come form the user, and
   // probably be stored encrypted and secure per user
 	WakatimeAPIKey string
+
+	// Grade holds the stats-card-with-grade calibration (medians + weights). Env
+	// vars BOOM_GRADE_* override individual fields on top of
+	// stats.DefaultGradeConfig — see loadGradeConfig below. cmd/boomtime applies
+	// this to stats.DefaultGradeConfig at boot so downstream renderers picking
+	// stats.Grade() get the tuned config transparently.
+	Grade stats.GradeConfig
 }
 
 func getEnv(key, def string) string {
@@ -72,6 +88,37 @@ func getEnvInt(key string, def int) int {
 		}
 	}
 	return def
+}
+
+func getEnvFloat(key string, def float64) float64 {
+	if v, ok := os.LookupEnv(key); ok {
+		if n, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil {
+			return n
+		}
+	}
+	return def
+}
+
+// loadGradeConfig starts from stats.DefaultGradeConfig and applies any
+// BOOM_GRADE_* overrides. Unset vars keep the shipped calibration; invalid
+// values are ignored (getEnvFloat / getEnvInt fall back on parse error).
+func loadGradeConfig() stats.GradeConfig {
+	d := stats.DefaultGradeConfig
+	return stats.GradeConfig{
+		StreakMedian:    getEnvFloat("BOOM_GRADE_STREAK_MEDIAN", d.StreakMedian),
+		StreakWeight:    getEnvFloat("BOOM_GRADE_STREAK_WEIGHT", d.StreakWeight),
+		ActiveMedian:    getEnvFloat("BOOM_GRADE_ACTIVE_MEDIAN", d.ActiveMedian),
+		ActiveWeight:    getEnvFloat("BOOM_GRADE_ACTIVE_WEIGHT", d.ActiveWeight),
+		LanguagesMedian: getEnvFloat("BOOM_GRADE_LANGUAGES_MEDIAN", d.LanguagesMedian),
+		LanguagesWeight: getEnvFloat("BOOM_GRADE_LANGUAGES_WEIGHT", d.LanguagesWeight),
+		ProjectsMedian:  getEnvFloat("BOOM_GRADE_PROJECTS_MEDIAN", d.ProjectsMedian),
+		ProjectsWeight:  getEnvFloat("BOOM_GRADE_PROJECTS_WEIGHT", d.ProjectsWeight),
+		DailyAvgMedian:  getEnvFloat("BOOM_GRADE_DAILY_AVG_MEDIAN", d.DailyAvgMedian),
+		DailyAvgWeight:  getEnvFloat("BOOM_GRADE_DAILY_AVG_WEIGHT", d.DailyAvgWeight),
+		HoursMedian:     getEnvFloat("BOOM_GRADE_HOURS_MEDIAN", d.HoursMedian),
+		HoursWeight:     getEnvFloat("BOOM_GRADE_HOURS_WEIGHT", d.HoursWeight),
+		MinRangeDays:    getEnvInt("BOOM_GRADE_MIN_RANGE_DAYS", d.MinRangeDays),
+	}
 }
 
 func getEnvBool(key string, def bool) bool {
@@ -134,6 +181,8 @@ func Load() *Config {
 	if c.WakatimeAPIKey == "" {
 		c.WakatimeAPIKey = rwToken
 	}
+
+	c.Grade = loadGradeConfig()
 
 	return c
 }
