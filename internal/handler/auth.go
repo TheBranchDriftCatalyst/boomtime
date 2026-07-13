@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -80,18 +81,15 @@ func (h *Handler) Register(c *echo.Context) error {
 	}
 	ctx := c.Request().Context()
 
-	hash, salt, err := auth.HashPassword(creds.Password)
-	if err != nil {
-		return respondErr(c, apierr.RegisterError())
-	}
-	created, err := h.DB.InsertUser(ctx, db.StoredUser{
-		Username: creds.Username, HashedPassword: hash, SaltUsed: salt,
-	})
-	if err != nil {
-		return h.internalErr(c, "user insert failed", err)
-	}
-	if !created {
-		return respondErr(c, apierr.UsernameExists(creds.Username))
+	if err := auth.CreateUser(ctx, h.DB, creds.Username, creds.Password); err != nil {
+		if errors.Is(err, auth.ErrUserExists) {
+			return respondErr(c, apierr.UsernameExists(creds.Username))
+		}
+		if errors.Is(err, auth.ErrInvalidCredentials) {
+			// unreachable via CreateUser; kept for symmetry with Login flow.
+			return respondErr(c, apierr.InvalidCredentials())
+		}
+		return h.internalErr(c, "user creation failed", err)
 	}
 
 	td := mkTokenData(creds.Username)
@@ -143,8 +141,8 @@ func (h *Handler) CreateAPIToken(c *echo.Context) error {
 	if aerr != nil {
 		return respondErr(c, aerr)
 	}
-	raw := auth.NewRawToken()
-	if err := h.DB.InsertAPIToken(c.Request().Context(), owner, auth.ToBase64(raw)); err != nil {
+	raw, err := auth.CreateAPIToken(c.Request().Context(), h.DB, owner)
+	if err != nil {
 		return h.internalErr(c, "api token insert failed", err)
 	}
 	return c.JSON(http.StatusOK, model.TokenResponse{APIToken: raw})
