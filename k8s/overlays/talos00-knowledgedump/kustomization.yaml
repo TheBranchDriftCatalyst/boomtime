@@ -11,10 +11,13 @@ resources:
   - external-secret.yaml
   - ingressroute.yaml
 
-# Temporary while the Argo Application tracks the `gakatime` branch — the
-# docker-publish workflow only tags `:latest` on default-branch pushes.
-# Flip back to `:latest` after gakatime → master merge, or let the
-# ImageUpdater CRD (gaka-xwt) manage it.
+# The Argo Application tracks the `gakatime` branch. This kustomize `newTag`
+# is a starting hint — the live authority is the ImageUpdater CRD at
+# talos-homelab:infrastructure/base/argocd/image-updater/boomtime-image-updater.yaml,
+# which rewrites spec.source.kustomize.images on the Argo Application whenever
+# ghcr publishes a new tag matching its allowTags regex
+# (latest|master|gakatime|sha-<7c>). Flip `newTag` to `latest` after the
+# gakatime → master merge.
 images:
   - name: ghcr.io/thebranchdriftcatalyst/hakatime
-    newTag: sha-0735fbe
+    newTag: gakatime
