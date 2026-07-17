@@ -2,6 +2,23 @@
 
 All notable changes to boomtime are documented here. This file is generated
 by [git-cliff](https://git-cliff.org) from conventional-commit history.
+## [0.5.4] - 2026-07-17
+
+### Documentation
+
+- **ai:** Reconcile_wakatime_schema_drift prompt (drift JSON -> full capture + chart)
+
+### Features
+
+- **branding:** Boomtime.svg as favicon + app icon + brand chip
+- **tokens:** Move API token management from header to Settings tab
+- **wellness:** Apple Watch health overlay on WakaTime domain
+- **companion:** IOS + watchOS BoomtimeWatch companion app
+
+### Refactoring
+
+- **db:** Case-insensitive aggregation across all axes
+
 ## [0.5.3] - 2026-07-13
 
 ### Bug Fixes
