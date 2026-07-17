@@ -59,10 +59,17 @@ export function Wellness() {
   return (
     <div className="flex flex-col gap-6">
       <PageToolbar title="Wellness">
-        <DateRangePicker />
+        <DateRangePicker
+          numDays={tr.numDays}
+          onPreset={tr.setDaysFromToday}
+          onRange={tr.setRange}
+        />
       </PageToolbar>
 
-      <QueryGate query={activityQ}>
+      <QueryGate
+        query={activityQ}
+        errorMessage="Failed to load health data."
+      >
         {(data) => {
           if (!data.hasData) return <EmptyState />;
 
