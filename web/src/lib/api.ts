@@ -33,6 +33,8 @@ import type {
   LeaderboardEntry,
   LeaderboardsPayload,
   AIActivityPayload,
+  HealthActivityPayload,
+  WorkoutListPayload,
   MomentumPayload,
   ProjectListPayload,
   ProjectStatistics,
@@ -305,6 +307,19 @@ export const api = {
   // tokens, AI vs human line changes, distinct sessions, latest plan).
   getAIActivity: (params: RangeParams) =>
     request<AIActivityPayload>("/api/v1/users/current/stats/ai", { params }),
+
+  // Apple Watch / HealthKit per-day workout + sample aggregates. Powers the
+  // Wellness card on Overview and the /wellness route. hasData=false when the
+  // range has no health data so the card skips render silently.
+  getHealthActivity: (params: RangeParams) =>
+    request<HealthActivityPayload>("/api/v1/users/current/stats/health", {
+      params,
+    }),
+
+  // Per-workout event list + per-label aggregate breakdown. Powers the
+  // Wellness page's events + by-label sections.
+  getWorkoutList: (params: RangeParams) =>
+    request<WorkoutListPayload>("/api/v1/users/current/workouts", { params }),
 
   // --- Projects --------------------------------------------------------------
 

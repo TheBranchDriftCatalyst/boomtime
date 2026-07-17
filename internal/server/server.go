@@ -82,6 +82,14 @@ func registerHeartbeatRoutes(e *echo.Echo, h *handler.Handler) {
 	e.POST("/api/v1/users/current/heartbeats", h.Heartbeat)
 	e.POST("/api/v1/users/current/heartbeats.bulk", h.HeartbeatBulk)
 
+	// HealthKit / Apple Watch ingest (extensions/boomtime-watch/).
+	// Workouts flow through the heartbeats table (ty='workout') so existing
+	// time-spent aggregations pick them up; raw samples land in health_samples.
+	e.POST("/api/v1/users/current/workouts", h.Workouts)
+	e.POST("/api/v1/users/current/workouts.bulk", h.WorkoutsBulk)
+	e.POST("/api/v1/users/current/health_samples", h.HealthSamples)
+	e.POST("/api/v1/users/current/health_samples.bulk", h.HealthSamplesBulk)
+
 	// Heartbeats Explorer (read-only audit views)
 	e.GET("/api/v1/users/current/heartbeats/group", h.HeartbeatsGroup)
 	e.GET("/api/v1/users/current/heartbeats/latest", h.HeartbeatsLatest)
@@ -144,6 +152,12 @@ func registerStatsRoutes(e *echo.Echo, h *handler.Handler) {
 
 	// gaka-1l9: wakatime.com AI-assistance metrics (heartbeats.ai_*).
 	e.GET("/api/v1/users/current/stats/ai", h.AIActivity)
+
+	// HealthKit metrics feed (Wellness card + Wellness page).
+	e.GET("/api/v1/users/current/stats/health", h.HealthActivity)
+
+	// Per-workout event list + per-label breakdown (Wellness events breakdown).
+	e.GET("/api/v1/users/current/workouts", h.WorkoutList)
 
 	// Cross-project active files (shared lynchpins spanning multiple projects)
 	e.GET("/api/v1/users/current/files", h.ActiveFiles)

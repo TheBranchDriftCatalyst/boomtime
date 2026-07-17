@@ -39,6 +39,9 @@ const Import = lazy(() =>
 const Settings = lazy(() =>
   import("@/features/settings/Settings").then((m) => ({ default: m.Settings })),
 );
+const Wellness = lazy(() =>
+  import("@/features/wellness/Wellness").then((m) => ({ default: m.Wellness })),
+);
 
 function RootRedirect() {
   const { isLoggedIn, bootstrapping } = useAuth();
@@ -139,6 +142,14 @@ export function App() {
           element={
             <Suspense fallback={<PageFallback />}>
               <Settings />
+            </Suspense>
+          }
+        />
+        <Route
+          path="wellness"
+          element={
+            <Suspense fallback={<PageFallback />}>
+              <Wellness />
             </Suspense>
           }
         />

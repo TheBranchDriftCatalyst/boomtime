@@ -7,6 +7,7 @@ import { ChartCard } from "@/components/ChartCard";
 import { WidgetsPanel } from "@/features/widgets/WidgetsPanel";
 import { EmbedLinkButton } from "@/features/widgets/EmbedActions";
 import { AIAssistanceCard } from "@/features/overview/AIAssistanceCard";
+import { WellnessCard } from "@/features/overview/WellnessCard";
 import { ColumnChart } from "@/viz/charts/ColumnChart";
 import { HeatmapChart } from "@/viz/charts/HeatmapChart";
 import { PieChart } from "@/viz/charts/PieChart";
@@ -122,6 +123,14 @@ export function OverviewDashboard({
     queryFn: () =>
       api.getAIActivity({ start: tr.startISO, end: tr.endISO }),
   });
+  // Apple Watch / HealthKit metrics — hasData=false short-circuits the card
+  // when the user hasn't yet paired the companion app or the range predates
+  // ingest, so no wasted viz slot.
+  const healthActivityQuery = useQuery({
+    queryKey: qk.healthActivity(tr.startISO, tr.endISO),
+    queryFn: () =>
+      api.getHealthActivity({ start: tr.startISO, end: tr.endISO }),
+  });
 
   const stats = statsQuery.data;
 
@@ -227,6 +236,10 @@ export function OverviewDashboard({
               AI-tagged heartbeats (user is on a non-AI plugin, or range is
               pre-2026-07-03 when wakatime.com started emitting these). */}
           <AIAssistanceCard data={aiActivityQuery.data} />
+
+          {/* Apple Watch / HealthKit overlay — self-hides when the companion
+              app hasn't been paired or the range has no health data. */}
+          <WellnessCard data={healthActivityQuery.data} />
 
           {/* Category breakdown — first-class, near the top: "tracked time" is
               more than coding (browsing/meetings/etc). */}

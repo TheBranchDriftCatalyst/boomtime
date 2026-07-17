@@ -4,10 +4,11 @@ package model
 type EntityType string
 
 const (
-	FileType   EntityType = "file"
-	AppType    EntityType = "app"
-	DomainType EntityType = "domain"
-	URLType    EntityType = "url"
+	FileType    EntityType = "file"
+	AppType     EntityType = "app"
+	DomainType  EntityType = "domain"
+	URLType     EntityType = "url"
+	WorkoutType EntityType = "workout" // Apple Watch / HealthKit workouts
 )
 
 // HeartbeatPayload is the incoming/outgoing heartbeat JSON (Types.hs HeartbeatPayload,
@@ -41,6 +42,16 @@ type HeartbeatPayload struct {
 	AIPromptLength     *int64  `json:"ai_prompt_length,omitempty"`
 	AISession          *string `json:"ai_session,omitempty"`
 	AISubscriptionPlan *string `json:"ai_subscription_plan,omitempty"`
+	// Health metrics: populated when Type == "workout" (see internal/model/health.go).
+	// Set by the workouts ingest path (handler/workouts.go), not by editor plugins.
+	// Existing WakaTime heartbeats leave all five nil, so the rollup query's
+	// COALESCE(workout_duration_s, gap_seconds_bounded) preserves the old
+	// gap-inferred semantics for coding time.
+	WorkoutKind       *string  `json:"workout_kind,omitempty"`
+	WorkoutDurationS  *int64   `json:"workout_duration_s,omitempty"`
+	WorkoutKcal       *float64 `json:"workout_kcal,omitempty"`
+	WorkoutAvgHR      *int64   `json:"workout_avg_hr,omitempty"`
+	WorkoutDistanceM  *float64 `json:"workout_distance_m,omitempty"`
 }
 
 // HeartbeatID is the inner {"id": "..."} object.

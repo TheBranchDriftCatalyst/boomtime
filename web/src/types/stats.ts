@@ -48,6 +48,61 @@ export interface AIActivityPayload {
   hasData: boolean;
 }
 
+// Apple Watch / HealthKit metrics per day. Mirrors internal/model/health.go
+// HealthActivityDay verbatim — every counter is zero (not nil) when a field
+// wasn't recorded, so the FE can render a flat baseline without null-checks.
+export interface HealthActivityDay {
+  day: string; // YYYY-MM-DD
+  workouts: number;
+  workoutMinutes: number;
+  activeKcal: number;
+  steps: number;
+  avgHR: number;
+  restingHR: number;
+  sleepMinutes: number;
+  hrvMs: number;
+  mindfulMinutes: number;
+}
+
+export interface HealthActivityPayload {
+  hasData: boolean;
+  days: HealthActivityDay[];
+  // Range summary — `day` field is set to "range" server-side.
+  totals: HealthActivityDay;
+}
+
+// One workout event as recorded on the watch. Label carries the user's
+// annotated project bucket (e.g. "Morning Run"); Kind is the raw
+// HKWorkoutActivityType name so the UI can pick an icon regardless.
+export interface WorkoutEvent {
+  id: number;
+  kind: string;
+  label: string;
+  start: number; // unix seconds
+  durationS: number;
+  kcal?: number;
+  avgHR?: number;
+  distanceM?: number;
+  sourceUUID: string;
+}
+
+// Per-label aggregate over the range — powers the "breakdown by label"
+// section on the Wellness page.
+export interface WorkoutLabelSummary {
+  label: string;
+  kind: string;
+  count: number;
+  totalMin: number;
+  totalKcal: number;
+  avgHR: number;
+}
+
+export interface WorkoutListPayload {
+  events: WorkoutEvent[];
+  byLabel: WorkoutLabelSummary[];
+  hasData: boolean;
+}
+
 export interface StatsPayload {
   startDate: string;
   endDate: string;

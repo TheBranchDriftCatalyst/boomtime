@@ -3,8 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Award,
   BookOpen,
-  Code2,
   Download,
+  HeartPulse,
   LayoutDashboard,
   ListTree,
   LogOut,
@@ -23,6 +23,7 @@ const NAV = [
   { name: "Projects", icon: BookOpen, to: "/app/projects", end: false },
   { name: "Leaderboards", icon: Award, to: "/app/leaderboards", end: false },
   { name: "Heartbeats", icon: ListTree, to: "/app/heartbeats", end: false },
+  { name: "Wellness", icon: HeartPulse, to: "/app/wellness", end: false },
   { name: "Import", icon: Download, to: "/app/import", end: false },
   // Logs + Changelog live inside Settings tabs now.
   { name: "Settings", icon: Settings2, to: "/app/settings", end: false },
@@ -122,9 +123,12 @@ export function Sidebar({
           collapsed ? "justify-center px-0" : "gap-2 px-6",
         )}
       >
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-          <Code2 className="h-5 w-5" />
-        </div>
+        <img
+          src="/boomtime.svg"
+          alt=""
+          aria-hidden="true"
+          className="h-8 w-8 shrink-0 rounded-lg"
+        />
         {!collapsed && (
           <span className="text-lg font-semibold">Boomtime</span>
         )}

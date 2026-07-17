@@ -25,6 +25,8 @@ const prefix = {
   sessions: ["sessions"] as const,
   momentum: ["momentum"] as const,
   aiActivity: ["ai-activity"] as const,
+  healthActivity: ["health-activity"] as const,
+  workoutList: ["workout-list"] as const,
   crossProjectFiles: ["cross-project-files"] as const,
   hbExploreGroup: ["hb-explore-group"] as const,
   hbExploreList: ["hb-explore-list"] as const,
@@ -91,6 +93,10 @@ export const qk = {
     ["momentum", start, end, space] as const,
   aiActivity: (start: string, end: string) =>
     ["ai-activity", start, end] as const,
+  healthActivity: (start: string, end: string) =>
+    ["health-activity", start, end] as const,
+  workoutList: (start: string, end: string) =>
+    ["workout-list", start, end] as const,
   leaderboards: (start: string, end: string) =>
     ["leaderboards", start, end] as const,
 

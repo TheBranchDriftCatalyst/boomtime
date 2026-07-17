@@ -62,6 +62,37 @@ func (h *Handler) AIActivity(c *echo.Context) error {
 	})
 }
 
+// HealthActivity: GET /api/v1/users/current/stats/health?start&end.
+// Per-day workout counts + HealthKit metric aggregates (HR, steps, kcal,
+// sleep, HRV, mindful). Returns {hasData: false} on an empty range so the FE
+// Wellness card can skip render. Not affected by curation or space scoping —
+// health metrics are cross-cutting personal signals, same as AI activity.
+func (h *Handler) HealthActivity(c *echo.Context) error {
+	s, aerr := h.dashboardScope(c, 30)
+	if aerr != nil {
+		return respondErr(c, aerr)
+	}
+	return h.cachedJSON(c, s.cacheKey("health-activity", s.t0, s.t1), func() (any, error) {
+		return h.DB.GetHealthActivity(s.ctx, s.owner, s.t0, s.t1)
+	})
+}
+
+// WorkoutList: GET /api/v1/users/current/workouts?start&end.
+// Per-workout event list + per-label breakdown for the Wellness page. Not a
+// /stats/ endpoint because it returns raw event rows (with timestamps and
+// heartbeat ids), not aggregates. Named WorkoutList (not Workouts) so it
+// doesn't collide with the POST ingest handler in handler/workouts.go.
+// 30s cached like the other dashboard feeds.
+func (h *Handler) WorkoutList(c *echo.Context) error {
+	s, aerr := h.dashboardScope(c, 30)
+	if aerr != nil {
+		return respondErr(c, aerr)
+	}
+	return h.cachedJSON(c, s.cacheKey("workouts", s.t0, s.t1), func() (any, error) {
+		return h.DB.GetWorkouts(s.ctx, s.owner, s.t0, s.t1)
+	})
+}
+
 // Momentum: GET /api/v1/users/current/stats/momentum?start&end&timeLimit&top=8.
 // Top-N projects' weekly time series. Excludes all hidden axis values.
 func (h *Handler) Momentum(c *echo.Context) error {

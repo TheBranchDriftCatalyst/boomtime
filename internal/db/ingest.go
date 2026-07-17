@@ -134,6 +134,10 @@ func insertHeartbeatsBatch(ctx context.Context, tx pgx.Tx, hbs []model.Heartbeat
 			hb.AIInputTokens, hb.AIOutputTokens, hb.AILineChanges,
 			hb.HumanLineChanges, hb.AIPromptLength, hb.AISession,
 			hb.AISubscriptionPlan,
+			// Health/workout fields ($26..$30). Populated by the workouts ingest
+			// path; NULL for regular editor heartbeats.
+			hb.WorkoutKind, hb.WorkoutDurationS, hb.WorkoutKcal,
+			hb.WorkoutAvgHR, hb.WorkoutDistanceM,
 		)
 	}
 	br := tx.SendBatch(ctx, &b)
@@ -206,13 +210,21 @@ func refreshRollup(ctx context.Context, q execer, sender string, since time.Time
 		`DELETE FROM hb_rollup_daily WHERE sender = $1 AND day >= $2::date`, sender, since); err != nil {
 		return err
 	}
+	// Workouts contribute their authoritative workout_duration_s, bypassing
+	// gap-inference entirely — a 45-minute run counts as 2700s regardless of
+	// whether HR samples were dense enough to close gaps. Regular editor
+	// heartbeats keep the gap-bounded time-spent semantics (gap<=900s).
 	_, err := q.Exec(ctx, `
 INSERT INTO hb_rollup_daily (sender, day, project, language, editor, platform, machine, category, plugin, branch, total_seconds)
 SELECT sender, time_sent::date,
     coalesce(project, 'Other'), coalesce(language, 'Other'), coalesce(editor, 'Other'),
     coalesce(platform, 'Other'), coalesce(machine, 'Other'),
     coalesce(category, 'Other'), coalesce(plugin, 'Other'), coalesce(branch, 'Other'),
-    sum(CASE WHEN gap_seconds <= 900 THEN gap_seconds ELSE 0 END)
+    sum(CASE
+        WHEN workout_duration_s IS NOT NULL THEN workout_duration_s
+        WHEN gap_seconds <= 900 THEN gap_seconds
+        ELSE 0
+    END)
 FROM heartbeats
 WHERE sender = $1 AND time_sent >= $2::date
 GROUP BY sender, time_sent::date, coalesce(project, 'Other'), coalesce(language, 'Other'),
