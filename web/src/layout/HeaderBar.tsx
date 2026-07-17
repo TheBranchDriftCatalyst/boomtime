@@ -1,6 +1,5 @@
 import { useNavigate } from "react-router";
 import { Download, KeyRound, LogOut, User } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,32 +12,17 @@ import { ThemeToggle } from "@/layout/ThemeToggle";
 
 interface HeaderBarProps {
   username: string;
-  onCreateToken: () => void;
-  onOpenTokens: () => void;
   onLogout: () => void;
 }
 
-/** Top header: theme toggle, new-token button, and the user menu. */
-export function HeaderBar({
-  username,
-  onCreateToken,
-  onOpenTokens,
-  onLogout,
-}: HeaderBarProps) {
+/** Top header: theme toggle and the user menu. Token management lives on
+ * /app/settings?tab=tokens — the header no longer has an API-token affordance. */
+export function HeaderBar({ username, onLogout }: HeaderBarProps) {
   const navigate = useNavigate();
 
   return (
     <header className="flex h-16 items-center justify-end gap-3 border-b bg-card px-6">
       <ThemeToggle />
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={onCreateToken}
-        title="Create a new API token"
-      >
-        <KeyRound className="h-4 w-4" />
-        New API token
-      </Button>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button className="flex items-center gap-2">
@@ -53,7 +37,9 @@ export function HeaderBar({
         <DropdownMenuContent align="end" className="w-48">
           <DropdownMenuLabel>{username}</DropdownMenuLabel>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={onOpenTokens}>
+          <DropdownMenuItem
+            onSelect={() => navigate("/app/settings?tab=tokens")}
+          >
             <KeyRound className="h-4 w-4" />
             Tokens
           </DropdownMenuItem>

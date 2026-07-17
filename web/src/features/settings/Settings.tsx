@@ -7,11 +7,14 @@ import { WidgetLinksCard } from "@/features/widgets/WidgetLinksCard";
 import { Changelog } from "@/features/changelog/Changelog";
 import { Logs } from "@/features/logs/Logs";
 import { PluginSetup } from "@/features/settings/PluginSetup";
+import { TokensTab } from "@/features/tokens/TokensTab";
 
 // Plugin Setup goes first — highest-value first-run info (how to actually
-// stream heartbeats here). Existing tabs follow in their original order.
+// stream heartbeats here). API tokens sits adjacent because Plugin Setup
+// explains "how to send data" and Tokens explains "which credential to use".
 const TABS = [
   { id: "plugin", label: "Plugin setup", render: () => <PluginSetup /> },
+  { id: "tokens", label: "API tokens", render: () => <TokensTab /> },
   { id: "curation", label: "Hidden data", render: () => <CurationTab /> },
   { id: "remappings", label: "Remappings", render: () => <RemappingsTab /> },
   { id: "widgets", label: "Widgets", render: () => <WidgetLinksCard /> },
