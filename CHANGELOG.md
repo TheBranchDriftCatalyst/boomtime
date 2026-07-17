@@ -2,6 +2,16 @@
 
 All notable changes to boomtime are documented here. This file is generated
 by [git-cliff](https://git-cliff.org) from conventional-commit history.
+## [0.5.5] - 2026-07-17
+
+### Bug Fixes
+
+- **wellness:** Pass required props to DateRangePicker + QueryGate
+
+### Documentation
+
+- Capture deferred followups from v0.5.4 for bd import
+
 ## [0.5.4] - 2026-07-17
 
 ### Documentation
