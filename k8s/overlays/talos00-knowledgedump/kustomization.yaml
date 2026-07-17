@@ -17,4 +17,4 @@ resources:
 # ImageUpdater CRD (gaka-xwt) manage it.
 images:
   - name: ghcr.io/thebranchdriftcatalyst/hakatime
-    newTag: gakatime
+    newTag: sha-0735fbe
