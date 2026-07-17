@@ -1,0 +1,6 @@
+[submodule "extensions/wakatime-cli"]
+	path = extensions/wakatime-cli
+	url = https://github.com/wakatime/wakatime-cli.git
+[submodule "extensions/vscode-wakatime"]
+	path = extensions/vscode-wakatime
+	url = https://github.com/wakatime/vscode-wakatime.git

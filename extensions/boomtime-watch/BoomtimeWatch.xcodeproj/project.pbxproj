@@ -1,0 +1,800 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		AA0000010000000000000001 /* BoomtimeWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000001 /* BoomtimeWatchApp.swift */; };
+		AA0000010000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000002 /* ContentView.swift */; };
+		AA0000010000000000000003 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000003 /* PairingView.swift */; };
+		AA0000010000000000000004 /* SyncStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000004 /* SyncStatusView.swift */; };
+		AA0000010000000000000005 /* Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000005 /* Config.swift */; };
+		AA0000010000000000000006 /* Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000006 /* Keychain.swift */; };
+		AA0000010000000000000007 /* HealthKitReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000007 /* HealthKitReader.swift */; };
+		AA0000010000000000000008 /* PayloadBuilder.swift in Sources (iOS) */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000008 /* PayloadBuilder.swift */; };
+		AA0000010000000000000009 /* Uploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000009 /* Uploader.swift */; };
+		AA000001000000000000000A /* SyncCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002000000000000000A /* SyncCoordinator.swift */; };
+		AA000001000000000000000B /* WorkoutPayload.swift in Sources (iOS) */ = {isa = PBXBuildFile; fileRef = AA000002000000000000000B /* WorkoutPayload.swift */; };
+		AA000001000000000000000C /* HealthSamplePayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002000000000000000C /* HealthSamplePayload.swift */; };
+		AA000001000000000000000D /* PayloadBuilderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000002000000000000000D /* PayloadBuilderTests.swift */; };
+		AA000001000000000000000E /* SyncKind.swift in Sources (iOS) */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000012 /* SyncKind.swift */; };
+		AA000001000000000000000F /* WorkoutLabelMap.swift in Sources (iOS) */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000013 /* WorkoutLabelMap.swift */; };
+		AA0000010000000000000010 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000014 /* SettingsView.swift */; };
+		AA0000010000000000000011 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000015 /* AboutView.swift */; };
+		AA0000010000000000000012 /* WatchConnector.swift in Sources (iOS) */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000016 /* WatchConnector.swift (iOS) */; };
+		AA0000010000000000000020 /* BoomtimeWatchApp.swift in Sources (watchOS) */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000020 /* BoomtimeWatchApp.swift (watchOS) */; };
+		AA0000010000000000000021 /* StartWorkoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000021 /* StartWorkoutView.swift */; };
+		AA0000010000000000000022 /* LiveWorkoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000022 /* LiveWorkoutView.swift */; };
+		AA0000010000000000000023 /* SyncNowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000023 /* SyncNowView.swift */; };
+		AA0000010000000000000024 /* WorkoutController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000024 /* WorkoutController.swift */; };
+		AA0000010000000000000025 /* WatchConnector.swift in Sources (watchOS) */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000025 /* WatchConnector.swift (watchOS) */; };
+		AA0000010000000000000026 /* SyncKind.swift in Sources (watchOS) */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000012 /* SyncKind.swift */; };
+		AA0000010000000000000027 /* WorkoutLabelMap.swift in Sources (watchOS) */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000013 /* WorkoutLabelMap.swift */; };
+		AA0000010000000000000028 /* WorkoutPayload.swift in Sources (watchOS) */ = {isa = PBXBuildFile; fileRef = AA000002000000000000000B /* WorkoutPayload.swift */; };
+		AA0000010000000000000029 /* PayloadBuilder.swift in Sources (watchOS) */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000008 /* PayloadBuilder.swift */; };
+		AA000001000000000000002A /* WatchSettings.swift in Sources (watchOS) */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000028 /* WatchSettings.swift */; };
+		AA000001000000000000002B /* WatchSettingsView.swift in Sources (watchOS) */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000029 /* WatchSettingsView.swift */; };
+		AA000001000000000000002C /* AnnotatedWorkout.swift in Sources (iOS) */ = {isa = PBXBuildFile; fileRef = AA000002000000000000002A /* AnnotatedWorkout.swift */; };
+		AA000001000000000000002D /* AnnotatedWorkout.swift in Sources (watchOS) */ = {isa = PBXBuildFile; fileRef = AA000002000000000000002A /* AnnotatedWorkout.swift */; };
+		AA000001000000000000002E /* HomeConfig.swift in Sources (iOS) */ = {isa = PBXBuildFile; fileRef = AA000002000000000000002B /* HomeConfig.swift */; };
+		AA000001000000000000002F /* HomeConfig.swift in Sources (watchOS) */ = {isa = PBXBuildFile; fileRef = AA000002000000000000002B /* HomeConfig.swift */; };
+		AA0000010000000000000030 /* BoomtimeWatch Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = AA0000050000000000000003 /* BoomtimeWatch Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		AA0000010000000000000031 /* HomePresenceMonitor.swift in Sources (iOS) */ = {isa = PBXBuildFile; fileRef = AA000002000000000000002C /* HomePresenceMonitor.swift */; };
+		AA0000010000000000000032 /* Assets.xcassets in Resources (iOS) */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000032 /* Assets.xcassets (iOS) */; };
+		AA0000010000000000000033 /* Assets.xcassets in Resources (watchOS) */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000033 /* Assets.xcassets (watchOS) */; };
+		AA0000010000000000000034 /* WiFiPresenceProvider.swift in Sources (iOS) */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000034 /* WiFiPresenceProvider.swift */; };
+		AA0000010000000000000035 /* SimulatorOverrides.swift in Sources (iOS) */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000035 /* SimulatorOverrides.swift */; };
+		AA0000010000000000000036 /* HomePresenceMonitorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000036 /* HomePresenceMonitorTests.swift */; };
+		AA0000010000000000000037 /* AnnotatedWorkoutCodableTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000037 /* AnnotatedWorkoutCodableTests.swift */; };
+		AA0000010000000000000038 /* WatchConfigContextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000038 /* WatchConfigContextTests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		AA0000030000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AA0000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AA0000040000000000000001;
+			remoteInfo = BoomtimeWatch;
+		};
+		AA0000030000000000000002 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AA0000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AA0000040000000000000003;
+			remoteInfo = "BoomtimeWatch Watch App";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		AA00000A0000000000000004 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				AA0000010000000000000030 /* BoomtimeWatch Watch App.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		AA0000020000000000000001 /* BoomtimeWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoomtimeWatchApp.swift; sourceTree = "<group>"; };
+		AA0000020000000000000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		AA0000020000000000000003 /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
+		AA0000020000000000000004 /* SyncStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStatusView.swift; sourceTree = "<group>"; };
+		AA0000020000000000000005 /* Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Config.swift; sourceTree = "<group>"; };
+		AA0000020000000000000006 /* Keychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Keychain.swift; sourceTree = "<group>"; };
+		AA0000020000000000000007 /* HealthKitReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitReader.swift; sourceTree = "<group>"; };
+		AA0000020000000000000008 /* PayloadBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PayloadBuilder.swift; sourceTree = "<group>"; };
+		AA0000020000000000000009 /* Uploader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Uploader.swift; sourceTree = "<group>"; };
+		AA000002000000000000000A /* SyncCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncCoordinator.swift; sourceTree = "<group>"; };
+		AA000002000000000000000B /* WorkoutPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutPayload.swift; sourceTree = "<group>"; };
+		AA000002000000000000000C /* HealthSamplePayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthSamplePayload.swift; sourceTree = "<group>"; };
+		AA000002000000000000000D /* PayloadBuilderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PayloadBuilderTests.swift; sourceTree = "<group>"; };
+		AA0000020000000000000010 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		AA0000020000000000000011 /* BoomtimeWatch.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = BoomtimeWatch.entitlements; sourceTree = "<group>"; };
+		AA0000020000000000000012 /* SyncKind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncKind.swift; sourceTree = "<group>"; };
+		AA0000020000000000000013 /* WorkoutLabelMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutLabelMap.swift; sourceTree = "<group>"; };
+		AA0000020000000000000014 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		AA0000020000000000000015 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
+		AA0000020000000000000016 /* WatchConnector.swift (iOS) */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchConnector.swift; sourceTree = "<group>"; };
+		AA0000020000000000000020 /* BoomtimeWatchApp.swift (watchOS) */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoomtimeWatchApp.swift; sourceTree = "<group>"; };
+		AA0000020000000000000021 /* StartWorkoutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartWorkoutView.swift; sourceTree = "<group>"; };
+		AA0000020000000000000022 /* LiveWorkoutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveWorkoutView.swift; sourceTree = "<group>"; };
+		AA0000020000000000000023 /* SyncNowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncNowView.swift; sourceTree = "<group>"; };
+		AA0000020000000000000024 /* WorkoutController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutController.swift; sourceTree = "<group>"; };
+		AA0000020000000000000025 /* WatchConnector.swift (watchOS) */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchConnector.swift; sourceTree = "<group>"; };
+		AA0000020000000000000026 /* Info.plist (watchOS) */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		AA0000020000000000000027 /* BoomtimeWatchWatch.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = BoomtimeWatchWatch.entitlements; sourceTree = "<group>"; };
+		AA0000020000000000000028 /* WatchSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSettings.swift; sourceTree = "<group>"; };
+		AA0000020000000000000029 /* WatchSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSettingsView.swift; sourceTree = "<group>"; };
+		AA000002000000000000002A /* AnnotatedWorkout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnnotatedWorkout.swift; sourceTree = "<group>"; };
+		AA000002000000000000002B /* HomeConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeConfig.swift; sourceTree = "<group>"; };
+		AA000002000000000000002C /* HomePresenceMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomePresenceMonitor.swift; sourceTree = "<group>"; };
+		AA0000020000000000000032 /* Assets.xcassets (iOS) */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		AA0000020000000000000033 /* Assets.xcassets (watchOS) */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		AA0000020000000000000034 /* WiFiPresenceProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WiFiPresenceProvider.swift; sourceTree = "<group>"; };
+		AA0000020000000000000035 /* SimulatorOverrides.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatorOverrides.swift; sourceTree = "<group>"; };
+		AA0000020000000000000036 /* HomePresenceMonitorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomePresenceMonitorTests.swift; sourceTree = "<group>"; };
+		AA0000020000000000000037 /* AnnotatedWorkoutCodableTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnnotatedWorkoutCodableTests.swift; sourceTree = "<group>"; };
+		AA0000020000000000000038 /* WatchConfigContextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchConfigContextTests.swift; sourceTree = "<group>"; };
+		AA0000050000000000000001 /* BoomtimeWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BoomtimeWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0000050000000000000002 /* BoomtimeWatchTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BoomtimeWatchTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0000050000000000000003 /* BoomtimeWatch Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "BoomtimeWatch Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		AA0000060000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA0000060000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA0000060000000000000003 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		AA0000070000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				AA0000070000000000000002 /* BoomtimeWatch */,
+				AA0000070000000000000009 /* BoomtimeWatchWatch */,
+				AA0000070000000000000006 /* BoomtimeWatchTests */,
+				AA0000070000000000000007 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		AA0000070000000000000002 /* BoomtimeWatch */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000020000000000000001 /* BoomtimeWatchApp.swift */,
+				AA0000070000000000000003 /* Views */,
+				AA0000070000000000000004 /* Services */,
+				AA0000070000000000000005 /* Models */,
+				AA0000070000000000000008 /* Shared */,
+				AA0000020000000000000032 /* Assets.xcassets (iOS) */,
+				AA0000020000000000000010 /* Info.plist */,
+				AA0000020000000000000011 /* BoomtimeWatch.entitlements */,
+			);
+			path = BoomtimeWatch;
+			sourceTree = "<group>";
+		};
+		AA0000070000000000000003 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000020000000000000002 /* ContentView.swift */,
+				AA0000020000000000000003 /* PairingView.swift */,
+				AA0000020000000000000004 /* SyncStatusView.swift */,
+				AA0000020000000000000014 /* SettingsView.swift */,
+				AA0000020000000000000015 /* AboutView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		AA0000070000000000000004 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000020000000000000005 /* Config.swift */,
+				AA0000020000000000000006 /* Keychain.swift */,
+				AA0000020000000000000007 /* HealthKitReader.swift */,
+				AA0000020000000000000008 /* PayloadBuilder.swift */,
+				AA0000020000000000000009 /* Uploader.swift */,
+				AA000002000000000000000A /* SyncCoordinator.swift */,
+				AA0000020000000000000016 /* WatchConnector.swift (iOS) */,
+				AA000002000000000000002C /* HomePresenceMonitor.swift */,
+				AA0000020000000000000034 /* WiFiPresenceProvider.swift */,
+				AA0000020000000000000035 /* SimulatorOverrides.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		AA0000070000000000000005 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				AA000002000000000000000B /* WorkoutPayload.swift */,
+				AA000002000000000000000C /* HealthSamplePayload.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		AA0000070000000000000008 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000020000000000000012 /* SyncKind.swift */,
+				AA0000020000000000000013 /* WorkoutLabelMap.swift */,
+				AA000002000000000000002A /* AnnotatedWorkout.swift */,
+				AA000002000000000000002B /* HomeConfig.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		AA0000070000000000000006 /* BoomtimeWatchTests */ = {
+			isa = PBXGroup;
+			children = (
+				AA000002000000000000000D /* PayloadBuilderTests.swift */,
+				AA0000020000000000000036 /* HomePresenceMonitorTests.swift */,
+				AA0000020000000000000037 /* AnnotatedWorkoutCodableTests.swift */,
+				AA0000020000000000000038 /* WatchConfigContextTests.swift */,
+			);
+			path = BoomtimeWatchTests;
+			sourceTree = "<group>";
+		};
+		AA0000070000000000000009 /* BoomtimeWatchWatch */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000020000000000000020 /* BoomtimeWatchApp.swift (watchOS) */,
+				AA000007000000000000000A /* Views */,
+				AA000007000000000000000B /* Services */,
+				AA0000020000000000000033 /* Assets.xcassets (watchOS) */,
+				AA0000020000000000000026 /* Info.plist (watchOS) */,
+				AA0000020000000000000027 /* BoomtimeWatchWatch.entitlements */,
+			);
+			path = BoomtimeWatchWatch;
+			sourceTree = "<group>";
+		};
+		AA000007000000000000000A /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000020000000000000021 /* StartWorkoutView.swift */,
+				AA0000020000000000000022 /* LiveWorkoutView.swift */,
+				AA0000020000000000000023 /* SyncNowView.swift */,
+				AA0000020000000000000029 /* WatchSettingsView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		AA000007000000000000000B /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000020000000000000024 /* WorkoutController.swift */,
+				AA0000020000000000000025 /* WatchConnector.swift (watchOS) */,
+				AA0000020000000000000028 /* WatchSettings.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		AA0000070000000000000007 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000050000000000000001 /* BoomtimeWatch.app */,
+				AA0000050000000000000002 /* BoomtimeWatchTests.xctest */,
+				AA0000050000000000000003 /* BoomtimeWatch Watch App.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		AA0000040000000000000001 /* BoomtimeWatch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA0000080000000000000001 /* Build configuration list for PBXNativeTarget "BoomtimeWatch" */;
+			buildPhases = (
+				AA0000090000000000000001 /* Sources */,
+				AA0000060000000000000001 /* Frameworks */,
+				AA00000A0000000000000001 /* Resources */,
+				AA00000A0000000000000004 /* Embed Watch Content */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AA00000B0000000000000002 /* PBXTargetDependency */,
+			);
+			name = BoomtimeWatch;
+			productName = BoomtimeWatch;
+			productReference = AA0000050000000000000001 /* BoomtimeWatch.app */;
+			productType = "com.apple.product-type.application";
+		};
+		AA0000040000000000000002 /* BoomtimeWatchTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA0000080000000000000002 /* Build configuration list for PBXNativeTarget "BoomtimeWatchTests" */;
+			buildPhases = (
+				AA0000090000000000000002 /* Sources */,
+				AA0000060000000000000002 /* Frameworks */,
+				AA00000A0000000000000002 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AA00000B0000000000000001 /* PBXTargetDependency */,
+			);
+			name = BoomtimeWatchTests;
+			productName = BoomtimeWatchTests;
+			productReference = AA0000050000000000000002 /* BoomtimeWatchTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		AA0000040000000000000003 /* BoomtimeWatch Watch App */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA0000080000000000000004 /* Build configuration list for PBXNativeTarget "BoomtimeWatch Watch App" */;
+			buildPhases = (
+				AA0000090000000000000003 /* Sources */,
+				AA0000060000000000000003 /* Frameworks */,
+				AA00000A0000000000000003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "BoomtimeWatch Watch App";
+			productName = "BoomtimeWatch Watch App";
+			productReference = AA0000050000000000000003 /* BoomtimeWatch Watch App.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		AA0000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					AA0000040000000000000001 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+					AA0000040000000000000002 = {
+						CreatedOnToolsVersion = 15.0;
+						TestTargetID = AA0000040000000000000001;
+					};
+					AA0000040000000000000003 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = AA0000080000000000000003 /* Build configuration list for PBXProject "BoomtimeWatch" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = AA0000070000000000000001;
+			productRefGroup = AA0000070000000000000007 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				AA0000040000000000000001 /* BoomtimeWatch */,
+				AA0000040000000000000003 /* BoomtimeWatch Watch App */,
+				AA0000040000000000000002 /* BoomtimeWatchTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AA00000A0000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA0000010000000000000032 /* Assets.xcassets in Resources (iOS) */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA00000A0000000000000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA00000A0000000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA0000010000000000000033 /* Assets.xcassets in Resources (watchOS) */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		AA0000090000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA0000010000000000000001 /* BoomtimeWatchApp.swift in Sources */,
+				AA0000010000000000000002 /* ContentView.swift in Sources */,
+				AA0000010000000000000003 /* PairingView.swift in Sources */,
+				AA0000010000000000000004 /* SyncStatusView.swift in Sources */,
+				AA0000010000000000000010 /* SettingsView.swift in Sources */,
+				AA0000010000000000000011 /* AboutView.swift in Sources */,
+				AA0000010000000000000005 /* Config.swift in Sources */,
+				AA0000010000000000000006 /* Keychain.swift in Sources */,
+				AA0000010000000000000007 /* HealthKitReader.swift in Sources */,
+				AA0000010000000000000008 /* PayloadBuilder.swift in Sources (iOS) */,
+				AA0000010000000000000009 /* Uploader.swift in Sources */,
+				AA000001000000000000000A /* SyncCoordinator.swift in Sources */,
+				AA0000010000000000000012 /* WatchConnector.swift in Sources (iOS) */,
+				AA000001000000000000000B /* WorkoutPayload.swift in Sources (iOS) */,
+				AA000001000000000000000C /* HealthSamplePayload.swift in Sources */,
+				AA000001000000000000000E /* SyncKind.swift in Sources (iOS) */,
+				AA000001000000000000000F /* WorkoutLabelMap.swift in Sources (iOS) */,
+				AA000001000000000000002C /* AnnotatedWorkout.swift in Sources (iOS) */,
+				AA000001000000000000002E /* HomeConfig.swift in Sources (iOS) */,
+				AA0000010000000000000031 /* HomePresenceMonitor.swift in Sources (iOS) */,
+				AA0000010000000000000034 /* WiFiPresenceProvider.swift in Sources (iOS) */,
+				AA0000010000000000000035 /* SimulatorOverrides.swift in Sources (iOS) */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA0000090000000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA000001000000000000000D /* PayloadBuilderTests.swift in Sources */,
+				AA0000010000000000000036 /* HomePresenceMonitorTests.swift in Sources */,
+				AA0000010000000000000037 /* AnnotatedWorkoutCodableTests.swift in Sources */,
+				AA0000010000000000000038 /* WatchConfigContextTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA0000090000000000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA0000010000000000000020 /* BoomtimeWatchApp.swift in Sources (watchOS) */,
+				AA0000010000000000000021 /* StartWorkoutView.swift in Sources */,
+				AA0000010000000000000022 /* LiveWorkoutView.swift in Sources */,
+				AA0000010000000000000023 /* SyncNowView.swift in Sources */,
+				AA0000010000000000000024 /* WorkoutController.swift in Sources */,
+				AA0000010000000000000025 /* WatchConnector.swift in Sources (watchOS) */,
+				AA0000010000000000000026 /* SyncKind.swift in Sources (watchOS) */,
+				AA0000010000000000000027 /* WorkoutLabelMap.swift in Sources (watchOS) */,
+				AA0000010000000000000028 /* WorkoutPayload.swift in Sources (watchOS) */,
+				AA0000010000000000000029 /* PayloadBuilder.swift in Sources (watchOS) */,
+				AA000001000000000000002A /* WatchSettings.swift in Sources (watchOS) */,
+				AA000001000000000000002B /* WatchSettingsView.swift in Sources (watchOS) */,
+				AA000001000000000000002D /* AnnotatedWorkout.swift in Sources (watchOS) */,
+				AA000001000000000000002F /* HomeConfig.swift in Sources (watchOS) */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		AA00000B0000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AA0000040000000000000001 /* BoomtimeWatch */;
+			targetProxy = AA0000030000000000000001 /* PBXContainerItemProxy */;
+		};
+		AA00000B0000000000000002 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AA0000040000000000000003 /* BoomtimeWatch Watch App */;
+			targetProxy = AA0000030000000000000002 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		AA00000C0000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		AA00000C0000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		AA00000C0000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = BoomtimeWatch/BoomtimeWatch.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = BoomtimeWatch/Info.plist;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.boomtime.watch;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		AA00000C0000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = BoomtimeWatch/BoomtimeWatch.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = BoomtimeWatch/Info.plist;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.boomtime.watch;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		AA00000C0000000000000005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.boomtime.watch.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BoomtimeWatch.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/BoomtimeWatch";
+			};
+			name = Debug;
+		};
+		AA00000C0000000000000006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.boomtime.watch.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BoomtimeWatch.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/BoomtimeWatch";
+			};
+			name = Release;
+		};
+		AA00000C0000000000000007 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = BoomtimeWatchWatch/BoomtimeWatchWatch.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = BoomtimeWatchWatch/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Boomtime;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.boomtime.watch;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.boomtime.watch.watchkitapp;
+				PRODUCT_NAME = "BoomtimeWatch Watch App";
+				SDKROOT = watchos;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
+		AA00000C0000000000000008 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = BoomtimeWatchWatch/BoomtimeWatchWatch.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = BoomtimeWatchWatch/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Boomtime;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.boomtime.watch;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.boomtime.watch.watchkitapp;
+				PRODUCT_NAME = "BoomtimeWatch Watch App";
+				SDKROOT = watchos;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		AA0000080000000000000001 /* Build configuration list for PBXNativeTarget "BoomtimeWatch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA00000C0000000000000003 /* Debug */,
+				AA00000C0000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA0000080000000000000002 /* Build configuration list for PBXNativeTarget "BoomtimeWatchTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA00000C0000000000000005 /* Debug */,
+				AA00000C0000000000000006 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA0000080000000000000003 /* Build configuration list for PBXProject "BoomtimeWatch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA00000C0000000000000001 /* Debug */,
+				AA00000C0000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA0000080000000000000004 /* Build configuration list for PBXNativeTarget "BoomtimeWatch Watch App" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA00000C0000000000000007 /* Debug */,
+				AA00000C0000000000000008 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = AA0000000000000000000001 /* Project object */;
+}

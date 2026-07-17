@@ -150,6 +150,11 @@ tasks:
     cmds:
       - go run ./tools/gendata {{.CLI_ARGS}}
 
+  icons:
+    desc: 'Rebuild web favicon + iOS/watchOS App Icons from boomtime.svg'
+    cmds:
+      - scripts/rasterize-icon.sh {{.CLI_ARGS}}
+
   # ── Frontend ─────────────────────────────────────────────────────────────────
   web:install:
     desc: Install frontend dependencies
