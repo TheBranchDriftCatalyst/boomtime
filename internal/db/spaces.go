@@ -70,6 +70,11 @@ func (ms MemberSets) HasMemberOutside(available map[string]bool) bool {
 // a space id already resolved to the owner, or by GetSpace). It groups rules by
 // axis + match type, validating each axis against the ExploreColumn whitelist
 // (unknown axes are skipped defensively — creation already rejects them).
+//
+// Exact match values are lowercased at load so inclusionPredicate can compare
+// against `lower(col)` — a rule authored as "MyProject" also selects rows where
+// the raw column is "myproject" or "MYPROJECT". Regex patterns keep their
+// original form; the SQL side uses `~*` (case-insensitive) or ILIKE.
 func (d *DB) LoadMemberSets(ctx context.Context, spaceID int) (MemberSets, error) {
 	ms := MemberSets{byAxis: map[string]axisMembers{}}
 	rows, err := d.Pool.Query(ctx,
@@ -90,7 +95,7 @@ func (d *DB) LoadMemberSets(ctx context.Context, spaceID int) (MemberSets, error
 		if matchType == MatchRegex {
 			a.regex = append(a.regex, matchValue)
 		} else {
-			a.exact = append(a.exact, matchValue)
+			a.exact = append(a.exact, strings.ToLower(matchValue))
 		}
 		ms.byAxis[axis] = a
 	}
@@ -120,13 +125,34 @@ func inclusionPredicate(ms MemberSets, cols map[string]string, passCond string, 
 			continue
 		}
 		if len(a.exact) > 0 {
-			arms = append(arms, fmt.Sprintf("%s = ANY($%d)", col, nextArg))
+			// Case-insensitive equality: array already lowercased at load, so we
+			// only need to lower() the column side. The btree index on the raw
+			// column doesn't serve this, but the exact-arm is fast enough on the
+			// per-request scale.
+			arms = append(arms, fmt.Sprintf("lower(%s) = ANY($%d)", col, nextArg))
 			args = append(args, a.exact)
 			nextArg++
 		}
 		for _, pat := range a.regex {
 			op, bound := rewriteAnchoredRegex(pat)
-			arms = append(arms, fmt.Sprintf("%s %s $%d", col, op, nextArg))
+			// Switch to case-insensitive operators: ~*, ILIKE, or lower(col)= for
+			// exact anchored patterns. Space regex rules should be as forgiving as
+			// the aggregation grouping — one rule catches every case variant.
+			ciOp := op
+			switch op {
+			case "~":
+				ciOp = "~*"
+			case "LIKE":
+				ciOp = "ILIKE"
+			case "=":
+				// exact-match rewrite of ^lit$ — do lower(col) = lower($n) so a
+				// literal like "MyBranch" catches "mybranch" too.
+				arms = append(arms, fmt.Sprintf("lower(%s) = lower($%d)", col, nextArg))
+				args = append(args, bound)
+				nextArg++
+				continue
+			}
+			arms = append(arms, fmt.Sprintf("%s %s $%d", col, ciOp, nextArg))
 			args = append(args, bound)
 			nextArg++
 		}

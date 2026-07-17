@@ -56,16 +56,18 @@ func (d *DB) GetLeaderboards(ctx context.Context, start, end time.Time, requeste
 
 	// Requester-scoped rename: re-group by remapped project/language (only the
 	// requester's rows relabel; every other sender's project/language pass through).
-	if rs.HasAxis("project") || rs.HasAxis("language") {
-		ensureRequester()
-		reqCond := fmt.Sprintf("sender = $%d", requesterArg)
-		projExpr, langExpr := "project", "language"
-		projExpr, args, next = rs.remapExpr("project", "project", reqCond, next, args)
-		langExpr, args, next = rs.remapExpr("language", "language", reqCond, next, args)
-		query = fmt.Sprintf(`SELECT %s AS project, %s AS language, sender, CAST(SUM(total_seconds) AS int8) AS total_seconds
+	// The wrap always runs so pure case variants merge inside EACH sender's rows;
+	// MODE() per case-folded group picks a canonical display casing. Cross-sender
+	// merging is intentionally NOT case-folded — different users' casings stay
+	// distinct because sender is a grouping column.
+	ensureRequester()
+	reqCond := fmt.Sprintf("sender = $%d", requesterArg)
+	var projExpr, langExpr string
+	projExpr, args, next = rs.remapExpr("project", "project", reqCond, next, args)
+	langExpr, args, next = rs.remapExpr("language", "language", reqCond, next, args)
+	query = fmt.Sprintf(`SELECT %s AS project, %s AS language, sender, CAST(SUM(total_seconds) AS int8) AS total_seconds
 FROM ( %s ) base
-GROUP BY %s, %s, sender`, projExpr, langExpr, trimSQL(query), projExpr, langExpr)
-	}
+GROUP BY lower(%s), lower(%s), sender`, caseFoldPick(projExpr), caseFoldPick(langExpr), trimSQL(query), projExpr, langExpr)
 
 	out := []LeaderboardRow{}
 	err := d.aggQuery(ctx, query, args, func(rows pgx.Rows) error {

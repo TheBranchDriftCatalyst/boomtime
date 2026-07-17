@@ -19,6 +19,7 @@ package db
 
 import (
 	"context"
+	"strings"
 	"time"
 )
 
@@ -45,13 +46,19 @@ type EntitySummary struct {
 // the result hit the limit — the caller can prompt the user to filter or
 // raise the cap. Redacted heartbeats (entity = '') are excluded so a
 // re-redact operation never shows them as a phantom bucket.
+//
+// The list is case-folded: `src/Main.go` and `SRC/main.go` collapse into one
+// row whose count/first/last-seen sum across all case variants and whose
+// displayed value is picked via MODE() (most common raw casing). Consistent
+// with dashboard aggregation.
 func (d *DB) ListEntitiesByType(ctx context.Context, sender, ty string, limit int) ([]EntitySummary, bool, error) {
 	// Fetch one extra to detect truncation.
 	rows, err := d.Pool.Query(ctx, `
-		SELECT entity, count(*) AS n, min(time_sent), max(time_sent)
+		SELECT MODE() WITHIN GROUP (ORDER BY entity) AS entity,
+		       count(*) AS n, min(time_sent), max(time_sent)
 		FROM heartbeats
 		WHERE sender = $1 AND ty = $2 AND entity <> ''
-		GROUP BY entity
+		GROUP BY lower(entity)
 		ORDER BY n DESC, entity
 		LIMIT $3`, sender, ty, limit+1)
 	if err != nil {
@@ -82,14 +89,23 @@ func (d *DB) ListEntitiesByType(ctx context.Context, sender, ty string, limit in
 // counts toward project/language/machine totals — only the entity value is
 // scrubbed. The rollup (which doesn't store entity) is unaffected, so no
 // drift banner is needed after redact.
+//
+// Case-insensitive: passing "src/Main.go" also redacts rows stored as
+// "src/main.go" or "SRC/MAIN.GO" — consistent with the case-folded list view.
+// Values are lowercased Go-side so the SQL side is `lower(entity) = ANY($3)`
+// which lets the caller pass any case and the correct raw rows are redacted.
 func (d *DB) RedactEntities(ctx context.Context, sender, ty string, entities []string) (int64, error) {
 	if len(entities) == 0 {
 		return 0, nil
 	}
+	lowered := make([]string, len(entities))
+	for i, e := range entities {
+		lowered[i] = strings.ToLower(e)
+	}
 	tag, err := d.Pool.Exec(ctx, `
 		UPDATE heartbeats SET entity = ''
-		WHERE sender = $1 AND ty = $2 AND entity = ANY($3)`,
-		sender, ty, entities)
+		WHERE sender = $1 AND ty = $2 AND lower(entity) = ANY($3)`,
+		sender, ty, lowered)
 	if err != nil {
 		return 0, err
 	}

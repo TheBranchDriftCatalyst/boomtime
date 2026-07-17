@@ -47,7 +47,9 @@ func TestBuildFilterClause(t *testing.T) {
 		{Column: nullCol, Value: nil}, // IS NULL branch
 	}
 	sql, args, next := buildFilterClause(filters, 4, []any{"sender", time.Now(), time.Now()})
-	if sql != " AND language::text = $4 AND project IS NULL" {
+	// Case-folded: text-typed axes compare via lower() so drill-through from a
+	// case-folded group listing keeps its rows aligned with the dashboards.
+	if sql != " AND lower(language::text) = lower($4) AND project IS NULL" {
 		t.Fatalf("filter SQL = %q", sql)
 	}
 	if next != 5 {

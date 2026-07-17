@@ -160,9 +160,12 @@ func (d *DB) CurationAffectedValues(ctx context.Context, sender string, rule *Cu
 		limit = 200
 	}
 
-	pred := col + " = $2"
+	// Case-insensitive matching mirrors the aggregation grouping: an exact rule
+	// authored as "Writing Docs" catches "writing docs" / "WRITING DOCS" too;
+	// regex/template rules use `~*` (Postgres's case-insensitive regex).
+	pred := "lower(" + col + ") = lower($2)"
 	if rule.MatchType == MatchRegex || rule.MatchType == MatchTemplate {
-		pred = col + " ~ $2"
+		pred = col + " ~* $2"
 	}
 
 	// mappedExpr is the display value each matched raw value maps to (rename
@@ -170,7 +173,7 @@ func (d *DB) CurationAffectedValues(ctx context.Context, sender string, rule *Cu
 	// for a template rule). For a hide rule (new_value NULL) it is '' — no target.
 	mappedExpr := "$3::text"
 	if rule.MatchType == MatchTemplate {
-		mappedExpr = fmt.Sprintf("regexp_replace(%s, $2, $3)", col)
+		mappedExpr = fmt.Sprintf("regexp_replace(%s, $2, $3, 'i')", col)
 	}
 	newVal := ""
 	if rule.NewValue != nil {

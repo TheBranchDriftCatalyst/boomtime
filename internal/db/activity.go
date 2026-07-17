@@ -101,13 +101,15 @@ const projectStatsMatchClause = "AND project = $2"
 func (d *DB) GetProjectStats(ctx context.Context, user, project string, start, end time.Time, limit int64, hs HiddenSets, rs RenameSets, ms MemberSets, spaceRequested bool) ([]ProjectStatRow, error) {
 	query, args, next := applyScopes(qGetProjectsStats, projectStatsRangeAnchor,
 		hs, ms, spaceRequested, rawHeartbeatCols, []any{user, project, start, end, limit}, 6)
-	// Match the display name against the remapped raw project.
-	if rs.HasAxis("project") {
-		var expr string
-		expr, args, next = rs.remapExpr("project", "project", "", next, args)
-		query = strings.Replace(query, projectStatsMatchClause, "AND ("+expr+") = $2", 1)
-	}
-	// Remap the output language axis (project axis isn't an output column here).
+	// Match the display name against the remapped raw project — always splice a
+	// case-insensitive comparison so "MyProject" also matches "myproject" rows;
+	// when no rename is active, `remapExpr` returns the raw column unchanged.
+	var expr string
+	expr, args, next = rs.remapExpr("project", "project", "", next, args)
+	query = strings.Replace(query, projectStatsMatchClause, "AND lower("+expr+") = lower($2)", 1)
+	// Remap + case-fold the output language axis (project axis isn't an output
+	// column here). The wrap always runs so pure case variants on language/entity
+	// merge without needing a rename rule.
 	query, args = rs.regroupProjectStatRows(query, next, args)
 	var out []ProjectStatRow
 	err := d.aggQuery(ctx, query, args, func(rows pgx.Rows) (e error) {

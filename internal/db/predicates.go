@@ -5,6 +5,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
 // ---- Hide exclusion helpers ----
@@ -43,14 +44,17 @@ func (h HiddenSets) HasHiddenOutside(available map[string]bool) bool {
 	return false
 }
 
-// exclusionPredicate builds `AND NOT (<col> = ANY($n))` clauses for each hidden
-// axis present in cols (axis -> SQL column expression). Axes absent from cols are
-// skipped (e.g. columns a pre-aggregated table lacks). Values are passed as array
-// params, so this is injection-safe. scopeCond, if non-empty, is ANDed inside
-// every NOT (mirrors remapExpr's extraCond; leaderboards scope the hide to the
-// requester's own rows with `sender = $req`, yielding
-// `AND NOT (sender = $req AND <col> = ANY($n))` so other users' rows pass
-// through). Returns the SQL fragment, grown args, and next free arg index.
+// exclusionPredicate builds `AND NOT (lower(<col>) = ANY($n))` clauses for each
+// hidden axis present in cols (axis -> SQL column expression). The `lower()`
+// wrap on the column mirrors the case-insensitive aggregation strategy: a hide
+// rule for "MyProject" also drops rows where the raw column is "myproject" or
+// "MYPROJECT". Values passed in the array param are already lowercased by
+// LoadHiddenSets, so the ANY() comparison is a simple lowercase equality.
+// Axes absent from cols are skipped (e.g. columns a pre-aggregated table
+// lacks). scopeCond, if non-empty, is ANDed inside every NOT (mirrors
+// remapExpr's extraCond; leaderboards scope the hide to the requester's own
+// rows with `sender = $req`). Returns the SQL fragment, grown args, and next
+// free arg index.
 func exclusionPredicate(hs HiddenSets, cols map[string]string, scopeCond string, nextArg int, args []any) (string, []any, int) {
 	var sql string
 	for _, axis := range hiddenAxes { // deterministic order
@@ -60,9 +64,9 @@ func exclusionPredicate(hs HiddenSets, cols map[string]string, scopeCond string,
 			continue
 		}
 		if scopeCond != "" {
-			sql += fmt.Sprintf(" AND NOT (%s AND %s = ANY($%d))", scopeCond, col, nextArg)
+			sql += fmt.Sprintf(" AND NOT (%s AND lower(%s) = ANY($%d))", scopeCond, col, nextArg)
 		} else {
-			sql += fmt.Sprintf(" AND NOT (%s = ANY($%d))", col, nextArg)
+			sql += fmt.Sprintf(" AND NOT (lower(%s) = ANY($%d))", col, nextArg)
 		}
 		args = append(args, vals)
 		nextArg++
@@ -72,8 +76,12 @@ func exclusionPredicate(hs HiddenSets, cols map[string]string, scopeCond string,
 
 // LoadHiddenSets fetches the hidden values for every dashboard-excluded axis in
 // ONE query (grouped by axis in Go) instead of one query per axis. The axis
-// filter keeps hide rules on non-dashboard axes (e.g. day/entity) out of the
-// sets, matching the per-axis loads this replaced.
+// filter keeps hide rules on non-dashboard axes (e.g. day) out of the sets,
+// matching the per-axis loads this replaced.
+//
+// Match values are stored lowercase in memory so exclusionPredicate can compare
+// against `lower(col)` — a hide rule authored as "MyProject" catches every
+// case variant present in raw heartbeats.
 func (d *DB) LoadHiddenSets(ctx context.Context, sender string) (HiddenSets, error) {
 	hs := HiddenSets{byAxis: make(map[string][]string, len(hiddenAxes))}
 	rows, err := d.Pool.Query(ctx,
@@ -89,7 +97,7 @@ func (d *DB) LoadHiddenSets(ctx context.Context, sender string) (HiddenSets, err
 		if err := rows.Scan(&axis, &v); err != nil {
 			return hs, err
 		}
-		hs.byAxis[axis] = append(hs.byAxis[axis], v)
+		hs.byAxis[axis] = append(hs.byAxis[axis], strings.ToLower(v))
 	}
 	return hs, rows.Err()
 }

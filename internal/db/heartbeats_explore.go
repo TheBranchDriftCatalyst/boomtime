@@ -46,8 +46,11 @@ type ExploreFilter struct {
 
 // buildFilterClause appends "AND <col> = $n" (or "IS NULL") clauses for each
 // filter, casting to text so heterogeneous column types (bool, date) compare
-// against string params safely. It starts numbering args at nextArg and returns
-// the SQL fragment, the appended args, and the next free arg index.
+// against string params safely. Text-typed axes (every axis except day/is_write)
+// are compared case-insensitively so the Explorer's drill-through — which
+// forwards the raw label from the case-folded group listing — keeps its rows
+// aligned with the case-folded dashboards. It starts numbering args at nextArg
+// and returns the SQL fragment, the appended args, and the next free arg index.
 func buildFilterClause(filters []ExploreFilter, nextArg int, args []any) (string, []any, int) {
 	var b strings.Builder
 	for _, f := range filters {
@@ -55,7 +58,13 @@ func buildFilterClause(filters []ExploreFilter, nextArg int, args []any) (string
 			fmt.Fprintf(&b, " AND %s IS NULL", f.Column)
 			continue
 		}
-		fmt.Fprintf(&b, " AND %s::text = $%d", f.Column, nextArg)
+		// day + is_write compare literally (date/bool cast to text); every other
+		// whitelisted column carries a user-facing string that should fold case.
+		if f.Column == "time_sent::date" || f.Column == "is_write" {
+			fmt.Fprintf(&b, " AND %s::text = $%d", f.Column, nextArg)
+		} else {
+			fmt.Fprintf(&b, " AND lower(%s::text) = lower($%d)", f.Column, nextArg)
+		}
 		args = append(args, *f.Value)
 		nextArg++
 	}
@@ -106,9 +115,20 @@ type ExploreGroup struct {
 func (d *DB) GroupHeartbeats(ctx context.Context, sender, groupCol string, start, end time.Time, filters []ExploreFilter, entitySubstr string, limit int, limitMinutes int64) ([]ExploreGroup, bool, error) {
 	// For the day axis, render the value as text 'YYYY-MM-DD'; otherwise cast the
 	// column to text so every group value is a consistent string|null.
+	//
+	// Every string-valued axis is grouped case-insensitively — the group
+	// displayed for entity/project/language/… is MODE()-picked so case variants
+	// merge into ONE bucket matching the dashboards. day and is_write use their
+	// natural literal comparison (date/bool).
+	fold := groupCol != "time_sent::date" && groupCol != "is_write"
 	valueExpr := groupCol + "::text"
+	groupByExpr := groupCol
 	if groupCol == "time_sent::date" {
 		valueExpr = "to_char(time_sent::date, 'YYYY-MM-DD')"
+	}
+	if fold {
+		valueExpr = fmt.Sprintf("MODE() WITHIN GROUP (ORDER BY %s::text)", groupCol)
+		groupByExpr = fmt.Sprintf("lower(%s::text)", groupCol)
 	}
 
 	// $1 sender, $2 start, $3 end, then filter args, then the gap cutoff.
@@ -133,7 +153,7 @@ func (d *DB) GroupHeartbeats(ctx context.Context, sender, groupCol string, start
 		WHERE sender = $1 AND time_sent >= $2 AND time_sent <= $3%s
 		GROUP BY %s
 		ORDER BY count(*) DESC
-		LIMIT %d`, valueExpr, cutoffArg, filterSQL, groupCol, fetch)
+		LIMIT %d`, valueExpr, cutoffArg, filterSQL, groupByExpr, fetch)
 
 	rows, err := d.Pool.Query(ctx, query, args...)
 	if err != nil {

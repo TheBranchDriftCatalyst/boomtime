@@ -28,23 +28,27 @@ type CategoryDailyRow struct {
 // values), for folding into the Overview stats payload. $4 limit is the gap
 // cutoff minutes. Note: a category hidden here disappears entirely (the whole
 // category axis is excluded when that category is hidden).
+//
+// The category axis is case-folded: "Coding" and "coding" merge into one row;
+// MODE() picks the most common raw casing as the display label. The wrap runs
+// even with no rename rule active so pure case variants still collapse.
 func (d *DB) GetCategoryDaily(ctx context.Context, sender string, start, end time.Time, limit int64, hs HiddenSets, rs RenameSets, ms MemberSets, spaceRequested bool) ([]CategoryDailyRow, error) {
 	query, args, next := applyScopes(qGetCategoryDaily, bigBetRangeAnchor,
 		hs, ms, spaceRequested, rawHeartbeatCols, []any{sender, start, end, limit}, 5)
-	// Rename remap: re-group (day, category) by the remapped category.
-	if rs.HasAxis("category") {
-		var expr string
-		expr, args, next = rs.remapExpr("category", "category", "", next, args)
-		query = fmt.Sprintf(`WITH regrouped AS (
+	// Always wrap: re-group (day, lower(category)) picking a MODE display casing.
+	// The rename remap is spliced into the SELECT (identity when no rule exists).
+	var expr string
+	expr, args, next = rs.remapExpr("category", "category", "", next, args)
+	query = fmt.Sprintf(`WITH regrouped AS (
     SELECT day, %s AS category, CAST(SUM(total_seconds) AS int8) AS total_seconds
     FROM ( %s ) base
-    GROUP BY day, %s
+    GROUP BY day, lower(%s)
 )
 SELECT day, category, total_seconds,
     coalesce(CAST(1.0 * total_seconds / nullif(sum(total_seconds) OVER (), 0) AS numeric(13, 12)), 0) AS pct,
     coalesce(CAST(1.0 * total_seconds / nullif(sum(total_seconds) OVER (PARTITION BY day), 0) AS numeric(13, 12)), 0) AS daily_pct
-FROM regrouped`, expr, trimSQL(query), expr)
-	}
+FROM regrouped`, caseFoldPick(expr), trimSQL(query), expr)
+	_ = next
 	var out []CategoryDailyRow
 	err := d.aggQuery(ctx, query, args, func(rows pgx.Rows) error {
 		defer rows.Close()
@@ -130,14 +134,15 @@ type MomentumRow struct {
 func (d *DB) GetMomentum(ctx context.Context, sender string, start, end time.Time, limit int64, hs HiddenSets, rs RenameSets, ms MemberSets, spaceRequested bool) ([]MomentumRow, error) {
 	query, args, next := applyScopes(qGetMomentum, bigBetRangeAnchor,
 		hs, ms, spaceRequested, rawHeartbeatCols, []any{sender, start, end, limit}, 5)
-	if rs.HasAxis("project") {
-		var expr string
-		expr, args, next = rs.remapExpr("project", "project", "", next, args)
-		query = fmt.Sprintf(`SELECT %s AS project, week_start, CAST(SUM(total_seconds) AS int8) AS total_seconds
+	// Always wrap: fold project casing and pick a MODE display label. Runs even
+	// with no project rename so pure case variants merge.
+	var expr string
+	expr, args, next = rs.remapExpr("project", "project", "", next, args)
+	query = fmt.Sprintf(`SELECT %s AS project, week_start, CAST(SUM(total_seconds) AS int8) AS total_seconds
 FROM ( %s ) base
-GROUP BY %s, week_start
-ORDER BY project, week_start`, expr, trimSQL(query), expr)
-	}
+GROUP BY lower(%s), week_start
+ORDER BY project, week_start`, caseFoldPick(expr), trimSQL(query), expr)
+	_ = next
 	var out []MomentumRow
 	err := d.aggQuery(ctx, query, args, func(rows pgx.Rows) error {
 		defer rows.Close()

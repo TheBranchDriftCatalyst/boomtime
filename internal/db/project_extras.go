@@ -48,14 +48,15 @@ type ProjectExtras struct {
 func (d *DB) GetProjectExtras(ctx context.Context, user, project string, start, end time.Time, limit int64, rs RenameSets) (*ProjectExtras, error) {
 	ex := &ProjectExtras{}
 
-	// --- Daily authoring/reading/breadth (project-match remap only) ---
+	// --- Daily authoring/reading/breadth (project-match remap + case-fold) ---
+	// Always splice a case-insensitive match on the (possibly remapped) project
+	// so "MyProject" matches rows stored as "myproject"; when no rename is
+	// active `remapExpr` returns the raw column unchanged.
 	dailyQuery := qGetProjDailyExtras
 	dailyArgs := []any{user, project, start, end, limit}
-	if rs.HasAxis("project") {
-		var expr string
-		expr, dailyArgs, _ = rs.remapExpr("project", "project", "", 6, dailyArgs)
-		dailyQuery = strings.Replace(dailyQuery, projectExtrasMatchClause, "AND ("+expr+") = $2", 1)
-	}
+	var dexpr string
+	dexpr, dailyArgs, _ = rs.remapExpr("project", "project", "", 6, dailyArgs)
+	dailyQuery = strings.Replace(dailyQuery, projectExtrasMatchClause, "AND lower("+dexpr+") = lower($2)", 1)
 	if err := d.aggQuery(ctx, dailyQuery, dailyArgs, func(rows pgx.Rows) error {
 		defer rows.Close()
 		for rows.Next() {
@@ -70,30 +71,27 @@ func (d *DB) GetProjectExtras(ctx context.Context, user, project string, start, 
 		return nil, err
 	}
 
-	// --- Per-day-per-branch (project-match remap + branch output remap) ---
+	// --- Per-day-per-branch (project-match remap + branch case-fold+remap) ---
 	branchQuery := qGetProjBranchDaily
 	branchArgs := []any{user, project, start, end, limit}
 	next := 6
-	if rs.HasAxis("project") {
-		var expr string
-		expr, branchArgs, next = rs.remapExpr("project", "project", "", next, branchArgs)
-		branchQuery = strings.Replace(branchQuery, projectExtrasMatchClause, "AND ("+expr+") = $2", 1)
-	}
-	if rs.HasAxis("branch") {
-		// Re-group (day, branch, total_seconds) by the remapped branch and recompute
-		// the pct/daily_pct windows so merged branch counts combine.
-		var bexpr string
-		bexpr, branchArgs, next = rs.remapExpr("branch", "branch", "", next, branchArgs)
-		branchQuery = fmt.Sprintf(`WITH regrouped AS (
+	var pexpr string
+	pexpr, branchArgs, next = rs.remapExpr("project", "project", "", next, branchArgs)
+	branchQuery = strings.Replace(branchQuery, projectExtrasMatchClause, "AND lower("+pexpr+") = lower($2)", 1)
+	// Always wrap: fold branch casing and pick MODE display, applying the rename
+	// remap first (identity when no rule). "main" and "Main" merge into one row.
+	var bexpr string
+	bexpr, branchArgs, next = rs.remapExpr("branch", "branch", "", next, branchArgs)
+	branchQuery = fmt.Sprintf(`WITH regrouped AS (
     SELECT day, %s AS branch, CAST(SUM(total_seconds) AS int8) AS total_seconds
     FROM ( %s ) base
-    GROUP BY day, %s
+    GROUP BY day, lower(%s)
 )
 SELECT day, branch, total_seconds,
     coalesce(CAST(1.0 * total_seconds / nullif(sum(total_seconds) OVER (), 0) AS numeric(13, 12)), 0) AS pct,
     coalesce(CAST(1.0 * total_seconds / nullif(sum(total_seconds) OVER (PARTITION BY day), 0) AS numeric(13, 12)), 0) AS daily_pct
-FROM regrouped`, bexpr, trimSQL(branchQuery), bexpr)
-	}
+FROM regrouped`, caseFoldPick(bexpr), trimSQL(branchQuery), bexpr)
+	_ = next
 	if err := d.aggQuery(ctx, branchQuery, branchArgs, func(rows pgx.Rows) error {
 		defer rows.Close()
 		for rows.Next() {

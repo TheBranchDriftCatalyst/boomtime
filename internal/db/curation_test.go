@@ -15,7 +15,9 @@ func TestExclusionPredicateShape(t *testing.T) {
 	sql, outArgs, next := exclusionPredicate(hs, rawHeartbeatCols, "", 5, args)
 
 	// hiddenAxes order puts project before machine, so $5=project, $6=machine.
-	want := " AND NOT (project = ANY($5)) AND NOT (machine = ANY($6))"
+	// lower() wraps the column so hides catch case-variant raw values (values
+	// are pre-lowered by LoadHiddenSets, so ANY() is a plain lowercase equality).
+	want := " AND NOT (lower(project) = ANY($5)) AND NOT (lower(machine) = ANY($6))"
 	if sql != want {
 		t.Fatalf("exclusion SQL = %q, want %q", sql, want)
 	}

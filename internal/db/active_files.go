@@ -37,6 +37,10 @@ func (d *DB) GetActiveFiles(ctx context.Context, sender string, start, end time.
 	projExpr, args, nextArg := rs.remapExpr("project", "project", "", 5, args)
 
 	// Cap+1 to detect truncation.
+	// Entity is case-folded so "src/Main.go" and "src/main.go" merge into one
+	// active-file row; MODE() picks a canonical display. Projects are counted
+	// DISTINCT on the case-folded remapped value so a merged/case-variant
+	// project name isn't double-counted toward the lynchpin score.
 	fetch := limit + 1
 	query := fmt.Sprintf(`
 WITH per_row AS (
@@ -47,11 +51,11 @@ WITH per_row AS (
     WHERE sender = $1 AND ty = 'file' AND entity IS NOT NULL AND entity <> ''
       AND time_sent >= $2 AND time_sent <= $3
 )
-SELECT entity,
+SELECT MODE() WITHIN GROUP (ORDER BY entity) AS entity,
        CAST(coalesce(sum(secs), 0) AS int8) AS seconds,
-       CAST(count(DISTINCT project) AS int8) AS projects
+       CAST(count(DISTINCT lower(project)) AS int8) AS projects
 FROM per_row
-GROUP BY entity
+GROUP BY lower(entity)
 ORDER BY projects DESC, seconds DESC, entity ASC
 LIMIT %d`, projExpr, fetch)
 

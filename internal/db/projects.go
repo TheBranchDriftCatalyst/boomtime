@@ -14,9 +14,10 @@ import (
 // ---- Projects & badges ----
 
 // checkProjectOwner reports whether the user owns the given project (raw name).
+// Case-insensitive: "MyProject" and "myproject" both resolve to the same owner.
 func (d *DB) checkProjectOwner(ctx context.Context, user, project string) (bool, error) {
 	var name string
-	err := d.Pool.QueryRow(ctx, `SELECT name FROM projects WHERE name = $1 AND owner = $2`, project, user).Scan(&name)
+	err := d.Pool.QueryRow(ctx, `SELECT name FROM projects WHERE lower(name) = lower($1) AND owner = $2`, project, user).Scan(&name)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
@@ -33,9 +34,11 @@ func (d *DB) CheckProjectDisplayOwner(ctx context.Context, user, display string,
 		return d.checkProjectOwner(ctx, user, display)
 	}
 	// $1 = user, $2 = display; the remap's pattern/target params start at $3.
+	// Case-insensitive match on the DISPLAY value so a stored "MyProject" resolves
+	// when the caller supplies "myproject" or a merged casing variant.
 	args := []any{user, display}
 	expr, args, _ := rs.remapExpr("project", "name", "", 3, args)
-	q := fmt.Sprintf(`SELECT 1 FROM projects WHERE owner = $1 AND (%s) = $2 LIMIT 1`, expr)
+	q := fmt.Sprintf(`SELECT 1 FROM projects WHERE owner = $1 AND lower(%s) = lower($2) LIMIT 1`, expr)
 	var one int
 	err := d.Pool.QueryRow(ctx, q, args...).Scan(&one)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -59,15 +62,14 @@ func (d *DB) GetAllProjects(ctx context.Context, user string, t0, t1 time.Time, 
 		hs, ms, spaceRequested, projectListCols, []any{user, t0, t1}, 4)
 	query += ` GROUP BY projects.name`
 
-	// Always re-project to exactly `name` (collectStrings reads one column). When a
-	// project rename is active, remap+re-group so merged names collapse into one
-	// entry ordered by summed activity; otherwise pass names through by count.
+	// Always re-project through the rename remap (identity when no rule) AND
+	// case-fold: merged/case-variant names collapse to one entry ordered by
+	// summed activity, with a MODE-picked display casing.
 	nameExpr := "name"
-	if rs.HasAxis("project") {
-		nameExpr, args, next = rs.remapExpr("project", "name", "", next, args)
-	}
-	query = fmt.Sprintf(`SELECT %s AS name FROM ( %s ) base GROUP BY %s ORDER BY SUM(cnt) DESC`,
-		nameExpr, trimSQL(query), nameExpr)
+	nameExpr, args, next = rs.remapExpr("project", "name", "", next, args)
+	query = fmt.Sprintf(`SELECT %s AS name FROM ( %s ) base GROUP BY lower(%s) ORDER BY SUM(cnt) DESC`,
+		caseFoldPick(nameExpr), trimSQL(query), nameExpr)
+	_ = next
 
 	rows, err := d.Pool.Query(ctx, query, args...)
 	if err != nil {

@@ -35,10 +35,11 @@ func TestInclusionPredicateShape(t *testing.T) {
 	args := []any{"sender", time.Now(), time.Now(), int64(15)}
 	sql, outArgs, next := inclusionPredicate(ms, rawHeartbeatCols, "", 5, args)
 
-	// hiddenAxes order: project before editor. project exact -> $5; editor
-	// rewrites: ^vim -> LIKE $6 (bound "vim%"); code stays as ~ $7 (bound
-	// "code" verbatim).
-	want := " AND (project = ANY($5) OR editor LIKE $6 OR editor ~ $7)"
+	// hiddenAxes order: project before editor. project exact -> lower(col)=ANY($5)
+	// (values pre-lowered at load); editor rewrites: ^vim -> ILIKE $6 (bound
+	// "vim%"); code stays as ~* $7 (bound "code" verbatim). Case-insensitive
+	// operators (~*, ILIKE, lower()) mirror the case-folded aggregation grouping.
+	want := " AND (lower(project) = ANY($5) OR editor ILIKE $6 OR editor ~* $7)"
 	if sql != want {
 		t.Fatalf("inclusion SQL = %q, want %q", sql, want)
 	}

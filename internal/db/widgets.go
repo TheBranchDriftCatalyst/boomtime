@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -213,21 +214,23 @@ func (d *DB) RecordWidgetLinkHit(ctx context.Context, id uuid.UUID, origin strin
 }
 
 // ProjectExists reports whether (owner, name) is a known project — the mint
-// endpoint's ownership check for project-scoped widget links.
+// endpoint's ownership check for project-scoped widget links. Case-insensitive:
+// "MyProject" and "myproject" resolve to the same project row.
 func (d *DB) ProjectExists(ctx context.Context, owner, name string) (bool, error) {
 	var ok bool
 	err := d.Pool.QueryRow(ctx,
-		`SELECT EXISTS(SELECT 1 FROM projects WHERE owner = $1 AND name = $2)`, owner, name).Scan(&ok)
+		`SELECT EXISTS(SELECT 1 FROM projects WHERE owner = $1 AND lower(name) = lower($2))`, owner, name).Scan(&ok)
 	return ok, err
 }
 
 // ProjectMemberSet builds a MemberSets scoping to exactly one project — it lets
 // project-scoped widgets reuse the whole Space inclusion-predicate path
 // (spaceRequested=true semantics). Project is a rollup axis, so this keeps the
-// rollup fast path too.
+// rollup fast path too. The value is lowercased so the downstream
+// inclusionPredicate's `lower(col) = ANY(...)` matches every case variant.
 func ProjectMemberSet(project string) MemberSets {
 	return MemberSets{byAxis: map[string]axisMembers{
-		"project": {exact: []string{project}},
+		"project": {exact: []string{strings.ToLower(project)}},
 	}}
 }
 
@@ -235,13 +238,15 @@ func ProjectMemberSet(project string) MemberSets {
 // rename map so a scope pinned to a renamed/merged project name matches raw
 // heartbeats stored under the source name(s) (gaka-xuc). The `project` arm
 // becomes `[project] ∪ ExactSourcesFor("project", project)` — the display
-// name plus every raw name that renames to it. Regex/template renames are
-// intentionally left out (see ExactSourcesFor comment).
+// name plus every raw name that renames to it (all lowercased so the SQL side
+// compares case-insensitively). Regex/template renames are intentionally left
+// out (see ExactSourcesFor comment).
 func ProjectMemberSetWithRenames(project string, rs RenameSets) MemberSets {
-	exact := []string{project}
+	exact := []string{strings.ToLower(project)}
 	for _, src := range rs.ExactSourcesFor("project", project) {
-		if src != project {
-			exact = append(exact, src)
+		low := strings.ToLower(src)
+		if low != exact[0] {
+			exact = append(exact, low)
 		}
 	}
 	return MemberSets{byAxis: map[string]axisMembers{
