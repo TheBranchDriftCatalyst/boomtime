@@ -1,18 +1,16 @@
 # Continuous GHCR publish for the boomtime image. Complements release.yml
 # (which handles semver tag releases + release notes) by pushing an image on
-# every commit to master and to the gakatime dev branch, so Argo has something
-# to sync mid-development. PR events build without pushing so PRs still
-# exercise the Dockerfile.
+# every commit to main, so Argo Image Updater has fresh sha-<7c> tags to roll.
+# PR events build without pushing so PRs still exercise the Dockerfile.
 name: docker-publish
 
 on:
   push:
     branches:
-      - master
-      - gakatime
+      - main
   pull_request:
     branches:
-      - master
+      - main
 
 env:
   REGISTRY: ghcr.io

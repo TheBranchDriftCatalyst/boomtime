@@ -22,9 +22,10 @@ spec:
     spec:
       containers:
         - name: boomtime
-          # GH repo is still named `hakatime` (rename to `boomtime` is a
-          # separate concern). Image path follows the repo name.
-          image: ghcr.io/thebranchdriftcatalyst/hakatime:latest
+          # Image path follows the repo name. Overridden per-cluster by the
+          # overlay's kustomize images: block + Argo Image Updater (which
+          # rewrites the pinned sha-<7c> tag on every new main push).
+          image: ghcr.io/thebranchdriftcatalyst/boomtime:latest
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
