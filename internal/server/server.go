@@ -15,6 +15,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/openapi"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
 )
@@ -68,12 +69,17 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 }
 
 // registerMetaRoutes: build/version disclosure + embedded changelog + the
-// public health probe. All three are intentionally unauthenticated (see
-// internal/handler/meta.go, internal/handler/healthz.go).
+// public health probe + self-hosted OpenAPI spec and Swagger UI (gaka-lfc).
+// All are intentionally unauthenticated (see internal/handler/meta.go,
+// internal/handler/healthz.go, internal/openapi).
 func registerMetaRoutes(e *echo.Echo, h *handler.Handler) {
 	e.GET("/api/v1/version", h.Version)
 	e.GET("/api/v1/changelog", h.Changelog)
 	e.GET("/healthz", h.Healthz)
+	// OpenAPI 3 spec + embedded Swagger UI. Public: the spec + docs are
+	// self-hosted transparency, not user data. Auth'd endpoints inside the
+	// spec still require the Authorize dialog to be filled in for Try-it-out.
+	openapi.Register(e)
 }
 
 // registerHeartbeatRoutes: ingest, the read-only explorer, and source health.
