@@ -1,0 +1,27 @@
+#!/usr/bin/env sh
+# Pre-push guard for boomtime — runs the same build that Docker CI runs,
+# so type-drift against catalyst-ui (or any other dep) gets caught locally
+# instead of blowing up in the docker-publish workflow after a push.
+#
+# Why this exists: during the catalyst-ui migration we hit multiple rounds
+# of "works locally with yarn-link, fails in Docker with npm install" —
+# usually rooted in @types/react version drift or Radix forwardRef typing
+# quirks that only surface when TS re-resolves against the published
+# node_modules layout. This hook closes the loop.
+#
+# What it runs:
+#   - `npm run build` in web/ = `tsc -b --noEmit --force && vite build`
+#     (identical to the RUN in Dockerfile stage 1)
+#
+# Activate with:   git config core.hooksPath .githooks
+# Bypass once:     git push --no-verify
+
+set -e
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+cd "$REPO_ROOT/web"
+
+echo "[pre-push] running boomtime web build (same as Docker CI)..."
+npm run build
+
+echo "[pre-push] ✓ build clean — safe to push"

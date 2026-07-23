@@ -101,10 +101,16 @@ export function Combobox({
       <PopoverContent
         align="start"
         className="w-[--radix-popover-trigger-width] min-w-56 p-0"
-        onOpenAutoFocus={(e) => {
-          e.preventDefault();
-          inputRef.current?.focus();
-        }}
+        // onOpenAutoFocus is a native DOM event handler from Radix, but
+        // catalyst-ui's PopoverContentProps also extends HTMLAttributes which
+        // types onOpenAutoFocus as a React synthetic focus handler. Cast
+        // around the collision — behavior is the native DOM event at runtime.
+        {...({
+          onOpenAutoFocus: (e: Event) => {
+            e.preventDefault();
+            inputRef.current?.focus();
+          },
+        } as unknown as React.ComponentProps<typeof PopoverContent>)}
       >
         <div className="border-b p-2">
           <Input
