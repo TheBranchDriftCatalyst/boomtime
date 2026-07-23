@@ -37,6 +37,19 @@ spec:
             - secretRef:
                 name: boomtime-secrets
                 optional: true
+            # BOOM_ENCRYPTION_KEY for encryption-at-rest of user secrets
+            # (imported Wakatime API keys). Provisioned by the overlay:
+            # - talos00-knowledgedump: ExternalSecret pulls from 1Password
+            #   vault item `boomtime` field `encryption-key` (see
+            #   external-secret.yaml). Falls back to boomtime-encryption-key
+            #   Secret (manually created) if 1P field not yet populated.
+            # - local: a stub key in overlays/local/secrets.yaml.
+            # Marked optional so dev/test overlays without either can still
+            # boot with a WARN; the prod-startup gate in cmd/boomtime/main.go
+            # refuses to run when BOOM_ENV=prod and the key is missing.
+            - secretRef:
+                name: boomtime-encryption-key
+                optional: true
           env:
             # DB credentials come from the CNPG-managed (prod) or overlay-provided
             # (local) `boomtime-postgres-app` Secret. CNPG populates username/password
