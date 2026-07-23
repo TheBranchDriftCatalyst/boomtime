@@ -172,9 +172,17 @@ var lookupSpec = schemaSpec{
 		// per-heartbeat — the important AI signal is on the heartbeat itself.
 		// Listed here to silence unknown_field warnings.
 		"cli_version":          {}, // user_agents
-		"ai_agent":             {}, // user_agents
+		"ai_agent":             {}, // user_agents — AI TOOL (Cursor, Copilot, …)
 		"ai_agent_version":     {}, // user_agents
 		"ai_agent_complexity":  {}, // user_agents
+		// wakatime added the ai_model_* parallel triple on 2026-07-23 to
+		// distinguish the underlying LLM (claude-sonnet-4-5, gpt-4o, …) from
+		// the AI tool wrapping it. Same per-user-agent shape as ai_agent_*.
+		// Silencing drift here; see follow-up bead for analytics wiring
+		// (persist to user_agents columns + FE badge per model).
+		"ai_model":            {}, // user_agents — underlying LLM
+		"ai_model_version":    {}, // user_agents
+		"ai_model_complexity": {}, // user_agents
 		"go_version":           {}, // user_agents
 		"name":                 {}, // machine_names
 		"ip":                   {}, // machine_names

@@ -174,6 +174,42 @@ func TestDriftLookupSpecRejectsMissingValue(t *testing.T) {
 	}
 }
 
+// TestDriftLookupSpec_KnowsAiModelFields_Wakatime20260723Regression pins the
+// three ai_model_* baseline entries added on 2026-07-23 in response to a live
+// drift report from a user's import. If someone deletes them from
+// lookupSpec.baseline, wakatime's user_agents endpoint would produce
+// warning-severity noise on every future import for anyone touching an AI
+// model. Not a data-integrity bug, but it's noise we shipped a fix for.
+func TestDriftLookupSpec_KnowsAiModelFields_Wakatime20260723Regression(t *testing.T) {
+	// A user_agents response including all three new fields — the exact shape
+	// the drift detector emitted in gaka-awh's report:
+	// unknown_field ai_model, ai_model_version, ai_model_complexity.
+	body := `{"data":[{
+		"id":"ua-1",
+		"value":"cursor/0.42.0 (darwin-arm64-24.5.0) cursor/0.42.0 cursor-wakatime/1.0.0",
+		"ai_agent":"cursor",
+		"ai_agent_version":"0.42.0",
+		"ai_agent_complexity":"high",
+		"ai_model":"claude-sonnet-4-5",
+		"ai_model_version":"20250929",
+		"ai_model_complexity":"high"
+	}]}`
+	c := newDriftCollector()
+	data, ok := c.checkEnvelope("user_agents", []byte(body), jtArray)
+	if !ok {
+		t.Fatalf("envelope OK failed: %+v", c.findings())
+	}
+	c.checkList("user_agents", "", data, lookupSpec, -1)
+
+	for _, f := range c.findings() {
+		if f.Kind == driftKindUnknown &&
+			(f.Field == "ai_model" || f.Field == "ai_model_version" || f.Field == "ai_model_complexity") {
+			t.Fatalf("ai_model_* field %q raised unknown_field drift — did someone remove it from lookupSpec.baseline? full findings=%+v",
+				f.Field, c.findings())
+		}
+	}
+}
+
 func TestDriftJSONRoundTrip(t *testing.T) {
 	// Verify the JSON contract used to persist findings into import_jobs.drift
 	// and ship over WS matches the FE type expectations (camelCase, no
