@@ -7,11 +7,12 @@
  * text-popover-foreground, border-border, etc.) never make it into the CSS
  * bundle and floating overlays render transparent.
  *
- * The workspace path is used instead of the node_modules path because yarn-
- * link creates a symlink that Tailwind's default scanner will not traverse.
- * When boomtime consumes catalyst-ui from npm (no link), swap this for
- * `@source "../node_modules/@thebranchdriftcatalyst/catalyst-ui/dist"`.
+ * BELT-AND-SUSPENDERS: list both possible locations so both `yarn install`
+ * (CI: real node_modules directory) and `yarn link` (local dev: workspace
+ * sibling) resolve. Tailwind ignores @source lines pointing at missing paths,
+ * so listing both is safe in either environment.
  */
+@source "../node_modules/@thebranchdriftcatalyst/catalyst-ui/dist";
 @source "../../../catalyst-ui/dist";
 
 /*
