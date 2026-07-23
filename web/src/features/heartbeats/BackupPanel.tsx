@@ -3,8 +3,8 @@ import { useMutation } from "@tanstack/react-query";
 import { DatabaseBackup, Download, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { ApiError, api } from "@/lib/api";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
+import { Card, CardContent, CardHeader } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { RestoreConfirmDialog } from "@/features/heartbeats/RestoreConfirmDialog";
 
 /**

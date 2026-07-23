@@ -154,7 +154,27 @@ export function MomentumGrid({ data, rowHeight = 26 }: MomentumGridProps) {
     [rows, weeks],
   );
 
-  if (rows.length === 0 || weeks.length === 0) return <EmptyChart height={140} />;
+  // Momentum buckets by ISO week, so ranges shorter than ~2 weeks collapse to
+  // a single column and there's no ramp to see. Communicate this instead of
+  // showing a lone strip that reads as "empty".
+  if (rows.length === 0 || weeks.length === 0) {
+    return (
+      <EmptyChart
+        height={140}
+        title="No momentum data for this range"
+        hint="Widen the date range in the toolbar — momentum needs multiple weeks of activity to plot."
+      />
+    );
+  }
+  if (weeks.length < 2) {
+    return (
+      <EmptyChart
+        height={140}
+        title="Range too short for weekly buckets"
+        hint="Try 30+ days — momentum shows how projects heat up or cool down week over week."
+      />
+    );
+  }
 
   return <ChartSurface surface={surface} />;
 }

@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "@thebranchdriftcatalyst/catalyst-ui/ui/badge";
 
 /**
  * Shared "hidden value" chip: a secondary badge with an unhide (X) button.

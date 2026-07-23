@@ -9,7 +9,7 @@ import {
 } from "@/lib/sourceStatus";
 import type { SourceHealth } from "@/types/api";
 import { cn } from "@/lib/utils";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 
 // Synthwave-friendly pill styling per status. active = healthy green,
 // idle = calm cyan, stale = amber warning, silent = red alert.

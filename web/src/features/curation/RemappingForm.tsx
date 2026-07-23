@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, Check, Plus } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
+import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
+import { Label } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
 import { AxisSelect } from "@/features/rules/AxisSelect";
 import { AxisValueField } from "@/features/rules/AxisValueField";
 import { MatchTypeToggle } from "@/features/rules/MatchTypeToggle";

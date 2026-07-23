@@ -199,7 +199,7 @@ func (hz *Harness) MintUser(prefix string) (username, token string) {
 	if err != nil {
 		hz.T.Fatalf("hash password: %v", err)
 	}
-	created, err := hz.DB.InsertUser(ctx, db.StoredUser{Username: username, HashedPassword: hash, SaltUsed: salt})
+	created, err := hz.DB.InsertUser(ctx, db.StoredUser{Username: username, HashedPassword: hash, SaltUsed: salt, ArgonVersion: auth.ArgonVersionCurrent})
 	if err != nil || !created {
 		hz.T.Fatalf("insert user %s: created=%v err=%v", username, created, err)
 	}

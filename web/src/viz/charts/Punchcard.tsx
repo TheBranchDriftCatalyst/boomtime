@@ -91,7 +91,33 @@ export function Punchcard({ data, height = 260 }: PunchcardProps) {
     [data],
   );
 
-  if (!data || data.cells.length === 0) return <EmptyChart height={height} />;
+  // Distinguish three states so the empty-state is actionable:
+  //   1. No payload / zero cells → generic "no data" placeholder.
+  //   2. Cells present but no non-zero seconds → range yielded no
+  //      punchcard-eligible activity (e.g. very narrow range on a quiet
+  //      week); hint the user to widen the range instead of squinting at an
+  //      empty grid where every dot has radius 0.
+  //   3. Otherwise render the chart.
+  if (!data || data.cells.length === 0) {
+    return (
+      <EmptyChart
+        height={height}
+        title="No punchcard data for this range"
+        hint="Widen the date range in the toolbar to see day-of-week × hour activity."
+      />
+    );
+  }
+  const hasActivity =
+    (data.totalSeconds ?? 0) > 0 || data.cells.some((c) => c.seconds > 0);
+  if (!hasActivity) {
+    return (
+      <EmptyChart
+        height={height}
+        title="No punchcard-eligible activity in this range"
+        hint="Try a wider date range in the toolbar — the current range has no coding hours to plot."
+      />
+    );
+  }
 
   return (
     <ChartSurface surface={surface}>

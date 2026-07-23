@@ -43,6 +43,12 @@ export const handlers = [
   http.get("/api/v1/users/current/spaces/preview", () =>
     HttpResponse.json({ values: [], truncated: false }),
   ),
+  // gaka-6jm.2: encrypted-at-rest Wakatime key presence probe. Default =
+  // no saved key so the import form's fallback UX is exercised. Tests can
+  // override with server.use to flip hasSavedKey.
+  http.get("/api/v1/users/current/wakatime_key", () =>
+    HttpResponse.json({ hasSavedKey: false }),
+  ),
 ];
 
 export { http, HttpResponse };

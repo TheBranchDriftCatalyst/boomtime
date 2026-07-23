@@ -4,8 +4,8 @@ import { toast } from "sonner";
 import { ApiError, api } from "@/lib/api";
 import { formatBytes } from "@/lib/utils";
 import { useAuth } from "@/features/auth/useAuth";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
+import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -13,7 +13,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@thebranchdriftcatalyst/catalyst-ui/ui/dialog";
 
 interface RestoreConfirmDialogProps {
   /** The selected backup archive; null = dialog closed. */

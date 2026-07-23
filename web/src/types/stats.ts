@@ -143,6 +143,26 @@ export interface PunchcardPayload {
   totalSeconds: number;
 }
 
+// GET /api/public/profile/:slug — scrubbed, no-auth read of a user's
+// dashboard aggregates (gaka-6jm.1). Deliberately narrower than StatsPayload:
+// no machines segment (identifying), no *Count fields (would leak a distinct
+// count for hidden values on short-list axes). Backend guarantees every field
+// here has been passed through internal/widget.Scrub before serialization.
+export interface PublicDashboardPayload {
+  username: string;
+  startDate: string;
+  endDate: string;
+  totalSeconds: number;
+  dailyAvg: number;
+  dailyTotal: number[];
+  projects: ResourceStats[];
+  languages: ResourceStats[];
+  editors: ResourceStats[];
+  platforms: ResourceStats[];
+  categories: ResourceStats[];
+  punchcard: PunchcardPayload;
+}
+
 // GET stats/sessions -> deep-work focus sessions (runs between >timeLimit gaps).
 interface SessionsSummary {
   count: number;

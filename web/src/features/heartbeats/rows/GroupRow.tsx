@@ -10,14 +10,14 @@ import {
   Plus,
   SquareStack,
 } from "lucide-react";
-import { Badge, badgeVariants } from "@/components/ui/badge";
+import { Badge, badgeVariants } from "@thebranchdriftcatalyst/catalyst-ui/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from "@thebranchdriftcatalyst/catalyst-ui/ui/dropdown-menu";
 import { axisLabel } from "@/lib/axes";
 import {
   INDENT,

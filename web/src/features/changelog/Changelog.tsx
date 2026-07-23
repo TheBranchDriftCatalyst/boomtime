@@ -2,8 +2,8 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { QueryGate } from "@/components/QueryGate";
 import { PageToolbar } from "@/components/toolbar/PageToolbar";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@thebranchdriftcatalyst/catalyst-ui/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { api } from "@/lib/api";
 import {
   classifyReleases,
@@ -24,10 +24,10 @@ const STATUS_LABELS: Record<ReleaseStatus, string> = {
 
 const STATUS_BADGE_VARIANT: Record<
   ReleaseStatus,
-  "default" | "secondary" | "info" | "outline"
+  "default" | "secondary" | "outline"
 > = {
   current: "default",
-  newer: "info",
+  newer: "secondary",
   older: "outline",
   unreleased: "secondary",
 };

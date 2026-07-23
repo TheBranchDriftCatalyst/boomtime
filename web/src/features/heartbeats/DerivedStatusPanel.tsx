@@ -4,8 +4,8 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
 import { formatBytes } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
+import { Card, CardContent, CardHeader } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { LabeledStat } from "@/components/LabeledStat";
 
 /**

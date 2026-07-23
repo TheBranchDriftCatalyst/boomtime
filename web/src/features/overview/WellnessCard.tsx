@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Activity, Flame, Footprints, HeartPulse, Moon } from "lucide-react";
 import { ChartCard } from "@/components/ChartCard";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import type { HealthActivityPayload } from "@/types/api";
 
 interface WellnessCardProps {

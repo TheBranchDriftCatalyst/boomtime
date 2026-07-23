@@ -149,6 +149,15 @@ export const qk = {
   importJobs: () => ["import-jobs"] as const,
   importJob: (id: number) => ["import-job", id] as const,
   importConfig: () => ["import-config"] as const,
+  // Per-user encrypted Wakatime key presence (gaka-6jm.2). Value is
+  // {hasSavedKey}; invalidated after save/delete so UI affordances update.
+  wakatimeKey: () => ["wakatime-key"] as const,
+  // Public profile (gaka-6jm.1): the caller's enable-toggle + slug. Used by
+  // the Settings card AND the Sidebar (to conditionally show the "Public
+  // profile" nav link when enabled). Invalidated after PUT so both consumers
+  // re-fetch atomically.
+  publicProfile: () => ["public-profile"] as const,
+  publicDashboard: (slug: string) => ["public-dashboard", slug] as const,
 
   // --- Meta (version + changelog) ---------------------------------------------
   // Both cache forever — the FE only refetches on a manual reload; a new

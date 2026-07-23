@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -16,10 +17,18 @@ import (
 	"sync"
 	"time"
 
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/wakatime"
 )
+
+// ErrWakatimeUnauthorized is returned by fetch helpers when wakatime.com
+// answers with 401. Handlers and the worker use errors.Is to distinguish a
+// "your key is bad" outcome from a transient network / rate-limit failure —
+// gaka-6jm.8 (save-on-success) and gaka-6jm.10 (key_status wiring) both key
+// off this sentinel.
+var ErrWakatimeUnauthorized = errors.New("wakatime returned 401")
 
 // JobSubmitted is the sole remaining legacy status label still used by the
 // submit endpoint's response envelope. MapState + JobPending/Failed/Finished
@@ -27,9 +36,17 @@ import (
 const JobSubmitted = "JobSubmitted"
 
 // QueueItem is the JSON stored in import_jobs.value (the request + requester).
+//
+// TypedToken (gaka-6jm.8) is the plaintext key the user typed on submit —
+// distinct from ReqPayload.APIToken which, after the handler resolves it, may
+// be a fallback (already-saved encrypted key OR server env key). We only
+// persist TypedToken to users.encrypted_wakatime_key on END-TO-END success
+// (no wakatime 401 seen during the run). When empty, there is no user-scoped
+// secret to persist and the save-on-success step is a no-op.
 type QueueItem struct {
 	ReqPayload model.ImportRequestPayload `json:"reqPayload"`
 	Requester  string                     `json:"requester"`
+	TypedToken string                     `json:"typedToken,omitempty"`
 }
 
 const wakatimeAPI = "https://wakatime.com"
@@ -197,6 +214,14 @@ func (w *Worker) run(ctx context.Context, jobID int, item QueueItem) {
 	log("info", fmt.Sprintf("starting import for %d day(s): %s .. %s",
 		len(days), p.StartDate.Format("2006-01-02"), p.EndDate.Format("2006-01-02")))
 
+	// gaka-6jm.8/.10: track whether wakatime.com issued a 401 at any point in
+	// the run. Drives (a) save-on-success — a typed token is only persisted
+	// when saw401 stays false end-to-end — and (b) key_status — a 401 flips
+	// the row to 'invalid', a clean run to 'valid'. saw401 is only meaningful
+	// when a typed token was submitted (otherwise the auth header used a
+	// server env key or a previously-saved key we don't want to disturb).
+	saw401 := false
+
 	// Resolve user_agents and machine_names once up front.
 	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(p.APIToken))
 	uaByID, mnByID, err := w.fetchLookups(ctx, authHeader, drift)
@@ -210,9 +235,13 @@ func (w *Worker) run(ctx context.Context, jobID int, item QueueItem) {
 		}
 		msg := err.Error()
 		log("error", "failed to fetch wakatime metadata: "+msg)
+		if errors.Is(err, ErrWakatimeUnauthorized) {
+			saw401 = true
+		}
 		persistDrift(ctx)
 		j, _ := w.db.FinishImportJob(ctx, jobID, db.JobStateFailed, &msg)
 		publishJob("state", j)
+		w.applyKeyOutcome(item, db.JobStateFailed, saw401)
 		return
 	}
 
@@ -234,6 +263,9 @@ func (w *Worker) run(ctx context.Context, jobID int, item QueueItem) {
 			}
 			// Resilient: log and continue to the next day.
 			log("error", fmt.Sprintf("failed to import %s: %s", day, dayErr.Error()))
+			if errors.Is(dayErr, ErrWakatimeUnauthorized) {
+				saw401 = true
+			}
 		} else {
 			importedTotal += n
 			log("info", fmt.Sprintf("imported %d heartbeats for %s", n, day))
@@ -263,6 +295,75 @@ func (w *Worker) run(ctx context.Context, jobID int, item QueueItem) {
 	}
 	publishJob("state", final)
 	w.logger.Info("import completed", "job", jobID, "user", item.Requester, "imported", importedTotal)
+	w.applyKeyOutcome(item, db.JobStateCompleted, saw401)
+}
+
+// applyKeyOutcome writes the gaka-6jm.8/.10 outcome for a terminal job:
+//
+//	saw401 && terminal=failed  → status='invalid' (never persists typed token)
+//	!saw401 && terminal=completed && typedToken != ""
+//	                           → SetEncryptedWakatimeKey(status='valid') —
+//	                             this is the save-on-success path.
+//	!saw401 && terminal=completed && typedToken == ""
+//	                           → best-effort status='valid' on the row (the
+//	                             user used a previously-saved encrypted key
+//	                             or the server env key; if there IS a saved
+//	                             key we can refresh its status).
+//	other outcomes (network, rate limit, cancelled) → NO writes, per spec.
+//
+// A write failure here is logged (warn) and does not affect the job's own
+// terminal state — the import is a success from the user's point of view.
+// Uses a bounded background context so a slow DB write can't hold anything up.
+func (w *Worker) applyKeyOutcome(item QueueItem, state string, saw401 bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	switch {
+	case saw401:
+		// gaka-6jm.10: any 401 during the run means the key is bad. Update
+		// the status regardless of terminal state (failed / cancelled with a
+		// prior 401 both count). Do NOT persist the typed token — the whole
+		// point of save-on-success is to not save known-bad keys.
+		if err := w.db.UpdateWakatimeKeyStatus(ctx, item.Requester, db.WakatimeKeyStatusInvalid); err != nil {
+			w.logger.Warn("wakatime key_status update to invalid failed",
+				"user", item.Requester, "err", err)
+		} else {
+			w.logger.Debug("save-on-success: SKIP (401 seen); marked key_status=invalid",
+				"user", item.Requester)
+		}
+		return
+	case state == db.JobStateCompleted && item.TypedToken != "":
+		// gaka-6jm.8: end-to-end success with a fresh typed token — this is
+		// the moment to persist encrypted at rest. Encryption failure logs a
+		// warning but does not block; the import already succeeded.
+		ct, err := auth.Encrypt([]byte(item.TypedToken))
+		if err != nil {
+			w.logger.Warn("save-on-success: encrypt failed",
+				"user", item.Requester, "err", err)
+			return
+		}
+		if err := w.db.SetEncryptedWakatimeKey(ctx, item.Requester, ct, db.WakatimeKeyStatusValid); err != nil {
+			w.logger.Warn("save-on-success: persist failed",
+				"user", item.Requester, "err", err)
+			return
+		}
+		w.logger.Debug("save-on-success: PERSIST (no 401)",
+			"user", item.Requester, "hasSavedWakatimeKey", true)
+	case state == db.JobStateCompleted:
+		// Import succeeded and there's no fresh typed token. If the user has
+		// a previously-saved key we CAN refresh its status to 'valid' (a
+		// clean run just re-proved it works). If there's no saved key this
+		// is a no-op inside UpdateWakatimeKeyStatus.
+		if err := w.db.UpdateWakatimeKeyStatus(ctx, item.Requester, db.WakatimeKeyStatusValid); err != nil {
+			w.logger.Warn("wakatime key_status refresh to valid failed",
+				"user", item.Requester, "err", err)
+		}
+	default:
+		// Failed/cancelled without a 401 (network, rate limit, user
+		// cancel) — leave status untouched per gaka-6jm.10 spec.
+		w.logger.Debug("import outcome inconclusive; leaving key_status untouched",
+			"user", item.Requester, "state", state)
+	}
 }
 
 // withBackgroundTimeout runs fn with a short-lived background context used
@@ -583,6 +684,13 @@ func getRawJSON(ctx context.Context, endpoint, authHeader string, query url.Valu
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		// gaka-6jm.8/.10: wrap 401 with a sentinel so the worker can
+		// distinguish "bad key" from other failures for save-on-success and
+		// key_status updates. The status code + response body are still
+		// preserved via %w-anchored fmt so operator debugging is unchanged.
+		if resp.StatusCode == http.StatusUnauthorized {
+			return nil, fmt.Errorf("%w: %s", ErrWakatimeUnauthorized, string(body))
+		}
 		return nil, fmt.Errorf("wakatime returned %d: %s", resp.StatusCode, string(body))
 	}
 	// Cap body reads defensively (wakatime heartbeat days can be a few MB but

@@ -47,8 +47,9 @@ func (h *Handler) CreateSpace(c *echo.Context) error {
 		return respondErr(c, aerr)
 	}
 	var req spaceRequest
-	if err := c.Bind(&req); err != nil {
-		return respondErr(c, apierr.New(http.StatusBadRequest, "Invalid request body", nil))
+	// gaka-bi2: 4 KiB cap — space create body is a single short name string.
+	if aerr := BindJSONWithLimit(c, &req, BodyLimitSmall); aerr != nil {
+		return respondErr(c, aerr)
 	}
 	if req.Name == "" {
 		return respondErr(c, apierr.New(http.StatusBadRequest, "name is required", nil))
@@ -73,8 +74,9 @@ func (h *Handler) UpdateSpace(c *echo.Context) error {
 		return respondErr(c, apierr.New(http.StatusBadRequest, "Invalid space id", nil))
 	}
 	var req spacePatchRequest
-	if err := c.Bind(&req); err != nil {
-		return respondErr(c, apierr.New(http.StatusBadRequest, "Invalid request body", nil))
+	// gaka-bi2: 4 KiB cap — patch body is optional name + position int.
+	if aerr := BindJSONWithLimit(c, &req, BodyLimitSmall); aerr != nil {
+		return respondErr(c, aerr)
 	}
 	n, err := h.DB.RenameSpace(c.Request().Context(), owner, id, req.Name, req.Position)
 	if err != nil {
@@ -146,8 +148,11 @@ func (h *Handler) AddSpaceRule(c *echo.Context) error {
 		return respondErr(c, apierr.New(http.StatusBadRequest, "Invalid space id", nil))
 	}
 	var req spaceRuleRequest
-	if err := c.Bind(&req); err != nil {
-		return respondErr(c, apierr.New(http.StatusBadRequest, "Invalid request body", nil))
+	// gaka-bi2: 64 KiB cap — rule adds carry an axis + matchValue (regex or
+	// literal); Medium leaves headroom for template rules without allowing a
+	// runaway body.
+	if aerr := BindJSONWithLimit(c, &req, BodyLimitMedium); aerr != nil {
+		return respondErr(c, aerr)
 	}
 	// Validate the axis whitelist up front for a clear 400 (AddSpaceRule also guards).
 	if _, ok := db.ExploreColumn(req.Axis); !ok {

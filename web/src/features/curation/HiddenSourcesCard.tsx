@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Combobox } from "@/components/ui/combobox";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { AxisSelect } from "@/features/rules/AxisSelect";
 import { HiddenValueBadge } from "@/features/curation/HiddenValueBadge";
 import { groupByAxis } from "@/features/curation/groupByAxis";

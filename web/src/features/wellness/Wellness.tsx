@@ -16,7 +16,7 @@ import { PageToolbar } from "@/components/toolbar/PageToolbar";
 import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
 import { ChartCard } from "@/components/ChartCard";
 import { QueryGate } from "@/components/QueryGate";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { ColumnChart } from "@/viz/charts/ColumnChart";
 import { useTimeRange } from "@/hooks/useTimeRange";
 import { api } from "@/lib/api";

@@ -2,10 +2,10 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link, useNavigate } from "react-router";
 import { z } from "zod";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
+import { Card, CardContent } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
+import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
+import { Label } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
 import { useAuth } from "@/features/auth/useAuth";
 import { ApiError } from "@/lib/api";
 

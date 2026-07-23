@@ -1,4 +1,4 @@
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "@thebranchdriftcatalyst/catalyst-ui/ui/badge";
 import { cn } from "@/lib/utils";
 import type { ImportJobState } from "@/types/api";
 

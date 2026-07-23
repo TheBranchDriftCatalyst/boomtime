@@ -23,6 +23,19 @@ bd close <id>         # Complete work
 bd dolt push          # Push beads data to remote
 ```
 
+## Encryption-at-Rest Config
+
+`BOOM_ENCRYPTION_KEY` (base64 of 32 random bytes) is required for the
+encrypted Wakatime-key feature (gaka-6jm.2). Generate with
+`openssl rand -base64 32` and set it in `.env`.
+
+- `BOOM_ENV=dev`/`test`: missing key WARNs at boot; feature stays inert.
+- `BOOM_ENV=prod`/`production`: missing key EXITS at boot (gaka-6jm.9).
+
+Rotate the key with `boomtime rotate-encryption-key --old <b64> --new <b64>`
+(gaka-6jm.7) BEFORE flipping the env value; a hot swap strands existing
+ciphertext. See `CLAUDE.md` and the crypto.go threat model for details.
+
 ## Non-Interactive Shell Commands
 
 **ALWAYS use non-interactive flags** with file operations to avoid hanging on confirmation prompts.

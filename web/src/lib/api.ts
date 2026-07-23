@@ -38,6 +38,7 @@ import type {
   MomentumPayload,
   ProjectListPayload,
   ProjectStatistics,
+  PublicDashboardPayload,
   PunchcardPayload,
   RangeParams,
   RestoreSummary,
@@ -229,6 +230,62 @@ export const api = {
 
   createApiToken: () =>
     request<CreateTokenResponse>("/auth/create_api_token", { method: "POST" }),
+
+  // Change password (gaka-6jm). Server verifies currentPassword, hashes the
+  // new one with argon2id, and revokes every other refresh token for the
+  // owner — the caller's access token stays valid so no immediate re-login.
+  changePassword: (body: { currentPassword: string; newPassword: string }) =>
+    request<void>("/api/v1/users/current/password", {
+      method: "POST",
+      body,
+    }),
+
+  // Encrypted-at-rest imported Wakatime API key (gaka-6jm.2).
+  //
+  // - GET returns {hasSavedKey, keyStatus?, checkedAt?}. No hint or prefix
+  //   of the plaintext is ever surfaced. keyStatus is "valid" | "invalid" |
+  //   "unknown" | undefined; checkedAt is RFC3339 or undefined.
+  // - POST validates the key against wakatime.com first, then persists
+  //   (encrypts under AES-256-GCM). 204 on success; 400 if wakatime.com
+  //   rejects the key (surface message: "Wakatime rejected this key…").
+  // - DELETE clears the stored ciphertext + status metadata. Idempotent.
+  getWakatimeKey: () =>
+    request<{
+      hasSavedKey: boolean;
+      keyStatus?: "valid" | "invalid" | "unknown" | null;
+      checkedAt?: string | null;
+    }>("/api/v1/users/current/wakatime_key"),
+  saveWakatimeKey: (key: string) =>
+    request<void>("/api/v1/users/current/wakatime_key", {
+      method: "POST",
+      body: { key },
+    }),
+  deleteWakatimeKey: () =>
+    request<void>("/api/v1/users/current/wakatime_key", {
+      method: "DELETE",
+    }),
+
+  // Public profile (gaka-6jm.1). GET returns the caller's toggle + slug so
+  // Settings can render the current state and the Sidebar can conditionally
+  // show a "Public profile" nav link. PUT writes { enabled, slug }; the
+  // server enforces the slug regex, blocks reserved names, and returns 409
+  // on slug conflict — surfaced as an ApiError with status=409 that the
+  // form maps to an inline "already taken" message.
+  getPublicProfile: () =>
+    request<{ enabled: boolean; slug: string | null }>(
+      "/api/v1/users/current/profile",
+    ),
+  savePublicProfile: (body: { enabled: boolean; slug: string }) =>
+    request<{ enabled: boolean; slug: string | null }>(
+      "/api/v1/users/current/profile",
+      { method: "PUT", body },
+    ),
+  // Public payload — no auth. Used by the /p/:slug dashboard route.
+  getPublicDashboard: (slug: string) =>
+    request<PublicDashboardPayload>(
+      `/api/public/profile/${encodeURIComponent(slug)}`,
+      { auth: false },
+    ),
 
   // Backend emits hakatime's raw StoredApiToken (default aeson) keys; normalize
   // to the ergonomic shape components use.

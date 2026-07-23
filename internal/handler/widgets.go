@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
@@ -18,6 +19,29 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
 )
+
+// isWidgetScopeProjectHidden is the widget-endpoint analogue of
+// applyBadgeCuration (see badges.go). Widgets whose scope is a specific project
+// have cardinality-1 subject-matter — if the pinned project is on the owner's
+// hide list, there is no partially-scrubbed representation the renderer could
+// emit that doesn't leak the project name (via the title/subtitle) or its
+// activity (via top-N rows for that single project). The endpoint MUST 404
+// instead. Mirrors applyBadgeCuration's case-insensitive semantics: hide values
+// are stored lowercased by db.LoadHiddenSets and compared via lower(col).
+//
+// hidden may be nil (defensive; the handler never passes nil in production).
+func isWidgetScopeProjectHidden(hidden model.HiddenSets, project string) bool {
+	if hidden == nil {
+		return false
+	}
+	needle := strings.ToLower(project)
+	for _, hp := range hidden.Projects() {
+		if hp == needle {
+			return true
+		}
+	}
+	return false
+}
 
 // widgetDaysDefault/Max bound the public endpoint's range: an embeds default of
 // 30 days, hard-capped at 366 so a stray param can't force an all-time raw scan.
@@ -166,6 +190,24 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 		return respondErr(c, apierr.NotFound("Widget link not found"))
 	}
 
+	// gaka-6jm.5: for project-scoped widgets, the pinned project name is baked
+	// into the widget's identity (URL + title/subtitle) — if it has been curated
+	// away, ANY response leaks either the name (via chrome) or its activity
+	// (via top-N rows on a single-project scope, which the DB predicate won't
+	// exclude, since the scope IS that project). Mirror the badge endpoint's
+	// 404 policy so an outsider can't enumerate curated project names by probing
+	// minted widget ids. Runs BEFORE cachedBlob — a 404 has no cacheable payload
+	// and cachedBlob would swallow the apierr as a generic 500.
+	if scopeType == db.WidgetScopeProject {
+		hidden, err := h.DB.LoadHiddenSets(ctx, owner)
+		if err != nil {
+			return h.internalErr(c, "widget hidden sets load failed", err)
+		}
+		if isWidgetScopeProjectHidden(hidden, scopeRef) {
+			return respondErr(c, apierr.NotFound("Widget link not found"))
+		}
+	}
+
 	// Track the request so the Settings badge can show "last requested Nm ago"
 	// and its click-through popover can list unique origins. Best-effort:
 	// don't fail the render if the hit-record write hits an issue.
@@ -194,6 +236,7 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 		t0 := removeDays(t1, int(days))
 
 		// Privacy: ALWAYS apply the owner's curation to the public payload.
+		// (Project-scope hide → 404 already enforced above, before cachedBlob.)
 		hidden, err := h.DB.LoadHiddenSets(ctx, owner)
 		if err != nil {
 			return nil, err
@@ -238,7 +281,14 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 		}
 
 		payload := stats.ToStatsPayload(t0, t1, rows, nil)
-		data := &widget.Data{Payload: &payload}
+		// gaka-6jm.3: enforce the public-safe contract before ANY renderer sees
+		// the payload. The DB queries above already excluded hidden values
+		// from top-N segments; Scrub additionally strips hidden names from
+		// the OtherMembers tail that capWithOther collapses in application
+		// code, so a hidden project/language/etc. can never surface via the
+		// "Other (N more)" bucket the FE tooltip breakdown would expose.
+		scrubbed := widget.Scrub(&payload, hidden)
+		data := &widget.Data{Payload: scrubbed}
 		needs := widget.Needs(kind)
 		if customDef != nil {
 			needs = widget.NeedsForDef(*customDef)
@@ -261,7 +311,12 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 				return nil, err
 			}
 			mp := stats.ToMomentumPayload(t0, t1, mrows, 6)
-			data.Momentum = &mp
+			// gaka-6jm.6: enforce the public-safe contract on momentum too. The
+			// DB predicate above already excluded hidden projects at query time;
+			// ScrubMomentum is the belt-and-braces guard against any drift
+			// between the DB hide set and the render pipeline (mirrors the
+			// Scrub call on the StatsPayload above).
+			data.Momentum = widget.ScrubMomentum(&mp, hidden)
 		}
 		if needs.Sessions {
 			srows, err := h.DB.GetSessions(ctx, owner, t0, t1, widgetTimeLimit, hidden, members, scoped)

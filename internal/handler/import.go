@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
@@ -38,6 +39,32 @@ func (h *Handler) ImportRequest(c *echo.Context) error {
 	if err := c.Bind(&payload); err != nil {
 		return respondErr(c, apierr.BadRequest("Invalid request body"))
 	}
+
+	// gaka-6jm.8: save-on-success. Rather than persist the typed key eagerly
+	// (the old behavior — see the pre-6jm.8 comment block), we defer the
+	// save to the worker's terminal-success path. This way a user who typed a
+	// wrong key gets a failed import job WITHOUT their bad key being written
+	// to disk. The typed token still travels to the worker via QueueItem so
+	// the run has something to authenticate with; the worker only calls
+	// SetEncryptedWakatimeKey when the run finishes with no 401s from
+	// wakatime.com (see importer.applyKeyOutcome for the state machine).
+	//
+	// Fallback logic (unchanged): if the user did NOT type a token, try the
+	// previously-saved encrypted key before falling through to the server
+	// env key. This is the "save it once, click Import forever" ergonomic.
+	typedToken := payload.APIToken
+	if typedToken == "" {
+		if blob, has, err := h.DB.GetEncryptedWakatimeKey(c.Request().Context(), owner); err != nil {
+			h.Logger.Warn("wakatime key lookup failed", "user", owner, "err", err)
+		} else if has {
+			if pt, derr := auth.Decrypt(blob); derr != nil {
+				h.Logger.Warn("wakatime key decrypt failed (falling back to server key)", "user", owner, "err", derr)
+			} else {
+				payload.APIToken = string(pt)
+			}
+		}
+	}
+
 	payload.APIToken = h.effectiveImportToken(payload.APIToken)
 	ctx := c.Request().Context()
 
@@ -52,7 +79,12 @@ func (h *Handler) ImportRequest(c *echo.Context) error {
 		})
 	}
 
-	item := importer.QueueItem{Requester: owner, ReqPayload: payload}
+	// TypedToken carries the ORIGINAL user-typed token (may be "") separate
+	// from payload.APIToken (which has already been resolved to typed OR
+	// saved-encrypted OR server-env). Only the typed value is a candidate
+	// for save-on-success persistence — a fallback token was either already
+	// saved or is not the user's to persist.
+	item := importer.QueueItem{Requester: owner, ReqPayload: payload, TypedToken: typedToken}
 	raw, err := json.Marshal(item)
 	if err != nil {
 		return respondErr(c, apierr.Generic())
@@ -187,7 +219,8 @@ func (h *Handler) ImportConfig(c *echo.Context) error {
 // WakatimeRange: POST /import/wakatime-range — discover how far back the user's
 // wakatime.com data goes so the UI can auto-populate the import date range.
 func (h *Handler) WakatimeRange(c *echo.Context) error {
-	if _, _, aerr := h.resolveUser(c); aerr != nil {
+	_, owner, aerr := h.resolveUser(c)
+	if aerr != nil {
 		return respondErr(c, aerr)
 	}
 	var body struct {
@@ -208,7 +241,8 @@ func (h *Handler) WakatimeRange(c *echo.Context) error {
 
 	rng, err := importer.FetchAllTimeRange(ctx, token)
 	if err != nil {
-		h.Logger.Warn("wakatime range lookup failed", "err", err)
+		// gaka-awh.2: tag with "user" so this stays user-scoped in the Logs tab.
+		h.Logger.Warn("wakatime range lookup failed", "user", owner, "err", err)
 		return c.JSON(http.StatusOK, map[string]any{"hasData": false})
 	}
 	return c.JSON(http.StatusOK, rng)

@@ -4,6 +4,7 @@ import {
   Award,
   BookOpen,
   Download,
+  Globe,
   HeartPulse,
   LayoutDashboard,
   ListTree,
@@ -14,6 +15,7 @@ import {
   Settings2,
 } from "lucide-react";
 import { useSpaces } from "@/features/spaces/useSpaces";
+import { useAuth } from "@/features/auth/useAuth";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
 import { cn } from "@/lib/utils";
@@ -102,6 +104,46 @@ function SpacesNavGroup({
   );
 }
 
+/** PublicProfileNavLink — conditional nav item that only appears when the
+ * caller has enabled their public profile (gaka-6jm.1). Opens the public
+ * URL in a new tab: the /p/:slug route is unauthenticated so keeping it
+ * in-app would drop the sidebar/header chrome mid-navigation and confuse
+ * the user (the shell auth-guards the whole /app tree). */
+function PublicProfileNavLink({ collapsed }: { collapsed: boolean }) {
+  const { isLoggedIn } = useAuth();
+  const { data } = useQuery({
+    queryKey: qk.publicProfile(),
+    // Only fetch when logged in; the public route needs no auth but the GET
+    // /api/v1/users/current/profile does.
+    queryFn: () => api.getPublicProfile(),
+    enabled: isLoggedIn,
+    // Small stale window so a toggle flip in Settings shows here quickly
+    // via invalidateQueries; the manual invalidate does the heavy lifting.
+    staleTime: 30_000,
+    retry: false,
+  });
+
+  if (!data?.enabled || !data.slug) return null;
+  const href = `/p/${data.slug}`;
+
+  // Plain <a> (not NavLink): the target is unauthed and opens in a new tab,
+  // so it should behave like any external link.
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      title={collapsed ? "Public profile" : undefined}
+      aria-label="Public profile"
+      className={sidebarItemClass(collapsed, false)}
+      data-testid="sidebar-public-profile"
+    >
+      <Globe className="h-4 w-4 shrink-0" />
+      {!collapsed && "Public profile"}
+    </a>
+  );
+}
+
 /** App sidebar: brand, nav items, the Spaces group, and the footer actions. */
 export function Sidebar({
   collapsed,
@@ -148,6 +190,8 @@ export function Sidebar({
             {!collapsed && item.name}
           </NavLink>
         ))}
+
+        <PublicProfileNavLink collapsed={collapsed} />
 
         <SpacesNavGroup collapsed={collapsed} onCreateSpace={onCreateSpace} />
       </nav>

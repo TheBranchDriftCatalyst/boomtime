@@ -42,6 +42,15 @@ type Config struct {
 	Env                string // "dev" or "prod"
 	HTTPLog            bool
 
+	// CookieSecure controls the Secure attribute on the refresh_token cookie
+	// (gaka-b5x part 1). Defaults to true when BOOM_ENV names a production
+	// environment ("prod" / "production") so a prod deploy behind TLS never
+	// forgets the flag. In dev the default is false so browsers accept the
+	// cookie on http://localhost. Explicit override via BOOM_COOKIE_SECURE
+	// (true|false) always wins — useful for dev users who want to smoke-test
+	// the prod cookie shape against a local HTTPS reverse proxy.
+	CookieSecure bool
+
 	DBHost string
 	DBPort int
 	DBName string
@@ -133,6 +142,18 @@ func getEnvBool(key string, def bool) bool {
 	return def
 }
 
+// isProdEnvName mirrors cmd/boomtime.isProdEnv but stays inside package config
+// so downstream defaults (like CookieSecure) can key off it without importing
+// main. Kept private — external callers should read Config.CookieSecure /
+// Config.IsDev instead of re-deriving the classification.
+func isProdEnvName(env string) bool {
+	switch strings.ToLower(strings.TrimSpace(env)) {
+	case "prod", "production":
+		return true
+	}
+	return false
+}
+
 // Load reads configuration from the environment, applying hakatime's defaults.
 func Load() *Config {
 	env := getEnv("BOOM_ENV", "prod")
@@ -168,6 +189,10 @@ func Load() *Config {
 		DBExplainSlowMs: getEnvInt("BOOM_DB_EXPLAIN_SLOW_MS", explainSlowDefault),
 
 		GithubToken: getEnv("GITHUB_TOKEN", ""),
+
+		// gaka-b5x.1: cookie Secure flag. Default = "true in prod, false in
+		// dev". BOOM_COOKIE_SECURE=true|false forces either mode explicitly.
+		CookieSecure: getEnvBool("BOOM_COOKIE_SECURE", isProdEnvName(env)),
 	}
 
 	rwURL := getEnv("BOOM_REMOTE_WRITE_URL", "")

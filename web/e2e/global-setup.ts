@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { request as playwrightRequest } from "@playwright/test";
 import type { FullConfig } from "@playwright/test";
@@ -49,6 +49,33 @@ export default async function globalSetup(_config: FullConfig) {
     // POST /auth/refresh_token on load.
     mkdirSync(path.dirname(STORAGE_STATE), { recursive: true });
     await request.storageState({ path: STORAGE_STATE });
+
+    // 6. Inject localStorage entries the SPA reads on boot:
+    //    - `boomtime-welcomed`: suppresses the first-run onboarding modal that
+    //      otherwise overlays the app and blocks toolbar clicks in tests.
+    //    - `theme:name`/`theme:variant`: pins the boomtime theme so visual
+    //      regressions don't drift with catalyst-ui defaults.
+    // storageState() only captures cookies from a request context, so we
+    // rewrite the JSON to add the origin's localStorage entries.
+    const state = JSON.parse(readFileSync(STORAGE_STATE, "utf8"));
+    state.origins = state.origins ?? [];
+    let originEntry = state.origins.find((o: { origin: string }) => o.origin === BASE_URL);
+    if (!originEntry) {
+      originEntry = { origin: BASE_URL, localStorage: [] };
+      state.origins.push(originEntry);
+    }
+    originEntry.localStorage = originEntry.localStorage ?? [];
+    const setLS = (name: string, value: string) => {
+      const existing = originEntry.localStorage.find(
+        (e: { name: string }) => e.name === name,
+      );
+      if (existing) existing.value = value;
+      else originEntry.localStorage.push({ name, value });
+    };
+    setLS("boomtime-welcomed", "1");
+    setLS("theme:name", JSON.stringify("boomtime"));
+    setLS("theme:variant", JSON.stringify("dark"));
+    writeFileSync(STORAGE_STATE, JSON.stringify(state, null, 2));
   } finally {
     await request.dispose();
   }

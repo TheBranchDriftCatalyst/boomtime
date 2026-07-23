@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Bot, Sparkles, User } from "lucide-react";
 import { ChartCard } from "@/components/ChartCard";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import type { AIActivityPayload } from "@/types/api";
 
 interface AIAssistanceCardProps {

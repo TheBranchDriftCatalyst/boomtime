@@ -6,9 +6,24 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 )
+
+// encryptionKeyEnvName mirrors internal/auth.EncryptionKeyEnv without importing
+// that package (auth already depends on internal/db, so the reverse import
+// would create a cycle). Keep in sync with internal/auth/crypto.go.
+const encryptionKeyEnvName = "BOOM_ENCRYPTION_KEY"
+
+// isEncryptionKeyConfigured is a cheap presence-only check. The full
+// base64/length validation lives in internal/auth.LoadKeyFromEnv; for the
+// restore gate we only need to know that the operator has SOMETHING set —
+// a malformed key still lets the operator see the ciphertext survive the
+// round trip and fix the env before decrypt is attempted.
+func isEncryptionKeyConfigured() bool {
+	return os.Getenv(encryptionKeyEnvName) != ""
+}
 
 // dump.go implements the whole-database logical backup ("Save DB") and its
 // destructive restore ("Load DB"). The dump is a ZIP of per-table Postgres
@@ -37,10 +52,28 @@ type dumpTable struct {
 // is deliberately absent — schema is owned by the running binary's migrations;
 // the manifest records the version for compatibility checking instead.
 var dumpTables = []dumpTable{
-	{"users", []string{"username", "hashed_password", "salt_used"}},
+	// gaka-awh.3: the users dump MUST include every user-owned column so a
+	// backup → restore round-trip preserves the whole user state. Omitting a
+	// column silently drops it on restore (TRUNCATE + COPY of a subset). The
+	// encrypted_wakatime_key ciphertext is safe to export: it's AES-256-GCM
+	// sealed with BOOM_ENCRYPTION_KEY, which lives in the process env and is
+	// NEVER included in a backup — an attacker with the ZIP still needs the
+	// env key to decrypt (same threat model as hashed_password). The restore
+	// path additionally REFUSES to load a dump containing ciphertext when
+	// BOOM_ENCRYPTION_KEY is unset in the current env, because the restored
+	// rows would be undecryptable.
+	{"users", []string{
+		"username", "hashed_password", "salt_used",
+		"encrypted_wakatime_key", "wakatime_key_status", "wakatime_key_checked_at",
+		"public_profile_enabled", "public_slug",
+	}},
 	{"projects", []string{"name", "description", "owner", "dependencies", "repository"}},
-	{"auth_tokens", []string{"token", "owner", "token_expiry", "last_usage", "token_name", "token_description"}},
-	{"refresh_tokens", []string{"refresh_token", "owner", "token_expiry"}},
+	// gaka-b5x.2: hashed_token / hashed_refresh_token columns are dumped so
+	// hashed-only rows (new sessions minted after migration 00026) survive an
+	// export → import round-trip. The raw `token` / `refresh_token` columns
+	// remain here for legacy rows minted before the cutover.
+	{"auth_tokens", []string{"token", "owner", "token_expiry", "last_usage", "token_name", "token_description", "hashed_token"}},
+	{"refresh_tokens", []string{"refresh_token", "owner", "token_expiry", "hashed_refresh_token"}},
 	{"heartbeats", []string{
 		"id", "editor", "plugin", "platform", "machine", "sender", "user_agent",
 		"branch", "category", "cursorpos", "dependencies", "entity", "is_write",
@@ -220,6 +253,57 @@ func validateManifest(m *dumpManifest, zr *zip.Reader, currentGoose int64) error
 	return nil
 }
 
+// usersHasEncryptedRows scans the users COPY-text stream for any non-null
+// encrypted_wakatime_key value. Postgres COPY text format is tab-separated,
+// `\N` marks SQL NULL, newlines terminate rows. We use the column index of
+// encrypted_wakatime_key in the current dump's users column list (defensive:
+// walk dumpTables so the check keeps working if the column order changes).
+// The check is best-effort: a malformed users file will fail the subsequent
+// COPY FROM anyway; here we only care about "does this dump contain
+// ciphertext we would need to decrypt?" so unset-key restores can be blocked.
+func usersHasEncryptedRows(zr *zip.Reader) (bool, error) {
+	var usersCols []string
+	for _, t := range dumpTables {
+		if t.Name == "users" {
+			usersCols = t.Columns
+			break
+		}
+	}
+	col := -1
+	for i, c := range usersCols {
+		if c == "encrypted_wakatime_key" {
+			col = i
+			break
+		}
+	}
+	if col < 0 {
+		return false, nil
+	}
+	f, err := zr.Open(entryName("users"))
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return false, err
+	}
+	// COPY text: rows are \n-terminated, columns \t-separated, NULL = "\N".
+	for _, line := range strings.Split(strings.TrimRight(string(data), "\n"), "\n") {
+		if line == "" {
+			continue
+		}
+		fields := strings.Split(line, "\t")
+		if col >= len(fields) {
+			continue
+		}
+		if fields[col] != `\N` {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // RestoreAll replaces the ENTIRE application state with the archive's contents.
 // Validation happens up front (nothing is touched on a bad/foreign/mismatched
 // archive); the destructive part is one transaction — TRUNCATE everything,
@@ -245,6 +329,17 @@ func (d *DB) RestoreAll(ctx context.Context, zr *zip.Reader) (RestoreSummary, er
 	}
 	if err := validateManifest(m, zr, currentGoose); err != nil {
 		return summary, err
+	}
+	// gaka-awh.3: refuse to restore a dump that carries wakatime ciphertext
+	// when this process has no BOOM_ENCRYPTION_KEY configured — the restored
+	// blobs would be undecryptable forever, wiping every user's saved key on
+	// the next read attempt. Better to fail loudly here than after TRUNCATE.
+	if hasEnc, err := usersHasEncryptedRows(zr); err != nil {
+		return summary, &RestoreValidationError{Msg: "unreadable users table entry: " + err.Error()}
+	} else if hasEnc && !isEncryptionKeyConfigured() {
+		return summary, &RestoreValidationError{
+			Msg: "backup contains encrypted user secrets but BOOM_ENCRYPTION_KEY is not configured — set it in this environment before restoring, or every user's saved Wakatime key will be unusable",
+		}
 	}
 	summary.GooseVersion = m.GooseVersion
 

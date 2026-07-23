@@ -2,7 +2,7 @@ import type { ReactElement, ReactNode } from "react";
 import { render, type RenderOptions } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
-import { ThemeProvider } from "@/theme/ThemeProvider";
+import { ThemeProvider } from "@thebranchdriftcatalyst/catalyst-ui/contexts/Theme";
 import { AuthProvider } from "@/features/auth/useAuth";
 
 /** A QueryClient with retries + refetch off, so tests are deterministic. */

@@ -9,9 +9,9 @@ import { EraserIcon } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
 import { Spinner } from "@/components/Spinner";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
+import { Card, CardContent } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
+import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
 import {
   Table,
   TableBody,
@@ -19,7 +19,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
+} from "@thebranchdriftcatalyst/catalyst-ui/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -27,7 +27,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@thebranchdriftcatalyst/catalyst-ui/ui/dialog";
 import type { EntitySummary, EntityType } from "@/types/api";
 
 // The four entity-type buckets stored in heartbeats.ty. Order chosen so

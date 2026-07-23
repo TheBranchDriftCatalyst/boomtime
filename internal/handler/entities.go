@@ -89,8 +89,10 @@ func (h *Handler) RedactEntities(c *echo.Context) error {
 		return respondErr(c, apierr.BadRequest("missing confirm=redact-entities — this endpoint scrubs the entity column on heartbeat rows"))
 	}
 	var body redactEntitiesBody
-	if err := c.Bind(&body); err != nil {
-		return respondErr(c, apierr.BadRequest("invalid JSON body"))
+	// gaka-bi2: 64 KiB cap — batches are bounded to 500 entities; each entity
+	// is a short URL/path/app name. Medium fits comfortably (500 * ~120 chars).
+	if aerr := BindJSONWithLimit(c, &body, BodyLimitMedium); aerr != nil {
+		return respondErr(c, aerr)
 	}
 	if !validEntityTypes[body.Ty] {
 		return respondErr(c, apierr.BadRequest("ty must be one of file/app/domain/url"))

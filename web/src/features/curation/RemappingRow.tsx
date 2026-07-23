@@ -8,7 +8,7 @@ import {
   Pencil,
   X,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "@thebranchdriftcatalyst/catalyst-ui/ui/badge";
 import { RemappingForm } from "@/features/curation/RemappingForm";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";

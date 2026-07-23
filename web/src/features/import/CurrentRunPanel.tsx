@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Ban, Wifi, WifiOff } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
+import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
+import { Progress } from "@thebranchdriftcatalyst/catalyst-ui/ui/progress";
 import { ImportStateBadge } from "@/features/import/ImportStateBadge";
 import { DriftBanner } from "@/features/import/DriftBanner";
 import { LogTerminal } from "@/components/LogTerminal";

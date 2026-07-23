@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
+import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { embedSnippets, widgetSvgUrl, type WidgetCatalogEntry } from "./catalog";
 
 interface WidgetCardProps {

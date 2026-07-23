@@ -14,7 +14,7 @@ func clearConfigEnv(t *testing.T) {
 	for _, k := range []string{
 		"BOOM_PORT", "BOOM_API_PREFIX", "BOOM_BADGE_URL", "BOOM_DASHBOARD_PATH",
 		"BOOM_SHIELDS_IO_URL", "BOOM_ENABLE_REGISTRATION", "BOOM_SESSION_EXPIRY",
-		"BOOM_LOG_LEVEL", "BOOM_ENV", "BOOM_HTTP_LOG",
+		"BOOM_LOG_LEVEL", "BOOM_ENV", "BOOM_HTTP_LOG", "BOOM_COOKIE_SECURE",
 		"BOOM_DB_HOST", "BOOM_DB_PORT", "BOOM_DB_NAME", "BOOM_DB_USER", "BOOM_DB_PASS",
 		"BOOM_REMOTE_WRITE_URL", "BOOM_REMOTE_WRITE_TOKEN",
 		"WAKATIME_API_KEY", "GITHUB_TOKEN",
@@ -102,6 +102,42 @@ func TestGetEnvInt(t *testing.T) {
 			t.Errorf("got %d, want 9090", got)
 		}
 	})
+}
+
+// TestCookieSecureDefaults is the unit-layer probe for gaka-b5x.1. It catches
+// the specific bug of "the cookie ships without Secure on a plaintext HTTP
+// prod deploy" by asserting the derivation: prod → true, dev → false,
+// explicit BOOM_COOKIE_SECURE always wins. Would fail if a future refactor
+// dropped the Secure flag from the config path OR flipped the default.
+func TestCookieSecureDefaults(t *testing.T) {
+	cases := []struct {
+		name     string
+		env      string
+		explicit string // "" = unset
+		want     bool
+	}{
+		{name: "prod default → Secure", env: "prod", want: true},
+		{name: "production default → Secure", env: "production", want: true},
+		{name: "PROD (case) default → Secure", env: "PROD", want: true},
+		{name: "dev default → not Secure", env: "dev", want: false},
+		{name: "prod + BOOM_COOKIE_SECURE=false overrides", env: "prod", explicit: "false", want: false},
+		{name: "dev + BOOM_COOKIE_SECURE=1 overrides", env: "dev", explicit: "1", want: true},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			clearConfigEnv(t)
+			t.Setenv("BOOM_ENV", tc.env)
+			if tc.explicit != "" {
+				t.Setenv("BOOM_COOKIE_SECURE", tc.explicit)
+			}
+			c := Load()
+			if c.CookieSecure != tc.want {
+				t.Errorf("CookieSecure = %v, want %v (BOOM_ENV=%q BOOM_COOKIE_SECURE=%q)",
+					c.CookieSecure, tc.want, tc.env, tc.explicit)
+			}
+		})
+	}
 }
 
 func TestGetEnvBool(t *testing.T) {

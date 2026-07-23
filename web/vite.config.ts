@@ -40,6 +40,9 @@ export default defineConfig({
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
+    // Dedupe React so a linked catalyst-ui (via yarn link) doesn't ship its
+    // own copy alongside boomtime's — mixed instances break hooks.
+    dedupe: ["react", "react-dom", "react/jsx-runtime"],
   },
   server: {
     port: 5173,

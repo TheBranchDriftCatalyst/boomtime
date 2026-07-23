@@ -3,16 +3,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { Copy, KeyRound, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Badge } from "@thebranchdriftcatalyst/catalyst-ui/ui/badge";
+import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+} from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
+import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
 import {
   Table,
   TableBody,
@@ -20,7 +20,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
+} from "@thebranchdriftcatalyst/catalyst-ui/ui/table";
 import { api, ApiError } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
 import { copyToClipboard } from "@/lib/utils";

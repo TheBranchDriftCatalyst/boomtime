@@ -1,11 +1,11 @@
 import { Clock } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from "@thebranchdriftcatalyst/catalyst-ui/ui/dropdown-menu";
 import { TIME_LIMIT_OPTIONS } from "@/lib/config";
 
 interface TimeLimitDropdownProps {

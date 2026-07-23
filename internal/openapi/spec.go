@@ -63,6 +63,8 @@ const (
 	tagDerived     = "Derived Data"
 	tagSources     = "Sources"
 	tagDocs        = "Docs"
+	tagProfile     = "Public Profile"
+	tagIntegration = "Integrations"
 )
 
 var (
@@ -128,6 +130,8 @@ func build() (*openapi3.T, error) {
 			{Name: tagSources, Description: "Ingestion source health (per plugin/editor/machine last check-in)."},
 			{Name: tagMeta, Description: "Build/version disclosure + embedded changelog."},
 			{Name: tagDocs, Description: "This document and the embedded interactive explorer."},
+			{Name: tagProfile, Description: "Opt-in public read-only profile page (owner CRUD + public slug view)."},
+			{Name: tagIntegration, Description: "External-service credential management (encrypted-at-rest)."},
 		},
 	}
 
@@ -782,6 +786,158 @@ func build() (*openapi3.T, error) {
 			Security:    &openapi3.SecurityRequirements{{"refreshCookie": []string{}}}}
 		setStatus(op, http.StatusOK, r("{data:{full_name,email,photo}}.", "UserStatusResponse"))
 		stdErrors(op, "400", "403", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/current/password", "POST", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagAuth}, Summary: "Change password",
+			Description: "Verifies currentPassword, enforces min-8/letter+digit on newPassword, re-hashes with argon2id, and revokes every refresh token for the owner (other sessions bounce)."}
+		body := openapi3.NewObjectSchema()
+		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{
+			Required: true, Description: "{currentPassword, newPassword}.",
+			Content: openapi3.NewContentWithJSONSchema(body),
+		}}
+		setStatus(op, http.StatusNoContent, noContentRef())
+		stdErrors(op, "400", "401", "403", "500")
+		return op
+	}())
+
+	// ==== PUBLIC PROFILE (gaka-6jm.1) ========================================
+	//
+	// The `/api/v1/users/current/profile` pair is the owner-side toggle + slug
+	// CRUD; `/api/public/profile/{slug}` is the auth-less renderer. Payload
+	// shape for the public route is scrubbed through internal/widget.Scrub —
+	// see internal/handler/profile.go for the exact security contract.
+
+	// Reusable inline schema for the owner-side GET/PUT profile shape.
+	profileToggleSchema := func() *openapi3.Schema {
+		s := openapi3.NewObjectSchema()
+		s.Properties = openapi3.Schemas{
+			"enabled": &openapi3.SchemaRef{Value: openapi3.NewBoolSchema()},
+			"slug":    &openapi3.SchemaRef{Value: openapi3.NewStringSchema().WithMinLength(3).WithMaxLength(30)},
+		}
+		s.Required = []string{"enabled"}
+		return s
+	}
+
+	doc.AddOperation("/api/v1/users/current/profile", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagProfile}, Summary: "Get public-profile toggle + slug",
+			Description: "Returns the caller's public-profile enabled flag and (nullable) slug. Owner-only."}
+		setStatus(op, http.StatusOK, rInline("{enabled, slug|null}.", profileToggleSchema()))
+		stdErrors(op, "401", "403", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/current/profile", "PUT", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagProfile}, Summary: "Update public-profile toggle + slug",
+			Description: "Body: {enabled, slug}. Enabling requires a valid slug (3-30 chars, lowercase alphanumeric + hyphens, not reserved). Returns 409 if the slug is already taken."}
+		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{
+			Required: true, Description: "{enabled, slug}.",
+			Content: openapi3.NewContentWithJSONSchema(profileToggleSchema()),
+		}}
+		setStatus(op, http.StatusOK, rInline("Persisted {enabled, slug|null}.", profileToggleSchema()))
+		stdErrors(op, "400", "401", "403", "409", "500")
+		return op
+	}())
+	doc.AddOperation("/api/public/profile/{slug}", "GET", func() *openapi3.Operation {
+		// Public payload is a hand-tuned subset of StatsPayload — omit machines,
+		// no *Count fields — scrubbed through widget.Scrub. Documented as an
+		// inline object to reflect that it's intentionally NOT the wire shape
+		// of StatsPayload (which would leak fields the scrubber drops).
+		body := openapi3.NewObjectSchema()
+		body.Properties = openapi3.Schemas{
+			"username":     &openapi3.SchemaRef{Value: openapi3.NewStringSchema()},
+			"startDate":    &openapi3.SchemaRef{Value: openapi3.NewDateTimeSchema()},
+			"endDate":      &openapi3.SchemaRef{Value: openapi3.NewDateTimeSchema()},
+			"totalSeconds": &openapi3.SchemaRef{Value: openapi3.NewIntegerSchema()},
+			"dailyAvg":     &openapi3.SchemaRef{Value: openapi3.NewFloat64Schema()},
+			"dailyTotal": &openapi3.SchemaRef{Value: func() *openapi3.Schema {
+				a := openapi3.NewArraySchema()
+				a.Items = &openapi3.SchemaRef{Value: openapi3.NewIntegerSchema()}
+				return a
+			}()},
+			"projects": &openapi3.SchemaRef{Value: func() *openapi3.Schema {
+				a := openapi3.NewArraySchema()
+				a.Items = &openapi3.SchemaRef{Value: openapi3.NewObjectSchema()}
+				return a
+			}()},
+			"languages": &openapi3.SchemaRef{Value: func() *openapi3.Schema {
+				a := openapi3.NewArraySchema()
+				a.Items = &openapi3.SchemaRef{Value: openapi3.NewObjectSchema()}
+				return a
+			}()},
+			"editors": &openapi3.SchemaRef{Value: func() *openapi3.Schema {
+				a := openapi3.NewArraySchema()
+				a.Items = &openapi3.SchemaRef{Value: openapi3.NewObjectSchema()}
+				return a
+			}()},
+			"platforms": &openapi3.SchemaRef{Value: func() *openapi3.Schema {
+				a := openapi3.NewArraySchema()
+				a.Items = &openapi3.SchemaRef{Value: openapi3.NewObjectSchema()}
+				return a
+			}()},
+			"categories": &openapi3.SchemaRef{Value: func() *openapi3.Schema {
+				a := openapi3.NewArraySchema()
+				a.Items = &openapi3.SchemaRef{Value: openapi3.NewObjectSchema()}
+				return a
+			}()},
+			"punchcard": refSchema("PunchcardPayload"),
+		}
+		op := &openapi3.Operation{Tags: []string{tagProfile}, Summary: "Public profile dashboard (no auth)",
+			Description: "Resolves slug -> user and returns a widget-scrubbed 60-day activity summary. Machines segment is omitted. Response is cached with must-revalidate for prompt privacy propagation when a user disables their profile.",
+			Security:    &public,
+			Parameters:  openapi3.Parameters{pathParamStr("slug", "Public profile slug (3-30 chars, lowercase alphanumeric + hyphens).")}}
+		setStatus(op, http.StatusOK, rInline("Scrubbed activity summary.", body))
+		stdErrors(op, "404", "500")
+		return op
+	}())
+
+	// ==== INTEGRATIONS: WAKATIME KEY (gaka-6jm.2) ============================
+	//
+	// Encrypted-at-rest imported Wakatime API key. Plaintext is NEVER returned
+	// on GET — the shape is metadata-only (hasSavedKey, status, checkedAt).
+	// See internal/handler/wakatime_key.go for the security posture.
+
+	wakatimeKeyGetSchema := func() *openapi3.Schema {
+		s := openapi3.NewObjectSchema()
+		s.Properties = openapi3.Schemas{
+			"hasSavedKey": &openapi3.SchemaRef{Value: openapi3.NewBoolSchema()},
+			"keyStatus":   &openapi3.SchemaRef{Value: openapi3.NewStringSchema().WithEnum("valid", "invalid", "unknown")},
+			"checkedAt":   &openapi3.SchemaRef{Value: openapi3.NewDateTimeSchema()},
+		}
+		s.Required = []string{"hasSavedKey"}
+		return s
+	}
+	wakatimeKeySaveSchema := func() *openapi3.Schema {
+		s := openapi3.NewObjectSchema()
+		s.Properties = openapi3.Schemas{
+			"key": &openapi3.SchemaRef{Value: openapi3.NewStringSchema()},
+		}
+		s.Required = []string{"key"}
+		return s
+	}
+
+	doc.AddOperation("/api/v1/users/current/wakatime_key", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagIntegration}, Summary: "Get saved Wakatime key metadata",
+			Description: "Returns whether the caller has a saved encrypted Wakatime key on file, the last-known validity status, and the last-check timestamp. Never returns the plaintext or any prefix of it."}
+		setStatus(op, http.StatusOK, rInline("{hasSavedKey, keyStatus?, checkedAt?}.", wakatimeKeyGetSchema()))
+		stdErrors(op, "401", "403", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/current/wakatime_key", "POST", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagIntegration}, Summary: "Save (and validate) a Wakatime API key",
+			Description: "Probes wakatime.com with the supplied key BEFORE persisting. A conclusive 401/403 from the probe returns 400 so an obviously-bad key never survives in the DB. Network errors are tolerated: the save proceeds with keyStatus='unknown'. Encrypted at rest — plaintext never logged."}
+		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{
+			Required: true, Description: "{key}.",
+			Content: openapi3.NewContentWithJSONSchema(wakatimeKeySaveSchema()),
+		}}
+		setStatus(op, http.StatusNoContent, noContentRef())
+		stdErrors(op, "400", "401", "403", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/current/wakatime_key", "DELETE", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagIntegration}, Summary: "Clear the saved Wakatime key",
+			Description: "Idempotent — 204 whether or not a saved key existed."}
+		setStatus(op, http.StatusNoContent, noContentRef())
+		stdErrors(op, "401", "403", "500")
 		return op
 	}())
 

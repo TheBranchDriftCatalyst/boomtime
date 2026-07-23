@@ -100,13 +100,56 @@ func NewWithObservability(ctx context.Context, url string, opts Options) (*DB, e
 // Phase 1: structured query logging via slog, with mandatory arg redaction.
 // ---------------------------------------------------------------------------
 
+// ctxUserKey is the private context-value key under which the request-scope
+// resolved username is stashed by an upstream middleware. The pgx tracer reads
+// it in newSlogTraceLogger below and, when present, emits it as the `"user"`
+// slog attribute so LogHub's FilterForUser (internal/logging) can gate the
+// resulting DEBUG SQL records to the acting user only — the fix for gaka-ar7
+// (LogHub SQL-tracer records leaking cross-tenant activity narration).
+//
+// Server-scope queries (migrations, healthz, N+1 counter probes, background
+// workers) run with no user in ctx and therefore emit no `"user"` attr — those
+// records stay visible to every authenticated Logs viewer, which matches the
+// server-scope semantics FilterForUser already implements.
+type ctxUserKey struct{}
+
+// WithUser stashes username in ctx under the tracer's private key. It is called
+// by the server-layer user-injection middleware right after the request's
+// bearer token is resolved to an owner. An empty username is a no-op (returns
+// ctx unchanged) so upstream code doesn't have to branch on the auth outcome.
+func WithUser(ctx context.Context, username string) context.Context {
+	if username == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, ctxUserKey{}, username)
+}
+
+// UserFrom returns the username previously stashed via WithUser, or the empty
+// string if none is present (nil ctx included — safe to call in every tracer
+// path). The pgx tracer treats "" as "server-scope" and emits no `"user"` attr.
+func UserFrom(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	u, _ := ctx.Value(ctxUserKey{}).(string)
+	return u
+}
+
 // newSlogTraceLogger adapts our log/slog default logger to tracelog.Logger. When
 // logArgs is false, args are dropped entirely (only sql/duration/commandTag are
 // logged). When true, args are still redacted for statements touching sensitive
 // tables/columns before they reach the log.
+//
+// Every emitted record additionally carries the request-scope username (when
+// present in ctx via WithUser) under the `"user"` attribute — the tee handler
+// flattens that into LogEntry.Attrs["user"], and logging.FilterForUser (gaka-
+// awh.2) drops the record for any other tenant's Logs viewer. Without this
+// hook the DEBUG SQL narration ("UPDATE users SET encrypted_wakatime_key = NULL
+// WHERE username = $1") leaks activity metadata cross-tenant even though the
+// bind args are redacted (gaka-ar7).
 func newSlogTraceLogger(logArgs bool) tracelog.Logger {
 	return tracelog.LoggerFunc(func(ctx context.Context, level tracelog.LogLevel, msg string, data map[string]any) {
-		attrs := make([]any, 0, len(data)*2)
+		attrs := make([]any, 0, len(data)*2+2)
 		sql, _ := data["sql"].(string)
 		for k, v := range data {
 			if k == "args" {
@@ -116,6 +159,9 @@ func newSlogTraceLogger(logArgs bool) tracelog.Logger {
 				v = redactArgs(sql, v)
 			}
 			attrs = append(attrs, k, v)
+		}
+		if u := UserFrom(ctx); u != "" {
+			attrs = append(attrs, "user", u)
 		}
 		slog.Default().Log(ctx, mapLevel(level), msg, attrs...)
 	})

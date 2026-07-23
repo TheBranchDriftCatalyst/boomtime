@@ -42,6 +42,13 @@ const Settings = lazy(() =>
 const Wellness = lazy(() =>
   import("@/features/wellness/Wellness").then((m) => ({ default: m.Wellness })),
 );
+// Public profile lives OUTSIDE the /app tree — /p/:slug is unauthenticated
+// and renders its own minimal shell (no sidebar, no header).
+const PublicDashboard = lazy(() =>
+  import("@/features/publicprofile/PublicDashboard").then((m) => ({
+    default: m.PublicDashboard,
+  })),
+);
 
 function RootRedirect() {
   const { isLoggedIn, bootstrapping } = useAuth();
@@ -72,6 +79,15 @@ export function App() {
       <Route path="/" element={<RootRedirect />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      {/* Public profile — unauthenticated, no shell. */}
+      <Route
+        path="/p/:slug"
+        element={
+          <Suspense fallback={<PageFallback />}>
+            <PublicDashboard />
+          </Suspense>
+        }
+      />
       <Route
         path="/app"
         element={

@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { QueryGate } from "@/components/QueryGate";
 import { ImportStateBadge } from "@/features/import/ImportStateBadge";
 import { DriftBanner } from "@/features/import/DriftBanner";

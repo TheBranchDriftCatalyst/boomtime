@@ -1,10 +1,10 @@
 import { ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@/components/ui/popover";
+} from "@thebranchdriftcatalyst/catalyst-ui/ui/popover";
 import { AXES, axisLabel } from "@/lib/axes";
 import type { HeartbeatAxis } from "@/types/api";
 

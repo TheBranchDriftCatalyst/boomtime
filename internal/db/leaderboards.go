@@ -60,8 +60,17 @@ func (d *DB) GetLeaderboards(ctx context.Context, start, end time.Time, requeste
 	// MODE() per case-folded group picks a canonical display casing. Cross-sender
 	// merging is intentionally NOT case-folded — different users' casings stay
 	// distinct because sender is a grouping column.
-	ensureRequester()
-	reqCond := fmt.Sprintf("sender = $%d", requesterArg)
+	//
+	// Only bind $req when there is an actual rename to scope; otherwise remapExpr
+	// returns `col` unchanged and $req would be an orphan positional param (pgx
+	// rejects the query with "expected N arguments, got N+1").
+	if rs.HasAxis("project") || rs.HasAxis("language") {
+		ensureRequester()
+	}
+	reqCond := ""
+	if requesterArg != 0 {
+		reqCond = fmt.Sprintf("sender = $%d", requesterArg)
+	}
 	var projExpr, langExpr string
 	projExpr, args, next = rs.remapExpr("project", "project", reqCond, next, args)
 	langExpr, args, next = rs.remapExpr("language", "language", reqCond, next, args)

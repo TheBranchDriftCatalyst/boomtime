@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router";
 import { Boxes, Download, Layers, Wand2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -8,7 +8,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@thebranchdriftcatalyst/catalyst-ui/ui/dialog";
 import { useFirstRunWelcome } from "@/features/onboarding/useFirstRunWelcome";
 
 // First-run welcome modal: shown on the user's first visit to /app in this

@@ -1,6 +1,191 @@
 package model
 
-import "time"
+import (
+	"strings"
+	"time"
+)
+
+// HiddenSets is a minimal, package-neutral view of the per-axis hide rules for
+// a user. It exists in the model package so payload types can implement
+// axis-aware scrubbing (ScrubTail) without importing internal/db (which would
+// create an import cycle, since db imports model).
+//
+// The interface intentionally exposes ONLY read accessors. Concrete
+// implementations live elsewhere: db.HiddenSets (production, DB-backed) and
+// HiddenSetsMap (below, in-memory; used by tests and the widget scrubber).
+//
+// axis names track internal/db/axes.go: "project", "language", "editor",
+// "plugin", "machine", "platform", "branch", "category". Values MUST already be
+// lowercased by the loader — comparisons in this package are case-insensitive
+// via lowercasing on the RHS.
+type HiddenSets interface {
+	// Values returns the hidden values for one axis (empty/nil if none).
+	Values(axis string) []string
+	// Projects is a convenience for the project axis.
+	Projects() []string
+}
+
+// HiddenSetsMap is an in-memory HiddenSets implementation. Callers construct it
+// directly from an axis->values map. Values are stored as-provided; callers
+// should pass lowercase strings to match the DB-backed loader's contract.
+type HiddenSetsMap map[string][]string
+
+// Values returns the hidden values for one axis.
+func (h HiddenSetsMap) Values(axis string) []string { return h[axis] }
+
+// Projects returns the hidden values on the project axis.
+func (h HiddenSetsMap) Projects() []string { return h["project"] }
+
+// hiddenNameSet builds a lowercase lookup set of the hidden values on axis.
+// Returns nil when no values are hidden — callers can range over a nil map or
+// check for a nil return.
+func hiddenNameSet(hidden HiddenSets, axis string) map[string]struct{} {
+	if hidden == nil {
+		return nil
+	}
+	vs := hidden.Values(axis)
+	if len(vs) == 0 {
+		return nil
+	}
+	m := make(map[string]struct{}, len(vs))
+	for _, v := range vs {
+		m[strings.ToLower(v)] = struct{}{}
+	}
+	return m
+}
+
+// ScrubTail returns a shallow copy of the payload with every OtherMembers tail
+// filtered so no entry whose Name matches a hidden value on the corresponding
+// axis appears. The top-N rows on each segment are NOT touched here — they
+// should already have been excluded at query time by the DB predicates; this
+// method is the LAST-LINE guard for the long-tail bucket, which capWithOther
+// collapses in application code AFTER the DB has returned rows and is
+// therefore not covered by SQL-level hide predicates.
+//
+// Axes and their corresponding StatsPayload segments:
+//
+//	project  -> Projects
+//	language -> Languages
+//	editor   -> Editors
+//	platform -> Platforms
+//	machine  -> Machines
+//	category -> Categories
+//
+// The returned payload is a shallow-copied *StatsPayload — segment slices and
+// their ResourceStats elements are copied only where a filter actually
+// changes something, so payloads with no matches share memory with the input.
+// The input payload is never mutated.
+//
+// If hidden is nil or has no relevant values, the input pointer is returned
+// unchanged.
+func (p *StatsPayload) ScrubTail(hidden HiddenSets) *StatsPayload {
+	if p == nil || hidden == nil {
+		return p
+	}
+	axisSegments := []struct {
+		axis string
+		seg  *[]ResourceStats
+	}{
+		{"project", nil}, {"language", nil}, {"editor", nil},
+		{"platform", nil}, {"machine", nil}, {"category", nil},
+	}
+	// Build the destination lazily so we don't allocate when nothing changes.
+	out := p
+	copyOnWrite := func() {
+		if out == p {
+			cp := *p
+			out = &cp
+		}
+	}
+	// Bind the segment pointers on the copy-on-write target — but only after
+	// out points at the destination. To keep the code straight, do it inline.
+	for i := range axisSegments {
+		names := hiddenNameSet(hidden, axisSegments[i].axis)
+		if names == nil {
+			continue
+		}
+		// Resolve the segment slice on the CURRENT out (input or copy).
+		var srcSeg []ResourceStats
+		switch axisSegments[i].axis {
+		case "project":
+			srcSeg = out.Projects
+		case "language":
+			srcSeg = out.Languages
+		case "editor":
+			srcSeg = out.Editors
+		case "platform":
+			srcSeg = out.Platforms
+		case "machine":
+			srcSeg = out.Machines
+		case "category":
+			srcSeg = out.Categories
+		}
+		newSeg, changed := scrubSegmentTail(srcSeg, names)
+		if !changed {
+			continue
+		}
+		copyOnWrite()
+		switch axisSegments[i].axis {
+		case "project":
+			out.Projects = newSeg
+		case "language":
+			out.Languages = newSeg
+		case "editor":
+			out.Editors = newSeg
+		case "platform":
+			out.Platforms = newSeg
+		case "machine":
+			out.Machines = newSeg
+		case "category":
+			out.Categories = newSeg
+		}
+	}
+	return out
+}
+
+// scrubSegmentTail walks a segment and, for every ResourceStats whose
+// OtherMembers contains a hidden name, returns a copy of the segment with the
+// offending entries removed. Non-Other rows and non-matching Other rows share
+// memory with the input.
+func scrubSegmentTail(seg []ResourceStats, hidden map[string]struct{}) ([]ResourceStats, bool) {
+	if len(seg) == 0 || len(hidden) == 0 {
+		return seg, false
+	}
+	changed := false
+	out := seg
+	for i, r := range seg {
+		if len(r.OtherMembers) == 0 {
+			continue
+		}
+		// Scan to see if any member matches; if none, leave the row alone.
+		matched := false
+		for _, m := range r.OtherMembers {
+			if _, hit := hidden[strings.ToLower(m.Name)]; hit {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			continue
+		}
+		if !changed {
+			out = make([]ResourceStats, len(seg))
+			copy(out, seg)
+			changed = true
+		}
+		filtered := make([]OtherMember, 0, len(r.OtherMembers))
+		for _, m := range r.OtherMembers {
+			if _, hit := hidden[strings.ToLower(m.Name)]; hit {
+				continue
+			}
+			filtered = append(filtered, m)
+		}
+		rowCopy := r
+		rowCopy.OtherMembers = filtered
+		out[i] = rowCopy
+	}
+	return out, changed
+}
 
 // ---- Stats payloads (Stats.hs) ----
 

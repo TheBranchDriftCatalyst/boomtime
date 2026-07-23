@@ -23,13 +23,13 @@ import { MomentumGrid } from "@/viz/charts/MomentumGrid";
 import { PageToolbar } from "@/components/toolbar/PageToolbar";
 import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
 import { TimeLimitDropdown } from "@/components/toolbar/TimeLimitDropdown";
-import { Button } from "@/components/ui/button";
+import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from "@thebranchdriftcatalyst/catalyst-ui/ui/dropdown-menu";
 import { useTimeRange } from "@/hooks/useTimeRange";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";

@@ -4,7 +4,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@thebranchdriftcatalyst/catalyst-ui/ui/dialog";
 import { RemappingForm } from "@/features/curation/RemappingForm";
 import { axisLabel } from "@/lib/axes";
 import type { GroupNode } from "@/features/heartbeats/explorerModel";

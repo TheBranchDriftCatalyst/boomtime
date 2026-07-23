@@ -1,6 +1,6 @@
 import { Columns3 } from "lucide-react";
 import type { VisibilityState } from "@tanstack/react-table";
-import { Button } from "@/components/ui/button";
+import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -8,7 +8,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from "@thebranchdriftcatalyst/catalyst-ui/ui/dropdown-menu";
 import { LEAF_COLUMNS } from "@/features/heartbeats/leafColumns";
 
 /** "Columns" dropdown toggling leaf-column visibility in the explorer table. */

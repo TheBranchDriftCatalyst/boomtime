@@ -181,6 +181,53 @@ func respondErr(c *echo.Context, e *apierr.Error) error {
 	return e.Write(c)
 }
 
+// Body-size caps for authed JSON writes (gaka-bi2). These bucket the request
+// body reads into three sizes so a hostile client can't force the server to
+// materialize a huge blob and then run an expensive verify step (argon2 on
+// change-password was the motivating amplifier — a 10 MiB body pinned ~256 MiB
+// per verify). Applied per-handler via BindJSONWithLimit so the cap sits next
+// to the deserialization, not hidden in middleware.
+//
+// Buckets:
+//   - Small (4 KiB): auth credentials, single-field secrets, small JSON toggles.
+//   - Medium (64 KiB): JSON-config endpoints that can carry a modest list of
+//     rules, member sets, or spec blobs (curation, spaces, widget-defs).
+//   - Heartbeat/telemetry ingest is left uncapped here — those bulk endpoints
+//     legitimately carry batched telemetry and are handled elsewhere.
+const (
+	BodyLimitSmall  int64 = 4 * 1024
+	BodyLimitMedium int64 = 64 * 1024
+)
+
+// BindJSONWithLimit wraps c.Bind with a http.MaxBytesReader cap on the request
+// body. On oversize input the Body read fails FAST — before json.Decode has to
+// allocate the tail — and we render 413 Payload Too Large with the exact limit
+// the client blew. On normal parse errors the returned *apierr.Error is a 400
+// so callers can keep their existing "invalid request body" response text.
+//
+// The cap MUST be set BEFORE c.Bind runs because Echo's binder reads the body
+// eagerly. MaxBytesReader also caps ContentLength when present, so a hostile
+// client that lies about size still gets rejected on the first read.
+func BindJSONWithLimit(c *echo.Context, dst any, limit int64) *apierr.Error {
+	r := c.Request()
+	// echo v5's *Response satisfies http.ResponseWriter; MaxBytesReader uses
+	// it only to allow closing the connection after a limit breach.
+	r.Body = http.MaxBytesReader(c.Response(), r.Body, limit)
+	if err := c.Bind(dst); err != nil {
+		// http.MaxBytesReader returns an error whose message contains
+		// "http: request body too large" when the cap is exceeded. Echo's
+		// binder surfaces that verbatim from json.Decoder.Decode.
+		if strings.Contains(err.Error(), "request body too large") {
+			return apierr.New(http.StatusRequestEntityTooLarge, "payload too large", ptrStr(fmt.Sprintf("limit=%d", limit)))
+		}
+		return apierr.BadRequest("Invalid request body")
+	}
+	return nil
+}
+
+// ptrStr is a tiny helper to embed a scalar in the apierr Extra field.
+func ptrStr(s string) *string { return &s }
+
 // internalErr logs the underlying error with request context and renders the
 // generic 500 envelope. Use it wherever an internal failure would otherwise be
 // swallowed silently — the raw error never reaches the client.

@@ -1,6 +1,6 @@
 import { Copy } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
+import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { copyToClipboard } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 

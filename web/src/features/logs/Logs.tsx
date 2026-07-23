@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { PageToolbar } from "@/components/toolbar/PageToolbar";
-import { Button } from "@/components/ui/button";
+import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { LogTerminal, type LogTerminalLine } from "@/components/LogTerminal";
 import { useLogsSocket, type SocketStatus } from "@/features/logs/useLogsSocket";
 import { cn } from "@/lib/utils";

@@ -113,3 +113,46 @@ func (h *LogHub) Backfill(afterID int64) []LogEntry {
 	}
 	return out
 }
+
+// OwnerAttrKey is the slog attribute key used to tag a log record with the
+// user it pertains to. Handlers emit e.g. `slog.Info(..., "user", owner)` and
+// the tee handler flattens that into LogEntry.Attrs["user"]. Records with no
+// value under this key are treated as server-scope and are visible to any
+// authenticated viewer of the Logs tab. See FilterForUser for the fail-closed
+// semantics enforced when a requester is not identifiable.
+const OwnerAttrKey = "user"
+
+// FilterForUser is the per-record owner gate that fixes gaka-awh.2 — LogHub
+// used to fan every record out to every authenticated viewer, leaking cross-
+// tenant activity metadata (who saved a wakatime key, whose password rotated,
+// which owner's import job just finished). Records tagged with an owner via
+// OwnerAttrKey are only visible to that user. Records with no owner
+// attribution (server-scope events like healthz, migrations, DB tracer output
+// whose args are already redacted) pass through to everyone.
+//
+// Fail-closed on an empty requester: an anonymous/unresolved viewer gets ONLY
+// the un-tagged (server-scope) records. This matters because a future change
+// that forgets to guard the endpoint should not turn this into an
+// unauthenticated leak.
+//
+// A nil records slice returns nil (not an empty slice) so callers that use
+// the nil-check to decide whether to emit `[]` vs `null` keep their prior
+// behavior.
+func FilterForUser(records []LogEntry, requester string) []LogEntry {
+	if records == nil {
+		return nil
+	}
+	out := make([]LogEntry, 0, len(records))
+	for _, e := range records {
+		owner, tagged := e.Attrs[OwnerAttrKey]
+		if !tagged {
+			// server-scope: everyone sees these.
+			out = append(out, e)
+			continue
+		}
+		if requester != "" && owner == requester {
+			out = append(out, e)
+		}
+	}
+	return out
+}

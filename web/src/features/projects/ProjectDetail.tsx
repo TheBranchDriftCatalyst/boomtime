@@ -14,7 +14,7 @@ import { RadarChart } from "@/viz/charts/RadarChart";
 import { AuthoringVsReading } from "@/viz/charts/AuthoringVsReading";
 import { BranchActivity } from "@/viz/charts/BranchActivity";
 import { BreadthVsDepth } from "@/viz/charts/BreadthVsDepth";
-import { Button } from "@/components/ui/button";
+import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Combobox } from "@/components/ui/combobox";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";

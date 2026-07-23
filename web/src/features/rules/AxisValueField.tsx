@@ -1,6 +1,6 @@
 import { Combobox } from "@/components/ui/combobox";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
+import { Label } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
 import { axisLabel } from "@/lib/axes";
 import { useAxisValues } from "@/features/rules/useAxisValues";
 import { cn } from "@/lib/utils";

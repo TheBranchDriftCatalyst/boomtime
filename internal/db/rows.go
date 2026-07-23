@@ -47,10 +47,18 @@ type LeaderboardRow struct {
 }
 
 // StoredUser is a validated username with password material (users table).
+//
+// gaka-awh.6: ArgonVersion tags the row with the Argon2id parameter generation
+// its hashed_password was produced under. 1 = legacy (pre-Bravo params),
+// 2 = current (OWASP ASVS L1 2025 floor). Verify with
+// auth.VerifyPasswordWithVersion so a v1 hash is checked against v1 params.
+// New rows land at 2; a successful login against a v1 row triggers a
+// transparent rehash to 2 (see UpgradeArgonVersion).
 type StoredUser struct {
 	Username       string
 	HashedPassword []byte
 	SaltUsed       []byte
+	ArgonVersion   int
 }
 
 // TokenData is the access/refresh token pair created on login (Types.hs TokenData).

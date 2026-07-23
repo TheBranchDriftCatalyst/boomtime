@@ -14,14 +14,20 @@ import (
 // ServerLogs: GET /api/v1/logs?afterId=<n> — REST tail fallback for the server's
 // own log records (from the in-memory LogHub ring buffer). Owner-gated via the
 // standard Authorization header.
+//
+// Per gaka-awh.2, the raw LogHub tail is filtered through
+// logging.FilterForUser so records tagged with a different owner (via slog's
+// "user" attribute) are dropped BEFORE the response is built. Server-scope
+// records (no owner tag) still fan out to every authenticated viewer.
 func (h *Handler) ServerLogs(c *echo.Context) error {
-	if _, _, aerr := h.resolveUser(c); aerr != nil {
+	_, owner, aerr := h.resolveUser(c)
+	if aerr != nil {
 		return respondErr(c, aerr)
 	}
 	afterID := queryInt64(c, "afterId", 0)
 	var logs []logging.LogEntry
 	if h.LogHub != nil {
-		logs = h.LogHub.Backfill(afterID)
+		logs = logging.FilterForUser(h.LogHub.Backfill(afterID), owner)
 	}
 	if logs == nil {
 		logs = []logging.LogEntry{}
@@ -37,9 +43,15 @@ func (h *Handler) ServerLogs(c *echo.Context) error {
 // server/proxy logs). On connect the server backfills the ring buffer after
 // afterId (making reload/resume seamless), then tails live entries.
 //
-// NOTE: any authenticated user sees ALL server logs (no per-user filtering).
+// Per gaka-awh.2, both the initial snapshot AND every live entry are filtered
+// through logging.FilterForUser: records tagged with a different owner via the
+// slog "user" attribute are dropped before they reach this viewer. Server-scope
+// records (no owner tag) still stream to every authenticated viewer. The same
+// filter is used on the REST tail so both code paths are impossible to skew
+// apart accidentally.
 func (h *Handler) ServerLogsWS(c *echo.Context) error {
-	if _, aerr := h.resolveOwnerFromCookie(c, apierr.ExpiredRefreshToken()); aerr != nil {
+	owner, aerr := h.resolveOwnerFromCookie(c, apierr.ExpiredRefreshToken())
+	if aerr != nil {
 		return respondErr(c, aerr)
 	}
 	if h.LogHub == nil {
@@ -65,7 +77,7 @@ func (h *Handler) ServerLogsWS(c *echo.Context) error {
 	sub := h.LogHub.Subscribe()
 	defer h.LogHub.Unsubscribe(sub)
 
-	backfill := h.LogHub.Backfill(afterID)
+	backfill := logging.FilterForUser(h.LogHub.Backfill(afterID), owner)
 	if backfill == nil {
 		backfill = []logging.LogEntry{}
 	}
@@ -95,8 +107,16 @@ func (h *Handler) ServerLogsWS(c *echo.Context) error {
 			if !alive {
 				return nil
 			}
+			// Reuse the same FilterForUser predicate on every live entry: one
+			// call with a one-element slice keeps the polling and streaming
+			// paths semantically identical (audit-friendly). An owner-mismatch
+			// yields an empty slice → skip the write.
+			visible := logging.FilterForUser([]logging.LogEntry{entry}, owner)
+			if len(visible) == 0 {
+				continue
+			}
 			if err := wsjson.Write(streamCtx, conn, map[string]any{
-				"type": "log", "log": entry,
+				"type": "log", "log": visible[0],
 			}); err != nil {
 				return nil
 			}

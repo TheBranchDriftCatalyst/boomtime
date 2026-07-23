@@ -1,16 +1,16 @@
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Badge } from "@thebranchdriftcatalyst/catalyst-ui/ui/badge";
+import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+} from "@thebranchdriftcatalyst/catalyst-ui/ui/dialog";
+import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
+import { Label } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
 import { Spinner } from "@/components/Spinner";
 import { api } from "@/lib/api";
 import { secondsToHms } from "@/lib/utils";
@@ -107,7 +107,7 @@ export function CommitListModal({ project, onClose }: CommitListModalProps) {
                       <span className="truncate text-sm font-medium">
                         {c.commit.message}
                       </span>
-                      <Badge variant="info" className="shrink-0">
+                      <Badge variant="secondary" className="shrink-0">
                         {secondsToHms(c.total_seconds)}
                       </Badge>
                     </div>

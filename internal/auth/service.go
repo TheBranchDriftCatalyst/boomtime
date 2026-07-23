@@ -24,6 +24,10 @@ var ErrInvalidCredentials = errors.New("wrong username or password")
 // CreateUser hashes the password (Argon2id + random salt) and inserts a fresh
 // users row. Returns ErrUserExists when the row already exists; any other
 // error is a real infra failure.
+//
+// gaka-awh.6: HashPassword produces an ArgonVersionCurrent (v2) hash, and the
+// row is tagged as such via StoredUser.ArgonVersion. New users therefore
+// NEVER land at v1 — only pre-migration rows carry v1.
 func CreateUser(ctx context.Context, database *db.DB, username, password string) error {
 	hash, salt, err := HashPassword(password)
 	if err != nil {
@@ -31,6 +35,7 @@ func CreateUser(ctx context.Context, database *db.DB, username, password string)
 	}
 	created, err := database.InsertUser(ctx, db.StoredUser{
 		Username: username, HashedPassword: hash, SaltUsed: salt,
+		ArgonVersion: ArgonVersionCurrent,
 	})
 	if err != nil {
 		return err
@@ -61,7 +66,7 @@ func VerifyUserCredentials(ctx context.Context, database *db.DB, username, passw
 	if err != nil {
 		return err
 	}
-	if user == nil || !VerifyPassword(password, user.HashedPassword, user.SaltUsed) {
+	if user == nil || !VerifyPasswordWithVersion(password, user.HashedPassword, user.SaltUsed, user.ArgonVersion) {
 		return ErrInvalidCredentials
 	}
 	return nil

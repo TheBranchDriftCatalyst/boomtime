@@ -6,6 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"strings"
 	"testing"
 	"time"
 )
@@ -45,12 +47,36 @@ func tableCount(t *testing.T, d *DB, table string) int64 {
 	return n
 }
 
+// wakatimeBlobFixture is a deterministic non-null bytea placeholder used by
+// dump round-trip tests. It is NOT valid AES-GCM ciphertext (no decrypt is
+// attempted at the db-package layer) — just a byte pattern that must survive
+// the export → truncate → import round trip byte-for-byte.
+var wakatimeBlobFixture = []byte{
+	0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+	0x08, 0x09, 0x0a, 0x0b, // 12-byte nonce prefix
+	0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe, // fake sealed payload
+	0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, // + fake GCM tag
+	0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00,
+}
+
 // seedFullState populates at least one row in EVERY dump table for a sender and
 // returns the id of a 'running' import job (used to assert normalization).
 func seedFullState(t *testing.T, d *DB, f *SenderFixture) (runningJobID int) {
 	t.Helper()
 	ctx := f.Ctx()
 	sender := f.Sender()
+
+	// gaka-awh.3: back-fill EVERY user-owned column that the dump now carries
+	// so the round-trip test proves each column survives byte-for-byte.
+	mustExec(t, d, ctx, `
+		UPDATE users
+		   SET encrypted_wakatime_key   = $2,
+		       wakatime_key_status      = 'valid',
+		       wakatime_key_checked_at  = '2026-03-01T12:00:00Z',
+		       public_profile_enabled   = true,
+		       public_slug              = $3
+		 WHERE username = $1`,
+		sender, wakatimeBlobFixture, "slug-"+sender)
 
 	// Heartbeats (+projects via the fixture) with exact gaps, then the rollup.
 	tmpl := hbSeed{
@@ -103,6 +129,11 @@ func mustExec(t *testing.T, d *DB, ctx context.Context, q string, args ...any) {
 // exact pre-dump state is back, sequences continue past restored ids, and
 // interrupted jobs are normalized.
 func TestDumpRestoreRoundTrip(t *testing.T) {
+	// gaka-awh.3: the seed now includes an encrypted_wakatime_key ciphertext,
+	// so the restore-time gate requires BOOM_ENCRYPTION_KEY to be present.
+	// Any non-empty value satisfies the presence-only check; the db-package
+	// tests never call Decrypt, so key validity isn't exercised here.
+	t.Setenv(encryptionKeyEnvName, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa=")
 	d := openIsolatedDumpDB(t)
 	ctx := context.Background()
 
@@ -195,6 +226,40 @@ func TestDumpRestoreRoundTrip(t *testing.T) {
 	if !s.InSync {
 		t.Errorf("derived data out of sync after restore: %+v", s)
 	}
+
+	// gaka-awh.3: the encrypted Wakatime key (+ its status metadata + public
+	// profile flag/slug) survived byte-for-byte. This is the whole point of
+	// widening the users dump — the earlier version silently NULL'd these
+	// on every restore, wiping every user's saved key.
+	var (
+		gotBlob        []byte
+		gotStatus      *string
+		gotCheckedAt   *time.Time
+		gotPublicEnab  bool
+		gotSlug        *string
+	)
+	if err := d.Pool.QueryRow(ctx,
+		`SELECT encrypted_wakatime_key, wakatime_key_status, wakatime_key_checked_at,
+		        public_profile_enabled, public_slug
+		   FROM users WHERE username=$1`, sender).Scan(
+		&gotBlob, &gotStatus, &gotCheckedAt, &gotPublicEnab, &gotSlug); err != nil {
+		t.Fatalf("read restored user cols: %v", err)
+	}
+	if !bytes.Equal(gotBlob, wakatimeBlobFixture) {
+		t.Errorf("encrypted_wakatime_key drift after restore:\n got=%x\nwant=%x", gotBlob, wakatimeBlobFixture)
+	}
+	if gotStatus == nil || *gotStatus != "valid" {
+		t.Errorf("wakatime_key_status after restore = %v, want 'valid'", gotStatus)
+	}
+	if gotCheckedAt == nil {
+		t.Errorf("wakatime_key_checked_at NULL after restore")
+	}
+	if !gotPublicEnab {
+		t.Errorf("public_profile_enabled = false after restore, want true")
+	}
+	if gotSlug == nil || *gotSlug != "slug-"+sender {
+		t.Errorf("public_slug after restore = %v, want %q", gotSlug, "slug-"+sender)
+	}
 }
 
 // buildArchive assembles an in-memory zip from name -> content.
@@ -273,4 +338,279 @@ func TestRestoreValidationLeavesDataUntouched(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestDumpUsersColumnsIncludeEncryptedSecrets is the pure-Go, no-DB, anti-
+// tautology unit test for the users-table column widening (gaka-awh.3).
+//
+// Layer coverage (why this test exists and what it catches uniquely):
+//
+//   - Unit layer catches the RED-TEAM regression itself: someone deleting a
+//     column from dumpTables makes this test go red WITHOUT waiting for the
+//     round-trip test to also flag it. It also catches a column being
+//     accidentally removed even if no test happens to populate that column.
+//
+//   - Integration layer (TestDumpRestoreRoundTrip) is where we prove the
+//     ciphertext survives an actual TRUNCATE + COPY cycle byte-for-byte.
+//
+//   - HTTP round-trip layer (handler_test) exercises the auth + confirm +
+//     content-type + Content-Disposition surface.
+func TestDumpUsersColumnsIncludeEncryptedSecrets(t *testing.T) {
+	var users dumpTable
+	for _, dt := range dumpTables {
+		if dt.Name == "users" {
+			users = dt
+			break
+		}
+	}
+	if users.Name == "" {
+		t.Fatal("users not in dumpTables")
+	}
+	// Every column that must be dumped so a restore doesn't silently wipe a
+	// user's saved wakatime key + public profile settings.
+	required := []string{
+		"username", "hashed_password", "salt_used",
+		"encrypted_wakatime_key", "wakatime_key_status", "wakatime_key_checked_at",
+		"public_profile_enabled", "public_slug",
+	}
+	have := make(map[string]bool, len(users.Columns))
+	for _, c := range users.Columns {
+		have[c] = true
+	}
+	for _, need := range required {
+		if !have[need] {
+			t.Errorf("dumpTables[users] missing required column %q — restore would silently drop it", need)
+		}
+	}
+}
+
+// TestDumpNeverIncludesDotenv is the regression lock for the "backup ZIP must
+// never contain the process .env" invariant. The dump only lists application
+// tables (see dumpTables) — there is no file-system read path — but a future
+// well-meaning change ("include the config for portability") would be a
+// devastating leak: BOOM_ENCRYPTION_KEY in the .env plus a ciphertext row in
+// users == plaintext Wakatime key. Fail loudly if any archive entry ever
+// contains ".env" in its name.
+//
+// Layer coverage: unit-only (no DB required), asserts the dump's file-list
+// shape. Integration/E2E tests can't easily prove a NEGATIVE ("we didn't
+// include this thing") without the fixed enumerated allow-list this test
+// enforces.
+func TestDumpNeverIncludesDotenv(t *testing.T) {
+	d := openIsolatedDumpDB(t)
+	ctx := context.Background()
+
+	// Minimal seed: one user, no other rows needed — we're inspecting the
+	// archive's file list, not per-table contents.
+	truncateAll(t, d)
+	mustExec(t, d, ctx, `INSERT INTO users (username, hashed_password, salt_used) VALUES ('dotenv-guard','\x00','\x00')`)
+
+	var buf bytes.Buffer
+	if err := d.DumpAll(ctx, &buf); err != nil {
+		t.Fatalf("DumpAll: %v", err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		t.Fatalf("zip.NewReader: %v", err)
+	}
+
+	// The dump's file list must be exactly: manifest.json + tables/*.copy.
+	// Any name containing ".env" (case-insensitive) is an immediate fail.
+	allowedTables := make(map[string]bool, len(dumpTables))
+	for _, dt := range dumpTables {
+		allowedTables[entryName(dt.Name)] = true
+	}
+	for _, f := range zr.File {
+		lower := strings.ToLower(f.Name)
+		if strings.Contains(lower, ".env") {
+			t.Errorf("backup archive contains a .env-like entry %q — this is a critical leak vector", f.Name)
+		}
+		if f.Name == manifestName {
+			continue
+		}
+		if !allowedTables[f.Name] {
+			t.Errorf("backup archive contains unexpected entry %q (not manifest, not a known table)", f.Name)
+		}
+	}
+}
+
+// TestRestoreRefusesWhenEncryptionKeyMissing proves the restore-time gate:
+// when the archive carries an encrypted_wakatime_key ciphertext AND the
+// current process has no BOOM_ENCRYPTION_KEY, the restore is refused BEFORE
+// any TRUNCATE. Without this gate, a cross-environment restore would silently
+// leave every user's saved key encrypted under a key nobody has.
+//
+// Layer coverage: integration (requires an isolated DB) — this is the only
+// layer that can prove "nothing was truncated" because the check happens
+// inside RestoreAll, after manifest validation but before the destructive tx.
+func TestRestoreRefusesWhenEncryptionKeyMissing(t *testing.T) {
+	d := openIsolatedDumpDB(t)
+	ctx := context.Background()
+
+	truncateAll(t, d)
+	f := newSender(t, d, "encgate")
+	sender := f.Sender()
+
+	// Seed just enough to satisfy round-trip expectations + set the ciphertext.
+	mustExec(t, d, ctx, `
+		UPDATE users
+		   SET encrypted_wakatime_key  = $2,
+		       wakatime_key_status     = 'valid',
+		       wakatime_key_checked_at = now()
+		 WHERE username = $1`, sender, wakatimeBlobFixture)
+	tmpl := hbSeed{project: "P", language: "Go", editor: "vim", plugin: "pl",
+		machine: "m", platform: "linux", branch: "main", category: "Coding"}
+	f.Block(tmpl, time.Date(2026, 3, 2, 9, 0, 0, 0, time.UTC), 2, 60)
+
+	// Snapshot the current heartbeat count — a refused restore must leave it
+	// UNCHANGED (no TRUNCATE has run).
+	beforeHB := tableCount(t, d, "heartbeats")
+
+	var buf bytes.Buffer
+	if err := d.DumpAll(ctx, &buf); err != nil {
+		t.Fatalf("DumpAll: %v", err)
+	}
+	archive := buf.Bytes()
+
+	// Clear the encryption env for this test only. t.Setenv restores on cleanup.
+	t.Setenv(encryptionKeyEnvName, "")
+
+	zr, err := zip.NewReader(bytes.NewReader(archive), int64(len(archive)))
+	if err != nil {
+		t.Fatalf("zip.NewReader: %v", err)
+	}
+	_, err = d.RestoreAll(ctx, zr)
+	if err == nil {
+		t.Fatal("RestoreAll accepted a dump with ciphertext under an unset BOOM_ENCRYPTION_KEY")
+	}
+	var verr *RestoreValidationError
+	if !errors.As(err, &verr) {
+		t.Fatalf("want RestoreValidationError, got %T: %v", err, err)
+	}
+	if !strings.Contains(verr.Msg, "BOOM_ENCRYPTION_KEY") {
+		t.Errorf("gate error message does not mention BOOM_ENCRYPTION_KEY: %q", verr.Msg)
+	}
+	// Nothing was truncated: the pre-restore heartbeat count is intact.
+	if after := tableCount(t, d, "heartbeats"); after != beforeHB {
+		t.Errorf("gated restore mutated data: heartbeats %d -> %d", beforeHB, after)
+	}
+
+	// Sanity: re-set the env, restore succeeds, ciphertext survives.
+	t.Setenv(encryptionKeyEnvName, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa=") // any non-empty value satisfies the presence gate
+	zr2, err := zip.NewReader(bytes.NewReader(archive), int64(len(archive)))
+	if err != nil {
+		t.Fatalf("zip.NewReader 2: %v", err)
+	}
+	if _, err := d.RestoreAll(ctx, zr2); err != nil {
+		t.Fatalf("RestoreAll with env set: %v", err)
+	}
+	var got []byte
+	if err := d.Pool.QueryRow(ctx,
+		`SELECT encrypted_wakatime_key FROM users WHERE username=$1`, sender).Scan(&got); err != nil {
+		t.Fatalf("read ciphertext post-restore: %v", err)
+	}
+	if !bytes.Equal(got, wakatimeBlobFixture) {
+		t.Errorf("ciphertext drift after gate-permitted restore: got %x want %x", got, wakatimeBlobFixture)
+	}
+}
+
+// usersCopyPayload is a helper that returns the raw COPY text bytes of the
+// users table entry from the given archive. Useful for asserts that "the
+// ciphertext column IS present in the emitted CSV/COPY output".
+func usersCopyPayload(t *testing.T, zr *zip.Reader) []byte {
+	t.Helper()
+	f, err := zr.Open(entryName("users"))
+	if err != nil {
+		t.Fatalf("open users entry: %v", err)
+	}
+	defer f.Close()
+	data, err := io.ReadAll(f)
+	if err != nil {
+		t.Fatalf("read users entry: %v", err)
+	}
+	return data
+}
+
+// TestDumpUsersRowHasCiphertextColumn is the anti-tautology sibling of
+// TestDumpUsersColumnsIncludeEncryptedSecrets: it inspects the ACTUAL emitted
+// COPY-text payload for the users table and asserts the ciphertext bytes are
+// serialised in the encrypted_wakatime_key column position. If the column is
+// removed from dumpTables OR skipped by the COPY, this test fails.
+//
+// Layer coverage: integration (needs a real dump). Combined with the unit
+// test above, deleting the column from dumpTables makes BOTH tests fail —
+// impossible to silently drop the ciphertext again without CI going red.
+func TestDumpUsersRowHasCiphertextColumn(t *testing.T) {
+	d := openIsolatedDumpDB(t)
+	ctx := context.Background()
+
+	truncateAll(t, d)
+	sender := mkSender("cipher-dump")
+	mustExec(t, d, ctx, `INSERT INTO users (username, hashed_password, salt_used, encrypted_wakatime_key, wakatime_key_status)
+		VALUES ($1, '\x00', '\x00', $2, 'valid')`, sender, wakatimeBlobFixture)
+
+	var buf bytes.Buffer
+	if err := d.DumpAll(ctx, &buf); err != nil {
+		t.Fatalf("DumpAll: %v", err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		t.Fatalf("zip.NewReader: %v", err)
+	}
+
+	// Find the column index in the current users column list.
+	var usersCols []string
+	for _, dt := range dumpTables {
+		if dt.Name == "users" {
+			usersCols = dt.Columns
+			break
+		}
+	}
+	col := -1
+	for i, c := range usersCols {
+		if c == "encrypted_wakatime_key" {
+			col = i
+			break
+		}
+	}
+	if col < 0 {
+		t.Fatal("encrypted_wakatime_key missing from dumpTables[users]")
+	}
+
+	payload := usersCopyPayload(t, zr)
+	// Find the row for our sender and pull the ciphertext column.
+	var found bool
+	for _, line := range strings.Split(strings.TrimRight(string(payload), "\n"), "\n") {
+		fields := strings.Split(line, "\t")
+		if len(fields) <= col {
+			continue
+		}
+		if fields[0] != sender {
+			continue
+		}
+		found = true
+		if fields[col] == `\N` {
+			t.Errorf("encrypted_wakatime_key emitted as NULL for %s — expected the seeded ciphertext", sender)
+		}
+		// COPY text encodes bytea as `\x` hex prefix. Verify the bytes are
+		// present verbatim in that encoded form.
+		wantHex := `\\x` + bytesToHex(wakatimeBlobFixture)
+		if fields[col] != wantHex {
+			t.Errorf("ciphertext column drift: got %q want %q", fields[col], wantHex)
+		}
+	}
+	if !found {
+		t.Fatalf("did not find seeded user %q in users COPY payload", sender)
+	}
+}
+
+// bytesToHex is a tiny helper that mirrors Postgres bytea's hex output ('\xAB…').
+func bytesToHex(b []byte) string {
+	const hexdigits = "0123456789abcdef"
+	out := make([]byte, len(b)*2)
+	for i, c := range b {
+		out[i*2] = hexdigits[c>>4]
+		out[i*2+1] = hexdigits[c&0x0f]
+	}
+	return string(out)
 }

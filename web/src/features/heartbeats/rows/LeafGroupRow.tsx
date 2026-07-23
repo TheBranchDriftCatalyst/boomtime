@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { JsonBlock } from "@/features/heartbeats/JsonBlock";
 import {
   INDENT,

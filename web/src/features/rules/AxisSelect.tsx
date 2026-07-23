@@ -1,11 +1,11 @@
-import { Button } from "@/components/ui/button";
+import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Label } from "@/components/ui/label";
+} from "@thebranchdriftcatalyst/catalyst-ui/ui/dropdown-menu";
+import { Label } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
 import { axisLabel } from "@/lib/axes";
 import { cn } from "@/lib/utils";
 import type { HeartbeatAxis } from "@/types/api";

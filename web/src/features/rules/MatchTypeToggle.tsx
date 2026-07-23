@@ -1,4 +1,4 @@
-import { Label } from "@/components/ui/label";
+import { Label } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
 import { cn } from "@/lib/utils";
 
 interface MatchTypeToggleProps<M extends string> {

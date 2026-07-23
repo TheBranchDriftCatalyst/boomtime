@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import * as d3 from "d3";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { secondsToHms } from "@/lib/utils";
 import { cssVar } from "@/viz/d3/useChartFrame";
 import { useD3Surface } from "@/viz/d3/useD3Surface";

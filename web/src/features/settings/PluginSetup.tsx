@@ -4,8 +4,8 @@ import { toast } from "sonner";
 import { AlertTriangle, Copy, ExternalLink, KeyRound } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { copyToClipboard } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
+import { Card, CardContent, CardHeader } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { useAuth } from "@/features/auth/useAuth";
 
 // PluginSetup shows the operator the exact ~/.wakatime.cfg block to point

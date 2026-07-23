@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { LayoutGrid } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import {
   Sheet,
   SheetContent,
@@ -8,7 +8,7 @@ import {
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-} from "@/components/ui/sheet";
+} from "@thebranchdriftcatalyst/catalyst-ui/ui/sheet";
 import type { WidgetScope } from "@/types/api";
 import { catalogFor } from "./catalog";
 import { useWidgetLink } from "./useWidgetLink";

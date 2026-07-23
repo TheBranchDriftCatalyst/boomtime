@@ -1,6 +1,6 @@
 import { Link2 } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
+import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { api } from "@/lib/api";
 import type { WidgetScope } from "@/types/api";
 import { embedSnippets, widgetSvgUrl } from "./catalog";

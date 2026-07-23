@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
+import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { AxisSelect } from "@/features/rules/AxisSelect";
 import { AxisValueField } from "@/features/rules/AxisValueField";
 import { MatchTypeToggle } from "@/features/rules/MatchTypeToggle";

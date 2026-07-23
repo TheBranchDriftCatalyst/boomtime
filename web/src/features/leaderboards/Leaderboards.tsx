@@ -4,20 +4,20 @@ import { ChevronDown } from "lucide-react";
 import { QueryGate } from "@/components/QueryGate";
 import { PageToolbar } from "@/components/toolbar/PageToolbar";
 import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from "@thebranchdriftcatalyst/catalyst-ui/ui/dropdown-menu";
 import {
   Table,
   TableBody,
   TableCell,
   TableRow,
-} from "@/components/ui/table";
+} from "@thebranchdriftcatalyst/catalyst-ui/ui/table";
 import { useTimeRange } from "@/hooks/useTimeRange";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";

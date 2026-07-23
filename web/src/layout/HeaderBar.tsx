@@ -7,7 +7,8 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from "@thebranchdriftcatalyst/catalyst-ui/ui/dropdown-menu";
+import { ThemeSwitcher } from "@/layout/ThemeSwitcher";
 import { ThemeToggle } from "@/layout/ThemeToggle";
 
 interface HeaderBarProps {
@@ -22,6 +23,7 @@ export function HeaderBar({ username, onLogout }: HeaderBarProps) {
 
   return (
     <header className="flex h-16 items-center justify-end gap-3 border-b bg-card px-6">
+      <ThemeSwitcher />
       <ThemeToggle />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

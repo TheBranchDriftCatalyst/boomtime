@@ -29,15 +29,37 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *impor
 	e := echo.New()
 
 	e.Use(middleware.Recover())
+	// gaka-n5r: CORS is credentialed (AllowCredentials=true is required so the
+	// refresh_token cookie flows behind the Vite proxy), which means the
+	// Access-Control-Allow-Origin value MUST be a checked allowlist entry — the
+	// previous reflect-any-origin behaviour let attacker pages read the login
+	// response body (and its fresh access token). Origins come from
+	// BOOM_CORS_ALLOWED_ORIGINS; if unset in dev we fall back to localhost:5173
+	// + localhost:8080; if unset in prod we already refused to start in
+	// cmd/boomtime, so allowedOrigins here is guaranteed non-empty in that case.
+	allowedOrigins := parseAllowedOrigins(os.Getenv("BOOM_CORS_ALLOWED_ORIGINS"), logger)
+	if len(allowedOrigins) == 0 {
+		allowedOrigins = defaultDevAllowedOrigins
+		logger.Warn("BOOM_CORS_ALLOWED_ORIGINS not set — falling back to localhost dev origins",
+			"origins", allowedOrigins,
+			"remediation", "set BOOM_CORS_ALLOWED_ORIGINS=https://your.domain in prod")
+	} else {
+		logger.Info("CORS allowlist configured", "origins", allowedOrigins)
+	}
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-		// Reflect the request origin so credentialed requests (refresh_token
-		// cookie) work in dev behind the Vite proxy. echo v5 forbids the "*"
-		// wildcard together with AllowCredentials=true.
+		// Exact-match allowlist (see internal/server/cors.go). We stay on
+		// UnsafeAllowOriginFunc rather than AllowOrigins because echo's default
+		// matcher uses strings.EqualFold, and we want case-sensitive scheme
+		// checks (an attacker who registers HTTP://LOCALHOST:5173 shouldn't
+		// squeak through a case-fold match).
 		UnsafeAllowOriginFunc: func(_ *echo.Context, origin string) (string, bool, error) {
-			return origin, true, nil
+			if isOriginAllowed(origin, allowedOrigins) {
+				return origin, true, nil
+			}
+			return "", false, nil
 		},
 		AllowHeaders:     []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAuthorization, "X-Machine-Name"},
-		AllowMethods:     []string{http.MethodGet, http.MethodPost, http.MethodPatch, http.MethodDelete, http.MethodOptions},
+		AllowMethods:     []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
 		AllowCredentials: true,
 	}))
 	if cfg.HTTPLog {
@@ -46,6 +68,17 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *impor
 	if cfg.DBN1Threshold > 0 || cfg.DBN1DupThresh > 0 {
 		e.Use(n1Middleware(logger, cfg.DBN1Threshold, cfg.DBN1DupThresh))
 	}
+	// Universal rate limit (gaka-jk6 / gaka-ddp / gaka-awh.1). Installed
+	// AFTER CORS (so preflight can short-circuit inside the middleware
+	// without ever counting against a bucket) and BEFORE the handler
+	// registration (so it wraps every route, including auth writes and
+	// wakatime_key probe endpoints). See internal/server/ratelimit.go for
+	// bucket sizing, testing hook (BOOM_DISABLE_RATE_LIMIT=1), and TTL /
+	// cleanup notes.
+	installRateLimit(e, logger, database)
+	// gaka-ar7: stash resolved owner in ctx so the pgx tracer can tag its DEBUG
+	// SQL records with "user" — LogHub's FilterForUser then gates them per tenant.
+	e.Use(userCtxMiddleware(database))
 
 	h := handler.New(database, cfg, logger, worker, hub, logHub)
 	registerRoutes(e, h)
@@ -184,6 +217,24 @@ func registerAuthRoutes(e *echo.Echo, h *handler.Handler) {
 	e.DELETE("/auth/token/:id", h.DeleteToken)
 	e.POST("/auth/token", h.UpdateToken)
 	e.GET("/auth/users/current", h.CurrentUser)
+	// Change password (gaka-6jm): auth'd, re-verifies the current password,
+	// re-hashes with argon2id, and revokes every refresh token for the owner
+	// so other browsers get bounced. Registered under the users/current tree
+	// (not /auth/) so it uses the same access-token auth as sibling
+	// /api/v1/users/current/* endpoints.
+	e.POST("/api/v1/users/current/password", h.ChangePassword)
+	// Public profile (gaka-6jm.1): auth'd GET/PUT for the caller's own
+	// enable-toggle + slug. The PUBLIC read endpoint that resolves the slug
+	// lives in registerMiscRoutes near /widget/svg/ — same public-payload
+	// audience, and both must apply the widget.Scrub scrubber.
+	e.GET("/api/v1/users/current/profile", h.GetPublicProfile)
+	e.PUT("/api/v1/users/current/profile", h.PutPublicProfile)
+	// Encrypted-at-rest imported Wakatime API key (gaka-6jm.2). GET reports
+	// only {"hasSavedKey": bool} — plaintext is never returned. POST persists
+	// a user-supplied key under AES-256-GCM. DELETE clears it.
+	e.GET("/api/v1/users/current/wakatime_key", h.GetWakatimeKey)
+	e.POST("/api/v1/users/current/wakatime_key", h.SaveWakatimeKey)
+	e.DELETE("/api/v1/users/current/wakatime_key", h.DeleteWakatimeKey)
 }
 
 // registerMiscRoutes: badges, widgets, leaderboards, and commits.
@@ -203,6 +254,11 @@ func registerMiscRoutes(e *echo.Echo, h *handler.Handler) {
 	// picks the first registered matcher for overlapping patterns.
 	e.GET("/widget/svg/:uuid/named", h.WidgetDefSvg)
 	e.GET("/widget/svg/:uuid/:kind", h.WidgetSvg)
+
+	// Public profile — resolves slug -> user, then renders a scrubbed
+	// dashboard-shaped payload. UNAUTHENTICATED; the payload MUST go
+	// through widget.Scrub before serialization. See internal/handler/profile.go.
+	e.GET("/api/public/profile/:slug", h.PublicProfile)
 
 	e.GET("/api/v1/users/current/widget-defs", h.ListWidgetDefs)
 	e.POST("/api/v1/users/current/widget-defs", h.CreateWidgetDef)

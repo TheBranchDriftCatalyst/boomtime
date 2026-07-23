@@ -40,8 +40,11 @@ func (h *Handler) CreateCuration(c *echo.Context) error {
 		return respondErr(c, aerr)
 	}
 	var req curationRequest
-	if err := c.Bind(&req); err != nil {
-		return respondErr(c, apierr.New(http.StatusBadRequest, "Invalid request body", nil))
+	// gaka-bi2: 64 KiB cap — curation rules are compact JSON (axis, action,
+	// matchType, matchValue, optional newValue); pattern strings should never
+	// approach this bound.
+	if aerr := BindJSONWithLimit(c, &req, BodyLimitMedium); aerr != nil {
+		return respondErr(c, aerr)
 	}
 
 	// axis must be in the Heartbeats Explorer whitelist.

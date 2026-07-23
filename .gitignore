@@ -37,6 +37,17 @@ internal/server/dist/
 /*-council-*.png
 /overview-*.png
 /projects-*.png
+/tour-*.png
+/calendar-fix-*.png
+/change-password-*.png
+/public-profile-*.png
+/wakatime-key-*.png
+/theme-switcher.png
+/widgets-panel.png
+/login.png
+/overview.png
+/dracula.png
+web/calendar-fix-*.png
 
 # fixturegen --raw output (REAL values; never commit)
 *.local.json

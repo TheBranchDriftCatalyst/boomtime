@@ -80,8 +80,11 @@ func (h *Handler) CreateWidgetDef(c *echo.Context) error {
 		return respondErr(c, aerr)
 	}
 	var body widgetDefBody
-	if err := c.Bind(&body); err != nil {
-		return respondErr(c, apierr.BadRequest("Invalid JSON body"))
+	// gaka-bi2: 64 KiB cap — the inline spec is bounded to 32 KiB
+	// (widgetDefMax) inside validateWidgetDefSpec; Medium leaves headroom for
+	// the name + envelope without letting a hostile client force a huge decode.
+	if aerr := BindJSONWithLimit(c, &body, BodyLimitMedium); aerr != nil {
+		return respondErr(c, aerr)
 	}
 	body.Name = strings.TrimSpace(body.Name)
 	if body.Name == "" {
@@ -117,8 +120,9 @@ func (h *Handler) UpdateWidgetDef(c *echo.Context) error {
 		return respondErr(c, apierr.BadRequest("name is required"))
 	}
 	var body widgetDefBody
-	if err := c.Bind(&body); err != nil {
-		return respondErr(c, apierr.BadRequest("Invalid JSON body"))
+	// gaka-bi2: 64 KiB cap (see CreateWidgetDef for the reasoning).
+	if aerr := BindJSONWithLimit(c, &body, BodyLimitMedium); aerr != nil {
+		return respondErr(c, aerr)
 	}
 	if _, err := validateWidgetDefSpec(body.Spec); err != nil {
 		return respondErr(c, apierr.BadRequest("Invalid spec: "+err.Error()))
@@ -225,7 +229,22 @@ func (h *Handler) WidgetDefSvg(c *echo.Context) error {
 		}
 
 		payload := stats.ToStatsPayload(t0, t1, rows, nil)
-		data := &widget.Data{Payload: &payload}
+		// gaka-6jm.13: enforce the public-safe contract on the named-def path
+		// too. WidgetSvg (widgets.go) calls widget.Scrub on the identical
+		// StatsPayload before ANY renderer sees it; this handler shipped
+		// without that call, so the "Other (N more)" tail could leak a curated
+		// project/language/etc. name into the SVG. Mirrors the WidgetSvg wiring
+		// exactly (gaka-6jm.3 there) — helpers are reused, not duplicated.
+		//
+		// Scope-project 404 gate is intentionally NOT applied here: widget-defs
+		// are user-scoped in v1 (see the file/type docstring in
+		// internal/db/widget_defs.go and the "v1: user scope" comment above at
+		// line 219). There is no pinned project whose curation-away could leak
+		// via title/subtitle — the def only renders the owner's global rollup.
+		// If v2 adds a project scope to widget_defs, add the same
+		// isWidgetScopeProjectHidden gate that WidgetSvg uses.
+		scrubbed := widget.Scrub(&payload, hidden)
+		data := &widget.Data{Payload: scrubbed}
 		needs := widget.NeedsForDef(def)
 		if needs.Grade {
 			g := stats.Grade(&payload)
@@ -245,7 +264,10 @@ func (h *Handler) WidgetDefSvg(c *echo.Context) error {
 				return nil, err
 			}
 			mp := stats.ToMomentumPayload(t0, t1, mrows, 6)
-			data.Momentum = &mp
+			// gaka-6jm.13: same rationale as the StatsPayload scrub above —
+			// belt to the DB predicate's braces on the momentum path. Mirrors
+			// the WidgetSvg momentum wiring (gaka-6jm.6 there).
+			data.Momentum = widget.ScrubMomentum(&mp, hidden)
 		}
 		if needs.Sessions {
 			srows, err := h.DB.GetSessions(ctx, owner, t0, t1, widgetTimeLimit, hidden, members, false)

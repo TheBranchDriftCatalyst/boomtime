@@ -1,4 +1,4 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import {
   Table,
   TableBody,
@@ -6,7 +6,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
+} from "@thebranchdriftcatalyst/catalyst-ui/ui/table";
 import { ImportStateBadge } from "@/features/import/ImportStateBadge";
 import { cn, formatElapsed } from "@/lib/utils";
 import type { ImportJob } from "@/types/api";

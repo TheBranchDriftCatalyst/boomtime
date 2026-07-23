@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { cn } from "@/lib/utils";
 
 interface StatCardProps {

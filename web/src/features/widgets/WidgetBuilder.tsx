@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import { Check, Copy, Wand2 } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
+import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
+import { Label } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
 import {
   Sheet,
   SheetContent,
@@ -11,7 +11,7 @@ import {
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-} from "@/components/ui/sheet";
+} from "@thebranchdriftcatalyst/catalyst-ui/ui/sheet";
 import { cn } from "@/lib/utils";
 import type { WidgetScope } from "@/types/api";
 import { useWidgetLink } from "./useWidgetLink";

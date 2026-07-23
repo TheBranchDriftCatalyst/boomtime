@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { Link } from "react-router";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { RemappingForm } from "@/features/curation/RemappingForm";
 import { RemappingRow } from "@/features/curation/RemappingRow";
 import { groupByAxis } from "@/features/curation/groupByAxis";
