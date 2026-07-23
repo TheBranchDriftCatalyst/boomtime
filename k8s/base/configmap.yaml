@@ -17,6 +17,10 @@ data:
   BOOM_SESSION_EXPIRY: "24"
   BOOM_DASHBOARD_PATH: ""
   BOOM_BADGE_URL: "https://boomtime.knowledgedump.space"
+  # CORS allowlist — required when BOOM_ENV=prod (gaka-n5r remediation).
+  # Comma-separate multiple origins if the SPA is served from more than
+  # one host. The API rejects requests from origins not on this list.
+  BOOM_CORS_ALLOWED_ORIGINS: "https://boomtime.knowledgedump.space"
   BOOM_SHIELDS_IO_URL: "https://img.shields.io"
   BOOM_STATS_WORK_MEM: "256MB"
   BOOM_STATS_CACHE_TTL: "30"
