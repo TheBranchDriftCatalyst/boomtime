@@ -78,19 +78,27 @@ func (d *DB) GetProjectExtras(ctx context.Context, user, project string, start, 
 	var pexpr string
 	pexpr, branchArgs, next = rs.remapExpr("project", "project", "", next, branchArgs)
 	branchQuery = strings.Replace(branchQuery, projectExtrasMatchClause, "AND lower("+pexpr+") = lower($2)", 1)
-	// Always wrap: fold branch casing and pick MODE display, applying the rename
-	// remap first (identity when no rule). "main" and "Main" merge into one row.
+	// Always wrap: fold branch casing and pick a canonical display GLOBALLY per
+	// lower-key (highest-total variant wins; alphabetical ASC tie-break), applying
+	// the rename remap first (identity when no rule). "main" and "Main" merge into
+	// one row and both days pick the same display casing (gaka-5db — prior MODE()
+	// per (day, lower(branch)) group produced different casings per day).
 	var bexpr string
 	bexpr, branchArgs, next = rs.remapExpr("branch", "branch", "", next, branchArgs)
-	branchQuery = fmt.Sprintf(`WITH regrouped AS (
-    SELECT day, %s AS branch, CAST(SUM(total_seconds) AS int8) AS total_seconds
-    FROM ( %s ) base
-    GROUP BY day, lower(%s)
+	branchQuery = fmt.Sprintf(`WITH base AS ( %s ),
+%s,
+regrouped AS (
+    SELECT day, cb.canonical AS branch, CAST(SUM(base.total_seconds) AS int8) AS total_seconds
+    FROM base JOIN cbranch cb ON cb.lc = lower(%s)
+    GROUP BY day, cb.canonical
 )
 SELECT day, branch, total_seconds,
     coalesce(CAST(1.0 * total_seconds / nullif(sum(total_seconds) OVER (), 0) AS numeric(13, 12)), 0) AS pct,
     coalesce(CAST(1.0 * total_seconds / nullif(sum(total_seconds) OVER (PARTITION BY day), 0) AS numeric(13, 12)), 0) AS daily_pct
-FROM regrouped`, caseFoldPick(bexpr), trimSQL(branchQuery), bexpr)
+FROM regrouped`,
+		trimSQL(branchQuery),
+		canonicalPickCTE("cbranch", "base", bexpr),
+		bexpr)
 	_ = next
 	if err := d.aggQuery(ctx, branchQuery, branchArgs, func(rows pgx.Rows) error {
 		defer rows.Close()

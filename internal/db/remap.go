@@ -239,8 +239,33 @@ var statRowRemapAxes = []struct{ axis, col string }{
 // MODE's tie-break (Postgres picks the value with the smallest ordering).
 // Applied per-axis on the RENAMED value so a rename that maps A/a/A to "M"
 // still produces "M" (MODE over a constant is that constant).
+//
+// NOTE: caseFoldPick is per-group (per (day, lower(col))) which produces DIFFERENT
+// canonicals across days when raw-variant distributions differ per day
+// (e.g. day1 has 3× "Writing Docs" / 1× "writing docs" → MODE picks "Writing Docs";
+// day2 has 3× "writing docs" / 1× "Writing Docs" → MODE picks "writing docs").
+// Downstream Go aggregation (segment/segmentAligned) then sees two rows with
+// different display names for the same lower-key — gaka-5db. For multi-day
+// aggregations use the two-CTE `by_variant` + `canonical` pattern (see
+// bigbets.go GetCategoryDaily) which picks canonical GLOBALLY, weighted by
+// total_seconds so the highest-total variant wins deterministically.
 func caseFoldPick(expr string) string {
 	return fmt.Sprintf("MODE() WITHIN GROUP (ORDER BY %s)", expr)
+}
+
+// canonicalPickCTE emits a `<name> AS ( ... )` CTE that picks the canonical raw
+// display casing for each lower(<expr>) key, weighted by total_seconds so the
+// highest-total variant wins (alphabetical ASC tie-break for determinism). The
+// CTE scans `sourceTable` (must be a preceding CTE in the same WITH block that
+// exposes `<expr>` and `total_seconds` columns). The emitted CTE columns are
+// (lc, canonical). See gaka-5db: fixes multi-day case-variant duplicates by
+// making the display pick GLOBAL across all days/weeks rather than per-group.
+func canonicalPickCTE(name, sourceTable, expr string) string {
+	return fmt.Sprintf(`%s AS (
+    SELECT DISTINCT ON (lc) lc, raw_val AS canonical
+    FROM (SELECT lower(%s) AS lc, %s AS raw_val, SUM(total_seconds) AS s FROM %s GROUP BY lower(%s), %s) t
+    ORDER BY lc, s DESC, raw_val ASC
+)`, name, expr, expr, sourceTable, expr, expr)
 }
 
 // regroupStatRows wraps `inner` (a query that outputs the StatRow columns:
@@ -252,8 +277,12 @@ func caseFoldPick(expr string) string {
 // positional param after the inner query's params.
 //
 // This wrap ALWAYS runs (even with zero rename rules) so that pure case
-// variants — never mediated by curation — still merge. The GROUP BY key is
-// lower(<remapped col>); the SELECT picks a canonical display via MODE().
+// variants — never mediated by curation — still merge. Per-axis canonical
+// display casings are picked GLOBALLY across all days (highest-total variant
+// wins; alphabetical ASC tie-break) so multi-day aggregations return one row
+// per lower-key with a consistent display name (gaka-5db). Prior implementation
+// used MODE() per (day, lower(col)) group which produced different casings per
+// day, surfacing as duplicate rows downstream (Category breakdown widget).
 func (rs RenameSets) regroupStatRows(inner string, nextArg int, args []any) (string, []any) {
 	inner = trimSQL(inner)
 	exprs := make([]string, len(statRowRemapAxes))
@@ -262,29 +291,53 @@ func (rs RenameSets) regroupStatRows(inner string, nextArg int, args []any) (str
 		e, args, nextArg = rs.remapExpr(a.axis, a.col, "", nextArg, args)
 		exprs[i] = e
 	}
-	q := fmt.Sprintf(`WITH regrouped AS (
+	// entityExpr is a plain column (no rename axis today).
+	entityExpr := "entity"
+
+	// One canonical CTE per axis picks its display casing over base rows.
+	q := fmt.Sprintf(`WITH base AS ( %s ),
+%s,
+%s,
+%s,
+%s,
+%s,
+%s,
+%s,
+regrouped AS (
     SELECT
         day,
-        %s AS project,
-        %s AS language,
-        %s AS editor,
-        %s AS branch,
-        %s AS platform,
-        %s AS machine,
-        %s AS entity,
-        CAST(SUM(total_seconds) AS int8) AS total_seconds
-    FROM ( %s ) base
-    GROUP BY day, lower(%s), lower(%s), lower(%s), lower(%s), lower(%s), lower(%s), lower(entity)
+        cp.canonical AS project,
+        cl.canonical AS language,
+        ce.canonical AS editor,
+        cb.canonical AS branch,
+        cpl.canonical AS platform,
+        cm.canonical AS machine,
+        cen.canonical AS entity,
+        CAST(SUM(base.total_seconds) AS int8) AS total_seconds
+    FROM base
+    JOIN cproj cp ON cp.lc = lower(%s)
+    JOIN clang cl ON cl.lc = lower(%s)
+    JOIN cedit ce ON ce.lc = lower(%s)
+    JOIN cbranch cb ON cb.lc = lower(%s)
+    JOIN cplat cpl ON cpl.lc = lower(%s)
+    JOIN cmach cm ON cm.lc = lower(%s)
+    JOIN cent cen ON cen.lc = lower(%s)
+    GROUP BY day, cp.canonical, cl.canonical, ce.canonical, cb.canonical, cpl.canonical, cm.canonical, cen.canonical
 )
 SELECT
     day, project, language, editor, branch, platform, machine, entity, total_seconds,
     coalesce(CAST(1.0 * total_seconds / nullif(sum(total_seconds) OVER (), 0) AS numeric(13, 12)), 0) AS pct,
     coalesce(CAST(1.0 * total_seconds / nullif(sum(total_seconds) OVER (PARTITION BY day), 0) AS numeric(13, 12)), 0) AS daily_pct
 FROM regrouped`,
-		caseFoldPick(exprs[0]), caseFoldPick(exprs[1]), caseFoldPick(exprs[2]),
-		caseFoldPick(exprs[3]), caseFoldPick(exprs[4]), caseFoldPick(exprs[5]),
-		caseFoldPick("entity"), inner,
-		exprs[0], exprs[1], exprs[2], exprs[3], exprs[4], exprs[5])
+		inner,
+		canonicalPickCTE("cproj", "base", exprs[0]),
+		canonicalPickCTE("clang", "base", exprs[1]),
+		canonicalPickCTE("cedit", "base", exprs[2]),
+		canonicalPickCTE("cbranch", "base", exprs[3]),
+		canonicalPickCTE("cplat", "base", exprs[4]),
+		canonicalPickCTE("cmach", "base", exprs[5]),
+		canonicalPickCTE("cent", "base", entityExpr),
+		exprs[0], exprs[1], exprs[2], exprs[3], exprs[4], exprs[5], entityExpr)
 	return q, args
 }
 
@@ -294,23 +347,36 @@ FROM regrouped`,
 // dayofweek/hourofday/ty are passthrough). Column order matches
 // scanProjectStatRows. Case-folds language + entity — like regroupStatRows this
 // wrap always runs so pure case variants merge with or without a rename.
+// Canonical display casings are picked GLOBALLY per axis (highest-total variant
+// wins) so multi-day rows for the same lower-key don't surface as duplicates
+// downstream (gaka-5db).
 func (rs RenameSets) regroupProjectStatRows(inner string, nextArg int, args []any) (string, []any) {
 	inner = trimSQL(inner)
 	var langExpr string
 	langExpr, args, nextArg = rs.remapExpr("language", "language", "", nextArg, args)
-	q := fmt.Sprintf(`WITH regrouped AS (
+	entityExpr := "entity"
+	q := fmt.Sprintf(`WITH base AS ( %s ),
+%s,
+%s,
+regrouped AS (
     SELECT
         day, dayofweek, hourofday,
-        %s AS language,
-        %s AS entity, ty,
-        CAST(SUM(total_seconds) AS int8) AS total_seconds
-    FROM ( %s ) base
-    GROUP BY day, dayofweek, hourofday, lower(%s), lower(entity), ty
+        cl.canonical AS language,
+        cen.canonical AS entity, ty,
+        CAST(SUM(base.total_seconds) AS int8) AS total_seconds
+    FROM base
+    JOIN clang cl ON cl.lc = lower(%s)
+    JOIN cent cen ON cen.lc = lower(%s)
+    GROUP BY day, dayofweek, hourofday, cl.canonical, cen.canonical, ty
 )
 SELECT
     day, dayofweek, hourofday, language, entity, ty, total_seconds,
     coalesce(CAST(1.0 * total_seconds / nullif(sum(total_seconds) OVER (), 0) AS numeric(13, 12)), 0) AS pct,
     coalesce(CAST(1.0 * total_seconds / nullif(sum(total_seconds) OVER (PARTITION BY day), 0) AS numeric(13, 12)), 0) AS daily_pct
-FROM regrouped`, caseFoldPick(langExpr), caseFoldPick("entity"), inner, langExpr)
+FROM regrouped`,
+		inner,
+		canonicalPickCTE("clang", "base", langExpr),
+		canonicalPickCTE("cent", "base", entityExpr),
+		langExpr, entityExpr)
 	return q, args
 }

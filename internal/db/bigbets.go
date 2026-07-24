@@ -35,19 +35,32 @@ type CategoryDailyRow struct {
 func (d *DB) GetCategoryDaily(ctx context.Context, sender string, start, end time.Time, limit int64, hs HiddenSets, rs RenameSets, ms MemberSets, spaceRequested bool) ([]CategoryDailyRow, error) {
 	query, args, next := applyScopes(qGetCategoryDaily, bigBetRangeAnchor,
 		hs, ms, spaceRequested, rawHeartbeatCols, []any{sender, start, end, limit}, 5)
-	// Always wrap: re-group (day, lower(category)) picking a MODE display casing.
-	// The rename remap is spliced into the SELECT (identity when no rule exists).
+	// Always wrap: re-group (day, lower(category)) picking a canonical display
+	// casing GLOBALLY across all days (highest-total variant wins; alphabetical
+	// tie-break). The rename remap is spliced into the SELECT (identity when no
+	// rule exists). See remap.go caseFoldPickCanonicalCTE for the per-axis pick
+	// pattern — this variant is inlined for a single axis (category).
 	var expr string
 	expr, args, next = rs.remapExpr("category", "category", "", next, args)
-	query = fmt.Sprintf(`WITH regrouped AS (
-    SELECT day, %s AS category, CAST(SUM(total_seconds) AS int8) AS total_seconds
+	query = fmt.Sprintf(`WITH by_variant AS (
+    SELECT day, %s AS raw_val, lower(%s) AS lc, CAST(SUM(total_seconds) AS int8) AS total_seconds
     FROM ( %s ) base
-    GROUP BY day, lower(%s)
+    GROUP BY day, %s
+),
+canonical AS (
+    SELECT DISTINCT ON (lc) lc, raw_val AS canonical
+    FROM (SELECT lc, raw_val, SUM(total_seconds) AS s FROM by_variant GROUP BY lc, raw_val) t
+    ORDER BY lc, s DESC, raw_val ASC
+),
+regrouped AS (
+    SELECT b.day, c.canonical AS category, CAST(SUM(b.total_seconds) AS int8) AS total_seconds
+    FROM by_variant b JOIN canonical c USING (lc)
+    GROUP BY b.day, c.canonical
 )
 SELECT day, category, total_seconds,
     coalesce(CAST(1.0 * total_seconds / nullif(sum(total_seconds) OVER (), 0) AS numeric(13, 12)), 0) AS pct,
     coalesce(CAST(1.0 * total_seconds / nullif(sum(total_seconds) OVER (PARTITION BY day), 0) AS numeric(13, 12)), 0) AS daily_pct
-FROM regrouped`, caseFoldPick(expr), trimSQL(query), expr)
+FROM regrouped`, expr, expr, trimSQL(query), expr)
 	_ = next
 	var out []CategoryDailyRow
 	err := d.aggQuery(ctx, query, args, func(rows pgx.Rows) error {
@@ -134,14 +147,22 @@ type MomentumRow struct {
 func (d *DB) GetMomentum(ctx context.Context, sender string, start, end time.Time, limit int64, hs HiddenSets, rs RenameSets, ms MemberSets, spaceRequested bool) ([]MomentumRow, error) {
 	query, args, next := applyScopes(qGetMomentum, bigBetRangeAnchor,
 		hs, ms, spaceRequested, rawHeartbeatCols, []any{sender, start, end, limit}, 5)
-	// Always wrap: fold project casing and pick a MODE display label. Runs even
-	// with no project rename so pure case variants merge.
+	// Always wrap: fold project casing and pick a canonical display GLOBALLY
+	// across all weeks (highest-total variant wins; alphabetical ASC tie-break)
+	// so a project doesn't surface as two rows when its case-mix changes across
+	// weeks (gaka-5db). Runs even with no project rename so pure case variants
+	// merge without a curation rule.
 	var expr string
 	expr, args, next = rs.remapExpr("project", "project", "", next, args)
-	query = fmt.Sprintf(`SELECT %s AS project, week_start, CAST(SUM(total_seconds) AS int8) AS total_seconds
-FROM ( %s ) base
-GROUP BY lower(%s), week_start
-ORDER BY project, week_start`, caseFoldPick(expr), trimSQL(query), expr)
+	query = fmt.Sprintf(`WITH base AS ( %s ),
+%s
+SELECT cp.canonical AS project, week_start, CAST(SUM(base.total_seconds) AS int8) AS total_seconds
+FROM base JOIN cproj cp ON cp.lc = lower(%s)
+GROUP BY cp.canonical, week_start
+ORDER BY project, week_start`,
+		trimSQL(query),
+		canonicalPickCTE("cproj", "base", expr),
+		expr)
 	_ = next
 	var out []MomentumRow
 	err := d.aggQuery(ctx, query, args, func(rows pgx.Rows) error {
