@@ -9,26 +9,11 @@
     <meta name="theme-color" content="#0a0a0a" />
     <meta name="description" content="Self-hosted WakaTime-compatible coding activity dashboard with Apple Watch health overlay." />
     <title>Boomtime</title>
-    <script>
-      // No-flash theme init — defaults to dark, mirrors ThemeProvider read logic.
-      (function () {
-        try {
-          var t = localStorage.getItem("boomtime-theme");
-          if (t === "system") {
-            t = window.matchMedia("(prefers-color-scheme: light)").matches
-              ? "light"
-              : "dark";
-          }
-          if (t !== "light") t = "dark"; // default to dark
-          var root = document.documentElement;
-          root.classList.toggle("dark", t === "dark");
-          root.style.colorScheme = t;
-        } catch (e) {
-          document.documentElement.classList.add("dark");
-          document.documentElement.style.colorScheme = "dark";
-        }
-      })();
-    </script>
+    <!--
+      No-flash-of-wrong-theme <script> is injected automatically by
+      `catalystPlugin({ noFlash: { legacyStorageKey: "boomtime-theme" } })`
+      at build/dev time. See web/vite.config.ts.
+    -->
   </head>
   <body class="h-full">
     <div id="root" class="h-full"></div>

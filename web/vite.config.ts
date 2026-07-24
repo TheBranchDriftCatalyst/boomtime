@@ -14,6 +14,7 @@ declare module "vite" {
 }
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { catalystPlugin } from "@thebranchdriftcatalyst/catalyst-ui/vite";
 import path from "node:path";
 
 // Proxy the Go backend's path prefixes so the SPA can use same-origin
@@ -35,13 +36,20 @@ const proxy = Object.fromEntries(
 );
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  // `catalystPlugin()` unions React deduplication into `resolve.dedupe`,
+  // registers a Tailwind `@source` pointing at the resolved catalyst-ui
+  // dist path, AND injects the no-flash-of-wrong-theme script into
+  // `index.html`'s <head> (mirrors <CatalystProvider>'s legacyStorageKey
+  // migration so the pre-mount paint matches the post-mount state).
+  plugins: [
+    react(),
+    tailwindcss(),
+    catalystPlugin({ noFlash: { legacyStorageKey: "boomtime-theme" } }),
+  ],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
-    // Dedupe React so a linked catalyst-ui (via yarn link) doesn't ship its
-    // own copy alongside boomtime's — mixed instances break hooks.
     dedupe: ["react", "react-dom", "react/jsx-runtime"],
   },
   server: {
