@@ -1,6 +1,21 @@
 @import "tailwindcss";
 @import "@thebranchdriftcatalyst/catalyst-ui/setup";
 
+/*
+ * Belt-and-suspenders @source: catalyst-ui@2.5.0's setup.css ships an
+ * @source with a relative path that Tailwind resolves relative to setup.css
+ * itself, not to this consumer file — so it points at a non-existent nested
+ * node_modules path and Tailwind's JIT never scans catalyst-ui's dist. Result:
+ * arbitrary utilities used inside library components (Radix Dialog centering:
+ * `top-[50%] left-[50%] translate-x-[-50%] translate-y-[-50%]`, popover
+ * chrome, tooltip positioning, etc.) never make it into the emitted CSS, and
+ * modals render off-screen with computed `top: <document-flow-y>px` instead
+ * of centered. Explicit @source here forces the scan even if the library's
+ * setup path is wrong. Followup: fix in catalyst-ui setup.css (2.5.1) —
+ * probably via `@source ".";` (the file's own directory = dist/).
+ */
+@source "../node_modules/@thebranchdriftcatalyst/catalyst-ui/dist";
+
 @layer base {
   body {
     font-feature-settings: "rlig" 1, "calt" 1;
