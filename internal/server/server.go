@@ -334,6 +334,7 @@ func registerStatic(e *echo.Echo, cfg *config.Config, logger *slog.Logger) {
 		if reqPath == "" {
 			reqPath = "index.html"
 		}
+		servingShell := false
 		if _, err := fs.Stat(fsys, reqPath); err != nil {
 			// Missing file. Return 404 for anything that looks like an asset
 			// (i.e. the last path segment has a file extension). Reason: a
@@ -348,6 +349,18 @@ func registerStatic(e *echo.Echo, cfg *config.Config, logger *slog.Logger) {
 				return echo.NewHTTPError(http.StatusNotFound, "not found")
 			}
 			c.Request().URL.Path = "/"
+			servingShell = true
+		} else if reqPath == "index.html" {
+			servingShell = true
+		}
+		if servingShell {
+			// The SPA shell embeds hashed chunk names via dynamic imports;
+			// every deploy the shell must revalidate or clients ride the
+			// stale hashes and lazy-loaded routes 404. Asset files keep
+			// the default (immutable-ish via hashed filenames) — only the
+			// shell revalidates. no-cache means "revalidate every load",
+			// which is basically free because the shell is ~3 KB.
+			c.Response().Header().Set("Cache-Control", "no-cache, must-revalidate")
 		}
 		fileServer.ServeHTTP(c.Response(), c.Request())
 		return nil
