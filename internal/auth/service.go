@@ -48,10 +48,11 @@ func CreateUser(ctx context.Context, database *db.DB, username, password string)
 
 // CreateAPIToken mints a fresh raw token, base64-encodes it for storage, and
 // inserts an auth_tokens row. Returns the RAW token (the caller shows it to
-// the user; the DB only ever keeps the encoded form).
-func CreateAPIToken(ctx context.Context, database *db.DB, username string) (string, error) {
+// the user; the DB only ever keeps the encoded form). Optional display name
+// is stored so the tokens list shows something friendlier than a hash prefix.
+func CreateAPIToken(ctx context.Context, database *db.DB, username, name string) (string, error) {
 	raw := NewRawToken()
-	if err := database.InsertAPIToken(ctx, username, ToBase64(raw)); err != nil {
+	if err := database.InsertAPIToken(ctx, username, ToBase64(raw), name); err != nil {
 		return "", err
 	}
 	return raw, nil

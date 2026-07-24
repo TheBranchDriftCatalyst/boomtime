@@ -214,13 +214,26 @@ func (h *Handler) Logout(c *echo.Context) error {
 	return noContent(c)
 }
 
-// CreateAPIToken: POST /auth/create_api_token.
+// CreateAPIToken: POST /auth/create_api_token. Body is optional; when present
+// it may carry a `name` field (<= 42 chars, trimmed) which is stored as the
+// human-readable label for the minted token. Empty/missing name is fine —
+// the tokens list will just show an em-dash until renamed.
 func (h *Handler) CreateAPIToken(c *echo.Context) error {
 	_, owner, aerr := h.resolveUser(c)
 	if aerr != nil {
 		return respondErr(c, aerr)
 	}
-	raw, err := auth.CreateAPIToken(c.Request().Context(), h.DB, owner)
+	var body struct {
+		Name string `json:"name"`
+	}
+	// Ignore decode errors — the endpoint has always been callable without a
+	// body, and the shape is documented as optional.
+	_ = c.Bind(&body)
+	name := strings.TrimSpace(body.Name)
+	if len(name) > 42 {
+		name = name[:42]
+	}
+	raw, err := auth.CreateAPIToken(c.Request().Context(), h.DB, owner, name)
 	if err != nil {
 		return h.internalErr(c, "api token insert failed", err)
 	}

@@ -204,7 +204,7 @@ func (hz *Harness) MintUser(prefix string) (username, token string) {
 		hz.T.Fatalf("insert user %s: created=%v err=%v", username, created, err)
 	}
 	token = auth.NewRawToken()
-	if err := hz.DB.InsertAPIToken(ctx, username, token); err != nil {
+	if err := hz.DB.InsertAPIToken(ctx, username, token, ""); err != nil {
 		hz.T.Fatalf("insert api token: %v", err)
 	}
 	return username, token

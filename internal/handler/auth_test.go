@@ -758,7 +758,7 @@ func TestChangePassword_StoresAtV2(t *testing.T) {
 	// API token for our v1 user to hit /api/v1/users/current/password.
 	// Mint one directly.
 	token := auth.NewRawToken()
-	if err := hz.DB.InsertAPIToken(context.Background(), user, token); err != nil {
+	if err := hz.DB.InsertAPIToken(context.Background(), user, token, ""); err != nil {
 		t.Fatalf("insert api token: %v", err)
 	}
 

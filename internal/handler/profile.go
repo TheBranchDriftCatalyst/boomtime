@@ -93,19 +93,27 @@ type putProfileRequest struct {
 // which fields land in the JSON: no machines, no counts leak, adds a
 // username label. The dashboard is DERIVED from a scrubbed StatsPayload —
 // see the field-by-field copy below.
+//
+// gaka-keb: the optional `Layout` field carries the owner's persisted
+// dashboard-layout JSON when present. Absent when the owner has never
+// customized their layout — the FE falls back to a default. Keeping this on
+// the same payload means the public dashboard is still a single fetch (no
+// separate public-layout endpoint that could get out of sync with the
+// activity payload's cache lifetime).
 type publicProfileResponse struct {
-	Username     string                `json:"username"`
-	StartDate    time.Time             `json:"startDate"`
-	EndDate      time.Time             `json:"endDate"`
-	TotalSeconds int64                 `json:"totalSeconds"`
-	DailyAvg     float64               `json:"dailyAvg"`
-	DailyTotal   []int64               `json:"dailyTotal"`
-	Projects     []model.ResourceStats `json:"projects"`
-	Languages    []model.ResourceStats `json:"languages"`
-	Editors      []model.ResourceStats `json:"editors"`
-	Platforms    []model.ResourceStats `json:"platforms"`
-	Categories   []model.ResourceStats `json:"categories"`
+	Username     string                 `json:"username"`
+	StartDate    time.Time              `json:"startDate"`
+	EndDate      time.Time              `json:"endDate"`
+	TotalSeconds int64                  `json:"totalSeconds"`
+	DailyAvg     float64                `json:"dailyAvg"`
+	DailyTotal   []int64                `json:"dailyTotal"`
+	Projects     []model.ResourceStats  `json:"projects"`
+	Languages    []model.ResourceStats  `json:"languages"`
+	Editors      []model.ResourceStats  `json:"editors"`
+	Platforms    []model.ResourceStats  `json:"platforms"`
+	Categories   []model.ResourceStats  `json:"categories"`
 	Punchcard    model.PunchcardPayload `json:"punchcard"`
+	Layout       json.RawMessage        `json:"layout,omitempty"`
 }
 
 // GetPublicProfile: GET /api/v1/users/current/profile (auth). Returns the
@@ -257,6 +265,15 @@ func (h *Handler) PublicProfile(c *echo.Context) error {
 		return h.internalErr(c, "public profile punchcard query failed", err)
 	}
 
+	// gaka-keb: read the owner's persisted layout for the public_profile
+	// scope. Errors here are logged and swallowed — the FE has a default
+	// layout to fall back to, and a broken layout row shouldn't 500 a
+	// public read that would otherwise succeed.
+	layoutRaw, hasLayout, err := h.DB.GetDashboardLayout(ctx, username, "public_profile")
+	if err != nil {
+		h.Logger.Warn("public profile layout lookup failed", "user", username, "err", err)
+	}
+
 	// Deliberate copy — omits Machines entirely, no *Count fields (those
 	// would leak a distinct-count for hidden values on axes whose top-N
 	// list happens to be short).
@@ -273,6 +290,9 @@ func (h *Handler) PublicProfile(c *echo.Context) error {
 		Platforms:    scrubbed.Platforms,
 		Categories:   scrubbed.Categories,
 		Punchcard:    stats.ToPunchcardPayload(pcCells),
+	}
+	if hasLayout {
+		resp.Layout = layoutRaw
 	}
 	// gaka-6jm.12: Cache leak fix.
 	//

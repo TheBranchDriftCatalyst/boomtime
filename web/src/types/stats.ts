@@ -161,6 +161,28 @@ export interface PublicDashboardPayload {
   platforms: ResourceStats[];
   categories: ResourceStats[];
   punchcard: PunchcardPayload;
+  // gaka-keb: optional persisted dashboard layout. Absent when the owner
+  // never saved one — FE falls back to the default layout for the scope.
+  layout?: DashboardLayout;
+}
+
+// gaka-keb: layout payload persisted per-user, per-scope in dashboard_layouts.
+// Widget `i` values are catalog kind ids (see web/src/features/widgets/
+// catalog.ts). The renderer silently drops unknown kinds so a stale saved
+// layout doesn't break the page after a catalog rename.
+export interface DashboardLayoutItem {
+  i: string; // widget catalog kind id
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  view?: string | null; // one of catalog entry's `views[].id`, or null/undefined
+  hidden?: boolean; // reserved for edit-mode "hide but keep in layout" state
+}
+
+export interface DashboardLayout {
+  cols: number; // total column count (12 today)
+  widgets: DashboardLayoutItem[];
 }
 
 // GET stats/sessions -> deep-work focus sessions (runs between >timeLimit gaps).

@@ -3,6 +3,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { Copy, KeyRound, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+// NOTE: the row-level Copy button was removed after the v31 hashed-only-tokens
+// migration. `token.id` returned by /api/v1/users/current/tokens is the first
+// 12 hex chars of the hashed_token digest — a fingerprint, not the plaintext.
+// The plaintext is UNRECOVERABLE after creation by design (hash at rest).
+// Copy the raw token from the "New token" panel at the moment of creation;
+// after dismissing that panel the value is gone for good.
 import { Badge } from "@thebranchdriftcatalyst/catalyst-ui/ui/badge";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import {
@@ -37,15 +43,6 @@ import type { StoredApiToken } from "@/types/api";
 // is therefore a static label per row, not a dynamic status field. If/when
 // the backend grows a real status column, feed it into the Badge here.
 
-// Stored id is base64(uuid); decode to hand the raw UUID back to the plugin.
-function decodeToken(id: string): string {
-  try {
-    return atob(id);
-  } catch {
-    return id;
-  }
-}
-
 // Tiny inline relative-time formatter — avoids pulling in date-fns just for
 // "3 hours ago" strings. Returns "Never" for a null/empty timestamp.
 function formatRelative(ts: string | null | undefined): string {
@@ -71,6 +68,7 @@ function formatRelative(ts: string | null | undefined): string {
 export function TokensTab() {
   const qc = useQueryClient();
   const [freshToken, setFreshToken] = useState<string | null>(null);
+  const [newTokenName, setNewTokenName] = useState("");
 
   const {
     data: tokens = [],
@@ -81,9 +79,11 @@ export function TokensTab() {
   });
 
   const mint = useMutation({
-    mutationFn: () => api.createApiToken(),
+    mutationFn: (name: string) =>
+      api.createApiToken(name ? { name } : undefined),
     onSuccess: (res) => {
       setFreshToken(res.apiToken);
+      setNewTokenName("");
       qc.invalidateQueries({ queryKey: qk.tokens() });
     },
     onError: (e) =>
@@ -138,14 +138,30 @@ export function TokensTab() {
             tab for the exact config snippet.
           </p>
         </div>
-        <Button
-          onClick={() => mint.mutate()}
-          disabled={mint.isPending}
-          title="Create a new API token"
+        <form
+          className="flex items-center gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!mint.isPending) mint.mutate(newTokenName.trim());
+          }}
         >
-          <Plus className="h-4 w-4" />
-          Create token
-        </Button>
+          <Input
+            value={newTokenName}
+            onChange={(e) => setNewTokenName(e.target.value)}
+            placeholder="Token name (optional)"
+            maxLength={42}
+            disabled={mint.isPending}
+            className="h-9 w-48"
+          />
+          <Button
+            type="submit"
+            disabled={mint.isPending}
+            title="Create a new API token"
+          >
+            <Plus className="h-4 w-4" />
+            Create token
+          </Button>
+        </form>
       </div>
 
       {freshToken !== null && (
@@ -318,18 +334,6 @@ function TokenRow({
       </TableCell>
       <TableCell className="text-right">
         <div className="flex justify-end gap-1">
-          <Button
-            variant="secondary"
-            size="icon"
-            className="h-8 w-8"
-            title="Copy raw token"
-            onClick={async () => {
-              await copyToClipboard(decodeToken(token.id));
-              toast.success("Token copied to clipboard");
-            }}
-          >
-            <Copy className="h-4 w-4" />
-          </Button>
           <Button
             variant="destructive"
             size="icon"

@@ -1,6 +1,16 @@
 @import "tailwindcss";
 
 /*
+ * Load catalyst-ui's visual effects bundle (glow, scanlines, border animations,
+ * gradient shift). The ThemeProvider sets data-effect-*="true|false" attributes
+ * on <html> but the CSS that reacts to them is NOT auto-injected by the
+ * ThemeProvider itself — the library bundles the effect stylesheets and
+ * consumer apps must import them once. Without this line, toggling effects in
+ * the theme picker is a no-op visually.
+ */
+@import "@thebranchdriftcatalyst/catalyst-ui/themes/effects";
+
+/*
  * Tell Tailwind v4 to scan catalyst-ui's compiled sources for utility classes.
  * By default the JIT only scans this project's own files; without this, classes
  * that only appear inside catalyst-ui components (bg-popover, bg-primary,

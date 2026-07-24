@@ -7,19 +7,29 @@ import { WidgetLinksCard } from "@/features/widgets/WidgetLinksCard";
 import { Changelog } from "@/features/changelog/Changelog";
 import { Logs } from "@/features/logs/Logs";
 import { ChangePasswordCard } from "@/features/settings/ChangePasswordCard";
+import { DashboardEditorCard } from "@/features/settings/DashboardEditorCard";
 import { PluginSetup } from "@/features/settings/PluginSetup";
 import { PublicProfileCard } from "@/features/settings/PublicProfileCard";
 import { TokensTab } from "@/features/tokens/TokensTab";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import { qk } from "@/lib/queryKeys";
 
 // ProfileTab: bundles the account-level cards (change password + public
-// profile toggle) so the "Profile" tab holds both. Kept as a small wrapper
-// component (rather than an array in the TABS entry) so each card stays a
-// standalone piece composable elsewhere.
+// profile toggle + composable dashboard editor). The editor is gated on
+// the profile being enabled — no point letting the owner arrange tiles
+// their public URL can't serve.
 function ProfileTab() {
+  const { data: profile } = useQuery({
+    queryKey: qk.publicProfile(),
+    queryFn: () => api.getPublicProfile(),
+    staleTime: 30_000,
+  });
   return (
     <div className="space-y-6">
       <ChangePasswordCard />
       <PublicProfileCard />
+      {profile?.enabled && <DashboardEditorCard />}
     </div>
   );
 }
@@ -81,7 +91,10 @@ export function Settings() {
         ))}
       </div>
 
-      <div role="tabpanel" className="max-w-4xl">
+      <div
+        role="tabpanel"
+        className={active === "profile" ? "max-w-6xl" : "max-w-4xl"}
+      >
         {tab.render()}
       </div>
     </div>

@@ -176,11 +176,16 @@ func (d *DB) CreateAccessTokens(ctx context.Context, td TokenData, expiryHours i
 // InsertAPIToken stores the SHA-256 of a base64(uuid) token with a null
 // expiry (never expires). The raw token value is thrown away at the
 // boundary — a DB read no longer yields a usable API token
-// (gaka-b5x.2).
-func (d *DB) InsertAPIToken(ctx context.Context, owner, token string) error {
+// (gaka-b5x.2). Optional name is persisted to token_name so the tokens
+// list can show something more meaningful than an 8-char hash prefix.
+func (d *DB) InsertAPIToken(ctx context.Context, owner, token, name string) error {
+	var namePtr *string
+	if name != "" {
+		namePtr = &name
+	}
 	_, err := d.Pool.Exec(ctx,
-		`INSERT INTO auth_tokens(owner, hashed_token) VALUES ($1, $2)`,
-		owner, hashSessionToken(token))
+		`INSERT INTO auth_tokens(owner, hashed_token, token_name) VALUES ($1, $2, $3)`,
+		owner, hashSessionToken(token), namePtr)
 	return err
 }
 

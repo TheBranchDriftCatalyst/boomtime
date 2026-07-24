@@ -229,6 +229,12 @@ func registerAuthRoutes(e *echo.Echo, h *handler.Handler) {
 	// audience, and both must apply the widget.Scrub scrubber.
 	e.GET("/api/v1/users/current/profile", h.GetPublicProfile)
 	e.PUT("/api/v1/users/current/profile", h.PutPublicProfile)
+	// Dashboard layout persistence (gaka-keb). Per-user, per-scope. Scope
+	// today is "public_profile"; the handler enforces the small allowlist so
+	// a stale FE can't squat rows for future scopes.
+	e.GET("/api/v1/users/current/dashboard/:scope", h.GetDashboardLayout)
+	e.PUT("/api/v1/users/current/dashboard/:scope", h.PutDashboardLayout)
+	e.DELETE("/api/v1/users/current/dashboard/:scope", h.DeleteDashboardLayout)
 	// Encrypted-at-rest imported Wakatime API key (gaka-6jm.2). GET reports
 	// only {"hasSavedKey": bool} — plaintext is never returned. POST persists
 	// a user-supplied key under AES-256-GCM. DELETE clears it.

@@ -1,0 +1,203 @@
+/* grid.css — isolated grid primitive styles. Consumers set the CSS custom
+ * properties below to skin tiles; the primitive itself is design-token-
+ * agnostic. When this folder graduates to catalyst-ui, this file goes with
+ * it unchanged.
+ *
+ * CSS variables consumers control:
+ *   --grid-tile-bg               background of a tile
+ *   --grid-tile-fg               body foreground
+ *   --grid-tile-border           border color (used for corner ticks)
+ *   --grid-tile-header-fg        header label / prompt color
+ *   --grid-tile-header-kind-fg   the "kind-id" suffix in the header
+ *   --grid-tile-radius           border-radius (defaults to 4px for terminal feel)
+ *   --grid-tile-header-h         header row height (24px default)
+ *   --grid-tile-font             body / chart font
+ *   --grid-tile-font-mono        header / chip / toggle font (monospaced)
+ *   --grid-toggle-active-bg      active pill background
+ *   --grid-toggle-active-fg      active pill foreground
+ *   --grid-toggle-idle-fg        idle pill foreground
+ *   --grid-editing-dot-color     dotted background overlay in edit mode
+ *   --grid-editing-dot-alpha     alpha for the dotted overlay (0..1)
+ *   --grid-remove-fg             remove-X color
+ */
+
+.catalyst-grid {
+  position: relative;
+}
+.catalyst-grid--editing {
+  /* Visible spatial guide when the user is arranging tiles. */
+  background-image: radial-gradient(
+    circle,
+    var(--grid-editing-dot-color, currentColor) 1px,
+    transparent 1px
+  );
+  background-size: 20px 20px;
+  background-position: 0 0;
+  /* Fake the alpha via opacity on the pseudo — actually we set the
+   * consumer var to include an rgba, keeping this file domain-free. */
+}
+
+.catalyst-grid-tile {
+  /* NOTE: no `position: relative` here — react-grid-layout applies
+   * `position: absolute` inline, which composes with its `transform` to
+   * place the tile. Setting position:relative would strip the absolute
+   * placement. Same reason we don't animate `transform` on this element
+   * (that would clobber RGL's `transform: translate(x, y)`); animate
+   * opacity only for the bootup fade-in. */
+  background: var(--grid-tile-bg, transparent);
+  color: var(--grid-tile-fg, inherit);
+  border: 1px solid var(--grid-tile-border, currentColor);
+  border-radius: var(--grid-tile-radius, 4px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--grid-tile-font, inherit);
+  animation: catalyst-grid-fade-in 0.5s ease;
+  animation-delay: calc(var(--tile-index, 0) * 60ms);
+  animation-fill-mode: both;
+}
+
+.catalyst-grid-tile__corner {
+  position: absolute;
+  color: var(--grid-tile-border, currentColor);
+  font-family: var(--grid-tile-font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1;
+  pointer-events: none;
+  opacity: 0.6;
+  transition: opacity 0.2s ease;
+}
+.catalyst-grid-tile:hover .catalyst-grid-tile__corner {
+  animation: catalyst-grid-pulse 1s ease-in-out infinite;
+}
+.catalyst-grid-tile__corner--tl { top: 2px; left: 4px; }
+.catalyst-grid-tile__corner--tr { top: 2px; right: 4px; }
+.catalyst-grid-tile__corner--bl { bottom: 2px; left: 4px; }
+.catalyst-grid-tile__corner--br { bottom: 2px; right: 4px; }
+
+.catalyst-grid-tile__header {
+  height: var(--grid-tile-header-h, 24px);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  font-family: var(--grid-tile-font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--grid-tile-header-fg, inherit);
+  flex-shrink: 0;
+  cursor: move;
+}
+.catalyst-grid--editing .catalyst-grid-tile__header {
+  cursor: grab;
+}
+
+.catalyst-grid-tile__prompt {
+  color: var(--grid-tile-header-fg, inherit);
+  animation: catalyst-grid-blink 1s step-end infinite;
+}
+
+.catalyst-grid-tile__title {
+  font-weight: 700;
+  letter-spacing: 0.15em;
+}
+
+.catalyst-grid-tile__kind {
+  color: var(--grid-tile-header-kind-fg, inherit);
+  opacity: 0.6;
+  font-weight: 400;
+}
+
+.catalyst-grid-tile__spacer {
+  flex: 1;
+}
+
+.catalyst-grid-tile__body {
+  flex: 1;
+  padding: 4px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.catalyst-grid-tile__id {
+  position: absolute;
+  bottom: 4px;
+  right: 8px;
+  font-family: var(--grid-tile-font-mono, ui-monospace, monospace);
+  font-size: 9px;
+  color: var(--grid-tile-header-kind-fg, inherit);
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.catalyst-grid-tile__remove {
+  background: transparent;
+  border: 1px solid var(--grid-tile-border, currentColor);
+  border-radius: 2px;
+  color: var(--grid-remove-fg, inherit);
+  padding: 2px 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+.catalyst-grid-tile__remove:hover {
+  background: var(--grid-remove-fg, currentColor);
+  color: var(--grid-tile-bg, black);
+}
+
+/* Chart-toggle segmented pill */
+.catalyst-grid-toggle {
+  display: inline-flex;
+  gap: 2px;
+  border: 1px solid var(--grid-tile-border, currentColor);
+  border-radius: 2px;
+  padding: 1px;
+  font-family: var(--grid-tile-font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+.catalyst-grid-toggle__pill {
+  background: transparent;
+  border: none;
+  padding: 2px 6px;
+  cursor: pointer;
+  color: var(--grid-toggle-idle-fg, inherit);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  text-transform: uppercase;
+  font-weight: 500;
+  letter-spacing: inherit;
+  border-radius: 1px;
+  transition: none;
+}
+.catalyst-grid-toggle__pill--active {
+  background: var(--grid-toggle-active-bg, currentColor);
+  color: var(--grid-toggle-active-fg, black);
+}
+.catalyst-grid-toggle__pill:hover:not(.catalyst-grid-toggle__pill--active) {
+  color: var(--grid-tile-fg, inherit);
+}
+
+/* Animations. Deliberately opacity-only — animating `transform` would
+ * clobber react-grid-layout's inline `transform: translate(x, y)`. */
+@keyframes catalyst-grid-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes catalyst-grid-blink {
+  50% { opacity: 0; }
+}
+@keyframes catalyst-grid-pulse {
+  0%, 100% { opacity: 0.6; }
+  50%      { opacity: 1; }
+}
+
+/* Ensure react-grid-layout's resizable handle sits above corner ticks
+ * without being clipped by our overflow:hidden tiles. */
+.catalyst-grid-tile > .react-resizable-handle {
+  z-index: 3;
+}

@@ -228,8 +228,11 @@ export const api = {
 
   currentUser: () => request<CurrentUser>("/auth/users/current"),
 
-  createApiToken: () =>
-    request<CreateTokenResponse>("/auth/create_api_token", { method: "POST" }),
+  createApiToken: (body?: { name?: string }) =>
+    request<CreateTokenResponse>("/auth/create_api_token", {
+      method: "POST",
+      body: body?.name ? { name: body.name } : undefined,
+    }),
 
   // Change password (gaka-6jm). Server verifies currentPassword, hashes the
   // new one with argon2id, and revokes every other refresh token for the
@@ -285,6 +288,25 @@ export const api = {
     request<PublicDashboardPayload>(
       `/api/public/profile/${encodeURIComponent(slug)}`,
       { auth: false },
+    ),
+
+  // Dashboard layout persistence (gaka-keb). Per-user, per-scope.
+  // GET returns `{ layout: ... }` or 404 when no layout is saved. PUT
+  // upserts. DELETE clears (FE reverts to default). Small (4 KiB) body cap
+  // enforced server-side; the FE typically emits well under 2 KiB.
+  getDashboardLayout: (scope: string) =>
+    request<{ layout: unknown }>(
+      `/api/v1/users/current/dashboard/${encodeURIComponent(scope)}`,
+    ),
+  putDashboardLayout: (scope: string, layout: unknown) =>
+    request<{ layout: unknown }>(
+      `/api/v1/users/current/dashboard/${encodeURIComponent(scope)}`,
+      { method: "PUT", body: { layout } },
+    ),
+  deleteDashboardLayout: (scope: string) =>
+    request<void>(
+      `/api/v1/users/current/dashboard/${encodeURIComponent(scope)}`,
+      { method: "DELETE" },
     ),
 
   // Backend emits hakatime's raw StoredApiToken (default aeson) keys; normalize

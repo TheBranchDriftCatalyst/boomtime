@@ -1,0 +1,108 @@
+/* hacker.css — catalyst-hacker theme overrides for the public dashboard
+ * (gaka-keb). Sets the CSS custom properties the isolated grid primitive
+ * (web/src/lib/grid/grid.css) reads. All boomtime-domain color / font
+ * tokens live here — the primitive itself stays skinnable by any consumer.
+ */
+
+.public-dashboard {
+  /* Grid primitive CSS-var contract */
+  --grid-tile-bg: color-mix(in oklab, var(--card) 92%, transparent);
+  --grid-tile-fg: var(--card-foreground);
+  --grid-tile-border: color-mix(in oklab, var(--primary) 40%, transparent);
+  --grid-tile-header-fg: var(--primary);
+  --grid-tile-header-kind-fg: var(--muted-foreground);
+  --grid-tile-radius: 4px;
+  --grid-tile-header-h: 24px;
+  --grid-tile-font: "Inter Tight", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --grid-tile-font-mono: "Space Mono", "JetBrains Mono", "Berkeley Mono",
+    ui-monospace, "SF Mono", Menlo, monospace;
+  --grid-toggle-active-bg: var(--primary);
+  --grid-toggle-active-fg: var(--background);
+  --grid-toggle-idle-fg: var(--muted-foreground);
+  --grid-editing-dot-color: color-mix(in oklab, var(--primary) 12%, transparent);
+  --grid-remove-fg: var(--primary);
+
+  position: relative;
+  min-height: 100vh;
+  color: var(--foreground);
+  /* CRT scanline overlay (very faint), gaka-keb design brief. */
+  background-image: repeating-linear-gradient(
+    to bottom,
+    color-mix(in oklab, var(--primary) 8%, transparent) 0,
+    color-mix(in oklab, var(--primary) 8%, transparent) 1px,
+    transparent 1px,
+    transparent 4px
+  );
+  background-blend-mode: overlay;
+}
+
+.public-dashboard__hero {
+  padding: 32px 0 24px;
+  position: relative;
+}
+
+.public-dashboard__hero-title {
+  font-family: var(--grid-tile-font-mono);
+  font-weight: 700;
+  font-size: clamp(48px, 8vw, 96px);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  line-height: 0.95;
+  color: var(--primary);
+  text-shadow: 0 0 24px color-mix(in oklab, var(--primary) 60%, transparent);
+  background: linear-gradient(90deg, var(--primary), var(--accent, var(--primary)));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.public-dashboard__hero-meta {
+  font-family: var(--grid-tile-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  margin-bottom: 12px;
+}
+
+.public-dashboard__hero-tagline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  font-family: var(--grid-tile-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.public-dashboard__hero-underline {
+  display: inline-block;
+  height: 2px;
+  width: 96px;
+  background: var(--primary);
+  box-shadow: 0 0 8px var(--primary);
+}
+
+.public-dashboard__footer {
+  padding: 24px 0 32px;
+  font-family: var(--grid-tile-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--muted-foreground);
+  text-align: left;
+}
+.public-dashboard__footer .public-dashboard__footer-cursor {
+  display: inline-block;
+  animation: catalyst-grid-blink 1s step-end infinite;
+}
+
+/* Bootup: fade the whole grid up briefly on first mount. Tiles have their
+ * own staggered fade-in (see grid.css). */
+.public-dashboard__grid {
+  animation: public-dashboard-bootup 0.35s ease both;
+}
+@keyframes public-dashboard-bootup {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}

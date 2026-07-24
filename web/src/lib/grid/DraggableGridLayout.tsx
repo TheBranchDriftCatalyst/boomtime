@@ -1,0 +1,205 @@
+// DraggableGridLayout — the isolated grid primitive's public entry
+// component. Scope-agnostic: takes instances + layout + storage, knows
+// nothing about boomtime's public profile / overview / etc.
+//
+// Mirrors @hakboard-dashboard/src/components/Grid.tsx for pattern parity;
+// key divergences documented at the composition site (boomtime's
+// PublicDashboard.tsx).
+//
+// The `@types/react-grid-layout` package on npm is stale relative to the
+// runtime v2.2.3 API (useContainerWidth, dragConfig are missing). We
+// pull the runtime helpers directly and cast to `any` at the module
+// boundary — a small, honest concession noted here so a future update to
+// the types package can drop the casts.
+import { useEffect, useMemo, useState } from "react";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+import * as RGL from "react-grid-layout";
+import "react-grid-layout/css/styles.css";
+import "react-resizable/css/styles.css";
+import "./grid.css";
+
+import { WidgetHost } from "./WidgetHost";
+import { buildDefaultLayout, mergeLayouts } from "./layout-evolution";
+import type { GridLayoutItem, StorageAdapter, WidgetInstance } from "./types";
+
+// Direct runtime references. `Responsive` is well-typed; `useContainerWidth`
+// isn't in the type package but exists in runtime v2.2.3 (verified in
+// react-grid-layout/dist/index.js). Cast the module through `any` to
+// reach it without a type-only import that would error.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const rglAny = RGL as any;
+const Responsive = rglAny.Responsive as React.ComponentType<Record<string, unknown>>;
+const useContainerWidth = rglAny.useContainerWidth as () => {
+  width: number;
+  containerRef: React.RefObject<HTMLElement>;
+  mounted: boolean;
+};
+
+// RGL's Layout item shape (verbatim from @types/react-grid-layout).
+type Layout = {
+  i: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  isDraggable?: boolean;
+  isResizable?: boolean;
+  static?: boolean;
+};
+
+export interface DraggableGridLayoutProps {
+  /** Ordered list of widget instances available for this dashboard. New
+   * instances added over time are additively merged into any persisted
+   * layout by `layout-evolution.mergeLayouts`. */
+  instances: WidgetInstance[];
+  /** Persistence adapter. `null` return from adapter.load() = fall back to
+   * defaults. save() fires on every layout change (drag/resize/view). */
+  storage: StorageAdapter;
+  /** Read-only (false) or edit-mode (true). Read-only tiles have static
+   * placement and no remove-X, but ChartToggle interactions still work. */
+  editable: boolean;
+  /** Total column count. 12 by default; the design consumer decides. */
+  cols?: number;
+  /** Row height in pixels (react-grid-layout units). 48 default. */
+  rowHeight?: number;
+  /** If provided, INITIAL layout that seeds when storage returns null. */
+  seedLayout?: GridLayoutItem[];
+}
+
+export function DraggableGridLayout({
+  instances,
+  storage,
+  editable,
+  cols = 12,
+  rowHeight = 48,
+  seedLayout,
+}: DraggableGridLayoutProps) {
+  const [layout, setLayout] = useState<GridLayoutItem[]>(() =>
+    seedLayout ?? buildDefaultLayout(instances, cols),
+  );
+  const { width, containerRef, mounted } = useContainerWidth();
+
+  // Load persisted layout once on mount; merge with defaults so new
+  // instances not yet in the persisted set get appended.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const persisted = await storage.load();
+      if (!alive) return;
+      const defaults = buildDefaultLayout(instances, cols);
+      const initial =
+        persisted && persisted.length > 0
+          ? mergeLayouts(persisted, defaults)
+          : (seedLayout ?? defaults);
+      setLayout(initial);
+    })();
+    return () => {
+      alive = false;
+    };
+    // Re-run when storage identity changes (scope swap).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storage]);
+
+  const rglLayout = useMemo<Layout[]>(
+    () =>
+      layout
+        .filter((w) => instances.some((i) => i.key === w.i))
+        .map((w) => ({
+          i: w.i,
+          x: w.x,
+          y: w.y,
+          w: w.w,
+          h: w.h,
+          isDraggable: editable,
+          isResizable: editable,
+          static: !editable,
+        })),
+    [layout, instances, editable],
+  );
+
+  const handleLayoutChange = (next: readonly Layout[]) => {
+    // Read-only grid: RGL still fires onLayoutChange on first mount (its
+    // internal breakpoint pick can reflow items). Don't save those — they
+    // would trample the seed layout on a page load. We also honor the
+    // `static: true` per-item flag so drag never fires here in read-only.
+    if (!editable) return;
+    // Preserve per-item view/hidden metadata across RGL's shape.
+    const byI = new Map(layout.map((w) => [w.i, w]));
+    const merged: GridLayoutItem[] = next.map((n) => {
+      const prev = byI.get(n.i);
+      return {
+        i: n.i,
+        x: n.x,
+        y: n.y,
+        w: n.w,
+        h: n.h,
+        view: prev?.view ?? null,
+        hidden: prev?.hidden,
+      };
+    });
+    setLayout(merged);
+    void storage.save(merged);
+  };
+
+  const handleViewChange = (key: string, nextView: string) => {
+    const merged = layout.map((w) => (w.i === key ? { ...w, view: nextView } : w));
+    setLayout(merged);
+    void storage.save(merged);
+  };
+
+  const handleRemove = (key: string) => {
+    const merged = layout.filter((w) => w.i !== key);
+    setLayout(merged);
+    void storage.save(merged);
+  };
+
+  const layoutsByBreakpoint = {
+    lg: rglLayout,
+    md: rglLayout,
+    sm: rglLayout,
+    xs: rglLayout,
+    xxs: rglLayout,
+  };
+
+  return (
+    <div
+      ref={containerRef as React.RefObject<HTMLDivElement>}
+      style={{ width: "100%" }}
+      className={`catalyst-grid${editable ? " catalyst-grid--editing" : ""}`}
+      data-testid="catalyst-grid"
+    >
+      {mounted && width > 0 && (
+        <Responsive
+          width={width}
+          containerPadding={[0, 0]}
+          margin={[12, 12]}
+          onLayoutChange={handleLayoutChange}
+          dragConfig={{ cancel: "button, a, .no-drag" }}
+          rowHeight={rowHeight}
+          layouts={layoutsByBreakpoint}
+          breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
+          cols={{ lg: cols, md: cols, sm: cols, xs: cols, xxs: cols }}
+          compactType={editable ? "vertical" : null}
+          isDroppable={false}
+        >
+          {layout
+            .filter((w) => instances.some((i) => i.key === w.i))
+            .map((w, idx) => {
+              const inst = instances.find((i) => i.key === w.i)!;
+              return (
+                <WidgetHost
+                  key={w.i}
+                  tileIndex={idx}
+                  instance={inst}
+                  view={w.view ?? undefined}
+                  editable={editable}
+                  onViewChange={(v) => handleViewChange(w.i, v)}
+                  onRemove={() => handleRemove(w.i)}
+                />
+              );
+            })}
+        </Responsive>
+      )}
+    </div>
+  );
+}

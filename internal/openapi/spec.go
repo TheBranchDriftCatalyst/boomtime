@@ -880,6 +880,10 @@ func build() (*openapi3.T, error) {
 				return a
 			}()},
 			"punchcard": refSchema("PunchcardPayload"),
+			// gaka-keb: the owner's persisted dashboard layout, if any.
+			// Omitted from the payload entirely when the owner never saved
+			// a layout — the FE falls back to a default array.
+			"layout": &openapi3.SchemaRef{Value: openapi3.NewObjectSchema()},
 		}
 		op := &openapi3.Operation{Tags: []string{tagProfile}, Summary: "Public profile dashboard (no auth)",
 			Description: "Resolves slug -> user and returns a widget-scrubbed 60-day activity summary. Machines segment is omitted. Response is cached with must-revalidate for prompt privacy propagation when a user disables their profile.",
@@ -887,6 +891,50 @@ func build() (*openapi3.T, error) {
 			Parameters:  openapi3.Parameters{pathParamStr("slug", "Public profile slug (3-30 chars, lowercase alphanumeric + hyphens).")}}
 		setStatus(op, http.StatusOK, rInline("Scrubbed activity summary.", body))
 		stdErrors(op, "404", "500")
+		return op
+	}())
+
+	// ==== DASHBOARD LAYOUTS (gaka-keb) =======================================
+	//
+	// Per-user, per-scope persisted layout JSON for the composable dashboard
+	// grid. Scope is a small allowlist (public_profile today). Layout is
+	// opaque JSONB — the FE renderer drops unknown widget-kind ids.
+
+	layoutEnvelopeSchema := func() *openapi3.Schema {
+		s := openapi3.NewObjectSchema()
+		s.Properties = openapi3.Schemas{
+			"layout": &openapi3.SchemaRef{Value: openapi3.NewObjectSchema()},
+		}
+		s.Required = []string{"layout"}
+		return s
+	}
+
+	doc.AddOperation("/api/v1/users/current/dashboard/{scope}", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagProfile}, Summary: "Get persisted dashboard layout for scope",
+			Description: "Returns {layout: ...} on hit or 404 when the caller has not saved a layout (FE falls back to a default array). Scope allowlist: public_profile.",
+			Parameters:  openapi3.Parameters{pathParamStr("scope", "Dashboard scope (public_profile).")}}
+		setStatus(op, http.StatusOK, rInline("{layout:...}.", layoutEnvelopeSchema()))
+		stdErrors(op, "400", "401", "403", "404", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/current/dashboard/{scope}", "PUT", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagProfile}, Summary: "Upsert dashboard layout for scope",
+			Description: "Body: {layout: ...} (opaque, capped at 4 KiB). Returns the persisted envelope so the FE can settle its cache.",
+			Parameters:  openapi3.Parameters{pathParamStr("scope", "Dashboard scope (public_profile).")}}
+		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{
+			Required: true, Description: "{layout:...}.",
+			Content: openapi3.NewContentWithJSONSchema(layoutEnvelopeSchema()),
+		}}
+		setStatus(op, http.StatusOK, rInline("Persisted {layout:...}.", layoutEnvelopeSchema()))
+		stdErrors(op, "400", "401", "403", "413", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/current/dashboard/{scope}", "DELETE", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagProfile}, Summary: "Clear persisted dashboard layout for scope",
+			Description: "Idempotent — 204 whether or not a row existed. FE reverts to its default layout for the scope.",
+			Parameters:  openapi3.Parameters{pathParamStr("scope", "Dashboard scope (public_profile).")}}
+		setStatus(op, http.StatusNoContent, noContentRef())
+		stdErrors(op, "400", "401", "403", "500")
 		return op
 	}())
 

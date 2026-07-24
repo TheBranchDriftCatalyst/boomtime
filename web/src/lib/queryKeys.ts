@@ -158,6 +158,10 @@ export const qk = {
   // re-fetch atomically.
   publicProfile: () => ["public-profile"] as const,
   publicDashboard: (slug: string) => ["public-dashboard", slug] as const,
+  // gaka-keb: per-user, per-scope dashboard layout. Scope key held loose
+  // (string) so future scopes ("overview", "space:12") land without a
+  // signature widening.
+  dashboardLayout: (scope: string) => ["dashboard-layout", scope] as const,
 
   // --- Meta (version + changelog) ---------------------------------------------
   // Both cache forever — the FE only refetches on a manual reload; a new
