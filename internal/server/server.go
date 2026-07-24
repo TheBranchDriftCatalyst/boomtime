@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path"
 	"strings"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
@@ -334,7 +335,18 @@ func registerStatic(e *echo.Echo, cfg *config.Config, logger *slog.Logger) {
 			reqPath = "index.html"
 		}
 		if _, err := fs.Stat(fsys, reqPath); err != nil {
-			// SPA fallback: serve index.html for unknown non-API paths.
+			// Missing file. Return 404 for anything that looks like an asset
+			// (i.e. the last path segment has a file extension). Reason: a
+			// stale-cached client requesting an old chunk hash like
+			// /assets/Settings-OLDHASH.js would otherwise get index.html
+			// served with 200 OK, then try to parse HTML as JavaScript and
+			// silently fail — breaking the whole lazy-loaded route with no
+			// user-visible error. Real routes (no extension in the last
+			// segment) still fall back to index.html so client-side
+			// routing keeps working.
+			if strings.Contains(path.Base(reqPath), ".") {
+				return echo.NewHTTPError(http.StatusNotFound)
+			}
 			c.Request().URL.Path = "/"
 		}
 		fileServer.ServeHTTP(c.Response(), c.Request())
