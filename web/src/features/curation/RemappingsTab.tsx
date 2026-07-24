@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router";
 import { toast } from "sonner";
 import { Spinner } from "@/components/Spinner";
-import { ApplyMappingDialog } from "@/features/curation/ApplyMappingDialog";
+import { DestructiveActionDialog } from "@/features/curation/DestructiveActionDialog";
 import { NameRemappingsCard } from "@/features/curation/NameRemappingsCard";
 import {
   useCurationMutations,
@@ -10,27 +10,44 @@ import {
 } from "@/features/curation/useCuration";
 import type { CurationRule } from "@/types/api";
 
-// The "Remappings" Settings tab: query-time rename rules.
+// The "Remappings" Settings tab: curation rules with per-row destructive
+// actions.
 //
-// gaka-cr4: the "apply" action per row opens ApplyMappingDialog, which is a
-// destructive confirm modal for permanently collapsing a rename mapping into
-// the raw data (rewriting matching rows + removing the mapping row). Modal
-// state lives here so one dialog instance is reused across rows.
+// gaka-cr4 + gaka-due: rows can be rename OR hide rules; the row icons
+// dispatch on rule.action. Zap opens the apply modal (rename → rewrite raw
+// heartbeats + delete the rule); Trash2 opens the purge modal (hide →
+// delete raw heartbeats + delete the rule). ONE DestructiveActionDialog
+// instance handles both variants — the variant tag is stashed alongside
+// the rule id so a single mount serves every row.
 export function RemappingsTab() {
   const { data, isLoading } = useCurationRules();
   const { remove } = useCurationMutations();
-  const [applyRule, setApplyRule] = useState<CurationRule | null>(null);
 
-  const renames = useMemo(
-    () => (data ?? []).filter((r) => r.action === "rename"),
-    [data],
-  );
+  // The destructive modal's state: which rule + which variant (apply | purge).
+  // Kept as a single {rule, variant} pair so React sees one state atom and
+  // there's no partial-transition window where "which modal am I?" is
+  // ambiguous.
+  const [pending, setPending] = useState<{
+    rule: CurationRule;
+    variant: "apply" | "purge";
+  } | null>(null);
 
-  function removeRename(rule: CurationRule) {
+  // All rules — both renames and hides get a full row (with edit + destructive
+  // + remove icons). Hides used to render as small badges in the Curation
+  // tab; promoting them to rows here lets us surface the purge action next
+  // to the same visual affordances renames get.
+  const rules = useMemo(() => data ?? [], [data]);
+
+  function removeRule(rule: CurationRule) {
     remove.mutate(rule.id, {
-      onSuccess: () =>
-        toast.success(`Removed remapping ${rule.matchValue} → ${rule.newValue}`),
-      onError: () => toast.error("Failed to remove remapping"),
+      onSuccess: () => {
+        const label =
+          rule.action === "hide"
+            ? `Unhid ${rule.matchValue}`
+            : `Removed remapping ${rule.matchValue} → ${rule.newValue}`;
+        toast.success(label);
+      },
+      onError: () => toast.error("Failed to remove rule"),
     });
   }
 
@@ -39,26 +56,28 @@ export function RemappingsTab() {
   return (
     <div className="space-y-6">
       <p className="text-sm text-muted-foreground">
-        Renames are reversible, query-time remaps. To create or merge values,
-        use the{" "}
+        Renames and hides are reversible, query-time rules by default. To
+        create or merge values, use the{" "}
         <Link
           to="/app/heartbeats"
           className="font-medium text-primary hover:underline"
         >
           Heartbeats
         </Link>{" "}
-        explorer. To permanently collapse a mapping into the raw data (rewrite
-        matching heartbeats and remove the mapping), use the lightning-bolt
-        icon on each row.
+        explorer. To permanently collapse a rule into the raw data — rewrite
+        matching heartbeats (lightning-bolt on renames) or delete them
+        (trashcan on hides) — click the destructive icon on the row.
       </p>
       <NameRemappingsCard
-        rules={renames}
-        onRemove={removeRename}
-        onApply={setApplyRule}
+        rules={rules}
+        onRemove={removeRule}
+        onApply={(rule) => setPending({ rule, variant: "apply" })}
+        onPurge={(rule) => setPending({ rule, variant: "purge" })}
       />
-      <ApplyMappingDialog
-        rule={applyRule}
-        onClose={() => setApplyRule(null)}
+      <DestructiveActionDialog
+        rule={pending?.rule ?? null}
+        variant={pending?.variant ?? "apply"}
+        onClose={() => setPending(null)}
       />
     </div>
   );

@@ -524,18 +524,26 @@ func build() (*openapi3.T, error) {
 		return op
 	}())
 	doc.AddOperation("/api/v1/users/current/curation/{id}/preview", "GET", func() *openapi3.Operation {
-		op := &openapi3.Operation{Tags: []string{tagCuration}, Summary: "Preview a destructive apply of a rename rule",
-			Description: "Returns the exact UPDATE+DELETE SQL that a destructive apply of this rename rule would run, plus a per-heartbeat before/after diff (capped at 100 rows; totalAffected is exact). Owner-scoped; no data is mutated. The SQL string returned here is identical to sqlRun on the apply endpoint. Only rename rules are apply-able — hide rules return 400.",
-			Parameters:  openapi3.Parameters{pathParamInt("id", "Rename rule id.")}}
-		setStatus(op, http.StatusOK, rInline("{sqlPlanned, sqlUpdate, sqlDelete, affectedRows:[{id,before,after}], totalAffected, rowsShown, rule}.", mapObject()))
+		op := &openapi3.Operation{Tags: []string{tagCuration}, Summary: "Preview a destructive apply or purge of a curation rule",
+			Description: "Dispatches on rule.action: a rename rule returns the apply-preview shape (UPDATE + rule-delete SQL, per-row before/after diff); a hide rule returns the purge-preview shape (DELETE heartbeats + rule-delete SQL, per-row 'will be deleted' info). The `action` field on the response is the discriminator. Owner-scoped; no data is mutated. The SQL strings returned here are identical to sqlRun on the apply/purge endpoint.",
+			Parameters:  openapi3.Parameters{pathParamInt("id", "Curation rule id.")}}
+		setStatus(op, http.StatusOK, rInline("Discriminated union on `action`: {action:'rename', sqlPlanned, sqlUpdate, sqlDelete, affectedRows:[{id,before,after}], totalAffected, rowsShown, rule} | {action:'hide', sqlPlanned, sqlDeleteRows, sqlDeleteRule, affectedRows:[{id,deleted}], totalAffected, rowsShown, rule}.", mapObject()))
 		stdErrors(op, "400", "401", "403", "404", "500")
 		return op
 	}())
 	doc.AddOperation("/api/v1/users/current/curation/{id}/apply", "POST", func() *openapi3.Operation {
 		op := &openapi3.Operation{Tags: []string{tagCuration}, Summary: "Destructively apply a rename rule",
-			Description: "DESTRUCTIVE: rewrites the target column on every heartbeat row this rename rule matches, then deletes the rule row itself, atomically in one transaction. Idempotent-in-effect: if 0 rows match, still succeeds with rowsAffected=0 and removes the rule. Owner-scoped. Only rename rules are apply-able — hide rules return 400.",
+			Description: "DESTRUCTIVE: rewrites the target column on every heartbeat row this rename rule matches, then deletes the rule row itself, atomically in one transaction. Idempotent-in-effect: if 0 rows match, still succeeds with rowsAffected=0 and removes the rule. Owner-scoped. Only rename rules are apply-able — hide rules return 400 (use /purge for those).",
 			Parameters:  openapi3.Parameters{pathParamInt("id", "Rename rule id.")}}
 		setStatus(op, http.StatusOK, rInline("{rowsAffected, sqlRun, sqlUpdate, sqlDelete}.", mapObject()))
+		stdErrors(op, "400", "401", "403", "404", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/current/curation/{id}/purge", "POST", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagCuration}, Summary: "Destructively purge every row a hide rule matches",
+			Description: "DESTRUCTIVE (data-obliterating): DELETEs every heartbeat row this hide rule matches, then deletes the rule row itself, atomically in one transaction. Idempotent-in-effect: if 0 rows match, still succeeds with rowsAffected=0 and removes the rule. Owner-scoped. Only hide rules are purge-able — rename rules return 400 (use /apply for those). The FE modal gates this behind a 'type rule id N to confirm' input because rewriting labels is reversible-ish but deleting raw rows is not.",
+			Parameters:  openapi3.Parameters{pathParamInt("id", "Hide rule id.")}}
+		setStatus(op, http.StatusOK, rInline("{rowsAffected, sqlRun, sqlDeleteRows, sqlDeleteRule}.", mapObject()))
 		stdErrors(op, "400", "401", "403", "404", "500")
 		return op
 	}())

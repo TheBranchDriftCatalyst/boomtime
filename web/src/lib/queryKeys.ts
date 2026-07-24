@@ -33,7 +33,10 @@ const prefix = {
   derivedStatus: ["derived-status"] as const,
   axisValues: ["axis-values"] as const,
   curationAffected: ["curation-affected"] as const,
-  remappingApplyPreview: ["remapping-apply-preview"] as const,
+  // gaka-cr4 + gaka-due: shared preview key for /curation/:id/preview.
+  // ONE key covers both variants (apply for rename, purge for hide) — the
+  // backend dispatches on rule.action and the FE modal renders accordingly.
+  curationActionPreview: ["curation-action-preview"] as const,
   entitiesByType: ["entities-by-type"] as const,
 };
 
@@ -122,9 +125,11 @@ export const qk = {
   // --- Curation ----------------------------------------------------------------
   curation: () => ["curation"] as const,
   curationAffected: (id: number) => ["curation-affected", id] as const,
-  // gaka-cr4: destructive-apply preview key (fetched once per modal open).
-  remappingApplyPreview: (id: number) =>
-    ["remapping-apply-preview", id] as const,
+  // gaka-cr4 + gaka-due: destructive-action preview key (fetched once per
+  // modal open). Same key for both apply (rename) and purge (hide) variants
+  // — the backend dispatches on rule.action; ONE cache entry per rule id.
+  curationActionPreview: (id: number) =>
+    ["curation-action-preview", id] as const,
 
   // --- Heartbeats explorer / health ---------------------------------------------
   axisValues: (axis: HeartbeatAxis | null) => ["axis-values", axis] as const,

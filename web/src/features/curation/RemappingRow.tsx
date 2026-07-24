@@ -4,8 +4,10 @@ import {
   ArrowRight,
   ChevronDown,
   ChevronRight,
+  EyeOff,
   Loader2,
   Pencil,
+  Trash2,
   X,
   Zap,
 } from "lucide-react";
@@ -24,15 +26,26 @@ export function RemappingRow({
   rule,
   onRemove,
   onApply,
+  onPurge,
 }: {
   rule: CurationRule;
   onRemove: (rule: CurationRule) => void;
-  // gaka-cr4: click handler for the destructive "apply mapping" button.
-  // Kept as a prop (not a hook here) so the parent owns the modal state and
-  // a single modal instance is reused across rows — plays nicely with the
-  // parent's query-invalidation-on-success pattern.
+  // gaka-cr4: click handler for the destructive "apply mapping" button
+  // (rename rules only — Zap icon). Kept as a prop (not a hook here) so the
+  // parent owns the modal state and a single modal instance is reused
+  // across rows — plays nicely with the parent's query-invalidation-on-
+  // success pattern.
   onApply?: (rule: CurationRule) => void;
+  // gaka-due: click handler for the destructive "purge" button (hide rules
+  // only — Trash2 icon). Same pattern as onApply; parent owns the modal.
+  onPurge?: (rule: CurationRule) => void;
 }) {
+  // Icon visibility dispatches on rule.action so a hide row never shows the
+  // rename-only Zap and vice versa. Both destructive buttons still require
+  // the parent to pass a handler — the parent decides whether the feature
+  // is wired in this view at all.
+  const isRename = rule.action === "rename";
+  const isHide = rule.action === "hide";
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const matchType: CurationMatchType = rule.matchType ?? "exact";
@@ -104,17 +117,32 @@ export function RemappingRow({
               {modeBadge}
             </Badge>
           )}
-          <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <span className="font-mono font-medium">{rule.newValue}</span>
+          {isHide && (
+            // Hide rules have no target — surface an EyeOff badge so the row
+            // is visually distinct from a rename (which shows source → target).
+            <Badge
+              variant="outline"
+              className="shrink-0 border-amber-500/40 text-[10px] uppercase text-amber-400"
+            >
+              <EyeOff className="mr-1 inline h-3 w-3" />
+              hidden
+            </Badge>
+          )}
+          {isRename && (
+            <>
+              <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <span className="font-mono font-medium">{rule.newValue}</span>
+            </>
+          )}
         </button>
         <button
           onClick={() => setEditing(true)}
-          title="Edit this remapping"
+          title="Edit this rule"
           className="rounded-full p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"
         >
           <Pencil className="h-3.5 w-3.5" />
         </button>
-        {onApply && (
+        {isRename && onApply && (
           <button
             onClick={() => onApply(rule)}
             title="Apply mapping destructively (rewrite raw rows, remove mapping)"
@@ -124,9 +152,25 @@ export function RemappingRow({
             <Zap className="h-3.5 w-3.5" />
           </button>
         )}
+        {isHide && onPurge && (
+          <button
+            onClick={() => onPurge(rule)}
+            title="Purge hidden rows destructively (DELETE raw heartbeats, remove rule)"
+            aria-label="Purge hidden rows destructively"
+            // Slightly redder hover tint than Zap — Trash2 obliterates data,
+            // Zap only rewrites it. Communicate the extra danger.
+            className="rounded-full p-0.5 text-muted-foreground hover:bg-destructive/20 hover:text-destructive"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        )}
         <button
           onClick={() => onRemove(rule)}
-          title="Remove remapping (reverts the merge)"
+          title={
+            isHide
+              ? "Remove hide rule (rows reappear on dashboards)"
+              : "Remove remapping (reverts the merge)"
+          }
           className="rounded-full p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"
         >
           <X className="h-3.5 w-3.5" />

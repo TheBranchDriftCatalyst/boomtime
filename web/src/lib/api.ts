@@ -15,7 +15,8 @@ import type {
   AddCurationRuleBody,
   AddCurationRulePayload,
   ApplyRenamePayload,
-  ApplyRenamePreviewPayload,
+  CurationActionPreviewPayload,
+  PurgeHiddenPayload,
   CrossProjectFile,
   CurationAffectedPayload,
   CurationRule,
@@ -649,24 +650,35 @@ export const api = {
       `/api/v1/users/current/curation/${id}/affected`,
     ),
 
-  // gaka-cr4: preview a destructive apply of a rename rule. Returns the
-  // exact UPDATE + DELETE SQL and a capped diff of affected heartbeat rows,
-  // NO data is mutated. Feeds the confirm modal.
-  //
-  // Endpoint lives under /curation/:id/preview (not /remappings/) so the URL
-  // matches the backend-domain naming — the same curation_rules table backs
-  // both the query-time remap and this destructive collapse.
-  previewApplyRemapping: (id: number) =>
-    request<ApplyRenamePreviewPayload>(
+  // gaka-cr4 + gaka-due: preview a destructive curation action. The response
+  // shape is a discriminated union on rule.action — rename rules get the
+  // apply-preview payload (UPDATE + rule-delete SQL, before/after diff),
+  // hide rules get the purge-preview payload (DELETE heartbeats + rule-delete
+  // SQL, per-row "will be deleted" info). ONE endpoint serves both variants;
+  // the FE modal reads the `action` field to render the right UI. No data
+  // is mutated.
+  previewCurationAction: (id: number) =>
+    request<CurationActionPreviewPayload>(
       `/api/v1/users/current/curation/${id}/preview`,
     ),
 
   // gaka-cr4: DESTRUCTIVELY apply a rename rule — rewrites raw heartbeat rows
-  // and removes the rule row itself, atomically. The returned sqlRun is the
-  // exact SQL that ran (verbatim match to the preview's sqlPlanned).
-  applyRemapping: (id: number) =>
+  // (UPDATE) and removes the rule row itself, atomically. Rejects non-rename
+  // rules with 400. Returned sqlRun matches the preview's sqlPlanned verbatim.
+  applyCurationRule: (id: number) =>
     request<ApplyRenamePayload>(
       `/api/v1/users/current/curation/${id}/apply`,
+      { method: "POST" },
+    ),
+
+  // gaka-due: DESTRUCTIVELY purge a hide rule — DELETEs every heartbeat row
+  // the rule matches, then removes the rule row itself, atomically. Rejects
+  // non-hide rules with 400. Data-obliterating: the FE gates this behind a
+  // "type rule id N to confirm" input to prevent muscle-memory Enter
+  // presses. Returned sqlRun matches the preview's sqlPlanned verbatim.
+  purgeCurationRule: (id: number) =>
+    request<PurgeHiddenPayload>(
+      `/api/v1/users/current/curation/${id}/purge`,
       { method: "POST" },
     ),
 

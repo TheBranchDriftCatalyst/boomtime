@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 
@@ -176,15 +177,28 @@ func (h *Handler) CurationAffected(c *echo.Context) error {
 // display cap (matches the frontend "and N more…" footer).
 const applyPreviewRowsCap = 100
 
-// ApplyRenamePreview: GET /api/v1/users/current/remappings/:id/preview →
-// {sqlPlanned:string, affectedRows:[{id,before,after}], totalAffected:int}.
-// Returns the exact SQL that a destructive apply would run PLUS a capped
-// diff of every heartbeat row that would be rewritten. Owner-scoped; no
-// data is mutated. Feeds the frontend confirm modal.
-//
-// The endpoint lives under /remappings/ (not /curation/) because the concept
-// belongs to the remappings sub-domain — only rename rules are apply-able,
-// and the frontend surface is the Remappings tab.
+// resolveCurationRule fetches the rule and enforces owner scoping. Returns a
+// 404-wrapped apierr when the rule is missing OR owned by someone else (the
+// two are indistinguishable to the caller — deliberate: never leak that
+// another user's rule exists). Shared by every destructive-action handler.
+func (h *Handler) resolveCurationRule(c *echo.Context, ctx context.Context, owner string, id int) (*db.CurationRule, *apierr.Error) {
+	rule, ruleOwner, err := h.DB.GetCurationRule(ctx, id)
+	if err != nil {
+		return nil, apierr.Generic()
+	}
+	if rule == nil || ruleOwner != owner {
+		return nil, apierr.New(http.StatusNotFound, "Curation rule not found", nil)
+	}
+	return rule, nil
+}
+
+// ApplyRenamePreview: GET /api/v1/users/current/curation/:id/preview.
+// Dispatches on rule.action — a rename rule preview returns the apply-shaped
+// payload (UPDATE + rule-delete SQL, before/after per row), a hide rule
+// preview returns the purge-shaped payload (DELETE heartbeats + rule-delete
+// SQL, per-row "will be deleted" info). Owner-scoped; no data is mutated.
+// One preview endpoint, two payload shapes — the FE modal dispatches on the
+// same `action` discriminator to render the appropriate UI.
 func (h *Handler) ApplyRenamePreview(c *echo.Context) error {
 	_, owner, aerr := h.resolveUser(c)
 	if aerr != nil {
@@ -196,48 +210,69 @@ func (h *Handler) ApplyRenamePreview(c *echo.Context) error {
 	}
 	ctx := c.Request().Context()
 
-	rule, ruleOwner, err := h.DB.GetCurationRule(ctx, id)
-	if err != nil {
-		return respondErr(c, apierr.Generic())
-	}
-	// Owner scoping: never leak that another user's rule exists.
-	if rule == nil || ruleOwner != owner {
-		return respondErr(c, apierr.New(http.StatusNotFound, "Remapping not found", nil))
-	}
-	if rule.Action != db.CurationRename {
-		return respondErr(c, apierr.New(http.StatusBadRequest, "only rename rules can be applied", nil))
+	rule, aerr := h.resolveCurationRule(c, ctx, owner, id)
+	if aerr != nil {
+		return respondErr(c, aerr)
 	}
 
-	updSQL, delSQL, diff, total, err := h.DB.ApplyRenamePreview(ctx, owner, rule, applyPreviewRowsCap)
-	if err != nil {
-		h.Logger.Error("apply-rename preview failed", "err", err, "ruleId", id)
-		return respondErr(c, apierr.New(http.StatusBadRequest, err.Error(), nil))
+	// Rule shape returned on both branches — kept identical so the FE
+	// discriminator (`action`) is the only per-variant switch it needs.
+	ruleOut := map[string]any{
+		"id":         rule.ID,
+		"axis":       rule.Axis,
+		"action":     rule.Action,
+		"matchType":  rule.MatchType,
+		"matchValue": rule.MatchValue,
+		"newValue":   rule.NewValue,
 	}
 
-	return c.JSON(http.StatusOK, map[string]any{
-		"sqlPlanned":    updSQL + ";\n" + delSQL + ";",
-		"sqlUpdate":     updSQL,
-		"sqlDelete":     delSQL,
-		"affectedRows":  diff,
-		"totalAffected": total,
-		"rowsShown":     len(diff),
-		"rule": map[string]any{
-			"id":         rule.ID,
-			"axis":       rule.Axis,
-			"matchType":  rule.MatchType,
-			"matchValue": rule.MatchValue,
-			"newValue":   rule.NewValue,
-		},
-	})
+	switch rule.Action {
+	case db.CurationRename:
+		updSQL, delSQL, diff, total, perr := h.DB.ApplyRenamePreview(ctx, owner, rule, applyPreviewRowsCap)
+		if perr != nil {
+			h.Logger.Error("apply-rename preview failed", "err", perr, "ruleId", id)
+			return respondErr(c, apierr.New(http.StatusBadRequest, perr.Error(), nil))
+		}
+		return c.JSON(http.StatusOK, map[string]any{
+			"action":        "rename",
+			"sqlPlanned":    updSQL + ";\n" + delSQL + ";",
+			"sqlUpdate":     updSQL,
+			"sqlDelete":     delSQL,
+			"affectedRows":  diff,
+			"totalAffected": total,
+			"rowsShown":     len(diff),
+			"rule":          ruleOut,
+		})
+	case db.CurationHide:
+		delRowsSQL, delRuleSQL, diff, total, perr := h.DB.PurgeHiddenPreview(ctx, owner, rule, applyPreviewRowsCap)
+		if perr != nil {
+			h.Logger.Error("purge-hidden preview failed", "err", perr, "ruleId", id)
+			return respondErr(c, apierr.New(http.StatusBadRequest, perr.Error(), nil))
+		}
+		return c.JSON(http.StatusOK, map[string]any{
+			"action":        "hide",
+			"sqlPlanned":    delRowsSQL + ";\n" + delRuleSQL + ";",
+			"sqlDeleteRows": delRowsSQL,
+			"sqlDeleteRule": delRuleSQL,
+			"affectedRows":  diff,
+			"totalAffected": total,
+			"rowsShown":     len(diff),
+			"rule":          ruleOut,
+		})
+	default:
+		return respondErr(c, apierr.New(http.StatusBadRequest, "unknown rule action: "+rule.Action, nil))
+	}
 }
 
-// ApplyRename: POST /api/v1/users/current/remappings/:id/apply →
+// ApplyRename: POST /api/v1/users/current/curation/:id/apply →
 // {rowsAffected:int, sqlRun:string}. DESTRUCTIVELY rewrites every heartbeat
-// row that the mapping matches on the target column, then removes the mapping
-// row itself, ATOMICALLY in one transaction. Owner-scoped.
+// row that the rename rule matches on the target column, then removes the
+// rule row itself, ATOMICALLY in one transaction. Owner-scoped. Rejects
+// non-rename rules with 400 (hide rules go through /purge instead — a
+// destructive-delete UX is scarier and gets its own path).
 //
 // Idempotent-in-effect: if the mapping is already applied and 0 rows match,
-// still succeeds with rowsAffected=0 and the mapping row is still removed.
+// still succeeds with rowsAffected=0 and the rule row is still removed.
 func (h *Handler) ApplyRename(c *echo.Context) error {
 	_, owner, aerr := h.resolveUser(c)
 	if aerr != nil {
@@ -249,12 +284,9 @@ func (h *Handler) ApplyRename(c *echo.Context) error {
 	}
 	ctx := c.Request().Context()
 
-	rule, ruleOwner, err := h.DB.GetCurationRule(ctx, id)
-	if err != nil {
-		return respondErr(c, apierr.Generic())
-	}
-	if rule == nil || ruleOwner != owner {
-		return respondErr(c, apierr.New(http.StatusNotFound, "Remapping not found", nil))
+	rule, aerr := h.resolveCurationRule(c, ctx, owner, id)
+	if aerr != nil {
+		return respondErr(c, aerr)
 	}
 	if rule.Action != db.CurationRename {
 		return respondErr(c, apierr.New(http.StatusBadRequest, "only rename rules can be applied", nil))
@@ -276,5 +308,54 @@ func (h *Handler) ApplyRename(c *echo.Context) error {
 		"sqlRun":       sqlUpd + ";\n" + sqlDel + ";",
 		"sqlUpdate":    sqlUpd,
 		"sqlDelete":    sqlDel,
+	})
+}
+
+// PurgeHidden: POST /api/v1/users/current/curation/:id/purge →
+// {rowsAffected:int, sqlRun:string, sqlDeleteRows:string, sqlDeleteRule:string}.
+// DESTRUCTIVELY deletes every heartbeat row a HIDE rule matches, then removes
+// the rule itself, ATOMICALLY in one transaction. Owner-scoped. Rejects
+// non-hide rules with 400 — rename rules go through /apply, which preserves
+// raw data under a rewrite (this endpoint destroys raw data). Idempotent-in-
+// effect: 0 matches still deletes the rule and returns rowsAffected=0.
+//
+// This is the scariest endpoint in the curation family — the FE modal MUST
+// gate it behind a "type rule id N to confirm" input, and the icon in the
+// row list gets a redder destructive tint than /apply's Zap.
+func (h *Handler) PurgeHidden(c *echo.Context) error {
+	_, owner, aerr := h.resolveUser(c)
+	if aerr != nil {
+		return respondErr(c, aerr)
+	}
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		return respondErr(c, apierr.New(http.StatusBadRequest, "Invalid rule id", nil))
+	}
+	ctx := c.Request().Context()
+
+	rule, aerr := h.resolveCurationRule(c, ctx, owner, id)
+	if aerr != nil {
+		return respondErr(c, aerr)
+	}
+	if rule.Action != db.CurationHide {
+		return respondErr(c, apierr.New(http.StatusBadRequest, "only hide rules can be purged", nil))
+	}
+
+	rows, sqlDelRows, sqlDelRule, err := h.DB.PurgeHiddenRule(ctx, owner, rule)
+	if err != nil {
+		h.Logger.Error("purge-hidden failed", "err", err, "ruleId", id)
+		return respondErr(c, apierr.Generic())
+	}
+
+	// Purge deleted raw heartbeats + removed a rule → dashboards, the
+	// explorer, and per-axis values all change. Drop the owner's cached
+	// aggregations so the next fetch is fresh.
+	h.invalidateOwnerCache(owner)
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"rowsAffected":  rows,
+		"sqlRun":        sqlDelRows + ";\n" + sqlDelRule + ";",
+		"sqlDeleteRows": sqlDelRows,
+		"sqlDeleteRule": sqlDelRule,
 	})
 }

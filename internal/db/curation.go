@@ -222,6 +222,24 @@ type AffectedRowDiff struct {
 	After  string `json:"after"`
 }
 
+// rulePredicateSQL returns the WHERE-clause fragment (WITHOUT the leading
+// AND/WHERE) that matches every heartbeat row on `rule`'s axis according to
+// its match type. $2 is always the matchValue. Both destructive endpoints
+// (apply for rename, purge for hide) reuse this so the "which rows does this
+// rule touch" question has ONE answer — no drift between preview/apply/purge.
+//
+//   - exact:    lower(col) = lower($2)   (case-insensitive; mirrors query-time)
+//   - regex:    col ~* $2                (case-insensitive regex)
+//   - template: col ~* $2                (template rules only apply to renames;
+//                                         the WHERE gate is identical to regex)
+func rulePredicateSQL(col string, matchType string) string {
+	if matchType == MatchRegex || matchType == MatchTemplate {
+		return fmt.Sprintf("%s ~* $2", col)
+	}
+	// exact + empty (legacy) both mean case-insensitive equality.
+	return fmt.Sprintf("lower(%s) = lower($2)", col)
+}
+
 // buildApplyUpdateSQL returns the parameterized UPDATE that a destructive apply
 // of `rule` would execute. Bound params are always ($1=sender, $2=matchValue,
 // [$3=newValue for exact], [$3=template for template]). Exact/regex rules
@@ -244,28 +262,46 @@ func (d *DB) buildApplyUpdateSQL(rule *CurationRule) (sqlText string, bindParams
 		return "", nil, fmt.Errorf("rename rule has no newValue (cannot apply)")
 	}
 
+	pred := rulePredicateSQL(col, rule.MatchType)
 	switch rule.MatchType {
-	case MatchRegex:
-		// Rewrite every row whose col matches the pattern to the fixed newValue.
-		q := fmt.Sprintf(`UPDATE heartbeats SET %s = $3 WHERE sender = $1 AND %s ~* $2`, col, col)
-		return q, []any{rule.MatchValue, *rule.NewValue}, nil
 	case MatchTemplate:
 		// Rewrite via regexp_replace, same pattern + template + 'i' flag as
 		// remapExpr uses at query time. Only rows that match the pattern are
-		// touched (the ~* WHERE gate).
+		// touched (the shared predicate covers the WHERE gate).
 		q := fmt.Sprintf(
-			`UPDATE heartbeats SET %s = regexp_replace(%s, $2, $3, 'i') WHERE sender = $1 AND %s ~* $2`,
-			col, col, col)
+			`UPDATE heartbeats SET %s = regexp_replace(%s, $2, $3, 'i') WHERE sender = $1 AND %s`,
+			col, col, pred)
 		return q, []any{rule.MatchValue, *rule.NewValue}, nil
-	default: // MatchExact or ""
-		// Case-insensitive equality mirrors the query-time exact rule.
-		q := fmt.Sprintf(`UPDATE heartbeats SET %s = $3 WHERE sender = $1 AND lower(%s) = lower($2)`, col, col)
+	default: // exact + regex both write a fixed target.
+		q := fmt.Sprintf(`UPDATE heartbeats SET %s = $3 WHERE sender = $1 AND %s`, col, pred)
 		return q, []any{rule.MatchValue, *rule.NewValue}, nil
 	}
 }
 
-// buildApplyDeleteSQL returns the parameterized DELETE that removes the mapping
-// row itself after the UPDATE has been applied. $1=id, $2=sender.
+// buildPurgeDeleteSQL returns the parameterized DELETE against `heartbeats`
+// that a destructive purge of a HIDE rule would execute. Bound params are
+// ($1=sender, $2=matchValue). Same predicate the query-time HiddenSets filter
+// uses, so a purge deletes exactly the rows the hide rule currently hides —
+// no more, no less. Only hide rules can be purged; rename rules must go
+// through the apply path (their whole point is preserving raw data under a
+// display remap, not destroying it).
+func (d *DB) buildPurgeDeleteSQL(rule *CurationRule) (sqlText string, bindParams []any, err error) {
+	col, ok := rawHeartbeatCols[rule.Axis]
+	if !ok {
+		return "", nil, fmt.Errorf("axis %q has no raw column (only rollup-tracked axes are purge-able)", rule.Axis)
+	}
+	if rule.Action != CurationHide {
+		return "", nil, fmt.Errorf("only hide rules are purge-able (got action=%q)", rule.Action)
+	}
+	pred := rulePredicateSQL(col, rule.MatchType)
+	q := fmt.Sprintf(`DELETE FROM heartbeats WHERE sender = $1 AND %s`, pred)
+	return q, []any{rule.MatchValue}, nil
+}
+
+// buildApplyDeleteSQL returns the parameterized DELETE that removes the rule
+// row itself after the mutation (UPDATE for apply, DELETE for purge) has run.
+// $1=id, $2=sender. Shared by both destructive paths — the terminal step is
+// identical regardless of what preceded it.
 func (d *DB) buildApplyDeleteSQL() string {
 	return `DELETE FROM curation_rules WHERE id = $1 AND sender = $2`
 }
@@ -323,10 +359,7 @@ func (d *DB) ApplyRenamePreview(ctx context.Context, sender string, rule *Curati
 	if rule.MatchType == MatchTemplate {
 		afterExpr = fmt.Sprintf("regexp_replace(%s, $2, $3, 'i')", col)
 	}
-	pred := fmt.Sprintf("lower(%s) = lower($2)", col)
-	if rule.MatchType == MatchRegex || rule.MatchType == MatchTemplate {
-		pred = fmt.Sprintf("%s ~* $2", col)
-	}
+	pred := rulePredicateSQL(col, rule.MatchType)
 	// Count separately so the modal can say "and N more" honestly.
 	countQ := fmt.Sprintf(`SELECT count(*) FROM heartbeats WHERE sender = $1 AND %s`, pred)
 	if err = d.Pool.QueryRow(ctx, countQ, sender, rule.MatchValue).Scan(&total); err != nil {
@@ -414,6 +447,127 @@ func (d *DB) ApplyRenameRule(ctx context.Context, sender string, rule *CurationR
 		return 0, "", "", err
 	}
 	return rowsAffected, sqlUpdateRun, sqlDeleteRun, nil
+}
+
+// PurgeRowDiff is one heartbeat row that a destructive PURGE would delete.
+// `Deleted` holds the raw column values on the row (currently just the axis
+// column that the rule matched on, but shaped as a map so the modal can
+// render richer per-row context later without a schema break).
+type PurgeRowDiff struct {
+	ID      int64             `json:"id"`
+	Deleted map[string]string `json:"deleted"`
+}
+
+// PurgeHiddenPreview returns the exact DELETE (heartbeats) + DELETE
+// (curation_rules) SQL a purge would run, plus a capped list of the
+// heartbeat rows that would be deleted. Owner-scoped; no data is mutated.
+// Used to populate the destructive-confirm modal. `limit` caps the returned
+// diff at that size; `total` is exact (the modal renders "and N more…"
+// footer when total > len(diff)).
+func (d *DB) PurgeHiddenPreview(ctx context.Context, sender string, rule *CurationRule, limit int) (
+	sqlDeleteRowsPlanned string, sqlDeleteRulePlanned string, diff []PurgeRowDiff, total int64, err error,
+) {
+	if limit <= 0 {
+		limit = 100
+	}
+	delRowsSQL, delRowsBind, err := d.buildPurgeDeleteSQL(rule)
+	if err != nil {
+		return "", "", nil, 0, err
+	}
+	delRuleSQL := d.buildApplyDeleteSQL()
+
+	sqlDeleteRowsPlanned = InlineParams(delRowsSQL, append([]any{sender}, delRowsBind...))
+	sqlDeleteRulePlanned = InlineParams(delRuleSQL, []any{rule.ID, sender})
+
+	col := rawHeartbeatCols[rule.Axis]
+	pred := rulePredicateSQL(col, rule.MatchType)
+
+	// Exact total for the "and N more" footer.
+	countQ := fmt.Sprintf(`SELECT count(*) FROM heartbeats WHERE sender = $1 AND %s`, pred)
+	if err = d.Pool.QueryRow(ctx, countQ, sender, rule.MatchValue).Scan(&total); err != nil {
+		return "", "", nil, 0, err
+	}
+
+	// Fetch id + raw column value for each row that would die. We surface the
+	// column value under its axis-name key so the FE can render "language =
+	// Python (will be deleted)" without knowing the rule's axis at render time.
+	q := fmt.Sprintf(`
+		SELECT id, %s::text
+		FROM heartbeats
+		WHERE sender = $1 AND %s
+		ORDER BY id ASC
+		LIMIT %d`, col, pred, limit)
+	rows, qerr := d.Pool.Query(ctx, q, sender, rule.MatchValue)
+	if qerr != nil {
+		return "", "", nil, 0, qerr
+	}
+	defer rows.Close()
+	diff = make([]PurgeRowDiff, 0, limit)
+	for rows.Next() {
+		var id int64
+		var val string
+		if serr := rows.Scan(&id, &val); serr != nil {
+			return "", "", nil, 0, serr
+		}
+		diff = append(diff, PurgeRowDiff{ID: id, Deleted: map[string]string{rule.Axis: val}})
+	}
+	if err = rows.Err(); err != nil {
+		return "", "", nil, 0, err
+	}
+	return sqlDeleteRowsPlanned, sqlDeleteRulePlanned, diff, total, nil
+}
+
+// PurgeHiddenRule DESTRUCTIVELY collapses a hide rule into the raw
+// heartbeats: it runs DELETE FROM heartbeats WHERE <matches rule> AND then
+// deletes the rule row itself, ATOMICALLY in a single transaction. Either
+// both succeed or both roll back — a partial state (rows gone but rule still
+// active) is impossible.
+//
+// Returns the number of heartbeat rows deleted and the exact SQL that was
+// executed (verbatim match to the preview strings — the regression test
+// TestPurgeHiddenPreviewMatchesRun guards this). If the rule matches nothing
+// (already-purged or spurious), still succeeds with rowsAffected=0 and the
+// rule row is still removed (idempotent-in-effect).
+//
+// Owner-scoped: every query is gated on `sender = $1` for the heartbeats
+// DELETE AND `id = $ruleId AND sender = $1` for the rule DELETE.
+func (d *DB) PurgeHiddenRule(ctx context.Context, sender string, rule *CurationRule) (
+	rowsAffected int64, sqlDeleteRowsRun string, sqlDeleteRuleRun string, err error,
+) {
+	delRowsSQL, delRowsBind, err := d.buildPurgeDeleteSQL(rule)
+	if err != nil {
+		return 0, "", "", err
+	}
+	delRuleSQL := d.buildApplyDeleteSQL()
+
+	sqlDeleteRowsRun = InlineParams(delRowsSQL, append([]any{sender}, delRowsBind...))
+	sqlDeleteRuleRun = InlineParams(delRuleSQL, []any{rule.ID, sender})
+
+	tx, err := d.Pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return 0, "", "", err
+	}
+	defer tx.Rollback(ctx)
+
+	rowsArgs := append([]any{sender}, delRowsBind...)
+	ct, err := tx.Exec(ctx, delRowsSQL, rowsArgs...)
+	if err != nil {
+		return 0, "", "", err
+	}
+	rowsAffected = ct.RowsAffected()
+
+	dct, err := tx.Exec(ctx, delRuleSQL, rule.ID, sender)
+	if err != nil {
+		return 0, "", "", err
+	}
+	if dct.RowsAffected() == 0 {
+		return 0, "", "", fmt.Errorf("hide rule %d for %q vanished mid-purge", rule.ID, sender)
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return 0, "", "", err
+	}
+	return rowsAffected, sqlDeleteRowsRun, sqlDeleteRuleRun, nil
 }
 
 // ValidateRegex checks that a pattern compiles as a Postgres regex (guarded).

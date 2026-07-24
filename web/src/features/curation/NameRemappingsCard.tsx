@@ -11,10 +11,14 @@ export function NameRemappingsCard({
   rules,
   onRemove,
   onApply,
+  onPurge,
 }: {
   rules: CurationRule[];
   onRemove: (rule: CurationRule) => void;
+  // gaka-cr4: opens the destructive-apply modal (rename rules only).
   onApply?: (rule: CurationRule) => void;
+  // gaka-due: opens the destructive-purge modal (hide rules only).
+  onPurge?: (rule: CurationRule) => void;
 }) {
   // Group rename rules by axis (project/language/editor/branch/…).
   const grouped = useMemo(() => groupByAxis(rules), [rules]);
@@ -56,6 +60,7 @@ export function NameRemappingsCard({
                       rule={r}
                       onRemove={onRemove}
                       onApply={onApply}
+                      onPurge={onPurge}
                     />
                   ))}
                 </div>

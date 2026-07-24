@@ -49,42 +49,93 @@ export interface CurationAffectedPayload {
   truncated?: boolean;
 }
 
-// gaka-cr4: destructive-apply preview + apply payloads. See
-// internal/handler/curation.go (ApplyRenamePreview / ApplyRename) and the
-// modal at web/src/features/curation/ApplyMappingDialog.tsx.
+// gaka-cr4 + gaka-due: destructive curation action payloads (apply for rename
+// rules, purge for hide rules). ONE preview endpoint dispatches on
+// rule.action; per-action verbs run the actual mutation.
 //
-// PREVIEW response: the exact UPDATE + DELETE SQL that a destructive apply
-// would run, plus a capped diff of every heartbeat row that would be
-// rewritten. `totalAffected` is exact; `affectedRows` is capped at 100 (the
-// modal renders an "and N more…" footer).
+// PREVIEW response is a discriminated union on `action`:
+//   - apply: heartbeats.<col> is UPDATED to a new value (rows survive)
+//   - purge: matching heartbeats are DELETED (rows cease to exist)
+// Both variants also delete the curation_rules row itself. The frontend's
+// DestructiveActionDialog renders both from the same shape.
+
+// One row that would be rewritten by a rename apply. `before` and `after`
+// are the raw column values on that heartbeat.
 export interface ApplyRenamePreviewRow {
   id: number;
   before: string;
   after: string;
 }
-export interface ApplyRenamePreviewPayload {
-  // Combined "UPDATE ...;\nDELETE ...;" — convenient for a single <pre> block.
-  sqlPlanned: string;
-  sqlUpdate: string;
-  sqlDelete: string;
-  affectedRows: ApplyRenamePreviewRow[];
-  totalAffected: number;
-  rowsShown: number;
-  rule: {
-    id: number;
-    axis: string;
-    matchType?: CurationMatchType;
-    matchValue: string;
-    newValue: string | null;
-  };
+
+// One row that would be DELETED by a hide purge. `deleted` holds the raw
+// column values on that heartbeat (currently a single {col: value} pair —
+// the raw column of the rule's axis — but shaped as an object so the modal
+// can render multi-column diffs later without a schema change).
+export interface PurgeHiddenPreviewRow {
+  id: number;
+  deleted: Record<string, string>;
 }
 
-// APPLY response: the number of heartbeat rows actually rewritten and the
-// exact SQL that ran (must match sqlPlanned from the preview verbatim — the
-// backend regression test TestApplyRenamePreviewMatchesRun guards this).
+// Shared preview envelope — action discriminates the row shape (and the
+// verbs on the SQL strings: sqlUpdate for apply, sqlDeleteRows for purge).
+export type CurationActionPreviewPayload =
+  | {
+      // Rename apply — an UPDATE of the raw column + a DELETE of the rule row.
+      action: "rename";
+      // Combined "UPDATE ...;\nDELETE ...;" — convenient for a single <pre> block.
+      sqlPlanned: string;
+      sqlUpdate: string;
+      sqlDelete: string; // deletes the curation_rules row
+      affectedRows: ApplyRenamePreviewRow[];
+      totalAffected: number;
+      rowsShown: number;
+      rule: {
+        id: number;
+        axis: string;
+        action: "rename";
+        matchType?: CurationMatchType;
+        matchValue: string;
+        newValue: string | null;
+      };
+    }
+  | {
+      // Hide purge — a DELETE of matching heartbeats + a DELETE of the rule row.
+      action: "hide";
+      sqlPlanned: string;
+      // The DELETE against `heartbeats` — the destructive one.
+      sqlDeleteRows: string;
+      // The DELETE against `curation_rules` — removes the rule row itself.
+      sqlDeleteRule: string;
+      affectedRows: PurgeHiddenPreviewRow[];
+      totalAffected: number;
+      rowsShown: number;
+      rule: {
+        id: number;
+        axis: string;
+        action: "hide";
+        matchType?: CurationMatchType;
+        matchValue: string;
+        newValue: string | null;
+      };
+    };
+
+// APPLY response (rename rules only): the number of heartbeat rows actually
+// rewritten and the exact SQL that ran (must match sqlPlanned from the
+// preview verbatim — the backend regression test TestApplyRenamePreviewMatchesRun
+// guards this).
 export interface ApplyRenamePayload {
   rowsAffected: number;
   sqlRun: string;
   sqlUpdate: string;
   sqlDelete: string;
+}
+
+// PURGE response (hide rules only): the number of heartbeat rows deleted and
+// the exact SQL that ran. Backend regression TestPurgeHiddenPreviewMatchesRun
+// guards preview===run identity, same as the apply path.
+export interface PurgeHiddenPayload {
+  rowsAffected: number;
+  sqlRun: string;
+  sqlDeleteRows: string;
+  sqlDeleteRule: string;
 }
