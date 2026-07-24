@@ -10,9 +10,20 @@
  * `top-[50%] left-[50%] translate-x-[-50%] translate-y-[-50%]`, popover
  * chrome, tooltip positioning, etc.) never make it into the emitted CSS, and
  * modals render off-screen with computed `top: <document-flow-y>px` instead
- * of centered. Explicit @source here forces the scan even if the library's
- * setup path is wrong. Followup: fix in catalyst-ui setup.css (2.5.1) —
- * probably via `@source ".";` (the file's own directory = dist/).
+ * of centered.
+ *
+ * catalyst-ui@2.5.1 (published 2026-07-24, commit a7d08d5) fixes this by
+ * switching setup.css to `@source ".";` — self-relative resolves to setup.css's
+ * own directory (= dist/) which is the actual scan target. With 2.5.1 in
+ * place, this belt-and-suspenders line is REDUNDANT and safe to remove.
+ *
+ * REMOVAL SCHEDULED: 2026-10-22 (90 days post-2.5.1 publish). See bead
+ * gaka-ozo — deferred until the date, then it lands on `bd ready` as an
+ * actionable followup. Rationale for the wait: give
+ * every consumer app a full cache-refresh cycle + a few deploys' worth of
+ * proof that 2.5.1's @source scan holds up before dropping the safety net.
+ * If for any reason 2.5.1 gets yanked or the fix regresses, this line still
+ * saves us.
  */
 @source "../node_modules/@thebranchdriftcatalyst/catalyst-ui/dist";
 
