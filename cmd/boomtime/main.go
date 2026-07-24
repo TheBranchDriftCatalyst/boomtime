@@ -132,6 +132,20 @@ func runCmd() *cobra.Command {
 			}
 			defer database.Close()
 
+			// gaka-awh.5: passive backfill of legacy raw tokens into their
+			// hashed_* companions. Runs every boot, idempotent (no-op once the
+			// migration has completed). Blocks startup until done so the DROP
+			// COLUMN migration in the next release can assume every row has
+			// a populated hashed_* column. Failure here is non-fatal — legacy
+			// dual-path lookups still work.
+			if a, r, err := database.BackfillHashedTokens(ctx); err != nil {
+				logger.Warn("hashed-token backfill failed (dual-path lookups still work)",
+					"err", err, "auth_backfilled", a, "refresh_backfilled", r)
+			} else if a > 0 || r > 0 {
+				logger.Info("hashed-token backfill complete",
+					"auth_backfilled", a, "refresh_backfilled", r)
+			}
+
 			// Durability: mark any queued/running jobs left over from a previous
 			// process as failed before accepting new work.
 			hub := importer.NewHub()
