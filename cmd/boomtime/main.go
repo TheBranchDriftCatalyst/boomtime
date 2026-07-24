@@ -237,7 +237,7 @@ func createTokenCmd() *cobra.Command {
 			if err := auth.VerifyUserCredentials(ctx, database, username, password); err != nil {
 				return err
 			}
-			raw, err := auth.CreateAPIToken(ctx, database, username)
+			raw, err := auth.CreateAPIToken(ctx, database, username, "")
 			if err != nil {
 				return err
 			}
