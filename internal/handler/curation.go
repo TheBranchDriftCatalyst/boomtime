@@ -141,6 +141,61 @@ func (h *Handler) DeleteCuration(c *echo.Context) error {
 	return noContent(c)
 }
 
+// toggleCurationRequest is the optional POST body for the toggle endpoint.
+// When Enabled is nil the current value is flipped; when non-nil the exact
+// value is written (idempotent — no-op if already at the requested value).
+type toggleCurationRequest struct {
+	Enabled *bool `json:"enabled"`
+}
+
+// ToggleCuration: POST /api/v1/users/current/curation/:id/toggle → {enabled:bool}.
+// gaka-dfd. Pauses / resumes a curation rule without deleting it. Owner-
+// scoped. Body is optional: omit to flip, or pass {"enabled":true|false} to
+// set an exact state. Both flip and set are idempotent — sending the same
+// state twice still returns 200 with the current value.
+//
+// A disabled rule stays in ListCurationRules (so the UI can surface it) but
+// is filtered out of LoadHiddenSets / LoadRenameSets — its effect is
+// paused. Apply and Purge reject disabled rules with 400 (see below).
+func (h *Handler) ToggleCuration(c *echo.Context) error {
+	_, owner, aerr := h.resolveUser(c)
+	if aerr != nil {
+		return respondErr(c, aerr)
+	}
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		return respondErr(c, apierr.New(http.StatusBadRequest, "Invalid rule id", nil))
+	}
+	// Body is optional — an empty POST flips. When present it must be tiny
+	// (a single boolean); reuse the small body cap.
+	var req toggleCurationRequest
+	if c.Request().ContentLength > 0 {
+		if aerr := BindJSONWithLimit(c, &req, BodyLimitSmall); aerr != nil {
+			return respondErr(c, aerr)
+		}
+	}
+	ctx := c.Request().Context()
+	var newEnabled bool
+	var found bool
+	if req.Enabled != nil {
+		found, err = h.DB.SetCurationRuleEnabled(ctx, owner, id, *req.Enabled)
+		newEnabled = *req.Enabled
+	} else {
+		newEnabled, found, err = h.DB.ToggleCurationRule(ctx, owner, id)
+	}
+	if err != nil {
+		h.Logger.Error("toggle curation rule failed", "err", err, "ruleId", id)
+		return respondErr(c, apierr.Generic())
+	}
+	if !found {
+		return respondErr(c, apierr.New(http.StatusNotFound, "Curation rule not found", nil))
+	}
+	// Enabling/disabling a rule changes what dashboards render → drop the
+	// owner's cached aggregations so the next fetch reflects the new state.
+	h.invalidateOwnerCache(owner)
+	return c.JSON(http.StatusOK, map[string]any{"enabled": newEnabled})
+}
+
 // CurationAffected: GET /api/v1/users/current/curation/:id/affected →
 // {values:[{value,count}], truncated}. The DISTINCT RAW values (with heartbeat
 // counts) a rule matches on its axis — the one literal for an exact rule, every
@@ -291,6 +346,13 @@ func (h *Handler) ApplyRename(c *echo.Context) error {
 	if rule.Action != db.CurationRename {
 		return respondErr(c, apierr.New(http.StatusBadRequest, "only rename rules can be applied", nil))
 	}
+	// gaka-dfd: refuse to run a destructive action against a paused rule —
+	// applying-a-rule-you-just-paused is confusing and probably a mistake.
+	// The user should re-enable, verify it still matches what they expect,
+	// and then apply.
+	if !rule.Enabled {
+		return respondErr(c, apierr.New(http.StatusBadRequest, "cannot apply a disabled rule; enable it first", nil))
+	}
 
 	rows, sqlUpd, sqlDel, err := h.DB.ApplyRenameRule(ctx, owner, rule)
 	if err != nil {
@@ -339,6 +401,11 @@ func (h *Handler) PurgeHidden(c *echo.Context) error {
 	}
 	if rule.Action != db.CurationHide {
 		return respondErr(c, apierr.New(http.StatusBadRequest, "only hide rules can be purged", nil))
+	}
+	// gaka-dfd: refuse to purge against a paused rule — the same reasoning
+	// as the apply guard, and purge is the more dangerous of the two.
+	if !rule.Enabled {
+		return respondErr(c, apierr.New(http.StatusBadRequest, "cannot purge a disabled rule; enable it first", nil))
 	}
 
 	rows, sqlDelRows, sqlDelRule, err := h.DB.PurgeHiddenRule(ctx, owner, rule)

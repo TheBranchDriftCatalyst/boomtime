@@ -62,6 +62,32 @@ describe("useCurationMutations invalidation (P0)", () => {
     expect(spy).toHaveBeenCalledTimes(EXPECTED_KEYS.length);
   });
 
+  it("invalidates the same keys on toggle (gaka-dfd)", async () => {
+    server.use(
+      http.post("/api/v1/users/current/curation/:id/toggle", () =>
+        HttpResponse.json({ enabled: false }),
+      ),
+    );
+    const qc = new QueryClient({
+      defaultOptions: { mutations: { retry: false } },
+    });
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    const { result } = renderHook(() => useCurationMutations(), {
+      wrapper: wrapper(qc),
+    });
+
+    result.current.toggle.mutate({ id: 1, enabled: false });
+    await waitFor(() => expect(result.current.toggle.isSuccess).toBe(true));
+
+    const invalidatedKeys = spy.mock.calls.map((c) => c[0]?.queryKey);
+    for (const key of EXPECTED_KEYS) {
+      expect(invalidatedKeys).toContainEqual(key);
+    }
+    // Exactly these — a paused rule stops rewriting dashboards, so the FE
+    // must refetch everything downstream; nothing more.
+    expect(spy).toHaveBeenCalledTimes(EXPECTED_KEYS.length);
+  });
+
   it("also invalidates the same keys on remove", async () => {
     server.use(
       http.delete("/api/v1/users/current/curation/:id", () =>

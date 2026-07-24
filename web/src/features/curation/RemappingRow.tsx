@@ -4,6 +4,7 @@ import {
   ArrowRight,
   ChevronDown,
   ChevronRight,
+  Eye,
   EyeOff,
   Loader2,
   Pencil,
@@ -13,6 +14,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@thebranchdriftcatalyst/catalyst-ui/ui/badge";
 import { RemappingForm } from "@/features/curation/RemappingForm";
+import { useCurationMutations } from "@/features/curation/useCuration";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
 import { templateToDisplay } from "@/features/curation/remapDisplay";
@@ -46,8 +48,12 @@ export function RemappingRow({
   // is wired in this view at all.
   const isRename = rule.action === "rename";
   const isHide = rule.action === "hide";
+  // gaka-dfd: an older backend may omit `enabled`; treat missing as `true`
+  // (the pre-feature default) so pre-migration installs still render sane.
+  const isEnabled = rule.enabled !== false;
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
+  const { toggle } = useCurationMutations();
   const matchType: CurationMatchType = rule.matchType ?? "exact";
   // Badge for non-exact rules ("regex" / "template" capture rules).
   const modeBadge =
@@ -94,7 +100,16 @@ export function RemappingRow({
   }
 
   return (
-    <div className="rounded-md border bg-secondary/40 text-sm">
+    <div
+      className={
+        "rounded-md border bg-secondary/40 text-sm transition-opacity " +
+        // gaka-dfd: dim the whole row when the rule is paused so the "this
+        // isn't doing anything right now" signal is present peripherally.
+        // Opacity beats a badge here — badges compete for attention with
+        // the existing HIDDEN / capture tags.
+        (isEnabled ? "" : "opacity-60")
+      }
+    >
       <div className="flex items-center gap-2 px-2.5 py-1.5">
         <button
           className="flex flex-1 items-center gap-2 text-left"
@@ -133,6 +148,36 @@ export function RemappingRow({
               <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               <span className="font-mono font-medium">{rule.newValue}</span>
             </>
+          )}
+        </button>
+        {/*
+          gaka-dfd: pause / resume toggle. First icon in the action group so
+          the "is this rule live?" affordance is the leftmost decision.
+          EyeOff = "currently active, click to pause" (an eye that stops
+          watching); Eye = "currently paused, click to resume watching".
+          Pass the EXACT desired state (not a flip) so double-clicks can't
+          land on the wrong value.
+        */}
+        <button
+          onClick={() =>
+            toggle.mutate({ id: rule.id, enabled: !isEnabled })
+          }
+          disabled={toggle.isPending}
+          title={
+            isEnabled
+              ? "Pause rule (keeps definition, stops applying)"
+              : "Enable rule (start applying again)"
+          }
+          aria-label={
+            isEnabled ? "Pause curation rule" : "Enable curation rule"
+          }
+          aria-pressed={!isEnabled}
+          className="rounded-full p-0.5 text-muted-foreground hover:bg-background hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isEnabled ? (
+            <EyeOff className="h-3.5 w-3.5" />
+          ) : (
+            <Eye className="h-3.5 w-3.5" />
           )}
         </button>
         <button

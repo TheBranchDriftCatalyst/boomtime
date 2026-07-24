@@ -18,6 +18,11 @@ export interface CurationRule {
   newValue: string | null;
   // Defaults to "exact" when the backend omits it (older rules / hide rules).
   matchType?: CurationMatchType;
+  // gaka-dfd: pause / resume flag. A disabled rule stays in the list (so the
+  // UI can surface it) but is filtered out of the query-time paths. Optional
+  // in the type so responses from a pre-migration backend still parse; the
+  // FE treats missing as `true` (the pre-feature default).
+  enabled?: boolean;
   createdAt: string;
 }
 

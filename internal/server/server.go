@@ -167,6 +167,9 @@ func registerCurationRoutes(e *echo.Echo, h *handler.Handler) {
 	e.GET("/api/v1/users/current/curation/:id/preview", h.ApplyRenamePreview)
 	e.POST("/api/v1/users/current/curation/:id/apply", h.ApplyRename)
 	e.POST("/api/v1/users/current/curation/:id/purge", h.PurgeHidden)
+	// gaka-dfd: pause/resume a rule without deleting it. Body optional —
+	// empty POST flips, {"enabled":true|false} sets an exact value.
+	e.POST("/api/v1/users/current/curation/:id/toggle", h.ToggleCuration)
 }
 
 // registerSpaceRoutes: spaces (named, scoped dashboards). The static

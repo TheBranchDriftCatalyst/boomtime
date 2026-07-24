@@ -54,6 +54,12 @@ func NormalizeTemplate(tmpl string) string {
 // MatchType is "exact" (MatchValue is a literal), "regex" (MatchValue is a
 // Postgres regex applied to the raw column via ~), or "template" (MatchValue is a
 // regex and NewValue is a regexp_replace template referencing capture groups).
+//
+// Enabled (gaka-dfd) reports whether the rule is currently applied at query
+// time. A disabled rule stays in the list (so the UI can surface it) but is
+// filtered out of LoadHiddenSets / LoadRenameSets — its definition survives,
+// its effect is paused. The apply and purge destructive paths reject
+// disabled rules (400) — pausing then applying is a confusing UX.
 type CurationRule struct {
 	ID         int       `json:"id"`
 	Axis       string    `json:"axis"`
@@ -61,13 +67,18 @@ type CurationRule struct {
 	MatchType  string    `json:"matchType"`
 	MatchValue string    `json:"matchValue"`
 	NewValue   *string   `json:"newValue"`
+	Enabled    bool      `json:"enabled"`
 	CreatedAt  time.Time `json:"createdAt"`
 }
 
 // ListCurationRules returns a user's rules, newest first.
+//
+// gaka-dfd: disabled rules are still returned so the UI can show them (with
+// the "paused" eyeball). Query-time consumers (LoadHiddenSets /
+// LoadRenameSets) do their own enabled=true filtering.
 func (d *DB) ListCurationRules(ctx context.Context, sender string) ([]CurationRule, error) {
 	rows, err := d.Pool.Query(ctx, `
-		SELECT id, axis, action, match_type, match_value, new_value, created_at
+		SELECT id, axis, action, match_type, match_value, new_value, enabled, created_at
 		FROM curation_rules WHERE sender = $1 ORDER BY id DESC`, sender)
 	if err != nil {
 		return nil, err
@@ -76,7 +87,7 @@ func (d *DB) ListCurationRules(ctx context.Context, sender string) ([]CurationRu
 	out := []CurationRule{}
 	for rows.Next() {
 		var r CurationRule
-		if err := rows.Scan(&r.ID, &r.Axis, &r.Action, &r.MatchType, &r.MatchValue, &r.NewValue, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.Axis, &r.Action, &r.MatchType, &r.MatchValue, &r.NewValue, &r.Enabled, &r.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -85,7 +96,10 @@ func (d *DB) ListCurationRules(ctx context.Context, sender string) ([]CurationRu
 }
 
 // CreateCurationRule inserts a rule (deduped on sender,axis,action,match_type,
-// match_value) and returns it. On an existing duplicate it updates new_value.
+// match_value) and returns it. On an existing duplicate it updates new_value
+// AND re-enables the rule (gaka-dfd) — re-adding a rule you previously paused
+// clearly expresses "I want this on again"; the alternative (silent
+// no-toggle) is confusing.
 func (d *DB) CreateCurationRule(ctx context.Context, sender, axis, action, matchType, matchValue string, newValue *string) (*CurationRule, error) {
 	if matchType == "" {
 		matchType = MatchExact
@@ -94,11 +108,11 @@ func (d *DB) CreateCurationRule(ctx context.Context, sender, axis, action, match
 		INSERT INTO curation_rules (sender, axis, action, match_type, match_value, new_value)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (sender, axis, action, match_type, match_value)
-		DO UPDATE SET new_value = EXCLUDED.new_value
-		RETURNING id, axis, action, match_type, match_value, new_value, created_at`,
+		DO UPDATE SET new_value = EXCLUDED.new_value, enabled = true
+		RETURNING id, axis, action, match_type, match_value, new_value, enabled, created_at`,
 		sender, axis, action, matchType, matchValue, newValue)
 	var r CurationRule
-	if err := row.Scan(&r.ID, &r.Axis, &r.Action, &r.MatchType, &r.MatchValue, &r.NewValue, &r.CreatedAt); err != nil {
+	if err := row.Scan(&r.ID, &r.Axis, &r.Action, &r.MatchType, &r.MatchValue, &r.NewValue, &r.Enabled, &r.CreatedAt); err != nil {
 		return nil, err
 	}
 	return &r, nil
@@ -109,9 +123,9 @@ func (d *DB) GetCurationRule(ctx context.Context, id int) (*CurationRule, string
 	var r CurationRule
 	var sender string
 	err := d.Pool.QueryRow(ctx, `
-		SELECT id, axis, action, match_type, match_value, new_value, created_at, sender
+		SELECT id, axis, action, match_type, match_value, new_value, enabled, created_at, sender
 		FROM curation_rules WHERE id = $1`, id).
-		Scan(&r.ID, &r.Axis, &r.Action, &r.MatchType, &r.MatchValue, &r.NewValue, &r.CreatedAt, &sender)
+		Scan(&r.ID, &r.Axis, &r.Action, &r.MatchType, &r.MatchValue, &r.NewValue, &r.Enabled, &r.CreatedAt, &sender)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, "", nil
 	}
@@ -119,6 +133,63 @@ func (d *DB) GetCurationRule(ctx context.Context, id int) (*CurationRule, string
 		return nil, "", err
 	}
 	return &r, sender, nil
+}
+
+// ToggleCurationRule flips (or sets, when `desired` is non-nil) a rule's
+// enabled flag. Owner-scoped. Idempotent — if the current value already
+// equals the requested value, still returns (enabled, true).
+//
+// gaka-dfd: rules default enabled=true. Toggling produces a paused rule that
+// the query-time consumers (LoadHiddenSets / LoadRenameSets) exclude. The
+// rule row itself stays in the list so the UI can flip it back on.
+//
+// Returns (newEnabled, found, err). found=false when the rule is missing or
+// belongs to a different owner (indistinguishable — never leak existence).
+func (d *DB) ToggleCurationRule(ctx context.Context, sender string, id int) (newEnabled bool, found bool, err error) {
+	// One statement: read current + write NOT current + return new. Avoids
+	// the read-modify-write TOCTOU (concurrent double-click gets one flip,
+	// not zero).
+	err = d.Pool.QueryRow(ctx, `
+		UPDATE curation_rules SET enabled = NOT enabled
+		WHERE id = $1 AND sender = $2
+		RETURNING enabled`, id, sender).Scan(&newEnabled)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, false, nil
+	}
+	if err != nil {
+		return false, false, err
+	}
+	return newEnabled, true, nil
+}
+
+// SetCurationRuleEnabled writes an EXACT enabled value (not a flip). Owner-
+// scoped, idempotent — a no-change write still returns (found, nil). Used
+// when the FE passes an explicit desired state to prevent double-click
+// races from landing on the wrong value.
+func (d *DB) SetCurationRuleEnabled(ctx context.Context, sender string, id int, enabled bool) (found bool, err error) {
+	ct, err := d.Pool.Exec(ctx, `
+		UPDATE curation_rules SET enabled = $3
+		WHERE id = $1 AND sender = $2`, id, sender, enabled)
+	if err != nil {
+		return false, err
+	}
+	// Postgres UPDATE with a WHERE that matches 0 rows returns 0. But we
+	// also need to distinguish "rule not found" from "rule found + already
+	// at the desired value". Do a follow-up existence check on the 0-row
+	// path so idempotent no-ops don't 404.
+	if ct.RowsAffected() > 0 {
+		return true, nil
+	}
+	var one int
+	err = d.Pool.QueryRow(ctx,
+		`SELECT 1 FROM curation_rules WHERE id = $1 AND sender = $2`, id, sender).Scan(&one)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // DeleteCurationRule removes a rule (owner-scoped). Returns rows affected.

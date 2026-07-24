@@ -84,9 +84,11 @@ func exclusionPredicate(hs HiddenSets, cols map[string]string, scopeCond string,
 // case variant present in raw heartbeats.
 func (d *DB) LoadHiddenSets(ctx context.Context, sender string) (HiddenSets, error) {
 	hs := HiddenSets{byAxis: make(map[string][]string, len(hiddenAxes))}
+	// gaka-dfd: disabled rules are skipped — a paused hide rule stops
+	// filtering. The rule row survives; only its query-time effect pauses.
 	rows, err := d.Pool.Query(ctx,
 		`SELECT axis, match_value FROM curation_rules
-		 WHERE sender = $1 AND action = 'hide' AND axis = ANY($2)`,
+		 WHERE sender = $1 AND action = 'hide' AND enabled = true AND axis = ANY($2)`,
 		sender, hiddenAxes)
 	if err != nil {
 		return hs, err

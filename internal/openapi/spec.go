@@ -547,6 +547,19 @@ func build() (*openapi3.T, error) {
 		stdErrors(op, "400", "401", "403", "404", "500")
 		return op
 	}())
+	doc.AddOperation("/api/v1/users/current/curation/{id}/toggle", "POST", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagCuration}, Summary: "Pause / resume a curation rule",
+			Description: "Toggle a rule's enabled flag without deleting it. Applies to BOTH rename and hide rules — pausing a rename stops the label swap at query time; pausing a hide stops the rows-being-filtered-out at query time. The rule row survives in the list either way, so the UI can flip it back on with a single click. Body is optional: an empty POST flips the current value; {\"enabled\":true|false} sets an exact state. Both flip and set are idempotent — sending the same state twice still returns 200 with the current value. Owner-scoped. Enabling/disabling invalidates the owner's dashboard cache. Apply and purge endpoints return 400 for a disabled rule (enable it first).",
+			Parameters:  openapi3.Parameters{pathParamInt("id", "Curation rule id.")}}
+		body := openapi3.NewObjectSchema()
+		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{
+			Required: false, Description: "Optional {enabled:bool}. Omit to flip.",
+			Content: openapi3.NewContentWithJSONSchema(body),
+		}}
+		setStatus(op, http.StatusOK, rInline("{enabled:bool} — the new state.", mapObject()))
+		stdErrors(op, "400", "401", "403", "404", "500")
+		return op
+	}())
 
 	// ==== SPACES ==============================================================
 

@@ -91,9 +91,11 @@ func (r RenameSets) ExactSourcesFor(axis, target string) []string {
 // `~*` (case-insensitive) so a pattern like `^Meet` matches `meet-*` too.
 func (d *DB) LoadRenameSets(ctx context.Context, sender string) (RenameSets, error) {
 	rs := RenameSets{byAxis: map[string]axisRenames{}}
+	// gaka-dfd: disabled rules are skipped — a paused rename rule stops
+	// remapping. The rule row survives; only its query-time effect pauses.
 	rows, err := d.Pool.Query(ctx,
 		`SELECT axis, match_type, match_value, new_value FROM curation_rules
-		 WHERE sender = $1 AND action = 'rename' AND new_value IS NOT NULL
+		 WHERE sender = $1 AND action = 'rename' AND enabled = true AND new_value IS NOT NULL
 		 ORDER BY id ASC`, sender)
 	if err != nil {
 		return rs, err

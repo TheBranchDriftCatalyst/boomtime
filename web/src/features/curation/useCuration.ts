@@ -68,5 +68,16 @@ export function useCurationMutations() {
     },
   });
 
-  return { add, remove, edit };
+  // gaka-dfd: pause / resume a curation rule without deleting it. When
+  // `enabled` is passed, sets the exact value (protects against double-click
+  // races where the client thinks the rule is on but the server disagrees).
+  // Invalidates every curation-dependent query — a paused rule stops
+  // filtering / renaming at query time, so dashboards must refetch.
+  const toggle = useMutation({
+    mutationFn: (vars: { id: number; enabled?: boolean }) =>
+      api.toggleCurationRule(vars.id, vars.enabled),
+    onSuccess: invalidateDependents,
+  });
+
+  return { add, remove, edit, toggle };
 }

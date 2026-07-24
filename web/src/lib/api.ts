@@ -644,6 +644,19 @@ export const api = {
       method: "DELETE",
     }),
 
+  // gaka-dfd: pause / resume a curation rule without deleting it. Body is
+  // optional — omit to flip the current value, or pass `enabled` explicitly
+  // to set an exact state (defends against double-click races). Returns the
+  // new enabled value.
+  toggleCurationRule: (id: number, enabled?: boolean) =>
+    request<{ enabled: boolean }>(
+      `/api/v1/users/current/curation/${id}/toggle`,
+      {
+        method: "POST",
+        body: enabled === undefined ? undefined : { enabled },
+      },
+    ),
+
   // Raw values a rule currently matches (for previewing a regex remapping).
   getCurationRuleAffected: (id: number) =>
     request<CurationAffectedPayload>(
