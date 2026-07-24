@@ -27,11 +27,16 @@ function makeRule(overrides: Partial<CurationRule> = {}): CurationRule {
   };
 }
 
+// AddToSpaceDropdown (used by the row) uses useNavigate — every test must
+// mount inside a router. `withRouter: true` is enough.
+const RENDER_OPTS = { withRouter: true };
+
 describe("RemappingRow — toggle (gaka-dfd)", () => {
   it("renders EyeOff when enabled and Eye when disabled", () => {
     const noop = () => undefined;
     const { rerender } = renderWithProviders(
       <RemappingRow rule={makeRule({ enabled: true })} onRemove={noop} />,
+      RENDER_OPTS,
     );
     // EyeOff button ('pause') should be present.
     expect(
@@ -66,6 +71,7 @@ describe("RemappingRow — toggle (gaka-dfd)", () => {
     const user = userEvent.setup();
     renderWithProviders(
       <RemappingRow rule={makeRule({ enabled: true })} onRemove={() => undefined} />,
+      RENDER_OPTS,
     );
 
     await user.click(
@@ -82,6 +88,7 @@ describe("RemappingRow — toggle (gaka-dfd)", () => {
         rule={makeRule({ enabled: false })}
         onRemove={() => undefined}
       />,
+      RENDER_OPTS,
     );
     // The row is the outermost <div> inside the render — check its class list.
     const row = container.firstChild as HTMLElement;
@@ -94,6 +101,7 @@ describe("RemappingRow — toggle (gaka-dfd)", () => {
         rule={makeRule({ enabled: true })}
         onRemove={() => undefined}
       />,
+      RENDER_OPTS,
     );
     const row = container.firstChild as HTMLElement;
     expect(row.className).not.toMatch(/opacity-60/);
@@ -110,6 +118,7 @@ describe("RemappingRow — toggle (gaka-dfd)", () => {
         rule={withoutEnabled as CurationRule}
         onRemove={() => undefined}
       />,
+      RENDER_OPTS,
     );
     // Renders the "pause" affordance (implying it thinks the rule is enabled).
     expect(

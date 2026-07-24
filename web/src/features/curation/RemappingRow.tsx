@@ -13,6 +13,7 @@ import {
   Zap,
 } from "lucide-react";
 import { Badge } from "@thebranchdriftcatalyst/catalyst-ui/ui/badge";
+import { AddToSpaceDropdown } from "@/features/curation/AddToSpaceDropdown";
 import { RemappingForm } from "@/features/curation/RemappingForm";
 import { useCurationMutations } from "@/features/curation/useCuration";
 import { api } from "@/lib/api";
@@ -187,6 +188,12 @@ export function RemappingRow({
         >
           <Pencil className="h-3.5 w-3.5" />
         </button>
+        {/*
+          gaka-esv: add-to-space dropdown. Position: after edit, before the
+          rename/hide-specific destructive icons. Always visible regardless
+          of rule.action — spaces can scope on both hide and rename axes.
+        */}
+        <AddToSpaceDropdown rule={rule} />
         {isRename && onApply && (
           <button
             onClick={() => onApply(rule)}
