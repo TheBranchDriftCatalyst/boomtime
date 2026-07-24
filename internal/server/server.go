@@ -345,7 +345,7 @@ func registerStatic(e *echo.Echo, cfg *config.Config, logger *slog.Logger) {
 			// segment) still fall back to index.html so client-side
 			// routing keeps working.
 			if strings.Contains(path.Base(reqPath), ".") {
-				return echo.NewHTTPError(http.StatusNotFound)
+				return echo.NewHTTPError(http.StatusNotFound, "not found")
 			}
 			c.Request().URL.Path = "/"
 		}
