@@ -170,3 +170,111 @@ func (h *Handler) CurationAffected(c *echo.Context) error {
 	}
 	return c.JSON(http.StatusOK, map[string]any{"values": values, "truncated": truncated})
 }
+
+// applyPreviewRowsCap is the max number of before/after rows returned by the
+// apply preview. The DB touches all rows on apply — this is only the modal
+// display cap (matches the frontend "and N more…" footer).
+const applyPreviewRowsCap = 100
+
+// ApplyRenamePreview: GET /api/v1/users/current/remappings/:id/preview →
+// {sqlPlanned:string, affectedRows:[{id,before,after}], totalAffected:int}.
+// Returns the exact SQL that a destructive apply would run PLUS a capped
+// diff of every heartbeat row that would be rewritten. Owner-scoped; no
+// data is mutated. Feeds the frontend confirm modal.
+//
+// The endpoint lives under /remappings/ (not /curation/) because the concept
+// belongs to the remappings sub-domain — only rename rules are apply-able,
+// and the frontend surface is the Remappings tab.
+func (h *Handler) ApplyRenamePreview(c *echo.Context) error {
+	_, owner, aerr := h.resolveUser(c)
+	if aerr != nil {
+		return respondErr(c, aerr)
+	}
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		return respondErr(c, apierr.New(http.StatusBadRequest, "Invalid rule id", nil))
+	}
+	ctx := c.Request().Context()
+
+	rule, ruleOwner, err := h.DB.GetCurationRule(ctx, id)
+	if err != nil {
+		return respondErr(c, apierr.Generic())
+	}
+	// Owner scoping: never leak that another user's rule exists.
+	if rule == nil || ruleOwner != owner {
+		return respondErr(c, apierr.New(http.StatusNotFound, "Remapping not found", nil))
+	}
+	if rule.Action != db.CurationRename {
+		return respondErr(c, apierr.New(http.StatusBadRequest, "only rename rules can be applied", nil))
+	}
+
+	updSQL, delSQL, diff, total, err := h.DB.ApplyRenamePreview(ctx, owner, rule, applyPreviewRowsCap)
+	if err != nil {
+		h.Logger.Error("apply-rename preview failed", "err", err, "ruleId", id)
+		return respondErr(c, apierr.New(http.StatusBadRequest, err.Error(), nil))
+	}
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"sqlPlanned":    updSQL + ";\n" + delSQL + ";",
+		"sqlUpdate":     updSQL,
+		"sqlDelete":     delSQL,
+		"affectedRows":  diff,
+		"totalAffected": total,
+		"rowsShown":     len(diff),
+		"rule": map[string]any{
+			"id":         rule.ID,
+			"axis":       rule.Axis,
+			"matchType":  rule.MatchType,
+			"matchValue": rule.MatchValue,
+			"newValue":   rule.NewValue,
+		},
+	})
+}
+
+// ApplyRename: POST /api/v1/users/current/remappings/:id/apply →
+// {rowsAffected:int, sqlRun:string}. DESTRUCTIVELY rewrites every heartbeat
+// row that the mapping matches on the target column, then removes the mapping
+// row itself, ATOMICALLY in one transaction. Owner-scoped.
+//
+// Idempotent-in-effect: if the mapping is already applied and 0 rows match,
+// still succeeds with rowsAffected=0 and the mapping row is still removed.
+func (h *Handler) ApplyRename(c *echo.Context) error {
+	_, owner, aerr := h.resolveUser(c)
+	if aerr != nil {
+		return respondErr(c, aerr)
+	}
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		return respondErr(c, apierr.New(http.StatusBadRequest, "Invalid rule id", nil))
+	}
+	ctx := c.Request().Context()
+
+	rule, ruleOwner, err := h.DB.GetCurationRule(ctx, id)
+	if err != nil {
+		return respondErr(c, apierr.Generic())
+	}
+	if rule == nil || ruleOwner != owner {
+		return respondErr(c, apierr.New(http.StatusNotFound, "Remapping not found", nil))
+	}
+	if rule.Action != db.CurationRename {
+		return respondErr(c, apierr.New(http.StatusBadRequest, "only rename rules can be applied", nil))
+	}
+
+	rows, sqlUpd, sqlDel, err := h.DB.ApplyRenameRule(ctx, owner, rule)
+	if err != nil {
+		h.Logger.Error("apply-rename failed", "err", err, "ruleId", id)
+		return respondErr(c, apierr.Generic())
+	}
+
+	// The apply mutated raw heartbeats and removed a rule → dashboards, the
+	// explorer, and per-axis values all change. Drop the owner's cached
+	// aggregations so the next fetch is fresh.
+	h.invalidateOwnerCache(owner)
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"rowsAffected": rows,
+		"sqlRun":       sqlUpd + ";\n" + sqlDel + ";",
+		"sqlUpdate":    sqlUpd,
+		"sqlDelete":    sqlDel,
+	})
+}

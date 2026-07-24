@@ -146,11 +146,21 @@ func registerHeartbeatRoutes(e *echo.Echo, h *handler.Handler) {
 }
 
 // registerCurationRoutes: data curation (hide / rename labels).
+//
+// The /curation/:id/{preview,apply} pair operates on the same curation_rules
+// table as the CRUD endpoints, but only for action='rename' — the destructive
+// rewrite path (collapse a rename mapping into the raw heartbeats and remove
+// the rule row). Hide rules return 400 from these paths; a destructive hide
+// (delete matching rows) would need its own path + double-confirm and is
+// deliberately out of scope. See internal/handler/curation.go for the UPDATE
+// + DELETE atomic transaction and the confirm-modal SQL contract.
 func registerCurationRoutes(e *echo.Echo, h *handler.Handler) {
 	e.GET("/api/v1/users/current/curation", h.ListCuration)
 	e.POST("/api/v1/users/current/curation", h.CreateCuration)
 	e.DELETE("/api/v1/users/current/curation/:id", h.DeleteCuration)
 	e.GET("/api/v1/users/current/curation/:id/affected", h.CurationAffected)
+	e.GET("/api/v1/users/current/curation/:id/preview", h.ApplyRenamePreview)
+	e.POST("/api/v1/users/current/curation/:id/apply", h.ApplyRename)
 }
 
 // registerSpaceRoutes: spaces (named, scoped dashboards). The static

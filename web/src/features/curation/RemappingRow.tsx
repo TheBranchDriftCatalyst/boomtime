@@ -7,6 +7,7 @@ import {
   Loader2,
   Pencil,
   X,
+  Zap,
 } from "lucide-react";
 import { Badge } from "@thebranchdriftcatalyst/catalyst-ui/ui/badge";
 import { RemappingForm } from "@/features/curation/RemappingForm";
@@ -22,9 +23,15 @@ import type {
 export function RemappingRow({
   rule,
   onRemove,
+  onApply,
 }: {
   rule: CurationRule;
   onRemove: (rule: CurationRule) => void;
+  // gaka-cr4: click handler for the destructive "apply mapping" button.
+  // Kept as a prop (not a hook here) so the parent owns the modal state and
+  // a single modal instance is reused across rows — plays nicely with the
+  // parent's query-invalidation-on-success pattern.
+  onApply?: (rule: CurationRule) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -107,6 +114,16 @@ export function RemappingRow({
         >
           <Pencil className="h-3.5 w-3.5" />
         </button>
+        {onApply && (
+          <button
+            onClick={() => onApply(rule)}
+            title="Apply mapping destructively (rewrite raw rows, remove mapping)"
+            aria-label="Apply mapping destructively"
+            className="rounded-full p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Zap className="h-3.5 w-3.5" />
+          </button>
+        )}
         <button
           onClick={() => onRemove(rule)}
           title="Remove remapping (reverts the merge)"

@@ -14,6 +14,8 @@ import type {
   EntityType,
   AddCurationRuleBody,
   AddCurationRulePayload,
+  ApplyRenamePayload,
+  ApplyRenamePreviewPayload,
   CrossProjectFile,
   CurationAffectedPayload,
   CurationRule,
@@ -645,6 +647,27 @@ export const api = {
   getCurationRuleAffected: (id: number) =>
     request<CurationAffectedPayload>(
       `/api/v1/users/current/curation/${id}/affected`,
+    ),
+
+  // gaka-cr4: preview a destructive apply of a rename rule. Returns the
+  // exact UPDATE + DELETE SQL and a capped diff of affected heartbeat rows,
+  // NO data is mutated. Feeds the confirm modal.
+  //
+  // Endpoint lives under /curation/:id/preview (not /remappings/) so the URL
+  // matches the backend-domain naming — the same curation_rules table backs
+  // both the query-time remap and this destructive collapse.
+  previewApplyRemapping: (id: number) =>
+    request<ApplyRenamePreviewPayload>(
+      `/api/v1/users/current/curation/${id}/preview`,
+    ),
+
+  // gaka-cr4: DESTRUCTIVELY apply a rename rule — rewrites raw heartbeat rows
+  // and removes the rule row itself, atomically. The returned sqlRun is the
+  // exact SQL that ran (verbatim match to the preview's sqlPlanned).
+  applyRemapping: (id: number) =>
+    request<ApplyRenamePayload>(
+      `/api/v1/users/current/curation/${id}/apply`,
+      { method: "POST" },
     ),
 
   // --- Spaces (named, rule-based scopes) -------------------------------------

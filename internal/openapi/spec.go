@@ -523,6 +523,22 @@ func build() (*openapi3.T, error) {
 		stdErrors(op, "400", "401", "403", "404", "500")
 		return op
 	}())
+	doc.AddOperation("/api/v1/users/current/curation/{id}/preview", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagCuration}, Summary: "Preview a destructive apply of a rename rule",
+			Description: "Returns the exact UPDATE+DELETE SQL that a destructive apply of this rename rule would run, plus a per-heartbeat before/after diff (capped at 100 rows; totalAffected is exact). Owner-scoped; no data is mutated. The SQL string returned here is identical to sqlRun on the apply endpoint. Only rename rules are apply-able — hide rules return 400.",
+			Parameters:  openapi3.Parameters{pathParamInt("id", "Rename rule id.")}}
+		setStatus(op, http.StatusOK, rInline("{sqlPlanned, sqlUpdate, sqlDelete, affectedRows:[{id,before,after}], totalAffected, rowsShown, rule}.", mapObject()))
+		stdErrors(op, "400", "401", "403", "404", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/current/curation/{id}/apply", "POST", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagCuration}, Summary: "Destructively apply a rename rule",
+			Description: "DESTRUCTIVE: rewrites the target column on every heartbeat row this rename rule matches, then deletes the rule row itself, atomically in one transaction. Idempotent-in-effect: if 0 rows match, still succeeds with rowsAffected=0 and removes the rule. Owner-scoped. Only rename rules are apply-able — hide rules return 400.",
+			Parameters:  openapi3.Parameters{pathParamInt("id", "Rename rule id.")}}
+		setStatus(op, http.StatusOK, rInline("{rowsAffected, sqlRun, sqlUpdate, sqlDelete}.", mapObject()))
+		stdErrors(op, "400", "401", "403", "404", "500")
+		return op
+	}())
 
 	// ==== SPACES ==============================================================
 

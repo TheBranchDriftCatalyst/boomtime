@@ -33,6 +33,7 @@ const prefix = {
   derivedStatus: ["derived-status"] as const,
   axisValues: ["axis-values"] as const,
   curationAffected: ["curation-affected"] as const,
+  remappingApplyPreview: ["remapping-apply-preview"] as const,
   entitiesByType: ["entities-by-type"] as const,
 };
 
@@ -121,6 +122,9 @@ export const qk = {
   // --- Curation ----------------------------------------------------------------
   curation: () => ["curation"] as const,
   curationAffected: (id: number) => ["curation-affected", id] as const,
+  // gaka-cr4: destructive-apply preview key (fetched once per modal open).
+  remappingApplyPreview: (id: number) =>
+    ["remapping-apply-preview", id] as const,
 
   // --- Heartbeats explorer / health ---------------------------------------------
   axisValues: (axis: HeartbeatAxis | null) => ["axis-values", axis] as const,

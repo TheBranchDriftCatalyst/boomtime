@@ -10,9 +10,11 @@ import type { CurationRule, HeartbeatAxis } from "@/types/api";
 export function NameRemappingsCard({
   rules,
   onRemove,
+  onApply,
 }: {
   rules: CurationRule[];
   onRemove: (rule: CurationRule) => void;
+  onApply?: (rule: CurationRule) => void;
 }) {
   // Group rename rules by axis (project/language/editor/branch/…).
   const grouped = useMemo(() => groupByAxis(rules), [rules]);
@@ -49,7 +51,12 @@ export function NameRemappingsCard({
                 </p>
                 <div className="space-y-1.5">
                   {items.map((r) => (
-                    <RemappingRow key={r.id} rule={r} onRemove={onRemove} />
+                    <RemappingRow
+                      key={r.id}
+                      rule={r}
+                      onRemove={onRemove}
+                      onApply={onApply}
+                    />
                   ))}
                 </div>
               </div>

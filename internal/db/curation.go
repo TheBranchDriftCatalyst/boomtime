@@ -214,6 +214,208 @@ func (d *DB) CurationAffectedValues(ctx context.Context, sender string, rule *Cu
 	return out, truncated, nil
 }
 
+// AffectedRowDiff is one row that a destructive apply-rename would rewrite. The
+// mapping is `Before -> After` on the target column of the heartbeat row.
+type AffectedRowDiff struct {
+	ID     int64  `json:"id"`
+	Before string `json:"before"`
+	After  string `json:"after"`
+}
+
+// buildApplyUpdateSQL returns the parameterized UPDATE that a destructive apply
+// of `rule` would execute. Bound params are always ($1=sender, $2=matchValue,
+// [$3=newValue for exact], [$3=template for template]). Exact/regex rules
+// rewrite matched rows to a fixed target; template rules rewrite via
+// regexp_replace with the same backref template used in the query-time remap.
+// Case matching mirrors the query-time remap (case-insensitive throughout).
+//
+// The returned SQL is the SOURCE OF TRUTH — the same string is bound both when
+// previewing (via a WITH cte to enumerate affected ids) and when applying. This
+// guarantees the modal preview reflects exactly what will run.
+func (d *DB) buildApplyUpdateSQL(rule *CurationRule) (sqlText string, bindParams []any, err error) {
+	col, ok := rawHeartbeatCols[rule.Axis]
+	if !ok {
+		return "", nil, fmt.Errorf("axis %q has no raw column (only rollup-tracked axes are apply-able)", rule.Axis)
+	}
+	if rule.Action != CurationRename {
+		return "", nil, fmt.Errorf("only rename rules are apply-able (got action=%q)", rule.Action)
+	}
+	if rule.NewValue == nil {
+		return "", nil, fmt.Errorf("rename rule has no newValue (cannot apply)")
+	}
+
+	switch rule.MatchType {
+	case MatchRegex:
+		// Rewrite every row whose col matches the pattern to the fixed newValue.
+		q := fmt.Sprintf(`UPDATE heartbeats SET %s = $3 WHERE sender = $1 AND %s ~* $2`, col, col)
+		return q, []any{rule.MatchValue, *rule.NewValue}, nil
+	case MatchTemplate:
+		// Rewrite via regexp_replace, same pattern + template + 'i' flag as
+		// remapExpr uses at query time. Only rows that match the pattern are
+		// touched (the ~* WHERE gate).
+		q := fmt.Sprintf(
+			`UPDATE heartbeats SET %s = regexp_replace(%s, $2, $3, 'i') WHERE sender = $1 AND %s ~* $2`,
+			col, col, col)
+		return q, []any{rule.MatchValue, *rule.NewValue}, nil
+	default: // MatchExact or ""
+		// Case-insensitive equality mirrors the query-time exact rule.
+		q := fmt.Sprintf(`UPDATE heartbeats SET %s = $3 WHERE sender = $1 AND lower(%s) = lower($2)`, col, col)
+		return q, []any{rule.MatchValue, *rule.NewValue}, nil
+	}
+}
+
+// buildApplyDeleteSQL returns the parameterized DELETE that removes the mapping
+// row itself after the UPDATE has been applied. $1=id, $2=sender.
+func (d *DB) buildApplyDeleteSQL() string {
+	return `DELETE FROM curation_rules WHERE id = $1 AND sender = $2`
+}
+
+// InlineParams substitutes bound $N params into `sqlText` for a HUMAN-READABLE
+// preview (the confirm modal). String values are single-quoted with doubled
+// internal quotes; other types render via fmt %v. This is NEVER sent back
+// through the SQL driver — the actual apply uses the parameterized form.
+func InlineParams(sqlText string, args []any) string {
+	// Replace $N (highest first) so $10 doesn't collide with $1.
+	out := sqlText
+	for i := len(args); i >= 1; i-- {
+		var rep string
+		switch v := args[i-1].(type) {
+		case string:
+			rep = "'" + strings.ReplaceAll(v, "'", "''") + "'"
+		default:
+			rep = fmt.Sprintf("%v", v)
+		}
+		out = strings.ReplaceAll(out, fmt.Sprintf("$%d", i), rep)
+	}
+	return out
+}
+
+// ApplyRenamePreview returns the exact UPDATE + DELETE SQL that ApplyRenameRule
+// would run, plus the affected-rows diff (before/after per heartbeat row). The
+// diff is capped at `limit` rows; the total count is exact. Owner-scoped; no
+// data is mutated. Used to populate the destructive-confirm modal.
+func (d *DB) ApplyRenamePreview(ctx context.Context, sender string, rule *CurationRule, limit int) (
+	sqlUpdatePlanned string, sqlDeletePlanned string, diff []AffectedRowDiff, total int64, err error,
+) {
+	if limit <= 0 {
+		limit = 100
+	}
+	updSQL, updBind, err := d.buildApplyUpdateSQL(rule)
+	if err != nil {
+		return "", "", nil, 0, err
+	}
+	delSQL := d.buildApplyDeleteSQL()
+
+	// The parameterized form binds $1=sender, then whatever buildApplyUpdateSQL
+	// asked for. Inline for the human-readable display; run parameterized
+	// against the DB.
+	inlineArgs := append([]any{sender}, updBind...)
+	inlineDelArgs := []any{rule.ID, sender}
+	sqlUpdatePlanned = InlineParams(updSQL, inlineArgs)
+	sqlDeletePlanned = InlineParams(delSQL, inlineDelArgs)
+
+	// Enumerate the affected rows via the same predicate the UPDATE would use.
+	// We build a SELECT with the same WHERE + SET expression so the "after"
+	// value is exactly what the UPDATE would write. For exact/regex this is
+	// $3 (the fixed newValue); for template it is regexp_replace(...).
+	col := rawHeartbeatCols[rule.Axis]
+	afterExpr := "$3::text"
+	if rule.MatchType == MatchTemplate {
+		afterExpr = fmt.Sprintf("regexp_replace(%s, $2, $3, 'i')", col)
+	}
+	pred := fmt.Sprintf("lower(%s) = lower($2)", col)
+	if rule.MatchType == MatchRegex || rule.MatchType == MatchTemplate {
+		pred = fmt.Sprintf("%s ~* $2", col)
+	}
+	// Count separately so the modal can say "and N more" honestly.
+	countQ := fmt.Sprintf(`SELECT count(*) FROM heartbeats WHERE sender = $1 AND %s`, pred)
+	if err = d.Pool.QueryRow(ctx, countQ, sender, rule.MatchValue).Scan(&total); err != nil {
+		return "", "", nil, 0, err
+	}
+
+	// Fetch the diff (limit+1 not needed — we already have the exact total).
+	q := fmt.Sprintf(`
+		SELECT id, %s::text AS before, %s AS after
+		FROM heartbeats
+		WHERE sender = $1 AND %s
+		ORDER BY id ASC
+		LIMIT %d`, col, afterExpr, pred, limit)
+	rows, qerr := d.Pool.Query(ctx, q, sender, rule.MatchValue, *rule.NewValue)
+	if qerr != nil {
+		return "", "", nil, 0, qerr
+	}
+	defer rows.Close()
+	diff = make([]AffectedRowDiff, 0, limit)
+	for rows.Next() {
+		var r AffectedRowDiff
+		if serr := rows.Scan(&r.ID, &r.Before, &r.After); serr != nil {
+			return "", "", nil, 0, serr
+		}
+		diff = append(diff, r)
+	}
+	if err = rows.Err(); err != nil {
+		return "", "", nil, 0, err
+	}
+	return sqlUpdatePlanned, sqlDeletePlanned, diff, total, nil
+}
+
+// ApplyRenameRule DESTRUCTIVELY collapses a rename mapping into the raw
+// heartbeats: it runs the UPDATE (rewriting the target column values on every
+// matching row) AND deletes the mapping row itself, ATOMICALLY in a single
+// transaction. Either both succeed or both roll back — a partial state (rows
+// rewritten but rule still active) is impossible.
+//
+// Returns the number of heartbeat rows rewritten and the exact SQL that was
+// executed (for the API response — matches the preview verbatim). If the
+// mapping was already applied and nothing matches, still succeeds with
+// rowsAffected=0 and the mapping row is still removed (idempotent-in-effect).
+//
+// Owner-scoped: every query is gated on `sender = $1` AND `id = $ruleId AND
+// sender = $1` for the delete, so one user can never apply another's mapping.
+func (d *DB) ApplyRenameRule(ctx context.Context, sender string, rule *CurationRule) (
+	rowsAffected int64, sqlUpdateRun string, sqlDeleteRun string, err error,
+) {
+	updSQL, updBind, err := d.buildApplyUpdateSQL(rule)
+	if err != nil {
+		return 0, "", "", err
+	}
+	delSQL := d.buildApplyDeleteSQL()
+
+	// Compose the inlined-for-display forms once, from the same strings we run.
+	sqlUpdateRun = InlineParams(updSQL, append([]any{sender}, updBind...))
+	sqlDeleteRun = InlineParams(delSQL, []any{rule.ID, sender})
+
+	tx, err := d.Pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return 0, "", "", err
+	}
+	defer tx.Rollback(ctx)
+
+	// Run the UPDATE first so we can return the row count.
+	updateArgs := append([]any{sender}, updBind...)
+	ct, err := tx.Exec(ctx, updSQL, updateArgs...)
+	if err != nil {
+		return 0, "", "", err
+	}
+	rowsAffected = ct.RowsAffected()
+
+	// Delete the mapping row (owner-scoped). If the id/sender pair doesn't
+	// exist we surface an error — the handler already validated ownership so
+	// this shouldn't happen, but the guard keeps the transaction honest.
+	dct, err := tx.Exec(ctx, delSQL, rule.ID, sender)
+	if err != nil {
+		return 0, "", "", err
+	}
+	if dct.RowsAffected() == 0 {
+		return 0, "", "", fmt.Errorf("mapping row %d for %q vanished mid-apply", rule.ID, sender)
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return 0, "", "", err
+	}
+	return rowsAffected, sqlUpdateRun, sqlDeleteRun, nil
+}
+
 // ValidateRegex checks that a pattern compiles as a Postgres regex (guarded).
 // Returns nil when valid, else a user-facing error.
 func (d *DB) ValidateRegex(ctx context.Context, pattern string) error {
