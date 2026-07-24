@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"io"
@@ -86,11 +87,13 @@ func seedFullState(t *testing.T, d *DB, f *SenderFixture) (runningJobID int) {
 	f.Block(tmpl, time.Date(2026, 3, 2, 9, 0, 0, 0, time.UTC), 5, 60)
 	f.RefreshRollup(time.Unix(0, 0).UTC())
 
-	// Tokens.
-	mustExec(t, d, ctx, `INSERT INTO auth_tokens (token, owner, token_name) VALUES ($1,$2,'backup-test')`,
-		"tok_"+sender, sender)
-	mustExec(t, d, ctx, `INSERT INTO refresh_tokens (refresh_token, owner, token_expiry) VALUES ($1,$2,now())`,
-		"refresh_"+sender, sender)
+	// Tokens (post-v31 hashed-only).
+	tokHash := sha256.Sum256([]byte("tok_" + sender))
+	refreshHash := sha256.Sum256([]byte("refresh_" + sender))
+	mustExec(t, d, ctx, `INSERT INTO auth_tokens (owner, hashed_token, token_name) VALUES ($1,$2,'backup-test')`,
+		sender, tokHash[:])
+	mustExec(t, d, ctx, `INSERT INTO refresh_tokens (owner, hashed_refresh_token, token_expiry) VALUES ($1,$2,now())`,
+		sender, refreshHash[:])
 
 	// Badge for the seeded project.
 	mustExec(t, d, ctx, `INSERT INTO badges (username, project) VALUES ($1,'P')`, sender)

@@ -1,12 +1,11 @@
 // auth.go holds user and token storage: credentials, access/refresh tokens,
 // and API-token management.
 //
-// gaka-b5x.2: session tokens are now stored HASHED at rest. New rows populate
-// only the hashed_* columns; the raw columns are left NULL. Lookup checks
-// hashed_* first, then falls back to the raw column so legacy rows minted
-// before migration 00026 keep working until they expire. See
-// internal/db/migrations/00026_hash_session_tokens.sql for the full plan
-// (dual-path window + follow-up drop of the raw columns).
+// gaka-b5x.2 + gaka-uj7: session tokens are stored ONLY as SHA-256 hashes
+// at rest (hashed_token / hashed_refresh_token bytea columns). The legacy
+// raw `token` / `refresh_token` columns were dropped in migration 00031.
+// A DB read never yields a usable session token — the hash is one-way and
+// cannot be reversed to authenticate.
 package db
 
 import (
@@ -98,19 +97,14 @@ func (d *DB) UpgradeArgonVersion(ctx context.Context, username string, newHash, 
 
 // GetUserByToken returns the owner of an API token, honoring token_expiry
 // (CLI/api tokens have null expiry and never expire), and bumps last_usage.
-//
-// gaka-b5x.2 dual-path lookup: NEW tokens are stored in the hashed_token
-// bytea column with token=NULL; LEGACY tokens minted before migration 00026
-// still live in the raw `token` column with hashed_token=NULL. The single
-// query matches EITHER path in one round-trip. `last_usage` is bumped by
-// the same predicate so the legacy path stays observable in the tokens UI.
+// Post-v31 the raw `token` column is dropped — lookup is hashed-only.
 func (d *DB) GetUserByToken(ctx context.Context, token string) (string, bool, error) {
 	hashed := hashSessionToken(token)
 	row := d.Pool.QueryRow(ctx, `
 		SELECT owner FROM auth_tokens
-		WHERE  (hashed_token = $1 OR (hashed_token IS NULL AND token = $2))
-		AND    COALESCE(token_expiry, (NOW() + interval '1 hours')::timestamp without time zone) > $3`,
-		hashed, token, time.Now().UTC())
+		WHERE  hashed_token = $1
+		AND    COALESCE(token_expiry, (NOW() + interval '1 hours')::timestamp without time zone) > $2`,
+		hashed, time.Now().UTC())
 	var owner string
 	if err := row.Scan(&owner); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -120,21 +114,20 @@ func (d *DB) GetUserByToken(ctx context.Context, token string) (string, bool, er
 	}
 	// Bump last usage (best-effort; ignore error impact on the read path).
 	_, _ = d.Pool.Exec(ctx,
-		`UPDATE auth_tokens SET last_usage = now()::timestamp
-		 WHERE hashed_token = $1 OR (hashed_token IS NULL AND token = $2)`,
-		hashed, token)
+		`UPDATE auth_tokens SET last_usage = now()::timestamp WHERE hashed_token = $1`,
+		hashed)
 	return owner, true, nil
 }
 
-// GetUserByRefreshToken returns the owner of a non-expired refresh token.
-// See GetUserByToken for the dual-path rationale (gaka-b5x.2).
+// GetUserByRefreshToken returns the owner of a non-expired refresh token
+// (post-v31 hashed-only lookup).
 func (d *DB) GetUserByRefreshToken(ctx context.Context, token string) (string, bool, error) {
 	hashed := hashSessionToken(token)
 	row := d.Pool.QueryRow(ctx,
 		`SELECT owner FROM refresh_tokens
-		 WHERE  (hashed_refresh_token = $1 OR (hashed_refresh_token IS NULL AND refresh_token = $2))
-		 AND    token_expiry > $3`,
-		hashed, token, time.Now().UTC())
+		 WHERE  hashed_refresh_token = $1
+		 AND    token_expiry > $2`,
+		hashed, time.Now().UTC())
 	var owner string
 	if err := row.Scan(&owner); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -191,28 +184,23 @@ func (d *DB) InsertAPIToken(ctx context.Context, owner, token string) error {
 	return err
 }
 
-// DeleteTokens removes an auth token and refresh token, returning rows affected.
-// Dual-path predicate matches either the hashed_* column (new rows) or the
-// raw column (legacy pre-00026 rows).
+// DeleteTokens removes an auth token and refresh token, returning rows
+// affected. Post-v31 hashed-only lookup.
 func (d *DB) DeleteTokens(ctx context.Context, token, refreshToken string) (int64, error) {
 	tx, err := d.Pool.Begin(ctx)
 	if err != nil {
 		return 0, err
 	}
 	defer tx.Rollback(ctx)
-	hashedToken := hashSessionToken(token)
-	hashedRefresh := hashSessionToken(refreshToken)
 	t1, err := tx.Exec(ctx,
-		`DELETE FROM auth_tokens
-		 WHERE hashed_token = $1 OR (hashed_token IS NULL AND token = $2)`,
-		hashedToken, token)
+		`DELETE FROM auth_tokens WHERE hashed_token = $1`,
+		hashSessionToken(token))
 	if err != nil {
 		return 0, err
 	}
 	t2, err := tx.Exec(ctx,
-		`DELETE FROM refresh_tokens
-		 WHERE hashed_refresh_token = $1 OR (hashed_refresh_token IS NULL AND refresh_token = $2)`,
-		hashedRefresh, refreshToken)
+		`DELETE FROM refresh_tokens WHERE hashed_refresh_token = $1`,
+		hashSessionToken(refreshToken))
 	if err != nil {
 		return 0, err
 	}
@@ -222,34 +210,24 @@ func (d *DB) DeleteTokens(ctx context.Context, token, refreshToken string) (int6
 	return t1.RowsAffected() + t2.RowsAffected(), nil
 }
 
-// DeleteAuthToken deletes an API token by its value, scoped to its owner so a
-// user can only revoke their own tokens.
-//
-// `token` here is the 12-char display prefix from ListApiTokens (either the
-// raw token's first 12 chars for legacy rows OR the first 12 chars of the
-// hex-encoded hashed_token for v26+ rows). Match on both columns so both
-// flavors delete cleanly. Superseded by the raw-column drop in v30; the
-// legacy branch stays until that migration lands.
+// DeleteAuthToken deletes an API token by its 12-char display prefix,
+// scoped to its owner. Post-v31 the identifier is always the first 12
+// chars of the hex-encoded hashed_token — the raw column is gone.
 func (d *DB) DeleteAuthToken(ctx context.Context, token, owner string) error {
 	_, err := d.Pool.Exec(ctx, `
 		DELETE FROM auth_tokens
 		WHERE owner = $2
-		  AND (LEFT(token, 12) = $1
-		       OR LEFT(encode(hashed_token, 'hex'), 12) = $1)`, token, owner)
+		  AND LEFT(encode(hashed_token, 'hex'), 12) = $1`, token, owner)
 	return err
 }
 
-// ListApiTokens returns the non-expiring API tokens for a user.
-//
-// Post-v26 rows have `token IS NULL` and only the hex-encoded hashed_token
-// to identify them by — v26 shipped without updating this handler, so the
-// UI displayed those rows with empty ID prefix and couldn't revoke them.
-// We coalesce to whichever column is populated + take the first 12 chars
-// as the stable display+lookup identifier. See DeleteAuthToken for the
-// symmetric match logic.
+// ListApiTokens returns the non-expiring API tokens for a user. Identifier
+// is the first 12 chars of the hex-encoded hashed_token — stable across
+// requests, revealed once to the client but not derivable back to the raw
+// token (hash is one-way).
 func (d *DB) ListApiTokens(ctx context.Context, owner string) ([]model.StoredApiToken, error) {
 	rows, err := d.Pool.Query(ctx, `
-		SELECT LEFT(COALESCE(token, encode(hashed_token, 'hex')), 12) AS id,
+		SELECT LEFT(encode(hashed_token, 'hex'), 12) AS id,
 		       last_usage::timestamptz, token_name, token_description
 		FROM auth_tokens
 		WHERE owner = $1 AND token_expiry IS NULL`, owner)
@@ -270,15 +248,12 @@ func (d *DB) ListApiTokens(ctx context.Context, owner string) ([]model.StoredApi
 	return out, rows.Err()
 }
 
-// UpdateTokenMetadata renames a token (POST /auth/token). Match logic mirrors
-// DeleteAuthToken — dual-path on raw prefix or hashed prefix, superseded by
-// v30's raw-column drop.
+// UpdateTokenMetadata renames a token by its 12-char hashed_token prefix.
 func (d *DB) UpdateTokenMetadata(ctx context.Context, owner string, m model.TokenMetadata) error {
 	_, err := d.Pool.Exec(ctx,
 		`UPDATE auth_tokens SET token_name = $3
 		 WHERE owner = $2
-		   AND (LEFT(token, 12) = $1
-		        OR LEFT(encode(hashed_token, 'hex'), 12) = $1)`,
+		   AND LEFT(encode(hashed_token, 'hex'), 12) = $1`,
 		m.TokenID, owner, m.TokenName)
 	return err
 }
@@ -371,24 +346,15 @@ func (d *DB) ChangePasswordAndRevoke(ctx context.Context, username string, hashe
 	//
 	// gaka-b5x.2: post-hashing, the "skip me" predicate must match against
 	// the caller's token via hashed_token (new rows) OR raw token (legacy).
-	// The single OR-combined predicate keeps the tx a single round-trip.
-	exceptHash := hashSessionToken(exceptToken)
+	// Post-v31 hashed-only lookup — the caller's exception is identified by
+	// hashed_token alone.
 	if _, err = tx.Exec(ctx,
 		`DELETE FROM auth_tokens
 		 WHERE owner = $1
-		 AND   NOT (hashed_token = $2 OR (hashed_token IS NULL AND token = $3))
+		 AND   hashed_token <> $2
 		 AND   token_expiry IS NOT NULL`,
-		username, exceptHash, exceptToken); err != nil {
+		username, hashSessionToken(exceptToken)); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
-}
-
-// BackfillHashedTokens was a Go-side backfill of legacy raw-token rows
-// (gaka-awh.5). Superseded by migration 00030_backfill_hashed_tokens.sql
-// which does the same work via pgcrypto's digest(). Kept as a no-op stub
-// so any external caller (tests, cmd/) still compiles during the
-// transitional window; will be removed alongside the v31 raw-column drop.
-func (d *DB) BackfillHashedTokens(ctx context.Context) (authCount, refreshCount int, err error) {
-	return 0, 0, nil
 }

@@ -70,10 +70,9 @@ var dumpTables = []dumpTable{
 	{"projects", []string{"name", "description", "owner", "dependencies", "repository"}},
 	// gaka-b5x.2: hashed_token / hashed_refresh_token columns are dumped so
 	// hashed-only rows (new sessions minted after migration 00026) survive an
-	// export → import round-trip. The raw `token` / `refresh_token` columns
-	// remain here for legacy rows minted before the cutover.
-	{"auth_tokens", []string{"token", "owner", "token_expiry", "last_usage", "token_name", "token_description", "hashed_token"}},
-	{"refresh_tokens", []string{"refresh_token", "owner", "token_expiry", "hashed_refresh_token"}},
+	// export → import round-trip. Post-v31 only the hashed_* columns exist.
+	{"auth_tokens", []string{"owner", "token_expiry", "last_usage", "token_name", "token_description", "hashed_token"}},
+	{"refresh_tokens", []string{"owner", "token_expiry", "hashed_refresh_token"}},
 	{"heartbeats", []string{
 		"id", "editor", "plugin", "platform", "machine", "sender", "user_agent",
 		"branch", "category", "cursorpos", "dependencies", "entity", "is_write",

@@ -414,15 +414,13 @@ func TestChangePassword_AtomicOnDBError(t *testing.T) {
 	}
 
 	// GUARANTEE 2: the planted refresh token still exists (revoke rolled back too).
-	// gaka-b5x.2: new tokens live in hashed_refresh_token (raw column NULL),
-	// legacy pre-migration tokens live in the raw column — check either.
+	// Post-v31 hashed-only lookup — the raw refresh_token column is dropped.
 	refreshHashBefore := sha256.Sum256([]byte(refreshBefore))
 	var n int
 	if err := hz.DB.Pool.QueryRow(context.Background(),
 		`SELECT count(*) FROM refresh_tokens
-		 WHERE owner=$1
-		 AND   (hashed_refresh_token=$2 OR (hashed_refresh_token IS NULL AND refresh_token=$3))`,
-		user, refreshHashBefore[:], refreshBefore).Scan(&n); err != nil {
+		 WHERE owner=$1 AND hashed_refresh_token=$2`,
+		user, refreshHashBefore[:]).Scan(&n); err != nil {
 		t.Fatalf("count refresh tokens: %v", err)
 	}
 	if n != 1 {

@@ -443,19 +443,18 @@ func TestRefreshTokenLookup_UsesHash(t *testing.T) {
 	// (access, refresh) pair, so there are TWO refresh_tokens rows for this
 	// user at this point. We want the one whose hash matches the cookie the
 	// client currently holds — filter by that hash directly.
+	//
+	// Post-v31: the raw `refresh_token` column is dropped, so we only read
+	// hashed_refresh_token now.
 	wantHash := sha256.Sum256([]byte(rawRefresh))
-	var rawCol *string
 	var hashCol []byte
 	if err := hz.DB.Pool.QueryRow(context.Background(),
-		`SELECT refresh_token, hashed_refresh_token
+		`SELECT hashed_refresh_token
 		 FROM refresh_tokens
 		 WHERE owner=$1 AND hashed_refresh_token=$2`,
 		user, wantHash[:],
-	).Scan(&rawCol, &hashCol); err != nil {
+	).Scan(&hashCol); err != nil {
 		t.Fatalf("read row: %v", err)
-	}
-	if rawCol != nil {
-		t.Errorf("new refresh row leaks raw token (regression): raw=%q — should be NULL post-gaka-b5x.2", *rawCol)
 	}
 	if len(hashCol) != 32 {
 		t.Errorf("hashed_refresh_token len = %d, want 32 (SHA-256 bytes)", len(hashCol))
@@ -478,49 +477,23 @@ func TestRefreshTokenLookup_UsesHash(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("refresh_token lookup on hashed row failed: %d body=%s", rr.Code, rr.Body.String())
 	}
-
-	// (2) Plant a LEGACY row (raw populated, hash NULL) and assert lookup
-	//     still works via the fallback. This catches a refactor that drops
-	//     the legacy branch mid-cutover, silently breaking every user
-	//     holding a pre-migration cookie.
-	legacyUser := "hash_legacy"
-	registerUser(t, e, hz, legacyUser, pw)
-	legacyRaw := auth.ToBase64(auth.NewRawToken())
-	if _, err := hz.DB.Pool.Exec(context.Background(),
-		`INSERT INTO refresh_tokens (owner, refresh_token, token_expiry)
-		 VALUES ($1, $2, NOW() + interval '1 hour')`,
-		legacyUser, legacyRaw); err != nil {
-		t.Fatalf("plant legacy row: %v", err)
-	}
-	req = httptest.NewRequest(http.MethodPost, "/auth/refresh_token", nil)
-	req.AddCookie(&http.Cookie{Name: "refresh_token", Value: legacyRaw})
-	rr = httptest.NewRecorder()
-	e.ServeHTTP(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Errorf("legacy raw-column refresh_token lookup failed: %d body=%s — dual-path fallback is broken",
-			rr.Code, rr.Body.String())
-	}
+	// Legacy-row fallback test removed alongside v31's raw-column drop.
 }
 
-// TestAPITokenLookup_UsesHash mirrors the refresh-token test for API tokens
-// (auth_tokens table). Same dual-path guarantee: new rows hashed, legacy
-// rows fallback-authenticate.
+// TestAPITokenLookup_UsesHash: API tokens stored hashed-only post-v31.
+// (The legacy-fallback subtest was removed alongside the raw-column drop.)
 func TestAPITokenLookup_UsesHash(t *testing.T) {
 	hz := testutil.NewHarness(t)
 
-	// MintUser() calls InsertAPIToken() which now stores only the hash.
+	// MintUser() calls InsertAPIToken() which stores only the hash.
 	user, token := hz.MintUser("apitok")
 
-	// (1) The auth_tokens row should have raw=NULL, hash=SHA-256(token).
-	var rawCol *string
+	// (1) The auth_tokens row's hashed_token equals SHA-256(minted token).
 	var hashCol []byte
 	if err := hz.DB.Pool.QueryRow(context.Background(),
-		`SELECT token, hashed_token FROM auth_tokens WHERE owner=$1 AND token_expiry IS NULL`, user,
-	).Scan(&rawCol, &hashCol); err != nil {
+		`SELECT hashed_token FROM auth_tokens WHERE owner=$1 AND token_expiry IS NULL`, user,
+	).Scan(&hashCol); err != nil {
 		t.Fatalf("read row: %v", err)
-	}
-	if rawCol != nil {
-		t.Errorf("new API token row leaks raw token: %q — should be NULL", *rawCol)
 	}
 	wantHash := sha256.Sum256([]byte(token))
 	for i := range wantHash {
@@ -531,34 +504,12 @@ func TestAPITokenLookup_UsesHash(t *testing.T) {
 	}
 
 	// (2) End-to-end auth still works via the hashed-path lookup.
-	// Use GetUserByToken directly (integration layer, no HTTP path needed
-	// for API-token lookup — it's the same lookup exercised by every authed
-	// endpoint).
 	owner, ok, err := hz.DB.GetUserByToken(context.Background(), token)
 	if err != nil {
 		t.Fatalf("GetUserByToken: %v", err)
 	}
 	if !ok || owner != user {
 		t.Errorf("GetUserByToken on hashed row: ok=%v owner=%q, want ok=true owner=%q", ok, owner, user)
-	}
-
-	// (3) Plant a LEGACY api token row (raw populated, hash NULL) and
-	//     assert lookup still works via the fallback.
-	legacyUser, _ := hz.MintUser("apitok_legacy_owner")
-	legacyRaw := auth.ToBase64(auth.NewRawToken())
-	if _, err := hz.DB.Pool.Exec(context.Background(),
-		`INSERT INTO auth_tokens (owner, token, token_expiry)
-		 VALUES ($1, $2, NOW() + interval '30 minutes')`,
-		legacyUser, legacyRaw); err != nil {
-		t.Fatalf("plant legacy api token: %v", err)
-	}
-	owner, ok, err = hz.DB.GetUserByToken(context.Background(), legacyRaw)
-	if err != nil {
-		t.Fatalf("GetUserByToken (legacy): %v", err)
-	}
-	if !ok || owner != legacyUser {
-		t.Errorf("legacy raw-column api token lookup failed: ok=%v owner=%q, want ok=true owner=%q — dual-path fallback broken",
-			ok, owner, legacyUser)
 	}
 }
 
