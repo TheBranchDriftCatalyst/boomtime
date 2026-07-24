@@ -127,7 +127,7 @@ tasks:
     desc: Run the Vite dev server
     dir: web
     cmds:
-      - npm run dev
+      - yarn dev
 
   # ── Server CLI ───────────────────────────────────────────────────────────────
   run:
@@ -160,13 +160,13 @@ tasks:
     desc: Install frontend dependencies
     dir: web
     cmds:
-      - npm install
+      - yarn install --frozen-lockfile
 
   web:build:
     desc: Build the frontend into web/dist
     dir: web
     cmds:
-      - npm run build
+      - yarn build
 
   # ── Build & quality ──────────────────────────────────────────────────────────
   build:
@@ -270,7 +270,7 @@ tasks:
     desc: Run go vet + frontend lint
     cmds:
       - task: vet
-      - '{{if .SKIP_FE_LINT}}echo "skip fe lint"{{else}}cd web && npm run lint{{end}}'
+      - '{{if .SKIP_FE_LINT}}echo "skip fe lint"{{else}}cd web && yarn lint{{end}}'
 
   tidy:
     desc: Tidy Go modules

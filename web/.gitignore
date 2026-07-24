@@ -5,6 +5,10 @@ coverage
 .DS_Store
 *.tsbuildinfo
 
+# We use yarn (yarn.lock is the canonical lockfile). Ignore npm's lockfile
+# so an accidental `npm install` can't reintroduce dual-lockfile drift.
+package-lock.json
+
 # Playwright e2e artifacts + captured auth state
 e2e/.auth/
 test-results

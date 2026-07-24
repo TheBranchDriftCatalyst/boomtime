@@ -12,7 +12,7 @@ Run once after cloning. Persists in `.git/config`.
 
 ## What's here
 
-- **`pre-push`** — runs `cd web && npm run build` (identical to Docker CI stage 1). Blocks the push if the TypeScript build or Vite bundle fails. Rationale: during the catalyst-ui migration we hit multiple rounds of "works locally with yarn-link, fails in Docker with npm install" from @types/react version drift and Radix forwardRef typing quirks. This closes the loop.
+- **`pre-push`** — runs `cd web && yarn build` (identical to Docker CI stage 1). Blocks the push if the TypeScript build or Vite bundle fails. Rationale: during the catalyst-ui migration we hit multiple rounds of "works locally with yarn-link, fails in Docker with yarn install" from @types/react version drift and Radix forwardRef typing quirks. This closes the loop.
 
 ## Bypass once
 

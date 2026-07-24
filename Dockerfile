@@ -1,10 +1,10 @@
 # ── Stage 1: build the React SPA ─────────────────────────────────────────────
 FROM node:22-alpine AS web
 WORKDIR /web
-COPY web/package.json web/package-lock.json* ./
-RUN npm ci || npm install
+COPY web/package.json web/yarn.lock ./
+RUN yarn install --frozen-lockfile
 COPY web/ ./
-RUN npm run build
+RUN yarn build
 
 # ── Stage 2: build the Go binary with the SPA embedded ───────────────────────
 # VERSION / BRANCH / COMMIT / BUILDTIME are not secrets — they're build
