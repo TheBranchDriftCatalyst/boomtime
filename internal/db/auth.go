@@ -384,75 +384,11 @@ func (d *DB) ChangePasswordAndRevoke(ctx context.Context, username string, hashe
 	return tx.Commit(ctx)
 }
 
-// BackfillHashedTokens hashes any auth_tokens / refresh_tokens rows still
-// holding a raw token in the legacy `token` / `refresh_token` columns with
-// their hashed_* companion NULL. Idempotent — safe to run on every boot;
-// a fully-migrated DB returns (0, 0, nil) instantly.
-//
-// This is the gaka-awh.5 cutover made active: once every row has a
-// populated hashed_* column, a follow-up migration DROPs the raw columns
-// entirely and code paths collapse to hashed-only lookups.
-//
-// Rationale for Go-side rather than SQL-side backfill: pgcrypto's digest()
-// isn't installed in the CNPG deployment, and enabling it just for a
-// one-shot migration is more cluster mutation than we want. Doing the
-// hashing here uses the SAME hashSessionToken() as every write path, so
-// we can't drift between production hashes and backfilled hashes.
+// BackfillHashedTokens was a Go-side backfill of legacy raw-token rows
+// (gaka-awh.5). Superseded by migration 00030_backfill_hashed_tokens.sql
+// which does the same work via pgcrypto's digest(). Kept as a no-op stub
+// so any external caller (tests, cmd/) still compiles during the
+// transitional window; will be removed alongside the v31 raw-column drop.
 func (d *DB) BackfillHashedTokens(ctx context.Context) (authCount, refreshCount int, err error) {
-	// auth_tokens
-	authRows, err := d.Pool.Query(ctx,
-		`SELECT token FROM auth_tokens WHERE token IS NOT NULL AND hashed_token IS NULL`)
-	if err != nil {
-		return 0, 0, err
-	}
-	authRaws := []string{}
-	for authRows.Next() {
-		var t string
-		if err := authRows.Scan(&t); err != nil {
-			authRows.Close()
-			return 0, 0, err
-		}
-		authRaws = append(authRaws, t)
-	}
-	authRows.Close()
-	if err := authRows.Err(); err != nil {
-		return 0, 0, err
-	}
-	for _, raw := range authRaws {
-		if _, err := d.Pool.Exec(ctx,
-			`UPDATE auth_tokens SET hashed_token = $1 WHERE token = $2 AND hashed_token IS NULL`,
-			hashSessionToken(raw), raw); err != nil {
-			return authCount, 0, err
-		}
-		authCount++
-	}
-
-	// refresh_tokens
-	refreshRows, err := d.Pool.Query(ctx,
-		`SELECT refresh_token FROM refresh_tokens WHERE refresh_token IS NOT NULL AND hashed_refresh_token IS NULL`)
-	if err != nil {
-		return authCount, 0, err
-	}
-	refreshRaws := []string{}
-	for refreshRows.Next() {
-		var t string
-		if err := refreshRows.Scan(&t); err != nil {
-			refreshRows.Close()
-			return authCount, 0, err
-		}
-		refreshRaws = append(refreshRaws, t)
-	}
-	refreshRows.Close()
-	if err := refreshRows.Err(); err != nil {
-		return authCount, 0, err
-	}
-	for _, raw := range refreshRaws {
-		if _, err := d.Pool.Exec(ctx,
-			`UPDATE refresh_tokens SET hashed_refresh_token = $1 WHERE refresh_token = $2 AND hashed_refresh_token IS NULL`,
-			hashSessionToken(raw), raw); err != nil {
-			return authCount, refreshCount, err
-		}
-		refreshCount++
-	}
-	return authCount, refreshCount, nil
+	return 0, 0, nil
 }
