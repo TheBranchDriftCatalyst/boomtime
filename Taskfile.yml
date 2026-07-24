@@ -160,7 +160,7 @@ tasks:
     desc: Install frontend dependencies
     dir: web
     cmds:
-      - yarn install --frozen-lockfile
+      - yarn install --frozen-lockfile --ignore-engines
 
   web:build:
     desc: Build the frontend into web/dist

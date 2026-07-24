@@ -2,7 +2,12 @@
 FROM node:22-alpine AS web
 WORKDIR /web
 COPY web/package.json web/yarn.lock ./
-RUN yarn install --frozen-lockfile
+# --ignore-engines: a transitive dep (@icons-pack/react-simple-icons via
+# catalyst-ui) declares node>=24, but nothing in the build actually needs
+# node 24 semantics. npm ci ignored engine mismatches silently; yarn 1's
+# --frozen-lockfile treats them as fatal, so the pragma stays until we
+# bump the base image (or the dep drops the requirement).
+RUN yarn install --frozen-lockfile --ignore-engines
 COPY web/ ./
 RUN yarn build
 
