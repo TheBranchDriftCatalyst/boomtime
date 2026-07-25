@@ -61,6 +61,12 @@ import type {
   WidgetLinkPayload,
   WidgetLinksPayload,
   WidgetScope,
+  // gaka-wpb: goals feature types.
+  BatchGoalProgress,
+  CreateGoalBody,
+  Goal,
+  GoalProgress,
+  UpdateGoalBody,
 } from "@/types/api";
 
 export class ApiError extends Error {
@@ -694,6 +700,57 @@ export const api = {
       `/api/v1/users/current/curation/${id}/purge`,
       { method: "POST" },
     ),
+
+  // --- Goals (gaka-wpb) --------------------------------------------------------
+  // Backend wraps the list in {goals:[...]} — unwrap to a bare Goal[]
+  // for consumers (matches getCurationRules).
+  getGoals: () => unwrap<Goal[]>("/api/v1/users/current/goals", "goals", []),
+  // Backend wraps single-goal responses in {goal:{...}} for POST/GET/
+  // PATCH; unwrap so components see a bare Goal shape.
+  getGoal: async (id: string): Promise<Goal> => {
+    const raw = await request<{ goal: Goal }>(
+      `/api/v1/users/current/goals/${encodeURIComponent(id)}`,
+    );
+    return raw.goal;
+  },
+  createGoal: async (body: CreateGoalBody): Promise<Goal> => {
+    const raw = await request<{ goal: Goal }>(
+      "/api/v1/users/current/goals",
+      { method: "POST", body },
+    );
+    return raw.goal;
+  },
+  updateGoal: async (id: string, body: UpdateGoalBody): Promise<Goal> => {
+    const raw = await request<{ goal: Goal }>(
+      `/api/v1/users/current/goals/${encodeURIComponent(id)}`,
+      { method: "PATCH", body },
+    );
+    return raw.goal;
+  },
+  deleteGoal: (id: string) =>
+    request<void>(`/api/v1/users/current/goals/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+  // Toggle: omit `enabled` to flip, pass true/false for an idempotent
+  // exact-set (defends against double-click races). Same pattern as
+  // toggleCurationRule.
+  toggleGoal: (id: string, enabled?: boolean) =>
+    request<{ enabled: boolean }>(
+      `/api/v1/users/current/goals/${encodeURIComponent(id)}/toggle`,
+      {
+        method: "POST",
+        body: enabled === undefined ? undefined : { enabled },
+      },
+    ),
+  // Per-goal progress. Direct GoalProgress payload (no envelope).
+  getGoalProgress: (id: string) =>
+    request<GoalProgress>(
+      `/api/v1/users/current/goals/${encodeURIComponent(id)}/progress`,
+    ),
+  // Batched progress for every enabled goal. One HTTP round trip per
+  // dashboard render (each tile reads its entry from the map).
+  getAllGoalProgress: () =>
+    request<BatchGoalProgress>("/api/v1/users/current/goals/progress"),
 
   // --- Spaces (named, rule-based scopes) -------------------------------------
 

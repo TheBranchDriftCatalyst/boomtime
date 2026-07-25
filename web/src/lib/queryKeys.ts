@@ -38,6 +38,10 @@ const prefix = {
   // backend dispatches on rule.action and the FE modal renders accordingly.
   curationActionPreview: ["curation-action-preview"] as const,
   entitiesByType: ["entities-by-type"] as const,
+  // gaka-wpb: goals list + per-goal + batched progress.
+  goals: ["goals"] as const,
+  goalProgress: ["goal-progress"] as const,
+  goalsProgress: ["goals-progress"] as const,
 };
 
 // Dashboard keys whose results are scoped by a Space (?space=…) and rewritten
@@ -182,4 +186,15 @@ export const qk = {
   widgetLink: (scopeType: string, scopeRef: string) =>
     ["widget-link", scopeType, scopeRef] as const,
   widgetLinks: () => ["widget-links"] as const,
+
+  // --- Goals (gaka-wpb) --------------------------------------------------------
+  // Full list (fetch once, hydrate the Settings > Goals table). Per-id
+  // isn't a separate key — the FE reads the list to render, and the
+  // list already carries the row shape.
+  goals: () => ["goals"] as const,
+  // Per-goal progress. Composable widgets use qk.goalProgress(id) so
+  // one tile invalidates in isolation; the batched dashboard call
+  // uses qk.goalsProgress().
+  goalProgress: (id: string) => ["goal-progress", id] as const,
+  goalsProgress: () => ["goals-progress"] as const,
 };
