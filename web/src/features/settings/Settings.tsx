@@ -3,6 +3,7 @@ import { PageToolbar } from "@/components/toolbar/PageToolbar";
 import { cn } from "@/lib/utils";
 import { CurationTab } from "@/features/curation/CurationTab";
 import { RemappingsTab } from "@/features/curation/RemappingsTab";
+import { GoalsTab } from "@/features/goals/GoalsTab";
 import { WidgetLinksCard } from "@/features/widgets/WidgetLinksCard";
 import { Changelog } from "@/features/changelog/Changelog";
 import { Logs } from "@/features/logs/Logs";
@@ -44,6 +45,10 @@ const TABS = [
   { id: "tokens", label: "API tokens", render: () => <TokensTab /> },
   { id: "curation", label: "Hidden data", render: () => <CurationTab /> },
   { id: "remappings", label: "Remappings", render: () => <RemappingsTab /> },
+  // gaka-wpb: user-defined composite goals. Placed after remappings
+  // (data-shaping) and before widgets (embed-shaping) so the tab flow
+  // reads "what data / what to aim for / how to embed".
+  { id: "goals", label: "Goals", render: () => <GoalsTab /> },
   { id: "widgets", label: "Widgets", render: () => <WidgetLinksCard /> },
   { id: "changelog", label: "Changelog", render: () => <Changelog embedded /> },
   { id: "logs", label: "Logs", render: () => <Logs embedded /> },
