@@ -1,0 +1,230 @@
+erDiagram
+    auth_tokens {
+        bytea hashed_token 
+        timestamp_without_time_zone last_usage 
+        text owner FK 
+        text token_description 
+        timestamp_without_time_zone token_expiry 
+        text token_name 
+    }
+
+    badges {
+        uuid link_id UK 
+        text project PK,FK 
+        text username PK,FK 
+    }
+
+    curation_rules {
+        text action 
+        text axis 
+        timestamp_with_time_zone created_at 
+        boolean enabled 
+        integer id PK 
+        text match_type 
+        text match_value 
+        text new_value 
+        text sender 
+    }
+
+    dashboard_layouts {
+        uuid id PK 
+        jsonb layout 
+        text owner FK,UK 
+        text scope UK 
+        timestamp_with_time_zone updated_at 
+    }
+
+    goose_db_version {
+        integer id PK 
+        boolean is_applied 
+        timestamp_without_time_zone tstamp 
+        bigint version_id 
+    }
+
+    hb_rollup_daily {
+        text branch PK 
+        text category PK 
+        date day PK 
+        text editor PK 
+        text language PK 
+        text machine PK 
+        text platform PK 
+        text plugin PK 
+        text project PK 
+        text sender PK 
+        bigint total_seconds 
+    }
+
+    health_rollup_daily {
+        real avg_qty 
+        date day PK 
+        text kind PK 
+        real max_qty 
+        real min_qty 
+        text owner PK 
+        integer sample_count 
+        real total_qty 
+    }
+
+    health_samples {
+        bigint id PK 
+        text kind 
+        jsonb meta 
+        text owner FK 
+        real q_avg 
+        real q_max 
+        real q_min 
+        real qty 
+        timestamp_with_time_zone ts_end 
+        timestamp_with_time_zone ts_start 
+        text unit 
+        bigint workout_id FK 
+    }
+
+    heartbeats {
+        integer ai_input_tokens 
+        integer ai_line_changes 
+        integer ai_output_tokens 
+        integer ai_prompt_length 
+        text ai_session 
+        text ai_subscription_plan 
+        text branch 
+        text category 
+        text cursorpos 
+        ARRAY dependencies 
+        text editor 
+        text entity UK 
+        integer file_lines 
+        integer gap_seconds 
+        integer human_line_changes 
+        integer id PK 
+        boolean is_write 
+        text language 
+        integer lineno 
+        text machine 
+        text platform 
+        text plugin 
+        text project FK 
+        text sender FK,UK 
+        timestamp_without_time_zone time_sent UK 
+        text ty 
+        text user_agent 
+        integer workout_avg_hr 
+        real workout_distance_m 
+        integer workout_duration_s 
+        real workout_kcal 
+        text workout_kind 
+    }
+
+    import_job_logs {
+        bigint id PK 
+        integer job_id FK 
+        text level 
+        text message 
+        timestamp_with_time_zone ts 
+    }
+
+    import_jobs {
+        timestamp_with_time_zone created_at 
+        date current_day 
+        jsonb drift 
+        timestamp_with_time_zone end_date 
+        text error 
+        timestamp_with_time_zone finished_at 
+        integer id PK 
+        bigint imported_count 
+        text owner 
+        integer processed_days 
+        timestamp_with_time_zone start_date 
+        timestamp_with_time_zone started_at 
+        text state 
+        integer total_days 
+        timestamp_with_time_zone updated_at 
+        jsonb value 
+    }
+
+    projects {
+        ARRAY dependencies 
+        text description 
+        text name PK 
+        text owner PK,FK 
+        text repository 
+    }
+
+    refresh_tokens {
+        bytea hashed_refresh_token 
+        text owner FK 
+        timestamp_without_time_zone token_expiry 
+    }
+
+    space_rules {
+        text axis 
+        integer id PK 
+        text match_type 
+        text match_value 
+        integer space_id FK 
+    }
+
+    spaces {
+        timestamp_with_time_zone created_at 
+        integer id PK 
+        text name UK 
+        text owner UK 
+        integer position 
+    }
+
+    users {
+        integer argon_version 
+        bytea encrypted_wakatime_key 
+        bytea hashed_password 
+        boolean public_profile_enabled 
+        text public_slug 
+        bytea salt_used 
+        text username PK 
+        timestamp_with_time_zone wakatime_key_checked_at 
+        text wakatime_key_status 
+    }
+
+    widget_defs {
+        timestamp_with_time_zone created_at 
+        uuid def_id UK 
+        text name PK 
+        jsonb spec 
+        timestamp_with_time_zone updated_at 
+        text username PK,FK 
+    }
+
+    widget_links {
+        timestamp_with_time_zone created_at 
+        timestamp_with_time_zone last_used_at 
+        uuid link_id UK 
+        jsonb origins 
+        text scope_ref PK 
+        text scope_type PK 
+        text username PK,FK 
+    }
+
+    workout_details {
+        bigint heartbeat_id PK,FK 
+        jsonb hr_series 
+        jsonb route 
+        text source_uuid 
+    }
+
+    auth_tokens }o--|| users : "owner"
+    badges }o--|| projects : "project"
+    badges }o--|| projects : "username"
+    badges }o--|| users : "username"
+    dashboard_layouts }o--|| users : "owner"
+    health_samples }o--|| heartbeats : "workout_id"
+    health_samples }o--|| users : "owner"
+    heartbeats }o--|| projects : "project"
+    heartbeats }o--|| projects : "sender"
+    heartbeats }o--|| users : "sender"
+    workout_details |o--|| heartbeats : "heartbeat_id"
+    import_job_logs }o--|| import_jobs : "job_id"
+    projects }o--|| users : "owner"
+    refresh_tokens }o--|| users : "owner"
+    space_rules }o--|| spaces : "space_id"
+    widget_defs }o--|| users : "username"
+    widget_links }o--|| users : "username"
