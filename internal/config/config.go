@@ -91,6 +91,13 @@ type Config struct {
 	// `boomtime label-images regenerate --all` to swap the whole set.
 	ComfyUIModel string
 
+	// AdminUsers is the set of usernames allowed to hit admin-only routes
+	// (currently: /api/v1/admin/label-images/*, which drives the Admin tab
+	// in the FE). Populated from BOOM_ADMIN_USERS as a comma-separated
+	// list. Empty (the default) disables admin routes entirely — safer
+	// default than "all users are admins".
+	AdminUsers map[string]struct{}
+
 	// WakatimeAPIKey is the server-configured key used to import history from
 	// wakatime.com when the request body omits apiToken. Sourced from
 	// WAKATIME_API_KEY, falling back to BOOM_REMOTE_WRITE_TOKEN. Never exposed.
@@ -219,6 +226,7 @@ func Load() *Config {
 		FeatureLabelImages: getEnvBool("BOOM_FEATURE_LABEL_IMAGES", false),
 		ComfyUIShimURL:     getEnv("BOOM_COMFYUI_SHIM_URL", ""),
 		ComfyUIModel:       getEnv("BOOM_COMFYUI_MODEL", "sdxl_illustrious_xl"),
+		AdminUsers:         parseAdminUsers(getEnv("BOOM_ADMIN_USERS", "")),
 
 		// gaka-b5x.1: cookie Secure flag. Default = "true in prod, false in
 		// dev". BOOM_COOKIE_SECURE=true|false forces either mode explicitly.
@@ -256,6 +264,37 @@ func (c *Config) DatabaseURL() string {
 // IsDev reports whether the server runs in development mode (text logs).
 func (c *Config) IsDev() bool {
 	return strings.EqualFold(c.Env, "dev")
+}
+
+// parseAdminUsers splits a comma-separated username list into a set. Empty
+// input returns nil so IsAdmin(u) is a cheap "always false" for the
+// default off configuration.
+func parseAdminUsers(csv string) map[string]struct{} {
+	csv = strings.TrimSpace(csv)
+	if csv == "" {
+		return nil
+	}
+	out := map[string]struct{}{}
+	for _, name := range strings.Split(csv, ",") {
+		name = strings.TrimSpace(name)
+		if name != "" {
+			out[name] = struct{}{}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// IsAdmin reports whether `username` is on the admin allowlist. Empty list
+// (default) means nobody is an admin — safer than "everybody is an admin".
+func (c *Config) IsAdmin(username string) bool {
+	if len(c.AdminUsers) == 0 {
+		return false
+	}
+	_, ok := c.AdminUsers[username]
+	return ok
 }
 
 // LabelImagesEnabled reports whether the label-images feature (gaka-myv) is

@@ -20,6 +20,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
+	labelimages "github.com/TheBranchDriftCatalyst/boomtime/internal/worker/labelimages"
 	"github.com/labstack/echo/v5"
 )
 
@@ -35,6 +36,10 @@ type Handler struct {
 	Cache  *cache.TTL
 	// StartTime is set at handler construction; /healthz reports uptime from it.
 	StartTime time.Time
+	// LabelImagesWorker drives on-demand image regeneration via the
+	// admin endpoints (gaka-myv). nil = feature disabled; handlers
+	// respond with 503 in that case.
+	LabelImagesWorker *labelimages.Worker
 }
 
 // New constructs a Handler. logHub streams server-process slog records to the
@@ -51,6 +56,14 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *impor
 		Cache:     cache.New(statsCacheTTL()),
 		StartTime: time.Now(),
 	}
+}
+
+// SetLabelImagesWorker wires the label-images worker after construction.
+// Called by cmd/boomtime once NewWorker succeeds; nil is fine when the
+// feature is disabled — admin handlers detect the nil worker and return
+// 503 Service Unavailable with a clear "feature disabled" message.
+func (h *Handler) SetLabelImagesWorker(w *labelimages.Worker) {
+	h.LabelImagesWorker = w
 }
 
 // statsCacheTTL is the TTL for cached aggregation payloads (stats/timeline/

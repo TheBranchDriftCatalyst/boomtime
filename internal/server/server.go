@@ -26,7 +26,20 @@ var distFS embed.FS
 
 // New builds a configured Echo server. logHub streams server-process slog
 // records to the Logs tab; pass nil to disable that endpoint's live stream.
+//
+// (See NewWithHandler if the caller needs to attach additional dependencies
+// to the constructed *handler.Handler — this shape is preserved for
+// backward compatibility with existing tests that only care about the
+// Echo instance.)
 func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *importer.Worker, hub *importer.Hub, logHub *logging.LogHub) *echo.Echo {
+	e, _ := NewWithHandler(database, cfg, logger, worker, hub, logHub)
+	return e
+}
+
+// NewWithHandler is New but also returns the constructed *handler.Handler
+// so callers (cmd/boomtime) can wire post-construction dependencies like
+// the label-images worker.
+func NewWithHandler(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *importer.Worker, hub *importer.Hub, logHub *logging.LogHub) (*echo.Echo, *handler.Handler) {
 	e := echo.New()
 
 	e.Use(middleware.Recover())
@@ -84,7 +97,7 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *impor
 	h := handler.New(database, cfg, logger, worker, hub, logHub)
 	registerRoutes(e, h)
 	registerStatic(e, cfg, logger)
-	return e
+	return e, h
 }
 
 // registerRoutes wires all API routes, one registration func per domain. The
@@ -302,6 +315,21 @@ func registerMiscRoutes(e *echo.Echo, h *handler.Handler) {
 	// dashboard-shaped payload. UNAUTHENTICATED; the payload MUST go
 	// through widget.Scrub before serialization. See internal/handler/profile.go.
 	e.GET("/api/public/profile/:slug", h.PublicProfile)
+
+	// gaka-myv: shared per-archetype label image bytes. PUBLIC (no auth) —
+	// label content is fixed catalog data, not per-user data. Cache-Control
+	// is `immutable`; the FE busts via ?v=<generated_at.epoch>. Reads do
+	// NOT check the feature flag so already-generated images keep serving
+	// after a flag flip (only writes / the startup worker gate on
+	// LabelImagesEnabled).
+	e.GET("/api/v1/labels/:id/image", h.LabelImage)
+
+	// gaka-myv: Admin tab endpoints — authed AND admin-gated (see
+	// BOOM_ADMIN_USERS). Info returns config + row count; Regenerate takes
+	// the caller-supplied {entries: [{id, prompt}, ...]} snapshot so the FE
+	// catalog stays the source of truth.
+	e.GET("/api/v1/admin/label-images", h.AdminLabelImagesInfo)
+	e.POST("/api/v1/admin/label-images/regenerate", h.AdminLabelImagesRegenerate)
 
 	e.GET("/api/v1/users/current/widget-defs", h.ListWidgetDefs)
 	e.POST("/api/v1/users/current/widget-defs", h.CreateWidgetDef)

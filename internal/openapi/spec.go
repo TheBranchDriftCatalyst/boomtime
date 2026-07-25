@@ -1239,6 +1239,45 @@ func build() (*openapi3.T, error) {
 		return op
 	}())
 
+	// gaka-myv: shared per-archetype label image bytes. PUBLIC (no auth).
+	// Cache-Control is `public, max-age=31536000, immutable`; the FE appends
+	// ?v=<generated_at.epoch> to bust the browser cache after a regeneration.
+	// The endpoint IGNORES the ?v query param — it's a routing no-op there
+	// purely for the cache-bust side effect.
+	doc.AddOperation("/api/v1/labels/{id}/image", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagProfile}, Summary: "Public label archetype image",
+			Description: "Shared image bytes for a memeification label archetype (one per id, same for every user who earned it). Generated via the ComfyUI shim (gaka-myv). Response is `image/png` (or whatever mime the shim returned). Cache-Control is `public, max-age=31536000, immutable`; the FE busts the cache by appending `?v=<generated_at.epoch>` to the src on every render — the endpoint ignores that param and always serves the current bytes.",
+			Security:    &public,
+			Parameters: openapi3.Parameters{
+				pathParamStr("id", "Label id (see internal/labelcatalog for the shipped set: late-night-coder, mac-native, vim-enjoyer, ...)."),
+				strParam("v", "query", "Optional cache-bust hint (typically generated_at.epoch). Ignored server-side.", false),
+			}}
+		setStatus(op, http.StatusOK, rBlob("Raw image bytes.", "image/png"))
+		stdErrors(op, "400", "404", "500")
+		return op
+	}())
+
+	// gaka-myv: Admin tab endpoints. Both require auth + admin allowlist
+	// (BOOM_ADMIN_USERS). Non-admins get 403.
+	doc.AddOperation("/api/v1/admin/label-images", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagProfile}, Summary: "Admin: label-images feature status",
+			Description: "Returns {enabled, model, shimUrl, count, baseline}. Admin-only (BOOM_ADMIN_USERS)."}
+		setStatus(op, http.StatusOK, rInline("Feature status + row count.", mapObject()))
+		stdErrors(op, "401", "403", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/admin/label-images/regenerate", "POST", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagProfile}, Summary: "Admin: regenerate label images via the ComfyUI shim",
+			Description: "Body: {entries: [{id, prompt}, ...], ids?: [...], all?: bool, truncate?: bool}. The FE POSTs the full label catalog snapshot; the Go side does NOT need to mirror it. `all: true` regenerates every entry sent (optionally truncating first). `ids: [...]` regenerates a named subset. Returns {generated, failed, requested}."}
+		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{
+			Required: true, Description: "Regeneration request.",
+			Content: openapi3.NewContentWithJSONSchema(openapi3.NewObjectSchema()),
+		}}
+		setStatus(op, http.StatusOK, rInline("{generated, failed, requested}.", mapObject()))
+		stdErrors(op, "400", "401", "403", "500")
+		return op
+	}())
+
 	doc.AddOperation("/api/v1/leaderboards", "GET", func() *openapi3.Operation {
 		op := &openapi3.Operation{Tags: []string{tagLeaderboard}, Summary: "Cross-user leaderboards",
 			Parameters: dashboardParams}

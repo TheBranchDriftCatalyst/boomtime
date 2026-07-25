@@ -22,6 +22,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/server"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
+	labelimages "github.com/TheBranchDriftCatalyst/boomtime/internal/worker/labelimages"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -52,7 +53,7 @@ func main() {
 		Short:   "Wakatime-compatible coding-time tracker",
 		Version: version,
 	}
-	root.AddCommand(runCmd(), runMigrationsCmd(), createUserCmd(), createTokenCmd(), rotateEncryptionKeyCmd())
+	root.AddCommand(runCmd(), runMigrationsCmd(), createUserCmd(), createTokenCmd(), rotateEncryptionKeyCmd(), labelImagesCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -142,7 +143,35 @@ func runCmd() *cobra.Command {
 			worker := importer.NewWorker(ctx, database, logger, hub)
 			worker.RecoverInterrupted(ctx)
 
-			e := server.New(database, cfg, logger, worker, hub, logHub)
+			// gaka-myv: label-images generation worker. NewWorker returns nil
+			// when the feature is off (flag unset OR shim URL unset); a
+			// non-nil worker generates any missing images in a detached
+			// goroutine so the HTTP server binds immediately. If the flag is
+			// on but the URL is missing we already treat the feature as off
+			// via LabelImagesEnabled(); log a WARN so the operator notices
+			// the misconfig.
+			if cfg.FeatureLabelImages && !cfg.LabelImagesEnabled() {
+				logger.Warn("BOOM_FEATURE_LABEL_IMAGES=on but BOOM_COMFYUI_SHIM_URL is unset — feature is inert",
+					"remediation", "set BOOM_COMFYUI_SHIM_URL=http://host:8012 or unset BOOM_FEATURE_LABEL_IMAGES")
+			}
+			liWorker, err := labelimages.NewWorker(cfg, database, logger)
+			if err != nil {
+				return fmt.Errorf("labelimages worker: %w", err)
+			}
+			if liWorker != nil {
+				logger.Info("labelimages worker enabled",
+					"shim_url", cfg.ComfyUIShimURL, "model", cfg.ComfyUIModel)
+				go liWorker.Run(ctx)
+			}
+			if len(cfg.AdminUsers) > 0 {
+				logger.Info("admin users configured", "count", len(cfg.AdminUsers))
+			}
+
+			e, h := server.NewWithHandler(database, cfg, logger, worker, hub, logHub)
+			// Wire the labelimages worker into the handler for the admin
+			// regen endpoints. Passing nil is fine when the feature is off
+			// — the admin handler detects the nil worker and returns 503.
+			h.SetLabelImagesWorker(liWorker)
 			addr := fmt.Sprintf(":%d", cfg.Port)
 			logger.Info("starting server", "addr", addr, "env", cfg.Env)
 
