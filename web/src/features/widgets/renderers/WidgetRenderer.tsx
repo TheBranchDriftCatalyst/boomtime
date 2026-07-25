@@ -24,6 +24,11 @@ import {
 import { GoalProgress } from "@/features/widgets/renderers/GoalProgress";
 import { GoalRing } from "@/features/widgets/renderers/GoalRing";
 import { GoalList } from "@/features/widgets/renderers/GoalList";
+// gaka-364: label evaluator drives the hero tagline (top-3 awards) +
+// the labels-showcase widget. Pure over the payload — no state, no
+// fetch, no clock, matches the grade badge's derivation pattern.
+import { evaluate } from "@/features/publicprofile/labels/evaluator";
+import { LabelsShowcase } from "@/features/widgets/renderers/LabelsShowcase";
 
 interface Ctx {
   view?: string;
@@ -124,6 +129,10 @@ export function WidgetRenderer({ kind, view, data, ctx }: WidgetRendererProps) {
     case "goal-list":
       return <GoalList />;
 
+    // gaka-364: labels showcase — all awarded labels grouped by kind
+    case "labels-showcase":
+      return <LabelsShowcase data={data} />;
+
     default:
       return <Empty note={`No renderer for "${kind}"`} />;
   }
@@ -163,11 +172,16 @@ function BigStat({
 }
 
 function HeroIdentity({ data }: { data: PublicDashboardPayload }) {
-  const topLang = data.languages?.[0]?.name;
-  const topEditor = data.editors?.[0]?.name;
-  const tagline = topLang
-    ? `${topLang.toUpperCase()}-CLASS · ${(topEditor ?? "POLYGLOT").toUpperCase()}-ADEPT`
-    : "POLYGLOT-CLASS · KEYSTROKE-HACKER";
+  // gaka-364: tagline is now the top-3 awarded labels from the memeification
+  // catalog, joined by " · ". Fallback to "NEW OPERATOR" (no awards at all)
+  // is deliberately unambiguous — it signals "we've got no data on you" more
+  // clearly than the old hard-coded POLYGLOT-CLASS placeholder ever did.
+  const awards = evaluate(data);
+  const top3 = awards.slice(0, 3);
+  const tagline =
+    top3.length === 0
+      ? "NEW OPERATOR"
+      : top3.map((a) => a.label).join(" · ");
   return (
     <div className="flex h-full flex-col justify-center px-3">
       <div className="mb-1 font-mono text-[10px] uppercase tracking-[0.18em] text-[color:var(--muted-foreground)]">
@@ -185,7 +199,10 @@ function HeroIdentity({ data }: { data: PublicDashboardPayload }) {
           style={{ background: "var(--primary)" }}
           aria-hidden
         />
-        <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-[color:var(--accent,var(--primary))]">
+        <span
+          className="font-mono text-[10px] uppercase tracking-[0.2em] text-[color:var(--accent,var(--primary))]"
+          data-testid="hero-tagline"
+        >
           {tagline}
         </span>
       </div>

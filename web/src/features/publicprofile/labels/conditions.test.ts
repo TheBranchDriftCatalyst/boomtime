@@ -4,7 +4,6 @@
 // the comparison direction breaks a specific assertion.
 import { describe, expect, it } from "vitest";
 import { evaluateCondition } from "./conditions";
-import type { LabelPayload } from "./types";
 import type { PublicDashboardPayload } from "@/types/stats";
 
 // Minimal payload builder — every axis defaults to empty so tests only

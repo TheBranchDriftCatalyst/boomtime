@@ -310,6 +310,21 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
     dashboardScopes: ["profile"],
     defaultLayout: { w: 6, h: 4 },
   },
+  // gaka-364: labels/memeification showcase — renders all evaluated
+  // labels grouped by category (tier / archetype / tribe). FE-only
+  // widget, not registered in internal/widget/render.go's SVG kinds
+  // (like the other profile-only tiles: grade-badge, hero-identity,
+  // stats/chips, goal-*). Adding a new label = one object literal in
+  // web/src/features/publicprofile/labels/catalog.ts.
+  {
+    kind: "labels-showcase",
+    title: "Labels Showcase",
+    description: "All awarded labels grouped by tier / archetype / tribe",
+    scopes: ["user"],
+    primitives: ["label"],
+    dashboardScopes: ["profile"],
+    defaultLayout: { w: 6, h: 4 },
+  },
 ];
 
 /** Catalog entries offered for a page scope. */
