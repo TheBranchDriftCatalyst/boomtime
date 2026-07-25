@@ -16,7 +16,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Plus, RotateCcw } from "lucide-react";
+import { PanelRightClose, PanelRightOpen, Plus, RotateCcw } from "lucide-react";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Card, CardContent, CardHeader } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { api, ApiError } from "@/lib/api";
@@ -137,6 +137,27 @@ export function DashboardEditorCard() {
 
   const [saving, setSaving] = useState(false);
   const [committed, setCommitted] = useState(false);
+  // Palette expand/collapse — persisted so the state survives tab switches
+  // and reloads. Default: expanded (the palette is where you discover
+  // widgets to add; new users need it open to know what exists).
+  const [paletteCollapsed, setPaletteCollapsed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return window.localStorage.getItem("dashboard-editor:palette-collapsed") === "1";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        "dashboard-editor:palette-collapsed",
+        paletteCollapsed ? "1" : "0",
+      );
+    } catch {
+      // localStorage disabled — state stays in-memory only, that's fine.
+    }
+  }, [paletteCollapsed]);
   useEffect(() => {
     // Poll the adapter's memory when it changes — cheap since it's local.
     // The primitive fires save on every layout mutation; mirror that into
@@ -208,7 +229,13 @@ export function DashboardEditorCard() {
         {isLoading ? (
           <div className="py-8 text-center text-muted-foreground">Loading…</div>
         ) : (
-          <div className="grid gap-4 lg:grid-cols-[1fr_240px]">
+          <div
+            className={
+              paletteCollapsed
+                ? "grid gap-4 lg:grid-cols-[1fr_44px]"
+                : "grid gap-4 lg:grid-cols-[1fr_340px]"
+            }
+          >
             <div className="public-dashboard rounded border border-border p-2">
               <DraggableGridLayout
                 instances={instances}
@@ -219,36 +246,77 @@ export function DashboardEditorCard() {
               />
             </div>
             <aside
-              className="flex max-h-[600px] flex-col gap-2 overflow-y-auto rounded border border-border p-3"
+              className={
+                paletteCollapsed
+                  ? "flex flex-col items-center gap-2 rounded border border-border p-1.5"
+                  : "flex max-h-[720px] flex-col gap-2 overflow-y-auto rounded border border-border p-3"
+              }
               aria-label="Widget palette"
+              data-collapsed={paletteCollapsed || undefined}
             >
-              <div className="font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
-                &gt; PALETTE ({paletteEntries.length})
-              </div>
-              {paletteEntries.length === 0 && (
-                <div className="text-xs text-muted-foreground">
-                  All widgets are in your layout.
-                </div>
-              )}
-              {paletteEntries.map((e) => (
-                <button
-                  key={e.kind}
-                  type="button"
-                  onClick={() => handleAdd(e.kind)}
-                  className="flex items-start justify-between gap-2 rounded border border-border/60 p-2 text-left text-xs hover:border-primary/60"
-                  data-testid={`palette-add-${e.kind}`}
-                >
-                  <div>
-                    <div className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-primary">
-                      {e.title}
-                    </div>
-                    <div className="mt-1 text-[10px] text-muted-foreground">
-                      {e.description}
-                    </div>
+              <div
+                className={
+                  paletteCollapsed
+                    ? "flex w-full justify-center"
+                    : "flex items-center justify-between"
+                }
+              >
+                {!paletteCollapsed && (
+                  <div className="font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
+                    &gt; PALETTE ({paletteEntries.length})
                   </div>
-                  <Plus size={14} />
+                )}
+                <button
+                  type="button"
+                  onClick={() => setPaletteCollapsed((v) => !v)}
+                  className="rounded p-1 text-muted-foreground hover:bg-background hover:text-foreground"
+                  aria-label={paletteCollapsed ? "Expand palette" : "Collapse palette"}
+                  aria-expanded={!paletteCollapsed}
+                  title={paletteCollapsed ? `Expand palette (${paletteEntries.length})` : "Collapse palette"}
+                  data-testid="dashboard-editor-palette-toggle"
+                >
+                  {paletteCollapsed ? (
+                    <PanelRightOpen size={14} />
+                  ) : (
+                    <PanelRightClose size={14} />
+                  )}
                 </button>
-              ))}
+              </div>
+              {paletteCollapsed ? (
+                <div
+                  className="font-mono text-[9px] tabular-nums text-muted-foreground"
+                  aria-hidden
+                >
+                  {paletteEntries.length}
+                </div>
+              ) : (
+                <>
+                  {paletteEntries.length === 0 && (
+                    <div className="text-xs text-muted-foreground">
+                      All widgets are in your layout.
+                    </div>
+                  )}
+                  {paletteEntries.map((e) => (
+                    <button
+                      key={e.kind}
+                      type="button"
+                      onClick={() => handleAdd(e.kind)}
+                      className="flex items-start justify-between gap-2 rounded border border-border/60 p-2 text-left text-xs hover:border-primary/60"
+                      data-testid={`palette-add-${e.kind}`}
+                    >
+                      <div>
+                        <div className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-primary">
+                          {e.title}
+                        </div>
+                        <div className="mt-1 text-[10px] text-muted-foreground">
+                          {e.description}
+                        </div>
+                      </div>
+                      <Plus size={14} />
+                    </button>
+                  ))}
+                </>
+              )}
             </aside>
           </div>
         )}
