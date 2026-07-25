@@ -1,8 +1,12 @@
-// SYNTHWAVE / OUTRUN categorical chart palette: 14 vivid neon hues tuned to
-// pop on the near-black violet dark cards while staying cohesive. Ordered so
-// CONSECUTIVE indices are clearly different (no two similar neons adjacent) —
-// important for stacked bands (streamgraph), adjacent heatmap rows, and pie
-// slices. This palette feeds every chart.
+// SYNTHWAVE / OUTRUN categorical chart palette — the LEGACY fallback used by
+// `colorAt(i)` in @/viz/d3/color when the active theme's `--chart-N` token is
+// unavailable (SSR, pre-mount, or a hypothetical broken theme). Since gaka-538
+// the CURRENT source-of-truth for chart colors is the theme's `--chart-1..12`
+// tokens, read via getComputedStyle at draw time. Do NOT reference this array
+// directly from chart code — always route through `colorAt(i)` so theme swaps
+// take effect on the next render. Ordered so CONSECUTIVE indices are clearly
+// different (no two similar hues adjacent) — important for stacked bands,
+// heatmap rows, and pie slices when the fallback fires.
 export const CHART_COLORS = [
   "#05d9e8", // electric cyan
   "#ff2d95", // neon magenta

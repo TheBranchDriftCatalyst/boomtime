@@ -1,8 +1,41 @@
 import { CHART_COLORS } from "@/lib/config";
 
-/** The positional palette lookup every chart uses: CHART_COLORS[i % len]. */
+/**
+ * Number of `--chart-N` tokens each theme in catalyst-ui declares.
+ * All 10 themes (arasaka, boomtime, catalyst, dracula, dungeon, gold,
+ * laracon, nature, netflix, nord) ship `--chart-1..12` per the theme
+ * registry contract. Charts wrap around this window on i >= 12.
+ */
+const THEME_CHART_TOKEN_COUNT = 12;
+
+/**
+ * Read the active theme's `--chart-N` token via `getComputedStyle` at
+ * call time so theme swaps (which flip the html className) are picked up
+ * on the NEXT chart render — no invalidation plumbing required.
+ *
+ * SSR-safe: returns `null` when `document` isn't defined so the caller
+ * falls back to the pure hex constant.
+ */
+function readChartToken(index: number): string | null {
+  if (typeof document === "undefined") return null;
+  const tokenName = `--chart-${(index % THEME_CHART_TOKEN_COUNT) + 1}`;
+  const raw = getComputedStyle(document.documentElement)
+    .getPropertyValue(tokenName)
+    .trim();
+  return raw.length > 0 ? raw : null;
+}
+
+/**
+ * Positional palette lookup used by every chart. Reads the active theme's
+ * `--chart-N` token; falls back to the legacy hardcoded SYNTHWAVE hex hue
+ * when the token is unset (SSR, pre-mount, or a theme that somehow
+ * shipped without chart tokens).
+ *
+ * `getComputedStyle` is cheap (browser-cached until layout invalidates)
+ * so per-call cost is negligible vs. a chart draw. See gaka-538.
+ */
 export function colorAt(i: number): string {
-  return CHART_COLORS[i % CHART_COLORS.length];
+  return readChartToken(i) ?? CHART_COLORS[i % CHART_COLORS.length];
 }
 
 /**

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { CHART_COLORS } from "@/lib/config";
+import { colorAt } from "@/viz/d3/color";
 import { secondsToHms } from "@/lib/utils";
 import type { ResourceStats } from "@/types/api";
 
@@ -30,7 +30,7 @@ export function TopProjectsBar({
       .map((p, i) => ({
         name: p.name,
         seconds: p.totalSeconds,
-        color: CHART_COLORS[i % CHART_COLORS.length],
+        color: colorAt(i),
       }));
   }, [projects, topN]);
 
