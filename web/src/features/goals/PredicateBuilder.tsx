@@ -189,7 +189,7 @@ function KindSwitcher({
   disabledDeepen: boolean;
 }) {
   return (
-    <Select value={current} onValueChange={(v) => onChange(v as Predicate["kind"])}>
+    <Select value={current} onValueChange={(v: string) => onChange(v as Predicate["kind"])}>
       <SelectTrigger className="w-[180px] h-8 text-xs">
         <SelectValue />
       </SelectTrigger>
@@ -286,7 +286,7 @@ function TimeLeafEditor({
           <Label htmlFor={id.axis} className="text-xs">Axis</Label>
           <Select
             value={node.axis}
-            onValueChange={(v) => onChange({ ...node, axis: v as GoalHeartbeatAxis })}
+            onValueChange={(v: string) => onChange({ ...node, axis: v as GoalHeartbeatAxis })}
           >
             <SelectTrigger id={id.axis} className="h-8">
               <SelectValue />
@@ -316,7 +316,7 @@ function TimeLeafEditor({
           <Label htmlFor={id.op} className="text-xs">Op</Label>
           <Select
             value={node.op}
-            onValueChange={(v) => onChange({ ...node, op: v as GoalOp })}
+            onValueChange={(v: string) => onChange({ ...node, op: v as GoalOp })}
           >
             <SelectTrigger id={id.op} className="h-8">
               <SelectValue />
@@ -347,7 +347,7 @@ function TimeLeafEditor({
           <Label htmlFor={id.window} className="text-xs">Window</Label>
           <Select
             value={node.window}
-            onValueChange={(v) => onChange({ ...node, window: v as GoalTimeWindow })}
+            onValueChange={(v: string) => onChange({ ...node, window: v as GoalTimeWindow })}
           >
             <SelectTrigger id={id.window} className="h-8">
               <SelectValue />
@@ -408,7 +408,7 @@ function ActiveDaysLeafEditor({
           <Label htmlFor={id.op} className="text-xs">Op</Label>
           <Select
             value={node.op}
-            onValueChange={(v) => onChange({ ...node, op: v as GoalOp })}
+            onValueChange={(v: string) => onChange({ ...node, op: v as GoalOp })}
           >
             <SelectTrigger id={id.op} className="h-8">
               <SelectValue />
@@ -439,7 +439,7 @@ function ActiveDaysLeafEditor({
           <Label htmlFor={id.window} className="text-xs">Window</Label>
           <Select
             value={node.window}
-            onValueChange={(v) =>
+            onValueChange={(v: string) =>
               onChange({ ...node, window: v as GoalActiveDaysWindow })
             }
           >
