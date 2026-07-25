@@ -185,6 +185,26 @@ func (hz *Harness) Router() *echo.Echo {
 	e.GET("/api/v1/users/current/widgets/links", h.WidgetLinkList)
 	e.POST("/api/v1/users/current/widgets/link/:id/roll", h.WidgetLinkRoll)
 	e.GET("/widget/svg/:uuid/:kind", h.WidgetSvg)
+	// gaka-wpb: goals CRUD + toggle + progress (per-goal + batched).
+	// /goals/progress registered BEFORE /goals/:id to win path matching
+	// (Echo picks the first registered match for overlapping patterns).
+	e.GET("/api/v1/users/current/goals", h.ListGoals)
+	e.POST("/api/v1/users/current/goals", h.CreateGoal)
+	e.GET("/api/v1/users/current/goals/progress", h.GetAllGoalProgress)
+	e.GET("/api/v1/users/current/goals/:id", h.GetGoal)
+	e.PATCH("/api/v1/users/current/goals/:id", h.UpdateGoal)
+	e.DELETE("/api/v1/users/current/goals/:id", h.DeleteGoal)
+	e.POST("/api/v1/users/current/goals/:id/toggle", h.ToggleGoal)
+	e.GET("/api/v1/users/current/goals/:id/progress", h.GetGoalProgress)
+	// gaka-wpb: heartbeat ingest so we can prove the invalidation hook
+	// (SaveHeartbeats → InvalidateGoalsForOwner) clears cached
+	// progress. Just the bulk endpoint — single- and bulk-shaped
+	// requests go through the same storeAndRespond path.
+	e.POST("/api/v1/users/current/heartbeats.bulk", h.HeartbeatBulk)
+	// Cleanup: also clean up the goals table for the test's sender.
+	// The parent Cleanup registered per MintUser catches every table
+	// but goals — we extend the cleanup list separately here so
+	// existing tests that don't touch goals don't need to change.
 	return e
 }
 
@@ -221,6 +241,10 @@ func (hz *Harness) Cleanup(sender string) {
 			`DELETE FROM spaces WHERE owner=$1`,
 			`DELETE FROM badges WHERE username=$1`,
 			`DELETE FROM widget_links WHERE username=$1`,
+			// gaka-wpb: goals cascade on users delete via FK, but we
+			// still clean explicitly so the between-run window with
+			// FK checks doesn't leak.
+			`DELETE FROM goals WHERE owner=$1`,
 			`DELETE FROM projects WHERE owner=$1`,
 			`DELETE FROM auth_tokens WHERE owner=$1`,
 			`DELETE FROM refresh_tokens WHERE owner=$1`,

@@ -65,6 +65,7 @@ const (
 	tagDocs        = "Docs"
 	tagProfile     = "Public Profile"
 	tagIntegration = "Integrations"
+	tagGoals       = "Goals"
 )
 
 var (
@@ -132,6 +133,7 @@ func build() (*openapi3.T, error) {
 			{Name: tagDocs, Description: "This document and the embedded interactive explorer."},
 			{Name: tagProfile, Description: "Opt-in public read-only profile page (owner CRUD + public slug view)."},
 			{Name: tagIntegration, Description: "External-service credential management (encrypted-at-rest)."},
+			{Name: tagGoals, Description: "User-defined composite goals (predicate tree over time-on-axis / streak / active-days)."},
 		},
 	}
 
@@ -972,6 +974,155 @@ func build() (*openapi3.T, error) {
 			Parameters:  openapi3.Parameters{pathParamStr("scope", "Dashboard scope (public_profile).")}}
 		setStatus(op, http.StatusNoContent, noContentRef())
 		stdErrors(op, "400", "401", "403", "500")
+		return op
+	}())
+
+	// ==== GOALS (gaka-wpb) ===================================================
+	//
+	// Composite predicate-tree targets with per-goal + batched progress
+	// endpoints. Spec is opaque JSONB validated server-side via
+	// stats.ValidateSpec (kind / axis whitelists, depth<=5,
+	// non-negative numbers). Progress cache lives on the row
+	// (last_progress + last_evaluated_at); 60s stale-while-revalidate
+	// per stats.GoalCacheTTL, invalidated eagerly on heartbeat ingest
+	// and on spec change.
+
+	goalObj := func() *openapi3.Schema { return openapi3.NewObjectSchema() }
+	goalEnvelope := func() *openapi3.Schema {
+		s := openapi3.NewObjectSchema()
+		s.Properties = openapi3.Schemas{"goal": &openapi3.SchemaRef{Value: goalObj()}}
+		s.Required = []string{"goal"}
+		return s
+	}
+	goalsListEnvelope := func() *openapi3.Schema {
+		s := openapi3.NewObjectSchema()
+		arr := openapi3.NewArraySchema()
+		arr.Items = &openapi3.SchemaRef{Value: goalObj()}
+		s.Properties = openapi3.Schemas{"goals": &openapi3.SchemaRef{Value: arr}}
+		s.Required = []string{"goals"}
+		return s
+	}
+	goalProgressSchema := func() *openapi3.Schema {
+		s := openapi3.NewObjectSchema()
+		// sub_conditions is a flat list of per-leaf detail objects
+		// (kind + axis/value/op/window + current/target/progress/hit).
+		// We describe items as opaque objects — the exact keys per
+		// kind are documented in stats.SubCondition; the FE reads
+		// discriminated fields on `kind`.
+		arr := openapi3.NewArraySchema()
+		arr.Items = &openapi3.SchemaRef{Value: openapi3.NewObjectSchema()}
+		s.Properties = openapi3.Schemas{
+			"hit":            &openapi3.SchemaRef{Value: openapi3.NewBoolSchema()},
+			"progress":       &openapi3.SchemaRef{Value: openapi3.NewFloat64Schema()},
+			"sub_conditions": &openapi3.SchemaRef{Value: arr},
+		}
+		s.Required = []string{"hit", "progress", "sub_conditions"}
+		return s
+	}
+	batchProgressSchema := func() *openapi3.Schema {
+		s := openapi3.NewObjectSchema()
+		mp := openapi3.NewObjectSchema()
+		mp.AdditionalProperties = openapi3.AdditionalProperties{Schema: &openapi3.SchemaRef{Value: goalProgressSchema()}}
+		s.Properties = openapi3.Schemas{"progress": &openapi3.SchemaRef{Value: mp}}
+		s.Required = []string{"progress"}
+		return s
+	}
+	goalCreateSchema := func() *openapi3.Schema {
+		s := openapi3.NewObjectSchema()
+		s.Properties = openapi3.Schemas{
+			"name":        &openapi3.SchemaRef{Value: openapi3.NewStringSchema()},
+			"description": &openapi3.SchemaRef{Value: openapi3.NewStringSchema()},
+			"spec":        &openapi3.SchemaRef{Value: openapi3.NewObjectSchema()},
+		}
+		s.Required = []string{"name", "spec"}
+		return s
+	}
+	goalPatchSchema := func() *openapi3.Schema {
+		s := openapi3.NewObjectSchema()
+		s.Properties = openapi3.Schemas{
+			"name":        &openapi3.SchemaRef{Value: openapi3.NewStringSchema()},
+			"description": &openapi3.SchemaRef{Value: openapi3.NewStringSchema()},
+			"spec":        &openapi3.SchemaRef{Value: openapi3.NewObjectSchema()},
+			"enabled":     &openapi3.SchemaRef{Value: openapi3.NewBoolSchema()},
+		}
+		return s
+	}
+	toggleSchema := func() *openapi3.Schema {
+		s := openapi3.NewObjectSchema()
+		s.Properties = openapi3.Schemas{"enabled": &openapi3.SchemaRef{Value: openapi3.NewBoolSchema()}}
+		return s
+	}
+
+	doc.AddOperation("/api/v1/users/current/goals", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagGoals}, Summary: "List the caller's goals",
+			Description: "Newest first. Every goal row carries its spec (opaque JSONB), enabled flag, and last cached progress (may be null when the cache is empty)."}
+		setStatus(op, http.StatusOK, rInline("{goals:[Goal]}.", goalsListEnvelope()))
+		stdErrors(op, "401", "403", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/current/goals", "POST", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagGoals}, Summary: "Create a goal",
+			Description: "Body: {name, description?, spec}. Spec is validated strictly (kind/axis whitelists, non-negative numeric fields, recursion depth <= 5). Duplicate (owner, name) returns 409."}
+		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{
+			Required: true, Description: "{name, description?, spec}.",
+			Content: openapi3.NewContentWithJSONSchema(goalCreateSchema()),
+		}}
+		setStatus(op, http.StatusOK, rInline("{goal:Goal}.", goalEnvelope()))
+		stdErrors(op, "400", "401", "403", "409", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/current/goals/progress", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagGoals}, Summary: "Batched progress for every enabled goal",
+			Description: "One round trip serves every dashboard tile — the FE calls this once per dashboard render. Disabled goals are omitted from the map. Each per-goal Progress respects the same 60s stale-while-revalidate cache the per-id endpoint uses."}
+		setStatus(op, http.StatusOK, rInline("{progress: {id: Progress}}.", batchProgressSchema()))
+		stdErrors(op, "401", "403", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/current/goals/{id}", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagGoals}, Summary: "Get one goal",
+			Description: "Cross-owner id returns 404 (never 403 — no oracle).",
+			Parameters:  openapi3.Parameters{pathParamStr("id", "Goal UUID.")}}
+		setStatus(op, http.StatusOK, rInline("{goal:Goal}.", goalEnvelope()))
+		stdErrors(op, "401", "403", "404", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/current/goals/{id}", "PATCH", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagGoals}, Summary: "Update fields on a goal",
+			Description: "Only supplied fields are written. A spec write revalidates the tree and clears the cached progress atomically. Duplicate (owner, name) on rename returns 409.",
+			Parameters:  openapi3.Parameters{pathParamStr("id", "Goal UUID.")}}
+		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{
+			Required: true, Description: "Any subset of {name, description, spec, enabled}.",
+			Content: openapi3.NewContentWithJSONSchema(goalPatchSchema()),
+		}}
+		setStatus(op, http.StatusOK, rInline("{goal:Goal}.", goalEnvelope()))
+		stdErrors(op, "400", "401", "403", "404", "409", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/current/goals/{id}", "DELETE", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagGoals}, Summary: "Delete a goal",
+			Parameters: openapi3.Parameters{pathParamStr("id", "Goal UUID.")}}
+		setStatus(op, http.StatusNoContent, noContentRef())
+		stdErrors(op, "401", "403", "404", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/current/goals/{id}/toggle", "POST", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagGoals}, Summary: "Pause / resume a goal",
+			Description: "Body optional — omit to flip, {\"enabled\":bool} to set an exact state (idempotent).",
+			Parameters:  openapi3.Parameters{pathParamStr("id", "Goal UUID.")}}
+		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{
+			Required: false, Description: "{enabled?}.",
+			Content: openapi3.NewContentWithJSONSchema(toggleSchema()),
+		}}
+		setStatus(op, http.StatusOK, rInline("{enabled:bool}.", toggleSchema()))
+		stdErrors(op, "401", "403", "404", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/current/goals/{id}/progress", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagGoals}, Summary: "Compute (or serve cached) progress for one goal",
+			Description: "60s stale-while-revalidate cache. A spec change or a heartbeat ingest clears the cache eagerly so the next read is fresh.",
+			Parameters:  openapi3.Parameters{pathParamStr("id", "Goal UUID.")}}
+		setStatus(op, http.StatusOK, rInline("Progress {hit, progress:0..1, sub_conditions:[...]}.", goalProgressSchema()))
+		stdErrors(op, "400", "401", "403", "404", "500")
 		return op
 	}())
 

@@ -100,6 +100,24 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	registerImportRoutes(e, h)
 	registerLogRoutes(e, h)
 	registerMetaRoutes(e, h)
+	registerGoalRoutes(e, h)
+}
+
+// registerGoalRoutes: user-defined composite goals (gaka-wpb). CRUD +
+// toggle + per-goal progress + batched progress (one round trip for
+// every enabled goal, used by dashboards). Owner-scoped; cross-owner
+// id access returns 404, never 403 (no oracle). The /goals/progress
+// batched endpoint is registered BEFORE /goals/:id so it isn't
+// shadowed by the param route (same pattern as spaces/preview).
+func registerGoalRoutes(e *echo.Echo, h *handler.Handler) {
+	e.GET("/api/v1/users/current/goals", h.ListGoals)
+	e.POST("/api/v1/users/current/goals", h.CreateGoal)
+	e.GET("/api/v1/users/current/goals/progress", h.GetAllGoalProgress)
+	e.GET("/api/v1/users/current/goals/:id", h.GetGoal)
+	e.PATCH("/api/v1/users/current/goals/:id", h.UpdateGoal)
+	e.DELETE("/api/v1/users/current/goals/:id", h.DeleteGoal)
+	e.POST("/api/v1/users/current/goals/:id/toggle", h.ToggleGoal)
+	e.GET("/api/v1/users/current/goals/:id/progress", h.GetGoalProgress)
 }
 
 // registerMetaRoutes: build/version disclosure + embedded changelog + the
