@@ -1,0 +1,49 @@
+---
+# ExternalName-alternative: a headless Service + hand-written Endpoints
+# resource that points cluster-internal DNS `comfyui-shim.boomtime.svc.cluster.local`
+# at the operator's Mac on the LAN (catalystM5.localdomain / 192.168.1.33)
+# where mac-sdlc-node's comfyui-shim binds `*:8012`.
+#
+# Why NOT ExternalName: catalystM5.localdomain is macOS mDNS/Bonjour and
+# does NOT resolve from inside Talos pods (mDNS isn't bridged into cluster
+# DNS). A hand-written Endpoints matching an in-cluster Service by name is
+# the standard "external endpoint as a first-class Service" pattern.
+#
+# Reachability assumption: the Talos node has an L3 route + no firewall
+# blocking outbound to 192.168.1.33:8012. If the Mac IP changes (DHCP
+# lease flip), edit the `ip:` here and commit — Argo reconciles. Consider
+# a DHCP reservation on the router to pin it.
+#
+# Runtime failure mode: if the Mac is off / shim is down, the label-images
+# worker inside boomtime logs a WARN and keeps polling; the feature is
+# best-effort by design, no image = glyph fallback in the UI.
+apiVersion: v1
+kind: Service
+metadata:
+  name: comfyui-shim
+  labels:
+    app.kubernetes.io/name: comfyui-shim
+    app.kubernetes.io/part-of: boomtime
+spec:
+  # No selector — Kubernetes will NOT auto-create Endpoints from pod labels;
+  # it uses the hand-written Endpoints below matched by name+namespace.
+  ports:
+    - name: http
+      port: 8012
+      targetPort: 8012
+      protocol: TCP
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: comfyui-shim
+  labels:
+    app.kubernetes.io/name: comfyui-shim
+    app.kubernetes.io/part-of: boomtime
+subsets:
+  - addresses:
+      - ip: 192.168.1.33  # catalystM5.localdomain — operator's Mac on LAN
+    ports:
+      - name: http
+        port: 8012
+        protocol: TCP
