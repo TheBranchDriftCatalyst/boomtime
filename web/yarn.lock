@@ -1476,10 +1476,10 @@
   resolved "https://registry.yarnpkg.com/@testing-library/user-event/-/user-event-14.6.1.tgz#13e09a32d7a8b7060fe38304788ebf4197cd2149"
   integrity sha512-vq7fv0rnt+QTXgPxr5Hjc210p6YKq2kmdziLgnsZGgLJ9e6VAShx1pACLuRjd/AS/sr7phAR58OIIpf0LlmQNw==
 
-"@thebranchdriftcatalyst/catalyst-ui@^2.5.0":
-  version "2.5.0"
-  resolved "https://registry.yarnpkg.com/@thebranchdriftcatalyst/catalyst-ui/-/catalyst-ui-2.5.0.tgz#7c18dae4ebe491d51b86cb88c220a58c40646be0"
-  integrity sha512-P+jiHl0R6me0EmpBl6T25MDrhe80a2sA3xgp+kdI9WQVoruCU8oFrOWnMlZ78Hesx3wfY3KOQxsu4UnNZjpokQ==
+"@thebranchdriftcatalyst/catalyst-ui@^2.5.2":
+  version "2.5.2"
+  resolved "https://registry.yarnpkg.com/@thebranchdriftcatalyst/catalyst-ui/-/catalyst-ui-2.5.2.tgz#b87018be1dd0e0d0732b31aff1403ce2b2cb2e3d"
+  integrity sha512-UUHFFaruOtRbHJJU+W4aeadNU0G1bro8mFYV4jzcV6pQDHuIb9pLEpHC2f8ePQV75ilIm4T6NiBjy9FmYXCHDQ==
   dependencies:
     "@hookform/resolvers" "^5.2.2"
     "@icons-pack/react-simple-icons" "^13.8.0"
@@ -1511,6 +1511,7 @@
     i18next "^25.6.0"
     js-yaml "^4.1.0"
     lucide-react "^0.544.0"
+    qrcode.react "^4.2.0"
     react-ga4 "^2.1.0"
     react-hook-form "^7.51.5"
     react-i18next "^16.0.0"
@@ -4641,6 +4642,11 @@ punycode@^2.1.0, punycode@^2.3.1:
   version "2.3.1"
   resolved "https://registry.yarnpkg.com/punycode/-/punycode-2.3.1.tgz#027422e2faec0b25e1549c3e1bd8309b9133b6e5"
   integrity sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==
+
+qrcode.react@^4.2.0:
+  version "4.2.0"
+  resolved "https://registry.yarnpkg.com/qrcode.react/-/qrcode.react-4.2.0.tgz#1bce8363f348197d145c0da640929a24c83cbca3"
+  integrity sha512-QpgqWi8rD9DsS9EP3z7BT+5lY5SFhsqGjpgW5DY/i3mK4M9DTBNz3ErMi8BWYEfI3L0d8GIbGmcdFAS1uIRGjA==
 
 qs@^6.14.1:
   version "6.15.3"
