@@ -116,3 +116,16 @@ func (d *DB) TruncateLabelImages(ctx context.Context) error {
 	_, err := d.Pool.Exec(ctx, `DELETE FROM label_images`)
 	return err
 }
+
+// DeleteLabelImages batches DeleteLabelImage over a slice. One round trip
+// instead of len(ids) — the per-id loop tripped the N+1 detector on the
+// admin regenerate path (gaka-myv) where ~70 ids come in per click.
+// Empty slice is a no-op. Nil-safe.
+func (d *DB) DeleteLabelImages(ctx context.Context, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	_, err := d.Pool.Exec(ctx,
+		`DELETE FROM label_images WHERE label_id = ANY($1::text[])`, ids)
+	return err
+}

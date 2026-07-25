@@ -43,6 +43,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
@@ -149,28 +150,49 @@ func (h *Handler) AdminLabelImagesRegenerate(c *echo.Context) error {
 		return respondErr(c, apierr.BadRequest("nothing to regenerate — verify `ids` match the `entries` you sent"))
 	}
 
-	ctx := c.Request().Context()
+	// The DELETE step is fast + needs to happen synchronously so a follow-up
+	// GET /admin/label-images shows the correct empty count while regen runs.
+	// Batched now (single query instead of len(toRun) round trips — was tripping
+	// the N+1 detector at ~70 rows per click).
+	reqCtx := c.Request().Context()
 	if req.All && req.Truncate {
-		if err := h.DB.TruncateLabelImages(ctx); err != nil {
+		if err := h.DB.TruncateLabelImages(reqCtx); err != nil {
 			return h.internalErr(c, "label images truncate failed", err)
 		}
 	} else {
-		// Even in per-id mode, wipe just the affected rows first so the
-		// worker's Save overwrites cleanly and generated_at refreshes.
-		for _, e := range toRun {
-			if err := h.DB.DeleteLabelImage(ctx, e.ID); err != nil {
-				return h.internalErr(c, "label image delete failed", err)
-			}
+		ids := make([]string, len(toRun))
+		for i, e := range toRun {
+			ids[i] = e.ID
+		}
+		if err := h.DB.DeleteLabelImages(reqCtx, ids); err != nil {
+			return h.internalErr(c, "label images batch delete failed", err)
 		}
 	}
 
-	gen, failed, err := h.LabelImagesWorker.RegenerateList(ctx, toRun)
-	if err != nil {
-		return h.internalErr(c, "label images regenerate failed", err)
-	}
-	return c.JSON(http.StatusOK, map[string]any{
-		"generated": gen,
-		"failed":    failed,
-		"requested": len(toRun),
+	// Async generation. Chroma-HD / SDXL Illustrious take ~20-30s per image;
+	// a full 68-label regenerate is ~30+ minutes. No HTTP client / reverse
+	// proxy holds a connection open that long — the earlier synchronous
+	// version got context-canceled at 125s and dropped a 500 back to the FE
+	// even though prior images had saved fine. Detach from the request
+	// context so shutting the browser tab doesn't kill the run.
+	//
+	// FE polls GET /admin/label-images (count field) to observe progress.
+	// Server logs stream per-label status via labelimages worker at INFO.
+	bgCtx := context.Background()
+	go func() {
+		gen, failed, err := h.LabelImagesWorker.RegenerateList(bgCtx, toRun)
+		if err != nil {
+			h.Logger.Error("label images regenerate background run failed",
+				"err", err, "requested", len(toRun), "generated", gen, "failed", failed)
+			return
+		}
+		h.Logger.Info("label images regenerate background run complete",
+			"requested", len(toRun), "generated", gen, "failed", failed)
+	}()
+
+	return c.JSON(http.StatusAccepted, map[string]any{
+		"queued":    len(toRun),
+		"async":     true,
+		"note":      "generation runs in background; poll GET /api/v1/admin/label-images (count) or watch server logs (labelimages: generating / saved)",
 	})
 }
