@@ -85,7 +85,7 @@ type Config struct {
 	ComfyUIShimURL string
 
 	// ComfyUIModel is the shim pipeline name to pass in the `model` field
-	// on every generation request. Default: sdxl_illustrious_xl (the
+	// on every generation request. Default: sdxl-illustrious-xl (the
 	// anime/emblem-friendly SDXL derivative — matches the memeification
 	// aesthetic). Operators iterate by changing this env var and rerunning
 	// `boomtime label-images regenerate --all` to swap the whole set.
@@ -225,7 +225,7 @@ func Load() *Config {
 		// FeatureLabelImages / ComfyUIShimURL / ComfyUIModel fields above.
 		FeatureLabelImages: getEnvBool("BOOM_FEATURE_LABEL_IMAGES", false),
 		ComfyUIShimURL:     getEnv("BOOM_COMFYUI_SHIM_URL", ""),
-		ComfyUIModel:       getEnv("BOOM_COMFYUI_MODEL", "sdxl_illustrious_xl"),
+		ComfyUIModel:       getEnv("BOOM_COMFYUI_MODEL", "sdxl-illustrious-xl"),
 		AdminUsers:         parseAdminUsers(getEnv("BOOM_ADMIN_USERS", "")),
 
 		// gaka-b5x.1: cookie Secure flag. Default = "true in prod, false in

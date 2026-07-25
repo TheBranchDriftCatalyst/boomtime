@@ -14,4 +14,4 @@ metadata:
 data:
   BOOM_FEATURE_LABEL_IMAGES: "on"
   BOOM_COMFYUI_SHIM_URL: "http://comfyui-shim:8012"
-  BOOM_COMFYUI_MODEL: "sdxl_illustrious_xl"
+  BOOM_COMFYUI_MODEL: "sdxl-illustrious-xl"
