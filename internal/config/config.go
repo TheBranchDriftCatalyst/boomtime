@@ -68,6 +68,29 @@ type Config struct {
 	RemoteWrite *RemoteWriteConfig
 	GithubToken string
 
+	// FeatureLabelImages is the master switch for the ComfyUI-generated label
+	// archetype images (gaka-myv). Requires BOTH FeatureLabelImages=on AND a
+	// non-empty ComfyUIShimURL — either missing means the feature is off,
+	// including the startup image-generation worker and any regenerate CLI
+	// probes. Public /api/v1/labels/:id/image still serves any rows already
+	// in the DB even when the flag is later toggled off (the feature gate
+	// only guards writes/generation, not reads).
+	FeatureLabelImages bool
+
+	// ComfyUIShimURL is the base URL of the comfyui-shim (OpenAI-shaped
+	// /v1/images/generations). Empty = feature auto-disabled EVEN IF
+	// FeatureLabelImages=on; a WARN is logged at startup in that case so
+	// the operator notices the misconfig instead of silently getting no
+	// images. See internal/comfyui/client.go for the request contract.
+	ComfyUIShimURL string
+
+	// ComfyUIModel is the shim pipeline name to pass in the `model` field
+	// on every generation request. Default: sdxl_illustrious_xl (the
+	// anime/emblem-friendly SDXL derivative — matches the memeification
+	// aesthetic). Operators iterate by changing this env var and rerunning
+	// `boomtime label-images regenerate --all` to swap the whole set.
+	ComfyUIModel string
+
 	// WakatimeAPIKey is the server-configured key used to import history from
 	// wakatime.com when the request body omits apiToken. Sourced from
 	// WAKATIME_API_KEY, falling back to BOOM_REMOTE_WRITE_TOKEN. Never exposed.
@@ -190,6 +213,13 @@ func Load() *Config {
 
 		GithubToken: getEnv("GITHUB_TOKEN", ""),
 
+		// gaka-myv: ComfyUI-generated label archetype images. Feature gate
+		// requires BOTH flag-on AND a non-empty shim URL. See docs on the
+		// FeatureLabelImages / ComfyUIShimURL / ComfyUIModel fields above.
+		FeatureLabelImages: getEnvBool("BOOM_FEATURE_LABEL_IMAGES", false),
+		ComfyUIShimURL:     getEnv("BOOM_COMFYUI_SHIM_URL", ""),
+		ComfyUIModel:       getEnv("BOOM_COMFYUI_MODEL", "sdxl_illustrious_xl"),
+
 		// gaka-b5x.1: cookie Secure flag. Default = "true in prod, false in
 		// dev". BOOM_COOKIE_SECURE=true|false forces either mode explicitly.
 		CookieSecure: getEnvBool("BOOM_COOKIE_SECURE", isProdEnvName(env)),
@@ -226,4 +256,13 @@ func (c *Config) DatabaseURL() string {
 // IsDev reports whether the server runs in development mode (text logs).
 func (c *Config) IsDev() bool {
 	return strings.EqualFold(c.Env, "dev")
+}
+
+// LabelImagesEnabled reports whether the label-images feature (gaka-myv) is
+// operationally on: BOTH the master flag must be set AND a shim URL must be
+// configured. Callers can key any generation-side branch off this single
+// method — reads (GET /api/v1/labels/:id/image) do NOT check this so already-
+// generated images keep serving after a flag flip.
+func (c *Config) LabelImagesEnabled() bool {
+	return c.FeatureLabelImages && strings.TrimSpace(c.ComfyUIShimURL) != ""
 }
