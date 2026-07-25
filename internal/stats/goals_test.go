@@ -253,3 +253,242 @@ func TestSpecShallowFingerprint(t *testing.T) {
 		t.Errorf("group fingerprint = %q, want all", got)
 	}
 }
+
+// TestCompareOp_EqualUnder plugs the missing under-target branch of
+// the == operator. The existing test only covers exact (60==60), over
+// (90 vs 60), and wildly off (6000 vs 60) — the SYMMETRIC under-target
+// case (30 vs 60 → diff=30, prog=0.5) wasn't asserted, so a change
+// that dropped the abs() on `diff` would still pass the wildly-off
+// case but fail here with a negative or clamped-to-zero progress.
+func TestCompareOp_EqualUnder(t *testing.T) {
+	// current<target: same diff magnitude as the over-target test.
+	if hit, prog := compareOp("==", 30, 60); hit || prog != 0.5 {
+		t.Errorf("== under-target: hit=%v prog=%v (want false, 0.5 — symmetric around target)", hit, prog)
+	}
+	// The absolute-value contract is what makes this test meaningful.
+	// Without abs(), diff would be -30 and prog would be 1 - (-30/60) =
+	// 1.5, clamped to 1 → the test would fail claiming prog==1.
+}
+
+// TestCompareOp_EqualTargetZero fills the target==0 branch of the ==
+// operator (existing tests only cover >= and <= at target=0). Only
+// current==0 satisfies "exactly zero"; anything else must be false
+// with a well-defined progress (max64(target,1) avoids DivByZero).
+func TestCompareOp_EqualTargetZero(t *testing.T) {
+	if hit, prog := compareOp("==", 0, 0); !hit || prog != 1 {
+		t.Errorf("== 0==0: hit=%v prog=%v (want true, 1)", hit, prog)
+	}
+	// current=1 vs target=0: diff=1, max64(0,1)=1, prog=1-1/1=0.
+	if hit, prog := compareOp("==", 1, 0); hit || prog != 0 {
+		t.Errorf("== 1!=0: hit=%v prog=%v (want false, 0)", hit, prog)
+	}
+}
+
+// TestCompareOp_UnknownOp exercises the default branch of compareOp
+// (validator gates known ops upstream, but the evaluator's belt-and-
+// suspenders default MUST return (false, 0) — a bug that returned
+// (true, 1) on an unknown op would silently "hit" every unrecognized
+// operator.
+func TestCompareOp_UnknownOp(t *testing.T) {
+	if hit, prog := compareOp("~=", 60, 60); hit || prog != 0 {
+		t.Errorf("unknown op: hit=%v prog=%v (want false, 0)", hit, prog)
+	}
+}
+
+// TestWindowRange_UnknownReturnsZeroSpan pins the fallback branch: an
+// unknown window silently returns a zero-length range (start==end==
+// today). Validator upstream rejects unknown windows so this branch
+// shouldn't fire in practice — but if it EVER does (bypass, direct
+// invocation), we want a zero-result query rather than a giant scan.
+func TestWindowRange_UnknownReturnsZeroSpan(t *testing.T) {
+	anchor := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	s, e := windowRange(anchor, "quarter") // not a valid window
+	if !s.Equal(e) {
+		t.Errorf("unknown window: span %v, want zero-length (start==end)", e.Sub(s))
+	}
+	// Should anchor to "today" (2026-07-15), NOT epoch.
+	if s.Year() != 2026 || s.Month() != 7 || s.Day() != 15 {
+		t.Errorf("unknown window fallback: got %v, want anchor date 2026-07-15", s)
+	}
+}
+
+// TestRewriteWindowToDay_NestedStreak proves the streak node's window
+// is NOT rewritten by rewriteWindowToDay (streak's recurrence is
+// day-by-day inherently — rewriting it to "day" would corrupt the
+// nested streak's semantics). A regression that added a
+// `case "streak": dup.Window = "day"` branch would show up here.
+func TestRewriteWindowToDay_NestedStreak(t *testing.T) {
+	// active_days inside a nested streak: window MUST be preserved on
+	// the streak node itself (streak has no Window; only its child does).
+	src := Predicate{
+		Kind:    "streak",
+		MinDays: 3,
+		Condition: &Predicate{
+			Kind: "streak", MinDays: 2,
+			Condition: &Predicate{
+				Kind: "time", Axis: "language", Op: ">=",
+				TargetSeconds: 60, Window: "week",
+			},
+		},
+	}
+	out := rewriteWindowToDay(&src)
+	if out.Kind != "streak" || out.Condition == nil {
+		t.Fatalf("outer streak structure lost: %+v", out)
+	}
+	// Inner streak: window untouched (no window on streak itself);
+	// its condition (deepest leaf) MUST be rewritten to "day".
+	inner := out.Condition
+	if inner.Kind != "streak" || inner.Condition == nil {
+		t.Fatalf("nested streak structure lost: %+v", inner)
+	}
+	// Deepest leaf was "week" — rewriteWindowToDay must NOT descend
+	// through streak (streak's own window controls its recurrence, not
+	// its children's). So the leaf REMAINS "week" — this is the
+	// documented contract in rewriteWindowToDay.
+	if inner.Condition.Window != "week" {
+		t.Errorf("rewriteWindowToDay descended through streak: nested leaf window = %q, want %q (streak owns its own recurrence)",
+			inner.Condition.Window, "week")
+	}
+}
+
+// TestRewriteWindowToDay_Not descends into `not`'s child. A regression
+// that forgot the not branch would leave the child's window un-rewritten
+// and streak wrapping-not-wrapping-time would evaluate as the outer
+// author's window (say, week) instead of day.
+func TestRewriteWindowToDay_Not(t *testing.T) {
+	src := Predicate{
+		Kind: "not",
+		Of: []Predicate{{
+			Kind: "time", Axis: "language", Op: ">=",
+			TargetSeconds: 60, Window: "week",
+		}},
+	}
+	out := rewriteWindowToDay(&src)
+	if out.Kind != "not" || len(out.Of) != 1 {
+		t.Fatalf("not structure lost: %+v", out)
+	}
+	if out.Of[0].Window != "day" {
+		t.Errorf("not child window not rewritten: %q", out.Of[0].Window)
+	}
+}
+
+// TestClamp01_Boundaries pins clamp01 at the exact edges the evaluator
+// depends on. If a future refactor swaps `<` for `<=` (or vice versa),
+// the test catches it — the interior boundary values (0 and 1) MUST
+// pass through unchanged.
+func TestClamp01_Boundaries(t *testing.T) {
+	cases := []struct {
+		in, want float64
+	}{
+		{-0.5, 0}, {-0.001, 0}, {0, 0}, {0.5, 0.5}, {1, 1}, {1.001, 1}, {99, 1},
+	}
+	for _, c := range cases {
+		if got := clamp01(c.in); got != c.want {
+			t.Errorf("clamp01(%v) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}
+
+// TestValidateSpec_NestedAllAxisPropagates ensures the validator
+// recurses through every child of `all` — a bug that only checked the
+// first child would fail to catch an unknown axis buried in position 2.
+func TestValidateSpec_NestedAllAxisPropagates(t *testing.T) {
+	// First child valid; second child has an unknown axis. If the
+	// validator short-circuits after the first child, this passes
+	// silently. The failure of this test proves recursion into
+	// EVERY sibling.
+	bad := `{"kind":"all","of":[
+		{"kind":"time","axis":"language","value":null,"op":">=","target_seconds":1,"window":"week"},
+		{"kind":"time","axis":"chicken","value":null,"op":">=","target_seconds":1,"window":"week"}
+	]}`
+	_, err := ValidateSpec(json.RawMessage(bad))
+	if err == nil {
+		t.Fatalf("expected error on nested bad-axis child, got nil")
+	}
+	if !strings.Contains(err.Error(), "unknown axis") {
+		t.Errorf("err = %v, want to contain 'unknown axis'", err)
+	}
+}
+
+// TestValidateSpec_NotChildValidated makes sure the validator recurses
+// INTO the not predicate's single child. A missing recursion would
+// let an invalid child slip through wrapped in not.
+func TestValidateSpec_NotChildValidated(t *testing.T) {
+	bad := `{"kind":"not","of":[
+		{"kind":"time","axis":"language","value":null,"op":"!=","target_seconds":1,"window":"week"}
+	]}`
+	_, err := ValidateSpec(json.RawMessage(bad))
+	if err == nil {
+		t.Fatalf("not-wraps-bad-op: expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "unknown op") {
+		t.Errorf("err = %v, want to contain 'unknown op'", err)
+	}
+}
+
+// TestValidateSpec_StreakConditionValidated confirms the streak
+// predicate recurses into its condition. A regression that dropped
+// validateNode(p.Condition, ...) would let an invalid streak child
+// through.
+func TestValidateSpec_StreakConditionValidated(t *testing.T) {
+	bad := `{"kind":"streak","min_days":3,"condition":{"kind":"time","axis":"chicken","op":">=","target_seconds":1,"window":"day"}}`
+	_, err := ValidateSpec(json.RawMessage(bad))
+	if err == nil {
+		t.Fatalf("streak-wraps-bad-axis: expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "unknown axis") {
+		t.Errorf("err = %v, want 'unknown axis' in %v", err, err)
+	}
+}
+
+// TestMarshalUnmarshalProgress round-trips a Progress through
+// MarshalProgress → UnmarshalProgress and asserts every field
+// survives. Used by the cache path — corruption here would silently
+// serve wrong percentages after a cache hit.
+func TestMarshalUnmarshalProgress(t *testing.T) {
+	str := "Go"
+	src := &Progress{
+		Hit: true, Progress: 0.75,
+		SubConditions: []SubCondition{
+			{Kind: "time", Axis: "language", Value: &str, Op: ">=",
+				Window: "week", Current: 3600, Target: 7200,
+				Progress: 0.5, Hit: false},
+		},
+	}
+	raw, err := MarshalProgress(src)
+	if err != nil {
+		t.Fatalf("MarshalProgress: %v", err)
+	}
+	back, err := UnmarshalProgress(raw)
+	if err != nil || back == nil {
+		t.Fatalf("UnmarshalProgress: %v back=%v", err, back)
+	}
+	if back.Hit != src.Hit || back.Progress != src.Progress {
+		t.Errorf("hit/progress drift: got %v/%v want %v/%v", back.Hit, back.Progress, src.Hit, src.Progress)
+	}
+	if len(back.SubConditions) != 1 {
+		t.Fatalf("sub len = %d, want 1", len(back.SubConditions))
+	}
+	got := back.SubConditions[0]
+	if got.Current != 3600 || got.Target != 7200 || got.Progress != 0.5 || got.Hit {
+		t.Errorf("sub-condition drift: %+v", got)
+	}
+	if got.Value == nil || *got.Value != "Go" {
+		t.Errorf("value pointer lost: %v", got.Value)
+	}
+}
+
+// TestUnmarshalProgress_EmptyRaw covers the fast-path: an empty raw
+// message means "no cache row" and returns (nil, nil). A regression
+// that treated empty as an error would flood the read path with
+// nuisance errors.
+func TestUnmarshalProgress_EmptyRaw(t *testing.T) {
+	p, err := UnmarshalProgress(nil)
+	if err != nil || p != nil {
+		t.Errorf("nil raw: got p=%v err=%v (want nil, nil)", p, err)
+	}
+	p, err = UnmarshalProgress(json.RawMessage(``))
+	if err != nil || p != nil {
+		t.Errorf("empty raw: got p=%v err=%v (want nil, nil)", p, err)
+	}
+}

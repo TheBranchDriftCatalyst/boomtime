@@ -329,6 +329,363 @@ func TestGoalsDuplicateName(t *testing.T) {
 	}
 }
 
+// TestGoalsUpdateAllPatchFields exercises EVERY branch of the dynamic
+// UPDATE builder — name-only, description-only, enabled-only, and
+// name+description together — so a subtle regression in one branch
+// (wrong column, typo in the SET fragment, missed arg-index bump) is
+// caught. TestGoalsCRUDAndSpecRoundtrip only covers Description; the
+// other three columns' write paths were uncovered.
+//
+// Also anchors the updated_at invariant: any non-empty patch MUST bump
+// updated_at strictly (>= previous). Comment out the
+// `sets = append(sets, "updated_at = now()")` line in UpdateGoal and
+// this test fails on the equality check.
+func TestGoalsUpdateAllPatchFields(t *testing.T) {
+	d := openTestDB(t)
+	ctx := context.Background()
+	fx := newSender(t, d, "goals_patchfields")
+	cleanupGoals(t, d, ctx, fx.Sender())
+
+	desc0 := "initial"
+	g, err := d.CreateGoal(ctx, fx.Sender(), "orig-name", &desc0, json.RawMessage(plantedSpec))
+	if err != nil || g == nil {
+		t.Fatalf("CreateGoal: %v", err)
+	}
+	origUpdatedAt := g.UpdatedAt
+
+	// Name-only PATCH. The updated row's name must change to the exact
+	// value we wrote; every OTHER column must be unchanged.
+	newName := "renamed-goal"
+	g2, err := d.UpdateGoal(ctx, fx.Sender(), g.ID, GoalPatch{Name: &newName})
+	if err != nil || g2 == nil {
+		t.Fatalf("UpdateGoal(name): %v g2=%v", err, g2)
+	}
+	if g2.Name != newName {
+		t.Errorf("name = %q, want %q", g2.Name, newName)
+	}
+	if g2.Description == nil || *g2.Description != desc0 {
+		t.Errorf("description drifted on name-only patch: %v", g2.Description)
+	}
+	if !g2.Enabled {
+		t.Errorf("enabled flipped on name-only patch: got false")
+	}
+	if !g2.UpdatedAt.After(origUpdatedAt) {
+		t.Errorf("updated_at didn't tick on name patch: %v -> %v", origUpdatedAt, g2.UpdatedAt)
+	}
+	if diff := semanticGoalsDiff(plantedSpec, string(g2.Spec)); diff != "" {
+		t.Errorf("spec drifted on name-only patch: %s", diff)
+	}
+
+	// Enabled-only PATCH — sets enabled=false. Read-back reflects it and
+	// the DB shows the exact boolean we wrote.
+	falseVal := false
+	g3, err := d.UpdateGoal(ctx, fx.Sender(), g.ID, GoalPatch{Enabled: &falseVal})
+	if err != nil || g3 == nil {
+		t.Fatalf("UpdateGoal(enabled): %v g3=%v", err, g3)
+	}
+	if g3.Enabled {
+		t.Errorf("enabled not written: still true after Enabled=&false patch")
+	}
+	if g3.Name != newName {
+		t.Errorf("name drifted on enabled-only patch: %q", g3.Name)
+	}
+
+	// Description-only PATCH re-established (make sure it survives the
+	// prior mutations).
+	desc2 := "second desc"
+	g4, err := d.UpdateGoal(ctx, fx.Sender(), g.ID, GoalPatch{Description: &desc2})
+	if err != nil || g4 == nil {
+		t.Fatalf("UpdateGoal(desc): %v g4=%v", err, g4)
+	}
+	if g4.Description == nil || *g4.Description != desc2 {
+		t.Errorf("description = %v, want %q", g4.Description, desc2)
+	}
+	if g4.Enabled { // should still be false from prior patch
+		t.Errorf("enabled unexpectedly true after desc-only patch")
+	}
+
+	// Combined name+description PATCH — two fields at once exercises the
+	// arg-index-bump path in the builder. A bug that reused the same
+	// $N would send "renamed" to BOTH columns and the assertion below
+	// (different values per column) would fail.
+	nName := "combined"
+	nDesc := "combined desc"
+	g5, err := d.UpdateGoal(ctx, fx.Sender(), g.ID, GoalPatch{Name: &nName, Description: &nDesc})
+	if err != nil || g5 == nil {
+		t.Fatalf("UpdateGoal(name+desc): %v g5=%v", err, g5)
+	}
+	if g5.Name != nName {
+		t.Errorf("name = %q, want %q", g5.Name, nName)
+	}
+	if g5.Description == nil || *g5.Description != nDesc {
+		t.Errorf("desc = %v, want %q", g5.Description, nDesc)
+	}
+}
+
+// TestGoalsUpdateNoOpPatch verifies the empty-patch branch: an
+// UpdateGoal with zero non-nil fields returns the CURRENT row unchanged
+// (idempotent GET-like behavior). Load-bearing: the branch at
+// `len(sets) == 0` returns d.GetGoal — if a future refactor turned
+// that into "always emit `updated_at = now()`" (an UPDATE-with-no-SET
+// syntax error), this test would fail on either the error or the
+// updated_at bump.
+func TestGoalsUpdateNoOpPatch(t *testing.T) {
+	d := openTestDB(t)
+	ctx := context.Background()
+	fx := newSender(t, d, "goals_noop")
+	cleanupGoals(t, d, ctx, fx.Sender())
+
+	desc := "keep me"
+	g, err := d.CreateGoal(ctx, fx.Sender(), "noop", &desc, json.RawMessage(plantedSpec))
+	if err != nil || g == nil {
+		t.Fatalf("CreateGoal: %v", err)
+	}
+	origUpdatedAt := g.UpdatedAt
+
+	// Zero-field patch — expect the same row back (updated_at NOT bumped).
+	back, err := d.UpdateGoal(ctx, fx.Sender(), g.ID, GoalPatch{})
+	if err != nil || back == nil {
+		t.Fatalf("UpdateGoal(empty): %v back=%v", err, back)
+	}
+	if back.ID != g.ID {
+		t.Errorf("id changed on no-op patch: %s -> %s", g.ID, back.ID)
+	}
+	if !back.UpdatedAt.Equal(origUpdatedAt) {
+		t.Errorf("no-op patch bumped updated_at: %v -> %v (want unchanged)", origUpdatedAt, back.UpdatedAt)
+	}
+	if back.Description == nil || *back.Description != desc {
+		t.Errorf("description drifted on no-op patch: %v", back.Description)
+	}
+}
+
+// TestGoalsUpdateMissingID pins the not-found sentinel path for
+// UpdateGoal / DeleteGoal on an id that doesn't exist AT ALL (as
+// opposed to belonging to another user — that's TestGoalsOwnerScoping).
+// The sentinel MUST be (nil, nil) for UpdateGoal and (false, nil) for
+// DeleteGoal — never a distinguishable error and never a leak.
+func TestGoalsUpdateMissingID(t *testing.T) {
+	d := openTestDB(t)
+	ctx := context.Background()
+	fx := newSender(t, d, "goals_missing")
+	cleanupGoals(t, d, ctx, fx.Sender())
+
+	// UUID that doesn't exist. UpdateGoal must return (nil, nil).
+	fakeID := "00000000-0000-0000-0000-000000000000"
+	nm := "ghost"
+	got, err := d.UpdateGoal(ctx, fx.Sender(), fakeID, GoalPatch{Name: &nm})
+	if err != nil {
+		t.Errorf("UpdateGoal(missing id): unexpected err %v", err)
+	}
+	if got != nil {
+		t.Errorf("UpdateGoal(missing id) returned non-nil: %+v", got)
+	}
+
+	// DeleteGoal must return (false, nil).
+	ok, err := d.DeleteGoal(ctx, fx.Sender(), fakeID)
+	if err != nil || ok {
+		t.Errorf("DeleteGoal(missing id): err=%v ok=%v (want false, nil)", err, ok)
+	}
+
+	// ToggleGoal (flip and exact-set) must return (_, false, nil).
+	_, found, err := d.ToggleGoal(ctx, fx.Sender(), fakeID, nil)
+	if err != nil || found {
+		t.Errorf("ToggleGoal(missing id, flip): err=%v found=%v (want false, nil)", err, found)
+	}
+	setTrue := true
+	_, found, err = d.ToggleGoal(ctx, fx.Sender(), fakeID, &setTrue)
+	if err != nil || found {
+		t.Errorf("ToggleGoal(missing id, exact-set): err=%v found=%v (want false, nil)", err, found)
+	}
+
+	// GetGoal must return (nil, nil).
+	g, err := d.GetGoal(ctx, fx.Sender(), fakeID)
+	if err != nil || g != nil {
+		t.Errorf("GetGoal(missing id): err=%v g=%v (want nil, nil)", err, g)
+	}
+}
+
+// TestGoalsListOwnerScoping is the missing owner-scoping check on the
+// LIST path (TestGoalsOwnerScoping only covered Get/Update/Delete/
+// Toggle). Alice's ListGoals must return ONLY her rows even when bob
+// has goals in the same DB — a WHERE-clause typo dropping `owner = $1`
+// would cause a cross-owner leak, and this test asserts row counts +
+// exact ids to catch that.
+func TestGoalsListOwnerScoping(t *testing.T) {
+	d := openTestDB(t)
+	ctx := context.Background()
+	alice := newSender(t, d, "goals_list_a")
+	bob := newSender(t, d, "goals_list_b")
+	cleanupGoals(t, d, ctx, alice.Sender())
+	cleanupGoals(t, d, ctx, bob.Sender())
+
+	// Alice: 2 goals.
+	a1, _ := d.CreateGoal(ctx, alice.Sender(), "a1", nil, json.RawMessage(plantedSpec))
+	a2, _ := d.CreateGoal(ctx, alice.Sender(), "a2", nil, json.RawMessage(plantedSpec))
+	// Bob: 3 goals.
+	b1, _ := d.CreateGoal(ctx, bob.Sender(), "b1", nil, json.RawMessage(plantedSpec))
+	b2, _ := d.CreateGoal(ctx, bob.Sender(), "b2", nil, json.RawMessage(plantedSpec))
+	b3, _ := d.CreateGoal(ctx, bob.Sender(), "b3", nil, json.RawMessage(plantedSpec))
+	if a1 == nil || a2 == nil || b1 == nil || b2 == nil || b3 == nil {
+		t.Fatalf("seed goals failed")
+	}
+
+	// Alice's list is exactly {a1, a2}. Bob's is exactly {b1, b2, b3}.
+	aList, err := d.ListGoals(ctx, alice.Sender())
+	if err != nil {
+		t.Fatalf("ListGoals(alice): %v", err)
+	}
+	if len(aList) != 2 {
+		t.Errorf("alice list len = %d, want 2 (owner filter dropped?)", len(aList))
+	}
+	aIDs := map[string]bool{}
+	for _, g := range aList {
+		aIDs[g.ID] = true
+		if g.Owner != alice.Sender() {
+			t.Errorf("alice list contains cross-owner row: owner=%s id=%s", g.Owner, g.ID)
+		}
+	}
+	if !aIDs[a1.ID] || !aIDs[a2.ID] {
+		t.Errorf("alice's own goals missing from her list: got ids=%v", aIDs)
+	}
+
+	bList, err := d.ListGoals(ctx, bob.Sender())
+	if err != nil {
+		t.Fatalf("ListGoals(bob): %v", err)
+	}
+	if len(bList) != 3 {
+		t.Errorf("bob list len = %d, want 3", len(bList))
+	}
+	for _, g := range bList {
+		if g.Owner != bob.Sender() {
+			t.Errorf("bob list contains cross-owner row: owner=%s id=%s", g.Owner, g.ID)
+		}
+	}
+}
+
+// TestGoalsToggleExactSetOppositeValue plugs a gap in TestGoalsToggle:
+// the exact-set path was ONLY tested with the current value (idempotent
+// no-flip). That path also handles a REAL flip via desired=false on a
+// true row — the RETURNED newEnabled must be the desired value, and a
+// subsequent GET must reflect it. A regression that returned
+// !currentValue (i.e., flipped anyway) would pass the idempotent test
+// but fail this one.
+func TestGoalsToggleExactSetOppositeValue(t *testing.T) {
+	d := openTestDB(t)
+	ctx := context.Background()
+	fx := newSender(t, d, "goals_exactset")
+	cleanupGoals(t, d, ctx, fx.Sender())
+
+	g, err := d.CreateGoal(ctx, fx.Sender(), "flipme", nil, json.RawMessage(plantedSpec))
+	if err != nil || g == nil {
+		t.Fatalf("CreateGoal: %v", err)
+	}
+	if !g.Enabled {
+		t.Fatalf("expected default enabled=true")
+	}
+
+	// Exact-set desired=false on a true row.
+	desiredFalse := false
+	newEnabled, found, err := d.ToggleGoal(ctx, fx.Sender(), g.ID, &desiredFalse)
+	if err != nil || !found {
+		t.Fatalf("exact-set false on true: err=%v found=%v", err, found)
+	}
+	if newEnabled {
+		t.Errorf("exact-set desired=false returned newEnabled=true (should be false)")
+	}
+	// GET reflects the write.
+	after, _ := d.GetGoal(ctx, fx.Sender(), g.ID)
+	if after == nil || after.Enabled {
+		t.Errorf("GET after exact-set false: enabled=%v want false", after.Enabled)
+	}
+
+	// Exact-set desired=true on the false row (real flip via exact-set).
+	desiredTrue := true
+	newEnabled, found, err = d.ToggleGoal(ctx, fx.Sender(), g.ID, &desiredTrue)
+	if err != nil || !found || !newEnabled {
+		t.Fatalf("exact-set true on false: err=%v found=%v newEnabled=%v", err, found, newEnabled)
+	}
+	after, _ = d.GetGoal(ctx, fx.Sender(), g.ID)
+	if after == nil || !after.Enabled {
+		t.Errorf("GET after exact-set true: enabled=%v want true", after.Enabled)
+	}
+}
+
+// TestGoalsInvalidateEmptyOwner confirms InvalidateGoalsForOwner is a
+// no-op for an owner with zero goals (called on every heartbeat ingest;
+// must not error for a fresh user). Also proves the WHERE guard is
+// scoped — planting an OTHER owner's goal + cache and asserting it
+// survives an invalidate for the empty owner.
+func TestGoalsInvalidateEmptyOwner(t *testing.T) {
+	d := openTestDB(t)
+	ctx := context.Background()
+	empty := newSender(t, d, "goals_inv_empty")
+	other := newSender(t, d, "goals_inv_other")
+	cleanupGoals(t, d, ctx, empty.Sender())
+	cleanupGoals(t, d, ctx, other.Sender())
+
+	// Other owner has a goal with a cache row.
+	og, _ := d.CreateGoal(ctx, other.Sender(), "og", nil, json.RawMessage(plantedSpec))
+	if og == nil {
+		t.Fatalf("seed other goal")
+	}
+	planted := json.RawMessage(`{"hit":true,"progress":1,"sub_conditions":[]}`)
+	if err := d.UpdateGoalProgress(ctx, other.Sender(), og.ID, planted); err != nil {
+		t.Fatalf("plant other cache: %v", err)
+	}
+
+	// Empty owner: no error and no effect.
+	if err := d.InvalidateGoalsForOwner(ctx, empty.Sender()); err != nil {
+		t.Errorf("InvalidateGoalsForOwner(empty): %v", err)
+	}
+	// Other owner's cache untouched.
+	after, _ := d.GetGoal(ctx, other.Sender(), og.ID)
+	if after == nil || len(after.LastProgress) == 0 || after.LastEvaluatedAt == nil {
+		t.Errorf("other owner's cache wiped by empty-owner invalidate: progress=%s eval=%v",
+			string(after.LastProgress), after.LastEvaluatedAt)
+	}
+}
+
+// TestGoalsUpdateProgressNilClears exercises the explicit-clear branch
+// of UpdateGoalProgress (progress=nil path). Previously only the
+// planted-then-invalidated path was tested; the DIRECT nil-arg branch
+// was uncovered — a regression that ignored the nil check and stored
+// the null JSON literal would pass the existing test but fail here.
+func TestGoalsUpdateProgressNilClears(t *testing.T) {
+	d := openTestDB(t)
+	ctx := context.Background()
+	fx := newSender(t, d, "goals_progclear")
+	cleanupGoals(t, d, ctx, fx.Sender())
+
+	g, err := d.CreateGoal(ctx, fx.Sender(), "clr", nil, json.RawMessage(plantedSpec))
+	if err != nil || g == nil {
+		t.Fatalf("CreateGoal: %v", err)
+	}
+	planted := json.RawMessage(`{"hit":false,"progress":0.1,"sub_conditions":[]}`)
+	if err := d.UpdateGoalProgress(ctx, fx.Sender(), g.ID, planted); err != nil {
+		t.Fatalf("plant: %v", err)
+	}
+	// Sanity: the plant landed.
+	mid, _ := d.GetGoal(ctx, fx.Sender(), g.ID)
+	if mid == nil || len(mid.LastProgress) == 0 || mid.LastEvaluatedAt == nil {
+		t.Fatalf("plant didn't land: %+v", mid)
+	}
+
+	// Clear via nil.
+	if err := d.UpdateGoalProgress(ctx, fx.Sender(), g.ID, nil); err != nil {
+		t.Fatalf("UpdateGoalProgress(nil): %v", err)
+	}
+	after, _ := d.GetGoal(ctx, fx.Sender(), g.ID)
+	if after == nil {
+		t.Fatalf("goal vanished")
+	}
+	if len(after.LastProgress) != 0 {
+		t.Errorf("nil-clear left last_progress: %s", string(after.LastProgress))
+	}
+	if after.LastEvaluatedAt != nil {
+		t.Errorf("nil-clear left last_evaluated_at: %v", *after.LastEvaluatedAt)
+	}
+}
+
 // semanticGoalsDiff normalizes two JSON documents through json.Marshal so
 // the comparison ignores object key order (Postgres JSONB does not
 // preserve it) but catches missing keys, changed values, and re-ordered

@@ -475,6 +475,395 @@ func TestGoalsDuplicateNameReturns409(t *testing.T) {
 	}
 }
 
+// TestGoalsProgressServesFromCacheWithinTTL is the LOAD-BEARING
+// mirror of TestGoalsProgressCacheAndFreshness: two rapid reads inside
+// the TTL must return the SAME cached bytes and NOT bump
+// last_evaluated_at. The prior test only asserts the timestamp moves
+// forward AFTER a PATCH — a regression that recomputed on EVERY read
+// (cache never used) would still pass that test but fail this one.
+//
+// Anti-tautology anchor: we assert equality of the two timestamps
+// (second read reused the first read's cache row). Bump the TTL to
+// zero in stats/goals.go and this test fails (timestamps drift).
+func TestGoalsProgressServesFromCacheWithinTTL(t *testing.T) {
+	hz := testutil.NewHarness(t)
+	e := routerWithGoals(hz)
+	owner, token := hz.MintUser("goal_cachehit")
+
+	seedRollupForOwner(t, hz, owner, time.Now().UTC().AddDate(0, 0, -1), "Go", 5000)
+	id := createGoal(t, e, token, "cachehit", weeklyGoSpec)
+
+	// First read: compute + cache. Capture the timestamp.
+	rec1 := doJSONReq(t, e, http.MethodGet, "/api/v1/users/current/goals/"+id+"/progress", token, nil)
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("progress 1: %d body=%s", rec1.Code, rec1.Body.String())
+	}
+	getRec := doJSONReq(t, e, http.MethodGet, "/api/v1/users/current/goals/"+id, token, nil)
+	var afterFirst struct {
+		Goal struct {
+			LastEvaluatedAt *time.Time `json:"lastEvaluatedAt"`
+		} `json:"goal"`
+	}
+	_ = json.Unmarshal(getRec.Body.Bytes(), &afterFirst)
+	if afterFirst.Goal.LastEvaluatedAt == nil {
+		t.Fatalf("first progress read did not populate cache")
+	}
+	firstTs := *afterFirst.Goal.LastEvaluatedAt
+
+	// Second read INSIDE TTL (immediate) must reuse the cache row.
+	// Sleep briefly so a bug that recomputes would produce a clearly
+	// distinguishable timestamp (DB now() tick > 1ms).
+	time.Sleep(5 * time.Millisecond)
+	rec2 := doJSONReq(t, e, http.MethodGet, "/api/v1/users/current/goals/"+id+"/progress", token, nil)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("progress 2: %d body=%s", rec2.Code, rec2.Body.String())
+	}
+
+	// Assertion 1: body of the second read matches the first byte-for-byte
+	// (cache row is JSONB and returned verbatim on serve-from-cache).
+	if rec1.Body.String() != rec2.Body.String() {
+		t.Errorf("body diverged inside TTL:\n  first: %s\n second: %s",
+			rec1.Body.String(), rec2.Body.String())
+	}
+
+	// Assertion 2: last_evaluated_at UNCHANGED (cache hit means no
+	// UpdateGoalProgress ran, so the timestamp column is untouched).
+	getRec2 := doJSONReq(t, e, http.MethodGet, "/api/v1/users/current/goals/"+id, token, nil)
+	var afterSecond struct {
+		Goal struct {
+			LastEvaluatedAt *time.Time `json:"lastEvaluatedAt"`
+		} `json:"goal"`
+	}
+	_ = json.Unmarshal(getRec2.Body.Bytes(), &afterSecond)
+	if afterSecond.Goal.LastEvaluatedAt == nil {
+		t.Fatalf("second read wiped the cache row (should have served from cache)")
+	}
+	if !afterSecond.Goal.LastEvaluatedAt.Equal(firstTs) {
+		t.Errorf("last_evaluated_at changed on cache-hit read: was %v, now %v (cache path not taken?)",
+			firstTs, *afterSecond.Goal.LastEvaluatedAt)
+	}
+}
+
+// TestGoalsBatchProgressOwnerScoping proves the batched endpoint is
+// owner-scoped. Alice and Bob each own a goal; alice's call returns
+// only her id. A regression that dropped the sender filter on the
+// underlying ListGoals would leak bob's id into alice's batch map.
+func TestGoalsBatchProgressOwnerScoping(t *testing.T) {
+	hz := testutil.NewHarness(t)
+	e := routerWithGoals(hz)
+	aliceOwner, aliceTok := hz.MintUser("goal_batch_a")
+	bobOwner, bobTok := hz.MintUser("goal_batch_b")
+
+	// Seed rollup for both — proves the eval branch runs for each.
+	seedRollupForOwner(t, hz, aliceOwner, time.Now().UTC().AddDate(0, 0, -1), "Go", 5000)
+	seedRollupForOwner(t, hz, bobOwner, time.Now().UTC().AddDate(0, 0, -1), "Go", 5000)
+
+	aID := createGoal(t, e, aliceTok, "a-batch", weeklyGoSpec)
+	bID := createGoal(t, e, bobTok, "b-batch", weeklyGoSpec)
+
+	// Alice's batch: exactly {aID}, NOT bID.
+	rec := doJSONReq(t, e, http.MethodGet, "/api/v1/users/current/goals/progress", aliceTok, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("batch alice: %d body=%s", rec.Code, rec.Body.String())
+	}
+	var env struct {
+		Progress map[string]any `json:"progress"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode: %v body=%s", err, rec.Body.String())
+	}
+	if _, ok := env.Progress[bID]; ok {
+		t.Errorf("alice's batch LEAKED bob's goal id %s — batch endpoint dropped owner filter", bID)
+	}
+	if _, ok := env.Progress[aID]; !ok {
+		t.Errorf("alice's own goal missing from batch: %+v", env.Progress)
+	}
+	if len(env.Progress) != 1 {
+		t.Errorf("alice batch len = %d, want 1", len(env.Progress))
+	}
+}
+
+// TestGoalsIngestInvalidationOwnerScoping proves the ingest hook is
+// scoped to the ingesting user — bob's heartbeat MUST NOT wipe
+// alice's cache. Without this test, a bug that called
+// InvalidateGoalsForOwner("*") or lost the owner param would pass
+// TestGoalsIngestInvalidation (which only checks the ingester's own
+// cache).
+func TestGoalsIngestInvalidationOwnerScoping(t *testing.T) {
+	hz := testutil.NewHarness(t)
+	e := routerWithGoals(hz)
+	aliceOwner, aliceTok := hz.MintUser("goal_ing_scope_a")
+	_, bobTok := hz.MintUser("goal_ing_scope_b")
+
+	// Alice seeds rollup + goal + reads progress → cache lands.
+	seedRollupForOwner(t, hz, aliceOwner, time.Now().UTC().AddDate(0, 0, -1), "Go", 5000)
+	aID := createGoal(t, e, aliceTok, "a-scoped", weeklyGoSpec)
+	if r := doJSONReq(t, e, http.MethodGet, "/api/v1/users/current/goals/"+aID+"/progress", aliceTok, nil); r.Code != http.StatusOK {
+		t.Fatalf("alice progress: %d body=%s", r.Code, r.Body.String())
+	}
+	// Capture alice's cache timestamp.
+	getRec := doJSONReq(t, e, http.MethodGet, "/api/v1/users/current/goals/"+aID, aliceTok, nil)
+	var afterAliceRead struct {
+		Goal struct {
+			LastEvaluatedAt *time.Time `json:"lastEvaluatedAt"`
+		} `json:"goal"`
+	}
+	_ = json.Unmarshal(getRec.Body.Bytes(), &afterAliceRead)
+	if afterAliceRead.Goal.LastEvaluatedAt == nil {
+		t.Fatalf("alice cache didn't land")
+	}
+	aliceTsBefore := *afterAliceRead.Goal.LastEvaluatedAt
+
+	// BOB ingests a heartbeat. Alice's cache must survive.
+	now := float64(time.Now().Unix())
+	ingestBody := []map[string]any{{
+		"time":       now,
+		"entity":     "b.py",
+		"type":       "file",
+		"project":    "P",
+		"language":   "Python",
+		"user_agent": "wakatime/1 (Linux) go/1 vscode",
+	}}
+	ingRec := doJSONReq(t, e, http.MethodPost, "/api/v1/users/current/heartbeats.bulk", bobTok, ingestBody)
+	if ingRec.Code != http.StatusAccepted {
+		t.Fatalf("bob ingest: %d body=%s", ingRec.Code, ingRec.Body.String())
+	}
+
+	// Alice's cache row must still be there, timestamp UNCHANGED.
+	getRec2 := doJSONReq(t, e, http.MethodGet, "/api/v1/users/current/goals/"+aID, aliceTok, nil)
+	var afterBobIngest struct {
+		Goal struct {
+			LastEvaluatedAt *time.Time `json:"lastEvaluatedAt"`
+		} `json:"goal"`
+	}
+	_ = json.Unmarshal(getRec2.Body.Bytes(), &afterBobIngest)
+	if afterBobIngest.Goal.LastEvaluatedAt == nil {
+		t.Errorf("bob's ingest WIPED alice's cache — invalidation is not owner-scoped")
+	} else if !afterBobIngest.Goal.LastEvaluatedAt.Equal(aliceTsBefore) {
+		t.Errorf("alice's cache timestamp drifted after bob's ingest: was %v, now %v",
+			aliceTsBefore, *afterBobIngest.Goal.LastEvaluatedAt)
+	}
+}
+
+// TestGoalsToggleHTTP asserts the toggle endpoint actually flips at
+// the HTTP layer. All other tests only use toggle to DISABLE a goal
+// (TestGoalsBatchProgressEndpoint) or check owner-scoping (404); no
+// test verifies the response contract {"enabled": bool} matches the
+// eventual state. A regression that returned a stale value (say,
+// always the old enabled) would pass owner-scoping + batch tests but
+// fail this one.
+func TestGoalsToggleHTTP(t *testing.T) {
+	hz := testutil.NewHarness(t)
+	e := routerWithGoals(hz)
+	_, token := hz.MintUser("goal_toggle_http")
+
+	id := createGoal(t, e, token, "toggle-http", weeklyGoSpec)
+
+	// Flip 1: no body, expect enabled=false.
+	rec := doJSONReq(t, e, http.MethodPost, "/api/v1/users/current/goals/"+id+"/toggle", token, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("flip 1: %d body=%s", rec.Code, rec.Body.String())
+	}
+	var env struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode flip 1: %v", err)
+	}
+	if env.Enabled {
+		t.Errorf("flip 1: response enabled=true (want false — starting from default true)")
+	}
+	// GET confirms the DB state matches the response.
+	getRec := doJSONReq(t, e, http.MethodGet, "/api/v1/users/current/goals/"+id, token, nil)
+	var got struct {
+		Goal struct {
+			Enabled bool `json:"enabled"`
+		} `json:"goal"`
+	}
+	_ = json.Unmarshal(getRec.Body.Bytes(), &got)
+	if got.Goal.Enabled {
+		t.Errorf("GET after flip 1: enabled=true (response and DB desynced)")
+	}
+
+	// Flip 2: no body — back to true.
+	rec2 := doJSONReq(t, e, http.MethodPost, "/api/v1/users/current/goals/"+id+"/toggle", token, nil)
+	var env2 struct {
+		Enabled bool `json:"enabled"`
+	}
+	_ = json.Unmarshal(rec2.Body.Bytes(), &env2)
+	if !env2.Enabled {
+		t.Errorf("flip 2: response enabled=false (want true)")
+	}
+
+	// Exact-set enabled=true on already-true — idempotent 200 with true.
+	rec3 := doJSONReq(t, e, http.MethodPost, "/api/v1/users/current/goals/"+id+"/toggle", token, map[string]any{
+		"enabled": true,
+	})
+	if rec3.Code != http.StatusOK {
+		t.Errorf("idempotent set true=true: %d body=%s", rec3.Code, rec3.Body.String())
+	}
+	var env3 struct {
+		Enabled bool `json:"enabled"`
+	}
+	_ = json.Unmarshal(rec3.Body.Bytes(), &env3)
+	if !env3.Enabled {
+		t.Errorf("idempotent set: response enabled=%v (want true)", env3.Enabled)
+	}
+}
+
+// TestGoalsValidationRejectsCoversAllBranches complements the existing
+// TestGoalsValidationRejects with the missing branches (streak errors,
+// depth cap, empty any, not-arity, active_days windows). The value of
+// listing every branch: someone loosening the validator to remove one
+// specific check will get exactly ONE red test with a clear name.
+func TestGoalsValidationRejectsCoversAllBranches(t *testing.T) {
+	hz := testutil.NewHarness(t)
+	e := routerWithGoals(hz)
+	_, token := hz.MintUser("goal_reject_full")
+
+	// Build a depth-6 spec (over the depth-5 cap).
+	deep := `{"kind":"time","axis":"language","value":null,"op":">=","target_seconds":1,"window":"week"}`
+	for i := 0; i < 6; i++ {
+		deep = `{"kind":"all","of":[` + deep + `]}`
+	}
+
+	bad := map[string]string{
+		"streak missing condition": `{"kind":"streak","min_days":3}`,
+		"streak min_days negative": `{"kind":"streak","min_days":-1,"condition":{"kind":"time","axis":"language","value":null,"op":">=","target_seconds":1,"window":"day"}}`,
+		"streak min_days too big":  `{"kind":"streak","min_days":9999,"condition":{"kind":"time","axis":"language","value":null,"op":">=","target_seconds":1,"window":"day"}}`,
+		"empty any":                `{"kind":"any","of":[]}`,
+		"not wrong arity 0":        `{"kind":"not","of":[]}`,
+		"not wrong arity 2": `{"kind":"not","of":[
+			{"kind":"time","axis":"language","value":null,"op":">=","target_seconds":1,"window":"week"},
+			{"kind":"time","axis":"project","value":null,"op":">=","target_seconds":1,"window":"week"}
+		]}`,
+		"active_days negative n":       `{"kind":"active_days","op":">=","n":-1,"window":"week"}`,
+		"active_days invalid window":   `{"kind":"active_days","op":">=","n":1,"window":"day"}`,
+		"depth cap":                    deep,
+		"nested bad axis inside all":   `{"kind":"all","of":[{"kind":"time","axis":"language","value":null,"op":">=","target_seconds":1,"window":"week"},{"kind":"time","axis":"chicken","value":null,"op":">=","target_seconds":1,"window":"week"}]}`,
+	}
+	for name, spec := range bad {
+		t.Run(name, func(t *testing.T) {
+			rec := doJSONReq(t, e, http.MethodPost, "/api/v1/users/current/goals", token, map[string]any{
+				"name": "vr_" + name,
+				"spec": json.RawMessage(spec),
+			})
+			if rec.Code != http.StatusBadRequest {
+				t.Errorf("status %d, want 400 (body=%s)", rec.Code, rec.Body.String())
+			}
+			// Body should carry a non-empty error hint so the FE can
+			// display it. A blank message would mean the handler
+			// silently rejected, which is user-hostile.
+			body := rec.Body.String()
+			if len(body) < 5 {
+				t.Errorf("body too short (no error hint): %q", body)
+			}
+		})
+	}
+}
+
+// TestGoalsCreateMissingFields checks the shape-level guards that
+// live in the handler ABOVE ValidateSpec: empty name → 400, empty
+// spec → 400. Regressions that fall through to CreateGoal would
+// either 500 (DB error) or silently succeed with empty name — both
+// user-hostile.
+func TestGoalsCreateMissingFields(t *testing.T) {
+	hz := testutil.NewHarness(t)
+	e := routerWithGoals(hz)
+	_, token := hz.MintUser("goal_missing_fields")
+
+	// Empty name.
+	rec := doJSONReq(t, e, http.MethodPost, "/api/v1/users/current/goals", token, map[string]any{
+		"name": "",
+		"spec": json.RawMessage(weeklyGoSpec),
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("empty name: status %d, want 400 body=%s", rec.Code, rec.Body.String())
+	}
+	// Whitespace-only name (strings.TrimSpace check).
+	rec = doJSONReq(t, e, http.MethodPost, "/api/v1/users/current/goals", token, map[string]any{
+		"name": "   ",
+		"spec": json.RawMessage(weeklyGoSpec),
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("whitespace-only name: status %d, want 400 body=%s", rec.Code, rec.Body.String())
+	}
+	// Missing spec (nil rawmessage).
+	rec = doJSONReq(t, e, http.MethodPost, "/api/v1/users/current/goals", token, map[string]any{
+		"name": "no-spec",
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("missing spec: status %d, want 400 body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestGoalsPatchValidationAndFields exercises the PATCH-side
+// validator + name-cannot-be-empty guard. Regressions in either would
+// pass tests that only touch the POST path.
+func TestGoalsPatchValidationAndFields(t *testing.T) {
+	hz := testutil.NewHarness(t)
+	e := routerWithGoals(hz)
+	_, token := hz.MintUser("goal_patch_val")
+
+	id := createGoal(t, e, token, "patch-val", weeklyGoSpec)
+
+	// PATCH with invalid spec → 400.
+	rec := doJSONReq(t, e, http.MethodPatch, "/api/v1/users/current/goals/"+id, token, map[string]any{
+		"spec": json.RawMessage(`{"kind":"time","axis":"CHICKEN","op":">=","target_seconds":1,"window":"week"}`),
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("PATCH bad spec: status %d, want 400 body=%s", rec.Code, rec.Body.String())
+	}
+
+	// PATCH with whitespace-only name → 400.
+	rec = doJSONReq(t, e, http.MethodPatch, "/api/v1/users/current/goals/"+id, token, map[string]any{
+		"name": "   ",
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("PATCH empty name: status %d, want 400 body=%s", rec.Code, rec.Body.String())
+	}
+
+	// PATCH with a valid new name → 200, name persisted.
+	rec = doJSONReq(t, e, http.MethodPatch, "/api/v1/users/current/goals/"+id, token, map[string]any{
+		"name": "renamed",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PATCH valid: %d body=%s", rec.Code, rec.Body.String())
+	}
+	getRec := doJSONReq(t, e, http.MethodGet, "/api/v1/users/current/goals/"+id, token, nil)
+	var got struct {
+		Goal struct {
+			Name string `json:"name"`
+		} `json:"goal"`
+	}
+	_ = json.Unmarshal(getRec.Body.Bytes(), &got)
+	if got.Goal.Name != "renamed" {
+		t.Errorf("PATCH name persisted as %q, want %q", got.Goal.Name, "renamed")
+	}
+}
+
+// TestGoalsDuplicateNameOnRename409 covers a subtle path: PATCHing an
+// existing goal to a name that another goal (same owner) already has
+// must return 409, not 500. The DB layer surfaces isUniqueViolation
+// on the RENAME UPDATE too; the handler must catch it via the same
+// mapping.
+func TestGoalsDuplicateNameOnRename409(t *testing.T) {
+	hz := testutil.NewHarness(t)
+	e := routerWithGoals(hz)
+	_, token := hz.MintUser("goal_rename_dup")
+
+	_ = createGoal(t, e, token, "existing-name", weeklyGoSpec)
+	id2 := createGoal(t, e, token, "second-name", weeklyGoSpec)
+
+	// Rename id2 → "existing-name" → 409.
+	rec := doJSONReq(t, e, http.MethodPatch, "/api/v1/users/current/goals/"+id2, token, map[string]any{
+		"name": "existing-name",
+	})
+	if rec.Code != http.StatusConflict {
+		t.Errorf("rename-to-existing: status %d, want 409 body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 // (helpers) — doJSONReq is defined in password_test.go; semanticJSONDiff
 // is defined in dashboard_layout_test.go. Both live in the same
 // handler_test package so we reuse them here.

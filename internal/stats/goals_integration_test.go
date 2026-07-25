@@ -306,6 +306,229 @@ func TestEvaluate_NotInverts(t *testing.T) {
 	}
 }
 
+// TestEvaluate_StreakMinDaysZero pins the early-return short-circuit
+// for min_days<=0. A regression that dropped this guard would spin
+// the walk loop with walkBackDaysMax=0, still return (true, 1) — so
+// the current test would pass. To make this non-tautological we also
+// assert NO sub-condition query fired (we're going to prove this by
+// evaluating without ANY rollup rows and confirming success without
+// error).
+func TestEvaluate_StreakMinDaysZero(t *testing.T) {
+	hz := testutil.NewHarness(t)
+	owner, _ := hz.MintUser("eval_streak_zero")
+
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	// Do NOT seed anything — a min_days=0 streak must trivially hit
+	// without touching the DB.
+	spec := `{"kind":"streak","min_days":0,"condition":{"kind":"time","axis":"language","value":"Go","op":">=","target_seconds":600,"window":"day"}}`
+	p, err := stats.ValidateSpec(json.RawMessage(spec))
+	if err != nil {
+		t.Fatalf("ValidateSpec: %v", err)
+	}
+	prog, err := stats.Evaluate(context.Background(), hz.DB.Pool, owner, p, now)
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if !prog.Hit || prog.Progress != 1 {
+		t.Errorf("min_days=0: hit=%v prog=%v (want true, 1 — trivially satisfied)",
+			prog.Hit, prog.Progress)
+	}
+	// Sub-condition list must have EXACTLY one entry (the streak summary),
+	// with Current=0 and Target=0 — the short-circuit must not have
+	// evaluated the child.
+	if len(prog.SubConditions) != 1 {
+		t.Fatalf("sub_conditions len = %d, want 1 (streak summary only)", len(prog.SubConditions))
+	}
+	sc := prog.SubConditions[0]
+	if sc.Kind != "streak" || sc.Current != 0 || sc.Target != 0 {
+		t.Errorf("streak short-circuit sub: %+v want kind=streak current=0 target=0", sc)
+	}
+}
+
+// TestEvaluate_StreakTodayMissesReturnsZero: no data at all → streak
+// count is 0 immediately (first walk-back iteration finds no hit and
+// breaks). Non-tautology anchor: without this test, a bug that seeded
+// daysHit=1 by mistake ("start at 1, count DOWN") would still pass
+// TestEvaluate_StreakStopsAtGap because that seeds three consecutive
+// hits — this test explicitly proves the loop's initial value is 0.
+func TestEvaluate_StreakTodayMissesReturnsZero(t *testing.T) {
+	hz := testutil.NewHarness(t)
+	owner, _ := hz.MintUser("eval_streak_miss")
+
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	// Empty — no rollup rows at all.
+
+	spec := `{"kind":"streak","min_days":3,"condition":{"kind":"time","axis":"language","value":"Go","op":">=","target_seconds":600,"window":"day"}}`
+	p, _ := stats.ValidateSpec(json.RawMessage(spec))
+	prog, err := stats.Evaluate(context.Background(), hz.DB.Pool, owner, p, now)
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if len(prog.SubConditions) != 1 {
+		t.Fatalf("sub_conditions len = %d, want 1", len(prog.SubConditions))
+	}
+	sc := prog.SubConditions[0]
+	if sc.Current != 0 {
+		t.Errorf("streak with no data: current = %d, want 0 (loop's initial daysHit=0)", sc.Current)
+	}
+	if sc.Hit {
+		t.Errorf("streak of 0 must NOT hit target 3")
+	}
+	if prog.Progress != 0 {
+		t.Errorf("progress = %v, want 0 (0/3)", prog.Progress)
+	}
+}
+
+// TestEvaluate_StreakExactlyMinDaysHits: seed exactly min_days
+// consecutive days ending today. The walk should STOP once daysHit ==
+// min_days (walkBackDaysMax = min_days). Non-tautology: catches an
+// off-by-one where the walk went min_days+1 or min_days-1 iterations.
+func TestEvaluate_StreakExactlyMinDaysHits(t *testing.T) {
+	hz := testutil.NewHarness(t)
+	owner, _ := hz.MintUser("eval_streak_exact")
+
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	// Seed exactly 3 consecutive hits ending today.
+	for _, offset := range []int{0, 1, 2} {
+		seedRollupRow(t, hz, owner, now.AddDate(0, 0, -offset), "P", "Go", "vim", 900)
+	}
+	// Extra pre-window hit that SHOULDN'T be counted (walk cap is 3).
+	seedRollupRow(t, hz, owner, now.AddDate(0, 0, -3), "P", "Go", "vim", 900)
+	seedRollupRow(t, hz, owner, now.AddDate(0, 0, -4), "P", "Go", "vim", 900)
+
+	spec := `{"kind":"streak","min_days":3,"condition":{"kind":"time","axis":"language","value":"Go","op":">=","target_seconds":600,"window":"day"}}`
+	p, _ := stats.ValidateSpec(json.RawMessage(spec))
+	prog, err := stats.Evaluate(context.Background(), hz.DB.Pool, owner, p, now)
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	sc := prog.SubConditions[0]
+	if sc.Current != 3 {
+		t.Errorf("streak: current = %d, want exactly 3 (walk cap = min_days; extras beyond don't count)", sc.Current)
+	}
+	if !sc.Hit || prog.Progress != 1 {
+		t.Errorf("hit=%v prog=%v, want (true, 1)", sc.Hit, prog.Progress)
+	}
+}
+
+// TestEvaluate_ActiveDaysOwnerScoping is the sibling to
+// TestEvaluate_OwnerScoping for the active_days query — same threat
+// model (WHERE sender = $1 dropped), different query. Owner A gets
+// their count; owner B seeing A's rows means the sender filter fell
+// off in the active_days SQL specifically.
+func TestEvaluate_ActiveDaysOwnerScoping(t *testing.T) {
+	hz := testutil.NewHarness(t)
+	ownerA, _ := hz.MintUser("eval_ad_scope_a")
+	ownerB, _ := hz.MintUser("eval_ad_scope_b")
+
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	// A seeds 3 distinct days.
+	seedRollupRow(t, hz, ownerA, now.AddDate(0, 0, -1), "P", "Go", "vim", 600)
+	seedRollupRow(t, hz, ownerA, now.AddDate(0, 0, -3), "P", "Go", "vim", 600)
+	seedRollupRow(t, hz, ownerA, now.AddDate(0, 0, -5), "P", "Go", "vim", 600)
+
+	spec := `{"kind":"active_days","op":">=","n":1,"window":"week"}`
+	p, _ := stats.ValidateSpec(json.RawMessage(spec))
+	progA, err := stats.Evaluate(context.Background(), hz.DB.Pool, ownerA, p, now)
+	if err != nil {
+		t.Fatalf("Evaluate ownerA: %v", err)
+	}
+	if progA.SubConditions[0].Current != 3 {
+		t.Errorf("ownerA active_days = %d, want 3", progA.SubConditions[0].Current)
+	}
+	progB, err := stats.Evaluate(context.Background(), hz.DB.Pool, ownerB, p, now)
+	if err != nil {
+		t.Fatalf("Evaluate ownerB: %v", err)
+	}
+	if progB.SubConditions[0].Current != 0 {
+		t.Errorf("ownerB active_days = %d, want 0 (sender filter fell off on active_days SQL?)",
+			progB.SubConditions[0].Current)
+	}
+}
+
+// TestEvaluate_TimeLeafDayWindow explicitly pins that "day" window
+// covers exactly TODAY — beats from yesterday must NOT count. Guards
+// against a windowRange bug that made day inclusive-of-yesterday
+// (a 24h shift). Seed rows on today and yesterday for the same key;
+// the day window must return only today's seconds.
+func TestEvaluate_TimeLeafDayWindow(t *testing.T) {
+	hz := testutil.NewHarness(t)
+	owner, _ := hz.MintUser("eval_day_win")
+
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	seedRollupRow(t, hz, owner, now, "P", "Go", "vim", 500)                // TODAY
+	seedRollupRow(t, hz, owner, now.AddDate(0, 0, -1), "P", "Go", "vim", 9999) // yesterday — MUST be excluded
+
+	spec := `{"kind":"time","axis":"language","value":"Go","op":">=","target_seconds":1,"window":"day"}`
+	p, _ := stats.ValidateSpec(json.RawMessage(spec))
+	prog, err := stats.Evaluate(context.Background(), hz.DB.Pool, owner, p, now)
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if prog.SubConditions[0].Current != 500 {
+		t.Errorf("day window included non-today rows: current = %d, want 500 (today only)",
+			prog.SubConditions[0].Current)
+	}
+}
+
+// TestEvaluate_LifetimeIncludesAncient asserts the lifetime window
+// pulls in a very old row (2020) — the start is pinned at epoch, not
+// clamped to "some sensible year". A bug that clamped lifetime to
+// e.g. 5 years back would silently drop the old row and fail the
+// exact-sum assertion.
+func TestEvaluate_LifetimeIncludesAncient(t *testing.T) {
+	hz := testutil.NewHarness(t)
+	owner, _ := hz.MintUser("eval_lifetime")
+
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	ancient := time.Date(2020, 3, 1, 0, 0, 0, 0, time.UTC)
+	recent := now.AddDate(0, 0, -1)
+	seedRollupRow(t, hz, owner, ancient, "P", "Go", "vim", 1234)
+	seedRollupRow(t, hz, owner, recent, "P", "Go", "vim", 5678)
+
+	spec := `{"kind":"time","axis":"language","value":"Go","op":">=","target_seconds":1,"window":"lifetime"}`
+	p, _ := stats.ValidateSpec(json.RawMessage(spec))
+	prog, err := stats.Evaluate(context.Background(), hz.DB.Pool, owner, p, now)
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	want := int64(1234 + 5678)
+	if prog.SubConditions[0].Current != want {
+		t.Errorf("lifetime sum = %d, want %d (ancient + recent). Clamped start?",
+			prog.SubConditions[0].Current, want)
+	}
+}
+
+// TestEvaluate_NotProgressInversion checks the arithmetic of `not`:
+// wrapping a leaf at 50% must return progress = 1 - 0.5 = 0.5 (a
+// "half-there of not-being-there" contract). A regression that
+// returned `1 - hit_bool` instead would report 0 or 1 depending on
+// the child's boolean — the exact-fraction assertion here catches it.
+func TestEvaluate_NotProgressInversion(t *testing.T) {
+	hz := testutil.NewHarness(t)
+	owner, _ := hz.MintUser("eval_not_prog")
+
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	// Seed 500s Go; leaf target 1000 → child.progress = 0.5, hit=false.
+	seedRollupRow(t, hz, owner, now.AddDate(0, 0, -1), "P", "Go", "vim", 500)
+
+	spec := `{"kind":"not","of":[
+		{"kind":"time","axis":"language","value":"Go","op":">=","target_seconds":1000,"window":"week"}
+	]}`
+	p, _ := stats.ValidateSpec(json.RawMessage(spec))
+	prog, err := stats.Evaluate(context.Background(), hz.DB.Pool, owner, p, now)
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if !prog.Hit {
+		t.Errorf("not(child hit=false): expected outer hit=true, got false")
+	}
+	if prog.Progress != 0.5 {
+		t.Errorf("not progress = %v, want 0.5 (1 - child.progress=0.5). Was 1-bool used instead of 1-frac?",
+			prog.Progress)
+	}
+}
+
 // TestEvaluate_OwnerScoping seeds rollup rows for owner A, evaluates
 // as owner B — must return zero. Guards against a WHERE-clause typo
 // that dropped the sender filter on the leaf query.
