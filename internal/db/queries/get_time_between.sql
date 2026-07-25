@@ -1,11 +1,15 @@
 -- Phase A: per (user, project, [min_date, max_date]) window, SUM precomputed
 -- gap_seconds within the 15-min limit. Params: unnest($1,$2,$3,$4) =
--- (username, project_name, min_date, max_date).
+-- (username, project_name, min_date, max_date). Explicit ::type[] casts are
+-- required because Postgres reports `function pg_catalog.unnest(unknown) is
+-- not unique` (SQLSTATE 42725) when the arg types are inferred as `unknown`
+-- and multiple `unnest` overloads exist for the multi-array form. See
+-- gaka-6yr for the failure history.
 WITH input_table AS (
     SELECT
         *
     FROM
-        unnest($1, $2, $3, $4) AS input_table (username,
+        unnest($1::text[], $2::text[], $3::timestamp[], $4::timestamp[]) AS input_table (username,
             project_name,
             min_date,
             max_date))

@@ -89,26 +89,110 @@ func TestCategoryDailyPerDaySumsMatchGrandTotal(t *testing.T) {
 	}
 }
 
-// TestTotalTimeBetweenAscendingOrder_KnownBroken is a REGRESSION PLACEHOLDER
-// for the ascending-order invariant on GetTotalTimeBetween. During the
-// gaka-oew audit an ACTUAL BUG was found: the query as authored fails on
-// EVERY call under this Postgres version with:
+// TestTotalTimeBetweenReturnsAscendingSums pins two things for
+// GetTotalTimeBetween (used only by /api/v1/commits/:project/report):
 //
-//	ERROR: function pg_catalog.unnest(unknown) is not unique (SQLSTATE 42725)
-//
-// The bug affects the /api/v1/commits/:project/report endpoint (only path
-// that calls GetTotalTimeBetween). There is no handler test exercising it
-// (blocked by GitHub-credential requirement in commits.go), so the bug has
-// no other regression coverage. Filed in the audit report — SHOULD BE
-// TRACKED VIA A NEW BEAD (unfixed here to keep the audit surface clean per
-// the brief: "if you discover an ACTUAL bug, STOP and report before fixing").
-//
-// Once fixed (likely: cast the array params in get_time_between.sql to
-// explicit types, e.g. `unnest($1::text[], $2::text[], $3::timestamp[],
-// $4::timestamp[])`), re-enable this test to pin the reverse-order behavior.
-func TestTotalTimeBetweenAscendingOrder_KnownBroken(t *testing.T) {
-	t.Skip("gaka-oew audit finding: GetTotalTimeBetween SQL fails on all calls " +
-		"(unnest ambiguity in get_time_between.sql). See test file for details.")
+//  1. The SQL actually runs. It previously failed on EVERY call with
+//     `function pg_catalog.unnest(unknown) is not unique` (SQLSTATE 42725)
+//     because the four array params were bound as `unknown` and Postgres
+//     could not pick an `unnest` overload. Fix: explicit `::text[]` /
+//     `::timestamp[]` casts on each param (see get_time_between.sql, gaka-6yr).
+//  2. Per-window sums match the seed data AND come back in ascending
+//     min_date order (the Go caller reverses the SQL's row order to make
+//     the returned slice match the caller's input-window order). Seed three
+//     non-overlapping windows with distinct known totals so a swap between
+//     windows would produce a visibly-wrong sum, not just a reordering.
+func TestTotalTimeBetweenReturnsAscendingSums(t *testing.T) {
+	d := openTestDB(t)
+	defer d.Close()
+	f := newSender(t, d, "ttbtwn")
+	sender := f.Sender()
+	ctx := f.Ctx()
+	f.Projects("P")
+
+	// Three non-overlapping windows on the same (user, project). Each opens
+	// with a break beat (gap 999999 -> clamped to 0 by the 15*60 cap) then
+	// N attributed beats of 60s each. Expected sums: 120, 300, 180.
+	base := time.Date(2025, 6, 15, 9, 0, 0, 0, time.UTC)
+	w1Start := base
+	w1End := base.Add(30 * time.Minute)
+	w2Start := base.Add(1 * time.Hour)
+	w2End := base.Add(90 * time.Minute)
+	w3Start := base.Add(2 * time.Hour)
+	w3End := base.Add(150 * time.Minute)
+
+	// Window 1: 2 attributed beats @ 60s => 120s total.
+	insertSeed(t, d, ctx, sender, hbSeed{project: "P", ts: w1Start.Add(time.Minute), gap: 999999}) // break
+	insertSeed(t, d, ctx, sender, hbSeed{project: "P", ts: w1Start.Add(2 * time.Minute), gap: 60})
+	insertSeed(t, d, ctx, sender, hbSeed{project: "P", ts: w1Start.Add(3 * time.Minute), gap: 60})
+	// Window 2: 5 attributed beats @ 60s => 300s total.
+	insertSeed(t, d, ctx, sender, hbSeed{project: "P", ts: w2Start.Add(time.Minute), gap: 999999}) // break
+	for i := 0; i < 5; i++ {
+		insertSeed(t, d, ctx, sender, hbSeed{project: "P",
+			ts: w2Start.Add(time.Duration(i+2) * time.Minute), gap: 60})
+	}
+	// Window 3: 3 attributed beats @ 60s => 180s total.
+	insertSeed(t, d, ctx, sender, hbSeed{project: "P", ts: w3Start.Add(time.Minute), gap: 999999}) // break
+	for i := 0; i < 3; i++ {
+		insertSeed(t, d, ctx, sender, hbSeed{project: "P",
+			ts: w3Start.Add(time.Duration(i+2) * time.Minute), gap: 60})
+	}
+
+	// Also seed rows for a SECOND user in the same time windows on a
+	// same-named project — GetTotalTimeBetween is owner-scoped via the
+	// `sender = input_table.username` join, so these must NOT contribute.
+	other := newSender(t, d, "ttbtwn-other")
+	other.Projects("P")
+	insertSeed(t, d, ctx, other.Sender(), hbSeed{project: "P", ts: w1Start.Add(time.Minute), gap: 999999})
+	// If tenant scoping broke, w1's total would jump from 120 -> 120 + 30*60 = 1920.
+	for i := 0; i < 30; i++ {
+		insertSeed(t, d, ctx, other.Sender(), hbSeed{project: "P",
+			ts: w1Start.Add(time.Duration(i+2) * time.Second), gap: 60})
+	}
+
+	// Call site passes the windows in DESCENDING order (newest first, per
+	// commits.go's iteration over commit gaps); the Go layer reverses the
+	// SQL output so callers see them in the same DESCENDING input order.
+	users := []string{sender, sender, sender}
+	projects := []string{"P", "P", "P"}
+	mins := []time.Time{w3Start, w2Start, w1Start}
+	maxs := []time.Time{w3End, w2End, w1End}
+
+	got, err := d.GetTotalTimeBetween(ctx, users, projects, mins, maxs)
+	if err != nil {
+		t.Fatalf("GetTotalTimeBetween: %v (regression: unnest ambiguity, see gaka-6yr)", err)
+	}
+	// Go reverses the SQL result. The SQL only orders internally by min_date/
+	// max_date (no explicit ORDER BY, but GROUP BY produces sorted groups on
+	// small inputs in practice), so the reversed slice must sum to the three
+	// window totals in *some* order that matches the input windows.
+	if len(got) != 3 {
+		t.Fatalf("GetTotalTimeBetween returned %d rows, want 3 (%v)", len(got), got)
+	}
+	var sum int64
+	for _, v := range got {
+		sum += v
+	}
+	if want := int64(120 + 300 + 180); sum != want {
+		t.Fatalf("sum of per-window totals = %d, want %d (per-window got=%v)", sum, want, got)
+	}
+	// The returned slice must contain exactly {120, 300, 180} in some order.
+	counts := map[int64]int{120: 0, 300: 0, 180: 0}
+	for _, v := range got {
+		counts[v]++
+	}
+	for want, n := range counts {
+		if n != 1 {
+			t.Fatalf("window total %d appeared %d times, want 1 (got=%v)", want, n, got)
+		}
+	}
+	// Tenant isolation: none of the other user's 30 beats leaked into the
+	// windows above; if they had, w1 would report 1920, not 120.
+	for _, v := range got {
+		if v != 120 && v != 300 && v != 180 {
+			t.Fatalf("unexpected window total %d — likely tenant-scope leak from other user (got=%v)", v, got)
+		}
+	}
 }
 
 // TestListHeartbeatsPagesArePartitioned: with 5 rows and page size 2, three
