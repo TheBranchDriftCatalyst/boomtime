@@ -72,4 +72,31 @@ describe("HeroIdentity tagline", () => {
     // Username shows twice: as "> PROFILE · zorak@boomtime" and as the big header
     expect(screen.getAllByText(/zorak/i).length).toBeGreaterThanOrEqual(1);
   });
+
+  // gaka-myv: emblem row renders one <img> per top-3 award. In tests the
+  // images will 404 (no backend) which triggers the null fallback, but the
+  // <img> elements are in the DOM before onError fires, so we can assert
+  // src is wired to /api/v1/labels/{id}/image.
+  it("renders an emblem <img> per top-3 award pointing at the label image endpoint", () => {
+    const data = p({
+      languages: [rs("python", 500)],
+      editors: [rs("vim", 500)],
+      dailyAvg: 3 * 3600,
+      dailyTotal: Array.from({ length: 30 }, () => 3 * 3600),
+    });
+    render(<WidgetRenderer kind="hero-identity" data={data} />);
+    const emblemRow = screen.getByTestId("hero-emblems");
+    const imgs = Array.from(emblemRow.querySelectorAll("img"));
+    expect(imgs).toHaveLength(3);
+    for (const img of imgs) {
+      expect(img.getAttribute("src")).toMatch(
+        /^\/api\/v1\/labels\/[a-zA-Z0-9\-]+\/image$/,
+      );
+    }
+  });
+
+  it("omits the emblem row entirely when there are no awards", () => {
+    render(<WidgetRenderer kind="hero-identity" data={p({})} />);
+    expect(screen.queryByTestId("hero-emblems")).not.toBeInTheDocument();
+  });
 });

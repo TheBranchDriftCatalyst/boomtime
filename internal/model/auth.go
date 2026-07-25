@@ -46,6 +46,11 @@ type UserStatus struct {
 	FullName string `json:"full_name"` // rFull_name -> full_name
 	Email    string `json:"email"`     // rEmail -> email
 	Photo    string `json:"photo"`     // rPhoto -> photo
+	// gaka-myv: signal to the FE whether this user is on the admin allowlist
+	// (BOOM_ADMIN_USERS). The FE conditionally shows the Admin tab based on
+	// this — server also enforces via the admin endpoints, so the flag is a
+	// UX aid, not a security boundary.
+	IsAdmin bool `json:"is_admin"` // omit-defaults not used to keep the shape stable
 }
 
 // UserStatusResponse is GET /auth/users/current.

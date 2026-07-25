@@ -104,6 +104,8 @@ export const LABEL_CATALOG: LabelSpec[] = [
       op: ">=",
       pct: 0.25,
     },
+    imagePrompt:
+      "hooded figure at a glowing terminal, moonlight through venetian blinds, cyberpunk noir emblem, deep red and black, no text",
   },
   {
     id: "early-bird",
@@ -118,6 +120,8 @@ export const LABEL_CATALOG: LabelSpec[] = [
       op: ">=",
       pct: 0.25,
     },
+    imagePrompt:
+      "silhouette coding as sun rises over a neon skyline, warm ambient red glow, cyberpunk emblem, no text",
   },
   {
     id: "weekend-warrior",
@@ -132,6 +136,8 @@ export const LABEL_CATALOG: LabelSpec[] = [
       op: ">=",
       pct: 0.3,
     },
+    imagePrompt:
+      "battle-scarred cyber-samurai coding on a tatami mat, weekend zen, red katana across knees, emblem style, no text",
   },
   {
     id: "monogamist",
@@ -141,6 +147,8 @@ export const LABEL_CATALOG: LabelSpec[] = [
     description: "Top project accounts for ≥70% of coding time",
     rank: 70,
     condition: { kind: "top-share", axis: "projects", op: ">=", pct: 0.7 },
+    imagePrompt:
+      "singular focus, monastic coder before one glowing screen, red halo, cyberpunk emblem, deep red and black, no text",
   },
   {
     id: "polyglot",
@@ -156,6 +164,8 @@ export const LABEL_CATALOG: LabelSpec[] = [
       op: ">=",
       n: 5,
     },
+    imagePrompt:
+      "a many-tongued cyber-oracle with multiple screens showing different scripts, chrome accents, deep red glow, emblem, no text",
   },
   {
     id: "consistent",
@@ -165,6 +175,8 @@ export const LABEL_CATALOG: LabelSpec[] = [
     description: "Current streak ≥30 days",
     rank: 90,
     condition: { kind: "streak", which: "current", op: ">=", days: 30 },
+    imagePrompt:
+      "brutalist clock tower emitting red pulses, unbroken chain of light, discipline motif, cyberpunk emblem, no text",
   },
   {
     id: "sprinter",
@@ -174,6 +186,8 @@ export const LABEL_CATALOG: LabelSpec[] = [
     description: "Last 7 days averaged ≥2× the prior 7 days",
     rank: 70,
     condition: { kind: "trend", window: "last7-vs-prior7", op: ">=", ratio: 2.0 },
+    imagePrompt:
+      "figure sprinting through neon rain, motion blur, red trailing light streaks, cyberpunk emblem, no text",
   },
   {
     id: "machine",
@@ -183,6 +197,8 @@ export const LABEL_CATALOG: LabelSpec[] = [
     description: "Daily average ≥3h",
     rank: 88,
     condition: { kind: "daily-avg", op: ">=", hours: 3 },
+    imagePrompt:
+      "half-android coder plugged directly into a terminal, tireless, deep red glow, cyberpunk emblem, no text",
   },
   {
     id: "deep-focus",
@@ -192,6 +208,8 @@ export const LABEL_CATALOG: LabelSpec[] = [
     description: "Top project holds ≥80% share (extreme concentration)",
     rank: 75,
     condition: { kind: "top-share", axis: "projects", op: ">=", pct: 0.8 },
+    imagePrompt:
+      "figure in meditative trance surrounded by three floating holographic screens, red aura, cyberpunk emblem, no text",
   },
   {
     id: "multi-tasker",
@@ -207,6 +225,8 @@ export const LABEL_CATALOG: LabelSpec[] = [
       op: ">=",
       n: 5,
     },
+    imagePrompt:
+      "cyber-Kali with many arms typing on many keyboards, chrome accents, deep red, cyberpunk emblem, no text",
   },
   {
     id: "meeting-warrior",
@@ -222,6 +242,8 @@ export const LABEL_CATALOG: LabelSpec[] = [
       op: ">=",
       pct: 0.1,
     },
+    imagePrompt:
+      "stern corporate samurai in a boardroom, katana laid across knees, red arasaka-style emblem, cyberpunk, no text",
   },
   {
     id: "ai-native",
@@ -237,6 +259,8 @@ export const LABEL_CATALOG: LabelSpec[] = [
       op: ">=",
       pct: 0.25,
     },
+    imagePrompt:
+      "cyber-monk conversing with a shimmering AI hologram, neon red glyphs, symbiosis motif, cyberpunk emblem, no text",
   },
   {
     id: "test-obsessive",
@@ -252,6 +276,8 @@ export const LABEL_CATALOG: LabelSpec[] = [
       op: ">=",
       pct: 0.05,
     },
+    imagePrompt:
+      "figure inspecting glowing code under a microscope, forensic precision, cyberpunk emblem, deep red and black, no text",
   },
   {
     id: "documenter",
@@ -267,6 +293,8 @@ export const LABEL_CATALOG: LabelSpec[] = [
       op: ">=",
       pct: 0.05,
     },
+    imagePrompt:
+      "hooded scribe illuminating cyberpunk scrolls with red ink, quill of light, emblem style, no text",
   },
 
   // ---------------- TRIBES (community identity) --------------------------
@@ -278,6 +306,8 @@ export const LABEL_CATALOG: LabelSpec[] = [
     description: "≥10h in Vim",
     rank: 30,
     condition: { kind: "axis-time", axis: "editors", value: "vim", op: ">=", hours: 10 },
+    imagePrompt:
+      "cyber-monk with a modal keyboard tattooed on hands, hjkl glowing red, deep red and black emblem, no text",
   },
   {
     id: "emacs-elder",
@@ -287,6 +317,8 @@ export const LABEL_CATALOG: LabelSpec[] = [
     description: "≥100h in Emacs",
     rank: 35,
     condition: { kind: "axis-time", axis: "editors", value: "emacs", op: ">=", hours: 100 },
+    imagePrompt:
+      "ancient wizard in flowing robes at a parenthesis altar, red bracket sigils floating around, cyberpunk emblem, no text",
   },
   {
     id: "terminal-purist",
@@ -310,6 +342,8 @@ export const LABEL_CATALOG: LabelSpec[] = [
         { kind: "axis-pct", axis: "editors", value: "emacs", op: ">=", pct: 0.9 },
       ],
     },
+    imagePrompt:
+      "ascetic figure at a monochrome terminal, no color except a deep red prompt cursor, cyberpunk emblem, no text",
   },
   {
     id: "mac-native",
@@ -319,6 +353,8 @@ export const LABEL_CATALOG: LabelSpec[] = [
     description: "≥200h on macOS",
     rank: 25,
     condition: { kind: "axis-time", axis: "platforms", value: "mac", op: ">=", hours: 200 },
+    imagePrompt:
+      "sleek chrome apple-shaped emblem, arasaka red, corporate cyberpunk minimalism, no text",
   },
   {
     id: "linux-warlord",
@@ -328,6 +364,8 @@ export const LABEL_CATALOG: LabelSpec[] = [
     description: "≥200h on Linux",
     rank: 25,
     condition: { kind: "axis-time", axis: "platforms", value: "linux", op: ">=", hours: 200 },
+    imagePrompt:
+      "war-painted penguin warrior in cyber-armor, chrome tusks, deep red war paint, cyberpunk emblem, no text",
   },
   {
     id: "windows-survivor",
@@ -337,6 +375,8 @@ export const LABEL_CATALOG: LabelSpec[] = [
     description: "≥200h on Windows",
     rank: 25,
     condition: { kind: "axis-time", axis: "platforms", value: "windows", op: ">=", hours: 200 },
+    imagePrompt:
+      "battle-scarred figure walking away from shattered windows, red debris raining, cyberpunk emblem, no text",
   },
   {
     id: "cross-platform",
@@ -352,6 +392,8 @@ export const LABEL_CATALOG: LabelSpec[] = [
       op: ">=",
       n: 2,
     },
+    imagePrompt:
+      "three-headed cyber-hydra, one head per operating system, chrome scales, glowing red eyes, cyberpunk emblem, no text",
   },
 
   // ============================================================================

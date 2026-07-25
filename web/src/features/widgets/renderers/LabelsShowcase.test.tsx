@@ -92,4 +92,18 @@ describe("LabelsShowcase", () => {
     expect(tribes).toHaveLength(1);
     expect(within(tribes[0]).getByText("MAC NATIVE")).toBeInTheDocument();
   });
+
+  // gaka-myv: every chip now includes a <LabelImage> that resolves to
+  // /api/v1/labels/<id>/image with a glyph fallback on 404. The test can't
+  // hit a live backend, so we assert the <img> element exists inside each
+  // chip and its src is wired correctly.
+  it("renders a LabelImage inside every award chip", () => {
+    const data = p({ platforms: [rs("mac", 200)] });
+    render(<LabelsShowcase data={data} />);
+    const chip = screen.getByTestId("label-award");
+    const img = chip.querySelector('img[data-testid="label-image"]') as HTMLImageElement | null;
+    expect(img).not.toBeNull();
+    expect(img!.getAttribute("src")).toBe("/api/v1/labels/mac-native/image");
+    expect(img!.getAttribute("data-label-id")).toBe("mac-native");
+  });
 });

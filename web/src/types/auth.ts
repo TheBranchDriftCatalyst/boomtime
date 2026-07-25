@@ -30,5 +30,9 @@ export interface CurrentUser {
     full_name: string | null;
     email: string | null;
     photo: string | null;
+    // gaka-myv: BOOM_ADMIN_USERS membership. Drives the Settings > Admin tab
+    // visibility. Missing when the server hasn't been updated — treat as
+    // false in that case.
+    is_admin?: boolean;
   };
 }

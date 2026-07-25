@@ -7,6 +7,7 @@
 import type { PublicDashboardPayload } from "@/types/stats";
 import { evaluate } from "@/features/publicprofile/labels/evaluator";
 import type { LabelAward } from "@/features/publicprofile/labels/types";
+import { LabelImage } from "@/features/publicprofile/labels/LabelImage";
 
 // gaka-364.1: "meme" group renders FIRST so the OP shiznit lands top of the
 // showcase widget the same way it lands top of the hero tagline. Rank-desc
@@ -68,11 +69,19 @@ export function LabelsShowcase({ data }: LabelsShowcaseProps) {
                     data-testid="label-award"
                     data-label-id={a.id}
                   >
-                    {a.glyph && (
-                      <span aria-hidden className="opacity-80">
-                        {a.glyph}
-                      </span>
-                    )}
+                    {/* gaka-myv: image if available, glyph fallback on 404 */}
+                    <LabelImage
+                      id={a.id}
+                      size={16}
+                      className="opacity-90"
+                      fallback={
+                        a.glyph ? (
+                          <span aria-hidden className="opacity-80">
+                            {a.glyph}
+                          </span>
+                        ) : null
+                      }
+                    />
                     <span>{a.label}</span>
                   </span>
                 </li>

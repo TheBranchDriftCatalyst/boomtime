@@ -297,6 +297,7 @@ func (h *Handler) CurrentUser(c *echo.Context) error {
 			FullName: owner,
 			Email:    owner + "@hakatime.dev",
 			Photo:    "",
+			IsAdmin:  h.Cfg.IsAdmin(owner),
 		},
 	})
 }

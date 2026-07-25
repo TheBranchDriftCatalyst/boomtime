@@ -176,6 +176,10 @@ export const qk = {
   // signature widening.
   dashboardLayout: (scope: string) => ["dashboard-layout", scope] as const,
 
+  // gaka-myv: admin label-images status (row count / feature flags).
+  // Refetched after a regenerate to update the "N / M generated" tally.
+  adminLabelImages: () => ["admin", "label-images"] as const,
+
   // --- Meta (version + changelog) ---------------------------------------------
   // Both cache forever — the FE only refetches on a manual reload; a new
   // release replaces the whole SPA anyway.

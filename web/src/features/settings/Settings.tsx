@@ -1,3 +1,4 @@
+import type React from "react";
 import { useSearchParams } from "react-router";
 import { PageToolbar } from "@/components/toolbar/PageToolbar";
 import { cn } from "@/lib/utils";
@@ -7,6 +8,7 @@ import { GoalsTab } from "@/features/goals/GoalsTab";
 import { WidgetLinksCard } from "@/features/widgets/WidgetLinksCard";
 import { Changelog } from "@/features/changelog/Changelog";
 import { Logs } from "@/features/logs/Logs";
+import { AdminTab } from "@/features/admin/AdminTab";
 import { ChangePasswordCard } from "@/features/settings/ChangePasswordCard";
 import { DashboardEditorCard } from "@/features/settings/DashboardEditorCard";
 import { PluginSetup } from "@/features/settings/PluginSetup";
@@ -39,7 +41,12 @@ function ProfileTab() {
 // later Wakatime key, later notifications). Plugin Setup follows — highest-
 // value first-run info. API tokens sits adjacent because Plugin Setup
 // explains "how to send data" and Tokens explains "which credential to use".
-const TABS = [
+//
+// gaka-myv: the Admin tab is conditionally appended below when the current
+// user is on BOOM_ADMIN_USERS. Keeps the tab list stable for the common
+// (non-admin) case and avoids leaking the existence of admin routes to
+// arbitrary logged-in users.
+const BASE_TABS = [
   { id: "profile", label: "Profile", render: () => <ProfileTab /> },
   { id: "plugin", label: "Plugin setup", render: () => <PluginSetup /> },
   { id: "tokens", label: "API tokens", render: () => <TokensTab /> },
@@ -54,7 +61,14 @@ const TABS = [
   { id: "logs", label: "Logs", render: () => <Logs embedded /> },
 ] as const;
 
-type TabID = (typeof TABS)[number]["id"];
+const ADMIN_TAB = {
+  id: "admin",
+  label: "Admin",
+  render: () => <AdminTab />,
+} as const;
+
+type BaseTabID = (typeof BASE_TABS)[number]["id"];
+type TabID = BaseTabID | typeof ADMIN_TAB.id;
 
 // Settings: one page, horizontal top tab bar. The active tab lives in
 // ?tab=<id> so tabs are linkable/bookmarkable (old /app/logs and
@@ -63,11 +77,26 @@ type TabID = (typeof TABS)[number]["id"];
 // ?tab=profile / avatar-menu link, not a first-run destination).
 export function Settings() {
   const [params, setParams] = useSearchParams();
+
+  // gaka-myv: pull the current-user record just to check is_admin so the
+  // Admin tab shows up in the right people's list. Static after login, so a
+  // long staleTime keeps this cheap.
+  const { data: current } = useQuery({
+    queryKey: ["auth", "current-user"],
+    queryFn: () => api.currentUser(),
+    staleTime: 60_000,
+  });
+  const isAdmin = Boolean(current?.data?.is_admin);
+
+  const tabs = isAdmin
+    ? ([...BASE_TABS, ADMIN_TAB] as ReadonlyArray<{ id: string; label: string; render: () => React.ReactNode }>)
+    : (BASE_TABS as ReadonlyArray<{ id: string; label: string; render: () => React.ReactNode }>);
+
   const raw = params.get("tab");
-  const active: TabID = TABS.some((t) => t.id === raw)
+  const active: TabID = tabs.some((t) => t.id === raw)
     ? (raw as TabID)
     : "plugin";
-  const tab = TABS.find((t) => t.id === active)!;
+  const tab = tabs.find((t) => t.id === active)!;
 
   return (
     <div>
@@ -78,7 +107,7 @@ export function Settings() {
         aria-label="Settings sections"
         className="mb-6 flex gap-1 border-b border-border"
       >
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.id}
             role="tab"

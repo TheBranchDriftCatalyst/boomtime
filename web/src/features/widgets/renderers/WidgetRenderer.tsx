@@ -28,6 +28,7 @@ import { GoalList } from "@/features/widgets/renderers/GoalList";
 // the labels-showcase widget. Pure over the payload — no state, no
 // fetch, no clock, matches the grade badge's derivation pattern.
 import { evaluate } from "@/features/publicprofile/labels/evaluator";
+import { LabelImage } from "@/features/publicprofile/labels/LabelImage";
 import { LabelsShowcase } from "@/features/widgets/renderers/LabelsShowcase";
 
 interface Ctx {
@@ -206,6 +207,26 @@ function HeroIdentity({ data }: { data: PublicDashboardPayload }) {
           {tagline}
         </span>
       </div>
+      {/* gaka-myv: emblem row — one <img> per top-3 award. The image falls
+          back to null when 404 (no imagePrompt yet, or shim disabled), so
+          the row stays visually clean either way. */}
+      {top3.length > 0 && (
+        <div
+          className="mt-2 flex items-center gap-2"
+          data-testid="hero-emblems"
+        >
+          {top3.map((a) => (
+            <LabelImage
+              key={a.id}
+              id={a.id}
+              size={28}
+              alt={a.label}
+              className="rounded-sm border border-[color:var(--primary)]/30 opacity-90"
+              fallback={null}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

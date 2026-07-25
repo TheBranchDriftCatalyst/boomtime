@@ -819,4 +819,27 @@ export const api = {
   // response isn't JSON, so this "just works").
   getChangelog: () =>
     request<string>("/api/v1/changelog", { auth: false }),
+
+  // --- Admin: label images (gaka-myv) ---------------------------------------
+  // Admin-gated (403 for non-admins). Info returns feature status + row count.
+  // Regenerate takes the FE catalog snapshot so the Go side doesn't have to
+  // mirror memecore/kawaii/space-marine expansions — the FE is authoritative.
+  getAdminLabelImages: () =>
+    request<{
+      enabled: boolean;
+      model: string;
+      shimUrl: string;
+      count: number;
+      baseline: string[];
+    }>("/api/v1/admin/label-images"),
+  regenerateLabelImages: (body: {
+    entries: Array<{ id: string; prompt: string }>;
+    ids?: string[];
+    all?: boolean;
+    truncate?: boolean;
+  }) =>
+    request<{ generated: number; failed: number; requested: number }>(
+      "/api/v1/admin/label-images/regenerate",
+      { method: "POST", body },
+    ),
 };
