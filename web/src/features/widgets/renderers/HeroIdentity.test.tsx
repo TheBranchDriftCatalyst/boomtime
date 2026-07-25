@@ -44,10 +44,15 @@ describe("HeroIdentity tagline", () => {
   });
 
   it("shows top-3 awards joined by · on a rich payload", () => {
-    // Two masters at rank 103 outrank everything else; tie-break is id-asc.
-    //   editors-vim-master (103)   ← e < l → wins tie
-    //   languages-python-master (103)
-    //   consistent (rank 90)       ← streak-driven archetype
+    // gaka-364.1: memecore labels (kind:"meme", rank 100-199) outrank the
+    // tame archetypes so the hero surfaces the OP names first.
+    // With python 500h + vim 500h + 30-day streak + 3h daily-avg:
+    //   gigachad-committer (rank 130) — 28d+ streak
+    //   space-marine       (rank 130) — 3h+ daily-avg, punchcard spread
+    //   for-the-emperor    (rank 125) — top-language 100% share
+    // Ties break by id-asc, so gigachad < space, and both outrank the
+    // 125-ranked FOR THE EMPEROR. Vim/Python MASTER (rank 103) and CONSISTENT
+    // (rank 90) still get awarded — they just don't win the hero top-3.
     const daily = Array.from({ length: 30 }, () => 3 * 3600);
     const data = p({
       languages: [rs("python", 500)],
@@ -57,7 +62,9 @@ describe("HeroIdentity tagline", () => {
     });
     render(<WidgetRenderer kind="hero-identity" data={data} />);
     const tagline = screen.getByTestId("hero-tagline");
-    expect(tagline).toHaveTextContent("VIM MASTER · PYTHON MASTER · CONSISTENT");
+    expect(tagline).toHaveTextContent(
+      "GIGACHAD COMMITTER · SPACE MARINE · FOR THE EMPEROR",
+    );
   });
 
   it("renders username regardless of award state", () => {

@@ -8,8 +8,17 @@ import type { PublicDashboardPayload } from "@/types/stats";
 import { evaluate } from "@/features/publicprofile/labels/evaluator";
 import type { LabelAward } from "@/features/publicprofile/labels/types";
 
-const GROUP_ORDER: Array<LabelAward["kind"]> = ["tier", "archetype", "tribe"];
+// gaka-364.1: "meme" group renders FIRST so the OP shiznit lands top of the
+// showcase widget the same way it lands top of the hero tagline. Rank-desc
+// sort inside the group is inherited from the evaluator, we just group here.
+const GROUP_ORDER: Array<LabelAward["kind"]> = [
+  "meme",
+  "tier",
+  "archetype",
+  "tribe",
+];
 const GROUP_HEADERS: Record<LabelAward["kind"], string> = {
+  meme: "OP Shiznit",
   tier: "Tiers",
   archetype: "Archetypes",
   tribe: "Tribes",

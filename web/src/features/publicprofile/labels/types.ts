@@ -164,8 +164,17 @@ export interface LabelSpec {
    *  dedupe + as a React key. */
   id: string;
   /** Category — drives grouping in the showcase widget and rank preference
-   *  in the hero-tagline top-N. */
-  kind: "tier" | "archetype" | "tribe";
+   *  in the hero-tagline top-N.
+   *
+   *  Kinds:
+   *    - "tier"      — 5-band ladder per axis-value (novice → legend).
+   *    - "archetype" — personality trait; you can hold several at once.
+   *    - "tribe"     — community identity (editor/OS allegiance).
+   *    - "meme"      — the OP shiznit (gaka-364.1) — memecore / kawaii /
+   *      space-marine / sigma-grindset flavor. Ranks intentionally OUTRANK
+   *      archetypes so they win the hero top-3 slot when they fire.
+   */
+  kind: "tier" | "archetype" | "tribe" | "meme";
   /** Display label. Uppercased at render; keep short. */
   label: string;
   /** Optional 1-3 char glyph (emoji or symbol). Purely cosmetic. */
@@ -184,6 +193,12 @@ export interface LabelSpec {
    *  collisions among the 5 tier specs generated per axis-value so only the
    *  highest reached is awarded. */
   tierKey?: string; // e.g. "languages:python"
+  /** Optional prompt template for the ComfyUI label-image worker (gaka-myv).
+   *  When set, the worker will render an emblem image for this label and
+   *  serve it in place of the glyph. Kept next to the spec so authoring a
+   *  new label carries its own art brief. When absent, the frontend falls
+   *  back to the glyph. */
+  imagePrompt?: string;
 }
 
 /** One label awarded to a payload. Consumed by the hero tagline + the
