@@ -278,6 +278,38 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
     dashboardScopes: ["profile"],
     defaultLayout: { w: 6, h: 2 },
   },
+  // gaka-wpb — goal tile widgets. All three render in-page only
+  // (svgOnly: not set; the backend SVG endpoint doesn't know these
+  // kinds and returns 404). Goals are private-by-default; users can
+  // still surface progress publicly by adding one of these tiles to
+  // their public dashboard layout.
+  {
+    kind: "goal-progress",
+    title: "Goal Progress",
+    description: "One goal, horizontal bar with % + name",
+    scopes: ["user"],
+    primitives: ["graph", "label"],
+    dashboardScopes: ["profile"],
+    defaultLayout: { w: 6, h: 2 },
+  },
+  {
+    kind: "goal-ring",
+    title: "Goal Ring",
+    description: "Up to 3 goals as concentric progress rings",
+    scopes: ["user"],
+    primitives: ["grade", "label"],
+    dashboardScopes: ["profile"],
+    defaultLayout: { w: 4, h: 4 },
+  },
+  {
+    kind: "goal-list",
+    title: "Goals",
+    description: "Mini list of enabled goals with per-row progress",
+    scopes: ["user"],
+    primitives: ["label", "graph"],
+    dashboardScopes: ["profile"],
+    defaultLayout: { w: 6, h: 4 },
+  },
 ];
 
 /** Catalog entries offered for a page scope. */

@@ -17,6 +17,13 @@ import {
   currentStreak,
   longestStreakInRange,
 } from "@/features/publicprofile/grade";
+// gaka-wpb: goal tile renderers. Data-fetched internally (batched
+// /goals/progress); the outer `data` prop isn't used by these
+// kinds. Public dashboard renders (unauth) will 401 silently and
+// show the "No goals yet" placeholder — private-by-default.
+import { GoalProgress } from "@/features/widgets/renderers/GoalProgress";
+import { GoalRing } from "@/features/widgets/renderers/GoalRing";
+import { GoalList } from "@/features/widgets/renderers/GoalList";
 
 interface Ctx {
   view?: string;
@@ -108,6 +115,14 @@ export function WidgetRenderer({ kind, view, data, ctx }: WidgetRendererProps) {
       return <ChipList items={data.editors} />;
     case "platforms-chips":
       return <ChipList items={data.platforms} />;
+
+    // gaka-wpb goal tiles — self-fetching (see GoalProgress.tsx doc).
+    case "goal-progress":
+      return <GoalProgress />;
+    case "goal-ring":
+      return <GoalRing />;
+    case "goal-list":
+      return <GoalList />;
 
     default:
       return <Empty note={`No renderer for "${kind}"`} />;

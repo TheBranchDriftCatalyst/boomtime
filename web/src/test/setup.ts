@@ -46,3 +46,24 @@ beforeEach(() => {
 if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {};
 }
+
+// jsdom lacks Element.prototype.hasPointerCapture / setPointerCapture /
+// releasePointerCapture. Radix UI's Select (and other pointer-capture
+// primitives — Slider, Toggle, Popover triggers) call these under
+// userEvent's pointerdown flow. Without the shim, tests that click a
+// Radix trigger fail with "target.hasPointerCapture is not a function".
+// Shim as no-ops (return false for hasPointerCapture — jsdom never
+// captures pointers, so the answer is genuinely "no").
+// gaka-wpb.1 (audit): the goals PredicateBuilder tests were the first
+// to trip on this; the "convert leaf to group" test had to be
+// tautologized to work around the missing shim. Adding it here lets
+// that test drive the real DOM instead.
+if (!Element.prototype.hasPointerCapture) {
+  Element.prototype.hasPointerCapture = () => false;
+}
+if (!Element.prototype.setPointerCapture) {
+  Element.prototype.setPointerCapture = () => {};
+}
+if (!Element.prototype.releasePointerCapture) {
+  Element.prototype.releasePointerCapture = () => {};
+}
