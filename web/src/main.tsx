@@ -7,6 +7,7 @@ import { App } from "@/app/App";
 import { AnalyticsTracker } from "@/app/AnalyticsTracker";
 import { AuthProvider } from "@/features/auth/useAuth";
 import { CatalystProvider } from "@thebranchdriftcatalyst/catalyst-ui/contexts/CatalystProvider";
+import { TooltipProvider } from "@thebranchdriftcatalyst/catalyst-ui/ui/tooltip";
 import { authStore } from "@/features/auth/auth";
 import "@/index.css";
 
@@ -34,15 +35,23 @@ createRoot(document.getElementById("root")!).render(
       <CatalystProvider> — see @thebranchdriftcatalyst/catalyst-ui/contexts/CatalystProvider.
     */}
     <CatalystProvider defaultTheme="boomtime" legacyStorageKey="boomtime-theme">
-      <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <AnalyticsTracker />
-          <AuthProvider>
-            <App />
-            <Toaster position="top-right" richColors />
-          </AuthProvider>
-        </BrowserRouter>
-      </QueryClientProvider>
+      {/*
+        Radix Tooltip needs a single root-level provider — every <Tooltip>
+        under it inherits the delayDuration. 200ms is snappier than the
+        700ms default and reads better with the LabelChip hover pattern
+        (labels are dense, want the explainer to appear quickly).
+      */}
+      <TooltipProvider delayDuration={200}>
+        <QueryClientProvider client={queryClient}>
+          <BrowserRouter>
+            <AnalyticsTracker />
+            <AuthProvider>
+              <App />
+              <Toaster position="top-right" richColors />
+            </AuthProvider>
+          </BrowserRouter>
+        </QueryClientProvider>
+      </TooltipProvider>
     </CatalystProvider>
   </StrictMode>,
 );

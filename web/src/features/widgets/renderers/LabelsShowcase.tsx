@@ -7,7 +7,7 @@
 import type { PublicDashboardPayload } from "@/types/stats";
 import { evaluate } from "@/features/publicprofile/labels/evaluator";
 import type { LabelAward } from "@/features/publicprofile/labels/types";
-import { LabelImage } from "@/features/publicprofile/labels/LabelImage";
+import { LabelChip } from "@/features/publicprofile/labels/LabelChip";
 
 // gaka-364.1: "meme" group renders FIRST so the OP shiznit lands top of the
 // showcase widget the same way it lands top of the hero tagline. Rank-desc
@@ -63,27 +63,13 @@ export function LabelsShowcase({ data }: LabelsShowcaseProps) {
             <ul className="flex flex-wrap gap-1.5">
               {list.map((a) => (
                 <li key={a.id}>
-                  <span
-                    title={a.description}
-                    className="inline-flex items-center gap-1 rounded-sm border border-[color:var(--primary)]/40 bg-[color:var(--primary)]/10 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.12em]"
-                    data-testid="label-award"
-                    data-label-id={a.id}
-                  >
-                    {/* gaka-myv: image if available, glyph fallback on 404 */}
-                    <LabelImage
-                      id={a.id}
-                      size={16}
-                      className="opacity-90"
-                      fallback={
-                        a.glyph ? (
-                          <span aria-hidden className="opacity-80">
-                            {a.glyph}
-                          </span>
-                        ) : null
-                      }
-                    />
-                    <span>{a.label}</span>
-                  </span>
+                  {/*
+                    gaka-mem-chip: LabelChip owns the full chip chrome —
+                    image or glyph + hover tooltip with the achievement's
+                    description. Replaces the earlier native title=... tip
+                    which browsers style inconsistently and can't show an image.
+                  */}
+                  <LabelChip award={a} size="md" />
                 </li>
               ))}
             </ul>

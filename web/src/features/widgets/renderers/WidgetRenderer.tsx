@@ -28,7 +28,7 @@ import { GoalList } from "@/features/widgets/renderers/GoalList";
 // the labels-showcase widget. Pure over the payload — no state, no
 // fetch, no clock, matches the grade badge's derivation pattern.
 import { evaluate } from "@/features/publicprofile/labels/evaluator";
-import { LabelImage } from "@/features/publicprofile/labels/LabelImage";
+import { LabelChip } from "@/features/publicprofile/labels/LabelChip";
 import { LabelsShowcase } from "@/features/widgets/renderers/LabelsShowcase";
 
 interface Ctx {
@@ -173,16 +173,17 @@ function BigStat({
 }
 
 function HeroIdentity({ data }: { data: PublicDashboardPayload }) {
-  // gaka-364: tagline is now the top-3 awarded labels from the memeification
-  // catalog, joined by " · ". Fallback to "NEW OPERATOR" (no awards at all)
-  // is deliberately unambiguous — it signals "we've got no data on you" more
-  // clearly than the old hard-coded POLYGLOT-CLASS placeholder ever did.
+  // gaka-364: hero tagline is the top-3 awarded labels from the memeification
+  // catalog. Fallback text when there are no awards at all — deliberately
+  // unambiguous ("NEW OPERATOR" signals "we've got no data on you" more
+  // clearly than the old POLYGLOT-CLASS placeholder ever did).
+  //
+  // gaka-mem-chip: the previous split of "plain-text tagline row" +
+  // "separate emblem row of naked <img>s" collapsed into ONE row of
+  // <LabelChip>s. Each chip carries its own image + hover tooltip with
+  // the description of what the label means. No duplication.
   const awards = evaluate(data);
   const top3 = awards.slice(0, 3);
-  const tagline =
-    top3.length === 0
-      ? "NEW OPERATOR"
-      : top3.map((a) => a.label).join(" · ");
   return (
     <div className="flex h-full flex-col justify-center px-3">
       <div className="mb-1 font-mono text-[10px] uppercase tracking-[0.18em] text-[color:var(--muted-foreground)]">
@@ -196,37 +197,28 @@ function HeroIdentity({ data }: { data: PublicDashboardPayload }) {
       </div>
       <div className="mt-2 flex items-center gap-3">
         <span
-          className="inline-block h-[2px] w-16"
+          className="inline-block h-[2px] w-16 shrink-0"
           style={{ background: "var(--primary)" }}
           aria-hidden
         />
-        <span
-          className="font-mono text-[10px] uppercase tracking-[0.2em] text-[color:var(--accent,var(--primary))]"
-          data-testid="hero-tagline"
-        >
-          {tagline}
-        </span>
+        {top3.length === 0 ? (
+          <span
+            className="font-mono text-[10px] uppercase tracking-[0.2em] text-[color:var(--accent,var(--primary))]"
+            data-testid="hero-tagline"
+          >
+            NEW OPERATOR
+          </span>
+        ) : (
+          <div
+            className="flex flex-wrap items-center gap-1.5"
+            data-testid="hero-tagline"
+          >
+            {top3.map((a) => (
+              <LabelChip key={a.id} award={a} size="sm" />
+            ))}
+          </div>
+        )}
       </div>
-      {/* gaka-myv: emblem row — one <img> per top-3 award. The image falls
-          back to null when 404 (no imagePrompt yet, or shim disabled), so
-          the row stays visually clean either way. */}
-      {top3.length > 0 && (
-        <div
-          className="mt-2 flex items-center gap-2"
-          data-testid="hero-emblems"
-        >
-          {top3.map((a) => (
-            <LabelImage
-              key={a.id}
-              id={a.id}
-              size={28}
-              alt={a.label}
-              className="rounded-sm border border-[color:var(--primary)]/30 opacity-90"
-              fallback={null}
-            />
-          ))}
-        </div>
-      )}
     </div>
   );
 }

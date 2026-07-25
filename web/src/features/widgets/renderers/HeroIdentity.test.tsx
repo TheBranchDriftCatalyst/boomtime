@@ -5,13 +5,25 @@
 // Invariants under test:
 //   - EMPTY PAYLOAD: no awards → tagline reads "NEW OPERATOR" (better
 //     signal than the old POLYGLOT-CLASS placeholder).
-//   - RICH PAYLOAD: tagline shows the top-3 award labels joined by "·"
-//     in rank-desc order.
+//   - RICH PAYLOAD: tagline shows the top-3 award labels as LabelChips
+//     in rank-desc order (previously joined by "·"; gaka-mem-chip made
+//     each award its own hover-tooltip'd chip).
 //   - USERNAME still renders regardless.
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { TooltipProvider } from "@thebranchdriftcatalyst/catalyst-ui/ui/tooltip";
 import { WidgetRenderer } from "./WidgetRenderer";
 import type { PublicDashboardPayload } from "@/types/stats";
+
+// LabelChip requires a TooltipProvider ancestor (Radix contract). The app
+// mounts one at the root in main.tsx; tests wrap here explicitly.
+function renderHero(data: PublicDashboardPayload) {
+  return render(
+    <TooltipProvider delayDuration={0}>
+      <WidgetRenderer kind="hero-identity" data={data} />
+    </TooltipProvider>,
+  );
+}
 
 const p = (over: Partial<PublicDashboardPayload>): PublicDashboardPayload => ({
   username: "pandax",
@@ -39,20 +51,15 @@ const rs = (name: string, hours: number, pct?: number) => ({
 
 describe("HeroIdentity tagline", () => {
   it("shows NEW OPERATOR fallback on empty payload", () => {
-    render(<WidgetRenderer kind="hero-identity" data={p({})} />);
+    renderHero(p({}));
     expect(screen.getByTestId("hero-tagline")).toHaveTextContent("NEW OPERATOR");
   });
 
-  it("shows top-3 awards joined by · on a rich payload", () => {
+  it("shows top-3 awards as LabelChips on a rich payload", () => {
     // gaka-364.1: memecore labels (kind:"meme", rank 100-199) outrank the
     // tame archetypes so the hero surfaces the OP names first.
-    // With python 500h + vim 500h + 30-day streak + 3h daily-avg:
-    //   gigachad-committer (rank 130) — 28d+ streak
-    //   space-marine       (rank 130) — 3h+ daily-avg, punchcard spread
-    //   for-the-emperor    (rank 125) — top-language 100% share
-    // Ties break by id-asc, so gigachad < space, and both outrank the
-    // 125-ranked FOR THE EMPEROR. Vim/Python MASTER (rank 103) and CONSISTENT
-    // (rank 90) still get awarded — they just don't win the hero top-3.
+    // Same rank-tiebreak expectation as before — just checking the labels
+    // land as separate LabelChip nodes now instead of a text join.
     const daily = Array.from({ length: 30 }, () => 3 * 3600);
     const data = p({
       languages: [rs("python", 500)],
@@ -60,34 +67,40 @@ describe("HeroIdentity tagline", () => {
       dailyAvg: 3 * 3600,
       dailyTotal: daily,
     });
-    render(<WidgetRenderer kind="hero-identity" data={data} />);
+    renderHero(data);
     const tagline = screen.getByTestId("hero-tagline");
-    expect(tagline).toHaveTextContent(
-      "GIGACHAD COMMITTER · SPACE MARINE · FOR THE EMPEROR",
-    );
+    const chips = tagline.querySelectorAll('[data-testid="label-chip"]');
+    expect(chips).toHaveLength(3);
+    // All expected labels should be present, order enforced by rank+tiebreak
+    const labels = Array.from(chips).map((c) => c.textContent?.trim());
+    expect(labels).toEqual([
+      "GIGACHAD COMMITTER",
+      "SPACE MARINE",
+      "FOR THE EMPEROR",
+    ]);
   });
 
   it("renders username regardless of award state", () => {
-    render(<WidgetRenderer kind="hero-identity" data={p({ username: "zorak" })} />);
+    renderHero(p({ username: "zorak" }));
     // Username shows twice: as "> PROFILE · zorak@boomtime" and as the big header
     expect(screen.getAllByText(/zorak/i).length).toBeGreaterThanOrEqual(1);
   });
 
-  // gaka-myv: emblem row renders one <img> per top-3 award. In tests the
-  // images will 404 (no backend) which triggers the null fallback, but the
-  // <img> elements are in the DOM before onError fires, so we can assert
-  // src is wired to /api/v1/labels/{id}/image.
-  it("renders an emblem <img> per top-3 award pointing at the label image endpoint", () => {
+  // gaka-mem-chip: chips carry their own <img> via LabelImage. In tests
+  // the images 404 (no backend), but the <img> elements are in the DOM
+  // before onError triggers, so we can assert src is wired to
+  // /api/v1/labels/{id}/image.
+  it("each chip in the tagline carries an <img> pointing at the label image endpoint", () => {
     const data = p({
       languages: [rs("python", 500)],
       editors: [rs("vim", 500)],
       dailyAvg: 3 * 3600,
       dailyTotal: Array.from({ length: 30 }, () => 3 * 3600),
     });
-    render(<WidgetRenderer kind="hero-identity" data={data} />);
-    const emblemRow = screen.getByTestId("hero-emblems");
-    const imgs = Array.from(emblemRow.querySelectorAll("img"));
-    expect(imgs).toHaveLength(3);
+    renderHero(data);
+    const tagline = screen.getByTestId("hero-tagline");
+    const imgs = Array.from(tagline.querySelectorAll("img"));
+    expect(imgs.length).toBeGreaterThanOrEqual(3);
     for (const img of imgs) {
       expect(img.getAttribute("src")).toMatch(
         /^\/api\/v1\/labels\/[a-zA-Z0-9\-]+\/image$/,
@@ -95,8 +108,8 @@ describe("HeroIdentity tagline", () => {
     }
   });
 
-  it("omits the emblem row entirely when there are no awards", () => {
-    render(<WidgetRenderer kind="hero-identity" data={p({})} />);
-    expect(screen.queryByTestId("hero-emblems")).not.toBeInTheDocument();
+  it("renders no LabelChips when there are no awards (only NEW OPERATOR text)", () => {
+    renderHero(p({}));
+    expect(screen.queryAllByTestId("label-chip")).toHaveLength(0);
   });
 });
