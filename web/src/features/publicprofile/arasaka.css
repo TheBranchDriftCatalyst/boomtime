@@ -1,0 +1,205 @@
+/* arasaka.css — Arasaka Corp variant of the public dashboard chrome
+ * (gaka-res). Only applies when the Arasaka theme is selected via the
+ * catalyst-ui theme switcher; boomtime + all other themes continue to
+ * use the sibling hacker.css unchanged.
+ *
+ * Design signatures:
+ *  - Deep signature red on jet black, chrome accents
+ *  - Chamfered top-right / bottom-left corners on tiles (clip-path)
+ *  - Katakana section labels via Noto Sans JP
+ *  - No infinite pulses; one entrance fade per surface
+ *  - Tighter scanlines (2px stride, 6% alpha)
+ *  - Compressed density (12px tile padding, 10-11px labels)
+ *
+ * The `.arasaka-katakana` glyph spans are always in the DOM but hidden by
+ * default; only the `.theme-arasaka` scope reveals them. This keeps the
+ * component code theme-agnostic — no useTheme() plumbing required.
+ */
+
+/* Katakana signage — hidden by default, revealed only under Arasaka. */
+.arasaka-katakana {
+  display: none;
+}
+
+.theme-arasaka .public-dashboard {
+  /* Grid primitive skin override — sharper, denser. */
+  --grid-tile-bg: color-mix(in oklab, var(--card) 96%, transparent);
+  --grid-tile-fg: var(--card-foreground);
+  --grid-tile-border: color-mix(in oklab, var(--primary) 30%, transparent);
+  --grid-tile-header-fg: var(--primary);
+  --grid-tile-header-kind-fg: var(--muted-foreground);
+  --grid-tile-radius: 2px;
+  --grid-tile-header-h: 22px;
+  --grid-tile-font: "Inter Tight", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --grid-tile-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular,
+    "SF Mono", Menlo, monospace;
+  --grid-toggle-active-bg: var(--primary);
+  --grid-toggle-active-fg: var(--background);
+  --grid-toggle-idle-fg: var(--muted-foreground);
+  --grid-editing-dot-color: color-mix(in oklab, var(--primary) 15%, transparent);
+  --grid-remove-fg: var(--primary);
+
+  /* Scanline overlay — tighter (2px stride) at 6% alpha */
+  background-image: repeating-linear-gradient(
+    to bottom,
+    color-mix(in oklab, var(--primary) 6%, transparent) 0,
+    color-mix(in oklab, var(--primary) 6%, transparent) 1px,
+    transparent 1px,
+    transparent 2px
+  );
+  background-blend-mode: overlay;
+}
+
+/* Hero — corporate signage, no gradient text. Static red bar left of name. */
+.theme-arasaka .public-dashboard__hero {
+  padding: 28px 0 20px;
+  border-bottom: 1px solid color-mix(in oklab, var(--primary) 20%, transparent);
+  margin-bottom: 20px;
+}
+
+.theme-arasaka .public-dashboard__hero-title {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-weight: 700;
+  font-size: clamp(44px, 7vw, 82px);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  line-height: 0.95;
+  color: var(--foreground);
+  text-shadow: none;
+  background: none;
+  /* Overwrite the gradient-clip from hacker.css so the title becomes solid. */
+  -webkit-text-fill-color: currentColor;
+  -webkit-background-clip: border-box;
+  background-clip: border-box;
+}
+
+.theme-arasaka .public-dashboard__hero-title::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 0.8em;
+  background: var(--primary);
+  margin-right: 14px;
+  vertical-align: -6%;
+  box-shadow: 0 0 6px color-mix(in oklab, var(--primary) 60%, transparent);
+}
+
+.theme-arasaka .public-dashboard__hero-meta {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  margin-bottom: 10px;
+}
+
+.theme-arasaka .public-dashboard__hero-tagline {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  gap: 10px;
+}
+
+.theme-arasaka .public-dashboard__hero-underline {
+  width: 64px;
+  height: 1px;
+  background: var(--primary);
+  box-shadow: none; /* kill the boomtime glow */
+}
+
+.theme-arasaka .public-dashboard__footer {
+  padding: 16px 0 24px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.10em;
+  color: var(--muted-foreground);
+  border-top: 1px solid color-mix(in oklab, var(--primary) 20%, transparent);
+  margin-top: 20px;
+}
+
+/* Kill the perpetual cursor blink — one blink on mount then static. */
+.theme-arasaka .public-dashboard__footer .public-dashboard__footer-cursor {
+  animation: arasaka-oneshot-blink 0.8s step-end 1;
+  animation-fill-mode: forwards;
+  opacity: 1;
+}
+@keyframes arasaka-oneshot-blink {
+  0%, 50% { opacity: 0; }
+  51%, 100% { opacity: 1; }
+}
+
+/* Grid bootup — faster, subtler (opacity only). */
+.theme-arasaka .public-dashboard__grid {
+  animation: arasaka-bootup 0.25s ease both;
+}
+@keyframes arasaka-bootup {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Katakana signage — visible only under Arasaka. Noto Sans JP for authentic
+ * corporate glyph shapes; primary color at 60% opacity so it reads as an
+ * accent not a headline. */
+.theme-arasaka .arasaka-katakana {
+  display: inline;
+  font-family: "Noto Sans JP", "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  color: color-mix(in oklab, var(--primary) 60%, transparent);
+  letter-spacing: 0.06em;
+  margin-left: 8px;
+  vertical-align: 1px;
+  font-weight: 400;
+}
+
+/* --- Grid tile chrome under Arasaka ---------------------------------- *
+ * The `.catalyst-grid-tile` class lives in @/lib/grid/grid.css and is
+ * shared across themes. We override only the perpetual-motion animations
+ * and the corner geometry here, scoped by `.theme-arasaka`. */
+
+/* Chamfered corners: top-right + bottom-left 8x8px tri-cut.
+ * clip-path composes with react-grid-layout's inline transform. */
+.theme-arasaka .catalyst-grid-tile {
+  clip-path: polygon(
+    0 0,
+    calc(100% - 8px) 0,
+    100% 8px,
+    100% 100%,
+    8px 100%,
+    0 calc(100% - 8px)
+  );
+  animation: arasaka-tile-fade 0.3s ease both;
+  animation-delay: calc(var(--tile-index, 0) * 40ms);
+}
+@keyframes arasaka-tile-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Kill the perpetual corner-bracket hover pulse. Corners stay static. */
+.theme-arasaka .catalyst-grid-tile:hover .catalyst-grid-tile__corner {
+  animation: none;
+  opacity: 1;
+}
+
+/* Kill the perpetual blinking `> ` prompt in tile headers. */
+.theme-arasaka .catalyst-grid-tile__prompt {
+  animation: none;
+}
+
+/* Denser tile bodies + tabular-nums for column alignment. */
+.theme-arasaka .catalyst-grid-tile__body {
+  padding: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tighter tile header letter-spacing (0.02em not 0.12em). */
+.theme-arasaka .catalyst-grid-tile__header {
+  letter-spacing: 0.02em;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.theme-arasaka .catalyst-grid-tile__title {
+  letter-spacing: 0.02em;
+}

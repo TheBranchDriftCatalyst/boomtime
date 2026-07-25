@@ -31,6 +31,9 @@ import { WidgetRenderer } from "@/features/widgets/renderers/WidgetRenderer";
 import { PUBLIC_PROFILE_DEFAULT_LAYOUT } from "./defaults";
 import type { PublicDashboardPayload } from "@/types/stats";
 import "./hacker.css";
+// Arasaka overrides are scoped by .theme-arasaka .public-dashboard, so
+// this import is a no-op for every other theme. See ./arasaka.css.
+import "./arasaka.css";
 
 export function PublicDashboard() {
   const { slug = "" } = useParams<{ slug: string }>();
@@ -124,14 +127,22 @@ function DashboardBody({ data }: { data: PublicDashboardPayload }) {
       <div className="mx-auto max-w-7xl px-4">
         <header className="public-dashboard__hero">
           <div className="public-dashboard__hero-meta">
-            &gt; PROFILE · {data.username}@boomtime · {fmtRange(data.startDate, data.endDate)}
+            &gt; PROFILE
+            {/* Katakana signage: only visible under .theme-arasaka.
+             * プロファイル = "profile". See ./arasaka.css .arasaka-katakana. */}
+            <span className="arasaka-katakana" aria-hidden>プロファイル</span>
+            {" · "}{data.username}@boomtime · {fmtRange(data.startDate, data.endDate)}
           </div>
           <h1 className="public-dashboard__hero-title" data-testid="public-username">
             {data.username}
           </h1>
           <div className="public-dashboard__hero-tagline">
             <span className="public-dashboard__hero-underline" aria-hidden />
-            <span>KEYSTROKE-HACKER · CATALYST-∞</span>
+            <span>
+              KEYSTROKE-HACKER · CATALYST-∞
+              {/* オペレーター = "operator". */}
+              <span className="arasaka-katakana" aria-hidden>オペレーター</span>
+            </span>
           </div>
         </header>
 
@@ -146,7 +157,10 @@ function DashboardBody({ data }: { data: PublicDashboardPayload }) {
         </div>
 
         <footer className="public-dashboard__footer">
-          &gt; END OF TRANSMISSION · boomtime · {version}{" "}
+          &gt; END OF TRANSMISSION
+          {/* 通信終了 = "end of transmission". */}
+          <span className="arasaka-katakana" aria-hidden>通信終了</span>
+          {" · boomtime · "}{version}{" "}
           <span className="public-dashboard__footer-cursor" aria-hidden>▎</span>
         </footer>
       </div>

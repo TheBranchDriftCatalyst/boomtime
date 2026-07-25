@@ -59,7 +59,12 @@ describe("boomtime → catalyst-ui integration seam", () => {
     expect(setupCss).toMatch(/--color-background:\s*var\(--background\)/);
     expect(setupCss).toMatch(/--color-popover:\s*var\(--popover\)/);
     // The @source hint targeting the library's own dist — required so the
-    // JIT scans compiled component sources for utility classes.
-    expect(setupCss).toMatch(/@source\s+["'][^"']*catalyst-ui[^"']*["']/);
+    // JIT scans compiled component sources for utility classes. Since
+    // catalyst-ui 2.5.1 (a7d08d5) this is `@source "."` — resolved relative
+    // to setup.css inside dist/, it scans the whole compiled catalyst-ui
+    // tree. Accept either the legacy explicit pattern or the current `"."`.
+    expect(setupCss).toMatch(
+      /@source\s+["'](?:[^"']*catalyst-ui[^"']*|\.)["']/,
+    );
   });
 });
