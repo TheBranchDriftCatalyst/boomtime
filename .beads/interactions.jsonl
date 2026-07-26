@@ -92,3 +92,4 @@
 {"id":"int-f274df4dd5ff4f309acfc1f17b7e41a7","kind":"field_change","created_at":"2026-07-25T16:45:55.320869Z","actor":"DJ Daniels","issue_id":"gaka-myv","extra":{"field":"status","new_value":"open","old_value":"in_progress"}}
 {"id":"int-fa94ce3256970dc87742fc09bf909565","kind":"field_change","created_at":"2026-07-25T16:45:55.466199Z","actor":"DJ Daniels","issue_id":"gaka-myv","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"Closed"}}
 {"id":"int-cfb3ea6c6bc4d92588305371056d3c65","kind":"field_change","created_at":"2026-07-26T23:34:31.455407Z","actor":"DJ Daniels","issue_id":"gaka-8bz","extra":{"field":"status","new_value":"in_progress","old_value":"open"}}
+{"id":"int-8938a5e795a75d9719a5bc59a1069e96","kind":"field_change","created_at":"2026-07-26T23:58:09.956921Z","actor":"DJ Daniels","issue_id":"gaka-8bz","extra":{"field":"status","new_value":"closed","old_value":"in_progress"}}
