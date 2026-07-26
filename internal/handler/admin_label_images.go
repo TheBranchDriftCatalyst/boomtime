@@ -74,16 +74,20 @@ func (h *Handler) AdminLabelImagesInfo(c *echo.Context) error {
 	if aerr != nil {
 		return respondErr(c, aerr)
 	}
-	var count int
-	// Row count is cheap (single COUNT); we don't cache — the tab is
-	// staff-only and rarely hit.
-	_ = h.DB.Pool.QueryRow(c.Request().Context(),
-		`SELECT COUNT(*) FROM label_images`).Scan(&count)
+	// Per-label meta drives the Admin table (id, size, generatedAt).
+	// The tab is staff-only + rarely hit; no caching. Fetching bytes is
+	// deliberately avoided — the FE fetches images on demand via
+	// GET /api/v1/labels/:id/image.
+	items, err := h.DB.ListLabelImagesMeta(c.Request().Context())
+	if err != nil {
+		return h.internalErr(c, "list label images failed", err)
+	}
 	return c.JSON(http.StatusOK, map[string]any{
 		"enabled":  h.Cfg.LabelImagesEnabled(),
 		"model":    h.Cfg.ComfyUIModel,
 		"shimUrl":  h.Cfg.ComfyUIShimURL,
-		"count":    count,
+		"count":    len(items),
+		"items":    items,
 		"baseline": labelcatalog.IDs(),
 	})
 }

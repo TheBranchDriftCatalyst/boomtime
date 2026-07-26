@@ -117,6 +117,39 @@ func (d *DB) TruncateLabelImages(ctx context.Context) error {
 	return err
 }
 
+// LabelImageMeta is the row minus the bytes — for admin listings that
+// need to show status/size/generated_at per label without shipping every
+// PNG blob down the wire.
+type LabelImageMeta struct {
+	ID          string    `json:"id"`
+	SizeBytes   int64     `json:"sizeBytes"`
+	GeneratedAt time.Time `json:"generatedAt"`
+}
+
+// ListLabelImagesMeta returns metadata for every row in label_images —
+// no image bytes. Powers the Admin tab's per-label status table (gaka-myv).
+// Ordered by generated_at DESC so the newest lands first (irrelevant to
+// the FE which keys by id, but stable-order helps snapshot tests).
+func (d *DB) ListLabelImagesMeta(ctx context.Context) ([]LabelImageMeta, error) {
+	rows, err := d.Pool.Query(ctx,
+		`SELECT label_id, octet_length(image_bytes)::bigint, generated_at
+		 FROM label_images
+		 ORDER BY generated_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]LabelImageMeta, 0, 64)
+	for rows.Next() {
+		var m LabelImageMeta
+		if err := rows.Scan(&m.ID, &m.SizeBytes, &m.GeneratedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
 // DeleteLabelImages batches DeleteLabelImage over a slice. One round trip
 // instead of len(ids) — the per-id loop tripped the N+1 detector on the
 // admin regenerate path (gaka-myv) where ~70 ids come in per click.

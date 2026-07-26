@@ -830,6 +830,13 @@ export const api = {
       model: string;
       shimUrl: string;
       count: number;
+      // gaka-myv: per-label metadata for the Admin table (no bytes — the
+      // FE fetches images on demand via /api/v1/labels/:id/image).
+      items: Array<{
+        id: string;
+        sizeBytes: number;
+        generatedAt: string;
+      }>;
       baseline: string[];
     }>("/api/v1/admin/label-images"),
   regenerateLabelImages: (body: {
@@ -838,8 +845,8 @@ export const api = {
     all?: boolean;
     truncate?: boolean;
   }) =>
-    request<{ generated: number; failed: number; requested: number }>(
-      "/api/v1/admin/label-images/regenerate",
-      { method: "POST", body },
-    ),
+    request<
+      | { queued: number; async: true; note: string }
+      | { generated: number; failed: number; requested: number }
+    >("/api/v1/admin/label-images/regenerate", { method: "POST", body }),
 };
