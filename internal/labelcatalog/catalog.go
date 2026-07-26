@@ -22,12 +22,17 @@
 // audit tests.
 package labelcatalog
 
-// Entry is the minimum shape the worker needs: an id (row primary key) and
-// the prompt to send to the shim. Anything else — glyph, description, rank
-// — is purely FE display concern and stays in the TS catalog.
+// Entry is the minimum shape the worker needs to generate one image.
+// Overrides (Model, Size, Seed) are optional per-request knobs — the
+// Admin tab's per-label editor threads user tweaks through here for
+// prompt iteration without touching env config. Empty overrides fall
+// back to worker defaults (Model=env, Size=1024x1024, Seed=shim-random).
 type Entry struct {
 	ID     string
 	Prompt string
+	Model  string // "" = use worker default (env)
+	Size   string // "" = 1024x1024
+	Seed   *int64 // nil = shim picks
 }
 
 // Entries is the shipped list. Ordered archetype-then-tribe (matches the TS

@@ -73,7 +73,7 @@ func TestGenerate_Success_B64JSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, mime, err := c.Generate(context.Background(), "a distinctive emblem", "flux_schnell_fast", nil)
+	got, mime, err := c.Generate(context.Background(), "a distinctive emblem", "flux_schnell_fast", "", nil)
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestGenerate_Success_DataURL(t *testing.T) {
 	defer srv.Close()
 
 	c, _ := NewClient(srv.URL)
-	got, mime, err := c.Generate(context.Background(), "prompt", "model", nil)
+	got, mime, err := c.Generate(context.Background(), "prompt", "model", "", nil)
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestGenerate_Retries_On5xx(t *testing.T) {
 	c.HTTP.Timeout = 5 * time.Second
 
 	start := time.Now()
-	_, _, err := c.Generate(context.Background(), "p", "m", nil)
+	_, _, err := c.Generate(context.Background(), "p", "m", "", nil)
 	elapsed := time.Since(start)
 	if err != nil {
 		t.Fatalf("Generate after 2x5xx: %v", err)
@@ -161,7 +161,7 @@ func TestGenerate_NoRetry_On4xx(t *testing.T) {
 	defer srv.Close()
 
 	c, _ := NewClient(srv.URL)
-	_, _, err := c.Generate(context.Background(), "p", "m", nil)
+	_, _, err := c.Generate(context.Background(), "p", "m", "", nil)
 	if err == nil {
 		t.Fatal("expected error for 4xx, got nil")
 	}
@@ -187,7 +187,7 @@ func TestGenerate_ContextCancelled(t *testing.T) {
 	defer cancel()
 
 	start := time.Now()
-	_, _, err := c.Generate(ctx, "p", "m", nil)
+	_, _, err := c.Generate(ctx, "p", "m", "", nil)
 	elapsed := time.Since(start)
 	if err == nil {
 		t.Fatal("expected error, got nil")

@@ -136,7 +136,7 @@ type generateResponse struct {
 //
 // Returns raw image bytes + mime type. Both b64_json and data-URL responses
 // are handled.
-func (c *Client) Generate(ctx context.Context, prompt, model string, seed *int64) (data []byte, mime string, err error) {
+func (c *Client) Generate(ctx context.Context, prompt, model, size string, seed *int64) (data []byte, mime string, err error) {
 	if c == nil {
 		return nil, "", errors.New("comfyui: client is nil (feature disabled)")
 	}
@@ -146,11 +146,17 @@ func (c *Client) Generate(ctx context.Context, prompt, model string, seed *int64
 	if strings.TrimSpace(model) == "" {
 		return nil, "", errors.New("comfyui: empty model")
 	}
+	// Size is optional — empty defaults to 1024x1024, matches the pre-override
+	// behavior. Shim validates the string (must be W×H with ×16 multiples per
+	// the shim README).
+	if strings.TrimSpace(size) == "" {
+		size = "1024x1024"
+	}
 
 	req := generateRequest{
 		Model:          model,
 		Prompt:         prompt,
-		Size:           "1024x1024",
+		Size:           size,
 		ResponseFormat: "b64_json",
 		Seed:           seed,
 	}
