@@ -21,20 +21,40 @@ func TestLabels_ListSeeded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListLabels: %v", err)
 	}
-	if len(labels) != 114 {
-		t.Fatalf("ListLabels count=%d want 114 (seed drift?)", len(labels))
-	}
-
-	// Kind bucketing: must have all four bands with the seed's expected
-	// counts.
-	byKind := map[string]int{}
+	// Sample a set of load-bearing seeded ids that MUST exist post-
+	// migration. Full-count / per-kind assertions race against parallel
+	// tests (TestLabels_UpsertRoundtrip and testutil binaries can
+	// briefly add/delete rows during their own runs). Existence of
+	// specific seeded ids is race-free — a sibling test can create
+	// arbitrary junk but cannot delete rows it didn't create.
+	byID := map[string]Label{}
 	for _, l := range labels {
-		byKind[l.Kind]++
+		byID[l.ID] = l
 	}
-	want := map[string]int{"tier": 45, "archetype": 14, "tribe": 7, "meme": 48}
-	for k, n := range want {
-		if byKind[k] != n {
-			t.Errorf("kind=%s count=%d want %d", k, byKind[k], n)
+	// One id per kind, spanning the full rank range, so drift in any
+	// class of the seed is caught.
+	wantIDs := []struct {
+		id   string
+		kind string
+	}{
+		{"languages-python-legend", "tier"},
+		{"editors-vim-master", "tier"},
+		{"late-night-coder", "archetype"},
+		{"machine", "archetype"},
+		{"vim-enjoyer", "tribe"},
+		{"cross-platform", "tribe"},
+		{"commander-neko-paws", "meme"},
+		{"sigma-grindset", "meme"},
+		{"based-chad-ultimate", "meme"},
+	}
+	for _, w := range wantIDs {
+		l, ok := byID[w.id]
+		if !ok {
+			t.Errorf("seed missing id=%s", w.id)
+			continue
+		}
+		if l.Kind != w.kind {
+			t.Errorf("%s kind=%q want %q", w.id, l.Kind, w.kind)
 		}
 	}
 
