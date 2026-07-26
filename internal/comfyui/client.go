@@ -79,11 +79,11 @@ func NewClient(url string) (*Client, error) {
 			Timeout:   5 * time.Second,
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
-		ResponseHeaderTimeout: 300 * time.Second,
+		ResponseHeaderTimeout: 600 * time.Second,
 	}
 	return &Client{
 		URL:  url,
-		HTTP: &http.Client{Timeout: 360 * time.Second, Transport: transport},
+		HTTP: &http.Client{Timeout: 720 * time.Second, Transport: transport},
 	}, nil
 }
 
