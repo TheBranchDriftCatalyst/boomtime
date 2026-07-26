@@ -3,6 +3,7 @@
 /bin/
 *.test
 *.out
+go.work.sum
 
 # Env / secrets
 .env
