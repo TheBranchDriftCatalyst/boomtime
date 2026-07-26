@@ -1277,6 +1277,17 @@ func build() (*openapi3.T, error) {
 		stdErrors(op, "400", "401", "403", "500")
 		return op
 	}())
+	// gaka-8bz: durable WS stream of the in-memory image-job queue. On
+	// connect the server emits {kind:"snapshot", jobs:[...]} then every
+	// lifecycle event (added/updated/removed) forever. Cookie auth
+	// (refresh_token) — WS handshakes cannot carry Authorization.
+	doc.AddOperation("/api/v1/admin/label-images/ws", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagProfile}, Summary: "Admin: label-image job queue live stream (WebSocket)",
+			Description: "WebSocket. Auths via the refresh_token cookie; non-admin owners get 403 pre-upgrade. On connect emits {kind:\"snapshot\", jobs:[Job]}, then a stream of {kind:\"added\"|\"updated\"|\"removed\", job:Job} events for every registry transition. In-memory only — restart of boomtime drops in-flight state (ComfyUI's own queue runs independently)."}
+		setStatus(op, http.StatusSwitchingProtocols, rInline("Upgrade to WebSocket.", mapObject()))
+		stdErrors(op, "401", "403", "503")
+		return op
+	}())
 
 	// gaka-364.3: DB-backed labels catalog + admin CRUD.
 	doc.AddOperation("/api/v1/labels/catalog", "GET", func() *openapi3.Operation {

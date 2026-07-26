@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -20,8 +21,10 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/imagejobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/server"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
+	labelcatalog "github.com/TheBranchDriftCatalyst/boomtime/internal/labelcatalog"
 	labelimages "github.com/TheBranchDriftCatalyst/boomtime/internal/worker/labelimages"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
@@ -172,6 +175,35 @@ func runCmd() *cobra.Command {
 			// regen endpoints. Passing nil is fine when the feature is off
 			// — the admin handler detects the nil worker and returns 503.
 			h.SetLabelImagesWorker(liWorker)
+
+			// gaka-8bz: in-memory job queue + worker pool for label-image
+			// regens. Only wire when the feature is enabled — a nil pool
+			// keeps the admin handler + WS returning 503, which is the
+			// same behavior as a nil labelimages worker (they gate on both).
+			var imgPool *imagejobs.Pool
+			if liWorker != nil {
+				concurrency := labelImageConcurrency()
+				registry := imagejobs.NewRegistry(logger)
+				exec := imagejobs.ExecutorFunc(func(execCtx context.Context, j imagejobs.Job) error {
+					return liWorker.RegenerateEntry(execCtx, labelcatalog.Entry{
+						ID:          j.LabelID,
+						Description: j.Description,
+						Prompt:      j.Prompt,
+						Model:       j.Model,
+						Size:        j.Size,
+						Seed:        j.Seed,
+					})
+				})
+				imgPool = imagejobs.NewPool(imagejobs.PoolConfig{
+					Concurrency: concurrency,
+					Registry:    registry,
+					Executor:    exec,
+					Logger:      logger,
+				})
+				imgPool.Start(ctx)
+				h.SetImageJobQueue(registry)
+				logger.Info("imagejobs pool wired", "concurrency", concurrency)
+			}
 			addr := fmt.Sprintf(":%d", cfg.Port)
 			logger.Info("starting server", "addr", addr, "env", cfg.Env)
 
@@ -179,6 +211,15 @@ func runCmd() *cobra.Command {
 			// returns http.ErrServerClosed on a clean stop.
 			if err := e.Start(addr); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				return err
+			}
+			// After echo returns (either shutdown signal or an error above)
+			// stop the imagejobs pool so in-flight generations get a
+			// chance to observe context cancellation and exit. ComfyUI
+			// calls that ignore ctx will time out this Stop — that's
+			// fine, in-flight state is not durable across restarts by
+			// design (gaka-8bz).
+			if imgPool != nil {
+				imgPool.Stop(30 * time.Second)
 			}
 			return nil
 		},
@@ -278,6 +319,27 @@ func createTokenCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&username, "username", "u", "", "The user the token will be created for")
 	_ = cmd.MarkFlagRequired("username")
 	return cmd
+}
+
+// labelImageConcurrency reads BOOM_LABEL_IMAGE_CONCURRENCY as an int in
+// the range [1, 16], defaulting to 2. Values outside that band are
+// clamped rather than rejected — the pool never runs unbounded, and 16
+// is comfortably above any realistic parallel-generation budget on a
+// single M-series machine.
+func labelImageConcurrency() int {
+	const def = 2
+	raw := strings.TrimSpace(os.Getenv("BOOM_LABEL_IMAGE_CONCURRENCY"))
+	if raw == "" {
+		return def
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 1 {
+		return def
+	}
+	if n > 16 {
+		return 16
+	}
+	return n
 }
 
 // isProdEnv reports whether BOOM_ENV names a production environment. Matches

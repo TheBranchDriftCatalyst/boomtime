@@ -330,6 +330,10 @@ func registerMiscRoutes(e *echo.Echo, h *handler.Handler) {
 	// catalog stays the source of truth.
 	e.GET("/api/v1/admin/label-images", h.AdminLabelImagesInfo)
 	e.POST("/api/v1/admin/label-images/regenerate", h.AdminLabelImagesRegenerate)
+	// gaka-8bz: durable WS stream of the image-job queue lifecycle.
+	// Auth uses the refresh_token cookie inside the handler (see
+	// AdminLabelImagesWS) — WS handshakes can't carry Authorization.
+	e.GET("/api/v1/admin/label-images/ws", h.AdminLabelImagesWS)
 
 	// gaka-364.3: DB-backed labels catalog. Public GET returns the whole
 	// catalog for the FE evaluator + admin table; admin CRUD lets a

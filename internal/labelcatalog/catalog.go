@@ -27,12 +27,21 @@ package labelcatalog
 // Admin tab's per-label editor threads user tweaks through here for
 // prompt iteration without touching env config. Empty overrides fall
 // back to worker defaults (Model=env, Size=1024x1024, Seed=shim-random).
+//
+// Description is the rich narrative for this label. When non-empty the
+// worker slots it between the systemPrompt (style) and the optimizedPrompt
+// (scene) so the diffusion model sees style-then-narrative-then-scene
+// (see buildFinalPrompt in internal/worker/labelimages/worker.go for the
+// full composition). The compiled baseline slice below leaves it empty —
+// descriptions are DB-only post gaka-364.3, and the baseline is only a
+// fallback for the "brand new DB before migrations apply" case.
 type Entry struct {
-	ID     string
-	Prompt string
-	Model  string // "" = use worker default (env)
-	Size   string // "" = 1024x1024
-	Seed   *int64 // nil = shim picks
+	ID          string
+	Description string
+	Prompt      string
+	Model       string // "" = use worker default (env)
+	Size        string // "" = 1024x1024
+	Seed        *int64 // nil = shim picks
 }
 
 // Entries is the shipped list. Ordered archetype-then-tribe (matches the TS

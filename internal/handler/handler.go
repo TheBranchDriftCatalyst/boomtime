@@ -20,6 +20,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/imagejobs"
 	labelimages "github.com/TheBranchDriftCatalyst/boomtime/internal/worker/labelimages"
 	"github.com/labstack/echo/v5"
 )
@@ -40,6 +41,12 @@ type Handler struct {
 	// admin endpoints (gaka-myv). nil = feature disabled; handlers
 	// respond with 503 in that case.
 	LabelImagesWorker *labelimages.Worker
+	// ImageJobQueue is the in-memory registry backing the durable
+	// per-label regen queue (gaka-8bz). nil = feature disabled; the
+	// admin handler + WS endpoint check for nil and 503 accordingly.
+	// The registry itself owns the pool feed channel; the pool is
+	// constructed and started at server startup in cmd/boomtime.
+	ImageJobQueue *imagejobs.Registry
 }
 
 // New constructs a Handler. logHub streams server-process slog records to the
@@ -64,6 +71,13 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *impor
 // 503 Service Unavailable with a clear "feature disabled" message.
 func (h *Handler) SetLabelImagesWorker(w *labelimages.Worker) {
 	h.LabelImagesWorker = w
+}
+
+// SetImageJobQueue wires the imagejobs.Registry after construction. Called
+// by cmd/boomtime when the label-images feature is on so the admin regen
+// endpoint + WS stream have somewhere to enqueue jobs. Nil = feature off.
+func (h *Handler) SetImageJobQueue(r *imagejobs.Registry) {
+	h.ImageJobQueue = r
 }
 
 // statsCacheTTL is the TTL for cached aggregation payloads (stats/timeline/

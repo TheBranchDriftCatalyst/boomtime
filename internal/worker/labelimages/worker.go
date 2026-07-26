@@ -124,8 +124,9 @@ func (w *Worker) catalog() []labelcatalog.Entry {
 				continue
 			}
 			out = append(out, labelcatalog.Entry{
-				ID:     r.ID,
-				Prompt: r.OptimizedPrompt,
+				ID:          r.ID,
+				Description: r.Description,
+				Prompt:      r.OptimizedPrompt,
 			})
 		}
 		if len(out) > 0 {
@@ -173,6 +174,30 @@ func (w *Worker) Run(ctx context.Context) {
 	w.logger.Info("labelimages: run complete", "generated", generated, "skipped_existing", skipped, "failed", failed)
 }
 
+// RegenerateEntry is the exported single-call generate+save path used by the
+// imagejobs pool Executor (gaka-8bz). Unlike RegenerateOne it takes the fully-
+// resolved catalog Entry (id + prompt + optional model/size/seed overrides)
+// instead of looking it up from the DB — the imagejobs.Registry already holds
+// exactly those fields when the operator submits a regen, so the caller
+// should supply them directly. Delete-before-save keeps parity with
+// RegenerateOne (an operator hitting Regen expects a fresh row, not a UPSERT
+// that leaves the old row_id in place).
+//
+// Returns nil on success or a wrapped error on shim/DB failure. Ctx cancel
+// propagates to the shim call (comfyui.Client.Generate honors ctx).
+func (w *Worker) RegenerateEntry(ctx context.Context, e labelcatalog.Entry) error {
+	if w == nil {
+		return errors.New("labelimages: feature disabled")
+	}
+	if e.ID == "" || e.Prompt == "" {
+		return fmt.Errorf("labelimages: RegenerateEntry requires non-empty ID + Prompt (got id=%q)", e.ID)
+	}
+	if err := w.db.DeleteLabelImage(ctx, e.ID); err != nil {
+		return fmt.Errorf("labelimages: delete old row: %w", err)
+	}
+	return w.generateAndSave(ctx, e)
+}
+
 // RegenerateOne wipes an id's existing row (if any), regenerates, saves.
 // Errors from shim/DB are returned to the caller so the CLI surfaces
 // non-zero exit on failure.
@@ -190,7 +215,7 @@ func (w *Worker) RegenerateOne(ctx context.Context, id string) error {
 			if row.OptimizedPrompt == "" {
 				return fmt.Errorf("labelimages: label %q has no optimized_prompt — nothing to generate", id)
 			}
-			entry = labelcatalog.Entry{ID: row.ID, Prompt: row.OptimizedPrompt}
+			entry = labelcatalog.Entry{ID: row.ID, Description: row.Description, Prompt: row.OptimizedPrompt}
 		}
 	}
 	if entry.ID == "" {
@@ -270,21 +295,25 @@ func (w *Worker) systemPrompt(ctx context.Context) string {
 	return sp
 }
 
-// buildFinalPrompt joins the systemPrompt with the per-label optimizedPrompt
-// using the SDXL tag-list convention: `${systemPrompt}, ${entry.Prompt}`.
-// Empty systemPrompt short-circuits to just the entry prompt — the FE
-// admin editor lets an operator clear the prefix if they want raw
-// per-label control.
-func buildFinalPrompt(systemPrompt, entryPrompt string) string {
-	sp := strings.TrimSpace(systemPrompt)
-	ep := strings.TrimSpace(entryPrompt)
-	if sp == "" {
-		return ep
+// buildFinalPrompt joins the systemPrompt (style), the label description
+// (narrative), and the per-label optimizedPrompt (scene) into one SDXL
+// tag-list. Composition order is deliberate: diffusion models weight
+// left-to-right, so style-first sets the aesthetic, then the narrative
+// establishes WHO / WHAT the character is, then the scene composition
+// lands the specific visual layout on top.
+//
+// Empty parts are dropped so the join stays clean — an operator with
+// a blank systemPrompt still gets `${description}, ${entryPrompt}`, and
+// a label without a description falls back to the pre-gaka-8bz
+// `${systemPrompt}, ${entryPrompt}` shape.
+func buildFinalPrompt(systemPrompt, description, entryPrompt string) string {
+	parts := make([]string, 0, 3)
+	for _, s := range []string{systemPrompt, description, entryPrompt} {
+		if trimmed := strings.TrimSpace(s); trimmed != "" {
+			parts = append(parts, trimmed)
+		}
 	}
-	if ep == "" {
-		return sp
-	}
-	return sp + ", " + ep
+	return strings.Join(parts, ", ")
 }
 
 // generateAndSave is the shared inner call: hit the shim, persist the
@@ -301,10 +330,12 @@ func (w *Worker) generateAndSave(ctx context.Context, e labelcatalog.Entry) erro
 		model = w.model
 	}
 	sysPrompt := w.systemPrompt(ctx)
-	finalPrompt := buildFinalPrompt(sysPrompt, e.Prompt)
+	finalPrompt := buildFinalPrompt(sysPrompt, e.Description, e.Prompt)
 	w.logger.Info("labelimages: generating",
 		"id", e.ID, "model", model, "size", e.Size,
-		"seed_set", e.Seed != nil, "sys_prefix_len", len(sysPrompt),
+		"seed_set", e.Seed != nil,
+		"sys_prefix_len", len(strings.TrimSpace(sysPrompt)),
+		"desc_len", len(strings.TrimSpace(e.Description)),
 		"final_prompt_len", len(finalPrompt))
 	bytes, mime, err := w.client.Generate(ctx, finalPrompt, model, e.Size, e.Seed)
 	if err != nil {

@@ -843,16 +843,26 @@ export const api = {
       }>;
       baseline: string[];
     }>("/api/v1/admin/label-images"),
+  // gaka-8bz: server-side queue + WS. The response now returns per-entry
+  // jobIds; the FE watches the WS for the actual lifecycle rather than
+  // polling. `existing:true` means the label already had an in-flight job
+  // and the caller got its handle rather than starting a duplicate.
   regenerateLabelImages: (body: {
-    entries: Array<{ id: string; prompt: string }>;
+    entries: Array<{
+      id: string;
+      prompt: string;
+      model?: string;
+      size?: string;
+      seed?: number;
+    }>;
     ids?: string[];
     all?: boolean;
     truncate?: boolean;
   }) =>
-    request<
-      | { queued: number; async: true; note: string }
-      | { generated: number; failed: number; requested: number }
-    >("/api/v1/admin/label-images/regenerate", { method: "POST", body }),
+    request<{
+      queued: number;
+      jobs: Array<{ jobId: string; labelId: string; existing: boolean }>;
+    }>("/api/v1/admin/label-images/regenerate", { method: "POST", body }),
 
   // --- Labels catalog (gaka-364.3) -----------------------------------------
   // Public GET for evaluator + admin table; admin-gated CRUD + gen-config

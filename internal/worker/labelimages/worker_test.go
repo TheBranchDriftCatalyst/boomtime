@@ -122,7 +122,10 @@ func TestWorker_Run_GeneratesMissing(t *testing.T) {
 	// the worker did so the assertion tolerates a non-empty seeded
 	// systemPrompt without hard-coding one.
 	sysPrompt, _ := d.GetGenConfig(context.Background())
-	expected := buildFinalPrompt(sysPrompt, "prompt A")
+	// Description is empty in the test fixture entries — buildFinalPrompt
+	// drops empty parts, so the concatenation reduces to the pre-gaka-8bz
+	// {system, prompt} shape for this specific test.
+	expected := buildFinalPrompt(sysPrompt, "", "prompt A")
 	if string(got.ImageBytes) != string(pngBytes(expected)) {
 		t.Errorf("test-w-a bytes wrong: got %q", string(got.ImageBytes))
 	}
@@ -223,6 +226,72 @@ func TestWorker_RegenerateOne_UnknownID(t *testing.T) {
 	err := w.RegenerateOne(context.Background(), "does-not-exist-in-catalog")
 	if err == nil {
 		t.Fatal("expected error for unknown id, got nil")
+	}
+}
+
+// TestBuildFinalPrompt_JoinsThreeSegments: gaka-8bz added a description
+// slot between the systemPrompt (style) and the entry prompt (scene).
+// Empty parts are dropped so the join stays clean. Order is deliberate:
+// diffusion weights left-to-right, so style-first sets the aesthetic.
+func TestBuildFinalPrompt_JoinsThreeSegments(t *testing.T) {
+	tests := []struct {
+		name   string
+		sys    string
+		desc   string
+		prompt string
+		want   string
+	}{
+		{
+			name:   "all three populated",
+			sys:    "cyberpunk emblem",
+			desc:   "a machine-like coder who never sleeps",
+			prompt: "half-android at terminal",
+			want:   "cyberpunk emblem, a machine-like coder who never sleeps, half-android at terminal",
+		},
+		{
+			name:   "empty description falls back to old {sys, prompt}",
+			sys:    "cyberpunk emblem",
+			desc:   "",
+			prompt: "half-android at terminal",
+			want:   "cyberpunk emblem, half-android at terminal",
+		},
+		{
+			name:   "empty systemPrompt keeps {desc, prompt}",
+			sys:    "",
+			desc:   "a machine-like coder",
+			prompt: "half-android",
+			want:   "a machine-like coder, half-android",
+		},
+		{
+			name:   "only prompt populated returns just the prompt",
+			sys:    "",
+			desc:   "",
+			prompt: "half-android",
+			want:   "half-android",
+		},
+		{
+			name:   "whitespace-only counts as empty",
+			sys:    "   \n  \t",
+			desc:   "narrative",
+			prompt: "scene",
+			want:   "narrative, scene",
+		},
+		{
+			name:   "all empty returns empty string",
+			sys:    "",
+			desc:   "",
+			prompt: "",
+			want:   "",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := buildFinalPrompt(tc.sys, tc.desc, tc.prompt)
+			if got != tc.want {
+				t.Errorf("buildFinalPrompt(%q, %q, %q) = %q, want %q",
+					tc.sys, tc.desc, tc.prompt, got, tc.want)
+			}
+		})
 	}
 }
 

@@ -36,6 +36,9 @@ import {
   Save,
   X,
   Trash2,
+  AlertTriangle,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
@@ -55,8 +58,7 @@ import { qk } from "@/lib/queryKeys";
 import { useLabelsCatalog } from "@/features/publicprofile/labels/useLabelsCatalog";
 import type { LabelCatalogRow } from "@/features/publicprofile/labels/types";
 import { LabelImage } from "@/features/publicprofile/labels/LabelImage";
-
-const MAX_PARALLEL_REGENS = 2;
+import { useImageJobQueue, type JobState } from "./useImageJobQueue";
 
 // --- ResizableSheetContent --------------------------------------------------
 //
@@ -200,24 +202,99 @@ function downloadText(filename: string, text: string) {
   URL.revokeObjectURL(url);
 }
 
+// --- row status badge -------------------------------------------------------
+//
+// One place to render the per-row status pill so the row-render loop
+// stays readable. Job status wins over the DB-derived "present/missing"
+// so a fresh regen shows "queued"/"generating…" immediately even if the
+// old image is still in place.
+
+interface RowStatusBadgeProps {
+  hasPrompt: boolean;
+  hasImage: boolean;
+  job: JobState | undefined;
+}
+
+function RowStatusBadge({ hasPrompt, hasImage, job }: RowStatusBadgeProps) {
+  if (!hasPrompt) {
+    return <span className="text-muted-foreground">no prompt</span>;
+  }
+  if (job) {
+    switch (job.status) {
+      case "queued":
+        return (
+          <span className="inline-flex items-center gap-1 rounded-sm border border-border bg-muted/40 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+            <span>queued</span>
+          </span>
+        );
+      case "running": {
+        const elapsed = job.startedAt
+          ? Math.max(0, Math.floor((Date.now() - new Date(job.startedAt).getTime()) / 1000))
+          : 0;
+        return (
+          <span className="inline-flex items-center gap-1 text-primary">
+            <Loader2 size={12} className="animate-spin" />
+            <span>generating… {elapsed}s</span>
+          </span>
+        );
+      }
+      case "done":
+        return (
+          <span className="inline-flex items-center gap-1 text-emerald-500">
+            <CheckCircle2 size={12} />
+            <span>done</span>
+          </span>
+        );
+      case "error":
+        return (
+          <span
+            className="inline-flex items-center gap-1 text-destructive"
+            title={job.error || "generation error"}
+          >
+            <AlertTriangle size={12} />
+            <span>error</span>
+          </span>
+        );
+    }
+  }
+  return hasImage ? (
+    <span className="inline-flex items-center gap-1 text-emerald-500">
+      <CheckCircle2 size={12} />
+      <span>present</span>
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 text-muted-foreground">
+      <ImageOff size={12} />
+      <span>missing</span>
+    </span>
+  );
+}
+
 // --- component --------------------------------------------------------------
 
 export function AdminTab() {
   const queryClient = useQueryClient();
 
   // Two independent fetches: catalog (labels + systemPrompt) drives the
-  // rows; adminLabelImages drives the per-row status column.
+  // rows; adminLabelImages drives the per-row IMAGE metadata (bytes /
+  // generated-at). Post gaka-8bz the aggressive 10s poll is dropped in
+  // favor of a WS-driven queue view (useImageJobQueue). We keep this
+  // query at a lazier 60s cadence as a safety net for cases where the
+  // WS never fires an event (e.g. the operator opens the tab AFTER a
+  // regen completed and was retention-expired out of the registry).
   const catalog = useLabelsCatalog();
   const status = useQuery({
     queryKey: qk.adminLabelImages(),
-    // Poll every 10s so newly-saved rows show up as their generation
-    // completes. Cheap query (single COUNT + light SELECT).
-    refetchInterval: 10_000,
+    refetchInterval: 60_000,
     queryFn: () => api.getAdminLabelImages(),
-    staleTime: 5_000,
+    staleTime: 30_000,
   });
 
-  const [inFlight, setInFlight] = useState<Set<string>>(new Set());
+  // gaka-8bz: durable server-side job queue + WS. Replaces the previous
+  // client-side inFlight Set + MAX_PARALLEL_REGENS pool. The hook owns
+  // the WS + reconnect; the server pool caps concurrency.
+  const queue = useImageJobQueue();
+
   const [filter, setFilter] = useState<"all" | "missing" | "present">("all");
   const [selected, setSelected] = useState<LabelCatalogRow | null>(null);
   const [sysPromptDraft, setSysPromptDraft] = useState<string>("");
@@ -249,42 +326,39 @@ export function AdminTab() {
     .map((r) => r.id);
 
   // --- per-label regen ------------------------------------------------------
-  const regenOne = useMutation({
-    mutationFn: async ({ id, prompt, model, size, seed }: {
-      id: string;
-      prompt: string;
-      model?: string;
-      size?: string;
-      seed?: number;
-    }) => {
-      const entry: {
-        id: string;
-        prompt: string;
-        model?: string;
-        size?: string;
-        seed?: number;
-      } = { id, prompt };
-      if (model) entry.model = model;
-      if (size) entry.size = size;
-      if (seed !== undefined) entry.seed = seed;
-      return api.regenerateLabelImages({ entries: [entry], ids: [id] });
-    },
-    onMutate: (v) => {
-      setInFlight((prev) => new Set(prev).add(v.id));
-    },
-    onSettled: (_res, _err, v) => {
-      setInFlight((prev) => {
-        const next = new Set(prev);
-        next.delete(v.id);
-        return next;
+  // Post gaka-8bz: enqueue is fire-and-forget; the WS drives all UI state.
+  // Wrapping in a small callable keeps a stable identity for the row
+  // Regen button + the Sheet's Save-and-regen call site.
+  const enqueueOne = async (params: {
+    id: string;
+    prompt: string;
+    model?: string;
+    size?: string;
+    seed?: number;
+  }) => {
+    try {
+      await queue.enqueue({
+        labelId: params.id,
+        prompt: params.prompt,
+        model: params.model,
+        size: params.size,
+        seed: params.seed,
       });
-      setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: qk.adminLabelImages() });
-      }, 2_000);
-    },
-  });
+    } catch {
+      // The server 400/500 flows through as a thrown ApiError; the WS
+      // will not emit anything for a rejected enqueue. Fire a lazy
+      // adminLabelImages refetch so the metadata column still refreshes
+      // if this was a client-side networking flake and the server DID
+      // start work.
+      queryClient.invalidateQueries({ queryKey: qk.adminLabelImages() });
+    }
+  };
 
-  // --- bulk regen ----------------------------------------------------------
+  // Bulk regen — just fire enqueue() N times. The server queue absorbs
+  // concurrency (BOOM_LABEL_IMAGE_CONCURRENCY, default 2); the FE no
+  // longer runs a fake pool. bulkRunning stays as a UI flag only for
+  // the "fire" phase — it flips off as soon as every enqueue has been
+  // accepted, which is nearly instant since each POST just returns 202.
   const [bulkRunning, setBulkRunning] = useState(false);
   async function bulkRegenerate(idsToRun: string[]) {
     if (bulkRunning) return;
@@ -292,27 +366,28 @@ export function AdminTab() {
     try {
       const promptById = new Map<string, string>();
       for (const r of rows) promptById.set(r.id, r.optimizedPrompt);
-      let idx = 0;
-      const workers = Array.from(
-        { length: Math.min(MAX_PARALLEL_REGENS, idsToRun.length) },
-        async () => {
-          while (idx < idsToRun.length) {
-            const my = idsToRun[idx++];
-            const prompt = promptById.get(my);
-            if (!prompt) continue;
-            try {
-              await regenOne.mutateAsync({ id: my, prompt });
-            } catch {
-              /* per-row state already cleared in onSettled */
-            }
-          }
-        },
+      await Promise.all(
+        idsToRun.map(async (id) => {
+          const prompt = promptById.get(id);
+          if (!prompt) return;
+          await enqueueOne({ id, prompt });
+        }),
       );
-      await Promise.all(workers);
     } finally {
       setBulkRunning(false);
     }
   }
+
+  // Count of active (queued + running) jobs across all labels — drives
+  // the bulk button's "in flight" tally so the operator gets ambient
+  // feedback while the server chews through the queue.
+  const activeJobCount = useMemo(() => {
+    let n = 0;
+    for (const j of queue.jobs.values()) {
+      if (j.status === "queued" || j.status === "running") n++;
+    }
+    return n;
+  }, [queue.jobs]);
 
   // --- global systemPrompt save --------------------------------------------
   const saveSysPrompt = useMutation({
@@ -382,12 +457,12 @@ export function AdminTab() {
             variant="default"
             onClick={() => bulkRegenerate(missingIds)}
             disabled={!status.data?.enabled || bulkRunning || missingIds.length === 0}
-            title="Fire per-label regens (max 2 in parallel) for every catalog entry not currently in DB"
+            title="Enqueue regens for every catalog entry not currently in DB — server pool caps concurrency"
           >
             <RefreshCw size={14} className={bulkRunning ? "animate-spin" : ""} />
             <span className="ml-2">
-              {bulkRunning
-                ? `Working — ${inFlight.size} in flight`
+              {activeJobCount > 0
+                ? `Regen missing (${missingIds.length}) — ${activeJobCount} in flight`
                 : `Regen missing (${missingIds.length})`}
             </span>
           </Button>
@@ -398,10 +473,30 @@ export function AdminTab() {
               bulkRegenerate(rows.filter((r) => r.optimizedPrompt).map((r) => r.id))
             }
             disabled={!status.data?.enabled || bulkRunning}
-            title="Fire per-label regens for every catalog entry with a prompt"
+            title="Enqueue regens for every catalog entry with a prompt"
           >
             Regen all ({rows.filter((r) => r.optimizedPrompt).length})
           </Button>
+          {/* WS connection indicator — subtle badge, only visible when the
+              hook is trying to reconnect. During normal operation the
+              icon is a small connected pip so the operator can distinguish
+              "queue is quiet" from "queue may not be updating live". */}
+          <span
+            className={cn(
+              "inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 font-mono text-[10px]",
+              queue.connected
+                ? "border-emerald-500/40 text-emerald-500"
+                : "border-yellow-500/50 text-yellow-500",
+            )}
+            title={
+              queue.connected
+                ? "Live queue stream connected"
+                : `Live queue stream reconnecting (attempt ${queue.reconnectAttempt})`
+            }
+          >
+            {queue.connected ? <Wifi size={10} /> : <WifiOff size={10} />}
+            <span>{queue.connected ? "live" : "reconnecting"}</span>
+          </span>
           <Button
             size="sm"
             variant="outline"
@@ -468,7 +563,7 @@ export function AdminTab() {
               )}
               {filteredRows.map((r) => {
                 const meta = metaById.get(r.id);
-                const running = inFlight.has(r.id);
+                const job = queue.byLabel(r.id);
                 const hasPrompt = !!r.optimizedPrompt;
                 return (
                   <tr
@@ -508,24 +603,11 @@ export function AdminTab() {
                       {r.rank}
                     </td>
                     <td className="py-2 pr-3">
-                      {!hasPrompt ? (
-                        <span className="text-muted-foreground">no prompt</span>
-                      ) : running ? (
-                        <span className="inline-flex items-center gap-1 text-primary">
-                          <Loader2 size={12} className="animate-spin" />
-                          <span>generating…</span>
-                        </span>
-                      ) : meta ? (
-                        <span className="inline-flex items-center gap-1 text-emerald-500">
-                          <CheckCircle2 size={12} />
-                          <span>present</span>
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-muted-foreground">
-                          <ImageOff size={12} />
-                          <span>missing</span>
-                        </span>
-                      )}
+                      <RowStatusBadge
+                        hasPrompt={hasPrompt}
+                        job={job}
+                        hasImage={!!meta}
+                      />
                     </td>
                     <td className="py-2 pr-3 font-mono text-[10px] tabular-nums text-muted-foreground">
                       {meta ? fmtRelative(meta.generatedAt) : "—"}
@@ -548,16 +630,24 @@ export function AdminTab() {
                             size="sm"
                             variant={meta ? "outline" : "default"}
                             onClick={() =>
-                              regenOne.mutate({ id: r.id, prompt: r.optimizedPrompt })
+                              enqueueOne({ id: r.id, prompt: r.optimizedPrompt })
                             }
-                            disabled={!status.data?.enabled || running}
+                            disabled={
+                              !status.data?.enabled ||
+                              job?.status === "queued" ||
+                              job?.status === "running"
+                            }
                             title={
-                              meta
-                                ? "Regenerate this label's image (own 600s window)"
-                                : "Generate this label's image (own 600s window)"
+                              job?.status === "queued"
+                                ? "Already queued on the server"
+                                : job?.status === "running"
+                                ? "Currently running on the server"
+                                : meta
+                                ? "Enqueue a regen for this label"
+                                : "Enqueue an initial generation for this label"
                             }
                           >
-                            {running ? (
+                            {job?.status === "running" ? (
                               <Loader2 size={12} className="animate-spin" />
                             ) : meta ? (
                               <RefreshCw size={12} />
@@ -637,7 +727,7 @@ export function AdminTab() {
           queryClient.invalidateQueries({ queryKey: qk.labelsCatalog() });
         }}
         onRegen={(id, prompt, model, size, seed) => {
-          regenOne.mutate({ id, prompt, model, size, seed });
+          void enqueueOne({ id, prompt, model, size, seed });
         }}
         canRegen={!!status.data?.enabled}
         generatedAt={selected ? metaById.get(selected.id)?.generatedAt : undefined}
