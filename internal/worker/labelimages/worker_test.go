@@ -117,11 +117,17 @@ func TestWorker_Run_GeneratesMissing(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("row for test-w-a: ok=%v err=%v", ok, err)
 	}
-	if string(got.ImageBytes) != string(pngBytes("prompt A")) {
+	// Post gaka-364.3 the worker prepends the DB's systemPrompt to the
+	// per-label prompt. Compute the expected final string the same way
+	// the worker did so the assertion tolerates a non-empty seeded
+	// systemPrompt without hard-coding one.
+	sysPrompt, _ := d.GetGenConfig(context.Background())
+	expected := buildFinalPrompt(sysPrompt, "prompt A")
+	if string(got.ImageBytes) != string(pngBytes(expected)) {
 		t.Errorf("test-w-a bytes wrong: got %q", string(got.ImageBytes))
 	}
-	if got.Model != "test-model" || got.Prompt != "prompt A" {
-		t.Errorf("provenance not saved: model=%q prompt=%q", got.Model, got.Prompt)
+	if got.Model != "test-model" || got.Prompt != expected {
+		t.Errorf("provenance not saved: model=%q prompt=%q want prompt=%q", got.Model, got.Prompt, expected)
 	}
 }
 

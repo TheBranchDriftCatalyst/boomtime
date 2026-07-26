@@ -1278,6 +1278,65 @@ func build() (*openapi3.T, error) {
 		return op
 	}())
 
+	// gaka-364.3: DB-backed labels catalog + admin CRUD.
+	doc.AddOperation("/api/v1/labels/catalog", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagProfile}, Summary: "Public labels catalog + global generation systemPrompt",
+			Description: "Returns {systemPrompt: string, labels: [Label]}. Consumed by the FE evaluator on every public-profile / dashboard mount. PUBLIC — no auth required; the catalog isn't per-user.",
+			Security:    &public}
+		setStatus(op, http.StatusOK, rInline("{systemPrompt, labels}.", mapObject()))
+		stdErrors(op, "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/admin/labels", "POST", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagProfile}, Summary: "Admin: create a new label",
+			Description: "Body: full LabelSpec (id, kind, label, condition required). 400 if id already exists — use PATCH to update. Admin-only."}
+		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{
+			Required: true, Description: "New label.",
+			Content: openapi3.NewContentWithJSONSchema(openapi3.NewObjectSchema()),
+		}}
+		setStatus(op, http.StatusCreated, rInline("Created label.", mapObject()))
+		stdErrors(op, "400", "401", "403", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/admin/labels/{id}", "PATCH", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagProfile}, Summary: "Admin: update a label (partial)",
+			Description: "Body: partial LabelSpec — only present fields are overwritten. Cannot rename id (breaks label_images FK). Admin-only.",
+			Parameters:  openapi3.Parameters{pathParamStr("id", "Label id.")}}
+		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{
+			Required: true, Description: "Partial LabelSpec.",
+			Content: openapi3.NewContentWithJSONSchema(openapi3.NewObjectSchema()),
+		}}
+		setStatus(op, http.StatusOK, rInline("Updated label.", mapObject()))
+		stdErrors(op, "400", "401", "403", "404", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/admin/labels/{id}", "DELETE", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagProfile}, Summary: "Admin: delete a label",
+			Description: "Idempotent — 204 whether or not the row existed. Cascades to label_images (best-effort). Admin-only.",
+			Parameters:  openapi3.Parameters{pathParamStr("id", "Label id.")}}
+		setStatus(op, http.StatusNoContent, rInline("Deleted.", mapObject()))
+		stdErrors(op, "400", "401", "403", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/admin/label-gen-config", "PATCH", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagProfile}, Summary: "Admin: update global label generation systemPrompt",
+			Description: "Body: {systemPrompt: string}. Empty string clears the prefix (worker sends only the per-label optimizedPrompt). Admin-only."}
+		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{
+			Required: true, Description: "Config update.",
+			Content: openapi3.NewContentWithJSONSchema(openapi3.NewObjectSchema()),
+		}}
+		setStatus(op, http.StatusOK, rInline("{systemPrompt}.", mapObject()))
+		stdErrors(op, "400", "401", "403", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/admin/labels/seed.sql", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagProfile}, Summary: "Admin: dump DB labels catalog as a goose SQL migration body",
+			Description: "Returns text/plain SQL suitable for pasting into a fresh migration file — captures the current DB state (114+ rows + systemPrompt) as reviewable code. Admin-only."}
+		setStatus(op, http.StatusOK, rBlob("Goose migration SQL body.", "text/plain"))
+		stdErrors(op, "401", "403", "500")
+		return op
+	}())
+
 	doc.AddOperation("/api/v1/leaderboards", "GET", func() *openapi3.Operation {
 		op := &openapi3.Operation{Tags: []string{tagLeaderboard}, Summary: "Cross-user leaderboards",
 			Parameters: dashboardParams}

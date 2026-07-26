@@ -1,4 +1,23 @@
-// catalog.ts — the MVP label manifest (gaka-364).
+// catalog.ts — the ORIGINAL TS label manifest (gaka-364).
+//
+// **STATUS (gaka-364.3): compat shim for tests only.** The runtime FE
+// no longer imports LABEL_CATALOG — the source of truth is now the DB
+// `labels` table (seeded from THIS file's contents by migration
+// 00036_labels_catalog.sql). Every consumer that needs to render or
+// evaluate labels fetches via `useLabelsCatalog()` instead.
+//
+// This file stays checked-in so:
+//   - The structural invariant tests in catalog.test.ts continue to run.
+//   - The migration seed generator (scripts/gen_labels_seed.mts) has a
+//     source to re-derive from during initial bootstrap.
+//   - A future re-seed / rebuild workflow has a canonical starting point
+//     if the operator wants to reset to the ship-catalog.
+//
+// Post-DB-pivot edits go through the admin CRUD UI, not this file. Any
+// edits made here after gaka-364.3 are effectively dead code until they
+// get migrated into the DB by hand.
+//
+// ---
 //
 // This file IS the DSL manifest — kept in TypeScript on purpose so the
 // Condition discriminated union in ./types.ts drives IDE autocomplete

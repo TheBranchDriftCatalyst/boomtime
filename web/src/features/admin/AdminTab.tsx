@@ -1,53 +1,171 @@
-// AdminTab.tsx — Settings > Admin (gaka-myv).
+// AdminTab.tsx — Settings > Admin (gaka-364.3).
+//
+// v3 shape: the labels catalog itself is now editable from this tab. Each
+// row shows the current thumbnail + label + kind + status (has image y/n)
+// + generated_at + actions. Clicking a row opens a right-side Sheet with
+// a full editor:
+//   - label / glyph / description / optimizedPrompt / rank / tier / kind
+//   - condition (raw JSONB textarea — MVP; tree editor is a follow-up)
+//   - per-request generation overrides: model / size / seed
+//   - Save / Save + regen / Cancel
+//
+// Also in the tab:
+//   - Global generation config (systemPrompt textarea + save)
+//   - Download seed.sql button (dumps the current DB state as a fresh
+//     migration body — an operator can commit it back to git)
+//   - The existing "regenerate all missing / regenerate all" bulk actions
+//
+// The old v2 behavior (parallel per-label regens, MAX_PARALLEL_REGENS
+// throttling, per-row spinners) is preserved — a full 114-label regen
+// still fires N per-label POSTs each with its own 600s server window.
 //
 // Only rendered when the current user is on the BOOM_ADMIN_USERS allowlist
 // (Settings.tsx filters the tab out otherwise; the server also 403s any
 // non-admin request, so the tab is a UX aid, not a security boundary).
-//
-// v2 shape: per-label table. Each row shows the current thumbnail (or a
-// glyph fallback), status (missing / present / regenerating), last
-// generated_at + byte size when present, and an individual REGEN button
-// that fires ONE POST with ids=[id]. That way each generation gets its
-// own 600s server-side timeout window — no more single-batch-of-N tied
-// to one HTTP request that dies before slow models (chroma-hd) finish.
-// The "regenerate all" bulk buttons stay for convenience.
-//
-// Concurrency: FE fires per-label regens in parallel up to
-// MAX_PARALLEL_REGENS at a time — the shim/ComfyUI serialize on GPU
-// anyway, but staggered client-side requests avoid piling up ComfyUI's
-// pending queue with orphans (each individual request has its own 600s
-// budget so we're not fighting the timeout).
-import { useEffect, useMemo, useState } from "react";
-import { RefreshCw, ImageOff, CheckCircle2, Loader2, Zap } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ComponentPropsWithoutRef, ReactNode } from "react";
+import { cn } from "@/lib/utils";
+import {
+  RefreshCw,
+  ImageOff,
+  CheckCircle2,
+  Loader2,
+  Zap,
+  Download,
+  Pencil,
+  Save,
+  X,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
+import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
+import { Label as UILabel } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
+import { Textarea } from "@thebranchdriftcatalyst/catalyst-ui/ui/textarea";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@thebranchdriftcatalyst/catalyst-ui/ui/sheet";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
-import { LABEL_CATALOG } from "@/features/publicprofile/labels/catalog";
-import type { LabelSpec } from "@/features/publicprofile/labels/types";
+import { useLabelsCatalog } from "@/features/publicprofile/labels/useLabelsCatalog";
+import type { LabelCatalogRow } from "@/features/publicprofile/labels/types";
 import { LabelImage } from "@/features/publicprofile/labels/LabelImage";
 
 const MAX_PARALLEL_REGENS = 2;
 
-interface Entry {
-  id: string;
-  label: string;
-  prompt: string;
-  kind: LabelSpec["kind"];
+// --- ResizableSheetContent --------------------------------------------------
+//
+// Radix Sheet gives us a fixed-width panel; wrap it with a boomtime-local
+// helper that adds a drag handle on the LEFT edge (matches side="right").
+// Grab the handle, drag left/right, the sheet grows/shrinks in real time.
+// Width is persisted per storageKey to localStorage so an operator's
+// preferred size for the label editor survives page reloads.
+//
+// Not touching catalyst-ui — this stays local to boomtime.
+//
+// Test note: automated drag tests are avoided (jsdom mousemove synthesis is
+// flaky). Manual verification only; the storage read/write is
+// deterministic + testable via the width prop.
+
+interface ResizableSheetContentProps
+  extends ComponentPropsWithoutRef<typeof SheetContent> {
+  minWidth?: number;
+  maxWidth?: number;
+  defaultWidth?: number;
+  /** localStorage key to persist the drag-set width across reloads. */
+  storageKey?: string;
+  children?: ReactNode;
 }
 
-// Extract the {id, prompt, label} pairs the backend needs from the FE catalog.
-// Labels without an imagePrompt are skipped — no image to generate.
-function catalogEntries(): Entry[] {
-  const out: Entry[] = [];
-  const seen = new Set<string>();
-  for (const s of LABEL_CATALOG as LabelSpec[]) {
-    if (!s.imagePrompt || seen.has(s.id)) continue;
-    seen.add(s.id);
-    out.push({ id: s.id, label: s.label, prompt: s.imagePrompt, kind: s.kind });
-  }
-  return out;
+function ResizableSheetContent({
+  children,
+  minWidth = 400,
+  maxWidth = 1200,
+  defaultWidth = 560,
+  storageKey = "admin-label-sheet-width",
+  className,
+  style,
+  ...sheetProps
+}: ResizableSheetContentProps) {
+  const [width, setWidth] = useState<number>(() => {
+    if (typeof window === "undefined") return defaultWidth;
+    const saved = Number(window.localStorage.getItem(storageKey));
+    return Number.isFinite(saved) && saved >= minWidth && saved <= maxWidth
+      ? saved
+      : defaultWidth;
+  });
+  const dragging = useRef(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(storageKey, String(width));
+    } catch {
+      /* localStorage may be disabled (private browsing); silently degrade */
+    }
+  }, [width, storageKey]);
+
+  useEffect(() => {
+    function onMove(e: MouseEvent) {
+      if (!dragging.current) return;
+      // Sheet slides in from the right; the drag handle is on the LEFT
+      // edge of the sheet, so width = viewport.right - clientX.
+      const next = Math.min(
+        maxWidth,
+        Math.max(minWidth, window.innerWidth - e.clientX),
+      );
+      setWidth(next);
+    }
+    function onUp() {
+      if (!dragging.current) return;
+      dragging.current = false;
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    }
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [minWidth, maxWidth]);
+
+  return (
+    <SheetContent
+      {...sheetProps}
+      // Drop padding on the outer container so the drag handle sits flush
+      // at the left edge. The inner scroll div re-adds it.
+      className={cn("p-0", className)}
+      style={{ width, maxWidth: "none", ...style }}
+    >
+      {/* Drag handle — 6px vertical strip. Transparent by default, tints
+          on hover so it's discoverable without shouting. */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize sheet"
+        onMouseDown={(e) => {
+          e.preventDefault();
+          dragging.current = true;
+          document.body.style.userSelect = "none";
+          document.body.style.cursor = "col-resize";
+        }}
+        className="absolute left-0 top-0 z-10 h-full w-1.5 cursor-col-resize bg-transparent transition-colors hover:bg-[color:var(--primary)]/40"
+        data-testid="sheet-resize-handle"
+      />
+      {/* Inner scroll container so the handle stays static as the form
+          scrolls. Padding restored here. */}
+      <div className="h-full overflow-y-auto p-6">{children}</div>
+    </SheetContent>
+  );
 }
+
+// --- helpers ----------------------------------------------------------------
 
 function fmtBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -68,21 +186,29 @@ function fmtRelative(iso: string): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+// Trigger a browser download of `text` as `filename`. Used by the seed.sql
+// dump button. Everything happens client-side; no server-side redirect.
+function downloadText(filename: string, text: string) {
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// --- component --------------------------------------------------------------
+
 export function AdminTab() {
   const queryClient = useQueryClient();
-  // Track per-id in-flight regens so buttons show per-row spinners and we
-  // can gate MAX_PARALLEL_REGENS in "Regenerate missing"/"all" bulk paths.
-  const [inFlight, setInFlight] = useState<Set<string>>(new Set());
-  const [filter, setFilter] = useState<"all" | "missing" | "present">("all");
 
-  const entries = useMemo(catalogEntries, []);
-  const promptById = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const e of entries) m.set(e.id, e.prompt);
-    return m;
-  }, [entries]);
-
-  const { data, isLoading, isError, error } = useQuery({
+  // Two independent fetches: catalog (labels + systemPrompt) drives the
+  // rows; adminLabelImages drives the per-row status column.
+  const catalog = useLabelsCatalog();
+  const status = useQuery({
     queryKey: qk.adminLabelImages(),
     // Poll every 10s so newly-saved rows show up as their generation
     // completes. Cheap query (single COUNT + light SELECT).
@@ -91,59 +217,93 @@ export function AdminTab() {
     staleTime: 5_000,
   });
 
+  const [inFlight, setInFlight] = useState<Set<string>>(new Set());
+  const [filter, setFilter] = useState<"all" | "missing" | "present">("all");
+  const [selected, setSelected] = useState<LabelCatalogRow | null>(null);
+  const [sysPromptDraft, setSysPromptDraft] = useState<string>("");
+
+  // Keep the systemPrompt draft in sync with the fetched value when we
+  // don't have an outstanding edit. Compare against undefined so we
+  // seed the draft ONCE from the fetch, then only refresh it on catalog
+  // refetches if the user hasn't edited it in the meantime.
+  useEffect(() => {
+    if (catalog.systemPrompt !== undefined) {
+      setSysPromptDraft(catalog.systemPrompt);
+    }
+  }, [catalog.systemPrompt]);
+
   const metaById = useMemo(() => {
     const m = new Map<string, { sizeBytes: number; generatedAt: string }>();
-    for (const it of data?.items ?? []) m.set(it.id, it);
+    for (const it of status.data?.items ?? []) m.set(it.id, it);
     return m;
-  }, [data]);
+  }, [status.data]);
 
+  const rows = catalog.rows;
+  const filteredRows = rows.filter((r) => {
+    if (filter === "missing") return !metaById.has(r.id);
+    if (filter === "present") return metaById.has(r.id);
+    return true;
+  });
+  const missingIds = rows
+    .filter((r) => r.optimizedPrompt && !metaById.has(r.id))
+    .map((r) => r.id);
+
+  // --- per-label regen ------------------------------------------------------
   const regenOne = useMutation({
-    mutationFn: async (id: string) => {
-      const prompt = promptById.get(id);
-      if (!prompt) throw new Error(`no imagePrompt for ${id}`);
-      // Single-id regen: the server-side goroutine gets its own 600s
-      // window instead of sharing one with 67 other labels.
-      return api.regenerateLabelImages({
-        entries: [{ id, prompt }],
-        ids: [id],
-      });
+    mutationFn: async ({ id, prompt, model, size, seed }: {
+      id: string;
+      prompt: string;
+      model?: string;
+      size?: string;
+      seed?: number;
+    }) => {
+      const entry: {
+        id: string;
+        prompt: string;
+        model?: string;
+        size?: string;
+        seed?: number;
+      } = { id, prompt };
+      if (model) entry.model = model;
+      if (size) entry.size = size;
+      if (seed !== undefined) entry.seed = seed;
+      return api.regenerateLabelImages({ entries: [entry], ids: [id] });
     },
-    onMutate: (id) => {
-      setInFlight((prev) => new Set(prev).add(id));
+    onMutate: (v) => {
+      setInFlight((prev) => new Set(prev).add(v.id));
     },
-    onSettled: (_res, _err, id) => {
+    onSettled: (_res, _err, v) => {
       setInFlight((prev) => {
         const next = new Set(prev);
-        next.delete(id);
+        next.delete(v.id);
         return next;
       });
-      // Bust the info query so the row's meta refreshes shortly.
-      // The 10s poll will also catch it, but this feels snappier.
       setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: qk.adminLabelImages() });
       }, 2_000);
     },
   });
 
-  // Bulk: regenerate ALL missing images, throttled to MAX_PARALLEL_REGENS.
-  // Not a single POST — fires N independent per-id POSTs so each has its
-  // own 600s server timeout (that's the whole point of this v2 UI).
+  // --- bulk regen ----------------------------------------------------------
   const [bulkRunning, setBulkRunning] = useState(false);
   async function bulkRegenerate(idsToRun: string[]) {
     if (bulkRunning) return;
     setBulkRunning(true);
     try {
-      // Simple pool: fire MAX_PARALLEL_REGENS at a time.
+      const promptById = new Map<string, string>();
+      for (const r of rows) promptById.set(r.id, r.optimizedPrompt);
       let idx = 0;
       const workers = Array.from(
         { length: Math.min(MAX_PARALLEL_REGENS, idsToRun.length) },
         async () => {
           while (idx < idsToRun.length) {
             const my = idsToRun[idx++];
+            const prompt = promptById.get(my);
+            if (!prompt) continue;
             try {
-              await regenOne.mutateAsync(my);
+              await regenOne.mutateAsync({ id: my, prompt });
             } catch {
-              /* swallow — the row's in-flight state cleared in onSettled */
+              /* per-row state already cleared in onSettled */
             }
           }
         },
@@ -154,97 +314,77 @@ export function AdminTab() {
     }
   }
 
-  // Force <LabelImage> to bust its cache after a regen — the immutable
-  // Cache-Control means the browser would keep the old bytes otherwise.
-  // The bust hint is the generatedAt epoch, so it changes on each new row.
+  // --- global systemPrompt save --------------------------------------------
+  const saveSysPrompt = useMutation({
+    mutationFn: (sp: string) => api.adminUpdateLabelGenConfig(sp),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: qk.labelsCatalog() });
+    },
+  });
+
+  // --- seed.sql download ---------------------------------------------------
+  const [downloading, setDownloading] = useState(false);
+  async function handleSeedDownload() {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      const sql = await api.adminLabelsSeedSQL();
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "");
+      downloadText(`labels_seed_${stamp}.sql`, sql);
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   function bustHintFor(id: string): string | number | undefined {
     const meta = metaById.get(id);
     if (!meta) return undefined;
     return new Date(meta.generatedAt).getTime();
   }
 
-  // Toast-y result banner for last bulk result; single-row results are shown
-  // inline via the row state so we don't need a big banner for those.
-  const [lastBulkAt, setLastBulkAt] = useState<number | null>(null);
-  useEffect(() => {
-    if (!bulkRunning && lastBulkAt !== null) return;
-    if (!bulkRunning) return;
-    setLastBulkAt(Date.now());
-  }, [bulkRunning, lastBulkAt]);
-
-  if (isLoading) {
+  if (catalog.isLoading || status.isLoading) {
     return <p className="text-sm text-muted-foreground">Loading admin status…</p>;
   }
-  if (isError) {
+  if (status.isError) {
     return (
       <div className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm">
         <p className="font-semibold">Admin access required.</p>
         <p className="mt-2 text-muted-foreground">
-          {(error as Error)?.message ?? "You are not on the admin allowlist."}
+          {(status.error as Error)?.message ?? "You are not on the admin allowlist."}
         </p>
       </div>
     );
   }
 
-  const filtered = entries.filter((e) => {
-    if (filter === "missing") return !metaById.has(e.id);
-    if (filter === "present") return metaById.has(e.id);
-    return true;
-  });
-  const missingIds = entries.filter((e) => !metaById.has(e.id)).map((e) => e.id);
-
   return (
     <div className="space-y-6">
+      {/* --- LABELS + IMAGES ------------------------------------------------ */}
       <section className="rounded-md border border-border bg-card p-4">
-        <h2 className="font-mono text-sm font-semibold uppercase tracking-wider">
-          Label images
-        </h2>
+        <div className="flex items-baseline justify-between">
+          <h2 className="font-mono text-sm font-semibold uppercase tracking-wider">
+            Labels catalog
+          </h2>
+          <span className="text-xs text-muted-foreground">
+            {rows.length} labels · {status.data?.count ?? 0} images ·{" "}
+            <strong>{status.data?.enabled ? "gen ON" : "gen OFF"}</strong>
+          </span>
+        </div>
         <p className="mt-1 text-xs text-muted-foreground">
-          Generates emblem imagery for every label with an{" "}
-          <code className="font-mono text-[10px]">imagePrompt</code> via the
-          ComfyUI shim ({data?.shimUrl || "not configured"}). Feature is{" "}
-          <strong>{data?.enabled ? "ON" : "OFF"}</strong>.
+          Edit label metadata + prompts live. Image generation uses the
+          ComfyUI shim ({status.data?.shimUrl || "not configured"}) under
+          model <code className="font-mono">{status.data?.model ?? "—"}</code>.
+          Click a row to open the editor.
         </p>
 
-        <dl className="mt-4 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
-          <div>
-            <dt className="uppercase tracking-wide text-muted-foreground">Model</dt>
-            <dd className="mt-1 font-mono">{data?.model ?? "—"}</dd>
-          </div>
-          <div>
-            <dt className="uppercase tracking-wide text-muted-foreground">
-              Rows in DB
-            </dt>
-            <dd className="mt-1 font-mono tabular-nums">{data?.count ?? 0}</dd>
-          </div>
-          <div>
-            <dt className="uppercase tracking-wide text-muted-foreground">
-              FE catalog (prompted)
-            </dt>
-            <dd className="mt-1 font-mono tabular-nums">{entries.length}</dd>
-          </div>
-          <div>
-            <dt className="uppercase tracking-wide text-muted-foreground">
-              In flight
-            </dt>
-            <dd className="mt-1 font-mono tabular-nums">{inFlight.size}</dd>
-          </div>
-        </dl>
-
-        <div className="mt-6 flex flex-wrap items-center gap-2">
+        <div className="mt-4 flex flex-wrap items-center gap-2">
           <Button
             size="sm"
             variant="default"
             onClick={() => bulkRegenerate(missingIds)}
-            disabled={
-              !data?.enabled || bulkRunning || missingIds.length === 0
-            }
+            disabled={!status.data?.enabled || bulkRunning || missingIds.length === 0}
             title="Fire per-label regens (max 2 in parallel) for every catalog entry not currently in DB"
           >
-            <RefreshCw
-              size={14}
-              className={bulkRunning ? "animate-spin" : ""}
-            />
+            <RefreshCw size={14} className={bulkRunning ? "animate-spin" : ""} />
             <span className="ml-2">
               {bulkRunning
                 ? `Working — ${inFlight.size} in flight`
@@ -254,11 +394,25 @@ export function AdminTab() {
           <Button
             size="sm"
             variant="outline"
-            onClick={() => bulkRegenerate(entries.map((e) => e.id))}
-            disabled={!data?.enabled || bulkRunning}
-            title="Fire per-label regens for every catalog entry — DELETEs each row then generates fresh"
+            onClick={() =>
+              bulkRegenerate(rows.filter((r) => r.optimizedPrompt).map((r) => r.id))
+            }
+            disabled={!status.data?.enabled || bulkRunning}
+            title="Fire per-label regens for every catalog entry with a prompt"
           >
-            Regen all ({entries.length})
+            Regen all ({rows.filter((r) => r.optimizedPrompt).length})
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleSeedDownload}
+            disabled={downloading}
+            title="Dump current DB catalog as a fresh goose migration file — commit back to git to snapshot operator edits"
+          >
+            <Download size={14} className={downloading ? "animate-pulse" : ""} />
+            <span className="ml-2">
+              {downloading ? "Preparing…" : "Download seed.sql"}
+            </span>
           </Button>
           <div className="ml-auto flex items-center gap-1 text-xs">
             <span className="text-muted-foreground">Filter:</span>
@@ -280,23 +434,24 @@ export function AdminTab() {
           </div>
         </div>
 
-        {!data?.enabled && (
+        {!status.data?.enabled && (
           <p className="mt-4 rounded-sm border border-yellow-500/40 bg-yellow-500/10 p-3 text-xs">
-            <strong>Feature disabled.</strong> Set{" "}
+            <strong>Image generation disabled.</strong> Set{" "}
             <code className="font-mono">BOOM_FEATURE_LABEL_IMAGES=on</code> AND{" "}
-            <code className="font-mono">BOOM_COMFYUI_SHIM_URL=&lt;url&gt;</code>{" "}
-            (and optionally{" "}
-            <code className="font-mono">BOOM_COMFYUI_MODEL=&lt;pipeline&gt;</code>
-            ), then restart boomtime.
+            <code className="font-mono">BOOM_COMFYUI_SHIM_URL=&lt;url&gt;</code>,
+            then restart boomtime. Label CRUD still works without the
+            generator.
           </p>
         )}
 
-        <div className="mt-6 overflow-x-auto">
-          <table className="w-full min-w-[600px] border-collapse text-xs">
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[720px] border-collapse text-xs">
             <thead>
               <tr className="border-b border-border text-left uppercase tracking-wide text-muted-foreground">
                 <th className="py-2 pr-3 font-mono text-[10px]">Preview</th>
                 <th className="py-2 pr-3 font-mono text-[10px]">Label</th>
+                <th className="py-2 pr-3 font-mono text-[10px]">Kind</th>
+                <th className="py-2 pr-3 font-mono text-[10px]">Rank</th>
                 <th className="py-2 pr-3 font-mono text-[10px]">Status</th>
                 <th className="py-2 pr-3 font-mono text-[10px]">Generated</th>
                 <th className="py-2 pr-3 font-mono text-[10px]">Size</th>
@@ -304,24 +459,29 @@ export function AdminTab() {
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 && (
+              {filteredRows.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="py-6 text-center text-muted-foreground">
+                  <td colSpan={8} className="py-6 text-center text-muted-foreground">
                     No labels match this filter.
                   </td>
                 </tr>
               )}
-              {filtered.map((e) => {
-                const meta = metaById.get(e.id);
-                const running = inFlight.has(e.id);
+              {filteredRows.map((r) => {
+                const meta = metaById.get(r.id);
+                const running = inFlight.has(r.id);
+                const hasPrompt = !!r.optimizedPrompt;
                 return (
-                  <tr key={e.id} className="border-b border-border/50">
+                  <tr
+                    key={r.id}
+                    className="cursor-pointer border-b border-border/50 hover:bg-primary/5"
+                    onClick={() => setSelected(r)}
+                  >
                     <td className="py-2 pr-3">
                       <div className="h-10 w-10">
                         <LabelImage
-                          id={e.id}
+                          id={r.id}
                           size={40}
-                          bustHint={bustHintFor(e.id)}
+                          bustHint={bustHintFor(r.id)}
                           className="rounded-sm border border-border"
                           fallback={
                             <div className="flex h-10 w-10 items-center justify-center rounded-sm border border-dashed border-muted-foreground/40 text-muted-foreground">
@@ -333,14 +493,24 @@ export function AdminTab() {
                     </td>
                     <td className="py-2 pr-3">
                       <div className="font-mono text-[11px] uppercase tracking-wide text-foreground">
-                        {e.label}
+                        {r.glyph ? <span className="mr-1">{r.glyph}</span> : null}
+                        {r.label}
                       </div>
                       <div className="text-[10px] text-muted-foreground">
-                        {e.id} · {e.kind}
+                        {r.id}
                       </div>
                     </td>
+                    <td className="py-2 pr-3 font-mono text-[10px] uppercase tracking-wide">
+                      {r.kind}
+                      {r.kind === "tier" && r.tier ? ` · ${r.tier}` : ""}
+                    </td>
+                    <td className="py-2 pr-3 font-mono text-[10px] tabular-nums">
+                      {r.rank}
+                    </td>
                     <td className="py-2 pr-3">
-                      {running ? (
+                      {!hasPrompt ? (
+                        <span className="text-muted-foreground">no prompt</span>
+                      ) : running ? (
                         <span className="inline-flex items-center gap-1 text-primary">
                           <Loader2 size={12} className="animate-spin" />
                           <span>generating…</span>
@@ -363,35 +533,40 @@ export function AdminTab() {
                     <td className="py-2 pr-3 font-mono text-[10px] tabular-nums text-muted-foreground">
                       {meta ? fmtBytes(meta.sizeBytes) : "—"}
                     </td>
-                    <td className="py-2">
-                      <Button
-                        size="sm"
-                        variant={meta ? "outline" : "default"}
-                        onClick={() => regenOne.mutate(e.id)}
-                        disabled={!data?.enabled || running}
-                        title={
-                          meta
-                            ? "Delete + regenerate this label's image (own 600s window)"
-                            : "Generate this label's image (own 600s window)"
-                        }
-                      >
-                        {running ? (
-                          <>
-                            <Loader2 size={12} className="animate-spin" />
-                            <span className="ml-1.5">Working</span>
-                          </>
-                        ) : meta ? (
-                          <>
-                            <RefreshCw size={12} />
-                            <span className="ml-1.5">Regen</span>
-                          </>
-                        ) : (
-                          <>
-                            <Zap size={12} />
-                            <span className="ml-1.5">Generate</span>
-                          </>
+                    <td className="py-2" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setSelected(r)}
+                          title="Edit this label"
+                        >
+                          <Pencil size={12} />
+                        </Button>
+                        {hasPrompt && (
+                          <Button
+                            size="sm"
+                            variant={meta ? "outline" : "default"}
+                            onClick={() =>
+                              regenOne.mutate({ id: r.id, prompt: r.optimizedPrompt })
+                            }
+                            disabled={!status.data?.enabled || running}
+                            title={
+                              meta
+                                ? "Regenerate this label's image (own 600s window)"
+                                : "Generate this label's image (own 600s window)"
+                            }
+                          >
+                            {running ? (
+                              <Loader2 size={12} className="animate-spin" />
+                            ) : meta ? (
+                              <RefreshCw size={12} />
+                            ) : (
+                              <Zap size={12} />
+                            )}
+                          </Button>
                         )}
-                      </Button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -400,6 +575,477 @@ export function AdminTab() {
           </table>
         </div>
       </section>
+
+      {/* --- GLOBAL GENERATION CONFIG --------------------------------------- */}
+      <section className="rounded-md border border-border bg-card p-4">
+        <h2 className="font-mono text-sm font-semibold uppercase tracking-wider">
+          Global generation config
+        </h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Prepended to every per-label{" "}
+          <code className="font-mono text-[10px]">optimizedPrompt</code>{" "}
+          before hitting the shim (SDXL tag convention:{" "}
+          <code className="font-mono">
+            {"{systemPrompt}, {perLabelOptimizedPrompt}"}
+          </code>
+          ). Cached in the worker for 30s — an edit is visible on the
+          next regen batch.
+        </p>
+        <div className="mt-4 space-y-2">
+          <UILabel htmlFor="sys-prompt">System prompt</UILabel>
+          <Textarea
+            id="sys-prompt"
+            value={sysPromptDraft}
+            onChange={(e) => setSysPromptDraft(e.target.value)}
+            rows={4}
+            className="font-mono text-[11px]"
+            placeholder="cyberpunk anime chibi half-body emblem portrait, ..."
+          />
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-muted-foreground">
+              {sysPromptDraft.length} chars
+            </span>
+            <Button
+              size="sm"
+              onClick={() => saveSysPrompt.mutate(sysPromptDraft)}
+              disabled={
+                saveSysPrompt.isPending ||
+                sysPromptDraft === catalog.systemPrompt
+              }
+            >
+              {saveSysPrompt.isPending ? (
+                <>
+                  <Loader2 size={12} className="animate-spin" />
+                  <span className="ml-1.5">Saving…</span>
+                </>
+              ) : (
+                <>
+                  <Save size={12} />
+                  <span className="ml-1.5">Save systemPrompt</span>
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      {/* --- EDIT SHEET ----------------------------------------------------- */}
+      <LabelEditSheet
+        row={selected}
+        onClose={() => setSelected(null)}
+        onSaved={() => {
+          queryClient.invalidateQueries({ queryKey: qk.labelsCatalog() });
+        }}
+        onRegen={(id, prompt, model, size, seed) => {
+          regenOne.mutate({ id, prompt, model, size, seed });
+        }}
+        canRegen={!!status.data?.enabled}
+      />
     </div>
   );
+}
+
+// --- Sheet editor -----------------------------------------------------------
+
+interface LabelEditSheetProps {
+  row: LabelCatalogRow | null;
+  onClose: () => void;
+  onSaved: () => void;
+  onRegen: (
+    id: string,
+    prompt: string,
+    model?: string,
+    size?: string,
+    seed?: number,
+  ) => void;
+  canRegen: boolean;
+}
+
+// Local editable-form state. Kept simple (untyped strings for numeric
+// fields → parsed on submit) so the form stays responsive even with
+// invalid intermediate input. Validation is fail-loud on save.
+interface EditDraft {
+  kind: string;
+  label: string;
+  glyph: string;
+  description: string;
+  optimizedPrompt: string;
+  rank: string;
+  tier: string;
+  conditionJson: string;
+  // Per-request overrides — not persisted on the label, threaded into
+  // the regen request only.
+  model: string;
+  size: string;
+  seed: string;
+}
+
+function toDraft(row: LabelCatalogRow): EditDraft {
+  return {
+    kind: row.kind,
+    label: row.label,
+    glyph: row.glyph,
+    description: row.description,
+    optimizedPrompt: row.optimizedPrompt,
+    rank: String(row.rank),
+    tier: row.tier,
+    conditionJson: JSON.stringify(row.condition, null, 2),
+    model: "",
+    size: "1024x1024",
+    seed: "",
+  };
+}
+
+const KIND_OPTIONS = ["tier", "archetype", "tribe", "meme"] as const;
+const TIER_OPTIONS = ["novice", "apprentice", "adept", "master", "legend"] as const;
+
+function LabelEditSheet({ row, onClose, onSaved, onRegen, canRegen }: LabelEditSheetProps) {
+  const queryClient = useQueryClient();
+  const [draft, setDraft] = useState<EditDraft | null>(row ? toDraft(row) : null);
+  const [conditionErr, setConditionErr] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+
+  // Re-seed the draft whenever a new row is selected. `row?.id` (not `row`)
+  // is the dep so re-fetches of the SAME row don't trample in-flight edits.
+  useEffect(() => {
+    if (row) {
+      setDraft(toDraft(row));
+      setConditionErr(null);
+      setDeleteConfirm(false);
+    }
+  }, [row?.id]);
+
+  const saveMutation = useMutation({
+    mutationFn: async (d: EditDraft) => {
+      if (!row) return null;
+      const parsed = parseCondition(d.conditionJson);
+      if (parsed.error) throw new Error(parsed.error);
+      return api.adminUpdateLabel(row.id, {
+        kind: d.kind as LabelCatalogRow["kind"],
+        label: d.label,
+        glyph: d.glyph,
+        description: d.description,
+        optimizedPrompt: d.optimizedPrompt,
+        rank: Number(d.rank) || 0,
+        tier: d.tier,
+        condition: parsed.value as LabelCatalogRow["condition"],
+      });
+    },
+    onSuccess: () => {
+      onSaved();
+      onClose();
+    },
+    onError: (err) => {
+      setConditionErr((err as Error).message);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      if (!row) return;
+      return api.adminDeleteLabel(row.id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: qk.labelsCatalog() });
+      queryClient.invalidateQueries({ queryKey: qk.adminLabelImages() });
+      onClose();
+    },
+  });
+
+  function saveAndRegen() {
+    if (!row || !draft) return;
+    const parsed = parseCondition(draft.conditionJson);
+    if (parsed.error) {
+      setConditionErr(parsed.error);
+      return;
+    }
+    saveMutation.mutate(draft, {
+      onSuccess: () => {
+        // Fire regen with the just-saved prompt + per-request overrides.
+        const seedNum = draft.seed ? Number(draft.seed) : undefined;
+        onRegen(
+          row.id,
+          draft.optimizedPrompt,
+          draft.model || undefined,
+          draft.size || undefined,
+          Number.isFinite(seedNum) ? (seedNum as number) : undefined,
+        );
+      },
+    });
+  }
+
+  const open = row !== null;
+  return (
+    <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
+      <ResizableSheetContent
+        side="right"
+        storageKey="admin-label-editor-width"
+        defaultWidth={560}
+        minWidth={400}
+        maxWidth={1200}
+      >
+        {row && draft && (
+          <>
+            <SheetHeader>
+              <SheetTitle className="font-mono uppercase tracking-wider">
+                {draft.glyph ? <span className="mr-2">{draft.glyph}</span> : null}
+                {draft.label || row.label}
+              </SheetTitle>
+              <SheetDescription className="font-mono text-[10px]">
+                {row.id}
+              </SheetDescription>
+            </SheetHeader>
+
+            <div className="mt-6 space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <UILabel htmlFor="ed-label">Label (display)</UILabel>
+                  <Input
+                    id="ed-label"
+                    value={draft.label}
+                    onChange={(e) =>
+                      setDraft({ ...draft, label: e.target.value.toUpperCase() })
+                    }
+                    className="font-mono uppercase"
+                  />
+                </div>
+                <div>
+                  <UILabel htmlFor="ed-glyph">Glyph (1-3 chars)</UILabel>
+                  <Input
+                    id="ed-glyph"
+                    value={draft.glyph}
+                    onChange={(e) => setDraft({ ...draft, glyph: e.target.value })}
+                    maxLength={8}
+                    className="font-mono"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <UILabel htmlFor="ed-desc">Description (rich narrative)</UILabel>
+                <Textarea
+                  id="ed-desc"
+                  value={draft.description}
+                  onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+                  rows={3}
+                  className="text-[12px]"
+                />
+              </div>
+
+              <div>
+                <UILabel htmlFor="ed-opt">Optimized prompt (sent to comfyui)</UILabel>
+                <Textarea
+                  id="ed-opt"
+                  value={draft.optimizedPrompt}
+                  onChange={(e) =>
+                    setDraft({ ...draft, optimizedPrompt: e.target.value })
+                  }
+                  rows={3}
+                  className="font-mono text-[11px]"
+                  placeholder="tag-heavy SDXL prompt (systemPrompt prepends at gen time)"
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <UILabel htmlFor="ed-rank">Rank</UILabel>
+                  <Input
+                    id="ed-rank"
+                    type="number"
+                    value={draft.rank}
+                    onChange={(e) => setDraft({ ...draft, rank: e.target.value })}
+                    className="font-mono tabular-nums"
+                  />
+                </div>
+                <div>
+                  <UILabel htmlFor="ed-kind">Kind</UILabel>
+                  <select
+                    id="ed-kind"
+                    value={draft.kind}
+                    onChange={(e) => setDraft({ ...draft, kind: e.target.value })}
+                    className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 font-mono text-xs uppercase tracking-wide"
+                    disabled
+                    title="Kind is not editable here — it defines the condition schema. Delete + recreate to change."
+                  >
+                    {KIND_OPTIONS.map((k) => (
+                      <option key={k} value={k}>
+                        {k}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <UILabel htmlFor="ed-tier">Tier (kind=tier only)</UILabel>
+                  <select
+                    id="ed-tier"
+                    value={draft.tier}
+                    onChange={(e) => setDraft({ ...draft, tier: e.target.value })}
+                    disabled={draft.kind !== "tier"}
+                    className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 font-mono text-xs uppercase tracking-wide"
+                  >
+                    <option value="">—</option>
+                    {TIER_OPTIONS.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <UILabel htmlFor="ed-cond">Condition (raw JSONB)</UILabel>
+                <Textarea
+                  id="ed-cond"
+                  value={draft.conditionJson}
+                  onChange={(e) => {
+                    setDraft({ ...draft, conditionJson: e.target.value });
+                    setConditionErr(null);
+                  }}
+                  rows={8}
+                  className="font-mono text-[11px]"
+                />
+                {conditionErr && (
+                  <p className="mt-1 text-[11px] text-destructive">
+                    {conditionErr}
+                  </p>
+                )}
+              </div>
+
+              <div className="border-t border-border pt-4">
+                <p className="mb-2 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+                  Per-request generation overrides (not persisted)
+                </p>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <UILabel htmlFor="ed-model">Model</UILabel>
+                    <Input
+                      id="ed-model"
+                      value={draft.model}
+                      onChange={(e) => setDraft({ ...draft, model: e.target.value })}
+                      placeholder="(env default)"
+                      className="font-mono text-xs"
+                    />
+                  </div>
+                  <div>
+                    <UILabel htmlFor="ed-size">Size</UILabel>
+                    <Input
+                      id="ed-size"
+                      value={draft.size}
+                      onChange={(e) => setDraft({ ...draft, size: e.target.value })}
+                      placeholder="1024x1024"
+                      className="font-mono text-xs"
+                    />
+                  </div>
+                  <div>
+                    <UILabel htmlFor="ed-seed">Seed</UILabel>
+                    <Input
+                      id="ed-seed"
+                      type="number"
+                      value={draft.seed}
+                      onChange={(e) => setDraft({ ...draft, seed: e.target.value })}
+                      placeholder="(random)"
+                      className="font-mono text-xs tabular-nums"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Delete confirmation — two-click safety (delete button turns
+                  into confirm after first click). */}
+              <div className="border-t border-border pt-4">
+                {deleteConfirm ? (
+                  <div className="flex items-center gap-2 rounded-sm border border-destructive/60 bg-destructive/10 p-3">
+                    <span className="text-xs">
+                      Really delete <strong>{row.id}</strong>? This
+                      cascades to the label_images row (if any).
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => deleteMutation.mutate()}
+                      disabled={deleteMutation.isPending}
+                    >
+                      {deleteMutation.isPending ? (
+                        <Loader2 size={12} className="animate-spin" />
+                      ) : (
+                        "Confirm delete"
+                      )}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setDeleteConfirm(false)}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-destructive hover:bg-destructive/10"
+                    onClick={() => setDeleteConfirm(true)}
+                  >
+                    <Trash2 size={12} />
+                    <span className="ml-1.5">Delete label</span>
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            <SheetFooter className="mt-6">
+              <Button variant="outline" onClick={onClose}>
+                <X size={12} />
+                <span className="ml-1.5">Cancel</span>
+              </Button>
+              <Button
+                onClick={() => saveMutation.mutate(draft)}
+                disabled={saveMutation.isPending}
+              >
+                {saveMutation.isPending ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : (
+                  <Save size={12} />
+                )}
+                <span className="ml-1.5">Save</span>
+              </Button>
+              <Button
+                variant="default"
+                onClick={saveAndRegen}
+                disabled={saveMutation.isPending || !canRegen || !draft.optimizedPrompt}
+                title={
+                  !canRegen
+                    ? "Image generation feature is disabled — set BOOM_FEATURE_LABEL_IMAGES=on"
+                    : "Save + immediately regenerate this label's image"
+                }
+              >
+                <Zap size={12} />
+                <span className="ml-1.5">Save + regen</span>
+              </Button>
+            </SheetFooter>
+          </>
+        )}
+      </ResizableSheetContent>
+    </Sheet>
+  );
+}
+
+// parseCondition guards the JSONB textarea. Returns {value, error} — error
+// is a human-readable message the sheet renders under the field.
+function parseCondition(txt: string): { value?: unknown; error?: string } {
+  const trimmed = txt.trim();
+  if (!trimmed) return { error: "condition JSON is required" };
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed === null || typeof parsed !== "object") {
+      return { error: "condition must be a JSON object" };
+    }
+    if (!("kind" in parsed)) {
+      return { error: "condition must have a `kind` discriminant (e.g. axis-time, daily-avg, all, any, not)" };
+    }
+    return { value: parsed };
+  } catch (e) {
+    return { error: `invalid JSON: ${(e as Error).message}` };
+  }
 }

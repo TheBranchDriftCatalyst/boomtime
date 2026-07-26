@@ -331,6 +331,16 @@ func registerMiscRoutes(e *echo.Echo, h *handler.Handler) {
 	e.GET("/api/v1/admin/label-images", h.AdminLabelImagesInfo)
 	e.POST("/api/v1/admin/label-images/regenerate", h.AdminLabelImagesRegenerate)
 
+	// gaka-364.3: DB-backed labels catalog. Public GET returns the whole
+	// catalog for the FE evaluator + admin table; admin CRUD lets a
+	// whitelisted operator edit labels + the global gen-config live.
+	e.GET("/api/v1/labels/catalog", h.LabelsCatalog)
+	e.POST("/api/v1/admin/labels", h.AdminCreateLabel)
+	e.PATCH("/api/v1/admin/labels/:id", h.AdminUpdateLabel)
+	e.DELETE("/api/v1/admin/labels/:id", h.AdminDeleteLabel)
+	e.PATCH("/api/v1/admin/label-gen-config", h.AdminUpdateLabelGenConfig)
+	e.GET("/api/v1/admin/labels/seed.sql", h.AdminLabelsSeedSQL)
+
 	e.GET("/api/v1/users/current/widget-defs", h.ListWidgetDefs)
 	e.POST("/api/v1/users/current/widget-defs", h.CreateWidgetDef)
 	e.PATCH("/api/v1/users/current/widget-defs/:name", h.UpdateWidgetDef)

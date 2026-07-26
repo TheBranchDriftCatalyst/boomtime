@@ -25,9 +25,12 @@ import { GoalProgress } from "@/features/widgets/renderers/GoalProgress";
 import { GoalRing } from "@/features/widgets/renderers/GoalRing";
 import { GoalList } from "@/features/widgets/renderers/GoalList";
 // gaka-364: label evaluator drives the hero tagline (top-3 awards) +
-// the labels-showcase widget. Pure over the payload — no state, no
-// fetch, no clock, matches the grade badge's derivation pattern.
+// the labels-showcase widget. Pure over the payload — but the CATALOG it
+// evaluates is now fetched from the DB (gaka-364.3) via useLabelsCatalog.
+// While the fetch is in flight `evaluate()` returns [] and the fallback
+// "NEW OPERATOR" branch renders — same UX as an actually-empty award set.
 import { evaluate } from "@/features/publicprofile/labels/evaluator";
+import { useLabelsCatalog } from "@/features/publicprofile/labels/useLabelsCatalog";
 import { LabelChip } from "@/features/publicprofile/labels/LabelChip";
 import { LabelsShowcase } from "@/features/widgets/renderers/LabelsShowcase";
 
@@ -182,7 +185,8 @@ function HeroIdentity({ data }: { data: PublicDashboardPayload }) {
   // "separate emblem row of naked <img>s" collapsed into ONE row of
   // <LabelChip>s. Each chip carries its own image + hover tooltip with
   // the description of what the label means. No duplication.
-  const awards = evaluate(data);
+  const { specs } = useLabelsCatalog();
+  const awards = evaluate(data, { catalog: specs });
   const top3 = awards.slice(0, 3);
   return (
     <div className="flex h-full flex-col justify-center px-3">

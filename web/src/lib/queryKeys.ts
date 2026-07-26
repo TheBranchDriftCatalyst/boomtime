@@ -180,6 +180,11 @@ export const qk = {
   // Refetched after a regenerate to update the "N / M generated" tally.
   adminLabelImages: () => ["admin", "label-images"] as const,
 
+  // gaka-364.3: DB-backed labels catalog. Public (no owner scoping) —
+  // one key shared by every consumer (evaluator, hero widget, admin
+  // table). Invalidated after PATCH/POST/DELETE on /admin/labels.
+  labelsCatalog: () => ["labels", "catalog"] as const,
+
   // --- Meta (version + changelog) ---------------------------------------------
   // Both cache forever — the FE only refetches on a manual reload; a new
   // release replaces the whole SPA anyway.

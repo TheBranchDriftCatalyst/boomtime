@@ -22,12 +22,21 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/comfyui"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/labelcatalog"
 )
+
+// systemPromptCacheTTL bounds how often the worker re-reads the singleton
+// label_gen_config row during a regen loop. Short so an admin edit is
+// visible on the next regen batch, long enough that a burst of per-label
+// regens doesn't re-SELECT the config on every entry.
+const systemPromptCacheTTL = 30 * time.Second
 
 // Worker is the label-image generation runner. Fields are unexported so
 // tests must go through the constructor + methods.
@@ -40,6 +49,15 @@ type Worker struct {
 	// unit tests can pass a small fake set without loading the full
 	// shipped catalog. Nil = use labelcatalog.Entries.
 	entries []labelcatalog.Entry
+
+	// systemPrompt cache — populated on first call, refreshed every
+	// systemPromptCacheTTL. Guarded by sysMu so parallel calls to
+	// generateAndSave don't racy-read. When the DB read fails the worker
+	// falls back to "" (no prefix) rather than aborting the whole
+	// generation.
+	sysMu       sync.Mutex
+	sysPrompt   string
+	sysFetched  time.Time
 }
 
 // NewWorker constructs a worker when the feature is on (both flag AND URL).
@@ -74,9 +92,47 @@ func newWorkerForTest(database *db.DB, client *comfyui.Client, model string, log
 }
 
 // catalog returns the entries this worker should iterate over.
+//
+// Order of preference:
+//  1. Explicit `entries` field (tests inject via newWorkerForTest so the
+//     unit suite doesn't need a live labels table).
+//  2. DB-backed labels catalog (post-gaka-364.3 — the new source of truth).
+//     Every row with a non-empty optimized_prompt becomes an entry.
+//  3. Fall back to the compiled-in labelcatalog.Entries baseline if the DB
+//     read fails or the table is empty (the old pre-pivot behavior). This
+//     keeps the worker functional on a brand-new DB where migrations
+//     haven't fully applied yet.
 func (w *Worker) catalog() []labelcatalog.Entry {
 	if w.entries != nil {
 		return w.entries
+	}
+	if w.db != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		rows, err := w.db.ListLabels(ctx)
+		if err != nil {
+			w.logger.Warn("labelimages: DB catalog read failed, falling back to compiled baseline",
+				"err", err, "baseline_count", len(labelcatalog.Entries))
+			return labelcatalog.Entries
+		}
+		out := make([]labelcatalog.Entry, 0, len(rows))
+		for _, r := range rows {
+			if r.OptimizedPrompt == "" {
+				// No prompt = no image to generate. Skip silently so tier
+				// labels (which don't ship images today) don't spam the
+				// log at every regen tick.
+				continue
+			}
+			out = append(out, labelcatalog.Entry{
+				ID:     r.ID,
+				Prompt: r.OptimizedPrompt,
+			})
+		}
+		if len(out) > 0 {
+			return out
+		}
+		w.logger.Warn("labelimages: DB catalog empty, falling back to compiled baseline",
+			"baseline_count", len(labelcatalog.Entries))
 	}
 	return labelcatalog.Entries
 }
@@ -120,13 +176,29 @@ func (w *Worker) Run(ctx context.Context) {
 // RegenerateOne wipes an id's existing row (if any), regenerates, saves.
 // Errors from shim/DB are returned to the caller so the CLI surfaces
 // non-zero exit on failure.
+//
+// Post gaka-364.3 the DB is the source of truth: look up id → prompt
+// there first, fall back to the compiled labelcatalog baseline so the
+// CLI still works on a partially-migrated dev DB.
 func (w *Worker) RegenerateOne(ctx context.Context, id string) error {
 	if w == nil {
 		return errors.New("labelimages: feature disabled (set BOOM_FEATURE_LABEL_IMAGES=on and BOOM_COMFYUI_SHIM_URL)")
 	}
-	entry, ok := labelcatalog.ByID(id)
-	if !ok {
-		return fmt.Errorf("labelimages: unknown label id %q (see internal/labelcatalog for the shipped set)", id)
+	var entry labelcatalog.Entry
+	if w.db != nil {
+		if row, err := w.db.GetLabel(ctx, id); err == nil && row != nil {
+			if row.OptimizedPrompt == "" {
+				return fmt.Errorf("labelimages: label %q has no optimized_prompt — nothing to generate", id)
+			}
+			entry = labelcatalog.Entry{ID: row.ID, Prompt: row.OptimizedPrompt}
+		}
+	}
+	if entry.ID == "" {
+		fallback, ok := labelcatalog.ByID(id)
+		if !ok {
+			return fmt.Errorf("labelimages: unknown label id %q (not in DB catalog, not in compiled baseline)", id)
+		}
+		entry = fallback
 	}
 	if err := w.db.DeleteLabelImage(ctx, id); err != nil {
 		return fmt.Errorf("labelimages: delete old row: %w", err)
@@ -177,15 +249,71 @@ func (w *Worker) RegenerateList(ctx context.Context, entries []labelcatalog.Entr
 	return generated, failed, nil
 }
 
+// systemPrompt returns the current global generation prefix, cached for
+// systemPromptCacheTTL. On DB error we log + return "" so a transient DB
+// blip doesn't fail every regen — the worker still ships a valid (but
+// unprefixed) prompt to comfyui.
+func (w *Worker) systemPrompt(ctx context.Context) string {
+	w.sysMu.Lock()
+	defer w.sysMu.Unlock()
+	if time.Since(w.sysFetched) < systemPromptCacheTTL {
+		return w.sysPrompt
+	}
+	sp, err := w.db.GetGenConfig(ctx)
+	if err != nil {
+		w.logger.Warn("labelimages: gen-config read failed, falling back to no system prompt",
+			"err", err)
+		sp = ""
+	}
+	w.sysPrompt = sp
+	w.sysFetched = time.Now()
+	return sp
+}
+
+// buildFinalPrompt joins the systemPrompt with the per-label optimizedPrompt
+// using the SDXL tag-list convention: `${systemPrompt}, ${entry.Prompt}`.
+// Empty systemPrompt short-circuits to just the entry prompt — the FE
+// admin editor lets an operator clear the prefix if they want raw
+// per-label control.
+func buildFinalPrompt(systemPrompt, entryPrompt string) string {
+	sp := strings.TrimSpace(systemPrompt)
+	ep := strings.TrimSpace(entryPrompt)
+	if sp == "" {
+		return ep
+	}
+	if ep == "" {
+		return sp
+	}
+	return sp + ", " + ep
+}
+
 // generateAndSave is the shared inner call: hit the shim, persist the
 // bytes with provenance columns filled in.
+//
+// Per-entry overrides (e.Model / e.Size / e.Seed) take precedence over
+// the worker's env-configured defaults so the Admin tab's per-label
+// editor can iterate on prompts + pipelines + seeds without changing
+// prod config. The systemPrompt from label_gen_config is prepended
+// as an SDXL-style tag prefix (see buildFinalPrompt).
 func (w *Worker) generateAndSave(ctx context.Context, e labelcatalog.Entry) error {
-	w.logger.Info("labelimages: generating", "id", e.ID, "model", w.model)
-	bytes, mime, err := w.client.Generate(ctx, e.Prompt, w.model, nil)
+	model := e.Model
+	if model == "" {
+		model = w.model
+	}
+	sysPrompt := w.systemPrompt(ctx)
+	finalPrompt := buildFinalPrompt(sysPrompt, e.Prompt)
+	w.logger.Info("labelimages: generating",
+		"id", e.ID, "model", model, "size", e.Size,
+		"seed_set", e.Seed != nil, "sys_prefix_len", len(sysPrompt),
+		"final_prompt_len", len(finalPrompt))
+	bytes, mime, err := w.client.Generate(ctx, finalPrompt, model, e.Size, e.Seed)
 	if err != nil {
 		return fmt.Errorf("shim: %w", err)
 	}
-	if err := w.db.SaveLabelImage(ctx, e.ID, bytes, mime, w.model, e.Prompt, nil); err != nil {
+	// Persist the FINAL rendered prompt (system + per-label) so the row's
+	// provenance is self-contained — you can reproduce the image later
+	// with just the row, no separate systemPrompt lookup needed.
+	if err := w.db.SaveLabelImage(ctx, e.ID, bytes, mime, model, finalPrompt, e.Seed); err != nil {
 		return fmt.Errorf("save: %w", err)
 	}
 	w.logger.Info("labelimages: saved", "id", e.ID, "bytes", len(bytes), "mime", mime)

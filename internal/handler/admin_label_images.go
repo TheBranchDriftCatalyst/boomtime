@@ -69,18 +69,34 @@ func (h *Handler) requireAdmin(c *echo.Context) (string, *apierr.Error) {
 // AdminLabelImagesInfo: GET /api/v1/admin/label-images.
 // Returns feature status + shim config + current row count so the Admin
 // tab can render a "regenerate" button plus a small dashboard.
+//
+// Post gaka-364.3 the response also carries `baseline` = every id from the
+// DB labels catalog. The admin table renders one row per catalog id
+// (present-or-missing image), and the compiled labelcatalog baseline is
+// kept as a fallback for the "brand new DB before migrations apply" case.
 func (h *Handler) AdminLabelImagesInfo(c *echo.Context) error {
 	_, aerr := h.requireAdmin(c)
 	if aerr != nil {
 		return respondErr(c, aerr)
 	}
+	ctx := c.Request().Context()
 	// Per-label meta drives the Admin table (id, size, generatedAt).
 	// The tab is staff-only + rarely hit; no caching. Fetching bytes is
 	// deliberately avoided — the FE fetches images on demand via
 	// GET /api/v1/labels/:id/image.
-	items, err := h.DB.ListLabelImagesMeta(c.Request().Context())
+	items, err := h.DB.ListLabelImagesMeta(ctx)
 	if err != nil {
 		return h.internalErr(c, "list label images failed", err)
+	}
+	// baseline = every id from the DB catalog (fallback: compiled Go
+	// baseline). Used by the admin table to show a row per label id.
+	baseline := labelcatalog.IDs()
+	if labels, lerr := h.DB.ListLabels(ctx); lerr == nil && len(labels) > 0 {
+		ids := make([]string, 0, len(labels))
+		for _, l := range labels {
+			ids = append(ids, l.ID)
+		}
+		baseline = ids
 	}
 	return c.JSON(http.StatusOK, map[string]any{
 		"enabled":  h.Cfg.LabelImagesEnabled(),
@@ -88,7 +104,7 @@ func (h *Handler) AdminLabelImagesInfo(c *echo.Context) error {
 		"shimUrl":  h.Cfg.ComfyUIShimURL,
 		"count":    len(items),
 		"items":    items,
-		"baseline": labelcatalog.IDs(),
+		"baseline": baseline,
 	})
 }
 
@@ -104,6 +120,13 @@ type regenReq struct {
 type regenEntry struct {
 	ID     string `json:"id"`
 	Prompt string `json:"prompt"`
+	// Optional per-request overrides — the Admin tab's per-label editor
+	// threads user tweaks through here (prompt iteration, pipeline swap,
+	// deterministic seed). Empty strings + nil seed fall back to worker
+	// defaults (Model=env, Size=1024x1024, Seed=random).
+	Model string `json:"model,omitempty"`
+	Size  string `json:"size,omitempty"`
+	Seed  *int64 `json:"seed,omitempty"`
 }
 
 // AdminLabelImagesRegenerate: POST /api/v1/admin/label-images/regenerate.
@@ -127,24 +150,32 @@ func (h *Handler) AdminLabelImagesRegenerate(c *echo.Context) error {
 		return respondErr(c, apierr.BadRequest("`entries` is required (send [{id, prompt}, ...])"))
 	}
 
-	// Pick the subset.
-	byID := make(map[string]string, len(req.Entries))
+	// Pick the subset. Preserve per-entry overrides (Model / Size / Seed)
+	// end-to-end so the worker's generateAndSave honors user tweaks from
+	// the Admin tab's per-label editor.
+	byID := make(map[string]labelcatalog.Entry, len(req.Entries))
 	for _, e := range req.Entries {
 		if e.ID == "" || e.Prompt == "" {
 			continue
 		}
-		byID[e.ID] = e.Prompt
+		byID[e.ID] = labelcatalog.Entry{
+			ID:     e.ID,
+			Prompt: e.Prompt,
+			Model:  e.Model,
+			Size:   e.Size,
+			Seed:   e.Seed,
+		}
 	}
 
 	var toRun []labelcatalog.Entry
 	if req.All {
-		for id, prompt := range byID {
-			toRun = append(toRun, labelcatalog.Entry{ID: id, Prompt: prompt})
+		for _, entry := range byID {
+			toRun = append(toRun, entry)
 		}
 	} else if len(req.IDs) > 0 {
 		for _, id := range req.IDs {
-			if p, ok := byID[id]; ok {
-				toRun = append(toRun, labelcatalog.Entry{ID: id, Prompt: p})
+			if entry, ok := byID[id]; ok {
+				toRun = append(toRun, entry)
 			}
 		}
 	} else {

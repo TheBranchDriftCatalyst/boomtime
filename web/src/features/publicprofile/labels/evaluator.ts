@@ -1,9 +1,14 @@
 // evaluator.ts — walks the catalog against a payload, awards passing
 // labels, dedupes tier collisions (keeps highest tier per axis-value),
 // sorts by rank. Pure function; no state; no time; no fetches.
+//
+// gaka-364.3: the catalog is now the DB-fetched list (via useLabelsCatalog
+// on the FE). Callers pass it in via opts.catalog — there's no shipped
+// default anymore. When opts.catalog is missing or empty, evaluate()
+// returns [] (no awards) so an in-flight loading state doesn't crash the
+// hero widget. Tests continue to pass small fixture catalogs directly.
 import type { LabelAward, LabelPayload, LabelSpec, LabelTier } from "./types";
 import { evaluateCondition } from "./conditions";
-import { LABEL_CATALOG } from "./catalog";
 
 // Ordering used to compare tiers when deduping (Legend > Master > ...).
 const TIER_STRENGTH: Record<LabelTier, number> = {
@@ -15,9 +20,11 @@ const TIER_STRENGTH: Record<LabelTier, number> = {
 };
 
 export interface EvaluateOptions {
-  /** Optional catalog override — defaults to the shipped LABEL_CATALOG. Kept
-   *  as a parameter so tests can seed a small, deterministic manifest without
-   *  monkey-patching the module. */
+  /** Catalog to evaluate against. Post-gaka-364.3 this comes from the FE's
+   *  useLabelsCatalog hook (which fetches /api/v1/labels/catalog). Tests
+   *  pass their own to avoid coupling to the moving default. When missing
+   *  or empty, evaluate() returns [] (no awards) — safe default while the
+   *  catalog fetch is in flight. */
   catalog?: LabelSpec[];
 }
 
@@ -25,9 +32,8 @@ export function evaluate(
   payload: LabelPayload,
   opts: EvaluateOptions = {},
 ): LabelAward[] {
-  // Default catalog = the app's shipped manifest. Tests pass their own to
-  // avoid coupling to the moving default.
-  const catalog = opts.catalog ?? LABEL_CATALOG;
+  const catalog = opts.catalog ?? [];
+  if (catalog.length === 0) return [];
 
   // Pass 1: filter to specs whose condition holds on this payload.
   const passing = catalog.filter((s) => evaluateCondition(s.condition, payload));

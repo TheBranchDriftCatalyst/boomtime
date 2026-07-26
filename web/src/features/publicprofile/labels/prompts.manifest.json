@@ -1,0 +1,461 @@
+{
+  "systemPrompt": "cyberpunk anime chibi half-body emblem portrait, Arasaka corporate aesthetic, deep crimson red rim light on jet black background, centered subject, muted red highlights, clean linework, high detail sharp cel shading, 8k illustration, no text no watermark no signature no logo",
+  "labels": {
+    "languages-python-novice": {
+      "description": "First contact with the great serpent. A rookie initiate cradling a coiled python of light, still learning to read its scales. Every def is a small revelation, every import a spell they haven't quite memorized.",
+      "optimizedPrompt": "cyberpunk anime rookie initiate cradling a small glowing red python serpent, wide curious eyes, novice tunic, chibi half-body emblem, faint crimson glow, dark background"
+    },
+    "languages-python-apprentice": {
+      "description": "The apprentice serpent-handler has learned the sacred whitespace. The python around their arm has grown longer, more responsive. They speak fluent list comprehension and dream in dictionary syntax.",
+      "optimizedPrompt": "cyberpunk anime apprentice with medium red python coiled around forearm, focused eyes, black apprentice robe with red trim, chibi half-body emblem, crimson rim light"
+    },
+    "languages-python-adept": {
+      "description": "Adept of the serpent-tongue. Their python is grown, muscular, laced with decorator sigils. They wield NumPy tensors and asyncio incantations without breaking eye contact with the terminal.",
+      "optimizedPrompt": "cyberpunk anime adept with large muscular red python draped over shoulders, decorator sigils floating around, black robe with red circuit trim, chibi half-body emblem, deep crimson glow"
+    },
+    "languages-python-master": {
+      "description": "Master of the great serpent. Their python is a hulking blood-red constrictor, obedient to every yield and lambda. The GIL bends around them; concurrency answers when called.",
+      "optimizedPrompt": "cyberpunk anime master with massive blood-red python constrictor coiled around body, master robe with intricate red glyphs, commanding stance, chibi half-body emblem, dark background"
+    },
+    "languages-python-legend": {
+      "description": "Legend of the python cult. The serpent has become a throne, a halo, an aura. They speak and interpreters obey across dimensions. Guido himself once nodded at them across a crowded PyCon.",
+      "optimizedPrompt": "cyberpunk anime legendary sage on throne of coiled crimson pythons, giant serpent halo behind head, red-black royal robes with python scale pattern, chibi half-body emblem, deep crimson aura"
+    },
+    "languages-typescript-novice": {
+      "description": "A novice type-wielder holding a small blue-red compiler shield for the first time. They just discovered interfaces and their bugs are down forty percent. The types are strict but the vibes are good.",
+      "optimizedPrompt": "cyberpunk anime rookie coder holding small blue-red compiler shield with TS glyph, novice tunic, hopeful expression, chibi half-body emblem, faint crimson glow, dark background"
+    },
+    "languages-typescript-apprentice": {
+      "description": "Apprentice of static typing. Their compiler shield has grown, edged in inference glyphs. Generics no longer terrify them. They have opinions about tsconfig now.",
+      "optimizedPrompt": "cyberpunk anime apprentice with medium blue-red compiler shield edged with generic glyphs, focused stance, black robe with red trim, chibi half-body emblem, crimson rim light"
+    },
+    "languages-typescript-adept": {
+      "description": "Adept type-alchemist. They juggle conditional types and template literal magic like second nature. Their shield hums with mapped types and inferred returns. Any is a swear word.",
+      "optimizedPrompt": "cyberpunk anime adept juggling glowing red conditional-type runes above a large TS shield, black robe with intricate red glyphs, focused eyes, chibi half-body emblem, deep crimson glow"
+    },
+    "languages-typescript-master": {
+      "description": "Master of the type kingdom. Their compiler shield is a fortress of narrow unions and exhaustive checks. Zod schemas orbit them like moons. They have never merged an unchecked cast.",
+      "optimizedPrompt": "cyberpunk anime master with fortress-sized TS compiler shield, orbiting schema moons, red-trimmed master robe, commanding stance, chibi half-body emblem, dark background"
+    },
+    "languages-typescript-legend": {
+      "description": "Legend of the type ladder. They speak in higher-kinded types and their pull requests read like proofs. TypeScript himself would ask them for advice.",
+      "optimizedPrompt": "cyberpunk anime legendary type-sage on throne of glowing red type definitions, giant TS sigil halo, ornate red-black robes with type glyph embroidery, chibi half-body emblem, deep crimson aura"
+    },
+    "languages-javascript-novice": {
+      "description": "Fresh to the wild west of the browser. A novice slinger cradling a small yellow-red event loop like a lantern. They have not yet been burned by NaN. Their optimism is precious.",
+      "optimizedPrompt": "cyberpunk anime rookie holding small yellow-red glowing event-loop lantern, curious hopeful eyes, novice hoodie, chibi half-body emblem, faint crimson glow, dark background"
+    },
+    "languages-javascript-apprentice": {
+      "description": "Apprentice of the loose types. Their event-loop lantern is brighter now, ringed in promise chains. They have survived their first callback hell and lived to refactor it.",
+      "optimizedPrompt": "cyberpunk anime apprentice with medium yellow-red event-loop lantern ringed by promise chains, black hoodie with red trim, focused eyes, chibi half-body emblem, crimson rim light"
+    },
+    "languages-javascript-adept": {
+      "description": "Adept prototype-hunter. They speak fluent async, wield closures like blades, and know exactly what this is bound to at any moment. Their bundle size is a subject of pride.",
+      "optimizedPrompt": "cyberpunk anime adept wielding a red glowing closure-blade with a yellow event-loop shield, black tactical hoodie with red circuit trim, chibi half-body emblem, deep crimson glow"
+    },
+    "languages-javascript-master": {
+      "description": "Master of the runtime. They command V8 like a familiar spirit and their microbenchmarks are art. The prototype chain bows when they walk by.",
+      "optimizedPrompt": "cyberpunk anime master with massive V8 engine familiar spirit floating behind, red glowing prototype chain wrapped around arm, master robe with yellow-red accents, chibi half-body emblem"
+    },
+    "languages-javascript-legend": {
+      "description": "Legend of the browser and beyond. Their JS runs everywhere: nodes, edges, workers, satellites. The event loop is their heartbeat. Brendan Eich sends them holiday cards.",
+      "optimizedPrompt": "cyberpunk anime legendary sage on throne of interlocking yellow-red event loops, giant JS sigil halo, ornate red-black-yellow royal robes, chibi half-body emblem, deep crimson aura"
+    },
+    "languages-go-novice": {
+      "description": "First-day gopher initiate cradling a tiny blue-red gopher plush. They just discovered goroutines and their eyes are wide with concurrency. Errors are values now and that changes everything.",
+      "optimizedPrompt": "cyberpunk anime rookie holding small red-tinted gopher plush familiar, novice tunic, wide curious eyes, chibi half-body emblem, faint crimson glow, dark background"
+    },
+    "languages-go-apprentice": {
+      "description": "Apprentice of channels and simplicity. Their gopher familiar has grown, ears alert. They no longer fear the empty interface. Their gofmt is muscle memory.",
+      "optimizedPrompt": "cyberpunk anime apprentice with medium red gopher familiar on shoulder, channel arrows glowing between hands, black robe with red trim, chibi half-body emblem, crimson rim light"
+    },
+    "languages-go-adept": {
+      "description": "Adept of the goroutine dance. They orchestrate concurrency with a conductor's grace and know when to use a mutex over a channel. Their pipelines never leak.",
+      "optimizedPrompt": "cyberpunk anime adept conducting swirling red goroutine ribbons in the air, gopher familiar at hip, black tactical robe with red circuit trim, chibi half-body emblem, deep crimson glow"
+    },
+    "languages-go-master": {
+      "description": "Master of the standard library. Their binary is single, static, seven megabytes, and boots faster than the JVM finishes warming up. Rob Pike would approve.",
+      "optimizedPrompt": "cyberpunk anime master with massive red gopher warrior beside them, glowing red static binary rune floating above hand, master robe with red-blue trim, chibi half-body emblem, dark background"
+    },
+    "languages-go-legend": {
+      "description": "Legend of the goroutine kingdom. Every service they ship handles a million concurrent connections without breaking a sweat. Their runtime scheduler is the runtime scheduler.",
+      "optimizedPrompt": "cyberpunk anime legendary sage on throne surrounded by giant red gopher guardians, glowing red goroutine constellations overhead, ornate red-black royal robes, chibi half-body emblem, deep crimson aura"
+    },
+    "languages-rust-novice": {
+      "description": "Novice initiate wrestling with a small orange-red crab that keeps borrow-checking their sleeve. Their code does not yet compile but their heart is pure. The borrow checker is a stern but fair teacher.",
+      "optimizedPrompt": "cyberpunk anime rookie wrestling small red crab familiar with pincers, novice tunic, determined expression, chibi half-body emblem, faint crimson glow, dark background"
+    },
+    "languages-rust-apprentice": {
+      "description": "Apprentice of ownership. Their crab familiar rides their shoulder, occasionally pinching them when a lifetime is wrong. They have made peace with the borrow checker. Mostly.",
+      "optimizedPrompt": "cyberpunk anime apprentice with medium red crab on shoulder, glowing red lifetime annotations floating around, black robe with orange-red trim, chibi half-body emblem, crimson rim light"
+    },
+    "languages-rust-adept": {
+      "description": "Adept of zero-cost abstractions. Their crab has grown into a small warrior. They wield unsafe blocks like ceremonial daggers and their unwraps are always earned.",
+      "optimizedPrompt": "cyberpunk anime adept with medium red crab warrior at side, glowing red trait bounds floating around, black tactical robe with orange-red circuit trim, chibi half-body emblem, deep crimson glow"
+    },
+    "languages-rust-master": {
+      "description": "Master of the borrow checker. They ship kernels, wasm runtimes, and databases where the arena allocator is a personal friend. Their unsafe blocks are proofs.",
+      "optimizedPrompt": "cyberpunk anime master with massive red crab guardian beside them, glowing red arena allocator rune above palm, master robe with orange-red-black trim, chibi half-body emblem, dark background"
+    },
+    "languages-rust-legend": {
+      "description": "Legend of the memory-safe kingdom. Their compiler is their oracle, their errors are their commentary. Rewrites-in-Rust follow them like a personal weather system.",
+      "optimizedPrompt": "cyberpunk anime legendary sage on throne of interlocking red crab shells, giant crab guardian looming behind, ornate red-black-orange royal robes with lifetime glyph embroidery, chibi half-body emblem, deep crimson aura"
+    },
+    "editors-vim-novice": {
+      "description": "Novice modal apprentice who just learned to exit vim. Small victory, monumental for them. Their fingers still hunt for the arrow keys but hjkl is starting to feel natural.",
+      "optimizedPrompt": "cyberpunk anime rookie in front of a small green-black vim terminal, hands hovering over hjkl keys, novice tunic, determined expression, chibi half-body emblem, faint crimson glow"
+    },
+    "editors-vim-apprentice": {
+      "description": "Apprentice of modes. They no longer accidentally type insert commands in normal mode. Their .vimrc is short but proudly theirs. Composed motions are starting to click.",
+      "optimizedPrompt": "cyberpunk anime apprentice at modal keyboard, glowing red hjkl runes floating above fingers, black robe with red trim, focused eyes, chibi half-body emblem, dark background"
+    },
+    "editors-vim-adept": {
+      "description": "Adept of the modal dance. They chain motions and text objects like sword forms. daw ciw yi and beyond, all in one breath.",
+      "optimizedPrompt": "cyberpunk anime adept mid-motion at glowing red modal keyboard, faint red text-object glyphs orbiting hands, black tactical robe with red circuit trim, chibi half-body emblem, deep crimson glow"
+    },
+    "editors-vim-master": {
+      "description": "Master of the modal way. Their fingers do not touch a mouse for hours. Registers, macros, and marks are their muscle memory. Their yank register is a treasure vault.",
+      "optimizedPrompt": "cyberpunk anime master at ornate modal keyboard altar, floating red macro-runes and register glyphs orbiting head, master robe with black-red trim, commanding stance, chibi half-body emblem"
+    },
+    "editors-vim-legend": {
+      "description": "Legend of the modal path. They have written a plugin. They have written another plugin. Every keystroke earns its place. Bram would have nodded.",
+      "optimizedPrompt": "cyberpunk anime legendary sage on throne of stacked modal keyboards, giant red hjkl sigil halo, ornate red-black royal robes with mode-glyph embroidery, chibi half-body emblem, deep crimson aura"
+    },
+    "editors-neovim-novice": {
+      "description": "Novice pilgrim who just switched from vim and is delighted by the tree-sitter highlights. Their init.lua is short but earnest. Plugins are still a mystery cult.",
+      "optimizedPrompt": "cyberpunk anime rookie in front of glowing teal-red neovim terminal, wide curious eyes, novice tunic, chibi half-body emblem, faint crimson glow, dark background"
+    },
+    "editors-neovim-apprentice": {
+      "description": "Apprentice of the Lua path. Their init.lua has bloomed with plugins. LSP is now their friend. They have opinions about telescope pickers.",
+      "optimizedPrompt": "cyberpunk anime apprentice at glowing teal-red modal keyboard, floating red lua-plugin runes around hands, black robe with teal-red trim, chibi half-body emblem, crimson rim light"
+    },
+    "editors-neovim-adept": {
+      "description": "Adept of the plugin ecosystem. Their init.lua is modular and tested. They contribute upstream. Tree-sitter queries are their evening entertainment.",
+      "optimizedPrompt": "cyberpunk anime adept configuring floating red LSP-glyph panels, modular lua-plugin runes orbiting, black tactical robe with teal-red circuit trim, chibi half-body emblem, deep crimson glow"
+    },
+    "editors-neovim-master": {
+      "description": "Master of the modular editor. Their config is a monorepo. Every plugin is auditable. They lazy-load like an artist and their startup time is under twenty milliseconds.",
+      "optimizedPrompt": "cyberpunk anime master at ornate keyboard altar with glowing teal-red plugin galaxies orbiting head, master robe with black-teal-red trim, commanding stance, chibi half-body emblem"
+    },
+    "editors-neovim-legend": {
+      "description": "Legend of the post-vim gospel. They wrote the plugin everyone uses. Their dotfiles repo has stars. New users pilgrimage to their github.",
+      "optimizedPrompt": "cyberpunk anime legendary sage on throne of stacked plugin manuscripts, giant teal-red diamond sigil halo, ornate red-black-teal royal robes, chibi half-body emblem, deep crimson aura"
+    },
+    "editors-vscode-novice": {
+      "description": "Novice initiate opening VS Code for the first time. Their sidebar has three extensions and infinite promise. The command palette is already their friend.",
+      "optimizedPrompt": "cyberpunk anime rookie in front of small blue-red code editor interface, novice hoodie, curious hopeful eyes, chibi half-body emblem, faint crimson glow, dark background"
+    },
+    "editors-vscode-apprentice": {
+      "description": "Apprentice of the extension marketplace. Their sidebar has grown wisely. Prettier and ESLint keep them honest. They know their keybindings now.",
+      "optimizedPrompt": "cyberpunk anime apprentice at glowing blue-red editor with extension icons floating around, black hoodie with red trim, focused eyes, chibi half-body emblem, crimson rim light"
+    },
+    "editors-vscode-adept": {
+      "description": "Adept of the IntelliSense arts. They live in the multi-cursor and the go-to-definition. Their workspace settings are curated. Remote SSH is second nature.",
+      "optimizedPrompt": "cyberpunk anime adept with multiple glowing red cursors orbiting at the modern IDE interface, black tactical hoodie with blue-red trim, chibi half-body emblem, deep crimson glow"
+    },
+    "editors-vscode-master": {
+      "description": "Master of the modern IDE. They have written their own extension. Their settings sync across machines like second nature. The debugger is their kingdom.",
+      "optimizedPrompt": "cyberpunk anime master at ornate glowing blue-red editor altar, floating extension sigils orbiting head, master robe with blue-red-black trim, chibi half-body emblem, commanding stance"
+    },
+    "editors-vscode-legend": {
+      "description": "Legend of the electron editor. Their extension has a million installs. Microsoft engineers know their handle. They can debug remotely on three machines at once.",
+      "optimizedPrompt": "cyberpunk anime legendary sage on throne of stacked editor windows, giant blue-red V sigil halo, ornate red-black-blue royal robes with extension glyph embroidery, chibi half-body emblem, deep crimson aura"
+    },
+    "editors-emacs-novice": {
+      "description": "Novice apprentice at the parenthesis altar. They just figured out the leader key and their pinky is already sore. The tutorial was long. They persevere.",
+      "optimizedPrompt": "cyberpunk anime rookie at floating parenthesis altar with small purple-red sigils, novice tunic, determined expression, chibi half-body emblem, faint crimson glow, dark background"
+    },
+    "editors-emacs-apprentice": {
+      "description": "Apprentice of the sacred lisp. They have written a defun. They have bound a key. Their init.el is short but their spirit is committed.",
+      "optimizedPrompt": "cyberpunk anime apprentice weaving small purple-red lisp parenthesis glyphs in the air, black robe with red trim, focused eyes, chibi half-body emblem, crimson rim light"
+    },
+    "editors-emacs-adept": {
+      "description": "Adept of the lisp machine. Their org-mode is legendary. Magit is their git client. They evaluate expressions in a live buffer like a wizard casting from memoized scrolls.",
+      "optimizedPrompt": "cyberpunk anime adept with floating purple-red org-mode scrolls orbiting hands, black tactical robe with purple-red circuit trim, chibi half-body emblem, deep crimson glow"
+    },
+    "editors-emacs-master": {
+      "description": "Master of the extensible editor. Their config has thousands of lines and no shame. They write elisp to solve real problems. They live inside emacs; email, chat, browser, all of it.",
+      "optimizedPrompt": "cyberpunk anime master at ornate parenthesis altar with floating purple-red lisp constellations, master robe with black-purple-red trim, commanding stance, chibi half-body emblem"
+    },
+    "editors-emacs-legend": {
+      "description": "Legend of the lisp cathedral. They have written a mode. They have written a distribution. Stallman himself once cc'd them on a mailing list thread.",
+      "optimizedPrompt": "cyberpunk anime legendary sage on throne of stacked parenthesis scrolls, giant purple-red E sigil halo, ornate red-black-purple royal robes with lisp glyph embroidery, chibi half-body emblem, deep crimson aura"
+    },
+    "late-night-coder": {
+      "description": "A hooded operator hunched over a glowing terminal at three in the morning, moonlight cutting through the blinds. The kind who ships their best commits when the rest of the timeline sleeps. Neon shadows, coffee cold, keyboard warm.",
+      "optimizedPrompt": "hooded cyberpunk anime coder at glowing terminal, 3am mood, moonlit venetian blinds shadow stripes, cold coffee cup, chibi half-body emblem, red rim light, cel shaded"
+    },
+    "early-bird": {
+      "description": "The dawn-shift operator whose best commits land while the city still sleeps. Their terminal glows soft red against a paling sky. Coffee steam, keyboard clicks, sunrise over neon towers.",
+      "optimizedPrompt": "cyberpunk anime early-bird coder silhouette against neon sunrise skyline, warm red ambient glow, steaming coffee cup, chibi half-body emblem, dark background"
+    },
+    "weekend-warrior": {
+      "description": "Battle-scarred cyber-samurai coding on a tatami mat under saturday moonlight. Weekday clocks do not touch them here. Katana laid across the knees, terminal open, weekend zen achieved.",
+      "optimizedPrompt": "cyberpunk anime battle-scarred samurai coder on tatami mat, red katana across knees, weekend zen, floating terminal panel, chibi half-body emblem, dark background"
+    },
+    "monogamist": {
+      "description": "The monastic coder who has chosen one project and made it a cathedral. Single glowing screen, red halo overhead, everything else stripped away. Devotion measured in commits.",
+      "optimizedPrompt": "cyberpunk anime monastic figure before single glowing red monitor, red halo overhead, black monk robe with red trim, chibi half-body emblem, dark background"
+    },
+    "polyglot": {
+      "description": "A many-tongued cyber-oracle surrounded by screens that flicker between scripts. Python coils, TypeScript shields, Go gophers, Rust crabs, all orbiting like satellites. Fluent in tongues no one asked them to learn.",
+      "optimizedPrompt": "cyberpunk anime oracle with multiple floating screens showing different code scripts, chrome accents, orbiting language sigils, chibi half-body emblem, deep red glow, dark background"
+    },
+    "consistent": {
+      "description": "A brutalist clock tower emitting steady red pulses, an unbroken chain of light stretching into the distance. Discipline as architecture. Every day another link forged.",
+      "optimizedPrompt": "cyberpunk anime disciplined figure before brutalist clock tower pulsing red light, unbroken chain of glowing red links wrapped around forearm, chibi half-body emblem, dark background"
+    },
+    "sprinter": {
+      "description": "A figure blazing through neon rain, motion blur streaking red across the frame. The last seven days doubled what came before and the burn is visible. Momentum has a color and it is crimson.",
+      "optimizedPrompt": "cyberpunk anime figure sprinting through neon rain, motion blur, red trailing light streaks, chibi half-body emblem, dark background"
+    },
+    "machine": {
+      "description": "A half-android coder plugged directly into a terminal, umbilical cables of light feeding data at three hours a day minimum. Tireless. The line between operator and machine grew thin months ago.",
+      "optimizedPrompt": "cyberpunk anime half-android coder with visible red circuitry plugged into terminal via glowing cables, chibi half-body emblem, deep red glow, dark background"
+    },
+    "deep-focus": {
+      "description": "A figure in meditative trance, three floating holographic panels arranged like a prayer alcove. One project holds them; everything else fades. Red aura, still hands, absolute concentration.",
+      "optimizedPrompt": "cyberpunk anime meditating figure surrounded by three floating holographic red panels, red focus aura, lotus pose variant, chibi half-body emblem, dark background"
+    },
+    "multi-tasker": {
+      "description": "A cyber-Kali with many arms, each on its own keyboard, each on its own project. Chrome accents, deep red flow, no wasted motion. Parallelism made flesh.",
+      "optimizedPrompt": "cyberpunk anime many-armed Kali coder typing on multiple keyboards, chrome accents, red flowing sash, chibi half-body emblem, deep red glow, dark background"
+    },
+    "meeting-warrior": {
+      "description": "A stern corporate samurai in the boardroom, katana laid across the knees as calendar invites pile up. Meetings are combat. Every yes-or-no answer is a sword stroke.",
+      "optimizedPrompt": "cyberpunk anime stern corporate samurai in boardroom, red katana across knees, holographic calendar invites floating around, red Arasaka emblem, chibi half-body emblem, dark background"
+    },
+    "ai-native": {
+      "description": "A cyber-monk in quiet conversation with a shimmering AI hologram, red glyphs orbiting between them like prayer beads. Symbiosis, not tool use. The model has learned their cadence and returns it.",
+      "optimizedPrompt": "cyberpunk anime monk conversing with shimmering AI hologram, floating red glyphs between them, black robe with red trim, chibi half-body emblem, dark background"
+    },
+    "test-obsessive": {
+      "description": "A figure examining glowing code under a red-lit microscope, forensic and patient. Every branch tested, every edge case named. Green checks are their preferred aesthetic.",
+      "optimizedPrompt": "cyberpunk anime forensic coder inspecting glowing code under red-lit microscope, black lab coat with red trim, floating check-mark sigils, chibi half-body emblem, dark background"
+    },
+    "documenter": {
+      "description": "A hooded scribe illuminating cyberpunk scrolls with red ink from a quill of light. Docs are craftsmanship. Nothing ships until the README sings.",
+      "optimizedPrompt": "cyberpunk anime hooded scribe writing on floating scroll with quill of red light, black robe with red trim, illuminated manuscript aesthetic, chibi half-body emblem, dark background"
+    },
+    "vim-enjoyer": {
+      "description": "A cyber-monk with a modal keyboard tattooed across the back of their hands, hjkl glowing softly beneath the skin. Ten hours of Vim earned them entry. They are only getting started.",
+      "optimizedPrompt": "cyberpunk anime monk with glowing red hjkl runes tattooed on hands, black robe with red trim, focused eyes, chibi half-body emblem, dark background"
+    },
+    "emacs-elder": {
+      "description": "An ancient wizard at the parenthesis altar, red bracket sigils floating around them like moths. A hundred hours in Emacs is the price of the robe. They pay it gladly.",
+      "optimizedPrompt": "cyberpunk anime ancient wizard at parenthesis altar with floating red bracket sigils, long flowing red-black robes, chibi half-body emblem, dark background"
+    },
+    "terminal-purist": {
+      "description": "An ascetic figure at a monochrome terminal, no color anywhere except one deep red prompt cursor blinking with slow patience. If it does not fit in eighty columns it is not worth doing.",
+      "optimizedPrompt": "cyberpunk anime ascetic monk before monochrome terminal, single blinking red prompt cursor as only color, minimalist black robe, chibi half-body emblem, dark background"
+    },
+    "mac-native": {
+      "description": "A sleek chrome apple-shaped emblem in Arasaka red, corporate cyberpunk minimalism given a fruit-brand halo. The trackpad is loved; the terminal is iTerm2.",
+      "optimizedPrompt": "cyberpunk anime operator with chrome apple-shaped sigil floating overhead, silver-red minimalist armor, chibi half-body emblem, dark background"
+    },
+    "linux-warlord": {
+      "description": "A war-painted penguin warrior in cyber-armor, chrome tusks and deep red war paint. Two hundred hours on Linux is a warband tithe. They pay it in kernel patches.",
+      "optimizedPrompt": "cyberpunk anime war-painted penguin warrior in red-trimmed cyber-armor, chrome tusks, deep red war paint stripes, chibi half-body emblem, dark background"
+    },
+    "windows-survivor": {
+      "description": "A battle-scarred figure walking away from a shattered pane, red debris raining behind them. They stayed for the compatibility, the games, the paycheck. They have earned their peace.",
+      "optimizedPrompt": "cyberpunk anime battle-scarred survivor walking away from shattering window panes, red debris raining behind, black tactical armor, chibi half-body emblem, dark background"
+    },
+    "cross-platform": {
+      "description": "A three-headed cyber-hydra, one head per operating system, chrome scales flickering with red eye-glow. They keep credentials for all three. They regret nothing.",
+      "optimizedPrompt": "cyberpunk anime three-headed cyber-hydra creature companion beside operator, chrome scales, glowing red eyes, black tactical armor, chibi half-body emblem, dark background"
+    },
+    "sigma-grindset": {
+      "description": "The chiseled cyber-CEO who codes hundred-hour weeks between cold plunges and ashwagandha shots. Every deploy is monetized. Every meeting is a battle for shareholder value. The grindset has consumed him and he is the market.",
+      "optimizedPrompt": "cyberpunk anime male sigma commander, chiseled jaw, black tactical suit with red trim, arms crossed, ashwagandha bottle prop, rooftop terminal glow, chibi half-body emblem, corporate authority"
+    },
+    "gigachad-committer": {
+      "description": "Marble-jawline coder whose git log reads like an epic poem. Twenty-eight days unbroken, keyboard aura visible from orbit. He does not celebrate green squares; the squares celebrate him.",
+      "optimizedPrompt": "cyberpunk anime gigachad developer with red glowing keyboard aura, marble jawline, black hoodie with red circuit trim, arms crossed, chibi half-body emblem, dark background"
+    },
+    "alpha-mogger": {
+      "description": "Total tunnel-vision alpha operator gazing into one glowing red monitor as ninety percent of their timeline funnels into a single project. Distractions do not survive contact.",
+      "optimizedPrompt": "cyberpunk anime alpha operator staring into single glowing red monitor, laser focus eyes, black tactical armor with red trim, chibi half-body emblem, dark background"
+    },
+    "mewing-master": {
+      "description": "A silent-dawn ninja monk mewing at a dark terminal as the sunrise bleeds red across the room. Jawline: sculpted. Commits: pre-caffeine. Discipline: monastic.",
+      "optimizedPrompt": "cyberpunk anime ninja monk at dark terminal at dawn, sharp jawline in profile, red sunrise light bleeding through window, black hooded outfit with red trim, chibi half-body emblem"
+    },
+    "hustle-android": {
+      "description": "Post-human throughput incarnate. An android developer with visible red circuitry beneath translucent skin, plugged directly into the terminal, no sleep cycle configured. Eight hours a day is the warmup routine.",
+      "optimizedPrompt": "cyberpunk anime android developer with visible red circuitry through translucent skin, plugged directly into terminal via cables, chibi half-body emblem, dark background"
+    },
+    "sleep-is-a-construct": {
+      "description": "An insomniac hacker with dark circles under glowing red eyes, hunched at the monitor while forty percent of their punchcard sits between midnight and dawn. Sleep is a bourgeois concept.",
+      "optimizedPrompt": "cyberpunk anime insomniac hacker with dark circles under glowing red eyes, hunched at monitor, 3am mood, black hoodie, chibi half-body emblem, dark background"
+    },
+    "weekend-warlord": {
+      "description": "A weekend warrior samurai wielding a red katana over a keyboard altar. Half of their week lives on the wrong side of the workday clock and they prefer it that way.",
+      "optimizedPrompt": "cyberpunk anime weekend warrior samurai wielding red katana over keyboard altar, red-trimmed samurai armor, chibi half-body emblem, dark background"
+    },
+    "space-marine": {
+      "description": "A warhammer forty-thousand space marine anime chibi in power armor with deep red trim, purity seals hanging from the pauldrons, a keyboard mounted where the bolter should be. Twenty-four seven watch on the emperor's codebase.",
+      "optimizedPrompt": "warhammer 40k space marine anime chibi in power armor with red trim, purity seals hanging, mechanical keyboard mounted to bolter, chibi half-body emblem, dark background"
+    },
+    "imperial-fist": {
+      "description": "A yellow-and-red-trimmed imperial fist space marine chibi, gauntleted fist raised. Sixty days unbroken longest streak is a foundation worthy of Dorn. Stubborn is not an insult in this chapter.",
+      "optimizedPrompt": "warhammer 40k imperial fist space marine anime chibi in yellow power armor with red trim, gauntleted fist raised, purity seals, chibi half-body emblem, dark background"
+    },
+    "battle-brother-of-the-keyboard": {
+      "description": "A battle-worn space marine chibi gripping a mechanical keyboard the way a battle-brother grips a bolter. Two hundred days forged in code. The oath was sworn and the oath was kept.",
+      "optimizedPrompt": "warhammer 40k space marine anime chibi in battle-worn power armor, gripping mechanical keyboard as bolt weapon, red accents, purity seals, chibi half-body emblem, dark background"
+    },
+    "for-the-emperor": {
+      "description": "A warhammer chibi zealot brandishing a glowing red scroll of source code, imperial iconography stamped across the pauldrons. Ninety percent of their language time in a single tongue. Devotion, not diversity, is the doctrine.",
+      "optimizedPrompt": "warhammer 40k anime chibi zealot brandishing glowing red scroll of source code, imperial iconography on armor, fervent expression, chibi half-body emblem, dark background"
+    },
+    "chapter-master": {
+      "description": "A chapter master chibi in ornate power armor holding a data-slate that glows deep red. Five hundred hours in a single project is not a codebase; it is a chapter. He has founded one.",
+      "optimizedPrompt": "warhammer 40k anime chibi chapter master in ornate power armor, holding red glowing data-slate, red cape, purity seals, chibi half-body emblem, dark background"
+    },
+    "dreadnought-pilot": {
+      "description": "An interred veteran chibi visible through the sarcophagus viewport of a dreadnought chassis. Daily hours steady, one hundred and eighty day longest streak. They have earned the honored sleep.",
+      "optimizedPrompt": "warhammer 40k dreadnought anime chibi with small pilot visible through sarcophagus viewport, red trim on armored chassis, purity seals, chibi half-body emblem, dark background"
+    },
+    "lord-solar": {
+      "description": "Lord solar chibi crowned with a halo of red plasma, ornate uniform draped with medals, commanding gesture mid-oration. Twelve hours a day daily average is legendary post-human throughput.",
+      "optimizedPrompt": "warhammer 40k lord solar anime chibi with solar-crown halo of red plasma, ornate uniform with medals, commanding gesture, chibi half-body emblem, dark background"
+    },
+    "inquisitor": {
+      "description": "An inquisitor chibi in a black trenchcoat, red inquisitorial rosette gleaming at the throat, glowing runes floating in a suspicious orbit. Eight projects each earning their audit is grounds for interrogation.",
+      "optimizedPrompt": "warhammer 40k inquisitor anime chibi with red inquisitorial rosette, black trenchcoat, glowing red runes floating in orbit, sharp gaze, chibi half-body emblem, dark background"
+    },
+    "kawaii-warlord": {
+      "description": "Kawaii warlord girl with cat ears, pastel-pink and red armor edged in stylus-thin lines, wielding a design pen like a katana. Fifteen percent of her tracked time is pure pixel-perfect nyaa. Every mock-up is a battle plan.",
+      "optimizedPrompt": "kawaii anime warlord girl with cat ears, pastel pink and red armor, wielding stylus like sword, chibi half-body emblem, dark background"
+    },
+    "tsundere-compiler": {
+      "description": "A tsundere anime girl at the keyboard, blushing while yelling at a compiler window. It is not like she likes static types. Baka. Her hundred hours of TypeScript disagree with her verbally.",
+      "optimizedPrompt": "kawaii tsundere anime girl at keyboard, blushing angrily at floating red compiler window, twin tails, red-black school-uniform variant, chibi half-body emblem, dark background"
+    },
+    "yandere-debugger": {
+      "description": "A yandere anime girl with dilated red eyes clutching a bug net, sinister smile playing at her lips. Debugging is love. The bug does not get away. It is loved into submission.",
+      "optimizedPrompt": "kawaii yandere anime girl with dilated red eyes and sinister smile, clutching bug net, red-black outfit, subtle blood-splatter aesthetic, chibi half-body emblem, dark background"
+    },
+    "catboy-operator": {
+      "description": "A cyberpunk catboy operator with cat ears and a swishing tail, thigh-highs and a black hoodie, glowing red terminal reflection across his face. Fifty hours of Vim, fifty hours of Linux, endless nyaa.",
+      "optimizedPrompt": "cyberpunk anime catboy with cat ears and tail, thigh-highs and black hoodie, red terminal reflection on face, chibi half-body emblem, dark background"
+    },
+    "femboy-fortress": {
+      "description": "A kawaii cyberpunk femboy operator inside a fortified server room lined with red-LED racks, mechanical keyboard cradled like a treasured heirloom. Five hundred hours on Linux and the fortress holds.",
+      "optimizedPrompt": "kawaii cyberpunk femboy operator in fortified server room, red LED racks glowing, mechanical keyboard cradled, black-red outfit, chibi half-body emblem, dark background"
+    },
+    "kawaii-code-mage": {
+      "description": "A kawaii anime witch girl coding at a magical crystal terminal, cat familiar with glowing eyes perched on her shoulder. A hundred hours of Python and a fifth of her time whispering with AI. Spellcasting with familiars.",
+      "optimizedPrompt": "kawaii anime witch girl at magical crystal terminal, red pastel palette, cat familiar with glowing red eyes on shoulder, witch hat, chibi half-body emblem, dark background"
+    },
+    "maid-cafe-manager": {
+      "description": "A kawaii anime maid manager with a red hair-ribbon serving a tray of glowing tokens to five little developer chibis. Meetings above ten percent, five languages actively juggled. Polite polyglot polymath.",
+      "optimizedPrompt": "kawaii anime maid manager with red hair-ribbon, serving tray of glowing red tokens to five tiny developer chibis, maid uniform with red apron, chibi half-body emblem, dark background"
+    },
+    "commander-neko-paws": {
+      "description": "Kawaii commander of the memecore fleet. Cat ears sharp as anti-aircraft antennae, tactical uniform hemmed in pastel red, holographic display floating at the fingertips. Every laptop she touches boots straight into Vim. Nya, but with authority.",
+      "optimizedPrompt": "cyberpunk anime commander with cat ears and cat paws, tactical uniform with red glowing insignia, holographic tactical display floating in front, chibi half-body emblem, dark background"
+    },
+    "poggers-committer": {
+      "description": "A cyberpunk anime streamer at an RGB mechanical keyboard, exaggerated POGGERS-surprised face, twitch chat overlay glowing red at the corner. Last seven days doubled the prior seven. Chat is losing its mind.",
+      "optimizedPrompt": "cyberpunk anime streamer at RGB mechanical keyboard, exaggerated POGGERS surprised face, twitch chat overlay glowing red, black hoodie, chibi half-body emblem, dark background"
+    },
+    "omegalul-warlock": {
+      "description": "A cyberpunk anime warlock casting a giant OMEGALUL sigil in glowing red, weekend rain lashing the window behind. Eighty percent of the top-project share and half the punchcard on Saturday and Sunday. Cursed, devoted, based.",
+      "optimizedPrompt": "cyberpunk anime warlock casting giant glowing red OMEGALUL sigil, weekend rain outside window, black-red robes, chibi half-body emblem, dark background"
+    },
+    "copium-connoisseur": {
+      "description": "A cyberpunk anime figure inhaling from a red neon COPIUM tank connected to a terminal. Thirty-five percent AI-assisted and rising. The cope is main-lined. The vibe is transcendent.",
+      "optimizedPrompt": "cyberpunk anime figure inhaling from glowing red neon COPIUM tank connected to terminal via cables, black tactical outfit, chibi half-body emblem, dark background"
+    },
+    "malding-supreme": {
+      "description": "A bald cyberpunk developer surrounded by eight glowing red project windows, forehead veins visible. Eight projects above five hours each. The mald is real. The mald is earned.",
+      "optimizedPrompt": "cyberpunk anime bald developer surrounded by eight glowing red project windows, visible forehead veins, exasperated expression, chibi half-body emblem, dark background"
+    },
+    "based-department": {
+      "description": "A cyberpunk anime operator answering a red vintage rotary phone labeled BASED DEPARTMENT in stark chrome lettering. A hundred hours of Go or Rust rang the line. The department answered.",
+      "optimizedPrompt": "cyberpunk anime operator answering vintage red rotary phone with chrome lettering, black tactical outfit with red trim, chibi half-body emblem, dark background"
+    },
+    "chad-developer": {
+      "description": "A cyberpunk anime chad with square jaw and black tank top, arms crossed at a red glowing terminal. Eighty percent top-project share and sixty days unbroken. The chad arc is complete.",
+      "optimizedPrompt": "cyberpunk anime chad developer with square jaw, black tank top, arms crossed at red glowing terminal, chibi half-body emblem, dark background"
+    },
+    "sigma-male": {
+      "description": "A cyberpunk anime lone-wolf sigma male standing at the edge of a rooftop with a single glowing red terminal open on the ledge. Ninety-five percent of everything is one project. He answers to nobody.",
+      "optimizedPrompt": "cyberpunk anime lone wolf sigma male at rooftop edge, single glowing red terminal on ledge, black trench coat with red trim, wind-blown pose, chibi half-body emblem, dark background"
+    },
+    "rizz-lord": {
+      "description": "A cyberpunk anime rizz lord with sunglasses reflecting scrolling red code, gold chain draped over a silk shirt. Twenty-five percent AI, ten percent design. Pure aesthetic rizz, unmatched drip, undeniable steez.",
+      "optimizedPrompt": "cyberpunk anime rizz lord with sunglasses reflecting scrolling red code, gold chain over silk shirt with red trim, confident smirk, chibi half-body emblem, dark background"
+    },
+    "vim-bushido": {
+      "description": "A cyberpunk anime samurai monk in a red-lacquered vim helmet, meditating over a glowing terminal katana. Fifty hours down the modal path. The way of the keyboard warrior.",
+      "optimizedPrompt": "cyberpunk anime samurai monk with red-lacquered vim helmet, meditating over glowing red terminal katana, black robe with red trim, chibi half-body emblem, dark background"
+    },
+    "emacs-overlord": {
+      "description": "A cyberpunk anime overlord in flowing red robes commanding a floating emacs sigil that pulses with parenthesis-shaped glyphs. Two hundred hours bent the editor to their will. The editor bent back.",
+      "optimizedPrompt": "cyberpunk anime overlord in flowing red robes commanding floating emacs sigil with parenthesis glyphs, dark cape, chibi half-body emblem, dark background"
+    },
+    "neovim-daimyo": {
+      "description": "A cyberpunk anime daimyo with a red kabuto helmet marked with a diamond sigil, standing over glowing plugin scrolls. Fifty hours of Neovim earned the title. The lua config is signed with his seal.",
+      "optimizedPrompt": "cyberpunk anime daimyo with red kabuto helmet marked with diamond sigil, standing over glowing red plugin scrolls, ornate robes, chibi half-body emblem, dark background"
+    },
+    "helix-prophet": {
+      "description": "A cyberpunk anime prophet with a double-helix red halo behind their head, holding an ancient scroll of modal-editor runes. Twenty hours in Helix, early adopter of the post-vim gospel. The keybindings are the message.",
+      "optimizedPrompt": "cyberpunk anime prophet with double-helix red halo behind head, holding ancient scroll marked with modal-editor runes, robed figure, chibi half-body emblem, dark background"
+    },
+    "tmux-warlord": {
+      "description": "A cyberpunk anime warlord on a throne built from stacked terminal panes, red glow bleeding between the splits. Terminal-editor share above ninety percent. They never leave the multiplexer.",
+      "optimizedPrompt": "cyberpunk anime warlord on throne of stacked terminal panes, red glow bleeding between panes, black-red armor, commanding stance, chibi half-body emblem, dark background"
+    },
+    "alacritty-devout": {
+      "description": "A cyberpunk anime devotee kneeling before a glowing red terminal icon set on a stone altar. A hundred hours of terminal-editor devotion. Every keystroke a small prayer.",
+      "optimizedPrompt": "cyberpunk anime devotee kneeling before glowing red terminal icon on stone altar, hooded black robe with red trim, chibi half-body emblem, dark background"
+    },
+    "mac-warlord": {
+      "description": "A cyberpunk anime warlord in silver-and-red armor with a glowing apple sigil at the chestplate. Five hundred hours on macOS. The M-series silicon obeys.",
+      "optimizedPrompt": "cyberpunk anime warlord in silver and red armor with glowing red apple sigil on chestplate, chibi half-body emblem, dark background"
+    },
+    "linux-emperor": {
+      "description": "A cyberpunk anime emperor in red-and-black robes with a penguin familiar at his side and a throne piled with tux plushies. Five hundred hours on Linux. The kernel is the state.",
+      "optimizedPrompt": "cyberpunk anime emperor in red and black robes with penguin familiar at side, throne of stacked tux plushies, ornate crown, chibi half-body emblem, dark background"
+    },
+    "arch-btw": {
+      "description": "A cyberpunk anime archwizard in blue-and-red robes casting a spell that spells out a triangular arch sigil in glowing runes. Fifty hours on Linux and terminal-editor supremacy. I use Arch, btw.",
+      "optimizedPrompt": "cyberpunk anime archwizard in blue and red robes casting spell spelling triangular arch sigil in glowing red runes, chibi half-body emblem, dark background"
+    },
+    "wsl-pilgrim": {
+      "description": "A cyberpunk anime pilgrim with a windowed pauldron on one shoulder and a penguin-marked pauldron on the other, walking between two neon gates. Fifty hours each of Windows and Linux. The two worlds are bridged.",
+      "optimizedPrompt": "cyberpunk anime pilgrim with one windowed pauldron and one penguin-marked pauldron, walking between two neon gates glowing red, chibi half-body emblem, dark background"
+    },
+    "prompt-engineer-supreme": {
+      "description": "A cyberpunk anime supreme prompt engineer with a floating ring of glowing red prompt scrolls orbiting their head like a haloed asteroid belt. Half their tracked time is dialogue with the model. The model asks their opinion.",
+      "optimizedPrompt": "cyberpunk anime supreme prompt engineer with floating ring of glowing red prompt scrolls orbiting head, black robe with red trim, chibi half-body emblem, dark background"
+    },
+    "kubernetes-cultist": {
+      "description": "A cyberpunk anime cultist wearing a ship-wheel amulet, standing over a glowing red cluster of container pods arranged like ritual candles. Building-category above ten percent. The k8s cult accepts them.",
+      "optimizedPrompt": "cyberpunk anime cultist with ship-wheel amulet, standing over glowing red cluster of container pods arranged as ritual candles, hooded robe, chibi half-body emblem, dark background"
+    },
+    "markdown-monk": {
+      "description": "A cyberpunk anime monk in flowing red-trimmed robes with a giant hashtag prayer-bead necklace, meditating over a scroll of documentation. Fifteen percent of their time speaks in headings.",
+      "optimizedPrompt": "cyberpunk anime monk in flowing red-trimmed robes with giant hashtag prayer-bead necklace, meditating over documentation scroll, chibi half-body emblem, dark background"
+    },
+    "regex-sorcerer": {
+      "description": "A cyberpunk anime sorcerer weaving glowing red regex patterns in the air, ancient scrolls floating in orbit. Debugging above five percent and a hundred hours of Rust or Go. They see the state machine behind the pattern.",
+      "optimizedPrompt": "cyberpunk anime sorcerer weaving glowing red regex patterns in air, ancient scrolls floating in orbit, dark robes with red glyph trim, chibi half-body emblem, dark background"
+    },
+    "commit-amender": {
+      "description": "A cyberpunk anime figure at a terminal frantically rewriting glowing red commit messages that spiral around them. Sprinter momentum plus a steady drip of meetings. The history will be perfect, eventually.",
+      "optimizedPrompt": "cyberpunk anime figure at terminal frantically rewriting glowing red commit messages that spiral around them, black hoodie, tired eyes, chibi half-body emblem, dark background"
+    },
+    "true-grindset-s-plus": {
+      "description": "A cyberpunk anime deity figure standing atop a mountain of humming servers, three glowing red halos overlapping behind the head. Sigma grindset, weekend warlord, and late-night operator. The trinity has been achieved.",
+      "optimizedPrompt": "cyberpunk anime deity figure atop mountain of humming servers, three overlapping glowing red halos behind head, ornate red-black tactical robe, chibi half-body emblem, dark background"
+    },
+    "based-chad-ultimate": {
+      "description": "A cyberpunk anime ultimate chad in warhammer forty-thousand power armor with deep red trim, standing before a giant glowing imperial sigil. Chad developer, imperial fist, and for-the-emperor devotion. Based, chad, and imperial in one silhouette.",
+      "optimizedPrompt": "cyberpunk anime ultimate chad in warhammer 40k power armor with deep red trim, standing before giant glowing red imperial sigil, arms crossed, chibi half-body emblem, dark background"
+    }
+  }
+}

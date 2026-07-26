@@ -6,6 +6,7 @@
 // DashboardGrid already handed us the PublicDashboardPayload.
 import type { PublicDashboardPayload } from "@/types/stats";
 import { evaluate } from "@/features/publicprofile/labels/evaluator";
+import { useLabelsCatalog } from "@/features/publicprofile/labels/useLabelsCatalog";
 import type { LabelAward } from "@/features/publicprofile/labels/types";
 import { LabelChip } from "@/features/publicprofile/labels/LabelChip";
 
@@ -30,7 +31,8 @@ export interface LabelsShowcaseProps {
 }
 
 export function LabelsShowcase({ data }: LabelsShowcaseProps) {
-  const awards = evaluate(data);
+  const { specs } = useLabelsCatalog();
+  const awards = evaluate(data, { catalog: specs });
 
   if (awards.length === 0) {
     return (

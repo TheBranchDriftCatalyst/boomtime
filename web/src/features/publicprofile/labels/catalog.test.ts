@@ -7,9 +7,16 @@
 // This is the guard against "silently tuned a label to award to more
 // people" changes that would land without a test change.
 import { describe, expect, it } from "vitest";
-import { evaluate } from "./evaluator";
+import { evaluate as evaluateWith } from "./evaluator";
 import { LABEL_CATALOG } from "./catalog";
 import type { PublicDashboardPayload } from "@/types/stats";
+
+// Post gaka-364.3 evaluate() no longer has a default catalog — the runtime
+// FE fetches from the DB. Structural tests still consume the checked-in
+// TS LABEL_CATALOG (compat shim + reference bootstrap seed), so shim it
+// here with a wrapper that mirrors the pre-pivot ergonomics.
+const evaluate = (payload: PublicDashboardPayload) =>
+  evaluateWith(payload, { catalog: LABEL_CATALOG });
 
 const p = (over: Partial<PublicDashboardPayload>): PublicDashboardPayload => ({
   username: "test",

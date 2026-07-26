@@ -68,6 +68,10 @@ import type {
   GoalProgress,
   UpdateGoalBody,
 } from "@/types/api";
+import type {
+  LabelCatalogRow,
+  LabelsCatalogPayload,
+} from "@/features/publicprofile/labels/types";
 
 export class ApiError extends Error {
   status: number;
@@ -849,4 +853,38 @@ export const api = {
       | { queued: number; async: true; note: string }
       | { generated: number; failed: number; requested: number }
     >("/api/v1/admin/label-images/regenerate", { method: "POST", body }),
+
+  // --- Labels catalog (gaka-364.3) -----------------------------------------
+  // Public GET for evaluator + admin table; admin-gated CRUD + gen-config
+  // + seed.sql dump for the admin sheet editor.
+  getLabelsCatalog: () =>
+    request<LabelsCatalogPayload>("/api/v1/labels/catalog", { auth: false }),
+  adminCreateLabel: (body: Partial<LabelCatalogRow> & { id: string; kind: string; label: string; condition: unknown }) =>
+    request<LabelCatalogRow>("/api/v1/admin/labels", { method: "POST", body }),
+  adminUpdateLabel: (id: string, body: Partial<LabelCatalogRow> & { condition?: unknown }) =>
+    request<LabelCatalogRow>(`/api/v1/admin/labels/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body,
+    }),
+  adminDeleteLabel: (id: string) =>
+    request<void>(`/api/v1/admin/labels/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+  adminUpdateLabelGenConfig: (systemPrompt: string) =>
+    request<{ systemPrompt: string }>("/api/v1/admin/label-gen-config", {
+      method: "PATCH",
+      body: { systemPrompt },
+    }),
+  /** Fetch the SQL dump as raw text — the caller triggers a browser
+   *  download from the returned string. Not JSON. */
+  adminLabelsSeedSQL: async (): Promise<string> => {
+    const headers: Record<string, string> = {};
+    const h = authStore.authHeader();
+    if (h) headers.Authorization = h;
+    const res = await fetch("/api/v1/admin/labels/seed.sql", { headers });
+    if (!res.ok) {
+      throw new ApiError(res.status, `seed.sql fetch failed: ${res.status}`, await res.text());
+    }
+    return await res.text();
+  },
 };

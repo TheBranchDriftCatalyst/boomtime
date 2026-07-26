@@ -11,17 +11,44 @@
 // either the catalog or the evaluator will be visible.
 import { describe, expect, it } from "vitest";
 import { render, screen, within, fireEvent } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@thebranchdriftcatalyst/catalyst-ui/ui/tooltip";
 import { LabelsShowcase } from "./LabelsShowcase";
 import type { PublicDashboardPayload } from "@/types/stats";
+import { LABEL_CATALOG } from "@/features/publicprofile/labels/catalog";
+import { qk } from "@/lib/queryKeys";
+import type { LabelSpec } from "@/features/publicprofile/labels/types";
 
 // LabelChip requires TooltipProvider ancestor; app root mounts one, tests
-// wrap explicitly.
+// wrap explicitly. Post gaka-364.3 the widget also needs a QueryClient — the
+// evaluator reads from useLabelsCatalog; we prime the cache from
+// LABEL_CATALOG so tests stay synchronous + offline.
 function renderShowcase(data: PublicDashboardPayload) {
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  });
+  qc.setQueryData(qk.labelsCatalog(), {
+    systemPrompt: "",
+    labels: (LABEL_CATALOG as LabelSpec[]).map((s) => ({
+      id: s.id,
+      kind: s.kind,
+      label: s.label,
+      glyph: s.glyph ?? "",
+      description: s.description,
+      optimizedPrompt: s.imagePrompt ?? "",
+      rank: s.rank,
+      tier: s.tier ?? "",
+      condition: s.condition,
+      createdAt: "",
+      updatedAt: "",
+    })),
+  });
   return render(
-    <TooltipProvider delayDuration={0}>
-      <LabelsShowcase data={data} />
-    </TooltipProvider>,
+    <QueryClientProvider client={qc}>
+      <TooltipProvider delayDuration={0}>
+        <LabelsShowcase data={data} />
+      </TooltipProvider>
+    </QueryClientProvider>,
   );
 }
 

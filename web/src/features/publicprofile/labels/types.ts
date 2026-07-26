@@ -197,8 +197,37 @@ export interface LabelSpec {
    *  When set, the worker will render an emblem image for this label and
    *  serve it in place of the glyph. Kept next to the spec so authoring a
    *  new label carries its own art brief. When absent, the frontend falls
-   *  back to the glyph. */
+   *  back to the glyph.
+   *
+   *  Legacy: pre-gaka-364.3 this was the ONLY prompt field. Post-pivot, the
+   *  server's `optimizedPrompt` column is authoritative; the FE type keeps
+   *  imagePrompt as an alias so evaluator tests can continue using inline
+   *  fixture specs without needing the DB catalog wire format. See the
+   *  `LabelCatalogRow` type for the DB-native shape. */
   imagePrompt?: string;
+}
+
+/** Wire shape returned by GET /api/v1/labels/catalog (gaka-364.3). The rows
+ *  are convertible to LabelSpec for the evaluator via `dbRowToSpec`. */
+export interface LabelCatalogRow {
+  id: string;
+  kind: LabelSpec["kind"];
+  label: string;
+  glyph: string;
+  description: string;
+  optimizedPrompt: string;
+  rank: number;
+  tier: string; // may be "" when kind !== "tier"
+  condition: Condition;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Full catalog payload — labels + the singleton generation-config
+ *  systemPrompt. */
+export interface LabelsCatalogPayload {
+  systemPrompt: string;
+  labels: LabelCatalogRow[];
 }
 
 /** One label awarded to a payload. Consumed by the hero tagline + the

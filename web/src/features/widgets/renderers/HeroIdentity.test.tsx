@@ -11,17 +11,51 @@
 //   - USERNAME still renders regardless.
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@thebranchdriftcatalyst/catalyst-ui/ui/tooltip";
 import { WidgetRenderer } from "./WidgetRenderer";
 import type { PublicDashboardPayload } from "@/types/stats";
+import { LABEL_CATALOG } from "@/features/publicprofile/labels/catalog";
+import { qk } from "@/lib/queryKeys";
+import type { LabelSpec } from "@/features/publicprofile/labels/types";
 
 // LabelChip requires a TooltipProvider ancestor (Radix contract). The app
 // mounts one at the root in main.tsx; tests wrap here explicitly.
+//
+// Post gaka-364.3 the hero also needs a QueryClientProvider — useLabelsCatalog
+// fetches the DB catalog via react-query. We seed the cache with LABEL_CATALOG
+// (converted to the DB wire shape) so the hero renders synchronously without
+// hitting the network in tests.
 function renderHero(data: PublicDashboardPayload) {
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  });
+  // Prime the cache with the shipped catalog. Shape must match the wire
+  // response: {systemPrompt, labels: [LabelCatalogRow]}. We fake a
+  // LabelCatalogRow from each LabelSpec — the evaluator only reads
+  // condition + kind + rank + tier so the extra fields can be blank.
+  qc.setQueryData(qk.labelsCatalog(), {
+    systemPrompt: "",
+    labels: (LABEL_CATALOG as LabelSpec[]).map((s) => ({
+      id: s.id,
+      kind: s.kind,
+      label: s.label,
+      glyph: s.glyph ?? "",
+      description: s.description,
+      optimizedPrompt: s.imagePrompt ?? "",
+      rank: s.rank,
+      tier: s.tier ?? "",
+      condition: s.condition,
+      createdAt: "",
+      updatedAt: "",
+    })),
+  });
   return render(
-    <TooltipProvider delayDuration={0}>
-      <WidgetRenderer kind="hero-identity" data={data} />
-    </TooltipProvider>,
+    <QueryClientProvider client={qc}>
+      <TooltipProvider delayDuration={0}>
+        <WidgetRenderer kind="hero-identity" data={data} />
+      </TooltipProvider>
+    </QueryClientProvider>,
   );
 }
 
