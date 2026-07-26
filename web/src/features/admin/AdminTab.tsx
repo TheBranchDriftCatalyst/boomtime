@@ -640,6 +640,7 @@ export function AdminTab() {
           regenOne.mutate({ id, prompt, model, size, seed });
         }}
         canRegen={!!status.data?.enabled}
+        generatedAt={selected ? metaById.get(selected.id)?.generatedAt : undefined}
       />
     </div>
   );
@@ -659,6 +660,8 @@ interface LabelEditSheetProps {
     seed?: number,
   ) => void;
   canRegen: boolean;
+  /** last-generated timestamp for cache-busting the preview image after regen. */
+  generatedAt?: string;
 }
 
 // Local editable-form state. Kept simple (untyped strings for numeric
@@ -699,7 +702,7 @@ function toDraft(row: LabelCatalogRow): EditDraft {
 const KIND_OPTIONS = ["tier", "archetype", "tribe", "meme"] as const;
 const TIER_OPTIONS = ["novice", "apprentice", "adept", "master", "legend"] as const;
 
-function LabelEditSheet({ row, onClose, onSaved, onRegen, canRegen }: LabelEditSheetProps) {
+function LabelEditSheet({ row, onClose, onSaved, onRegen, canRegen, generatedAt }: LabelEditSheetProps) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<EditDraft | null>(row ? toDraft(row) : null);
   const [conditionErr, setConditionErr] = useState<string | null>(null);
@@ -795,6 +798,30 @@ function LabelEditSheet({ row, onClose, onSaved, onRegen, canRegen }: LabelEditS
                 {row.id}
               </SheetDescription>
             </SheetHeader>
+
+            {/*
+              Big preview — the label image at a size that actually reads.
+              Aspect-square, capped at 400px so the sheet doesn't blow out
+              when the operator drags it wide. bustHint = generatedAt so
+              a fresh regen busts the immutable-1yr cache without a full
+              page reload.
+            */}
+            <div className="mt-4 flex justify-center">
+              <LabelImage
+                id={row.id}
+                size={400}
+                bustHint={generatedAt}
+                className="aspect-square w-full max-w-[400px] rounded-sm border border-[color:var(--primary)]/40 object-cover"
+                fallback={
+                  <div
+                    aria-hidden
+                    className="flex aspect-square w-full max-w-[400px] items-center justify-center rounded-sm border border-dashed border-[color:var(--primary)]/30 bg-[color:var(--muted)] text-8xl text-[color:var(--muted-foreground)]"
+                  >
+                    {draft.glyph || row.glyph || "·"}
+                  </div>
+                }
+              />
+            </div>
 
             <div className="mt-6 space-y-4">
               <div className="grid grid-cols-2 gap-3">

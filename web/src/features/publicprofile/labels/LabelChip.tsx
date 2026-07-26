@@ -86,33 +86,32 @@ export function LabelChip({
         side="top"
         align="center"
         sideOffset={8}
-        className="max-w-[280px] p-0 border border-[color:var(--primary)]/50 bg-[color:var(--card)] shadow-lg"
+        className="max-w-[288px] p-0 border border-[color:var(--primary)]/50 bg-[color:var(--card)] shadow-lg"
         data-testid="label-chip-tooltip"
       >
-        <div className="flex gap-3 p-3">
-          {/*
-            The tooltip image is deliberately bigger (72px) than the chip
-            glyph so the illustration actually reads. Same fallback rule —
-            glyph if no generated image.
-          */}
-          <div className="shrink-0">
-            <LabelImage
-              id={award.id}
-              size={72}
-              bustHint={bustHint}
-              className="rounded-sm border border-[color:var(--primary)]/30"
-              fallback={
-                <div
-                  aria-hidden
-                  className="flex h-[72px] w-[72px] items-center justify-center rounded-sm border border-[color:var(--primary)]/30 bg-[color:var(--muted)] text-2xl"
-                >
-                  {award.glyph ?? "·"}
-                </div>
-              }
-            />
-          </div>
-          <div className="flex flex-col gap-1.5 min-w-0">
-            <div className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--primary)] leading-tight">
+        {/*
+          Vertical stack: big square image on top (256px — actually reads the
+          illustration instead of "is that a smudge?"), text block below. Prior
+          layout had a 72px thumbnail beside the copy — user feedback: the
+          images may as well not be there at that size.
+        */}
+        <div className="flex flex-col">
+          <LabelImage
+            id={award.id}
+            size={256}
+            bustHint={bustHint}
+            className="h-64 w-full rounded-t-sm border-b border-[color:var(--primary)]/30 object-cover"
+            fallback={
+              <div
+                aria-hidden
+                className="flex h-64 w-full items-center justify-center rounded-t-sm border-b border-[color:var(--primary)]/30 bg-[color:var(--muted)] text-6xl"
+              >
+                {award.glyph ?? "·"}
+              </div>
+            }
+          />
+          <div className="flex flex-col gap-1.5 p-3">
+            <div className="font-mono text-[12px] font-semibold uppercase tracking-[0.14em] text-[color:var(--primary)] leading-tight">
               {award.label}
             </div>
             {award.description && (
