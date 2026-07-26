@@ -16,11 +16,16 @@
 //     network error. Respects context cancellation between attempts so a
 //     shutdown doesn't have to wait out the last backoff.
 //
-//   - Timeout is 60s per attempt — SDXL Illustrious and Flux Schnell both
-//     round-trip in <35s per the shim README's approximates. A 5s ceiling
-//     (the brief suggestion) would time out real generations on the first
-//     attempt; we keep the SPIRIT of the brief (fail fast if the shim is
-//     unreachable) via a 5s connection dial in the transport.
+//   - Response-header timeout is 300s per attempt; overall client timeout
+//     360s. SDXL Illustrious rounds trip in ~25s, but Chroma-HD (full
+//     precision, max-quality FLUX-derivative on M-series GPUs) can spend
+//     >60s in front of the pipeline before the shim even flushes its
+//     first byte. The initial 60s/90s pair we shipped worked for SDXL
+//     but caused chroma-hd to time out at "awaiting response headers" on
+//     every attempt (4 retries × 60s = ~4 min of wasted work per label).
+//     Fail-fast against an unreachable shim is preserved via a 5s
+//     connection dial in the transport — the response wait only bounds
+//     time-in-generation.
 //
 //   - We return image bytes + mime type. Both `b64_json` and `data:` URL
 //     responses are handled — the shim defaults to b64_json, but a future
@@ -74,11 +79,11 @@ func NewClient(url string) (*Client, error) {
 			Timeout:   5 * time.Second,
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
-		ResponseHeaderTimeout: 60 * time.Second,
+		ResponseHeaderTimeout: 300 * time.Second,
 	}
 	return &Client{
 		URL:  url,
-		HTTP: &http.Client{Timeout: 90 * time.Second, Transport: transport},
+		HTTP: &http.Client{Timeout: 360 * time.Second, Transport: transport},
 	}, nil
 }
 
