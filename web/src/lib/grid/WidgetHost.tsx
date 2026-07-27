@@ -71,7 +71,13 @@ export const WidgetHost = forwardRef<HTMLDivElement, WidgetHostProps>(function W
         <span className="catalyst-grid-tile__title">
           {(instance.displayName ?? instance.key).toUpperCase()}
         </span>
-        <span className="catalyst-grid-tile__kind" aria-hidden>· {instance.key}</span>
+        {/* Kind slug is developer-relevant in edit mode (helps operators
+            identify which tile is which when the display name isn't unique).
+            In view mode (public profile, non-editable) it's just visual
+            noise duplicating the title, so hide it. */}
+        {editable && (
+          <span className="catalyst-grid-tile__kind" aria-hidden>· {instance.key}</span>
+        )}
         <span className="catalyst-grid-tile__spacer" />
         {editable ? (
           <button
