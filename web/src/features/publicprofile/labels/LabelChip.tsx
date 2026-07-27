@@ -11,11 +11,21 @@
 // gaka-mem-chip: added atop the memeification framework (gaka-364) and the
 // label-images pipeline (gaka-myv) — pulls both together into one visual
 // primitive so downstream widgets don't reimplement chip chrome each time.
+// We import Radix Tooltip primitives DIRECTLY (bypassing catalyst-ui's
+// re-export) so the Root / Trigger / Portal / Content all share the same
+// bundled context. catalyst-ui bundles its own copy of @radix-ui/react-tooltip
+// via a rollup chunk, so a Portal imported separately would fail with
+// "TooltipPortal must be used within Tooltip" — the contexts don't line up
+// across bundles. The Portal is required because widget cards use
+// overflow-y-auto for internal scroll, which clips our 256px-tall tooltip.
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@thebranchdriftcatalyst/catalyst-ui/ui/tooltip";
+  Provider as TooltipProvider,
+  Root as Tooltip,
+  Trigger as TooltipTrigger,
+  Portal as TooltipPortal,
+  Content as TooltipContentPrimitive,
+} from "@radix-ui/react-tooltip";
+import { cn } from "@/lib/utils";
 import { LabelImage } from "@/features/publicprofile/labels/LabelImage";
 import type { LabelAward } from "@/features/publicprofile/labels/types";
 
@@ -56,6 +66,12 @@ export function LabelChip({
   ) : null;
 
   return (
+    // Self-contained TooltipProvider: catalyst-ui bundles its own Radix so the
+    // app's root TooltipProvider (from catalyst-ui) uses a DIFFERENT context
+    // than these primitives (imported directly from @radix-ui/react-tooltip
+    // for Portal access). Wrapping here scopes a compatible context for this
+    // chip only; delayDuration=200 matches the app-wide feel.
+    <TooltipProvider delayDuration={200}>
     <Tooltip>
       <TooltipTrigger asChild>
         {/*
@@ -82,11 +98,21 @@ export function LabelChip({
           <span>{award.label}</span>
         </span>
       </TooltipTrigger>
-      <TooltipContent
+      <TooltipPortal>
+      <TooltipContentPrimitive
         side="top"
         align="center"
         sideOffset={8}
-        className="max-w-[288px] p-0 border border-[color:var(--primary)]/50 bg-[color:var(--card)] shadow-lg"
+        // Replicates the styling catalyst-ui's TooltipContent adds on top of
+        // Radix (animation, rounded corners, popover bg) since we're bypassing
+        // that wrapper — see the import comment above for why.
+        // z-50 keeps the portaled content above sheets / dialogs.
+        className={cn(
+          "z-50 max-w-[288px] p-0 rounded-md border border-[color:var(--primary)]/50 bg-[color:var(--card)] text-[color:var(--foreground)] shadow-lg",
+          "animate-in fade-in-0 zoom-in-95",
+          "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
+          "data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
+        )}
         data-testid="label-chip-tooltip"
       >
         {/*
@@ -129,7 +155,9 @@ export function LabelChip({
             )}
           </div>
         </div>
-      </TooltipContent>
+      </TooltipContentPrimitive>
+      </TooltipPortal>
     </Tooltip>
+    </TooltipProvider>
   );
 }
