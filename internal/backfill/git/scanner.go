@@ -107,15 +107,17 @@ func (s *Scanner) Iter(ctx context.Context) iter.Seq2[Commit, error] {
 			return
 		}
 
-		iter, err := s.repo.Log(&git.LogOptions{From: head.Hash()})
+		// Rename the iterator variable so it doesn't shadow the `iter`
+		// stdlib package we import for Seq2.
+		logIter, err := s.repo.Log(&git.LogOptions{From: head.Hash()})
 		if err != nil {
 			yield(Commit{}, fmt.Errorf("log: %w", err))
 			return
 		}
-		defer iter.Close()
+		defer logIter.Close()
 
 		name := s.RepoName()
-		err = iter.ForEach(func(c *object.Commit) error {
+		err = logIter.ForEach(func(c *object.Commit) error {
 			// Early-cancel via ctx is the whole reason we accept ctx —
 			// a "walk every ~/code repo" run needs to interrupt cleanly.
 			select {
