@@ -294,15 +294,22 @@ func (h *Handler) handleBackfillJobBatch(c *echo.Context, insert bool) error {
 		return h.internalErr(c, "backfill config get failed", err)
 	}
 	sessions := make([]db.BackfillSession, 0, len(req.Sessions))
-	commitCount := 0
 	for _, s := range req.Sessions {
 		sessions = append(sessions, db.BackfillSession{
 			Start:      s.Start,
 			End:        s.End,
 			Heartbeats: s.Heartbeats,
 		})
-		commitCount++ // approximate: one commit → one session on the wire
 	}
+	// job.processed is incremented by session count, not commit count.
+	// The FE displays "processed/total"; total was set at enqueue time
+	// (commit count from the CLI's scan), so the ratio is
+	// sessions-so-far / commits-total. This is intentionally
+	// approximate — the operator sees "we're moving through the repo"
+	// and by the end processed==total minus filtered-out-during-scan
+	// commits. An exact per-commit counter would require the CLI to
+	// PATCH per commit, which is too chatty.
+	sessionCount := len(sessions)
 	batch := db.BackfillBatch{
 		Username:  owner,
 		SourceTag: cfg.SourceTag,
@@ -321,7 +328,7 @@ func (h *Handler) handleBackfillJobBatch(c *echo.Context, insert bool) error {
 		// Auto-flip queued → running and increment counters. Uses the
 		// registry's atomic IncrementCounts so a burst of parallel
 		// batches doesn't lose any updates.
-		h.BackfillJobQueue.IncrementCounts(id, commitCount, res.AcceptedHeartbeats, res.SkippedHeartbeats)
+		h.BackfillJobQueue.IncrementCounts(id, sessionCount, res.AcceptedHeartbeats, res.SkippedHeartbeats)
 	}
 	// Invalidate cached aggregations so the new rows show up on the
 	// next dashboard poll. Backfill writes can span months, so cached
