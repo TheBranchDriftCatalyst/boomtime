@@ -177,7 +177,7 @@ func (h *Handler) SynthesizeAvatarPrompt(c *echo.Context) error {
 	// httptest.ResponseRecorder does not — the SSE test uses hand-
 	// crafted streaming via msw on the FE side and does not exercise
 	// this branch server-side.
-	flusher, canFlush := resp.Writer.(http.Flusher)
+	flusher, canFlush := resp.(http.Flusher)
 	scanner := bufio.NewScanner(upResp.Body)
 	// SSE lines can be large (long delta contents) — bump the scanner buffer.
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
