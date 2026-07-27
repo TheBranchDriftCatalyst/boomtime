@@ -1,0 +1,46 @@
+---
+# Headless Service + hand-written Endpoints pointing cluster-internal DNS
+# `ollama-shim.boomtime.svc.cluster.local` at the operator's Mac on the LAN
+# (catalystM5.localdomain / 192.168.1.33) where Ollama binds `*:11434`.
+#
+# Same pattern as comfyui-shim-external.yaml — see that file for the "why not
+# ExternalName" rationale (mDNS doesn't bridge into cluster DNS). We deliberately
+# do NOT depend on catalyst-llm's `ollama-remote` Service: that one points at a
+# Nebula-mesh IP (10.42.2.1) that isn't routable from boomtime's namespace, so
+# every attempt from here fails with immediate connection refused.
+#
+# Prereq: Ollama must be running on the Mac and bound to all interfaces:
+#   $ OLLAMA_HOST=0.0.0.0:11434 ollama serve   &   # or via launchd / brew services
+#   $ ollama pull qwen2.5:7b                       # model referenced by llm-config.yaml
+#
+# Runtime failure mode: if Ollama is down, the chibi SYNTHESIZE endpoint returns
+# a 5xx and the FE surfaces "LLM unavailable" — nothing else breaks. The manual
+# RENDER path still works (operator types their own prompt).
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama-shim
+  labels:
+    app.kubernetes.io/name: ollama-shim
+    app.kubernetes.io/part-of: boomtime
+spec:
+  ports:
+    - name: http
+      port: 11434
+      targetPort: 11434
+      protocol: TCP
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: ollama-shim
+  labels:
+    app.kubernetes.io/name: ollama-shim
+    app.kubernetes.io/part-of: boomtime
+subsets:
+  - addresses:
+      - ip: 192.168.1.33  # catalystM5.localdomain — operator's Mac on LAN
+    ports:
+      - name: http
+        port: 11434
+        protocol: TCP

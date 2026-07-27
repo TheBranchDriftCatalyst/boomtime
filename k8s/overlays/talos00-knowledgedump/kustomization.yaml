@@ -11,11 +11,13 @@ resources:
   - external-secret.yaml
   - ingressroute.yaml
   - comfyui-shim-external.yaml
+  - ollama-shim-external.yaml
 
-# Strategic-merge patch: adds label-images feature env vars to the base
-# boomtime-config ConfigMap without disturbing existing keys.
+# Strategic-merge patches: each adds a feature-specific set of env vars
+# to the base boomtime-config ConfigMap without disturbing existing keys.
 patchesStrategicMerge:
   - label-images-config.yaml
+  - llm-config.yaml
 
 # The Argo Application tracks the `main` branch. This kustomize `newTag`
 # is a starting hint — the live authority is the ImageUpdater CRD at

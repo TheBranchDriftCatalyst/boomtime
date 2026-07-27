@@ -1,0 +1,27 @@
+---
+# Overlay-only patch merging chibi-avatar LLM feature vars into `boomtime-config`.
+# Same shape as label-images-config.yaml — kustomize strategic-merge ADDs these
+# keys without disturbing base ones.
+#
+# See gaka-9v4 for the feature. Points at ollama-shim (defined in
+# ollama-shim-external.yaml), which routes to the operator's Mac at
+# 192.168.1.33:11434. Ollama's native OpenAI-compat lives under `/v1`.
+#
+# Model: qwen2.5:7b — strong creative writing on M-series (~4-5GB memory,
+# fast). Operator must run `ollama pull qwen2.5:7b` on the Mac before the
+# SYNTHESIZE button works. To swap models, edit BOOM_LLM_MODEL here and
+# commit — Argo picks it up on next sync.
+#
+# Auth: Ollama ignores Bearer tokens but boomtime treats empty API key as
+# "feature disabled". Passing the literal string "ollama" satisfies the
+# LLMEnabled() gate without leaking a real credential.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: boomtime-config
+  labels:
+    app.kubernetes.io/name: boomtime
+data:
+  BOOM_LLM_BASE_URL: "http://ollama-shim:11434/v1"
+  BOOM_LLM_API_KEY: "ollama"
+  BOOM_LLM_MODEL: "qwen2.5:7b"
