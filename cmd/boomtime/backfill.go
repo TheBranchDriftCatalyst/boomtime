@@ -460,6 +460,11 @@ func (c *apiClient) doJSON(ctx context.Context, method, path string, body any, o
 		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
+	// Real UA — Cloudflare's default bot-management drops the stock
+	// "Go-http-client/1.1" with a 403 challenge page, which is what
+	// happened before this line existed. Anything self-identifying and
+	// non-headless-looking passes.
+	req.Header.Set("User-Agent", "boomtime-backfill-cli/1.0 (+https://github.com/TheBranchDriftCatalyst/boomtime)")
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return err
