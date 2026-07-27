@@ -71,19 +71,20 @@ func NewClient(url string) (*Client, error) {
 	}
 	url = strings.TrimRight(url, "/")
 
-	// Per-attempt 60s ceiling — SDXL Illustrious on M-series generates ~15-30s.
-	// A short 5s DIAL timeout ensures we fail fast if the shim isn't listening,
-	// but ONE generation call can still legitimately take a while.
+	// Chroma-HD on M-series: measured gens take 15-30 MINUTES per label; SDXL
+	// variants are 15-30 SECONDS. The header timeout must cover the slowest
+	// pipeline the shim might be configured for. 45min gives real headroom
+	// without letting a truly-wedged shim hang forever.
 	transport := &http.Transport{
 		DialContext: (&net.Dialer{
 			Timeout:   5 * time.Second,
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
-		ResponseHeaderTimeout: 600 * time.Second,
+		ResponseHeaderTimeout: 45 * time.Minute,
 	}
 	return &Client{
 		URL:  url,
-		HTTP: &http.Client{Timeout: 720 * time.Second, Transport: transport},
+		HTTP: &http.Client{Timeout: 50 * time.Minute, Transport: transport},
 	}, nil
 }
 
@@ -204,9 +205,16 @@ func (c *Client) doOne(ctx context.Context, body []byte) ([]byte, string, error)
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		// Network/connect errors are always retryable — the shim may be
-		// temporarily unreachable during a launchd restart / brief blip.
-		return nil, "", &retryable{err}
+		// Retry ONLY when the shim was unreachable (dial / connect errors) —
+		// those are brief blips during a launchd restart. A header-timeout
+		// or overall client.Timeout means the shim ACCEPTED the request and
+		// is either still computing or wedged; retrying would burn another
+		// 45-minute window on the exact same non-progress. Fail loud so the
+		// operator sees the job errored quickly on a wedge.
+		if isDialError(err) {
+			return nil, "", &retryable{err}
+		}
+		return nil, "", fmt.Errorf("comfyui: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -262,6 +270,28 @@ func (c *Client) doOne(ctx context.Context, body []byte) ([]byte, string, error)
 		return raw, mime, nil
 	}
 	return nil, "", errors.New("comfyui: response item has neither b64_json nor url")
+}
+
+// isDialError reports whether err came from the DIAL phase of an HTTP request
+// (connection refused / no route / DNS fail / TCP timeout on connect) as
+// opposed to a response-phase error (header timeout, body read, TLS during
+// data transfer). Only dial errors are worth retrying — everything else means
+// the shim ACCEPTED the request and either is still working or has wedged,
+// neither of which improves on retry.
+func isDialError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var opErr *net.OpError
+	if errors.As(err, &opErr) && opErr.Op == "dial" {
+		return true
+	}
+	// Fallback string sniff for wrapped errors that lose the OpError.
+	s := err.Error()
+	return strings.Contains(s, "connection refused") ||
+		strings.Contains(s, "no route to host") ||
+		strings.Contains(s, "no such host") ||
+		strings.Contains(s, "i/o timeout") && strings.Contains(s, "dial")
 }
 
 // sniffMime picks a mime type from the first bytes of a PNG/JPEG/WEBP payload.
