@@ -10,7 +10,7 @@ import { PieChart } from "@/viz/charts/PieChart";
 import { Punchcard } from "@/viz/charts/Punchcard";
 import { HourBarChart } from "@/viz/charts/HourBarChart";
 import { ContributionCalendar } from "@/viz/charts/ContributionCalendar";
-import { secondsToHms } from "@/lib/utils";
+import { secondsToCompact, secondsToHms } from "@/lib/utils";
 import type { PublicDashboardPayload, ResourceStats } from "@/types/stats";
 import {
   computeGrade,
@@ -57,10 +57,14 @@ export function WidgetRenderer({ kind, view, data, ctx }: WidgetRendererProps) {
       return <GradeBadge data={data} />;
 
     case "total-time-stat":
+      // gaka-k2p: compact `366h 47m` instead of the wrappy
+      // `366 hrs 47 mins` — keeps the stat card to a single line so it
+      // doesn't grow taller than its row-mates and blow out row-height
+      // alignment.
       return (
         <BigStat
           label="TOTAL TIME"
-          value={secondsToHms(data.totalSeconds)}
+          value={secondsToCompact(data.totalSeconds)}
           Icon={Clock}
         />
       );
@@ -68,7 +72,7 @@ export function WidgetRenderer({ kind, view, data, ctx }: WidgetRendererProps) {
       return (
         <BigStat
           label="DAILY AVG"
-          value={secondsToHms(Math.round(data.dailyAvg))}
+          value={secondsToCompact(Math.round(data.dailyAvg))}
           Icon={Code}
         />
       );
@@ -159,17 +163,39 @@ function BigStat({
   sub?: string;
   Icon?: React.ComponentType<{ size?: number; strokeWidth?: number }>;
 }) {
+  // gaka-k2p: value uses a fluid clamp() sized against the card width so it
+  // never wraps to two lines (which was blowing out the row-height on TOTAL
+  // TIME). `dossier-stat__value` picks up the arasaka subtle-glow text-shadow
+  // in arasaka.css. `whitespace-nowrap` is the belt-and-braces guarantee
+  // against a second line even when the clamp bottoms out.
   return (
-    <div className="flex h-full w-full flex-col items-start justify-center gap-1 px-3">
-      <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.14em] text-[color:var(--muted-foreground)]">
+    <div
+      className="dossier-stat flex h-full w-full flex-col items-start justify-center gap-1 px-3"
+      // Container-query context so the value's `cqw`-based font size measures
+      // against THIS stat card's width, not the viewport. Keeps 366h 47m fit
+      // to a 3-col tile without shrinking a 2-col tile's value into oblivion.
+      style={{ containerType: "inline-size" }}
+    >
+      <div className="dossier-stat__label flex items-center gap-2 text-[10px] uppercase tracking-[0.14em] text-[color:var(--muted-foreground)]">
         {Icon && <Icon size={11} strokeWidth={1.75} />}
         <span>{label}</span>
       </div>
-      <div className="font-mono text-[42px] font-bold leading-none text-[color:var(--primary)] [font-variant-numeric:tabular-nums]">
+      <div
+        className="dossier-stat__value font-mono font-bold leading-none text-[color:var(--primary)] [font-variant-numeric:tabular-nums] whitespace-nowrap overflow-hidden"
+        // clamp(min, preferred, max): floor 20px so values always read;
+        // preferred is ~3.4% of card width + 12px, so a 200px card ≈ 19px
+        // (clamped up to 20) and a 400px card ≈ 26px; max 42px matches the
+        // shipped size on wide cards. `cqw` needs the parent
+        // `container-type: inline-size` set above.
+        style={{ fontSize: "clamp(20px, calc(3.4cqw + 12px), 42px)" }}
+        title={value}
+      >
         {value}
       </div>
       {sub && (
-        <div className="text-xs text-[color:var(--muted-foreground)]">{sub}</div>
+        <div className="dossier-stat__sub text-xs text-[color:var(--muted-foreground)]">
+          {sub}
+        </div>
       )}
     </div>
   );
@@ -280,13 +306,18 @@ function BarList({ items }: { items: ResourceStats[] }) {
 
 function ChipList({ items }: { items: ResourceStats[] }) {
   if (!items?.length) return <Empty note="No data" />;
+  // gaka-k2p: drop the `overflow-y-auto` scroll bar (which was visibly
+  // clipping the EDITORS row and rendering a tiny scroll indicator). The
+  // grid tile's own `overflow: hidden` still guards catastrophic overflow,
+  // but 6-8 chips at h=2 will wrap onto 2 rows without needing a scrollbar.
+  // Chips also shrink one step at the base size to leave more room.
   return (
-    <div className="flex h-full w-full flex-wrap items-center gap-2 overflow-y-auto px-3 py-2">
+    <div className="dossier-chips flex h-full w-full flex-wrap content-center items-center gap-1.5 px-3 py-2">
       {items.map((it) => (
         <span
           key={it.name}
-          className="inline-flex items-center gap-1 rounded-sm border border-[color:var(--primary)]/40 bg-[color:var(--primary)]/10 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em]"
-          style={{ fontSize: Math.max(10, Math.min(16, 10 + (it.totalPct ?? 0) / 8)) + "px" }}
+          className="dossier-chip inline-flex items-center gap-1 rounded-sm border border-[color:var(--primary)]/40 bg-[color:var(--primary)]/10 px-2 py-[3px] font-mono text-[10px] uppercase tracking-[0.08em] whitespace-nowrap"
+          style={{ fontSize: Math.max(10, Math.min(14, 10 + (it.totalPct ?? 0) / 10)) + "px" }}
         >
           <span>{it.name}</span>
           <span className="opacity-60">{Math.round(it.totalPct ?? 0)}%</span>

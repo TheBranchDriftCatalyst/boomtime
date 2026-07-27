@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { formatBytes, formatElapsed, secondsToHms } from "@/lib/utils";
+import {
+  formatBytes,
+  formatElapsed,
+  secondsToCompact,
+  secondsToHms,
+} from "@/lib/utils";
 
 describe("secondsToHms", () => {
   it("formats hours + minutes (14 hrs 32 min)", () => {
@@ -23,6 +28,28 @@ describe("secondsToHms", () => {
     expect(secondsToHms(0)).toBe("0 mins");
     expect(secondsToHms(null)).toBe("0 mins");
     expect(secondsToHms(undefined)).toBe("0 mins");
+  });
+});
+
+describe("secondsToCompact", () => {
+  it("compacts large durations to a single-line h/m readout (gaka-k2p)", () => {
+    // 366h 47m — the exact case from the profile-page bug report where the
+    // long `secondsToHms` string ("366 hrs 47 mins") wrapped to 3 lines.
+    expect(secondsToCompact(366 * 3600 + 47 * 60)).toBe("366h 47m");
+  });
+  it("omits minutes when zero", () => {
+    expect(secondsToCompact(2 * 3600)).toBe("2h");
+  });
+  it("under an hour: minutes only", () => {
+    expect(secondsToCompact(45 * 60)).toBe("45m");
+  });
+  it("under a minute: seconds", () => {
+    expect(secondsToCompact(9)).toBe("9s");
+  });
+  it("0/null/undefined -> '0m'", () => {
+    expect(secondsToCompact(0)).toBe("0m");
+    expect(secondsToCompact(null)).toBe("0m");
+    expect(secondsToCompact(undefined)).toBe("0m");
   });
 });
 

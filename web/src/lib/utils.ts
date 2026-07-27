@@ -6,6 +6,24 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
+ * Compact single-line duration for stat cards, e.g. "366h 47m", "1h 4m",
+ * "45m", "9s". Keeps the value narrow enough for the stat-card row so it
+ * never wraps to a second line and blows out the row height. Prefer this
+ * over `secondsToHms` when you need a fixed-width numeric readout (dossier /
+ * corpo aesthetic — gaka-k2p).
+ */
+export function secondsToCompact(input: number | null | undefined): string {
+  const d = Number(input ?? 0);
+  if (!Number.isFinite(d) || d <= 0) return "0m";
+  const h = Math.floor(d / 3600);
+  const m = Math.floor((d % 3600) / 60);
+  const s = Math.floor(d % 60);
+  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  if (m > 0) return `${m}m`;
+  return `${s}s`;
+}
+
+/**
  * Format a number of seconds like the original dashboard, e.g. "14 hrs 32 min".
  * Ported from hakatime's utils.secondsToHms.
  */
