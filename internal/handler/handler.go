@@ -20,6 +20,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/backfilljobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/imagejobs"
 	labelimages "github.com/TheBranchDriftCatalyst/boomtime/internal/worker/labelimages"
 	"github.com/labstack/echo/v5"
@@ -47,6 +48,11 @@ type Handler struct {
 	// The registry itself owns the pool feed channel; the pool is
 	// constructed and started at server startup in cmd/boomtime.
 	ImageJobQueue *imagejobs.Registry
+	// BackfillJobQueue is the in-memory registry backing the git-history
+	// backfill CLI flow (gaka-vh8). Non-nil in every configuration —
+	// unlike ImageJobQueue there is no feature flag, the registry is
+	// cheap and only holds rows when a CLI is actively streaming.
+	BackfillJobQueue *backfilljobs.Registry
 }
 
 // New constructs a Handler. logHub streams server-process slog records to the
@@ -78,6 +84,13 @@ func (h *Handler) SetLabelImagesWorker(w *labelimages.Worker) {
 // endpoint + WS stream have somewhere to enqueue jobs. Nil = feature off.
 func (h *Handler) SetImageJobQueue(r *imagejobs.Registry) {
 	h.ImageJobQueue = r
+}
+
+// SetBackfillJobQueue wires the backfilljobs.Registry (gaka-vh8). Always
+// non-nil in prod; kept as a setter for symmetry with SetImageJobQueue
+// and so tests can inject a per-test registry with tight retention.
+func (h *Handler) SetBackfillJobQueue(r *backfilljobs.Registry) {
+	h.BackfillJobQueue = r
 }
 
 // statsCacheTTL is the TTL for cached aggregation payloads (stats/timeline/
