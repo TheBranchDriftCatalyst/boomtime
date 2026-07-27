@@ -953,4 +953,22 @@ export const api = {
     }
     return await res.text();
   },
+
+  // --- Avatar (gaka-9v4) -----------------------------------------------------
+  // Prompt synthesis is SSE — the FE reads the ReadableStream directly via
+  // useAvatarPromptStream (see features/settings/avatar/useAvatarPromptStream)
+  // so it doesn't go through the JSON-envelope request() helper.
+  // Regenerate + status use the standard client.
+  regenerateAvatar: (body: { prompt: string; model?: string; size?: string; seed?: number }) =>
+    request<{ status: string }>("/api/v1/users/current/avatar/regenerate", {
+      method: "POST",
+      body,
+    }),
+  getAvatarStatus: () =>
+    request<{
+      status: "none" | "pending" | "running" | "ready" | "error";
+      error?: string;
+      generatedAt?: string;
+      updatedAt?: string;
+    }>("/api/v1/users/current/avatar/status"),
 };

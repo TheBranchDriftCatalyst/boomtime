@@ -33,6 +33,10 @@ import { evaluate } from "@/features/publicprofile/labels/evaluator";
 import { useLabelsCatalog } from "@/features/publicprofile/labels/useLabelsCatalog";
 import { LabelChip } from "@/features/publicprofile/labels/LabelChip";
 import { LabelsShowcase } from "@/features/widgets/renderers/LabelsShowcase";
+// gaka-9v4: per-user chibi avatar slot in the hero identity tile. Falls
+// back to initials when the user hasn't rendered one yet — the profile
+// still reads cleanly for the "new operator" case.
+import { UserAvatarImage } from "@/features/publicprofile/UserAvatarImage";
 
 interface Ctx {
   view?: string;
@@ -215,39 +219,51 @@ function HeroIdentity({ data }: { data: PublicDashboardPayload }) {
   const awards = evaluate(data, { catalog: specs });
   const top3 = awards.slice(0, 3);
   return (
-    <div className="flex h-full flex-col justify-center px-3">
-      <div className="mb-1 font-mono text-[10px] uppercase tracking-[0.18em] text-[color:var(--muted-foreground)]">
-        &gt; PROFILE · {data.username}@boomtime
+    <div
+      className="flex h-full items-center px-3"
+      style={{ gap: 16 }}
+      data-testid="hero-identity"
+    >
+      {/* gaka-9v4: chibi avatar square. Falls back to initials in an
+       *  amber-bordered square when the user hasn't rendered one — the
+       *  hero still reads cleanly in the "new operator" empty state. */}
+      <div className="shrink-0" data-testid="hero-avatar-slot">
+        <UserAvatarImage username={data.username} size={72} />
       </div>
-      <div
-        className="font-mono text-4xl font-bold uppercase leading-none tracking-tight text-[color:var(--primary)]"
-        style={{ textShadow: "0 0 20px var(--primary)" }}
-      >
-        {data.username}
-      </div>
-      <div className="mt-2 flex items-center gap-3">
-        <span
-          className="inline-block h-[2px] w-16 shrink-0"
-          style={{ background: "var(--primary)" }}
-          aria-hidden
-        />
-        {top3.length === 0 ? (
+      <div className="flex flex-col justify-center min-w-0">
+        <div className="mb-1 font-mono text-[10px] uppercase tracking-[0.18em] text-[color:var(--muted-foreground)]">
+          &gt; PROFILE · {data.username}@boomtime
+        </div>
+        <div
+          className="font-mono text-4xl font-bold uppercase leading-none tracking-tight text-[color:var(--primary)] truncate"
+          style={{ textShadow: "0 0 20px var(--primary)" }}
+        >
+          {data.username}
+        </div>
+        <div className="mt-2 flex items-center gap-3">
           <span
-            className="font-mono text-[10px] uppercase tracking-[0.2em] text-[color:var(--accent,var(--primary))]"
-            data-testid="hero-tagline"
-          >
-            NEW OPERATOR
-          </span>
-        ) : (
-          <div
-            className="flex flex-wrap items-center gap-1.5"
-            data-testid="hero-tagline"
-          >
-            {top3.map((a) => (
-              <LabelChip key={a.id} award={a} size="sm" />
-            ))}
-          </div>
-        )}
+            className="inline-block h-[2px] w-16 shrink-0"
+            style={{ background: "var(--primary)" }}
+            aria-hidden
+          />
+          {top3.length === 0 ? (
+            <span
+              className="font-mono text-[10px] uppercase tracking-[0.2em] text-[color:var(--accent,var(--primary))]"
+              data-testid="hero-tagline"
+            >
+              NEW OPERATOR
+            </span>
+          ) : (
+            <div
+              className="flex flex-wrap items-center gap-1.5"
+              data-testid="hero-tagline"
+            >
+              {top3.map((a) => (
+                <LabelChip key={a.id} award={a} size="sm" />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -10,6 +10,7 @@ import { Changelog } from "@/features/changelog/Changelog";
 import { Logs } from "@/features/logs/Logs";
 import { AdminTab } from "@/features/admin/AdminTab";
 import { BackfillTab } from "@/features/admin/BackfillTab";
+import { AvatarTab } from "@/features/settings/avatar/AvatarTab";
 import { ChangePasswordCard } from "@/features/settings/ChangePasswordCard";
 import { DashboardEditorCard } from "@/features/settings/DashboardEditorCard";
 import { PluginSetup } from "@/features/settings/PluginSetup";
@@ -49,6 +50,12 @@ function ProfileTab() {
 // arbitrary logged-in users.
 const BASE_TABS = [
   { id: "profile", label: "Profile", render: () => <ProfileTab /> },
+  // gaka-9v4: AI-generated chibi avatar. Sits next to Profile because
+  // the avatar surfaces on the public profile hero — semantically an
+  // account-level identity concern, not a "settings you tweak weekly"
+  // tab. Kept out of BASE_TABS's default landing so first-run doesn't
+  // fire an LLM stream at random.
+  { id: "avatar", label: "Avatar", render: () => <AvatarTab /> },
   { id: "plugin", label: "Plugin setup", render: () => <PluginSetup /> },
   { id: "tokens", label: "API tokens", render: () => <TokensTab /> },
   { id: "curation", label: "Hidden data", render: () => <CurationTab /> },

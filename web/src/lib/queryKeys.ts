@@ -191,6 +191,11 @@ export const qk = {
   backfillConfig: () => ["admin", "backfill", "config"] as const,
   backfillStats: () => ["admin", "backfill", "stats"] as const,
 
+  // gaka-9v4: per-user chibi avatar status (polled while a render is
+  // in flight). Public-image consumers don't need a query key — the
+  // <img src> URL is stable + cache-busted with the generatedAt hint.
+  avatarStatus: () => ["user-avatar", "status"] as const,
+
   // --- Meta (version + changelog) ---------------------------------------------
   // Both cache forever — the FE only refetches on a manual reload; a new
   // release replaces the whole SPA anyway.
