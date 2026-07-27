@@ -351,6 +351,15 @@ func registerMiscRoutes(e *echo.Echo, h *handler.Handler) {
 	e.DELETE("/api/v1/admin/backfill/heartbeats", h.AdminBackfillDeleteHeartbeats)
 	e.GET("/api/v1/admin/backfill/ws", h.AdminBackfillWS)
 
+	// gaka-9v4: per-user CHIBI avatar. Prompt-synthesis SSE is authed
+	// (any logged-in user; server-side LLM key never touches the FE).
+	// Regenerate + status are self-only (resolveUser gates on token).
+	// Public GET serves the ready image bytes to the profile hero.
+	e.POST("/api/v1/admin/avatar/synthesize-prompt", h.SynthesizeAvatarPrompt)
+	e.POST("/api/v1/users/current/avatar/regenerate", h.RegenerateAvatar)
+	e.GET("/api/v1/users/current/avatar/status", h.GetAvatarStatus)
+	e.GET("/api/v1/users/:username/avatar", h.UserAvatar)
+
 	// gaka-364.3: DB-backed labels catalog. Public GET returns the whole
 	// catalog for the FE evaluator + admin table; admin CRUD lets a
 	// whitelisted operator edit labels + the global gen-config live.

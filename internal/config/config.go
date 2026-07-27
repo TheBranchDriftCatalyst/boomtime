@@ -98,6 +98,24 @@ type Config struct {
 	// default than "all users are admins".
 	AdminUsers map[string]struct{}
 
+	// gaka-9v4: OpenAI-shaped chat completion endpoint used by the
+	// avatar prompt-synthesis SSE endpoint (POST /api/v1/admin/avatar/
+	// synthesize-prompt). The FE never talks to a third-party LLM
+	// directly — every stream flows through the boomtime server so the
+	// API key never leaves the host.
+	//
+	// LLMAPIKey is the Authorization: Bearer value; when empty the
+	// endpoint returns 503 with a clear "LLM not configured" message so
+	// the operator immediately sees what needs setting.
+	// LLMBaseURL defaults to https://api.openai.com/v1 (any OpenAI-
+	// compatible provider works — Anthropic-compat proxies, Groq, local
+	// llama.cpp servers, etc.).
+	// LLMModel defaults to gpt-4o-mini (cheap; fine for a one-paragraph
+	// portrait prompt).
+	LLMAPIKey  string
+	LLMBaseURL string
+	LLMModel   string
+
 	// WakatimeAPIKey is the server-configured key used to import history from
 	// wakatime.com when the request body omits apiToken. Sourced from
 	// WAKATIME_API_KEY, falling back to BOOM_REMOTE_WRITE_TOKEN. Never exposed.
@@ -228,6 +246,11 @@ func Load() *Config {
 		ComfyUIModel:       getEnv("BOOM_COMFYUI_MODEL", "sdxl-illustrious-xl"),
 		AdminUsers:         parseAdminUsers(getEnv("BOOM_ADMIN_USERS", "")),
 
+		// gaka-9v4: LLM (OpenAI-compat) for avatar prompt synthesis SSE.
+		LLMAPIKey:  getEnv("BOOM_LLM_API_KEY", ""),
+		LLMBaseURL: strings.TrimRight(getEnv("BOOM_LLM_BASE_URL", "https://api.openai.com/v1"), "/"),
+		LLMModel:   getEnv("BOOM_LLM_MODEL", "gpt-4o-mini"),
+
 		// gaka-b5x.1: cookie Secure flag. Default = "true in prod, false in
 		// dev". BOOM_COOKIE_SECURE=true|false forces either mode explicitly.
 		CookieSecure: getEnvBool("BOOM_COOKIE_SECURE", isProdEnvName(env)),
@@ -304,4 +327,13 @@ func (c *Config) IsAdmin(username string) bool {
 // generated images keep serving after a flag flip.
 func (c *Config) LabelImagesEnabled() bool {
 	return c.FeatureLabelImages && strings.TrimSpace(c.ComfyUIShimURL) != ""
+}
+
+// LLMEnabled reports whether an LLM API key is configured for the avatar
+// prompt-synthesis endpoint (gaka-9v4). Handlers gate on this and return
+// 503 when off so the FE renders a clear "server not configured" state
+// instead of a mystery 500. BaseURL + Model always have defaults, so only
+// the key gates the feature.
+func (c *Config) LLMEnabled() bool {
+	return strings.TrimSpace(c.LLMAPIKey) != ""
 }

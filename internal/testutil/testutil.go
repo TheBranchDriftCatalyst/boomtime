@@ -201,6 +201,13 @@ func (hz *Harness) Router() *echo.Echo {
 	// progress. Just the bulk endpoint — single- and bulk-shaped
 	// requests go through the same storeAndRespond path.
 	e.POST("/api/v1/users/current/heartbeats.bulk", h.HeartbeatBulk)
+	// gaka-9v4: per-user chibi avatar. Regenerate/status are auth'd
+	// self-only, UserAvatar is public — the harness registers all three
+	// so a single handler test covers the full surface.
+	e.POST("/api/v1/users/current/avatar/regenerate", h.RegenerateAvatar)
+	e.GET("/api/v1/users/current/avatar/status", h.GetAvatarStatus)
+	e.GET("/api/v1/users/:username/avatar", h.UserAvatar)
+	e.POST("/api/v1/admin/avatar/synthesize-prompt", h.SynthesizeAvatarPrompt)
 	// Cleanup: also clean up the goals table for the test's sender.
 	// The parent Cleanup registered per MintUser catches every table
 	// but goals — we extend the cleanup list separately here so
