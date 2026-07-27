@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import * as d3 from "d3";
 import { cssVar } from "@/viz/d3/useChartFrame";
 import { useD3Surface } from "@/viz/d3/useD3Surface";
@@ -35,8 +35,6 @@ export function ContributionCalendar({ dates, values }: ContributionCalendarProp
     () => dates.map((d, i) => ({ date: new Date(d), value: values[i] ?? 0 })),
     [dates, values],
   );
-  const [svgWidth, setSvgWidth] = useState(0);
-
   // Content-sized: the draw owns the svg width and doesn't re-run on frame
   // width changes (the centering below is pure JSX off the measured frame).
   const surface = useD3Surface(
@@ -64,7 +62,6 @@ export function ContributionCalendar({ dates, values }: ContributionCalendarProp
       const numWeeks = col(days[days.length - 1].date) + 1;
       const gridW = numWeeks * (CELL + GAP);
       const svgW = MARGIN.left + gridW + 4;
-      setSvgWidth(svgW);
 
       // Intensity via opacity of --primary (avoids interpolating oklch tokens):
       // empty => floor; active days ramp 0.25 → 1.0 across 4 quantized buckets.
@@ -168,15 +165,18 @@ export function ContributionCalendar({ dates, values }: ContributionCalendarProp
 
   if (days.length === 0) return <EmptyChart height={svgHeight} />;
 
-  // Center a short calendar; left-align (and scroll) a long one.
-  const fits = svgWidth > 0 && svgWidth <= surface.frame.width;
+  // gaka-k2p: always left-align. Previously a short window was centered,
+  // which stranded a big empty white gap to the LEFT of the cells on the
+  // public dashboard's full-bleed h=3 calendar card. Left-aligning keeps
+  // the axis labels flush and lets long windows scroll horizontally in
+  // the same wrapper.
   return (
     <ChartSurface
       surface={surface}
       style={{
         overflowX: "auto",
         display: "flex",
-        justifyContent: fits ? "center" : "flex-start",
+        justifyContent: "flex-start",
       }}
     />
   );

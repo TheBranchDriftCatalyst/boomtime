@@ -17,7 +17,10 @@ interface PunchcardProps {
 
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const MARGIN = { top: 8, right: 12, bottom: 22, left: 34 };
+// gaka-k2p: right margin bumped to 18 so the rightmost 23:00 column's
+// circle radius doesn't clip past the card's inner edge on narrower
+// widget footprints. Left/bottom axis space unchanged.
+const MARGIN = { top: 8, right: 18, bottom: 22, left: 34 };
 
 /**
  * Classic 7x24 punchcard: rows = day of week (Sun..Sat), cols = hour (0..23),
@@ -119,9 +122,19 @@ export function Punchcard({ data, height = 260 }: PunchcardProps) {
     );
   }
 
+  // gaka-k2p: pull the "UTC" note out of the ChartSurface's fixed-height
+  // container (was overflowing bottom on tight tiles) and pin it as a small
+  // absolute badge in the corner. Still visible; no longer competes for
+  // vertical space against the svg.
   return (
-    <ChartSurface surface={surface}>
-      <p className="mt-1 text-xs text-muted-foreground">Times shown in UTC.</p>
-    </ChartSurface>
+    <div className="relative h-full w-full">
+      <ChartSurface surface={surface} />
+      <span
+        className="pointer-events-none absolute right-1 top-0 font-mono text-[9px] uppercase tracking-[0.14em] text-muted-foreground/70"
+        aria-hidden
+      >
+        UTC
+      </span>
+    </div>
   );
 }

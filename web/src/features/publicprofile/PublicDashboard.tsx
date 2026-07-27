@@ -84,12 +84,12 @@ export function PublicDashboard() {
 
   return (
     <PublicShell>
-      <DashboardBody data={data} />
+      <DashboardBody data={data} slug={slug} />
     </PublicShell>
   );
 }
 
-function DashboardBody({ data }: { data: PublicDashboardPayload }) {
+function DashboardBody({ data, slug }: { data: PublicDashboardPayload; slug: string }) {
   // Seed the initial layout from the payload if present, else the default.
   const seed = useMemo(() => {
     const persisted = (data.layout as { widgets?: unknown } | undefined)?.widgets;
@@ -125,6 +125,11 @@ function DashboardBody({ data }: { data: PublicDashboardPayload }) {
   return (
     <div className="public-dashboard">
       <div className="mx-auto max-w-7xl px-4">
+        {/* gaka-k2p: dossier classification banner. Hidden by CSS under
+         * every non-Arasaka theme so it doesn't leak into the boomtime
+         * look. Placed OUTSIDE the hero so the border-top hairline reads
+         * as a stripe across the top of the frame. */}
+        <DossierClassLine username={data.username} slug={slug} />
         <header className="public-dashboard__hero">
           <div className="public-dashboard__hero-meta">
             &gt; PROFILE
@@ -181,4 +186,46 @@ function fmtRange(startISO: string, endISO: string): string {
   const end = new Date(endISO);
   const opts: Intl.DateTimeFormatOptions = { year: "numeric", month: "short", day: "numeric" };
   return `${start.toLocaleDateString(undefined, opts)} — ${end.toLocaleDateString(undefined, opts)}`.toUpperCase();
+}
+
+// gaka-k2p: dossier classification banner.
+//
+// Only styled under the Arasaka theme (see arasaka.css
+// `.public-dashboard__classline`); every other theme keeps the element in
+// the DOM but display:none — no branching in JS needed. The typing effect
+// is CSS-only (width steps() + a resolving cursor keyframe), so no state.
+function DossierClassLine({ username, slug }: { username: string; slug: string }) {
+  // File # = first 5 hex chars of the slug's hash. Deterministic,
+  // stable across renders, and doesn't require any network dependency.
+  const fileId = shortHash(slug || username);
+  const rev = new Date().toISOString().slice(0, 10).replace(/-/g, ".");
+  const subject = username.toUpperCase();
+  return (
+    <div className="public-dashboard__classline" aria-hidden>
+      <span className="public-dashboard__classline-block">▓</span>
+      <span className="public-dashboard__classline-text">
+        CLEARANCE: PUBLIC · SUBJECT: {subject} · FILE #{fileId}-ARASAKA-∞ ·{" "}
+        <span className="public-dashboard__classline-stamp">
+          CLASSIFIED: LVL-2
+        </span>
+        {" · REV "}
+        {rev}
+      </span>
+      <span className="public-dashboard__classline-cursor" aria-hidden />
+    </div>
+  );
+}
+
+// Cheap deterministic 5-char id derived from a string. NOT a cryptographic
+// hash — purely for the dossier's decorative "FILE #" field. Result is
+// 5 lowercase hex chars (e.g. "b4c92"). Same input → same output across
+// sessions, which lets a subject's profile URL feel like a stable dossier
+// reference.
+function shortHash(s: string): string {
+  let h = 2166136261 >>> 0; // FNV-1a offset basis
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0").slice(0, 5);
 }
