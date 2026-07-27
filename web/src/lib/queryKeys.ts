@@ -185,6 +185,12 @@ export const qk = {
   // table). Invalidated after PATCH/POST/DELETE on /admin/labels.
   labelsCatalog: () => ["labels", "catalog"] as const,
 
+  // gaka-vh8: git-history backfill config + stats. Both are per-user
+  // and admin-only; separate keys because a config save and a batch
+  // POST invalidate different things.
+  backfillConfig: () => ["admin", "backfill", "config"] as const,
+  backfillStats: () => ["admin", "backfill", "stats"] as const,
+
   // --- Meta (version + changelog) ---------------------------------------------
   // Both cache forever — the FE only refetches on a manual reload; a new
   // release replaces the whole SPA anyway.

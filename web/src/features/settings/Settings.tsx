@@ -9,6 +9,7 @@ import { WidgetLinksCard } from "@/features/widgets/WidgetLinksCard";
 import { Changelog } from "@/features/changelog/Changelog";
 import { Logs } from "@/features/logs/Logs";
 import { AdminTab } from "@/features/admin/AdminTab";
+import { BackfillTab } from "@/features/admin/BackfillTab";
 import { ChangePasswordCard } from "@/features/settings/ChangePasswordCard";
 import { DashboardEditorCard } from "@/features/settings/DashboardEditorCard";
 import { PluginSetup } from "@/features/settings/PluginSetup";
@@ -67,8 +68,17 @@ const ADMIN_TAB = {
   render: () => <AdminTab />,
 } as const;
 
+// gaka-vh8: git-history backfill lives under its own admin tab so the
+// existing Admin tab's labels-catalog UX doesn't have to grow a second
+// concern. Both share the same "admin only" gate.
+const BACKFILL_TAB = {
+  id: "backfill",
+  label: "Backfill",
+  render: () => <BackfillTab />,
+} as const;
+
 type BaseTabID = (typeof BASE_TABS)[number]["id"];
-type TabID = BaseTabID | typeof ADMIN_TAB.id;
+type TabID = BaseTabID | typeof ADMIN_TAB.id | typeof BACKFILL_TAB.id;
 
 // Settings: one page, horizontal top tab bar. The active tab lives in
 // ?tab=<id> so tabs are linkable/bookmarkable (old /app/logs and
@@ -89,7 +99,7 @@ export function Settings() {
   const isAdmin = Boolean(current?.data?.is_admin);
 
   const tabs = isAdmin
-    ? ([...BASE_TABS, ADMIN_TAB] as ReadonlyArray<{ id: string; label: string; render: () => React.ReactNode }>)
+    ? ([...BASE_TABS, ADMIN_TAB, BACKFILL_TAB] as ReadonlyArray<{ id: string; label: string; render: () => React.ReactNode }>)
     : (BASE_TABS as ReadonlyArray<{ id: string; label: string; render: () => React.ReactNode }>);
 
   const raw = params.get("tab");

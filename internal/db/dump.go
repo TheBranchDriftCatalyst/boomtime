@@ -77,6 +77,12 @@ var dumpTables = []dumpTable{
 		"id", "editor", "plugin", "platform", "machine", "sender", "user_agent",
 		"branch", "category", "cursorpos", "dependencies", "entity", "is_write",
 		"language", "lineno", "file_lines", "project", "ty", "time_sent", "gap_seconds",
+		// gaka-vh8: backfill source tag. NULL for real Wakatime data;
+		// non-NULL rows are synthetic (git-history backfill etc.).
+		// Exported so a restore preserves the "these are backfilled"
+		// classification, otherwise a round-trip would silently turn
+		// every backfill row into "real" data.
+		"source",
 	}},
 	{"badges", []string{"link_id", "username", "project"}},
 	{"hb_rollup_daily", []string{"sender", "day", "project", "language", "editor", "platform", "machine", "category", "plugin", "branch", "total_seconds"}},
@@ -89,6 +95,12 @@ var dumpTables = []dumpTable{
 		"current_day", "started_at", "finished_at",
 	}},
 	{"import_job_logs", []string{"id", "job_id", "ts", "level", "message"}},
+	// NOTE (gaka-vh8): backfill_config is deliberately NOT dumped. Adding
+	// it here would make every pre-vh8 archive fail restore because the
+	// restore path enforces "every dumpTable present in ZIP" (see
+	// RestoreValidationError below). Backfill config is small and
+	// idempotent — an operator can re-tune it on the fresh box in the
+	// Admin > Backfill tab.
 }
 
 // serialColumns lists every serial/bigserial PK that must have its sequence

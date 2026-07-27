@@ -885,6 +885,62 @@ export const api = {
       method: "PATCH",
       body: { systemPrompt },
     }),
+  // --- Git-history backfill (gaka-vh8) --------------------------------------
+  // Admin-only. Config lives in backfill_config; stats read backfill:%
+  // rows from heartbeats via a partial index. The CLI runs on the
+  // operator's laptop and streams heartbeats to /admin/backfill/jobs/:id/
+  // heartbeats — the FE only needs the config editor + stats + WS + delete.
+  getBackfillConfig: () =>
+    request<{
+      username: string;
+      clusterGapSec: number;
+      preCommitLeadSec: number;
+      postCommitTailSec: number;
+      heartbeatRateSec: number;
+      authorEmails: string[];
+      sourceTag: string;
+      langMap: Record<string, string>;
+      updatedAt: string;
+    }>("/api/v1/admin/backfill/config"),
+  patchBackfillConfig: (body: Partial<{
+    clusterGapSec: number;
+    preCommitLeadSec: number;
+    postCommitTailSec: number;
+    heartbeatRateSec: number;
+    authorEmails: string[];
+    sourceTag: string;
+    langMap: Record<string, string>;
+  }>) =>
+    request<{
+      username: string;
+      clusterGapSec: number;
+      preCommitLeadSec: number;
+      postCommitTailSec: number;
+      heartbeatRateSec: number;
+      authorEmails: string[];
+      sourceTag: string;
+      langMap: Record<string, string>;
+      updatedAt: string;
+    }>("/api/v1/admin/backfill/config", { method: "PATCH", body }),
+  getBackfillStats: () =>
+    request<{
+      totalRows: number;
+      sources: Record<string, number>;
+      oldest?: string;
+      newest?: string;
+    }>("/api/v1/admin/backfill/stats"),
+  /** Delete backfilled heartbeats. Either pass source=<tag> (must start
+   *  with "backfill:") or all=true to purge every backfill:% row for the
+   *  caller. Never touches real Wakatime rows (server floor). */
+  deleteBackfillHeartbeats: (params: { source?: string; all?: boolean }) =>
+    request<{ deleted: number }>("/api/v1/admin/backfill/heartbeats", {
+      method: "DELETE",
+      params: {
+        source: params.source ?? "",
+        all: params.all ? "true" : "",
+      },
+    }),
+
   /** Fetch the SQL dump as raw text — the caller triggers a browser
    *  download from the returned string. Not JSON. */
   adminLabelsSeedSQL: async (): Promise<string> => {

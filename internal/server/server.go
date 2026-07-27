@@ -335,6 +335,22 @@ func registerMiscRoutes(e *echo.Echo, h *handler.Handler) {
 	// AdminLabelImagesWS) — WS handshakes can't carry Authorization.
 	e.GET("/api/v1/admin/label-images/ws", h.AdminLabelImagesWS)
 
+	// gaka-vh8: git-history backfill admin endpoints. Config
+	// GET/PATCH, per-user stats, in-memory job registry (enqueue +
+	// PATCH + per-session heartbeat push / preview + delete), and a
+	// durable WS stream mirroring the label-images shape. All
+	// admin-gated (see requireAdmin) — the WS uses the refresh_token
+	// cookie because WS handshakes can't carry Authorization.
+	e.GET("/api/v1/admin/backfill/config", h.AdminBackfillConfig)
+	e.PATCH("/api/v1/admin/backfill/config", h.AdminBackfillConfigUpdate)
+	e.GET("/api/v1/admin/backfill/stats", h.AdminBackfillStats)
+	e.POST("/api/v1/admin/backfill/jobs", h.AdminBackfillEnqueueJob)
+	e.PATCH("/api/v1/admin/backfill/jobs/:id", h.AdminBackfillJobPatch)
+	e.POST("/api/v1/admin/backfill/jobs/:id/heartbeats", h.AdminBackfillJobHeartbeats)
+	e.POST("/api/v1/admin/backfill/jobs/:id/preview", h.AdminBackfillJobPreview)
+	e.DELETE("/api/v1/admin/backfill/heartbeats", h.AdminBackfillDeleteHeartbeats)
+	e.GET("/api/v1/admin/backfill/ws", h.AdminBackfillWS)
+
 	// gaka-364.3: DB-backed labels catalog. Public GET returns the whole
 	// catalog for the FE evaluator + admin table; admin CRUD lets a
 	// whitelisted operator edit labels + the global gen-config live.
