@@ -513,7 +513,12 @@ window.onload = function () {
     if (ACCESS && ACCESS.expiresAt - Date.now() > 60_000) return ACCESS.token;
     return (await refreshAccess()).token;
   }
-  const basicHeader = (token) => 'Basic ' + btoa(token);
+  // The access token returned by POST /auth/refresh_token is already the
+  // exact wire value the server expects after "Basic " — it's stored as
+  // base64(uuid) at mint time (see internal/handler/auth.go mkTokenData)
+  // and looked up by SHA256 of that same string. btoa()ing it here would
+  // send double-base64, which never matches the stored hash → 403.
+  const basicHeader = (token) => 'Basic ' + token;
 
   // --- #5 keyboard shortcuts + #6 deep-link scroll ---------------------
   window.addEventListener('keydown', (e) => {
