@@ -13,6 +13,8 @@
 package openapi
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"io/fs"
 	"net/http"
@@ -20,6 +22,15 @@ import (
 
 	swaggerFiles "github.com/swaggo/files/v2"
 )
+
+// initializerVersion is a content-hash of the initializer bytes, used to
+// cache-bust the <script src="./swagger-initializer.js"> reference in the
+// served index.html. Any change to the JS auto-invalidates every browser +
+// upstream (Cloudflare, etc.) cache without operator intervention.
+var initializerVersion = func() string {
+	sum := sha256.Sum256([]byte(initializerJS))
+	return hex.EncodeToString(sum[:4]) // 8 hex chars is plenty
+}()
 
 // initializerJS is the ONLY swagger UI file we substitute. It swaps the
 // default petstore URL for our self-hosted spec, enables persistAuthorization,
@@ -641,15 +652,32 @@ func UIHandler(prefix string) http.Handler {
 		// sees paths rooted at "/".
 		p := strings.TrimPrefix(r.URL.Path, prefix)
 		if p == "" || p == "/" {
-			// Serve the vendored index.html at the docs root.
+			// Serve the vendored index.html at the docs root, with the
+			// initializer <script> tag rewritten to include a content-hash
+			// query string. Any change to initializerJS auto-invalidates
+			// every browser + upstream (Cloudflare) cache.
 			f, err := sub.Open("index.html")
 			if err != nil {
 				http.Error(w, "index.html missing", http.StatusInternalServerError)
 				return
 			}
 			defer f.Close()
+			body, err := io.ReadAll(f)
+			if err != nil {
+				http.Error(w, "index.html read failed", http.StatusInternalServerError)
+				return
+			}
+			bust := strings.ReplaceAll(
+				string(body),
+				`./swagger-initializer.js`,
+				`./swagger-initializer.js?v=`+initializerVersion,
+			)
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			_, _ = io.Copy(w, f)
+			// The wrapper (index.html) itself must also revalidate so a
+			// stale cached copy doesn't keep pointing at the OLD version
+			// query string after a deploy.
+			w.Header().Set("Cache-Control", "no-store, must-revalidate")
+			_, _ = io.WriteString(w, bust)
 			return
 		}
 		// Custom initializer — swap in our own so the UI loads our spec.
