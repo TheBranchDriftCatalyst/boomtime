@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router";
 import { AppShell } from "@/layout/AppShell";
 import { ProtectedRoute } from "@/app/ProtectedRoute";
+import { AdminRoute } from "@/app/AdminRoute";
 import { useAuth } from "@/features/auth/useAuth";
 import { Spinner } from "@/components/Spinner";
 // Auth pages are eagerly imported: the pre-auth bundle is tiny and Login is
@@ -41,6 +42,24 @@ const Settings = lazy(() =>
 );
 const Wellness = lazy(() =>
   import("@/features/wellness/Wellness").then((m) => ({ default: m.Wellness })),
+);
+// gaka-ebq: Admin section is its own chunk. Non-admins never trigger the
+// fetch because the sidebar link is hidden AND AdminRoute short-circuits
+// to /app before <Suspense> ever kicks. The three tab bodies also lazy —
+// operators rarely tap all three in one visit.
+const AdminPage = lazy(() =>
+  import("@/features/admin/AdminPage").then((m) => ({ default: m.AdminPage })),
+);
+const AdminTab = lazy(() =>
+  import("@/features/admin/AdminTab").then((m) => ({ default: m.AdminTab })),
+);
+const BackfillTab = lazy(() =>
+  import("@/features/admin/BackfillTab").then((m) => ({
+    default: m.BackfillTab,
+  })),
+);
+const Logs = lazy(() =>
+  import("@/features/logs/Logs").then((m) => ({ default: m.Logs })),
 );
 // Public profile lives OUTSIDE the /app tree — /p/:slug is unauthenticated
 // and renders its own minimal shell (no sidebar, no header).
@@ -144,15 +163,58 @@ export function App() {
             </Suspense>
           }
         />
-        {/* Logs + Changelog moved into Settings tabs; keep old URLs working. */}
-        <Route
-          path="logs"
-          element={<Navigate to="/app/settings?tab=logs" replace />}
-        />
+        {/* gaka-ebq: Logs lives under /app/admin/logs now (admin-only).
+            Keep the old bookmarkable /app/logs URL working — the AdminRoute
+            below decides whether the user actually gets to see it. */}
+        <Route path="logs" element={<Navigate to="/app/admin/logs" replace />} />
+        {/* Changelog still ships as a Settings tab. */}
         <Route
           path="changelog"
           element={<Navigate to="/app/settings?tab=changelog" replace />}
         />
+        {/* /app/admin — admin-only section with three sub-tabs. Guarded
+            twice: (1) the sidebar hides the entry entirely for non-admins,
+            (2) AdminRoute redirects any direct URL hit. Each per-endpoint
+            fetch also 403s on the server; this is UX, not security. */}
+        <Route
+          path="admin"
+          element={
+            <AdminRoute>
+              <Suspense fallback={<PageFallback />}>
+                <AdminPage />
+              </Suspense>
+            </AdminRoute>
+          }
+        >
+          <Route index element={<Navigate to="/app/admin/labels" replace />} />
+          <Route
+            path="labels"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <AdminTab />
+              </Suspense>
+            }
+          />
+          <Route
+            path="backfill"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <BackfillTab />
+              </Suspense>
+            }
+          />
+          <Route
+            path="logs"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                {/* embedded so the AdminPage's toolbar/tab-strip stays the
+                    single page heading — Logs otherwise renders its own
+                    PageToolbar title, which would double-print "Admin". */}
+                <Logs embedded />
+              </Suspense>
+            }
+          />
+        </Route>
         <Route
           path="settings"
           element={

@@ -13,9 +13,11 @@ import {
   PanelLeftOpen,
   Plus,
   Settings2,
+  ShieldCheck,
 } from "lucide-react";
 import { useSpaces } from "@/features/spaces/useSpaces";
 import { useAuth } from "@/features/auth/useAuth";
+import { useIsAdmin } from "@/features/auth/useIsAdmin";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
 import { cn } from "@/lib/utils";
@@ -144,6 +146,33 @@ function PublicProfileNavLink({ collapsed }: { collapsed: boolean }) {
   );
 }
 
+/** AdminNavLink — top-level Admin section entry (gaka-ebq). Rendered only
+ * when the current user is on BOOM_ADMIN_USERS. Matches active on any
+ * /app/admin descendant so a sub-tab (labels/backfill/logs) still lights
+ * up the parent link. Hidden entirely (not disabled, not "unauthorized")
+ * for non-admins — same visual model as PublicProfileNavLink: if it isn't
+ * yours, it isn't in the sidebar. */
+function AdminNavLink({ collapsed }: { collapsed: boolean }) {
+  const { isAdmin, isLoading } = useIsAdmin();
+  // Render nothing during the first-paint auth check so we don't flash a
+  // link in for admins-of-record who reload. The Overview page is happy
+  // to render behind us regardless.
+  if (isLoading || !isAdmin) return null;
+
+  return (
+    <NavLink
+      to="/app/admin"
+      title={collapsed ? "Admin" : undefined}
+      aria-label="Admin"
+      className={({ isActive }) => sidebarItemClass(collapsed, isActive)}
+      data-testid="sidebar-admin"
+    >
+      <ShieldCheck className="h-4 w-4 shrink-0" />
+      {!collapsed && "Admin"}
+    </NavLink>
+  );
+}
+
 /** App sidebar: brand, nav items, the Spaces group, and the footer actions. */
 export function Sidebar({
   collapsed,
@@ -192,6 +221,8 @@ export function Sidebar({
         ))}
 
         <PublicProfileNavLink collapsed={collapsed} />
+
+        <AdminNavLink collapsed={collapsed} />
 
         <SpacesNavGroup collapsed={collapsed} onCreateSpace={onCreateSpace} />
       </nav>

@@ -1,5 +1,4 @@
-import type React from "react";
-import { useSearchParams } from "react-router";
+import { Navigate, useSearchParams } from "react-router";
 import { PageToolbar } from "@/components/toolbar/PageToolbar";
 import { cn } from "@/lib/utils";
 import { CurationTab } from "@/features/curation/CurationTab";
@@ -7,9 +6,8 @@ import { RemappingsTab } from "@/features/curation/RemappingsTab";
 import { GoalsTab } from "@/features/goals/GoalsTab";
 import { WidgetLinksCard } from "@/features/widgets/WidgetLinksCard";
 import { Changelog } from "@/features/changelog/Changelog";
-import { Logs } from "@/features/logs/Logs";
-import { AdminTab } from "@/features/admin/AdminTab";
-import { BackfillTab } from "@/features/admin/BackfillTab";
+// gaka-ebq: Admin / Backfill / Logs tabs moved OUT of Settings into
+// /app/admin. Keep this file lean and non-admin-only.
 import { AvatarTab } from "@/features/settings/avatar/AvatarTab";
 import { ChangePasswordCard } from "@/features/settings/ChangePasswordCard";
 import { DashboardEditorCard } from "@/features/settings/DashboardEditorCard";
@@ -44,16 +42,15 @@ function ProfileTab() {
 // value first-run info. API tokens sits adjacent because Plugin Setup
 // explains "how to send data" and Tokens explains "which credential to use".
 //
-// gaka-myv: the Admin tab is conditionally appended below when the current
-// user is on BOOM_ADMIN_USERS. Keeps the tab list stable for the common
-// (non-admin) case and avoids leaking the existence of admin routes to
-// arbitrary logged-in users.
-const BASE_TABS = [
+// gaka-ebq: Admin / Backfill / Logs tabs have moved out of this file into
+// the top-level /app/admin section. Settings is now non-admin-only and the
+// tab list is stable across users.
+const TABS = [
   { id: "profile", label: "Profile", render: () => <ProfileTab /> },
   // gaka-9v4: AI-generated chibi avatar. Sits next to Profile because
   // the avatar surfaces on the public profile hero — semantically an
   // account-level identity concern, not a "settings you tweak weekly"
-  // tab. Kept out of BASE_TABS's default landing so first-run doesn't
+  // tab. Kept out of TABS's default landing so first-run doesn't
   // fire an LLM stream at random.
   { id: "avatar", label: "Avatar", render: () => <AvatarTab /> },
   { id: "plugin", label: "Plugin setup", render: () => <PluginSetup /> },
@@ -66,54 +63,41 @@ const BASE_TABS = [
   { id: "goals", label: "Goals", render: () => <GoalsTab /> },
   { id: "widgets", label: "Widgets", render: () => <WidgetLinksCard /> },
   { id: "changelog", label: "Changelog", render: () => <Changelog embedded /> },
-  { id: "logs", label: "Logs", render: () => <Logs embedded /> },
 ] as const;
 
-const ADMIN_TAB = {
-  id: "admin",
-  label: "Admin",
-  render: () => <AdminTab />,
-} as const;
-
-// gaka-vh8: git-history backfill lives under its own admin tab so the
-// existing Admin tab's labels-catalog UX doesn't have to grow a second
-// concern. Both share the same "admin only" gate.
-const BACKFILL_TAB = {
-  id: "backfill",
-  label: "Backfill",
-  render: () => <BackfillTab />,
-} as const;
-
-type BaseTabID = (typeof BASE_TABS)[number]["id"];
-type TabID = BaseTabID | typeof ADMIN_TAB.id | typeof BACKFILL_TAB.id;
+type TabID = (typeof TABS)[number]["id"];
 
 // Settings: one page, horizontal top tab bar. The active tab lives in
-// ?tab=<id> so tabs are linkable/bookmarkable (old /app/logs and
-// /app/changelog routes redirect here). Default lands on Plugin Setup so a
-// first-run user still sees the ingest URL immediately (Profile is opt-in via
+// ?tab=<id> so tabs are linkable/bookmarkable (the /app/changelog route
+// redirects here). Default lands on Plugin Setup so a first-run user
+// still sees the ingest URL immediately (Profile is opt-in via
 // ?tab=profile / avatar-menu link, not a first-run destination).
+//
+// gaka-ebq: the legacy ?tab=logs / ?tab=admin / ?tab=backfill values now
+// redirect to /app/admin/{logs,labels,backfill}. The remap lives in the
+// active-tab resolver below so bookmarks + old links keep working.
+const LEGACY_ADMIN_TAB_REDIRECTS: Record<string, string> = {
+  logs: "/app/admin/logs",
+  admin: "/app/admin/labels",
+  backfill: "/app/admin/backfill",
+};
+
 export function Settings() {
   const [params, setParams] = useSearchParams();
 
-  // gaka-myv: pull the current-user record just to check is_admin so the
-  // Admin tab shows up in the right people's list. Static after login, so a
-  // long staleTime keeps this cheap.
-  const { data: current } = useQuery({
-    queryKey: ["auth", "current-user"],
-    queryFn: () => api.currentUser(),
-    staleTime: 60_000,
-  });
-  const isAdmin = Boolean(current?.data?.is_admin);
+  const raw = params.get("tab") ?? "";
+  const redirect = LEGACY_ADMIN_TAB_REDIRECTS[raw];
+  if (redirect) {
+    // Fire the navigation via <Navigate> so it goes through the router
+    // and preserves scroll/state behavior. Guard is a top-level early
+    // return so tab hunt below never runs on a stale legacy id.
+    return <Navigate to={redirect} replace />;
+  }
 
-  const tabs = isAdmin
-    ? ([...BASE_TABS, ADMIN_TAB, BACKFILL_TAB] as ReadonlyArray<{ id: string; label: string; render: () => React.ReactNode }>)
-    : (BASE_TABS as ReadonlyArray<{ id: string; label: string; render: () => React.ReactNode }>);
-
-  const raw = params.get("tab");
-  const active: TabID = tabs.some((t) => t.id === raw)
+  const active: TabID = TABS.some((t) => t.id === raw)
     ? (raw as TabID)
     : "plugin";
-  const tab = tabs.find((t) => t.id === active)!;
+  const tab = TABS.find((t) => t.id === active)!;
 
   return (
     <div>
@@ -124,7 +108,7 @@ export function Settings() {
         aria-label="Settings sections"
         className="mb-6 flex gap-1 border-b border-border"
       >
-        {tabs.map((t) => (
+        {TABS.map((t) => (
           <button
             key={t.id}
             role="tab"
@@ -151,3 +135,4 @@ export function Settings() {
     </div>
   );
 }
+
