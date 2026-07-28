@@ -25,9 +25,16 @@ func SpecHandler(c *echo.Context) error {
 
 // DocsHandler serves the embedded Swagger UI at /api/docs (index) and
 // /api/docs/* (static assets). The prefix must match the registered route.
+//
+// Sets X-Frame-Options: SAMEORIGIN so a hostile site can't iframe the docs
+// and trick a logged-in operator into clicking the token-mint FAB
+// (clickjacking). Combined with the refresh_token cookie's SameSite=Strict
+// policy, this closes the two CSRF paths a malicious embed could exploit.
 func DocsHandler(prefix string) echo.HandlerFunc {
 	h := UIHandler(prefix)
 	return func(c *echo.Context) error {
+		c.Response().Header().Set("X-Frame-Options", "SAMEORIGIN")
+		c.Response().Header().Set("Content-Security-Policy", "frame-ancestors 'self'")
 		h.ServeHTTP(c.Response(), c.Request())
 		return nil
 	}
