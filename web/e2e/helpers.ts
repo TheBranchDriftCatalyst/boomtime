@@ -282,3 +282,158 @@ export async function waitForUrl(
 }
 
 export { BACKEND_URL, BASE_URL };
+
+// -------------------------------------------------------------------------
+// gaka-dvb — helpers for the recent-features Playwright suite (admin
+// sidebar, swagger docs, backfill tab, avatar tab, public dossier).
+//
+// These are additive: the existing add-to-space/widgets specs continue to
+// boot preauthenticated via storageState. The specs added under this bead
+// need distinct login shapes (admin vs non-admin) that the shared
+// storageState can't provide, so we log in per-test into a fresh browser
+// context and clear the storageState cookie first.
+// -------------------------------------------------------------------------
+
+import type { BrowserContext, Page } from "@playwright/test";
+
+/**
+ * BOOMTIME_E2E_ADMIN_USER + BOOMTIME_E2E_ADMIN_PASS credentials for a user
+ * that is on BOOM_ADMIN_USERS. If unset, admin-scoped specs will skip.
+ * The dev stack default admin is `panda` (see .env), so setting
+ * BOOMTIME_E2E_ADMIN_USER=panda + a matching password will opt in.
+ */
+export const ADMIN_USERNAME = process.env.BOOMTIME_E2E_ADMIN_USER ?? "";
+export const ADMIN_PASSWORD = process.env.BOOMTIME_E2E_ADMIN_PASS ?? "";
+
+/**
+ * Non-admin credentials. Defaults to the isolated e2e user that
+ * global-setup already creates; that user is NOT on BOOM_ADMIN_USERS in
+ * the shipped dev stack. Override via env vars if you're pointing at a
+ * remote boomtime and don't want to register the e2e-playwright-user
+ * there.
+ */
+export const NONADMIN_USERNAME =
+  process.env.BOOMTIME_E2E_NONADMIN_USER ?? E2E_USERNAME;
+export const NONADMIN_PASSWORD =
+  process.env.BOOMTIME_E2E_NONADMIN_PASS ?? E2E_PASSWORD;
+
+/** True when the browser tests can hit a running boomtime dev/prod stack. */
+export function stackReachableFromEnv(): boolean {
+  // Vite dev server on :5173 is the default target from playwright.config.ts;
+  // BOOMTIME_BASE_URL / PLAYWRIGHT_BASE_URL let CI point at a remote host.
+  // We can't fetch synchronously here, so the actual liveness check happens
+  // in globalSetup — if it failed the whole suite would already have aborted.
+  // This predicate is used by the AVATAR + BACKFILL + SWAGGER specs to
+  // skip when explicitly disabled via BOOMTIME_E2E_SKIP=1.
+  return process.env.BOOMTIME_E2E_SKIP !== "1";
+}
+
+/**
+ * Log in via /auth/login inside the browser context. Clears any
+ * pre-existing storageState cookies first so the storageState admin/non-
+ * admin identity doesn't collide with the one we want.
+ *
+ * The SPA bootstraps its in-memory access token from POST
+ * /auth/refresh_token on load; setting the refresh_token cookie via the
+ * login call satisfies that bootstrap and every subsequent authed request
+ * on the page reuses it.
+ */
+export async function loginAsUser(
+  page: Page,
+  username: string,
+  password: string,
+): Promise<void> {
+  // Drop the storageState cookies for this origin — we don't want the
+  // e2e-playwright-user refresh cookie leaking into an admin session.
+  await page.context().clearCookies();
+  // Also clear any localStorage from previous tests (we want the app's
+  // welcome-modal-suppressed flag though, so re-seed it).
+  await page.goto("/login");
+  await page.evaluate(() => {
+    localStorage.clear();
+    localStorage.setItem("boomtime-welcomed", "1");
+    localStorage.setItem("theme:name", JSON.stringify("boomtime"));
+    localStorage.setItem("theme:variant", JSON.stringify("dark"));
+  });
+  const res = await page.request.post("/auth/login", {
+    data: { username, password },
+  });
+  if (!res.ok()) {
+    throw new Error(
+      `login failed for ${username}: ${res.status()} ${await res.text()}`,
+    );
+  }
+}
+
+/**
+ * Convenience: log in as the admin fixture. Returns false (so the caller
+ * can `test.skip`) when no admin credentials are configured — the
+ * gaka-ebq / gaka-vh8 / gaka-9v4 specs treat missing admin creds as
+ * "environment not wired for this test", not a failure.
+ */
+export async function loginAsAdmin(page: Page): Promise<boolean> {
+  if (!ADMIN_USERNAME || !ADMIN_PASSWORD) return false;
+  await loginAsUser(page, ADMIN_USERNAME, ADMIN_PASSWORD);
+  return true;
+}
+
+/** Convenience: log in as a known non-admin. Uses the e2e-playwright-user
+ * global-setup already registered. */
+export async function loginAsNonAdmin(page: Page): Promise<void> {
+  await loginAsUser(page, NONADMIN_USERNAME, NONADMIN_PASSWORD);
+}
+
+/**
+ * Try to fetch the public-profile slug for the calling test's fixture
+ * user. Returns null when the user has no public profile (which is the
+ * expected state for a freshly-registered non-admin) so the caller can
+ * `test.skip`.
+ */
+export async function tryGetPublicProfileSlug(
+  context: BrowserContext,
+  username: string,
+): Promise<string | null> {
+  const res = await context.request.get(
+    `/api/public/profile/${encodeURIComponent(username)}`,
+  );
+  if (res.status() === 404) return null;
+  if (!res.ok()) return null;
+  return username;
+}
+
+/**
+ * Best-effort revoke of any API tokens whose name matches the given
+ * substring. Called in afterEach to clean up tokens minted during swagger
+ * FAB tests. Never throws — token cleanup MUST NOT fail a passing test.
+ */
+export async function revokeTokensByNameSubstring(
+  page: Page,
+  substring: string,
+): Promise<void> {
+  try {
+    const list = await page.request.get("/auth/tokens");
+    if (!list.ok()) return;
+    const rows = (await list.json()) as Array<{ id: string; name?: string }>;
+    for (const t of rows) {
+      if ((t.name ?? "").includes(substring)) {
+        await page.request.delete(
+          `/auth/token/${encodeURIComponent(t.id)}`,
+        );
+      }
+    }
+  } catch {
+    /* swallow — cleanup is best-effort */
+  }
+}
+
+/**
+ * Standard skip reason for the recent-features specs. Specs call
+ * `test.skip(!stackReachableFromEnv(), NO_STACK_REASON)` to opt out
+ * when BOOMTIME_E2E_SKIP=1 is set.
+ */
+export const NO_STACK_REASON =
+  "BOOMTIME_E2E_SKIP=1 — recent-features specs opted out (no live stack)";
+
+export const NO_ADMIN_CREDS_REASON =
+  "BOOMTIME_E2E_ADMIN_USER / BOOMTIME_E2E_ADMIN_PASS not set — admin-only spec cannot run";
+
