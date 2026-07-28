@@ -653,8 +653,14 @@ func UIHandler(prefix string) http.Handler {
 			return
 		}
 		// Custom initializer — swap in our own so the UI loads our spec.
+		// no-store on this specific asset (not the whole UI): the file is
+		// tiny (~30KB) and its contents evolve with the app; browsers
+		// heuristically caching it makes every FAB/theme change invisible
+		// until an operator manually hard-reloads. Vendored assets (CSS,
+		// bundle JS) are stable per-release and stay cacheable.
 		if p == "/swagger-initializer.js" {
 			w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+			w.Header().Set("Cache-Control", "no-store, must-revalidate")
 			_, _ = io.WriteString(w, initializerJS)
 			return
 		}
