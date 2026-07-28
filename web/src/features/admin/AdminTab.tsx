@@ -22,7 +22,7 @@
 // Only rendered when the current user is on the BOOM_ADMIN_USERS allowlist
 // (Settings.tsx filters the tab out otherwise; the server also 403s any
 // non-admin request, so the tab is a UX aid, not a security boundary).
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import {
@@ -325,6 +325,52 @@ export function AdminTab() {
     .filter((r) => r.optimizedPrompt && !metaById.has(r.id))
     .map((r) => r.id);
 
+  // Grouped structure: KIND → (for tier only) axis → rows sorted by tier
+  // ladder. Other kinds are a single flat sub-group sorted by rank desc.
+  // Memoized against the filtered set so filter chips update grouping.
+  const grouped = useMemo(() => {
+    const byKind = new Map<string, LabelCatalogRow[]>();
+    for (const r of filteredRows) {
+      const list = byKind.get(r.kind) ?? [];
+      list.push(r);
+      byKind.set(r.kind, list);
+    }
+    return KIND_ORDER.filter((k) => byKind.has(k)).map((kind) => {
+      const rowsOfKind = byKind.get(kind)!;
+      if (kind !== "tier") {
+        return {
+          kind,
+          subGroups: [
+            {
+              axis: "",
+              rows: [...rowsOfKind].sort((a, b) => b.rank - a.rank),
+            },
+          ],
+        };
+      }
+      // Tier: sub-group by axis, sort each axis by the tier ladder.
+      const byAxis = new Map<string, LabelCatalogRow[]>();
+      for (const r of rowsOfKind) {
+        const axis = tierAxis(r.id);
+        const list = byAxis.get(axis) ?? [];
+        list.push(r);
+        byAxis.set(axis, list);
+      }
+      const subGroups = Array.from(byAxis.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([axis, rs]) => ({
+          axis,
+          rows: rs.sort((a, b) => {
+            const ta = TIER_ORDER.indexOf(a.tier || "");
+            const tb = TIER_ORDER.indexOf(b.tier || "");
+            if (ta !== tb) return ta - tb;
+            return b.rank - a.rank;
+          }),
+        }));
+      return { kind, subGroups };
+    });
+  }, [filteredRows]);
+
   // --- per-label regen ------------------------------------------------------
   // Post gaka-8bz: enqueue is fire-and-forget; the WS drives all UI state.
   // Wrapping in a small callable keeps a stable identity for the row
@@ -561,104 +607,138 @@ export function AdminTab() {
                   </td>
                 </tr>
               )}
-              {filteredRows.map((r) => {
-                const meta = metaById.get(r.id);
-                const job = queue.byLabel(r.id);
-                const hasPrompt = !!r.optimizedPrompt;
+              {grouped.map(({ kind, subGroups }) => {
+                const totalInKind = subGroups.reduce((s, sg) => s + sg.rows.length, 0);
                 return (
-                  <tr
-                    key={r.id}
-                    className="cursor-pointer border-b border-border/50 hover:bg-primary/5"
-                    onClick={() => setSelected(r)}
-                  >
-                    <td className="py-2 pr-3">
-                      <div className="h-10 w-10">
-                        <LabelImage
-                          id={r.id}
-                          size={40}
-                          bustHint={bustHintFor(r.id)}
-                          className="rounded-sm border border-border"
-                          fallback={
-                            <div className="flex h-10 w-10 items-center justify-center rounded-sm border border-dashed border-muted-foreground/40 text-muted-foreground">
-                              <ImageOff size={14} />
-                            </div>
-                          }
-                        />
-                      </div>
-                    </td>
-                    <td className="py-2 pr-3">
-                      <div className="font-mono text-[11px] uppercase tracking-wide text-foreground">
-                        {r.glyph ? <span className="mr-1">{r.glyph}</span> : null}
-                        {r.label}
-                      </div>
-                      <div className="text-[10px] text-muted-foreground">
-                        {r.id}
-                      </div>
-                    </td>
-                    <td className="py-2 pr-3 font-mono text-[10px] uppercase tracking-wide">
-                      {r.kind}
-                      {r.kind === "tier" && r.tier ? ` · ${r.tier}` : ""}
-                    </td>
-                    <td className="py-2 pr-3 font-mono text-[10px] tabular-nums">
-                      {r.rank}
-                    </td>
-                    <td className="py-2 pr-3">
-                      <RowStatusBadge
-                        hasPrompt={hasPrompt}
-                        job={job}
-                        hasImage={!!meta}
-                      />
-                    </td>
-                    <td className="py-2 pr-3 font-mono text-[10px] tabular-nums text-muted-foreground">
-                      {meta ? fmtRelative(meta.generatedAt) : "—"}
-                    </td>
-                    <td className="py-2 pr-3 font-mono text-[10px] tabular-nums text-muted-foreground">
-                      {meta ? fmtBytes(meta.sizeBytes) : "—"}
-                    </td>
-                    <td className="py-2" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center gap-1">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setSelected(r)}
-                          title="Edit this label"
-                        >
-                          <Pencil size={12} />
-                        </Button>
-                        {hasPrompt && (
-                          <Button
-                            size="sm"
-                            variant={meta ? "outline" : "default"}
-                            onClick={() =>
-                              enqueueOne({ id: r.id, prompt: r.optimizedPrompt })
-                            }
-                            disabled={
-                              !status.data?.enabled ||
-                              job?.status === "queued" ||
-                              job?.status === "running"
-                            }
-                            title={
-                              job?.status === "queued"
-                                ? "Already queued on the server"
-                                : job?.status === "running"
-                                ? "Currently running on the server"
-                                : meta
-                                ? "Enqueue a regen for this label"
-                                : "Enqueue an initial generation for this label"
-                            }
-                          >
-                            {job?.status === "running" ? (
-                              <Loader2 size={12} className="animate-spin" />
-                            ) : meta ? (
-                              <RefreshCw size={12} />
-                            ) : (
-                              <Zap size={12} />
-                            )}
-                          </Button>
+                  <Fragment key={kind}>
+                    {/* Kind header row — 4 sections total (MEME/TIERS/ARCHETYPES/TRIBES) */}
+                    <tr className="border-y border-primary/40 bg-primary/10">
+                      <td
+                        colSpan={8}
+                        className="py-2 px-3 font-mono text-[11px] uppercase tracking-[0.2em] text-primary"
+                      >
+                        <span className="mr-2 text-primary/70">▓</span>
+                        {KIND_HEADERS[kind]}
+                        <span className="ml-3 text-muted-foreground">· {totalInKind}</span>
+                      </td>
+                    </tr>
+                    {subGroups.map(({ axis, rows: rowsInAxis }) => (
+                      <Fragment key={axis || "_flat"}>
+                        {/* Sub-header ONLY for TIER kind (axis grouping: PYTHON / VIM / MAC / ...) */}
+                        {kind === "tier" && axis && (
+                          <tr className="border-b border-border/40 bg-muted/20">
+                            <td
+                              colSpan={8}
+                              className="py-1 pl-8 pr-3 font-mono text-[10px] uppercase tracking-[0.16em] text-amber-500/80"
+                            >
+                              {axis.toUpperCase()}
+                              <span className="ml-2 text-muted-foreground/70">· {rowsInAxis.length}</span>
+                            </td>
+                          </tr>
                         )}
-                      </div>
-                    </td>
-                  </tr>
+                        {rowsInAxis.map((r) => {
+                          const meta = metaById.get(r.id);
+                          const job = queue.byLabel(r.id);
+                          const hasPrompt = !!r.optimizedPrompt;
+                          return (
+                            <tr
+                              key={r.id}
+                              className="cursor-pointer border-b border-border/50 hover:bg-primary/5"
+                              onClick={() => setSelected(r)}
+                            >
+                              <td className="py-2 pr-3">
+                                <div className="h-10 w-10">
+                                  <LabelImage
+                                    id={r.id}
+                                    size={40}
+                                    bustHint={bustHintFor(r.id)}
+                                    className="rounded-sm border border-border"
+                                    fallback={
+                                      <div className="flex h-10 w-10 items-center justify-center rounded-sm border border-dashed border-muted-foreground/40 text-muted-foreground">
+                                        <ImageOff size={14} />
+                                      </div>
+                                    }
+                                  />
+                                </div>
+                              </td>
+                              <td className="py-2 pr-3">
+                                <div className="font-mono text-[11px] uppercase tracking-wide text-foreground">
+                                  {r.glyph ? <span className="mr-1">{r.glyph}</span> : null}
+                                  {r.label}
+                                </div>
+                                <div className="text-[10px] text-muted-foreground">
+                                  {r.id}
+                                </div>
+                              </td>
+                              <td className="py-2 pr-3 font-mono text-[10px] uppercase tracking-wide">
+                                {r.kind}
+                                {r.kind === "tier" && r.tier ? ` · ${r.tier}` : ""}
+                              </td>
+                              <td className="py-2 pr-3 font-mono text-[10px] tabular-nums">
+                                {r.rank}
+                              </td>
+                              <td className="py-2 pr-3">
+                                <RowStatusBadge
+                                  hasPrompt={hasPrompt}
+                                  job={job}
+                                  hasImage={!!meta}
+                                />
+                              </td>
+                              <td className="py-2 pr-3 font-mono text-[10px] tabular-nums text-muted-foreground">
+                                {meta ? fmtRelative(meta.generatedAt) : "—"}
+                              </td>
+                              <td className="py-2 pr-3 font-mono text-[10px] tabular-nums text-muted-foreground">
+                                {meta ? fmtBytes(meta.sizeBytes) : "—"}
+                              </td>
+                              <td className="py-2" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex items-center gap-1">
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => setSelected(r)}
+                                    title="Edit this label"
+                                  >
+                                    <Pencil size={12} />
+                                  </Button>
+                                  {hasPrompt && (
+                                    <Button
+                                      size="sm"
+                                      variant={meta ? "outline" : "default"}
+                                      onClick={() =>
+                                        enqueueOne({ id: r.id, prompt: r.optimizedPrompt })
+                                      }
+                                      disabled={
+                                        !status.data?.enabled ||
+                                        job?.status === "queued" ||
+                                        job?.status === "running"
+                                      }
+                                      title={
+                                        job?.status === "queued"
+                                          ? "Already queued on the server"
+                                          : job?.status === "running"
+                                          ? "Currently running on the server"
+                                          : meta
+                                          ? "Enqueue a regen for this label"
+                                          : "Enqueue an initial generation for this label"
+                                      }
+                                    >
+                                      {job?.status === "running" ? (
+                                        <Loader2 size={12} className="animate-spin" />
+                                      ) : meta ? (
+                                        <RefreshCw size={12} />
+                                      ) : (
+                                        <Zap size={12} />
+                                      )}
+                                    </Button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </Fragment>
+                    ))}
+                  </Fragment>
                 );
               })}
             </tbody>
@@ -791,6 +871,45 @@ function toDraft(row: LabelCatalogRow): EditDraft {
 
 const KIND_OPTIONS = ["tier", "archetype", "tribe", "meme"] as const;
 const TIER_OPTIONS = ["novice", "apprentice", "adept", "master", "legend"] as const;
+
+// ---- taxonomy grouping (catalog table) ------------------------------------
+// Presentation order: memecore first (highest signal on the profile), tier
+// second (largest section), archetypes + tribes last. Matches LabelsShowcase
+// so operator + viewer share a mental model.
+const KIND_ORDER: Array<LabelCatalogRow["kind"]> = [
+  "meme",
+  "tier",
+  "archetype",
+  "tribe",
+];
+const KIND_HEADERS: Record<LabelCatalogRow["kind"], string> = {
+  meme: "OP SHIZNIT",
+  tier: "TIERS",
+  archetype: "ARCHETYPES",
+  tribe: "TRIBES",
+};
+// Prefixes on tier IDs identify the AXIS. Strip when rendering the axis
+// header (e.g. `languages-python-master` → axis "python" under sub-header PYTHON).
+const TIER_ID_PREFIXES = [
+  "languages-",
+  "editors-",
+  "platforms-",
+  "categories-",
+  "projects-",
+];
+const TIER_ORDER = ["novice", "apprentice", "adept", "master", "legend"];
+
+function tierAxis(id: string): string {
+  let s = id;
+  for (const p of TIER_ID_PREFIXES) {
+    if (s.startsWith(p)) {
+      s = s.slice(p.length);
+      break;
+    }
+  }
+  const idx = s.lastIndexOf("-");
+  return idx > 0 ? s.slice(0, idx) : s;
+}
 
 function LabelEditSheet({ row, onClose, onSaved, onRegen, canRegen, generatedAt }: LabelEditSheetProps) {
   const queryClient = useQueryClient();
