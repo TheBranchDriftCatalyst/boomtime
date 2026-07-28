@@ -42,11 +42,14 @@
 // passes stats.ValidateSpec and round-trips through the backend
 // unchanged. Handler tests + DB tests already cover the wire; this
 // component's own tests cover the state transitions.
-import { useId } from "react";
+import { useId, useMemo } from "react";
 import { X } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
 import { Label } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
+import { api } from "@/lib/api";
+import { qk } from "@/lib/queryKeys";
 import {
   Select,
   SelectContent,
@@ -62,6 +65,97 @@ import type {
   GoalTimeWindow,
   Predicate,
 } from "@/types/api";
+
+// ---- axis-value autocomplete ---------------------------------------------
+//
+// Goal predicates target a specific axis + value (e.g. axis="language",
+// value="Go"). The value field used to be a plain <Input> — operators had to
+// know the exact string casing/spelling. `AxisValueInput` upgrades that with a
+// native <datalist> populated from the user's own recent stats so hitting
+// axis=language shows Go/Python/TypeScript/... as suggestions.
+//
+// Non-existing values are STILL accepted — datalist is suggest-only, not
+// restrict-to-list. That's deliberate: an operator can author aspirational
+// goals ("learn Rust before I have any Rust time") by just typing.
+//
+// Data source: /api/v1/users/current/stats windowed to the last 90 days.
+// Cached via react-query so opening the modal repeatedly doesn't re-fetch.
+// Branch + plugin axes don't come out of /stats — the datalist stays empty
+// for those, input still works as free-text.
+
+const AXIS_TO_STATS_KEY: Partial<Record<GoalHeartbeatAxis, keyof StatsAxisMap>> = {
+  language: "languages",
+  project: "projects",
+  editor: "editors",
+  category: "categories",
+  platform: "platforms",
+  machine: "machines",
+  // branch + plugin intentionally omitted — /stats doesn't surface them.
+};
+
+type StatsAxisMap = {
+  languages: ReadonlyArray<{ name: string }>;
+  projects: ReadonlyArray<{ name: string }>;
+  editors: ReadonlyArray<{ name: string }>;
+  categories?: ReadonlyArray<{ name: string }>;
+  platforms: ReadonlyArray<{ name: string }>;
+  machines: ReadonlyArray<{ name: string }>;
+};
+
+function last90(): { start: string; end: string } {
+  const end = new Date();
+  const start = new Date(end.getTime() - 90 * 24 * 60 * 60 * 1000);
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  return { start: iso(start), end: iso(end) };
+}
+
+function AxisValueInput({
+  id,
+  axis,
+  value,
+  onChange,
+}: {
+  id: string;
+  axis: GoalHeartbeatAxis;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const range = useMemo(last90, []);
+  const stats = useQuery({
+    queryKey: qk.stats(range.start, range.end, undefined, undefined),
+    queryFn: () => api.getStats({ start: range.start, end: range.end }),
+    staleTime: 5 * 60_000,
+  });
+  const listId = `${id}-suggestions`;
+  const suggestions = useMemo(() => {
+    const key = AXIS_TO_STATS_KEY[axis];
+    if (!key || !stats.data) return [] as string[];
+    const arr = (stats.data as unknown as StatsAxisMap)[key] ?? [];
+    return arr
+      .map((r) => r.name)
+      .filter((n) => typeof n === "string" && n.length > 0)
+      .slice(0, 100); // browsers cap datalist rendering; 100 is plenty
+  }, [axis, stats.data]);
+  return (
+    <>
+      <Input
+        id={id}
+        className="h-8"
+        value={value}
+        placeholder="e.g. Go"
+        list={suggestions.length > 0 ? listId : undefined}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      {suggestions.length > 0 && (
+        <datalist id={listId}>
+          {suggestions.map((s) => (
+            <option key={s} value={s} />
+          ))}
+        </datalist>
+      )}
+    </>
+  );
+}
 
 const AXES: GoalHeartbeatAxis[] = [
   "language",
@@ -302,14 +396,11 @@ function TimeLeafEditor({
         </div>
         <div>
           <Label htmlFor={id.value} className="text-xs">Value (blank = any)</Label>
-          <Input
+          <AxisValueInput
             id={id.value}
-            className="h-8"
+            axis={node.axis}
             value={node.value ?? ""}
-            placeholder="e.g. Go"
-            onChange={(e) =>
-              onChange({ ...node, value: e.target.value === "" ? null : e.target.value })
-            }
+            onChange={(v) => onChange({ ...node, value: v === "" ? null : v })}
           />
         </div>
         <div>
