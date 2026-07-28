@@ -18,6 +18,7 @@ resources:
 patchesStrategicMerge:
   - label-images-config.yaml
   - llm-config.yaml
+  - tz-config.yaml
 
 # The Argo Application tracks the `main` branch. This kustomize `newTag`
 # is a starting hint — the live authority is the ImageUpdater CRD at

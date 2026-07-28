@@ -1,0 +1,19 @@
+---
+# Server-wide default timezone (gaka-tz). Applied when a user hasn't picked
+# their own timezone in Settings > Profile. Resolution chain is 3-level:
+#
+#   1. users.timezone (explicit user choice)
+#   2. BOOM_DEFAULT_TIMEZONE (this env var, server-wide operator default)
+#   3. "UTC" (hardcoded fallback if the env var is unset or invalid)
+#
+# IANA name — includes DST rules automatically. To swap, edit + commit;
+# Argo picks it up on next sync. Individual users who have explicitly
+# picked a TZ are unaffected.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: boomtime-config
+  labels:
+    app.kubernetes.io/name: boomtime
+data:
+  BOOM_DEFAULT_TIMEZONE: "America/Los_Angeles"
