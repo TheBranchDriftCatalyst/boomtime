@@ -7,12 +7,22 @@
 # ollama-shim-external.yaml), which routes to the operator's Mac at
 # 192.168.1.33:11434. Ollama's native OpenAI-compat lives under `/v1`.
 #
-# Model: qwen3:8b — the mac-sdlc-node maintainer's blessed default for
-# chat + function-calling ("small, fast, most-stable Ollama tool-caller
-# in its size class... sub-second per turn on M5 Max"). ~5GB resident,
-# always warm on the operator's inference layer. To swap, edit
-# BOOM_LLM_MODEL below and commit — Argo picks it up on next sync;
-# `ollama list` on the mac to check what's actually pulled.
+# Model: TheDrummer/Cydonia-24B-v4.3 Q8_0 — mac-sdlc-node maintainer's
+# rank-3 in the "uncensored RP/creative writing top 5" list ("fast
+# 24B-class daily for RP"). Chibi prompt synthesis IS creative visual
+# authoring, and Cydonia's uncensored posture means cyberpunk / edgy
+# character descriptors ("SIGMA GRINDSET", "GIGACHAD COMMITTER", etc.)
+# don't get sanitized on the way through. ~24GB resident, Q8 quality,
+# fits comfortably on M5 Max.
+#
+# Alternatives if quality feels off (higher rank = more literary,
+# slower):
+#   1. hf.co/TheDrummer/Behemoth-X-123B-v2-GGUF:Q4_K_M — 73GB, slow
+#   2. hf.co/unsloth/Hermes-4-70B-GGUF:Q5_K_M          — 48GB, smart
+#   4. qwen3-moe-uncensored:i1-Q6_K                    — 24GB, MoE
+#   5. magnum-v4:Q5_K_M                                — 52GB, explicit
+# To swap, edit BOOM_LLM_MODEL below and commit — Argo picks it up.
+# `ollama list` on the mac to see what's actually pulled.
 #
 # Auth: Ollama ignores Bearer tokens but boomtime treats empty API key as
 # "feature disabled". Passing the literal string "ollama" satisfies the
@@ -26,4 +36,4 @@ metadata:
 data:
   BOOM_LLM_BASE_URL: "http://ollama-shim:11434/v1"
   BOOM_LLM_API_KEY: "ollama"
-  BOOM_LLM_MODEL: "qwen3:8b"
+  BOOM_LLM_MODEL: "hf.co/TheDrummer/Cydonia-24B-v4.3-GGUF:Q8_0"
