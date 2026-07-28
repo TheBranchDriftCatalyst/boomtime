@@ -81,13 +81,22 @@ export function LabelChip({
         */}
         <span
           className={
-            `inline-flex items-center gap-1 rounded-sm border border-[color:var(--primary)]/40 bg-[color:var(--primary)]/10 font-mono uppercase tracking-[0.12em] outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--primary)] ${sz.padding} ${sz.text}` +
+            // Patches get a distinct visual: double-amber border (outline
+            // shadow trick) + ★ prefix, so citations read differently
+            // from the softer crimson chips used by tier/archetype/tribe/meme.
+            (award.kind === "patch"
+              ? `inline-flex items-center gap-1 rounded-sm border border-amber-400/80 bg-amber-500/5 shadow-[0_0_0_1px_rgba(0,0,0,0.4),0_0_0_2px_rgba(245,166,35,0.35)] font-mono uppercase tracking-[0.14em] outline-none focus-visible:ring-1 focus-visible:ring-amber-400 ${sz.padding} ${sz.text}`
+              : `inline-flex items-center gap-1 rounded-sm border border-[color:var(--primary)]/40 bg-[color:var(--primary)]/10 font-mono uppercase tracking-[0.12em] outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--primary)] ${sz.padding} ${sz.text}`) +
             (className ? ` ${className}` : "")
           }
           data-testid="label-chip"
           data-label-id={award.id}
+          data-label-kind={award.kind}
           tabIndex={0}
         >
+          {award.kind === "patch" && (
+            <span aria-hidden className="text-amber-400">★</span>
+          )}
           <LabelImage
             id={award.id}
             size={sz.glyphPx}

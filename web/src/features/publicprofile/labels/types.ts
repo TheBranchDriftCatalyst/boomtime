@@ -174,7 +174,13 @@ export interface LabelSpec {
    *      space-marine / sigma-grindset flavor. Ranks intentionally OUTRANK
    *      archetypes so they win the hero top-3 slot when they fire.
    */
-  kind: "tier" | "archetype" | "tribe" | "meme";
+  /**
+   *    - "patch"     — memewarfare wave 1 (gaka-mwp): event-driven military
+   *      -op awards ("Rapid Response Team", "Fire Fighter"). Additive to
+   *      the other four; renders with a distinct double-amber border + ★
+   *      prefix so patches read as "citations", not archetypes.
+   */
+  kind: "tier" | "archetype" | "tribe" | "meme" | "patch";
   /** Display label. Uppercased at render; keep short. */
   label: string;
   /** Optional 1-3 char glyph (emoji or symbol). Purely cosmetic. */

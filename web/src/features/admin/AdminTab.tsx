@@ -869,7 +869,7 @@ function toDraft(row: LabelCatalogRow): EditDraft {
   };
 }
 
-const KIND_OPTIONS = ["tier", "archetype", "tribe", "meme"] as const;
+const KIND_OPTIONS = ["tier", "archetype", "tribe", "meme", "patch"] as const;
 const TIER_OPTIONS = ["novice", "apprentice", "adept", "master", "legend"] as const;
 
 // ---- taxonomy grouping (catalog table) ------------------------------------
@@ -877,12 +877,14 @@ const TIER_OPTIONS = ["novice", "apprentice", "adept", "master", "legend"] as co
 // second (largest section), archetypes + tribes last. Matches LabelsShowcase
 // so operator + viewer share a mental model.
 const KIND_ORDER: Array<LabelCatalogRow["kind"]> = [
+  "patch",
   "meme",
   "tier",
   "archetype",
   "tribe",
 ];
 const KIND_HEADERS: Record<LabelCatalogRow["kind"], string> = {
+  patch: "PATCHES · STANDARDS",
   meme: "OP SHIZNIT",
   tier: "TIERS",
   archetype: "ARCHETYPES",

@@ -14,12 +14,14 @@ import { LabelChip } from "@/features/publicprofile/labels/LabelChip";
 // showcase widget the same way it lands top of the hero tagline. Rank-desc
 // sort inside the group is inherited from the evaluator, we just group here.
 const GROUP_ORDER: Array<LabelAward["kind"]> = [
+  "patch",
   "meme",
   "tier",
   "archetype",
   "tribe",
 ];
 const GROUP_HEADERS: Record<LabelAward["kind"], string> = {
+  patch: "Patches",
   meme: "OP Shiznit",
   tier: "Tiers",
   archetype: "Archetypes",
