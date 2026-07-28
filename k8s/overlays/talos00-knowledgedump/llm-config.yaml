@@ -7,10 +7,12 @@
 # ollama-shim-external.yaml), which routes to the operator's Mac at
 # 192.168.1.33:11434. Ollama's native OpenAI-compat lives under `/v1`.
 #
-# Model: qwen2.5:7b — strong creative writing on M-series (~4-5GB memory,
-# fast). Operator must run `ollama pull qwen2.5:7b` on the Mac before the
-# SYNTHESIZE button works. To swap models, edit BOOM_LLM_MODEL here and
-# commit — Argo picks it up on next sync.
+# Model: qwen3:8b — the mac-sdlc-node maintainer's blessed default for
+# chat + function-calling ("small, fast, most-stable Ollama tool-caller
+# in its size class... sub-second per turn on M5 Max"). ~5GB resident,
+# always warm on the operator's inference layer. To swap, edit
+# BOOM_LLM_MODEL below and commit — Argo picks it up on next sync;
+# `ollama list` on the mac to check what's actually pulled.
 #
 # Auth: Ollama ignores Bearer tokens but boomtime treats empty API key as
 # "feature disabled". Passing the literal string "ollama" satisfies the
@@ -24,4 +26,4 @@ metadata:
 data:
   BOOM_LLM_BASE_URL: "http://ollama-shim:11434/v1"
   BOOM_LLM_API_KEY: "ollama"
-  BOOM_LLM_MODEL: "qwen2.5:7b"
+  BOOM_LLM_MODEL: "qwen3:8b"
