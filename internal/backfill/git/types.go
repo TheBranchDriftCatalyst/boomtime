@@ -67,10 +67,21 @@ type Session struct {
 	Commits  []Commit  `json:"commits"`
 	Language string    `json:"language,omitempty"`
 	// TopFile is the single file (across all commits in the session) with
-	// the most lines added+deleted. Used as the `entity` for every
-	// synthetic heartbeat in this session so time-attribution rolls up
-	// under that path/name. Empty when no commit touched any file.
+	// the most lines added+deleted. Kept as a backward-compat readout;
+	// Materialize now distributes heartbeat entity across FileWeights so
+	// individual files each get proportional time attribution.
 	TopFile string `json:"topFile,omitempty"`
+	// FileWeights is the per-file "touched" score across all commits in
+	// this session (lines added + deleted, split evenly per file per
+	// commit). Materialize uses it to spread heartbeat entities across
+	// every file the user actually edited — instead of the pre-fix
+	// behavior where all N heartbeats got TopFile as their entity, which
+	// wildly under-represented multi-file sessions.
+	FileWeights map[string]int `json:"fileWeights,omitempty"`
+	// FileLanguages is the derived language per file (from extension +
+	// LangMap overrides). Pre-computed at cluster time so Materialize
+	// doesn't need EstimatorConfig.
+	FileLanguages map[string]string `json:"fileLanguages,omitempty"`
 }
 
 // Heartbeat is the wire-shape sent to the boomtime API. Field names match

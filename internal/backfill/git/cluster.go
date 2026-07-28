@@ -125,6 +125,17 @@ func buildSession(commits []Commit, cfg EstimatorConfig) Session {
 	if topFile != "" {
 		s.Language = cfg.languageFor(topFile)
 	}
+	// Store the weights + per-file language map so Materialize can
+	// distribute heartbeats across every file touched, not just TopFile.
+	if len(touchedPerFile) > 0 {
+		s.FileWeights = touchedPerFile
+		s.FileLanguages = make(map[string]string, len(touchedPerFile))
+		for f := range touchedPerFile {
+			if lang := cfg.languageFor(f); lang != "" {
+				s.FileLanguages[f] = lang
+			}
+		}
+	}
 	return s
 }
 
@@ -155,22 +166,36 @@ func Materialize(sess Session, sourceTag string, rate time.Duration) []Heartbeat
 	if sess.End.Before(sess.Start) {
 		return nil
 	}
-	entity := sess.TopFile
-	if entity == "" {
-		entity = "backfill:" + sess.RepoName
-	}
+	// Pre-compute the number of heartbeats + the file pattern (one entity
+	// per slot, weighted by how many lines the file received in this
+	// session). Falls back to TopFile / placeholder when FileWeights is
+	// unset (e.g. manually-constructed Session in tests).
+	timestamps := timestampSteps(sess.Start, sess.End, rate)
+	pattern := buildFilePattern(sess, len(timestamps))
 
 	project := sess.RepoName
 	sender := sourceTag
-	var language *string
+	// sess.Language is the SESSION-level dominant language, used only
+	// when FileLanguages is empty (fallback path).
+	var defaultLang *string
 	if sess.Language != "" {
 		lang := sess.Language
-		language = &lang
+		defaultLang = &lang
 	}
 	ua := "boomtime-backfill-git/1"
 
-	var hbs []Heartbeat
-	for t := sess.Start; !t.After(sess.End); t = t.Add(rate) {
+	hbs := make([]Heartbeat, 0, len(timestamps))
+	for i, t := range timestamps {
+		entity := pattern[i]
+		// Per-file language when we have it (from Cluster's derivation);
+		// fall back to the session-level language.
+		var language *string
+		if l, ok := sess.FileLanguages[entity]; ok && l != "" {
+			ll := l
+			language = &ll
+		} else {
+			language = defaultLang
+		}
 		p := project
 		s := sender
 		hb := Heartbeat{
@@ -186,4 +211,94 @@ func Materialize(sess Session, sourceTag string, rate time.Duration) []Heartbeat
 		hbs = append(hbs, hb)
 	}
 	return hbs
+}
+
+// timestampSteps yields the sequence of heartbeat instants from start
+// through end, stepping by `rate`. The first tick is start; the last is
+// the largest step ≤ end (matches the original range-loop semantics).
+func timestampSteps(start, end time.Time, rate time.Duration) []time.Time {
+	if rate <= 0 || end.Before(start) {
+		return nil
+	}
+	out := make([]time.Time, 0, int(end.Sub(start)/rate)+1)
+	for t := start; !t.After(end); t = t.Add(rate) {
+		out = append(out, t)
+	}
+	return out
+}
+
+// buildFilePattern returns a slice of length `n` where each slot holds
+// the file that should back that heartbeat, proportional to the file's
+// weight in sess.FileWeights.
+//
+// The distribution uses largest-remainder allocation (Hamilton method):
+// slot i picks the file with the biggest deficit between its expected
+// cumulative allocation ((i+1)*weight/total) and its actual allocated
+// count. Result: an interleaved pattern that hits every file the
+// operator touched, in proportion to how much they touched it — instead
+// of the pre-fix behavior of all N slots getting TopFile.
+//
+// Fallback path (empty weights): returns n slots of TopFile, or a
+// placeholder "backfill:<repo>" when TopFile is empty too. Preserves
+// existing behavior for manually-constructed Session values.
+func buildFilePattern(sess Session, n int) []string {
+	if n <= 0 {
+		return nil
+	}
+	// Fallback: no per-file weights → repeat TopFile / placeholder.
+	if len(sess.FileWeights) == 0 {
+		entity := sess.TopFile
+		if entity == "" {
+			entity = "backfill:" + sess.RepoName
+		}
+		out := make([]string, n)
+		for i := range out {
+			out[i] = entity
+		}
+		return out
+	}
+	// Sort files deterministically (weight desc, then name asc) so the
+	// pattern is stable across runs — testable + reproducible.
+	type fw struct {
+		file   string
+		weight int
+	}
+	files := make([]fw, 0, len(sess.FileWeights))
+	total := 0
+	for f, w := range sess.FileWeights {
+		if w > 0 {
+			files = append(files, fw{f, w})
+			total += w
+		}
+	}
+	if len(files) == 0 || total == 0 {
+		// Weights all zero for some reason — fall back like empty path.
+		return buildFilePattern(Session{RepoName: sess.RepoName, TopFile: sess.TopFile}, n)
+	}
+	sort.Slice(files, func(i, j int) bool {
+		if files[i].weight != files[j].weight {
+			return files[i].weight > files[j].weight
+		}
+		return files[i].file < files[j].file
+	})
+	allocated := make(map[string]int, len(files))
+	out := make([]string, 0, n)
+	for i := 0; i < n; i++ {
+		// Pick the file with the biggest deficit vs its expected share.
+		var bestFile string
+		var bestDeficit float64
+		first := true
+		for _, f := range files {
+			expected := float64(i+1) * float64(f.weight) / float64(total)
+			deficit := expected - float64(allocated[f.file])
+			if first || deficit > bestDeficit {
+				bestFile = f.file
+				bestDeficit = deficit
+				first = false
+			}
+		}
+		out = append(out, bestFile)
+		allocated[bestFile]++
+	}
+	return out
 }

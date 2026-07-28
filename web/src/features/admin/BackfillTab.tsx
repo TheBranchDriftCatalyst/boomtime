@@ -27,11 +27,18 @@ import {
   Copy,
   Plus,
   X,
+  Info,
 } from "lucide-react";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
 import { Label as UILabel } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
 import { Textarea } from "@thebranchdriftcatalyst/catalyst-ui/ui/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@thebranchdriftcatalyst/catalyst-ui/ui/tooltip";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
@@ -224,6 +231,22 @@ function ConfigPanel() {
           max={7200}
           step={300}
           onChange={(v) => setDraft({ ...draft, clusterGapSec: v })}
+          tooltip={
+            <>
+              <strong>How commits get grouped into a coding session.</strong>{" "}
+              Any two of your commits made within this window merge into a single
+              session; a gap longer than this starts a new one.
+              <br />
+              <br />
+              <em>Bigger</em> = fewer, longer sessions (may merge unrelated work).
+              {" "}
+              <em>Smaller</em> = more, shorter sessions (may fragment one real
+              coding block into several).
+              <br />
+              <br />
+              Default 30&nbsp;min matches Wakatime&apos;s own idle-timeout heuristic.
+            </>
+          }
         />
         <SliderRow
           label={`Pre-commit lead (${secToMin(draft.preCommitLeadSec)} min)`}
@@ -232,6 +255,18 @@ function ConfigPanel() {
           max={3600}
           step={300}
           onChange={(v) => setDraft({ ...draft, preCommitLeadSec: v })}
+          tooltip={
+            <>
+              <strong>Time credited BEFORE the first commit of each session.</strong>{" "}
+              Captures the &quot;you typed for a while before hitting save/commit&quot;
+              behavior that Wakatime editor plugins pick up but git can&apos;t see.
+              <br />
+              <br />
+              Set to <em>0</em> to only count from the first commit onward
+              (strictest — undercounts thinking time). Default <em>15&nbsp;min</em> is
+              conservative for the average code→commit gap.
+            </>
+          }
         />
         <SliderRow
           label={`Post-commit tail (${secToMin(draft.postCommitTailSec)} min)`}
@@ -240,6 +275,18 @@ function ConfigPanel() {
           max={1800}
           step={60}
           onChange={(v) => setDraft({ ...draft, postCommitTailSec: v })}
+          tooltip={
+            <>
+              <strong>Time credited AFTER the last commit of each session.</strong>{" "}
+              Covers commit-message writing, cleanup, and small tweaks that happen
+              in the tail of a work block.
+              <br />
+              <br />
+              Usually small — default <em>5&nbsp;min</em> is enough for a well-written
+              commit message. Bump higher if you frequently do post-commit review /
+              docs updates without a new commit.
+            </>
+          }
         />
         <SliderRow
           label={`Heartbeat rate (${secToMin(draft.heartbeatRateSec)} min)`}
@@ -248,14 +295,47 @@ function ConfigPanel() {
           max={600}
           step={60}
           onChange={(v) => setDraft({ ...draft, heartbeatRateSec: v })}
+          tooltip={
+            <>
+              <strong>How often a synthetic heartbeat is emitted inside each session.</strong>{" "}
+              Matches Wakatime&apos;s ~2&nbsp;min real cadence by default so backfilled
+              time rolls up the same way as live-tracked time.
+              <br />
+              <br />
+              <em>Larger</em> = fewer DB rows, less granular per-file attribution.{" "}
+              <em>Smaller</em> = more rows, higher DB pressure, tighter file-level
+              detail. A 30-min session at 2&nbsp;min rate = 16 heartbeats spread
+              across the files you actually edited.
+            </>
+          }
         />
       </div>
 
       {/* Emails chip input */}
       <div className="space-y-2">
-        <UILabel className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-          Author emails
-        </UILabel>
+        <div className="flex items-center gap-1.5">
+          <UILabel className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
+            Author emails
+          </UILabel>
+          <InfoTip
+            content={
+              <>
+                <strong>Which commits count as yours.</strong> Only commits whose{" "}
+                <code className="bg-muted/40 px-1">author.email</code> exactly
+                matches one of these are turned into heartbeats.
+                <br />
+                <br />
+                Add <em>every email</em> you&apos;ve ever committed under —
+                personal, past work, projects that used a different alias.
+                Missing an email means those commits are silently skipped and
+                contribute zero backfill time.
+                <br />
+                <br />
+                Case-sensitive, exact match. No wildcards.
+              </>
+            }
+          />
+        </div>
         <div className="flex flex-wrap gap-1">
           {draft.authorEmails.length === 0 && (
             <span className="text-xs text-muted-foreground">
@@ -306,9 +386,31 @@ function ConfigPanel() {
 
       {/* Source tag */}
       <div className="space-y-1">
-        <UILabel className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-          Source tag
-        </UILabel>
+        <div className="flex items-center gap-1.5">
+          <UILabel className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
+            Source tag
+          </UILabel>
+          <InfoTip
+            content={
+              <>
+                <strong>How backfilled rows are labeled in the DB.</strong>{" "}
+                Written to <code className="bg-muted/40 px-1">heartbeats.source</code>{" "}
+                on every synthetic heartbeat.
+                <br />
+                <br />
+                Server enforces a <code className="bg-muted/40 px-1">backfill:</code>{" "}
+                prefix so real Wakatime rows (<code>source IS NULL</code>) can never
+                be overwritten by mistake.
+                <br />
+                <br />
+                Use different tags to segment runs — e.g.{" "}
+                <code>backfill:git-2024</code> then <code>backfill:git-2025</code>{" "}
+                lets you selectively purge one range from the Danger Zone without
+                losing the other.
+              </>
+            }
+          />
+        </div>
         <Input
           value={draft.sourceTag}
           onChange={(e) => setDraft({ ...draft, sourceTag: e.target.value })}
@@ -370,14 +472,19 @@ interface SliderRowProps {
   max: number;
   step: number;
   onChange: (v: number) => void;
+  /** Rich-text explanation shown on ℹ hover. Rendered inside a Radix tooltip. */
+  tooltip?: ReactNode;
 }
 
-function SliderRow({ label, value, min, max, step, onChange }: SliderRowProps) {
+function SliderRow({ label, value, min, max, step, onChange, tooltip }: SliderRowProps) {
   return (
     <div className="space-y-1">
-      <UILabel className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-        {label}
-      </UILabel>
+      <div className="flex items-center gap-1.5">
+        <UILabel className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
+          {label}
+        </UILabel>
+        {tooltip && <InfoTip content={tooltip} />}
+      </div>
       <input
         type="range"
         min={min}
@@ -388,6 +495,35 @@ function SliderRow({ label, value, min, max, step, onChange }: SliderRowProps) {
         className="w-full accent-[color:var(--primary)]"
       />
     </div>
+  );
+}
+
+// InfoTip — small ℹ icon that pops a hover tooltip with rich explanation.
+// Wrap in its own TooltipProvider so this stays self-contained; app root
+// already has one but nesting is a no-op in Radix.
+function InfoTip({ content }: { content: ReactNode }) {
+  return (
+    <TooltipProvider delayDuration={150}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            className="text-muted-foreground/60 hover:text-[color:var(--primary)] focus-visible:text-[color:var(--primary)] outline-none"
+            aria-label="What is this?"
+          >
+            <Info size={12} />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent
+          side="top"
+          align="start"
+          sideOffset={6}
+          className="max-w-[340px] border border-[color:var(--primary)]/50 bg-[color:var(--card)] p-3 text-[11px] leading-relaxed text-[color:var(--foreground)]"
+        >
+          {content}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 

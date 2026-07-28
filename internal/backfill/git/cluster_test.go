@@ -220,3 +220,57 @@ func TestMaterialize_EndBeforeStart_ReturnsNil(t *testing.T) {
 		t.Errorf("hbs = %v, want nil", hbs)
 	}
 }
+
+// TestMaterialize_DistributesAcrossFilesByWeight verifies the post-fix
+// behavior: when Session has FileWeights, heartbeats are spread across
+// every file (not just TopFile) proportional to weight, and per-file
+// language attribution kicks in. Fixes the "all N heartbeats have
+// entity=.flake8" observation on the first live backfill run.
+func TestMaterialize_DistributesAcrossFilesByWeight(t *testing.T) {
+	sess := Session{
+		RepoName: "r",
+		Start:    at(0),
+		End:      at(18), // 18min / 2min = 10 heartbeats
+		TopFile:  "main.go",
+		Language: "Go",
+		FileWeights: map[string]int{
+			"main.go":   6, // 60% of weight → ~6 slots
+			"readme.md": 3, // 30% → ~3 slots
+			"util.go":   1, // 10% → ~1 slot
+		},
+		FileLanguages: map[string]string{
+			"main.go":   "Go",
+			"readme.md": "Markdown",
+			"util.go":   "Go",
+		},
+	}
+	hbs := Materialize(sess, "backfill:git", 2*time.Minute)
+	if len(hbs) != 10 {
+		t.Fatalf("len(hbs) = %d, want 10", len(hbs))
+	}
+	counts := map[string]int{}
+	for _, hb := range hbs {
+		counts[hb.Entity]++
+	}
+	// Largest-remainder allocation of 10 slots with weights 6/3/1 → 6/3/1.
+	if counts["main.go"] != 6 {
+		t.Errorf("main.go got %d slots, want 6", counts["main.go"])
+	}
+	if counts["readme.md"] != 3 {
+		t.Errorf("readme.md got %d slots, want 3", counts["readme.md"])
+	}
+	if counts["util.go"] != 1 {
+		t.Errorf("util.go got %d slots, want 1", counts["util.go"])
+	}
+	// Per-heartbeat language derived from the file's extension.
+	for _, hb := range hbs {
+		wantLang := sess.FileLanguages[hb.Entity]
+		if hb.Language == nil || *hb.Language != wantLang {
+			got := "<nil>"
+			if hb.Language != nil {
+				got = *hb.Language
+			}
+			t.Errorf("Entity=%q got Language=%q, want %q", hb.Entity, got, wantLang)
+		}
+	}
+}
