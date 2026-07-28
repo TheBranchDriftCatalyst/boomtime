@@ -317,21 +317,197 @@ window.onload = function () {
     .swagger-ui .dialog-ux .modal-ux-header h3 { color: var(--bx-crimson) !important; font-family: 'Chakra Petch', sans-serif; }
     .swagger-ui .auth-container h4, .swagger-ui .auth-container .wrapper > * { color: var(--bx-fg) !important; }
 
-    /* ----- models ----- */
+    /* ============================================================
+       SCHEMAS — data-sheet aesthetic. Prior pass made the section a
+       floating cluster of dim text with unreadable hierarchy. Redesign:
+       each schema is a bordered card with a corner-bracketed header,
+       tight rows, tree-line guides for nested properties, type badges
+       for primitives, hover highlight for scanning.
+       ============================================================ */
     .swagger-ui section.models {
-      background: var(--bx-panel) !important; border: 1px solid var(--bx-line) !important;
+      background: var(--bx-panel) !important;
+      border: 1px solid var(--bx-line) !important;
       border-radius: 0 !important;
+      padding: 12px !important;
+      margin: 24px 0 !important;
     }
-    .swagger-ui section.models h4, .swagger-ui section.models h5 {
-      color: var(--bx-crimson) !important; border-bottom: 1px solid var(--bx-line) !important;
-      font-family: 'Chakra Petch', sans-serif;
+    .swagger-ui section.models.is-open {
+      padding: 12px !important;
     }
-    .swagger-ui .model-box, .swagger-ui .model { background: transparent !important; }
-    .swagger-ui .model .property { color: var(--bx-fg) !important; }
-    .swagger-ui .model .property.primitive { color: var(--bx-cyan) !important; }
-    .swagger-ui .model-title, .swagger-ui .model-toggle { color: var(--bx-amber) !important; }
-    .swagger-ui .prop-format, .swagger-ui .prop-type { color: var(--bx-amber) !important; }
-    .swagger-ui .prop-name { color: var(--bx-fg) !important; }
+    .swagger-ui section.models > h4 {
+      color: var(--bx-crimson) !important;
+      border-bottom: 1px solid var(--bx-line-hot) !important;
+      font-family: 'Chakra Petch', sans-serif !important;
+      font-weight: 700 !important;
+      text-transform: uppercase; letter-spacing: 0.14em;
+      padding: 6px 0 10px !important; margin: 0 0 8px !important;
+    }
+    .swagger-ui section.models > h4 svg { fill: var(--bx-crimson) !important; }
+
+    /* -- individual schema card -- */
+    .swagger-ui section.models .model-container {
+      background: var(--bx-bg) !important;
+      border: 1px solid var(--bx-line) !important;
+      border-left: 2px solid var(--bx-amber) !important;
+      margin: 6px 0 !important; padding: 0 !important;
+      position: relative; transition: border-color 0.15s;
+    }
+    .swagger-ui section.models .model-container:hover {
+      border-color: var(--bx-line-hot) !important;
+      border-left-color: var(--bx-crimson) !important;
+    }
+    .swagger-ui section.models .model-container.active {
+      border-left-color: var(--bx-crimson) !important;
+    }
+    /* corner brackets on each schema card (matches op blocks) */
+    .swagger-ui section.models .model-container::before,
+    .swagger-ui section.models .model-container::after {
+      content: ''; position: absolute; width: 6px; height: 6px;
+      border-color: var(--bx-crimson); pointer-events: none;
+      opacity: 0; transition: opacity 0.2s;
+    }
+    .swagger-ui section.models .model-container::before {
+      top: -1px; right: -1px; border-top: 1px solid; border-right: 1px solid;
+    }
+    .swagger-ui section.models .model-container::after {
+      bottom: -1px; right: -1px; border-bottom: 1px solid; border-right: 1px solid;
+    }
+    .swagger-ui section.models .model-container:hover::before,
+    .swagger-ui section.models .model-container:hover::after,
+    .swagger-ui section.models .model-container.active::before,
+    .swagger-ui section.models .model-container.active::after { opacity: 0.7; }
+
+    /* -- schema title (BulkHeartbeatData, CommitReport, etc.) -- */
+    .swagger-ui section.models .model-box {
+      background: transparent !important;
+      padding: 8px 12px !important;
+    }
+    .swagger-ui .model-title {
+      color: var(--bx-amber) !important;
+      font-family: 'Chakra Petch', sans-serif !important;
+      font-weight: 600 !important;
+      font-size: 14px !important;
+      letter-spacing: 0.08em; text-transform: uppercase;
+    }
+    .swagger-ui .model-title__text { color: var(--bx-amber) !important; }
+    .swagger-ui .model-toggle {
+      color: var(--bx-crimson) !important;
+      transition: transform 0.2s;
+    }
+    .swagger-ui .model-toggle::after {
+      background-image: none !important;
+      content: '▸'; color: var(--bx-crimson); font-size: 10px;
+      display: inline-block; transition: transform 0.2s;
+    }
+    .swagger-ui .model-toggle.collapsed::after { transform: rotate(0deg); }
+    .swagger-ui .model-toggle:not(.collapsed)::after { transform: rotate(90deg); }
+
+    /* -- schema body: the expanded property tree -- */
+    .swagger-ui .model {
+      background: transparent !important;
+      color: var(--bx-fg) !important;
+      font-family: 'JetBrains Mono', monospace !important;
+      font-size: 12px !important; line-height: 1.55 !important;
+    }
+    .swagger-ui .model-box .model {
+      padding: 4px 0 !important;
+    }
+    /* delimiter chars: {, }, [, ] — subtle punctuation */
+    .swagger-ui .model .brace-open,
+    .swagger-ui .model .brace-close {
+      color: var(--bx-fg-muted) !important; font-weight: 400;
+    }
+
+    /* -- property rows -- */
+    .swagger-ui .model .property {
+      color: var(--bx-fg) !important;
+      padding: 1px 0 !important;
+    }
+    .swagger-ui .model .property.primitive {
+      color: var(--bx-cyan) !important;
+    }
+    .swagger-ui .prop-name {
+      color: var(--bx-fg) !important;
+      font-weight: 500 !important;
+    }
+    .swagger-ui .property-row td:first-child { padding-right: 14px; }
+
+    /* -- type / format badges (string, integer($int64), etc.) -- */
+    .swagger-ui .prop-type {
+      color: var(--bx-amber) !important;
+      background: rgba(245,166,35,0.08);
+      border: 1px solid rgba(245,166,35,0.35);
+      padding: 1px 6px; margin-left: 4px;
+      font-family: 'JetBrains Mono', monospace; font-size: 11px;
+      display: inline-block; letter-spacing: 0.03em;
+    }
+    .swagger-ui .prop-format {
+      color: var(--bx-cyan) !important;
+      background: rgba(53,200,255,0.08);
+      border: 1px solid rgba(53,200,255,0.35);
+      padding: 1px 6px; margin-left: 4px;
+      font-family: 'JetBrains Mono', monospace; font-size: 11px;
+      display: inline-block;
+    }
+    /* enum values */
+    .swagger-ui .model .property .prop-enum {
+      color: var(--bx-purple) !important;
+    }
+    /* the "required" star on required properties */
+    .swagger-ui .model .property-row .star {
+      color: var(--bx-crimson) !important;
+      font-size: 14px; font-weight: 700;
+    }
+
+    /* -- nested indent + tree-line guides -- */
+    /* Swagger's model DOM is <table> with property-row rows; nesting is
+       via <table> inside <td>. We add a left tree-line to the nested
+       tables so hierarchy reads at a glance. */
+    .swagger-ui .model .inner-object {
+      border-left: 1px dashed rgba(255,42,91,0.2);
+      margin-left: 2px; padding-left: 12px !important;
+    }
+    .swagger-ui .model table {
+      border-collapse: collapse; margin: 0;
+    }
+    .swagger-ui .model table tr:hover td {
+      background: rgba(255,42,91,0.04) !important;
+    }
+    .swagger-ui .model table td {
+      padding: 1px 8px 1px 0 !important;
+      vertical-align: top;
+      border: none !important;
+    }
+    /* the toggle chevrons inside nested objects */
+    .swagger-ui .model .model-toggle,
+    .swagger-ui .model .expand-methods {
+      cursor: pointer;
+    }
+
+    /* -- description text on schemas -- */
+    .swagger-ui .model .property .prop-desc,
+    .swagger-ui .model .markdown p {
+      color: var(--bx-fg-muted) !important;
+      font-style: normal !important;
+      font-size: 11px !important;
+    }
+
+    /* -- example blocks embedded in schemas -- */
+    .swagger-ui .model .prop-default,
+    .swagger-ui .model-example {
+      color: var(--bx-fg) !important;
+      background: rgba(255,255,255,0.02);
+      padding: 4px 8px; border-left: 2px solid var(--bx-line);
+    }
+
+    /* Backward-compat: some Swagger versions use .model-box for the
+       schema container without .model-container. Style both. */
+    .swagger-ui section.models > .model-box {
+      background: var(--bx-bg) !important;
+      border: 1px solid var(--bx-line) !important;
+      border-left: 2px solid var(--bx-amber) !important;
+      margin: 6px 0 !important;
+    }
 
     /* misc odds and ends */
     .swagger-ui .expand-methods svg,
