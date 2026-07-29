@@ -203,7 +203,7 @@ func (d *DB) SaveHealthSamples(ctx context.Context, owner string, samples []mode
 		batch.Queue(`
 INSERT INTO health_samples (owner, kind, unit, qty, q_min, q_avg, q_max, ts_start, ts_end, meta, workout_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-ON CONFLICT ON CONSTRAINT idx_health_samples_dedupe DO NOTHING`,
+ON CONFLICT (owner, kind, ts_start, COALESCE(ts_end, ts_start)) DO NOTHING`,
 			owner, s.Kind, s.Unit, s.Qty, s.QMin, s.QAvg, s.QMax,
 			ts, tsEnd, jsonbOrNil(metaJSON), workoutID)
 	}
