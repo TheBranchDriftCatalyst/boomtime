@@ -208,6 +208,15 @@ func (hz *Harness) Router() *echo.Echo {
 	e.GET("/api/v1/users/current/avatar/status", h.GetAvatarStatus)
 	e.GET("/api/v1/users/:username/avatar", h.UserAvatar)
 	e.POST("/api/v1/admin/avatar/synthesize-prompt", h.SynthesizeAvatarPrompt)
+	// gaka-hc6.3 + gaka-hc6.5.1: server-side award evaluation + historical
+	// backfill. Public/own variants + the backfill entry point.
+	e.GET("/api/v1/users/current/awards", h.OwnAwards)
+	e.GET("/api/public/profile/:slug/awards", h.PublicAwards)
+	e.POST("/api/v1/users/current/awards/backfill", h.AwardsBackfill)
+	// gaka-mwp-streaks: streak walker + ledger inspector — needed for the
+	// integration test's ledger-write assertion.
+	e.GET("/api/v1/users/current/awards/streaks", h.AwardsStreaks)
+	e.GET("/api/v1/users/current/awards/ledger", h.AwardsLedger)
 	// Cleanup: also clean up the goals table for the test's sender.
 	// The parent Cleanup registered per MintUser catches every table
 	// but goals — we extend the cleanup list separately here so
@@ -252,6 +261,10 @@ func (hz *Harness) Cleanup(sender string) {
 			// still clean explicitly so the between-run window with
 			// FK checks doesn't leak.
 			`DELETE FROM goals WHERE owner=$1`,
+			// gaka-hc6.3.1: server-side award evaluation writes ledger
+			// rows on every /awards read. Clean per-user so parallel
+			// tests don't leak into each other's streak counts.
+			`DELETE FROM award_ledger WHERE username=$1`,
 			`DELETE FROM projects WHERE owner=$1`,
 			`DELETE FROM auth_tokens WHERE owner=$1`,
 			`DELETE FROM refresh_tokens WHERE owner=$1`,
