@@ -17,7 +17,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -67,9 +66,9 @@ func ensure() error {
 // OpenDB provisions/migrates then connects to the isolated test DB. It Skips the
 // test when Postgres is unreachable, unless BOOM_REQUIRE_DB=1 (then it Fatals).
 //
-// Accepts testing.TB (Skipf/Fatalf/Cleanup are all on TB) so ginkgo callers
+// Accepts HarnessT (Skipf/Fatalf/Cleanup are all on TB) so ginkgo callers
 // using GinkgoTB() work uniformly with legacy *testing.T callers.
-func OpenDB(t testing.TB) *db.DB {
+func OpenDB(t HarnessT) *db.DB {
 	t.Helper()
 	if err := ensure(); err != nil {
 		if os.Getenv("BOOM_REQUIRE_DB") == "1" {
@@ -93,7 +92,7 @@ func OpenDB(t testing.TB) *db.DB {
 // backup restore TRUNCATEs every table) must use this instead of OpenDB —
 // `go test ./...` runs packages in parallel against the shared test DB, so a
 // TRUNCATE there would race other packages' seeds.
-func OpenIsolatedDB(t testing.TB, suffix string) *db.DB {
+func OpenIsolatedDB(t HarnessT, suffix string) *db.DB {
 	t.Helper()
 	url := maintenanceURLFor(DatabaseURL(), dbNameFromURL(DatabaseURL())+"_"+suffix)
 	ctx := context.Background()
@@ -117,14 +116,23 @@ func OpenIsolatedDB(t testing.TB, suffix string) *db.DB {
 	return database
 }
 
-// HarnessT is an alias for testing.TB retained for backwards compatibility
-// with the ginkgo mirror suite in internal/handler which typed its GinkgoT()
-// proxy as testutil.HarnessT before we widened Harness.T to testing.TB.
-type HarnessT = testing.TB
+// HarnessT is the subset of *testing.T that the harness requires. It is
+// designed to be also satisfied by ginkgo's GinkgoT() proxy — HarnessT
+// itself carries an unexported method that prevents third-party impls, so
+// we declare the intersection of methods we actually use. Both *testing.T
+// and ginkgo.FullGinkgoTInterface satisfy this.
+type HarnessT interface {
+	Helper()
+	Fatalf(format string, args ...any)
+	Skipf(format string, args ...any)
+	Logf(format string, args ...any)
+	Cleanup(func())
+	Errorf(format string, args ...any)
+}
 
 // Harness bundles a live Handler + DB for HTTP integration tests.
 type Harness struct {
-	T   testing.TB
+	T   HarnessT
 	DB  *db.DB
 	H   *handler.Handler
 	Cfg *config.Config
@@ -133,17 +141,17 @@ type Harness struct {
 // NewHarness builds a Handler wired to the isolated DB with a discardable logger
 // and an empty importer Hub. Registration is enabled so /auth/register works.
 //
-// Accepts testing.TB so ginkgo callers can pass ginkgo.GinkgoTB() (which
-// implements testing.TB) — legacy *testing.T callers keep working since
-// *testing.T satisfies testing.TB.
-func NewHarness(t testing.TB) *Harness {
+// Accepts HarnessT so ginkgo callers can pass ginkgo.GinkgoTB() (which
+// implements HarnessT) — legacy *testing.T callers keep working since
+// *testing.T satisfies HarnessT.
+func NewHarness(t HarnessT) *Harness {
 	t.Helper()
 	return NewHarnessWithDB(t, OpenDB(t))
 }
 
 // NewHarnessWithDB builds a Harness on an explicit database (e.g. an
 // OpenIsolatedDB one for destructive whole-DB tests).
-func NewHarnessWithDB(t testing.TB, database *db.DB) *Harness {
+func NewHarnessWithDB(t HarnessT, database *db.DB) *Harness {
 	t.Helper()
 	cfg := &config.Config{
 		Port:               8080,
