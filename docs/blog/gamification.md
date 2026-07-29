@@ -10,18 +10,12 @@ This post is the map: what the system does, how the pieces fit,
 where the extension points are, and where a language model could add
 value without breaking the shape.
 
-> **Update — 2026-07-29 (gaka-hc6).** The evaluator moved server-side.
-> The DSL is unchanged (all 13 primitives + 3 composers) but it now
-> lives in `internal/labels/` as a Go port and runs behind two endpoints
-> — `GET /awards` (own; writes the ledger atomically) and
-> `GET /public/profile/:slug/awards` (public; read-only for the ledger).
-> Layer 2's "pure client-side TypeScript" description below is being
-> rewritten; treat those paragraphs as historical until this notice is
-> removed. The **request-flow diagram is out of date** — the client no
-> longer POSTs `/awards/log` after evaluating; the server writes on its
-> own /awards read. The `useAwards()` hook in
-> `web/src/features/publicprofile/labels/useAwards.ts` is the FE
-> entry point; it picks own vs public from the current route.
+> **Updated 2026-07-29 (gaka-hc6).** The evaluator moved server-side.
+> The DSL is unchanged (all 13 primitives + 3 composers) — same tables,
+> same JSON shapes on disk — but the runtime moved from a browser
+> TypeScript switch to a Go switch behind two endpoints. Layer 2 and
+> the request-flow diagram reflect the new shape; see also
+> `docs/design/labels-server-eval.md` for the migration write-up.
 
 ## What you see
 
@@ -104,41 +98,43 @@ The catalog ships as SQL seeds. **114 labels** across 5 kinds:
 
 Adding a label is **one INSERT**. No code change. That's on purpose.
 
-### Layer 2 — Evaluator (FE, pure TS)
+### Layer 2 — Evaluator (Go, server-side)
 
 The catalog holds intent. The evaluator turns intent into awards.
 
-`web/src/features/publicprofile/labels/conditions.ts` — 161 lines of
-pure TypeScript, no I/O, no clock, no random. Takes a `Condition` node
-and a `LabelPayload` (== `PublicDashboardPayload` — the shape the
-public profile already fetches). Returns `true` or `false`.
+`internal/labels/evaluator.go` — pure Go, no I/O, no clock, no random.
+Takes a `Condition` node and a `*Payload` (a projection of the same
+public-dashboard payload the FE renders from) and returns `true` or
+`false`. `EvaluateAll(payload, catalog) []LabelAward` is the entry
+point every handler uses.
 
-Every condition is data:
+Every condition is data (same JSON shape stored in `labels.condition`
+JSONB — unchanged by the port):
 
-```ts
+```json
 // PYTHON MASTER — 100 hours logged in Python
-{ kind: "axis-time", axis: "languages", value: "Python",
-  op: ">=", hours: 100 }
+{ "kind": "axis-time", "axis": "languages", "value": "Python",
+  "op": ">=", "hours": 100 }
 
 // TERMINAL PURIST — vim + neovim + emacs ≥ 50h combined
-{ kind: "axis-time-sum", axis: "editors",
-  values: ["vim", "neovim", "emacs"], op: ">=", hours: 50 }
+{ "kind": "axis-time-sum", "axis": "editors",
+  "values": ["vim","neovim","emacs"], "op": ">=", "hours": 50 }
 
 // NIGHT WATCH — ≥ 40% of punchcard between 22:00-05:00
-{ kind: "punchcard-hour-pct", hoursIn: [22,23,0,1,2,3,4,5],
-  op: ">=", pct: 0.40 }
+{ "kind": "punchcard-hour-pct", "hoursIn": [22,23,0,1,2,3,4,5],
+  "op": ">=", "pct": 0.40 }
 
 // POLYGLOT — 5+ languages each ≥ 20h
-{ kind: "distinct-count", axis: "languages",
-  minHoursEach: 20, op: ">=", n: 5 }
+{ "kind": "distinct-count", "axis": "languages",
+  "minHoursEach": 20, "op": ">=", "n": 5 }
 
 // SPRINTER — last-7 avg is 2x the prior-7 avg
-{ kind: "trend", window: "last7-vs-prior7", op: ">=", ratio: 2.0 }
+{ "kind": "trend", "window": "last7-vs-prior7", "op": ">=", "ratio": 2.0 }
 
 // Composition
-{ kind: "all", of: [<condA>, <condB>] }
-{ kind: "any", of: [<condA>, <condB>] }
-{ kind: "not", of: <condA> }
+{ "kind": "all", "of": [ <condA>, <condB> ] }
+{ "kind": "any", "of": [ <condA>, <condB> ] }
+{ "kind": "not", "of": <condA> }
 ```
 
 The full primitive set today:
@@ -157,13 +153,19 @@ The full primitive set today:
 | `all` / `any` / `not`  | boolean composition                                 |
 
 Extension rule: adding a primitive is **one case** in the switch, **one
-type** in `types.ts`, **one test** in `conditions.test.ts`. If the
+struct** in `types.go`, **one test** in `evaluator_test.go`. If the
 existing set covers a new label, compose — don't add.
 
-`evaluator.ts` walks the whole catalog, filters to passing specs, dedups
-tier collisions (highest tier per axis-value wins), sorts by rank, and
-hands back a `LabelAward[]`. Pure function. **No server round trip.**
-Every visitor gets a live evaluation off the payload they already fetched.
+`EvaluateAll` walks the whole catalog, filters to passing specs, dedupes
+tier collisions (highest tier per axis-value wins), sorts by rank desc
+(id asc secondary), returns `[]LabelAward`. Pure function; the wrapping
+handler is the one that touches DB and clocks.
+
+**Client contract:** the FE never runs the evaluator anymore. Two hooks
+in `web/src/features/publicprofile/labels/useAwards.ts` — `useOwnAwards()`
+and `usePublicAwards(slug)` — pull awards from the endpoints in Layer
+3. `useAwards()` picks between them by sniffing the `:slug` route param,
+so widget authors don't have to plumb scope through props.
 
 ### Layer 3 — Ledger (BE, append-only)
 
@@ -185,15 +187,27 @@ CREATE TABLE award_ledger (
 );
 ```
 
-Every time the client evaluator fires, it POSTs the passing label IDs
-to `/api/v1/users/current/awards/log`. The server:
+Every time an authenticated user hits `GET /api/v1/users/current/awards`,
+the server evaluates the catalog and — before returning the awards —
+writes ledger rows in the same handler. The server:
 
 1. Resolves the caller's timezone via the 3-level chain
    (`users.timezone` → `BOOM_DEFAULT_TIMEZONE` → `UTC`)
-2. Computes `[period_start, period_end)` for each item at `at=now()` in
-   that timezone
+2. Computes `[period_start, period_end)` for each firing label at
+   `at=now()` in that timezone
 3. Batches one upsert per item — `ON CONFLICT DO NOTHING`. Idempotent
    inside a period; repeat visits are cheap and don't skew the streak
+
+Public-profile hits (`GET /api/public/profile/:slug/awards`) evaluate
+and return, but **do NOT write to the ledger** — a public visitor
+must not be able to advance someone else's streak. The one authoritative
+"you had this label" moment is the owner's own read.
+
+**Historical replay:** `POST /api/v1/users/current/awards/backfill
+{days: N}` walks the last N days server-side, rebuilds each day's
+payload snapshot, evaluates, and writes ledger rows with `at=D` for
+that day. Powers the "Streak backfill" tool in Settings → Admin;
+supersedes the earlier browser-side per-day loop.
 
 The primary key `(username, label_id, period_start)` is the whole trick.
 Two visits on the same day → one row. Fifty visits over a Monday → one
@@ -232,56 +246,83 @@ fired for N periods prior" (Layer 4). The `Nx` badge on the chip.
 
 ## The whole request flow
 
-Visitor loads `/p/dj`:
+Visitor loads their own dashboard at `/app`:
 
 ```
-Browser                       Boomtime API                DB
-   │                              │                        │
-   ├─ GET /public/profile/dj ────►│                        │
-   │◄────────────── payload ──────┤ SELECT stats + rollups │
-   │                              │                        │
-   ├─ GET /labels/catalog ───────►│                        │
-   │◄────────────── 114 rows ─────┤ SELECT * FROM labels   │
-   │                              │                        │
-   ├─ evaluate(payload, catalog) ─────── (pure client) ──►│
-   │                                                       │
-   ├─ POST /awards/log ──────────►│                        │
-   │  {items: [{labelId,          │ tz-resolve → PeriodBounds
-   │            periodType}]}     │ ON CONFLICT DO NOTHING │
-   │                              │                        │
-   ├─ GET /awards/streaks ───────►│                        │
-   │◄─── {night-watch: 3, ...} ───┤ walker over ledger     │
-   │                                                       │
-   └── render chips with Nx badges + tooltips
+Browser                    Boomtime API                    DB
+   │                           │                            │
+   ├─ GET /awards ────────────►│                            │
+   │                           │ build public payload       │
+   │                           │  ├── LoadHidden/RenameSets │
+   │                           │  ├── GetUserActivity       │
+   │                           │  ├── GetCategoryDaily      │
+   │                           │  └── GetPunchcard          │
+   │                           │ ListLabels → catalog       │
+   │                           │ EvaluateAll(payload, cat.) │
+   │                           │ LogAwards (own only)       │
+   │                           │  ON CONFLICT DO NOTHING    │
+   │◄────── LabelAward[] ──────┤                            │
+   │                           │                            │
+   ├─ GET /awards/streaks ────►│                            │
+   │◄─── {night-watch: 3, ...} │ walker over ledger         │
+   │                           │                            │
+   └── useAwards() + useAwardStreaks() → render chips w/ Nx badges
 ```
 
-Two DB reads, one write, one client-side compute. All idempotent.
+Visitor loads a public profile at `/p/dj`:
 
-## Why "client-side JIT evaluate + server-side persistent log"
+```
+Browser                    Boomtime API                    DB
+   │                           │                            │
+   ├─ GET /public/profile/dj/awards ─────────────────►────►│
+   │                           │ resolve slug → owner       │
+   │                           │ build owner's payload      │
+   │                           │ ListLabels → catalog       │
+   │                           │ EvaluateAll                │
+   │                           │ *NO ledger write*          │
+   │◄────── LabelAward[] ──────┤                            │
+   │                           │                            │
+   ├─ GET /public/profile/dj/awards/streaks ────────►      │
+   │◄─── {night-watch: 3, ...} │ walker (visitor's view)    │
+   │                           │                            │
+   └── useAwards() picks public via slug param → render
+```
 
-We considered three shapes early:
+One request per read, ledger write folded in on the own path,
+everything idempotent.
+
+## Why "server evaluate + server-write ledger"
+
+Three shapes were on the table:
 
 1. **Fully client-side** — evaluator only, no persistence. Streaks
    impossible; every reload starts over.
-2. **Fully server-side** — a cron computes awards nightly and writes
-   them. Streaks trivial; but no live "you just earned this" moment;
-   every catalog tweak requires a rerun.
-3. **JIT client eval + persistent log** — what we shipped. Live
-   evaluation is instant and always reflects the current catalog;
-   the log is the memory.
+2. **Fully server-side batch** — a cron computes awards nightly.
+   Streaks trivial; but no live "you just earned this" moment; every
+   catalog tweak requires a rerun.
+3. **Server evaluate on-read + write-through ledger** — what we shipped.
+   Every own-dashboard hit re-evaluates against the current catalog and
+   writes the ledger inline. Public visits evaluate but never write.
 
-Shape #3 wins because the **catalog is authorable**. Admin edits a
-threshold, deploys, refresh — every visitor immediately sees awards
-under the new rule. No batch to rerun. The log stays correct because
-it records "this label id fired in this period" — the rule the label
-represented today is by definition the current one.
+Shape #3 wins on the same three counts as any live-eval approach:
+the **catalog is authorable** (edit a threshold, refresh, every
+subsequent visitor sees the new answer immediately; no batch to
+rerun), the **ledger stays honest** (server-authoritative, no client
+lies possible), and the **request budget is small** (one own read =
+one payload query + one catalog query + one batch upsert; public read
+skips the upsert).
 
-The one gotcha: a rule change is retroactively invisible.
-`archetype/night-watch`'s ledger rows say "fired on 2026-07-15" —
-they don't remember what threshold was in force at the time. That's a
-deliberate call: streaks are about **consistency**, not **rule
-archaeology**. If you re-tighten the rule, next period's evaluate()
-gets the new answer, the streak may break, and that's honest.
+Shape #3 replaced an earlier "shape #3.5" — client-side JIT evaluate
+plus a client POST to `/awards/log` after each evaluate — which put
+too much of the ledger-integrity contract in the browser. See
+`docs/design/labels-server-eval.md` for the migration write-up.
+
+The one gotcha survives: rule changes are retroactively invisible.
+A ledger row from 2026-07-15 says "fired on that date" but doesn't
+remember the threshold that fired it. That's a deliberate call:
+streaks are about **consistency**, not **rule archaeology**. Tighten
+a rule and next period the evaluator gets a different answer; the
+streak may break, and that's honest.
 
 ## What extensibility actually looks like
 
@@ -429,14 +470,33 @@ reader**. None mutate the runtime path.
 
 ## Files worth reading
 
-- `web/src/features/publicprofile/labels/types.ts` — the whole vocabulary
-- `web/src/features/publicprofile/labels/conditions.ts` — the evaluator (161 lines)
-- `web/src/features/publicprofile/labels/evaluator.ts` — the walker (82 lines)
+**Go (server-side):**
+
+- `internal/labels/types.go` — the whole DSL vocabulary (Condition
+  interface + 13 primitives + 3 composers)
+- `internal/labels/evaluator.go` — `EvaluateCondition` + `EvaluateAll`
+- `internal/labels/dbrow.go` — DB-row → LabelSpec bridge (tierKey
+  derivation lives here)
+- `internal/handler/awards_eval.go` — `GET /awards` (own + public)
+- `internal/handler/awards_backfill.go` — `POST /awards/backfill` for
+  historical replay
 - `internal/db/award_ledger.go` — persistence + streak walker
-- `internal/handler/awards.go` — endpoints
 - `internal/db/migrations/00036_labels_catalog.sql` — the catalog schema
 - `internal/db/migrations/00044_award_ledger.sql` — the ledger schema
 
-The whole system is under a thousand lines of Go + TS. That's the shape
-you want when the runtime has to be trustworthy but the vocabulary has
-to grow forever.
+**TypeScript (client-side):**
+
+- `web/src/features/publicprofile/labels/types.ts` — just the display
+  shapes the FE needs (`LabelAward`, `LabelCatalogRow`, and the
+  `Condition` primitive TYPES for the tooltip formatter — no runtime
+  helpers)
+- `web/src/features/publicprofile/labels/useAwards.ts` — the hooks
+  widgets use
+- `web/src/features/publicprofile/labels/formatCondition.ts` — renders
+  "Fires when: ..." in chip tooltips
+- `web/src/features/publicprofile/labels/LabelChip.tsx` — the chip
+  itself
+
+Server side is ~1000 LOC of Go; client side is a couple hundred LOC of
+display code. That's the shape you want when the runtime has to be
+trustworthy but the vocabulary has to grow forever.
