@@ -1,11 +1,12 @@
 // dashboard_layout_ginkgo_test.go — ginkgo mirror of dashboard_layout_test.go (gaka-keb).
 // 1:1 case map (6 stdlib TestXxx):
-//   TestDashboardLayoutPersistence_Gaka6jmXRegression → dashboard layout > "PUT/GET semantic round-trip; overwrite replaces"
-//   TestDashboardLayoutUnknownScope                   → dashboard layout > "unknown scope → 400 (PUT + GET)"
-//   TestDashboardLayoutMissWhenUnset                  → dashboard layout > "GET before any PUT → 404"
-//   TestPutDashboardLayout_BodySizeCap_413            → dashboard layout > "5 KiB body → 413 before write"
-//   TestPublicProfileIncludesLayoutWhenSet            → public profile layout > "included verbatim when set"
-//   TestPublicProfileLayoutOmittedWhenUnset           → public profile layout > "omitted (omitempty) when unset"
+//
+//	TestDashboardLayoutPersistence_Gaka6jmXRegression → dashboard layout > "PUT/GET semantic round-trip; overwrite replaces"
+//	TestDashboardLayoutUnknownScope                   → dashboard layout > "unknown scope → 400 (PUT + GET)"
+//	TestDashboardLayoutMissWhenUnset                  → dashboard layout > "GET before any PUT → 404"
+//	TestPutDashboardLayout_BodySizeCap_413            → dashboard layout > "5 KiB body → 413 before write"
+//	TestPublicProfileIncludesLayoutWhenSet            → public profile layout > "included verbatim when set"
+//	TestPublicProfileLayoutOmittedWhenUnset           → public profile layout > "omitted (omitempty) when unset"
 package handler_test
 
 import (
@@ -214,4 +215,3 @@ func semanticJSONDiff(a, b string) string {
 	}
 	return ""
 }
-

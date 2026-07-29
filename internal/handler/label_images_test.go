@@ -1,8 +1,9 @@
 // label_images_ginkgo_test.go — ginkgo mirror of label_images_test.go (gaka-myv).
 // 1:1 case map (3 stdlib TestXxx):
-//   TestLabelImage_Served                   → LabelImage > "serves bytes + Cache-Control verbatim"
-//   TestLabelImage_NotFound                 → LabelImage > "unknown id → 404"
-//   TestLabelImage_IgnoresCacheBustParam    → LabelImage > "?v= cache-bust param is ignored"
+//
+//	TestLabelImage_Served                   → LabelImage > "serves bytes + Cache-Control verbatim"
+//	TestLabelImage_NotFound                 → LabelImage > "unknown id → 404"
+//	TestLabelImage_IgnoresCacheBustParam    → LabelImage > "?v= cache-bust param is ignored"
 package handler_test
 
 import (

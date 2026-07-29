@@ -1,7 +1,8 @@
 // curation_ginkgo_test.go — ginkgo mirror of curation_test.go.
 // 1:1 case map (2 stdlib TestXxx):
-//   TestCurationAxisWhitelist    → curation whitelist > valid axes + invalid axes (as 2 Its)
-//   TestCurationActionConstants  → curation constants > "hide/rename constants have not drifted"
+//
+//	TestCurationAxisWhitelist    → curation whitelist > valid axes + invalid axes (as 2 Its)
+//	TestCurationActionConstants  → curation constants > "hide/rename constants have not drifted"
 package handler
 
 import (

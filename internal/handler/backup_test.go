@@ -11,8 +11,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
-	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -110,15 +108,3 @@ var _ = Describe("backup round-trip (export → mutate → import)", func() {
 			"token no longer valid after restoring its own backup: %d", rec.Code)
 	})
 })
-
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
-func doRaw(t *testing.T, e http.Handler, method, target, token string, body []byte) *httptest.ResponseRecorder {
-	t.Helper()
-	req := httptest.NewRequest(method, target, bytes.NewReader(body))
-	if token != "" {
-		req.Header.Set("Authorization", "Basic "+token)
-	}
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-	return rec
-}

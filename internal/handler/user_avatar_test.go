@@ -1,12 +1,13 @@
 // user_avatar_ginkgo_test.go — ginkgo mirror of user_avatar_test.go (gaka-9v4).
 // 1:1 case map (6 stdlib TestXxx):
-//   TestAvatar_SynthesizePrompt_401WithoutToken   → SynthesizePrompt > "no token → auth failure (not 2xx)"
-//   TestAvatar_SynthesizePrompt_403ForNonAdmin    → SynthesizePrompt > "authed non-admin → 403"
-//   TestAvatar_SynthesizePrompt_503WhenLLMUnconfigured → SynthesizePrompt > "admin, no LLM key → 503 w/ LLM sentinel"
-//   TestAvatar_Regenerate_503WhenShimDisabled     → Regenerate > "no shim → 503"
-//   TestAvatar_Regenerate_400OnEmptyPrompt        → Regenerate > "empty prompt → 400 with shim on"
-//   TestAvatar_PublicGet_404WhenNotReady          → PublicGet > "no row / running row → 404; ready row → 200 with bytes"
-//   TestAvatar_Status_None                        → Status > "no row → {status:none}"
+//
+//	TestAvatar_SynthesizePrompt_401WithoutToken   → SynthesizePrompt > "no token → auth failure (not 2xx)"
+//	TestAvatar_SynthesizePrompt_403ForNonAdmin    → SynthesizePrompt > "authed non-admin → 403"
+//	TestAvatar_SynthesizePrompt_503WhenLLMUnconfigured → SynthesizePrompt > "admin, no LLM key → 503 w/ LLM sentinel"
+//	TestAvatar_Regenerate_503WhenShimDisabled     → Regenerate > "no shim → 503"
+//	TestAvatar_Regenerate_400OnEmptyPrompt        → Regenerate > "empty prompt → 400 with shim on"
+//	TestAvatar_PublicGet_404WhenNotReady          → PublicGet > "no row / running row → 404; ready row → 200 with bytes"
+//	TestAvatar_Status_None                        → Status > "no row → {status:none}"
 package handler_test
 
 import (

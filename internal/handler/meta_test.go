@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -84,16 +83,6 @@ var _ = Describe("Changelog endpoint", func() {
 		Expect(rec.Body.Len()).To(Equal(len(boomtime.ChangelogMD)))
 	})
 })
-
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
-func metaHandler(t *testing.T, ver string) *Handler {
-	t.Helper()
-	return &Handler{
-		Cfg:    &config.Config{Version: ver},
-		Logger: slog.Default(),
-		Cache:  cache.New(0),
-	}
-}
 
 func firstLine(b []byte) string {
 	if i := strings.IndexByte(string(b), '\n'); i >= 0 {

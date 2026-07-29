@@ -1,10 +1,11 @@
 // config_ginkgo_test.go — ginkgo mirror of config_test.go (gaka-0vp).
 // 1:1 case map (5 top-level TestXxx, several with subtests):
-//   TestLoadDefaults              → Load > "defaults"
-//   TestWakatimeAPIKeyPrecedence  → Load > "wakatime api key precedence" (3 Its)
-//   TestGetEnvInt                 → getEnvInt > 3 named entries
-//   TestCookieSecureDefaults      → cookie secure derivation > DescribeTable of 6
-//   TestGetEnvBool                → getEnvBool > 4 groups
+//
+//	TestLoadDefaults              → Load > "defaults"
+//	TestWakatimeAPIKeyPrecedence  → Load > "wakatime api key precedence" (3 Its)
+//	TestGetEnvInt                 → getEnvInt > 3 named entries
+//	TestCookieSecureDefaults      → cookie secure derivation > DescribeTable of 6
+//	TestGetEnvBool                → getEnvBool > 4 groups
 //
 // Uses GinkgoT() to bridge into stdlib-typed helpers (clearConfigEnv,
 // t.Setenv) — those helpers still take *testing.T; ginkgo returns a

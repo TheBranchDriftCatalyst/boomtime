@@ -1,11 +1,12 @@
 // case_fold_ginkgo_test.go — ginkgo mirror of case_fold_test.go (gaka-0vp.13).
 // 1:1 case map (6 stdlib TestXxx incl 7+2 subtests → 5 Its + 1 DescribeTable(7) + 1 DescribeTable(2)):
-//   TestCaseFoldAggregationAcrossAxes → DescribeTable "case-fold aggregation across axes" (7 axes)
-//   TestCaseFoldCategoryDaily          → It "GetCategoryDaily collapses 'coding' case variants"
-//   TestCaseFoldRollupPath             → It "rollup path collapses MyProject/myproject case variants"
-//   TestCaseFoldEntity                 → It "entity list + active files fold file path case variants"
-//   TestCaseFoldHideCatchesVariants    → It "hide rule catches every case variant"
-//   TestCaseFoldMultiDayCanonicalPick  → DescribeTable "multi-day canonical pick" (category + project)
+//
+//	TestCaseFoldAggregationAcrossAxes → DescribeTable "case-fold aggregation across axes" (7 axes)
+//	TestCaseFoldCategoryDaily          → It "GetCategoryDaily collapses 'coding' case variants"
+//	TestCaseFoldRollupPath             → It "rollup path collapses MyProject/myproject case variants"
+//	TestCaseFoldEntity                 → It "entity list + active files fold file path case variants"
+//	TestCaseFoldHideCatchesVariants    → It "hide rule catches every case variant"
+//	TestCaseFoldMultiDayCanonicalPick  → DescribeTable "multi-day canonical pick" (category + project)
 package db
 
 import (

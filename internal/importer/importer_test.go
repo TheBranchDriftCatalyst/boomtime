@@ -1,9 +1,10 @@
 // importer_ginkgo_test.go — ginkgo mirror of importer_test.go (gaka-0vp).
 // 1:1 case map (4 stdlib TestXxx):
-//   TestDayRangeInclusivePlusOne                   → DayRange / TotalDays > "same-day range yields 2 entries"
-//   TestDayRangeMultiDay                           → DayRange / TotalDays > "3-day span → 4 entries"
-//   TestCancelReturnsPreClosedChannelForUnknownJob → Worker.Cancel > "unknown job returns pre-closed done channel"
-//   TestCancelDoneChannelClosesAfterWorkerExit     → Worker.Cancel > "registered job's done channel closes after worker exit"
+//
+//	TestDayRangeInclusivePlusOne                   → DayRange / TotalDays > "same-day range yields 2 entries"
+//	TestDayRangeMultiDay                           → DayRange / TotalDays > "3-day span → 4 entries"
+//	TestCancelReturnsPreClosedChannelForUnknownJob → Worker.Cancel > "unknown job returns pre-closed done channel"
+//	TestCancelDoneChannelClosesAfterWorkerExit     → Worker.Cancel > "registered job's done channel closes after worker exit"
 package importer
 
 import (

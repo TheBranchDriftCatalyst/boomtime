@@ -1,13 +1,14 @@
 // capwithother_ginkgo_test.go — ginkgo mirror of capwithother_test.go (gaka-tst-ginkgo).
 // 1:1 case map (7 stdlib TestXxx):
-//   TestCapWithOtherSmallListUnchanged                → capWithOther > "small list (<= topN) is unchanged"
-//   TestCapWithOtherCollapsesTail                     → capWithOther > "collapses tail into Other with element-wise sums"
-//   TestCapWithOtherCarriesOtherMembers               → capWithOther > "Other carries members for tooltip breakdown (gaka-7m4)"
-//   TestCapWithOtherRespectsMembersCap                → capWithOther > "respects otherMembersCap (post gaka-mwp-other)"
-//   TestCapWithOtherGrowsToKeepOtherBelowCeiling      → capWithOther > "grows topN to keep Other <= 25% ceiling (gaka-mwp-other)"
-//   TestCapWithOtherHonorsDefaultNWhenOtherIsSmall    → capWithOther > "honors default N when Other is already small"
-//   TestCapWithOtherSmallListHasNoOtherMembers        → capWithOther > "small list rows carry no Other* fields"
-//   TestCapWithOtherDoesNotMutateInput                → capWithOther > "does not mutate caller's input slice or backing array"
+//
+//	TestCapWithOtherSmallListUnchanged                → capWithOther > "small list (<= topN) is unchanged"
+//	TestCapWithOtherCollapsesTail                     → capWithOther > "collapses tail into Other with element-wise sums"
+//	TestCapWithOtherCarriesOtherMembers               → capWithOther > "Other carries members for tooltip breakdown (gaka-7m4)"
+//	TestCapWithOtherRespectsMembersCap                → capWithOther > "respects otherMembersCap (post gaka-mwp-other)"
+//	TestCapWithOtherGrowsToKeepOtherBelowCeiling      → capWithOther > "grows topN to keep Other <= 25% ceiling (gaka-mwp-other)"
+//	TestCapWithOtherHonorsDefaultNWhenOtherIsSmall    → capWithOther > "honors default N when Other is already small"
+//	TestCapWithOtherSmallListHasNoOtherMembers        → capWithOther > "small list rows carry no Other* fields"
+//	TestCapWithOtherDoesNotMutateInput                → capWithOther > "does not mutate caller's input slice or backing array"
 package stats
 
 import (
@@ -142,7 +143,7 @@ var _ = Describe("capWithOther", func() {
 		share := float64(other.TotalSeconds) / float64(total)
 		Expect(share).To(BeNumerically("<=", 0.25001), "Other share must be <= 0.25")
 		// Sanity: at least resourceTopN entries kept (minimum floor).
-		Expect(len(out) - 1).To(BeNumerically(">=", 12), "kept at least resourceTopN entries in top")
+		Expect(len(out)-1).To(BeNumerically(">=", 12), "kept at least resourceTopN entries in top")
 	})
 
 	It("honors default N when Other is already small", func() {

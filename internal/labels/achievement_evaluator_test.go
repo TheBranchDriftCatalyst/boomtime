@@ -3,31 +3,32 @@
 // both files run until the kill switch drops the stdlib variant.
 //
 // 1:1 case map (22 stdlib TestXxx → 22 ginkgo Its / entries):
-//   TestAxisTime_ThresholdInclusive       → axis-time > "threshold inclusive"
-//   TestAxisTime_CaseInsensitive          → axis-time > "case-insensitive matching"
-//   TestAxisTimeSum_TerminalPuristShape   → axis-time-sum > "TERMINAL PURIST shape"
-//   TestAxisPct_ComputedFromSeconds       → axis-pct > "computed from seconds"
-//   TestTopShare_UsesFirstEntry           → top-share > "uses list[0]"
-//   TestDistinctCount_MinHoursEachFloor   → distinct-count > "minHoursEach floor"
-//   TestPunchcardHourPct_UsesTotalDenominator
-//                                         → punchcard-hour-pct > "total denominator"
-//   TestStreak_CurrentVsLongest           → streak > "current vs longest"
-//   TestTrend_InsufficientHistoryDoesNotFire
-//                                         → trend > "insufficient history"
-//   TestAll_AllMustHold                   → composition > "all"
-//   TestAny_OneEnough                     → composition > "any"
-//   TestNot_Inverts                       → composition > "not"
-//   TestEvaluateAll_EmptyCatalogReturnsNil→ EvaluateAll > "empty catalog"
-//   TestEvaluateAll_TierDedupeKeepsHighest→ EvaluateAll > "tier dedupe keeps highest"
-//   TestEvaluateAll_SortByRankDescIdAscSecondary
-//                                         → EvaluateAll > "sort by rank/id"
-//   TestJSONRoundTrip_ExampleFromSeed     → JSON round-trip > "axis-time"
-//   TestJSONRoundTrip_AllComposition      → JSON round-trip > "all composition"
-//   TestDailyAvg_Fires                    → daily-avg > "fires at threshold"
-//   TestPunchcardDowPct_Fires             → punchcard-dow-pct > "fires at threshold"
-//   TestNilPayloadNoPanic                 → defensive > "nil payload no panic"
-//   TestEvaluateAll_NilPayloadReturnsNil  → EvaluateAll > "nil payload returns nil"
-//   TestAxisTimeLE_Fires                  → axis-time > "LE comparator"
+//
+//	TestAxisTime_ThresholdInclusive       → axis-time > "threshold inclusive"
+//	TestAxisTime_CaseInsensitive          → axis-time > "case-insensitive matching"
+//	TestAxisTimeSum_TerminalPuristShape   → axis-time-sum > "TERMINAL PURIST shape"
+//	TestAxisPct_ComputedFromSeconds       → axis-pct > "computed from seconds"
+//	TestTopShare_UsesFirstEntry           → top-share > "uses list[0]"
+//	TestDistinctCount_MinHoursEachFloor   → distinct-count > "minHoursEach floor"
+//	TestPunchcardHourPct_UsesTotalDenominator
+//	                                      → punchcard-hour-pct > "total denominator"
+//	TestStreak_CurrentVsLongest           → streak > "current vs longest"
+//	TestTrend_InsufficientHistoryDoesNotFire
+//	                                      → trend > "insufficient history"
+//	TestAll_AllMustHold                   → composition > "all"
+//	TestAny_OneEnough                     → composition > "any"
+//	TestNot_Inverts                       → composition > "not"
+//	TestEvaluateAll_EmptyCatalogReturnsNil→ EvaluateAll > "empty catalog"
+//	TestEvaluateAll_TierDedupeKeepsHighest→ EvaluateAll > "tier dedupe keeps highest"
+//	TestEvaluateAll_SortByRankDescIdAscSecondary
+//	                                      → EvaluateAll > "sort by rank/id"
+//	TestJSONRoundTrip_ExampleFromSeed     → JSON round-trip > "axis-time"
+//	TestJSONRoundTrip_AllComposition      → JSON round-trip > "all composition"
+//	TestDailyAvg_Fires                    → daily-avg > "fires at threshold"
+//	TestPunchcardDowPct_Fires             → punchcard-dow-pct > "fires at threshold"
+//	TestNilPayloadNoPanic                 → defensive > "nil payload no panic"
+//	TestEvaluateAll_NilPayloadReturnsNil  → EvaluateAll > "nil payload returns nil"
+//	TestAxisTimeLE_Fires                  → axis-time > "LE comparator"
 package labels
 
 import (

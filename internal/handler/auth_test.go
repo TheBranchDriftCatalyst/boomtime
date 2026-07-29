@@ -27,7 +27,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -523,52 +522,10 @@ var _ = Describe("ChangePassword argon2 version (gaka-awh.6)", func() {
 	})
 })
 
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
-func registerUser(t *testing.T, e http.Handler, hz *testutil.Harness, user, pw string) {
-	t.Helper()
-	hz.Cleanup(user)
-	rec := doJSONReq(t, e, http.MethodPost, "/auth/register", "", map[string]string{
-		"username": user,
-		"password": pw,
-	})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("register %s: status %d body=%s", user, rec.Code, rec.Body.String())
-	}
-}
-
 func mean(xs []time.Duration) time.Duration {
 	var sum time.Duration
 	for _, x := range xs {
 		sum += x
 	}
 	return sum / time.Duration(len(xs))
-}
-
-func plantLegacyUser(t *testing.T, hz *testutil.Harness, username, password string) {
-	t.Helper()
-	ctx := context.Background()
-	hz.Cleanup(username)
-	hash, salt, err := auth.HashPasswordWithVersion(password, auth.ArgonVersionLegacy)
-	if err != nil {
-		t.Fatalf("hash v1: %v", err)
-	}
-	created, err := hz.DB.InsertUser(ctx, db.StoredUser{
-		Username: username, HashedPassword: hash, SaltUsed: salt,
-		ArgonVersion: auth.ArgonVersionLegacy,
-	})
-	if err != nil || !created {
-		t.Fatalf("plant legacy user %s: created=%v err=%v", username, created, err)
-	}
-}
-
-func readUserRow(t *testing.T, hz *testutil.Harness, username string) ([]byte, int) {
-	t.Helper()
-	var hp []byte
-	var ver int
-	if err := hz.DB.Pool.QueryRow(context.Background(),
-		`SELECT hashed_password, argon_version FROM users WHERE username=$1`,
-		username).Scan(&hp, &ver); err != nil {
-		t.Fatalf("read user row %s: %v", username, err)
-	}
-	return hp, ver
 }

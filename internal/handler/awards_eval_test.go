@@ -253,55 +253,6 @@ func getJSON(t *testing.T, e http.Handler, path, token string) *httptest.Respons
 	return rec
 }
 
-func countLedger(t *testing.T, hz *testutil.Harness, username string) int {
-	t.Helper()
-	var n int
-	if err := hz.DB.Pool.QueryRow(t.Context(),
-		`SELECT count(*) FROM award_ledger WHERE username=$1`, username).Scan(&n); err != nil {
-		t.Fatalf("count ledger for %s: %v", username, err)
-	}
-	return n
-}
-
-func seedPythonFiveHours(t *testing.T, hz *testutil.Harness, sender string) {
-	t.Helper()
-	// Recent (within the awards handler's 60-day window from Now()).
-	base := time.Now().UTC().Add(-7 * 24 * time.Hour)
-	// Snap to a weekday noon.
-	base = time.Date(base.Year(), base.Month(), base.Day(), 12, 0, 0, 0, time.UTC)
-	if base.Weekday() == time.Saturday {
-		base = base.Add(48 * time.Hour)
-	} else if base.Weekday() == time.Sunday {
-		base = base.Add(24 * time.Hour)
-	}
-	hz.Seeder(sender).
-		Projects("boomtime").
-		Block(testutil.HB{
-			Project:  "boomtime",
-			Language: "python",
-			Editor:   "vim",
-			Platform: "linux",
-			Category: "coding",
-			Entity:   "main.py",
-		}, base, 30, 900)
-	if err := hz.DB.RefreshRollup(t.Context(), sender, base.Add(-time.Hour)); err != nil {
-		t.Fatalf("RefreshRollup: %v", err)
-	}
-}
-
-func doPostJSON(t *testing.T, e http.Handler, target, token string, body any) *httptest.ResponseRecorder {
-	t.Helper()
-	b, _ := json.Marshal(body)
-	req := httptest.NewRequest(http.MethodPost, target, bytesReader(b))
-	if token != "" {
-		req.Header.Set("Authorization", "Basic "+token)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-	return rec
-}
-
 type bytesReaderT struct {
 	b   []byte
 	pos int

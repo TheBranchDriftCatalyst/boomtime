@@ -1,16 +1,17 @@
 // scrub_ginkgo_test.go — ginkgo mirror of scrub_test.go (gaka-0vp).
 // 1:1 case map (10 stdlib TestXxx → 10 Its across 4 Describe groups):
-//   TestScrub_HiddenProjectNeverAppears           → "Scrub" > It "strips a hidden project everywhere and does not mutate input"
-//   TestScrub_HiddenLanguageNeverAppears          → "Scrub" > It "strips a hidden language without cross-axis contamination"
-//   TestScrub_HiddenMachineNeverAppears           → "Scrub" > It "strips a hidden machine from the tail"
-//   TestScrub_StatsPayloadNeverExposesFilePaths   → "public-safe payload contracts" > It "StatsPayload has no per-file/per-branch/per-entity field"
-//   TestScrub_Idempotent                          → "Scrub" > It "is idempotent"
-//   TestScrub_NilAndEmpty                         → "Scrub" > It "no-op fast paths (nil payload / nil hidden / empty axes)"
-//   TestScrubMomentum_HiddenProjectNeverAppears   → "ScrubMomentum" > It "drops hidden project rows, keeps Weeks axis, preserves visible projects"
-//   TestScrubMomentum_NoOpFastPaths               → "ScrubMomentum" > It "no-op fast paths"
-//   TestScrubMomentum_Idempotent                  → "ScrubMomentum" > It "is idempotent"
-//   TestPunchcardHasNoProjectLabels               → "public-safe payload contracts" > It "PunchcardPayload/Cell have no axis-label fields"
-//   TestSessionsHasNoProjectLabels                → "public-safe payload contracts" > It "SessionsPayload family has no axis-label fields"
+//
+//	TestScrub_HiddenProjectNeverAppears           → "Scrub" > It "strips a hidden project everywhere and does not mutate input"
+//	TestScrub_HiddenLanguageNeverAppears          → "Scrub" > It "strips a hidden language without cross-axis contamination"
+//	TestScrub_HiddenMachineNeverAppears           → "Scrub" > It "strips a hidden machine from the tail"
+//	TestScrub_StatsPayloadNeverExposesFilePaths   → "public-safe payload contracts" > It "StatsPayload has no per-file/per-branch/per-entity field"
+//	TestScrub_Idempotent                          → "Scrub" > It "is idempotent"
+//	TestScrub_NilAndEmpty                         → "Scrub" > It "no-op fast paths (nil payload / nil hidden / empty axes)"
+//	TestScrubMomentum_HiddenProjectNeverAppears   → "ScrubMomentum" > It "drops hidden project rows, keeps Weeks axis, preserves visible projects"
+//	TestScrubMomentum_NoOpFastPaths               → "ScrubMomentum" > It "no-op fast paths"
+//	TestScrubMomentum_Idempotent                  → "ScrubMomentum" > It "is idempotent"
+//	TestPunchcardHasNoProjectLabels               → "public-safe payload contracts" > It "PunchcardPayload/Cell have no axis-label fields"
+//	TestSessionsHasNoProjectLabels                → "public-safe payload contracts" > It "SessionsPayload family has no axis-label fields"
 package widget
 
 import (
@@ -307,4 +308,3 @@ func containsName(p *model.StatsPayload, needle string) bool {
 	}
 	return false
 }
-

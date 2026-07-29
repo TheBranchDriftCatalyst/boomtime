@@ -1,13 +1,14 @@
 // bigbets_ginkgo_test.go — ginkgo mirror of bigbets_test.go (gaka-tst-ginkgo).
 // 1:1 case map (7 stdlib TestXxx):
-//   TestCategoriesFoldIn      → ToStatsPayload categories > "folds category-daily rows aligned to day series"
-//   TestCategoriesNil         → ToStatsPayload categories > "nil cats yields empty non-nil breakdown + zero count"
-//   TestPunchcardPayload      → ToPunchcardPayload > "passes cells through and computes totals/max"
-//   TestPunchcardEmpty        → ToPunchcardPayload > "nil cells yield all-zero payload"
-//   TestSessionsPayload       → ToSessionsPayload > "summarizes, gap-fills daily, buckets histogram"
-//   TestSessionsEmpty         → ToSessionsPayload > "empty input still gap-fills daily and 5 histogram bins"
-//   TestMomentumPayload       → ToMomentumPayload > "picks top-N and aligns weekly series with gap-fill"
-//   TestIsoWeekStart          → isoWeekStart > "maps a weekday back to the ISO week's Monday"
+//
+//	TestCategoriesFoldIn      → ToStatsPayload categories > "folds category-daily rows aligned to day series"
+//	TestCategoriesNil         → ToStatsPayload categories > "nil cats yields empty non-nil breakdown + zero count"
+//	TestPunchcardPayload      → ToPunchcardPayload > "passes cells through and computes totals/max"
+//	TestPunchcardEmpty        → ToPunchcardPayload > "nil cells yield all-zero payload"
+//	TestSessionsPayload       → ToSessionsPayload > "summarizes, gap-fills daily, buckets histogram"
+//	TestSessionsEmpty         → ToSessionsPayload > "empty input still gap-fills daily and 5 histogram bins"
+//	TestMomentumPayload       → ToMomentumPayload > "picks top-N and aligns weekly series with gap-fill"
+//	TestIsoWeekStart          → isoWeekStart > "maps a weekday back to the ISO week's Monday"
 package stats
 
 import (

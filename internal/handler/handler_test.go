@@ -14,7 +14,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -167,22 +166,4 @@ func (p *panicReaderCloserGinkgo) Close() error               { return nil }
 type tinyPayload struct {
 	CurrentPassword string `json:"currentPassword"`
 	NewPassword     string `json:"newPassword"`
-}
-
-func runBindLimit(t *testing.T, body []byte, dst any, limit int64) (*httptest.ResponseRecorder, bool) {
-	t.Helper()
-	e := echo.New()
-	var bound bool
-	e.POST("/test", func(c *echo.Context) error {
-		if aerr := handler.BindJSONWithLimit(c, dst, limit); aerr != nil {
-			return aerr.Write(c)
-		}
-		bound = true
-		return c.NoContent(http.StatusNoContent)
-	})
-	req := httptest.NewRequest(http.MethodPost, "/test", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-	return rec, bound
 }

@@ -1,6 +1,7 @@
 // import_ginkgo_test.go — ginkgo mirror of import_test.go (gaka-6jm.8).
 // 1:1 case map (1 stdlib TestXxx):
-//   TestImportRequestDoesNotEagerlySaveTypedKey → ImportRequest > "does not eagerly persist typed apiToken; save is deferred to worker"
+//
+//	TestImportRequestDoesNotEagerlySaveTypedKey → ImportRequest > "does not eagerly persist typed apiToken; save is deferred to worker"
 package handler_test
 
 import (

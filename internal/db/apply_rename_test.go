@@ -1,14 +1,15 @@
 // apply_rename_ginkgo_test.go — ginkgo mirror of apply_rename_test.go (gaka-0vp.13).
 // 1:1 case map (9 stdlib TestXxx → 8 Its + 1 DescribeTable(4)):
-//   TestApplyRenameRuleExactHappyPath              → It "exact happy path + preview==run SQL"
-//   TestApplyRenameRuleIdempotent                  → It "idempotent: zero-match still removes mapping"
-//   TestApplyRenameRuleOwnerScoped                 → It "owner-scoped: alice's apply doesn't touch bob"
-//   TestApplyRenameRuleRegex                       → It "regex apply"
-//   TestApplyRenamePreviewMatchesRun               → It "preview SQL == run SQL"
-//   TestApplyRenameRuleRejectsHide                 → It "rejects hide rules (only 'rename')"
-//   TestApplyRenameRuleTemplate                    → It "template apply via regexp_replace"
-//   TestApplyRenameRuleRollbackOnConstraintViolation → It "atomicity: FK violation rolls back UPDATE + DELETE"
-//   TestInlineParams                                → DescribeTable "InlineParams" (4 entries)
+//
+//	TestApplyRenameRuleExactHappyPath              → It "exact happy path + preview==run SQL"
+//	TestApplyRenameRuleIdempotent                  → It "idempotent: zero-match still removes mapping"
+//	TestApplyRenameRuleOwnerScoped                 → It "owner-scoped: alice's apply doesn't touch bob"
+//	TestApplyRenameRuleRegex                       → It "regex apply"
+//	TestApplyRenamePreviewMatchesRun               → It "preview SQL == run SQL"
+//	TestApplyRenameRuleRejectsHide                 → It "rejects hide rules (only 'rename')"
+//	TestApplyRenameRuleTemplate                    → It "template apply via regexp_replace"
+//	TestApplyRenameRuleRollbackOnConstraintViolation → It "atomicity: FK violation rolls back UPDATE + DELETE"
+//	TestInlineParams                                → DescribeTable "InlineParams" (4 entries)
 package db
 
 import (

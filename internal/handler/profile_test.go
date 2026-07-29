@@ -1,7 +1,8 @@
 // profile_ginkgo_test.go — ginkgo mirror of profile_test.go (gaka-6jm.1/.12/bi2).
 // 1:1 case map (2 stdlib TestXxx):
-//   TestPublicProfileCacheHeadersTightPolicy → public profile cache headers > "tight policy (max-age=60, must-revalidate, no s-maxage, quoted ETag)"
-//   TestPutPublicProfile_BodySizeCap_413     → PutPublicProfile body-size cap > "5 KiB body → 413 before slug regex runs"
+//
+//	TestPublicProfileCacheHeadersTightPolicy → public profile cache headers > "tight policy (max-age=60, must-revalidate, no s-maxage, quoted ETag)"
+//	TestPutPublicProfile_BodySizeCap_413     → PutPublicProfile body-size cap > "5 KiB body → 413 before slug regex runs"
 package handler_test
 
 import (

@@ -1,9 +1,10 @@
 // hub_ginkgo_test.go — ginkgo mirror of hub_test.go (gaka-0vp).
 // 1:1 case map (4 stdlib TestXxx):
-//   TestHubPublishDeliversToSubscribers        → Hub > "Publish delivers to all subscribers"
-//   TestHubBufferFullDropsWithoutBlocking      → Hub > "buffer-full drops without blocking Publish"
-//   TestHubUnsubscribeClosesAndSilencesPublish → Hub > "Unsubscribe closes channel and silences later Publishes"
-//   TestHubPublishNoSubscribersIsNoOp          → Hub > "Publish with no subscribers is a no-op"
+//
+//	TestHubPublishDeliversToSubscribers        → Hub > "Publish delivers to all subscribers"
+//	TestHubBufferFullDropsWithoutBlocking      → Hub > "buffer-full drops without blocking Publish"
+//	TestHubUnsubscribeClosesAndSilencesPublish → Hub > "Unsubscribe closes channel and silences later Publishes"
+//	TestHubPublishNoSubscribersIsNoOp          → Hub > "Publish with no subscribers is a no-op"
 package importer
 
 import (

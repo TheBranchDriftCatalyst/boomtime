@@ -1,20 +1,21 @@
 // rename_merge_ginkgo_test.go — ginkgo mirror of rename_merge_test.go (gaka-0vp.13).
 // 1:1 case map (15 stdlib TestXxx incl 3 subtests → 14 Its + 1 DescribeTable(3)):
-//   TestRenameRawPreservation             → It "rename mutates no raw data"
-//   TestRenameMergeAggregates             → DescribeTable "merge aggregates per axis" (3 axes)
-//   TestRenameRollupMerge                 → It "rollup fast path merges A,B -> M"
-//   TestRenameReversibility               → It "deleting rule reverts dashboards to raw"
-//   TestRenameIngestStoresRaw             → It "ingest stores raw values under active rename"
-//   TestRenameProjectDetailByDisplayName  → It "GetProjectStats keys by display name"
-//   TestRenameProjectListMerge            → It "project list shows merged name once"
-//   TestRenameAuditUnaffected             → It "audit surfaces show raw values, not remapped"
-//   TestRenameHidePrecedence              → It "hide precedence: A hidden, only B merges into M"
-//   TestRenameLeaderboardRequesterOnly    → It "requester rename only affects requester rows"
-//   TestRenameMomentumAndCategory         → It "momentum + category-daily merge"
-//   TestRegexRenameMerge                  → It "regex rename merges all Meet* projects"
-//   TestCurationAffectedValues            → It "affected values: regex + exact"
-//   TestRenameProjectExtras               → It "extras aggregates through project + branch rename"
-//   TestCheckProjectDisplayOwner          → It "display-name owner check resolves through remap"
+//
+//	TestRenameRawPreservation             → It "rename mutates no raw data"
+//	TestRenameMergeAggregates             → DescribeTable "merge aggregates per axis" (3 axes)
+//	TestRenameRollupMerge                 → It "rollup fast path merges A,B -> M"
+//	TestRenameReversibility               → It "deleting rule reverts dashboards to raw"
+//	TestRenameIngestStoresRaw             → It "ingest stores raw values under active rename"
+//	TestRenameProjectDetailByDisplayName  → It "GetProjectStats keys by display name"
+//	TestRenameProjectListMerge            → It "project list shows merged name once"
+//	TestRenameAuditUnaffected             → It "audit surfaces show raw values, not remapped"
+//	TestRenameHidePrecedence              → It "hide precedence: A hidden, only B merges into M"
+//	TestRenameLeaderboardRequesterOnly    → It "requester rename only affects requester rows"
+//	TestRenameMomentumAndCategory         → It "momentum + category-daily merge"
+//	TestRegexRenameMerge                  → It "regex rename merges all Meet* projects"
+//	TestCurationAffectedValues            → It "affected values: regex + exact"
+//	TestRenameProjectExtras               → It "extras aggregates through project + branch rename"
+//	TestCheckProjectDisplayOwner          → It "display-name owner check resolves through remap"
 package db
 
 import (

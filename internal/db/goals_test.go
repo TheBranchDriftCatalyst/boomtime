@@ -19,7 +19,6 @@ package db
 import (
 	"context"
 	"encoding/json"
-	"testing"
 
 	"github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -404,14 +403,6 @@ var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
 		Expect(after.LastEvaluatedAt).To(BeNil())
 	})
 })
-
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
-func cleanupGoals(t *testing.T, d *DB, ctx context.Context, sender string) {
-	t.Helper()
-	t.Cleanup(func() {
-		_, _ = d.Pool.Exec(ctx, `DELETE FROM goals WHERE owner=$1`, sender)
-	})
-}
 
 const plantedSpec = `{"kind":"time","axis":"language","value":"Go","op":">=","target_seconds":3600,"window":"week"}`
 

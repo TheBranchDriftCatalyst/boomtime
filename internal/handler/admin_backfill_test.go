@@ -1,9 +1,10 @@
 // admin_backfill_ginkgo_test.go — ginkgo mirror of admin_backfill_test.go
 // (gaka-vh8).
 // 1:1 case map (2 stdlib TestXxx):
-//   TestBackfillEvent2JSON_WireShape          → backfillEvent2json > "wire shape (kind/job.*)"
-//   TestBackfillConfigPatch_WireShape_RoundTrips
-//                                             → backfillConfigPatch > "round-trips PATCH body"
+//
+//	TestBackfillEvent2JSON_WireShape          → backfillEvent2json > "wire shape (kind/job.*)"
+//	TestBackfillConfigPatch_WireShape_RoundTrips
+//	                                          → backfillConfigPatch > "round-trips PATCH body"
 package handler
 
 import (

@@ -1,12 +1,13 @@
 // toggle_curation_ginkgo_test.go — ginkgo mirror of toggle_curation_test.go (gaka-0vp.13).
 // 1:1 case map (7 stdlib TestXxx → 7 Its):
-//   TestToggleCurationRuleHappyPath          → It "ToggleCurationRule: happy path"
-//   TestToggleCurationRuleOwnerScoped        → It "ToggleCurationRule: owner scoped"
-//   TestSetCurationRuleEnabledIdempotent     → It "SetCurationRuleEnabled: idempotent"
-//   TestSetCurationRuleEnabledMissing        → It "SetCurationRuleEnabled: missing id returns found=false"
-//   TestLoadHiddenSetsSkipsDisabled          → It "LoadHiddenSets: skips disabled hide rules"
-//   TestLoadRenameSetsSkipsDisabled          → It "LoadRenameSets: skips disabled rename rules; ListCurationRules keeps them"
-//   TestCreateCurationRuleReEnablesOnUpsert  → It "CreateCurationRule: upsert re-enables paused rule"
+//
+//	TestToggleCurationRuleHappyPath          → It "ToggleCurationRule: happy path"
+//	TestToggleCurationRuleOwnerScoped        → It "ToggleCurationRule: owner scoped"
+//	TestSetCurationRuleEnabledIdempotent     → It "SetCurationRuleEnabled: idempotent"
+//	TestSetCurationRuleEnabledMissing        → It "SetCurationRuleEnabled: missing id returns found=false"
+//	TestLoadHiddenSetsSkipsDisabled          → It "LoadHiddenSets: skips disabled hide rules"
+//	TestLoadRenameSetsSkipsDisabled          → It "LoadRenameSets: skips disabled rename rules; ListCurationRules keeps them"
+//	TestCreateCurationRuleReEnablesOnUpsert  → It "CreateCurationRule: upsert re-enables paused rule"
 package db
 
 import (

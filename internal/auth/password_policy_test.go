@@ -1,7 +1,8 @@
 // password_policy_ginkgo_test.go — ginkgo mirror of password_policy_test.go (gaka-0vp).
 // 1:1 case map (2 stdlib TestXxx):
-//   TestValidatePassword                       → ValidatePassword > DescribeTable of 7 named cases
-//   TestValidatePassword_ErrorMessagesUserSafe → sentinel errors > "user-safe messages"
+//
+//	TestValidatePassword                       → ValidatePassword > DescribeTable of 7 named cases
+//	TestValidatePassword_ErrorMessagesUserSafe → sentinel errors > "user-safe messages"
 package auth
 
 import (

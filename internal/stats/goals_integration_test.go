@@ -21,7 +21,6 @@ package stats_test
 import (
 	"context"
 	"encoding/json"
-	"testing"
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
@@ -364,19 +363,3 @@ var _ = Describe("Evaluate (DB integration, gaka-tst-ginkgo)", func() {
 			"owner-scoping breach — leaf query lost sender filter")
 	})
 })
-
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
-func seedRollupRow(t *testing.T, hz *testutil.Harness, owner string, day time.Time, project, language, editor string, seconds int64) {
-	t.Helper()
-	ctx := context.Background()
-	_, err := hz.DB.Pool.Exec(ctx, `
-		INSERT INTO hb_rollup_daily (sender, day, project, language, editor,
-			platform, machine, category, plugin, branch, total_seconds)
-		VALUES ($1, $2::date, $3, $4, $5, 'linux', 'm', 'Coding', 'pl', 'main', $6)
-		ON CONFLICT (sender, day, project, language, editor, platform, machine, category, plugin, branch)
-		DO UPDATE SET total_seconds = EXCLUDED.total_seconds`,
-		owner, day, project, language, editor, seconds)
-	if err != nil {
-		t.Fatalf("seed rollup: %v", err)
-	}
-}

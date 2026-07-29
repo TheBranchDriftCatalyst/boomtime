@@ -3,11 +3,11 @@
 //
 // Runs one subtest per label in the DB catalog. Each subtest:
 //
-//   1. mints a fresh user (auto-cleanup: heartbeats + hb_rollup_daily +
-//      award_ledger + users row all get DELETEd via testutil.Cleanup)
-//   2. reads the label's Condition, dispatches to a per-primitive
-//      heartbeat synthesizer that seeds the minimum data to satisfy it
-//   3. hits GET /awards over HTTP and asserts the label's id appears
+//  1. mints a fresh user (auto-cleanup: heartbeats + hb_rollup_daily +
+//     award_ledger + users row all get DELETEd via testutil.Cleanup)
+//  2. reads the label's Condition, dispatches to a per-primitive
+//     heartbeat synthesizer that seeds the minimum data to satisfy it
+//  3. hits GET /awards over HTTP and asserts the label's id appears
 //
 // Skipped intentionally (documented per subtest via t.Skip):
 //   - `trend` primitive (needs a specific 14-day doubling pattern —

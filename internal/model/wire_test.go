@@ -1,6 +1,7 @@
 // wire_ginkgo_test.go — ginkgo mirror of wire_test.go (gaka-0vp).
 // 1:1 case map (1 stdlib TestXxx with 10 subtests → 1 DescribeTable of 10 Entries):
-//   TestWireFormat/* → wire format > entry per name.
+//
+//	TestWireFormat/* → wire format > entry per name.
 package model
 
 import (

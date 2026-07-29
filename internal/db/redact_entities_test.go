@@ -1,9 +1,10 @@
 // redact_entities_ginkgo_test.go — ginkgo mirror of redact_entities_test.go (gaka-0vp.13).
 // 1:1 case map (4 stdlib TestXxx → 4 Its):
-//   TestRedactEntitiesCaseInsensitiveAndOwnerScoped → "case-insensitive + owner-scoped"
-//   TestRedactEntitiesTyScoped                      → "ty-scoped (file redact doesn't touch url)"
-//   TestRedactEntitiesEmptyInputIsNoop              → "empty input is a no-op"
-//   TestListEntitiesByTypeExcludesRedacted          → "list excludes redacted rows"
+//
+//	TestRedactEntitiesCaseInsensitiveAndOwnerScoped → "case-insensitive + owner-scoped"
+//	TestRedactEntitiesTyScoped                      → "ty-scoped (file redact doesn't touch url)"
+//	TestRedactEntitiesEmptyInputIsNoop              → "empty input is a no-op"
+//	TestListEntitiesByTypeExcludesRedacted          → "list excludes redacted rows"
 package db
 
 import (

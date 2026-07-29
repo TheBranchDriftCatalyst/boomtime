@@ -1,6 +1,7 @@
 // suppression_ginkgo_test.go — ginkgo mirror of suppression_test.go (gaka-0vp.13).
 // 1:1 case map (1 stdlib TestXxx wrapping 8 subtests → 1 DescribeTable(8)):
-//   TestSuppressedValuesExcludedFromAggregations → DescribeTable "hidden value excluded from every aggregation path" per-axis
+//
+//	TestSuppressedValuesExcludedFromAggregations → DescribeTable "hidden value excluded from every aggregation path" per-axis
 package db
 
 import (

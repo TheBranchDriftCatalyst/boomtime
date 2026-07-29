@@ -1,12 +1,13 @@
 // purge_hidden_ginkgo_test.go — ginkgo mirror of purge_hidden_test.go (gaka-0vp.13).
 // 1:1 case map (7 stdlib TestXxx → 7 Its):
-//   TestPurgeHiddenRuleExactHappyPath           → It "exact happy path: deletes matching rows + rule row"
-//   TestPurgeHiddenRuleIdempotent               → It "idempotent: zero-match still deletes rule"
-//   TestPurgeHiddenRuleOwnerScoped              → It "owner-scoped: alice's purge doesn't touch bob"
-//   TestPurgeHiddenRuleRegex                    → It "regex hide purges every matching row"
-//   TestPurgeHiddenPreviewMatchesRun            → It "preview SQL == run SQL"
-//   TestPurgeHiddenRuleRejectsRename            → It "rejects rename rules (only 'hide')"
-//   TestPurgeHiddenRuleRollbackOnCommitFail     → It "atomicity: cancelled ctx leaves rows + rule intact"
+//
+//	TestPurgeHiddenRuleExactHappyPath           → It "exact happy path: deletes matching rows + rule row"
+//	TestPurgeHiddenRuleIdempotent               → It "idempotent: zero-match still deletes rule"
+//	TestPurgeHiddenRuleOwnerScoped              → It "owner-scoped: alice's purge doesn't touch bob"
+//	TestPurgeHiddenRuleRegex                    → It "regex hide purges every matching row"
+//	TestPurgeHiddenPreviewMatchesRun            → It "preview SQL == run SQL"
+//	TestPurgeHiddenRuleRejectsRename            → It "rejects rename rules (only 'hide')"
+//	TestPurgeHiddenRuleRollbackOnCommitFail     → It "atomicity: cancelled ctx leaves rows + rule intact"
 package db
 
 import (
@@ -190,4 +191,3 @@ var _ = ginkgo.Describe("PurgeHiddenRule", func() {
 
 // -- helpers restored from stdlib partner (gaka-0vp.17) --
 func ptrStr(s string) *string { return &s }
-

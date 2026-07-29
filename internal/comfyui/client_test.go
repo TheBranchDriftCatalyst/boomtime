@@ -1,13 +1,14 @@
 // client_ginkgo_test.go — ginkgo mirror of client_test.go (gaka-0vp).
 // 1:1 case map (7 stdlib TestXxx):
-//   TestNewClient_EmptyURL           → NewClient > "empty URL is a no-op"
-//   TestNewClient_MissingScheme      → NewClient > "missing scheme fails loudly"
-//   TestGenerate_Success_B64JSON     → Generate > "success (b64_json shape)"
-//   TestGenerate_Success_DataURL     → Generate > "success (data URL shape)"
-//   TestGenerate_Retries_On5xx       → Generate > "retries with backoff on 5xx"
-//   TestGenerate_NoRetry_On4xx       → Generate > "no retry on 4xx"
-//   TestGenerate_ContextCancelled    → Generate > "context cancel short-circuits backoff"
-//   TestGenerate_Healthz             → Healthz > 2 Its
+//
+//	TestNewClient_EmptyURL           → NewClient > "empty URL is a no-op"
+//	TestNewClient_MissingScheme      → NewClient > "missing scheme fails loudly"
+//	TestGenerate_Success_B64JSON     → Generate > "success (b64_json shape)"
+//	TestGenerate_Success_DataURL     → Generate > "success (data URL shape)"
+//	TestGenerate_Retries_On5xx       → Generate > "retries with backoff on 5xx"
+//	TestGenerate_NoRetry_On4xx       → Generate > "no retry on 4xx"
+//	TestGenerate_ContextCancelled    → Generate > "context cancel short-circuits backoff"
+//	TestGenerate_Healthz             → Healthz > 2 Its
 package comfyui
 
 import (

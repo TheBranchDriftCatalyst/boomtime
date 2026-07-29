@@ -2,13 +2,14 @@
 // 1:1 case map (6 stdlib TestXxx; TestGradePersonas has 3 subtests →
 // DescribeTable of 3 Entries; TestLongestStreak has 5 subtests → DescribeTable
 // of 5 Entries; TestGradeThresholdLadder has 11 subtests → DescribeTable of 11 Entries):
-//   TestGradePersonas/*             → Grade > "persona entry per name"
-//   TestGradeEmptyPayloadIsC        → Grade > "empty payload lands at C / percentile 100"
-//   TestGradeMonotonicInVolume      → Grade > "monotonic: more coding time never worsens percentile"
-//   TestGradeThresholdLadder/*      → gradeLevels ladder > entry per percentile
-//   TestGradeShortRangeGuard        → Grade > "short-range guard: MinRangeDays keeps 3-day 100%-active honest"
-//   TestLongestStreak/*             → longestStreak > entry per daily pattern
-//   TestGradeCDFsMatchUpstream      → CDFs > "exponentialCDF and logNormalCDF match upstream at 0 and 1"
+//
+//	TestGradePersonas/*             → Grade > "persona entry per name"
+//	TestGradeEmptyPayloadIsC        → Grade > "empty payload lands at C / percentile 100"
+//	TestGradeMonotonicInVolume      → Grade > "monotonic: more coding time never worsens percentile"
+//	TestGradeThresholdLadder/*      → gradeLevels ladder > entry per percentile
+//	TestGradeShortRangeGuard        → Grade > "short-range guard: MinRangeDays keeps 3-day 100%-active honest"
+//	TestLongestStreak/*             → longestStreak > entry per daily pattern
+//	TestGradeCDFsMatchUpstream      → CDFs > "exponentialCDF and logNormalCDF match upstream at 0 and 1"
 package stats
 
 import (
@@ -103,7 +104,7 @@ var _ = Describe("Grade short-range guard", func() {
 			}
 		}
 		// 3 active days over max(3, 7) -> 42.86, not 100.
-		Expect(math.Abs(active.Raw - 42.857)).To(BeNumerically("<", 0.01),
+		Expect(math.Abs(active.Raw-42.857)).To(BeNumerically("<", 0.01),
 			"short-range activeDays raw ~ 42.857 (floored denominator)")
 	})
 })
@@ -149,4 +150,3 @@ func mkPayload(rangeDays int, pattern []bool, secondsPerActiveDay int64, langs, 
 		ProjectsCount:  projects,
 	}
 }
-

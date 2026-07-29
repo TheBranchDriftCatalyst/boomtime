@@ -1,16 +1,17 @@
 // cluster_ginkgo_test.go — ginkgo mirror of cluster_test.go.
 // 1:1 case map (9 stdlib TestXxx → 9 Its across two Describe blocks):
-//   TestCluster_EmptyReturnsNil                              → Cluster > empty input returns nil
-//   TestCluster_SingleCommit_ProducesOneSession_WithLeadAndTail
-//                                                            → Cluster > single commit → one session with lead/tail padding
-//   TestCluster_CommitsWithinGap_MergeIntoOneSession         → Cluster > commits within gap merge into one session
-//   TestCluster_CommitsBeyondGap_SplitIntoTwoSessions        → Cluster > commits beyond gap split into two sessions
-//   TestCluster_UnsortedInput_ClustersByTime                 → Cluster > unsorted input clusters by time
-//   TestCluster_TopFileWinsByLinesTouched                    → Cluster > top file wins by lines touched
-//   TestMaterialize_ExactHBCount                             → Materialize > exact heartbeat count and cadence
-//   TestMaterialize_EmptyTopFile_UsesPlaceholderEntity       → Materialize > empty TopFile uses placeholder entity
-//   TestMaterialize_EndBeforeStart_ReturnsNil                → Materialize > End before Start returns nil
-//   TestMaterialize_DistributesAcrossFilesByWeight           → Materialize > distributes heartbeats across files by weight
+//
+//	TestCluster_EmptyReturnsNil                              → Cluster > empty input returns nil
+//	TestCluster_SingleCommit_ProducesOneSession_WithLeadAndTail
+//	                                                         → Cluster > single commit → one session with lead/tail padding
+//	TestCluster_CommitsWithinGap_MergeIntoOneSession         → Cluster > commits within gap merge into one session
+//	TestCluster_CommitsBeyondGap_SplitIntoTwoSessions        → Cluster > commits beyond gap split into two sessions
+//	TestCluster_UnsortedInput_ClustersByTime                 → Cluster > unsorted input clusters by time
+//	TestCluster_TopFileWinsByLinesTouched                    → Cluster > top file wins by lines touched
+//	TestMaterialize_ExactHBCount                             → Materialize > exact heartbeat count and cadence
+//	TestMaterialize_EmptyTopFile_UsesPlaceholderEntity       → Materialize > empty TopFile uses placeholder entity
+//	TestMaterialize_EndBeforeStart_ReturnsNil                → Materialize > End before Start returns nil
+//	TestMaterialize_DistributesAcrossFilesByWeight           → Materialize > distributes heartbeats across files by weight
 //
 // Reuses at() and mkCommit() helpers from cluster_test.go (same package).
 package git

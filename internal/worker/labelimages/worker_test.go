@@ -19,7 +19,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"sync/atomic"
-	"testing"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/comfyui"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
@@ -258,60 +257,13 @@ var _ = Describe("Worker (nil receiver) — feature-disabled gate", func() {
 // -- helpers restored from stdlib partner (gaka-0vp.17) --
 const testDatabaseURL = "postgres://test:test@localhost:5432/boomtime_test?sslmode=disable"
 
-func openTestDB(t *testing.T) *db.DB {
-	t.Helper()
-	if v := os.Getenv("BOOM_TEST_DATABASE_URL"); v != "" {
-		// caller override honored
-	}
-	url := testDatabaseURL
-	if v := os.Getenv("BOOM_TEST_DATABASE_URL"); v != "" {
-		url = v
-	}
-	ctx := context.Background()
-	d, err := db.New(ctx, url)
-	if err != nil {
-		t.Skipf("labelimages worker test: no test DB (%s): %v", url, err)
-	}
-	return d
-}
-
 func pngBytes(tag string) []byte {
 	return append([]byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}, []byte(tag)...)
-}
-
-func shimServer(t *testing.T, hits *atomic.Int32) *httptest.Server {
-	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if hits != nil {
-			hits.Add(1)
-		}
-		if r.URL.Path != "/v1/images/generations" {
-			http.Error(w, "unexpected path", 404)
-			return
-		}
-		defer r.Body.Close()
-		body, _ := io.ReadAll(r.Body)
-		var req map[string]any
-		_ = json.Unmarshal(body, &req)
-		prompt, _ := req["prompt"].(string)
-		// One prompt -> one deterministic byte string.
-		bytes := pngBytes(prompt)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"data": []map[string]string{{"b64_json": base64.StdEncoding.EncodeToString(bytes)}},
-		})
-	}))
 }
 
 func fixtureEntries() []labelcatalog.Entry {
 	return []labelcatalog.Entry{
 		{ID: "test-w-a", Prompt: "prompt A"},
 		{ID: "test-w-b", Prompt: "prompt B"},
-	}
-}
-
-func cleanupTestRows(t *testing.T, d *db.DB, ids ...string) {
-	t.Helper()
-	for _, id := range ids {
-		_ = d.DeleteLabelImage(context.Background(), id)
 	}
 }

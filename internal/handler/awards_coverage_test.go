@@ -12,7 +12,8 @@
 // dump on miss) match the stdlib version exactly.
 //
 // 1:1 case map (1 stdlib TestXxx):
-//   TestLabelCoverage → label coverage sweep > "every catalog label fires against its minimum-viable seed"
+//
+//	TestLabelCoverage → label coverage sweep > "every catalog label fires against its minimum-viable seed"
 package handler_test
 
 import (

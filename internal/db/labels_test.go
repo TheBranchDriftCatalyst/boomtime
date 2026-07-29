@@ -1,11 +1,12 @@
 // labels_ginkgo_test.go — ginkgo mirror of labels_test.go (gaka-0vp.13).
 // 1:1 case map (6 stdlib TestXxx + 4 subtests → 6 Its + 1 DescribeTable(4)):
-//   TestLabels_ListSeeded                    → It "ListLabels: seeded ids + condition JSONB integrity"
-//   TestLabels_UpsertRoundtrip               → It "Upsert + Get roundtrips all editable fields"
-//   TestLabels_UpsertRejectsBadInput         → DescribeTable "Upsert rejects bad input" (4 entries)
-//   TestLabels_CheckConstraintRejectsBadKind → It "CHECK constraint rejects unknown kind"
-//   TestLabels_DeleteIdempotent              → It "DeleteLabel is idempotent"
-//   TestLabelGenConfig_Roundtrip             → It "GenConfig get/set roundtrip"
+//
+//	TestLabels_ListSeeded                    → It "ListLabels: seeded ids + condition JSONB integrity"
+//	TestLabels_UpsertRoundtrip               → It "Upsert + Get roundtrips all editable fields"
+//	TestLabels_UpsertRejectsBadInput         → DescribeTable "Upsert rejects bad input" (4 entries)
+//	TestLabels_CheckConstraintRejectsBadKind → It "CHECK constraint rejects unknown kind"
+//	TestLabels_DeleteIdempotent              → It "DeleteLabel is idempotent"
+//	TestLabelGenConfig_Roundtrip             → It "GenConfig get/set roundtrip"
 package db
 
 import (

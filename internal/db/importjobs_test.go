@@ -1,7 +1,8 @@
 // importjobs_ginkgo_test.go — ginkgo mirror of importjobs_test.go (gaka-0vp.13).
 // 1:1 case map (2 stdlib TestXxx → 2 Its):
-//   TestOneRunningJobPerOwner  → "GetRunningJobByOwner: one active per owner"
-//   TestJobProgressAndLogs     → "UpdateJobProgress + InsertJobLog + GetJobLogs"
+//
+//	TestOneRunningJobPerOwner  → "GetRunningJobByOwner: one active per owner"
+//	TestJobProgressAndLogs     → "UpdateJobProgress + InsertJobLog + GetJobLogs"
 package db
 
 import (

@@ -1,9 +1,10 @@
 // spec_ginkgo_test.go — ginkgo mirror of spec_test.go (gaka-0vp).
 // 1:1 case map (4 stdlib TestXxx):
-//   TestSpecBuildsAndValidates            → Spec > "builds + validates + round-trips"
-//   TestSpecHasSecuritySchemes            → Spec > "has bearerAuth + refreshCookie schemes"
-//   TestSpecPublicEndpointsHaveEmptySecurity → Spec > "public endpoints table"
-//   TestSpecJSONIsSelfContained           → Spec > "JSON has no external refs"
+//
+//	TestSpecBuildsAndValidates            → Spec > "builds + validates + round-trips"
+//	TestSpecHasSecuritySchemes            → Spec > "has bearerAuth + refreshCookie schemes"
+//	TestSpecPublicEndpointsHaveEmptySecurity → Spec > "public endpoints table"
+//	TestSpecJSONIsSelfContained           → Spec > "JSON has no external refs"
 package openapi_test
 
 import (

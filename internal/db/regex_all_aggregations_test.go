@@ -1,6 +1,7 @@
 // regex_all_aggregations_ginkgo_test.go — ginkgo mirror of regex_all_aggregations_test.go (gaka-0vp.13).
 // 1:1 case map (1 stdlib TestXxx → 1 It — massive integration test spans 9 aggregation paths + revert):
-//   TestRegexRemapAcrossAllAggregations → It "regex rename '^Meet - → Meeting' remaps through every server-side aggregation path"
+//
+//	TestRegexRemapAcrossAllAggregations → It "regex rename '^Meet - → Meeting' remaps through every server-side aggregation path"
 package db
 
 import (

@@ -1,8 +1,9 @@
 // wakatime_ginkgo_test.go — ginkgo mirror of wakatime_test.go (gaka-0vp).
 // 1:1 case map (3 stdlib TestXxx):
-//   TestUserAgentInfo         → UserAgentInfo > "extracts 5-token UA"
-//   TestUserAgentInfoShort    → UserAgentInfo > "short UA gracefully"
-//   TestLanguageFromEntity    → LanguageFromEntity > DescribeTable of 7 entries
+//
+//	TestUserAgentInfo         → UserAgentInfo > "extracts 5-token UA"
+//	TestUserAgentInfoShort    → UserAgentInfo > "short UA gracefully"
+//	TestLanguageFromEntity    → LanguageFromEntity > DescribeTable of 7 entries
 package wakatime
 
 import (

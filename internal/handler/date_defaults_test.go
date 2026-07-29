@@ -1,10 +1,11 @@
 // date_defaults_ginkgo_test.go — ginkgo mirror of date_defaults_test.go.
 // 1:1 case map (5 stdlib TestXxx w/ subtests → 16 Its):
-//   TestParseTimeParam            → parseTimeParam > 3 Its (RFC3339 / date-only / empty)
-//   TestDefaultWeekRange          → defaultWeekRange > 4 Its (no/no, no/end, start/no, both)
-//   TestDefaultMonthRange         → defaultMonthRange > 4 Its (no/no, no/end, start/no, both)
-//   TestQueryInt64                → queryInt64 > 3 Its (absent, valid, invalid)
-//   TestTimeLimitDefault          → timeLimit > 2 Its (default, override)
+//
+//	TestParseTimeParam            → parseTimeParam > 3 Its (RFC3339 / date-only / empty)
+//	TestDefaultWeekRange          → defaultWeekRange > 4 Its (no/no, no/end, start/no, both)
+//	TestDefaultMonthRange         → defaultMonthRange > 4 Its (no/no, no/end, start/no, both)
+//	TestQueryInt64                → queryInt64 > 3 Its (absent, valid, invalid)
+//	TestTimeLimitDefault          → timeLimit > 2 Its (default, override)
 package handler
 
 import (
@@ -130,4 +131,3 @@ func spanDaysGinkgo(t0, t1 time.Time) float64 {
 func spanDays(t0, t1 time.Time) float64 {
 	return t1.Sub(t0).Hours() / 24
 }
-

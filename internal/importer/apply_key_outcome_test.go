@@ -19,7 +19,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -207,94 +206,8 @@ func applyKeyOutcomeDSN() string {
 	return defaultDriftDSN // reuse the constant from drift_integration_test.go
 }
 
-func openImportOutcomeDB(t *testing.T) *db.DB {
-	t.Helper()
-	base := applyKeyOutcomeDSN()
-	url := swapDBName(base, dbNameFromDSN(base)+applyKeyOutcomeDBSfx)
-
-	ctx := context.Background()
-
-	// ensure the dedicated DB exists (idempotent CREATE DATABASE via maint).
-	maint := swapDBName(url, "postgres")
-	pool, err := pgxpool.New(ctx, maint)
-	if err != nil {
-		t.Skipf("skipping import-outcome DB (maint connect): %v", err)
-	}
-	name := dbNameFromDSN(url)
-	if _, err := pool.Exec(ctx, "CREATE DATABASE "+quoteIdentLocal(name)); err != nil && !isDupDatabaseErr(err) {
-		pool.Close()
-		t.Skipf("skipping import-outcome DB (create): %v", err)
-	}
-	pool.Close()
-
-	if err := db.MigrateURL(ctx, url); err != nil {
-		t.Skipf("skipping import-outcome DB (migrate): %v", err)
-	}
-	database, err := db.New(ctx, url)
-	if err != nil {
-		t.Skipf("skipping import-outcome DB (connect): %v", err)
-	}
-	t.Cleanup(database.Close)
-	return database
-}
-
 func silentLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
-}
-
-func seedUserWithKey(t *testing.T, database *db.DB, username, plaintext string, initialStatus db.WakatimeKeyStatus) []byte {
-	t.Helper()
-	ctx := context.Background()
-	hash, salt, err := auth.HashPassword("pw-" + username)
-	if err != nil {
-		t.Fatalf("hash: %v", err)
-	}
-	if _, err := database.InsertUser(ctx, db.StoredUser{Username: username, HashedPassword: hash, SaltUsed: salt, ArgonVersion: auth.ArgonVersionCurrent}); err != nil {
-		t.Fatalf("insert user %s: %v", username, err)
-	}
-	t.Cleanup(func() {
-		_, _ = database.Pool.Exec(context.Background(), `DELETE FROM users WHERE username=$1`, username)
-	})
-	if plaintext == "" {
-		return nil
-	}
-	ct, err := auth.Encrypt([]byte(plaintext))
-	if err != nil {
-		t.Fatalf("encrypt seed key: %v", err)
-	}
-	if err := database.SetEncryptedWakatimeKey(ctx, username, ct, initialStatus); err != nil {
-		t.Fatalf("SetEncryptedWakatimeKey seed: %v", err)
-	}
-	return ct
-}
-
-func seedUserNoKey(t *testing.T, database *db.DB, username string) {
-	t.Helper()
-	ctx := context.Background()
-	hash, salt, err := auth.HashPassword("pw-" + username)
-	if err != nil {
-		t.Fatalf("hash: %v", err)
-	}
-	if _, err := database.InsertUser(ctx, db.StoredUser{Username: username, HashedPassword: hash, SaltUsed: salt, ArgonVersion: auth.ArgonVersionCurrent}); err != nil {
-		t.Fatalf("insert user %s: %v", username, err)
-	}
-	t.Cleanup(func() {
-		_, _ = database.Pool.Exec(context.Background(), `DELETE FROM users WHERE username=$1`, username)
-	})
-}
-
-func withEncryptionKey(t *testing.T) {
-	t.Helper()
-	t.Setenv("BOOM_ENCRYPTION_KEY", "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=")
-	// force lazy loader to re-parse (crypto's sync.Once is reset via the
-	// test-only hook, but that hook is in-package to auth; instead we call
-	// LoadKeyFromEnv which is a no-op if already loaded, but since the test
-	// process may be first-touch it works).
-	auth.ResetForTest()
-	if err := auth.LoadKeyFromEnv(); err != nil {
-		t.Fatalf("load encryption key: %v", err)
-	}
-	t.Cleanup(auth.ResetForTest)
 }
 
 func ptrStrEq(a, b *string) bool {

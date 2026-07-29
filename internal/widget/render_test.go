@@ -18,9 +18,7 @@
 package widget
 
 import (
-	"encoding/xml"
 	"strings"
-	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -305,18 +303,4 @@ func dataFixture() *Data {
 	p.Languages[1].TotalDaily = []int64{0, 1800, 3600, 1800, 0, 0, 3600}
 	p.Projects[0].TotalDaily = []int64{3600, 3600, 3600, 1800, 3600, 2400, 3600}
 	return &Data{Payload: p, Grade: &g, Punchcard: &pc, Momentum: &m, Sessions: &s}
-}
-
-func assertValidXML(t *testing.T, b []byte) {
-	t.Helper()
-	dec := xml.NewDecoder(strings.NewReader(string(b)))
-	for {
-		_, err := dec.Token()
-		if err != nil {
-			if err.Error() == "EOF" {
-				return
-			}
-			t.Fatalf("SVG is not well-formed XML: %v\n%s", err, b)
-		}
-	}
 }

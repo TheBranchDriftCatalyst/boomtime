@@ -1,8 +1,9 @@
 // catalog_drift_ginkgo_test.go — ginkgo mirror of catalog_drift_test.go (gaka-0vp).
 // 1:1 case map (3 stdlib TestXxx):
-//   TestCatalogDrift_TSPromptedIDsReported → drift > "informational: TS-prompted IDs"
-//   TestCatalogDrift_GoIDsExistInTS        → drift > "Go IDs exist in TS"
-//   TestCatalogDrift_NoDuplicateGoIDs      → drift > "no duplicate Go IDs"
+//
+//	TestCatalogDrift_TSPromptedIDsReported → drift > "informational: TS-prompted IDs"
+//	TestCatalogDrift_GoIDsExistInTS        → drift > "Go IDs exist in TS"
+//	TestCatalogDrift_NoDuplicateGoIDs      → drift > "no duplicate Go IDs"
 //
 // Note: since gaka-hc6.5 deleted the TS catalog, the first two Its
 // currently Skip in normal runs — same behavior as the stdlib version.

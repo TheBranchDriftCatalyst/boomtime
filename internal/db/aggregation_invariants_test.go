@@ -1,9 +1,10 @@
 // aggregation_invariants_ginkgo_test.go — ginkgo mirror of aggregation_invariants_test.go (gaka-0vp.13).
 // 1:1 case map (4 stdlib TestXxx → 4 Its):
-//   TestCategoryDailyPerDaySumsMatchGrandTotal   → It "CategoryDaily per-day sums match grand total + cross-checks GetUserActivity"
-//   TestTotalTimeBetweenReturnsAscendingSums     → It "GetTotalTimeBetween: per-window sums correct + tenant-isolated"
-//   TestListHeartbeatsPagesArePartitioned        → It "ListHeartbeats pages partition rows (no dups, no drops)"
-//   TestActiveFilesCaseVariantProjectDistinctCount → It "ActiveFiles case-variant project DISTINCT count folds to one"
+//
+//	TestCategoryDailyPerDaySumsMatchGrandTotal   → It "CategoryDaily per-day sums match grand total + cross-checks GetUserActivity"
+//	TestTotalTimeBetweenReturnsAscendingSums     → It "GetTotalTimeBetween: per-window sums correct + tenant-isolated"
+//	TestListHeartbeatsPagesArePartitioned        → It "ListHeartbeats pages partition rows (no dups, no drops)"
+//	TestActiveFilesCaseVariantProjectDistinctCount → It "ActiveFiles case-variant project DISTINCT count folds to one"
 package db
 
 import (
@@ -101,7 +102,7 @@ var _ = ginkgo.Describe("aggregation invariants (gaka-oew)", func() {
 		for _, v := range got {
 			sum += v
 		}
-		Expect(sum).To(BeEquivalentTo(120+300+180))
+		Expect(sum).To(BeEquivalentTo(120 + 300 + 180))
 
 		counts := map[int64]int{120: 0, 300: 0, 180: 0}
 		for _, v := range got {

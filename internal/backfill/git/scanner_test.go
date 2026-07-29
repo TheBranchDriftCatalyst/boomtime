@@ -17,7 +17,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"testing"
 	"time"
 
 	"github.com/go-git/go-git/v5"
@@ -130,39 +129,4 @@ type testCommit struct {
 	when   time.Time
 	file   string
 	body   string
-}
-
-func mkTestRepo(t *testing.T, commits []testCommit) string {
-	t.Helper()
-	dir := t.TempDir()
-	repo, err := git.PlainInit(dir, false)
-	if err != nil {
-		t.Fatalf("PlainInit: %v", err)
-	}
-	wt, err := repo.Worktree()
-	if err != nil {
-		t.Fatalf("Worktree: %v", err)
-	}
-	for _, c := range commits {
-		fp := filepath.Join(dir, c.file)
-		if err := os.WriteFile(fp, []byte(c.body), 0o644); err != nil {
-			t.Fatalf("WriteFile: %v", err)
-		}
-		if _, err := wt.Add(c.file); err != nil {
-			t.Fatalf("Add: %v", err)
-		}
-		sig := &object.Signature{
-			Name:  c.author,
-			Email: c.email,
-			When:  c.when,
-		}
-		_, err := wt.Commit(c.body, &git.CommitOptions{
-			Author:    sig,
-			Committer: sig,
-		})
-		if err != nil {
-			t.Fatalf("Commit: %v", err)
-		}
-	}
-	return dir
 }

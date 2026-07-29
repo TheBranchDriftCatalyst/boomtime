@@ -1,13 +1,14 @@
 // backfill_ginkgo_test.go — ginkgo mirror of backfill_test.go (gaka-0vp.13).
 // 1:1 case map (8 stdlib TestXxx → 8 Its):
-//   TestInsertBackfillBatch_NoOverlap_WritesAll              → It "no-overlap session writes every heartbeat with source"
-//   TestInsertBackfillBatch_OverlapWithReal_SkipsSession     → It "overlap with real (source NULL) heartbeats skips session"
-//   TestInsertBackfillBatch_OverlapWithPriorBackfill_StillWrites → It "overlap only with prior backfill still writes (idempotent)"
-//   TestDeleteBackfilledHeartbeats_PreservesRealRows         → It "DeleteBackfilledHeartbeats preserves source-NULL real rows"
-//   TestBackfillStatsFor_ReportsCounts                       → It "BackfillStatsFor reports per-source counts"
-//   TestGetBackfillConfig_ReturnsDefaultsForNewUser          → It "GetBackfillConfig returns defaults when no row"
-//   TestSetBackfillConfig_Roundtrip                          → It "SetBackfillConfig roundtrips values (+ lang map)"
-//   TestClampBackfillConfig_ForcesBackfillPrefix             → It "clampBackfillConfig repairs missing backfill: prefix"
+//
+//	TestInsertBackfillBatch_NoOverlap_WritesAll              → It "no-overlap session writes every heartbeat with source"
+//	TestInsertBackfillBatch_OverlapWithReal_SkipsSession     → It "overlap with real (source NULL) heartbeats skips session"
+//	TestInsertBackfillBatch_OverlapWithPriorBackfill_StillWrites → It "overlap only with prior backfill still writes (idempotent)"
+//	TestDeleteBackfilledHeartbeats_PreservesRealRows         → It "DeleteBackfilledHeartbeats preserves source-NULL real rows"
+//	TestBackfillStatsFor_ReportsCounts                       → It "BackfillStatsFor reports per-source counts"
+//	TestGetBackfillConfig_ReturnsDefaultsForNewUser          → It "GetBackfillConfig returns defaults when no row"
+//	TestSetBackfillConfig_Roundtrip                          → It "SetBackfillConfig roundtrips values (+ lang map)"
+//	TestClampBackfillConfig_ForcesBackfillPrefix             → It "clampBackfillConfig repairs missing backfill: prefix"
 package db
 
 import (

@@ -16,7 +16,6 @@ import (
 	"context"
 	"io"
 	"log/slog"
-	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -201,31 +200,10 @@ func ginkgoDrain(ch <-chan Event) {
 	}
 }
 
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
-func newTestRegistry(t *testing.T) *Registry {
-	t.Helper()
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewRegistryWith(logger, 50*time.Millisecond, 50*time.Millisecond)
-}
-
 func (r *Registry) byLabelSnapshot(labelID string) string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.byLabel[labelID]
-}
-
-func mustReceive(t *testing.T, ch <-chan Event, timeout time.Duration) Event {
-	t.Helper()
-	select {
-	case ev, ok := <-ch:
-		if !ok {
-			t.Fatalf("channel closed while waiting for event")
-		}
-		return ev
-	case <-time.After(timeout):
-		t.Fatalf("timed out waiting for event after %s", timeout)
-		return Event{}
-	}
 }
 
 func drain(ch <-chan Event) {

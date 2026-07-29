@@ -1,7 +1,8 @@
 // ingest_ginkgo_test.go — ginkgo mirror of ingest_test.go (gaka-0vp.13).
 // 1:1 case map (2 stdlib TestXxx → 2 Its):
-//   TestSaveHeartbeatsAtomicity   → "SaveHeartbeats atomicity"
-//   TestSaveHeartbeatsBatchOrder  → "SaveHeartbeats returns ids in input order"
+//
+//	TestSaveHeartbeatsAtomicity   → "SaveHeartbeats atomicity"
+//	TestSaveHeartbeatsBatchOrder  → "SaveHeartbeats returns ids in input order"
 package db
 
 import (

@@ -1,10 +1,11 @@
 // crypto_ginkgo_test.go — ginkgo mirror of crypto_test.go (gaka-0vp).
 // 1:1 case map (4 stdlib TestXxx):
-//   TestRoundTrip                → Encrypt/Decrypt > "round-trips; nonce is fresh per call"
-//   TestDecryptWithWrongKey      → Decrypt > "wrong key → auth failure (not garbage)"
-//   TestDecryptTamperedCiphertext→ Decrypt > 4 tamper flavors
-//   TestLoadKeyFromEnvUnset      → LoadKeyFromEnv > "unset env → ErrKeyUnset; ops refuse"
-//   TestLoadKeyFromEnvInvalid    → LoadKeyFromEnv > 2 invalid flavors
+//
+//	TestRoundTrip                → Encrypt/Decrypt > "round-trips; nonce is fresh per call"
+//	TestDecryptWithWrongKey      → Decrypt > "wrong key → auth failure (not garbage)"
+//	TestDecryptTamperedCiphertext→ Decrypt > 4 tamper flavors
+//	TestLoadKeyFromEnvUnset      → LoadKeyFromEnv > "unset env → ErrKeyUnset; ops refuse"
+//	TestLoadKeyFromEnvInvalid    → LoadKeyFromEnv > 2 invalid flavors
 //
 // Uses os.Setenv + DeferCleanup to bridge the stdlib t.Setenv+t.Cleanup
 // pattern (see the `setenv` helper in the config file for the same idiom).

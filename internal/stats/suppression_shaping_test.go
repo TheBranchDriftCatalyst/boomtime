@@ -1,6 +1,7 @@
 // suppression_shaping_ginkgo_test.go — ginkgo mirror of suppression_shaping_test.go (gaka-tst-ginkgo).
 // 1:1 case map (1 stdlib TestXxx):
-//   TestSuppressionShapingExcluded → ToStatsPayload > "shaping doesn't reintroduce SUPPRESS across breakdowns"
+//
+//	TestSuppressionShapingExcluded → ToStatsPayload > "shaping doesn't reintroduce SUPPRESS across breakdowns"
 package stats
 
 import (

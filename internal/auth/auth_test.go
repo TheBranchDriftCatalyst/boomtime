@@ -1,15 +1,16 @@
 // auth_ginkgo_test.go — ginkgo mirror of auth_test.go (gaka-0vp).
 // 1:1 case map (7 stdlib TestXxx):
-//   TestPasswordRoundTrip                        → HashPassword+VerifyPassword > "round trip"
-//   TestParseAuthHeader                          → ParseAuthHeader > "table of 3 cases"
-//   TestParseRefreshCookie                       → ParseRefreshCookie > "hit / miss"
-//   TestBurnSentinelVerify_Counter               → BurnSentinelVerify > "increments counter (gaka-imm)"
-//   TestHashToken_SHA256_Matches_stdlib          → HashToken > "matches stdlib SHA-256"
-//   TestHashToken_Deterministic                  → HashToken > "deterministic (no random salt)"
-//   TestArgon2Params_LockedToOWASPFloor_BravoRegression
-//                                                → argon2 params > "pinned to OWASP ASVS L1 2025 floor"
-//   TestHashPassword_UsesCurrentParams           → HashPassword > "uses current-generation params"
-//   TestVerifyPassword_v1AndV2_BothWork          → VerifyPassword > "v1 and v2 same-version round-trip; cross-version fails"
+//
+//	TestPasswordRoundTrip                        → HashPassword+VerifyPassword > "round trip"
+//	TestParseAuthHeader                          → ParseAuthHeader > "table of 3 cases"
+//	TestParseRefreshCookie                       → ParseRefreshCookie > "hit / miss"
+//	TestBurnSentinelVerify_Counter               → BurnSentinelVerify > "increments counter (gaka-imm)"
+//	TestHashToken_SHA256_Matches_stdlib          → HashToken > "matches stdlib SHA-256"
+//	TestHashToken_Deterministic                  → HashToken > "deterministic (no random salt)"
+//	TestArgon2Params_LockedToOWASPFloor_BravoRegression
+//	                                             → argon2 params > "pinned to OWASP ASVS L1 2025 floor"
+//	TestHashPassword_UsesCurrentParams           → HashPassword > "uses current-generation params"
+//	TestVerifyPassword_v1AndV2_BothWork          → VerifyPassword > "v1 and v2 same-version round-trip; cross-version fails"
 package auth
 
 import (

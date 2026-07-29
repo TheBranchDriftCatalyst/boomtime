@@ -1,16 +1,17 @@
 // drift_ginkgo_test.go — ginkgo mirror of drift_test.go (gaka-0vp).
 // 1:1 case map (9 stdlib TestXxx):
-//   TestDriftCurrentSchemaNoFindings                              → driftCollector > "baseline heartbeats payload yields zero findings"
-//   TestDriftUnknownField                                         → driftCollector > "unknown field → warning-severity unknown_field"
-//   TestDriftMissingRequiredIsError                               → driftCollector > "missing required field → error severity"
-//   TestDriftTypeChangedWarns                                     → driftCollector > "type-changed field → type_changed with detail"
-//   TestDriftDedupeAcrossItems                                    → driftCollector > "duplicate unknown field across items → dedupes with count=3"
-//   TestDriftEnvelopeMissingData                                  → driftCollector envelope > "missing 'data' key → error-severity envelope_changed"
-//   TestDriftEnvelopeWrongDataType                                → driftCollector envelope > "wrong 'data' type → error-severity finding"
-//   TestDriftLookupSpecRejectsMissingValue                        → driftCollector > "user_agents missing required 'value' → error severity"
-//   TestDriftLookupSpec_KnowsAiModelFields_Wakatime20260723Regression → driftCollector > "user_agents baseline knows ai_model_* fields (regression)"
-//   TestDriftJSONRoundTrip                                        → DriftFinding > "JSON round-trip preserves camelCase contract"
-//   TestDriftCap                                                  → driftCollector > "cap at driftMaxFindings and set capped flag"
+//
+//	TestDriftCurrentSchemaNoFindings                              → driftCollector > "baseline heartbeats payload yields zero findings"
+//	TestDriftUnknownField                                         → driftCollector > "unknown field → warning-severity unknown_field"
+//	TestDriftMissingRequiredIsError                               → driftCollector > "missing required field → error severity"
+//	TestDriftTypeChangedWarns                                     → driftCollector > "type-changed field → type_changed with detail"
+//	TestDriftDedupeAcrossItems                                    → driftCollector > "duplicate unknown field across items → dedupes with count=3"
+//	TestDriftEnvelopeMissingData                                  → driftCollector envelope > "missing 'data' key → error-severity envelope_changed"
+//	TestDriftEnvelopeWrongDataType                                → driftCollector envelope > "wrong 'data' type → error-severity finding"
+//	TestDriftLookupSpecRejectsMissingValue                        → driftCollector > "user_agents missing required 'value' → error severity"
+//	TestDriftLookupSpec_KnowsAiModelFields_Wakatime20260723Regression → driftCollector > "user_agents baseline knows ai_model_* fields (regression)"
+//	TestDriftJSONRoundTrip                                        → DriftFinding > "JSON round-trip preserves camelCase contract"
+//	TestDriftCap                                                  → driftCollector > "cap at driftMaxFindings and set capped flag"
 package importer
 
 import (
@@ -242,4 +243,3 @@ const heartbeatsBaselineJSON = `{
     }
   ]
 }`
-

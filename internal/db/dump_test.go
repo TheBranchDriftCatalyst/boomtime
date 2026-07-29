@@ -19,7 +19,6 @@ import (
 	"io"
 	"os"
 	"strings"
-	"testing"
 	"time"
 
 	"github.com/onsi/ginkgo/v2"
@@ -437,148 +436,12 @@ var _ = ginkgo.Describe("dump + restore", func() {
 	})
 })
 
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
-func openIsolatedDumpDB(t *testing.T) *DB {
-	t.Helper()
-	if !dbReady {
-		t.Skipf("skipping: isolated test database unavailable: %s", dbSkipMsg)
-	}
-	url := maintenanceURLFor(testDatabaseURL(), testDBName+"_dump")
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	if err := ensureTestDatabase(ctx, url); err != nil {
-		t.Skipf("skipping: could not ensure %s_dump: %v", testDBName, err)
-	}
-	if err := MigrateURL(ctx, url); err != nil {
-		t.Fatalf("migrate %s_dump: %v", testDBName, err)
-	}
-	d, err := New(ctx, url)
-	if err != nil {
-		t.Skipf("skipping: connect %s_dump: %v", testDBName, err)
-	}
-	t.Cleanup(d.Close)
-	return d
-}
-
-func tableCount(t *testing.T, d *DB, table string) int64 {
-	t.Helper()
-	var n int64
-	if err := d.Pool.QueryRow(context.Background(), "SELECT count(*) FROM "+table).Scan(&n); err != nil {
-		t.Fatalf("count %s: %v", table, err)
-	}
-	return n
-}
-
 var wakatimeBlobFixture = []byte{
 	0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
 	0x08, 0x09, 0x0a, 0x0b, // 12-byte nonce prefix
 	0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe, // fake sealed payload
 	0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, // + fake GCM tag
 	0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00,
-}
-
-func seedFullState(t *testing.T, d *DB, f *SenderFixture) (runningJobID int) {
-	t.Helper()
-	ctx := f.Ctx()
-	sender := f.Sender()
-
-	// gaka-awh.3: back-fill EVERY user-owned column that the dump now carries
-	// so the round-trip test proves each column survives byte-for-byte.
-	mustExec(t, d, ctx, `
-		UPDATE users
-		   SET encrypted_wakatime_key   = $2,
-		       wakatime_key_status      = 'valid',
-		       wakatime_key_checked_at  = '2026-03-01T12:00:00Z',
-		       public_profile_enabled   = true,
-		       public_slug              = $3
-		 WHERE username = $1`,
-		sender, wakatimeBlobFixture, "slug-"+sender)
-
-	// Heartbeats (+projects via the fixture) with exact gaps, then the rollup.
-	tmpl := hbSeed{
-		project: "P", language: "Go", editor: "vim", plugin: "pl",
-		machine: "m", platform: "linux", branch: "main", category: "Coding",
-	}
-	f.Block(tmpl, time.Date(2026, 3, 2, 9, 0, 0, 0, time.UTC), 5, 60)
-	f.RefreshRollup(time.Unix(0, 0).UTC())
-
-	// Tokens (post-v31 hashed-only).
-	tokHash := sha256.Sum256([]byte("tok_" + sender))
-	refreshHash := sha256.Sum256([]byte("refresh_" + sender))
-	mustExec(t, d, ctx, `INSERT INTO auth_tokens (owner, hashed_token, token_name) VALUES ($1,$2,'backup-test')`,
-		sender, tokHash[:])
-	mustExec(t, d, ctx, `INSERT INTO refresh_tokens (owner, hashed_refresh_token, token_expiry) VALUES ($1,$2,now())`,
-		sender, refreshHash[:])
-
-	// Badge for the seeded project.
-	mustExec(t, d, ctx, `INSERT INTO badges (username, project) VALUES ($1,'P')`, sender)
-
-	// Curation rule.
-	newVal := "Renamed"
-	if _, err := d.CreateCurationRule(ctx, sender, "project", "rename", "exact", "P", &newVal); err != nil {
-		t.Fatalf("create curation rule: %v", err)
-	}
-
-	// Space + rule.
-	var spaceID int
-	if err := d.Pool.QueryRow(ctx, `INSERT INTO spaces (owner, name) VALUES ($1,'sp') RETURNING id`, sender).Scan(&spaceID); err != nil {
-		t.Fatalf("insert space: %v", err)
-	}
-	mustExec(t, d, ctx, `INSERT INTO space_rules (space_id, axis, match_value) VALUES ($1,'project','P')`, spaceID)
-
-	// A RUNNING import job (+ a log line): restore must normalize it to failed.
-	if err := d.Pool.QueryRow(ctx,
-		`INSERT INTO import_jobs (value, state, owner) VALUES ('{}'::jsonb,'running',$1) RETURNING id`,
-		sender).Scan(&runningJobID); err != nil {
-		t.Fatalf("insert import job: %v", err)
-	}
-	mustExec(t, d, ctx, `INSERT INTO import_job_logs (job_id, level, message) VALUES ($1,'info','hi')`, runningJobID)
-	return runningJobID
-}
-
-func mustExec(t *testing.T, d *DB, ctx context.Context, q string, args ...any) {
-	t.Helper()
-	if _, err := d.Pool.Exec(ctx, q, args...); err != nil {
-		t.Fatalf("exec %q: %v", q, err)
-	}
-}
-
-func buildArchive(t *testing.T, entries map[string]string) *zip.Reader {
-	t.Helper()
-	var buf bytes.Buffer
-	zw := zip.NewWriter(&buf)
-	for name, content := range entries {
-		w, err := zw.Create(name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := w.Write([]byte(content)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := zw.Close(); err != nil {
-		t.Fatal(err)
-	}
-	zr, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return zr
-}
-
-// -- dump extras (gaka-0vp.17 extractor missed these due to brace-in-string) --
-func usersCopyPayload(t *testing.T, zr *zip.Reader) []byte {
-	t.Helper()
-	f, err := zr.Open(entryName("users"))
-	if err != nil {
-		t.Fatalf("open users entry: %v", err)
-	}
-	defer f.Close()
-	data, err := io.ReadAll(f)
-	if err != nil {
-		t.Fatalf("read users entry: %v", err)
-	}
-	return data
 }
 
 func bytesToHex(b []byte) string {

@@ -1,9 +1,10 @@
 // stats_ginkgo_test.go — ginkgo mirror of stats_test.go (gaka-tst-ginkgo).
 // 1:1 case map (3 stdlib TestXxx with 6 subtests → 1 DescribeTable of 6 Entries
 // plus 2 Its):
-//   TestCompoundDuration/*        → CompoundDuration > entry per name
-//   TestToStatsPayloadShaping     → ToStatsPayload > "shapes projects/languages/dailies"
-//   TestToLeaderboardsPayload     → ToLeaderboardsPayload > "filters <60 and buckets by language"
+//
+//	TestCompoundDuration/*        → CompoundDuration > entry per name
+//	TestToStatsPayloadShaping     → ToStatsPayload > "shapes projects/languages/dailies"
+//	TestToLeaderboardsPayload     → ToLeaderboardsPayload > "filters <60 and buckets by language"
 package stats
 
 import (
@@ -95,4 +96,3 @@ var _ = Describe("ToLeaderboardsPayload", func() {
 
 // -- helpers restored from stdlib partner (gaka-0vp.17) --
 func ptr(v int64) *int64 { return &v }
-

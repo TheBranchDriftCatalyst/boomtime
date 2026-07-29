@@ -1,6 +1,7 @@
 // wakatime_key_ginkgo_test.go — ginkgo mirror of wakatime_key_test.go (gaka-bi2).
 // 1:1 case map (1 stdlib TestXxx):
-//   TestSaveWakatimeKey_BodySizeCap_413 → SaveWakatimeKey body-size cap > "5 KiB body → 413, no probe"
+//
+//	TestSaveWakatimeKey_BodySizeCap_413 → SaveWakatimeKey body-size cap > "5 KiB body → 413, no probe"
 package handler_test
 
 import (

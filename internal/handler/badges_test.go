@@ -1,9 +1,10 @@
 // badges_ginkgo_test.go — ginkgo mirror of badges_test.go (bd gaka-6jm.3).
 // 1:1 case map (4 stdlib TestXxx):
-//   TestApplyBadgeCuration_HiddenProject      → applyBadgeCuration > "hidden project resolves to 'hidden' (case-insensitive)"
-//   TestApplyBadgeCuration_VisibleProject     → applyBadgeCuration > "visible project passes through untouched"
-//   TestApplyBadgeCuration_NoRules            → applyBadgeCuration > "empty/nil rules → passthrough"
-//   TestApplyBadgeCuration_OtherAxesIgnored   → applyBadgeCuration > "only the project axis matters"
+//
+//	TestApplyBadgeCuration_HiddenProject      → applyBadgeCuration > "hidden project resolves to 'hidden' (case-insensitive)"
+//	TestApplyBadgeCuration_VisibleProject     → applyBadgeCuration > "visible project passes through untouched"
+//	TestApplyBadgeCuration_NoRules            → applyBadgeCuration > "empty/nil rules → passthrough"
+//	TestApplyBadgeCuration_OtherAxesIgnored   → applyBadgeCuration > "only the project axis matters"
 package handler
 
 import (

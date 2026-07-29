@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -108,22 +107,3 @@ var _ = Describe("timezone endpoints (gaka-dg7)", func() {
 		Expect(cleared.EffectiveTimezone).To(Equal("UTC"), "fallback after clear")
 	})
 })
-
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
-func doJSON(t *testing.T, e *echo.Echo, method, path, token string, body any) *httptest.ResponseRecorder {
-	t.Helper()
-	var b []byte
-	if body != nil {
-		var err error
-		b, err = json.Marshal(body)
-		if err != nil {
-			t.Fatalf("marshal: %v", err)
-		}
-	}
-	req := httptest.NewRequest(method, path, bytes.NewReader(b))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Basic "+token)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-	return rec
-}

@@ -1,6 +1,7 @@
 // walk_ginkgo_test.go — ginkgo mirror of walk_test.go.
 // 1:1 case map (1 stdlib TestXxx → 1 It):
-//   TestWalkRepos_FindsGitDirs → WalkRepos > "finds real .git dirs and worktree pointer files, skips vendored/hidden"
+//
+//	TestWalkRepos_FindsGitDirs → WalkRepos > "finds real .git dirs and worktree pointer files, skips vendored/hidden"
 package git
 
 import (

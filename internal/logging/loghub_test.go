@@ -1,21 +1,22 @@
 // loghub_ginkgo_test.go — ginkgo mirror of loghub_test.go (gaka-0vp).
 // 1:1 case map (11 stdlib TestXxx):
-//   TestLogHubPublishDeliversToSubscribers   → LogHub > "Publish delivers to every subscriber"
-//   TestLogHubAssignsMonotonicIDs            → LogHub > "assigns monotonic IDs"
-//   TestLogHubRingBufferEvictsOldest         → LogHub > "ring buffer evicts oldest"
-//   TestLogHubBackfillAfterID                → LogHub > "Backfill(id) returns entries > id"
-//   TestLogHubBufferFullDropsWithoutBlocking → LogHub > "buffer-full drops without blocking"
-//   TestLogHubUnsubscribeClosesAndSilencesPublish
-//                                            → LogHub > "Unsubscribe closes + silences later Publish"
-//   TestLogHubNilReceiverIsNoOp              → LogHub > "nil receiver is a no-op"
-//   TestFilterForUser_PassesThroughOwnerMatch→ FilterForUser > "owner match passes through"
-//   TestFilterForUser_DropsCrossOwner        → FilterForUser > "cross-owner leak is dropped"
-//   TestFilterForUser_PassesThroughUnowned   → FilterForUser > "unowned passes through"
-//   TestFilterForUser_EmptyInputEmptyOutput  → FilterForUser > "empty/nil in → empty/nil out"
-//   TestFilterForUser_EmptyRequesterDropsAllUserScoped
-//                                            → FilterForUser > "empty requester fail-closed"
-//   TestFilterForUser_MixedAudienceSegregation
-//                                            → FilterForUser > "mixed audience segregation"
+//
+//	TestLogHubPublishDeliversToSubscribers   → LogHub > "Publish delivers to every subscriber"
+//	TestLogHubAssignsMonotonicIDs            → LogHub > "assigns monotonic IDs"
+//	TestLogHubRingBufferEvictsOldest         → LogHub > "ring buffer evicts oldest"
+//	TestLogHubBackfillAfterID                → LogHub > "Backfill(id) returns entries > id"
+//	TestLogHubBufferFullDropsWithoutBlocking → LogHub > "buffer-full drops without blocking"
+//	TestLogHubUnsubscribeClosesAndSilencesPublish
+//	                                         → LogHub > "Unsubscribe closes + silences later Publish"
+//	TestLogHubNilReceiverIsNoOp              → LogHub > "nil receiver is a no-op"
+//	TestFilterForUser_PassesThroughOwnerMatch→ FilterForUser > "owner match passes through"
+//	TestFilterForUser_DropsCrossOwner        → FilterForUser > "cross-owner leak is dropped"
+//	TestFilterForUser_PassesThroughUnowned   → FilterForUser > "unowned passes through"
+//	TestFilterForUser_EmptyInputEmptyOutput  → FilterForUser > "empty/nil in → empty/nil out"
+//	TestFilterForUser_EmptyRequesterDropsAllUserScoped
+//	                                         → FilterForUser > "empty requester fail-closed"
+//	TestFilterForUser_MixedAudienceSegregation
+//	                                         → FilterForUser > "mixed audience segregation"
 package logging
 
 import (

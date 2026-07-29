@@ -1,10 +1,11 @@
 // timezone_ginkgo_test.go — ginkgo mirror of timezone_test.go (gaka-0vp.13).
 // 1:1 case map (5 stdlib TestXxx → 4 Its + 1 DescribeTable(5)):
-//   TestPunchcard_HourReflectsUserTZ           → It "Punchcard hour reflects user tz (PT vs UTC)"
-//   TestUserActivity_DayBucketReflectsUserTZ   → It "UserActivity day bucket reflects user tz"
-//   TestResolveTimezone_3LevelChain            → DescribeTable "ResolveTimezone 3-level chain"
-//   TestSetUserTimezone_RejectsInvalidIANA     → It "SetUserTimezone rejects invalid IANA + roundtrips valid"
-//   TestGetTotalTimeToday_UsesUserLocalMidnight → It "GetTotalTimeToday uses user local midnight"
+//
+//	TestPunchcard_HourReflectsUserTZ           → It "Punchcard hour reflects user tz (PT vs UTC)"
+//	TestUserActivity_DayBucketReflectsUserTZ   → It "UserActivity day bucket reflects user tz"
+//	TestResolveTimezone_3LevelChain            → DescribeTable "ResolveTimezone 3-level chain"
+//	TestSetUserTimezone_RejectsInvalidIANA     → It "SetUserTimezone rejects invalid IANA + roundtrips valid"
+//	TestGetTotalTimeToday_UsesUserLocalMidnight → It "GetTotalTimeToday uses user local midnight"
 package db
 
 import (

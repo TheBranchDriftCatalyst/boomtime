@@ -1,9 +1,10 @@
 // label_images_ginkgo_test.go — ginkgo mirror of label_images_test.go (gaka-0vp.13).
 // 1:1 case map (4 stdlib TestXxx → 4 Its):
-//   TestLabelImages_Roundtrip        → "roundtrip: save and read back"
-//   TestLabelImages_Upsert           → "upsert: second save overwrites row"
-//   TestLabelImages_NotFound         → "not found: missing id returns (nil,false,nil)"
-//   TestLabelImages_HasLabelImage    → "HasLabelImage tracks save/delete"
+//
+//	TestLabelImages_Roundtrip        → "roundtrip: save and read back"
+//	TestLabelImages_Upsert           → "upsert: second save overwrites row"
+//	TestLabelImages_NotFound         → "not found: missing id returns (nil,false,nil)"
+//	TestLabelImages_HasLabelImage    → "HasLabelImage tracks save/delete"
 package db
 
 import (

@@ -15,7 +15,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
-	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -202,72 +201,6 @@ var _ = Describe("RenderCustomWidget scope gate (v1 invariants)", func() {
 type createDefResp struct {
 	DefID string `json:"defId"`
 	URL   string `json:"url"`
-}
-
-func mintTopLangsDef(t *testing.T, e http.Handler, token, name string) createDefResp {
-	t.Helper()
-	spec := mustMarshalDef(t, widget.Def{
-		Layout: widget.Layout1,
-		Title:  "langs",
-		Panels: []widget.Panel{{Kind: widget.PanelTopLangs}},
-	})
-	rec := doJSONReq(t, e, http.MethodPost, "/api/v1/users/current/widget-defs", token,
-		map[string]any{"name": name, "spec": json.RawMessage(spec)})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("create widget-def %q: status %d body=%s", name, rec.Code, rec.Body.String())
-	}
-	var out createDefResp
-	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
-		t.Fatalf("decode create widget-def response: %v body=%s", err, rec.Body.String())
-	}
-	if out.DefID == "" {
-		t.Fatalf("empty defId in create widget-def response: %s", rec.Body.String())
-	}
-	return out
-}
-
-func mintMomentumDef(t *testing.T, e http.Handler, token, name string) createDefResp {
-	t.Helper()
-	spec := mustMarshalDef(t, widget.Def{
-		Layout: widget.Layout1,
-		Title:  "momentum",
-		Panels: []widget.Panel{{Kind: widget.PanelMomentum}},
-	})
-	rec := doJSONReq(t, e, http.MethodPost, "/api/v1/users/current/widget-defs", token,
-		map[string]any{"name": name, "spec": json.RawMessage(spec)})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("create momentum widget-def: status %d body=%s", rec.Code, rec.Body.String())
-	}
-	var out createDefResp
-	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
-		t.Fatalf("decode create: %v body=%s", err, rec.Body.String())
-	}
-	return out
-}
-
-func mustMarshalDef(t *testing.T, d widget.Def) []byte {
-	t.Helper()
-	b, err := json.Marshal(d)
-	if err != nil {
-		t.Fatalf("marshal widget.Def: %v", err)
-	}
-	return b
-}
-
-func fetchDefSvg(t *testing.T, e http.Handler, defID string, params string) *strings.Reader {
-	t.Helper()
-	target := "/widget/svg/" + defID + "/named"
-	if params != "" {
-		target += "?" + params
-	}
-	rec := doJSONReq(t, e, http.MethodGet, target, "", nil)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("fetch widget-def svg: status %d body=%s", rec.Code, rec.Body.String())
-	}
-	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "image/svg+xml") {
-		t.Errorf("Content-Type = %q, want image/svg+xml", ct)
-	}
-	return strings.NewReader(rec.Body.String())
 }
 
 func bodyOf(r *strings.Reader) string {

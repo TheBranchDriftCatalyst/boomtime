@@ -371,65 +371,9 @@ func (f *SenderFixture) RecomputeGaps(since time.Time) *SenderFixture {
 	return f
 }
 
-func seedAxisBlock(t *testing.T, d *DB, ctx context.Context, sender, axis, val string, startTS time.Time, n int, each int64) (attributed int64, rowCount int) {
-	t.Helper()
-	tmpl := hbSeed{
-		project: "P", language: "Go", editor: "vim", plugin: "pl",
-		machine: "m", platform: "linux", branch: "main", category: "Coding",
-	}
-	switch axis {
-	case "project":
-		tmpl.project = val
-	case "language":
-		tmpl.language = val
-	case "editor":
-		tmpl.editor = val
-	}
-	ensureProjects(t, d, ctx, sender, tmpl.project)
-	f := &SenderFixture{t: t, db: d, ctx: ctx, name: sender}
-	return f.Block(tmpl, startTS, n, each)
-}
-
 func seedHB(t *testing.T, d *DB, ctx context.Context, sender, project, lang string, ts time.Time) {
 	t.Helper()
 	insertSeed(t, d, ctx, sender, hbSeed{project: project, language: lang, entity: "a.go", ts: ts})
-}
-
-func createRename(t *testing.T, d *DB, ctx context.Context, sender, axis, match, newVal string) int {
-	t.Helper()
-	rule, err := d.CreateCurationRule(ctx, sender, axis, "rename", "exact", match, &newVal)
-	if err != nil {
-		t.Fatalf("createRename %s %s->%s: %v", axis, match, newVal, err)
-	}
-	return rule.ID
-}
-
-func createRegexRename(t *testing.T, d *DB, ctx context.Context, sender, axis, pattern, newVal string) int {
-	t.Helper()
-	rule, err := d.CreateCurationRule(ctx, sender, axis, "rename", "regex", pattern, &newVal)
-	if err != nil {
-		t.Fatalf("createRegexRename %s /%s/->%s: %v", axis, pattern, newVal, err)
-	}
-	return rule.ID
-}
-
-func createTemplateRename(t *testing.T, d *DB, ctx context.Context, sender, axis, pattern, tmpl string) int {
-	t.Helper()
-	norm := NormalizeTemplate(tmpl)
-	rule, err := d.CreateCurationRule(ctx, sender, axis, "rename", "template", pattern, &norm)
-	if err != nil {
-		t.Fatalf("createTemplateRename %s /%s/->%q: %v", axis, pattern, tmpl, err)
-	}
-	return rule.ID
-}
-
-func loadRenames(t *testing.T, d *DB, ctx context.Context, sender string) RenameSets {
-	t.Helper()
-	rs, err := d.LoadRenameSets(ctx, sender)
-	if err != nil {
-		t.Fatalf("LoadRenameSets: %v", err)
-	}
-	return rs
 }
 
 func mkHiddenSets(byAxis map[string][]string) HiddenSets {
@@ -440,25 +384,6 @@ func mkHiddenSets(byAxis map[string][]string) HiddenSets {
 		}
 	}
 	return HiddenSets{byAxis: m}
-}
-
-func rawCount(t *testing.T, d *DB, ctx context.Context, sender, col, val string) int {
-	t.Helper()
-	var n int
-	q := "SELECT count(*) FROM heartbeats WHERE sender=$1 AND " + col + "=$2"
-	if err := d.Pool.QueryRow(ctx, q, sender, val).Scan(&n); err != nil {
-		t.Fatalf("rawCount %s=%s: %v", col, val, err)
-	}
-	return n
-}
-
-func scalarCount(t *testing.T, d *DB, ctx context.Context, q, sender string) int {
-	t.Helper()
-	var n int
-	if err := d.Pool.QueryRow(ctx, q, sender).Scan(&n); err != nil {
-		t.Fatal(err)
-	}
-	return n
 }
 
 func totalStatSeconds(rows []StatRow) int64 {

@@ -1,6 +1,7 @@
 // axes_ginkgo_test.go — ginkgo mirror of axes_test.go (gaka-0vp.13).
 // 1:1 case map (1 stdlib TestXxx → 1 It):
-//   TestAxisRegistryDerivations → "pins every registry-derived value to its literal"
+//
+//	TestAxisRegistryDerivations → "pins every registry-derived value to its literal"
 package db
 
 import (

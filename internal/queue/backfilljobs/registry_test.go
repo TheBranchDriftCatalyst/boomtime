@@ -1,10 +1,11 @@
 // registry_ginkgo_test.go — ginkgo mirror of registry_test.go (gaka-0vp).
 // 1:1 case map (5 stdlib TestXxx):
-//   TestEnqueue_ReturnsFreshJob                → Registry > "Enqueue returns a fresh Queued job"
-//   TestUpdate_AutoStartsAndFinishes           → Registry > "Update auto-stamps StartedAt/FinishedAt + retention drops row"
-//   TestIncrementCounts_FlipsQueuedToRunning   → Registry > "IncrementCounts flips Queued→Running + accumulates"
-//   TestSnapshotFor_OwnerFilter                → Registry > "SnapshotFor filters by owner"
-//   TestSubscribe_ReceivesAddedEvents          → Registry > "Subscribe receives Added events"
+//
+//	TestEnqueue_ReturnsFreshJob                → Registry > "Enqueue returns a fresh Queued job"
+//	TestUpdate_AutoStartsAndFinishes           → Registry > "Update auto-stamps StartedAt/FinishedAt + retention drops row"
+//	TestIncrementCounts_FlipsQueuedToRunning   → Registry > "IncrementCounts flips Queued→Running + accumulates"
+//	TestSnapshotFor_OwnerFilter                → Registry > "SnapshotFor filters by owner"
+//	TestSubscribe_ReceivesAddedEvents          → Registry > "Subscribe receives Added events"
 package backfilljobs
 
 import (

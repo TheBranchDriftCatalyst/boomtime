@@ -1,26 +1,27 @@
 // goals_ginkgo_test.go — ginkgo mirror of goals_test.go (gaka-tst-ginkgo).
 // 1:1 case map (18 stdlib TestXxx; several have subtests):
-//   TestValidateSpec_AcceptsHappyLeaves        → ValidateSpec > "accepts every happy-leaf shape (table of 7)"
-//   TestValidateSpec_RejectsEachInvariant/*    → ValidateSpec rejects > entry per invariant (11 entries)
-//   TestValidateSpec_DepthCap                  → ValidateSpec > "depth cap accepts at MaxPredicateDepth and rejects at +1"
-//   TestCompareOp_GreaterEqual                 → compareOp > ">= under/at/over/target=0"
-//   TestCompareOp_LessEqual                    → compareOp > "<= under/at/over/target=0"
-//   TestCompareOp_Equal                        → compareOp > "== exact/near-miss/wildly-off"
-//   TestWindowRange                            → windowRange > "day/week/month/year/lifetime"
-//   TestRewriteWindowToDay                     → rewriteWindowToDay > "descends all/any and rewrites time leaves; original untouched"
-//   TestSpecShallowFingerprint                 → SpecShallowFingerprint > "time leaf and group cases"
-//   TestCompareOp_EqualUnder                   → compareOp > "== under-target symmetric (abs(diff) contract)"
-//   TestCompareOp_EqualTargetZero              → compareOp > "== target=0 only hit when current=0"
-//   TestCompareOp_UnknownOp                    → compareOp > "unknown op returns (false, 0) default"
-//   TestWindowRange_UnknownReturnsZeroSpan     → windowRange > "unknown window returns zero-length range anchored to today"
-//   TestRewriteWindowToDay_NestedStreak        → rewriteWindowToDay > "does NOT descend through streak (owns its own recurrence)"
-//   TestRewriteWindowToDay_Not                 → rewriteWindowToDay > "descends into not's child"
-//   TestClamp01_Boundaries                     → clamp01 > "boundary table"
-//   TestValidateSpec_NestedAllAxisPropagates   → ValidateSpec > "recurses into every child of all (unknown axis in 2nd child rejects)"
-//   TestValidateSpec_NotChildValidated         → ValidateSpec > "recurses into not's child"
-//   TestValidateSpec_StreakConditionValidated  → ValidateSpec > "recurses into streak's condition"
-//   TestMarshalUnmarshalProgress               → Progress > "MarshalProgress/UnmarshalProgress round-trip preserves every field"
-//   TestUnmarshalProgress_EmptyRaw             → UnmarshalProgress > "nil/empty raw returns (nil, nil) fast-path"
+//
+//	TestValidateSpec_AcceptsHappyLeaves        → ValidateSpec > "accepts every happy-leaf shape (table of 7)"
+//	TestValidateSpec_RejectsEachInvariant/*    → ValidateSpec rejects > entry per invariant (11 entries)
+//	TestValidateSpec_DepthCap                  → ValidateSpec > "depth cap accepts at MaxPredicateDepth and rejects at +1"
+//	TestCompareOp_GreaterEqual                 → compareOp > ">= under/at/over/target=0"
+//	TestCompareOp_LessEqual                    → compareOp > "<= under/at/over/target=0"
+//	TestCompareOp_Equal                        → compareOp > "== exact/near-miss/wildly-off"
+//	TestWindowRange                            → windowRange > "day/week/month/year/lifetime"
+//	TestRewriteWindowToDay                     → rewriteWindowToDay > "descends all/any and rewrites time leaves; original untouched"
+//	TestSpecShallowFingerprint                 → SpecShallowFingerprint > "time leaf and group cases"
+//	TestCompareOp_EqualUnder                   → compareOp > "== under-target symmetric (abs(diff) contract)"
+//	TestCompareOp_EqualTargetZero              → compareOp > "== target=0 only hit when current=0"
+//	TestCompareOp_UnknownOp                    → compareOp > "unknown op returns (false, 0) default"
+//	TestWindowRange_UnknownReturnsZeroSpan     → windowRange > "unknown window returns zero-length range anchored to today"
+//	TestRewriteWindowToDay_NestedStreak        → rewriteWindowToDay > "does NOT descend through streak (owns its own recurrence)"
+//	TestRewriteWindowToDay_Not                 → rewriteWindowToDay > "descends into not's child"
+//	TestClamp01_Boundaries                     → clamp01 > "boundary table"
+//	TestValidateSpec_NestedAllAxisPropagates   → ValidateSpec > "recurses into every child of all (unknown axis in 2nd child rejects)"
+//	TestValidateSpec_NotChildValidated         → ValidateSpec > "recurses into not's child"
+//	TestValidateSpec_StreakConditionValidated  → ValidateSpec > "recurses into streak's condition"
+//	TestMarshalUnmarshalProgress               → Progress > "MarshalProgress/UnmarshalProgress round-trip preserves every field"
+//	TestUnmarshalProgress_EmptyRaw             → UnmarshalProgress > "nil/empty raw returns (nil, nil) fast-path"
 package stats
 
 import (
@@ -367,4 +368,3 @@ var _ = Describe("Progress serialization", func() {
 		Expect(p).To(BeNil())
 	})
 })
-

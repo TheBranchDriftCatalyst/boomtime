@@ -14,7 +14,6 @@ package db
 
 import (
 	"context"
-	"testing"
 	"time"
 
 	"github.com/onsi/ginkgo/v2"
@@ -276,22 +275,4 @@ func mkMembers(exact map[string][]string, regex map[string][]string) MemberSets 
 		ms.byAxis[axis] = a
 	}
 	return ms
-}
-
-func newSpaceSender(t *testing.T, d *DB, prefix string) (context.Context, string) {
-	t.Helper()
-	ctx := context.Background()
-	sender := mkSender(prefix)
-	_, _ = d.Pool.Exec(ctx, `INSERT INTO users (username, hashed_password, salt_used) VALUES ($1,'\x00','\x00') ON CONFLICT DO NOTHING`, sender)
-	cleanupSender(t, d, ctx, sender)
-	return ctx, sender
-}
-
-func seedAxisBlock2(t *testing.T, d *DB, ctx context.Context, sender string, tmpl hbSeed, startTS time.Time, n int, each int64) (int64, int) {
-	t.Helper()
-	if tmpl.project != "" {
-		ensureProjects(t, d, ctx, sender, tmpl.project)
-	}
-	f := &SenderFixture{t: t, db: d, ctx: ctx, name: sender}
-	return f.Block(tmpl, startTS, n, each)
 }

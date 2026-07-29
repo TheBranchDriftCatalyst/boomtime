@@ -15,7 +15,6 @@ import (
 	"log/slog"
 	"sync"
 	"sync/atomic"
-	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -165,18 +164,6 @@ var _ = Describe("Pool", func() {
 
 func labelNGinkgo(i int) string {
 	return "label-" + string(rune('a'+i))
-}
-
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
-func newQuietPool(t *testing.T, r *Registry, exec Executor, concurrency int) *Pool {
-	t.Helper()
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewPool(PoolConfig{
-		Concurrency: concurrency,
-		Registry:    r,
-		Executor:    exec,
-		Logger:      logger,
-	})
 }
 
 func labelN(i int) string {

@@ -1,7 +1,8 @@
 // apierr_ginkgo_test.go — ginkgo mirror of apierr_test.go (gaka-0vp).
 // 1:1 case map (2 stdlib TestXxx → 12 DescribeTable Entries + 1 It):
-//   TestPredefinedErrorStatuses → predefined constructor > table of 12
-//   TestNewAndError             → New + Error() > "New + Error()"
+//
+//	TestPredefinedErrorStatuses → predefined constructor > table of 12
+//	TestNewAndError             → New + Error() > "New + Error()"
 package apierr
 
 import (

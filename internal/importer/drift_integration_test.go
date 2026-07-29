@@ -21,7 +21,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
-	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -249,40 +248,6 @@ func maintenanceURL(url, maintDB string) string {
 		return url + q
 	}
 	return url[:slash+1] + maintDB + q
-}
-
-func openDriftDB(t *testing.T) *db.DB {
-	t.Helper()
-	targetURL := dedicatedDriftURL()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	// 1. Ensure the dedicated DB exists via a maintenance connection.
-	if err := ensureDedicatedDB(ctx, targetURL); err != nil {
-		if os.Getenv("BOOM_REQUIRE_DB") == "1" {
-			t.Fatalf("ensure %s: %v", targetURL, err)
-		}
-		t.Skipf("skipping: cannot provision drift test DB: %v", err)
-	}
-
-	// 2. Migrate — the dedicated DB has no prior goose state, so 00014 runs
-	//    fresh and adds the drift column.
-	if err := db.MigrateURL(ctx, targetURL); err != nil {
-		if os.Getenv("BOOM_REQUIRE_DB") == "1" {
-			t.Fatalf("migrate: %v", err)
-		}
-		t.Skipf("skipping: migrate failed: %v", err)
-	}
-	database, err := db.New(ctx, targetURL)
-	if err != nil {
-		if os.Getenv("BOOM_REQUIRE_DB") == "1" {
-			t.Fatalf("db.New: %v", err)
-		}
-		t.Skipf("skipping: db.New: %v", err)
-	}
-	t.Cleanup(database.Close)
-	return database
 }
 
 func ensureDedicatedDB(ctx context.Context, targetURL string) error {

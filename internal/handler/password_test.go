@@ -16,12 +16,10 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -242,58 +240,3 @@ var _ = Describe("ChangePassword atomicity on DB error", func() {
 		Expect(n).To(Equal(1), "rollback should have preserved planted refresh token")
 	})
 })
-
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
-func mintUserWithPassword(t *testing.T, hz *testutil.Harness, prefix, password string) (string, string, string) {
-	t.Helper()
-	ctx := context.Background()
-	// Use MintUser's username generator implicitly: we need a unique name.
-	// Simplest path is to piggyback on MintUser and then rewrite the hash.
-	user, token := hz.MintUser(prefix)
-	hash, salt, err := auth.HashPassword(password)
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	if err := hz.DB.UpdatePassword(ctx, user, hash, salt); err != nil {
-		t.Fatalf("update password: %v", err)
-	}
-	return user, password, token
-}
-
-func doJSONReq(t *testing.T, e http.Handler, method, target, token string, body any) *httptest.ResponseRecorder {
-	t.Helper()
-	var buf bytes.Buffer
-	if body != nil {
-		if err := json.NewEncoder(&buf).Encode(body); err != nil {
-			t.Fatalf("encode body: %v", err)
-		}
-	}
-	req := httptest.NewRequest(method, target, &buf)
-	req.Header.Set("Content-Type", "application/json")
-	if token != "" {
-		req.Header.Set("Authorization", "Basic "+token)
-	}
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-	return rec
-}
-
-func verifyLogin(t *testing.T, e http.Handler, user, password string) int {
-	t.Helper()
-	rec := doJSONReq(t, e, http.MethodPost, "/auth/login", "", map[string]string{
-		"username": user, "password": password,
-	})
-	return rec.Code
-}
-
-func mintAccessTokenPair(t *testing.T, hz *testutil.Harness, user string) (accessToken, refreshToken string) {
-	t.Helper()
-	accessToken = auth.ToBase64(auth.NewRawToken())
-	refreshToken = auth.ToBase64(auth.NewRawToken())
-	if err := hz.DB.CreateAccessTokens(context.Background(), db.TokenData{
-		Owner: user, Token: accessToken, RefreshToken: refreshToken,
-	}, 24); err != nil {
-		t.Fatalf("mint access token pair: %v", err)
-	}
-	return accessToken, refreshToken
-}

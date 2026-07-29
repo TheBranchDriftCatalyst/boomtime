@@ -18,7 +18,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -305,17 +304,4 @@ var _ = strings.Contains
 type widgetLinkResp struct {
 	WidgetBaseURL string `json:"widgetBaseUrl"`
 	LinkID        string `json:"linkId"`
-}
-
-func mintWidgetLink(t *testing.T, e http.Handler, token, scopeType, scopeRef string) widgetLinkResp {
-	t.Helper()
-	rec := do(t, e, "GET",
-		fmt.Sprintf("/api/v1/users/current/widgets/link?scopeType=%s&scopeRef=%s", scopeType, scopeRef),
-		token, nil)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("mint widget link: status %d body=%s", rec.Code, rec.Body.String())
-	}
-	var out widgetLinkResp
-	decode(t, rec, &out)
-	return out
 }

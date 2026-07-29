@@ -1,10 +1,11 @@
 // active_files_ginkgo_test.go — ginkgo mirror of active_files_test.go (gaka-0vp.13).
 // 1:1 case map (5 stdlib TestXxx → 5 Its):
-//   TestActiveFilesCrossProject           → "cross-project files count projects+time"
-//   TestActiveFilesRespectsGapCutoff      → "respects gap cutoff"
-//   TestActiveFilesHiddenProjectExcluded  → "hidden project drops from shared file"
-//   TestActiveFilesRenameMergesProjectCount → "rename merges DISTINCT project count"
-//   TestActiveFilesTruncation             → "limit caps result and flips truncated=true"
+//
+//	TestActiveFilesCrossProject           → "cross-project files count projects+time"
+//	TestActiveFilesRespectsGapCutoff      → "respects gap cutoff"
+//	TestActiveFilesHiddenProjectExcluded  → "hidden project drops from shared file"
+//	TestActiveFilesRenameMergesProjectCount → "rename merges DISTINCT project count"
+//	TestActiveFilesTruncation             → "limit caps result and flips truncated=true"
 package db
 
 import (
@@ -148,4 +149,3 @@ func afByEntity(files []ActiveFile) map[string]ActiveFile {
 	}
 	return m
 }
-

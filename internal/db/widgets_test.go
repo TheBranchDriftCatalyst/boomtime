@@ -1,7 +1,8 @@
 // widgets_ginkgo_test.go — ginkgo mirror of widgets_test.go (gaka-0vp.13).
 // 1:1 case map (2 stdlib TestXxx → 2 Its):
-//   TestExactSourcesFor                       → "ExactSourcesFor > reverse-lookup"
-//   TestProjectMemberSetWithRenamesExpands    → "ProjectMemberSetWithRenames > expands renames into scope"
+//
+//	TestExactSourcesFor                       → "ExactSourcesFor > reverse-lookup"
+//	TestProjectMemberSetWithRenamesExpands    → "ProjectMemberSetWithRenames > expands renames into scope"
 package db
 
 import (
@@ -68,4 +69,3 @@ func mkRenames(axis string, exact map[string]string) RenameSets {
 	rs.byAxis[axis] = a
 	return rs
 }
-

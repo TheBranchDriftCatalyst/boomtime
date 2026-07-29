@@ -20,7 +20,6 @@
 package testutil_test
 
 import (
-	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -457,31 +456,6 @@ var _ = Describe("Files HTTP", func() {
 // this package, but here only via ContainSubstring; explicit uses below
 // silence any accidental unused imports if a case is trimmed.
 var _ = strings.Contains
-
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
-func do(t *testing.T, e http.Handler, method, target, token string, body any) *httptest.ResponseRecorder {
-	t.Helper()
-	var rdr *bytes.Reader
-	if body != nil {
-		b, err := json.Marshal(body)
-		if err != nil {
-			t.Fatalf("marshal body: %v", err)
-		}
-		rdr = bytes.NewReader(b)
-	} else {
-		rdr = bytes.NewReader(nil)
-	}
-	req := httptest.NewRequest(method, target, rdr)
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	if token != "" {
-		req.Header.Set("Authorization", "Basic "+token)
-	}
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-	return rec
-}
 
 func decode(t *testing.T, rec *httptest.ResponseRecorder, v any) {
 	t.Helper()

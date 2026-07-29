@@ -9,7 +9,6 @@ package handler_test
 import (
 	"encoding/json"
 	"net/http"
-	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -138,21 +137,6 @@ func publishFixture(hub *logging.LogHub, userA, userB string) (aMsgs, bMsgs, ser
 		})
 	}
 	return
-}
-
-func decodeLogsResponse(t *testing.T, body []byte) []string {
-	t.Helper()
-	var env struct {
-		Logs []logging.LogEntry `json:"logs"`
-	}
-	if err := json.Unmarshal(body, &env); err != nil {
-		t.Fatalf("decode /logs response: %v (body=%s)", err, string(body))
-	}
-	out := make([]string, 0, len(env.Logs))
-	for _, e := range env.Logs {
-		out = append(out, e.Msg)
-	}
-	return out
 }
 
 func containsMsg(xs []string, target string) bool {

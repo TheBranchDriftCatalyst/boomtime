@@ -22,7 +22,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
-	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -624,30 +623,3 @@ func min(a, b int) int {
 
 // -- helpers restored from stdlib partner (gaka-0vp.17) --
 const weeklyGoSpec = `{"kind":"time","axis":"language","value":"Go","op":">=","target_seconds":3600,"window":"week"}`
-
-func seedRollupForOwner(t *testing.T, hz *testutil.Harness, owner string, day time.Time, language string, seconds int64) {
-	t.Helper()
-	if err := hz.SeedRollup(owner, day, language, seconds); err != nil {
-		t.Fatalf("seed rollup: %v", err)
-	}
-}
-
-func createGoal(t *testing.T, e http.Handler, token, name, spec string) string {
-	t.Helper()
-	rec := doJSONReq(t, e, http.MethodPost, "/api/v1/users/current/goals", token, map[string]any{
-		"name": name,
-		"spec": json.RawMessage(spec),
-	})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("create goal %q: status %d body=%s", name, rec.Code, rec.Body.String())
-	}
-	var env struct {
-		Goal struct {
-			ID string `json:"id"`
-		} `json:"goal"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
-		t.Fatalf("decode create response: %v body=%s", err, rec.Body.String())
-	}
-	return env.Goal.ID
-}

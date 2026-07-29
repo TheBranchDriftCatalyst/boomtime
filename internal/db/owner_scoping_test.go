@@ -7,7 +7,6 @@ package db
 import (
 	"context"
 	"strings"
-	"testing"
 	"time"
 
 	"github.com/onsi/ginkgo/v2"
@@ -276,27 +275,3 @@ var _ = ginkgo.Describe("owner scoping across aggregations", func() {
 		Expect(bTot).To(BeEquivalentTo(200))
 	})
 })
-
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
-func seedTwoUserBlock(t *testing.T, d *DB, sender, project string, day time.Time) int64 {
-	t.Helper()
-	ctx := t.Context()
-	ensureUser(t, d, ctx, sender)
-	ensureProjects(t, d, ctx, sender, project)
-	tmpl := hbSeed{
-		project: project, language: "Go", editor: "vim", plugin: "pl",
-		machine: "m", platform: "linux", branch: "main", category: "Coding",
-		entity: "a.go",
-	}
-	brk := tmpl
-	brk.ts = day
-	brk.gap = 999999
-	insertSeed(t, d, ctx, sender, brk)
-	for i := 0; i < 2; i++ {
-		h := tmpl
-		h.ts = day.Add(time.Duration(i+1) * time.Minute)
-		h.gap = 100
-		insertSeed(t, d, ctx, sender, h)
-	}
-	return 200
-}

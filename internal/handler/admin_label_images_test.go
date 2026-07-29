@@ -1,9 +1,10 @@
 // admin_label_images_ginkgo_test.go — ginkgo mirror of
 // admin_label_images_test.go (gaka-8bz).
 // 1:1 case map (3 stdlib TestXxx):
-//   TestEvent2JSON_WireShape         → event2json > "wire shape (FE hook keys)"
-//   TestRegenResponseJob_WireShape   → regenResponseJob > "exact JSON envelope"
-//   TestJob_JSONOmitsZeroTimestamps  → Job JSON > "omits zero pointer fields"
+//
+//	TestEvent2JSON_WireShape         → event2json > "wire shape (FE hook keys)"
+//	TestRegenResponseJob_WireShape   → regenResponseJob > "exact JSON envelope"
+//	TestJob_JSONOmitsZeroTimestamps  → Job JSON > "omits zero pointer fields"
 package handler
 
 import (

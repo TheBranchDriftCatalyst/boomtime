@@ -2,10 +2,11 @@
 // 1:1 case map (4 stdlib TestXxx; TestOpenAPIAuthSchemeMatchesHarness has 6
 // t.Run subtests — 3 paths × {with token, no token} — each becomes a
 // separate It):
-//   TestOpenAPISpecEndpoint                → OpenAPI Spec > "serves a valid OpenAPI 3 doc"
-//   TestOpenAPIDocsHandlerServesSwaggerUI  → OpenAPI Docs > 3 Its (root, initializer, css asset)
-//   TestOpenAPIAuthSchemeMatchesHarness    → OpenAPI Auth > 3 paths × 2 Its each (6 total)
-//   TestOpenAPISpecMatchesAuthShape        → OpenAPI Spec > "bearerAuth scheme shape matches resolveUser"
+//
+//	TestOpenAPISpecEndpoint                → OpenAPI Spec > "serves a valid OpenAPI 3 doc"
+//	TestOpenAPIDocsHandlerServesSwaggerUI  → OpenAPI Docs > 3 Its (root, initializer, css asset)
+//	TestOpenAPIAuthSchemeMatchesHarness    → OpenAPI Auth > 3 paths × 2 Its each (6 total)
+//	TestOpenAPISpecMatchesAuthShape        → OpenAPI Spec > "bearerAuth scheme shape matches resolveUser"
 package testutil_test
 
 import (

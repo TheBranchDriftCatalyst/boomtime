@@ -1,13 +1,14 @@
 // cache_ginkgo_test.go — ginkgo mirror of cache_test.go (gaka-0vp).
 // 1:1 case map (8 stdlib TestXxx):
-//   TestGetSetHit                     → TTL cache > "hits and increments Len"
-//   TestExpirationLazyEviction        → TTL cache > "expires and drops on next Get"
-//   TestInvalidatePrefixOwnerOnly     → TTL cache > "InvalidatePrefix scopes to matching keys"
-//   TestInvalidatePrefixEmptyClearsAll→ TTL cache > "empty prefix clears everything"
-//   TestZeroTTLDisablesCache          → TTL cache > "TTL=0 disables the cache"
-//   TestNilReceiverIsInert            → TTL cache > "nil receiver is inert on every op"
-//   TestSweepEvictsExpiredEntries     → TTL cache > "sweep evicts expired"
-//   TestCloseIsIdempotent             → TTL cache > "Close is idempotent"
+//
+//	TestGetSetHit                     → TTL cache > "hits and increments Len"
+//	TestExpirationLazyEviction        → TTL cache > "expires and drops on next Get"
+//	TestInvalidatePrefixOwnerOnly     → TTL cache > "InvalidatePrefix scopes to matching keys"
+//	TestInvalidatePrefixEmptyClearsAll→ TTL cache > "empty prefix clears everything"
+//	TestZeroTTLDisablesCache          → TTL cache > "TTL=0 disables the cache"
+//	TestNilReceiverIsInert            → TTL cache > "nil receiver is inert on every op"
+//	TestSweepEvictsExpiredEntries     → TTL cache > "sweep evicts expired"
+//	TestCloseIsIdempotent             → TTL cache > "Close is idempotent"
 package cache
 
 import (

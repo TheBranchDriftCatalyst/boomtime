@@ -1,10 +1,11 @@
 // user_avatars_ginkgo_test.go — ginkgo mirror of user_avatars_test.go (gaka-0vp.13).
 // 1:1 case map (5 stdlib TestXxx → 5 Its):
-//   TestUserAvatars_SaveRoundtrip       → "SaveUserAvatar > round-trips ready row"
-//   TestUserAvatars_StatusTransitions   → "SetAvatarStatus > running/error/retry transitions"
-//   TestUserAvatars_ErrorPreservesBytes → "SetAvatarStatus(error) > preserves image_bytes"
-//   TestUserAvatars_UnknownStatus       → "SetAvatarStatus > rejects unknown status"
-//   TestUserAvatars_NotFound            → "GetUserAvatar > returns (nil,false,nil) miss"
+//
+//	TestUserAvatars_SaveRoundtrip       → "SaveUserAvatar > round-trips ready row"
+//	TestUserAvatars_StatusTransitions   → "SetAvatarStatus > running/error/retry transitions"
+//	TestUserAvatars_ErrorPreservesBytes → "SetAvatarStatus(error) > preserves image_bytes"
+//	TestUserAvatars_UnknownStatus       → "SetAvatarStatus > rejects unknown status"
+//	TestUserAvatars_NotFound            → "GetUserAvatar > returns (nil,false,nil) miss"
 package db
 
 import (

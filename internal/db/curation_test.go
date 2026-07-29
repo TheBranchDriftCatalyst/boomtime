@@ -1,9 +1,10 @@
 // curation_ginkgo_test.go — ginkgo mirror of curation_test.go (gaka-0vp.13).
 // 1:1 case map (4 stdlib TestXxx → 4 Its):
-//   TestExclusionPredicateShape   → "exclusionPredicate: shape + arg indexing"
-//   TestExclusionPredicateEmpty   → "exclusionPredicate: empty HiddenSets no-ops"
-//   TestInjectAfterAnchorsExist   → "injectAfter: every anchor still exists in embedded SQL"
-//   TestHideExclusionInStats      → "hide exclusion drops the hidden project from raw/rollup/project-list"
+//
+//	TestExclusionPredicateShape   → "exclusionPredicate: shape + arg indexing"
+//	TestExclusionPredicateEmpty   → "exclusionPredicate: empty HiddenSets no-ops"
+//	TestInjectAfterAnchorsExist   → "injectAfter: every anchor still exists in embedded SQL"
+//	TestHideExclusionInStats      → "hide exclusion drops the hidden project from raw/rollup/project-list"
 package db
 
 import (

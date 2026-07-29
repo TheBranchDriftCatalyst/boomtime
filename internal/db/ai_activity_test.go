@@ -9,7 +9,6 @@ package db
 
 import (
 	"context"
-	"testing"
 	"time"
 
 	"github.com/onsi/ginkgo/v2"
@@ -122,28 +121,3 @@ var _ = ginkgo.Describe("GetAIActivity", func() {
 		Expect(sum.HeartbeatsWithAI).To(BeEquivalentTo(1))
 	})
 })
-
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
-func insertAIHB(t *testing.T, d *DB, ctx context.Context, sender string, ts time.Time, session *string, in, out, aiLines, humanLines int64) {
-	t.Helper()
-	if _, err := d.Pool.Exec(ctx, `
-		INSERT INTO heartbeats
-		  (sender, entity, ty, time_sent, user_agent, gap_seconds,
-		   ai_input_tokens, ai_output_tokens, ai_line_changes, human_line_changes, ai_session)
-		VALUES ($1, 'a.go', 'file', $2, 'ua', 60,
-		        $3, $4, $5, $6, $7)`,
-		sender, ts, in, out, aiLines, humanLines, session); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func insertPlainHB(t *testing.T, d *DB, ctx context.Context, sender string, ts time.Time) {
-	t.Helper()
-	if _, err := d.Pool.Exec(ctx, `
-		INSERT INTO heartbeats
-		  (sender, entity, ty, time_sent, user_agent, gap_seconds)
-		VALUES ($1, 'plain.go', 'file', $2, 'ua', 60)`,
-		sender, ts); err != nil {
-		t.Fatal(err)
-	}
-}
