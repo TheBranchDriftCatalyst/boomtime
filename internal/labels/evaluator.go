@@ -190,11 +190,20 @@ func EvaluateCondition(cond Condition, p *Payload) bool {
 		}
 		return cmp(float64(sumSec)/3600.0, c.Op, c.Hours)
 	case AxisPctCond:
+		// gaka-hc6.6: the port initially mirrored the TS eval which
+		// divided TotalPct by 100. That was wrong — the aggregation
+		// emits TotalPct as a 0..1 decimal (from the SQL
+		// `total_seconds / SUM(total_seconds) OVER ()`), not a percent.
+		// TS was equally broken; the coverage test surfaced it.
+		// Compute the share directly from seconds so we're immune to
+		// whatever scale TotalPct happens to use.
 		hit := findAxisEntry(p, c.Axis, c.Value)
 		var pct float64
 		if hit != nil {
-			// Payload TotalPct is 0..100, DSL pct is 0..1.
-			pct = hit.TotalPct / 100.0
+			total := axisTotalSeconds(p, c.Axis)
+			if total > 0 {
+				pct = float64(hit.TotalSeconds) / float64(total)
+			}
 		}
 		return cmp(pct, c.Op, c.Pct)
 	case TopShareCond:

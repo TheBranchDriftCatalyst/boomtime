@@ -71,10 +71,13 @@ func TestAxisTimeSum_TerminalPuristShape(t *testing.T) {
 	}
 }
 
-func TestAxisPct_PayloadIsHundredScale(t *testing.T) {
-	// Payload TotalPct is 0..100; DSL pct is 0..1.
+func TestAxisPct_ComputedFromSeconds(t *testing.T) {
+	// gaka-hc6.6: axis-pct computes share from TotalSeconds directly
+	// (immune to the payload's TotalPct scale, which is 0..1 today —
+	// see the AxisPctCond case comment for the migration story).
 	p := &Payload{Languages: []model.ResourceStats{
-		{Name: "Go", TotalSeconds: 500 * 3600, TotalPct: 60}, // = 0.60 in DSL
+		{Name: "Go", TotalSeconds: 300 * 3600},
+		{Name: "Rust", TotalSeconds: 200 * 3600},
 	}}
 	cond := AxisPctCond{Axis: AxisLanguages, Value: "Go", Op: OpGE, Pct: 0.5}
 	if !EvaluateCondition(cond, p) {
