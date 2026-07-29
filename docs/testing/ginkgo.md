@@ -56,6 +56,33 @@ Go stdlib `testing` package to
 | `TestMain` for once-per-package setup               | `BeforeSuite(func() { ... })` in the suite file |
 | One-time teardown                                   | `AfterSuite(...)`                         |
 
+## Name collisions
+
+Ginkgo v2 exports `Entry(...)` (for DescribeTable rows) as a top-level
+symbol. Any package that defines a type or var named `Entry` (or
+`Fail`, `It`, etc.) can't dot-import ginkgo — the compiler flags the
+collision. In practice this hit `internal/labelcatalog` which declares
+`type Entry struct{...}`.
+
+Workaround: named import ginkgo (not gomega — gomega's `Expect`,
+`Equal`, `BeNil` rarely collide):
+
+```go
+import (
+    "github.com/onsi/ginkgo/v2"      // no dot import
+    . "github.com/onsi/gomega"
+)
+
+var _ = ginkgo.Describe("...", func() {
+    ginkgo.It("...", func() {
+        Expect(x).To(Equal(y))       // gomega dot-import stays
+    })
+})
+```
+
+The suite entry file also needs the named import
+(`ginkgo.Fail`, `ginkgo.RunSpecs`).
+
 ## Handling `*testing.T`
 
 Legacy helpers still typed `*testing.T` (e.g. `testutil.NewHarness(t)`)
