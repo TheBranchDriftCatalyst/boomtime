@@ -17,18 +17,10 @@ import (
 )
 
 // routerWithPublicProfileG — mirror of the stdlib file's routerWithPublicProfile.
-func routerWithPublicProfileG(hz *testutil.Harness) http.Handler {
-	e := hz.Router()
-	e.GET("/api/v1/users/current/profile", hz.H.GetPublicProfile)
-	e.PUT("/api/v1/users/current/profile", hz.H.PutPublicProfile)
-	e.GET("/api/public/profile/:slug", hz.H.PublicProfile)
-	return e
-}
-
 var _ = Describe("public profile cache headers (gaka-6jm.12)", func() {
 	It("advertises tight policy — max-age=60, must-revalidate, no s-maxage, quoted ETag", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithPublicProfileG(hz)
+		e := hz.Router()
 		user, token := hz.MintUser("cache_hdr_g")
 
 		slug := "cachehdrg-" + strings.ToLower(strings.ReplaceAll(user[len(user)-8:], ".", ""))
@@ -71,7 +63,7 @@ var _ = Describe("public profile cache headers (gaka-6jm.12)", func() {
 var _ = Describe("PutPublicProfile body-size cap (gaka-bi2)", func() {
 	It("rejects a 5 KiB body with 413 before slug regex runs", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithPublicProfileG(hz)
+		e := hz.Router()
 		_, token := hz.MintUser("prof_413_g")
 
 		big := strings.Repeat("a", 5000)

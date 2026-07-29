@@ -22,15 +22,9 @@ import (
 
 // routerWithLabelImages wires just the public endpoint. Matches the
 // production registration in server.go: no auth, no scope.
-func routerWithLabelImages(hz *testutil.Harness) http.Handler {
-	e := hz.Router()
-	e.GET("/api/v1/labels/:id/image", hz.H.LabelImage)
-	return e
-}
-
 func TestLabelImage_Served(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithLabelImages(hz)
+	e := hz.Router()
 
 	// Seed a row.
 	id := "test-served-late-night-coder"
@@ -65,7 +59,7 @@ func TestLabelImage_Served(t *testing.T) {
 // no auth leakage; the response is the standard error envelope.
 func TestLabelImage_NotFound(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithLabelImages(hz)
+	e := hz.Router()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/labels/no-such-label-xyz/image", nil)
 	rec := httptest.NewRecorder()
@@ -81,7 +75,7 @@ func TestLabelImage_NotFound(t *testing.T) {
 // ignore that parameter — same bytes served regardless.
 func TestLabelImage_IgnoresCacheBustParam(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithLabelImages(hz)
+	e := hz.Router()
 
 	id := "test-bust-param"
 	body := []byte("fake-png-bytes")

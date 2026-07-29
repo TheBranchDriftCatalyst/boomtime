@@ -60,13 +60,6 @@ import (
 // router. The harness omits them (its Router mirrors production but was written
 // before the widget-defs endpoints landed); we install exactly what the tests
 // exercise so we do not touch testutil.
-func routerWithWidgetDefs(hz *testutil.Harness) http.Handler {
-	e := hz.Router()
-	e.POST("/api/v1/users/current/widget-defs", hz.H.CreateWidgetDef)
-	e.GET("/widget/svg/:uuid/named", hz.H.WidgetDefSvg)
-	return e
-}
-
 // createDefResp mirrors the CreateWidgetDef JSON envelope.
 type createDefResp struct {
 	DefID string `json:"defId"`
@@ -170,7 +163,7 @@ func bodyOf(r *strings.Reader) string {
 // is in the task report.
 func TestRenderCustomWidget_ScrubberFiltersHiddenLang_Gaka6jm13Regression(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithWidgetDefs(hz)
+	e := hz.Router()
 	user, token := hz.MintUser("wd_scrub_lang")
 
 	// Seed enough languages that the top-langs panel has a tail bucket.
@@ -224,7 +217,7 @@ func TestRenderCustomWidget_ScrubberFiltersHiddenLang_Gaka6jm13Regression(t *tes
 // the momentum query).
 func TestRenderCustomWidget_ScrubberFiltersMomentumProjectName_Gaka6jm13Regression(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithWidgetDefs(hz)
+	e := hz.Router()
 	user, token := hz.MintUser("wd_scrub_mom")
 
 	start := time.Now().UTC().Add(-48 * time.Hour).Truncate(time.Hour)
@@ -276,7 +269,7 @@ func TestRenderCustomWidget_ScrubberFiltersMomentumProjectName_Gaka6jm13Regressi
 // the WidgetSvg check.
 func TestRenderCustomWidget_ScopeProjectHidden_Returns404_Gaka6jm13Regression(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithWidgetDefs(hz)
+	e := hz.Router()
 	user, token := hz.MintUser("wd_scope_gate")
 
 	// (1) Unknown def-id — 404. Public endpoint, no auth.
@@ -320,7 +313,7 @@ func TestRenderCustomWidget_ScopeProjectHidden_Returns404_Gaka6jm13Regression(t 
 // scan than "not anywhere in the bytes").
 func TestRenderCustomWidget_ScrubberFiltersHiddenLangInPayload(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithWidgetDefs(hz)
+	e := hz.Router()
 	user, token := hz.MintUser("wd_scrub_lang_rows")
 
 	start := time.Now().UTC().Add(-48 * time.Hour).Truncate(time.Hour)

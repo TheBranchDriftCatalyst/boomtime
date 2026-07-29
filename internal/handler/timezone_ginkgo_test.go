@@ -19,13 +19,6 @@ import (
 
 // routerWithTimezoneGinkgo — mirror of the stdlib file's routerWithTimezone.
 // Distinct name avoids duplicate-symbol collision in the same test binary.
-func routerWithTimezoneGinkgo(hz *testutil.Harness) *echo.Echo {
-	e := hz.Router()
-	e.GET("/api/v1/users/current/timezone", hz.H.GetTimezone)
-	e.PATCH("/api/v1/users/current/timezone", hz.H.UpdateTimezone)
-	return e
-}
-
 // doJSONGinkgo — mirror of the stdlib file's doJSON but reports via Expect
 // rather than testing.T. Distinct name avoids collision.
 func doJSONGinkgo(e *echo.Echo, method, path, token string, body any) *httptest.ResponseRecorder {
@@ -46,7 +39,7 @@ func doJSONGinkgo(e *echo.Echo, method, path, token string, body any) *httptest.
 var _ = Describe("timezone endpoints (gaka-dg7)", func() {
 	It("rejects an invalid IANA name with 400 and does not touch the DB", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithTimezoneGinkgo(hz)
+		e := hz.Router()
 		_, token := hz.MintUser("tz_invalid")
 
 		// Baseline: user has never picked a tz.
@@ -77,7 +70,7 @@ var _ = Describe("timezone endpoints (gaka-dg7)", func() {
 
 	It("PATCH valid IANA round-trips through GET; empty string clears the pick", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithTimezoneGinkgo(hz)
+		e := hz.Router()
 		_, token := hz.MintUser("tz_valid")
 
 		// PATCH a valid IANA name.

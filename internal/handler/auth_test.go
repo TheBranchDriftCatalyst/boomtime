@@ -748,7 +748,6 @@ func TestCreateUser_StartsAtV2_BravoRegression(t *testing.T) {
 func TestChangePassword_StoresAtV2(t *testing.T) {
 	hz := testutil.NewHarness(t)
 	e := hz.Router()
-	e.POST("/api/v1/users/current/password", hz.H.ChangePassword)
 
 	user := "bravo_chpwd_v1_to_v2"
 	pw := "bravoMedium1!"

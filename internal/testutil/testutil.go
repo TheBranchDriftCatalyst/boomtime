@@ -237,6 +237,25 @@ func (hz *Harness) Router() *echo.Echo {
 	// integration test's ledger-write assertion.
 	e.GET("/api/v1/users/current/awards/streaks", h.AwardsStreaks)
 	e.GET("/api/v1/users/current/awards/ledger", h.AwardsLedger)
+	// gaka-0vp.18 (DRY audit): folded 8 per-file routerWithXxx helpers into
+	// the central Router() below. The per-file builders were 5-11 LOC each,
+	// existed in stdlib + ginkgo pairs (byte-identical), and were the
+	// biggest single source of test-code duplication before this fold.
+	// Every one is now a single route line here.
+	e.POST("/api/v1/users/current/password", h.ChangePassword)                        // was routerWithChangePassword
+	e.GET("/api/v1/labels/:id/image", h.LabelImage)                                   // was routerWithLabelImages
+	e.POST("/api/v1/users/current/widget-defs", h.CreateWidgetDef)                    // was routerWithWidgetDefs
+	e.GET("/widget/svg/:uuid/named", h.WidgetDefSvg)                                  // was routerWithWidgetDefs
+	e.GET("/api/v1/logs", h.ServerLogs)                                               // was routerWithLogs
+	e.GET("/api/v1/users/current/timezone", h.GetTimezone)                            // was routerWithTimezone
+	e.PATCH("/api/v1/users/current/timezone", h.UpdateTimezone)                       // was routerWithTimezone
+	e.GET("/api/v1/users/current/profile", h.GetPublicProfile)                        // was routerWithPublicProfile
+	e.PUT("/api/v1/users/current/profile", h.PutPublicProfile)                        // was routerWithPublicProfile
+	e.GET("/api/public/profile/:slug", h.PublicProfile)                               // was routerWithPublicProfile
+	e.GET("/api/v1/users/current/dashboard/:scope", h.GetDashboardLayout)             // was routerWithDashboardLayout
+	e.PUT("/api/v1/users/current/dashboard/:scope", h.PutDashboardLayout)             // was routerWithDashboardLayout
+	e.DELETE("/api/v1/users/current/dashboard/:scope", h.DeleteDashboardLayout)       // was routerWithDashboardLayout
+	e.POST("/api/v1/users/current/wakatime_key", h.SaveWakatimeKey)                   // was routerWithWakatimeKey
 	// Cleanup: also clean up the goals table for the test's sender.
 	// The parent Cleanup registered per MintUser catches every table
 	// but goals — we extend the cleanup list separately here so

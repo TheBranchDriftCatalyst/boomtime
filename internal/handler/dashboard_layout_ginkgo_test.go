@@ -22,17 +22,6 @@ import (
 )
 
 // routerWithDashboardLayoutG — mirror of the stdlib helper.
-func routerWithDashboardLayoutG(hz *testutil.Harness) http.Handler {
-	e := hz.Router()
-	e.GET("/api/v1/users/current/profile", hz.H.GetPublicProfile)
-	e.PUT("/api/v1/users/current/profile", hz.H.PutPublicProfile)
-	e.GET("/api/public/profile/:slug", hz.H.PublicProfile)
-	e.GET("/api/v1/users/current/dashboard/:scope", hz.H.GetDashboardLayout)
-	e.PUT("/api/v1/users/current/dashboard/:scope", hz.H.PutDashboardLayout)
-	e.DELETE("/api/v1/users/current/dashboard/:scope", hz.H.DeleteDashboardLayout)
-	return e
-}
-
 // semanticJSONDiffG — mirror of semanticJSONDiff.
 func semanticJSONDiffG(a, b string) string {
 	var av, bv any
@@ -53,7 +42,7 @@ func semanticJSONDiffG(a, b string) string {
 var _ = Describe("dashboard layout (gaka-keb)", func() {
 	It("PUT / GET semantic round-trip; overwrite replaces", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithDashboardLayoutG(hz)
+		e := hz.Router()
 		_, token := hz.MintUser("dash_rt_g")
 
 		inner := `{"cols":12,"widgets":[{"i":"grade-badge","x":0,"y":0,"w":3,"h":3,"view":null},{"i":"top-langs","x":6,"y":3,"w":6,"h":4,"view":"bar"}]}`
@@ -103,7 +92,7 @@ var _ = Describe("dashboard layout (gaka-keb)", func() {
 
 	It("returns 400 (not 404/500) for an unknown scope on both PUT and GET", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithDashboardLayoutG(hz)
+		e := hz.Router()
 		_, token := hz.MintUser("dash_scope_g")
 
 		body := []byte(`{"layout":{"widgets":[]}}`)
@@ -123,7 +112,7 @@ var _ = Describe("dashboard layout (gaka-keb)", func() {
 
 	It("returns 404 on GET before any PUT (FE fall-back path)", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithDashboardLayoutG(hz)
+		e := hz.Router()
 		_, token := hz.MintUser("dash_miss_g")
 
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/users/current/dashboard/public_profile", nil)
@@ -136,7 +125,7 @@ var _ = Describe("dashboard layout (gaka-keb)", func() {
 
 	It("rejects a > 4 KiB body with 413 before writing the layout row", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithDashboardLayoutG(hz)
+		e := hz.Router()
 		_, token := hz.MintUser("dash_413_g")
 
 		pad := strings.Repeat("a", 5000)
@@ -155,7 +144,7 @@ var _ = Describe("dashboard layout (gaka-keb)", func() {
 var _ = Describe("public profile layout inlining", func() {
 	It("includes the layout verbatim when set (single-fetch contract)", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithDashboardLayoutG(hz)
+		e := hz.Router()
 		user, token := hz.MintUser("pub_layout_g")
 
 		slug := "publayoutg-" + strings.ToLower(strings.ReplaceAll(user[len(user)-8:], ".", ""))
@@ -188,7 +177,7 @@ var _ = Describe("public profile layout inlining", func() {
 
 	It("omits the layout key entirely when unset (omitempty contract)", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithDashboardLayoutG(hz)
+		e := hz.Router()
 		user, token := hz.MintUser("pub_nolayout_g")
 
 		slug := "nolayoutg-" + strings.ToLower(strings.ReplaceAll(user[len(user)-8:], ".", ""))

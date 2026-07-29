@@ -18,7 +18,6 @@
 package handler_test
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -32,16 +31,10 @@ import (
 
 const weeklyGoSpecG = `{"kind":"time","axis":"language","value":"Go","op":">=","target_seconds":3600,"window":"week"}`
 
-func routerWithGoalsG(hz *testutil.Harness) http.Handler { return hz.Router() }
-
+// seedRollupForOwnerG is an Expect-based wrapper around hz.SeedRollup
+// (defined in internal/testutil/seed.go — one shared source of truth).
 func seedRollupForOwnerG(hz *testutil.Harness, owner string, day time.Time, language string, seconds int64) {
-	_, err := hz.DB.Pool.Exec(context.Background(), `
-		INSERT INTO hb_rollup_daily (sender, day, project, language, editor,
-			platform, machine, category, plugin, branch, total_seconds)
-		VALUES ($1, $2::date, 'P', $3, 'vim', 'linux', 'm', 'Coding', 'pl', 'main', $4)
-		ON CONFLICT DO NOTHING`,
-		owner, day, language, seconds)
-	Expect(err).NotTo(HaveOccurred())
+	Expect(hz.SeedRollup(owner, day, language, seconds)).To(Succeed())
 }
 
 func createGoalG(e http.Handler, token, name, spec string) string {
@@ -62,7 +55,7 @@ func createGoalG(e http.Handler, token, name, spec string) string {
 var _ = Describe("goals CRUD (gaka-wpb)", func() {
 	It("POST/GET/LIST/PATCH/DELETE round-trip preserves the spec semantically", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithGoalsG(hz)
+		e := hz.Router()
 		_, token := hz.MintUser("goal_crud_g")
 
 		// Create.
@@ -138,7 +131,7 @@ var _ = Describe("goals CRUD (gaka-wpb)", func() {
 
 	It("duplicate name returns 409 (not 500 leaked DB error)", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithGoalsG(hz)
+		e := hz.Router()
 		_, token := hz.MintUser("goal_dup_g")
 
 		r1 := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/goals", token, map[string]any{
@@ -156,7 +149,7 @@ var _ = Describe("goals CRUD (gaka-wpb)", func() {
 var _ = Describe("goals owner scoping (no oracle)", func() {
 	It("bob's id → 404 on every alice endpoint; alice's list does not include bob's id", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithGoalsG(hz)
+		e := hz.Router()
 		_, aliceTok := hz.MintUser("goal_alice_g")
 		_, bobTok := hz.MintUser("goal_bob_g")
 
@@ -190,7 +183,7 @@ var _ = Describe("goals validation (ValidateSpec branches)", func() {
 	DescribeTable("bad spec → 400",
 		func(spec string) {
 			hz := testutil.NewHarness(GinkgoT())
-			e := routerWithGoalsG(hz)
+			e := hz.Router()
 			_, token := hz.MintUser("goal_reject_g_" + strings.ReplaceAll(spec[:min(10, len(spec))], `"`, ""))
 			rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/goals", token, map[string]any{
 				"name": "n_reject",
@@ -217,7 +210,7 @@ var _ = Describe("goals validation extras (all branches)", func() {
 	DescribeTable("bad spec → 400 with error hint in body",
 		func(spec string) {
 			hz := testutil.NewHarness(GinkgoT())
-			e := routerWithGoalsG(hz)
+			e := hz.Router()
 			_, token := hz.MintUser("goal_reject_full_g")
 			rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/goals", token, map[string]any{
 				"name": "vr_full",
@@ -243,7 +236,7 @@ var _ = Describe("goals validation extras (all branches)", func() {
 var _ = Describe("goals progress cache", func() {
 	It("PATCH spec clears cache; fresh timestamp on next read", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithGoalsG(hz)
+		e := hz.Router()
 		owner, token := hz.MintUser("goal_progcache_g")
 
 		seedRollupForOwnerG(hz, owner, time.Now().UTC().AddDate(0, 0, -1), "Go", 4000)
@@ -310,7 +303,7 @@ var _ = Describe("goals progress cache", func() {
 
 	It("two reads within TTL return same bytes and same timestamp (cache actually serves)", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithGoalsG(hz)
+		e := hz.Router()
 		owner, token := hz.MintUser("goal_cachehit_g")
 
 		seedRollupForOwnerG(hz, owner, time.Now().UTC().AddDate(0, 0, -1), "Go", 5000)
@@ -352,7 +345,7 @@ var _ = Describe("goals progress cache", func() {
 var _ = Describe("goals ingest invalidation hook", func() {
 	It("heartbeat ingest wipes cached progress for the ingesting owner", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithGoalsG(hz)
+		e := hz.Router()
 		owner, token := hz.MintUser("goal_ingest_g")
 
 		seedRollupForOwnerG(hz, owner, time.Now().UTC().AddDate(0, 0, -1), "Go", 1000)
@@ -396,7 +389,7 @@ var _ = Describe("goals ingest invalidation hook", func() {
 
 	It("bob's ingest does NOT wipe alice's cache (invalidation is owner-scoped)", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithGoalsG(hz)
+		e := hz.Router()
 		aliceOwner, aliceTok := hz.MintUser("goal_ing_scope_a_g")
 		_, bobTok := hz.MintUser("goal_ing_scope_b_g")
 
@@ -446,7 +439,7 @@ var _ = Describe("goals ingest invalidation hook", func() {
 var _ = Describe("goals batched progress", func() {
 	It("returns map keyed by id; disabled goals are omitted", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithGoalsG(hz)
+		e := hz.Router()
 		owner, token := hz.MintUser("goal_batch_g")
 
 		seedRollupForOwnerG(hz, owner, time.Now().UTC().AddDate(0, 0, -1), "Go", 5000)
@@ -472,7 +465,7 @@ var _ = Describe("goals batched progress", func() {
 
 	It("alice's batch never leaks bob's id (owner-scoped)", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithGoalsG(hz)
+		e := hz.Router()
 		aliceOwner, aliceTok := hz.MintUser("goal_batch_a_g")
 		bobOwner, bobTok := hz.MintUser("goal_batch_b_g")
 
@@ -499,7 +492,7 @@ var _ = Describe("goals batched progress", func() {
 var _ = Describe("goals toggle endpoint", func() {
 	It("flips off then on; explicit set is idempotent", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithGoalsG(hz)
+		e := hz.Router()
 		_, token := hz.MintUser("goal_toggle_http_g")
 
 		id := createGoalG(e, token, "toggle-http-g", weeklyGoSpecG)
@@ -547,7 +540,7 @@ var _ = Describe("goals toggle endpoint", func() {
 var _ = Describe("goals create guards (shape-level)", func() {
 	It("empty name / whitespace / missing spec → 400", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithGoalsG(hz)
+		e := hz.Router()
 		_, token := hz.MintUser("goal_missing_fields_g")
 
 		rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/goals", token, map[string]any{
@@ -572,7 +565,7 @@ var _ = Describe("goals create guards (shape-level)", func() {
 var _ = Describe("goals PATCH guards", func() {
 	It("PATCH invalid spec → 400; whitespace-only name → 400; valid rename persists", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithGoalsG(hz)
+		e := hz.Router()
 		_, token := hz.MintUser("goal_patch_val_g")
 
 		id := createGoalG(e, token, "patch-val-g", weeklyGoSpecG)
@@ -606,7 +599,7 @@ var _ = Describe("goals PATCH guards", func() {
 var _ = Describe("goals rename collision", func() {
 	It("rename-to-existing (same owner) returns 409, not 500", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithGoalsG(hz)
+		e := hz.Router()
 		_, token := hz.MintUser("goal_rename_dup_g")
 
 		_ = createGoalG(e, token, "existing-name-g", weeklyGoSpecG)

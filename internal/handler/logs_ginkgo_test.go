@@ -18,12 +18,6 @@ import (
 )
 
 // routerWithLogsG — mirror of the stdlib routerWithLogs.
-func routerWithLogsG(hz *testutil.Harness) http.Handler {
-	e := hz.Router()
-	e.GET("/api/v1/logs", hz.H.ServerLogs)
-	return e
-}
-
 // publishFixtureG — mirror of the stdlib publishFixture.
 func publishFixtureG(hub *logging.LogHub, userA, userB string) (aMsgs, bMsgs, serverMsgs []string) {
 	aMsgs = []string{"wakatime key saved (Ag-1)", "wakatime key cleared (Ag-2)", "password changed (Ag-3)"}
@@ -59,7 +53,7 @@ var _ = Describe("ServerLogs owner-scope filter (gaka-awh.2)", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		hub := logging.NewLogHub(64)
 		hz.H.LogHub = hub // override the nil harness default
-		e := routerWithLogsG(hz)
+		e := hz.Router()
 
 		userA, tokenA := hz.MintUser("awhg_A")
 		userB, _ := hz.MintUser("awhg_B")
@@ -87,7 +81,7 @@ var _ = Describe("ServerLogs owner-scope filter (gaka-awh.2)", func() {
 	It("rejects unauthenticated calls with 4xx (fail-closed, not silent partial data)", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		hz.H.LogHub = logging.NewLogHub(8)
-		e := routerWithLogsG(hz)
+		e := hz.Router()
 
 		rec := doJSONReqG(e, http.MethodGet, "/api/v1/logs", "", nil)
 		Expect(rec.Code).To(BeNumerically(">=", 400))
@@ -98,7 +92,7 @@ var _ = Describe("ServerLogs owner-scope filter (gaka-awh.2)", func() {
 	It("empty hub returns {logs:[]} — never null (FE contract)", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		hz.H.LogHub = logging.NewLogHub(8)
-		e := routerWithLogsG(hz)
+		e := hz.Router()
 		_, token := hz.MintUser("awhg_empty")
 
 		rec := doJSONReqG(e, http.MethodGet, "/api/v1/logs", token, nil)

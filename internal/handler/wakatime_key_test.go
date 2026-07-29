@@ -25,16 +25,10 @@ import (
 
 // routerWithWakatimeKey wires just the save endpoint since Harness.Router()
 // doesn't include it by default.
-func routerWithWakatimeKey(hz *testutil.Harness) http.Handler {
-	e := hz.Router()
-	e.POST("/api/v1/users/current/wakatime_key", hz.H.SaveWakatimeKey)
-	return e
-}
-
 // TestSaveWakatimeKey_BodySizeCap_413: 5 KiB body → 413, no probe, no encrypt.
 func TestSaveWakatimeKey_BodySizeCap_413(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithWakatimeKey(hz)
+	e := hz.Router()
 	_, token := hz.MintUser("wkkey_413")
 
 	big := strings.Repeat("a", 5000)

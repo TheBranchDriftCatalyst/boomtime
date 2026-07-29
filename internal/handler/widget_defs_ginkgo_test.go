@@ -24,13 +24,6 @@ import (
 )
 
 // routerWithWidgetDefsG — mirror of the stdlib routerWithWidgetDefs.
-func routerWithWidgetDefsG(hz *testutil.Harness) http.Handler {
-	e := hz.Router()
-	e.POST("/api/v1/users/current/widget-defs", hz.H.CreateWidgetDef)
-	e.GET("/widget/svg/:uuid/named", hz.H.WidgetDefSvg)
-	return e
-}
-
 type createDefRespG struct {
 	DefID string `json:"defId"`
 	URL   string `json:"url"`
@@ -90,7 +83,7 @@ func fetchDefSvgG(e http.Handler, defID string, params string) string {
 var _ = Describe("RenderCustomWidget scrubber (gaka-6jm.13 regression)", func() {
 	It("filters hidden language from the top-langs SVG anywhere in body", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithWidgetDefsG(hz)
+		e := hz.Router()
 		user, token := hz.MintUser("wd_scrub_lang_g")
 
 		start := time.Now().UTC().Add(-48 * time.Hour).Truncate(time.Hour)
@@ -122,7 +115,7 @@ var _ = Describe("RenderCustomWidget scrubber (gaka-6jm.13 regression)", func() 
 
 	It("filters hidden project from the momentum SVG (ScrubMomentum wiring)", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithWidgetDefsG(hz)
+		e := hz.Router()
 		user, token := hz.MintUser("wd_scrub_mom_g")
 
 		start := time.Now().UTC().Add(-48 * time.Hour).Truncate(time.Hour)
@@ -149,7 +142,7 @@ var _ = Describe("RenderCustomWidget scrubber (gaka-6jm.13 regression)", func() 
 
 	It("filters hidden language from the top-langs bar rows (stricter >Label< scan)", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithWidgetDefsG(hz)
+		e := hz.Router()
 		user, token := hz.MintUser("wd_scrub_lang_rows_g")
 
 		start := time.Now().UTC().Add(-48 * time.Hour).Truncate(time.Hour)
@@ -176,7 +169,7 @@ var _ = Describe("RenderCustomWidget scrubber (gaka-6jm.13 regression)", func() 
 var _ = Describe("RenderCustomWidget scope gate (v1 invariants)", func() {
 	It("404s on unknown def-id and 200s on a valid def even with an unrelated hide rule", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithWidgetDefsG(hz)
+		e := hz.Router()
 		user, token := hz.MintUser("wd_scope_gate_g")
 
 		// (1) Unknown def-id → 404.

@@ -65,12 +65,6 @@ func verifyLogin(t *testing.T, e http.Handler, user, password string) int {
 // routerWithChangePassword returns a router with /auth/login + the
 // change-password route registered. The Harness.Router() intentionally omits
 // misc routes to stay minimal, so we register what we need here.
-func routerWithChangePassword(hz *testutil.Harness) http.Handler {
-	e := hz.Router()
-	e.POST("/api/v1/users/current/password", hz.H.ChangePassword)
-	return e
-}
-
 // TestChangePasswordBodySizeCap_413: gaka-bi2. With a real authed user and a
 // 5 KiB body (> BodyLimitSmall = 4 KiB), the response MUST be 413 Payload Too
 // Large — NOT 401 (wrong password), 400 (invalid body), or 500.
@@ -86,7 +80,7 @@ func routerWithChangePassword(hz *testutil.Harness) http.Handler {
 // and the response would be 401 — a clean regression signal.
 func TestChangePasswordBodySizeCap_413(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithChangePassword(hz)
+	e := hz.Router()
 	_, _, token := mintUserWithPassword(t, hz, "chpwd_413", "test1234")
 
 	// 5 KiB currentPassword string — well over the 4 KiB Small cap.
@@ -116,7 +110,7 @@ func TestChangePasswordBodySizeCap_413(t *testing.T) {
 // requests. A tiny valid body still succeeds.
 func TestChangePasswordUnderCapStillWorks_204(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithChangePassword(hz)
+	e := hz.Router()
 	_, _, token := mintUserWithPassword(t, hz, "chpwd_under", "test1234")
 
 	rec := doJSONReq(t, e, http.MethodPost, "/api/v1/users/current/password", token, map[string]string{
@@ -131,7 +125,7 @@ func TestChangePasswordUnderCapStillWorks_204(t *testing.T) {
 // TestChangePasswordWrongCurrentPassword: wrong current-password → 401.
 func TestChangePasswordWrongCurrentPassword(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithChangePassword(hz)
+	e := hz.Router()
 	_, _, token := mintUserWithPassword(t, hz, "chpwd_wrong", "test1234")
 
 	rec := doJSONReq(t, e, http.MethodPost, "/api/v1/users/current/password", token, map[string]string{
@@ -146,7 +140,7 @@ func TestChangePasswordWrongCurrentPassword(t *testing.T) {
 // TestChangePasswordWeakNewPassword: weak new password → 400.
 func TestChangePasswordWeakNewPassword(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithChangePassword(hz)
+	e := hz.Router()
 	_, _, token := mintUserWithPassword(t, hz, "chpwd_weak", "test1234")
 
 	// Short (< 8) — 400.
@@ -209,7 +203,7 @@ func TestChangePasswordWeakNewPassword(t *testing.T) {
 //	    marquee_multibyte_reject: status 204, want 400 — 日本1a accepted at 8 bytes
 func TestChangePassword_UsesSharedValidator_Gaka0guRegression(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithChangePassword(hz)
+	e := hz.Router()
 
 	t.Run("marquee_multibyte_reject", func(t *testing.T) {
 		// 日本1a — 4 runes, 8 bytes. Byte-based len() accepts; rune-based
@@ -259,7 +253,7 @@ func TestChangePassword_UsesSharedValidator_Gaka0guRegression(t *testing.T) {
 // password does, refresh tokens for the owner are revoked.
 func TestChangePasswordHappyPath(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithChangePassword(hz)
+	e := hz.Router()
 	user, oldPassword, token := mintUserWithPassword(t, hz, "chpwd_happy", "test1234")
 
 	// Plant a refresh token for the owner so we can prove revocation happened.
@@ -327,7 +321,7 @@ func mintAccessTokenPair(t *testing.T, hz *testutil.Harness, user string) (acces
 // authenticated the change-password request — MUST survive.
 func TestChangePassword_RevokesOtherAccessTokens(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithChangePassword(hz)
+	e := hz.Router()
 	// Also register an authed endpoint we can probe with the old token — Stats
 	// runs h.resolveUser, so a revoked access token produces the same 403
 	// InvalidToken response the browser would see on any authed request.
@@ -384,7 +378,7 @@ func TestChangePassword_RevokesOtherAccessTokens(t *testing.T) {
 // Charlie flagged as LOW still exists).
 func TestChangePassword_AtomicOnDBError(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithChangePassword(hz)
+	e := hz.Router()
 	user, oldPassword, token := mintUserWithPassword(t, hz, "chpwd_atomic", "test1234")
 
 	// Also plant a refresh token so we can check it survives the rollback.

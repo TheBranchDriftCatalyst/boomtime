@@ -40,6 +40,24 @@ func (hz *Harness) Seeder(sender string) *Seeder {
 	return &Seeder{t: hz.T, db: hz.DB, ctx: context.Background(), sender: sender}
 }
 
+// SeedRollup inserts one rollup row for (owner, day, language, seconds).
+// Returns any Pool.Exec error verbatim — callers pick the assertion style:
+//
+//	stdlib:  if err := hz.SeedRollup(...); err != nil { t.Fatalf(...) }
+//	ginkgo:  Expect(hz.SeedRollup(...)).To(Succeed())
+//
+// Was: seedRollupForOwner (goals_test.go) + seedRollupForOwnerG
+// (goals_ginkgo_test.go). Both were removed as part of gaka-0vp.18.
+func (hz *Harness) SeedRollup(owner string, day time.Time, language string, seconds int64) error {
+	_, err := hz.DB.Pool.Exec(context.Background(), `
+		INSERT INTO hb_rollup_daily (sender, day, project, language, editor,
+			platform, machine, category, plugin, branch, total_seconds)
+		VALUES ($1, $2::date, 'P', $3, 'vim', 'linux', 'm', 'Coding', 'pl', 'main', $4)
+		ON CONFLICT DO NOTHING`,
+		owner, day, language, seconds)
+	return err
+}
+
 // Projects inserts the projects rows the (sender,project) FK requires.
 func (s *Seeder) Projects(names ...string) *Seeder {
 	s.t.Helper()

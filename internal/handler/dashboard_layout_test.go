@@ -30,17 +30,6 @@ import (
 
 // routerWithDashboardLayout wires the layout CRUD + the pieces of the
 // public-profile flow needed for the public-payload-includes-layout tests.
-func routerWithDashboardLayout(hz *testutil.Harness) http.Handler {
-	e := hz.Router()
-	e.GET("/api/v1/users/current/profile", hz.H.GetPublicProfile)
-	e.PUT("/api/v1/users/current/profile", hz.H.PutPublicProfile)
-	e.GET("/api/public/profile/:slug", hz.H.PublicProfile)
-	e.GET("/api/v1/users/current/dashboard/:scope", hz.H.GetDashboardLayout)
-	e.PUT("/api/v1/users/current/dashboard/:scope", hz.H.PutDashboardLayout)
-	e.DELETE("/api/v1/users/current/dashboard/:scope", hz.H.DeleteDashboardLayout)
-	return e
-}
-
 // TestDashboardLayoutPersistence_Gaka6jmXRegression is the anti-tautology
 // round-trip guard: PUT a layout, GET returns the SEMANTICALLY equivalent
 // inner layout (arrays keep order; object keys need not — Postgres JSONB
@@ -60,7 +49,7 @@ func routerWithDashboardLayout(hz *testutil.Harness) http.Handler {
 // tighten this to byte-for-byte then.
 func TestDashboardLayoutPersistence_Gaka6jmXRegression(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithDashboardLayout(hz)
+	e := hz.Router()
 	_, token := hz.MintUser("dash_rt")
 
 	// Fields we want to survive intact: array order in `widgets`, all
@@ -163,7 +152,7 @@ func semanticJSONDiff(a, b string) string {
 // squatting rows for scopes we haven't wired yet.
 func TestDashboardLayoutUnknownScope(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithDashboardLayout(hz)
+	e := hz.Router()
 	_, token := hz.MintUser("dash_scope")
 
 	body := []byte(`{"layout":{"widgets":[]}}`)
@@ -189,7 +178,7 @@ func TestDashboardLayoutUnknownScope(t *testing.T) {
 // FE knows to fall back to defaults.
 func TestDashboardLayoutMissWhenUnset(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithDashboardLayout(hz)
+	e := hz.Router()
 	_, token := hz.MintUser("dash_miss")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/users/current/dashboard/public_profile", nil)
@@ -207,7 +196,7 @@ func TestDashboardLayoutMissWhenUnset(t *testing.T) {
 // store it. A 413 here proves the size trip fired first.
 func TestPutDashboardLayout_BodySizeCap_413(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithDashboardLayout(hz)
+	e := hz.Router()
 	_, token := hz.MintUser("dash_413")
 
 	// Craft a valid-JSON body that exceeds 4 KiB. Pad the layout with a
@@ -230,7 +219,7 @@ func TestPutDashboardLayout_BodySizeCap_413(t *testing.T) {
 // `layout`. This is the single-fetch contract for the public dashboard.
 func TestPublicProfileIncludesLayoutWhenSet(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithDashboardLayout(hz)
+	e := hz.Router()
 	user, token := hz.MintUser("pub_layout")
 
 	// Enable the profile with a valid slug.
@@ -278,7 +267,7 @@ func TestPublicProfileIncludesLayoutWhenSet(t *testing.T) {
 // json:",omitempty") so the FE knows to render the default array.
 func TestPublicProfileLayoutOmittedWhenUnset(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithDashboardLayout(hz)
+	e := hz.Router()
 	user, token := hz.MintUser("pub_nolayout")
 
 	slug := "nolayout-" + strings.ToLower(strings.ReplaceAll(user[len(user)-8:], ".", ""))

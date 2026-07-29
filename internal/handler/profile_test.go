@@ -21,14 +21,6 @@ import (
 
 // routerWithPublicProfile wires just the auth'd owner CRUD + the public route.
 // Handler.Router() doesn't register these by default (harness is minimal).
-func routerWithPublicProfile(hz *testutil.Harness) http.Handler {
-	e := hz.Router()
-	e.GET("/api/v1/users/current/profile", hz.H.GetPublicProfile)
-	e.PUT("/api/v1/users/current/profile", hz.H.PutPublicProfile)
-	e.GET("/api/public/profile/:slug", hz.H.PublicProfile)
-	return e
-}
-
 // TestPublicProfileCacheHeadersTightPolicy: gaka-6jm.12 regression.
 //
 // A publicly-enabled profile's GET response MUST advertise the tightened
@@ -37,7 +29,7 @@ func routerWithPublicProfile(hz *testutil.Harness) http.Handler {
 // It MUST also include an ETag so revalidation is cheap.
 func TestPublicProfileCacheHeadersTightPolicy(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithPublicProfile(hz)
+	e := hz.Router()
 	user, token := hz.MintUser("cache_hdr")
 
 	// Enable the profile with a valid slug.
@@ -111,7 +103,7 @@ func TestPublicProfileCacheHeadersTightPolicy(t *testing.T) {
 // the size trip fired ahead of the format check.
 func TestPutPublicProfile_BodySizeCap_413(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithPublicProfile(hz)
+	e := hz.Router()
 	_, token := hz.MintUser("prof_413")
 
 	big := strings.Repeat("a", 5000)

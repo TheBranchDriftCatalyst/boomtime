@@ -30,10 +30,8 @@
 package handler_test
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -45,21 +43,18 @@ import (
 // diff at the top of the file surfaces any accidental reformat.
 const weeklyGoSpec = `{"kind":"time","axis":"language","value":"Go","op":">=","target_seconds":3600,"window":"week"}`
 
-func routerWithGoals(hz *testutil.Harness) http.Handler { return hz.Router() }
 
 // seedRollupForOwner inserts one hb_rollup_daily row so leaf-time
 // evaluations return a non-zero current. Kept minimal (one row) so
 // the test stays fast — the DB layer + evaluator layer already cover
 // wide-seed correctness.
+// seedRollupForOwner is a Fatal-on-error wrapper around hz.SeedRollup
+// (defined in internal/testutil/seed.go — one shared source of truth).
+// Kept as a thin file-local shim so the stdlib TestXxx callers stay
+// compact; the ginkgo mirror has its own Expect-based wrapper.
 func seedRollupForOwner(t *testing.T, hz *testutil.Harness, owner string, day time.Time, language string, seconds int64) {
 	t.Helper()
-	_, err := hz.DB.Pool.Exec(context.Background(), `
-		INSERT INTO hb_rollup_daily (sender, day, project, language, editor,
-			platform, machine, category, plugin, branch, total_seconds)
-		VALUES ($1, $2::date, 'P', $3, 'vim', 'linux', 'm', 'Coding', 'pl', 'main', $4)
-		ON CONFLICT DO NOTHING`,
-		owner, day, language, seconds)
-	if err != nil {
+	if err := hz.SeedRollup(owner, day, language, seconds); err != nil {
 		t.Fatalf("seed rollup: %v", err)
 	}
 }
@@ -89,7 +84,7 @@ func createGoal(t *testing.T, e http.Handler, token, name, spec string) string {
 // spec survives a POST → GET → PATCH → GET cycle semantically intact.
 func TestGoalsCRUDRoundtrip(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithGoals(hz)
+	e := hz.Router()
 	_, token := hz.MintUser("goal_crud")
 
 	// Create.
@@ -193,7 +188,7 @@ func TestGoalsCRUDRoundtrip(t *testing.T) {
 // filter drifted from the DB filter.
 func TestGoalsOwnerScoping(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithGoals(hz)
+	e := hz.Router()
 	_, aliceTok := hz.MintUser("goal_alice")
 	_, bobTok := hz.MintUser("goal_bob")
 
@@ -232,7 +227,7 @@ func TestGoalsOwnerScoping(t *testing.T) {
 // — regressions in the wire-level validator surface here.
 func TestGoalsValidationRejects(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithGoals(hz)
+	e := hz.Router()
 	_, token := hz.MintUser("goal_reject")
 
 	bad := map[string]string{
@@ -262,7 +257,7 @@ func TestGoalsValidationRejects(t *testing.T) {
 //      (last_evaluated_at moved forward vs before).
 func TestGoalsProgressCacheAndFreshness(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithGoals(hz)
+	e := hz.Router()
 	owner, token := hz.MintUser("goal_progcache")
 
 	// Seed enough Go time to hit target 3600 in the week window.
@@ -360,7 +355,7 @@ func TestGoalsProgressCacheAndFreshness(t *testing.T) {
 // last_evaluated_at NULL and the next read recomputes.
 func TestGoalsIngestInvalidation(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithGoals(hz)
+	e := hz.Router()
 	owner, token := hz.MintUser("goal_ingest")
 
 	// Preseed some Go time so the first read has something to sum.
@@ -419,7 +414,7 @@ func TestGoalsIngestInvalidation(t *testing.T) {
 // out-of-date value).
 func TestGoalsBatchProgressEndpoint(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithGoals(hz)
+	e := hz.Router()
 	owner, token := hz.MintUser("goal_batch")
 
 	seedRollupForOwner(t, hz, owner, time.Now().UTC().AddDate(0, 0, -1), "Go", 5000)
@@ -458,7 +453,7 @@ func TestGoalsBatchProgressEndpoint(t *testing.T) {
 // CREATE. A duplicate must surface as 409, not 500 (leaked DB error).
 func TestGoalsDuplicateNameReturns409(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithGoals(hz)
+	e := hz.Router()
 	_, token := hz.MintUser("goal_dup")
 
 	r1 := doJSONReq(t, e, http.MethodPost, "/api/v1/users/current/goals", token, map[string]any{
@@ -487,7 +482,7 @@ func TestGoalsDuplicateNameReturns409(t *testing.T) {
 // zero in stats/goals.go and this test fails (timestamps drift).
 func TestGoalsProgressServesFromCacheWithinTTL(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithGoals(hz)
+	e := hz.Router()
 	owner, token := hz.MintUser("goal_cachehit")
 
 	seedRollupForOwner(t, hz, owner, time.Now().UTC().AddDate(0, 0, -1), "Go", 5000)
@@ -550,7 +545,7 @@ func TestGoalsProgressServesFromCacheWithinTTL(t *testing.T) {
 // underlying ListGoals would leak bob's id into alice's batch map.
 func TestGoalsBatchProgressOwnerScoping(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithGoals(hz)
+	e := hz.Router()
 	aliceOwner, aliceTok := hz.MintUser("goal_batch_a")
 	bobOwner, bobTok := hz.MintUser("goal_batch_b")
 
@@ -591,7 +586,7 @@ func TestGoalsBatchProgressOwnerScoping(t *testing.T) {
 // cache).
 func TestGoalsIngestInvalidationOwnerScoping(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithGoals(hz)
+	e := hz.Router()
 	aliceOwner, aliceTok := hz.MintUser("goal_ing_scope_a")
 	_, bobTok := hz.MintUser("goal_ing_scope_b")
 
@@ -654,7 +649,7 @@ func TestGoalsIngestInvalidationOwnerScoping(t *testing.T) {
 // fail this one.
 func TestGoalsToggleHTTP(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithGoals(hz)
+	e := hz.Router()
 	_, token := hz.MintUser("goal_toggle_http")
 
 	id := createGoal(t, e, token, "toggle-http", weeklyGoSpec)
@@ -718,7 +713,7 @@ func TestGoalsToggleHTTP(t *testing.T) {
 // specific check will get exactly ONE red test with a clear name.
 func TestGoalsValidationRejectsCoversAllBranches(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithGoals(hz)
+	e := hz.Router()
 	_, token := hz.MintUser("goal_reject_full")
 
 	// Build a depth-6 spec (over the depth-5 cap).
@@ -769,7 +764,7 @@ func TestGoalsValidationRejectsCoversAllBranches(t *testing.T) {
 // user-hostile.
 func TestGoalsCreateMissingFields(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithGoals(hz)
+	e := hz.Router()
 	_, token := hz.MintUser("goal_missing_fields")
 
 	// Empty name.
@@ -802,7 +797,7 @@ func TestGoalsCreateMissingFields(t *testing.T) {
 // pass tests that only touch the POST path.
 func TestGoalsPatchValidationAndFields(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithGoals(hz)
+	e := hz.Router()
 	_, token := hz.MintUser("goal_patch_val")
 
 	id := createGoal(t, e, token, "patch-val", weeklyGoSpec)
@@ -849,7 +844,7 @@ func TestGoalsPatchValidationAndFields(t *testing.T) {
 // mapping.
 func TestGoalsDuplicateNameOnRename409(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithGoals(hz)
+	e := hz.Router()
 	_, token := hz.MintUser("goal_rename_dup")
 
 	_ = createGoal(t, e, token, "existing-name", weeklyGoSpec)
@@ -865,6 +860,3 @@ func TestGoalsDuplicateNameOnRename409(t *testing.T) {
 }
 
 // (helpers) — doJSONReq is defined in password_test.go; semanticJSONDiff
-// is defined in dashboard_layout_test.go. Both live in the same
-// handler_test package so we reuse them here.
-var _ = httptest.NewRecorder // keep httptest referenced when only helpers use it

@@ -19,16 +19,10 @@ import (
 
 // routerWithLabelImagesGinkgo — mirror of the stdlib file's helper.
 // Distinct name avoids duplicate-symbol collision.
-func routerWithLabelImagesGinkgo(hz *testutil.Harness) http.Handler {
-	e := hz.Router()
-	e.GET("/api/v1/labels/:id/image", hz.H.LabelImage)
-	return e
-}
-
 var _ = Describe("LabelImage (gaka-myv)", func() {
 	It("serves saved bytes with the exact Cache-Control envelope", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithLabelImagesGinkgo(hz)
+		e := hz.Router()
 
 		id := "test-served-late-night-coder-g"
 		want := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 'x', 'y', 'z'}
@@ -49,7 +43,7 @@ var _ = Describe("LabelImage (gaka-myv)", func() {
 
 	It("returns 404 for an unknown id (public endpoint, no auth leakage)", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithLabelImagesGinkgo(hz)
+		e := hz.Router()
 
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/labels/no-such-label-xyz-g/image", nil)
 		rec := httptest.NewRecorder()
@@ -59,7 +53,7 @@ var _ = Describe("LabelImage (gaka-myv)", func() {
 
 	It("ignores the ?v=<epoch> cache-bust parameter — same bytes served either way", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithLabelImagesGinkgo(hz)
+		e := hz.Router()
 
 		id := "test-bust-param-g"
 		body := []byte("fake-png-bytes")

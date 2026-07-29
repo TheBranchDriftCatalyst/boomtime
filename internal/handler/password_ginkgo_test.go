@@ -29,12 +29,6 @@ import (
 )
 
 // routerWithChangePasswordG — mirror of the stdlib helper.
-func routerWithChangePasswordG(hz *testutil.Harness) http.Handler {
-	e := hz.Router()
-	e.POST("/api/v1/users/current/password", hz.H.ChangePassword)
-	return e
-}
-
 // mintAccessTokenPairG — mirror of the stdlib helper.
 func mintAccessTokenPairG(hz *testutil.Harness, user string) (accessToken, refreshToken string) {
 	accessToken = auth.ToBase64(auth.NewRawToken())
@@ -48,7 +42,7 @@ func mintAccessTokenPairG(hz *testutil.Harness, user string) (accessToken, refre
 var _ = Describe("ChangePassword body-size cap (gaka-bi2)", func() {
 	It("returns 413 on a 5 KiB body — argon2 never runs on the payload", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithChangePasswordG(hz)
+		e := hz.Router()
 		_, _, token := mintUserWithPasswordG(hz, "chpwd_413_g", "test1234")
 
 		big := strings.Repeat("a", 5000)
@@ -71,7 +65,7 @@ var _ = Describe("ChangePassword body-size cap (gaka-bi2)", func() {
 var _ = Describe("ChangePassword happy paths + validation", func() {
 	It("an under-cap body works (204)", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithChangePasswordG(hz)
+		e := hz.Router()
 		_, _, token := mintUserWithPasswordG(hz, "chpwd_under_g", "test1234")
 
 		rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/password", token, map[string]string{
@@ -83,7 +77,7 @@ var _ = Describe("ChangePassword happy paths + validation", func() {
 
 	It("wrong current password → 401", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithChangePasswordG(hz)
+		e := hz.Router()
 		_, _, token := mintUserWithPasswordG(hz, "chpwd_wrong_g", "test1234")
 
 		rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/password", token, map[string]string{
@@ -95,7 +89,7 @@ var _ = Describe("ChangePassword happy paths + validation", func() {
 
 	It("weak new password → 400 for short / letters-only / digits-only", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithChangePasswordG(hz)
+		e := hz.Router()
 		_, _, token := mintUserWithPasswordG(hz, "chpwd_weak_g", "test1234")
 
 		for _, bad := range []string{"ab1", "abcdefghij", "1234567890"} {
@@ -111,7 +105,7 @@ var _ = Describe("ChangePassword happy paths + validation", func() {
 var _ = Describe("ChangePassword shared validator (gaka-0gu regression)", func() {
 	It("marquee multibyte reject: 日本1a (4 runes, 8 bytes) → 400 with shared sentinel text", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithChangePasswordG(hz)
+		e := hz.Router()
 		_, _, token := mintUserWithPasswordG(hz, "chpwd_marquee_g", "test1234")
 
 		rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/password", token, map[string]string{
@@ -126,7 +120,7 @@ var _ = Describe("ChangePassword shared validator (gaka-0gu regression)", func()
 
 	It("no-digit password surfaces the shared ErrPasswordNoDigit text", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithChangePasswordG(hz)
+		e := hz.Router()
 		_, _, token := mintUserWithPasswordG(hz, "chpwd_sentinel_g", "test1234")
 
 		rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/password", token, map[string]string{
@@ -141,7 +135,7 @@ var _ = Describe("ChangePassword shared validator (gaka-0gu regression)", func()
 var _ = Describe("ChangePassword happy-path invariants", func() {
 	It("204s, revokes ALL refresh tokens, and the old password stops working", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithChangePasswordG(hz)
+		e := hz.Router()
 		user, oldPassword, token := mintUserWithPasswordG(hz, "chpwd_happy_g", "test1234")
 
 		// Plant a refresh token so we can prove revocation happened.
@@ -173,7 +167,7 @@ var _ = Describe("ChangePassword happy-path invariants", func() {
 var _ = Describe("ChangePassword access-token revocation (gaka-abo)", func() {
 	It("kills OTHER browsers' access + refresh tokens, keeps caller's OWN access token alive", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithChangePasswordG(hz)
+		e := hz.Router()
 		user, password, browser1Token := mintUserWithPasswordG(hz, "chpwd_revoke_g", "test1234")
 
 		browser2Token, browser2Refresh := mintAccessTokenPairG(hz, user)
@@ -213,7 +207,7 @@ var _ = Describe("ChangePassword access-token revocation (gaka-abo)", func() {
 var _ = Describe("ChangePassword atomicity on DB error", func() {
 	It("rolls back BOTH the password UPDATE and refresh-token revoke on mid-tx fault", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		e := routerWithChangePasswordG(hz)
+		e := hz.Router()
 		user, oldPassword, token := mintUserWithPasswordG(hz, "chpwd_atomic_g", "test1234")
 
 		_, refreshBefore := mintAccessTokenPairG(hz, user)

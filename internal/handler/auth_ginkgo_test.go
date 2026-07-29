@@ -499,7 +499,6 @@ var _ = Describe("ChangePassword argon2 version (gaka-awh.6)", func() {
 	It("a v1 user changing password → row is at ArgonVersionCurrent afterward", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
-		e.POST("/api/v1/users/current/password", hz.H.ChangePassword)
 
 		user := "bravo_chpwd_v1_to_v2_g"
 		pw := "bravoMedium1!"

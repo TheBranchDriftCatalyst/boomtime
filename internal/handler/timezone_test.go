@@ -19,13 +19,6 @@ import (
 // routerWithTimezone: harness Router() doesn't wire the timezone endpoints
 // by default (added post-hoc); wire them here so the test drives the real
 // handler.
-func routerWithTimezone(hz *testutil.Harness) *echo.Echo {
-	e := hz.Router()
-	e.GET("/api/v1/users/current/timezone", hz.H.GetTimezone)
-	e.PATCH("/api/v1/users/current/timezone", hz.H.UpdateTimezone)
-	return e
-}
-
 func doJSON(t *testing.T, e *echo.Echo, method, path, token string, body any) *httptest.ResponseRecorder {
 	t.Helper()
 	var b []byte
@@ -48,7 +41,7 @@ func doJSON(t *testing.T, e *echo.Echo, method, path, token string, body any) *h
 // Non-tautological: a follow-up GET must still report the pre-PATCH value.
 func TestUpdateTimezone_RejectsInvalidIANA(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithTimezone(hz)
+	e := hz.Router()
 	_, token := hz.MintUser("tz_invalid")
 
 	// Baseline: user has never picked a tz.
@@ -99,7 +92,7 @@ func TestUpdateTimezone_RejectsInvalidIANA(t *testing.T) {
 // value in the response body AND surfaced by a follow-up GET.
 func TestUpdateTimezone_ValidRoundtrips(t *testing.T) {
 	hz := testutil.NewHarness(t)
-	e := routerWithTimezone(hz)
+	e := hz.Router()
 	_, token := hz.MintUser("tz_valid")
 
 	// PATCH a valid IANA name.

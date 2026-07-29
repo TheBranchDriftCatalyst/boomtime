@@ -32,12 +32,6 @@ import (
 // routerWithLogs registers the /api/v1/logs route on top of the harness's
 // standard router. The harness omits this route (its LogHub is nil by
 // default), so we install one first.
-func routerWithLogs(hz *testutil.Harness) http.Handler {
-	e := hz.Router()
-	e.GET("/api/v1/logs", hz.H.ServerLogs)
-	return e
-}
-
 // publishFixture publishes the "3 for A, 3 for B, 3 server-scope" mix used by
 // every scenario. Returns the messages emitted per audience so assertions can
 // name them explicitly without magic strings scattered through the test.
@@ -113,7 +107,7 @@ func TestServerLogs_OwnerFilterIsWired(t *testing.T) {
 	hz := testutil.NewHarness(t)
 	hub := logging.NewLogHub(64)
 	hz.H.LogHub = hub // override the nil harness default with a real hub.
-	e := routerWithLogs(hz)
+	e := hz.Router()
 
 	userA, tokenA := hz.MintUser("awh_A")
 	userB, _ := hz.MintUser("awh_B")
@@ -158,7 +152,7 @@ func TestServerLogs_OwnerFilterIsWired(t *testing.T) {
 func TestServerLogs_UnauthenticatedIsRejected(t *testing.T) {
 	hz := testutil.NewHarness(t)
 	hz.H.LogHub = logging.NewLogHub(8)
-	e := routerWithLogs(hz)
+	e := hz.Router()
 
 	rec := doJSONReq(t, e, http.MethodGet, "/api/v1/logs", "", nil)
 	if rec.Code < 400 || rec.Code >= 500 {
@@ -173,7 +167,7 @@ func TestServerLogs_UnauthenticatedIsRejected(t *testing.T) {
 func TestServerLogs_EmptyHubYieldsEmptyArray(t *testing.T) {
 	hz := testutil.NewHarness(t)
 	hz.H.LogHub = logging.NewLogHub(8)
-	e := routerWithLogs(hz)
+	e := hz.Router()
 	_, token := hz.MintUser("awh_empty")
 
 	rec := doJSONReq(t, e, http.MethodGet, "/api/v1/logs", token, nil)
