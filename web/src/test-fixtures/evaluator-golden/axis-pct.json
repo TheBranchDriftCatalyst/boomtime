@@ -1,0 +1,45 @@
+{
+  "name": "axis-pct: Go is 60% of language time >=50% fires",
+  "payload": {
+    "username": "test",
+    "startDate": "2026-01-01T00:00:00Z",
+    "endDate": "2026-01-31T00:00:00Z",
+    "totalSeconds": 3000000,
+    "dailyAvg": 0,
+    "dailyTotal": [],
+    "languages": [
+      { "name": "go", "totalSeconds": 1800000, "totalPct": 60, "totalDaily": [], "pctDaily": [] },
+      { "name": "python", "totalSeconds": 1200000, "totalPct": 40, "totalDaily": [], "pctDaily": [] }
+    ],
+    "editors": [],
+    "projects": [],
+    "categories": [],
+    "platforms": [],
+    "punchcard": { "cells": [], "maxSeconds": 0, "totalSeconds": 0 }
+  },
+  "catalog": [
+    {
+      "id": "go-majority",
+      "kind": "archetype",
+      "label": "GO MAJORITY",
+      "glyph": "",
+      "description": "50%+ of time is in Go",
+      "rank": 100,
+      "tier": "",
+      "tierKey": "",
+      "condition": { "kind": "axis-pct", "axis": "languages", "value": "go", "op": ">=", "pct": 0.5 }
+    },
+    {
+      "id": "go-dominant",
+      "kind": "archetype",
+      "label": "GO DOMINANT",
+      "glyph": "",
+      "description": "70%+ of time is in Go",
+      "rank": 200,
+      "tier": "",
+      "tierKey": "",
+      "condition": { "kind": "axis-pct", "axis": "languages", "value": "go", "op": ">=", "pct": 0.7 }
+    }
+  ],
+  "expectedAwards": ["go-majority"]
+}

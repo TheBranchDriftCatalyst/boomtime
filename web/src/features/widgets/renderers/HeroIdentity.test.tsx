@@ -1,42 +1,36 @@
 // HeroIdentity.test.tsx — hero-identity now derives its tagline from
-// the label evaluator (gaka-364). The old hard-coded
+// the server-side label evaluator (gaka-hc6.3). The old hard-coded
 // "{TOP_LANG}-CLASS · {TOP_EDITOR}-ADEPT" template is gone.
 //
+// gaka-hc6.5: post client-eval delete, tests prime qk.awards("own")
+// directly with LabelAward fixtures — no evaluator call in this file.
+//
 // Invariants under test:
-//   - EMPTY PAYLOAD: no awards → tagline reads "NEW OPERATOR" (better
-//     signal than the old POLYGLOT-CLASS placeholder).
-//   - RICH PAYLOAD: tagline shows the top-3 award labels as LabelChips
-//     in rank-desc order (previously joined by "·"; gaka-mem-chip made
-//     each award its own hover-tooltip'd chip).
-//   - USERNAME still renders regardless.
+//   - EMPTY AWARDS: tagline reads "NEW OPERATOR"
+//   - RICH AWARDS: tagline shows the top-3 awards as LabelChips in
+//     rank-desc order (gaka-mem-chip made each award its own chip)
+//   - USERNAME still renders regardless
+//   - Every chip's <img> src points at /api/v1/labels/<id>/image
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@thebranchdriftcatalyst/catalyst-ui/ui/tooltip";
 import { WidgetRenderer } from "./WidgetRenderer";
 import type { PublicDashboardPayload } from "@/types/stats";
-import { LABEL_CATALOG } from "@/features/publicprofile/labels/catalog";
-import { evaluate } from "@/features/publicprofile/labels/evaluator";
+import type { LabelAward } from "@/features/publicprofile/labels/types";
 import { qk } from "@/lib/queryKeys";
-import type { LabelSpec } from "@/features/publicprofile/labels/types";
 import { MemoryRouter } from "react-router";
 
-// gaka-hc6.4: awards now come from the server via useAwards(). Tests
-// prime the qk.awards("own") cache with the evaluated result of the
-// given payload so the render assertions still exercise a real award
-// set. The evaluator itself is separately tested; this suite is about
-// rendering the awards as chips.
-function renderHero(data: PublicDashboardPayload) {
+function renderHero(payload: PublicDashboardPayload, awards: LabelAward[] = []) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
-  const awards = evaluate(data, { catalog: LABEL_CATALOG as LabelSpec[] });
   qc.setQueryData(qk.awards("own"), awards);
   return render(
     <MemoryRouter>
       <QueryClientProvider client={qc}>
         <TooltipProvider delayDuration={0}>
-          <WidgetRenderer kind="hero-identity" data={data} />
+          <WidgetRenderer kind="hero-identity" data={payload} />
         </TooltipProvider>
       </QueryClientProvider>
     </MemoryRouter>,
@@ -59,37 +53,34 @@ const p = (over: Partial<PublicDashboardPayload>): PublicDashboardPayload => ({
   ...over,
 });
 
-const rs = (name: string, hours: number, pct?: number) => ({
-  name,
-  totalSeconds: hours * 3600,
-  totalPct: pct ?? 0,
-  totalDaily: [],
-  pctDaily: [],
+const meme = (id: string, label: string, rank = 150): LabelAward => ({
+  id,
+  kind: "meme",
+  label,
+  description: "",
+  rank,
 });
 
 describe("HeroIdentity tagline", () => {
   it("shows NEW OPERATOR fallback on empty payload", () => {
-    renderHero(p({}));
+    renderHero(p({}), []);
     expect(screen.getByTestId("hero-tagline")).toHaveTextContent("NEW OPERATOR");
   });
 
   it("shows top-3 awards as LabelChips on a rich payload", () => {
-    // gaka-364.1: memecore labels (kind:"meme", rank 100-199) outrank the
-    // tame archetypes so the hero surfaces the OP names first.
-    // Same rank-tiebreak expectation as before — just checking the labels
-    // land as separate LabelChip nodes now instead of a text join.
-    const daily = Array.from({ length: 30 }, () => 3 * 3600);
-    const data = p({
-      languages: [rs("python", 500)],
-      editors: [rs("vim", 500)],
-      dailyAvg: 3 * 3600,
-      dailyTotal: daily,
-    });
-    renderHero(data);
+    // gaka-364.1: memecore labels (kind:"meme") outrank tame archetypes so
+    // the hero surfaces the OP names first. Same chip-count expectation as
+    // before — the widget slices the first 3 out of the awards array.
+    renderHero(p({}), [
+      meme("gigachad-committer", "GIGACHAD COMMITTER", 180),
+      meme("space-marine", "SPACE MARINE", 170),
+      meme("for-the-emperor", "FOR THE EMPEROR", 160),
+      // Extra awards past top-3 are not rendered in the hero
+      meme("also-ran", "ALSO RAN", 100),
+    ]);
     const tagline = screen.getByTestId("hero-tagline");
     const chips = tagline.querySelectorAll('[data-testid="label-chip"]');
     expect(chips).toHaveLength(3);
-    // All expected labels should be present, order enforced by rank+tiebreak
     const labels = Array.from(chips).map((c) => c.textContent?.trim());
     expect(labels).toEqual([
       "GIGACHAD COMMITTER",
@@ -99,8 +90,7 @@ describe("HeroIdentity tagline", () => {
   });
 
   it("renders username regardless of award state", () => {
-    renderHero(p({ username: "zorak" }));
-    // Username shows twice: as "> PROFILE · zorak@boomtime" and as the big header
+    renderHero(p({ username: "zorak" }), []);
     expect(screen.getAllByText(/zorak/i).length).toBeGreaterThanOrEqual(1);
   });
 
@@ -109,13 +99,11 @@ describe("HeroIdentity tagline", () => {
   // before onError triggers, so we can assert src is wired to
   // /api/v1/labels/{id}/image.
   it("each chip in the tagline carries an <img> pointing at the label image endpoint", () => {
-    const data = p({
-      languages: [rs("python", 500)],
-      editors: [rs("vim", 500)],
-      dailyAvg: 3 * 3600,
-      dailyTotal: Array.from({ length: 30 }, () => 3 * 3600),
-    });
-    renderHero(data);
+    renderHero(p({}), [
+      meme("gigachad-committer", "GIGACHAD COMMITTER", 180),
+      meme("space-marine", "SPACE MARINE", 170),
+      meme("for-the-emperor", "FOR THE EMPEROR", 160),
+    ]);
     const tagline = screen.getByTestId("hero-tagline");
     const imgs = Array.from(tagline.querySelectorAll("img"));
     expect(imgs.length).toBeGreaterThanOrEqual(3);
@@ -127,7 +115,7 @@ describe("HeroIdentity tagline", () => {
   });
 
   it("renders no LabelChips when there are no awards (only NEW OPERATOR text)", () => {
-    renderHero(p({}));
+    renderHero(p({}), []);
     expect(screen.queryAllByTestId("label-chip")).toHaveLength(0);
   });
 });

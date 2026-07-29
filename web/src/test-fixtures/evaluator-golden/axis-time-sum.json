@@ -1,0 +1,42 @@
+{
+  "name": "axis-time-sum: TERMINAL PURIST — vim+neovim+emacs summed >=50h",
+  "payload": {
+    "username": "test",
+    "startDate": "2026-01-01T00:00:00Z",
+    "endDate": "2026-01-31T00:00:00Z",
+    "totalSeconds": 486000,
+    "dailyAvg": 0,
+    "dailyTotal": [],
+    "languages": [],
+    "editors": [
+      { "name": "vim", "totalSeconds": 72000, "totalPct": 14.8, "totalDaily": [], "pctDaily": [] },
+      { "name": "neovim", "totalSeconds": 72000, "totalPct": 14.8, "totalDaily": [], "pctDaily": [] },
+      { "name": "emacs", "totalSeconds": 54000, "totalPct": 11.1, "totalDaily": [], "pctDaily": [] },
+      { "name": "vscode", "totalSeconds": 288000, "totalPct": 59.3, "totalDaily": [], "pctDaily": [] }
+    ],
+    "projects": [],
+    "categories": [],
+    "platforms": [],
+    "punchcard": { "cells": [], "maxSeconds": 0, "totalSeconds": 0 }
+  },
+  "catalog": [
+    {
+      "id": "terminal-purist",
+      "kind": "patch",
+      "label": "TERMINAL PURIST",
+      "glyph": "",
+      "description": "50+ hours in vim/neovim/emacs combined",
+      "rank": 150,
+      "tier": "",
+      "tierKey": "",
+      "condition": {
+        "kind": "axis-time-sum",
+        "axis": "editors",
+        "values": ["vim", "neovim", "emacs"],
+        "op": ">=",
+        "hours": 50
+      }
+    }
+  ],
+  "expectedAwards": ["terminal-purist"]
+}

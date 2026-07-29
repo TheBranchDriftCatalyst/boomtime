@@ -1,49 +1,48 @@
 // LabelsShowcase.test.tsx — the labels-showcase dashboard widget.
-// Invariants:
-//   - EMPTY: no awards → renders the "NO LABELS YET" placeholder
-//     (matches the plan's empty-state fallback).
-//   - GROUPED: awards render in three sections in order tier →
-//     archetype → tribe; each section header shows the count.
-//   - AWARD METADATA: every award chip carries the label text, glyph
-//     if present, and a title tooltip = description.
 //
-// These render against the SHIPPED catalog on purpose — regressions in
-// either the catalog or the evaluator will be visible.
+// gaka-hc6.5: post evaluator delete, this file no longer runs the client
+// evaluator. Tests prime the qk.awards("own") cache directly with fixed
+// LabelAward[] arrays and assert the rendering. Evaluator correctness is
+// tested in Go (internal/labels/evaluator_test.go); this suite is purely
+// a rendering test.
+//
+// Invariants under test:
+//   - EMPTY: no awards → renders the "NO LABELS YET" placeholder
+//   - GROUPED: awards render in sections in kind order; each section
+//     header shows the count
+//   - AWARD METADATA: every award chip carries the label text, glyph
+//     if present, and a tooltip = description
+//   - IMAGE: every chip renders a <LabelImage> wired to
+//     /api/v1/labels/<id>/image
 import { describe, expect, it } from "vitest";
 import { render, screen, within, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@thebranchdriftcatalyst/catalyst-ui/ui/tooltip";
 import { LabelsShowcase } from "./LabelsShowcase";
 import type { PublicDashboardPayload } from "@/types/stats";
-import { LABEL_CATALOG } from "@/features/publicprofile/labels/catalog";
-import { evaluate } from "@/features/publicprofile/labels/evaluator";
+import type { LabelAward } from "@/features/publicprofile/labels/types";
 import { qk } from "@/lib/queryKeys";
-import type { LabelSpec } from "@/features/publicprofile/labels/types";
 import { MemoryRouter } from "react-router";
 
-// gaka-hc6.4: awards now come from the server via useAwards() — tests
-// prime the qk.awards("own") cache with the evaluated result of the
-// given payload so the render assertions still exercise a real award set.
-// The evaluator itself is separately tested; this test suite is about
-// rendering the awards.
-function renderShowcase(data: PublicDashboardPayload) {
+function renderShowcase(awards: LabelAward[]) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
-  const awards = evaluate(data, { catalog: LABEL_CATALOG as LabelSpec[] });
   qc.setQueryData(qk.awards("own"), awards);
   return render(
     <MemoryRouter>
       <QueryClientProvider client={qc}>
         <TooltipProvider delayDuration={0}>
-          <LabelsShowcase data={data} />
+          <LabelsShowcase data={emptyPayload} />
         </TooltipProvider>
       </QueryClientProvider>
     </MemoryRouter>,
   );
 }
 
-const p = (over: Partial<PublicDashboardPayload>): PublicDashboardPayload => ({
+// LabelsShowcase's `data` prop is unused post gaka-hc6.4 (awards come
+// from useAwards()) but the widget renderer contract still passes one.
+const emptyPayload: PublicDashboardPayload = {
   username: "test",
   startDate: new Date(0).toISOString(),
   endDate: new Date().toISOString(),
@@ -56,35 +55,43 @@ const p = (over: Partial<PublicDashboardPayload>): PublicDashboardPayload => ({
   platforms: [],
   categories: [],
   punchcard: { cells: [], maxSeconds: 0, totalSeconds: 0 },
-  ...over,
-});
+};
 
-const rs = (name: string, hours: number, pct?: number) => ({
-  name,
-  totalSeconds: hours * 3600,
-  totalPct: pct ?? 0,
-  totalDaily: [],
-  pctDaily: [],
+// Fixture builders — one line per award, easy to read at the call site.
+const tier = (id: string, label: string, desc = ""): LabelAward => ({
+  id,
+  kind: "tier",
+  label,
+  description: desc,
+  rank: 100,
+});
+const archetype = (id: string, label: string, desc = ""): LabelAward => ({
+  id,
+  kind: "archetype",
+  label,
+  description: desc,
+  rank: 50,
+});
+const tribe = (id: string, label: string, desc = ""): LabelAward => ({
+  id,
+  kind: "tribe",
+  label,
+  description: desc,
+  rank: 30,
 });
 
 describe("LabelsShowcase", () => {
   it("renders the empty-state placeholder when no labels are awarded", () => {
-    renderShowcase(p({}));
+    renderShowcase([]);
     expect(screen.getByText(/NO LABELS YET/i)).toBeInTheDocument();
   });
 
   it("renders a rich payload with all three sections", () => {
-    // Payload seeded to hit at least one label in each category:
-    //   tier: python-master (500h)
-    //   archetype: machine (3h daily avg)
-    //   tribe: vim-enjoyer (10h vim)
-    const data = p({
-      languages: [rs("python", 500)],
-      editors: [rs("vim", 10)],
-      dailyAvg: 3 * 3600,
-      dailyTotal: [3 * 3600],
-    });
-    renderShowcase(data);
+    renderShowcase([
+      tier("languages-python-master", "PYTHON MASTER"),
+      archetype("machine", "MACHINE"),
+      tribe("vim-enjoyer", "VIM ENJOYER"),
+    ]);
 
     // All three section headers present
     expect(screen.getByText("Tiers")).toBeInTheDocument();
@@ -102,8 +109,9 @@ describe("LabelsShowcase", () => {
   it("each awarded chip opens a Radix tooltip with the label description on focus", async () => {
     // gaka-mem-chip: previously used the native `title` attribute; now uses
     // catalyst-ui Tooltip (Radix). Focus the chip to trigger tooltip mount.
-    const data = p({ dailyAvg: 3 * 3600 });
-    renderShowcase(data);
+    renderShowcase([
+      archetype("machine", "MACHINE", "for daily average grinders"),
+    ]);
     const machine = screen.getByText("MACHINE").closest('[data-testid="label-chip"]');
     expect(machine).not.toBeNull();
     fireEvent.focus(machine!);
@@ -112,15 +120,12 @@ describe("LabelsShowcase", () => {
   });
 
   it("hides sections that have no awards", () => {
-    // vim-only payload → no tier fires (10h → editors-vim-novice is tier=novice, so tier section WILL fire)
-    // Use a payload that only produces a tribe: 200h mac → mac-native tribe, but no tier since
-    // there's no "mac" editor tier. Actually 200h on mac platform, and no language/editor time.
-    const data = p({ platforms: [rs("mac", 200)] });
-    renderShowcase(data);
+    // Tribe-only fixture: no tier, no archetype → Tiers + Archetypes headers
+    // should be absent; Tribes header + one chip present.
+    renderShowcase([tribe("mac-native", "MAC NATIVE")]);
     expect(screen.queryByText("Tiers")).not.toBeInTheDocument();
     expect(screen.queryByText("Archetypes")).not.toBeInTheDocument();
     expect(screen.getByText("Tribes")).toBeInTheDocument();
-    // exactly one tribe chip
     const tribes = screen.getAllByTestId("label-chip");
     expect(tribes).toHaveLength(1);
     expect(within(tribes[0]).getByText("MAC NATIVE")).toBeInTheDocument();
@@ -131,8 +136,7 @@ describe("LabelsShowcase", () => {
   // hit a live backend, so we assert the <img> element exists inside each
   // chip and its src is wired correctly.
   it("renders a LabelImage inside every award chip", () => {
-    const data = p({ platforms: [rs("mac", 200)] });
-    renderShowcase(data);
+    renderShowcase([tribe("mac-native", "MAC NATIVE")]);
     const chip = screen.getByTestId("label-chip");
     const img = chip.querySelector('img[data-testid="label-image"]') as HTMLImageElement | null;
     expect(img).not.toBeNull();
