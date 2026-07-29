@@ -23,11 +23,15 @@ INSERT INTO public.labels
   (id, kind, label, glyph, description, optimized_prompt, rank, tier, condition)
 VALUES
 
--- ── TERMINAL PURIST ────────────────────────────────────────────────────
--- ≥100h combined across vim + neovim + emacs — the "no IDE" specialist.
-('terminal-purist', 'patch', 'TERMINAL PURIST', '⌂',
- 'The kernel does not require a mouse. ≥100 combined hours across vim/neovim/emacs — you refuse the modern IDE and the modern IDE, in return, refuses you.',
- 'cyberpunk-anime chibi coder in tactical hooded cloak, tmux status bar glowing overhead like a HUD, keyboard with worn keycaps, red terminal cursors blinking in the pupils, deep crimson rim light on jet black, TERMINAL PURIST patch on shoulder, no text',
+-- ── TERMINAL VETERAN ───────────────────────────────────────────────────
+-- ≥100h combined across vim + neovim + emacs — the "years of service"
+-- volume signal. Complementary to the existing `terminal-purist` TRIBE
+-- (00036 seed) which fires on per-editor >=90% share (identity, not
+-- volume). Kept as a separate id so both can co-exist: tribe = "you ARE
+-- a terminal purist", patch = "you have accumulated the hours to prove it".
+('terminal-veteran', 'patch', 'TERMINAL VETERAN', '⌂',
+ 'The kernel does not require a mouse. ≥100 combined hours across vim/neovim/emacs — you have paid the tuition in keystrokes and the terminal recognizes its own.',
+ 'cyberpunk-anime chibi coder in tactical hooded cloak, tmux status bar glowing overhead like a HUD, keyboard with worn keycaps, red terminal cursors blinking in the pupils, deep crimson rim light on jet black, TERMINAL VETERAN patch on shoulder, no text',
  236, '',
  '{"kind":"axis-time-sum","axis":"editors","values":["vim","neovim","emacs"],"op":">=","hours":100}'),
 
@@ -45,5 +49,5 @@ VALUES
 
 -- +goose Down
 -- +goose StatementBegin
-DELETE FROM public.labels WHERE id IN ('terminal-purist', 'field-medic');
+DELETE FROM public.labels WHERE id IN ('terminal-veteran', 'field-medic');
 -- +goose StatementEnd
