@@ -1,20 +1,11 @@
-// dashboard_layout_test.go — integration tests for the dashboard-layout
-// persistence layer (gaka-keb).
-//
-// The tests cover:
-//
-//   - Round-trip byte-preservation (gaka-25r anti-tautology): PUT a layout,
-//     GET returns the same inner-layout JSON byte-for-byte. This catches
-//     future storage swaps (JSONB → normalized rows) that would drop key
-//     order or otherwise re-serialize.
-//   - PUT/GET happy path with a subsequent overwrite (layouts are upserted,
-//     not accumulated).
-//   - Public profile response includes the layout when set, omits it when
-//     unset. Both branches verified against a live PublicProfile handler.
-//   - Scope allowlist rejection: an unknown scope returns 400 (not 404 or
-//     500), so a stale FE can't squat rows for future scopes.
-//   - Body-cap rejection: a 5 KiB body trips 413 before the JSON decoder
-//     even sees the tail (same pattern as TestPutPublicProfile_BodySizeCap_413).
+// dashboard_layout_ginkgo_test.go — ginkgo mirror of dashboard_layout_test.go (gaka-keb).
+// 1:1 case map (6 stdlib TestXxx):
+//   TestDashboardLayoutPersistence_Gaka6jmXRegression → dashboard layout > "PUT/GET semantic round-trip; overwrite replaces"
+//   TestDashboardLayoutUnknownScope                   → dashboard layout > "unknown scope → 400 (PUT + GET)"
+//   TestDashboardLayoutMissWhenUnset                  → dashboard layout > "GET before any PUT → 404"
+//   TestPutDashboardLayout_BodySizeCap_413            → dashboard layout > "5 KiB body → 413 before write"
+//   TestPublicProfileIncludesLayoutWhenSet            → public profile layout > "included verbatim when set"
+//   TestPublicProfileLayoutOmittedWhenUnset           → public profile layout > "omitted (omitempty) when unset"
 package handler_test
 
 import (
@@ -23,111 +14,188 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
 )
 
-// routerWithDashboardLayout wires the layout CRUD + the pieces of the
-// public-profile flow needed for the public-payload-includes-layout tests.
-// TestDashboardLayoutPersistence_Gaka6jmXRegression is the anti-tautology
-// round-trip guard: PUT a layout, GET returns the SEMANTICALLY equivalent
-// inner layout (arrays keep order; object keys need not — Postgres JSONB
-// does NOT preserve object key order but MUST preserve array order and all
-// values).
-//
-// If someone later swaps the storage from JSONB to a normalized
-// (widgets, positions) pair of tables that reorders array elements or
-// silently drops unknown fields (`view: null` becoming missing, or
-// `_meta` being stripped), this test catches it.
-//
-// We DELIBERATELY do not compare byte-for-byte. Postgres JSONB does not
-// preserve object key order (`{"a":1,"b":2}` may reappear as
-// `{"b":2,"a":1}`), and that's fine for our schema — the client renders
-// widgets by their `i` (widget-kind id), not by their key order. If we
-// ever switch to `json` (Postgres text) or a normalized table, we can
-// tighten this to byte-for-byte then.
-func TestDashboardLayoutPersistence_Gaka6jmXRegression(t *testing.T) {
-	hz := testutil.NewHarness(t)
-	e := hz.Router()
-	_, token := hz.MintUser("dash_rt")
-
-	// Fields we want to survive intact: array order in `widgets`, all
-	// coordinates on each widget, and the `view` field including its null
-	// literal (a normalized-table swap that dropped null-valued columns
-	// would be a silent semantic change).
-	inner := `{"cols":12,"widgets":[{"i":"grade-badge","x":0,"y":0,"w":3,"h":3,"view":null},{"i":"top-langs","x":6,"y":3,"w":6,"h":4,"view":"bar"}]}`
-	body := []byte(`{"layout":` + inner + `}`)
-
-	// PUT
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/users/current/dashboard/public_profile", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Basic "+token)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("PUT: status %d body=%s", rec.Code, rec.Body.String())
+// routerWithDashboardLayoutG — mirror of the stdlib helper.
+// semanticJSONDiffG — mirror of semanticJSONDiff.
+func semanticJSONDiffG(a, b string) string {
+	var av, bv any
+	if err := json.Unmarshal([]byte(a), &av); err != nil {
+		return "left is not valid JSON: " + err.Error()
 	}
-	var putEnv struct {
-		Layout json.RawMessage `json:"layout"`
+	if err := json.Unmarshal([]byte(b), &bv); err != nil {
+		return "right is not valid JSON: " + err.Error()
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &putEnv); err != nil {
-		t.Fatalf("PUT: unmarshal response: %v body=%s", err, rec.Body.String())
+	an, _ := json.Marshal(av)
+	bn, _ := json.Marshal(bv)
+	if string(an) != string(bn) {
+		return "normalized forms differ"
 	}
-
-	// GET
-	req2 := httptest.NewRequest(http.MethodGet, "/api/v1/users/current/dashboard/public_profile", nil)
-	req2.Header.Set("Authorization", "Basic "+token)
-	rec2 := httptest.NewRecorder()
-	e.ServeHTTP(rec2, req2)
-	if rec2.Code != http.StatusOK {
-		t.Fatalf("GET: status %d body=%s", rec2.Code, rec2.Body.String())
-	}
-	var getEnv struct {
-		Layout json.RawMessage `json:"layout"`
-	}
-	if err := json.Unmarshal(rec2.Body.Bytes(), &getEnv); err != nil {
-		t.Fatalf("GET: unmarshal response: %v body=%s", err, rec2.Body.String())
-	}
-
-	// Semantic round-trip: catches storage-strategy swaps that lose array
-	// order, drop null values, or otherwise re-shape the payload.
-	if diff := semanticJSONDiff(inner, string(getEnv.Layout)); diff != "" {
-		t.Errorf("layout round-trip differs semantically: %s\n  sent: %s\n   got: %s", diff, inner, string(getEnv.Layout))
-	}
-
-	// Overwrite semantics: PUT a different layout, GET returns the new one.
-	inner2 := `{"cols":6,"widgets":[{"i":"punchcard","x":0,"y":0,"w":6,"h":4,"view":"heatmap"}]}`
-	body2 := []byte(`{"layout":` + inner2 + `}`)
-	req3 := httptest.NewRequest(http.MethodPut, "/api/v1/users/current/dashboard/public_profile", bytes.NewReader(body2))
-	req3.Header.Set("Content-Type", "application/json")
-	req3.Header.Set("Authorization", "Basic "+token)
-	rec3 := httptest.NewRecorder()
-	e.ServeHTTP(rec3, req3)
-	if rec3.Code != http.StatusOK {
-		t.Fatalf("PUT overwrite: status %d body=%s", rec3.Code, rec3.Body.String())
-	}
-	req4 := httptest.NewRequest(http.MethodGet, "/api/v1/users/current/dashboard/public_profile", nil)
-	req4.Header.Set("Authorization", "Basic "+token)
-	rec4 := httptest.NewRecorder()
-	e.ServeHTTP(rec4, req4)
-	var getEnv2 struct {
-		Layout json.RawMessage `json:"layout"`
-	}
-	if err := json.Unmarshal(rec4.Body.Bytes(), &getEnv2); err != nil {
-		t.Fatalf("GET after overwrite: %v", err)
-	}
-	if diff := semanticJSONDiff(inner2, string(getEnv2.Layout)); diff != "" {
-		t.Errorf("overwrite lost semantics: %s\n  sent: %s\n   got: %s", diff, inner2, string(getEnv2.Layout))
-	}
+	return ""
 }
 
-// semanticJSONDiff compares two JSON documents by their decoded any-value
-// representations. Returns "" when they are structurally equal, otherwise a
-// short human-oriented diff message. This is intentionally a helper local
-// to this test file — the round-trip contract does NOT require byte
-// equality (see the test's doc comment above), only that everything the FE
-// reads back is the same.
+var _ = Describe("dashboard layout (gaka-keb)", func() {
+	It("PUT / GET semantic round-trip; overwrite replaces", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := hz.Router()
+		_, token := hz.MintUser("dash_rt_g")
+
+		inner := `{"cols":12,"widgets":[{"i":"grade-badge","x":0,"y":0,"w":3,"h":3,"view":null},{"i":"top-langs","x":6,"y":3,"w":6,"h":4,"view":"bar"}]}`
+		body := []byte(`{"layout":` + inner + `}`)
+
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/users/current/dashboard/public_profile", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Basic "+token)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		Expect(rec.Code).To(Equal(http.StatusOK), "PUT: body=%s", rec.Body.String())
+
+		req2 := httptest.NewRequest(http.MethodGet, "/api/v1/users/current/dashboard/public_profile", nil)
+		req2.Header.Set("Authorization", "Basic "+token)
+		rec2 := httptest.NewRecorder()
+		e.ServeHTTP(rec2, req2)
+		Expect(rec2.Code).To(Equal(http.StatusOK), "GET: body=%s", rec2.Body.String())
+
+		var getEnv struct {
+			Layout json.RawMessage `json:"layout"`
+		}
+		Expect(json.Unmarshal(rec2.Body.Bytes(), &getEnv)).To(Succeed())
+		Expect(semanticJSONDiffG(inner, string(getEnv.Layout))).To(BeEmpty(),
+			"layout round-trip differs semantically\n  sent: %s\n   got: %s", inner, string(getEnv.Layout))
+
+		// Overwrite semantics.
+		inner2 := `{"cols":6,"widgets":[{"i":"punchcard","x":0,"y":0,"w":6,"h":4,"view":"heatmap"}]}`
+		body2 := []byte(`{"layout":` + inner2 + `}`)
+		req3 := httptest.NewRequest(http.MethodPut, "/api/v1/users/current/dashboard/public_profile", bytes.NewReader(body2))
+		req3.Header.Set("Content-Type", "application/json")
+		req3.Header.Set("Authorization", "Basic "+token)
+		rec3 := httptest.NewRecorder()
+		e.ServeHTTP(rec3, req3)
+		Expect(rec3.Code).To(Equal(http.StatusOK), "PUT overwrite: body=%s", rec3.Body.String())
+
+		req4 := httptest.NewRequest(http.MethodGet, "/api/v1/users/current/dashboard/public_profile", nil)
+		req4.Header.Set("Authorization", "Basic "+token)
+		rec4 := httptest.NewRecorder()
+		e.ServeHTTP(rec4, req4)
+		var getEnv2 struct {
+			Layout json.RawMessage `json:"layout"`
+		}
+		Expect(json.Unmarshal(rec4.Body.Bytes(), &getEnv2)).To(Succeed())
+		Expect(semanticJSONDiffG(inner2, string(getEnv2.Layout))).To(BeEmpty(),
+			"overwrite lost semantics\n  sent: %s\n   got: %s", inner2, string(getEnv2.Layout))
+	})
+
+	It("returns 400 (not 404/500) for an unknown scope on both PUT and GET", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := hz.Router()
+		_, token := hz.MintUser("dash_scope_g")
+
+		body := []byte(`{"layout":{"widgets":[]}}`)
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/users/current/dashboard/overview", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Basic "+token)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		Expect(rec.Code).To(Equal(http.StatusBadRequest), "PUT unknown scope: got %d", rec.Code)
+
+		req2 := httptest.NewRequest(http.MethodGet, "/api/v1/users/current/dashboard/overview", nil)
+		req2.Header.Set("Authorization", "Basic "+token)
+		rec2 := httptest.NewRecorder()
+		e.ServeHTTP(rec2, req2)
+		Expect(rec2.Code).To(Equal(http.StatusBadRequest), "GET unknown scope: got %d", rec2.Code)
+	})
+
+	It("returns 404 on GET before any PUT (FE fall-back path)", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := hz.Router()
+		_, token := hz.MintUser("dash_miss_g")
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/users/current/dashboard/public_profile", nil)
+		req.Header.Set("Authorization", "Basic "+token)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		Expect(rec.Code).To(Equal(http.StatusNotFound),
+			"FE default-layout path relies on 404 for unset layouts; got %d", rec.Code)
+	})
+
+	It("rejects a > 4 KiB body with 413 before writing the layout row", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := hz.Router()
+		_, token := hz.MintUser("dash_413_g")
+
+		pad := strings.Repeat("a", 5000)
+		body := []byte(`{"layout":{"widgets":[],"_pad":"` + pad + `"}}`)
+
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/users/current/dashboard/public_profile", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Basic "+token)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		Expect(rec.Code).To(Equal(http.StatusRequestEntityTooLarge),
+			"200 would prove the cap didn't fire and the row was written")
+	})
+})
+
+var _ = Describe("public profile layout inlining", func() {
+	It("includes the layout verbatim when set (single-fetch contract)", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := hz.Router()
+		user, token := hz.MintUser("pub_layout_g")
+
+		slug := "publayoutg-" + strings.ToLower(strings.ReplaceAll(user[len(user)-8:], ".", ""))
+		rec := doJSONReqG(e, http.MethodPut, "/api/v1/users/current/profile", token, map[string]any{
+			"enabled": true, "slug": slug,
+		})
+		Expect(rec.Code).To(Equal(http.StatusOK), "PUT profile: body=%s", rec.Body.String())
+
+		inner := `{"cols":12,"widgets":[{"i":"grade-badge","x":0,"y":0,"w":3,"h":3,"view":null}]}`
+		body := []byte(`{"layout":` + inner + `}`)
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/users/current/dashboard/public_profile", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Basic "+token)
+		rr := httptest.NewRecorder()
+		e.ServeHTTP(rr, req)
+		Expect(rr.Code).To(Equal(http.StatusOK), "PUT layout: body=%s", rr.Body.String())
+
+		req2 := httptest.NewRequest(http.MethodGet, "/api/public/profile/"+slug, nil)
+		rr2 := httptest.NewRecorder()
+		e.ServeHTTP(rr2, req2)
+		Expect(rr2.Code).To(Equal(http.StatusOK), "public profile GET: body=%s", rr2.Body.String())
+
+		var resp struct {
+			Layout json.RawMessage `json:"layout"`
+		}
+		Expect(json.Unmarshal(rr2.Body.Bytes(), &resp)).To(Succeed())
+		Expect(semanticJSONDiffG(inner, string(resp.Layout))).To(BeEmpty(),
+			"public profile layout mismatch\n  sent: %s\n   got: %s", inner, string(resp.Layout))
+	})
+
+	It("omits the layout key entirely when unset (omitempty contract)", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := hz.Router()
+		user, token := hz.MintUser("pub_nolayout_g")
+
+		slug := "nolayoutg-" + strings.ToLower(strings.ReplaceAll(user[len(user)-8:], ".", ""))
+		rec := doJSONReqG(e, http.MethodPut, "/api/v1/users/current/profile", token, map[string]any{
+			"enabled": true, "slug": slug,
+		})
+		Expect(rec.Code).To(Equal(http.StatusOK), "PUT profile: body=%s", rec.Body.String())
+
+		req := httptest.NewRequest(http.MethodGet, "/api/public/profile/"+slug, nil)
+		rr := httptest.NewRecorder()
+		e.ServeHTTP(rr, req)
+		Expect(rr.Code).To(Equal(http.StatusOK), "public profile GET: body=%s", rr.Body.String())
+		Expect(rr.Body.String()).NotTo(ContainSubstring(`"layout"`),
+			"expected no `layout` key when unset; body=%s", rr.Body.String())
+	})
+})
+
+// -- helpers restored from stdlib partner (gaka-0vp.17) --
 func semanticJSONDiff(a, b string) string {
 	var av, bv any
 	if err := json.Unmarshal([]byte(a), &av); err != nil {
@@ -147,148 +215,3 @@ func semanticJSONDiff(a, b string) string {
 	return ""
 }
 
-// TestDashboardLayoutUnknownScope: PUT/GET/DELETE with a scope not in the
-// allowlist returns 400 (not 404 or 500). Guards against a stale FE
-// squatting rows for scopes we haven't wired yet.
-func TestDashboardLayoutUnknownScope(t *testing.T) {
-	hz := testutil.NewHarness(t)
-	e := hz.Router()
-	_, token := hz.MintUser("dash_scope")
-
-	body := []byte(`{"layout":{"widgets":[]}}`)
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/users/current/dashboard/overview", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Basic "+token)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("PUT unknown scope: status %d, want 400", rec.Code)
-	}
-
-	req2 := httptest.NewRequest(http.MethodGet, "/api/v1/users/current/dashboard/overview", nil)
-	req2.Header.Set("Authorization", "Basic "+token)
-	rec2 := httptest.NewRecorder()
-	e.ServeHTTP(rec2, req2)
-	if rec2.Code != http.StatusBadRequest {
-		t.Errorf("GET unknown scope: status %d, want 400", rec2.Code)
-	}
-}
-
-// TestDashboardLayoutMissWhenUnset: GET before any PUT returns 404 so the
-// FE knows to fall back to defaults.
-func TestDashboardLayoutMissWhenUnset(t *testing.T) {
-	hz := testutil.NewHarness(t)
-	e := hz.Router()
-	_, token := hz.MintUser("dash_miss")
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/users/current/dashboard/public_profile", nil)
-	req.Header.Set("Authorization", "Basic "+token)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("GET unset: status %d, want 404 (FE default-layout path relies on this)", rec.Code)
-	}
-}
-
-// TestPutDashboardLayout_BodySizeCap_413: A body over 4 KiB returns 413
-// BEFORE the layout row is written. Non-tautological signal: without the
-// cap, the handler would decode the (still-valid-JSON) 5 KiB layout and
-// store it. A 413 here proves the size trip fired first.
-func TestPutDashboardLayout_BodySizeCap_413(t *testing.T) {
-	hz := testutil.NewHarness(t)
-	e := hz.Router()
-	_, token := hz.MintUser("dash_413")
-
-	// Craft a valid-JSON body that exceeds 4 KiB. Pad the layout with a
-	// large `_pad` field so the decoder would accept it if the cap didn't fire.
-	pad := strings.Repeat("a", 5000)
-	body := []byte(`{"layout":{"widgets":[],"_pad":"` + pad + `"}}`)
-
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/users/current/dashboard/public_profile", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Basic "+token)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-	if rec.Code != http.StatusRequestEntityTooLarge {
-		t.Errorf("oversize layout PUT: status %d (want 413). 200 would prove the cap didn't fire and the row was written.", rec.Code)
-	}
-}
-
-// TestPublicProfileIncludesLayoutWhenSet: after a user PUTs a layout, the
-// public /api/public/profile/:slug response embeds it verbatim under
-// `layout`. This is the single-fetch contract for the public dashboard.
-func TestPublicProfileIncludesLayoutWhenSet(t *testing.T) {
-	hz := testutil.NewHarness(t)
-	e := hz.Router()
-	user, token := hz.MintUser("pub_layout")
-
-	// Enable the profile with a valid slug.
-	slug := "publayout-" + strings.ToLower(strings.ReplaceAll(user[len(user)-8:], ".", ""))
-	rec := doJSONReq(t, e, http.MethodPut, "/api/v1/users/current/profile", token, map[string]any{
-		"enabled": true,
-		"slug":    slug,
-	})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("PUT profile: status %d body=%s", rec.Code, rec.Body.String())
-	}
-
-	// Save a layout.
-	inner := `{"cols":12,"widgets":[{"i":"grade-badge","x":0,"y":0,"w":3,"h":3,"view":null}]}`
-	body := []byte(`{"layout":` + inner + `}`)
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/users/current/dashboard/public_profile", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Basic "+token)
-	rr := httptest.NewRecorder()
-	e.ServeHTTP(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("PUT layout: status %d body=%s", rr.Code, rr.Body.String())
-	}
-
-	// Hit the public route unauthenticated — the layout MUST appear inline.
-	req2 := httptest.NewRequest(http.MethodGet, "/api/public/profile/"+slug, nil)
-	rr2 := httptest.NewRecorder()
-	e.ServeHTTP(rr2, req2)
-	if rr2.Code != http.StatusOK {
-		t.Fatalf("public profile GET: status %d body=%s", rr2.Code, rr2.Body.String())
-	}
-	var resp struct {
-		Layout json.RawMessage `json:"layout"`
-	}
-	if err := json.Unmarshal(rr2.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal public profile: %v", err)
-	}
-	if diff := semanticJSONDiff(inner, string(resp.Layout)); diff != "" {
-		t.Errorf("public profile layout mismatch: %s\n  sent: %s\n   got: %s", diff, inner, string(resp.Layout))
-	}
-}
-
-// TestPublicProfileLayoutOmittedWhenUnset: without a saved layout row, the
-// public profile response OMITS the layout field entirely (thanks to
-// json:",omitempty") so the FE knows to render the default array.
-func TestPublicProfileLayoutOmittedWhenUnset(t *testing.T) {
-	hz := testutil.NewHarness(t)
-	e := hz.Router()
-	user, token := hz.MintUser("pub_nolayout")
-
-	slug := "nolayout-" + strings.ToLower(strings.ReplaceAll(user[len(user)-8:], ".", ""))
-	rec := doJSONReq(t, e, http.MethodPut, "/api/v1/users/current/profile", token, map[string]any{
-		"enabled": true,
-		"slug":    slug,
-	})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("PUT profile: status %d body=%s", rec.Code, rec.Body.String())
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/public/profile/"+slug, nil)
-	rr := httptest.NewRecorder()
-	e.ServeHTTP(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("public profile GET: status %d body=%s", rr.Code, rr.Body.String())
-	}
-	// Cheap containment check — if omitempty is honored, "layout" doesn't
-	// appear in the JSON at all. A raw-map decode into any is more thorough
-	// but this string-check catches the regression narrowly and cheaply.
-	if strings.Contains(rr.Body.String(), `"layout"`) {
-		t.Errorf("expected no `layout` key in public profile when unset; body=%s", rr.Body.String())
-	}
-}

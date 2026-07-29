@@ -1,3 +1,14 @@
+// drift_integration_ginkgo_test.go — ginkgo mirror of drift_integration_test.go (gaka-0vp).
+// 1:1 case map (2 stdlib TestXxx):
+//
+//	TestDriftEndToEndUnknownFieldPersisted → drift end-to-end > "unknown field on heartbeats is persisted to import_jobs.drift with a warn log"
+//	TestDriftEndToEndBrokenLookupFailsJob  → drift end-to-end > "missing 'value' on user_agents hard-fails the job and persists drift"
+//
+// Ginkgo-native helpers openDriftDBGinkgo + mockWakatime.startGinkgo mirror
+// the stdlib helpers openDriftDB + mockWakatime.start; both accept no
+// *testing.T (they use DeferCleanup + Skip). The remaining plumbing —
+// dedicatedDriftURL, ensureDedicatedDB, driftDSN, mockWakatime struct — is
+// shared with the stdlib file.
 package importer
 
 import (
@@ -14,17 +25,193 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 )
 
-// gaka-unq.1: end-to-end drift persistence test — runs a real worker with an
-// httptest.Server standing in for wakatime.com and asserts that drift findings
-// are persisted on the import_jobs row and that a warn-level log line is
-// written. Uses a DEDICATED per-package database (boomtime_test_drift) so a
-// prior partial migration state on the shared test DB can't skew results.
+// openDriftDBGinkgo mirrors openDriftDB but uses ginkgo Skip/DeferCleanup
+// instead of *testing.T.
+func openDriftDBGinkgo() *db.DB {
+	targetURL := dedicatedDriftURL()
 
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	if err := ensureDedicatedDB(ctx, targetURL); err != nil {
+		if os.Getenv("BOOM_REQUIRE_DB") == "1" {
+			Fail("ensure " + targetURL + ": " + err.Error())
+		}
+		Skip("cannot provision drift test DB: " + err.Error())
+	}
+	if err := db.MigrateURL(ctx, targetURL); err != nil {
+		if os.Getenv("BOOM_REQUIRE_DB") == "1" {
+			Fail("migrate: " + err.Error())
+		}
+		Skip("migrate failed: " + err.Error())
+	}
+	database, err := db.New(ctx, targetURL)
+	if err != nil {
+		if os.Getenv("BOOM_REQUIRE_DB") == "1" {
+			Fail("db.New: " + err.Error())
+		}
+		Skip("db.New: " + err.Error())
+	}
+	DeferCleanup(database.Close)
+	return database
+}
+
+// startMockWakatimeGinkgo mirrors mockWakatime.start but uses DeferCleanup.
+func startMockWakatimeGinkgo(m *mockWakatime) *httptest.Server {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/users/current/user_agents", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, m.uaBody)
+	})
+	mux.HandleFunc("/api/v1/users/current/machine_names", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, m.mnBody)
+	})
+	mux.HandleFunc("/api/v1/users/current/heartbeats", func(w http.ResponseWriter, r *http.Request) {
+		day := r.URL.Query().Get("date")
+		body, ok := m.hbBodyByDay[day]
+		if !ok {
+			body = m.defaultHB
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, body)
+	})
+	srv := httptest.NewServer(mux)
+	DeferCleanup(srv.Close)
+	return srv
+}
+
+var _ = Describe("drift end-to-end (gaka-unq.1)", func() {
+	It("unknown field on heartbeats is persisted to import_jobs.drift with a warn log", func() {
+		database := openDriftDBGinkgo()
+		ctx := context.Background()
+
+		// One user (heartbeats FK requires the user row + a project).
+		owner := "drift_e2e_gk_" + time.Now().Format("150405.000000")
+		_, _ = database.Pool.Exec(ctx, `INSERT INTO users (username, hashed_password, salt_used) VALUES ($1, '\x00', '\x00') ON CONFLICT DO NOTHING`, owner)
+		DeferCleanup(func() {
+			bg := context.Background()
+			_, _ = database.Pool.Exec(bg, `DELETE FROM heartbeats WHERE sender=$1`, owner)
+			_, _ = database.Pool.Exec(bg, `DELETE FROM projects WHERE owner=$1`, owner)
+			_, _ = database.Pool.Exec(bg, `DELETE FROM import_job_logs WHERE job_id IN (SELECT id FROM import_jobs WHERE owner=$1)`, owner)
+			_, _ = database.Pool.Exec(bg, `DELETE FROM import_jobs WHERE owner=$1`, owner)
+			_, _ = database.Pool.Exec(bg, `DELETE FROM users WHERE username=$1`, owner)
+		})
+
+		// Wakatime mock: clean UA/MN, heartbeats with unknown field.
+		uaBody := `{"data":[{"id":"ua-1","value":"vscode-test/1.0 (mac) my-editor/1.0"}]}`
+		mnBody := `{"data":[{"id":"mn-1","value":"my-mac"}]}`
+		hbBody := `{"data":[
+      {
+        "user_agent_id":"ua-1",
+        "machine_name_id":"mn-1",
+        "entity":"/tmp/a.go",
+        "type":"file",
+        "time":1735689600.0,
+        "brand_new_wakatime_field":"drift"
+      }
+    ]}`
+		m := &mockWakatime{uaBody: uaBody, mnBody: mnBody, defaultHB: hbBody}
+		srv := startMockWakatimeGinkgo(m)
+
+		// Build a worker pointed at the mock.
+		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+		hub := NewHub()
+		worker := NewWorker(context.Background(), database, logger, hub)
+		worker.BaseURL = srv.URL
+
+		// Create a queued job.
+		start := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+		end := start
+		payload := model.ImportRequestPayload{APIToken: "test-token", StartDate: start, EndDate: end}
+		item := QueueItem{Requester: owner, ReqPayload: payload}
+		raw, _ := json.Marshal(item)
+		job, err := database.CreateImportJob(ctx, owner, raw, start, end, TotalDays(start, end))
+		Expect(err).NotTo(HaveOccurred())
+
+		// Run inline (StartJob would race the test; call run directly).
+		worker.run(ctx, job.ID, item)
+
+		// Fetch persisted state.
+		final, err := database.GetJobByID(ctx, job.ID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(final).NotTo(BeNil())
+		Expect(final.State).To(Equal(db.JobStateCompleted), "error=%v", final.Error)
+		Expect(len(final.Drift)).To(BeNumerically(">", 0), "expected persisted drift, got empty")
+
+		var findings []DriftFinding
+		Expect(json.Unmarshal(final.Drift, &findings)).To(Succeed())
+		found := false
+		for _, f := range findings {
+			if f.Endpoint == "heartbeats" && f.Field == "brand_new_wakatime_field" && f.Kind == driftKindUnknown {
+				found = true
+				break
+			}
+		}
+		Expect(found).To(BeTrue(), "expected unknown_field for brand_new_wakatime_field, got %+v", findings)
+
+		// Verify a warn log line was appended for the drift.
+		logs, err := database.GetJobLogs(ctx, job.ID, 0, 1000)
+		Expect(err).NotTo(HaveOccurred())
+		sawWarn := false
+		for _, l := range logs {
+			if l.Level == "warn" && strings.Contains(l.Message, "schema drift") {
+				sawWarn = true
+				break
+			}
+		}
+		Expect(sawWarn).To(BeTrue(), "expected a warn schema-drift log line, got %+v", logs)
+	})
+
+	It("missing 'value' on user_agents hard-fails the job and persists drift", func() {
+		database := openDriftDBGinkgo()
+		ctx := context.Background()
+
+		owner := "drift_e2e_fail_gk_" + time.Now().Format("150405.000000")
+		_, _ = database.Pool.Exec(ctx, `INSERT INTO users (username, hashed_password, salt_used) VALUES ($1, '\x00', '\x00') ON CONFLICT DO NOTHING`, owner)
+		DeferCleanup(func() {
+			bg := context.Background()
+			_, _ = database.Pool.Exec(bg, `DELETE FROM import_job_logs WHERE job_id IN (SELECT id FROM import_jobs WHERE owner=$1)`, owner)
+			_, _ = database.Pool.Exec(bg, `DELETE FROM import_jobs WHERE owner=$1`, owner)
+			_, _ = database.Pool.Exec(bg, `DELETE FROM users WHERE username=$1`, owner)
+		})
+
+		// user_agents payload is missing `value` on every entry.
+		uaBody := `{"data":[{"id":"ua-1"}]}`
+		mnBody := `{"data":[]}`
+		m := &mockWakatime{uaBody: uaBody, mnBody: mnBody, defaultHB: `{"data":[]}`}
+		srv := startMockWakatimeGinkgo(m)
+
+		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+		hub := NewHub()
+		worker := NewWorker(context.Background(), database, logger, hub)
+		worker.BaseURL = srv.URL
+
+		start := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+		end := start
+		payload := model.ImportRequestPayload{APIToken: "test-token", StartDate: start, EndDate: end}
+		item := QueueItem{Requester: owner, ReqPayload: payload}
+		raw, _ := json.Marshal(item)
+		job, err := database.CreateImportJob(ctx, owner, raw, start, end, TotalDays(start, end))
+		Expect(err).NotTo(HaveOccurred())
+		worker.run(ctx, job.ID, item)
+
+		final, err := database.GetJobByID(ctx, job.ID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(final).NotTo(BeNil())
+		Expect(final.State).To(Equal(db.JobStateFailed))
+		Expect(len(final.Drift)).To(BeNumerically(">", 0), "expected persisted drift on failed job")
+	})
+})
+
+// -- helpers restored from stdlib partner (gaka-0vp.17) --
 const (
 	defaultDriftDSN     = "postgres://test:test@localhost:5432/boomtime_test?sslmode=disable"
 	dedicatedDriftDBSfx = "_drift"
@@ -37,10 +224,6 @@ func driftDSN() string {
 	return defaultDriftDSN
 }
 
-// dedicatedDriftURL swaps the DB name to `<original>_drift`. This isolation
-// insulates the drift tests from any prior "current version = 14" state on
-// the shared test DB where the drift column may be missing (e.g. a previous
-// 00014 file with different content).
 func dedicatedDriftURL() string {
 	url := driftDSN()
 	q := ""
@@ -55,7 +238,6 @@ func dedicatedDriftURL() string {
 	return url[:slash+1] + url[slash+1:] + dedicatedDriftDBSfx + q
 }
 
-// maintenanceURL swaps the DB name in url for maintDB.
 func maintenanceURL(url, maintDB string) string {
 	q := ""
 	if i := strings.Index(url, "?"); i >= 0 {
@@ -69,8 +251,6 @@ func maintenanceURL(url, maintDB string) string {
 	return url[:slash+1] + maintDB + q
 }
 
-// openDriftDB opens a DEDICATED test DB and migrates it. Skips (unless
-// BOOM_REQUIRE_DB=1) if Postgres is unreachable.
 func openDriftDB(t *testing.T) *db.DB {
 	t.Helper()
 	targetURL := dedicatedDriftURL()
@@ -105,8 +285,6 @@ func openDriftDB(t *testing.T) *db.DB {
 	return database
 }
 
-// ensureDedicatedDB creates the target database if it doesn't already exist,
-// via a maintenance connection.
 func ensureDedicatedDB(ctx context.Context, targetURL string) error {
 	// Extract target dbname.
 	url := targetURL
@@ -148,185 +326,9 @@ func ensureDedicatedDB(ctx context.Context, targetURL string) error {
 	return lastErr
 }
 
-// mockWakatime builds an httptest server that serves the requested per-endpoint
-// bodies. It matches URL paths on suffix so query strings on /heartbeats don't
-// interfere.
 type mockWakatime struct {
 	uaBody      string
 	mnBody      string
 	hbBodyByDay map[string]string
 	defaultHB   string
-}
-
-func (m *mockWakatime) start(t *testing.T) *httptest.Server {
-	t.Helper()
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/users/current/user_agents", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, m.uaBody)
-	})
-	mux.HandleFunc("/api/v1/users/current/machine_names", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, m.mnBody)
-	})
-	mux.HandleFunc("/api/v1/users/current/heartbeats", func(w http.ResponseWriter, r *http.Request) {
-		day := r.URL.Query().Get("date")
-		body, ok := m.hbBodyByDay[day]
-		if !ok {
-			body = m.defaultHB
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, body)
-	})
-	srv := httptest.NewServer(mux)
-	t.Cleanup(srv.Close)
-	return srv
-}
-
-// TestDriftEndToEndUnknownFieldPersisted runs a real worker against a mock
-// wakatime server that returns an unknown field on heartbeats. Asserts that
-// (a) the job completes, (b) drift[] is persisted on the row, (c) a "warn"
-// log line was appended, and (d) it rides along on GetJobByID (WS/REST both
-// serve this).
-func TestDriftEndToEndUnknownFieldPersisted(t *testing.T) {
-	database := openDriftDB(t)
-	ctx := context.Background()
-
-	// One user (heartbeats FK requires the user row + a project).
-	owner := "drift_e2e_" + time.Now().Format("150405.000000")
-	_, _ = database.Pool.Exec(ctx, `INSERT INTO users (username, hashed_password, salt_used) VALUES ($1, '\x00', '\x00') ON CONFLICT DO NOTHING`, owner)
-	t.Cleanup(func() {
-		_, _ = database.Pool.Exec(ctx, `DELETE FROM heartbeats WHERE sender=$1`, owner)
-		_, _ = database.Pool.Exec(ctx, `DELETE FROM projects WHERE owner=$1`, owner)
-		_, _ = database.Pool.Exec(ctx, `DELETE FROM import_job_logs WHERE job_id IN (SELECT id FROM import_jobs WHERE owner=$1)`, owner)
-		_, _ = database.Pool.Exec(ctx, `DELETE FROM import_jobs WHERE owner=$1`, owner)
-		_, _ = database.Pool.Exec(ctx, `DELETE FROM users WHERE username=$1`, owner)
-	})
-
-	// Wakatime mock: clean UA/MN, heartbeats with unknown field.
-	uaBody := `{"data":[{"id":"ua-1","value":"vscode-test/1.0 (mac) my-editor/1.0"}]}`
-	mnBody := `{"data":[{"id":"mn-1","value":"my-mac"}]}`
-	hbBody := `{"data":[
-      {
-        "user_agent_id":"ua-1",
-        "machine_name_id":"mn-1",
-        "entity":"/tmp/a.go",
-        "type":"file",
-        "time":1735689600.0,
-        "brand_new_wakatime_field":"drift"
-      }
-    ]}`
-	m := &mockWakatime{uaBody: uaBody, mnBody: mnBody, defaultHB: hbBody}
-	srv := m.start(t)
-
-	// Build a worker pointed at the mock.
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	hub := NewHub()
-	worker := NewWorker(context.Background(), database, logger, hub)
-	worker.BaseURL = srv.URL
-
-	// Create a queued job.
-	start := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
-	end := start
-	payload := model.ImportRequestPayload{APIToken: "test-token", StartDate: start, EndDate: end}
-	item := QueueItem{Requester: owner, ReqPayload: payload}
-	raw, _ := json.Marshal(item)
-	job, err := database.CreateImportJob(ctx, owner, raw, start, end, TotalDays(start, end))
-	if err != nil {
-		t.Fatalf("CreateImportJob: %v", err)
-	}
-
-	// Run inline (StartJob would race the test; call run directly).
-	worker.run(ctx, job.ID, item)
-
-	// Fetch persisted state.
-	final, err := database.GetJobByID(ctx, job.ID)
-	if err != nil || final == nil {
-		t.Fatalf("GetJobByID: %v (job=%v)", err, final)
-	}
-	if final.State != db.JobStateCompleted {
-		t.Fatalf("state = %q, want completed. error=%v", final.State, final.Error)
-	}
-	if len(final.Drift) == 0 {
-		t.Fatal("expected persisted drift, got empty")
-	}
-	var findings []DriftFinding
-	if err := json.Unmarshal(final.Drift, &findings); err != nil {
-		t.Fatalf("unmarshal drift: %v (%s)", err, string(final.Drift))
-	}
-	found := false
-	for _, f := range findings {
-		if f.Endpoint == "heartbeats" && f.Field == "brand_new_wakatime_field" && f.Kind == driftKindUnknown {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("expected unknown_field for brand_new_wakatime_field, got %+v", findings)
-	}
-
-	// Verify a warn log line was appended for the drift.
-	logs, err := database.GetJobLogs(ctx, job.ID, 0, 1000)
-	if err != nil {
-		t.Fatalf("GetJobLogs: %v", err)
-	}
-	sawWarn := false
-	for _, l := range logs {
-		if l.Level == "warn" && strings.Contains(l.Message, "schema drift") {
-			sawWarn = true
-			break
-		}
-	}
-	if !sawWarn {
-		t.Fatalf("expected a warn schema-drift log line, got %+v", logs)
-	}
-}
-
-// TestDriftEndToEndBrokenLookupFailsJob asserts that when a required field is
-// missing on user_agents (id/value), the job hard-fails — heartbeat ingestion
-// cannot resolve UAs otherwise.
-func TestDriftEndToEndBrokenLookupFailsJob(t *testing.T) {
-	database := openDriftDB(t)
-	ctx := context.Background()
-
-	owner := "drift_e2e_fail_" + time.Now().Format("150405.000000")
-	_, _ = database.Pool.Exec(ctx, `INSERT INTO users (username, hashed_password, salt_used) VALUES ($1, '\x00', '\x00') ON CONFLICT DO NOTHING`, owner)
-	t.Cleanup(func() {
-		_, _ = database.Pool.Exec(ctx, `DELETE FROM import_job_logs WHERE job_id IN (SELECT id FROM import_jobs WHERE owner=$1)`, owner)
-		_, _ = database.Pool.Exec(ctx, `DELETE FROM import_jobs WHERE owner=$1`, owner)
-		_, _ = database.Pool.Exec(ctx, `DELETE FROM users WHERE username=$1`, owner)
-	})
-
-	// user_agents payload is missing `value` on every entry.
-	uaBody := `{"data":[{"id":"ua-1"}]}`
-	mnBody := `{"data":[]}`
-	m := &mockWakatime{uaBody: uaBody, mnBody: mnBody, defaultHB: `{"data":[]}`}
-	srv := m.start(t)
-
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	hub := NewHub()
-	worker := NewWorker(context.Background(), database, logger, hub)
-	worker.BaseURL = srv.URL
-
-	start := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
-	end := start
-	payload := model.ImportRequestPayload{APIToken: "test-token", StartDate: start, EndDate: end}
-	item := QueueItem{Requester: owner, ReqPayload: payload}
-	raw, _ := json.Marshal(item)
-	job, err := database.CreateImportJob(ctx, owner, raw, start, end, TotalDays(start, end))
-	if err != nil {
-		t.Fatalf("CreateImportJob: %v", err)
-	}
-	worker.run(ctx, job.ID, item)
-
-	final, err := database.GetJobByID(ctx, job.ID)
-	if err != nil || final == nil {
-		t.Fatalf("GetJobByID: %v (job=%v)", err, final)
-	}
-	if final.State != db.JobStateFailed {
-		t.Fatalf("state = %q, want failed", final.State)
-	}
-	if len(final.Drift) == 0 {
-		t.Fatal("expected persisted drift on failed job")
-	}
 }

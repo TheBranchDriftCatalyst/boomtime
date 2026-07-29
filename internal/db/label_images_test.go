@@ -1,151 +1,101 @@
+// label_images_ginkgo_test.go — ginkgo mirror of label_images_test.go (gaka-0vp.13).
+// 1:1 case map (4 stdlib TestXxx → 4 Its):
+//   TestLabelImages_Roundtrip        → "roundtrip: save and read back"
+//   TestLabelImages_Upsert           → "upsert: second save overwrites row"
+//   TestLabelImages_NotFound         → "not found: missing id returns (nil,false,nil)"
+//   TestLabelImages_HasLabelImage    → "HasLabelImage tracks save/delete"
 package db
 
 import (
 	"bytes"
 	"context"
-	"testing"
+
+	"github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-// TestLabelImages_Roundtrip: save an image, read it back with matching bytes,
-// mime, and provenance. Non-tautological: exercises the full INSERT + SELECT
-// path (including the NULLIF empty-string coercions on model/prompt).
-func TestLabelImages_Roundtrip(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	ctx := context.Background()
+var _ = ginkgo.Describe("LabelImages", func() {
+	ginkgo.It("roundtrips: save an image and read it back", func() {
+		d := openTestDBG()
+		ctx := context.Background()
 
-	id := "test-late-night-coder"
-	t.Cleanup(func() { _ = d.DeleteLabelImage(ctx, id) })
+		id := "test-late-night-coder"
+		ginkgo.DeferCleanup(func() { _ = d.DeleteLabelImage(ctx, id) })
 
-	img := []byte("\x89PNG\r\n\x1a\nfake-png-bytes")
-	var seed int64 = 12345
-	if err := d.SaveLabelImage(ctx, id, img, "image/png", "flux_schnell_fast", "a distinctive emblem", &seed); err != nil {
-		t.Fatalf("SaveLabelImage: %v", err)
-	}
+		img := []byte("\x89PNG\r\n\x1a\nfake-png-bytes")
+		var seed int64 = 12345
+		err := d.SaveLabelImage(ctx, id, img, "image/png", "flux_schnell_fast", "a distinctive emblem", &seed)
+		Expect(err).NotTo(HaveOccurred())
 
-	got, ok, err := d.GetLabelImage(ctx, id)
-	if err != nil {
-		t.Fatalf("GetLabelImage: %v", err)
-	}
-	if !ok {
-		t.Fatal("GetLabelImage: expected row, got miss")
-	}
-	if !bytes.Equal(got.ImageBytes, img) {
-		t.Errorf("bytes mismatch: got %d bytes want %d bytes", len(got.ImageBytes), len(img))
-	}
-	if got.MimeType != "image/png" {
-		t.Errorf("MimeType=%q want image/png", got.MimeType)
-	}
-	if got.Model != "flux_schnell_fast" {
-		t.Errorf("Model=%q", got.Model)
-	}
-	if got.Prompt != "a distinctive emblem" {
-		t.Errorf("Prompt=%q", got.Prompt)
-	}
-	if got.Seed == nil || *got.Seed != 12345 {
-		t.Errorf("Seed=%v want 12345", got.Seed)
-	}
-	if got.GeneratedAt.IsZero() {
-		t.Error("GeneratedAt is zero — the DEFAULT now() didn't fire")
-	}
-}
+		got, ok, err := d.GetLabelImage(ctx, id)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(ok).To(BeTrue(), "GetLabelImage: expected row, got miss")
+		Expect(bytes.Equal(got.ImageBytes, img)).To(BeTrue(), "bytes mismatch: got %d bytes want %d bytes", len(got.ImageBytes), len(img))
+		Expect(got.MimeType).To(Equal("image/png"))
+		Expect(got.Model).To(Equal("flux_schnell_fast"))
+		Expect(got.Prompt).To(Equal("a distinctive emblem"))
+		Expect(got.Seed).NotTo(BeNil())
+		Expect(*got.Seed).To(BeEquivalentTo(12345))
+		Expect(got.GeneratedAt.IsZero()).To(BeFalse(), "GeneratedAt is zero — the DEFAULT now() didn't fire")
+	})
 
-// TestLabelImages_Upsert: saving twice for the same id overwrites the row and
-// bumps generated_at forward. Non-tautological: the second save uses different
-// bytes + model + no seed, and we verify the row reflects the second save.
-func TestLabelImages_Upsert(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	ctx := context.Background()
+	ginkgo.It("upserts: saving twice for the same id overwrites the row and never regresses generated_at", func() {
+		d := openTestDBG()
+		ctx := context.Background()
 
-	id := "test-upsert"
-	t.Cleanup(func() { _ = d.DeleteLabelImage(ctx, id) })
+		id := "test-upsert"
+		ginkgo.DeferCleanup(func() { _ = d.DeleteLabelImage(ctx, id) })
 
-	if err := d.SaveLabelImage(ctx, id, []byte("v1"), "image/png", "flux_schnell_fast", "prompt v1", nil); err != nil {
-		t.Fatalf("first SaveLabelImage: %v", err)
-	}
-	first, _, err := d.GetLabelImage(ctx, id)
-	if err != nil {
-		t.Fatalf("first GetLabelImage: %v", err)
-	}
+		err := d.SaveLabelImage(ctx, id, []byte("v1"), "image/png", "flux_schnell_fast", "prompt v1", nil)
+		Expect(err).NotTo(HaveOccurred())
+		first, _, err := d.GetLabelImage(ctx, id)
+		Expect(err).NotTo(HaveOccurred())
 
-	// Second save with different content; MUST overwrite, MUST bump generated_at.
-	if err := d.SaveLabelImage(ctx, id, []byte("v2-different-content"), "image/webp", "sdxl_illustrious_xl", "prompt v2", nil); err != nil {
-		t.Fatalf("second SaveLabelImage: %v", err)
-	}
-	second, _, err := d.GetLabelImage(ctx, id)
-	if err != nil {
-		t.Fatalf("second GetLabelImage: %v", err)
-	}
-	if string(second.ImageBytes) != "v2-different-content" {
-		t.Errorf("bytes not overwritten; got %q", string(second.ImageBytes))
-	}
-	if second.MimeType != "image/webp" {
-		t.Errorf("mime not overwritten; got %q", second.MimeType)
-	}
-	if second.Model != "sdxl_illustrious_xl" {
-		t.Errorf("model not overwritten; got %q", second.Model)
-	}
-	if !second.GeneratedAt.After(first.GeneratedAt) && !second.GeneratedAt.Equal(first.GeneratedAt) {
-		// generated_at may be equal on a very fast test; the point is it never
-		// went backwards.
-		t.Errorf("generated_at regressed: first=%v second=%v", first.GeneratedAt, second.GeneratedAt)
-	}
-}
+		// Second save with different content; MUST overwrite, MUST bump generated_at.
+		err = d.SaveLabelImage(ctx, id, []byte("v2-different-content"), "image/webp", "sdxl_illustrious_xl", "prompt v2", nil)
+		Expect(err).NotTo(HaveOccurred())
+		second, _, err := d.GetLabelImage(ctx, id)
+		Expect(err).NotTo(HaveOccurred())
 
-// TestLabelImages_NotFound: GET on a missing id returns (nil, false, nil) so
-// the handler can render a 404 without an internal-error branch.
-func TestLabelImages_NotFound(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	ctx := context.Background()
+		Expect(string(second.ImageBytes)).To(Equal("v2-different-content"))
+		Expect(second.MimeType).To(Equal("image/webp"))
+		Expect(second.Model).To(Equal("sdxl_illustrious_xl"))
+		// generated_at may be equal on a very fast test; the point is it never went backwards.
+		Expect(second.GeneratedAt.Before(first.GeneratedAt)).To(BeFalse(),
+			"generated_at regressed: first=%v second=%v", first.GeneratedAt, second.GeneratedAt)
+	})
 
-	li, ok, err := d.GetLabelImage(ctx, "does-not-exist-xyz")
-	if err != nil {
-		t.Fatalf("GetLabelImage: %v", err)
-	}
-	if ok || li != nil {
-		t.Errorf("expected miss for unknown id; got ok=%v li=%+v", ok, li)
-	}
-}
+	ginkgo.It("returns (nil,false,nil) for a missing id", func() {
+		d := openTestDBG()
+		ctx := context.Background()
 
-// TestLabelImages_HasLabelImage: HasLabelImage returns true after Save, false
-// after Delete. The worker uses this to skip labels that already have a row.
-func TestLabelImages_HasLabelImage(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	ctx := context.Background()
+		li, ok, err := d.GetLabelImage(ctx, "does-not-exist-xyz")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(ok).To(BeFalse())
+		Expect(li).To(BeNil())
+	})
 
-	id := "test-has"
-	t.Cleanup(func() { _ = d.DeleteLabelImage(ctx, id) })
+	ginkgo.It("HasLabelImage flips true after Save, false after Delete", func() {
+		d := openTestDBG()
+		ctx := context.Background()
 
-	has, err := d.HasLabelImage(ctx, id)
-	if err != nil {
-		t.Fatalf("HasLabelImage pre: %v", err)
-	}
-	if has {
-		t.Fatal("HasLabelImage true before Save")
-	}
+		id := "test-has"
+		ginkgo.DeferCleanup(func() { _ = d.DeleteLabelImage(ctx, id) })
 
-	if err := d.SaveLabelImage(ctx, id, []byte("x"), "image/png", "", "", nil); err != nil {
-		t.Fatalf("Save: %v", err)
-	}
-	has, err = d.HasLabelImage(ctx, id)
-	if err != nil {
-		t.Fatalf("HasLabelImage post-save: %v", err)
-	}
-	if !has {
-		t.Error("HasLabelImage false after Save")
-	}
+		has, err := d.HasLabelImage(ctx, id)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(has).To(BeFalse(), "HasLabelImage true before Save")
 
-	if err := d.DeleteLabelImage(ctx, id); err != nil {
-		t.Fatalf("Delete: %v", err)
-	}
-	has, err = d.HasLabelImage(ctx, id)
-	if err != nil {
-		t.Fatalf("HasLabelImage post-delete: %v", err)
-	}
-	if has {
-		t.Error("HasLabelImage true after Delete")
-	}
-}
+		err = d.SaveLabelImage(ctx, id, []byte("x"), "image/png", "", "", nil)
+		Expect(err).NotTo(HaveOccurred())
+		has, err = d.HasLabelImage(ctx, id)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(has).To(BeTrue(), "HasLabelImage false after Save")
+
+		err = d.DeleteLabelImage(ctx, id)
+		Expect(err).NotTo(HaveOccurred())
+		has, err = d.HasLabelImage(ctx, id)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(has).To(BeFalse(), "HasLabelImage true after Delete")
+	})
+})

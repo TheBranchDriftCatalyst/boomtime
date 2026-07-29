@@ -1,86 +1,81 @@
+// leaderboard_cap_ginkgo_test.go — ginkgo mirror of leaderboard_cap_test.go (gaka-tst-ginkgo).
+// 1:1 case map (3 stdlib TestXxx):
+//   TestToLeaderboardsPayloadGlobalCapAndSort              → ToLeaderboardsPayload > "top-20 cap and desc sort"
+//   TestToLeaderboardsPayloadTieBreakByName                → ToLeaderboardsPayload > "tie-break by name ascending"
+//   TestToLeaderboardsPayloadFiltersUnder60AndEmptyLangBuckets
+//                                                          → ToLeaderboardsPayload > "filters <=60 and omits empty lang buckets"
 package stats
 
 import (
 	"fmt"
-	"testing"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-func TestToLeaderboardsPayloadGlobalCapAndSort(t *testing.T) {
-	// 25 distinct senders, all > 60s, with strictly descending totals so the
-	// top-20 cap and value-desc ordering are unambiguous.
-	var rows []db.LeaderboardRow
-	for i := 0; i < 25; i++ {
-		rows = append(rows, db.LeaderboardRow{
-			Sender:       fmt.Sprintf("user%02d", i),
-			Language:     "Go",
-			TotalSeconds: int64(10000 - i*100), // 10000 down to 7600, all > 60
-		})
-	}
-
-	p := ToLeaderboardsPayload(rows)
-
-	if len(p.Global) != 20 {
-		t.Fatalf("Global len = %d, want 20 (top-20 cap)", len(p.Global))
-	}
-	// Highest total is user00 (10000); descending thereafter.
-	if p.Global[0].Name != "user00" || p.Global[0].Value != 10000 {
-		t.Errorf("Global[0] = %+v, want user00/10000", p.Global[0])
-	}
-	for i := 1; i < len(p.Global); i++ {
-		if p.Global[i-1].Value < p.Global[i].Value {
-			t.Errorf("Global not sorted desc at %d: %d < %d",
-				i, p.Global[i-1].Value, p.Global[i].Value)
+var _ = Describe("ToLeaderboardsPayload cap/sort/filter", func() {
+	It("caps global to top-20 and sorts descending by value", func() {
+		// 25 distinct senders, all > 60s, with strictly descending totals so the
+		// top-20 cap and value-desc ordering are unambiguous.
+		var rows []db.LeaderboardRow
+		for i := 0; i < 25; i++ {
+			rows = append(rows, db.LeaderboardRow{
+				Sender:       fmt.Sprintf("user%02d", i),
+				Language:     "Go",
+				TotalSeconds: int64(10000 - i*100), // 10000 down to 7600, all > 60
+			})
 		}
-	}
-	// The 21st..25th (lowest totals) must be dropped: user20..user24 absent.
-	for _, ut := range p.Global {
-		if ut.Name == "user24" {
-			t.Error("user24 (lowest) should have been dropped by top-20 cap")
+
+		p := ToLeaderboardsPayload(rows)
+
+		Expect(p.Global).To(HaveLen(20))
+		// Highest total is user00 (10000); descending thereafter.
+		Expect(p.Global[0].Name).To(Equal("user00"))
+		Expect(p.Global[0].Value).To(BeEquivalentTo(10000))
+		for i := 1; i < len(p.Global); i++ {
+			Expect(p.Global[i-1].Value).To(BeNumerically(">=", p.Global[i].Value),
+				fmt.Sprintf("Global not sorted desc at %d", i))
 		}
-	}
-}
-
-func TestToLeaderboardsPayloadTieBreakByName(t *testing.T) {
-	// Equal totals -> tie-break by name ascending.
-	rows := []db.LeaderboardRow{
-		{Sender: "charlie", Language: "Go", TotalSeconds: 500},
-		{Sender: "alice", Language: "Go", TotalSeconds: 500},
-		{Sender: "bob", Language: "Go", TotalSeconds: 500},
-	}
-	p := ToLeaderboardsPayload(rows)
-	got := []string{p.Global[0].Name, p.Global[1].Name, p.Global[2].Name}
-	want := []string{"alice", "bob", "charlie"}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("tie-break order = %v, want %v", got, want)
+		// The 21st..25th (lowest totals) must be dropped: user20..user24 absent.
+		for _, ut := range p.Global {
+			Expect(ut.Name).NotTo(Equal("user24"), "user24 (lowest) should have been dropped by top-20 cap")
 		}
-	}
-}
+	})
 
-func TestToLeaderboardsPayloadFiltersUnder60AndEmptyLangBuckets(t *testing.T) {
-	rows := []db.LeaderboardRow{
-		{Sender: "keepGlobal", Language: "Go", TotalSeconds: 120},
-		// Exactly 60 is filtered out (filter is v > 60, strictly).
-		{Sender: "borderline", Language: "Go", TotalSeconds: 60},
-		// Sub-60 sender in Python: its only total is 30 -> Python bucket empty -> omitted.
-		{Sender: "tiny", Language: "Python", TotalSeconds: 30},
-	}
-	p := ToLeaderboardsPayload(rows)
+	It("tie-breaks equal totals by sender name ascending", func() {
+		rows := []db.LeaderboardRow{
+			{Sender: "charlie", Language: "Go", TotalSeconds: 500},
+			{Sender: "alice", Language: "Go", TotalSeconds: 500},
+			{Sender: "bob", Language: "Go", TotalSeconds: 500},
+		}
+		p := ToLeaderboardsPayload(rows)
+		got := []string{p.Global[0].Name, p.Global[1].Name, p.Global[2].Name}
+		Expect(got).To(Equal([]string{"alice", "bob", "charlie"}))
+	})
 
-	// Global: only keepGlobal survives (120 > 60); borderline (==60) and tiny (30) dropped.
-	if len(p.Global) != 1 || p.Global[0].Name != "keepGlobal" {
-		t.Fatalf("Global = %+v, want single keepGlobal", p.Global)
-	}
+	It("filters totals <=60 and omits empty language buckets", func() {
+		rows := []db.LeaderboardRow{
+			{Sender: "keepGlobal", Language: "Go", TotalSeconds: 120},
+			// Exactly 60 is filtered out (filter is v > 60, strictly).
+			{Sender: "borderline", Language: "Go", TotalSeconds: 60},
+			// Sub-60 sender in Python: its only total is 30 -> Python bucket empty -> omitted.
+			{Sender: "tiny", Language: "Python", TotalSeconds: 30},
+		}
+		p := ToLeaderboardsPayload(rows)
 
-	// Go bucket has keepGlobal (>60); borderline (==60) filtered but bucket non-empty.
-	if goList, ok := p.Lang["Go"]; !ok || len(goList) != 1 || goList[0].Name != "keepGlobal" {
-		t.Errorf("Lang[Go] = %+v, want single keepGlobal", p.Lang["Go"])
-	}
+		// Global: only keepGlobal survives (120 > 60); borderline (==60) and tiny (30) dropped.
+		Expect(p.Global).To(HaveLen(1))
+		Expect(p.Global[0].Name).To(Equal("keepGlobal"))
 
-	// Python bucket only had a sub-60 total -> empty list -> must be omitted entirely.
-	if _, ok := p.Lang["Python"]; ok {
-		t.Error("Lang[Python] should be omitted (all entries filtered)")
-	}
-}
+		// Go bucket has keepGlobal (>60); borderline (==60) filtered but bucket non-empty.
+		Expect(p.Lang).To(HaveKey("Go"))
+		goList := p.Lang["Go"]
+		Expect(goList).To(HaveLen(1))
+		Expect(goList[0].Name).To(Equal("keepGlobal"))
+
+		// Python bucket only had a sub-60 total -> empty list -> must be omitted entirely.
+		Expect(p.Lang).NotTo(HaveKey("Python"))
+	})
+})

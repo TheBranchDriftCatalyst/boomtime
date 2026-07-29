@@ -1,204 +1,134 @@
+// redact_entities_ginkgo_test.go — ginkgo mirror of redact_entities_test.go (gaka-0vp.13).
+// 1:1 case map (4 stdlib TestXxx → 4 Its):
+//   TestRedactEntitiesCaseInsensitiveAndOwnerScoped → "case-insensitive + owner-scoped"
+//   TestRedactEntitiesTyScoped                      → "ty-scoped (file redact doesn't touch url)"
+//   TestRedactEntitiesEmptyInputIsNoop              → "empty input is a no-op"
+//   TestListEntitiesByTypeExcludesRedacted          → "list excludes redacted rows"
 package db
 
 import (
 	"strings"
-	"testing"
 	"time"
+
+	"github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-// redact_entities_test.go pins the RedactEntities invariants that no prior
-// test exercised. RedactEntities is the destructive counterpart to
-// ListEntitiesByType (Entity Explorer's "purge" button). Its contract:
-//
-//   1. Owner-scoped: A cannot redact B's entities. (No test.)
-//   2. Case-insensitive: passing "src/Main.go" must also redact rows stored
-//      as "src/main.go" or "SRC/MAIN.GO" — mirrors the case-folded list view
-//      so a user redacting what they see actually clears every case variant.
-//   3. Non-destructive on the HB row: `entity` becomes `''`, but the row
-//      survives (project/language/machine totals still count).
-//   4. ty-scoped: passing ty='file' must NOT touch a ty='url' row whose
-//      entity string matches.
+var _ = ginkgo.Describe("RedactEntities", func() {
+	ginkgo.It("is case-insensitive and owner-scoped and preserves the heartbeat rows", func() {
+		d := openTestDBG()
 
-func TestRedactEntitiesCaseInsensitiveAndOwnerScoped(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
+		a := newSenderG(d, "redA")
+		b := newSenderG(d, "redB")
 
-	// Two users. A intends to redact "src/main.go" — this must NOT touch B.
-	a := newSender(t, d, "redA")
-	b := newSender(t, d, "redB")
+		day := time.Date(2025, 6, 3, 10, 0, 0, 0, time.UTC)
+		ensureProjectsG(d, a.Ctx(), a.Sender(), "P")
+		ensureProjectsG(d, b.Ctx(), b.Sender(), "P")
 
-	day := time.Date(2025, 6, 3, 10, 0, 0, 0, time.UTC)
-	ensureProjects(t, d, a.Ctx(), a.Sender(), "P")
-	ensureProjects(t, d, b.Ctx(), b.Sender(), "P")
+		// A: three case variants of the same entity + one distinct entity.
+		insertSeedG(d, a.Ctx(), a.Sender(), hbSeed{project: "P", entity: "src/main.go", ts: day, gap: 60})
+		insertSeedG(d, a.Ctx(), a.Sender(), hbSeed{project: "P", entity: "src/Main.go", ts: day.Add(time.Minute), gap: 60})
+		insertSeedG(d, a.Ctx(), a.Sender(), hbSeed{project: "P", entity: "SRC/MAIN.GO", ts: day.Add(2 * time.Minute), gap: 60})
+		insertSeedG(d, a.Ctx(), a.Sender(), hbSeed{project: "P", entity: "keep.go", ts: day.Add(3 * time.Minute), gap: 60})
 
-	// A: three case variants of the same entity + one distinct entity.
-	insertSeed(t, d, a.Ctx(), a.Sender(), hbSeed{project: "P", entity: "src/main.go", ts: day, gap: 60})
-	insertSeed(t, d, a.Ctx(), a.Sender(), hbSeed{project: "P", entity: "src/Main.go", ts: day.Add(time.Minute), gap: 60})
-	insertSeed(t, d, a.Ctx(), a.Sender(), hbSeed{project: "P", entity: "SRC/MAIN.GO", ts: day.Add(2 * time.Minute), gap: 60})
-	insertSeed(t, d, a.Ctx(), a.Sender(), hbSeed{project: "P", entity: "keep.go", ts: day.Add(3 * time.Minute), gap: 60})
+		// B: identical case variant that MUST survive (owner scoping).
+		insertSeedG(d, b.Ctx(), b.Sender(), hbSeed{project: "P", entity: "src/main.go", ts: day, gap: 60})
 
-	// B: identical case variant that MUST survive (owner scoping).
-	insertSeed(t, d, b.Ctx(), b.Sender(), hbSeed{project: "P", entity: "src/main.go", ts: day, gap: 60})
+		n, err := d.RedactEntities(a.Ctx(), a.Sender(), "file", []string{"src/main.go"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(n).To(BeEquivalentTo(3), "three case variants of A's")
 
-	// A redacts via one casing — all three variants of A's rows must clear.
-	n, err := d.RedactEntities(a.Ctx(), a.Sender(), "file", []string{"src/main.go"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n != 3 {
-		t.Fatalf("RedactEntities affected = %d, want 3 (three case variants of A's)", n)
-	}
+		// The heartbeat ROWS must survive.
+		var totalAfter int
+		err = d.Pool.QueryRow(a.Ctx(), `SELECT count(*) FROM heartbeats WHERE sender=$1`, a.Sender()).Scan(&totalAfter)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(totalAfter).To(Equal(4), "rows preserved")
 
-	// The heartbeat ROWS must survive (RedactEntities is non-destructive on rows).
-	var totalAfter int
-	if err := d.Pool.QueryRow(a.Ctx(),
-		`SELECT count(*) FROM heartbeats WHERE sender=$1`, a.Sender()).Scan(&totalAfter); err != nil {
-		t.Fatal(err)
-	}
-	if totalAfter != 4 {
-		t.Fatalf("A row count after redact = %d, want 4 (rows preserved)", totalAfter)
-	}
+		// All three of A's src/main.go variants now have entity = ''.
+		var blank int
+		err = d.Pool.QueryRow(a.Ctx(), `SELECT count(*) FROM heartbeats WHERE sender=$1 AND entity=''`, a.Sender()).Scan(&blank)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(blank).To(Equal(3))
 
-	// All three of A's src/main.go variants now have entity = ''.
-	var blank int
-	if err := d.Pool.QueryRow(a.Ctx(),
-		`SELECT count(*) FROM heartbeats WHERE sender=$1 AND entity=''`, a.Sender()).Scan(&blank); err != nil {
-		t.Fatal(err)
-	}
-	if blank != 3 {
-		t.Fatalf("A blanked entities = %d, want 3", blank)
-	}
-	// The 'keep.go' row is untouched.
-	var keep int
-	if err := d.Pool.QueryRow(a.Ctx(),
-		`SELECT count(*) FROM heartbeats WHERE sender=$1 AND entity='keep.go'`, a.Sender()).Scan(&keep); err != nil {
-		t.Fatal(err)
-	}
-	if keep != 1 {
-		t.Fatalf("A keep.go rows = %d, want 1 (non-matching entity untouched)", keep)
-	}
+		// The 'keep.go' row is untouched.
+		var keep int
+		err = d.Pool.QueryRow(a.Ctx(), `SELECT count(*) FROM heartbeats WHERE sender=$1 AND entity='keep.go'`, a.Sender()).Scan(&keep)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(keep).To(Equal(1), "non-matching entity untouched")
 
-	// B's src/main.go is UNTOUCHED — owner scoping invariant.
-	var bMain int
-	if err := d.Pool.QueryRow(b.Ctx(),
-		`SELECT count(*) FROM heartbeats WHERE sender=$1 AND lower(entity)=lower($2)`,
-		b.Sender(), "src/main.go").Scan(&bMain); err != nil {
-		t.Fatal(err)
-	}
-	if bMain != 1 {
-		t.Fatalf("B src/main.go rows = %d, want 1 (A's redact must not touch B)", bMain)
-	}
-}
+		// B's src/main.go is UNTOUCHED.
+		var bMain int
+		err = d.Pool.QueryRow(b.Ctx(), `SELECT count(*) FROM heartbeats WHERE sender=$1 AND lower(entity)=lower($2)`, b.Sender(), "src/main.go").Scan(&bMain)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(bMain).To(Equal(1), "A's redact must not touch B")
+	})
 
-// TestRedactEntitiesTyScoped: a redact on ty='file' must NOT touch ty='url' or
-// ty='domain' rows whose entity string happens to match. This is the tenant
-// invariant of the ty axis — Entity Explorer's per-type table view depends on
-// each ty maintaining its own visible entity set.
-func TestRedactEntitiesTyScoped(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	f := newSender(t, d, "red_ty")
-	sender := f.Sender()
-	ctx := f.Ctx()
-	f.Projects("P")
+	ginkgo.It("is ty-scoped: file redact doesn't touch a matching url row", func() {
+		d := openTestDBG()
+		f := newSenderG(d, "red_ty")
+		sender := f.Sender()
+		ctx := f.Ctx()
+		f.Projects("P")
 
-	day := time.Date(2025, 6, 4, 10, 0, 0, 0, time.UTC)
-	// Same string on file + url; only file should be affected.
-	insertSeed(t, d, ctx, sender, hbSeed{project: "P", entity: "https://ex.com/x",
-		ty: "file", ts: day, gap: 60})
-	insertSeed(t, d, ctx, sender, hbSeed{project: "P", entity: "https://ex.com/x",
-		ty: "url", ts: day.Add(time.Minute), gap: 60})
+		day := time.Date(2025, 6, 4, 10, 0, 0, 0, time.UTC)
+		insertSeedG(d, ctx, sender, hbSeed{project: "P", entity: "https://ex.com/x", ty: "file", ts: day, gap: 60})
+		insertSeedG(d, ctx, sender, hbSeed{project: "P", entity: "https://ex.com/x", ty: "url", ts: day.Add(time.Minute), gap: 60})
 
-	n, err := d.RedactEntities(ctx, sender, "file", []string{"https://ex.com/x"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n != 1 {
-		t.Fatalf("RedactEntities affected = %d, want 1 (only ty='file' row)", n)
-	}
+		n, err := d.RedactEntities(ctx, sender, "file", []string{"https://ex.com/x"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(n).To(BeEquivalentTo(1), "only ty='file' row")
 
-	// url row survives.
-	var alive int
-	if err := d.Pool.QueryRow(ctx,
-		`SELECT count(*) FROM heartbeats WHERE sender=$1 AND ty='url' AND entity=$2`,
-		sender, "https://ex.com/x").Scan(&alive); err != nil {
-		t.Fatal(err)
-	}
-	if alive != 1 {
-		t.Fatalf("url row survived count = %d, want 1 (redact must be ty-scoped)", alive)
-	}
-}
+		var alive int
+		err = d.Pool.QueryRow(ctx, `SELECT count(*) FROM heartbeats WHERE sender=$1 AND ty='url' AND entity=$2`, sender, "https://ex.com/x").Scan(&alive)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(alive).To(Equal(1), "redact must be ty-scoped")
+	})
 
-// TestRedactEntitiesEmptyInputIsNoop: passing an empty entity slice must not
-// touch a single row (documented as a fast-return in RedactEntities).
-func TestRedactEntitiesEmptyInputIsNoop(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	f := newSender(t, d, "red_empty")
-	sender := f.Sender()
-	ctx := f.Ctx()
-	f.Projects("P")
+	ginkgo.It("empty entity slice is a no-op", func() {
+		d := openTestDBG()
+		f := newSenderG(d, "red_empty")
+		sender := f.Sender()
+		ctx := f.Ctx()
+		f.Projects("P")
 
-	insertSeed(t, d, ctx, sender, hbSeed{project: "P", entity: "x.go",
-		ts: time.Date(2025, 6, 5, 10, 0, 0, 0, time.UTC), gap: 60})
+		insertSeedG(d, ctx, sender, hbSeed{project: "P", entity: "x.go",
+			ts: time.Date(2025, 6, 5, 10, 0, 0, 0, time.UTC), gap: 60})
 
-	n, err := d.RedactEntities(ctx, sender, "file", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n != 0 {
-		t.Fatalf("RedactEntities([]) = %d, want 0 (must be a no-op)", n)
-	}
+		n, err := d.RedactEntities(ctx, sender, "file", nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(n).To(BeEquivalentTo(0))
 
-	var blanks int
-	if err := d.Pool.QueryRow(ctx,
-		`SELECT count(*) FROM heartbeats WHERE sender=$1 AND entity=''`,
-		sender).Scan(&blanks); err != nil {
-		t.Fatal(err)
-	}
-	if blanks != 0 {
-		t.Fatalf("blanked entities = %d, want 0", blanks)
-	}
-}
+		var blanks int
+		err = d.Pool.QueryRow(ctx, `SELECT count(*) FROM heartbeats WHERE sender=$1 AND entity=''`, sender).Scan(&blanks)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(blanks).To(Equal(0))
+	})
 
-// TestListEntitiesByTypeExcludesRedacted: after a redact, the same entity must
-// NOT re-appear as a phantom bucket (the WHERE `entity <> ''` filter in
-// ListEntitiesByType pins this). Verifies redact + list stay in sync.
-func TestListEntitiesByTypeExcludesRedacted(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	f := newSender(t, d, "red_list")
-	sender := f.Sender()
-	ctx := f.Ctx()
-	f.Projects("P")
+	ginkgo.It("ListEntitiesByType excludes redacted rows and does not surface a blank-entity bucket", func() {
+		d := openTestDBG()
+		f := newSenderG(d, "red_list")
+		sender := f.Sender()
+		ctx := f.Ctx()
+		f.Projects("P")
 
-	day := time.Date(2025, 6, 6, 10, 0, 0, 0, time.UTC)
-	insertSeed(t, d, ctx, sender, hbSeed{project: "P", entity: "purgeme.go", ts: day, gap: 60})
-	insertSeed(t, d, ctx, sender, hbSeed{project: "P", entity: "keep.go", ts: day.Add(time.Minute), gap: 60})
+		day := time.Date(2025, 6, 6, 10, 0, 0, 0, time.UTC)
+		insertSeedG(d, ctx, sender, hbSeed{project: "P", entity: "purgeme.go", ts: day, gap: 60})
+		insertSeedG(d, ctx, sender, hbSeed{project: "P", entity: "keep.go", ts: day.Add(time.Minute), gap: 60})
 
-	if _, err := d.RedactEntities(ctx, sender, "file", []string{"purgeme.go"}); err != nil {
-		t.Fatal(err)
-	}
-	list, _, err := d.ListEntitiesByType(ctx, sender, "file", 100)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, e := range list {
-		if strings.EqualFold(e.Entity, "purgeme.go") {
-			t.Fatalf("redacted entity %q still listed", e.Entity)
+		_, err := d.RedactEntities(ctx, sender, "file", []string{"purgeme.go"})
+		Expect(err).NotTo(HaveOccurred())
+		list, _, err := d.ListEntitiesByType(ctx, sender, "file", 100)
+		Expect(err).NotTo(HaveOccurred())
+		for _, e := range list {
+			Expect(strings.EqualFold(e.Entity, "purgeme.go")).To(BeFalse(), "redacted entity %q still listed", e.Entity)
+			Expect(e.Entity).NotTo(BeEmpty(), "blank-entity bucket surfaced — the entity<>'' filter is broken")
 		}
-		if e.Entity == "" {
-			t.Fatalf("blank-entity bucket surfaced — the entity<>'' filter is broken")
+		seen := false
+		for _, e := range list {
+			if e.Entity == "keep.go" {
+				seen = true
+			}
 		}
-	}
-	// keep.go still visible.
-	seen := false
-	for _, e := range list {
-		if e.Entity == "keep.go" {
-			seen = true
-		}
-	}
-	if !seen {
-		t.Fatal("keep.go missing from list after redact")
-	}
-}
+		Expect(seen).To(BeTrue(), "keep.go missing from list after redact")
+	})
+})

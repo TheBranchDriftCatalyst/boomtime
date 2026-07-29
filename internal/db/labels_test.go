@@ -1,264 +1,167 @@
+// labels_ginkgo_test.go — ginkgo mirror of labels_test.go (gaka-0vp.13).
+// 1:1 case map (6 stdlib TestXxx + 4 subtests → 6 Its + 1 DescribeTable(4)):
+//   TestLabels_ListSeeded                    → It "ListLabels: seeded ids + condition JSONB integrity"
+//   TestLabels_UpsertRoundtrip               → It "Upsert + Get roundtrips all editable fields"
+//   TestLabels_UpsertRejectsBadInput         → DescribeTable "Upsert rejects bad input" (4 entries)
+//   TestLabels_CheckConstraintRejectsBadKind → It "CHECK constraint rejects unknown kind"
+//   TestLabels_DeleteIdempotent              → It "DeleteLabel is idempotent"
+//   TestLabelGenConfig_Roundtrip             → It "GenConfig get/set roundtrip"
 package db
 
 import (
 	"context"
 	"encoding/json"
 	"strings"
-	"testing"
+
+	"github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-// TestLabels_ListSeeded exercises the initial migration seed: ListLabels
-// returns the 114 rows the migration inserted, and the row shape decodes
-// cleanly (condition JSONB round-trips, kind is one of the four expected
-// values, etc.). Non-tautological: the seed count + kind distribution is
-// baked into the migration and would flag any drop-or-drift.
-func TestLabels_ListSeeded(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	ctx := context.Background()
+var _ = ginkgo.Describe("labels", func() {
+	ginkgo.It("ListLabels returns the seeded ids with valid condition JSONB", func() {
+		d := openTestDBG()
+		ctx := context.Background()
 
-	labels, err := d.ListLabels(ctx)
-	if err != nil {
-		t.Fatalf("ListLabels: %v", err)
-	}
-	// Sample a set of load-bearing seeded ids that MUST exist post-
-	// migration. Full-count / per-kind assertions race against parallel
-	// tests (TestLabels_UpsertRoundtrip and testutil binaries can
-	// briefly add/delete rows during their own runs). Existence of
-	// specific seeded ids is race-free — a sibling test can create
-	// arbitrary junk but cannot delete rows it didn't create.
-	byID := map[string]Label{}
-	for _, l := range labels {
-		byID[l.ID] = l
-	}
-	// One id per kind, spanning the full rank range, so drift in any
-	// class of the seed is caught.
-	wantIDs := []struct {
-		id   string
-		kind string
-	}{
-		{"languages-python-legend", "tier"},
-		{"editors-vim-master", "tier"},
-		{"late-night-coder", "archetype"},
-		{"machine", "archetype"},
-		{"vim-enjoyer", "tribe"},
-		{"cross-platform", "tribe"},
-		{"commander-neko-paws", "meme"},
-		{"sigma-grindset", "meme"},
-		{"based-chad-ultimate", "meme"},
-	}
-	for _, w := range wantIDs {
-		l, ok := byID[w.id]
-		if !ok {
-			t.Errorf("seed missing id=%s", w.id)
-			continue
+		labels, err := d.ListLabels(ctx)
+		Expect(err).NotTo(HaveOccurred())
+
+		byID := map[string]Label{}
+		for _, l := range labels {
+			byID[l.ID] = l
 		}
-		if l.Kind != w.kind {
-			t.Errorf("%s kind=%q want %q", w.id, l.Kind, w.kind)
+		wantIDs := []struct {
+			id   string
+			kind string
+		}{
+			{"languages-python-legend", "tier"},
+			{"editors-vim-master", "tier"},
+			{"late-night-coder", "archetype"},
+			{"machine", "archetype"},
+			{"vim-enjoyer", "tribe"},
+			{"cross-platform", "tribe"},
+			{"commander-neko-paws", "meme"},
+			{"sigma-grindset", "meme"},
+			{"based-chad-ultimate", "meme"},
 		}
-	}
-
-	// Every row must have a non-empty condition JSONB that decodes to an
-	// object with a "kind" discriminant — otherwise the FE evaluator would
-	// silently no-match at award time.
-	for _, l := range labels {
-		var probe map[string]any
-		if err := json.Unmarshal(l.Condition, &probe); err != nil {
-			t.Errorf("%s: condition unmarshal: %v", l.ID, err)
-			continue
+		for _, w := range wantIDs {
+			l, ok := byID[w.id]
+			Expect(ok).To(BeTrue(), "seed missing id=%s", w.id)
+			Expect(l.Kind).To(Equal(w.kind), "%s kind", w.id)
 		}
-		if _, ok := probe["kind"]; !ok {
-			t.Errorf("%s: condition has no `kind` discriminant: %s", l.ID, string(l.Condition))
+
+		for _, l := range labels {
+			var probe map[string]any
+			err := json.Unmarshal(l.Condition, &probe)
+			Expect(err).NotTo(HaveOccurred(), "%s: condition unmarshal", l.ID)
+			_, ok := probe["kind"]
+			Expect(ok).To(BeTrue(), "%s: condition has no `kind` discriminant: %s", l.ID, string(l.Condition))
 		}
-	}
-}
+	})
 
-// TestLabels_UpsertRoundtrip: insert a new label, read it back, then update
-// it, read again. Every editable field survives the round trip. Non-
-// tautological: JSONB round-trip is the load-bearing property here — the
-// evaluator relies on the exact tree shape, and a naive json.Marshal
-// re-order in pgx would silently break composed predicates.
-func TestLabels_UpsertRoundtrip(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	ctx := context.Background()
+	ginkgo.It("Upsert + Get roundtrips every editable field and preserves created_at across updates", func() {
+		d := openTestDBG()
+		ctx := context.Background()
 
-	id := "test-upsert-label"
-	t.Cleanup(func() { _ = d.DeleteLabel(ctx, id) })
+		id := "test-upsert-label"
+		ginkgo.DeferCleanup(func() { _ = d.DeleteLabel(ctx, id) })
 
-	cond := json.RawMessage(`{"kind":"all","of":[{"kind":"axis-time","axis":"languages","value":"python","op":">=","hours":5},{"kind":"streak","which":"current","op":">=","days":10}]}`)
-	orig := Label{
-		ID:              id,
-		Kind:            "archetype",
-		Label:           "TEST ROUNDTRIP",
-		Glyph:           "★",
-		Description:     "roundtrip fixture",
-		OptimizedPrompt: "cyberpunk emblem",
-		Rank:            77,
-		Tier:            "",
-		Condition:       cond,
-	}
-	if err := d.UpsertLabel(ctx, orig); err != nil {
-		t.Fatalf("first UpsertLabel: %v", err)
-	}
+		cond := json.RawMessage(`{"kind":"all","of":[{"kind":"axis-time","axis":"languages","value":"python","op":">=","hours":5},{"kind":"streak","which":"current","op":">=","days":10}]}`)
+		orig := Label{
+			ID:              id,
+			Kind:            "archetype",
+			Label:           "TEST ROUNDTRIP",
+			Glyph:           "★",
+			Description:     "roundtrip fixture",
+			OptimizedPrompt: "cyberpunk emblem",
+			Rank:            77,
+			Tier:            "",
+			Condition:       cond,
+		}
+		Expect(d.UpsertLabel(ctx, orig)).To(Succeed())
 
-	first, err := d.GetLabel(ctx, id)
-	if err != nil {
-		t.Fatalf("GetLabel: %v", err)
-	}
-	if first == nil {
-		t.Fatal("GetLabel: expected row, got nil")
-	}
-	// Assert every editable field round-tripped.
-	if first.Kind != "archetype" {
-		t.Errorf("kind=%q", first.Kind)
-	}
-	if first.Label != "TEST ROUNDTRIP" {
-		t.Errorf("label=%q", first.Label)
-	}
-	if first.Glyph != "★" {
-		t.Errorf("glyph=%q", first.Glyph)
-	}
-	if first.Description != "roundtrip fixture" {
-		t.Errorf("description=%q", first.Description)
-	}
-	if first.OptimizedPrompt != "cyberpunk emblem" {
-		t.Errorf("optimizedPrompt=%q", first.OptimizedPrompt)
-	}
-	if first.Rank != 77 {
-		t.Errorf("rank=%d", first.Rank)
-	}
-	// Condition JSONB round-trip: the shape MUST still parse into the
-	// same nested structure (order of keys in Postgres JSONB is not
-	// preserved but structure is). We reparse both sides and deep-compare
-	// after re-serialization.
-	var got, want any
-	if err := json.Unmarshal(first.Condition, &got); err != nil {
-		t.Fatalf("re-parse condition: %v", err)
-	}
-	if err := json.Unmarshal(cond, &want); err != nil {
-		t.Fatalf("re-parse want: %v", err)
-	}
-	gotJSON, _ := json.Marshal(got)
-	wantJSON, _ := json.Marshal(want)
-	if string(gotJSON) != string(wantJSON) {
-		t.Errorf("condition drift: got=%s want=%s", gotJSON, wantJSON)
-	}
+		first, err := d.GetLabel(ctx, id)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(first).NotTo(BeNil())
 
-	// Update: change rank + prompt + condition, upsert, read back.
-	newCond := json.RawMessage(`{"kind":"daily-avg","op":">=","hours":8}`)
-	updated := orig
-	updated.Rank = 999
-	updated.OptimizedPrompt = "updated cyberpunk emblem"
-	updated.Condition = newCond
-	if err := d.UpsertLabel(ctx, updated); err != nil {
-		t.Fatalf("second UpsertLabel: %v", err)
-	}
-	second, err := d.GetLabel(ctx, id)
-	if err != nil {
-		t.Fatalf("second GetLabel: %v", err)
-	}
-	if second.Rank != 999 {
-		t.Errorf("rank not updated: %d", second.Rank)
-	}
-	if second.OptimizedPrompt != "updated cyberpunk emblem" {
-		t.Errorf("optimizedPrompt not updated: %q", second.OptimizedPrompt)
-	}
-	if !second.UpdatedAt.After(first.UpdatedAt) && !second.UpdatedAt.Equal(first.UpdatedAt) {
-		t.Errorf("updated_at regressed: first=%v second=%v", first.UpdatedAt, second.UpdatedAt)
-	}
-	if !second.CreatedAt.Equal(first.CreatedAt) {
-		t.Errorf("created_at drifted on update: first=%v second=%v", first.CreatedAt, second.CreatedAt)
-	}
-}
+		Expect(first.Kind).To(Equal("archetype"))
+		Expect(first.Label).To(Equal("TEST ROUNDTRIP"))
+		Expect(first.Glyph).To(Equal("★"))
+		Expect(first.Description).To(Equal("roundtrip fixture"))
+		Expect(first.OptimizedPrompt).To(Equal("cyberpunk emblem"))
+		Expect(first.Rank).To(Equal(77))
 
-// TestLabels_UpsertRejectsBadInput: empty id / empty kind / empty label /
-// empty condition all fail — they're structural invariants the FE evaluator
-// depends on.
-func TestLabels_UpsertRejectsBadInput(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	ctx := context.Background()
+		var got, want any
+		Expect(json.Unmarshal(first.Condition, &got)).To(Succeed())
+		Expect(json.Unmarshal(cond, &want)).To(Succeed())
+		gotJSON, _ := json.Marshal(got)
+		wantJSON, _ := json.Marshal(want)
+		Expect(string(gotJSON)).To(Equal(string(wantJSON)), "condition drift")
 
-	good := Label{ID: "x", Kind: "archetype", Label: "X", Condition: json.RawMessage(`{"kind":"daily-avg","op":">=","hours":1}`)}
-	cases := []struct {
-		name string
-		mut  func(l *Label)
-	}{
-		{"empty id", func(l *Label) { l.ID = "" }},
-		{"empty kind", func(l *Label) { l.Kind = "" }},
-		{"empty label", func(l *Label) { l.Label = "" }},
-		{"empty condition", func(l *Label) { l.Condition = nil }},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+		newCond := json.RawMessage(`{"kind":"daily-avg","op":">=","hours":8}`)
+		updated := orig
+		updated.Rank = 999
+		updated.OptimizedPrompt = "updated cyberpunk emblem"
+		updated.Condition = newCond
+		Expect(d.UpsertLabel(ctx, updated)).To(Succeed())
+		second, err := d.GetLabel(ctx, id)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(second.Rank).To(Equal(999))
+		Expect(second.OptimizedPrompt).To(Equal("updated cyberpunk emblem"))
+		Expect(second.UpdatedAt.Before(first.UpdatedAt)).To(BeFalse(), "updated_at regressed")
+		Expect(second.CreatedAt.Equal(first.CreatedAt)).To(BeTrue(), "created_at drifted on update")
+	})
+
+	ginkgo.DescribeTable("Upsert rejects structurally-invalid input",
+		func(mut func(l *Label)) {
+			d := openTestDBG()
+			ctx := context.Background()
+			good := Label{ID: "x", Kind: "archetype", Label: "X",
+				Condition: json.RawMessage(`{"kind":"daily-avg","op":">=","hours":1}`)}
 			bad := good
-			tc.mut(&bad)
-			if err := d.UpsertLabel(ctx, bad); err == nil {
-				t.Errorf("expected error for %s, got nil", tc.name)
-			}
-		})
-	}
-}
+			mut(&bad)
+			Expect(d.UpsertLabel(ctx, bad)).To(HaveOccurred())
+		},
+		ginkgo.Entry("empty id", func(l *Label) { l.ID = "" }),
+		ginkgo.Entry("empty kind", func(l *Label) { l.Kind = "" }),
+		ginkgo.Entry("empty label", func(l *Label) { l.Label = "" }),
+		ginkgo.Entry("empty condition", func(l *Label) { l.Condition = nil }),
+	)
 
-// TestLabels_CheckConstraintRejectsBadKind: the CHECK constraint on `kind`
-// only permits tier/archetype/tribe/meme. Attempting to insert 'bogus'
-// must fail at the DB layer even if the Go validation would let it
-// through (belt-and-braces).
-func TestLabels_CheckConstraintRejectsBadKind(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	ctx := context.Background()
+	ginkgo.It("CHECK constraint on `kind` rejects unknown values at the DB layer", func() {
+		d := openTestDBG()
+		ctx := context.Background()
 
-	bad := Label{ID: "test-bad-kind", Kind: "bogus", Label: "X",
-		Condition: json.RawMessage(`{"kind":"daily-avg","op":">=","hours":1}`)}
-	err := d.UpsertLabel(ctx, bad)
-	if err == nil {
-		_ = d.DeleteLabel(ctx, "test-bad-kind")
-		t.Fatal("expected CHECK constraint violation on kind='bogus'")
-	}
-	if !strings.Contains(err.Error(), "labels_kind_check") && !strings.Contains(err.Error(), "check") {
-		t.Errorf("expected check constraint error; got %v", err)
-	}
-}
+		bad := Label{ID: "test-bad-kind", Kind: "bogus", Label: "X",
+			Condition: json.RawMessage(`{"kind":"daily-avg","op":">=","hours":1}`)}
+		err := d.UpsertLabel(ctx, bad)
+		if err == nil {
+			_ = d.DeleteLabel(ctx, "test-bad-kind")
+			ginkgo.Fail("expected CHECK constraint violation on kind='bogus'")
+		}
+		if !strings.Contains(err.Error(), "labels_kind_check") && !strings.Contains(err.Error(), "check") {
+			ginkgo.Fail("expected check constraint error; got " + err.Error())
+		}
+	})
 
-// TestLabels_DeleteIdempotent: DELETE on a missing id returns nil. Callers
-// use this to blindly clean up during regen without an existence check.
-func TestLabels_DeleteIdempotent(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	ctx := context.Background()
+	ginkgo.It("DeleteLabel on a missing id is idempotent (returns nil)", func() {
+		d := openTestDBG()
+		ctx := context.Background()
 
-	if err := d.DeleteLabel(ctx, "definitely-does-not-exist-xyz"); err != nil {
-		t.Errorf("DeleteLabel on missing id: %v", err)
-	}
-}
+		Expect(d.DeleteLabel(ctx, "definitely-does-not-exist-xyz")).To(Succeed())
+	})
 
-// TestLabelGenConfig_Roundtrip: get returns the seeded value (post-manifest
-// UPDATE runs the systemPrompt into the singleton row); set updates it,
-// re-get returns the new value.
-func TestLabelGenConfig_Roundtrip(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	ctx := context.Background()
+	ginkgo.It("GenConfig get/set roundtrips the systemPrompt string", func() {
+		d := openTestDBG()
+		ctx := context.Background()
 
-	seeded, err := d.GetGenConfig(ctx)
-	if err != nil {
-		t.Fatalf("GetGenConfig seeded: %v", err)
-	}
-	// Restore whatever was there originally so we don't strand the test DB
-	// in a modified state between suite runs.
-	t.Cleanup(func() { _ = d.SetGenConfig(ctx, seeded) })
+		seeded, err := d.GetGenConfig(ctx)
+		Expect(err).NotTo(HaveOccurred())
+		ginkgo.DeferCleanup(func() { _ = d.SetGenConfig(ctx, seeded) })
 
-	newPrompt := "test system prompt from unit test — do not ship"
-	if err := d.SetGenConfig(ctx, newPrompt); err != nil {
-		t.Fatalf("SetGenConfig: %v", err)
-	}
-	got, err := d.GetGenConfig(ctx)
-	if err != nil {
-		t.Fatalf("GetGenConfig post-set: %v", err)
-	}
-	if got != newPrompt {
-		t.Errorf("systemPrompt=%q want %q", got, newPrompt)
-	}
-}
+		newPrompt := "test system prompt from unit test — do not ship"
+		Expect(d.SetGenConfig(ctx, newPrompt)).To(Succeed())
+		got, err := d.GetGenConfig(ctx)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(got).To(Equal(newPrompt))
+	})
+})

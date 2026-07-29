@@ -1,7 +1,12 @@
-// worker_test.go — end-to-end coverage of the labelimages worker against an
-// httptest shim + a live isolated Postgres. Non-tautological: verifies that
-// a Run cycle actually inserts rows AND that a second Run skips the same
-// ids (using a call counter on the httptest server).
+// worker_ginkgo_test.go — ginkgo mirror of worker_test.go.
+// 1:1 case map (6 stdlib TestXxx):
+//
+//	TestWorker_Run_GeneratesMissing              → Worker.Run > "generates missing rows and records provenance"
+//	TestWorker_Run_SkipsExisting                 → Worker.Run > "skips labels that already have a row on a second Run"
+//	TestWorker_RegenerateAll_TruncatesAndReplaces → Worker.RegenerateAll > "truncates existing rows and re-generates every label"
+//	TestWorker_RegenerateOne_UnknownID           → Worker.RegenerateOne > "returns error for unknown id"
+//	TestBuildFinalPrompt_JoinsThreeSegments (6 subtests) → DescribeTable("buildFinalPrompt joins three segments") with 6 Entries
+//	TestWorker_NilReceiver_NoOp                  → Worker (nil receiver) > 3 Its (Run no-op, RegenerateOne err, RegenerateAll err)
 package labelimages
 
 import (
@@ -19,12 +24,240 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/comfyui"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/labelcatalog"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
+// openTestDBGinkgo mirrors openTestDB but Skips inside a ginkgo spec when
+// Postgres is unreachable — uses the same URL-resolution rules.
+func openTestDBGinkgo() *db.DB {
+	url := testDatabaseURL
+	if v := os.Getenv("BOOM_TEST_DATABASE_URL"); v != "" {
+		url = v
+	}
+	ctx := context.Background()
+	d, err := db.New(ctx, url)
+	if err != nil {
+		Skip("labelimages worker test: no test DB (" + url + "): " + err.Error())
+	}
+	return d
+}
+
+// pngBytesGinkgo mirrors pngBytes from the stdlib file.
+func pngBytesGinkgo(tag string) []byte {
+	return append([]byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}, []byte(tag)...)
+}
+
+// shimServerGinkgo mirrors shimServer — uses GinkgoRecover so Expect panics
+// inside the handler goroutine bubble as spec failures.
+func shimServerGinkgo(hits *atomic.Int32) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer GinkgoRecover()
+		if hits != nil {
+			hits.Add(1)
+		}
+		if r.URL.Path != "/v1/images/generations" {
+			http.Error(w, "unexpected path", 404)
+			return
+		}
+		defer r.Body.Close()
+		body, _ := io.ReadAll(r.Body)
+		var req map[string]any
+		_ = json.Unmarshal(body, &req)
+		prompt, _ := req["prompt"].(string)
+		bytes := pngBytesGinkgo(prompt)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]string{{"b64_json": base64.StdEncoding.EncodeToString(bytes)}},
+		})
+	}))
+}
+
+func fixtureEntriesGinkgo() []labelcatalog.Entry {
+	return []labelcatalog.Entry{
+		{ID: "test-w-a", Prompt: "prompt A"},
+		{ID: "test-w-b", Prompt: "prompt B"},
+	}
+}
+
+func cleanupTestRowsGinkgo(d *db.DB, ids ...string) {
+	for _, id := range ids {
+		_ = d.DeleteLabelImage(context.Background(), id)
+	}
+}
+
+var _ = Describe("Worker.Run", func() {
+	It("generates missing rows and records provenance", func() {
+		d := openTestDBGinkgo()
+		DeferCleanup(func() { d.Close() })
+		cleanupTestRowsGinkgo(d, "test-w-a", "test-w-b")
+		DeferCleanup(func() { cleanupTestRowsGinkgo(d, "test-w-a", "test-w-b") })
+
+		var hits atomic.Int32
+		srv := shimServerGinkgo(&hits)
+		DeferCleanup(func() { srv.Close() })
+
+		client, err := comfyui.NewClient(srv.URL)
+		Expect(err).NotTo(HaveOccurred())
+		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+		w := newWorkerForTest(d, client, "test-model", logger, fixtureEntriesGinkgo())
+
+		w.Run(context.Background())
+
+		Expect(hits.Load()).To(BeEquivalentTo(2), "one hit per label")
+
+		got, ok, err := d.GetLabelImage(context.Background(), "test-w-a")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(ok).To(BeTrue())
+
+		// Match the worker's final-prompt construction: systemPrompt from DB
+		// prefixed to the per-label prompt. Description is empty in the
+		// fixture, so buildFinalPrompt drops it.
+		sysPrompt, _ := d.GetGenConfig(context.Background())
+		expected := buildFinalPrompt(sysPrompt, "", "prompt A")
+
+		Expect(string(got.ImageBytes)).To(Equal(string(pngBytesGinkgo(expected))))
+		Expect(got.Model).To(Equal("test-model"))
+		Expect(got.Prompt).To(Equal(expected))
+	})
+
+	It("skips labels that already have a row on a second Run", func() {
+		d := openTestDBGinkgo()
+		DeferCleanup(func() { d.Close() })
+		cleanupTestRowsGinkgo(d, "test-w-a", "test-w-b")
+		DeferCleanup(func() { cleanupTestRowsGinkgo(d, "test-w-a", "test-w-b") })
+
+		var hits atomic.Int32
+		srv := shimServerGinkgo(&hits)
+		DeferCleanup(func() { srv.Close() })
+
+		client, _ := comfyui.NewClient(srv.URL)
+		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+		w := newWorkerForTest(d, client, "test-model", logger, fixtureEntriesGinkgo())
+
+		w.Run(context.Background())
+		first := hits.Load()
+		w.Run(context.Background()) // second run — should be a no-op
+		second := hits.Load()
+
+		Expect(second).To(Equal(first), "shim must not be called on second run")
+	})
+})
+
+var _ = Describe("Worker.RegenerateAll", func() {
+	It("truncates existing rows and re-generates every label", func() {
+		d := openTestDBGinkgo()
+		DeferCleanup(func() { d.Close() })
+		cleanupTestRowsGinkgo(d, "test-w-a", "test-w-b")
+		DeferCleanup(func() { cleanupTestRowsGinkgo(d, "test-w-a", "test-w-b") })
+
+		var hits atomic.Int32
+		srv := shimServerGinkgo(&hits)
+		DeferCleanup(func() { srv.Close() })
+
+		client, _ := comfyui.NewClient(srv.URL)
+		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+		w := newWorkerForTest(d, client, "model-v1", logger, fixtureEntriesGinkgo())
+
+		// Seed both labels with a stub row so we can prove Truncate wiped them.
+		Expect(d.SaveLabelImage(context.Background(), "test-w-a", pngBytesGinkgo("OLD-A"), "image/png", "old-model", "old prompt", nil)).To(Succeed())
+		Expect(d.SaveLabelImage(context.Background(), "test-w-b", pngBytesGinkgo("OLD-B"), "image/png", "old-model", "old prompt", nil)).To(Succeed())
+
+		gen, failed, err := w.RegenerateAll(context.Background())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(failed).To(Equal(0))
+		Expect(gen).To(Equal(2))
+
+		// Row must now carry the NEW model + NEW bytes.
+		got, _, _ := d.GetLabelImage(context.Background(), "test-w-a")
+		Expect(got).NotTo(BeNil())
+		Expect(got.Model).To(Equal("model-v1"))
+		Expect(string(got.ImageBytes)).NotTo(Equal(string(pngBytesGinkgo("OLD-A"))),
+			"Truncate should have wiped old seed and worker should have re-generated")
+	})
+})
+
+var _ = Describe("Worker.RegenerateOne", func() {
+	It("returns error for unknown id", func() {
+		d := openTestDBGinkgo()
+		DeferCleanup(func() { d.Close() })
+
+		srv := shimServerGinkgo(nil)
+		DeferCleanup(func() { srv.Close() })
+
+		client, _ := comfyui.NewClient(srv.URL)
+		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+		w := newWorkerForTest(d, client, "test-model", logger, fixtureEntriesGinkgo())
+
+		err := w.RegenerateOne(context.Background(), "does-not-exist-in-catalog")
+		Expect(err).To(HaveOccurred())
+	})
+})
+
+var _ = DescribeTable("buildFinalPrompt joins three segments (systemPrompt, description, entryPrompt)",
+	func(sys, desc, prompt, want string) {
+		Expect(buildFinalPrompt(sys, desc, prompt)).To(Equal(want))
+	},
+	Entry("all three populated",
+		"cyberpunk emblem",
+		"a machine-like coder who never sleeps",
+		"half-android at terminal",
+		"cyberpunk emblem, a machine-like coder who never sleeps, half-android at terminal",
+	),
+	Entry("empty description falls back to old {sys, prompt}",
+		"cyberpunk emblem",
+		"",
+		"half-android at terminal",
+		"cyberpunk emblem, half-android at terminal",
+	),
+	Entry("empty systemPrompt keeps {desc, prompt}",
+		"",
+		"a machine-like coder",
+		"half-android",
+		"a machine-like coder, half-android",
+	),
+	Entry("only prompt populated returns just the prompt",
+		"",
+		"",
+		"half-android",
+		"half-android",
+	),
+	Entry("whitespace-only counts as empty",
+		"   \n  \t",
+		"narrative",
+		"scene",
+		"narrative, scene",
+	),
+	Entry("all empty returns empty string",
+		"",
+		"",
+		"",
+		"",
+	),
+)
+
+var _ = Describe("Worker (nil receiver) — feature-disabled gate", func() {
+	It("Run is a graceful no-op (does not panic)", func() {
+		var w *Worker
+		Expect(func() { w.Run(context.Background()) }).NotTo(Panic())
+	})
+
+	It("RegenerateOne returns an error (not silent success)", func() {
+		var w *Worker
+		err := w.RegenerateOne(context.Background(), "late-night-coder")
+		Expect(err).To(HaveOccurred())
+	})
+
+	It("RegenerateAll returns an error (not silent success)", func() {
+		var w *Worker
+		_, _, err := w.RegenerateAll(context.Background())
+		Expect(err).To(HaveOccurred())
+	})
+})
+
+// -- helpers restored from stdlib partner (gaka-0vp.17) --
 const testDatabaseURL = "postgres://test:test@localhost:5432/boomtime_test?sslmode=disable"
 
-// openTestDB gives us a live DB or Skips when Postgres is unreachable — same
-// convention as internal/db test helpers.
 func openTestDB(t *testing.T) *db.DB {
 	t.Helper()
 	if v := os.Getenv("BOOM_TEST_DATABASE_URL"); v != "" {
@@ -42,13 +275,10 @@ func openTestDB(t *testing.T) *db.DB {
 	return d
 }
 
-// pngBytes: PNG magic + payload so the DB save + mime sniff works.
 func pngBytes(tag string) []byte {
 	return append([]byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}, []byte(tag)...)
 }
 
-// shimServer starts a fake shim that returns unique bytes per prompt so
-// tests can distinguish saved-rows-per-label.
 func shimServer(t *testing.T, hits *atomic.Int32) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -72,7 +302,6 @@ func shimServer(t *testing.T, hits *atomic.Int32) *httptest.Server {
 	}))
 }
 
-// fixtureEntries: 2 labels for the worker to iterate.
 func fixtureEntries() []labelcatalog.Entry {
 	return []labelcatalog.Entry{
 		{ID: "test-w-a", Prompt: "prompt A"},
@@ -84,230 +313,5 @@ func cleanupTestRows(t *testing.T, d *db.DB, ids ...string) {
 	t.Helper()
 	for _, id := range ids {
 		_ = d.DeleteLabelImage(context.Background(), id)
-	}
-}
-
-// TestWorker_Run_GeneratesMissing: first Run of a clean slate hits the shim
-// once per label; every label ends up with a row whose bytes match the
-// prompt-derived shim response.
-func TestWorker_Run_GeneratesMissing(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	cleanupTestRows(t, d, "test-w-a", "test-w-b")
-	defer cleanupTestRows(t, d, "test-w-a", "test-w-b")
-
-	var hits atomic.Int32
-	srv := shimServer(t, &hits)
-	defer srv.Close()
-
-	client, err := comfyui.NewClient(srv.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	w := newWorkerForTest(d, client, "test-model", logger, fixtureEntries())
-
-	w.Run(context.Background())
-
-	if got := hits.Load(); got != 2 {
-		t.Errorf("shim hits=%d want 2 (one per label)", got)
-	}
-
-	got, ok, err := d.GetLabelImage(context.Background(), "test-w-a")
-	if err != nil || !ok {
-		t.Fatalf("row for test-w-a: ok=%v err=%v", ok, err)
-	}
-	// Post gaka-364.3 the worker prepends the DB's systemPrompt to the
-	// per-label prompt. Compute the expected final string the same way
-	// the worker did so the assertion tolerates a non-empty seeded
-	// systemPrompt without hard-coding one.
-	sysPrompt, _ := d.GetGenConfig(context.Background())
-	// Description is empty in the test fixture entries — buildFinalPrompt
-	// drops empty parts, so the concatenation reduces to the pre-gaka-8bz
-	// {system, prompt} shape for this specific test.
-	expected := buildFinalPrompt(sysPrompt, "", "prompt A")
-	if string(got.ImageBytes) != string(pngBytes(expected)) {
-		t.Errorf("test-w-a bytes wrong: got %q", string(got.ImageBytes))
-	}
-	if got.Model != "test-model" || got.Prompt != expected {
-		t.Errorf("provenance not saved: model=%q prompt=%q want prompt=%q", got.Model, got.Prompt, expected)
-	}
-}
-
-// TestWorker_Run_SkipsExisting: a second Run should NOT re-hit the shim for
-// labels that already have a row. Non-tautological: the shim call counter
-// stays at N after the second Run (where N is the count from the first).
-func TestWorker_Run_SkipsExisting(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	cleanupTestRows(t, d, "test-w-a", "test-w-b")
-	defer cleanupTestRows(t, d, "test-w-a", "test-w-b")
-
-	var hits atomic.Int32
-	srv := shimServer(t, &hits)
-	defer srv.Close()
-
-	client, _ := comfyui.NewClient(srv.URL)
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	w := newWorkerForTest(d, client, "test-model", logger, fixtureEntries())
-
-	w.Run(context.Background())
-	first := hits.Load()
-	w.Run(context.Background()) // second run — should be a no-op
-	second := hits.Load()
-
-	if second != first {
-		t.Errorf("shim was called on second run: first=%d second=%d (worker should skip existing rows)", first, second)
-	}
-}
-
-// TestWorker_RegenerateAll_TruncatesAndReplaces: a --all regeneration
-// deletes existing rows and re-hits the shim for every label.
-func TestWorker_RegenerateAll_TruncatesAndReplaces(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	cleanupTestRows(t, d, "test-w-a", "test-w-b")
-	defer cleanupTestRows(t, d, "test-w-a", "test-w-b")
-
-	var hits atomic.Int32
-	srv := shimServer(t, &hits)
-	defer srv.Close()
-
-	client, _ := comfyui.NewClient(srv.URL)
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	w := newWorkerForTest(d, client, "model-v1", logger, fixtureEntries())
-
-	// Seed both labels with a stub row so we can prove the Truncate wiped them.
-	if err := d.SaveLabelImage(context.Background(), "test-w-a", pngBytes("OLD-A"), "image/png", "old-model", "old prompt", nil); err != nil {
-		t.Fatal(err)
-	}
-	if err := d.SaveLabelImage(context.Background(), "test-w-b", pngBytes("OLD-B"), "image/png", "old-model", "old prompt", nil); err != nil {
-		t.Fatal(err)
-	}
-
-	// TruncateLabelImages inside RegenerateAll should delete these AND
-	// every other row currently in the table — but this test only cares
-	// about the two we seeded. Note: this test shares the DB with the
-	// startup worker (if a real one runs elsewhere). Guard with an
-	// explicit assertion on OUR rows only.
-	gen, failed, err := w.RegenerateAll(context.Background())
-	if err != nil {
-		t.Fatalf("RegenerateAll: %v", err)
-	}
-	if failed != 0 {
-		t.Errorf("failed=%d want 0", failed)
-	}
-	if gen != 2 {
-		t.Errorf("generated=%d want 2", gen)
-	}
-
-	// The row must now carry the NEW model + NEW bytes.
-	got, _, _ := d.GetLabelImage(context.Background(), "test-w-a")
-	if got == nil || got.Model != "model-v1" {
-		t.Errorf("row after regenerate-all didn't carry new model: %+v", got)
-	}
-	if string(got.ImageBytes) == string(pngBytes("OLD-A")) {
-		t.Errorf("row bytes still the OLD seed — Truncate didn't wipe or worker didn't re-generate")
-	}
-}
-
-// TestWorker_RegenerateOne_UnknownID: an unknown id returns an error before
-// touching the DB.
-func TestWorker_RegenerateOne_UnknownID(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-
-	srv := shimServer(t, nil)
-	defer srv.Close()
-	client, _ := comfyui.NewClient(srv.URL)
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	w := newWorkerForTest(d, client, "test-model", logger, fixtureEntries())
-
-	err := w.RegenerateOne(context.Background(), "does-not-exist-in-catalog")
-	if err == nil {
-		t.Fatal("expected error for unknown id, got nil")
-	}
-}
-
-// TestBuildFinalPrompt_JoinsThreeSegments: gaka-8bz added a description
-// slot between the systemPrompt (style) and the entry prompt (scene).
-// Empty parts are dropped so the join stays clean. Order is deliberate:
-// diffusion weights left-to-right, so style-first sets the aesthetic.
-func TestBuildFinalPrompt_JoinsThreeSegments(t *testing.T) {
-	tests := []struct {
-		name   string
-		sys    string
-		desc   string
-		prompt string
-		want   string
-	}{
-		{
-			name:   "all three populated",
-			sys:    "cyberpunk emblem",
-			desc:   "a machine-like coder who never sleeps",
-			prompt: "half-android at terminal",
-			want:   "cyberpunk emblem, a machine-like coder who never sleeps, half-android at terminal",
-		},
-		{
-			name:   "empty description falls back to old {sys, prompt}",
-			sys:    "cyberpunk emblem",
-			desc:   "",
-			prompt: "half-android at terminal",
-			want:   "cyberpunk emblem, half-android at terminal",
-		},
-		{
-			name:   "empty systemPrompt keeps {desc, prompt}",
-			sys:    "",
-			desc:   "a machine-like coder",
-			prompt: "half-android",
-			want:   "a machine-like coder, half-android",
-		},
-		{
-			name:   "only prompt populated returns just the prompt",
-			sys:    "",
-			desc:   "",
-			prompt: "half-android",
-			want:   "half-android",
-		},
-		{
-			name:   "whitespace-only counts as empty",
-			sys:    "   \n  \t",
-			desc:   "narrative",
-			prompt: "scene",
-			want:   "narrative, scene",
-		},
-		{
-			name:   "all empty returns empty string",
-			sys:    "",
-			desc:   "",
-			prompt: "",
-			want:   "",
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := buildFinalPrompt(tc.sys, tc.desc, tc.prompt)
-			if got != tc.want {
-				t.Errorf("buildFinalPrompt(%q, %q, %q) = %q, want %q",
-					tc.sys, tc.desc, tc.prompt, got, tc.want)
-			}
-		})
-	}
-}
-
-// TestWorker_NilReceiver_NoOp: a nil worker (feature disabled) is a graceful
-// no-op for Run and returns errors for the CLI methods (so an operator
-// invoking `boomtime label-images regenerate` without the flag gets a clear
-// error, not a silent no-op).
-func TestWorker_NilReceiver_NoOp(t *testing.T) {
-	var w *Worker
-	// Run must not panic.
-	w.Run(context.Background())
-	// CLI methods must return an error, not silently succeed.
-	if err := w.RegenerateOne(context.Background(), "late-night-coder"); err == nil {
-		t.Error("nil-worker RegenerateOne: expected error, got nil")
-	}
-	if _, _, err := w.RegenerateAll(context.Background()); err == nil {
-		t.Error("nil-worker RegenerateAll: expected error, got nil")
 	}
 }

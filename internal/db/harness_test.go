@@ -1,30 +1,229 @@
+// harness_ginkgo_test.go — ginkgo-flavored wrappers around the harness_test.go
+// helpers (which take *testing.T and can therefore only be called from stdlib
+// tests). This file mirrors the shape of the stdlib helpers under names that
+// end in `G`, so a ginkgo It can call `openTestDBG()` / `newSenderG(d, "pfx")`
+// / `cleanupSenderG(d, ctx, sender)` and get the same behavior. All failures
+// route through gomega's `Fail`, and cleanup is registered with
+// `ginkgo.DeferCleanup` (so it runs at the enclosing It/Context boundary).
 package db
 
 import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-// harness_test.go is the SINGLE source of truth for the internal/db test seed
-// builders and assertion helpers ("AIO" harness). All package-db tests reuse
-// these instead of re-writing per-test insert/seed boilerplate. The isolated-DB
-// access (openTestDB / truncateAll / TestMain) lives in main_test.go and is used
-// as-is. External/handler tests use internal/dbtest (which imports db) — this
-// file cannot live outside package db without an import cycle.
+// openTestDBG mirrors openTestDB but for ginkgo Its. Skips the current spec
+// when the isolated test DB is unavailable, and registers a DeferCleanup to
+// close the pool at the end of the spec.
+func openTestDBG() *DB {
+	if !dbReady {
+		ginkgo.Skip("skipping: isolated test database unavailable: " + dbSkipMsg)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	database, err := New(ctx, testDatabaseURL())
+	if err != nil {
+		ginkgo.Skip("skipping: could not open " + testDBName + ": " + err.Error())
+	}
+	ginkgo.DeferCleanup(func() { database.Close() })
+	return database
+}
 
-// ---- identifiers & lifecycle ----
+// ensureUserG inserts the users row a heartbeat's sender FK requires.
+func ensureUserG(d *DB, ctx context.Context, sender string) {
+	_, err := d.Pool.Exec(ctx,
+		`INSERT INTO users (username, hashed_password, salt_used) VALUES ($1,'\x00','\x00') ON CONFLICT DO NOTHING`,
+		sender)
+	Expect(err).NotTo(HaveOccurred())
+}
 
-// mkSender returns a unique sender name so parallel tests never collide.
+// ensureProjectsG inserts the projects rows a heartbeat's (sender,project) FK needs.
+func ensureProjectsG(d *DB, ctx context.Context, sender string, names ...string) {
+	for _, n := range names {
+		_, err := d.Pool.Exec(ctx, `INSERT INTO projects (owner, name) VALUES ($1,$2) ON CONFLICT DO NOTHING`, sender, n)
+		Expect(err).NotTo(HaveOccurred())
+	}
+}
+
+// cleanupSenderG registers a DeferCleanup that deletes every row a sender owns.
+// Call this INSIDE an It / BeforeEach body — DeferCleanup outside a spec node panics.
+func cleanupSenderG(d *DB, ctx context.Context, sender string) {
+	ginkgo.DeferCleanup(func() { deleteSenderRows(d, ctx, sender) })
+}
+
+// SenderFixtureG wraps SenderFixture with ginkgo-safe error routing (Fail via
+// gomega Expect rather than t.Fatal). It reuses SenderFixture's insert/rollup
+// primitives by pointing back to a fresh fixture with a background Ctx.
+type SenderFixtureG struct {
+	db   *DB
+	ctx  context.Context
+	name string
+}
+
+func (f *SenderFixtureG) Sender() string       { return f.name }
+func (f *SenderFixtureG) DB() *DB              { return f.db }
+func (f *SenderFixtureG) Ctx() context.Context { return f.ctx }
+
+// Projects ensures project rows for this sender exist.
+func (f *SenderFixtureG) Projects(names ...string) *SenderFixtureG {
+	ensureProjectsG(f.db, f.ctx, f.name, names...)
+	return f
+}
+
+// Seed inserts one heartbeat, ensuring its project row is present.
+func (f *SenderFixtureG) Seed(h hbSeed) *SenderFixtureG {
+	if h.project != "" {
+		ensureProjectsG(f.db, f.ctx, f.name, h.project)
+	}
+	insertSeedG(f.db, f.ctx, f.name, h)
+	return f
+}
+
+// Block mirrors SenderFixture.Block but routes errors through gomega.
+func (f *SenderFixtureG) Block(tmpl hbSeed, startTS time.Time, n int, each int64) (attributed int64, rows int) {
+	if tmpl.project != "" {
+		ensureProjectsG(f.db, f.ctx, f.name, tmpl.project)
+	}
+	brk := tmpl
+	brk.ts = startTS
+	brk.gap = 999999
+	insertSeedG(f.db, f.ctx, f.name, brk)
+	for i := 0; i < n; i++ {
+		h := tmpl
+		h.ts = startTS.Add(time.Duration(i+1) * time.Minute)
+		h.gap = each
+		insertSeedG(f.db, f.ctx, f.name, h)
+	}
+	return int64(n) * each, n + 1
+}
+
+// RefreshRollup rebuilds the rollup for this sender from the given time.
+func (f *SenderFixtureG) RefreshRollup(since time.Time) *SenderFixtureG {
+	err := f.db.RefreshRollup(f.ctx, f.name, since)
+	Expect(err).NotTo(HaveOccurred())
+	return f
+}
+
+// RecomputeGaps recomputes gap_seconds for this sender from the given time.
+func (f *SenderFixtureG) RecomputeGaps(since time.Time) *SenderFixtureG {
+	err := f.db.RecomputeGaps(f.ctx, f.name, since)
+	Expect(err).NotTo(HaveOccurred())
+	return f
+}
+
+// newSenderG makes a unique sender, inserts its user row, registers cleanup,
+// and returns a fixture builder. Ginkgo analog of newSender().
+func newSenderG(d *DB, prefix string) *SenderFixtureG {
+	ctx := context.Background()
+	name := mkSender(prefix)
+	cleanupSenderG(d, ctx, name)
+	ensureUserG(d, ctx, name)
+	return &SenderFixtureG{db: d, ctx: ctx, name: name}
+}
+
+// insertSeedG inserts one heartbeat with gomega error routing.
+func insertSeedG(d *DB, ctx context.Context, sender string, h hbSeed) {
+	ty := h.ty
+	if ty == "" {
+		ty = "file"
+	}
+	entity := h.entity
+	if entity == "" {
+		entity = "a.go"
+	}
+	var isWrite any
+	if h.isWrite != nil {
+		isWrite = *h.isWrite
+	}
+	_, err := d.Pool.Exec(ctx, `
+		INSERT INTO heartbeats
+		  (sender, project, language, editor, plugin, machine, platform, branch, category,
+		   entity, ty, is_write, time_sent, user_agent, gap_seconds)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'ua',$14)`,
+		sender, nz(h.project), nz(h.language), nz(h.editor), nz(h.plugin), nz(h.machine),
+		nz(h.platform), nz(h.branch), nz(h.category), entity, ty, isWrite, h.ts, h.gap)
+	Expect(err).NotTo(HaveOccurred())
+}
+
+// seedAxisBlockG mirrors seedAxisBlock but routes errors through gomega.
+func seedAxisBlockG(d *DB, ctx context.Context, sender, axis, val string, startTS time.Time, n int, each int64) (attributed int64, rowCount int) {
+	tmpl := hbSeed{
+		project: "P", language: "Go", editor: "vim", plugin: "pl",
+		machine: "m", platform: "linux", branch: "main", category: "Coding",
+	}
+	switch axis {
+	case "project":
+		tmpl.project = val
+	case "language":
+		tmpl.language = val
+	case "editor":
+		tmpl.editor = val
+	}
+	ensureProjectsG(d, ctx, sender, tmpl.project)
+	f := &SenderFixtureG{db: d, ctx: ctx, name: sender}
+	return f.Block(tmpl, startTS, n, each)
+}
+
+// seedHBG mirrors seedHB (ginkgo variant).
+func seedHBG(d *DB, ctx context.Context, sender, project, lang string, ts time.Time) {
+	insertSeedG(d, ctx, sender, hbSeed{project: project, language: lang, entity: "a.go", ts: ts})
+}
+
+// createRenameG stores an EXACT rename rule and returns its id (ginkgo variant).
+func createRenameG(d *DB, ctx context.Context, sender, axis, match, newVal string) int {
+	rule, err := d.CreateCurationRule(ctx, sender, axis, "rename", "exact", match, &newVal)
+	Expect(err).NotTo(HaveOccurred())
+	return rule.ID
+}
+
+// createRegexRenameG stores a REGEX rename rule (ginkgo variant).
+func createRegexRenameG(d *DB, ctx context.Context, sender, axis, pattern, newVal string) int {
+	rule, err := d.CreateCurationRule(ctx, sender, axis, "rename", "regex", pattern, &newVal)
+	Expect(err).NotTo(HaveOccurred())
+	return rule.ID
+}
+
+// createTemplateRenameG stores a TEMPLATE rename rule (ginkgo variant).
+func createTemplateRenameG(d *DB, ctx context.Context, sender, axis, pattern, tmpl string) int {
+	norm := NormalizeTemplate(tmpl)
+	rule, err := d.CreateCurationRule(ctx, sender, axis, "rename", "template", pattern, &norm)
+	Expect(err).NotTo(HaveOccurred())
+	return rule.ID
+}
+
+// loadRenamesG loads rename sets (ginkgo variant).
+func loadRenamesG(d *DB, ctx context.Context, sender string) RenameSets {
+	rs, err := d.LoadRenameSets(ctx, sender)
+	Expect(err).NotTo(HaveOccurred())
+	return rs
+}
+
+// rawCountG returns the number of raw heartbeats for sender where col=val.
+func rawCountG(d *DB, ctx context.Context, sender, col, val string) int {
+	var n int
+	q := "SELECT count(*) FROM heartbeats WHERE sender=$1 AND " + col + "=$2"
+	err := d.Pool.QueryRow(ctx, q, sender, val).Scan(&n)
+	Expect(err).NotTo(HaveOccurred())
+	return n
+}
+
+// scalarCountG runs a `SELECT count(*) ... WHERE ...=$1` with sender bound.
+func scalarCountG(d *DB, ctx context.Context, q, sender string) int {
+	var n int
+	err := d.Pool.QueryRow(ctx, q, sender).Scan(&n)
+	Expect(err).NotTo(HaveOccurred())
+	return n
+}
+
+// -- helpers restored from stdlib partner (gaka-0vp.17) --
 func mkSender(prefix string) string {
 	return prefix + "_" + time.Now().Format("150405.000000000")
 }
 
-// deleteSenderRows deletes every row a sender owns across the mutable tables
-// (children before parents). Sender-scoped on purpose: internal/db and
-// internal/testutil are separate test binaries sharing boomtime_test in a
-// parallel `go test ./...` run, so a table-wide TRUNCATE here races the other
-// binary's in-flight tests (users CASCADE nukes their minted rows mid-test).
 func deleteSenderRows(d *DB, ctx context.Context, sender string) {
 	_, _ = d.Pool.Exec(ctx, `DELETE FROM heartbeats WHERE sender=$1`, sender)
 	_, _ = d.Pool.Exec(ctx, `DELETE FROM curation_rules WHERE sender=$1`, sender)
@@ -38,12 +237,10 @@ func deleteSenderRows(d *DB, ctx context.Context, sender string) {
 	_, _ = d.Pool.Exec(ctx, `DELETE FROM users WHERE username=$1`, sender)
 }
 
-// cleanupSender registers a t.Cleanup that deletes every row a sender owns.
 func cleanupSender(t *testing.T, d *DB, ctx context.Context, sender string) {
 	t.Cleanup(func() { deleteSenderRows(d, ctx, sender) })
 }
 
-// ensureUser inserts the users row a heartbeat's sender FK requires.
 func ensureUser(t *testing.T, d *DB, ctx context.Context, sender string) {
 	t.Helper()
 	if _, err := d.Pool.Exec(ctx,
@@ -53,7 +250,6 @@ func ensureUser(t *testing.T, d *DB, ctx context.Context, sender string) {
 	}
 }
 
-// ensureProjects inserts the projects rows a heartbeat's (sender,project) FK needs.
 func ensureProjects(t *testing.T, d *DB, ctx context.Context, sender string, names ...string) {
 	t.Helper()
 	for _, n := range names {
@@ -63,8 +259,6 @@ func ensureProjects(t *testing.T, d *DB, ctx context.Context, sender string, nam
 	}
 }
 
-// newSender is the fluent entry point: it makes a unique sender, inserts its user
-// row, and registers cleanup, returning a SenderFixture builder.
 func newSender(t *testing.T, d *DB, prefix string) *SenderFixture {
 	t.Helper()
 	ctx := context.Background()
@@ -74,10 +268,6 @@ func newSender(t *testing.T, d *DB, prefix string) *SenderFixture {
 	return &SenderFixture{t: t, db: d, ctx: ctx, name: name}
 }
 
-// ---- fluent seed builder ----
-
-// hbSeed is a fully-specified heartbeat row. Empty string fields become SQL NULL
-// (via nz); gap_seconds is seeded directly so expected attributed totals are exact.
 type hbSeed struct {
 	project, language, editor, plugin, machine, platform, branch, category string
 	ty                                                                     string
@@ -87,7 +277,6 @@ type hbSeed struct {
 	gap                                                                    int64 // gap_seconds (<= limit*60 counts as attributed)
 }
 
-// nz maps "" -> nil so NULL columns stay NULL (not 'Other').
 func nz(s string) any {
 	if s == "" {
 		return nil
@@ -95,7 +284,6 @@ func nz(s string) any {
 	return s
 }
 
-// insertSeed inserts one heartbeat. ty defaults to 'file', entity to 'a.go'.
 func insertSeed(t *testing.T, d *DB, ctx context.Context, sender string, h hbSeed) {
 	t.Helper()
 	ty := h.ty
@@ -122,7 +310,6 @@ func insertSeed(t *testing.T, d *DB, ctx context.Context, sender string, h hbSee
 	}
 }
 
-// SenderFixture builds heartbeats and derived data for one owner-scoped sender.
 type SenderFixture struct {
 	t    *testing.T
 	db   *DB
@@ -130,15 +317,17 @@ type SenderFixture struct {
 	name string
 }
 
-func (f *SenderFixture) Sender() string       { return f.name }
-func (f *SenderFixture) DB() *DB              { return f.db }
+func (f *SenderFixture) Sender() string { return f.name }
+
+func (f *SenderFixture) DB() *DB { return f.db }
+
 func (f *SenderFixture) Ctx() context.Context { return f.ctx }
+
 func (f *SenderFixture) Projects(names ...string) *SenderFixture {
 	ensureProjects(f.t, f.db, f.ctx, f.name, names...)
 	return f
 }
 
-// Seed inserts one heartbeat (sender auto-filled) and creates its project row.
 func (f *SenderFixture) Seed(h hbSeed) *SenderFixture {
 	f.t.Helper()
 	if h.project != "" {
@@ -148,10 +337,6 @@ func (f *SenderFixture) Seed(h hbSeed) *SenderFixture {
 	return f
 }
 
-// Block seeds a leading break beat (gap 999999, unattributed) then n attributed
-// beats of `each` seconds, 1 minute apart, all sharing the template's fields
-// (project/branch/language/... ) starting at startTS. Returns attributed total
-// (n*each) and rows inserted (n+1). This is the workhorse for exact-number tests.
 func (f *SenderFixture) Block(tmpl hbSeed, startTS time.Time, n int, each int64) (attributed int64, rows int) {
 	f.t.Helper()
 	if tmpl.project != "" {
@@ -170,7 +355,6 @@ func (f *SenderFixture) Block(tmpl hbSeed, startTS time.Time, n int, each int64)
 	return int64(n) * each, n + 1
 }
 
-// RefreshRollup rebuilds the rollup for this sender from the given time.
 func (f *SenderFixture) RefreshRollup(since time.Time) *SenderFixture {
 	f.t.Helper()
 	if err := f.db.RefreshRollup(f.ctx, f.name, since); err != nil {
@@ -179,7 +363,6 @@ func (f *SenderFixture) RefreshRollup(since time.Time) *SenderFixture {
 	return f
 }
 
-// RecomputeGaps recomputes gap_seconds for this sender from the given time.
 func (f *SenderFixture) RecomputeGaps(since time.Time) *SenderFixture {
 	f.t.Helper()
 	if err := f.db.RecomputeGaps(f.ctx, f.name, since); err != nil {
@@ -188,11 +371,6 @@ func (f *SenderFixture) RecomputeGaps(since time.Time) *SenderFixture {
 	return f
 }
 
-// ---- legacy per-axis block seeder (kept for existing tests) ----
-
-// seedAxisBlock seeds a break beat + n attributed beats of `each` seconds, varying
-// only the given axis to `val` (project/language/editor). Returns attributed
-// total and rows.
 func seedAxisBlock(t *testing.T, d *DB, ctx context.Context, sender, axis, val string, startTS time.Time, n int, each int64) (attributed int64, rowCount int) {
 	t.Helper()
 	tmpl := hbSeed{
@@ -212,15 +390,11 @@ func seedAxisBlock(t *testing.T, d *DB, ctx context.Context, sender, axis, val s
 	return f.Block(tmpl, startTS, n, each)
 }
 
-// seedHB inserts a single file heartbeat with a chosen project+language (no gap).
 func seedHB(t *testing.T, d *DB, ctx context.Context, sender, project, lang string, ts time.Time) {
 	t.Helper()
 	insertSeed(t, d, ctx, sender, hbSeed{project: project, language: lang, entity: "a.go", ts: ts})
 }
 
-// ---- rule helpers ----
-
-// createRename stores an EXACT rename rule and returns its id.
 func createRename(t *testing.T, d *DB, ctx context.Context, sender, axis, match, newVal string) int {
 	t.Helper()
 	rule, err := d.CreateCurationRule(ctx, sender, axis, "rename", "exact", match, &newVal)
@@ -230,7 +404,6 @@ func createRename(t *testing.T, d *DB, ctx context.Context, sender, axis, match,
 	return rule.ID
 }
 
-// createRegexRename stores a REGEX rename rule and returns its id.
 func createRegexRename(t *testing.T, d *DB, ctx context.Context, sender, axis, pattern, newVal string) int {
 	t.Helper()
 	rule, err := d.CreateCurationRule(ctx, sender, axis, "rename", "regex", pattern, &newVal)
@@ -240,9 +413,6 @@ func createRegexRename(t *testing.T, d *DB, ctx context.Context, sender, axis, p
 	return rule.ID
 }
 
-// createTemplateRename stores a TEMPLATE rename rule (regex pattern + a
-// regexp_replace replacement template referencing capture groups) and returns
-// its id. `tmpl` is normalized (`$N`->`\N`) exactly as the handler would.
 func createTemplateRename(t *testing.T, d *DB, ctx context.Context, sender, axis, pattern, tmpl string) int {
 	t.Helper()
 	norm := NormalizeTemplate(tmpl)
@@ -262,7 +432,6 @@ func loadRenames(t *testing.T, d *DB, ctx context.Context, sender string) Rename
 	return rs
 }
 
-// mkHiddenSets builds a HiddenSets from an axis->values map (test helper).
 func mkHiddenSets(byAxis map[string][]string) HiddenSets {
 	m := make(map[string][]string, len(byAxis))
 	for k, v := range byAxis {
@@ -273,9 +442,6 @@ func mkHiddenSets(byAxis map[string][]string) HiddenSets {
 	return HiddenSets{byAxis: m}
 }
 
-// ---- raw-count / scalar helpers ----
-
-// rawCount returns the number of raw heartbeats for sender where col=val.
 func rawCount(t *testing.T, d *DB, ctx context.Context, sender, col, val string) int {
 	t.Helper()
 	var n int
@@ -286,7 +452,6 @@ func rawCount(t *testing.T, d *DB, ctx context.Context, sender, col, val string)
 	return n
 }
 
-// scalarCount runs a `SELECT count(*) ... WHERE ...=$1` with the sender bound to $1.
 func scalarCount(t *testing.T, d *DB, ctx context.Context, q, sender string) int {
 	t.Helper()
 	var n int
@@ -296,8 +461,6 @@ func scalarCount(t *testing.T, d *DB, ctx context.Context, q, sender string) int
 	return n
 }
 
-// ---- StatRow assertion helpers ----
-
 func totalStatSeconds(rows []StatRow) int64 {
 	var s int64
 	for _, r := range rows {
@@ -306,10 +469,8 @@ func totalStatSeconds(rows []StatRow) int64 {
 	return s
 }
 
-// grandTotal is an alias for totalStatSeconds used by the merge tests.
 func grandTotal(rows []StatRow) int64 { return totalStatSeconds(rows) }
 
-// axisTotals maps axis-value -> summed attributed seconds.
 func axisTotals(rows []StatRow, axis string) map[string]int64 {
 	secs := map[string]int64{}
 	for _, r := range rows {
@@ -318,8 +479,6 @@ func axisTotals(rows []StatRow, axis string) map[string]int64 {
 	return secs
 }
 
-// statRowHasAxis reports whether get_user_activity's StatRow carries a column for
-// this axis (plugin/category are not selected there).
 func statRowHasAxis(axis string) bool {
 	switch axis {
 	case "project", "language", "editor", "machine", "platform", "branch":
@@ -356,8 +515,6 @@ func statRowsContain(rows []StatRow, axis, val string) bool {
 }
 
 func hasProject(rows []StatRow, p string) bool { return statRowsContain(rows, "project", p) }
-
-// ---- other result-set sum/lookup helpers ----
 
 func sumPunch(cells []PunchcardCell) int64 {
 	var s int64

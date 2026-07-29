@@ -1,286 +1,179 @@
+// toggle_curation_ginkgo_test.go — ginkgo mirror of toggle_curation_test.go (gaka-0vp.13).
+// 1:1 case map (7 stdlib TestXxx → 7 Its):
+//   TestToggleCurationRuleHappyPath          → It "ToggleCurationRule: happy path"
+//   TestToggleCurationRuleOwnerScoped        → It "ToggleCurationRule: owner scoped"
+//   TestSetCurationRuleEnabledIdempotent     → It "SetCurationRuleEnabled: idempotent"
+//   TestSetCurationRuleEnabledMissing        → It "SetCurationRuleEnabled: missing id returns found=false"
+//   TestLoadHiddenSetsSkipsDisabled          → It "LoadHiddenSets: skips disabled hide rules"
+//   TestLoadRenameSetsSkipsDisabled          → It "LoadRenameSets: skips disabled rename rules; ListCurationRules keeps them"
+//   TestCreateCurationRuleReEnablesOnUpsert  → It "CreateCurationRule: upsert re-enables paused rule"
 package db
 
 import (
 	"context"
-	"testing"
-	"time"
+
+	"github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-// gaka-dfd: tests for the enable/disable flag on curation_rules.
-//
-// Contract:
-//   - Rules default to enabled=true (schema default; CreateCurationRule inherits it).
-//   - ToggleCurationRule flips the flag; SetCurationRuleEnabled writes an exact value.
-//   - Both are owner-scoped: a wrong-sender toggle reports found=false and never
-//     touches the row.
-//   - Both are idempotent (a set-to-current-value still returns found=true).
-//   - LoadHiddenSets / LoadRenameSets skip disabled rules (their query-time effect
-//     is paused while the row survives for the UI).
-//   - ListCurationRules still returns disabled rules so the UI can surface them.
+var _ = ginkgo.Describe("curation rule toggle (gaka-dfd)", func() {
+	ginkgo.It("ToggleCurationRule flips enabled and returns the new value each time", func() {
+		d := openTestDBG()
+		ctx := context.Background()
+		f := newSenderG(d, "toggle_hp")
+		sender := f.Sender()
 
-func TestToggleCurationRuleHappyPath(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	ctx := context.Background()
-	f := newSender(t, d, "toggle_hp")
-	sender := f.Sender()
+		ensureProjectsG(d, ctx, sender, "keep")
+		id := createRenameG(d, ctx, sender, "project", "keep", "kept")
 
-	ensureProjects(t, d, ctx, sender, "keep")
-	id := createRename(t, d, ctx, sender, "project", "keep", "kept")
+		rule, _, err := d.GetCurationRule(ctx, id)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(rule.Enabled).To(BeTrue(), "newly-created rule should be enabled=true")
 
-	// Newly-created rule is enabled.
-	rule, _, err := d.GetCurationRule(ctx, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !rule.Enabled {
-		t.Fatal("newly-created rule should be enabled=true")
-	}
+		got, found, err := d.ToggleCurationRule(ctx, sender, id)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(found).To(BeTrue())
+		Expect(got).To(BeFalse(), "first toggle should have returned enabled=false")
 
-	// Flip once — should now be false.
-	got, found, err := d.ToggleCurationRule(ctx, sender, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !found {
-		t.Fatal("ToggleCurationRule reported not-found on an owned rule")
-	}
-	if got {
-		t.Fatal("first toggle should have returned enabled=false")
-	}
+		got, found, err = d.ToggleCurationRule(ctx, sender, id)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(found).To(BeTrue())
+		Expect(got).To(BeTrue(), "second toggle should have returned enabled=true")
+	})
 
-	// Flip again — back to true.
-	got, found, err = d.ToggleCurationRule(ctx, sender, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !found {
-		t.Fatal("second toggle reported not-found")
-	}
-	if !got {
-		t.Fatal("second toggle should have returned enabled=true")
-	}
-}
+	ginkgo.It("ToggleCurationRule is owner-scoped (wrong sender: found=false, rule unchanged)", func() {
+		d := openTestDBG()
+		ctx := context.Background()
 
-func TestToggleCurationRuleOwnerScoped(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	ctx := context.Background()
+		fA := newSenderG(d, "toggle_ownerA")
+		fB := newSenderG(d, "toggle_ownerB")
+		senderA, senderB := fA.Sender(), fB.Sender()
 
-	// Two isolated fixtures so the wrong-sender toggle can't collide with a
-	// rule the wrong sender legitimately owns.
-	fA := newSender(t, d, "toggle_ownerA")
-	fB := newSender(t, d, "toggle_ownerB")
-	senderA, senderB := fA.Sender(), fB.Sender()
+		ensureProjectsG(d, ctx, senderA, "aProj")
+		id := createRenameG(d, ctx, senderA, "project", "aProj", "aProjRenamed")
 
-	ensureProjects(t, d, ctx, senderA, "aProj")
-	id := createRename(t, d, ctx, senderA, "project", "aProj", "aProjRenamed")
+		_, found, err := d.ToggleCurationRule(ctx, senderB, id)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(found).To(BeFalse(), "cross-owner toggle must report found=false (never leak existence)")
 
-	// Wrong sender must not flip A's rule.
-	_, found, err := d.ToggleCurationRule(ctx, senderB, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if found {
-		t.Fatal("cross-owner toggle must report found=false (never leak existence)")
-	}
+		rule, _, err := d.GetCurationRule(ctx, id)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(rule.Enabled).To(BeTrue(), "cross-owner toggle attempt mutated the rule (owner-scope violation)")
+	})
 
-	// A's rule is still enabled — cross-owner attempt did not sneak through.
-	rule, _, err := d.GetCurationRule(ctx, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !rule.Enabled {
-		t.Fatal("cross-owner toggle attempt mutated the rule (owner-scope violation)")
-	}
-}
+	ginkgo.It("SetCurationRuleEnabled is idempotent (setting current value still returns found=true)", func() {
+		d := openTestDBG()
+		ctx := context.Background()
+		f := newSenderG(d, "toggle_idem")
+		sender := f.Sender()
 
-func TestSetCurationRuleEnabledIdempotent(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	ctx := context.Background()
-	f := newSender(t, d, "toggle_idem")
-	sender := f.Sender()
+		ensureProjectsG(d, ctx, sender, "proj")
+		id := createRenameG(d, ctx, sender, "project", "proj", "projRenamed")
 
-	ensureProjects(t, d, ctx, sender, "proj")
-	id := createRename(t, d, ctx, sender, "project", "proj", "projRenamed")
+		found, err := d.SetCurationRuleEnabled(ctx, sender, id, true)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(found).To(BeTrue(), "idempotent set-to-current-value must still return found=true")
 
-	// Set enabled=true when it is already true — should still return found=true.
-	found, err := d.SetCurationRuleEnabled(ctx, sender, id, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !found {
-		t.Fatal("idempotent set-to-current-value must still return found=true")
-	}
+		found, err = d.SetCurationRuleEnabled(ctx, sender, id, false)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(found).To(BeTrue())
+		rule, _, err := d.GetCurationRule(ctx, id)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(rule.Enabled).To(BeFalse(), "SetCurationRuleEnabled(false) did not persist")
 
-	// Set enabled=false; verify it stuck.
-	found, err = d.SetCurationRuleEnabled(ctx, sender, id, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !found {
-		t.Fatal("set to a new value must return found=true")
-	}
-	rule, _, err := d.GetCurationRule(ctx, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if rule.Enabled {
-		t.Fatal("SetCurationRuleEnabled(false) did not persist")
-	}
+		found, err = d.SetCurationRuleEnabled(ctx, sender, id, false)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(found).To(BeTrue(), "second idempotent set must still return found=true")
+	})
 
-	// Set enabled=false AGAIN — no change, still found.
-	found, err = d.SetCurationRuleEnabled(ctx, sender, id, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !found {
-		t.Fatal("second idempotent set must still return found=true")
-	}
-}
+	ginkgo.It("SetCurationRuleEnabled on a missing id returns found=false (not an error)", func() {
+		d := openTestDBG()
+		ctx := context.Background()
+		f := newSenderG(d, "toggle_missing")
+		sender := f.Sender()
 
-func TestSetCurationRuleEnabledMissing(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	ctx := context.Background()
-	f := newSender(t, d, "toggle_missing")
-	sender := f.Sender()
+		found, err := d.SetCurationRuleEnabled(ctx, sender, 999999999, true)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(found).To(BeFalse())
+	})
 
-	// A very unlikely id — must return found=false, not an error.
-	found, err := d.SetCurationRuleEnabled(ctx, sender, 999999999, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if found {
-		t.Fatal("missing rule must report found=false")
-	}
-}
+	ginkgo.It("LoadHiddenSets skips disabled hide rules (only enabled rows contribute)", func() {
+		d := openTestDBG()
+		ctx := context.Background()
+		f := newSenderG(d, "toggle_hide_skip")
+		sender := f.Sender()
 
-func TestLoadHiddenSetsSkipsDisabled(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	ctx := context.Background()
-	f := newSender(t, d, "toggle_hide_skip")
-	sender := f.Sender()
+		ensureProjectsG(d, ctx, sender, "hideA", "hideB")
+		_, err := d.Pool.Exec(ctx,
+			`INSERT INTO curation_rules (sender, axis, action, match_type, match_value, enabled)
+			 VALUES ($1, 'project', 'hide', 'exact', 'hideA', true),
+			        ($1, 'project', 'hide', 'exact', 'hideB', false)`, sender)
+		Expect(err).NotTo(HaveOccurred())
 
-	// Two hide rules on `project`; disable one; only the enabled one should
-	// show up in LoadHiddenSets. Direct SQL to insert the hide rule (we don't
-	// have a shared helper).
-	ensureProjects(t, d, ctx, sender, "hideA", "hideB")
-	if _, err := d.Pool.Exec(ctx,
-		`INSERT INTO curation_rules (sender, axis, action, match_type, match_value, enabled)
-		 VALUES ($1, 'project', 'hide', 'exact', 'hideA', true),
-		        ($1, 'project', 'hide', 'exact', 'hideB', false)`, sender); err != nil {
-		t.Fatal(err)
-	}
+		hs, err := d.LoadHiddenSets(ctx, sender)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(hs.AnyHidden()).To(BeTrue())
+		got := hs.byAxis["project"]
+		Expect(got).To(HaveLen(1), "disabled rule must be skipped")
+		Expect(got[0]).To(Equal("hidea"), "values are pre-lowered")
+	})
 
-	hs, err := d.LoadHiddenSets(ctx, sender)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !hs.AnyHidden() {
-		t.Fatal("expected at least one hidden value from the enabled rule")
-	}
-	// Collect the loaded values (case-lowered in memory).
-	// We can't peek the private field directly, so probe via exclusionPredicate
-	// shape via the byAxis reader helper: use the ability to enumerate through
-	// the raw axis map by relying on LoadHiddenSets writing to hs.byAxis. Use
-	// the direct field access (test lives in package db so it's fine).
-	got := hs.byAxis["project"]
-	if len(got) != 1 {
-		t.Fatalf("LoadHiddenSets returned %d project hides, want 1 (disabled rule must be skipped): %v", len(got), got)
-	}
-	if got[0] != "hidea" {
-		t.Fatalf("LoadHiddenSets returned %q, want 'hidea' (values are pre-lowered)", got[0])
-	}
-}
+	ginkgo.It("LoadRenameSets skips disabled rename rules while ListCurationRules keeps them (UI needs it)", func() {
+		d := openTestDBG()
+		ctx := context.Background()
+		f := newSenderG(d, "toggle_rename_skip")
+		sender := f.Sender()
 
-func TestLoadRenameSetsSkipsDisabled(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	ctx := context.Background()
-	f := newSender(t, d, "toggle_rename_skip")
-	sender := f.Sender()
+		ensureProjectsG(d, ctx, sender, "src1", "src2", "dst1", "dst2")
+		idOn := createRenameG(d, ctx, sender, "project", "src1", "dst1")
+		idOff := createRenameG(d, ctx, sender, "project", "src2", "dst2")
 
-	ensureProjects(t, d, ctx, sender, "src1", "src2", "dst1", "dst2")
-	idOn := createRename(t, d, ctx, sender, "project", "src1", "dst1")
-	idOff := createRename(t, d, ctx, sender, "project", "src2", "dst2")
+		_, err := d.SetCurationRuleEnabled(ctx, sender, idOff, false)
+		Expect(err).NotTo(HaveOccurred())
 
-	// Disable the second one.
-	if _, err := d.SetCurationRuleEnabled(ctx, sender, idOff, false); err != nil {
-		t.Fatal(err)
-	}
+		rs, err := d.LoadRenameSets(ctx, sender)
+		Expect(err).NotTo(HaveOccurred())
+		a := rs.byAxis["project"]
+		Expect(a.exact).To(HaveLen(1))
+		_, ok := a.exact["src1"]
+		Expect(ok).To(BeTrue(), "expected the ENABLED rename 'src1' to survive")
+		_, ok = a.exact["src2"]
+		Expect(ok).To(BeFalse(), "DISABLED rename 'src2' leaked into RenameSets")
 
-	rs, err := d.LoadRenameSets(ctx, sender)
-	if err != nil {
-		t.Fatal(err)
-	}
-	a := rs.byAxis["project"]
-	if len(a.exact) != 1 {
-		t.Fatalf("LoadRenameSets returned %d exact project renames, want 1 (disabled rule must be skipped): %v",
-			len(a.exact), a.exact)
-	}
-	if _, ok := a.exact["src1"]; !ok {
-		t.Fatalf("expected the ENABLED rename 'src1' to survive; got %v", a.exact)
-	}
-	if _, ok := a.exact["src2"]; ok {
-		t.Fatalf("DISABLED rename 'src2' leaked into RenameSets: %v", a.exact)
-	}
-
-	// The rule is still in ListCurationRules — the UI needs it.
-	rules, err := d.ListCurationRules(ctx, sender)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var seenDisabled bool
-	for _, r := range rules {
-		if r.ID == idOff {
-			seenDisabled = true
-			if r.Enabled {
-				t.Fatal("disabled rule was returned with enabled=true — struct/scan drift")
+		rules, err := d.ListCurationRules(ctx, sender)
+		Expect(err).NotTo(HaveOccurred())
+		var seenDisabled bool
+		for _, r := range rules {
+			if r.ID == idOff {
+				seenDisabled = true
+				Expect(r.Enabled).To(BeFalse(), "disabled rule returned with enabled=true — scan drift")
+			}
+			if r.ID == idOn {
+				Expect(r.Enabled).To(BeTrue(), "enabled rule reported as disabled — scan drift")
 			}
 		}
-		if r.ID == idOn && !r.Enabled {
-			t.Fatal("enabled rule reported as disabled — scan drift")
-		}
-	}
-	if !seenDisabled {
-		t.Fatal("ListCurationRules must still return disabled rules (UI depends on it)")
-	}
-}
+		Expect(seenDisabled).To(BeTrue(), "ListCurationRules must still return disabled rules (UI depends on it)")
+	})
 
-func TestCreateCurationRuleReEnablesOnUpsert(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	ctx := context.Background()
-	f := newSender(t, d, "toggle_upsert")
-	sender := f.Sender()
+	ginkgo.It("CreateCurationRule upserts a matching key: re-enables paused rule and updates new_value", func() {
+		d := openTestDBG()
+		ctx := context.Background()
+		f := newSenderG(d, "toggle_upsert")
+		sender := f.Sender()
 
-	ensureProjects(t, d, ctx, sender, "px", "pxNew", "pxNewer")
-	id := createRename(t, d, ctx, sender, "project", "px", "pxNew")
+		ensureProjectsG(d, ctx, sender, "px", "pxNew", "pxNewer")
+		id := createRenameG(d, ctx, sender, "project", "px", "pxNew")
 
-	// Pause it.
-	if _, err := d.SetCurationRuleEnabled(ctx, sender, id, false); err != nil {
-		t.Fatal(err)
-	}
+		_, err := d.SetCurationRuleEnabled(ctx, sender, id, false)
+		Expect(err).NotTo(HaveOccurred())
 
-	// Re-add the SAME rule with a new target — the ON CONFLICT upsert must
-	// re-enable it (documented behavior: re-adding a rule you paused
-	// clearly means "turn it back on").
-	newTarget := "pxNewer"
-	if _, err := d.CreateCurationRule(ctx, sender, "project", "rename", "exact", "px", &newTarget); err != nil {
-		t.Fatal(err)
-	}
-	rule, _, err := d.GetCurationRule(ctx, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !rule.Enabled {
-		t.Fatal("upsert of a matching key must re-enable a paused rule")
-	}
-	if rule.NewValue == nil || *rule.NewValue != "pxNewer" {
-		t.Fatalf("upsert did not update new_value: got %v", rule.NewValue)
-	}
-	_ = time.Now() // keep the time import in case timing helpers get added
-}
+		newTarget := "pxNewer"
+		_, err = d.CreateCurationRule(ctx, sender, "project", "rename", "exact", "px", &newTarget)
+		Expect(err).NotTo(HaveOccurred())
+		rule, _, err := d.GetCurationRule(ctx, id)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(rule.Enabled).To(BeTrue(), "upsert of a matching key must re-enable a paused rule")
+		Expect(rule.NewValue).NotTo(BeNil())
+		Expect(*rule.NewValue).To(Equal("pxNewer"))
+	})
+})

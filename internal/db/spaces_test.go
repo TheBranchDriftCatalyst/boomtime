@@ -1,13 +1,268 @@
+// spaces_ginkgo_test.go — ginkgo mirror of spaces_test.go (gaka-0vp.13).
+// 1:1 case map (9 stdlib TestXxx → 7 Its + 1 DescribeTable(19)):
+//
+//	TestInclusionPredicateShape        → It "inclusionPredicate SQL/arg shape"
+//	TestRewriteAnchoredRegex           → DescribeTable "rewriteAnchoredRegex" 19 entries
+//	TestSpaceScopePredicateEmpty       → It "spaceScopePredicate: empty requested → AND FALSE; unrequested no-op"
+//	TestHasMemberOutside               → It "HasMemberOutside: rollup vs non-rollup axis"
+//	TestSpaceInclusionUnionAcrossAxes  → It "space inclusion is UNION across axes"
+//	TestSpaceMultiRuleOR               → It "multiple exact rules on same axis OR together"
+//	TestSpaceEmptyMatchesNothing       → It "empty space requested matches nothing"
+//	TestSpaceCRUDAndLoadMemberSets     → It "space CRUD + LoadMemberSets round-trip + owner isolation"
+//	TestSpacePreviewValues             → It "SpacePreviewValues returns matching raw values + counts"
 package db
 
 import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-// mkMembers builds a MemberSets from an axis -> {exact,regex} map (test helper),
-// mirroring the shape LoadMemberSets produces.
+// seedAxisBlock2G — ginkgo variant of seedAxisBlock2.
+func seedAxisBlock2G(d *DB, ctx context.Context, sender string, tmpl hbSeed, startTS time.Time, n int, each int64) (int64, int) {
+	if tmpl.project != "" {
+		ensureProjectsG(d, ctx, sender, tmpl.project)
+	}
+	f := &SenderFixtureG{db: d, ctx: ctx, name: sender}
+	return f.Block(tmpl, startTS, n, each)
+}
+
+// newSpaceSenderG — ginkgo variant of newSpaceSender.
+func newSpaceSenderG(d *DB, prefix string) (context.Context, string) {
+	ctx := context.Background()
+	sender := mkSender(prefix)
+	_, _ = d.Pool.Exec(ctx, `INSERT INTO users (username, hashed_password, salt_used) VALUES ($1,'\x00','\x00') ON CONFLICT DO NOTHING`, sender)
+	cleanupSenderG(d, ctx, sender)
+	return ctx, sender
+}
+
+var _ = ginkgo.Describe("spaces (inclusion predicate)", func() {
+	ginkgo.It("inclusionPredicate produces the expected SQL/arg shape (project ANY + editor ILIKE/~)", func() {
+		ms := mkMembers(
+			map[string][]string{"project": {"a", "b"}},
+			map[string][]string{"editor": {"^vim", "code"}},
+		)
+		args := []any{"sender", time.Now(), time.Now(), int64(15)}
+		sql, outArgs, next := inclusionPredicate(ms, rawHeartbeatCols, "", 5, args)
+
+		want := " AND (lower(project) = ANY($5) OR editor ILIKE $6 OR editor ~* $7)"
+		Expect(sql).To(Equal(want))
+		Expect(next).To(Equal(8))
+		Expect(outArgs).To(HaveLen(7))
+		Expect(outArgs[5]).To(Equal("vim%"))
+		Expect(outArgs[6]).To(Equal("code"))
+	})
+
+	ginkgo.DescribeTable("rewriteAnchoredRegex",
+		func(pat, wantOp, wantBound string) {
+			op, bound := rewriteAnchoredRegex(pat)
+			Expect(op).To(Equal(wantOp))
+			Expect(bound).To(Equal(wantBound))
+		},
+		ginkgo.Entry("^foo → LIKE foo%", "^foo", "LIKE", "foo%"),
+		ginkgo.Entry("^svc-", "^svc-", "LIKE", "svc-%"),
+		ginkgo.Entry("^catalyst-web", "^catalyst-web", "LIKE", "catalyst-web%"),
+		ginkgo.Entry("^some/path", "^some/path", "LIKE", "some/path%"),
+		ginkgo.Entry("^ns:name", "^ns:name", "LIKE", "ns:name%"),
+		ginkgo.Entry("^foo$ → =", "^foo$", "=", "foo"),
+		ginkgo.Entry("^svc-auth$", "^svc-auth$", "=", "svc-auth"),
+		ginkgo.Entry("no anchor foo", "foo", "~", "foo"),
+		ginkgo.Entry("no anchor teak", "teak", "~", "teak"),
+		ginkgo.Entry("no anchor protecht", "protecht", "~", "protecht"),
+		ginkgo.Entry("^foo.bar (metachar)", "^foo.bar", "~", "^foo.bar"),
+		ginkgo.Entry("^foo\\.bar", "^foo\\.bar", "~", "^foo\\.bar"),
+		ginkgo.Entry("^svc-(a|b)", "^svc-(a|b)", "~", "^svc-(a|b)"),
+		ginkgo.Entry("^foo*", "^foo*", "~", "^foo*"),
+		ginkgo.Entry("^foo+", "^foo+", "~", "^foo+"),
+		ginkgo.Entry("^foo?", "^foo?", "~", "^foo?"),
+		ginkgo.Entry("^foo[a-z]", "^foo[a-z]", "~", "^foo[a-z]"),
+		ginkgo.Entry("^foo bar (space)", "^foo bar", "~", "^foo bar"),
+		ginkgo.Entry("bare ^", "^", "~", "^"),
+		ginkgo.Entry("bare ^$", "^$", "~", "^$"),
+	)
+
+	ginkgo.It("spaceScopePredicate: empty+requested → AND FALSE; empty+unrequested → no-op", func() {
+		sql, _, next := spaceScopePredicate(MemberSets{}, rawHeartbeatCols, "", 5, []any{"x"}, true)
+		Expect(sql).To(Equal(" AND FALSE"))
+		Expect(next).To(Equal(5))
+
+		sql2, _, _ := spaceScopePredicate(MemberSets{}, rawHeartbeatCols, "", 5, []any{"x"}, false)
+		Expect(sql2).To(Equal(""))
+		Expect((MemberSets{}).AnyMember()).To(BeFalse())
+	})
+
+	ginkgo.It("HasMemberOutside: rollup-axis rules return false; non-rollup (entity) returns true", func() {
+		inRollup := mkMembers(map[string][]string{"project": {"p"}}, nil)
+		Expect(inRollup.HasMemberOutside(RollupAxes)).To(BeFalse())
+		outside := mkMembers(map[string][]string{"entity": {"main.go"}}, nil)
+		Expect(outside.HasMemberOutside(RollupAxes)).To(BeTrue())
+	})
+
+	ginkgo.It("space inclusion is UNION across axes (project exact OR editor regex)", func() {
+		d := openTestDBG()
+		ctx, sender := newSpaceSenderG(d, "spc_union")
+		ensureProjectsG(d, ctx, sender, "catalyst-web", "catalyst-api", "personal")
+
+		day := time.Date(2025, 9, 1, 9, 0, 0, 0, time.UTC)
+		web, _ := seedAxisBlock2G(d, ctx, sender, hbSeed{project: "catalyst-web", editor: "vim", language: "Go"}, day, 2, 100)
+		code, _ := seedAxisBlock2G(d, ctx, sender, hbSeed{project: "personal", editor: "code", language: "Go"}, day.Add(20*time.Minute), 3, 100)
+		_, _ = seedAxisBlock2G(d, ctx, sender, hbSeed{project: "personal", editor: "emacs", language: "Go"}, day.Add(40*time.Minute), 1, 100)
+
+		start, end := day.AddDate(0, 0, -1), day.AddDate(0, 0, 1)
+		ms := mkMembers(
+			map[string][]string{"project": {"catalyst-web"}},
+			map[string][]string{"editor": {"^code"}},
+		)
+		rows, err := d.GetUserActivity(ctx, sender, start, end, 15, "UTC", HiddenSets{}, RenameSets{}, ms, true)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(totalStatSeconds(rows)).To(Equal(web + code))
+		secs := axisTotals(rows, "editor")
+		_, ok := secs["emacs"]
+		Expect(ok).To(BeFalse(), "emacs rows should be excluded (match no rule)")
+	})
+
+	ginkgo.It("multiple exact rules on the same axis OR together", func() {
+		d := openTestDBG()
+		ctx, sender := newSpaceSenderG(d, "spc_or")
+		ensureProjectsG(d, ctx, sender, "alpha", "beta", "gamma")
+
+		day := time.Date(2025, 9, 2, 9, 0, 0, 0, time.UTC)
+		a, _ := seedAxisBlock2G(d, ctx, sender, hbSeed{project: "alpha", language: "Go"}, day, 2, 100)
+		b, _ := seedAxisBlock2G(d, ctx, sender, hbSeed{project: "beta", language: "Go"}, day.Add(20*time.Minute), 3, 100)
+		_, _ = seedAxisBlock2G(d, ctx, sender, hbSeed{project: "gamma", language: "Go"}, day.Add(40*time.Minute), 1, 100)
+		start, end := day.AddDate(0, 0, -1), day.AddDate(0, 0, 1)
+
+		ms := mkMembers(map[string][]string{"project": {"alpha", "beta"}}, nil)
+		rows, err := d.GetUserActivity(ctx, sender, start, end, 15, "UTC", HiddenSets{}, RenameSets{}, ms, true)
+		Expect(err).NotTo(HaveOccurred())
+		secs := axisTotals(rows, "project")
+		Expect(secs["alpha"]).To(Equal(a))
+		Expect(secs["beta"]).To(Equal(b))
+		_, ok := secs["gamma"]
+		Expect(ok).To(BeFalse(), "gamma should be excluded (no rule)")
+	})
+
+	ginkgo.It("empty space requested matches nothing; unrequested returns full dashboard", func() {
+		d := openTestDBG()
+		ctx, sender := newSpaceSenderG(d, "spc_empty")
+		ensureProjectsG(d, ctx, sender, "alpha")
+
+		day := time.Date(2025, 9, 3, 9, 0, 0, 0, time.UTC)
+		seedAxisBlock2G(d, ctx, sender, hbSeed{project: "alpha", language: "Go"}, day, 2, 100)
+		start, end := day.AddDate(0, 0, -1), day.AddDate(0, 0, 1)
+
+		rows, err := d.GetUserActivity(ctx, sender, start, end, 15, "UTC", HiddenSets{}, RenameSets{}, MemberSets{}, true)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(rows).To(HaveLen(0))
+
+		unscoped, err := d.GetUserActivity(ctx, sender, start, end, 15, "UTC", HiddenSets{}, RenameSets{}, MemberSets{}, false)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(totalStatSeconds(unscoped)).To(BeEquivalentTo(200))
+	})
+
+	ginkgo.It("space CRUD + LoadMemberSets round-trip + owner isolation + rename + cascade-on-delete", func() {
+		d := openTestDBG()
+		ctx, owner := newSpaceSenderG(d, "spc_crud")
+		_, other := newSpaceSenderG(d, "spc_other")
+
+		sp, err := d.CreateSpace(ctx, owner, "Work")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(sp.ID).NotTo(BeZero())
+		Expect(sp.Name).To(Equal("Work"))
+
+		_, err = d.AddSpaceRule(ctx, owner, sp.ID, "project", "catalyst-web", "exact")
+		Expect(err).NotTo(HaveOccurred())
+		_, err = d.AddSpaceRule(ctx, owner, sp.ID, "project", "^svc-", "regex")
+		Expect(err).NotTo(HaveOccurred())
+
+		_, err = d.AddSpaceRule(ctx, owner, sp.ID, "bogus", "x", "exact")
+		Expect(err).To(HaveOccurred(), "unknown axis should be rejected")
+		_, err = d.AddSpaceRule(ctx, owner, sp.ID, "project", "x", "template")
+		Expect(err).To(HaveOccurred(), "template matchType should be rejected")
+		_, err = d.AddSpaceRule(ctx, owner, sp.ID, "project", "(unterminated", "regex")
+		Expect(err).To(HaveOccurred(), "invalid regex should be rejected")
+
+		ms, err := d.LoadMemberSets(ctx, sp.ID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(ms.AnyMember()).To(BeTrue())
+		a := ms.byAxis["project"]
+		Expect(a.exact).To(Equal([]string{"catalyst-web"}))
+		Expect(a.regex).To(Equal([]string{"^svc-"}))
+
+		gotSp, rules, err := d.GetSpace(ctx, owner, sp.ID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(gotSp).NotTo(BeNil())
+		Expect(rules).To(HaveLen(2))
+		list, err := d.ListSpaces(ctx, owner)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(list).To(HaveLen(1))
+		Expect(list[0].RuleCount).To(BeEquivalentTo(2))
+
+		// Owner isolation.
+		sp2, _, _ := d.GetSpace(ctx, other, sp.ID)
+		Expect(sp2).To(BeNil())
+		rule, err := d.AddSpaceRule(ctx, other, sp.ID, "project", "x", "exact")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(rule).To(BeNil())
+		n, _ := d.DeleteSpace(ctx, other, sp.ID)
+		Expect(n).To(BeEquivalentTo(0))
+		list2, _ := d.ListSpaces(ctx, other)
+		Expect(list2).To(HaveLen(0))
+
+		// Delete a rule (owner-scoped).
+		n, err = d.DeleteSpaceRule(ctx, owner, sp.ID, rules[0].ID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(n).To(BeEquivalentTo(1))
+
+		newName := "Job"
+		pos := 5
+		n, err = d.RenameSpace(ctx, owner, sp.ID, &newName, &pos)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(n).To(BeEquivalentTo(1))
+		gotSp, _, _ = d.GetSpace(ctx, owner, sp.ID)
+		Expect(gotSp.Name).To(Equal("Job"))
+		Expect(gotSp.Position).To(Equal(5))
+
+		n, err = d.DeleteSpace(ctx, owner, sp.ID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(n).To(BeEquivalentTo(1))
+		var ruleCount int
+		_ = d.Pool.QueryRow(ctx, `SELECT count(*) FROM space_rules WHERE space_id=$1`, sp.ID).Scan(&ruleCount)
+		Expect(ruleCount).To(Equal(0), "rules should cascade on space delete")
+	})
+
+	ginkgo.It("SpacePreviewValues returns matching raw values with counts", func() {
+		d := openTestDBG()
+		ctx, owner := newSpaceSenderG(d, "spc_prev")
+		ensureProjectsG(d, ctx, owner, "svc-auth", "svc-billing", "web")
+
+		day := time.Date(2025, 9, 4, 9, 0, 0, 0, time.UTC)
+		for i := 0; i < 3; i++ {
+			insertSeedG(d, ctx, owner, hbSeed{project: "svc-auth", entity: "a.go", ts: day.Add(time.Duration(i) * time.Minute), gap: 60})
+		}
+		for i := 0; i < 2; i++ {
+			insertSeedG(d, ctx, owner, hbSeed{project: "svc-billing", entity: "b.go", ts: day.Add(time.Duration(10+i) * time.Minute), gap: 60})
+		}
+		insertSeedG(d, ctx, owner, hbSeed{project: "web", entity: "c.go", ts: day.Add(30 * time.Minute), gap: 60})
+
+		vals, trunc, err := d.SpacePreviewValues(ctx, owner, "project", "^svc-", "regex", 200)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(trunc).To(BeFalse())
+		byVal := map[string]int64{}
+		for _, v := range vals {
+			byVal[v.Value] = v.Count
+		}
+		Expect(byVal["svc-auth"]).To(BeEquivalentTo(3))
+		Expect(byVal["svc-billing"]).To(BeEquivalentTo(2))
+		_, ok := byVal["web"]
+		Expect(ok).To(BeFalse(), "web must not match ^svc-")
+	})
+})
+
+// -- helpers restored from stdlib partner (gaka-0vp.17) --
 func mkMembers(exact map[string][]string, regex map[string][]string) MemberSets {
 	ms := MemberSets{byAxis: map[string]axisMembers{}}
 	for axis, vals := range exact {
@@ -23,123 +278,6 @@ func mkMembers(exact map[string][]string, regex map[string][]string) MemberSets 
 	return ms
 }
 
-// TestInclusionPredicateShape asserts the SQL/arg shape of inclusionPredicate:
-// one OR-group across axes (deterministic order), exact -> ANY. Regex arms
-// are picked per-pattern by rewriteAnchoredRegex: `^vim` is safe-anchored so
-// it becomes `LIKE 'vim%'`; `code` has no anchor so it stays as `~`.
-func TestInclusionPredicateShape(t *testing.T) {
-	ms := mkMembers(
-		map[string][]string{"project": {"a", "b"}},
-		map[string][]string{"editor": {"^vim", "code"}},
-	)
-	args := []any{"sender", time.Now(), time.Now(), int64(15)}
-	sql, outArgs, next := inclusionPredicate(ms, rawHeartbeatCols, "", 5, args)
-
-	// hiddenAxes order: project before editor. project exact -> lower(col)=ANY($5)
-	// (values pre-lowered at load); editor rewrites: ^vim -> ILIKE $6 (bound
-	// "vim%"); code stays as ~* $7 (bound "code" verbatim). Case-insensitive
-	// operators (~*, ILIKE, lower()) mirror the case-folded aggregation grouping.
-	want := " AND (lower(project) = ANY($5) OR editor ILIKE $6 OR editor ~* $7)"
-	if sql != want {
-		t.Fatalf("inclusion SQL = %q, want %q", sql, want)
-	}
-	if next != 8 {
-		t.Fatalf("next arg = %d, want 8", next)
-	}
-	if len(outArgs) != 7 {
-		t.Fatalf("args len = %d, want 7", len(outArgs))
-	}
-	// The rewrite must bind "vim%" (not "^vim") at $6 and "code" (not
-	// touched) at $7 — a wrong bound value would mis-scope silently.
-	if got, want := outArgs[5], "vim%"; got != want {
-		t.Errorf("$6 bound = %q, want %q", got, want)
-	}
-	if got, want := outArgs[6], "code"; got != want {
-		t.Errorf("$7 bound = %q, want %q", got, want)
-	}
-}
-
-// TestRewriteAnchoredRegex covers the full pattern matrix — rewrites for
-// safe anchored literals, fallback to `~` for anything with metachars, and
-// the ^lit$ -> = rewrite for exact-match regexes.
-func TestRewriteAnchoredRegex(t *testing.T) {
-	cases := []struct {
-		pat, op, bound string
-	}{
-		// Safe anchored prefix → LIKE.
-		{"^foo", "LIKE", "foo%"},
-		{"^svc-", "LIKE", "svc-%"},
-		{"^catalyst-web", "LIKE", "catalyst-web%"},
-		{"^some/path", "LIKE", "some/path%"},
-		{"^ns:name", "LIKE", "ns:name%"},
-
-		// Safe anchored + $-terminated → =.
-		{"^foo$", "=", "foo"},
-		{"^svc-auth$", "=", "svc-auth"},
-
-		// No anchor → passthrough.
-		{"foo", "~", "foo"},
-		{"teak", "~", "teak"},
-		{"protecht", "~", "protecht"},
-
-		// Anchored but with regex metachars → passthrough (safety).
-		{"^foo.bar", "~", "^foo.bar"},
-		{"^foo\\.bar", "~", "^foo\\.bar"},
-		{"^svc-(a|b)", "~", "^svc-(a|b)"},
-		{"^foo*", "~", "^foo*"},
-		{"^foo+", "~", "^foo+"},
-		{"^foo?", "~", "^foo?"},
-		{"^foo[a-z]", "~", "^foo[a-z]"},
-		{"^foo bar", "~", "^foo bar"},
-
-		// Degenerate: bare "^" or "^$" — nothing to bind.
-		{"^", "~", "^"},
-		{"^$", "~", "^$"},
-	}
-	for _, tc := range cases {
-		op, bound := rewriteAnchoredRegex(tc.pat)
-		if op != tc.op || bound != tc.bound {
-			t.Errorf("rewriteAnchoredRegex(%q) = (%q, %q), want (%q, %q)",
-				tc.pat, op, bound, tc.op, tc.bound)
-		}
-	}
-}
-
-// TestSpaceScopePredicateEmpty: an empty (rule-less) space that IS requested must
-// match NOTHING (` AND FALSE`); an unrequested scope adds no predicate.
-func TestSpaceScopePredicateEmpty(t *testing.T) {
-	// Requested but no members -> AND FALSE.
-	sql, _, next := spaceScopePredicate(MemberSets{}, rawHeartbeatCols, "", 5, []any{"x"}, true)
-	if sql != " AND FALSE" || next != 5 {
-		t.Fatalf("empty requested scope: sql=%q next=%d, want ' AND FALSE'/5", sql, next)
-	}
-	// Not requested -> no predicate.
-	sql2, _, _ := spaceScopePredicate(MemberSets{}, rawHeartbeatCols, "", 5, []any{"x"}, false)
-	if sql2 != "" {
-		t.Fatalf("unrequested scope: sql=%q, want ''", sql2)
-	}
-	if (MemberSets{}).AnyMember() {
-		t.Fatal("empty MemberSets.AnyMember() should be false")
-	}
-}
-
-// TestHasMemberOutside: a rule on a non-rollup axis (project is a rollup axis;
-// entity is not — it's the only rollup-external axis after 00014 widened the
-// rollup to include category/plugin/branch) forces the raw path.
-func TestHasMemberOutside(t *testing.T) {
-	inRollup := mkMembers(map[string][]string{"project": {"p"}}, nil)
-	if inRollup.HasMemberOutside(RollupAxes) {
-		t.Fatal("project is a rollup axis; HasMemberOutside should be false")
-	}
-	// entity is intentionally not in the rollup (per-file cardinality would blow
-	// it up), so a Space rule on entity must force the raw path.
-	outside := mkMembers(map[string][]string{"entity": {"main.go"}}, nil)
-	if !outside.HasMemberOutside(RollupAxes) {
-		t.Fatal("entity is NOT a rollup axis; HasMemberOutside should be true")
-	}
-}
-
-// spaceTestSender seeds a sender + user and returns a fixture-less helper context.
 func newSpaceSender(t *testing.T, d *DB, prefix string) (context.Context, string) {
 	t.Helper()
 	ctx := context.Background()
@@ -149,235 +287,6 @@ func newSpaceSender(t *testing.T, d *DB, prefix string) (context.Context, string
 	return ctx, sender
 }
 
-// TestSpaceInclusionUnionAcrossAxes: a Space with an exact project rule + a regex
-// editor rule includes rows matching EITHER (union), excludes the rest.
-func TestSpaceInclusionUnionAcrossAxes(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	ctx, sender := newSpaceSender(t, d, "spc_union")
-	ensureProjects(t, d, ctx, sender, "catalyst-web", "catalyst-api", "personal")
-
-	day := time.Date(2025, 9, 1, 9, 0, 0, 0, time.UTC)
-	// catalyst-web edited in vim (matches project rule).
-	web, _ := seedAxisBlock2(t, d, ctx, sender, hbSeed{project: "catalyst-web", editor: "vim", language: "Go"}, day, 2, 100)
-	// personal edited in code (matches editor regex rule ^code, not project).
-	code, _ := seedAxisBlock2(t, d, ctx, sender, hbSeed{project: "personal", editor: "code", language: "Go"}, day.Add(20*time.Minute), 3, 100)
-	// personal edited in emacs (matches NEITHER rule) -> excluded.
-	_, _ = seedAxisBlock2(t, d, ctx, sender, hbSeed{project: "personal", editor: "emacs", language: "Go"}, day.Add(40*time.Minute), 1, 100)
-
-	start, end := day.AddDate(0, 0, -1), day.AddDate(0, 0, 1)
-	ms := mkMembers(
-		map[string][]string{"project": {"catalyst-web"}},
-		map[string][]string{"editor": {"^code"}},
-	)
-
-	rows, err := d.GetUserActivity(ctx, sender, start, end, 15, "UTC", HiddenSets{}, RenameSets{}, ms, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	total := totalStatSeconds(rows)
-	if total != web+code {
-		t.Fatalf("scoped total = %d, want %d (catalyst-web + code-edited personal)", total, web+code)
-	}
-	secs := axisTotals(rows, "editor")
-	if _, ok := secs["emacs"]; ok {
-		t.Fatal("emacs rows should be excluded (match no rule)")
-	}
-}
-
-// TestSpaceMultiRuleOR: multiple exact project rules OR together (either project in).
-func TestSpaceMultiRuleOR(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	ctx, sender := newSpaceSender(t, d, "spc_or")
-	ensureProjects(t, d, ctx, sender, "alpha", "beta", "gamma")
-
-	day := time.Date(2025, 9, 2, 9, 0, 0, 0, time.UTC)
-	a, _ := seedAxisBlock2(t, d, ctx, sender, hbSeed{project: "alpha", language: "Go"}, day, 2, 100)
-	b, _ := seedAxisBlock2(t, d, ctx, sender, hbSeed{project: "beta", language: "Go"}, day.Add(20*time.Minute), 3, 100)
-	_, _ = seedAxisBlock2(t, d, ctx, sender, hbSeed{project: "gamma", language: "Go"}, day.Add(40*time.Minute), 1, 100)
-	start, end := day.AddDate(0, 0, -1), day.AddDate(0, 0, 1)
-
-	ms := mkMembers(map[string][]string{"project": {"alpha", "beta"}}, nil)
-	rows, err := d.GetUserActivity(ctx, sender, start, end, 15, "UTC", HiddenSets{}, RenameSets{}, ms, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	secs := axisTotals(rows, "project")
-	if secs["alpha"] != a || secs["beta"] != b {
-		t.Fatalf("scoped alpha/beta = %d/%d, want %d/%d", secs["alpha"], secs["beta"], a, b)
-	}
-	if _, ok := secs["gamma"]; ok {
-		t.Fatal("gamma should be excluded (no rule)")
-	}
-}
-
-// TestSpaceEmptyMatchesNothing: an empty space requested -> zero rows (not the full
-// unscoped dashboard).
-func TestSpaceEmptyMatchesNothing(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	ctx, sender := newSpaceSender(t, d, "spc_empty")
-	ensureProjects(t, d, ctx, sender, "alpha")
-
-	day := time.Date(2025, 9, 3, 9, 0, 0, 0, time.UTC)
-	seedAxisBlock2(t, d, ctx, sender, hbSeed{project: "alpha", language: "Go"}, day, 2, 100)
-	start, end := day.AddDate(0, 0, -1), day.AddDate(0, 0, 1)
-
-	rows, err := d.GetUserActivity(ctx, sender, start, end, 15, "UTC", HiddenSets{}, RenameSets{}, MemberSets{}, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(rows) != 0 {
-		t.Fatalf("empty space should match nothing, got %d rows", len(rows))
-	}
-	// Unrequested -> full dashboard is back.
-	unscoped, err := d.GetUserActivity(ctx, sender, start, end, 15, "UTC", HiddenSets{}, RenameSets{}, MemberSets{}, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if totalStatSeconds(unscoped) != 200 {
-		t.Fatalf("unscoped total = %d, want 200", totalStatSeconds(unscoped))
-	}
-}
-
-// TestSpaceCRUDAndLoadMemberSets exercises the full CRUD + owner isolation and the
-// LoadMemberSets round-trip.
-func TestSpaceCRUDAndLoadMemberSets(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	ctx, owner := newSpaceSender(t, d, "spc_crud")
-	_, other := newSpaceSender(t, d, "spc_other")
-
-	sp, err := d.CreateSpace(ctx, owner, "Work")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if sp.ID == 0 || sp.Name != "Work" {
-		t.Fatalf("created space = %+v", sp)
-	}
-
-	// Add an exact + regex rule.
-	if _, err := d.AddSpaceRule(ctx, owner, sp.ID, "project", "catalyst-web", "exact"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := d.AddSpaceRule(ctx, owner, sp.ID, "project", "^svc-", "regex"); err != nil {
-		t.Fatal(err)
-	}
-	// Unknown axis + bad matchType are rejected.
-	if _, err := d.AddSpaceRule(ctx, owner, sp.ID, "bogus", "x", "exact"); err == nil {
-		t.Fatal("unknown axis should be rejected")
-	}
-	if _, err := d.AddSpaceRule(ctx, owner, sp.ID, "project", "x", "template"); err == nil {
-		t.Fatal("template matchType should be rejected")
-	}
-	// Bad regex rejected.
-	if _, err := d.AddSpaceRule(ctx, owner, sp.ID, "project", "(unterminated", "regex"); err == nil {
-		t.Fatal("invalid regex should be rejected")
-	}
-
-	// LoadMemberSets round-trips both rules.
-	ms, err := d.LoadMemberSets(ctx, sp.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !ms.AnyMember() {
-		t.Fatal("expected members after adding rules")
-	}
-	a := ms.byAxis["project"]
-	if len(a.exact) != 1 || a.exact[0] != "catalyst-web" || len(a.regex) != 1 || a.regex[0] != "^svc-" {
-		t.Fatalf("loaded project members = %+v", a)
-	}
-
-	// GetSpace returns the space + rules; ListSpaces reports the rule count.
-	gotSp, rules, err := d.GetSpace(ctx, owner, sp.ID)
-	if err != nil || gotSp == nil {
-		t.Fatalf("GetSpace = %+v err=%v", gotSp, err)
-	}
-	if len(rules) != 2 {
-		t.Fatalf("GetSpace rules = %d, want 2", len(rules))
-	}
-	list, err := d.ListSpaces(ctx, owner)
-	if err != nil || len(list) != 1 || list[0].RuleCount != 2 {
-		t.Fatalf("ListSpaces = %+v err=%v", list, err)
-	}
-
-	// Owner isolation: `other` cannot see, rule, or delete owner's space.
-	if sp2, _, _ := d.GetSpace(ctx, other, sp.ID); sp2 != nil {
-		t.Fatal("other owner should not GET this space")
-	}
-	if rule, err := d.AddSpaceRule(ctx, other, sp.ID, "project", "x", "exact"); err != nil || rule != nil {
-		t.Fatalf("other owner AddSpaceRule = rule %+v err %v, want nil/nil", rule, err)
-	}
-	if n, _ := d.DeleteSpace(ctx, other, sp.ID); n != 0 {
-		t.Fatal("other owner should not delete this space")
-	}
-	if list2, _ := d.ListSpaces(ctx, other); len(list2) != 0 {
-		t.Fatalf("other owner ListSpaces = %d, want 0", len(list2))
-	}
-
-	// Delete a rule (owner-scoped).
-	if n, err := d.DeleteSpaceRule(ctx, owner, sp.ID, rules[0].ID); err != nil || n != 1 {
-		t.Fatalf("DeleteSpaceRule = %d err=%v, want 1", n, err)
-	}
-	// Rename + reorder.
-	newName := "Job"
-	pos := 5
-	if n, err := d.RenameSpace(ctx, owner, sp.ID, &newName, &pos); err != nil || n != 1 {
-		t.Fatalf("RenameSpace = %d err=%v", n, err)
-	}
-	gotSp, _, _ = d.GetSpace(ctx, owner, sp.ID)
-	if gotSp.Name != "Job" || gotSp.Position != 5 {
-		t.Fatalf("renamed space = %+v", gotSp)
-	}
-	// Delete cascades its remaining rule.
-	if n, err := d.DeleteSpace(ctx, owner, sp.ID); err != nil || n != 1 {
-		t.Fatalf("DeleteSpace = %d err=%v", n, err)
-	}
-	var ruleCount int
-	_ = d.Pool.QueryRow(ctx, `SELECT count(*) FROM space_rules WHERE space_id=$1`, sp.ID).Scan(&ruleCount)
-	if ruleCount != 0 {
-		t.Fatalf("rules should cascade on space delete, got %d", ruleCount)
-	}
-}
-
-// TestSpacePreviewValues: SpacePreviewValues returns matching RAW values + counts.
-func TestSpacePreviewValues(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	ctx, owner := newSpaceSender(t, d, "spc_prev")
-	ensureProjects(t, d, ctx, owner, "svc-auth", "svc-billing", "web")
-
-	day := time.Date(2025, 9, 4, 9, 0, 0, 0, time.UTC)
-	for i := 0; i < 3; i++ {
-		insertSeed(t, d, ctx, owner, hbSeed{project: "svc-auth", entity: "a.go", ts: day.Add(time.Duration(i) * time.Minute), gap: 60})
-	}
-	for i := 0; i < 2; i++ {
-		insertSeed(t, d, ctx, owner, hbSeed{project: "svc-billing", entity: "b.go", ts: day.Add(time.Duration(10+i) * time.Minute), gap: 60})
-	}
-	insertSeed(t, d, ctx, owner, hbSeed{project: "web", entity: "c.go", ts: day.Add(30 * time.Minute), gap: 60})
-
-	vals, trunc, err := d.SpacePreviewValues(ctx, owner, "project", "^svc-", "regex", 200)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if trunc {
-		t.Fatal("did not expect truncation")
-	}
-	byVal := map[string]int64{}
-	for _, v := range vals {
-		byVal[v.Value] = v.Count
-	}
-	if byVal["svc-auth"] != 3 || byVal["svc-billing"] != 2 {
-		t.Fatalf("preview = %+v, want svc-auth=3 svc-billing=2", vals)
-	}
-	if _, ok := byVal["web"]; ok {
-		t.Fatal("web must not match ^svc-")
-	}
-}
-
-// seedAxisBlock2 is like Block: seeds a break beat + n attributed beats sharing the
-// given template's fields, returning (attributed, rows). Reuses the fixture builder.
 func seedAxisBlock2(t *testing.T, d *DB, ctx context.Context, sender string, tmpl hbSeed, startTS time.Time, n int, each int64) (int64, int) {
 	t.Helper()
 	if tmpl.project != "" {

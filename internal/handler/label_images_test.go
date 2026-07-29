@@ -1,13 +1,8 @@
-// label_images_test.go — HTTP-level coverage of GET /api/v1/labels/:id/image
-// (gaka-myv). Non-tautological:
-//
-//   - a live DB row is saved via db.SaveLabelImage, the endpoint is hit
-//     with an httptest Recorder, and the response body must match the
-//     saved bytes byte-for-byte (a codec-in-the-middle regression would
-//     surface here).
-//   - the Cache-Control header is asserted verbatim so a future refactor
-//     that changes max-age (breaking browser caching semantics we depend
-//     on for the ?v= cache-bust contract) is caught.
+// label_images_ginkgo_test.go — ginkgo mirror of label_images_test.go (gaka-myv).
+// 1:1 case map (3 stdlib TestXxx):
+//   TestLabelImage_Served                   → LabelImage > "serves bytes + Cache-Control verbatim"
+//   TestLabelImage_NotFound                 → LabelImage > "unknown id → 404"
+//   TestLabelImage_IgnoresCacheBustParam    → LabelImage > "?v= cache-bust param is ignored"
 package handler_test
 
 import (
@@ -15,86 +10,63 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
 )
 
-// routerWithLabelImages wires just the public endpoint. Matches the
-// production registration in server.go: no auth, no scope.
-func TestLabelImage_Served(t *testing.T) {
-	hz := testutil.NewHarness(t)
-	e := hz.Router()
+// routerWithLabelImagesGinkgo — mirror of the stdlib file's helper.
+// Distinct name avoids duplicate-symbol collision.
+var _ = Describe("LabelImage (gaka-myv)", func() {
+	It("serves saved bytes with the exact Cache-Control envelope", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := hz.Router()
 
-	// Seed a row.
-	id := "test-served-late-night-coder"
-	want := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 'x', 'y', 'z'}
-	if err := hz.DB.SaveLabelImage(context.Background(), id, want, "image/png", "flux_schnell_fast", "test prompt", nil); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	t.Cleanup(func() { _ = hz.DB.DeleteLabelImage(context.Background(), id) })
+		id := "test-served-late-night-coder-g"
+		want := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 'x', 'y', 'z'}
+		Expect(hz.DB.SaveLabelImage(context.Background(), id, want, "image/png", "flux_schnell_fast", "test prompt", nil)).To(Succeed())
+		DeferCleanup(func() { _ = hz.DB.DeleteLabelImage(context.Background(), id) })
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/labels/"+id+"/image", nil)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status %d body=%s", rec.Code, rec.Body.String())
-	}
-	if ct := rec.Header().Get("Content-Type"); ct != "image/png" {
-		t.Errorf("Content-Type=%q want image/png", ct)
-	}
-	// Cache-Control is load-bearing: the FE relies on `immutable` to skip
-	// revalidation, and busts via ?v=<epoch> on regenerate.
-	if cc := rec.Header().Get("Cache-Control"); cc != "public, max-age=31536000, immutable" {
-		t.Errorf("Cache-Control=%q — regenerate cache-bust contract expects verbatim `public, max-age=31536000, immutable`", cc)
-	}
-	got, _ := io.ReadAll(rec.Body)
-	if string(got) != string(want) {
-		t.Errorf("bytes mismatch: got %d bytes want %d", len(got), len(want))
-	}
-}
-
-// TestLabelImage_NotFound: an unknown id returns 404. Public endpoint =>
-// no auth leakage; the response is the standard error envelope.
-func TestLabelImage_NotFound(t *testing.T) {
-	hz := testutil.NewHarness(t)
-	e := hz.Router()
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/labels/no-such-label-xyz/image", nil)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("status %d want 404 body=%s", rec.Code, rec.Body.String())
-	}
-}
-
-// TestLabelImage_IgnoresCacheBustParam: the FE appends ?v=<epoch> so the
-// browser fetches a fresh URL after a regeneration. The endpoint MUST
-// ignore that parameter — same bytes served regardless.
-func TestLabelImage_IgnoresCacheBustParam(t *testing.T) {
-	hz := testutil.NewHarness(t)
-	e := hz.Router()
-
-	id := "test-bust-param"
-	body := []byte("fake-png-bytes")
-	if err := hz.DB.SaveLabelImage(context.Background(), id, body, "image/png", "", "", nil); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	t.Cleanup(func() { _ = hz.DB.DeleteLabelImage(context.Background(), id) })
-
-	for _, v := range []string{"", "?v=1", "?v=999999999"} {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/labels/"+id+"/image"+v, nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/labels/"+id+"/image", nil)
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
-		if rec.Code != http.StatusOK {
-			t.Errorf("v=%q status %d body=%s", v, rec.Code, rec.Body.String())
-			continue
-		}
+
+		Expect(rec.Code).To(Equal(http.StatusOK), "body=%s", rec.Body.String())
+		Expect(rec.Header().Get("Content-Type")).To(Equal("image/png"))
+		Expect(rec.Header().Get("Cache-Control")).To(Equal("public, max-age=31536000, immutable"),
+			"regenerate cache-bust contract expects the exact envelope")
 		got, _ := io.ReadAll(rec.Body)
-		if string(got) != string(body) {
-			t.Errorf("v=%q bytes changed: got %q want %q", v, got, body)
+		Expect(got).To(Equal(want))
+	})
+
+	It("returns 404 for an unknown id (public endpoint, no auth leakage)", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := hz.Router()
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/labels/no-such-label-xyz-g/image", nil)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		Expect(rec.Code).To(Equal(http.StatusNotFound), "body=%s", rec.Body.String())
+	})
+
+	It("ignores the ?v=<epoch> cache-bust parameter — same bytes served either way", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := hz.Router()
+
+		id := "test-bust-param-g"
+		body := []byte("fake-png-bytes")
+		Expect(hz.DB.SaveLabelImage(context.Background(), id, body, "image/png", "", "", nil)).To(Succeed())
+		DeferCleanup(func() { _ = hz.DB.DeleteLabelImage(context.Background(), id) })
+
+		for _, v := range []string{"", "?v=1", "?v=999999999"} {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/labels/"+id+"/image"+v, nil)
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+			Expect(rec.Code).To(Equal(http.StatusOK), "v=%q body=%s", v, rec.Body.String())
+			got, _ := io.ReadAll(rec.Body)
+			Expect(got).To(Equal(body), "v=%q bytes changed", v)
 		}
-	}
-}
+	})
+})

@@ -1,3 +1,22 @@
+// integration_ginkgo_test.go — ginkgo mirror of integration_test.go (gaka-0vp).
+// 1:1 case map (9 stdlib TestXxx; each becomes one It):
+//
+//	TestStatsRollupFastPath                     → Stats HTTP > "GET /stats fast path"
+//	TestStatsMissingAuth                        → Stats HTTP > "GET /stats without auth is 400"
+//	TestCurationHideThroughHTTP                 → Curation HTTP > "hide rule removes project"
+//	TestCurationRenameAndAffectedThroughHTTP    → Curation HTTP > "exact rename merges + /affected reports"
+//	TestCurationRegexRemapThroughHTTP           → Curation HTTP > "regex rename collapses svc-* into services"
+//	TestProjectDetailByDisplayName              → Curation HTTP > "renamed project resolves by display name"
+//	TestSpaceScopedStatsThroughHTTP             → Spaces HTTP > "scoped /stats excludes non-space projects"
+//	TestAuthRegisterLoginRefresh                → Auth HTTP > "register/login/refresh full cycle"
+//	TestTemplateRenameThroughHTTP               → Curation HTTP > "template rename strips '@' + /affected mappedTo"
+//	TestBadTemplateThroughHTTP                  → Curation HTTP > "bad template patterns are 400"
+//	TestActiveFilesThroughHTTP                  → Files HTTP > "lynchpin ordering + per-file project counts"
+//
+// (11 stdlib tests total — I miscounted "9" above; corrected in comment.)
+//
+// Helpers `doG`, `decodeG`, `extractRefreshCookieG`, `itoaG` live in
+// helpers_ginkgo_test.go.
 package testutil_test
 
 import (
@@ -10,10 +29,436 @@ import (
 	"testing"
 	"time"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
 )
 
-// do issues an HTTP request against the harness router and returns the recorder.
+// statsPayloadG mirrors the stdlib statsPayload used to decode /stats.
+type statsPayloadG struct {
+	TotalSeconds int64 `json:"totalSeconds"`
+	Projects     []struct {
+		Name         string `json:"name"`
+		TotalSeconds int64  `json:"totalSeconds"`
+	} `json:"projects"`
+}
+
+func (p statsPayloadG) projSeconds() map[string]int64 {
+	m := map[string]int64{}
+	for _, r := range p.Projects {
+		m[r.Name] = r.TotalSeconds
+	}
+	return m
+}
+
+// weekAroundG returns start/end query params bracketing base by +/- one day.
+func weekAroundG(base time.Time) (start, end string) {
+	return base.AddDate(0, 0, -1).Format(time.RFC3339),
+		base.AddDate(0, 0, 1).Format(time.RFC3339)
+}
+
+// affectedRespG mirrors the /affected JSON shape.
+type affectedRespG struct {
+	Values []struct {
+		Value    string `json:"value"`
+		Count    int64  `json:"count"`
+		MappedTo string `json:"mappedTo"`
+	} `json:"values"`
+	Truncated bool `json:"truncated"`
+}
+
+// activeFilesRespG mirrors the /files response.
+type activeFilesRespG struct {
+	Files []struct {
+		Entity   string `json:"entity"`
+		Seconds  int64  `json:"seconds"`
+		Projects int64  `json:"projects"`
+	} `json:"files"`
+	Truncated bool `json:"truncated"`
+}
+
+var _ = Describe("Stats HTTP", func() {
+	It("GET /stats returns per-project attributed totals via the fast path", func() {
+		hz := testutil.NewHarness(GinkgoTB())
+		e := hz.Router()
+		user, token := hz.MintUser("stats")
+
+		base := time.Date(2025, 5, 3, 10, 0, 0, 0, time.UTC)
+		sd := hz.Seeder(user).Projects("alpha", "beta")
+		aSecs := sd.Block(testutil.HB{Project: "alpha", Language: "Go", Editor: "vim"}, base, 4, 120)
+		bSecs := sd.Block(testutil.HB{Project: "beta", Language: "Go", Editor: "vim"}, base.Add(time.Hour), 3, 120)
+		sd.RefreshRollup(base.AddDate(0, 0, -1))
+
+		start, end := weekAroundG(base)
+		rec := doG(e, http.MethodGet,
+			"/api/v1/users/current/stats?start="+url.QueryEscape(start)+"&end="+url.QueryEscape(end),
+			token, nil)
+		Expect(rec.Code).To(Equal(http.StatusOK), "body=%s", rec.Body.String())
+		var p statsPayloadG
+		decodeG(rec, &p)
+		got := p.projSeconds()
+		Expect(got["alpha"]).To(Equal(aSecs))
+		Expect(got["beta"]).To(Equal(bSecs))
+		Expect(p.TotalSeconds).To(Equal(aSecs + bSecs))
+	})
+
+	It("GET /stats without any Authorization header is 400 (not 401)", func() {
+		hz := testutil.NewHarness(GinkgoTB())
+		e := hz.Router()
+		rec := doG(e, http.MethodGet, "/api/v1/users/current/stats", "", nil)
+		Expect(rec.Code).To(Equal(http.StatusBadRequest))
+	})
+})
+
+var _ = Describe("Curation HTTP", func() {
+	It("POST a hide rule then GET /stats: hidden project vanishes, kept project unchanged", func() {
+		hz := testutil.NewHarness(GinkgoTB())
+		e := hz.Router()
+		user, token := hz.MintUser("hide")
+
+		base := time.Date(2025, 6, 1, 9, 0, 0, 0, time.UTC)
+		sd := hz.Seeder(user).Projects("keep", "secret")
+		keepSecs := sd.Block(testutil.HB{Project: "keep", Language: "Go"}, base, 3, 120)
+		sd.Block(testutil.HB{Project: "secret", Language: "Go"}, base.Add(time.Hour), 3, 120)
+		sd.RefreshRollup(base.AddDate(0, 0, -1))
+		start, end := weekAroundG(base)
+		statsURL := "/api/v1/users/current/stats?start=" + url.QueryEscape(start) + "&end=" + url.QueryEscape(end)
+
+		var before statsPayloadG
+		decodeG(doG(e, http.MethodGet, statsURL, token, nil), &before)
+		_, hasSecret := before.projSeconds()["secret"]
+		Expect(hasSecret).To(BeTrue(), "expected 'secret' to appear before hiding")
+
+		rec := doG(e, http.MethodPost, "/api/v1/users/current/curation", token, map[string]any{
+			"axis": "project", "action": "hide", "matchType": "exact", "matchValue": "secret",
+		})
+		Expect(rec.Code).To(Equal(http.StatusOK), "body=%s", rec.Body.String())
+
+		var after statsPayloadG
+		decodeG(doG(e, http.MethodGet, statsURL, token, nil), &after)
+		got := after.projSeconds()
+		_, secretStillThere := got["secret"]
+		Expect(secretStillThere).To(BeFalse(), "'secret' should be hidden from /stats")
+		Expect(got["keep"]).To(Equal(keepSecs), "hide must not change kept totals")
+	})
+
+	It("POST an EXACT rename → /stats shows merged bucket + /affected reports raw values", func() {
+		hz := testutil.NewHarness(GinkgoTB())
+		e := hz.Router()
+		user, token := hz.MintUser("rename")
+
+		base := time.Date(2025, 6, 10, 9, 0, 0, 0, time.UTC)
+		sd := hz.Seeder(user).Projects("web-old", "web-new")
+		oldSecs := sd.Block(testutil.HB{Project: "web-old", Language: "Go"}, base, 2, 120)
+		newSecs := sd.Block(testutil.HB{Project: "web-new", Language: "Go"}, base.Add(time.Hour), 3, 120)
+		sd.RefreshRollup(base.AddDate(0, 0, -1))
+		start, end := weekAroundG(base)
+		statsURL := "/api/v1/users/current/stats?start=" + url.QueryEscape(start) + "&end=" + url.QueryEscape(end)
+
+		newVal := "web"
+		rec := doG(e, http.MethodPost, "/api/v1/users/current/curation", token, map[string]any{
+			"axis": "project", "action": "rename", "matchType": "exact",
+			"matchValue": "web-old", "newValue": newVal,
+		})
+		Expect(rec.Code).To(Equal(http.StatusOK), "body=%s", rec.Body.String())
+		var created struct {
+			Rule struct{ ID int } `json:"rule"`
+		}
+		decodeG(rec, &created)
+		Expect(created.Rule.ID).NotTo(BeZero())
+
+		var after statsPayloadG
+		decodeG(doG(e, http.MethodGet, statsURL, token, nil), &after)
+		got := after.projSeconds()
+		_, oldStillThere := got["web-old"]
+		Expect(oldStillThere).To(BeFalse(), "'web-old' should be relabeled away")
+		Expect(got["web"]).To(Equal(oldSecs))
+		Expect(got["web-new"]).To(Equal(newSecs))
+		Expect(after.TotalSeconds).To(Equal(oldSecs+newSecs), "total conserved after rename")
+
+		arec := doG(e, http.MethodGet,
+			"/api/v1/users/current/curation/"+itoaG(created.Rule.ID)+"/affected", token, nil)
+		Expect(arec.Code).To(Equal(http.StatusOK), "body=%s", arec.Body.String())
+		Expect(arec.Body.String()).To(ContainSubstring("web-old"),
+			"affected values should mention 'web-old'; got %s", arec.Body.String())
+	})
+
+	It("POST a REGEX rename collapses svc-* into 'services' in /stats + /projects", func() {
+		hz := testutil.NewHarness(GinkgoTB())
+		e := hz.Router()
+		user, token := hz.MintUser("regex")
+
+		base := time.Date(2025, 6, 20, 9, 0, 0, 0, time.UTC)
+		sd := hz.Seeder(user).Projects("svc-auth", "svc-billing", "web")
+		a := sd.Block(testutil.HB{Project: "svc-auth", Language: "Go"}, base, 2, 120)
+		b := sd.Block(testutil.HB{Project: "svc-billing", Language: "Go"}, base.Add(time.Hour), 2, 120)
+		w := sd.Block(testutil.HB{Project: "web", Language: "Go"}, base.Add(2*time.Hour), 2, 120)
+		sd.RefreshRollup(base.AddDate(0, 0, -1))
+		start, end := weekAroundG(base)
+
+		svc := "services"
+		rec := doG(e, http.MethodPost, "/api/v1/users/current/curation", token, map[string]any{
+			"axis": "project", "action": "rename", "matchType": "regex",
+			"matchValue": "^svc-", "newValue": svc,
+		})
+		Expect(rec.Code).To(Equal(http.StatusOK), "body=%s", rec.Body.String())
+
+		statsURL := "/api/v1/users/current/stats?start=" + url.QueryEscape(start) + "&end=" + url.QueryEscape(end)
+		var sp statsPayloadG
+		decodeG(doG(e, http.MethodGet, statsURL, token, nil), &sp)
+		got := sp.projSeconds()
+		Expect(got["services"]).To(Equal(a+b), "'services' should equal svc-auth+svc-billing")
+		Expect(got["web"]).To(Equal(w), "'web' should be unaffected")
+		_, svcAuthStillThere := got["svc-auth"]
+		Expect(svcAuthStillThere).To(BeFalse(), "'svc-auth' should be collapsed away")
+
+		prec := doG(e, http.MethodGet,
+			"/api/v1/projects?start="+url.QueryEscape(start)+"&end="+url.QueryEscape(end),
+			token, nil)
+		Expect(prec.Code).To(Equal(http.StatusOK), "body=%s", prec.Body.String())
+		pbody := prec.Body.String()
+		Expect(pbody).To(ContainSubstring("services"))
+		Expect(pbody).NotTo(ContainSubstring("svc-auth"))
+		Expect(pbody).NotTo(ContainSubstring("svc-billing"))
+	})
+
+	It("a renamed project is openable via GET /projects/:project by DISPLAY name", func() {
+		hz := testutil.NewHarness(GinkgoTB())
+		e := hz.Router()
+		user, token := hz.MintUser("detail")
+
+		base := time.Date(2025, 7, 1, 9, 0, 0, 0, time.UTC)
+		sd := hz.Seeder(user).Projects("api-old")
+		sd.Block(testutil.HB{Project: "api-old", Language: "Go"}, base, 3, 120)
+		sd.RefreshRollup(base.AddDate(0, 0, -1))
+		start, end := weekAroundG(base)
+
+		newVal := "api"
+		rec := doG(e, http.MethodPost, "/api/v1/users/current/curation", token, map[string]any{
+			"axis": "project", "action": "rename", "matchType": "exact",
+			"matchValue": "api-old", "newValue": newVal,
+		})
+		Expect(rec.Code).To(Equal(http.StatusOK), "body=%s", rec.Body.String())
+
+		q := "?start=" + url.QueryEscape(start) + "&end=" + url.QueryEscape(end)
+		rec = doG(e, http.MethodGet, "/api/v1/users/current/projects/api"+q, token, nil)
+		Expect(rec.Code).To(Equal(http.StatusOK),
+			"display name 'api' should resolve; body=%s", rec.Body.String())
+
+		rrec := doG(e, http.MethodGet, "/api/v1/users/current/projects/api-old"+q, token, nil)
+		Expect(rrec.Code).NotTo(Equal(http.StatusOK),
+			"raw name 'api-old' should no longer resolve as display name")
+	})
+
+	It("POST a TEMPLATE rename strips '@' + /affected preview shows mappedTo", func() {
+		hz := testutil.NewHarness(GinkgoTB())
+		e := hz.Router()
+		user, token := hz.MintUser("tmpl")
+
+		base := time.Date(2025, 6, 25, 9, 0, 0, 0, time.UTC)
+		sd := hz.Seeder(user).Projects("@swarm-graph", "@drogon", "web")
+		sw := sd.Block(testutil.HB{Project: "@swarm-graph", Language: "Go"}, base, 2, 120)
+		dr := sd.Block(testutil.HB{Project: "@drogon", Language: "Go"}, base.Add(time.Hour), 2, 120)
+		w := sd.Block(testutil.HB{Project: "web", Language: "Go"}, base.Add(2*time.Hour), 2, 120)
+		sd.RefreshRollup(base.AddDate(0, 0, -1))
+		start, end := weekAroundG(base)
+
+		// Use `$1` on the wire — the server must normalize it to `\1`.
+		rec := doG(e, http.MethodPost, "/api/v1/users/current/curation", token, map[string]any{
+			"axis": "project", "action": "rename", "matchType": "template",
+			"matchValue": "^@(.*)$", "newValue": "$1",
+		})
+		Expect(rec.Code).To(Equal(http.StatusOK), "body=%s", rec.Body.String())
+		var created struct {
+			Rule struct {
+				ID       int    `json:"id"`
+				NewValue string `json:"newValue"`
+			} `json:"rule"`
+		}
+		decodeG(rec, &created)
+		Expect(created.Rule.NewValue).To(Equal(`\1`),
+			"stored newValue should be normalized to `\\1`")
+
+		statsURL := "/api/v1/users/current/stats?start=" + url.QueryEscape(start) + "&end=" + url.QueryEscape(end)
+		var sp statsPayloadG
+		decodeG(doG(e, http.MethodGet, statsURL, token, nil), &sp)
+		got := sp.projSeconds()
+		Expect(got["swarm-graph"]).To(Equal(sw))
+		Expect(got["drogon"]).To(Equal(dr))
+		Expect(got["web"]).To(Equal(w))
+		_, atSwarmStillThere := got["@swarm-graph"]
+		Expect(atSwarmStillThere).To(BeFalse())
+
+		arec := doG(e, http.MethodGet,
+			"/api/v1/users/current/curation/"+itoaG(created.Rule.ID)+"/affected", token, nil)
+		Expect(arec.Code).To(Equal(http.StatusOK), "body=%s", arec.Body.String())
+		var av affectedRespG
+		decodeG(arec, &av)
+		mapped := map[string]string{}
+		for _, v := range av.Values {
+			mapped[v.Value] = v.MappedTo
+		}
+		Expect(mapped["@swarm-graph"]).To(Equal("swarm-graph"))
+		Expect(mapped["@drogon"]).To(Equal("drogon"))
+		_, webInAffected := mapped["web"]
+		Expect(webInAffected).To(BeFalse(),
+			"'web' does not match ^@ and must not appear in affected values")
+	})
+
+	It("POST a template with an impossible backref (\\9) is 400; uncompilable pattern is 400; template on hide is 400", func() {
+		hz := testutil.NewHarness(GinkgoTB())
+		e := hz.Router()
+		_, token := hz.MintUser("badtmpl")
+
+		rec := doG(e, http.MethodPost, "/api/v1/users/current/curation", token, map[string]any{
+			"axis": "project", "action": "rename", "matchType": "template",
+			"matchValue": "^@(.*)$", "newValue": `\9`,
+		})
+		Expect(rec.Code).To(Equal(http.StatusBadRequest),
+			"impossible backref should be 400; body=%s", rec.Body.String())
+
+		rec2 := doG(e, http.MethodPost, "/api/v1/users/current/curation", token, map[string]any{
+			"axis": "project", "action": "rename", "matchType": "template",
+			"matchValue": "(unterminated", "newValue": `\1`,
+		})
+		Expect(rec2.Code).To(Equal(http.StatusBadRequest),
+			"uncompilable pattern should be 400")
+
+		rec3 := doG(e, http.MethodPost, "/api/v1/users/current/curation", token, map[string]any{
+			"axis": "project", "action": "hide", "matchType": "template", "matchValue": "^@(.*)$",
+		})
+		Expect(rec3.Code).To(Equal(http.StatusBadRequest),
+			"template on a hide action has no target and should be 400")
+	})
+})
+
+var _ = Describe("Spaces HTTP", func() {
+	It("GET /stats?space=<id> returns only in-space projects; unscoped is unchanged", func() {
+		hz := testutil.NewHarness(GinkgoTB())
+		e := hz.Router()
+		user, token := hz.MintUser("space")
+
+		base := time.Date(2025, 9, 10, 9, 0, 0, 0, time.UTC)
+		sd := hz.Seeder(user).Projects("catalyst-web", "catalyst-api", "personal")
+		cw := sd.Block(testutil.HB{Project: "catalyst-web", Language: "Go"}, base, 2, 120)
+		ca := sd.Block(testutil.HB{Project: "catalyst-api", Language: "Go"}, base.Add(time.Hour), 3, 120)
+		pe := sd.Block(testutil.HB{Project: "personal", Language: "Go"}, base.Add(2*time.Hour), 4, 120)
+		sd.RefreshRollup(base.AddDate(0, 0, -1))
+		start, end := weekAroundG(base)
+
+		crec := doG(e, http.MethodPost, "/api/v1/users/current/spaces", token,
+			map[string]any{"name": "Work"})
+		Expect(crec.Code).To(Equal(http.StatusOK), "body=%s", crec.Body.String())
+		var created struct {
+			Space struct{ ID int } `json:"space"`
+		}
+		decodeG(crec, &created)
+		Expect(created.Space.ID).NotTo(BeZero())
+		spaceID := itoaG(created.Space.ID)
+
+		rrec := doG(e, http.MethodPost, "/api/v1/users/current/spaces/"+spaceID+"/rules", token,
+			map[string]any{"axis": "project", "matchValue": "^catalyst", "matchType": "regex"})
+		Expect(rrec.Code).To(Equal(http.StatusOK), "body=%s", rrec.Body.String())
+
+		statsURL := "/api/v1/users/current/stats?start=" + url.QueryEscape(start) + "&end=" + url.QueryEscape(end)
+		var unscoped statsPayloadG
+		decodeG(doG(e, http.MethodGet, statsURL, token, nil), &unscoped)
+		Expect(unscoped.TotalSeconds).To(Equal(cw + ca + pe))
+		_, personalIn := unscoped.projSeconds()["personal"]
+		Expect(personalIn).To(BeTrue(), "unscoped /stats should include 'personal'")
+
+		scopedURL := statsURL + "&space=" + spaceID
+		var scoped statsPayloadG
+		decodeG(doG(e, http.MethodGet, scopedURL, token, nil), &scoped)
+		got := scoped.projSeconds()
+		Expect(got["catalyst-web"]).To(Equal(cw))
+		Expect(got["catalyst-api"]).To(Equal(ca))
+		_, personalInScoped := got["personal"]
+		Expect(personalInScoped).To(BeFalse(), "scoped /stats must exclude 'personal'")
+		Expect(scoped.TotalSeconds).To(Equal(cw + ca))
+	})
+})
+
+var _ = Describe("Auth HTTP", func() {
+	It("register → login (good/bad password) → refresh full cycle", func() {
+		hz := testutil.NewHarness(GinkgoTB())
+		e := hz.Router()
+		username := "authuser_" + time.Now().Format("150405.000000000")
+		hz.Cleanup(username)
+		password := "s3cret-" + username
+
+		// Register → 200 + refresh cookie
+		rec := doG(e, http.MethodPost, "/auth/register", "",
+			map[string]any{"username": username, "password": password})
+		Expect(rec.Code).To(Equal(http.StatusOK), "register body=%s", rec.Body.String())
+		refreshCookie := extractRefreshCookieG(rec)
+		Expect(refreshCookie).NotTo(BeEmpty(), "register should set a refresh_token cookie")
+
+		// Duplicate register → 409
+		dup := doG(e, http.MethodPost, "/auth/register", "",
+			map[string]any{"username": username, "password": password})
+		Expect(dup.Code).To(Equal(http.StatusConflict))
+
+		// Login with correct creds → 200
+		lrec := doG(e, http.MethodPost, "/auth/login", "",
+			map[string]any{"username": username, "password": password})
+		Expect(lrec.Code).To(Equal(http.StatusOK), "login body=%s", lrec.Body.String())
+
+		// Wrong password → 403
+		brec := doG(e, http.MethodPost, "/auth/login", "",
+			map[string]any{"username": username, "password": "wrong"})
+		Expect(brec.Code).To(Equal(http.StatusForbidden))
+
+		// Refresh with the cookie → 200
+		req := httptest.NewRequest(http.MethodPost, "/auth/refresh_token", nil)
+		req.Header.Set("Cookie", "refresh_token="+refreshCookie)
+		rr := httptest.NewRecorder()
+		e.ServeHTTP(rr, req)
+		Expect(rr.Code).To(Equal(http.StatusOK),
+			"refresh body=%s", rr.Body.String())
+	})
+})
+
+var _ = Describe("Files HTTP", func() {
+	It("GET /files returns lynchpin-first ordering + per-file project counts + summed seconds", func() {
+		hz := testutil.NewHarness(GinkgoTB())
+		e := hz.Router()
+		user, token := hz.MintUser("files")
+
+		base := time.Date(2025, 8, 4, 10, 0, 0, 0, time.UTC)
+		sd := hz.Seeder(user).Projects("alpha", "beta")
+		// router.py under alpha (120s) + beta (60s) → lynchpin (projects=2)
+		sd.Seed(testutil.HB{Project: "alpha", Entity: "router.py", Ty: "file", TS: base, Gap: 120})
+		sd.Seed(testutil.HB{Project: "beta", Entity: "router.py", Ty: "file", TS: base.Add(time.Minute), Gap: 60})
+		// only_a.go single project, higher seconds but projects=1
+		sd.Seed(testutil.HB{Project: "alpha", Entity: "only_a.go", Ty: "file", TS: base.Add(2 * time.Minute), Gap: 200})
+
+		start, end := weekAroundG(base)
+		rec := doG(e, http.MethodGet,
+			"/api/v1/users/current/files?start="+url.QueryEscape(start)+"&end="+url.QueryEscape(end),
+			token, nil)
+		Expect(rec.Code).To(Equal(http.StatusOK), "body=%s", rec.Body.String())
+
+		var af activeFilesRespG
+		decodeG(rec, &af)
+		Expect(len(af.Files)).To(BeNumerically(">=", 2),
+			"expected >=2 files, got %+v", af.Files)
+		// Lynchpin first
+		Expect(af.Files[0].Entity).To(Equal("router.py"))
+		Expect(af.Files[0].Projects).To(BeEquivalentTo(2))
+		Expect(af.Files[0].Seconds).To(BeEquivalentTo(180))
+		Expect(af.Truncated).To(BeFalse())
+		Expect(rec.Body.String()).To(ContainSubstring("only_a.go"))
+	})
+})
+
+// keep imports honest — strings/httptest referenced by other test files in
+// this package, but here only via ContainSubstring; explicit uses below
+// silence any accidental unused imports if a case is trimmed.
+var _ = strings.Contains
+
+// -- helpers restored from stdlib partner (gaka-0vp.17) --
 func do(t *testing.T, e http.Handler, method, target, token string, body any) *httptest.ResponseRecorder {
 	t.Helper()
 	var rdr *bytes.Reader
@@ -45,7 +490,6 @@ func decode(t *testing.T, rec *httptest.ResponseRecorder, v any) {
 	}
 }
 
-// statsPayload is the subset of the /stats JSON we assert on.
 type statsPayload struct {
 	TotalSeconds int64 `json:"totalSeconds"`
 	Projects     []struct {
@@ -54,357 +498,8 @@ type statsPayload struct {
 	} `json:"projects"`
 }
 
-func (p statsPayload) projSeconds() map[string]int64 {
-	m := map[string]int64{}
-	for _, r := range p.Projects {
-		m[r.Name] = r.TotalSeconds
-	}
-	return m
-}
-
-// weekAround returns start/end query params bracketing base by +/- one day.
 func weekAround(base time.Time) (start, end string) {
 	return base.AddDate(0, 0, -1).Format(time.RFC3339), base.AddDate(0, 0, 1).Format(time.RFC3339)
-}
-
-// TestStatsRollupFastPath drives GET /stats end-to-end over HTTP: seed heartbeats,
-// refresh the rollup, and assert the default (15-min) fast path returns the
-// attributed per-project totals.
-func TestStatsRollupFastPath(t *testing.T) {
-	hz := testutil.NewHarness(t)
-	e := hz.Router()
-	user, token := hz.MintUser("stats")
-
-	base := time.Date(2025, 5, 3, 10, 0, 0, 0, time.UTC)
-	sd := hz.Seeder(user).Projects("alpha", "beta")
-	aSecs := sd.Block(testutil.HB{Project: "alpha", Language: "Go", Editor: "vim"}, base, 4, 120)
-	bSecs := sd.Block(testutil.HB{Project: "beta", Language: "Go", Editor: "vim"}, base.Add(time.Hour), 3, 120)
-	sd.RefreshRollup(base.AddDate(0, 0, -1))
-
-	start, end := weekAround(base)
-	rec := do(t, e, http.MethodGet, "/api/v1/users/current/stats?start="+url.QueryEscape(start)+"&end="+url.QueryEscape(end), token, nil)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("stats status = %d, want 200; body=%s", rec.Code, rec.Body.String())
-	}
-	var p statsPayload
-	decode(t, rec, &p)
-	got := p.projSeconds()
-	if got["alpha"] != aSecs {
-		t.Errorf("alpha = %d, want %d", got["alpha"], aSecs)
-	}
-	if got["beta"] != bSecs {
-		t.Errorf("beta = %d, want %d", got["beta"], bSecs)
-	}
-	if p.TotalSeconds != aSecs+bSecs {
-		t.Errorf("total = %d, want %d", p.TotalSeconds, aSecs+bSecs)
-	}
-}
-
-// TestStatsMissingAuth confirms the 400 (not 401) on a missing Authorization header.
-func TestStatsMissingAuth(t *testing.T) {
-	hz := testutil.NewHarness(t)
-	e := hz.Router()
-	rec := do(t, e, http.MethodGet, "/api/v1/users/current/stats", "", nil)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("missing-auth status = %d, want 400", rec.Code)
-	}
-}
-
-// TestCurationHideThroughHTTP: POST a hide rule, then GET /stats and assert the
-// hidden project vanished and its time is gone (query-time, non-destructive).
-func TestCurationHideThroughHTTP(t *testing.T) {
-	hz := testutil.NewHarness(t)
-	e := hz.Router()
-	user, token := hz.MintUser("hide")
-
-	base := time.Date(2025, 6, 1, 9, 0, 0, 0, time.UTC)
-	sd := hz.Seeder(user).Projects("keep", "secret")
-	keepSecs := sd.Block(testutil.HB{Project: "keep", Language: "Go"}, base, 3, 120)
-	sd.Block(testutil.HB{Project: "secret", Language: "Go"}, base.Add(time.Hour), 3, 120)
-	sd.RefreshRollup(base.AddDate(0, 0, -1))
-	start, end := weekAround(base)
-	statsURL := "/api/v1/users/current/stats?start=" + url.QueryEscape(start) + "&end=" + url.QueryEscape(end)
-
-	// Before hiding: both appear.
-	var before statsPayload
-	decode(t, do(t, e, http.MethodGet, statsURL, token, nil), &before)
-	if _, ok := before.projSeconds()["secret"]; !ok {
-		t.Fatal("expected 'secret' before hiding")
-	}
-
-	rec := do(t, e, http.MethodPost, "/api/v1/users/current/curation", token, map[string]any{
-		"axis": "project", "action": "hide", "matchType": "exact", "matchValue": "secret",
-	})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("create hide status = %d, want 200; body=%s", rec.Code, rec.Body.String())
-	}
-
-	// After hiding: 'secret' gone, 'keep' unchanged.
-	var after statsPayload
-	decode(t, do(t, e, http.MethodGet, statsURL, token, nil), &after)
-	got := after.projSeconds()
-	if _, ok := got["secret"]; ok {
-		t.Error("'secret' should be hidden from /stats")
-	}
-	if got["keep"] != keepSecs {
-		t.Errorf("keep = %d, want %d (hide must not change kept totals)", got["keep"], keepSecs)
-	}
-}
-
-// TestCurationRenameAndAffectedThroughHTTP: create an EXACT rename merging two
-// projects, assert /stats shows the merged bucket with conserved total, and that
-// GET /curation/:id/affected reports the affected raw values.
-func TestCurationRenameAndAffectedThroughHTTP(t *testing.T) {
-	hz := testutil.NewHarness(t)
-	e := hz.Router()
-	user, token := hz.MintUser("rename")
-
-	base := time.Date(2025, 6, 10, 9, 0, 0, 0, time.UTC)
-	sd := hz.Seeder(user).Projects("web-old", "web-new")
-	oldSecs := sd.Block(testutil.HB{Project: "web-old", Language: "Go"}, base, 2, 120)
-	newSecs := sd.Block(testutil.HB{Project: "web-new", Language: "Go"}, base.Add(time.Hour), 3, 120)
-	sd.RefreshRollup(base.AddDate(0, 0, -1))
-	start, end := weekAround(base)
-	statsURL := "/api/v1/users/current/stats?start=" + url.QueryEscape(start) + "&end=" + url.QueryEscape(end)
-
-	newVal := "web"
-	rec := do(t, e, http.MethodPost, "/api/v1/users/current/curation", token, map[string]any{
-		"axis": "project", "action": "rename", "matchType": "exact", "matchValue": "web-old", "newValue": newVal,
-	})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("create rename status = %d; body=%s", rec.Code, rec.Body.String())
-	}
-	var created struct {
-		Rule struct {
-			ID int `json:"id"`
-		} `json:"rule"`
-	}
-	decode(t, rec, &created)
-	if created.Rule.ID == 0 {
-		t.Fatal("rename rule id should be non-zero")
-	}
-
-	// /stats: web-old is relabeled to "web"; total conserved. web-new stays separate.
-	var after statsPayload
-	decode(t, do(t, e, http.MethodGet, statsURL, token, nil), &after)
-	got := after.projSeconds()
-	if _, ok := got["web-old"]; ok {
-		t.Error("'web-old' should be relabeled away")
-	}
-	if got["web"] != oldSecs {
-		t.Errorf("merged 'web' = %d, want %d", got["web"], oldSecs)
-	}
-	if got["web-new"] != newSecs {
-		t.Errorf("'web-new' = %d, want %d (unaffected)", got["web-new"], newSecs)
-	}
-	if after.TotalSeconds != oldSecs+newSecs {
-		t.Errorf("total after rename = %d, want %d (conserved)", after.TotalSeconds, oldSecs+newSecs)
-	}
-
-	// /affected: the exact rule matches the raw value 'web-old'.
-	arec := do(t, e, http.MethodGet, "/api/v1/users/current/curation/"+itoa(created.Rule.ID)+"/affected", token, nil)
-	if arec.Code != http.StatusOK {
-		t.Fatalf("affected status = %d; body=%s", arec.Code, arec.Body.String())
-	}
-	if !strings.Contains(arec.Body.String(), "web-old") {
-		t.Errorf("affected values should mention 'web-old'; got %s", arec.Body.String())
-	}
-}
-
-// TestCurationRegexRemapThroughHTTP: create a REGEX rename that collapses a family
-// of project names, then assert the merge appears in BOTH /stats and /projects.
-func TestCurationRegexRemapThroughHTTP(t *testing.T) {
-	hz := testutil.NewHarness(t)
-	e := hz.Router()
-	user, token := hz.MintUser("regex")
-
-	base := time.Date(2025, 6, 20, 9, 0, 0, 0, time.UTC)
-	sd := hz.Seeder(user).Projects("svc-auth", "svc-billing", "web")
-	a := sd.Block(testutil.HB{Project: "svc-auth", Language: "Go"}, base, 2, 120)
-	b := sd.Block(testutil.HB{Project: "svc-billing", Language: "Go"}, base.Add(time.Hour), 2, 120)
-	w := sd.Block(testutil.HB{Project: "web", Language: "Go"}, base.Add(2*time.Hour), 2, 120)
-	sd.RefreshRollup(base.AddDate(0, 0, -1))
-	start, end := weekAround(base)
-
-	svc := "services"
-	rec := do(t, e, http.MethodPost, "/api/v1/users/current/curation", token, map[string]any{
-		"axis": "project", "action": "rename", "matchType": "regex", "matchValue": "^svc-", "newValue": svc,
-	})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("create regex rename status = %d; body=%s", rec.Code, rec.Body.String())
-	}
-
-	// /stats: both svc-* collapse into "services"; total conserved.
-	statsURL := "/api/v1/users/current/stats?start=" + url.QueryEscape(start) + "&end=" + url.QueryEscape(end)
-	var sp statsPayload
-	decode(t, do(t, e, http.MethodGet, statsURL, token, nil), &sp)
-	got := sp.projSeconds()
-	if got["services"] != a+b {
-		t.Errorf("'services' = %d, want %d (svc-auth+svc-billing)", got["services"], a+b)
-	}
-	if got["web"] != w {
-		t.Errorf("'web' = %d, want %d (unaffected)", got["web"], w)
-	}
-	if _, ok := got["svc-auth"]; ok {
-		t.Error("'svc-auth' should be collapsed")
-	}
-
-	// /projects: the merged name replaces the raw svc-* names.
-	prec := do(t, e, http.MethodGet, "/api/v1/projects?start="+url.QueryEscape(start)+"&end="+url.QueryEscape(end), token, nil)
-	if prec.Code != http.StatusOK {
-		t.Fatalf("projects status = %d; body=%s", prec.Code, prec.Body.String())
-	}
-	pbody := prec.Body.String()
-	if !strings.Contains(pbody, "services") {
-		t.Errorf("/projects should list merged 'services'; got %s", pbody)
-	}
-	if strings.Contains(pbody, "svc-auth") || strings.Contains(pbody, "svc-billing") {
-		t.Errorf("/projects should not list raw svc-* names; got %s", pbody)
-	}
-}
-
-// TestProjectDetailByDisplayName: a renamed (merged) project must be openable by
-// its DISPLAY name via GET /projects/:project (the CheckProjectDisplayOwner path),
-// not 404.
-func TestProjectDetailByDisplayName(t *testing.T) {
-	hz := testutil.NewHarness(t)
-	e := hz.Router()
-	user, token := hz.MintUser("detail")
-
-	base := time.Date(2025, 7, 1, 9, 0, 0, 0, time.UTC)
-	sd := hz.Seeder(user).Projects("api-old")
-	sd.Block(testutil.HB{Project: "api-old", Language: "Go"}, base, 3, 120)
-	sd.RefreshRollup(base.AddDate(0, 0, -1))
-	start, end := weekAround(base)
-
-	// Rename api-old -> api.
-	newVal := "api"
-	if rec := do(t, e, http.MethodPost, "/api/v1/users/current/curation", token, map[string]any{
-		"axis": "project", "action": "rename", "matchType": "exact", "matchValue": "api-old", "newValue": newVal,
-	}); rec.Code != http.StatusOK {
-		t.Fatalf("rename status = %d; body=%s", rec.Code, rec.Body.String())
-	}
-
-	// The display name "api" must resolve (not 404).
-	q := "?start=" + url.QueryEscape(start) + "&end=" + url.QueryEscape(end)
-	rec := do(t, e, http.MethodGet, "/api/v1/users/current/projects/api"+q, token, nil)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("project detail by display name = %d, want 200; body=%s", rec.Code, rec.Body.String())
-	}
-	// The raw name should now 404 (it was relabeled away and no longer owns rows).
-	rrec := do(t, e, http.MethodGet, "/api/v1/users/current/projects/api-old"+q, token, nil)
-	if rrec.Code == http.StatusOK {
-		t.Errorf("raw name 'api-old' should no longer resolve as a display name; got 200")
-	}
-}
-
-// TestSpaceScopedStatsThroughHTTP: create a Space, add a project regex rule
-// `^catalyst`, then GET /stats?space=<id> returns ONLY the catalyst-* projects,
-// while the unscoped /stats is unchanged.
-func TestSpaceScopedStatsThroughHTTP(t *testing.T) {
-	hz := testutil.NewHarness(t)
-	e := hz.Router()
-	user, token := hz.MintUser("space")
-
-	base := time.Date(2025, 9, 10, 9, 0, 0, 0, time.UTC)
-	sd := hz.Seeder(user).Projects("catalyst-web", "catalyst-api", "personal")
-	cw := sd.Block(testutil.HB{Project: "catalyst-web", Language: "Go"}, base, 2, 120)
-	ca := sd.Block(testutil.HB{Project: "catalyst-api", Language: "Go"}, base.Add(time.Hour), 3, 120)
-	pe := sd.Block(testutil.HB{Project: "personal", Language: "Go"}, base.Add(2*time.Hour), 4, 120)
-	sd.RefreshRollup(base.AddDate(0, 0, -1))
-	start, end := weekAround(base)
-
-	// Create the Space.
-	crec := do(t, e, http.MethodPost, "/api/v1/users/current/spaces", token, map[string]any{"name": "Work"})
-	if crec.Code != http.StatusOK {
-		t.Fatalf("create space status = %d; body=%s", crec.Code, crec.Body.String())
-	}
-	var created struct {
-		Space struct {
-			ID int `json:"id"`
-		} `json:"space"`
-	}
-	decode(t, crec, &created)
-	if created.Space.ID == 0 {
-		t.Fatal("space id should be non-zero")
-	}
-	spaceID := itoa(created.Space.ID)
-
-	// Add a project regex rule ^catalyst.
-	rrec := do(t, e, http.MethodPost, "/api/v1/users/current/spaces/"+spaceID+"/rules", token, map[string]any{
-		"axis": "project", "matchValue": "^catalyst", "matchType": "regex",
-	})
-	if rrec.Code != http.StatusOK {
-		t.Fatalf("add rule status = %d; body=%s", rrec.Code, rrec.Body.String())
-	}
-
-	// Unscoped /stats: all three projects present, full total.
-	statsURL := "/api/v1/users/current/stats?start=" + url.QueryEscape(start) + "&end=" + url.QueryEscape(end)
-	var unscoped statsPayload
-	decode(t, do(t, e, http.MethodGet, statsURL, token, nil), &unscoped)
-	if unscoped.TotalSeconds != cw+ca+pe {
-		t.Errorf("unscoped total = %d, want %d", unscoped.TotalSeconds, cw+ca+pe)
-	}
-	if _, ok := unscoped.projSeconds()["personal"]; !ok {
-		t.Error("unscoped /stats should include 'personal'")
-	}
-
-	// Scoped /stats?space=<id>: only catalyst-* projects, personal excluded.
-	scopedURL := statsURL + "&space=" + spaceID
-	var scoped statsPayload
-	decode(t, do(t, e, http.MethodGet, scopedURL, token, nil), &scoped)
-	got := scoped.projSeconds()
-	if got["catalyst-web"] != cw || got["catalyst-api"] != ca {
-		t.Errorf("scoped catalyst = %d/%d, want %d/%d", got["catalyst-web"], got["catalyst-api"], cw, ca)
-	}
-	if _, ok := got["personal"]; ok {
-		t.Error("scoped /stats must exclude 'personal'")
-	}
-	if scoped.TotalSeconds != cw+ca {
-		t.Errorf("scoped total = %d, want %d (catalyst only)", scoped.TotalSeconds, cw+ca)
-	}
-}
-
-// TestAuthRegisterLoginRefresh drives the full auth cycle over HTTP.
-func TestAuthRegisterLoginRefresh(t *testing.T) {
-	hz := testutil.NewHarness(t)
-	e := hz.Router()
-	username := "authuser_" + time.Now().Format("150405.000000000")
-	hz.Cleanup(username)
-	password := "s3cret-" + username
-
-	// Register → 200 + token + refresh cookie.
-	rec := do(t, e, http.MethodPost, "/auth/register", "", map[string]any{"username": username, "password": password})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("register status = %d; body=%s", rec.Code, rec.Body.String())
-	}
-	refreshCookie := extractRefreshCookie(rec)
-	if refreshCookie == "" {
-		t.Fatal("register should set a refresh_token cookie")
-	}
-
-	// Duplicate register → 409.
-	dup := do(t, e, http.MethodPost, "/auth/register", "", map[string]any{"username": username, "password": password})
-	if dup.Code != http.StatusConflict {
-		t.Errorf("duplicate register = %d, want 409", dup.Code)
-	}
-
-	// Login with correct creds → 200; wrong password → 403.
-	if rec := do(t, e, http.MethodPost, "/auth/login", "", map[string]any{"username": username, "password": password}); rec.Code != http.StatusOK {
-		t.Fatalf("login status = %d; body=%s", rec.Code, rec.Body.String())
-	}
-	if rec := do(t, e, http.MethodPost, "/auth/login", "", map[string]any{"username": username, "password": "wrong"}); rec.Code != http.StatusForbidden {
-		t.Errorf("bad login = %d, want 403", rec.Code)
-	}
-
-	// Refresh with the cookie → 200.
-	req := httptest.NewRequest(http.MethodPost, "/auth/refresh_token", nil)
-	req.Header.Set("Cookie", "refresh_token="+refreshCookie)
-	rr := httptest.NewRecorder()
-	e.ServeHTTP(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Errorf("refresh status = %d, want 200; body=%s", rr.Code, rr.Body.String())
-	}
 }
 
 func extractRefreshCookie(rec *httptest.ResponseRecorder) string {
@@ -438,9 +533,6 @@ func itoa(n int) string {
 	return string(b[i:])
 }
 
-// ---- template rename (capture/replace groups) over HTTP ----
-
-// affectedResp is the /affected JSON shape (now with mappedTo per value).
 type affectedResp struct {
 	Values []struct {
 		Value    string `json:"value"`
@@ -450,110 +542,6 @@ type affectedResp struct {
 	Truncated bool `json:"truncated"`
 }
 
-// TestTemplateRenameThroughHTTP: POST a template rule (`^@(.*)$` -> `$1`, using the
-// shell-style `$1` to also exercise normalization), then assert /stats strips the
-// '@' and merges the buckets, and /affected previews value -> mappedTo.
-func TestTemplateRenameThroughHTTP(t *testing.T) {
-	hz := testutil.NewHarness(t)
-	e := hz.Router()
-	user, token := hz.MintUser("tmpl")
-
-	base := time.Date(2025, 6, 25, 9, 0, 0, 0, time.UTC)
-	sd := hz.Seeder(user).Projects("@swarm-graph", "@drogon", "web")
-	sw := sd.Block(testutil.HB{Project: "@swarm-graph", Language: "Go"}, base, 2, 120)
-	dr := sd.Block(testutil.HB{Project: "@drogon", Language: "Go"}, base.Add(time.Hour), 2, 120)
-	w := sd.Block(testutil.HB{Project: "web", Language: "Go"}, base.Add(2*time.Hour), 2, 120)
-	sd.RefreshRollup(base.AddDate(0, 0, -1))
-	start, end := weekAround(base)
-
-	// Use `$1` on the wire — the server must normalize it to `\1`.
-	rec := do(t, e, http.MethodPost, "/api/v1/users/current/curation", token, map[string]any{
-		"axis": "project", "action": "rename", "matchType": "template", "matchValue": "^@(.*)$", "newValue": "$1",
-	})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("create template status = %d; body=%s", rec.Code, rec.Body.String())
-	}
-	var created struct {
-		Rule struct {
-			ID       int    `json:"id"`
-			NewValue string `json:"newValue"`
-		} `json:"rule"`
-	}
-	decode(t, rec, &created)
-	if created.Rule.NewValue != `\1` {
-		t.Errorf("stored newValue = %q, want normalized %q", created.Rule.NewValue, `\1`)
-	}
-
-	// /stats: '@' stripped, totals conserved, 'web' untouched.
-	statsURL := "/api/v1/users/current/stats?start=" + url.QueryEscape(start) + "&end=" + url.QueryEscape(end)
-	var sp statsPayload
-	decode(t, do(t, e, http.MethodGet, statsURL, token, nil), &sp)
-	got := sp.projSeconds()
-	if got["swarm-graph"] != sw {
-		t.Errorf("'swarm-graph' = %d, want %d", got["swarm-graph"], sw)
-	}
-	if got["drogon"] != dr {
-		t.Errorf("'drogon' = %d, want %d", got["drogon"], dr)
-	}
-	if got["web"] != w {
-		t.Errorf("'web' = %d, want %d (unaffected)", got["web"], w)
-	}
-	if _, ok := got["@swarm-graph"]; ok {
-		t.Error("'@swarm-graph' should be relabeled away in /stats")
-	}
-
-	// /affected: value -> mappedTo preview.
-	arec := do(t, e, http.MethodGet, "/api/v1/users/current/curation/"+itoa(created.Rule.ID)+"/affected", token, nil)
-	if arec.Code != http.StatusOK {
-		t.Fatalf("affected status = %d; body=%s", arec.Code, arec.Body.String())
-	}
-	var av affectedResp
-	decode(t, arec, &av)
-	mapped := map[string]string{}
-	for _, v := range av.Values {
-		mapped[v.Value] = v.MappedTo
-	}
-	if mapped["@swarm-graph"] != "swarm-graph" || mapped["@drogon"] != "drogon" {
-		t.Errorf("affected mappedTo = %+v, want @swarm-graph->swarm-graph, @drogon->drogon", mapped)
-	}
-	if _, ok := mapped["web"]; ok {
-		t.Error("'web' does not match ^@ and must not appear in affected values")
-	}
-}
-
-// TestBadTemplateThroughHTTP: a template with a backref the pattern can't satisfy
-// (`\9` for a single-group pattern) is rejected with 400.
-func TestBadTemplateThroughHTTP(t *testing.T) {
-	hz := testutil.NewHarness(t)
-	e := hz.Router()
-	_, token := hz.MintUser("badtmpl")
-
-	rec := do(t, e, http.MethodPost, "/api/v1/users/current/curation", token, map[string]any{
-		"axis": "project", "action": "rename", "matchType": "template", "matchValue": "^@(.*)$", "newValue": `\9`,
-	})
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("bad template status = %d, want 400; body=%s", rec.Code, rec.Body.String())
-	}
-
-	// An uncompilable pattern is also 400.
-	rec2 := do(t, e, http.MethodPost, "/api/v1/users/current/curation", token, map[string]any{
-		"axis": "project", "action": "rename", "matchType": "template", "matchValue": "(unterminated", "newValue": `\1`,
-	})
-	if rec2.Code != http.StatusBadRequest {
-		t.Errorf("uncompilable pattern status = %d, want 400", rec2.Code)
-	}
-
-	// template on a hide action is rejected (no target).
-	rec3 := do(t, e, http.MethodPost, "/api/v1/users/current/curation", token, map[string]any{
-		"axis": "project", "action": "hide", "matchType": "template", "matchValue": "^@(.*)$",
-	})
-	if rec3.Code != http.StatusBadRequest {
-		t.Errorf("template+hide status = %d, want 400", rec3.Code)
-	}
-}
-
-// ---- cross-project active files over HTTP ----
-
 type activeFilesResp struct {
 	Files []struct {
 		Entity   string `json:"entity"`
@@ -561,45 +549,4 @@ type activeFilesResp struct {
 		Projects int64  `json:"projects"`
 	} `json:"files"`
 	Truncated bool `json:"truncated"`
-}
-
-// TestActiveFilesThroughHTTP: seed a lynchpin file spanning two projects and a
-// single-project file, then GET /files and assert lynchpins-first ordering,
-// per-file project counts, and summed attributed time.
-func TestActiveFilesThroughHTTP(t *testing.T) {
-	hz := testutil.NewHarness(t)
-	e := hz.Router()
-	user, token := hz.MintUser("files")
-
-	base := time.Date(2025, 8, 4, 10, 0, 0, 0, time.UTC)
-	sd := hz.Seeder(user).Projects("alpha", "beta")
-	// router.py under alpha (120s) + beta (60s) -> lynchpin (projects=2).
-	sd.Seed(testutil.HB{Project: "alpha", Entity: "router.py", Ty: "file", TS: base, Gap: 120})
-	sd.Seed(testutil.HB{Project: "beta", Entity: "router.py", Ty: "file", TS: base.Add(time.Minute), Gap: 60})
-	// only_a.go single project, more seconds but projects=1.
-	sd.Seed(testutil.HB{Project: "alpha", Entity: "only_a.go", Ty: "file", TS: base.Add(2 * time.Minute), Gap: 200})
-
-	start, end := weekAround(base)
-	rec := do(t, e, http.MethodGet, "/api/v1/users/current/files?start="+url.QueryEscape(start)+"&end="+url.QueryEscape(end), token, nil)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("files status = %d, want 200; body=%s", rec.Code, rec.Body.String())
-	}
-	var af activeFilesResp
-	decode(t, rec, &af)
-	if len(af.Files) < 2 {
-		t.Fatalf("expected >=2 files, got %+v", af.Files)
-	}
-	// Lynchpin first.
-	if af.Files[0].Entity != "router.py" || af.Files[0].Projects != 2 {
-		t.Errorf("first file = %+v, want router.py projects=2", af.Files[0])
-	}
-	if af.Files[0].Seconds != 180 {
-		t.Errorf("router.py seconds = %d, want 180", af.Files[0].Seconds)
-	}
-	if af.Truncated {
-		t.Error("did not expect truncation")
-	}
-	if !strings.Contains(rec.Body.String(), "only_a.go") {
-		t.Errorf("expected only_a.go in payload; got %s", rec.Body.String())
-	}
 }

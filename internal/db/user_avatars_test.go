@@ -1,190 +1,121 @@
+// user_avatars_ginkgo_test.go — ginkgo mirror of user_avatars_test.go (gaka-0vp.13).
+// 1:1 case map (5 stdlib TestXxx → 5 Its):
+//   TestUserAvatars_SaveRoundtrip       → "SaveUserAvatar > round-trips ready row"
+//   TestUserAvatars_StatusTransitions   → "SetAvatarStatus > running/error/retry transitions"
+//   TestUserAvatars_ErrorPreservesBytes → "SetAvatarStatus(error) > preserves image_bytes"
+//   TestUserAvatars_UnknownStatus       → "SetAvatarStatus > rejects unknown status"
+//   TestUserAvatars_NotFound            → "GetUserAvatar > returns (nil,false,nil) miss"
 package db
-
-// user_avatars_test.go (gaka-9v4): DB roundtrip + status-transition tests
-// for the per-user chibi avatar row. Non-tautological: exercises the two-
-// phase status ('running' → 'ready') the async worker relies on, and the
-// bytes-preserving 'error' transition that keeps a prior ready image
-// visible when a retry fails.
 
 import (
 	"bytes"
 	"context"
-	"testing"
+
+	"github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-// TestUserAvatars_SaveRoundtrip: SaveUserAvatar populates every column,
-// GetUserAvatar reads them back verbatim, and the row lands in 'ready'.
-func TestUserAvatars_SaveRoundtrip(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	ctx := context.Background()
+var _ = ginkgo.Describe("user_avatars", func() {
+	ginkgo.It("SaveUserAvatar round-trips a ready row with all columns intact", func() {
+		d := openTestDBG()
+		ctx := context.Background()
 
-	sender := mkSender("useravatar_save")
-	cleanupSender(t, d, ctx, sender)
-	ensureUser(t, d, ctx, sender)
+		sender := mkSender("useravatar_save")
+		cleanupSenderG(d, ctx, sender)
+		ensureUserG(d, ctx, sender)
 
-	img := []byte("\x89PNG\r\n\x1a\nfake-chibi-portrait-bytes")
-	var seed int64 = 424242
-	if err := d.SaveUserAvatar(ctx, sender, img, "image/png",
-		"chroma_hd", "a chibi hacker in a hoodie, neon glow", &seed); err != nil {
-		t.Fatalf("SaveUserAvatar: %v", err)
-	}
+		img := []byte("\x89PNG\r\n\x1a\nfake-chibi-portrait-bytes")
+		var seed int64 = 424242
+		err := d.SaveUserAvatar(ctx, sender, img, "image/png",
+			"chroma_hd", "a chibi hacker in a hoodie, neon glow", &seed)
+		Expect(err).NotTo(HaveOccurred())
 
-	got, ok, err := d.GetUserAvatar(ctx, sender)
-	if err != nil {
-		t.Fatalf("GetUserAvatar: %v", err)
-	}
-	if !ok {
-		t.Fatal("GetUserAvatar: expected row, got miss")
-	}
-	if !bytes.Equal(got.ImageBytes, img) {
-		t.Errorf("bytes mismatch: got %d want %d", len(got.ImageBytes), len(img))
-	}
-	if got.MimeType != "image/png" {
-		t.Errorf("MimeType=%q want image/png", got.MimeType)
-	}
-	if got.Model != "chroma_hd" {
-		t.Errorf("Model=%q", got.Model)
-	}
-	if got.Prompt == "" {
-		t.Error("Prompt was dropped")
-	}
-	if got.Seed == nil || *got.Seed != seed {
-		t.Errorf("Seed=%v want %d", got.Seed, seed)
-	}
-	if got.Status != UserAvatarStatusReady {
-		t.Errorf("Status=%q want ready", got.Status)
-	}
-	if got.GeneratedAt == nil {
-		t.Error("GeneratedAt is nil — SaveUserAvatar should stamp now()")
-	}
-}
+		got, ok, err := d.GetUserAvatar(ctx, sender)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(ok).To(BeTrue(), "GetUserAvatar: expected row, got miss")
+		Expect(bytes.Equal(got.ImageBytes, img)).To(BeTrue())
+		Expect(got.MimeType).To(Equal("image/png"))
+		Expect(got.Model).To(Equal("chroma_hd"))
+		Expect(got.Prompt).NotTo(BeEmpty())
+		Expect(got.Seed).NotTo(BeNil())
+		Expect(*got.Seed).To(Equal(seed))
+		Expect(got.Status).To(Equal(UserAvatarStatusReady))
+		Expect(got.GeneratedAt).NotTo(BeNil(), "SaveUserAvatar should stamp now()")
+	})
 
-// TestUserAvatars_StatusTransitions: SetAvatarStatus can drive
-// pending → running → ready → error → running (retry), and each state
-// change clears the previous error_message. Non-tautological: proves the
-// NULLIF-on-empty-error branch by transitioning INTO error, then OUT of
-// error and verifying the message is gone.
-func TestUserAvatars_StatusTransitions(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	ctx := context.Background()
+	ginkgo.It("SetAvatarStatus drives running/error/retry transitions and clears prior error on retry", func() {
+		d := openTestDBG()
+		ctx := context.Background()
 
-	sender := mkSender("useravatar_status")
-	cleanupSender(t, d, ctx, sender)
-	ensureUser(t, d, ctx, sender)
+		sender := mkSender("useravatar_status")
+		cleanupSenderG(d, ctx, sender)
+		ensureUserG(d, ctx, sender)
 
-	// pre-condition: no row, status endpoint returns miss.
-	if info, ok, err := d.GetUserAvatarStatus(ctx, sender); err != nil {
-		t.Fatalf("pre GetUserAvatarStatus: %v", err)
-	} else if ok || info != nil {
-		t.Fatalf("pre: expected no row, got ok=%v info=%+v", ok, info)
-	}
+		// pre-condition: no row.
+		info, ok, err := d.GetUserAvatarStatus(ctx, sender)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(ok).To(BeFalse())
+		Expect(info).To(BeNil())
 
-	// running (creates the row via upsert).
-	if err := d.SetAvatarStatus(ctx, sender, UserAvatarStatusRunning, ""); err != nil {
-		t.Fatalf("set running: %v", err)
-	}
-	info, ok, err := d.GetUserAvatarStatus(ctx, sender)
-	if err != nil || !ok {
-		t.Fatalf("post-running status: ok=%v err=%v", ok, err)
-	}
-	if info.Status != UserAvatarStatusRunning {
-		t.Errorf("Status=%q want running", info.Status)
-	}
-	if info.ErrorMessage != "" {
-		t.Errorf("ErrorMessage=%q want empty", info.ErrorMessage)
-	}
+		// running (creates the row via upsert).
+		Expect(d.SetAvatarStatus(ctx, sender, UserAvatarStatusRunning, "")).To(Succeed())
+		info, ok, err = d.GetUserAvatarStatus(ctx, sender)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(ok).To(BeTrue())
+		Expect(info.Status).To(Equal(UserAvatarStatusRunning))
+		Expect(info.ErrorMessage).To(BeEmpty())
 
-	// error (writes an error message; bytes remain nil).
-	if err := d.SetAvatarStatus(ctx, sender, UserAvatarStatusError, "shim: 503 upstream unavailable"); err != nil {
-		t.Fatalf("set error: %v", err)
-	}
-	info, _, err = d.GetUserAvatarStatus(ctx, sender)
-	if err != nil {
-		t.Fatalf("post-error status: %v", err)
-	}
-	if info.Status != UserAvatarStatusError {
-		t.Errorf("Status=%q want error", info.Status)
-	}
-	if info.ErrorMessage == "" {
-		t.Error("ErrorMessage empty; expected the shim 503 message")
-	}
+		// error.
+		Expect(d.SetAvatarStatus(ctx, sender, UserAvatarStatusError, "shim: 503 upstream unavailable")).To(Succeed())
+		info, _, err = d.GetUserAvatarStatus(ctx, sender)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(info.Status).To(Equal(UserAvatarStatusError))
+		Expect(info.ErrorMessage).NotTo(BeEmpty(), "expected the shim 503 message")
 
-	// running again (retry) — MUST clear the prior error_message.
-	if err := d.SetAvatarStatus(ctx, sender, UserAvatarStatusRunning, ""); err != nil {
-		t.Fatalf("set running (retry): %v", err)
-	}
-	info, _, err = d.GetUserAvatarStatus(ctx, sender)
-	if err != nil {
-		t.Fatalf("post-retry status: %v", err)
-	}
-	if info.ErrorMessage != "" {
-		t.Errorf("ErrorMessage=%q; retry into 'running' should clear the prior error", info.ErrorMessage)
-	}
-}
+		// running again (retry) — MUST clear the prior error_message.
+		Expect(d.SetAvatarStatus(ctx, sender, UserAvatarStatusRunning, "")).To(Succeed())
+		info, _, err = d.GetUserAvatarStatus(ctx, sender)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(info.ErrorMessage).To(BeEmpty(), "retry into 'running' should clear the prior error")
+	})
 
-// TestUserAvatars_ErrorPreservesBytes: seeding a ready avatar then
-// transitioning to 'error' MUST NOT wipe image_bytes. This preserves the
-// old avatar in the FE while a retry is in flight, which was an explicit
-// UX call in the design ("don't nuke the good one until the new one lands").
-func TestUserAvatars_ErrorPreservesBytes(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	ctx := context.Background()
+	ginkgo.It("SetAvatarStatus(error) preserves the previously-ready image_bytes", func() {
+		d := openTestDBG()
+		ctx := context.Background()
 
-	sender := mkSender("useravatar_err_preserves")
-	cleanupSender(t, d, ctx, sender)
-	ensureUser(t, d, ctx, sender)
+		sender := mkSender("useravatar_err_preserves")
+		cleanupSenderG(d, ctx, sender)
+		ensureUserG(d, ctx, sender)
 
-	img := []byte("original-good-image")
-	if err := d.SaveUserAvatar(ctx, sender, img, "image/png", "m", "p", nil); err != nil {
-		t.Fatalf("initial Save: %v", err)
-	}
-	if err := d.SetAvatarStatus(ctx, sender, UserAvatarStatusError, "shim timeout"); err != nil {
-		t.Fatalf("set error: %v", err)
-	}
-	got, ok, err := d.GetUserAvatar(ctx, sender)
-	if err != nil || !ok {
-		t.Fatalf("post-error GetUserAvatar: ok=%v err=%v", ok, err)
-	}
-	if !bytes.Equal(got.ImageBytes, img) {
-		t.Errorf("bytes wiped by SetAvatarStatus(error); got %q want %q — regression: FE would lose the old avatar during a retry",
-			string(got.ImageBytes), string(img))
-	}
-	if got.Status != UserAvatarStatusError {
-		t.Errorf("Status=%q want error", got.Status)
-	}
-}
+		img := []byte("original-good-image")
+		Expect(d.SaveUserAvatar(ctx, sender, img, "image/png", "m", "p", nil)).To(Succeed())
+		Expect(d.SetAvatarStatus(ctx, sender, UserAvatarStatusError, "shim timeout")).To(Succeed())
+		got, ok, err := d.GetUserAvatar(ctx, sender)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(ok).To(BeTrue())
+		Expect(bytes.Equal(got.ImageBytes, img)).To(BeTrue(),
+			"bytes wiped by SetAvatarStatus(error); regression: FE would lose the old avatar during a retry")
+		Expect(got.Status).To(Equal(UserAvatarStatusError))
+	})
 
-// TestUserAvatars_UnknownStatus: SetAvatarStatus rejects free-form strings
-// so a typo never hits the DB and silently mangles the FE state machine.
-func TestUserAvatars_UnknownStatus(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	ctx := context.Background()
+	ginkgo.It("SetAvatarStatus rejects unknown status strings", func() {
+		d := openTestDBG()
+		ctx := context.Background()
 
-	sender := mkSender("useravatar_unknown")
-	cleanupSender(t, d, ctx, sender)
-	ensureUser(t, d, ctx, sender)
+		sender := mkSender("useravatar_unknown")
+		cleanupSenderG(d, ctx, sender)
+		ensureUserG(d, ctx, sender)
 
-	if err := d.SetAvatarStatus(ctx, sender, UserAvatarStatus("bogus"), ""); err == nil {
-		t.Fatal("SetAvatarStatus with unknown status: expected error, got nil")
-	}
-}
+		Expect(d.SetAvatarStatus(ctx, sender, UserAvatarStatus("bogus"), "")).To(HaveOccurred())
+	})
 
-// TestUserAvatars_NotFound: GetUserAvatar on a user with no row returns
-// (nil, false, nil) so the handler can 404 without an internal-error branch.
-func TestUserAvatars_NotFound(t *testing.T) {
-	d := openTestDB(t)
-	defer d.Close()
-	ctx := context.Background()
+	ginkgo.It("GetUserAvatar returns (nil,false,nil) for a missing user", func() {
+		d := openTestDBG()
+		ctx := context.Background()
 
-	got, ok, err := d.GetUserAvatar(ctx, "does-not-exist-xyz-9v4")
-	if err != nil {
-		t.Fatalf("GetUserAvatar: %v", err)
-	}
-	if ok || got != nil {
-		t.Errorf("expected miss; got ok=%v got=%+v", ok, got)
-	}
-}
+		got, ok, err := d.GetUserAvatar(ctx, "does-not-exist-xyz-9v4")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(ok).To(BeFalse())
+		Expect(got).To(BeNil())
+	})
+})

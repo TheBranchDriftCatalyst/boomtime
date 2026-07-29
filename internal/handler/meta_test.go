@@ -1,3 +1,8 @@
+// meta_ginkgo_test.go — ginkgo mirror of meta_test.go.
+// 1:1 case map (2 stdlib TestXxx w/ subtests):
+//
+//	TestVersionEndpoint    → Version endpoint > 2 Its (configured version / dev fallback)
+//	TestChangelogEndpoint  → Changelog endpoint > "serves embedded MD verbatim"
 package handler
 
 import (
@@ -8,17 +13,18 @@ import (
 	"strings"
 	"testing"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
 	boomtime "github.com/TheBranchDriftCatalyst/boomtime"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/cache"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/labstack/echo/v5"
 )
 
-// metaHandler builds a Handler wired with just what the meta endpoints touch
-// (Cfg + Logger + Cache; no DB, no worker, no hub). Meta endpoints must never
-// depend on the database or the importer — kept true by only wiring these.
-func metaHandler(t *testing.T, ver string) *Handler {
-	t.Helper()
+// metaHandlerGinkgo — mirror of the stdlib file's metaHandler helper without
+// the *testing.T parameter (ginkgo specs use GinkgoT / Expect for reporting).
+func metaHandlerGinkgo(ver string) *Handler {
 	return &Handler{
 		Cfg:    &config.Config{Version: ver},
 		Logger: slog.Default(),
@@ -26,77 +32,66 @@ func metaHandler(t *testing.T, ver string) *Handler {
 	}
 }
 
-func TestVersionEndpoint(t *testing.T) {
-	t.Run("returns configured version", func(t *testing.T) {
-		h := metaHandler(t, "v1.2.3")
+var _ = Describe("Version endpoint", func() {
+	It("returns the configured version", func() {
+		h := metaHandlerGinkgo("v1.2.3")
 		e := echo.New()
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/version", nil)
 		rec := httptest.NewRecorder()
 		c := e.NewContext(req, rec)
 
-		if err := h.Version(c); err != nil {
-			t.Fatalf("Version() error: %v", err)
-		}
-		if rec.Code != http.StatusOK {
-			t.Fatalf("status = %d, want 200", rec.Code)
-		}
+		Expect(h.Version(c)).To(Succeed())
+		Expect(rec.Code).To(Equal(http.StatusOK))
+
 		var got versionResponse
-		if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
-			t.Fatalf("decode: %v", err)
-		}
-		if got.Version != "v1.2.3" {
-			t.Errorf("version = %q, want %q", got.Version, "v1.2.3")
-		}
+		Expect(json.NewDecoder(rec.Body).Decode(&got)).To(Succeed())
+		Expect(got.Version).To(Equal("v1.2.3"))
 	})
 
-	t.Run("empty cfg version falls back to dev", func(t *testing.T) {
-		h := metaHandler(t, "")
+	It("falls back to 'dev' when cfg.Version is empty", func() {
+		h := metaHandlerGinkgo("")
 		e := echo.New()
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/version", nil)
 		rec := httptest.NewRecorder()
 		c := e.NewContext(req, rec)
 
-		if err := h.Version(c); err != nil {
-			t.Fatalf("Version() error: %v", err)
-		}
+		Expect(h.Version(c)).To(Succeed())
 		var got versionResponse
-		if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
-			t.Fatalf("decode: %v", err)
-		}
-		if got.Version != "dev" {
-			t.Errorf("empty cfg.Version should surface as %q, got %q", "dev", got.Version)
-		}
+		Expect(json.NewDecoder(rec.Body).Decode(&got)).To(Succeed())
+		Expect(got.Version).To(Equal("dev"))
 	})
-}
+})
 
-func TestChangelogEndpoint(t *testing.T) {
-	// Sanity-check the embedded bytes first — a missing embed is a compile
-	// failure, but an accidentally-empty file would slip past that.
-	if len(boomtime.ChangelogMD) == 0 {
-		t.Fatal("boomtime.ChangelogMD is empty; regenerate with `task changelog`")
-	}
-	if !strings.HasPrefix(string(boomtime.ChangelogMD), "# Changelog") {
-		t.Fatalf("embedded CHANGELOG.md must start with '# Changelog'; got %q", firstLine(boomtime.ChangelogMD))
-	}
+var _ = Describe("Changelog endpoint", func() {
+	It("serves the embedded CHANGELOG.md verbatim with a text/markdown type", func() {
+		Expect(len(boomtime.ChangelogMD)).NotTo(BeZero(),
+			"boomtime.ChangelogMD is empty; regenerate with `task changelog`")
+		Expect(strings.HasPrefix(string(boomtime.ChangelogMD), "# Changelog")).
+			To(BeTrue(), "embedded CHANGELOG.md must start with '# Changelog'")
 
-	h := metaHandler(t, "v1.0.0")
-	e := echo.New()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/changelog", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
+		h := metaHandlerGinkgo("v1.0.0")
+		e := echo.New()
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/changelog", nil)
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
 
-	if err := h.Changelog(c); err != nil {
-		t.Fatalf("Changelog() error: %v", err)
-	}
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
-	}
-	ct := rec.Header().Get(echo.HeaderContentType)
-	if !strings.HasPrefix(ct, "text/markdown") {
-		t.Errorf("Content-Type = %q, want text/markdown*", ct)
-	}
-	if rec.Body.Len() != len(boomtime.ChangelogMD) {
-		t.Errorf("body length = %d, want %d (verbatim)", rec.Body.Len(), len(boomtime.ChangelogMD))
+		Expect(h.Changelog(c)).To(Succeed())
+		Expect(rec.Code).To(Equal(http.StatusOK))
+
+		ct := rec.Header().Get(echo.HeaderContentType)
+		Expect(strings.HasPrefix(ct, "text/markdown")).To(BeTrue(),
+			"Content-Type = %q, want text/markdown*", ct)
+		Expect(rec.Body.Len()).To(Equal(len(boomtime.ChangelogMD)))
+	})
+})
+
+// -- helpers restored from stdlib partner (gaka-0vp.17) --
+func metaHandler(t *testing.T, ver string) *Handler {
+	t.Helper()
+	return &Handler{
+		Cfg:    &config.Config{Version: ver},
+		Logger: slog.Default(),
+		Cache:  cache.New(0),
 	}
 }
 

@@ -1,63 +1,57 @@
+// heartbeats_explore_ginkgo_test.go — ginkgo mirror of heartbeats_explore_test.go.
+// 1:1 case map (2 stdlib TestXxx):
+//
+//	TestCollectExploreFiltersRejectsUnknown     → collectExploreFilters > "rejects non-whitelisted axis" + "rejects raw DB column name"
+//	TestCollectExploreFiltersAcceptsWhitelisted → collectExploreFilters > "accepts whitelisted axes, reserved params ignored, empty → IS NULL"
 package handler
 
 import (
 	"net/http"
 	"net/http/httptest"
-	"testing"
 
 	"github.com/labstack/echo/v5"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
+var _ = Describe("collectExploreFilters", func() {
+	It("rejects a non-whitelisted filter axis (400)", func() {
+		c := ctxWithQuery("language=Go&sender=evil")
+		_, aerr := collectExploreFilters(c)
+		Expect(aerr).NotTo(BeNil(), "expected 400 for non-whitelisted filter axis 'sender'")
+		Expect(aerr.Status).To(Equal(http.StatusBadRequest))
+	})
+
+	It("rejects a raw DB column name (400) — FE must use the FE axis name", func() {
+		c := ctxWithQuery("is_write=true")
+		_, aerr := collectExploreFilters(c)
+		Expect(aerr).NotTo(BeNil(), "expected 400 for raw column 'is_write' (FE axis is 'isWrite')")
+	})
+
+	It("accepts whitelisted axes, ignores reserved params, maps empty value to IS NULL", func() {
+		c := ctxWithQuery("groupBy=day&start=x&end=y&page=2&limit=50&entity=foo&language=Go&project=")
+		filters, aerr := collectExploreFilters(c)
+		Expect(aerr).To(BeNil())
+		Expect(filters).To(HaveLen(2), "want 2 filters (language, project); got %+v", filters)
+
+		var sawGoValue, sawNull bool
+		for _, f := range filters {
+			if f.Column == "language" && f.Value != nil && *f.Value == "Go" {
+				sawGoValue = true
+			}
+			if f.Column == "project" && f.Value == nil {
+				sawNull = true
+			}
+		}
+		Expect(sawGoValue).To(BeTrue(), "expected language=Go equality filter")
+		Expect(sawNull).To(BeTrue(), "expected project (empty) => IS NULL filter")
+	})
+})
+
+// -- helpers restored from stdlib partner (gaka-0vp.17) --
 func ctxWithQuery(rawQuery string) *echo.Context {
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodGet, "/?"+rawQuery, nil)
 	rec := httptest.NewRecorder()
 	return e.NewContext(req, rec)
-}
-
-func TestCollectExploreFiltersRejectsUnknown(t *testing.T) {
-	// A non-whitelisted filter axis is a 400.
-	c := ctxWithQuery("language=Go&sender=evil")
-	_, aerr := collectExploreFilters(c)
-	if aerr == nil {
-		t.Fatal("expected 400 for non-whitelisted filter axis 'sender'")
-	}
-	if aerr.Status != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400", aerr.Status)
-	}
-
-	// A raw DB column name (not an FE axis) is also rejected — the whitelist maps
-	// FE names to columns, so passing the underlying column name is not allowed.
-	c = ctxWithQuery("is_write=true")
-	if _, aerr := collectExploreFilters(c); aerr == nil {
-		t.Fatal("expected 400 for raw column name 'is_write' (FE axis is 'isWrite')")
-	}
-}
-
-func TestCollectExploreFiltersAcceptsWhitelisted(t *testing.T) {
-	// Reserved params are ignored; whitelisted axes become equality filters;
-	// an empty value becomes an IS NULL filter.
-	c := ctxWithQuery("groupBy=day&start=x&end=y&page=2&limit=50&entity=foo&language=Go&project=")
-	filters, aerr := collectExploreFilters(c)
-	if aerr != nil {
-		t.Fatalf("unexpected error: %v", aerr)
-	}
-	if len(filters) != 2 {
-		t.Fatalf("filters = %d, want 2 (language, project); got %+v", len(filters), filters)
-	}
-	var sawGoValue, sawNull bool
-	for _, f := range filters {
-		if f.Column == "language" && f.Value != nil && *f.Value == "Go" {
-			sawGoValue = true
-		}
-		if f.Column == "project" && f.Value == nil {
-			sawNull = true
-		}
-	}
-	if !sawGoValue {
-		t.Fatal("expected language=Go equality filter")
-	}
-	if !sawNull {
-		t.Fatal("expected project (empty) => IS NULL filter")
-	}
 }

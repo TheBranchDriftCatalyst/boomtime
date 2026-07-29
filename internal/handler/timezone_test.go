@@ -1,9 +1,9 @@
+// timezone_ginkgo_test.go — ginkgo mirror of timezone_test.go (gaka-dg7).
+// 1:1 case map (2 stdlib TestXxx):
+//
+//	TestUpdateTimezone_RejectsInvalidIANA → timezone endpoints > "PATCH invalid IANA → 400, no DB write"
+//	TestUpdateTimezone_ValidRoundtrips    → timezone endpoints > "PATCH valid IANA round-trips through GET; empty clears"
 package handler_test
-
-// timezone_test.go (gaka-dg7): PATCH/GET endpoint tests + the current-user
-// payload extension. Non-tautological: PATCH with an invalid IANA name must
-// 400 (proving Go's time.LoadLocation gate ran BEFORE any DB write), and a
-// successful PATCH must round-trip through GET.
 
 import (
 	"bytes"
@@ -12,13 +12,104 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
 	"github.com/labstack/echo/v5"
 )
 
-// routerWithTimezone: harness Router() doesn't wire the timezone endpoints
-// by default (added post-hoc); wire them here so the test drives the real
-// handler.
+// routerWithTimezoneGinkgo — mirror of the stdlib file's routerWithTimezone.
+// Distinct name avoids duplicate-symbol collision in the same test binary.
+// doJSONGinkgo — mirror of the stdlib file's doJSON but reports via Expect
+// rather than testing.T. Distinct name avoids collision.
+func doJSONGinkgo(e *echo.Echo, method, path, token string, body any) *httptest.ResponseRecorder {
+	var b []byte
+	if body != nil {
+		var err error
+		b, err = json.Marshal(body)
+		Expect(err).NotTo(HaveOccurred())
+	}
+	req := httptest.NewRequest(method, path, bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Basic "+token)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	return rec
+}
+
+var _ = Describe("timezone endpoints (gaka-dg7)", func() {
+	It("rejects an invalid IANA name with 400 and does not touch the DB", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := hz.Router()
+		_, token := hz.MintUser("tz_invalid")
+
+		// Baseline: user has never picked a tz.
+		rec := doJSONGinkgo(e, http.MethodGet, "/api/v1/users/current/timezone", token, nil)
+		Expect(rec.Code).To(Equal(http.StatusOK))
+		var baseline struct {
+			Timezone          string `json:"timezone"`
+			EffectiveTimezone string `json:"effectiveTimezone"`
+		}
+		Expect(json.Unmarshal(rec.Body.Bytes(), &baseline)).To(Succeed())
+		Expect(baseline.Timezone).To(BeEmpty(), "never-picked user should have empty tz")
+		Expect(baseline.EffectiveTimezone).To(Equal("UTC"), "no env default in test harness → UTC")
+
+		// PATCH bogus name → 400.
+		rec = doJSONGinkgo(e, http.MethodPatch, "/api/v1/users/current/timezone", token,
+			map[string]string{"timezone": "Mars/Olympus"})
+		Expect(rec.Code).To(Equal(http.StatusBadRequest),
+			"PATCH invalid IANA: body=%s", rec.Body.String())
+
+		// GET must still show empty — proves no DB write happened.
+		rec = doJSONGinkgo(e, http.MethodGet, "/api/v1/users/current/timezone", token, nil)
+		Expect(rec.Code).To(Equal(http.StatusOK))
+		var after struct{ Timezone string }
+		_ = json.Unmarshal(rec.Body.Bytes(), &after)
+		Expect(after.Timezone).To(BeEmpty(),
+			"invalid PATCH should have failed BEFORE any DB write")
+	})
+
+	It("PATCH valid IANA round-trips through GET; empty string clears the pick", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := hz.Router()
+		_, token := hz.MintUser("tz_valid")
+
+		// PATCH a valid IANA name.
+		rec := doJSONGinkgo(e, http.MethodPatch, "/api/v1/users/current/timezone", token,
+			map[string]string{"timezone": "America/Los_Angeles"})
+		Expect(rec.Code).To(Equal(http.StatusOK), "PATCH valid: body=%s", rec.Body.String())
+		var patched struct {
+			Timezone          string `json:"timezone"`
+			EffectiveTimezone string `json:"effectiveTimezone"`
+		}
+		Expect(json.Unmarshal(rec.Body.Bytes(), &patched)).To(Succeed())
+		Expect(patched.Timezone).To(Equal("America/Los_Angeles"))
+		Expect(patched.EffectiveTimezone).To(Equal("America/Los_Angeles"),
+			"user pick MUST win the 3-level chain over any env default")
+
+		// GET must show the same.
+		rec = doJSONGinkgo(e, http.MethodGet, "/api/v1/users/current/timezone", token, nil)
+		Expect(rec.Code).To(Equal(http.StatusOK))
+		var got struct{ Timezone, EffectiveTimezone string }
+		_ = json.Unmarshal(rec.Body.Bytes(), &got)
+		Expect(got.Timezone).To(Equal("America/Los_Angeles"))
+		Expect(got.EffectiveTimezone).To(Equal("America/Los_Angeles"))
+
+		// PATCH with empty clears the pick.
+		rec = doJSONGinkgo(e, http.MethodPatch, "/api/v1/users/current/timezone", token,
+			map[string]string{"timezone": ""})
+		Expect(rec.Code).To(Equal(http.StatusOK), "PATCH empty: body=%s", rec.Body.String())
+
+		rec = doJSONGinkgo(e, http.MethodGet, "/api/v1/users/current/timezone", token, nil)
+		var cleared struct{ Timezone, EffectiveTimezone string }
+		_ = json.Unmarshal(rec.Body.Bytes(), &cleared)
+		Expect(cleared.Timezone).To(BeEmpty())
+		Expect(cleared.EffectiveTimezone).To(Equal("UTC"), "fallback after clear")
+	})
+})
+
+// -- helpers restored from stdlib partner (gaka-0vp.17) --
 func doJSON(t *testing.T, e *echo.Echo, method, path, token string, body any) *httptest.ResponseRecorder {
 	t.Helper()
 	var b []byte
@@ -35,113 +126,4 @@ func doJSON(t *testing.T, e *echo.Echo, method, path, token string, body any) *h
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 	return rec
-}
-
-// TestUpdateTimezone_RejectsInvalidIANA: bogus name -> 400 with no DB write.
-// Non-tautological: a follow-up GET must still report the pre-PATCH value.
-func TestUpdateTimezone_RejectsInvalidIANA(t *testing.T) {
-	hz := testutil.NewHarness(t)
-	e := hz.Router()
-	_, token := hz.MintUser("tz_invalid")
-
-	// Baseline: user has never picked a tz.
-	rec := doJSON(t, e, http.MethodGet, "/api/v1/users/current/timezone", token, nil)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("GET baseline: status %d body=%s", rec.Code, rec.Body.String())
-	}
-	var baseline struct {
-		Timezone          string `json:"timezone"`
-		EffectiveTimezone string `json:"effectiveTimezone"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &baseline); err != nil {
-		t.Fatalf("unmarshal baseline: %v", err)
-	}
-	if baseline.Timezone != "" {
-		t.Fatalf("baseline timezone = %q, want empty (never picked)", baseline.Timezone)
-	}
-	if baseline.EffectiveTimezone != "UTC" {
-		t.Fatalf("baseline effectiveTimezone = %q, want UTC (no env default in test harness)",
-			baseline.EffectiveTimezone)
-	}
-
-	// PATCH bogus name -> 400.
-	rec = doJSON(t, e, http.MethodPatch, "/api/v1/users/current/timezone", token,
-		map[string]string{"timezone": "Mars/Olympus"})
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("PATCH invalid IANA: status %d, want 400. body=%s",
-			rec.Code, rec.Body.String())
-	}
-
-	// GET must still show empty — proves no DB write happened.
-	rec = doJSON(t, e, http.MethodGet, "/api/v1/users/current/timezone", token, nil)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("GET post-reject: status %d", rec.Code)
-	}
-	var after struct{ Timezone string }
-	_ = json.Unmarshal(rec.Body.Bytes(), &after)
-	if after.Timezone != "" {
-		t.Fatalf("post-reject timezone = %q, want empty — the invalid PATCH "+
-			"should have failed BEFORE any DB write. Non-tautological: "+
-			"without the LoadLocation gate the bogus string would sit in "+
-			"users.timezone until the next AT TIME ZONE query erroredmid-flight.",
-			after.Timezone)
-	}
-}
-
-// TestUpdateTimezone_ValidRoundtrips: PATCH valid IANA -> 200 with the new
-// value in the response body AND surfaced by a follow-up GET.
-func TestUpdateTimezone_ValidRoundtrips(t *testing.T) {
-	hz := testutil.NewHarness(t)
-	e := hz.Router()
-	_, token := hz.MintUser("tz_valid")
-
-	// PATCH a valid IANA name.
-	rec := doJSON(t, e, http.MethodPatch, "/api/v1/users/current/timezone", token,
-		map[string]string{"timezone": "America/Los_Angeles"})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("PATCH valid: status %d body=%s", rec.Code, rec.Body.String())
-	}
-	var patched struct {
-		Timezone          string `json:"timezone"`
-		EffectiveTimezone string `json:"effectiveTimezone"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &patched); err != nil {
-		t.Fatalf("unmarshal PATCH resp: %v", err)
-	}
-	if patched.Timezone != "America/Los_Angeles" {
-		t.Fatalf("PATCH resp.timezone = %q, want America/Los_Angeles", patched.Timezone)
-	}
-	if patched.EffectiveTimezone != "America/Los_Angeles" {
-		t.Fatalf("PATCH resp.effectiveTimezone = %q, want America/Los_Angeles "+
-			"(user pick MUST win the 3-level chain over any env default)",
-			patched.EffectiveTimezone)
-	}
-
-	// GET must show the same.
-	rec = doJSON(t, e, http.MethodGet, "/api/v1/users/current/timezone", token, nil)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("GET post-patch: status %d", rec.Code)
-	}
-	var got struct{ Timezone, EffectiveTimezone string }
-	_ = json.Unmarshal(rec.Body.Bytes(), &got)
-	if got.Timezone != "America/Los_Angeles" || got.EffectiveTimezone != "America/Los_Angeles" {
-		t.Fatalf("GET post-patch: %+v, want both America/Los_Angeles", got)
-	}
-
-	// PATCH with empty clears the pick.
-	rec = doJSON(t, e, http.MethodPatch, "/api/v1/users/current/timezone", token,
-		map[string]string{"timezone": ""})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("PATCH empty: status %d body=%s", rec.Code, rec.Body.String())
-	}
-	rec = doJSON(t, e, http.MethodGet, "/api/v1/users/current/timezone", token, nil)
-	var cleared struct{ Timezone, EffectiveTimezone string }
-	_ = json.Unmarshal(rec.Body.Bytes(), &cleared)
-	if cleared.Timezone != "" {
-		t.Fatalf("post-clear timezone = %q, want empty", cleared.Timezone)
-	}
-	if cleared.EffectiveTimezone != "UTC" {
-		t.Fatalf("post-clear effectiveTimezone = %q, want UTC (fallback)",
-			cleared.EffectiveTimezone)
-	}
 }
