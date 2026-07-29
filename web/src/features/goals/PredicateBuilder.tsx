@@ -42,7 +42,7 @@
 // passes stats.ValidateSpec and round-trips through the backend
 // unchanged. Handler tests + DB tests already cover the wire; this
 // component's own tests cover the state transitions.
-import { useId, useMemo } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
@@ -58,6 +58,7 @@ import {
   SelectValue,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/select";
 import { MaxPredicateDepth, MaxStreakDays } from "@/features/goals/constants";
+import { formatDuration, parseDuration } from "@/lib/duration";
 import type {
   GoalActiveDaysWindow,
   GoalHeartbeatAxis,
@@ -163,6 +164,78 @@ function AxisValueInput({
         </datalist>
       )}
     </>
+  );
+}
+
+// DurationInput accepts human shortforms (1h30m, 2d, 7d, 45m, 3600) and
+// commits the parsed seconds back via onChangeSeconds. Renders a text
+// input (not type=number) so the user can freely type unit suffixes;
+// bare integers still parse as seconds for backward compat with saved
+// "3600"-shaped goals.
+//
+// - draft is what the user sees; committed on blur or Enter
+// - invalid input keeps the draft red-tinted and does NOT commit
+// - a small unit-legend caption ("1h · 45m · 2d · 7d · 1w") sits under
+//   the input as a live cheat sheet
+function DurationInput({
+  id,
+  valueSeconds,
+  onChangeSeconds,
+}: {
+  id?: string;
+  valueSeconds: number;
+  onChangeSeconds: (secs: number) => void;
+}) {
+  const [draft, setDraft] = useState(() => formatDuration(valueSeconds));
+
+  // Reflect external changes (e.g. group array replaced upstream) into
+  // the visible draft — but skip the update while the field is focused
+  // (i.e. the user's typing wins over prop echo).
+  useEffect(() => {
+    setDraft(formatDuration(valueSeconds));
+  }, [valueSeconds]);
+
+  const parsed = parseDuration(draft);
+  const invalid = draft.trim() !== "" && parsed === null;
+
+  const commit = () => {
+    if (parsed !== null && parsed !== valueSeconds) {
+      onChangeSeconds(parsed);
+    }
+    // Snap the visible text to the canonical form so "1h 30m" reformats
+    // to "1h30m" — same value, cleaner display.
+    if (parsed !== null) setDraft(formatDuration(parsed));
+  };
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      <Input
+        id={id}
+        className={
+          "h-8 font-mono tabular-nums" +
+          (invalid ? " border-red-500 text-red-400" : "")
+        }
+        type="text"
+        inputMode="text"
+        value={draft}
+        placeholder="1h30m"
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            commit();
+          }
+        }}
+      />
+      <span className="text-[10px] text-muted-foreground tabular-nums">
+        {invalid
+          ? "invalid — use e.g. 1h · 45m · 2d · 7d · 1w"
+          : parsed !== null
+            ? `${parsed}s`
+            : "e.g. 1h · 45m · 2d · 7d · 1w"}
+      </span>
+    </div>
   );
 }
 
@@ -431,16 +504,11 @@ function TimeLeafEditor({
           </Select>
         </div>
         <div>
-          <Label htmlFor={id.target} className="text-xs">Target (seconds)</Label>
-          <Input
+          <Label htmlFor={id.target} className="text-xs">Target</Label>
+          <DurationInput
             id={id.target}
-            className="h-8"
-            type="number"
-            min={0}
-            value={node.target_seconds}
-            onChange={(e) =>
-              onChange({ ...node, target_seconds: Math.max(0, Number(e.target.value) || 0) })
-            }
+            valueSeconds={node.target_seconds}
+            onChangeSeconds={(secs) => onChange({ ...node, target_seconds: secs })}
           />
         </div>
         <div className="col-span-2 md:col-span-1">

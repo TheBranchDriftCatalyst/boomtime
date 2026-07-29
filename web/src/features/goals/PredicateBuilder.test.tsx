@@ -21,7 +21,7 @@
 //     onRemove affordance disappears when only one child remains
 //     (backend rejects empty `of`).
 import { describe, expect, it } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -72,16 +72,28 @@ describe("PredicateBuilder", () => {
     });
   });
 
-  it("editing target_seconds on a time leaf produces an updated spec", async () => {
+  it("editing target on a time leaf produces an updated spec (bare seconds still work)", async () => {
     const user = userEvent.setup();
     render(<Harness />);
-    const targetInput = screen.getByLabelText("Target (seconds)");
+    const targetInput = screen.getByLabelText("Target");
     await user.clear(targetInput);
     await user.type(targetInput, "7200");
+    // DurationInput commits on blur / Enter — trigger blur.
+    fireEvent.blur(targetInput);
     expect(readSpec()).toMatchObject({
       kind: "time",
       target_seconds: 7200,
     });
+  });
+
+  it("target accepts shortform durations (1h30m → 5400)", async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    const targetInput = screen.getByLabelText("Target");
+    await user.clear(targetInput);
+    await user.type(targetInput, "1h30m");
+    fireEvent.blur(targetInput);
+    expect(readSpec()).toMatchObject({ kind: "time", target_seconds: 5400 });
   });
 
   it("typing an axis value replaces the null with the string; blank stays null", async () => {
@@ -113,9 +125,10 @@ describe("PredicateBuilder", () => {
     render(<Harness />);
     // First: edit the target so we can prove the wrapped child
     // preserves the edit (not silently reset to defaults).
-    const targetInput = screen.getByLabelText("Target (seconds)");
+    const targetInput = screen.getByLabelText("Target");
     await user.clear(targetInput);
     await user.type(targetInput, "999");
+    fireEvent.blur(targetInput);
     // Open the KindSwitcher (the only Select initially rendered — a
     // leaf editor has other selects but they're for axis/op/window;
     // the kind switcher is the leftmost / first one in DOM order).
@@ -204,9 +217,10 @@ describe("PredicateBuilder", () => {
     };
     render(<Harness initial={initial} />);
     // Edit the FIRST leaf's target — the parent must stay `any`.
-    const [firstTarget] = screen.getAllByLabelText("Target (seconds)");
+    const [firstTarget] = screen.getAllByLabelText("Target");
     await user.clear(firstTarget);
     await user.type(firstTarget, "42");
+    fireEvent.blur(firstTarget);
     const after = readSpec() as Extract<Predicate, { kind: "any" }>;
     expect(after.kind).toBe("any");
     expect(after.of[0]).toMatchObject({ target_seconds: 42 });
@@ -256,11 +270,12 @@ describe("PredicateBuilder", () => {
       );
     }
     render(<FrozenHarness />);
-    const targetInput = screen.getByLabelText("Target (seconds)");
+    const targetInput = screen.getByLabelText("Target");
     // If PredicateBuilder mutates node.target_seconds directly, the
     // frozen object rejects the assignment and the test fails.
     await user.clear(targetInput);
     await user.type(targetInput, "42");
+    fireEvent.blur(targetInput);
     expect(readSpec()).toMatchObject({ kind: "time", target_seconds: 42 });
   });
 
