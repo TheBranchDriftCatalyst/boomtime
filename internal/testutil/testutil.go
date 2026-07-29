@@ -117,6 +117,11 @@ func OpenIsolatedDB(t testing.TB, suffix string) *db.DB {
 	return database
 }
 
+// HarnessT is an alias for testing.TB retained for backwards compatibility
+// with the ginkgo mirror suite in internal/handler which typed its GinkgoT()
+// proxy as testutil.HarnessT before we widened Harness.T to testing.TB.
+type HarnessT = testing.TB
+
 // Harness bundles a live Handler + DB for HTTP integration tests.
 type Harness struct {
 	T   testing.TB
