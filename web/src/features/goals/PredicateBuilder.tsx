@@ -231,8 +231,8 @@ function DurationInput({
       <span className="text-[10px] text-muted-foreground tabular-nums">
         {invalid
           ? "invalid — use e.g. 1h · 45m · 2d · 7d · 1w"
-          : parsed !== null
-            ? `${parsed}s`
+          : parsed !== null && formatDuration(parsed) !== draft.trim()
+            ? `= ${formatDuration(parsed)}`
             : "e.g. 1h · 45m · 2d · 7d · 1w"}
       </span>
     </div>
