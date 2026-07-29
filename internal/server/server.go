@@ -299,6 +299,15 @@ func registerAuthRoutes(e *echo.Echo, h *handler.Handler) {
 	// path immediately serves user-local buckets.
 	e.GET("/api/v1/users/current/timezone", h.GetTimezone)
 	e.PATCH("/api/v1/users/current/timezone", h.UpdateTimezone)
+
+	// gaka-mwp-streaks: award-ledger endpoints. FE evaluator POSTs the
+	// firing labels after each evaluate() run; server upserts one row
+	// per (user, label, period_start) so the streak walker can render
+	// "3x NIGHT WATCH" badges on the LabelChip. Public variant so
+	// profile viewers see the same badges.
+	e.POST("/api/v1/users/current/awards/log", h.AwardsLog)
+	e.GET("/api/v1/users/current/awards/streaks", h.AwardsStreaks)
+	e.GET("/api/public/profile/:slug/awards/streaks", h.PublicAwardsStreaks)
 }
 
 // registerMiscRoutes: badges, widgets, leaderboards, and commits.

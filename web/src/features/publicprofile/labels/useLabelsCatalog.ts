@@ -32,6 +32,9 @@ export function dbRowToSpec(row: LabelCatalogRow): LabelSpec {
     rank: row.rank,
     condition: row.condition,
     imagePrompt: row.optimizedPrompt || undefined,
+    // gaka-mwp-streaks: pass through per-label period override so
+    // useAwardStreaks.resolvePeriod can use it. Empty = kind default.
+    periodDefault: row.periodDefault,
   };
   if (row.kind === "tier" && row.tier) {
     spec.tier = row.tier as LabelTier;

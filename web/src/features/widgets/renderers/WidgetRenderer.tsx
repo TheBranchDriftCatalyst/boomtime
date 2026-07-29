@@ -31,6 +31,10 @@ import { GoalList } from "@/features/widgets/renderers/GoalList";
 // "NEW OPERATOR" branch renders — same UX as an actually-empty award set.
 import { evaluate } from "@/features/publicprofile/labels/evaluator";
 import { useLabelsCatalog } from "@/features/publicprofile/labels/useLabelsCatalog";
+import {
+  useAwardStreaks,
+  useLogAwards,
+} from "@/features/publicprofile/labels/useAwardStreaks";
 import { LabelChip } from "@/features/publicprofile/labels/LabelChip";
 import { LabelsShowcase } from "@/features/widgets/renderers/LabelsShowcase";
 // gaka-9v4: per-user chibi avatar slot in the hero identity tile. Falls
@@ -217,6 +221,11 @@ function HeroIdentity({ data }: { data: PublicDashboardPayload }) {
   // the description of what the label means. No duplication.
   const { specs } = useLabelsCatalog();
   const awards = evaluate(data, { catalog: specs });
+  // gaka-mwp-streaks: log the current firing set (own-profile only —
+  // the hook internally gates on auth) + read back streak counts so
+  // the hero chips show "Nx" badges when the label has recurred.
+  useLogAwards(awards, specs);
+  const streaks = useAwardStreaks();
   const top3 = awards.slice(0, 3);
   return (
     <div
@@ -259,7 +268,7 @@ function HeroIdentity({ data }: { data: PublicDashboardPayload }) {
               data-testid="hero-tagline"
             >
               {top3.map((a) => (
-                <LabelChip key={a.id} award={a} size="sm" />
+                <LabelChip key={a.id} award={a} size="sm" streak={streaks[a.id]} />
               ))}
             </div>
           )}

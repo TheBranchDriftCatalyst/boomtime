@@ -951,6 +951,19 @@ export const api = {
       langMap: Record<string, string>;
       updatedAt: string;
     }>("/api/v1/admin/backfill/config", { method: "PATCH", body }),
+  // gaka-mwp-streaks: award-ledger writes + reads.
+  logAwards: (items: { labelId: string; periodType: "daily" | "weekly" | "monthly" }[]) =>
+    request<{ received: number; written: number }>(
+      "/api/v1/users/current/awards/log",
+      { method: "POST", body: { items } },
+    ),
+  getAwardStreaks: () =>
+    request<Record<string, number>>("/api/v1/users/current/awards/streaks"),
+  getPublicAwardStreaks: (slug: string) =>
+    request<Record<string, number>>(
+      `/api/public/profile/${encodeURIComponent(slug)}/awards/streaks`,
+    ),
+
   getBackfillStats: () =>
     request<{
       totalRows: number;

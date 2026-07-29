@@ -43,9 +43,13 @@ type Label struct {
 	OptimizedPrompt string          `json:"optimizedPrompt"`
 	Rank            int             `json:"rank"`
 	Tier            string          `json:"tier"`
-	Condition       json.RawMessage `json:"condition"`
-	CreatedAt       time.Time       `json:"createdAt"`
-	UpdatedAt       time.Time       `json:"updatedAt"`
+	// gaka-mwp-streaks: per-label period override for the award ledger.
+	// Empty string = "use the kind default" (see db.KindDefaultPeriod).
+	// Valid values: "" | "daily" | "weekly" | "monthly" | "lifetime".
+	PeriodDefault string          `json:"periodDefault"`
+	Condition     json.RawMessage `json:"condition"`
+	CreatedAt     time.Time       `json:"createdAt"`
+	UpdatedAt     time.Time       `json:"updatedAt"`
 }
 
 // labelCols is the canonical SELECT list. COALESCE the nullable text columns
@@ -58,6 +62,7 @@ const labelCols = `id, kind, label,
 	COALESCE(optimized_prompt, ''),
 	rank,
 	COALESCE(tier, ''),
+	COALESCE(period_default, ''),
 	condition, created_at, updated_at`
 
 func scanLabel(row pgx.Row) (*Label, error) {
@@ -65,7 +70,7 @@ func scanLabel(row pgx.Row) (*Label, error) {
 	if err := row.Scan(
 		&l.ID, &l.Kind, &l.Label,
 		&l.Glyph, &l.Description, &l.OptimizedPrompt,
-		&l.Rank, &l.Tier, &l.Condition, &l.CreatedAt, &l.UpdatedAt,
+		&l.Rank, &l.Tier, &l.PeriodDefault, &l.Condition, &l.CreatedAt, &l.UpdatedAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -92,7 +97,7 @@ func (d *DB) ListLabels(ctx context.Context) ([]Label, error) {
 		if err := rows.Scan(
 			&l.ID, &l.Kind, &l.Label,
 			&l.Glyph, &l.Description, &l.OptimizedPrompt,
-			&l.Rank, &l.Tier, &l.Condition, &l.CreatedAt, &l.UpdatedAt,
+			&l.Rank, &l.Tier, &l.PeriodDefault, &l.Condition, &l.CreatedAt, &l.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

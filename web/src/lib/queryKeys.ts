@@ -189,6 +189,13 @@ export const qk = {
   // table). Invalidated after PATCH/POST/DELETE on /admin/labels.
   labelsCatalog: () => ["labels", "catalog"] as const,
 
+  // gaka-mwp-streaks: award-ledger streak counts. Own vs public share
+  // a prefix so a bulk invalidation clears both cleanly.
+  awardStreaks: (slug?: string) =>
+    slug
+      ? (["awards", "streaks", "public", slug] as const)
+      : (["awards", "streaks", "own"] as const),
+
   // gaka-vh8: git-history backfill config + stats. Both are per-user
   // and admin-only; separate keys because a config save and a batch
   // POST invalidate different things.

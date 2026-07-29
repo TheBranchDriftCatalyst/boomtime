@@ -74,6 +74,9 @@ export function evaluate(
     description: s.description,
     rank: s.rank,
     tier: s.tier,
+    // Pass the raw condition through so the LabelChip tooltip can render
+    // a "Fires when: ..." human-readable line without a catalog lookup.
+    condition: s.condition,
   }));
 }
 

@@ -28,6 +28,7 @@ import {
 import { cn } from "@/lib/utils";
 import { LabelImage } from "@/features/publicprofile/labels/LabelImage";
 import type { LabelAward } from "@/features/publicprofile/labels/types";
+import { formatCondition } from "@/features/publicprofile/labels/formatCondition";
 
 export interface LabelChipProps {
   award: LabelAward;
@@ -37,6 +38,10 @@ export interface LabelChipProps {
   bustHint?: string | number;
   /** Optional extra classes on the trigger chip. */
   className?: string;
+  /** Streak count for this award (gaka-mwp-streaks). Values ≤ 1 render no
+   *  badge. Values ≥ 2 render a small amber "Nx" pill in the top-right
+   *  corner — "3x", "12x", etc. */
+  streak?: number;
 }
 
 const CHIP_SIZE = {
@@ -57,6 +62,7 @@ export function LabelChip({
   size = "md",
   bustHint,
   className,
+  streak,
 }: LabelChipProps) {
   const sz = CHIP_SIZE[size];
   const fallback = award.glyph ? (
@@ -84,6 +90,9 @@ export function LabelChip({
             // Patches get a distinct visual: double-amber border (outline
             // shadow trick) + ★ prefix, so citations read differently
             // from the softer crimson chips used by tier/archetype/tribe/meme.
+            // `relative` so the streak-count badge can absolute-position
+            // to the top-right corner.
+            "relative " +
             (award.kind === "patch"
               ? `inline-flex items-center gap-1 rounded-sm border border-amber-400/80 bg-amber-500/5 shadow-[0_0_0_1px_rgba(0,0,0,0.4),0_0_0_2px_rgba(245,166,35,0.35)] font-mono uppercase tracking-[0.14em] outline-none focus-visible:ring-1 focus-visible:ring-amber-400 ${sz.padding} ${sz.text}`
               : `inline-flex items-center gap-1 rounded-sm border border-[color:var(--primary)]/40 bg-[color:var(--primary)]/10 font-mono uppercase tracking-[0.12em] outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--primary)] ${sz.padding} ${sz.text}`) +
@@ -92,6 +101,7 @@ export function LabelChip({
           data-testid="label-chip"
           data-label-id={award.id}
           data-label-kind={award.kind}
+          data-streak={streak && streak > 1 ? streak : undefined}
           tabIndex={0}
         >
           {award.kind === "patch" && (
@@ -105,6 +115,15 @@ export function LabelChip({
             fallback={fallback}
           />
           <span>{award.label}</span>
+          {streak && streak > 1 ? (
+            <span
+              className="absolute -right-1 -top-1 rounded-sm border border-amber-400 bg-black px-1 py-[1px] text-[9px] font-bold leading-none text-amber-400 shadow-[0_0_4px_rgba(245,166,35,0.6)]"
+              aria-label={`streak: ${streak} periods`}
+              data-testid="label-streak-badge"
+            >
+              {streak}x
+            </span>
+          ) : null}
         </span>
       </TooltipTrigger>
       <TooltipPortal>
@@ -146,12 +165,29 @@ export function LabelChip({
             }
           />
           <div className="flex flex-col gap-1.5 p-3">
-            <div className="font-mono text-[12px] font-semibold uppercase tracking-[0.14em] text-[color:var(--primary)] leading-tight">
-              {award.label}
+            <div className="flex items-baseline justify-between gap-2">
+              <div className="font-mono text-[12px] font-semibold uppercase tracking-[0.14em] text-[color:var(--primary)] leading-tight">
+                {award.label}
+              </div>
+              {streak && streak > 1 ? (
+                <div className="rounded-sm border border-amber-400 px-1.5 py-[1px] font-mono text-[10px] font-bold text-amber-400">
+                  {streak}× streak
+                </div>
+              ) : null}
             </div>
             {award.description && (
               <div className="text-[11px] leading-snug text-[color:var(--foreground)]">
                 {award.description}
+              </div>
+            )}
+            {award.condition && (
+              <div className="mt-1 border-t border-[color:var(--border)] pt-1.5">
+                <div className="mb-0.5 font-mono text-[9px] uppercase tracking-[0.14em] text-[color:var(--muted-foreground)]">
+                  Fires when
+                </div>
+                <div className="font-mono text-[10px] leading-snug text-amber-400/90">
+                  {formatCondition(award.condition)}
+                </div>
               </div>
             )}
             {award.tier && (

@@ -212,6 +212,11 @@ export interface LabelSpec {
    *  collisions among the 5 tier specs generated per axis-value so only the
    *  highest reached is awarded. */
   tierKey?: string; // e.g. "languages:python"
+  /** gaka-mwp-streaks: per-label period override for the award ledger.
+   *  Empty = inherit kind default (see useAwardStreaks KIND_DEFAULT_PERIOD:
+   *  tier/tribe = lifetime, archetype/meme = weekly, patch = daily).
+   *  Named values: "daily" | "weekly" | "monthly" | "lifetime". */
+  periodDefault?: string;
   /** Optional prompt template for the ComfyUI label-image worker (gaka-myv).
    *  When set, the worker will render an emblem image for this label and
    *  serve it in place of the glyph. Kept next to the spec so authoring a
@@ -237,6 +242,8 @@ export interface LabelCatalogRow {
   optimizedPrompt: string;
   rank: number;
   tier: string; // may be "" when kind !== "tier"
+  /** gaka-mwp-streaks: per-label period override; empty = use kind default. */
+  periodDefault?: string;
   condition: Condition;
   createdAt: string;
   updatedAt: string;
@@ -259,6 +266,10 @@ export interface LabelAward {
   description: string;
   rank: number;
   tier?: LabelTier;
+  /** The condition that fired this award. Passed through by the evaluator
+   *  so downstream (LabelChip tooltip) can render "Fires when: X ≥ Y"
+   *  without a separate catalog lookup. */
+  condition?: Condition;
 }
 
 /** Convenience alias — the evaluator reads the same shape everywhere. */

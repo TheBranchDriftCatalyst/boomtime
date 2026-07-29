@@ -7,6 +7,10 @@
 import type { PublicDashboardPayload } from "@/types/stats";
 import { evaluate } from "@/features/publicprofile/labels/evaluator";
 import { useLabelsCatalog } from "@/features/publicprofile/labels/useLabelsCatalog";
+import {
+  useAwardStreaks,
+  useLogAwards,
+} from "@/features/publicprofile/labels/useAwardStreaks";
 import type { LabelAward } from "@/features/publicprofile/labels/types";
 import { LabelChip } from "@/features/publicprofile/labels/LabelChip";
 
@@ -35,6 +39,11 @@ export interface LabelsShowcaseProps {
 export function LabelsShowcase({ data }: LabelsShowcaseProps) {
   const { specs } = useLabelsCatalog();
   const awards = evaluate(data, { catalog: specs });
+  // Streak ledger integration (gaka-mwp-streaks): log the current
+  // firing set (own-profile only — hook internally guards on auth)
+  // and read back the streak map so LabelChip can render Nx badges.
+  useLogAwards(awards, specs);
+  const streaks = useAwardStreaks();
 
   if (awards.length === 0) {
     return (
@@ -73,7 +82,7 @@ export function LabelsShowcase({ data }: LabelsShowcaseProps) {
                     description. Replaces the earlier native title=... tip
                     which browsers style inconsistently and can't show an image.
                   */}
-                  <LabelChip award={a} size="md" />
+                  <LabelChip award={a} size="md" streak={streaks[a.id]} />
                 </li>
               ))}
             </ul>
