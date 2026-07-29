@@ -26,6 +26,11 @@ import (
 // A rename on branch has no output column here (branch is 'Other' in the output),
 // so it can't mis-display.
 func (d *DB) GetUserActivityRollup(ctx context.Context, user string, start, end time.Time, hs HiddenSets, rs RenameSets, ms MemberSets, spaceRequested bool) ([]StatRow, error) {
+	// gaka-dg7: no $tz bind here — this reads pre-aggregated hb_rollup_daily
+	// whose `day` column is already computed in the sender's TZ at ingest
+	// (see internal/db/ingest.go refreshRollup). A TZ change flips the
+	// rollup rebuild on the next ingest (or PATCH-timezone forces one) and
+	// this fast path automatically starts serving user-local buckets.
 	query, args, next := applyScopes(qGetUserActivityRoll, rollupRangeAnchor,
 		hs, ms, spaceRequested, rollupCols, []any{user, start, end}, 4)
 	query, args = rs.regroupStatRows(query, next, args)
@@ -44,12 +49,14 @@ const rollupRangeAnchor = "AND day <= $3::date"
 // excluding ALL of the sender's hidden axis values (project, language, editor,
 // plugin, machine, platform, branch, category) via appended `AND NOT (<col> =
 // ANY($n))` predicates on the raw-heartbeats scan.
-func (d *DB) GetUserActivity(ctx context.Context, user string, start, end time.Time, limit int64, hs HiddenSets, rs RenameSets, ms MemberSets, spaceRequested bool) ([]StatRow, error) {
+func (d *DB) GetUserActivity(ctx context.Context, user string, start, end time.Time, limit int64, tz string, hs HiddenSets, rs RenameSets, ms MemberSets, spaceRequested bool) ([]StatRow, error) {
+	// gaka-dg7: $5 = IANA tz name; the SQL extracts day in user-local TZ so
+	// the bucket boundaries match the FE's expectations. Splice args are $6+.
 	// Hide exclusion + space scope are spliced into the inner WHERE (anchored on
 	// the range-end clause) so filtered rows are dropped (by RAW value) before
 	// aggregation.
 	query, args, next := applyScopes(qGetUserActivity, activityRangeAnchor,
-		hs, ms, spaceRequested, rawHeartbeatCols, []any{user, start, end, limit}, 5)
+		hs, ms, spaceRequested, rawHeartbeatCols, []any{user, start, end, limit, tz}, 6)
 	// Rename remap re-groups the surviving rows by display value (merges A,B→M).
 	query, args = rs.regroupStatRows(query, next, args)
 	var out []StatRow
@@ -98,9 +105,10 @@ const projectStatsMatchClause = "AND project = $2"
 // raw `project = $2` filter is replaced with `remap(project) = $2` so a merged
 // name aggregates all its source projects (and identity still works). Hidden axis
 // values are excluded within the project; the output `language` axis is remapped.
-func (d *DB) GetProjectStats(ctx context.Context, user, project string, start, end time.Time, limit int64, hs HiddenSets, rs RenameSets, ms MemberSets, spaceRequested bool) ([]ProjectStatRow, error) {
+func (d *DB) GetProjectStats(ctx context.Context, user, project string, start, end time.Time, limit int64, tz string, hs HiddenSets, rs RenameSets, ms MemberSets, spaceRequested bool) ([]ProjectStatRow, error) {
+	// gaka-dg7: $6 = IANA tz for day/dow/hour buckets; splice args are $7+.
 	query, args, next := applyScopes(qGetProjectsStats, projectStatsRangeAnchor,
-		hs, ms, spaceRequested, rawHeartbeatCols, []any{user, project, start, end, limit}, 6)
+		hs, ms, spaceRequested, rawHeartbeatCols, []any{user, project, start, end, limit, tz}, 7)
 	// Match the display name against the remapped raw project — always splice a
 	// case-insensitive comparison so "MyProject" also matches "myproject" rows;
 	// when no rename is active, `remapExpr` returns the raw column unchanged.
@@ -144,17 +152,23 @@ func (d *DB) GetTimeline(ctx context.Context, user string, start, end time.Time,
 	return out, err
 }
 
-// GetTotalTimeToday runs get_time_today.sql ($1 user).
+// GetTotalTimeToday runs get_time_today.sql ($1 user, $2 IANA tz name).
 // timeTodayRangeAnchor is the inner day-bound clause of get_time_today.sql; the
 // hide exclusion is spliced after it (raw heartbeats scan, all axes available).
-const timeTodayRangeAnchor = "time_sent < (current_date + interval '1' day)"
+//
+// gaka-dg7: the anchor now references the tz-shifted upper bound so the hide
+// exclusion still splices in AFTER the correct clause. The trailing `))` is
+// unique to this line in the query (no other clause ends the same way), so
+// injectAfter stays deterministic.
+const timeTodayRangeAnchor = "AND time_sent < (((((now() AT TIME ZONE $2)::date) + interval '1' day) AT TIME ZONE $2) AT TIME ZONE 'UTC')"
 
-// GetTotalTimeToday returns today's attributed coding time, excluding the sender's
-// hidden axis values (so the statusbar total matches the hidden dashboards).
-func (d *DB) GetTotalTimeToday(ctx context.Context, user string, hs HiddenSets) (int64, error) {
-	// Hide exclusion only (the statusbar total has no space scope).
+// GetTotalTimeToday returns today's attributed coding time (user-local
+// "today" per gaka-dg7), excluding the sender's hidden axis values so the
+// statusbar total matches the hidden dashboards.
+func (d *DB) GetTotalTimeToday(ctx context.Context, user, tz string, hs HiddenSets) (int64, error) {
+	// $1 user, $2 tz, then hide predicates start at $3.
 	query, args, _ := applyScopes(qGetTimeToday, timeTodayRangeAnchor,
-		hs, MemberSets{}, false, rawHeartbeatCols, []any{user}, 2)
+		hs, MemberSets{}, false, rawHeartbeatCols, []any{user, tz}, 3)
 	var total int64
 	err := d.Pool.QueryRow(ctx, query, args...).Scan(&total)
 	return total, err

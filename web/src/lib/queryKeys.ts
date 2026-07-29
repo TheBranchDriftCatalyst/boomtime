@@ -165,6 +165,10 @@ export const qk = {
   // Per-user encrypted Wakatime key presence (gaka-6jm.2). Value is
   // {hasSavedKey}; invalidated after save/delete so UI affordances update.
   wakatimeKey: () => ["wakatime-key"] as const,
+  // Per-user IANA timezone (gaka-dg7). Value is {timezone, effectiveTimezone};
+  // invalidated after PATCH so the Settings picker + any downstream FE
+  // decision (e.g. the "Using X (from server default)" hint) re-renders.
+  timezone: () => ["timezone"] as const,
   // Public profile (gaka-6jm.1): the caller's enable-toggle + slug. Used by
   // the Settings card AND the Sidebar (to conditionally show the "Public
   // profile" nav link when enabled). Invalidated after PUT so both consumers

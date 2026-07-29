@@ -1177,6 +1177,49 @@ func build() (*openapi3.T, error) {
 		return op
 	}())
 
+	// ==== USER TIMEZONE (gaka-dg7) ==========================================
+	//
+	// Per-user IANA timezone used by every dow/hour/date bucket the server
+	// computes. GET reports both the raw stored value (empty = never picked)
+	// and what the server actually resolves to via the 3-level chain (user >
+	// BOOM_DEFAULT_TIMEZONE > "UTC"). PATCH validates via time.LoadLocation
+	// and triggers a rollup rebuild so the Overview fast path serves
+	// user-local buckets immediately.
+	timezoneSchema := func() *openapi3.Schema {
+		s := openapi3.NewObjectSchema()
+		s.Properties = openapi3.Schemas{
+			"timezone":          &openapi3.SchemaRef{Value: openapi3.NewStringSchema()},
+			"effectiveTimezone": &openapi3.SchemaRef{Value: openapi3.NewStringSchema()},
+		}
+		s.Required = []string{"timezone", "effectiveTimezone"}
+		return s
+	}
+	timezoneUpdateSchema := func() *openapi3.Schema {
+		s := openapi3.NewObjectSchema()
+		s.Properties = openapi3.Schemas{
+			"timezone": &openapi3.SchemaRef{Value: openapi3.NewStringSchema()},
+		}
+		return s
+	}
+	doc.AddOperation("/api/v1/users/current/timezone", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagIntegration}, Summary: "Get the caller's stored + effective IANA timezone",
+			Description: "Returns {timezone, effectiveTimezone}. `timezone` is the raw stored value (empty string = user has never picked); `effectiveTimezone` is what the server actually uses after the 3-level resolution (user > BOOM_DEFAULT_TIMEZONE > 'UTC'). The FE Settings picker keys 'your choice vs server default' off the difference."}
+		setStatus(op, http.StatusOK, rInline("{timezone, effectiveTimezone}.", timezoneSchema()))
+		stdErrors(op, "401", "403", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/current/timezone", "PATCH", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagIntegration}, Summary: "Set (or clear) the caller's IANA timezone",
+			Description: "Body: {timezone}. Validated with time.LoadLocation — invalid names return 400. Empty string clears the explicit pick and reverts to the server default resolver. Response mirrors GET so the FE picker can round-trip through one endpoint. Also rebuilds hb_rollup_daily so the Overview fast path serves user-local buckets immediately."}
+		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{
+			Required: true, Description: "{timezone}.",
+			Content: openapi3.NewContentWithJSONSchema(timezoneUpdateSchema()),
+		}}
+		setStatus(op, http.StatusOK, rInline("{timezone, effectiveTimezone} after write.", timezoneSchema()))
+		stdErrors(op, "400", "401", "403", "500")
+		return op
+	}())
+
 	// ==== MISC (BADGES / WIDGETS / LEADERBOARDS / COMMITS) ===================
 
 	doc.AddOperation("/badge/link/{project}", "GET", func() *openapi3.Operation {

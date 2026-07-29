@@ -34,5 +34,16 @@ export interface CurrentUser {
     // visibility. Missing when the server hasn't been updated — treat as
     // false in that case.
     is_admin?: boolean;
+    // gaka-dg7: user's raw stored IANA name ('' = never picked). Optional
+    // because older server binaries don't emit it — the auto-detect logic
+    // treats missing as "not picked" so nothing gets falsely auto-detected
+    // against an unknown server.
+    timezone?: string;
+    // gaka-dg7: what the server ACTUALLY resolves to via the 3-level chain.
+    // NEVER "" when present. The Settings picker uses the difference between
+    // this and `timezone` to render "your choice" vs "server default", and
+    // the first-login auto-detect only fires when
+    //   timezone === '' && browserTZ !== effective_timezone
+    effective_timezone?: string;
   };
 }

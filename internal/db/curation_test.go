@@ -106,7 +106,7 @@ func TestHideExclusionInStats(t *testing.T) {
 	end := base.AddDate(0, 0, 1)
 
 	// No hide: both projects appear on the raw path.
-	rows, err := d.GetUserActivity(ctx, sender, start, end, 15, HiddenSets{}, RenameSets{}, MemberSets{}, false)
+	rows, err := d.GetUserActivity(ctx, sender, start, end, 15, "UTC", HiddenSets{}, RenameSets{}, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestHideExclusionInStats(t *testing.T) {
 	}
 
 	// Raw path excludes it.
-	rows, err = d.GetUserActivity(ctx, sender, start, end, 15, hs, RenameSets{}, MemberSets{}, false)
+	rows, err = d.GetUserActivity(ctx, sender, start, end, 15, "UTC", hs, RenameSets{}, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -231,6 +231,11 @@ func (h *Handler) PublicProfile(c *echo.Context) error {
 		return h.internalErr(c, "public profile rename load failed", err)
 	}
 
+	// gaka-dg7: public profile shows the profile OWNER's data in the OWNER's
+	// timeframe — an East-coast viewer of a Pacific dev's public profile
+	// should see Pacific dow/hour buckets, not shifted-to-viewer buckets.
+	tz := h.resolveUserTZ(ctx, username)
+
 	// No Space scoping for public profile — it's an account-level view.
 	// members/spaceRequested are the zero value.
 	var members db.MemberSets
@@ -240,12 +245,12 @@ func (h *Handler) PublicProfile(c *echo.Context) error {
 	if !hidden.HasHiddenOutside(db.RollupAxes) {
 		rows, err = h.DB.GetUserActivityRollup(ctx, username, t0, t1, hidden, renames, members, false)
 	} else {
-		rows, err = h.DB.GetUserActivity(ctx, username, t0, t1, publicProfileTimeLimit, hidden, renames, members, false)
+		rows, err = h.DB.GetUserActivity(ctx, username, t0, t1, publicProfileTimeLimit, tz, hidden, renames, members, false)
 	}
 	if err != nil {
 		return h.internalErr(c, "public profile activity query failed", err)
 	}
-	categories, err := h.DB.GetCategoryDaily(ctx, username, t0, t1, publicProfileTimeLimit, hidden, renames, members, false)
+	categories, err := h.DB.GetCategoryDaily(ctx, username, t0, t1, publicProfileTimeLimit, tz, hidden, renames, members, false)
 	if err != nil {
 		return h.internalErr(c, "public profile category query failed", err)
 	}
@@ -260,7 +265,7 @@ func (h *Handler) PublicProfile(c *echo.Context) error {
 	// Punchcard also uses hidden — even though its cells are (dow, hour)
 	// buckets with no name, the DB query filters heartbeats by the hidden
 	// axes at scan time.
-	pcCells, err := h.DB.GetPunchcard(ctx, username, t0, t1, publicProfileTimeLimit, hidden, members, false)
+	pcCells, err := h.DB.GetPunchcard(ctx, username, t0, t1, publicProfileTimeLimit, tz, hidden, members, false)
 	if err != nil {
 		return h.internalErr(c, "public profile punchcard query failed", err)
 	}

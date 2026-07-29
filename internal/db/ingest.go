@@ -4,6 +4,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"time"
 
@@ -17,6 +18,10 @@ import (
 // SaveHeartbeats transaction.
 type execer interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	// gaka-dg7: refreshRollup needs to read users.timezone before rebuilding
+	// so the daily bucket is computed in the sender's TZ. Both pgxpool.Pool
+	// and pgx.Tx satisfy this method.
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
 // ---- Heartbeats ----
@@ -205,18 +210,56 @@ func (d *DB) RefreshRollup(ctx context.Context, sender string, since time.Time) 
 
 // refreshRollup runs the DELETE+INSERT rollup rebuild against any pool or
 // in-flight tx. Must run inside a tx to keep the DELETE and INSERT atomic.
+//
+// gaka-dg7: the `day` column is now computed in the sender's user-local TZ
+// (resolved 3-level: users.timezone > BOOM_DEFAULT_TIMEZONE > UTC) so the
+// fast-path get_user_activity_rollup.sql serves user-local daily buckets
+// automatically — no read-side AT TIME ZONE dance needed. The DELETE
+// anchor is also shifted to that TZ so we bracket the correct affected days
+// (a `since` timestamp at 06:00 UTC = the prior day in Pacific, so we must
+// DELETE from the earlier day to avoid orphaning a partial bucket).
 func refreshRollup(ctx context.Context, q execer, sender string, since time.Time) error {
+	// Resolve the sender's tz from the users row. Empty column => UTC (the
+	// operator-default fall-through happens in the handler layer for read
+	// paths; on the ingest hot path we keep this in a single query to avoid
+	// a per-batch handler round-trip). A row that doesn't exist yields
+	// ErrNoRows here; we treat that as "unknown user, skip refresh" — the
+	// SELECT in the INSERT would produce no rows anyway.
+	var tz string
+	err := q.QueryRow(ctx,
+		`SELECT COALESCE(NULLIF(timezone, ''), 'UTC') FROM users WHERE username = $1`,
+		sender).Scan(&tz)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	// $2 (since) is a Go time.Time — pgx encodes it as a timestamptz. To get
+	// the sender's local date from it we `AT TIME ZONE $3` (converts
+	// timestamptz to naked wall clock in tz).
+	// $2 (since) can be time.Time{} (zero) for a full rebuild; pgx encodes
+	// zero as '0001-01-01 00:00:00Z' which converts safely under AT TIME
+	// ZONE.
 	if _, err := q.Exec(ctx,
-		`DELETE FROM hb_rollup_daily WHERE sender = $1 AND day >= $2::date`, sender, since); err != nil {
+		`DELETE FROM hb_rollup_daily WHERE sender = $1 AND day >= (($2::timestamptz AT TIME ZONE $3)::date)`,
+		sender, since, tz); err != nil {
 		return err
 	}
 	// Workouts contribute their authoritative workout_duration_s, bypassing
 	// gap-inference entirely — a 45-minute run counts as 2700s regardless of
 	// whether HR samples were dense enough to close gaps. Regular editor
 	// heartbeats keep the gap-bounded time-spent semantics (gap<=900s).
-	_, err := q.Exec(ctx, `
+	//
+	// heartbeats.time_sent is `timestamp without time zone` stored as UTC
+	// (unixToTime in ingest.go), so to get the local date we chain
+	// `AT TIME ZONE 'UTC'` (mark as UTC -> timestamptz) then `AT TIME ZONE
+	// $3` (project to local wall clock) then `::date` (snap to local day).
+	// The WHERE lower bound is symmetric: local midnight -> timestamptz ->
+	// naked UTC to compare against time_sent.
+	_, err = q.Exec(ctx, `
 INSERT INTO hb_rollup_daily (sender, day, project, language, editor, platform, machine, category, plugin, branch, total_seconds)
-SELECT sender, time_sent::date,
+SELECT sender, (((time_sent AT TIME ZONE 'UTC') AT TIME ZONE $3)::date),
     coalesce(project, 'Other'), coalesce(language, 'Other'), coalesce(editor, 'Other'),
     coalesce(platform, 'Other'), coalesce(machine, 'Other'),
     coalesce(category, 'Other'), coalesce(plugin, 'Other'), coalesce(branch, 'Other'),
@@ -226,10 +269,11 @@ SELECT sender, time_sent::date,
         ELSE 0
     END)
 FROM heartbeats
-WHERE sender = $1 AND time_sent >= $2::date
-GROUP BY sender, time_sent::date, coalesce(project, 'Other'), coalesce(language, 'Other'),
+WHERE sender = $1
+  AND time_sent >= ((($2::timestamptz AT TIME ZONE $3)::date) AT TIME ZONE $3 AT TIME ZONE 'UTC')
+GROUP BY sender, (((time_sent AT TIME ZONE 'UTC') AT TIME ZONE $3)::date), coalesce(project, 'Other'), coalesce(language, 'Other'),
     coalesce(editor, 'Other'), coalesce(platform, 'Other'), coalesce(machine, 'Other'),
-    coalesce(category, 'Other'), coalesce(plugin, 'Other'), coalesce(branch, 'Other')`, sender, since)
+    coalesce(category, 'Other'), coalesce(plugin, 'Other'), coalesce(branch, 'Other')`, sender, since, tz)
 	return err
 }
 

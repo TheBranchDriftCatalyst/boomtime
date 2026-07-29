@@ -112,7 +112,7 @@ func TestCaseFoldAggregationAcrossAxes(t *testing.T) {
 			// Category is not a column on StatRow, so it's checked via
 			// GetCategoryDaily; every other axis has a StatRow column.
 			if tc.axis == "category" {
-				cats, err := d.GetCategoryDaily(ctx, sender, start, end, 15,
+				cats, err := d.GetCategoryDaily(ctx, sender, start, end, 15, "UTC",
 					HiddenSets{}, RenameSets{}, MemberSets{}, false)
 				if err != nil {
 					t.Fatal(err)
@@ -133,7 +133,7 @@ func TestCaseFoldAggregationAcrossAxes(t *testing.T) {
 				}
 				return
 			}
-			rows, err := d.GetUserActivity(ctx, sender, start, end, 15,
+			rows, err := d.GetUserActivity(ctx, sender, start, end, 15, "UTC",
 				HiddenSets{}, RenameSets{}, MemberSets{}, false)
 			if err != nil {
 				t.Fatal(err)
@@ -201,7 +201,7 @@ func TestCaseFoldCategoryDaily(t *testing.T) {
 	start := day.AddDate(0, 0, -1)
 	end := day.AddDate(0, 0, 1)
 
-	cats, err := d.GetCategoryDaily(ctx, sender, start, end, 15,
+	cats, err := d.GetCategoryDaily(ctx, sender, start, end, 15, "UTC",
 		HiddenSets{}, RenameSets{}, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
@@ -396,7 +396,7 @@ func TestCaseFoldHideCatchesVariants(t *testing.T) {
 
 	start := day.AddDate(0, 0, -1)
 	end := day.AddDate(0, 0, 1)
-	rows, err := d.GetUserActivity(ctx, sender, start, end, 15, hs, RenameSets{}, MemberSets{}, false)
+	rows, err := d.GetUserActivity(ctx, sender, start, end, 15, "UTC", hs, RenameSets{}, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -471,7 +471,7 @@ func TestCaseFoldMultiDayCanonicalPick(t *testing.T) {
 		start := day1.AddDate(0, 0, -1)
 		end := day2.AddDate(0, 0, 1)
 
-		cats, err := d.GetCategoryDaily(ctx, sender, start, end, 15,
+		cats, err := d.GetCategoryDaily(ctx, sender, start, end, 15, "UTC",
 			HiddenSets{}, RenameSets{}, MemberSets{}, false)
 		if err != nil {
 			t.Fatal(err)
@@ -545,7 +545,7 @@ func TestCaseFoldMultiDayCanonicalPick(t *testing.T) {
 		start := day1.AddDate(0, 0, -1)
 		end := day2.AddDate(0, 0, 1)
 
-		rows, err := d.GetUserActivity(ctx, sender, start, end, 15,
+		rows, err := d.GetUserActivity(ctx, sender, start, end, 15, "UTC",
 			HiddenSets{}, RenameSets{}, MemberSets{}, false)
 		if err != nil {
 			t.Fatal(err)

@@ -45,17 +45,19 @@ type ProjectExtras struct {
 // Owner-scoped; same range/limit semantics as GetProjectStats. The incoming
 // `project` is a DISPLAY name: a project rename remap-matches it so a merged name
 // aggregates all its source projects; a branch rename remaps the branches[] output.
-func (d *DB) GetProjectExtras(ctx context.Context, user, project string, start, end time.Time, limit int64, rs RenameSets) (*ProjectExtras, error) {
+func (d *DB) GetProjectExtras(ctx context.Context, user, project string, start, end time.Time, limit int64, tz string, rs RenameSets) (*ProjectExtras, error) {
 	ex := &ProjectExtras{}
 
 	// --- Daily authoring/reading/breadth (project-match remap + case-fold) ---
+	// gaka-dg7: $6 = IANA tz for the day bucket in both extras queries; the
+	// project remap splice starts at $7 to leave room.
 	// Always splice a case-insensitive match on the (possibly remapped) project
 	// so "MyProject" matches rows stored as "myproject"; when no rename is
 	// active `remapExpr` returns the raw column unchanged.
 	dailyQuery := qGetProjDailyExtras
-	dailyArgs := []any{user, project, start, end, limit}
+	dailyArgs := []any{user, project, start, end, limit, tz}
 	var dexpr string
-	dexpr, dailyArgs, _ = rs.remapExpr("project", "project", "", 6, dailyArgs)
+	dexpr, dailyArgs, _ = rs.remapExpr("project", "project", "", 7, dailyArgs)
 	dailyQuery = strings.Replace(dailyQuery, projectExtrasMatchClause, "AND lower("+dexpr+") = lower($2)", 1)
 	if err := d.aggQuery(ctx, dailyQuery, dailyArgs, func(rows pgx.Rows) error {
 		defer rows.Close()
@@ -73,8 +75,8 @@ func (d *DB) GetProjectExtras(ctx context.Context, user, project string, start, 
 
 	// --- Per-day-per-branch (project-match remap + branch case-fold+remap) ---
 	branchQuery := qGetProjBranchDaily
-	branchArgs := []any{user, project, start, end, limit}
-	next := 6
+	branchArgs := []any{user, project, start, end, limit, tz}
+	next := 7
 	var pexpr string
 	pexpr, branchArgs, next = rs.remapExpr("project", "project", "", next, branchArgs)
 	branchQuery = strings.Replace(branchQuery, projectExtrasMatchClause, "AND lower("+pexpr+") = lower($2)", 1)

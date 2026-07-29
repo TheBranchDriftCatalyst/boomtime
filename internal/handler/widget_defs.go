@@ -215,6 +215,9 @@ func (h *Handler) WidgetDefSvg(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
+		// gaka-dg7: same owner-tz frame as WidgetSvg — a public named-def
+		// render must reflect the owner's local dow/hour buckets.
+		tz := h.resolveUserTZ(ctx, owner)
 
 		// v1: user scope. Reuse the same rollup-vs-raw gate as WidgetSvg.
 		var rows []db.StatRow
@@ -222,7 +225,7 @@ func (h *Handler) WidgetDefSvg(c *echo.Context) error {
 		if !hidden.HasHiddenOutside(db.RollupAxes) {
 			rows, err = h.DB.GetUserActivityRollup(ctx, owner, t0, t1, hidden, renames, members, false)
 		} else {
-			rows, err = h.DB.GetUserActivity(ctx, owner, t0, t1, widgetTimeLimit, hidden, renames, members, false)
+			rows, err = h.DB.GetUserActivity(ctx, owner, t0, t1, widgetTimeLimit, tz, hidden, renames, members, false)
 		}
 		if err != nil {
 			return nil, err
@@ -251,7 +254,7 @@ func (h *Handler) WidgetDefSvg(c *echo.Context) error {
 			data.Grade = &g
 		}
 		if needs.Punchcard {
-			cells, err := h.DB.GetPunchcard(ctx, owner, t0, t1, widgetTimeLimit, hidden, members, false)
+			cells, err := h.DB.GetPunchcard(ctx, owner, t0, t1, widgetTimeLimit, tz, hidden, members, false)
 			if err != nil {
 				return nil, err
 			}
@@ -259,7 +262,7 @@ func (h *Handler) WidgetDefSvg(c *echo.Context) error {
 			data.Punchcard = &pc
 		}
 		if needs.Momentum {
-			mrows, err := h.DB.GetMomentum(ctx, owner, t0, t1, widgetTimeLimit, hidden, renames, members, false)
+			mrows, err := h.DB.GetMomentum(ctx, owner, t0, t1, widgetTimeLimit, tz, hidden, renames, members, false)
 			if err != nil {
 				return nil, err
 			}
@@ -270,7 +273,7 @@ func (h *Handler) WidgetDefSvg(c *echo.Context) error {
 			data.Momentum = widget.ScrubMomentum(&mp, hidden)
 		}
 		if needs.Sessions {
-			srows, err := h.DB.GetSessions(ctx, owner, t0, t1, widgetTimeLimit, hidden, members, false)
+			srows, err := h.DB.GetSessions(ctx, owner, t0, t1, widgetTimeLimit, tz, hidden, members, false)
 			if err != nil {
 				return nil, err
 			}

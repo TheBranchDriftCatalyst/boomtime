@@ -53,7 +53,7 @@ func TestCategoryDailyPerDaySumsMatchGrandTotal(t *testing.T) {
 	start := day1.AddDate(0, 0, -1)
 	end := day2.AddDate(0, 0, 1)
 
-	cats, err := d.GetCategoryDaily(ctx, sender, start, end, 15,
+	cats, err := d.GetCategoryDaily(ctx, sender, start, end, 15, "UTC",
 		HiddenSets{}, RenameSets{}, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
@@ -78,7 +78,7 @@ func TestCategoryDailyPerDaySumsMatchGrandTotal(t *testing.T) {
 	}
 	// Sanity cross-check against GetUserActivity for the same window (both
 	// use the same gap-attributed seconds so they must agree).
-	act, err := d.GetUserActivity(ctx, sender, start, end, 15,
+	act, err := d.GetUserActivity(ctx, sender, start, end, 15, "UTC",
 		HiddenSets{}, RenameSets{}, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)

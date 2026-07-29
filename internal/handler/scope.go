@@ -33,6 +33,13 @@ type dashboardScope struct {
 	t0, t1     time.Time
 	limit      int64
 	spaceParam string
+	// tz (gaka-dg7) is the resolved IANA name for the owner (never ""): a
+	// SINGLE lookup at scope-construction time then threaded through every
+	// SQL that extracts dow/hour/date from time_sent. If a handler talks to
+	// multiple TZ-sensitive queries in one request (Stats -> activity +
+	// categories, for example), all of them see the same resolved zone so
+	// their day series line up.
+	tz string
 }
 
 // dashboardScope resolves the requesting user and the common dashboard query
@@ -43,22 +50,30 @@ func (h *Handler) dashboardScope(c *echo.Context, days int) (*dashboardScope, *a
 		return nil, aerr
 	}
 	t0, t1 := defaultRange(c, days)
+	ctx := c.Request().Context()
 	return &dashboardScope{
 		h:          h,
-		ctx:        c.Request().Context(),
+		ctx:        ctx,
 		owner:      owner,
 		t0:         t0,
 		t1:         t1,
 		limit:      timeLimit(c),
 		spaceParam: c.QueryParam("space"),
+		// gaka-dg7: single lookup, one place per request. resolveUserTZ never
+		// returns "" so all downstream $tz bindings are safe.
+		tz: h.resolveUserTZ(ctx, owner),
 	}, nil
 }
 
 // cacheKey builds the handler's cache key from the given middle parts, always
-// terminated with the "space:<param>" component. The key format (same parts,
-// same order) is behavior — keep it stable.
+// terminated with the "space:<param>" and "tz:<name>" components. The key
+// format (same parts, same order) is behavior — keep it stable.
+//
+// gaka-dg7: tz is part of the key so a TZ change flips buckets to a distinct
+// cache slot instead of serving pre-change UTC buckets under a hot key. The
+// PATCH endpoint also fires invalidateOwnerCache, so this is defense-in-depth.
 func (s *dashboardScope) cacheKey(name string, parts ...any) string {
-	return cacheKey(s.owner, name, append(parts, "space:"+s.spaceParam)...)
+	return cacheKey(s.owner, name, append(parts, "space:"+s.spaceParam, "tz:"+s.tz)...)
 }
 
 // dashSets is the lazily loaded query-time scoping data: hide exclusions and

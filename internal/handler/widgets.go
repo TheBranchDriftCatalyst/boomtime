@@ -245,6 +245,12 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
+		// gaka-dg7: widget uses the OWNER's tz (the widget shows the owner's
+		// data in the owner's timeframe — a public embed of a Pacific dev's
+		// punchcard should reflect Pacific dow/hour buckets even when a UTC
+		// requester loads the SVG). The cache key does NOT need tz appended
+		// because the owner-prefixed sweep already invalidates on a TZ change.
+		tz := h.resolveUserTZ(ctx, owner)
 
 		// Scope: project reuses the Space inclusion path via a synthesized
 		// single-project member set; space loads its rules by id (ownership was
@@ -274,7 +280,7 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 		if !hidden.HasHiddenOutside(db.RollupAxes) && (!scoped || !members.HasMemberOutside(db.RollupAxes)) {
 			rows, err = h.DB.GetUserActivityRollup(ctx, owner, t0, t1, hidden, renames, members, scoped)
 		} else {
-			rows, err = h.DB.GetUserActivity(ctx, owner, t0, t1, widgetTimeLimit, hidden, renames, members, scoped)
+			rows, err = h.DB.GetUserActivity(ctx, owner, t0, t1, widgetTimeLimit, tz, hidden, renames, members, scoped)
 		}
 		if err != nil {
 			return nil, err
@@ -298,7 +304,7 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 			data.Grade = &g
 		}
 		if needs.Punchcard {
-			cells, err := h.DB.GetPunchcard(ctx, owner, t0, t1, widgetTimeLimit, hidden, members, scoped)
+			cells, err := h.DB.GetPunchcard(ctx, owner, t0, t1, widgetTimeLimit, tz, hidden, members, scoped)
 			if err != nil {
 				return nil, err
 			}
@@ -306,7 +312,7 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 			data.Punchcard = &pc
 		}
 		if needs.Momentum {
-			mrows, err := h.DB.GetMomentum(ctx, owner, t0, t1, widgetTimeLimit, hidden, renames, members, scoped)
+			mrows, err := h.DB.GetMomentum(ctx, owner, t0, t1, widgetTimeLimit, tz, hidden, renames, members, scoped)
 			if err != nil {
 				return nil, err
 			}
@@ -319,7 +325,7 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 			data.Momentum = widget.ScrubMomentum(&mp, hidden)
 		}
 		if needs.Sessions {
-			srows, err := h.DB.GetSessions(ctx, owner, t0, t1, widgetTimeLimit, hidden, members, scoped)
+			srows, err := h.DB.GetSessions(ctx, owner, t0, t1, widgetTimeLimit, tz, hidden, members, scoped)
 			if err != nil {
 				return nil, err
 			}

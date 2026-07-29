@@ -4,9 +4,11 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
 )
@@ -129,6 +131,16 @@ type Config struct {
 	// this to stats.DefaultGradeConfig at boot so downstream renderers picking
 	// stats.Grade() get the tuned config transparently.
 	Grade stats.GradeConfig
+
+	// DefaultTimezone (gaka-dg7) is the IANA name applied by db.ResolveTimezone
+	// when a user has NOT picked an explicit timezone yet
+	// (users.timezone = ''). Sourced from BOOM_DEFAULT_TIMEZONE; validated at
+	// Load-time with time.LoadLocation — an invalid value logs a WARN and
+	// falls back to "UTC" (never bootloops the server on a bad env var).
+	// Empty string means "no operator default; fall through to UTC in the
+	// resolver". Users who explicitly pick a zone via the Settings picker
+	// always win over this default.
+	DefaultTimezone string
 }
 
 func getEnv(key, def string) string {
@@ -270,7 +282,30 @@ func Load() *Config {
 
 	c.Grade = loadGradeConfig()
 
+	// gaka-dg7: operator-wide default TZ for users with no explicit pick.
+	// Validate here so an invalid IANA name never lands into the resolver —
+	// a bogus value from the env would cause every subsequent AT TIME ZONE
+	// query to error at PG time. Silent fall-through to "UTC" plus a WARN.
+	c.DefaultTimezone = validateDefaultTimezone(getEnv("BOOM_DEFAULT_TIMEZONE", ""))
+
 	return c
+}
+
+// validateDefaultTimezone parses `raw` against time.LoadLocation. Returns raw
+// when valid; empty string (meaning "no default; UTC wins in the resolver")
+// when raw is empty; empty string with a WARN log when raw is set but
+// invalid so the operator sees the misconfig without a server crash.
+func validateDefaultTimezone(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if _, err := time.LoadLocation(raw); err != nil {
+		slog.Warn("invalid BOOM_DEFAULT_TIMEZONE — falling back to UTC in the resolver",
+			"raw", raw, "err", err)
+		return ""
+	}
+	return raw
 }
 
 // HasServerWakatimeKey reports whether a server-configured import key is present.

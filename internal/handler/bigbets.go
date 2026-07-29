@@ -6,7 +6,8 @@ import (
 )
 
 // Punchcard: GET /api/v1/users/current/stats/punchcard?start&end&timeLimit.
-// Day-of-week x hour-of-day intensity (UTC). Excludes all hidden axis values.
+// Day-of-week x hour-of-day intensity in the caller's LOCAL time (gaka-dg7).
+// Excludes all hidden axis values.
 func (h *Handler) Punchcard(c *echo.Context) error {
 	s, aerr := h.dashboardScope(c, 7)
 	if aerr != nil {
@@ -17,7 +18,7 @@ func (h *Handler) Punchcard(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		cells, err := h.DB.GetPunchcard(s.ctx, s.owner, s.t0, s.t1, s.limit, l.hidden, l.members, l.spaceRequested)
+		cells, err := h.DB.GetPunchcard(s.ctx, s.owner, s.t0, s.t1, s.limit, s.tz, l.hidden, l.members, l.spaceRequested)
 		if err != nil {
 			return nil, err
 		}
@@ -37,7 +38,7 @@ func (h *Handler) Sessions(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		rows, err := h.DB.GetSessions(s.ctx, s.owner, s.t0, s.t1, s.limit, l.hidden, l.members, l.spaceRequested)
+		rows, err := h.DB.GetSessions(s.ctx, s.owner, s.t0, s.t1, s.limit, s.tz, l.hidden, l.members, l.spaceRequested)
 		if err != nil {
 			return nil, err
 		}
@@ -109,7 +110,7 @@ func (h *Handler) Momentum(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		rows, err := h.DB.GetMomentum(s.ctx, s.owner, s.t0, s.t1, s.limit, l.hidden, l.renames, l.members, l.spaceRequested)
+		rows, err := h.DB.GetMomentum(s.ctx, s.owner, s.t0, s.t1, s.limit, s.tz, l.hidden, l.renames, l.members, l.spaceRequested)
 		if err != nil {
 			return nil, err
 		}

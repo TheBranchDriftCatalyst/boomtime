@@ -287,17 +287,35 @@ func (h *Handler) UpdateToken(c *echo.Context) error {
 }
 
 // CurrentUser: GET /auth/users/current (Users.hs).
+//
+// gaka-dg7: also emits `timezone` (raw stored) and `effective_timezone`
+// (post-3-level-resolution). Wakatime editor plugins ignore unknown fields,
+// so this stays wire-safe with wakatime-compat callers.
 func (h *Handler) CurrentUser(c *echo.Context) error {
 	owner, aerr := h.resolveOwnerFromCookie(c, apierr.MissingRefreshTokenCookie())
 	if aerr != nil {
 		return respondErr(c, aerr)
 	}
+	ctx := c.Request().Context()
+	// Best-effort read: on a lookup failure log and fall through to "", so
+	// the resolver still yields a non-empty EffectiveTimezone (UTC unless
+	// BOOM_DEFAULT_TIMEZONE is set). Never fail the whole /users/current
+	// response — that would log every editor plugin out on a transient blip.
+	rawTZ, err := h.DB.GetUserTimezone(ctx, owner)
+	if err != nil {
+		h.Logger.Warn("CurrentUser: users.timezone lookup failed; emitting empty",
+			"user", owner, "err", err)
+		rawTZ = ""
+	}
+	effective := db.ResolveTimezone(rawTZ, h.Cfg.DefaultTimezone)
 	return c.JSON(http.StatusOK, model.UserStatusResponse{
 		Data: model.UserStatus{
-			FullName: owner,
-			Email:    owner + "@hakatime.dev",
-			Photo:    "",
-			IsAdmin:  h.Cfg.IsAdmin(owner),
+			FullName:          owner,
+			Email:             owner + "@hakatime.dev",
+			Photo:             "",
+			IsAdmin:           h.Cfg.IsAdmin(owner),
+			Timezone:          rawTZ,
+			EffectiveTimezone: effective,
 		},
 	})
 }

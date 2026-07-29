@@ -39,11 +39,11 @@ func (h *Handler) ProjectStats(c *echo.Context) error {
 		}
 		// `project` is a DISPLAY name; GetProjectStats remap-matches it so a merged
 		// name aggregates all its source projects.
-		rows, err := h.DB.GetProjectStats(s.ctx, s.owner, project, s.t0, s.t1, s.limit, l.hidden, renames, l.members, l.spaceRequested)
+		rows, err := h.DB.GetProjectStats(s.ctx, s.owner, project, s.t0, s.t1, s.limit, s.tz, l.hidden, renames, l.members, l.spaceRequested)
 		if err != nil {
 			return nil, err
 		}
-		extras, err := h.DB.GetProjectExtras(s.ctx, s.owner, project, s.t0, s.t1, s.limit, renames)
+		extras, err := h.DB.GetProjectExtras(s.ctx, s.owner, project, s.t0, s.t1, s.limit, s.tz, renames)
 		if err != nil {
 			return nil, err
 		}

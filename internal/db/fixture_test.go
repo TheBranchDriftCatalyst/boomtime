@@ -116,7 +116,7 @@ func TestFixturePipeline(t *testing.T) {
 	end := maxT.AddDate(0, 0, 1)
 
 	// --- Invariant 1: stats totals are positive on realistic data. ---
-	rows, err := d.GetUserActivity(ctx, sender, start, end, 15, HiddenSets{}, RenameSets{}, MemberSets{}, false)
+	rows, err := d.GetUserActivity(ctx, sender, start, end, 15, "UTC", HiddenSets{}, RenameSets{}, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func TestFixturePipeline(t *testing.T) {
 	}
 
 	// --- Invariant 5: weekly bucketing (momentum) produces multiple weeks. ---
-	mom, err := d.GetMomentum(ctx, sender, start, end, 15, HiddenSets{}, RenameSets{}, MemberSets{}, false)
+	mom, err := d.GetMomentum(ctx, sender, start, end, 15, "UTC", HiddenSets{}, RenameSets{}, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

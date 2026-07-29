@@ -1,10 +1,14 @@
+-- gaka-dg7: day/dow/hour buckets computed in user-local TZ ($6) so the
+-- per-project stats page's dayofweek/hourofday drilldowns reflect the user's
+-- clock, not UTC. Same fix as get_punchcard for badge misfires.
+--
 -- Phase A: windowless conditional SUM over precomputed gap_seconds for one
--- project. $1 sender, $2 project, $3 start, $4 end, $5 limit.
+-- project. $1 sender, $2 project, $3 start, $4 end, $5 limit, $6 IANA tz name.
 WITH stats AS (
     SELECT
-        time_sent::date + interval '0h' AS day,
-        (CAST(extract(dow FROM (time_sent::date + interval '0h')) AS int8))::text AS dayofweek,
-        (CAST(extract(hour FROM time_sent) AS int8))::text AS hourofday,
+        ((time_sent AT TIME ZONE 'UTC') AT TIME ZONE $6)::date + interval '0h' AS day,
+        (CAST(extract(dow FROM (((time_sent AT TIME ZONE 'UTC') AT TIME ZONE $6)::date + interval '0h')) AS int8))::text AS dayofweek,
+        (CAST(extract(hour FROM ((time_sent AT TIME ZONE 'UTC') AT TIME ZONE $6)) AS int8))::text AS hourofday,
         coalesce(language, 'Other') AS LANGUAGE,
         entity,
         ty,
@@ -17,9 +21,9 @@ WITH stats AS (
         AND time_sent >= $3
         AND time_sent <= $4
     GROUP BY
-        time_sent::date + interval '0h',
-        extract(dow FROM (time_sent::date + interval '0h')),
-        extract(hour FROM time_sent),
+        ((time_sent AT TIME ZONE 'UTC') AT TIME ZONE $6)::date + interval '0h',
+        extract(dow FROM (((time_sent AT TIME ZONE 'UTC') AT TIME ZONE $6)::date + interval '0h')),
+        extract(hour FROM ((time_sent AT TIME ZONE 'UTC') AT TIME ZONE $6)),
         language,
         entity,
         ty

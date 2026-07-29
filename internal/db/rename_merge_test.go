@@ -79,7 +79,7 @@ func TestRenameMergeAggregates(t *testing.T) {
 
 			start, end := day.AddDate(0, 0, -1), day.AddDate(0, 0, 1)
 
-			before, err := d.GetUserActivity(ctx, sender, start, end, 15, HiddenSets{}, RenameSets{}, MemberSets{}, false)
+			before, err := d.GetUserActivity(ctx, sender, start, end, 15, "UTC", HiddenSets{}, RenameSets{}, MemberSets{}, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -92,7 +92,7 @@ func TestRenameMergeAggregates(t *testing.T) {
 			}
 			rs := loadRenames(t, d, ctx, sender)
 
-			after, err := d.GetUserActivity(ctx, sender, start, end, 15, HiddenSets{}, rs, MemberSets{}, false)
+			after, err := d.GetUserActivity(ctx, sender, start, end, 15, "UTC", HiddenSets{}, rs, MemberSets{}, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -175,7 +175,7 @@ func TestRenameReversibility(t *testing.T) {
 
 	ruleID := createRename(t, d, ctx, sender, "project", "A", "B")
 	rs := loadRenames(t, d, ctx, sender)
-	merged, err := d.GetUserActivity(ctx, sender, start, end, 15, HiddenSets{}, rs, MemberSets{}, false)
+	merged, err := d.GetUserActivity(ctx, sender, start, end, 15, "UTC", HiddenSets{}, rs, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +190,7 @@ func TestRenameReversibility(t *testing.T) {
 	if rs.Any() {
 		t.Fatal("rename set should be empty after delete")
 	}
-	reverted, err := d.GetUserActivity(ctx, sender, start, end, 15, HiddenSets{}, rs, MemberSets{}, false)
+	reverted, err := d.GetUserActivity(ctx, sender, start, end, 15, "UTC", HiddenSets{}, rs, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +232,7 @@ func TestRenameIngestStoresRaw(t *testing.T) {
 
 	start, end := day.AddDate(0, 0, -1), day.AddDate(0, 0, 1)
 	rs := loadRenames(t, d, ctx, sender)
-	rows, err := d.GetUserActivity(ctx, sender, start, end, 15, HiddenSets{}, rs, MemberSets{}, false)
+	rows, err := d.GetUserActivity(ctx, sender, start, end, 15, "UTC", HiddenSets{}, rs, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,7 +275,7 @@ func TestRenameProjectDetailByDisplayName(t *testing.T) {
 		return s
 	}
 
-	rowsM, err := d.GetProjectStats(ctx, sender, "M", start, end, 15, HiddenSets{}, rs, MemberSets{}, false)
+	rowsM, err := d.GetProjectStats(ctx, sender, "M", start, end, 15, "UTC", HiddenSets{}, rs, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,7 +283,7 @@ func TestRenameProjectDetailByDisplayName(t *testing.T) {
 		t.Fatalf("project detail 'M' total = %d, want 300 (A+B merged)", got)
 	}
 
-	rowsKeep, err := d.GetProjectStats(ctx, sender, "keep", start, end, 15, HiddenSets{}, rs, MemberSets{}, false)
+	rowsKeep, err := d.GetProjectStats(ctx, sender, "keep", start, end, 15, "UTC", HiddenSets{}, rs, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -291,7 +291,7 @@ func TestRenameProjectDetailByDisplayName(t *testing.T) {
 		t.Fatalf("project detail 'keep' total = %d, want 100", got)
 	}
 
-	rowsA, err := d.GetProjectStats(ctx, sender, "A", start, end, 15, HiddenSets{}, rs, MemberSets{}, false)
+	rowsA, err := d.GetProjectStats(ctx, sender, "A", start, end, 15, "UTC", HiddenSets{}, rs, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -423,7 +423,7 @@ func TestRenameHidePrecedence(t *testing.T) {
 	}
 	rs := loadRenames(t, d, ctx, sender)
 
-	rows, err := d.GetUserActivity(ctx, sender, start, end, 15, hs, rs, MemberSets{}, false)
+	rows, err := d.GetUserActivity(ctx, sender, start, end, 15, "UTC", hs, rs, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -513,7 +513,7 @@ func TestRenameMomentumAndCategory(t *testing.T) {
 	createRename(t, d, ctx, sender, "category", "Y", "Z")
 	rs := loadRenames(t, d, ctx, sender)
 
-	mom, err := d.GetMomentum(ctx, sender, start, end, 15, HiddenSets{}, rs, MemberSets{}, false)
+	mom, err := d.GetMomentum(ctx, sender, start, end, 15, "UTC", HiddenSets{}, rs, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -530,7 +530,7 @@ func TestRenameMomentumAndCategory(t *testing.T) {
 		t.Fatalf("momentum M seconds = %d, want 240 (A+B merged)", momM)
 	}
 
-	cats, err := d.GetCategoryDaily(ctx, sender, start, end, 15, HiddenSets{}, rs, MemberSets{}, false)
+	cats, err := d.GetCategoryDaily(ctx, sender, start, end, 15, "UTC", HiddenSets{}, rs, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -574,7 +574,7 @@ func TestRegexRenameMerge(t *testing.T) {
 		t.Fatal("regex rule should register on the project axis")
 	}
 
-	rows, err := d.GetUserActivity(ctx, sender, start, end, 15, HiddenSets{}, rs, MemberSets{}, false)
+	rows, err := d.GetUserActivity(ctx, sender, start, end, 15, "UTC", HiddenSets{}, rs, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -604,7 +604,7 @@ func TestRegexRenameMerge(t *testing.T) {
 		t.Fatal(err)
 	}
 	rs = loadRenames(t, d, ctx, sender)
-	reverted, err := d.GetUserActivity(ctx, sender, start, end, 15, HiddenSets{}, rs, MemberSets{}, false)
+	reverted, err := d.GetUserActivity(ctx, sender, start, end, 15, "UTC", HiddenSets{}, rs, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -723,7 +723,7 @@ func TestRenameProjectExtras(t *testing.T) {
 	rs := loadRenames(t, d, ctx, sender)
 
 	// Querying the DISPLAY name "Meeting" must aggregate BOTH source projects.
-	ex, err := d.GetProjectExtras(ctx, sender, "Meeting", start, end, 15, rs)
+	ex, err := d.GetProjectExtras(ctx, sender, "Meeting", start, end, 15, "UTC", rs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -756,7 +756,7 @@ func TestRenameProjectExtras(t *testing.T) {
 	createRename(t, d, ctx, sender, "branch", "feature-x", "features")
 	createRename(t, d, ctx, sender, "branch", "feature-y", "features")
 	rs = loadRenames(t, d, ctx, sender)
-	ex2, err := d.GetProjectExtras(ctx, sender, "Meeting", start, end, 15, rs)
+	ex2, err := d.GetProjectExtras(ctx, sender, "Meeting", start, end, 15, "UTC", rs)
 	if err != nil {
 		t.Fatal(err)
 	}

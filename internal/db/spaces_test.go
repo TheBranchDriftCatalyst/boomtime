@@ -171,7 +171,7 @@ func TestSpaceInclusionUnionAcrossAxes(t *testing.T) {
 		map[string][]string{"editor": {"^code"}},
 	)
 
-	rows, err := d.GetUserActivity(ctx, sender, start, end, 15, HiddenSets{}, RenameSets{}, ms, true)
+	rows, err := d.GetUserActivity(ctx, sender, start, end, 15, "UTC", HiddenSets{}, RenameSets{}, ms, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +199,7 @@ func TestSpaceMultiRuleOR(t *testing.T) {
 	start, end := day.AddDate(0, 0, -1), day.AddDate(0, 0, 1)
 
 	ms := mkMembers(map[string][]string{"project": {"alpha", "beta"}}, nil)
-	rows, err := d.GetUserActivity(ctx, sender, start, end, 15, HiddenSets{}, RenameSets{}, ms, true)
+	rows, err := d.GetUserActivity(ctx, sender, start, end, 15, "UTC", HiddenSets{}, RenameSets{}, ms, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +224,7 @@ func TestSpaceEmptyMatchesNothing(t *testing.T) {
 	seedAxisBlock2(t, d, ctx, sender, hbSeed{project: "alpha", language: "Go"}, day, 2, 100)
 	start, end := day.AddDate(0, 0, -1), day.AddDate(0, 0, 1)
 
-	rows, err := d.GetUserActivity(ctx, sender, start, end, 15, HiddenSets{}, RenameSets{}, MemberSets{}, true)
+	rows, err := d.GetUserActivity(ctx, sender, start, end, 15, "UTC", HiddenSets{}, RenameSets{}, MemberSets{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +232,7 @@ func TestSpaceEmptyMatchesNothing(t *testing.T) {
 		t.Fatalf("empty space should match nothing, got %d rows", len(rows))
 	}
 	// Unrequested -> full dashboard is back.
-	unscoped, err := d.GetUserActivity(ctx, sender, start, end, 15, HiddenSets{}, RenameSets{}, MemberSets{}, false)
+	unscoped, err := d.GetUserActivity(ctx, sender, start, end, 15, "UTC", HiddenSets{}, RenameSets{}, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

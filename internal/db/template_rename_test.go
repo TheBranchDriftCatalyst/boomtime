@@ -50,7 +50,7 @@ func TestTemplateRenameStripsPrefix(t *testing.T) {
 	t1 := base.AddDate(0, 0, 1)
 
 	// --- Baseline (no rule): raw prefixed names, no merge. ---
-	baseRows, err := d.GetUserActivity(ctx, sender, t0, t1, 15, HiddenSets{}, RenameSets{}, MemberSets{}, false)
+	baseRows, err := d.GetUserActivity(ctx, sender, t0, t1, 15, "UTC", HiddenSets{}, RenameSets{}, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestTemplateRenameStripsPrefix(t *testing.T) {
 	}
 
 	// --- Raw-scan path (limit != 15 forces GetUserActivity). ---
-	rawRows, err := d.GetUserActivity(ctx, sender, t0, t1, 30, HiddenSets{}, rs, MemberSets{}, false)
+	rawRows, err := d.GetUserActivity(ctx, sender, t0, t1, 30, "UTC", HiddenSets{}, rs, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestTemplateRenameStripsPrefix(t *testing.T) {
 		t.Fatal(err)
 	}
 	rs2 := loadRenames(t, d, ctx, sender)
-	revRows, err := d.GetUserActivity(ctx, sender, t0, t1, 15, HiddenSets{}, rs2, MemberSets{}, false)
+	revRows, err := d.GetUserActivity(ctx, sender, t0, t1, 15, "UTC", HiddenSets{}, rs2, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

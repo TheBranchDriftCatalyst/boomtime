@@ -291,6 +291,14 @@ func registerAuthRoutes(e *echo.Echo, h *handler.Handler) {
 	e.GET("/api/v1/users/current/wakatime_key", h.GetWakatimeKey)
 	e.POST("/api/v1/users/current/wakatime_key", h.SaveWakatimeKey)
 	e.DELETE("/api/v1/users/current/wakatime_key", h.DeleteWakatimeKey)
+	// User IANA timezone (gaka-dg7). GET reports the raw stored value
+	// (''=unset) alongside the server's 3-level-resolved effectiveTimezone
+	// so the FE can render "your choice" vs "server default" and only
+	// auto-detect-and-prompt when the two differ. PATCH validates via
+	// time.LoadLocation and rebuilds hb_rollup_daily so the dashboard fast
+	// path immediately serves user-local buckets.
+	e.GET("/api/v1/users/current/timezone", h.GetTimezone)
+	e.PATCH("/api/v1/users/current/timezone", h.UpdateTimezone)
 }
 
 // registerMiscRoutes: badges, widgets, leaderboards, and commits.

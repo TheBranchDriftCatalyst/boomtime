@@ -59,6 +59,12 @@ type StoredUser struct {
 	HashedPassword []byte
 	SaltUsed       []byte
 	ArgonVersion   int
+	// Timezone (gaka-dg7) is the user's explicit IANA name choice or the
+	// empty-string sentinel meaning "no explicit pick — use BOOM_DEFAULT_TIMEZONE
+	// (else UTC)". Callers that need the effective zone for a query MUST use
+	// the 3-level resolver (handler.resolveUserTZ / db.ResolveTimezone) rather
+	// than reading this field raw, so the env default has a chance to fire.
+	Timezone string
 }
 
 // TokenData is the access/refresh token pair created on login (Types.hs TokenData).

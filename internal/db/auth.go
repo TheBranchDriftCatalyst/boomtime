@@ -37,10 +37,12 @@ func hashSessionToken(raw string) []byte {
 // whether to bump the row to the current generation).
 func (d *DB) GetUserByName(ctx context.Context, name string) (*StoredUser, error) {
 	row := d.Pool.QueryRow(ctx,
-		`SELECT username, hashed_password, salt_used, argon_version
+		// gaka-dg7: timezone comes back on the same round-trip so the TZ
+		// resolver used by every dow/hour/date SQL is a single row read.
+		`SELECT username, hashed_password, salt_used, argon_version, timezone
 		 FROM users WHERE username = $1`, name)
 	var u StoredUser
-	if err := row.Scan(&u.Username, &u.HashedPassword, &u.SaltUsed, &u.ArgonVersion); err != nil {
+	if err := row.Scan(&u.Username, &u.HashedPassword, &u.SaltUsed, &u.ArgonVersion, &u.Timezone); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}

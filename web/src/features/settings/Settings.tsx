@@ -13,6 +13,7 @@ import { ChangePasswordCard } from "@/features/settings/ChangePasswordCard";
 import { DashboardEditorCard } from "@/features/settings/DashboardEditorCard";
 import { PluginSetup } from "@/features/settings/PluginSetup";
 import { PublicProfileCard } from "@/features/settings/PublicProfileCard";
+import { TimezoneCard } from "@/features/settings/TimezoneCard";
 import { TokensTab } from "@/features/tokens/TokensTab";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -31,6 +32,7 @@ function ProfileTab() {
   return (
     <div className="space-y-6">
       <ChangePasswordCard />
+      <TimezoneCard />
       <PublicProfileCard />
       {profile?.enabled && <DashboardEditorCard />}
     </div>

@@ -50,7 +50,7 @@ func TestTimeWindowInclusiveBothEdges(t *testing.T) {
 	insertSeed(t, d, ctx, sender, hbSeed{project: "P", entity: "a.go",
 		category: "Coding", ts: end, gap: 100}) // exactly at end edge
 
-	rows, err := d.GetUserActivity(ctx, sender, start, end, 15,
+	rows, err := d.GetUserActivity(ctx, sender, start, end, 15, "UTC",
 		HiddenSets{}, RenameSets{}, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +59,7 @@ func TestTimeWindowInclusiveBothEdges(t *testing.T) {
 		t.Fatalf("[GetUserActivity] total = %d, want 200 (both edges must be inclusive)", got)
 	}
 
-	cats, err := d.GetCategoryDaily(ctx, sender, start, end, 15,
+	cats, err := d.GetCategoryDaily(ctx, sender, start, end, 15, "UTC",
 		HiddenSets{}, RenameSets{}, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
@@ -72,7 +72,7 @@ func TestTimeWindowInclusiveBothEdges(t *testing.T) {
 		t.Fatalf("[GetCategoryDaily] total = %d, want 200 (both edges inclusive)", catTot)
 	}
 
-	punch, err := d.GetPunchcard(ctx, sender, start, end, 15,
+	punch, err := d.GetPunchcard(ctx, sender, start, end, 15, "UTC",
 		HiddenSets{}, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
@@ -81,7 +81,7 @@ func TestTimeWindowInclusiveBothEdges(t *testing.T) {
 		t.Fatalf("[GetPunchcard] total = %d, want 200 (both edges inclusive)", got)
 	}
 
-	sess, err := d.GetSessions(ctx, sender, start, end, 15,
+	sess, err := d.GetSessions(ctx, sender, start, end, 15, "UTC",
 		HiddenSets{}, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
@@ -90,7 +90,7 @@ func TestTimeWindowInclusiveBothEdges(t *testing.T) {
 		t.Fatalf("[GetSessions] total = %d, want 200 (both edges inclusive)", got)
 	}
 
-	mom, err := d.GetMomentum(ctx, sender, start, end, 15,
+	mom, err := d.GetMomentum(ctx, sender, start, end, 15, "UTC",
 		HiddenSets{}, RenameSets{}, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)
@@ -125,7 +125,7 @@ func TestTimeWindowExcludesOutside(t *testing.T) {
 	insertSeed(t, d, ctx, sender, hbSeed{project: "P", entity: "a.go",
 		category: "Coding", ts: end.Add(time.Second), gap: 100})
 
-	rows, err := d.GetUserActivity(ctx, sender, start, end, 15,
+	rows, err := d.GetUserActivity(ctx, sender, start, end, 15, "UTC",
 		HiddenSets{}, RenameSets{}, MemberSets{}, false)
 	if err != nil {
 		t.Fatal(err)

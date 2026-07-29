@@ -76,7 +76,7 @@ func TestOwnerScopingAcrossAggregations(t *testing.T) {
 		a, b := newPair(t, "act")
 		seedTwoUserBlock(t, d, a, "SharedProj", day)
 		seedTwoUserBlock(t, d, b, "SharedProj", day)
-		rowsA, err := d.GetUserActivity(t.Context(), a, start, end, 15,
+		rowsA, err := d.GetUserActivity(t.Context(), a, start, end, 15, "UTC",
 			HiddenSets{}, RenameSets{}, MemberSets{}, false)
 		if err != nil {
 			t.Fatal(err)
@@ -110,7 +110,7 @@ func TestOwnerScopingAcrossAggregations(t *testing.T) {
 		a, b := newPair(t, "cat")
 		seedTwoUserBlock(t, d, a, "P", day)
 		seedTwoUserBlock(t, d, b, "P", day)
-		cats, err := d.GetCategoryDaily(t.Context(), a, start, end, 15,
+		cats, err := d.GetCategoryDaily(t.Context(), a, start, end, 15, "UTC",
 			HiddenSets{}, RenameSets{}, MemberSets{}, false)
 		if err != nil {
 			t.Fatal(err)
@@ -128,7 +128,7 @@ func TestOwnerScopingAcrossAggregations(t *testing.T) {
 		a, b := newPair(t, "pnch")
 		seedTwoUserBlock(t, d, a, "P", day)
 		seedTwoUserBlock(t, d, b, "P", day)
-		cells, err := d.GetPunchcard(t.Context(), a, start, end, 15,
+		cells, err := d.GetPunchcard(t.Context(), a, start, end, 15, "UTC",
 			HiddenSets{}, MemberSets{}, false)
 		if err != nil {
 			t.Fatal(err)
@@ -142,7 +142,7 @@ func TestOwnerScopingAcrossAggregations(t *testing.T) {
 		a, b := newPair(t, "sess")
 		seedTwoUserBlock(t, d, a, "P", day)
 		seedTwoUserBlock(t, d, b, "P", day)
-		sess, err := d.GetSessions(t.Context(), a, start, end, 15,
+		sess, err := d.GetSessions(t.Context(), a, start, end, 15, "UTC",
 			HiddenSets{}, MemberSets{}, false)
 		if err != nil {
 			t.Fatal(err)
@@ -156,7 +156,7 @@ func TestOwnerScopingAcrossAggregations(t *testing.T) {
 		a, b := newPair(t, "mom")
 		seedTwoUserBlock(t, d, a, "P", day)
 		seedTwoUserBlock(t, d, b, "P", day)
-		mom, err := d.GetMomentum(t.Context(), a, start, end, 15,
+		mom, err := d.GetMomentum(t.Context(), a, start, end, 15, "UTC",
 			HiddenSets{}, RenameSets{}, MemberSets{}, false)
 		if err != nil {
 			t.Fatal(err)
@@ -170,7 +170,7 @@ func TestOwnerScopingAcrossAggregations(t *testing.T) {
 		a, b := newPair(t, "pstat")
 		seedTwoUserBlock(t, d, a, "P", day)
 		seedTwoUserBlock(t, d, b, "P", day)
-		rows, err := d.GetProjectStats(t.Context(), a, "P", start, end, 15,
+		rows, err := d.GetProjectStats(t.Context(), a, "P", start, end, 15, "UTC",
 			HiddenSets{}, RenameSets{}, MemberSets{}, false)
 		if err != nil {
 			t.Fatal(err)
@@ -188,7 +188,7 @@ func TestOwnerScopingAcrossAggregations(t *testing.T) {
 		a, b := newPair(t, "pex")
 		seedTwoUserBlock(t, d, a, "P", day)
 		seedTwoUserBlock(t, d, b, "P", day)
-		ex, err := d.GetProjectExtras(t.Context(), a, "P", start, end, 15, RenameSets{})
+		ex, err := d.GetProjectExtras(t.Context(), a, "P", start, end, 15, "UTC", RenameSets{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -242,7 +242,7 @@ func TestOwnerScopingAcrossAggregations(t *testing.T) {
 		a, b := newPair(t, "today")
 		seedTwoUserBlock(t, d, a, "P", today)
 		seedTwoUserBlock(t, d, b, "P", today)
-		tot, err := d.GetTotalTimeToday(t.Context(), a, HiddenSets{})
+		tot, err := d.GetTotalTimeToday(t.Context(), a, "UTC", HiddenSets{})
 		if err != nil {
 			t.Fatal(err)
 		}
