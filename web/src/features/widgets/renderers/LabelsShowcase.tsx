@@ -2,15 +2,14 @@
 // the framework (gaka-364), grouped by category (tier / archetype /
 // tribe). Complements the top-3 slice shown on the hero tagline.
 //
-// Purely display over `evaluate(data)`. No fetching — the outer
-// DashboardGrid already handed us the PublicDashboardPayload.
+// gaka-hc6.4: awards now come from the server via useAwards() — no more
+// client-side evaluate(). The server also writes ledger rows on its own,
+// so the previous useLogAwards() POST is gone (double-write eliminated).
+// `data` is still accepted to keep the widget renderer contract stable,
+// but the label set no longer depends on it.
 import type { PublicDashboardPayload } from "@/types/stats";
-import { evaluate } from "@/features/publicprofile/labels/evaluator";
-import { useLabelsCatalog } from "@/features/publicprofile/labels/useLabelsCatalog";
-import {
-  useAwardStreaks,
-  useLogAwards,
-} from "@/features/publicprofile/labels/useAwardStreaks";
+import { useAwards } from "@/features/publicprofile/labels/useAwards";
+import { useAwardStreaks } from "@/features/publicprofile/labels/useAwardStreaks";
 import type { LabelAward } from "@/features/publicprofile/labels/types";
 import { LabelChip } from "@/features/publicprofile/labels/LabelChip";
 
@@ -33,16 +32,17 @@ const GROUP_HEADERS: Record<LabelAward["kind"], string> = {
 };
 
 export interface LabelsShowcaseProps {
+  // kept in the signature for renderer-contract stability; awards no
+  // longer depend on it (server evaluates against the caller/slug's
+  // authoritative payload).
   data: PublicDashboardPayload;
 }
 
-export function LabelsShowcase({ data }: LabelsShowcaseProps) {
-  const { specs } = useLabelsCatalog();
-  const awards = evaluate(data, { catalog: specs });
-  // Streak ledger integration (gaka-mwp-streaks): log the current
-  // firing set (own-profile only — hook internally guards on auth)
-  // and read back the streak map so LabelChip can render Nx badges.
-  useLogAwards(awards, specs);
+export function LabelsShowcase(_: LabelsShowcaseProps) {
+  const awards = useAwards();
+  // Streaks map still comes from its own endpoint — the LabelChip needs
+  // it to render Nx badges. Server-side ledger writes on /awards mean
+  // the streak count reflects the just-computed period automatically.
   const streaks = useAwardStreaks();
 
   if (awards.length === 0) {

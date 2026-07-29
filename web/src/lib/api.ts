@@ -991,6 +991,36 @@ export const api = {
       `/api/public/profile/${encodeURIComponent(slug)}/awards/streaks`,
     ),
 
+  // gaka-hc6.3 / gaka-hc6.4: server-side award evaluation. Replaces the
+  // client-side evaluate() call. Own variant WRITES the ledger; public
+  // variant is read-only for the ledger.
+  getOwnAwards: () =>
+    request<
+      Array<{
+        id: string;
+        kind: "tier" | "archetype" | "tribe" | "meme" | "patch";
+        label: string;
+        glyph?: string;
+        description: string;
+        rank: number;
+        tier?: string;
+        condition?: unknown;
+      }>
+    >("/api/v1/users/current/awards"),
+  getPublicAwards: (slug: string) =>
+    request<
+      Array<{
+        id: string;
+        kind: "tier" | "archetype" | "tribe" | "meme" | "patch";
+        label: string;
+        glyph?: string;
+        description: string;
+        rank: number;
+        tier?: string;
+        condition?: unknown;
+      }>
+    >(`/api/public/profile/${encodeURIComponent(slug)}/awards`),
+
   getBackfillStats: () =>
     request<{
       totalRows: number;

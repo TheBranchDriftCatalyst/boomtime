@@ -25,16 +25,13 @@ import { GoalProgress } from "@/features/widgets/renderers/GoalProgress";
 import { GoalRing } from "@/features/widgets/renderers/GoalRing";
 import { GoalList } from "@/features/widgets/renderers/GoalList";
 // gaka-364: label evaluator drives the hero tagline (top-3 awards) +
-// the labels-showcase widget. Pure over the payload — but the CATALOG it
-// evaluates is now fetched from the DB (gaka-364.3) via useLabelsCatalog.
-// While the fetch is in flight `evaluate()` returns [] and the fallback
+// the labels-showcase widget. gaka-hc6.4: awards come from the server
+// via useAwards() — no more client-side evaluate(), no more client POST
+// to /awards/log (server writes the ledger atomically on its own read).
+// While the fetch is in flight useAwards returns [] and the fallback
 // "NEW OPERATOR" branch renders — same UX as an actually-empty award set.
-import { evaluate } from "@/features/publicprofile/labels/evaluator";
-import { useLabelsCatalog } from "@/features/publicprofile/labels/useLabelsCatalog";
-import {
-  useAwardStreaks,
-  useLogAwards,
-} from "@/features/publicprofile/labels/useAwardStreaks";
+import { useAwards } from "@/features/publicprofile/labels/useAwards";
+import { useAwardStreaks } from "@/features/publicprofile/labels/useAwardStreaks";
 import { LabelChip } from "@/features/publicprofile/labels/LabelChip";
 import { LabelsShowcase } from "@/features/widgets/renderers/LabelsShowcase";
 // gaka-9v4: per-user chibi avatar slot in the hero identity tile. Falls
@@ -219,12 +216,9 @@ function HeroIdentity({ data }: { data: PublicDashboardPayload }) {
   // "separate emblem row of naked <img>s" collapsed into ONE row of
   // <LabelChip>s. Each chip carries its own image + hover tooltip with
   // the description of what the label means. No duplication.
-  const { specs } = useLabelsCatalog();
-  const awards = evaluate(data, { catalog: specs });
-  // gaka-mwp-streaks: log the current firing set (own-profile only —
-  // the hook internally gates on auth) + read back streak counts so
-  // the hero chips show "Nx" badges when the label has recurred.
-  useLogAwards(awards, specs);
+  const awards = useAwards();
+  // Read streak counts so hero chips show "Nx" badges when a label has
+  // recurred. Server-side ledger write on /awards keeps this fresh.
   const streaks = useAwardStreaks();
   const top3 = awards.slice(0, 3);
   return (

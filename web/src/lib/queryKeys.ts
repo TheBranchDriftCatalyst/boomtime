@@ -200,6 +200,13 @@ export const qk = {
     label
       ? (["awards", "ledger", "own", label] as const)
       : (["awards", "ledger", "own"] as const),
+  // gaka-hc6.4: server-evaluated awards. Distinct from streaks/ledger so
+  // the /awards endpoint's cache doesn't get invalidated when a streak
+  // POST bumps the streaks cache.
+  awards: (scope: "own" | "public", slug?: string) =>
+    scope === "public"
+      ? (["awards", "eval", "public", slug ?? ""] as const)
+      : (["awards", "eval", "own"] as const),
 
   // gaka-vh8: git-history backfill config + stats. Both are per-user
   // and admin-only; separate keys because a config save and a batch

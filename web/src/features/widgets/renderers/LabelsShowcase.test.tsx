@@ -16,39 +16,30 @@ import { TooltipProvider } from "@thebranchdriftcatalyst/catalyst-ui/ui/tooltip"
 import { LabelsShowcase } from "./LabelsShowcase";
 import type { PublicDashboardPayload } from "@/types/stats";
 import { LABEL_CATALOG } from "@/features/publicprofile/labels/catalog";
+import { evaluate } from "@/features/publicprofile/labels/evaluator";
 import { qk } from "@/lib/queryKeys";
 import type { LabelSpec } from "@/features/publicprofile/labels/types";
+import { MemoryRouter } from "react-router";
 
-// LabelChip requires TooltipProvider ancestor; app root mounts one, tests
-// wrap explicitly. Post gaka-364.3 the widget also needs a QueryClient — the
-// evaluator reads from useLabelsCatalog; we prime the cache from
-// LABEL_CATALOG so tests stay synchronous + offline.
+// gaka-hc6.4: awards now come from the server via useAwards() — tests
+// prime the qk.awards("own") cache with the evaluated result of the
+// given payload so the render assertions still exercise a real award set.
+// The evaluator itself is separately tested; this test suite is about
+// rendering the awards.
 function renderShowcase(data: PublicDashboardPayload) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
-  qc.setQueryData(qk.labelsCatalog(), {
-    systemPrompt: "",
-    labels: (LABEL_CATALOG as LabelSpec[]).map((s) => ({
-      id: s.id,
-      kind: s.kind,
-      label: s.label,
-      glyph: s.glyph ?? "",
-      description: s.description,
-      optimizedPrompt: s.imagePrompt ?? "",
-      rank: s.rank,
-      tier: s.tier ?? "",
-      condition: s.condition,
-      createdAt: "",
-      updatedAt: "",
-    })),
-  });
+  const awards = evaluate(data, { catalog: LABEL_CATALOG as LabelSpec[] });
+  qc.setQueryData(qk.awards("own"), awards);
   return render(
-    <QueryClientProvider client={qc}>
-      <TooltipProvider delayDuration={0}>
-        <LabelsShowcase data={data} />
-      </TooltipProvider>
-    </QueryClientProvider>,
+    <MemoryRouter>
+      <QueryClientProvider client={qc}>
+        <TooltipProvider delayDuration={0}>
+          <LabelsShowcase data={data} />
+        </TooltipProvider>
+      </QueryClientProvider>
+    </MemoryRouter>,
   );
 }
 
