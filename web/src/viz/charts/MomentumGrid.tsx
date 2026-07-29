@@ -6,7 +6,7 @@ import { useD3Surface } from "@/viz/d3/useD3Surface";
 import { ChartSurface } from "@/viz/d3/ChartSurface";
 import { tooltipHtml } from "@/viz/d3/tooltip";
 import { fmtDelta, fmtPct } from "@/viz/d3/tooltipContent";
-import { formatDay, styleAxis, thinnedDateTicks } from "@/viz/d3/axes";
+import { adaptiveDateFormatter, styleAxis, thinnedDateTicks } from "@/viz/d3/axes";
 import { emptyFloor } from "@/viz/d3/color";
 import { EmptyChart } from "@/viz/d3/EmptyChart";
 import type { MomentumPayload } from "@/types/api";
@@ -66,7 +66,12 @@ export function MomentumGrid({ data, rowHeight = 26 }: MomentumGridProps) {
         .append("title")
         .text((d) => String(d));
 
-      // Week axis (thinned to ~8 labels).
+      // Week axis (thinned to ~8 labels). Formatter is span-adaptive so a
+      // multi-year range doesn't render as "26 Dec, 27 Apr, 27 Aug" (which
+      // reads as ambiguous day-of-month ticks) — instead you get
+      // "Dec '24, Apr '25, Aug '25" and the axis is honest.
+      const weekDates = weeks.map((w) => new Date(w));
+      const fmt = adaptiveDateFormatter(weekDates);
       styleAxis(
         g
           .append("g")
@@ -75,7 +80,7 @@ export function MomentumGrid({ data, rowHeight = 26 }: MomentumGridProps) {
             d3
               .axisBottom(x)
               .tickValues(thinnedDateTicks(d3.range(weeks.length)))
-              .tickFormat((i) => formatDay(new Date(weeks[Number(i)]))),
+              .tickFormat((i) => fmt(weekDates[Number(i)])),
           ),
         { fg },
         { fontSize: "10px" },

@@ -109,8 +109,36 @@ export function thinnedDateTicks<T>(values: readonly T[], max = 8): T[] {
   return values.filter((_, i) => i % every === 0);
 }
 
-/** Shared day-axis label formatter — "07 Mar". */
+/** Shared day-axis label formatter — "07 Mar". Year-less; assumes the caller's
+ *  range fits inside one calendar year (short-range charts). */
 export const formatDay = d3.timeFormat("%d %b");
+
+/** Multi-year-safe date formatter. Picks a format from the actual span of the
+ *  supplied dates so the axis never renders ambiguous "26 Dec, 27 Apr" ticks
+ *  on a range that spans years — instead you get "Dec '24, Apr '25" so the
+ *  reader can tell WHICH December they're looking at.
+ *
+ *  - span ≤ 60 days   → "%d %b"        (day-precision — e.g. "07 Mar")
+ *  - span ≤ 365 days  → "%b"           (month name — e.g. "Mar")
+ *  - span >  365 days → "%b '%y"       (month + short year — e.g. "Mar '25")
+ *
+ *  Pass in the whole date array (not just min/max) so callers don't recompute
+ *  the extent themselves. Empty array → falls back to formatDay so a caller
+ *  with no data behaves the way it did before. */
+export function adaptiveDateFormatter(dates: readonly Date[]): (d: Date) => string {
+  if (dates.length === 0) return formatDay;
+  let minMs = Infinity;
+  let maxMs = -Infinity;
+  for (const d of dates) {
+    const t = d.getTime();
+    if (t < minMs) minMs = t;
+    if (t > maxMs) maxMs = t;
+  }
+  const spanDays = (maxMs - minMs) / 86_400_000;
+  if (spanDays <= 60) return formatDay;
+  if (spanDays <= 365) return d3.timeFormat("%b");
+  return d3.timeFormat("%b '%y");
+}
 
 /**
  * Seconds → hours tick formatter. Label text is parameterized because charts
