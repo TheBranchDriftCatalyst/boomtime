@@ -73,6 +73,17 @@ export function evaluateCondition(cond: Condition, payload: LabelPayload): boole
       const hours = (hit?.totalSeconds ?? 0) / 3600;
       return cmp(hours, cond.op, cond.hours);
     }
+    case "axis-time-sum": {
+      // Sum totalSeconds across every entry whose name (case-insensitive)
+      // matches one of `values`. Enables patches like TERMINAL PURIST that
+      // want vim+neovim+emacs combined without a hacky OR-of-axis-times.
+      let sumSec = 0;
+      for (const v of cond.values) {
+        const hit = findAxisEntry(payload, cond.axis, v);
+        if (hit) sumSec += hit.totalSeconds ?? 0;
+      }
+      return cmp(sumSec / 3600, cond.op, cond.hours);
+    }
     case "axis-pct": {
       const hit = findAxisEntry(payload, cond.axis, cond.value);
       // Payload's totalPct is percent (0..100); DSL expresses pct as 0..1.

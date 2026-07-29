@@ -70,6 +70,18 @@ export interface AxisPctCond {
   pct: number; // 0..1
 }
 
+/** True when the SUM of hours across multiple axis values crosses the threshold.
+ *  Enables patches like TERMINAL PURIST (vim + neovim + emacs combined) or
+ *  FIELD MEDIC (debugging + code reviewing combined) that a single AxisTimeCond
+ *  can't express without hacks. `values` are OR'd — case-insensitive match. */
+export interface AxisTimeSumCond {
+  kind: "axis-time-sum";
+  axis: Axis;
+  values: string[]; // multiple axis values whose hours get summed
+  op: CmpOp;
+  hours: number;
+}
+
 /** True when the TOP entry on an axis holds ≥/≤ pct of that axis's total. */
 export interface TopShareCond {
   kind: "top-share";
@@ -144,6 +156,7 @@ export interface NotCond {
 
 export type Condition =
   | AxisTimeCond
+  | AxisTimeSumCond
   | AxisPctCond
   | TopShareCond
   | DistinctCountCond

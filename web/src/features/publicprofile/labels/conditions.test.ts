@@ -72,6 +72,90 @@ describe("evaluateCondition — axis-time", () => {
   });
 });
 
+describe("evaluateCondition — axis-time-sum", () => {
+  it("sums hours across the listed values (case-insensitive)", () => {
+    // vim + neovim + emacs → 40 + 35 + 30 = 105h combined
+    const payload = p({
+      editors: [rs("vim", 40), rs("Neovim", 35), rs("emacs", 30), rs("vscode", 200)],
+    });
+    expect(
+      evaluateCondition(
+        {
+          kind: "axis-time-sum",
+          axis: "editors",
+          values: ["vim", "neovim", "emacs"],
+          op: ">=",
+          hours: 100,
+        },
+        payload,
+      ),
+    ).toBe(true);
+    // Just under threshold: 105 - 6 = 99h → deny.
+    const payload2 = p({
+      editors: [rs("vim", 34), rs("Neovim", 35), rs("emacs", 30)],
+    });
+    expect(
+      evaluateCondition(
+        {
+          kind: "axis-time-sum",
+          axis: "editors",
+          values: ["vim", "neovim", "emacs"],
+          op: ">=",
+          hours: 100,
+        },
+        payload2,
+      ),
+    ).toBe(false);
+  });
+  it("ignores values not present in the payload", () => {
+    // debugging present, writing tests absent — sum = 20h alone.
+    const payload = p({ categories: [rs("debugging", 20)] });
+    expect(
+      evaluateCondition(
+        {
+          kind: "axis-time-sum",
+          axis: "categories",
+          values: ["debugging", "writing tests"],
+          op: ">=",
+          hours: 30,
+        },
+        payload,
+      ),
+    ).toBe(false);
+    // With both present → sum = 20 + 15 = 35 → award.
+    const payload2 = p({
+      categories: [rs("debugging", 20), rs("writing tests", 15)],
+    });
+    expect(
+      evaluateCondition(
+        {
+          kind: "axis-time-sum",
+          axis: "categories",
+          values: ["debugging", "writing tests"],
+          op: ">=",
+          hours: 30,
+        },
+        payload2,
+      ),
+    ).toBe(true);
+  });
+  it("returns false when none of the values are present", () => {
+    const payload = p({ editors: [rs("vscode", 500)] });
+    expect(
+      evaluateCondition(
+        {
+          kind: "axis-time-sum",
+          axis: "editors",
+          values: ["vim", "neovim", "emacs"],
+          op: ">=",
+          hours: 1,
+        },
+        payload,
+      ),
+    ).toBe(false);
+  });
+});
+
 describe("evaluateCondition — axis-pct", () => {
   it("awards when payload pct (0..100) meets DSL pct (0..1)", () => {
     // Meetings category with 12% share → DSL threshold 0.10 satisfied
