@@ -1,114 +1,110 @@
+// cache_ginkgo_test.go — ginkgo mirror of cache_test.go (gaka-0vp).
+// 1:1 case map (8 stdlib TestXxx):
+//   TestGetSetHit                     → TTL cache > "hits and increments Len"
+//   TestExpirationLazyEviction        → TTL cache > "expires and drops on next Get"
+//   TestInvalidatePrefixOwnerOnly     → TTL cache > "InvalidatePrefix scopes to matching keys"
+//   TestInvalidatePrefixEmptyClearsAll→ TTL cache > "empty prefix clears everything"
+//   TestZeroTTLDisablesCache          → TTL cache > "TTL=0 disables the cache"
+//   TestNilReceiverIsInert            → TTL cache > "nil receiver is inert on every op"
+//   TestSweepEvictsExpiredEntries     → TTL cache > "sweep evicts expired"
+//   TestCloseIsIdempotent             → TTL cache > "Close is idempotent"
 package cache
 
 import (
-	"testing"
 	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-func TestGetSetHit(t *testing.T) {
-	c := New(time.Minute)
-	defer c.Close()
+var _ = Describe("TTL cache", func() {
+	It("hits and increments Len", func() {
+		c := New(time.Minute)
+		defer c.Close()
 
-	c.Set("owner|stats|a", []byte(`{"ok":1}`))
-	got, ok := c.Get("owner|stats|a")
-	if !ok || string(got) != `{"ok":1}` {
-		t.Fatalf("want hit, got ok=%v val=%q", ok, got)
-	}
-	if c.Len() != 1 {
-		t.Fatalf("Len=%d, want 1", c.Len())
-	}
-}
+		c.Set("owner|stats|a", []byte(`{"ok":1}`))
+		got, ok := c.Get("owner|stats|a")
+		Expect(ok).To(BeTrue())
+		Expect(string(got)).To(Equal(`{"ok":1}`))
+		Expect(c.Len()).To(Equal(1))
+	})
 
-func TestExpirationLazyEviction(t *testing.T) {
-	c := New(10 * time.Millisecond)
-	defer c.Close()
+	It("expires and drops on next Get (lazy eviction)", func() {
+		c := New(10 * time.Millisecond)
+		defer c.Close()
 
-	c.Set("k", []byte("v"))
-	if _, ok := c.Get("k"); !ok {
-		t.Fatal("fresh key should hit")
-	}
-	time.Sleep(20 * time.Millisecond)
-	if _, ok := c.Get("k"); ok {
-		t.Fatal("expired key should miss")
-	}
-	if c.Len() != 0 {
-		t.Fatalf("lazy eviction should drop the entry, Len=%d", c.Len())
-	}
-}
+		c.Set("k", []byte("v"))
+		_, ok := c.Get("k")
+		Expect(ok).To(BeTrue())
 
-func TestInvalidatePrefixOwnerOnly(t *testing.T) {
-	c := New(time.Minute)
-	defer c.Close()
+		time.Sleep(20 * time.Millisecond)
+		_, ok = c.Get("k")
+		Expect(ok).To(BeFalse())
+		Expect(c.Len()).To(BeZero())
+	})
 
-	c.Set("alice|stats|a", []byte("1"))
-	c.Set("alice|leaderboards|a", []byte("2"))
-	c.Set("bob|stats|a", []byte("3"))
+	It("InvalidatePrefix scopes to matching keys", func() {
+		c := New(time.Minute)
+		defer c.Close()
 
-	c.InvalidatePrefix("alice|")
-	if _, ok := c.Get("alice|stats|a"); ok {
-		t.Fatal("alice's entry should be gone")
-	}
-	if _, ok := c.Get("alice|leaderboards|a"); ok {
-		t.Fatal("alice's other entry should be gone")
-	}
-	if _, ok := c.Get("bob|stats|a"); !ok {
-		t.Fatal("bob's entry should have survived")
-	}
-}
+		c.Set("alice|stats|a", []byte("1"))
+		c.Set("alice|leaderboards|a", []byte("2"))
+		c.Set("bob|stats|a", []byte("3"))
 
-func TestInvalidatePrefixEmptyClearsAll(t *testing.T) {
-	c := New(time.Minute)
-	defer c.Close()
+		c.InvalidatePrefix("alice|")
 
-	c.Set("a|x", []byte("1"))
-	c.Set("b|y", []byte("2"))
-	c.InvalidatePrefix("")
-	if c.Len() != 0 {
-		t.Fatalf("empty prefix should clear everything, Len=%d", c.Len())
-	}
-}
+		_, ok := c.Get("alice|stats|a")
+		Expect(ok).To(BeFalse())
+		_, ok = c.Get("alice|leaderboards|a")
+		Expect(ok).To(BeFalse())
+		_, ok = c.Get("bob|stats|a")
+		Expect(ok).To(BeTrue())
+	})
 
-func TestZeroTTLDisablesCache(t *testing.T) {
-	c := New(0)
-	defer c.Close()
+	It("empty prefix clears everything", func() {
+		c := New(time.Minute)
+		defer c.Close()
 
-	c.Set("k", []byte("v"))
-	if _, ok := c.Get("k"); ok {
-		t.Fatal("zero TTL should never hit")
-	}
-	if c.Len() != 0 {
-		t.Fatalf("zero TTL cache should store nothing, Len=%d", c.Len())
-	}
-}
+		c.Set("a|x", []byte("1"))
+		c.Set("b|y", []byte("2"))
+		c.InvalidatePrefix("")
+		Expect(c.Len()).To(BeZero())
+	})
 
-func TestNilReceiverIsInert(t *testing.T) {
-	var c *TTL
-	c.Set("k", []byte("v"))
-	if _, ok := c.Get("k"); ok {
-		t.Fatal("nil cache should not hit")
-	}
-	c.InvalidatePrefix("anything")
-	if c.Len() != 0 {
-		t.Fatal("nil cache Len should be 0")
-	}
-	c.Close() // must not panic
-}
+	It("TTL=0 disables the cache", func() {
+		c := New(0)
+		defer c.Close()
 
-func TestSweepEvictsExpiredEntries(t *testing.T) {
-	// Sweep loop floors at 30s; call sweep directly so the test isn't slow.
-	c := New(10 * time.Millisecond)
-	defer c.Close()
-	c.Set("a", []byte("1"))
-	c.Set("b", []byte("2"))
-	time.Sleep(15 * time.Millisecond)
-	c.sweep(time.Now())
-	if c.Len() != 0 {
-		t.Fatalf("sweep should evict expired entries, Len=%d", c.Len())
-	}
-}
+		c.Set("k", []byte("v"))
+		_, ok := c.Get("k")
+		Expect(ok).To(BeFalse())
+		Expect(c.Len()).To(BeZero())
+	})
 
-func TestCloseIsIdempotent(t *testing.T) {
-	c := New(time.Second)
-	c.Close()
-	c.Close() // must not double-close panic
-}
+	It("nil receiver is inert on every op", func() {
+		var c *TTL
+		c.Set("k", []byte("v"))
+		_, ok := c.Get("k")
+		Expect(ok).To(BeFalse())
+
+		c.InvalidatePrefix("anything")
+		Expect(c.Len()).To(BeZero())
+		Expect(func() { c.Close() }).NotTo(Panic())
+	})
+
+	It("sweep evicts expired entries", func() {
+		c := New(10 * time.Millisecond)
+		defer c.Close()
+		c.Set("a", []byte("1"))
+		c.Set("b", []byte("2"))
+		time.Sleep(15 * time.Millisecond)
+		c.sweep(time.Now())
+		Expect(c.Len()).To(BeZero())
+	})
+
+	It("Close is idempotent", func() {
+		c := New(time.Second)
+		c.Close()
+		Expect(func() { c.Close() }).NotTo(Panic())
+	})
+})

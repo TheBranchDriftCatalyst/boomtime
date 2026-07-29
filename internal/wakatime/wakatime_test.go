@@ -1,57 +1,55 @@
+// wakatime_ginkgo_test.go — ginkgo mirror of wakatime_test.go (gaka-0vp).
+// 1:1 case map (3 stdlib TestXxx):
+//   TestUserAgentInfo         → UserAgentInfo > "extracts 5-token UA"
+//   TestUserAgentInfoShort    → UserAgentInfo > "short UA gracefully"
+//   TestLanguageFromEntity    → LanguageFromEntity > DescribeTable of 7 entries
 package wakatime
 
-import "testing"
+import (
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+)
 
-func TestUserAgentInfo(t *testing.T) {
-	// tokens: [0]=wakatime/1.0 [1]=(Linux-5.4) [2]=go1.20 [3]=vscode/1.70 [4]=vscode-wakatime/4.0
-	ua := "wakatime/1.0 (Linux-5.4) go1.20 vscode/1.70 vscode-wakatime/4.0"
-	info := UserAgentInfo(ua)
-	if info.Platform == nil || *info.Platform != "(Linux-5.4)" {
-		t.Fatalf("platform = %v, want (Linux-5.4)", info.Platform)
-	}
-	if info.Editor == nil || *info.Editor != "vscode/1.70" {
-		t.Fatalf("editor = %v, want vscode/1.70", info.Editor)
-	}
-	if info.Plugin == nil || *info.Plugin != "vscode-wakatime/4.0" {
-		t.Fatalf("plugin = %v, want vscode-wakatime/4.0", info.Plugin)
-	}
-}
+var _ = Describe("UserAgentInfo", func() {
+	It("extracts platform/editor/plugin from a 5-token wakatime UA", func() {
+		info := UserAgentInfo("wakatime/1.0 (Linux-5.4) go1.20 vscode/1.70 vscode-wakatime/4.0")
+		Expect(info.Platform).NotTo(BeNil())
+		Expect(*info.Platform).To(Equal("(Linux-5.4)"))
+		Expect(info.Editor).NotTo(BeNil())
+		Expect(*info.Editor).To(Equal("vscode/1.70"))
+		Expect(info.Plugin).NotTo(BeNil())
+		Expect(*info.Plugin).To(Equal("vscode-wakatime/4.0"))
+	})
 
-func TestUserAgentInfoShort(t *testing.T) {
-	info := UserAgentInfo("only two")
-	if info.Platform == nil || *info.Platform != "two" {
-		t.Fatalf("platform = %v, want two", info.Platform)
-	}
-	if info.Editor != nil {
-		t.Fatalf("editor = %v, want nil", info.Editor)
-	}
-	if info.Plugin != nil {
-		t.Fatalf("plugin = %v, want nil", info.Plugin)
-	}
-}
+	It("leaves editor/plugin nil for a short UA", func() {
+		info := UserAgentInfo("only two")
+		Expect(info.Platform).NotTo(BeNil())
+		Expect(*info.Platform).To(Equal("two"))
+		Expect(info.Editor).To(BeNil())
+		Expect(info.Plugin).To(BeNil())
+	})
+})
 
-func TestLanguageFromEntity(t *testing.T) {
-	cases := []struct {
-		entity string
-		want   *string
-	}{
-		{"main.go", strptr("GO")},
-		{"main.zig", strptr("Zig")},
-		{"vars.tfvars", strptr("Terraform")},
-		{"notes.org", strptr("Org")},
-		{"template.jinja2", strptr("Jinja")},
-		{"noext", nil},
-		{"trailingdot.", nil},
-	}
-	for _, c := range cases {
-		got := LanguageFromEntity(c.entity)
-		if (got == nil) != (c.want == nil) {
-			t.Fatalf("LanguageFromEntity(%q) = %v, want %v", c.entity, got, c.want)
-		}
-		if got != nil && *got != *c.want {
-			t.Fatalf("LanguageFromEntity(%q) = %q, want %q", c.entity, *got, *c.want)
-		}
-	}
-}
+var _ = Describe("LanguageFromEntity", func() {
+	DescribeTable("entity path → detected language",
+		func(entity string, want *string) {
+			got := LanguageFromEntity(entity)
+			if want == nil {
+				Expect(got).To(BeNil())
+			} else {
+				Expect(got).NotTo(BeNil())
+				Expect(*got).To(Equal(*want))
+			}
+		},
+		Entry("Go source", "main.go", strptr("GO")),
+		Entry("Zig source", "main.zig", strptr("Zig")),
+		Entry("Terraform vars", "vars.tfvars", strptr("Terraform")),
+		Entry("Org mode", "notes.org", strptr("Org")),
+		Entry("Jinja template", "template.jinja2", strptr("Jinja")),
+		Entry("no extension → nil", "noext", (*string)(nil)),
+		Entry("trailing dot → nil", "trailingdot.", (*string)(nil)),
+	)
+})
 
+// -- restored from internal/wakatime/wakatime_test.go during kill-switch (gaka-0vp.17) --
 func strptr(s string) *string { return &s }

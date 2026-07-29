@@ -1,199 +1,147 @@
+// crypto_ginkgo_test.go — ginkgo mirror of crypto_test.go (gaka-0vp).
+// 1:1 case map (4 stdlib TestXxx):
+//   TestRoundTrip                → Encrypt/Decrypt > "round-trips; nonce is fresh per call"
+//   TestDecryptWithWrongKey      → Decrypt > "wrong key → auth failure (not garbage)"
+//   TestDecryptTamperedCiphertext→ Decrypt > 4 tamper flavors
+//   TestLoadKeyFromEnvUnset      → LoadKeyFromEnv > "unset env → ErrKeyUnset; ops refuse"
+//   TestLoadKeyFromEnvInvalid    → LoadKeyFromEnv > 2 invalid flavors
+//
+// Uses os.Setenv + DeferCleanup to bridge the stdlib t.Setenv+t.Cleanup
+// pattern (see the `setenv` helper in the config file for the same idiom).
 package auth
 
 import (
 	"bytes"
 	"encoding/base64"
 	"errors"
-	"testing"
+	"os"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-// testKey is a deterministic 32-byte key used across the crypto tests. Never
-// use a fixed key in production — this is just so tests are hermetic and
-// re-runnable without disturbing developer envs.
-const testKeyBase64 = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+const (
+	ginkgoTestKeyBase64 = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+	ginkgoAltKeyBase64  = "IAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+)
 
-// altKeyBase64 is a different 32-byte key used to prove that a ciphertext
-// sealed under one key cannot be opened under another (Decrypt returns the
-// GCM authentication-failure error, not silent gibberish).
-const altKeyBase64 = "IAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-
-// withKey installs a fresh encryption-state singleton, sets BOOM_ENCRYPTION_KEY
-// to key for the duration of the test, and restores the previous singleton on
-// cleanup. Must be called before Encrypt/Decrypt in every test.
-func withKey(t *testing.T, key string) {
-	t.Helper()
-	t.Setenv(EncryptionKeyEnv, key)
+// installKey mirrors the stdlib file's withKey — sets BOOM_ENCRYPTION_KEY,
+// resets the singleton, and registers DeferCleanup to restore.
+func installKey(key string) {
+	prev, hadPrev := os.LookupEnv(EncryptionKeyEnv)
+	os.Setenv(EncryptionKeyEnv, key)
 	resetEncryptionStateForTest()
-	if err := LoadKeyFromEnv(); err != nil {
-		t.Fatalf("LoadKeyFromEnv with valid key returned error: %v", err)
-	}
-	t.Cleanup(func() {
+	Expect(LoadKeyFromEnv()).To(Succeed())
+	DeferCleanup(func() {
+		if hadPrev {
+			os.Setenv(EncryptionKeyEnv, prev)
+		} else {
+			os.Unsetenv(EncryptionKeyEnv)
+		}
 		resetEncryptionStateForTest()
 	})
 }
 
-// TestRoundTrip verifies that Encrypt/Decrypt recover the exact plaintext and
-// that two encryptions of the same plaintext produce different ciphertexts
-// (fresh nonce per Encrypt).
-func TestRoundTrip(t *testing.T) {
-	withKey(t, testKeyBase64)
+var _ = Describe("Encrypt/Decrypt", func() {
+	It("round-trips plaintext and uses a fresh nonce per call", func() {
+		installKey(ginkgoTestKeyBase64)
 
-	plaintext := []byte("waka_51ee7a20-not-a-real-key-just-for-tests")
-	c1, err := Encrypt(plaintext)
-	if err != nil {
-		t.Fatalf("Encrypt: %v", err)
-	}
-	if len(c1) <= gcmNonceSize {
-		t.Fatalf("ciphertext too short (%d bytes) — nonce prefix missing?", len(c1))
-	}
+		plaintext := []byte("waka_51ee7a20-not-a-real-key-just-for-tests")
+		c1, err := Encrypt(plaintext)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(len(c1)).To(BeNumerically(">", gcmNonceSize))
 
-	got, err := Decrypt(c1)
-	if err != nil {
-		t.Fatalf("Decrypt: %v", err)
-	}
-	if !bytes.Equal(got, plaintext) {
-		t.Fatalf("Decrypt roundtrip mismatch:\n  got: %q\n want: %q", got, plaintext)
-	}
+		got, err := Decrypt(c1)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(bytes.Equal(got, plaintext)).To(BeTrue())
 
-	// A second encryption must use a fresh nonce (so identical plaintext →
-	// different stored blob). This is what stops an attacker with DB read from
-	// noticing that user A and user B share the same Wakatime key.
-	c2, err := Encrypt(plaintext)
-	if err != nil {
-		t.Fatalf("Encrypt (second call): %v", err)
-	}
-	if bytes.Equal(c1, c2) {
-		t.Fatalf("two Encrypt calls on the same plaintext produced identical ciphertext — nonce is not random")
-	}
-}
+		// Fresh nonce → different ciphertext.
+		c2, err := Encrypt(plaintext)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(bytes.Equal(c1, c2)).To(BeFalse(),
+			"two Encrypt calls on same plaintext should not be equal — nonce not random")
+	})
 
-// TestDecryptWithWrongKey seals under one key and tries to open under a
-// different key. GCM must reject with an auth failure, NOT return garbage.
-func TestDecryptWithWrongKey(t *testing.T) {
-	withKey(t, testKeyBase64)
+	It("Decrypt with the wrong key returns GCM auth failure (not garbage)", func() {
+		installKey(ginkgoTestKeyBase64)
+		sealed, err := Encrypt([]byte("secret-token"))
+		Expect(err).NotTo(HaveOccurred())
 
-	sealed, err := Encrypt([]byte("secret-token"))
-	if err != nil {
-		t.Fatalf("Encrypt: %v", err)
-	}
+		installKey(ginkgoAltKeyBase64)
+		got, err := Decrypt(sealed)
+		Expect(err).To(HaveOccurred())
+		Expect(got).To(BeNil())
+	})
+})
 
-	// Swap keys and try to open. Same nonce, different key → auth failure.
-	withKey(t, altKeyBase64)
-	got, err := Decrypt(sealed)
-	if err == nil {
-		t.Fatalf("Decrypt with wrong key returned no error and %q — expected auth failure", got)
-	}
-	if got != nil {
-		t.Fatalf("Decrypt returned plaintext bytes despite error: %q", got)
-	}
-}
+var _ = Describe("Decrypt with a tampered ciphertext", func() {
+	// Preserves the 4 stdlib mutation cases as named DescribeTable entries.
+	DescribeTable("mutation → error",
+		func(mutate func([]byte) []byte, wantSentinel error) {
+			installKey(ginkgoTestKeyBase64)
+			sealed, err := Encrypt([]byte("another-secret"))
+			Expect(err).NotTo(HaveOccurred())
 
-// TestDecryptTamperedCiphertext flips a bit in the ciphertext body and in the
-// nonce prefix, both of which must trigger a GCM auth failure. A tampered
-// blob MUST NOT decrypt to a partial or padded plaintext.
-func TestDecryptTamperedCiphertext(t *testing.T) {
-	withKey(t, testKeyBase64)
-
-	sealed, err := Encrypt([]byte("another-secret"))
-	if err != nil {
-		t.Fatalf("Encrypt: %v", err)
-	}
-
-	tests := []struct {
-		name  string
-		mutate func([]byte) []byte
-	}{
-		{
-			name: "flip bit in ciphertext body",
-			mutate: func(b []byte) []byte {
+			tampered := mutate(sealed)
+			got, err := Decrypt(tampered)
+			Expect(err).To(HaveOccurred())
+			Expect(got).To(BeNil())
+			if wantSentinel != nil {
+				Expect(errors.Is(err, wantSentinel)).To(BeTrue(),
+					"expected errors.Is(err, %v), got %v", wantSentinel, err)
+			}
+		},
+		Entry("flip bit in ciphertext body",
+			func(b []byte) []byte {
 				out := append([]byte(nil), b...)
-				// Flip a bit past the nonce prefix.
 				out[gcmNonceSize+1] ^= 0x01
 				return out
 			},
-		},
-		{
-			name: "flip bit in nonce prefix",
-			mutate: func(b []byte) []byte {
+			nil, // GCM auth failure (no specific sentinel)
+		),
+		Entry("flip bit in nonce prefix",
+			func(b []byte) []byte {
 				out := append([]byte(nil), b...)
 				out[0] ^= 0x80
 				return out
 			},
-		},
-		{
-			name: "truncate to below nonce size",
-			mutate: func(b []byte) []byte {
-				return b[:gcmNonceSize-1]
-			},
-		},
-		{
-			name: "truncate tag",
-			mutate: func(b []byte) []byte {
-				return b[:len(b)-1]
-			},
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			tampered := tc.mutate(sealed)
-			got, err := Decrypt(tampered)
-			if err == nil {
-				t.Fatalf("Decrypt on tampered ciphertext returned no error and %q", got)
-			}
-			if got != nil {
-				t.Fatalf("Decrypt returned plaintext bytes despite tamper: %q", got)
-			}
-			// The truncation-below-nonce case surfaces as ErrMalformedCiphertext
-			// (a distinct sentinel); the other three are GCM auth failures.
-			if tc.name == "truncate to below nonce size" && !errors.Is(err, ErrMalformedCiphertext) {
-				t.Fatalf("truncation should be ErrMalformedCiphertext, got %v", err)
-			}
-		})
-	}
-}
+			nil,
+		),
+		Entry("truncate to below nonce size",
+			func(b []byte) []byte { return b[:gcmNonceSize-1] },
+			ErrMalformedCiphertext,
+		),
+		Entry("truncate tag",
+			func(b []byte) []byte { return b[:len(b)-1] },
+			nil,
+		),
+	)
+})
 
-// TestLoadKeyFromEnvUnset covers the developer-friendly branch: no env, no
-// panic — Encrypt/Decrypt just refuse to run with ErrKeyUnset.
-func TestLoadKeyFromEnvUnset(t *testing.T) {
-	t.Setenv(EncryptionKeyEnv, "")
-	resetEncryptionStateForTest()
-	defer resetEncryptionStateForTest()
-
-	if err := LoadKeyFromEnv(); !errors.Is(err, ErrKeyUnset) {
-		t.Fatalf("LoadKeyFromEnv with unset env: got %v, want ErrKeyUnset", err)
-	}
-	if IsEncryptionKeyConfigured() {
-		t.Fatal("IsEncryptionKeyConfigured returned true with unset env")
-	}
-	if _, err := Encrypt([]byte("x")); !errors.Is(err, ErrKeyUnset) {
-		t.Fatalf("Encrypt with unset env: got %v, want ErrKeyUnset", err)
-	}
-	if _, err := Decrypt([]byte("x")); !errors.Is(err, ErrKeyUnset) {
-		t.Fatalf("Decrypt with unset env: got %v, want ErrKeyUnset", err)
-	}
-}
-
-// TestLoadKeyFromEnvInvalid covers the "operator typed a bad key" branches:
-// both non-base64 garbage and a base64 blob of the wrong length must produce
-// ErrKeyInvalid (not a panic, not a wrong-sized silent AES key).
-func TestLoadKeyFromEnvInvalid(t *testing.T) {
-	// Non-base64.
-	t.Run("non-base64", func(t *testing.T) {
-		t.Setenv(EncryptionKeyEnv, "!!! not base64 !!!")
+var _ = Describe("LoadKeyFromEnv", func() {
+	It("unset env → ErrKeyUnset; Encrypt/Decrypt refuse with the same sentinel", func() {
+		os.Setenv(EncryptionKeyEnv, "")
 		resetEncryptionStateForTest()
-		defer resetEncryptionStateForTest()
-		if err := LoadKeyFromEnv(); !errors.Is(err, ErrKeyInvalid) {
-			t.Fatalf("got %v, want ErrKeyInvalid", err)
-		}
+		DeferCleanup(resetEncryptionStateForTest)
+
+		Expect(errors.Is(LoadKeyFromEnv(), ErrKeyUnset)).To(BeTrue())
+		Expect(IsEncryptionKeyConfigured()).To(BeFalse())
+
+		_, err := Encrypt([]byte("x"))
+		Expect(errors.Is(err, ErrKeyUnset)).To(BeTrue())
+		_, err = Decrypt([]byte("x"))
+		Expect(errors.Is(err, ErrKeyUnset)).To(BeTrue())
 	})
-	// Base64 of the wrong size (16 bytes → AES-128, forbidden by policy).
-	t.Run("wrong-length", func(t *testing.T) {
-		short := base64.StdEncoding.EncodeToString(make([]byte, 16))
-		t.Setenv(EncryptionKeyEnv, short)
-		resetEncryptionStateForTest()
-		defer resetEncryptionStateForTest()
-		if err := LoadKeyFromEnv(); !errors.Is(err, ErrKeyInvalid) {
-			t.Fatalf("got %v, want ErrKeyInvalid", err)
-		}
-	})
-}
+
+	DescribeTable("invalid key → ErrKeyInvalid",
+		func(envValue string) {
+			os.Setenv(EncryptionKeyEnv, envValue)
+			resetEncryptionStateForTest()
+			DeferCleanup(resetEncryptionStateForTest)
+			Expect(errors.Is(LoadKeyFromEnv(), ErrKeyInvalid)).To(BeTrue())
+		},
+		Entry("non-base64 garbage", "!!! not base64 !!!"),
+		Entry("wrong length (base64 of 16 bytes → AES-128)",
+			base64.StdEncoding.EncodeToString(make([]byte, 16))),
+	)
+})

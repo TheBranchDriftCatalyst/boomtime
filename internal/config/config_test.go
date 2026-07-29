@@ -1,175 +1,166 @@
+// config_ginkgo_test.go — ginkgo mirror of config_test.go (gaka-0vp).
+// 1:1 case map (5 top-level TestXxx, several with subtests):
+//   TestLoadDefaults              → Load > "defaults"
+//   TestWakatimeAPIKeyPrecedence  → Load > "wakatime api key precedence" (3 Its)
+//   TestGetEnvInt                 → getEnvInt > 3 named entries
+//   TestCookieSecureDefaults      → cookie secure derivation > DescribeTable of 6
+//   TestGetEnvBool                → getEnvBool > 4 groups
+//
+// Uses GinkgoT() to bridge into stdlib-typed helpers (clearConfigEnv,
+// t.Setenv) — those helpers still take *testing.T; ginkgo returns a
+// compatible-enough shim.
 package config
 
 import (
 	"os"
-	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-// clearConfigEnv unsets every env var Load reads so a test starts from a known
-// clean slate. It uses t.Setenv first (which registers auto-restore of the
-// original value) and then unsets, so LookupEnv reports the var as absent —
-// matching a fresh process rather than an empty-string override.
-func clearConfigEnv(t *testing.T) {
-	t.Helper()
-	for _, k := range []string{
+// clearEnv is the ginkgo variant of clearConfigEnv — takes no *testing.T
+// and uses os.Unsetenv directly. Register a restore via DeferCleanup so
+// the pre-test environment survives.
+func clearEnv() {
+	saved := map[string]string{}
+	keys := []string{
 		"BOOM_PORT", "BOOM_API_PREFIX", "BOOM_BADGE_URL", "BOOM_DASHBOARD_PATH",
 		"BOOM_SHIELDS_IO_URL", "BOOM_ENABLE_REGISTRATION", "BOOM_SESSION_EXPIRY",
 		"BOOM_LOG_LEVEL", "BOOM_ENV", "BOOM_HTTP_LOG", "BOOM_COOKIE_SECURE",
 		"BOOM_DB_HOST", "BOOM_DB_PORT", "BOOM_DB_NAME", "BOOM_DB_USER", "BOOM_DB_PASS",
 		"BOOM_REMOTE_WRITE_URL", "BOOM_REMOTE_WRITE_TOKEN",
 		"WAKATIME_API_KEY", "GITHUB_TOKEN",
-	} {
-		t.Setenv(k, "") // registers restore of the pre-test value
-		os.Unsetenv(k)  // make LookupEnv report absent
 	}
+	for _, k := range keys {
+		if v, ok := os.LookupEnv(k); ok {
+			saved[k] = v
+		}
+		os.Unsetenv(k)
+	}
+	DeferCleanup(func() {
+		for _, k := range keys {
+			if v, ok := saved[k]; ok {
+				os.Setenv(k, v)
+			} else {
+				os.Unsetenv(k)
+			}
+		}
+	})
 }
 
-func TestLoadDefaults(t *testing.T) {
-	clearConfigEnv(t)
-	c := Load()
-
-	if c.Port != 8080 {
-		t.Errorf("Port = %d, want 8080", c.Port)
-	}
-	if !c.EnableRegistration {
-		t.Error("EnableRegistration = false, want true")
-	}
-	if c.SessionExpiry != 24 {
-		t.Errorf("SessionExpiry = %d, want 24", c.SessionExpiry)
-	}
-	if c.DBPort != 5432 {
-		t.Errorf("DBPort = %d, want 5432", c.DBPort)
-	}
-	if c.ShieldsIOURL != "https://img.shields.io" {
-		t.Errorf("ShieldsIOURL = %q, want default", c.ShieldsIOURL)
-	}
+// setenv wraps os.Setenv with a DeferCleanup to restore the prior value.
+func setenv(k, v string) {
+	prev, hadPrev := os.LookupEnv(k)
+	os.Setenv(k, v)
+	DeferCleanup(func() {
+		if hadPrev {
+			os.Setenv(k, prev)
+		} else {
+			os.Unsetenv(k)
+		}
+	})
 }
 
-func TestWakatimeAPIKeyPrecedence(t *testing.T) {
-	t.Run("WAKATIME_API_KEY wins", func(t *testing.T) {
-		clearConfigEnv(t)
-		t.Setenv("WAKATIME_API_KEY", "primary")
-		t.Setenv("BOOM_REMOTE_WRITE_TOKEN", "fallback")
+var _ = Describe("Load", func() {
+	It("returns documented defaults when every env var is unset", func() {
+		clearEnv()
 		c := Load()
-		if c.WakatimeAPIKey != "primary" {
-			t.Errorf("WakatimeAPIKey = %q, want primary", c.WakatimeAPIKey)
-		}
-		if !c.HasServerWakatimeKey() {
-			t.Error("HasServerWakatimeKey = false, want true")
-		}
+		Expect(c.Port).To(Equal(8080))
+		Expect(c.EnableRegistration).To(BeTrue())
+		Expect(c.SessionExpiry).To(BeEquivalentTo(24))
+		Expect(c.DBPort).To(Equal(5432))
+		Expect(c.ShieldsIOURL).To(Equal("https://img.shields.io"))
 	})
 
-	t.Run("falls back to remote write token", func(t *testing.T) {
-		clearConfigEnv(t)
-		t.Setenv("BOOM_REMOTE_WRITE_TOKEN", "fallback")
-		c := Load()
-		if c.WakatimeAPIKey != "fallback" {
-			t.Errorf("WakatimeAPIKey = %q, want fallback", c.WakatimeAPIKey)
-		}
-		if !c.HasServerWakatimeKey() {
-			t.Error("HasServerWakatimeKey = false, want true")
-		}
+	Describe("wakatime api key precedence", func() {
+		It("WAKATIME_API_KEY wins over BOOM_REMOTE_WRITE_TOKEN", func() {
+			clearEnv()
+			setenv("WAKATIME_API_KEY", "primary")
+			setenv("BOOM_REMOTE_WRITE_TOKEN", "fallback")
+			c := Load()
+			Expect(c.WakatimeAPIKey).To(Equal("primary"))
+			Expect(c.HasServerWakatimeKey()).To(BeTrue())
+		})
+
+		It("falls back to BOOM_REMOTE_WRITE_TOKEN when WAKATIME_API_KEY is unset", func() {
+			clearEnv()
+			setenv("BOOM_REMOTE_WRITE_TOKEN", "fallback")
+			c := Load()
+			Expect(c.WakatimeAPIKey).To(Equal("fallback"))
+			Expect(c.HasServerWakatimeKey()).To(BeTrue())
+		})
+
+		It("both unset → empty and HasServerWakatimeKey false", func() {
+			clearEnv()
+			c := Load()
+			Expect(c.WakatimeAPIKey).To(BeEmpty())
+			Expect(c.HasServerWakatimeKey()).To(BeFalse())
+		})
+	})
+})
+
+var _ = Describe("getEnvInt", func() {
+	It("unset → default", func() {
+		clearEnv()
+		Expect(getEnvInt("BOOM_PORT", 8080)).To(Equal(8080))
 	})
 
-	t.Run("both unset -> empty", func(t *testing.T) {
-		clearConfigEnv(t)
-		c := Load()
-		if c.WakatimeAPIKey != "" {
-			t.Errorf("WakatimeAPIKey = %q, want empty", c.WakatimeAPIKey)
-		}
-		if c.HasServerWakatimeKey() {
-			t.Error("HasServerWakatimeKey = true, want false")
-		}
+	It("invalid → default", func() {
+		setenv("BOOM_PORT", "notanumber")
+		Expect(getEnvInt("BOOM_PORT", 8080)).To(Equal(8080))
 	})
-}
 
-func TestGetEnvInt(t *testing.T) {
-	t.Run("unset -> default", func(t *testing.T) {
-		clearConfigEnv(t)
-		if got := getEnvInt("BOOM_PORT", 8080); got != 8080 {
-			t.Errorf("got %d, want default 8080", got)
-		}
+	It("valid (with surrounding whitespace) → parsed", func() {
+		setenv("BOOM_PORT", "  9090  ")
+		Expect(getEnvInt("BOOM_PORT", 8080)).To(Equal(9090))
 	})
-	t.Run("invalid -> default", func(t *testing.T) {
-		t.Setenv("BOOM_PORT", "notanumber")
-		if got := getEnvInt("BOOM_PORT", 8080); got != 8080 {
-			t.Errorf("got %d, want default 8080 on invalid", got)
-		}
-	})
-	t.Run("valid (trimmed) -> parsed", func(t *testing.T) {
-		t.Setenv("BOOM_PORT", "  9090  ")
-		if got := getEnvInt("BOOM_PORT", 8080); got != 9090 {
-			t.Errorf("got %d, want 9090", got)
-		}
-	})
-}
+})
 
-// TestCookieSecureDefaults is the unit-layer probe for gaka-b5x.1. It catches
-// the specific bug of "the cookie ships without Secure on a plaintext HTTP
-// prod deploy" by asserting the derivation: prod → true, dev → false,
-// explicit BOOM_COOKIE_SECURE always wins. Would fail if a future refactor
-// dropped the Secure flag from the config path OR flipped the default.
-func TestCookieSecureDefaults(t *testing.T) {
-	cases := []struct {
-		name     string
-		env      string
-		explicit string // "" = unset
-		want     bool
-	}{
-		{name: "prod default → Secure", env: "prod", want: true},
-		{name: "production default → Secure", env: "production", want: true},
-		{name: "PROD (case) default → Secure", env: "PROD", want: true},
-		{name: "dev default → not Secure", env: "dev", want: false},
-		{name: "prod + BOOM_COOKIE_SECURE=false overrides", env: "prod", explicit: "false", want: false},
-		{name: "dev + BOOM_COOKIE_SECURE=1 overrides", env: "dev", explicit: "1", want: true},
-	}
-	for _, tc := range cases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			clearConfigEnv(t)
-			t.Setenv("BOOM_ENV", tc.env)
-			if tc.explicit != "" {
-				t.Setenv("BOOM_COOKIE_SECURE", tc.explicit)
+var _ = Describe("CookieSecure derivation (gaka-b5x.1)", func() {
+	DescribeTable("env + explicit → Secure flag",
+		func(env, explicit string, want bool) {
+			clearEnv()
+			setenv("BOOM_ENV", env)
+			if explicit != "" {
+				setenv("BOOM_COOKIE_SECURE", explicit)
 			}
 			c := Load()
-			if c.CookieSecure != tc.want {
-				t.Errorf("CookieSecure = %v, want %v (BOOM_ENV=%q BOOM_COOKIE_SECURE=%q)",
-					c.CookieSecure, tc.want, tc.env, tc.explicit)
-			}
-		})
-	}
-}
+			Expect(c.CookieSecure).To(Equal(want))
+		},
+		Entry("prod default → Secure", "prod", "", true),
+		Entry("production default → Secure", "production", "", true),
+		Entry("PROD (case-insensitive) default → Secure", "PROD", "", true),
+		Entry("dev default → not Secure", "dev", "", false),
+		Entry("prod + explicit false overrides", "prod", "false", false),
+		Entry("dev + explicit 1 overrides", "dev", "1", true),
+	)
+})
 
-func TestGetEnvBool(t *testing.T) {
-	trueVals := []string{"true", "1", "yes", "on", "TRUE", "On"}
-	for _, v := range trueVals {
-		t.Setenv("BOOM_HTTP_LOG", v)
-		if !getEnvBool("BOOM_HTTP_LOG", false) {
-			t.Errorf("getEnvBool(%q) = false, want true", v)
-		}
-	}
-	falseVals := []string{"false", "0", "no", "off", "FALSE", "Off"}
-	for _, v := range falseVals {
-		t.Setenv("BOOM_HTTP_LOG", v)
-		if getEnvBool("BOOM_HTTP_LOG", true) {
-			t.Errorf("getEnvBool(%q) = true, want false", v)
-		}
-	}
-
-	t.Run("unset -> default", func(t *testing.T) {
-		clearConfigEnv(t)
-		if !getEnvBool("BOOM_HTTP_LOG", true) {
-			t.Error("unset should return default true")
-		}
-		if getEnvBool("BOOM_HTTP_LOG", false) {
-			t.Error("unset should return default false")
+var _ = Describe("getEnvBool", func() {
+	It("accepts true-ish values", func() {
+		for _, v := range []string{"true", "1", "yes", "on", "TRUE", "On"} {
+			setenv("BOOM_HTTP_LOG", v)
+			Expect(getEnvBool("BOOM_HTTP_LOG", false)).To(BeTrue(),
+				"value = %q", v)
 		}
 	})
 
-	t.Run("invalid -> default", func(t *testing.T) {
-		t.Setenv("BOOM_HTTP_LOG", "maybe")
-		if !getEnvBool("BOOM_HTTP_LOG", true) {
-			t.Error("invalid should return default true")
+	It("accepts false-ish values", func() {
+		for _, v := range []string{"false", "0", "no", "off", "FALSE", "Off"} {
+			setenv("BOOM_HTTP_LOG", v)
+			Expect(getEnvBool("BOOM_HTTP_LOG", true)).To(BeFalse(),
+				"value = %q", v)
 		}
 	})
-}
+
+	It("unset → default", func() {
+		clearEnv()
+		Expect(getEnvBool("BOOM_HTTP_LOG", true)).To(BeTrue())
+		Expect(getEnvBool("BOOM_HTTP_LOG", false)).To(BeFalse())
+	})
+
+	It("invalid → default", func() {
+		setenv("BOOM_HTTP_LOG", "maybe")
+		Expect(getEnvBool("BOOM_HTTP_LOG", true)).To(BeTrue())
+	})
+})

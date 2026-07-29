@@ -1,76 +1,94 @@
+// dbrow_ginkgo_test.go — ginkgo mirror of dbrow_test.go (gaka-tst-ginkgo).
+//
+// PARALLEL migration: both this file and dbrow_test.go run under
+// `go test ./internal/labels/...`. Once every stdlib TestXxx has a
+// verified 1:1 ginkgo equivalent in the same package, the stdlib file
+// gets deleted in a single "kill switch" commit at the end of the epic.
+//
+// Assertion mapping (see docs/testing/ginkgo.md for the full guide):
+//   if got != want { t.Errorf(...) }        →  Expect(got).To(Equal(want))
+//   if err != nil  { t.Fatalf(...) }        →  Expect(err).NotTo(HaveOccurred())
+//   if !ok { t.Error(...) }                 →  Expect(cond).To(BeTrue())
+//   if _, ok := x.(T); !ok { t.Errorf... }  →  Expect(x).To(BeAssignableToTypeOf(T{}))
+//   Table-driven stdlib for-loop            →  DescribeTable + Entry per row
+//
+// Naming convention: <original>_ginkgo_test.go per file during the
+// parallel window. Renamed back to <original>_test.go after stdlib
+// deletion.
+
 package labels
 
 import (
 	"encoding/json"
-	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-func TestDeriveTierKey_Convention(t *testing.T) {
-	cases := []struct {
-		id, tier, want string
-	}{
-		{"languages-python-master", "master", "languages:python"},
-		{"editors-vim-legend", "legend", "editors:vim"},
-		{"languages-c++-adept", "adept", "languages:c++"},
-		// No trailing tier match.
-		{"languages-python-master", "novice", ""},
-		// No dash to split axis from value.
-		{"solo-master", "master", ""},
-		// Empty tier → no key.
-		{"whatever", "", ""},
-	}
-	for _, c := range cases {
-		got := deriveTierKey(c.id, c.tier)
-		if got != c.want {
-			t.Errorf("deriveTierKey(%q, %q) = %q, want %q", c.id, c.tier, got, c.want)
-		}
-	}
-}
+var _ = Describe("SpecFromDBRow", func() {
 
-func TestSpecFromDBRow_TierRowGetsTierKey(t *testing.T) {
-	row := DBRow{
-		ID:          "languages-python-master",
-		Kind:        "tier",
-		Label:       "PYTHON MASTER",
-		Rank:        100,
-		Tier:        "master",
-		Condition:   json.RawMessage(`{"kind":"axis-time","axis":"languages","value":"python","op":">=","hours":100}`),
-	}
-	spec, err := SpecFromDBRow(row)
-	if err != nil {
-		t.Fatalf("SpecFromDBRow: %v", err)
-	}
-	if spec.TierKey != "languages:python" {
-		t.Errorf("TierKey = %q, want %q", spec.TierKey, "languages:python")
-	}
-	if _, ok := spec.Condition.(AxisTimeCond); !ok {
-		t.Errorf("Condition type = %T, want AxisTimeCond", spec.Condition)
-	}
-}
+	Describe("deriveTierKey", func() {
+		// Was: TestDeriveTierKey_Convention (table-driven for-loop).
+		DescribeTable("id + tier → key",
+			func(id, tier, want string) {
+				Expect(deriveTierKey(id, tier)).To(Equal(want))
+			},
+			Entry("standard tier id", "languages-python-master", "master", "languages:python"),
+			Entry("editor + legend", "editors-vim-legend", "legend", "editors:vim"),
+			Entry("value with special chars", "languages-c++-adept", "adept", "languages:c++"),
+			Entry("no trailing tier match → empty", "languages-python-master", "novice", ""),
+			Entry("no dash to split axis from value → empty", "solo-master", "master", ""),
+			Entry("empty tier → empty key", "whatever", "", ""),
+		)
+	})
 
-func TestSpecFromDBRow_NonTierLeavesTierKeyEmpty(t *testing.T) {
-	row := DBRow{
-		ID:        "night-watch",
-		Kind:      "archetype",
-		Label:     "NIGHT WATCH",
-		Rank:      50,
-		Condition: json.RawMessage(`{"kind":"punchcard-hour-pct","hoursIn":[22,23,0,1,2,3,4,5],"op":">=","pct":0.4}`),
-	}
-	spec, err := SpecFromDBRow(row)
-	if err != nil {
-		t.Fatalf("SpecFromDBRow: %v", err)
-	}
-	if spec.TierKey != "" {
-		t.Errorf("non-tier spec should have empty TierKey, got %q", spec.TierKey)
-	}
-}
+	// Was: TestSpecFromDBRow_TierRowGetsTierKey.
+	Context("on a tier row", func() {
+		It("populates TierKey from the id and decodes the condition", func() {
+			row := DBRow{
+				ID:        "languages-python-master",
+				Kind:      "tier",
+				Label:     "PYTHON MASTER",
+				Rank:      100,
+				Tier:      "master",
+				Condition: json.RawMessage(`{"kind":"axis-time","axis":"languages","value":"python","op":">=","hours":100}`),
+			}
+			spec, err := SpecFromDBRow(row)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(spec.TierKey).To(Equal("languages:python"))
+			Expect(spec.Condition).To(BeAssignableToTypeOf(AxisTimeCond{}))
+		})
+	})
 
-func TestSpecsFromDBRows_BadConditionRejects(t *testing.T) {
-	rows := []DBRow{
-		{ID: "ok", Kind: "archetype", Condition: json.RawMessage(`{"kind":"daily-avg","op":">=","hours":1}`)},
-		{ID: "bad", Kind: "archetype", Condition: json.RawMessage(`{"kind":"UNKNOWN"}`)},
-	}
-	if _, err := SpecsFromDBRows(rows); err == nil {
-		t.Error("expected error on unknown-kind condition, got nil")
-	}
-}
+	// Was: TestSpecFromDBRow_NonTierLeavesTierKeyEmpty.
+	Context("on a non-tier row", func() {
+		It("leaves TierKey empty", func() {
+			row := DBRow{
+				ID:        "night-watch",
+				Kind:      "archetype",
+				Label:     "NIGHT WATCH",
+				Rank:      50,
+				Condition: json.RawMessage(`{"kind":"punchcard-hour-pct","hoursIn":[22,23,0,1,2,3,4,5],"op":">=","pct":0.4}`),
+			}
+			spec, err := SpecFromDBRow(row)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(spec.TierKey).To(BeEmpty())
+		})
+	})
+})
+
+var _ = Describe("SpecsFromDBRows", func() {
+	// Was: TestSpecsFromDBRows_BadConditionRejects.
+	Context("with one bad row (unknown kind)", func() {
+		It("rejects the whole batch loudly", func() {
+			rows := []DBRow{
+				{ID: "ok", Kind: "archetype",
+					Condition: json.RawMessage(`{"kind":"daily-avg","op":">=","hours":1}`)},
+				{ID: "bad", Kind: "archetype",
+					Condition: json.RawMessage(`{"kind":"UNKNOWN"}`)},
+			}
+			_, err := SpecsFromDBRows(rows)
+			Expect(err).To(HaveOccurred())
+		})
+	})
+})

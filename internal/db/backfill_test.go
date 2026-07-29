@@ -1,17 +1,27 @@
+// backfill_ginkgo_test.go — ginkgo mirror of backfill_test.go (gaka-0vp.13).
+// 1:1 case map (8 stdlib TestXxx → 8 Its):
+//   TestInsertBackfillBatch_NoOverlap_WritesAll              → It "no-overlap session writes every heartbeat with source"
+//   TestInsertBackfillBatch_OverlapWithReal_SkipsSession     → It "overlap with real (source NULL) heartbeats skips session"
+//   TestInsertBackfillBatch_OverlapWithPriorBackfill_StillWrites → It "overlap only with prior backfill still writes (idempotent)"
+//   TestDeleteBackfilledHeartbeats_PreservesRealRows         → It "DeleteBackfilledHeartbeats preserves source-NULL real rows"
+//   TestBackfillStatsFor_ReportsCounts                       → It "BackfillStatsFor reports per-source counts"
+//   TestGetBackfillConfig_ReturnsDefaultsForNewUser          → It "GetBackfillConfig returns defaults when no row"
+//   TestSetBackfillConfig_Roundtrip                          → It "SetBackfillConfig roundtrips values (+ lang map)"
+//   TestClampBackfillConfig_ForcesBackfillPrefix             → It "clampBackfillConfig repairs missing backfill: prefix"
 package db
 
 import (
 	"context"
-	"testing"
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
+	"github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-// mkBackfillHB is a small builder for a materialized-shape heartbeat.
-// Kept local rather than reusing insertSeed's hbSeed so a schema change
-// on the wire shape (model.HeartbeatPayload) breaks tests loudly.
-func mkBackfillHB(sender, project, entity string, ts time.Time) model.HeartbeatPayload {
+// mkBackfillHBG mirrors mkBackfillHB (kept local rather than reused so a wire-
+// shape change breaks tests loudly).
+func mkBackfillHBG(sender, project, entity string, ts time.Time) model.HeartbeatPayload {
 	s := sender
 	p := project
 	cat := "coding"
@@ -27,278 +37,211 @@ func mkBackfillHB(sender, project, entity string, ts time.Time) model.HeartbeatP
 	}
 }
 
-// TestInsertBackfillBatch_NoOverlap_WritesAll seeds a fresh user with no
-// real heartbeats and inserts one session; every heartbeat should land
-// with source=<tag>.
-func TestInsertBackfillBatch_NoOverlap_WritesAll(t *testing.T) {
-	d := openTestDB(t)
-	f := newSender(t, d, "bfnovlp")
-	ctx := f.Ctx()
-	sender := f.Sender()
+var _ = ginkgo.Describe("backfill", func() {
+	ginkgo.It("InsertBackfillBatch with no overlap writes every heartbeat with source tag", func() {
+		d := openTestDBG()
+		f := newSenderG(d, "bfnovlp")
+		ctx := f.Ctx()
+		sender := f.Sender()
 
-	sess := BackfillSession{
-		Start: time.Now().Add(-2 * time.Hour).UTC().Truncate(time.Second),
-		End:   time.Now().Add(-1 * time.Hour).UTC().Truncate(time.Second),
-		Heartbeats: []model.HeartbeatPayload{
-			mkBackfillHB(sender, "p1", "main.go", time.Now().Add(-90*time.Minute).UTC()),
-			mkBackfillHB(sender, "p1", "main.go", time.Now().Add(-88*time.Minute).UTC()),
-		},
-	}
-	res, err := d.InsertBackfillBatch(ctx, BackfillBatch{
-		Username:  sender,
-		SourceTag: "backfill:git",
-		Sessions:  []BackfillSession{sess},
+		sess := BackfillSession{
+			Start: time.Now().Add(-2 * time.Hour).UTC().Truncate(time.Second),
+			End:   time.Now().Add(-1 * time.Hour).UTC().Truncate(time.Second),
+			Heartbeats: []model.HeartbeatPayload{
+				mkBackfillHBG(sender, "p1", "main.go", time.Now().Add(-90*time.Minute).UTC()),
+				mkBackfillHBG(sender, "p1", "main.go", time.Now().Add(-88*time.Minute).UTC()),
+			},
+		}
+		res, err := d.InsertBackfillBatch(ctx, BackfillBatch{
+			Username:  sender,
+			SourceTag: "backfill:git",
+			Sessions:  []BackfillSession{sess},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(res.AcceptedHeartbeats).To(BeEquivalentTo(2))
+		Expect(res.SkippedHeartbeats).To(BeEquivalentTo(0))
+
+		var got int
+		err = d.Pool.QueryRow(ctx, `SELECT count(*) FROM heartbeats WHERE sender=$1 AND source='backfill:git'`, sender).Scan(&got)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(got).To(Equal(2))
 	})
-	if err != nil {
-		t.Fatalf("insert: %v", err)
-	}
-	if res.AcceptedHeartbeats != 2 || res.SkippedHeartbeats != 0 {
-		t.Fatalf("res = %+v, want 2 accepted/0 skipped", res)
-	}
-	// Verify the rows landed with source set.
-	var got int
-	if err := d.Pool.QueryRow(ctx,
-		`SELECT count(*) FROM heartbeats WHERE sender=$1 AND source='backfill:git'`,
-		sender).Scan(&got); err != nil {
-		t.Fatal(err)
-	}
-	if got != 2 {
-		t.Errorf("row count = %d, want 2", got)
-	}
-}
 
-// TestInsertBackfillBatch_OverlapWithReal_SkipsSession is the whole
-// point of the feature: never double-count. Seed one real (source IS
-// NULL) heartbeat inside the candidate window and confirm the session
-// is skipped entirely.
-func TestInsertBackfillBatch_OverlapWithReal_SkipsSession(t *testing.T) {
-	d := openTestDB(t)
-	f := newSender(t, d, "bfovlp")
-	ctx := f.Ctx()
-	sender := f.Sender()
-	f.Projects("p1")
+	ginkgo.It("InsertBackfillBatch skips a session that overlaps a real (source NULL) heartbeat", func() {
+		d := openTestDBG()
+		f := newSenderG(d, "bfovlp")
+		ctx := f.Ctx()
+		sender := f.Sender()
+		f.Projects("p1")
 
-	realTime := time.Now().Add(-90 * time.Minute).UTC().Truncate(time.Second)
-	// Insert a real Wakatime-style row via the seed helper (leaves source NULL).
-	f.Seed(hbSeed{project: "p1", ts: realTime, gap: 60, entity: "editor.go"})
+		realTime := time.Now().Add(-90 * time.Minute).UTC().Truncate(time.Second)
+		f.Seed(hbSeed{project: "p1", ts: realTime, gap: 60, entity: "editor.go"})
 
-	sess := BackfillSession{
-		Start: realTime.Add(-30 * time.Minute),
-		End:   realTime.Add(30 * time.Minute),
-		Heartbeats: []model.HeartbeatPayload{
-			mkBackfillHB(sender, "p1", "main.go", realTime.Add(-10*time.Minute)),
-			mkBackfillHB(sender, "p1", "main.go", realTime.Add(-8*time.Minute)),
-		},
-	}
-	res, err := d.InsertBackfillBatch(ctx, BackfillBatch{
-		Username:  sender,
-		SourceTag: "backfill:git",
-		Sessions:  []BackfillSession{sess},
+		sess := BackfillSession{
+			Start: realTime.Add(-30 * time.Minute),
+			End:   realTime.Add(30 * time.Minute),
+			Heartbeats: []model.HeartbeatPayload{
+				mkBackfillHBG(sender, "p1", "main.go", realTime.Add(-10*time.Minute)),
+				mkBackfillHBG(sender, "p1", "main.go", realTime.Add(-8*time.Minute)),
+			},
+		}
+		res, err := d.InsertBackfillBatch(ctx, BackfillBatch{
+			Username:  sender,
+			SourceTag: "backfill:git",
+			Sessions:  []BackfillSession{sess},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(res.AcceptedHeartbeats).To(BeEquivalentTo(0))
+		Expect(res.SkippedHeartbeats).To(BeEquivalentTo(2))
+		Expect(res.Sessions[0].Reason).To(Equal("overlap"))
 	})
-	if err != nil {
-		t.Fatalf("insert: %v", err)
-	}
-	if res.AcceptedHeartbeats != 0 || res.SkippedHeartbeats != 2 {
-		t.Fatalf("res = %+v, want 0 accepted/2 skipped", res)
-	}
-	if res.Sessions[0].Reason != "overlap" {
-		t.Errorf("Reason = %q, want overlap", res.Sessions[0].Reason)
-	}
-}
 
-// TestInsertBackfillBatch_OverlapWithPriorBackfill_StillWrites verifies
-// that a session overlapping only prior backfill rows (source != NULL)
-// does NOT trigger the overlap skip — otherwise a rerun would drop
-// everything. The unique_heartbeats constraint absorbs duplicates.
-func TestInsertBackfillBatch_OverlapWithPriorBackfill_StillWrites(t *testing.T) {
-	d := openTestDB(t)
-	f := newSender(t, d, "bfprior")
-	ctx := f.Ctx()
-	sender := f.Sender()
+	ginkgo.It("overlap only with prior backfill (source != NULL) still writes; ON CONFLICT absorbs the dup (idempotent)", func() {
+		d := openTestDBG()
+		f := newSenderG(d, "bfprior")
+		ctx := f.Ctx()
+		sender := f.Sender()
 
-	hbs := []model.HeartbeatPayload{
-		mkBackfillHB(sender, "p1", "main.go", time.Now().Add(-90*time.Minute).UTC().Truncate(time.Second)),
-	}
-	sess := BackfillSession{
-		Start:      time.Now().Add(-95 * time.Minute).UTC().Truncate(time.Second),
-		End:        time.Now().Add(-85 * time.Minute).UTC().Truncate(time.Second),
-		Heartbeats: hbs,
-	}
-	// Run 1: should insert.
-	if _, err := d.InsertBackfillBatch(ctx, BackfillBatch{
-		Username:  sender,
-		SourceTag: "backfill:git",
-		Sessions:  []BackfillSession{sess},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	// Run 2 with the same shape: session should NOT be skipped (prior
-	// backfill row has source != NULL, so overlap check is False). The
-	// ON CONFLICT constraint then absorbs the duplicate row.
-	res, err := d.InsertBackfillBatch(ctx, BackfillBatch{
-		Username:  sender,
-		SourceTag: "backfill:git",
-		Sessions:  []BackfillSession{sess},
+		hbs := []model.HeartbeatPayload{
+			mkBackfillHBG(sender, "p1", "main.go", time.Now().Add(-90*time.Minute).UTC().Truncate(time.Second)),
+		}
+		sess := BackfillSession{
+			Start:      time.Now().Add(-95 * time.Minute).UTC().Truncate(time.Second),
+			End:        time.Now().Add(-85 * time.Minute).UTC().Truncate(time.Second),
+			Heartbeats: hbs,
+		}
+		_, err := d.InsertBackfillBatch(ctx, BackfillBatch{
+			Username:  sender,
+			SourceTag: "backfill:git",
+			Sessions:  []BackfillSession{sess},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		res, err := d.InsertBackfillBatch(ctx, BackfillBatch{
+			Username:  sender,
+			SourceTag: "backfill:git",
+			Sessions:  []BackfillSession{sess},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(res.SkippedHeartbeats).To(BeEquivalentTo(0))
+
+		var got int
+		err = d.Pool.QueryRow(ctx, `SELECT count(*) FROM heartbeats WHERE sender=$1 AND source='backfill:git'`, sender).Scan(&got)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(got).To(Equal(1), "idempotency")
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.SkippedHeartbeats != 0 {
-		t.Errorf("second run skipped = %d, want 0", res.SkippedHeartbeats)
-	}
-	// Verify only ONE physical row exists.
-	var got int
-	if err := d.Pool.QueryRow(ctx,
-		`SELECT count(*) FROM heartbeats WHERE sender=$1 AND source='backfill:git'`,
-		sender).Scan(&got); err != nil {
-		t.Fatal(err)
-	}
-	if got != 1 {
-		t.Errorf("row count = %d, want 1 (idempotency)", got)
-	}
-}
 
-// TestDeleteBackfilledHeartbeats_PreservesRealRows verifies the danger-
-// zone delete never touches source-NULL rows.
-func TestDeleteBackfilledHeartbeats_PreservesRealRows(t *testing.T) {
-	d := openTestDB(t)
-	f := newSender(t, d, "bfdel")
-	ctx := f.Ctx()
-	sender := f.Sender()
-	f.Projects("p1")
+	ginkgo.It("DeleteBackfilledHeartbeats preserves source-NULL real rows", func() {
+		d := openTestDBG()
+		f := newSenderG(d, "bfdel")
+		ctx := f.Ctx()
+		sender := f.Sender()
+		f.Projects("p1")
 
-	realTime := time.Now().Add(-3 * time.Hour).UTC().Truncate(time.Second)
-	f.Seed(hbSeed{project: "p1", ts: realTime, entity: "real.go"})
+		realTime := time.Now().Add(-3 * time.Hour).UTC().Truncate(time.Second)
+		f.Seed(hbSeed{project: "p1", ts: realTime, entity: "real.go"})
 
-	sess := BackfillSession{
-		Start: time.Now().Add(-2 * time.Hour).UTC(),
-		End:   time.Now().Add(-time.Hour).UTC(),
-		Heartbeats: []model.HeartbeatPayload{
-			mkBackfillHB(sender, "p1", "main.go", time.Now().Add(-90*time.Minute).UTC()),
-		},
-	}
-	if _, err := d.InsertBackfillBatch(ctx, BackfillBatch{
-		Username:  sender,
-		SourceTag: "backfill:git",
-		Sessions:  []BackfillSession{sess},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	// Now delete backfill rows and verify the real row still exists.
-	n, err := d.DeleteBackfilledHeartbeats(ctx, sender, "backfill:%")
-	if err != nil {
-		t.Fatalf("delete: %v", err)
-	}
-	if n != 1 {
-		t.Errorf("delete count = %d, want 1", n)
-	}
-	var realCount int
-	if err := d.Pool.QueryRow(ctx,
-		`SELECT count(*) FROM heartbeats WHERE sender=$1 AND source IS NULL`,
-		sender).Scan(&realCount); err != nil {
-		t.Fatal(err)
-	}
-	if realCount != 1 {
-		t.Errorf("real row count = %d, want 1 (delete leaked into real data)", realCount)
-	}
-}
+		sess := BackfillSession{
+			Start: time.Now().Add(-2 * time.Hour).UTC(),
+			End:   time.Now().Add(-time.Hour).UTC(),
+			Heartbeats: []model.HeartbeatPayload{
+				mkBackfillHBG(sender, "p1", "main.go", time.Now().Add(-90*time.Minute).UTC()),
+			},
+		}
+		_, err := d.InsertBackfillBatch(ctx, BackfillBatch{
+			Username:  sender,
+			SourceTag: "backfill:git",
+			Sessions:  []BackfillSession{sess},
+		})
+		Expect(err).NotTo(HaveOccurred())
 
-// TestBackfillStatsFor_ReportsCounts inserts a couple of tagged rows
-// and verifies the stats endpoint returns correct totals + per-source
-// breakdown.
-func TestBackfillStatsFor_ReportsCounts(t *testing.T) {
-	d := openTestDB(t)
-	f := newSender(t, d, "bfstats")
-	ctx := f.Ctx()
-	sender := f.Sender()
+		n, err := d.DeleteBackfilledHeartbeats(ctx, sender, "backfill:%")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(n).To(BeEquivalentTo(1))
 
-	makeSess := func(tag string, when time.Time) BackfillSession {
-		return BackfillSession{
+		var realCount int
+		err = d.Pool.QueryRow(ctx, `SELECT count(*) FROM heartbeats WHERE sender=$1 AND source IS NULL`, sender).Scan(&realCount)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(realCount).To(Equal(1), "delete leaked into real data")
+	})
+
+	ginkgo.It("BackfillStatsFor reports total + per-source counts", func() {
+		d := openTestDBG()
+		f := newSenderG(d, "bfstats")
+		ctx := f.Ctx()
+		sender := f.Sender()
+
+		when := time.Now().Add(-24 * time.Hour).UTC().Truncate(time.Second)
+		sess := BackfillSession{
 			Start: when.Add(-5 * time.Minute),
 			End:   when.Add(5 * time.Minute),
 			Heartbeats: []model.HeartbeatPayload{
-				mkBackfillHB(sender, "p1", "a.go", when),
+				mkBackfillHBG(sender, "p1", "a.go", when),
 			},
 		}
-	}
-	_, err := d.InsertBackfillBatch(ctx, BackfillBatch{
-		Username:  sender,
-		SourceTag: "backfill:git",
-		Sessions:  []BackfillSession{makeSess("backfill:git", time.Now().Add(-24*time.Hour).UTC().Truncate(time.Second))},
+		_, err := d.InsertBackfillBatch(ctx, BackfillBatch{
+			Username:  sender,
+			SourceTag: "backfill:git",
+			Sessions:  []BackfillSession{sess},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		stats, err := d.BackfillStatsFor(ctx, sender)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(stats.TotalRows).To(BeEquivalentTo(1))
+		Expect(stats.Sources["backfill:git"]).To(BeEquivalentTo(1))
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	stats, err := d.BackfillStatsFor(ctx, sender)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if stats.TotalRows != 1 {
-		t.Errorf("TotalRows = %d, want 1", stats.TotalRows)
-	}
-	if stats.Sources["backfill:git"] != 1 {
-		t.Errorf("Sources[backfill:git] = %d, want 1 (map=%v)", stats.Sources["backfill:git"], stats.Sources)
-	}
-}
 
-// TestGetBackfillConfig_ReturnsDefaultsForNewUser verifies the "no
-// row" path emits sensible defaults so the FE can render an editable
-// form without a prior write.
-func TestGetBackfillConfig_ReturnsDefaultsForNewUser(t *testing.T) {
-	d := openTestDB(t)
-	f := newSender(t, d, "bfcfgnew")
-	cfg, err := d.GetBackfillConfig(context.Background(), f.Sender())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.ClusterGapSec != 1800 || cfg.HeartbeatRateSec != 120 {
-		t.Errorf("cfg = %+v, want defaults", cfg)
-	}
-	if cfg.SourceTag != "backfill:git" {
-		t.Errorf("SourceTag = %q, want backfill:git", cfg.SourceTag)
-	}
-}
+	ginkgo.It("GetBackfillConfig returns sensible defaults when no row exists", func() {
+		d := openTestDBG()
+		f := newSenderG(d, "bfcfgnew")
+		cfg, err := d.GetBackfillConfig(context.Background(), f.Sender())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.ClusterGapSec).To(BeEquivalentTo(1800))
+		Expect(cfg.HeartbeatRateSec).To(BeEquivalentTo(120))
+		Expect(cfg.SourceTag).To(Equal("backfill:git"))
+	})
 
-// TestSetBackfillConfig_Roundtrip verifies that a Set followed by a Get
-// returns the same values (clamped where applicable).
-func TestSetBackfillConfig_Roundtrip(t *testing.T) {
-	d := openTestDB(t)
-	f := newSender(t, d, "bfcfgrt")
-	sender := f.Sender()
-	cfg := BackfillConfig{
-		Username:          sender,
-		ClusterGapSec:     600,
-		PreCommitLeadSec:  300,
-		PostCommitTailSec: 60,
-		HeartbeatRateSec:  60,
-		AuthorEmails:      []string{"me@x.com"},
-		SourceTag:         "backfill:git",
-		LangMap:           map[string]string{"ts": "TypeScript"},
-	}
-	if err := d.SetBackfillConfig(context.Background(), cfg); err != nil {
-		t.Fatal(err)
-	}
-	got, err := d.GetBackfillConfig(context.Background(), sender)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.ClusterGapSec != cfg.ClusterGapSec ||
-		got.HeartbeatRateSec != cfg.HeartbeatRateSec ||
-		got.SourceTag != cfg.SourceTag {
-		t.Errorf("got=%+v want=%+v", got, cfg)
-	}
-	if got.LangMap["ts"] != "TypeScript" {
-		t.Errorf("LangMap missing ts=TypeScript, got %+v", got.LangMap)
-	}
-}
+	ginkgo.It("SetBackfillConfig roundtrips values (including LangMap)", func() {
+		d := openTestDBG()
+		f := newSenderG(d, "bfcfgrt")
+		sender := f.Sender()
+		cfg := BackfillConfig{
+			Username:          sender,
+			ClusterGapSec:     600,
+			PreCommitLeadSec:  300,
+			PostCommitTailSec: 60,
+			HeartbeatRateSec:  60,
+			AuthorEmails:      []string{"me@x.com"},
+			SourceTag:         "backfill:git",
+			LangMap:           map[string]string{"ts": "TypeScript"},
+		}
+		Expect(d.SetBackfillConfig(context.Background(), cfg)).To(Succeed())
+		got, err := d.GetBackfillConfig(context.Background(), sender)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(got.ClusterGapSec).To(Equal(cfg.ClusterGapSec))
+		Expect(got.HeartbeatRateSec).To(Equal(cfg.HeartbeatRateSec))
+		Expect(got.SourceTag).To(Equal(cfg.SourceTag))
+		Expect(got.LangMap["ts"]).To(Equal("TypeScript"))
+	})
 
-// TestClampBackfillConfig_ForcesBackfillPrefix asserts that a caller
-// setting SourceTag without the required prefix gets it repaired
-// rather than 400'd. The DELETE / partial index / overlap filter all
-// depend on the prefix so a "backfill-git" tag would fail silently.
-func TestClampBackfillConfig_ForcesBackfillPrefix(t *testing.T) {
-	c := clampBackfillConfig(BackfillConfig{SourceTag: "git-history"})
-	if c.SourceTag != "backfill:git-history" {
-		t.Errorf("SourceTag = %q, want backfill:git-history", c.SourceTag)
+	ginkgo.It("clampBackfillConfig repairs a SourceTag missing the required backfill: prefix", func() {
+		c := clampBackfillConfig(BackfillConfig{SourceTag: "git-history"})
+		Expect(c.SourceTag).To(Equal("backfill:git-history"))
+	})
+})
+
+// -- helpers restored from internal/db/backfill_test.go (gaka-0vp.17) --
+func mkBackfillHB(sender, project, entity string, ts time.Time) model.HeartbeatPayload {
+	s := sender
+	p := project
+	cat := "coding"
+	ua := "backfill-test"
+	return model.HeartbeatPayload{
+		Entity:    entity,
+		Type:      model.FileType,
+		Sender:    &s,
+		Project:   &p,
+		Category:  &cat,
+		UserAgent: ua,
+		TimeSent:  float64(ts.Unix()),
 	}
 }

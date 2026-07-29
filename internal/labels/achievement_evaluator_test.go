@@ -1,443 +1,396 @@
-// evaluator_test.go — 15 highest-value cases ported from
-// web/src/features/publicprofile/labels/conditions.test.ts + evaluator.test.ts.
-// Priorities: threshold-inclusive semantics, case-insensitive axis matching,
-// tier dedupe, all/any/not composition, JSON round-trip. Full ~30-case
-// parity is tracked in follow-up bead gaka-hc6.1.1.
+// achievement_evaluator_ginkgo_test.go — ginkgo mirror of
+// achievement_evaluator_test.go (gaka-0vp.1). Parallel migration:
+// both files run until the kill switch drops the stdlib variant.
+//
+// 1:1 case map (22 stdlib TestXxx → 22 ginkgo Its / entries):
+//   TestAxisTime_ThresholdInclusive       → axis-time > "threshold inclusive"
+//   TestAxisTime_CaseInsensitive          → axis-time > "case-insensitive matching"
+//   TestAxisTimeSum_TerminalPuristShape   → axis-time-sum > "TERMINAL PURIST shape"
+//   TestAxisPct_ComputedFromSeconds       → axis-pct > "computed from seconds"
+//   TestTopShare_UsesFirstEntry           → top-share > "uses list[0]"
+//   TestDistinctCount_MinHoursEachFloor   → distinct-count > "minHoursEach floor"
+//   TestPunchcardHourPct_UsesTotalDenominator
+//                                         → punchcard-hour-pct > "total denominator"
+//   TestStreak_CurrentVsLongest           → streak > "current vs longest"
+//   TestTrend_InsufficientHistoryDoesNotFire
+//                                         → trend > "insufficient history"
+//   TestAll_AllMustHold                   → composition > "all"
+//   TestAny_OneEnough                     → composition > "any"
+//   TestNot_Inverts                       → composition > "not"
+//   TestEvaluateAll_EmptyCatalogReturnsNil→ EvaluateAll > "empty catalog"
+//   TestEvaluateAll_TierDedupeKeepsHighest→ EvaluateAll > "tier dedupe keeps highest"
+//   TestEvaluateAll_SortByRankDescIdAscSecondary
+//                                         → EvaluateAll > "sort by rank/id"
+//   TestJSONRoundTrip_ExampleFromSeed     → JSON round-trip > "axis-time"
+//   TestJSONRoundTrip_AllComposition      → JSON round-trip > "all composition"
+//   TestDailyAvg_Fires                    → daily-avg > "fires at threshold"
+//   TestPunchcardDowPct_Fires             → punchcard-dow-pct > "fires at threshold"
+//   TestNilPayloadNoPanic                 → defensive > "nil payload no panic"
+//   TestEvaluateAll_NilPayloadReturnsNil  → EvaluateAll > "nil payload returns nil"
+//   TestAxisTimeLE_Fires                  → axis-time > "LE comparator"
 package labels
 
 import (
 	"encoding/json"
-	"testing"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-// makePayload builds a Payload with the given resource lists. Callers pass
-// only the axes they care about — the rest stay nil, which the evaluator
-// treats as "no data".
-func makePayload() *Payload { return &Payload{} }
+var _ = Describe("EvaluateCondition primitives (rollup ops)", func() {
 
-func TestAxisTime_ThresholdInclusive(t *testing.T) {
-	p := &Payload{Languages: []model.ResourceStats{
-		{Name: "Python", TotalSeconds: 100 * 3600},
-	}}
-	cond := AxisTimeCond{Axis: AxisLanguages, Value: "Python", Op: OpGE, Hours: 100}
-	if !EvaluateCondition(cond, p) {
-		t.Errorf("expected 100h == 100h to fire (>=), got false")
-	}
-	// Just under threshold → not fires.
-	p.Languages[0].TotalSeconds = 100*3600 - 1
-	if EvaluateCondition(cond, p) {
-		t.Errorf("expected 99.999...h to not fire (>=100), got true")
-	}
-}
+	Describe("axis-time", func() {
+		It("fires inclusively at the threshold (>=)", func() {
+			p := &Payload{Languages: []model.ResourceStats{
+				{Name: "Python", TotalSeconds: 100 * 3600},
+			}}
+			cond := AxisTimeCond{Axis: AxisLanguages, Value: "Python", Op: OpGE, Hours: 100}
+			Expect(EvaluateCondition(cond, p)).To(BeTrue())
 
-func TestAxisTime_CaseInsensitive(t *testing.T) {
-	// Catalog says "Python", heartbeats attribute as "python" — must still fire.
-	p := &Payload{Languages: []model.ResourceStats{
-		{Name: "python", TotalSeconds: 200 * 3600},
-	}}
-	cond := AxisTimeCond{Axis: AxisLanguages, Value: "Python", Op: OpGE, Hours: 100}
-	if !EvaluateCondition(cond, p) {
-		t.Error("expected case-insensitive match to fire")
-	}
-	// And the reverse — catalog "python", data "PYTHON".
-	p.Languages[0].Name = "PYTHON"
-	cond.Value = "python"
-	if !EvaluateCondition(cond, p) {
-		t.Error("expected inverse case match to fire")
-	}
-}
+			// Just under → does not fire.
+			p.Languages[0].TotalSeconds = 100*3600 - 1
+			Expect(EvaluateCondition(cond, p)).To(BeFalse())
+		})
 
-func TestAxisTimeSum_TerminalPuristShape(t *testing.T) {
-	// vim (20h) + neovim (20h) + emacs (15h) = 55h. Threshold 50h → fires.
-	p := &Payload{Editors: []model.ResourceStats{
-		{Name: "vim", TotalSeconds: 20 * 3600},
-		{Name: "neovim", TotalSeconds: 20 * 3600},
-		{Name: "emacs", TotalSeconds: 15 * 3600},
-		{Name: "vscode", TotalSeconds: 100 * 3600}, // ignored — not in values
-	}}
-	cond := AxisTimeSumCond{
-		Axis: AxisEditors, Values: []string{"vim", "neovim", "emacs"},
-		Op: OpGE, Hours: 50,
-	}
-	if !EvaluateCondition(cond, p) {
-		t.Error("expected vim+neovim+emacs=55h ≥ 50h to fire")
-	}
-	// Under-threshold variant.
-	cond.Hours = 60
-	if EvaluateCondition(cond, p) {
-		t.Error("expected 55h < 60h to not fire")
-	}
-}
+		It("matches axis values case-insensitively", func() {
+			p := &Payload{Languages: []model.ResourceStats{
+				{Name: "python", TotalSeconds: 200 * 3600},
+			}}
+			Expect(EvaluateCondition(
+				AxisTimeCond{Axis: AxisLanguages, Value: "Python", Op: OpGE, Hours: 100},
+				p,
+			)).To(BeTrue())
 
-func TestAxisPct_ComputedFromSeconds(t *testing.T) {
-	// gaka-hc6.6: axis-pct computes share from TotalSeconds directly
-	// (immune to the payload's TotalPct scale, which is 0..1 today —
-	// see the AxisPctCond case comment for the migration story).
-	p := &Payload{Languages: []model.ResourceStats{
-		{Name: "Go", TotalSeconds: 300 * 3600},
-		{Name: "Rust", TotalSeconds: 200 * 3600},
-	}}
-	cond := AxisPctCond{Axis: AxisLanguages, Value: "Go", Op: OpGE, Pct: 0.5}
-	if !EvaluateCondition(cond, p) {
-		t.Error("expected 60% ≥ 50% to fire")
-	}
-	cond.Pct = 0.7
-	if EvaluateCondition(cond, p) {
-		t.Error("expected 60% < 70% to not fire")
-	}
-}
+			p.Languages[0].Name = "PYTHON"
+			Expect(EvaluateCondition(
+				AxisTimeCond{Axis: AxisLanguages, Value: "python", Op: OpGE, Hours: 100},
+				p,
+			)).To(BeTrue())
+		})
 
-func TestTopShare_UsesFirstEntry(t *testing.T) {
-	// Payload is pre-sorted desc; TopShare inspects [0] against axis total.
-	p := &Payload{Languages: []model.ResourceStats{
-		{Name: "TypeScript", TotalSeconds: 300 * 3600},
-		{Name: "Python", TotalSeconds: 200 * 3600},
-	}}
-	cond := TopShareCond{Axis: AxisLanguages, Op: OpGE, Pct: 0.5}
-	// TS is 300/500 = 60% ≥ 50%.
-	if !EvaluateCondition(cond, p) {
-		t.Error("expected top-share 60% ≥ 50% to fire")
-	}
-	cond.Pct = 0.7
-	if EvaluateCondition(cond, p) {
-		t.Error("expected 60% < 70% to not fire")
-	}
-}
+		It("honors the LE comparator", func() {
+			p := &Payload{Languages: []model.ResourceStats{
+				{Name: "typescript", TotalSeconds: 5 * 3600},
+			}}
+			Expect(EvaluateCondition(
+				AxisTimeCond{Axis: AxisLanguages, Value: "typescript", Op: OpLE, Hours: 10},
+				p,
+			)).To(BeTrue())
+			Expect(EvaluateCondition(
+				AxisTimeCond{Axis: AxisLanguages, Value: "typescript", Op: OpLE, Hours: 3},
+				p,
+			)).To(BeFalse())
+		})
+	})
 
-func TestDistinctCount_MinHoursEachFloor(t *testing.T) {
-	// Polyglot: 5+ languages each ≥ 20h.
-	p := &Payload{Languages: []model.ResourceStats{
-		{Name: "Go", TotalSeconds: 25 * 3600},         // qualifies
-		{Name: "TS", TotalSeconds: 30 * 3600},         // qualifies
-		{Name: "Py", TotalSeconds: 20 * 3600},         // qualifies (== floor)
-		{Name: "Rust", TotalSeconds: 19*3600 + 3599},  // does NOT qualify
-		{Name: "Zig", TotalSeconds: 100},              // does NOT
-	}}
-	cond := DistinctCountCond{Axis: AxisLanguages, MinHoursEach: 20, Op: OpGE, N: 3}
-	if !EvaluateCondition(cond, p) {
-		t.Errorf("expected 3 qualifying languages to satisfy N=3")
-	}
-	cond.N = 4
-	if EvaluateCondition(cond, p) {
-		t.Errorf("expected only 3 qualifying to fail N=4")
-	}
-}
-
-func TestPunchcardHourPct_UsesTotalDenominator(t *testing.T) {
-	// 40% of time between 22:00-05:00.
-	p := &Payload{Punchcard: model.PunchcardPayload{
-		Cells: []model.PunchcardCell{
-			{Hour: 23, Seconds: 400}, // in the set
-			{Hour: 10, Seconds: 600}, // outside
-		},
-		TotalSeconds: 1000,
-	}}
-	cond := PunchcardHourPctCond{HoursIn: []int{22, 23, 0, 1, 2, 3, 4, 5}, Op: OpGE, Pct: 0.4}
-	if !EvaluateCondition(cond, p) {
-		t.Error("expected 400/1000 = 40% ≥ 40% to fire")
-	}
-	cond.Pct = 0.5
-	if EvaluateCondition(cond, p) {
-		t.Error("expected 40% < 50% to not fire")
-	}
-}
-
-func TestStreak_CurrentVsLongest(t *testing.T) {
-	// dailyTotal has a gap then a trailing run.
-	p := &Payload{DailyTotal: []int64{1, 1, 1, 1, 0, 1, 1}} // longest 4, current 2
-	c1 := StreakCond{Which: "current", Op: OpGE, Days: 2}
-	if !EvaluateCondition(c1, p) {
-		t.Error("current streak = 2, ≥ 2 should fire")
-	}
-	c2 := StreakCond{Which: "longest", Op: OpGE, Days: 4}
-	if !EvaluateCondition(c2, p) {
-		t.Error("longest streak = 4, ≥ 4 should fire")
-	}
-	c3 := StreakCond{Which: "current", Op: OpGE, Days: 3}
-	if EvaluateCondition(c3, p) {
-		t.Error("current streak = 2 should fail ≥ 3")
-	}
-}
-
-func TestTrend_InsufficientHistoryDoesNotFire(t *testing.T) {
-	// Only 10 days — trend needs 14.
-	p := &Payload{DailyTotal: []int64{1, 1, 1, 1, 1, 1, 1, 1, 1, 1}}
-	cond := TrendCond{Window: "last7-vs-prior7", Op: OpGE, Ratio: 1.0}
-	if EvaluateCondition(cond, p) {
-		t.Error("expected < 14 days to not fire (no false positive)")
-	}
-	// 14 days flat: ratio = 1.0 → matches ≥ 1.0.
-	p.DailyTotal = []int64{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
-	if !EvaluateCondition(cond, p) {
-		t.Error("expected flat 14 days ratio = 1.0 to fire ≥ 1.0")
-	}
-	// Doubled last 7 → ratio = 2.
-	p.DailyTotal = []int64{1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2}
-	cond.Ratio = 2.0
-	if !EvaluateCondition(cond, p) {
-		t.Error("expected ratio 2.0 to fire ≥ 2.0")
-	}
-}
-
-func TestAll_AllMustHold(t *testing.T) {
-	p := &Payload{Languages: []model.ResourceStats{
-		{Name: "python", TotalSeconds: 100 * 3600},
-	}}
-	pass := AxisTimeCond{Axis: AxisLanguages, Value: "python", Op: OpGE, Hours: 50}
-	fail := AxisTimeCond{Axis: AxisLanguages, Value: "python", Op: OpGE, Hours: 200}
-	if !EvaluateCondition(AllCond{Of: []Condition{pass, pass}}, p) {
-		t.Error("all([pass, pass]) should fire")
-	}
-	if EvaluateCondition(AllCond{Of: []Condition{pass, fail}}, p) {
-		t.Error("all([pass, fail]) should not fire")
-	}
-}
-
-func TestAny_OneEnough(t *testing.T) {
-	p := &Payload{Languages: []model.ResourceStats{
-		{Name: "python", TotalSeconds: 100 * 3600},
-	}}
-	pass := AxisTimeCond{Axis: AxisLanguages, Value: "python", Op: OpGE, Hours: 50}
-	fail := AxisTimeCond{Axis: AxisLanguages, Value: "rust", Op: OpGE, Hours: 50}
-	if !EvaluateCondition(AnyCond{Of: []Condition{fail, pass}}, p) {
-		t.Error("any([fail, pass]) should fire")
-	}
-	if EvaluateCondition(AnyCond{Of: []Condition{fail, fail}}, p) {
-		t.Error("any([fail, fail]) should not fire")
-	}
-}
-
-func TestNot_Inverts(t *testing.T) {
-	p := &Payload{Languages: []model.ResourceStats{
-		{Name: "python", TotalSeconds: 100 * 3600},
-	}}
-	pass := AxisTimeCond{Axis: AxisLanguages, Value: "python", Op: OpGE, Hours: 50}
-	if EvaluateCondition(NotCond{Of: pass}, p) {
-		t.Error("not(pass) should be false")
-	}
-	fail := AxisTimeCond{Axis: AxisLanguages, Value: "python", Op: OpGE, Hours: 200}
-	if !EvaluateCondition(NotCond{Of: fail}, p) {
-		t.Error("not(fail) should be true")
-	}
-}
-
-func TestEvaluateAll_EmptyCatalogReturnsNil(t *testing.T) {
-	awards := EvaluateAll(&Payload{}, nil)
-	if awards != nil {
-		t.Errorf("empty catalog should return nil, got %v", awards)
-	}
-}
-
-func TestEvaluateAll_TierDedupeKeepsHighest(t *testing.T) {
-	// Same tierKey — the master and adept both fire; only master should
-	// appear in the result.
-	p := &Payload{Languages: []model.ResourceStats{
-		{Name: "python", TotalSeconds: 300 * 3600},
-	}}
-	catalog := []LabelSpec{
-		{
-			ID: "py-adept", Kind: KindTier, Label: "PYTHON ADEPT", Rank: 100,
-			Tier: TierAdept, TierKey: "languages:python",
-			Condition: AxisTimeCond{Axis: AxisLanguages, Value: "python", Op: OpGE, Hours: 50},
-		},
-		{
-			ID: "py-master", Kind: KindTier, Label: "PYTHON MASTER", Rank: 100,
-			Tier: TierMaster, TierKey: "languages:python",
-			Condition: AxisTimeCond{Axis: AxisLanguages, Value: "python", Op: OpGE, Hours: 100},
-		},
-	}
-	awards := EvaluateAll(p, catalog)
-	if len(awards) != 1 || awards[0].ID != "py-master" {
-		t.Errorf("expected only py-master, got %+v", awards)
-	}
-}
-
-func TestEvaluateAll_SortByRankDescIdAscSecondary(t *testing.T) {
-	// All three fire. Ranks: 20, 20, 10 → the two 20s tie and secondary
-	// sorts by id asc; 10 comes last.
-	p := &Payload{Languages: []model.ResourceStats{
-		{Name: "python", TotalSeconds: 100 * 3600},
-	}}
-	always := AxisTimeCond{Axis: AxisLanguages, Value: "python", Op: OpGE, Hours: 50}
-	catalog := []LabelSpec{
-		{ID: "b-hi", Kind: KindArchetype, Label: "B", Rank: 20, Condition: always},
-		{ID: "a-hi", Kind: KindArchetype, Label: "A", Rank: 20, Condition: always},
-		{ID: "c-lo", Kind: KindArchetype, Label: "C", Rank: 10, Condition: always},
-	}
-	awards := EvaluateAll(p, catalog)
-	if len(awards) != 3 {
-		t.Fatalf("expected 3 awards, got %d", len(awards))
-	}
-	want := []string{"a-hi", "b-hi", "c-lo"}
-	for i, id := range want {
-		if awards[i].ID != id {
-			t.Errorf("awards[%d].ID = %q, want %q", i, awards[i].ID, id)
-		}
-	}
-}
-
-func TestJSONRoundTrip_ExampleFromSeed(t *testing.T) {
-	// One of the simpler seed rows: {"kind":"axis-time","axis":"languages",
-	// "value":"python","op":">=","hours":5} (from 00036_labels_catalog.sql,
-	// python-novice tier).
-	src := []byte(`{"kind":"axis-time","axis":"languages","value":"python","op":">=","hours":5}`)
-	cond, err := UnmarshalCondition(src)
-	if err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	// Assert semantics.
-	c, ok := cond.(AxisTimeCond)
-	if !ok || c.Axis != AxisLanguages || c.Value != "python" || c.Op != OpGE || c.Hours != 5 {
-		t.Errorf("decoded shape wrong: %+v", cond)
-	}
-	// Round-trip must produce bytes representing the same JSON object.
-	back, err := MarshalCondition(cond)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	var origMap, backMap map[string]any
-	if err := json.Unmarshal(src, &origMap); err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal(back, &backMap); err != nil {
-		t.Fatalf("re-parse marshalled: %v (bytes: %s)", err, back)
-	}
-	if len(origMap) != len(backMap) {
-		t.Errorf("field count differs: orig=%d re-encoded=%d", len(origMap), len(backMap))
-	}
-	for k, v := range origMap {
-		bv, ok := backMap[k]
-		if !ok {
-			t.Errorf("missing key %q in round-trip", k)
-			continue
-		}
-		// json.Unmarshal maps numbers to float64 uniformly, so this compare
-		// works for our example.
-		if bv != v {
-			t.Errorf("field %q: orig=%v, back=%v", k, v, bv)
-		}
-	}
-}
-
-func TestDailyAvg_Fires(t *testing.T) {
-	p := &Payload{DailyAvg: 3.5 * 3600} // 3.5 hours/day
-	cond := DailyAvgCond{Op: OpGE, Hours: 3}
-	if !EvaluateCondition(cond, p) {
-		t.Error("expected 3.5h/day ≥ 3h to fire")
-	}
-	cond.Hours = 4
-	if EvaluateCondition(cond, p) {
-		t.Error("expected 3.5h/day < 4h to not fire")
-	}
-}
-
-func TestPunchcardDowPct_Fires(t *testing.T) {
-	// 400s on dow=0 (Sun), 600s on dow=3 (Wed). Weekend fraction = 400/1000 = 40%.
-	p := &Payload{Punchcard: model.PunchcardPayload{
-		Cells: []model.PunchcardCell{
-			{Dow: 0, Seconds: 400},
-			{Dow: 3, Seconds: 600},
-		},
-		TotalSeconds: 1000,
-	}}
-	// Weekend warrior — Sat/Sun.
-	cond := PunchcardDowPctCond{DowIn: []int{0, 6}, Op: OpGE, Pct: 0.35}
-	if !EvaluateCondition(cond, p) {
-		t.Error("expected 40% dow-in-set ≥ 35% to fire")
-	}
-	cond.Pct = 0.5
-	if EvaluateCondition(cond, p) {
-		t.Error("expected 40% < 50% to not fire")
-	}
-}
-
-func TestNilPayloadNoPanic(t *testing.T) {
-	// Every primitive must survive a nil payload (defensive — an in-flight
-	// query state or a corrupt input should not crash the evaluator).
-	cases := []Condition{
-		AxisTimeCond{Axis: AxisLanguages, Value: "python", Op: OpGE, Hours: 5},
-		AxisTimeSumCond{Axis: AxisEditors, Values: []string{"vim"}, Op: OpGE, Hours: 1},
-		AxisPctCond{Axis: AxisLanguages, Value: "python", Op: OpGE, Pct: 0.5},
-		TopShareCond{Axis: AxisLanguages, Op: OpGE, Pct: 0.5},
-		DistinctCountCond{Axis: AxisLanguages, MinHoursEach: 1, Op: OpGE, N: 3},
-		PunchcardHourPctCond{HoursIn: []int{22, 23}, Op: OpGE, Pct: 0.4},
-		PunchcardDowPctCond{DowIn: []int{0, 6}, Op: OpGE, Pct: 0.4},
-		StreakCond{Which: "current", Op: OpGE, Days: 7},
-		DailyAvgCond{Op: OpGE, Hours: 3},
-		TrendCond{Window: "last7-vs-prior7", Op: OpGE, Ratio: 2},
-	}
-	for _, c := range cases {
-		// Should not panic; result value is unimportant.
-		defer func() {
-			if r := recover(); r != nil {
-				t.Errorf("nil payload panic for %T: %v", c, r)
+	Describe("axis-time-sum", func() {
+		It("fires when the SUM across values crosses (TERMINAL PURIST shape)", func() {
+			p := &Payload{Editors: []model.ResourceStats{
+				{Name: "vim", TotalSeconds: 20 * 3600},
+				{Name: "neovim", TotalSeconds: 20 * 3600},
+				{Name: "emacs", TotalSeconds: 15 * 3600},
+				{Name: "vscode", TotalSeconds: 100 * 3600}, // ignored
+			}}
+			base := AxisTimeSumCond{
+				Axis: AxisEditors, Values: []string{"vim", "neovim", "emacs"},
+				Op: OpGE, Hours: 50,
 			}
-		}()
-		_ = EvaluateCondition(c, nil)
-	}
-}
+			Expect(EvaluateCondition(base, p)).To(BeTrue())
 
-func TestEvaluateAll_NilPayloadReturnsNil(t *testing.T) {
-	catalog := []LabelSpec{
-		{
-			ID: "some", Kind: KindArchetype, Label: "SOME", Rank: 10,
-			Condition: AxisTimeCond{Axis: AxisLanguages, Value: "python", Op: OpGE, Hours: 5},
-		},
-	}
-	awards := EvaluateAll(nil, catalog)
-	if len(awards) != 0 {
-		t.Errorf("expected no awards from nil payload, got %d", len(awards))
-	}
-}
+			over := base
+			over.Hours = 60
+			Expect(EvaluateCondition(over, p)).To(BeFalse())
+		})
+	})
 
-func TestAxisTimeLE_Fires(t *testing.T) {
-	// <= boundary — "at most 10h of TypeScript" — a niche shape but the DSL
-	// supports it and we should prove it works.
+	Describe("axis-pct", func() {
+		It("computes share from TotalSeconds (immune to TotalPct scale)", func() {
+			p := &Payload{Languages: []model.ResourceStats{
+				{Name: "Go", TotalSeconds: 300 * 3600},
+				{Name: "Rust", TotalSeconds: 200 * 3600},
+			}}
+			Expect(EvaluateCondition(
+				AxisPctCond{Axis: AxisLanguages, Value: "Go", Op: OpGE, Pct: 0.5},
+				p,
+			)).To(BeTrue())
+			Expect(EvaluateCondition(
+				AxisPctCond{Axis: AxisLanguages, Value: "Go", Op: OpGE, Pct: 0.7},
+				p,
+			)).To(BeFalse())
+		})
+	})
+
+	Describe("top-share", func() {
+		It("uses payload's list[0] as the top entry", func() {
+			// Payload is pre-sorted desc; list[0] is top.
+			p := &Payload{Languages: []model.ResourceStats{
+				{Name: "TypeScript", TotalSeconds: 300 * 3600},
+				{Name: "Python", TotalSeconds: 200 * 3600},
+			}}
+			Expect(EvaluateCondition(
+				TopShareCond{Axis: AxisLanguages, Op: OpGE, Pct: 0.5},
+				p,
+			)).To(BeTrue())
+			Expect(EvaluateCondition(
+				TopShareCond{Axis: AxisLanguages, Op: OpGE, Pct: 0.7},
+				p,
+			)).To(BeFalse())
+		})
+	})
+
+	Describe("distinct-count", func() {
+		It("counts only entries meeting minHoursEach", func() {
+			p := &Payload{Languages: []model.ResourceStats{
+				{Name: "Go", TotalSeconds: 25 * 3600},        // qualifies
+				{Name: "TS", TotalSeconds: 30 * 3600},        // qualifies
+				{Name: "Py", TotalSeconds: 20 * 3600},        // qualifies (== floor)
+				{Name: "Rust", TotalSeconds: 19*3600 + 3599}, // does NOT
+				{Name: "Zig", TotalSeconds: 100},             // does NOT
+			}}
+			Expect(EvaluateCondition(
+				DistinctCountCond{Axis: AxisLanguages, MinHoursEach: 20, Op: OpGE, N: 3},
+				p,
+			)).To(BeTrue())
+			Expect(EvaluateCondition(
+				DistinctCountCond{Axis: AxisLanguages, MinHoursEach: 20, Op: OpGE, N: 4},
+				p,
+			)).To(BeFalse())
+		})
+	})
+
+	Describe("punchcard-hour-pct", func() {
+		It("uses the punchcard total as denominator", func() {
+			p := &Payload{Punchcard: model.PunchcardPayload{
+				Cells: []model.PunchcardCell{
+					{Hour: 23, Seconds: 400}, // in the set
+					{Hour: 10, Seconds: 600}, // outside
+				},
+				TotalSeconds: 1000,
+			}}
+			Expect(EvaluateCondition(
+				PunchcardHourPctCond{
+					HoursIn: []int{22, 23, 0, 1, 2, 3, 4, 5}, Op: OpGE, Pct: 0.4,
+				},
+				p,
+			)).To(BeTrue())
+			Expect(EvaluateCondition(
+				PunchcardHourPctCond{
+					HoursIn: []int{22, 23, 0, 1, 2, 3, 4, 5}, Op: OpGE, Pct: 0.5,
+				},
+				p,
+			)).To(BeFalse())
+		})
+	})
+
+	Describe("punchcard-dow-pct", func() {
+		It("fires when the dow-in-set share crosses", func() {
+			p := &Payload{Punchcard: model.PunchcardPayload{
+				Cells: []model.PunchcardCell{
+					{Dow: 0, Seconds: 400}, // in the set (Sun)
+					{Dow: 3, Seconds: 600},
+				},
+				TotalSeconds: 1000,
+			}}
+			Expect(EvaluateCondition(
+				PunchcardDowPctCond{DowIn: []int{0, 6}, Op: OpGE, Pct: 0.35},
+				p,
+			)).To(BeTrue())
+			Expect(EvaluateCondition(
+				PunchcardDowPctCond{DowIn: []int{0, 6}, Op: OpGE, Pct: 0.5},
+				p,
+			)).To(BeFalse())
+		})
+	})
+
+	Describe("streak", func() {
+		It("current vs longest", func() {
+			p := &Payload{DailyTotal: []int64{1, 1, 1, 1, 0, 1, 1}} // longest 4, current 2
+			Expect(EvaluateCondition(
+				StreakCond{Which: "current", Op: OpGE, Days: 2}, p,
+			)).To(BeTrue())
+			Expect(EvaluateCondition(
+				StreakCond{Which: "longest", Op: OpGE, Days: 4}, p,
+			)).To(BeTrue())
+			Expect(EvaluateCondition(
+				StreakCond{Which: "current", Op: OpGE, Days: 3}, p,
+			)).To(BeFalse())
+		})
+	})
+
+	Describe("daily-avg", func() {
+		It("fires when the day-average crosses", func() {
+			p := &Payload{DailyAvg: 3.5 * 3600} // 3.5 hours/day
+			Expect(EvaluateCondition(
+				DailyAvgCond{Op: OpGE, Hours: 3}, p,
+			)).To(BeTrue())
+			Expect(EvaluateCondition(
+				DailyAvgCond{Op: OpGE, Hours: 4}, p,
+			)).To(BeFalse())
+		})
+	})
+
+	Describe("trend", func() {
+		It("does not fire without 14 days of history", func() {
+			p := &Payload{DailyTotal: []int64{1, 1, 1, 1, 1, 1, 1, 1, 1, 1}} // 10 days
+			Expect(EvaluateCondition(
+				TrendCond{Window: "last7-vs-prior7", Op: OpGE, Ratio: 1.0}, p,
+			)).To(BeFalse())
+		})
+
+		It("fires with flat 14 days at ratio 1.0", func() {
+			p := &Payload{DailyTotal: []int64{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}}
+			Expect(EvaluateCondition(
+				TrendCond{Window: "last7-vs-prior7", Op: OpGE, Ratio: 1.0}, p,
+			)).To(BeTrue())
+		})
+
+		It("fires when last-7 doubled prior-7 (ratio 2)", func() {
+			p := &Payload{DailyTotal: []int64{1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2}}
+			Expect(EvaluateCondition(
+				TrendCond{Window: "last7-vs-prior7", Op: OpGE, Ratio: 2.0}, p,
+			)).To(BeTrue())
+		})
+	})
+})
+
+var _ = Describe("EvaluateCondition composition", func() {
+	pass := AxisTimeCond{Axis: AxisLanguages, Value: "python", Op: OpGE, Hours: 50}
+	fail := AxisTimeCond{Axis: AxisLanguages, Value: "python", Op: OpGE, Hours: 200}
+	failOther := AxisTimeCond{Axis: AxisLanguages, Value: "rust", Op: OpGE, Hours: 50}
 	p := &Payload{Languages: []model.ResourceStats{
-		{Name: "typescript", TotalSeconds: 5 * 3600},
+		{Name: "python", TotalSeconds: 100 * 3600},
 	}}
-	cond := AxisTimeCond{Axis: AxisLanguages, Value: "typescript", Op: OpLE, Hours: 10}
-	if !EvaluateCondition(cond, p) {
-		t.Error("expected 5h ≤ 10h to fire (<=)")
-	}
-	cond.Hours = 3
-	if EvaluateCondition(cond, p) {
-		t.Error("expected 5h > 3h to not fire (<=)")
-	}
-}
 
-func TestJSONRoundTrip_AllComposition(t *testing.T) {
-	// Composer: {"kind":"all","of":[<inner1>,<inner2>]}
-	src := []byte(`{"kind":"all","of":[` +
-		`{"kind":"axis-time","axis":"languages","value":"go","op":">=","hours":10},` +
-		`{"kind":"streak","which":"current","op":">=","days":3}` +
-		`]}`)
-	cond, err := UnmarshalCondition(src)
-	if err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	all, ok := cond.(AllCond)
-	if !ok || len(all.Of) != 2 {
-		t.Fatalf("expected AllCond with 2 subs, got %+v", cond)
-	}
-	if _, ok := all.Of[0].(AxisTimeCond); !ok {
-		t.Errorf("of[0] type wrong: %T", all.Of[0])
-	}
-	if _, ok := all.Of[1].(StreakCond); !ok {
-		t.Errorf("of[1] type wrong: %T", all.Of[1])
-	}
-	// Round-trip.
-	back, err := MarshalCondition(cond)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cond2, err := UnmarshalCondition(back)
-	if err != nil {
-		t.Fatalf("re-unmarshal: %v (bytes: %s)", err, back)
-	}
-	if _, ok := cond2.(AllCond); !ok {
-		t.Errorf("round-trip lost outer AllCond: %T", cond2)
-	}
-}
+	It("all requires every sub to hold", func() {
+		Expect(EvaluateCondition(AllCond{Of: []Condition{pass, pass}}, p)).To(BeTrue())
+		Expect(EvaluateCondition(AllCond{Of: []Condition{pass, fail}}, p)).To(BeFalse())
+	})
+
+	It("any requires at least one sub to hold", func() {
+		Expect(EvaluateCondition(AnyCond{Of: []Condition{failOther, pass}}, p)).To(BeTrue())
+		Expect(EvaluateCondition(AnyCond{Of: []Condition{failOther, failOther}}, p)).To(BeFalse())
+	})
+
+	It("not inverts", func() {
+		Expect(EvaluateCondition(NotCond{Of: pass}, p)).To(BeFalse())
+		Expect(EvaluateCondition(NotCond{Of: fail}, p)).To(BeTrue())
+	})
+})
+
+var _ = Describe("EvaluateAll (walker + dedupe + sort)", func() {
+	It("empty catalog returns nil", func() {
+		Expect(EvaluateAll(&Payload{}, nil)).To(BeNil())
+	})
+
+	It("tier dedupe keeps the highest tier per tierKey", func() {
+		p := &Payload{Languages: []model.ResourceStats{
+			{Name: "python", TotalSeconds: 300 * 3600},
+		}}
+		catalog := []LabelSpec{
+			{
+				ID: "py-adept", Kind: KindTier, Label: "PYTHON ADEPT", Rank: 100,
+				Tier: TierAdept, TierKey: "languages:python",
+				Condition: AxisTimeCond{Axis: AxisLanguages, Value: "python", Op: OpGE, Hours: 50},
+			},
+			{
+				ID: "py-master", Kind: KindTier, Label: "PYTHON MASTER", Rank: 100,
+				Tier: TierMaster, TierKey: "languages:python",
+				Condition: AxisTimeCond{Axis: AxisLanguages, Value: "python", Op: OpGE, Hours: 100},
+			},
+		}
+		awards := EvaluateAll(p, catalog)
+		Expect(awards).To(HaveLen(1))
+		Expect(awards[0].ID).To(Equal("py-master"))
+	})
+
+	It("sorts by rank desc, id asc secondary", func() {
+		p := &Payload{Languages: []model.ResourceStats{
+			{Name: "python", TotalSeconds: 100 * 3600},
+		}}
+		always := AxisTimeCond{Axis: AxisLanguages, Value: "python", Op: OpGE, Hours: 50}
+		catalog := []LabelSpec{
+			{ID: "b-hi", Kind: KindArchetype, Label: "B", Rank: 20, Condition: always},
+			{ID: "a-hi", Kind: KindArchetype, Label: "A", Rank: 20, Condition: always},
+			{ID: "c-lo", Kind: KindArchetype, Label: "C", Rank: 10, Condition: always},
+		}
+		awards := EvaluateAll(p, catalog)
+		Expect(awards).To(HaveLen(3))
+		ids := []string{awards[0].ID, awards[1].ID, awards[2].ID}
+		Expect(ids).To(Equal([]string{"a-hi", "b-hi", "c-lo"}))
+	})
+
+	It("survives a nil payload gracefully (no panic, returns nil)", func() {
+		catalog := []LabelSpec{
+			{
+				ID: "some", Kind: KindArchetype, Label: "SOME", Rank: 10,
+				Condition: AxisTimeCond{Axis: AxisLanguages, Value: "python", Op: OpGE, Hours: 5},
+			},
+		}
+		Expect(EvaluateAll(nil, catalog)).To(BeEmpty())
+	})
+})
+
+var _ = Describe("defensive", func() {
+	It("does not panic when EvaluateCondition receives a nil payload", func() {
+		cases := []Condition{
+			AxisTimeCond{Axis: AxisLanguages, Value: "python", Op: OpGE, Hours: 5},
+			AxisTimeSumCond{Axis: AxisEditors, Values: []string{"vim"}, Op: OpGE, Hours: 1},
+			AxisPctCond{Axis: AxisLanguages, Value: "python", Op: OpGE, Pct: 0.5},
+			TopShareCond{Axis: AxisLanguages, Op: OpGE, Pct: 0.5},
+			DistinctCountCond{Axis: AxisLanguages, MinHoursEach: 1, Op: OpGE, N: 3},
+			PunchcardHourPctCond{HoursIn: []int{22, 23}, Op: OpGE, Pct: 0.4},
+			PunchcardDowPctCond{DowIn: []int{0, 6}, Op: OpGE, Pct: 0.4},
+			StreakCond{Which: "current", Op: OpGE, Days: 7},
+			DailyAvgCond{Op: OpGE, Hours: 3},
+			TrendCond{Window: "last7-vs-prior7", Op: OpGE, Ratio: 2},
+		}
+		for _, c := range cases {
+			Expect(func() { _ = EvaluateCondition(c, nil) }).NotTo(Panic())
+		}
+	})
+})
+
+var _ = Describe("JSON round-trip", func() {
+	It("round-trips an axis-time example from the seed", func() {
+		src := []byte(`{"kind":"axis-time","axis":"languages","value":"python","op":">=","hours":5}`)
+		cond, err := UnmarshalCondition(src)
+		Expect(err).NotTo(HaveOccurred())
+
+		c, ok := cond.(AxisTimeCond)
+		Expect(ok).To(BeTrue())
+		Expect(c.Axis).To(Equal(AxisLanguages))
+		Expect(c.Value).To(Equal("python"))
+		Expect(c.Op).To(Equal(OpGE))
+		Expect(c.Hours).To(Equal(float64(5)))
+
+		back, err := MarshalCondition(cond)
+		Expect(err).NotTo(HaveOccurred())
+
+		var origMap, backMap map[string]any
+		Expect(json.Unmarshal(src, &origMap)).To(Succeed())
+		Expect(json.Unmarshal(back, &backMap)).To(Succeed())
+		Expect(backMap).To(Equal(origMap))
+	})
+
+	It("round-trips an all-composition (recursively)", func() {
+		src := []byte(`{"kind":"all","of":[` +
+			`{"kind":"axis-time","axis":"languages","value":"go","op":">=","hours":10},` +
+			`{"kind":"streak","which":"current","op":">=","days":3}` +
+			`]}`)
+		cond, err := UnmarshalCondition(src)
+		Expect(err).NotTo(HaveOccurred())
+
+		all, ok := cond.(AllCond)
+		Expect(ok).To(BeTrue())
+		Expect(all.Of).To(HaveLen(2))
+		Expect(all.Of[0]).To(BeAssignableToTypeOf(AxisTimeCond{}))
+		Expect(all.Of[1]).To(BeAssignableToTypeOf(StreakCond{}))
+
+		back, err := MarshalCondition(cond)
+		Expect(err).NotTo(HaveOccurred())
+		cond2, err := UnmarshalCondition(back)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cond2).To(BeAssignableToTypeOf(AllCond{}))
+	})
+})
