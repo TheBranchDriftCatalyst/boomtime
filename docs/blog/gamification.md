@@ -10,6 +10,19 @@ This post is the map: what the system does, how the pieces fit,
 where the extension points are, and where a language model could add
 value without breaking the shape.
 
+> **Update — 2026-07-29 (gaka-hc6).** The evaluator moved server-side.
+> The DSL is unchanged (all 13 primitives + 3 composers) but it now
+> lives in `internal/labels/` as a Go port and runs behind two endpoints
+> — `GET /awards` (own; writes the ledger atomically) and
+> `GET /public/profile/:slug/awards` (public; read-only for the ledger).
+> Layer 2's "pure client-side TypeScript" description below is being
+> rewritten; treat those paragraphs as historical until this notice is
+> removed. The **request-flow diagram is out of date** — the client no
+> longer POSTs `/awards/log` after evaluating; the server writes on its
+> own /awards read. The `useAwards()` hook in
+> `web/src/features/publicprofile/labels/useAwards.ts` is the FE
+> entry point; it picks own vs public from the current route.
+
 ## What you see
 
 Open `/p/<slug>` on any public profile. Under the hero you'll see a row
