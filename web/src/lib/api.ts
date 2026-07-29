@@ -1020,6 +1020,19 @@ export const api = {
         condition?: unknown;
       }>
     >(`/api/public/profile/${encodeURIComponent(slug)}/awards`),
+  // gaka-hc6.5.1: historical replay. Server walks N days back, evaluates
+  // each day's snapshot, writes ledger rows with at=D. Replaces the
+  // per-day client-side loop that used to run in StreakBackfillSection.
+  awardsBackfill: (days: number) =>
+    request<{
+      daysProcessed: number;
+      rowsWritten: number;
+      skipped: number;
+      tookMs: number;
+    }>("/api/v1/users/current/awards/backfill", {
+      method: "POST",
+      body: { days },
+    }),
 
   getBackfillStats: () =>
     request<{

@@ -313,6 +313,9 @@ func registerAuthRoutes(e *echo.Echo, h *handler.Handler) {
 	// evaluate() call. Own variant WRITES the ledger; public variant does not.
 	e.GET("/api/v1/users/current/awards", h.OwnAwards)
 	e.GET("/api/public/profile/:slug/awards", h.PublicAwards)
+	// gaka-hc6.5.1: historical replay. Unblocks the full delete of the
+	// client-side evaluator (which was the AdminTab backfill's last use).
+	e.POST("/api/v1/users/current/awards/backfill", h.AwardsBackfill)
 }
 
 // registerMiscRoutes: badges, widgets, leaderboards, and commits.

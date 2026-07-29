@@ -123,7 +123,15 @@ func (h *Handler) PublicAwards(c *echo.Context) error {
 // Kept as a Handler method so it can be shared between the two award
 // endpoints without exporting all the tuning constants.
 func (h *Handler) buildAwardsPayload(ctx echoContext, username string) (*labels.Payload, error) {
-	t1 := time.Now().UTC()
+	return h.buildAwardsPayloadAt(ctx, username, time.Now().UTC())
+}
+
+// buildAwardsPayloadAt is the historical variant — computes the payload
+// as if EndDate=at instead of Now(). Used by the /awards/backfill flow
+// (gaka-hc6.5.1) to walk N days back and evaluate each day's snapshot
+// against the historical window that ended THAT day.
+func (h *Handler) buildAwardsPayloadAt(ctx echoContext, username string, at time.Time) (*labels.Payload, error) {
+	t1 := at.UTC()
 	t0 := removeDays(t1, publicProfilePayloadDays)
 
 	hidden, err := h.DB.LoadHiddenSets(ctx, username)

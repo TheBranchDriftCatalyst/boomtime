@@ -56,8 +56,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
 import { useLabelsCatalog } from "@/features/publicprofile/labels/useLabelsCatalog";
-import { evaluate } from "@/features/publicprofile/labels/evaluator";
-import { resolvePeriod } from "@/features/publicprofile/labels/useAwardStreaks";
 import type { LabelCatalogRow } from "@/features/publicprofile/labels/types";
 import { LabelImage } from "@/features/publicprofile/labels/LabelImage";
 import { useImageJobQueue, type JobState } from "./useImageJobQueue";
@@ -1457,87 +1455,35 @@ function AwardLedgerInspector() {
 
 // ---- streak backfill tool (gaka-mwp-streaks) ------------------------------
 //
-// The evaluator is FE-only, so populating historical ledger rows means
-// looping day-by-day in the browser: fetch stats windowed to end at
-// that day, run evaluate(), POST /awards/log with an explicit `at`
-// timestamp so the server buckets against the historical period. Server
-// upserts, so re-running is idempotent.
-//
-// This walks the CURRENT user's own ledger — a per-user maintenance
-// tool, not admin-cross-user. Progress feedback is live so a mistaken
-// N=3650 doesn't leave the operator wondering.
+// gaka-hc6.5.1: the per-day loop moved server-side. FE just POSTs
+// {days: N}, server walks each historical day and writes ledger rows
+// with at=D. Result is a single summary. This unblocked the full
+// delete of the client-side evaluator (gaka-hc6.5) — no more
+// per-day evaluate() in the browser.
 
 function StreakBackfillSection() {
-  const catalog = useLabelsCatalog();
   const [days, setDays] = useState(30);
   const [running, setRunning] = useState(false);
-  const [progress, setProgress] = useState<{
-    doneDays: number;
-    totalDays: number;
-    written: number;
-    errors: number;
-    currentDay: string;
+  const [result, setResult] = useState<{
+    daysProcessed: number;
+    rowsWritten: number;
+    skipped: number;
+    tookMs: number;
   } | null>(null);
-  const cancelRef = useRef(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function runBackfill() {
-    if (catalog.specs.length === 0) return;
     setRunning(true);
-    cancelRef.current = false;
-    setProgress({
-      doneDays: 0,
-      totalDays: days,
-      written: 0,
-      errors: 0,
-      currentDay: "",
-    });
-    let written = 0;
-    let errors = 0;
-    // Walk oldest → newest so the ledger fills in chronological order —
-    // if the user cancels mid-run, they keep the earlier days' rows.
-    for (let i = days - 1; i >= 0; i--) {
-      if (cancelRef.current) break;
-      const end = new Date();
-      end.setDate(end.getDate() - i);
-      const start = new Date(end);
-      start.setDate(start.getDate() - 30); // 30d trailing window matches production display windows
-      const startISO = start.toISOString().slice(0, 10);
-      const endISO = end.toISOString().slice(0, 10);
-      setProgress((p) => (p ? { ...p, currentDay: endISO } : p));
-      try {
-        const stats = await api.getStats({ start: startISO, end: endISO });
-        // evaluate() wants a PublicDashboardPayload; StatsPayload is a
-        // superset (adds `username`) — the evaluator only reads the
-        // shared fields so a shallow cast is safe.
-        const awards = evaluate(
-          stats as unknown as import("@/types/stats").PublicDashboardPayload,
-          { catalog: catalog.specs },
-        );
-        const items = awards
-          .map((a) => {
-            const spec = catalog.specs.find((s) => s.id === a.id);
-            if (!spec) return null;
-            const p = resolvePeriod(spec);
-            if (p === "lifetime") return null;
-            return { labelId: a.id, periodType: p as "daily" | "weekly" | "monthly" };
-          })
-          .filter((x): x is { labelId: string; periodType: "daily" | "weekly" | "monthly" } => !!x);
-        if (items.length > 0) {
-          // Send `at` at end-of-day local time so period bucketing lands
-          // in that day (not accidentally rolled into the next).
-          const at = new Date(end);
-          at.setHours(12, 0, 0, 0);
-          const res = await api.logAwards(items, at.toISOString());
-          written += res.written;
-        }
-      } catch {
-        errors++;
-      }
-      setProgress((p) =>
-        p ? { ...p, doneDays: days - i, written, errors } : p,
-      );
+    setResult(null);
+    setError(null);
+    try {
+      const res = await api.awardsBackfill(days);
+      setResult(res);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "backfill failed");
+    } finally {
+      setRunning(false);
     }
-    setRunning(false);
   }
 
   return (
@@ -1569,36 +1515,40 @@ function StreakBackfillSection() {
         </div>
         <Button
           size="sm"
-          onClick={() => (running ? (cancelRef.current = true) : runBackfill())}
-          disabled={catalog.specs.length === 0}
+          onClick={runBackfill}
+          disabled={running}
         >
-          {running ? "▸ CANCEL" : `▸ BACKFILL ${days} DAYS`}
+          {running ? "▸ RUNNING…" : `▸ BACKFILL ${days} DAYS`}
         </Button>
-        {progress && (
+        {result && (
           <div className="flex-1 text-[11px] font-mono text-muted-foreground">
             <span className="tabular-nums text-foreground">
-              {progress.doneDays}/{progress.totalDays}
+              {result.daysProcessed}
             </span>{" "}
             days ·{" "}
             <span className="tabular-nums text-amber-500">
-              {progress.written}
+              {result.rowsWritten}
             </span>{" "}
             rows written
-            {progress.errors > 0 && (
+            {result.skipped > 0 && (
               <>
                 {" "}
                 ·{" "}
                 <span className="tabular-nums text-destructive">
-                  {progress.errors} errors
+                  {result.skipped} skipped
                 </span>
               </>
             )}
-            {running && (
-              <>
-                {" "}
-                · <span className="text-foreground">{progress.currentDay}</span>
-              </>
-            )}
+            {" "}
+            ·{" "}
+            <span className="tabular-nums text-foreground">
+              {result.tookMs}ms
+            </span>
+          </div>
+        )}
+        {error && (
+          <div className="flex-1 text-[11px] font-mono text-destructive">
+            {error}
           </div>
         )}
       </div>
