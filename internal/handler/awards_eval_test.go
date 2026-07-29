@@ -267,8 +267,6 @@ func (bb *bytesReaderT) Read(p []byte) (int, error) {
 	return n, nil
 }
 
-func bytesReader(b []byte) *bytesReaderT { return &bytesReaderT{b: b} }
-
 type eofErr struct{}
 
 func (eofErr) Error() string { return "EOF" }

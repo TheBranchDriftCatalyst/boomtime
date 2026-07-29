@@ -256,14 +256,3 @@ var _ = Describe("Worker (nil receiver) — feature-disabled gate", func() {
 
 // -- helpers restored from stdlib partner (gaka-0vp.17) --
 const testDatabaseURL = "postgres://test:test@localhost:5432/boomtime_test?sslmode=disable"
-
-func pngBytes(tag string) []byte {
-	return append([]byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}, []byte(tag)...)
-}
-
-func fixtureEntries() []labelcatalog.Entry {
-	return []labelcatalog.Entry{
-		{ID: "test-w-a", Prompt: "prompt A"},
-		{ID: "test-w-b", Prompt: "prompt B"},
-	}
-}

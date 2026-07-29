@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 
-	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
@@ -68,19 +67,3 @@ func verifyLoginG(e http.Handler, user, password string) int {
 	})
 	return rec.Code
 }
-
-// ginkgoCtx returns a background context — ginkgo specs cannot call
-// t.Context() (HarnessT doesn't expose it), so we use context.Background().
-func ginkgoCtx() context.Context { return context.Background() }
-
-// silenceUnused suppresses "declared and not used" errors when this file
-// happens to be built without any consumer of a particular helper.
-var _ = []any{doJSONReqG, doRawG, mintUserWithPasswordG, verifyLoginG, ginkgoCtx}
-
-// mustGinkgoT returns a GinkgoT() proxy that satisfies HarnessT. Encapsulated
-// so callers use one obvious form (avoids the temptation to sprinkle GinkgoT()
-// literals). Not strictly required — GinkgoT() is fine — but keeps the seam
-// explicit.
-func mustGinkgoT() testutil.HarnessT { return GinkgoT() }
-
-var _ = mustGinkgoT // silence in files that don't use it

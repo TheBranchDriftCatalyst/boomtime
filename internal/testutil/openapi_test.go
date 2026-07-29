@@ -126,10 +126,3 @@ var _ = Describe("OpenAPI Auth scheme matches harness", func() {
 		})
 	}
 })
-
-// -- helpers restored from internal/testutil/openapi_test.go (gaka-0vp.17) --
-func recordFor(h http.Handler, req *http.Request) *httptest.ResponseRecorder {
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	return rec
-}

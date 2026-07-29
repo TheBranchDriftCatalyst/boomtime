@@ -126,8 +126,3 @@ var _ = Describe("timeLimit", func() {
 func spanDaysGinkgo(t0, t1 time.Time) float64 {
 	return t1.Sub(t0).Hours() / 24
 }
-
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
-func spanDays(t0, t1 time.Time) float64 {
-	return t1.Sub(t0).Hours() / 24
-}

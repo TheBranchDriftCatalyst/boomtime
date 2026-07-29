@@ -521,11 +521,3 @@ var _ = Describe("ChangePassword argon2 version (gaka-awh.6)", func() {
 			"login with new password after change")
 	})
 })
-
-func mean(xs []time.Duration) time.Duration {
-	var sum time.Duration
-	for _, x := range xs {
-		sum += x
-	}
-	return sum / time.Duration(len(xs))
-}

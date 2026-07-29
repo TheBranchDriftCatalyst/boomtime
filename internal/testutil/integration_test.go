@@ -472,41 +472,6 @@ type statsPayload struct {
 	} `json:"projects"`
 }
 
-func weekAround(base time.Time) (start, end string) {
-	return base.AddDate(0, 0, -1).Format(time.RFC3339), base.AddDate(0, 0, 1).Format(time.RFC3339)
-}
-
-func extractRefreshCookie(rec *httptest.ResponseRecorder) string {
-	for _, c := range rec.Result().Cookies() {
-		if c.Name == "refresh_token" {
-			return c.Value
-		}
-	}
-	return ""
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var b [20]byte
-	i := len(b)
-	for n > 0 {
-		i--
-		b[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		b[i] = '-'
-	}
-	return string(b[i:])
-}
-
 type affectedResp struct {
 	Values []struct {
 		Value    string `json:"value"`

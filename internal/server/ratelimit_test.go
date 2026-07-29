@@ -25,7 +25,6 @@ package server
 import (
 	"encoding/json"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -404,6 +403,3 @@ var _ = Describe("real-echo integration: OPTIONS preflight bypasses the limiter"
 		}
 	})
 })
-
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
-func silentLoggerRL() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }

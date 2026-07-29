@@ -83,10 +83,3 @@ var _ = Describe("Changelog endpoint", func() {
 		Expect(rec.Body.Len()).To(Equal(len(boomtime.ChangelogMD)))
 	})
 })
-
-func firstLine(b []byte) string {
-	if i := strings.IndexByte(string(b), '\n'); i >= 0 {
-		return string(b[:i])
-	}
-	return string(b)
-}

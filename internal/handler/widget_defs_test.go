@@ -202,9 +202,3 @@ type createDefResp struct {
 	DefID string `json:"defId"`
 	URL   string `json:"url"`
 }
-
-func bodyOf(r *strings.Reader) string {
-	buf := make([]byte, r.Len())
-	_, _ = r.Read(buf)
-	return string(buf)
-}

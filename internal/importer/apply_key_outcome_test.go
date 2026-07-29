@@ -206,10 +206,6 @@ func applyKeyOutcomeDSN() string {
 	return defaultDriftDSN // reuse the constant from drift_integration_test.go
 }
 
-func silentLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
-}
-
 func ptrStrEq(a, b *string) bool {
 	switch {
 	case a == nil && b == nil:

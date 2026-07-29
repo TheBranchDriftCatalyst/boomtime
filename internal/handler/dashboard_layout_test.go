@@ -195,23 +195,3 @@ var _ = Describe("public profile layout inlining", func() {
 			"expected no `layout` key when unset; body=%s", rr.Body.String())
 	})
 })
-
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
-func semanticJSONDiff(a, b string) string {
-	var av, bv any
-	if err := json.Unmarshal([]byte(a), &av); err != nil {
-		return "left is not valid JSON: " + err.Error()
-	}
-	if err := json.Unmarshal([]byte(b), &bv); err != nil {
-		return "right is not valid JSON: " + err.Error()
-	}
-	// Re-marshal both through the same encoder so map key order is normalized
-	// (json.Marshal sorts map keys). If the normalized forms match, the two
-	// documents are semantically equal.
-	an, _ := json.Marshal(av)
-	bn, _ := json.Marshal(bv)
-	if string(an) != string(bn) {
-		return "normalized forms differ"
-	}
-	return ""
-}

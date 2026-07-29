@@ -205,10 +205,3 @@ func (r *Registry) byLabelSnapshot(labelID string) string {
 	defer r.mu.RUnlock()
 	return r.byLabel[labelID]
 }
-
-func drain(ch <-chan Event) {
-	select {
-	case <-ch:
-	default:
-	}
-}

@@ -165,7 +165,3 @@ var _ = Describe("Pool", func() {
 func labelNGinkgo(i int) string {
 	return "label-" + string(rune('a'+i))
 }
-
-func labelN(i int) string {
-	return "label-" + string(rune('a'+i))
-}
