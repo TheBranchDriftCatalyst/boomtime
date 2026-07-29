@@ -224,11 +224,24 @@ func segmentAligned[T any](days []time.Time, rows []T, day func(T) time.Time, na
 	return out
 }
 
-// resourceTopN is how many resources (by total time) each dimension keeps before
-// collapsing the remainder into one aggregated "Other (N more)" bucket. Keeps the
-// payload small and every chart's series count bounded on wide/all-time ranges,
-// while the aggregate row still carries real (summed) day-by-day data.
+// resourceTopN is the MINIMUM number of resources (by total time) each
+// dimension keeps before collapsing the remainder into an aggregated
+// "Other (N more)" bucket. The final N may grow beyond this via the
+// otherMaxShare guard below.
 const resourceTopN = 12
+
+// resourceMaxN caps the topN growth so a pathologically wide distribution
+// (hundreds of tiny languages, each <1%) doesn't blow the series count
+// out on the chart. If Other still exceeds otherMaxShare at resourceMaxN,
+// we accept the domination — better than 100 slices with unreadable labels.
+const resourceMaxN = 40
+
+// otherMaxShare (30%) is the ceiling on Other's share of the total. When
+// the default top-12 leaves Other above this, we grow N until Other drops
+// below the threshold (or we hit resourceMaxN). Prevents "Other" from
+// visually overshadowing every real entry in a pie/bar chart when the
+// user has a long tail of small-but-real values. gaka-mwp-other.
+const otherMaxShare = 0.30
 
 // otherMembersCap is the max number of tail members carried on the synthesized
 // "Other" entry for FE tooltip breakdown (gaka-7m4). Sized to comfortably
@@ -238,20 +251,55 @@ const otherMembersCap = 20
 
 // capWithOther returns the top-N resources by total time plus, if there are more,
 // a single "Other (N more)" entry whose TotalSeconds and per-day arrays are the
-// element-wise sums of the remaining tail. On the Other entry we also carry the
-// top otherMembersCap tail members (name/totalSeconds/totalPct only) so the FE
-// can render a breakdown tooltip. The caller's slice is never mutated: sorting
-// happens on a clone, and the returned slice has its own backing array.
+// element-wise sums of the remaining tail. N starts at resourceTopN and grows
+// toward resourceMaxN when Other's share would exceed otherMaxShare — ensures
+// Other doesn't dominate the chart just because the tail is long.
+//
+// On the Other entry we also carry the top otherMembersCap tail members
+// (name/totalSeconds/totalPct only) so the FE can render a breakdown tooltip.
+// The caller's slice is never mutated: sorting happens on a clone, and the
+// returned slice has its own backing array.
 func capWithOther(list []model.ResourceStats) []model.ResourceStats {
 	if len(list) <= resourceTopN {
 		return list
 	}
 	sorted := slices.Clone(list)
 	sort.SliceStable(sorted, func(a, b int) bool { return sorted[a].TotalSeconds > sorted[b].TotalSeconds })
+
+	// Grow N beyond resourceTopN until Other's share ≤ otherMaxShare
+	// or we hit the hard cap. Uses grand total (all entries) so the
+	// share ratio matches what the chart renders.
+	var grandTotal int64
+	for _, r := range sorted {
+		grandTotal += r.TotalSeconds
+	}
+	topN := resourceTopN
+	if grandTotal > 0 {
+		var otherSum int64
+		for i := topN; i < len(sorted); i++ {
+			otherSum += sorted[i].TotalSeconds
+		}
+		for topN < len(sorted) && topN < resourceMaxN {
+			share := float64(otherSum) / float64(grandTotal)
+			if share <= otherMaxShare {
+				break
+			}
+			// Promote the next tail entry into top, shrinking Other.
+			otherSum -= sorted[topN].TotalSeconds
+			topN++
+		}
+	}
+	// If growth consumed the whole list, return without an Other bucket —
+	// nothing left to collapse.
+	if topN >= len(sorted) {
+		out := make([]model.ResourceStats, len(sorted))
+		copy(out, sorted)
+		return out
+	}
 	// Full-slice expression: the append below must allocate rather than write
 	// into sorted's (or, before the clone existed, the caller's) backing array.
-	top := sorted[:resourceTopN:resourceTopN]
-	tail := sorted[resourceTopN:]
+	top := sorted[:topN:topN]
+	tail := sorted[topN:]
 
 	other := model.ResourceStats{
 		Name:       fmt.Sprintf("Other (%d more)", len(tail)),

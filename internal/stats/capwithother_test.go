@@ -100,14 +100,21 @@ func TestCapWithOtherCarriesOtherMembers(t *testing.T) {
 
 // The cap bounds the payload — a tail bigger than otherMembersCap only carries
 // the top otherMembersCap members, but OtherCount reflects the true tail size.
+//
+// Post gaka-mwp-other: the adaptive Other-share cap (otherMaxShare = 30%)
+// grows topN beyond the default 12 when the default-N Other would dominate.
+// Fixture: 60 entries with strictly-desc values so the tail is long enough to
+// exceed the members cap AFTER the adaptive growth stops.
 func TestCapWithOtherRespectsMembersCap(t *testing.T) {
-	// resourceTopN = 12; otherMembersCap = 20. Use 12+25 = 37 entries so the
-	// tail (25) exceeds the cap.
+	// Values 6000, 5900, ..., 100 → grand total 183,000. Default-N Other share
+	// would be far above 30%, driving topN up to resourceMaxN (40). Tail is
+	// then 60-40 = 20 entries — exactly the members cap; the test's original
+	// intent (tail > cap) needs even more entries. Use 65 to be safe.
 	var in []model.ResourceStats
-	for i := 0; i < 37; i++ {
+	for i := 0; i < 65; i++ {
 		in = append(in, model.ResourceStats{
 			Name:         string(rune('a' + i%26)) + string(rune('0'+i/26)),
-			TotalSeconds: int64(3700 - i*100), // strictly desc
+			TotalSeconds: int64(6500 - i*100), // strictly desc
 			TotalDaily:   []int64{0},
 			PctDaily:     []float64{0},
 		})
@@ -115,16 +122,73 @@ func TestCapWithOtherRespectsMembersCap(t *testing.T) {
 	out := capWithOther(in)
 	other := out[len(out)-1]
 
-	if other.OtherCount != 25 {
-		t.Errorf("Other.OtherCount = %d, want 25 (len(tail))", other.OtherCount)
-	}
 	if len(other.OtherMembers) != 20 {
 		t.Fatalf("len(Other.OtherMembers) = %d, want %d (otherMembersCap)", len(other.OtherMembers), 20)
 	}
-	// The first member is the highest-TotalSeconds tail entry (index 12 in the
-	// desc-sorted list).
-	if other.OtherMembers[0].TotalSeconds != 2500 {
-		t.Errorf("OtherMembers[0].TotalSeconds = %d, want 2500 (first tail entry)", other.OtherMembers[0].TotalSeconds)
+	if other.OtherCount != len(in)-(len(out)-1) {
+		t.Errorf("Other.OtherCount = %d, want %d (len(tail))", other.OtherCount, len(in)-(len(out)-1))
+	}
+	// First member is the highest-TotalSeconds tail entry — index equal to
+	// the adapted topN. Compute expected from the output length.
+	expectedFirst := int64(6500 - (len(out)-1)*100)
+	if other.OtherMembers[0].TotalSeconds != expectedFirst {
+		t.Errorf("OtherMembers[0].TotalSeconds = %d, want %d (first tail entry)", other.OtherMembers[0].TotalSeconds, expectedFirst)
+	}
+}
+
+// gaka-mwp-other: Other shouldn't dominate — if the default top-12 would leave
+// Other above 30%, grow topN until it drops below OR we hit resourceMaxN.
+func TestCapWithOtherGrowsToKeepOtherBelow30Pct(t *testing.T) {
+	// 30 entries, each 100s → grand total 3000. If we took the default top-12,
+	// Other = 18*100 = 1800, share = 60% (way above 30%). Adaptive N must grow.
+	var in []model.ResourceStats
+	for i := 0; i < 30; i++ {
+		in = append(in, model.ResourceStats{
+			Name:         "r" + string(rune('a'+i)),
+			TotalSeconds: 100,
+			TotalDaily:   []int64{0},
+			PctDaily:     []float64{0},
+		})
+	}
+	out := capWithOther(in)
+	other := out[len(out)-1]
+
+	// Sanity: Other's share must be ≤ 30% (or we exhausted the list).
+	var total int64
+	for _, r := range in {
+		total += r.TotalSeconds
+	}
+	share := float64(other.TotalSeconds) / float64(total)
+	if share > 0.30001 {
+		t.Errorf("Other share = %.3f, want ≤ 0.30", share)
+	}
+	// Sanity: at least resourceTopN entries kept (minimum floor).
+	if len(out)-1 < 12 {
+		t.Errorf("kept %d entries in top, want ≥ 12 (resourceTopN)", len(out)-1)
+	}
+}
+
+// If the tail is small enough that default-N already gives Other ≤ 30%, keep
+// topN at 12 — no unnecessary growth.
+func TestCapWithOtherHonorsDefaultNWhenOtherIsSmall(t *testing.T) {
+	// 15 entries — top-12 dominant, tail-3 tiny. Default-N Other << 30%.
+	var in []model.ResourceStats
+	for i := 0; i < 15; i++ {
+		val := int64(10000)
+		if i >= 12 {
+			val = 10 // tiny tail
+		}
+		in = append(in, model.ResourceStats{
+			Name:         "r" + string(rune('a'+i)),
+			TotalSeconds: val,
+			TotalDaily:   []int64{0},
+			PctDaily:     []float64{0},
+		})
+	}
+	out := capWithOther(in)
+	// Should be 12 top + 1 Other = 13.
+	if len(out) != 13 {
+		t.Errorf("len(out) = %d, want 13 (default topN + Other)", len(out))
 	}
 }
 
