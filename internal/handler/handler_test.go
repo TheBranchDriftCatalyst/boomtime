@@ -19,6 +19,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
 	"github.com/labstack/echo/v5"
 )
 
@@ -58,7 +59,7 @@ var _ = Describe("BindJSONWithLimit (gaka-bi2)", func() {
 		var dst tinyPayloadGinkgo
 		rec, ok := runBindLimitGinkgo(body, &dst, handler.BodyLimitSmall)
 		Expect(ok).To(BeTrue(), "bind should succeed for under-cap body")
-		Expect(rec.Code).To(Equal(http.StatusNoContent), "body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusNoContent))
 		Expect(dst.CurrentPassword).To(Equal("test1234"))
 		Expect(dst.NewPassword).To(Equal("test5678"))
 	})
@@ -72,7 +73,7 @@ var _ = Describe("BindJSONWithLimit (gaka-bi2)", func() {
 		var dst tinyPayloadGinkgo
 		rec, ok := runBindLimitGinkgo(body, &dst, handler.BodyLimitSmall)
 		Expect(ok).To(BeFalse(), "bind unexpectedly succeeded for over-cap body")
-		Expect(rec.Code).To(Equal(http.StatusRequestEntityTooLarge), "body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusRequestEntityTooLarge))
 
 		var envelope struct {
 			Error   string  `json:"error"`
@@ -92,7 +93,7 @@ var _ = Describe("BindJSONWithLimit (gaka-bi2)", func() {
 		var dst tinyPayloadGinkgo
 		rec, ok := runBindLimitGinkgo(body, &dst, handler.BodyLimitSmall)
 		Expect(ok).To(BeFalse(), "bind unexpectedly succeeded for malformed JSON")
-		Expect(rec.Code).To(Equal(http.StatusBadRequest), "body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest))
 	})
 
 	It("MaxBytesReader trips at cap+ε — the panicReader anchor never fires", func() {
@@ -132,7 +133,7 @@ var _ = Describe("BindJSONWithLimit (gaka-bi2)", func() {
 		var dst tinyPayloadGinkgo
 		rec, ok := runBindLimitGinkgo(body, &dst, handler.BodyLimitSmall)
 		Expect(ok).To(BeTrue(), "bind should succeed at exactly cap; got status %d body=%s", rec.Code, rec.Body.String())
-		Expect(rec.Code).To(Equal(http.StatusNoContent), "body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusNoContent))
 		Expect(dst.CurrentPassword).To(HaveLen(pad))
 	})
 })

@@ -62,7 +62,7 @@ var _ = Describe("ServerLogs owner-scope filter (gaka-awh.2)", func() {
 		aMsgs, bMsgs, serverMsgs := publishFixtureG(hub, userA, userB)
 
 		rec := doJSONReqG(e, http.MethodGet, "/api/v1/logs?limit=200", tokenA, nil)
-		Expect(rec.Code).To(Equal(http.StatusOK), "GET /logs: body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK), "GET /logs: body=%s", rec.Body.String())
 
 		got := decodeLogsResponseG(rec.Body.Bytes())
 		Expect(got).To(HaveLen(len(aMsgs) + len(serverMsgs)))
@@ -97,7 +97,7 @@ var _ = Describe("ServerLogs owner-scope filter (gaka-awh.2)", func() {
 		_, token := hz.MintUser("awhg_empty")
 
 		rec := doJSONReqG(e, http.MethodGet, "/api/v1/logs", token, nil)
-		Expect(rec.Code).To(Equal(http.StatusOK), "empty hub GET /logs: body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK), "empty hub GET /logs: body=%s", rec.Body.String())
 
 		body := rec.Body.String()
 		Expect(body).NotTo(BeEmpty())

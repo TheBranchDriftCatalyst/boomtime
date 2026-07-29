@@ -45,7 +45,7 @@ var _ = Describe("timezone endpoints (gaka-dg7)", func() {
 
 		// Baseline: user has never picked a tz.
 		rec := doJSONGinkgo(e, http.MethodGet, "/api/v1/users/current/timezone", token, nil)
-		Expect(rec.Code).To(Equal(http.StatusOK))
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
 		var baseline struct {
 			Timezone          string `json:"timezone"`
 			EffectiveTimezone string `json:"effectiveTimezone"`
@@ -57,12 +57,12 @@ var _ = Describe("timezone endpoints (gaka-dg7)", func() {
 		// PATCH bogus name → 400.
 		rec = doJSONGinkgo(e, http.MethodPatch, "/api/v1/users/current/timezone", token,
 			map[string]string{"timezone": "Mars/Olympus"})
-		Expect(rec.Code).To(Equal(http.StatusBadRequest),
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest),
 			"PATCH invalid IANA: body=%s", rec.Body.String())
 
 		// GET must still show empty — proves no DB write happened.
 		rec = doJSONGinkgo(e, http.MethodGet, "/api/v1/users/current/timezone", token, nil)
-		Expect(rec.Code).To(Equal(http.StatusOK))
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
 		var after struct{ Timezone string }
 		_ = json.Unmarshal(rec.Body.Bytes(), &after)
 		Expect(after.Timezone).To(BeEmpty(),
@@ -77,7 +77,7 @@ var _ = Describe("timezone endpoints (gaka-dg7)", func() {
 		// PATCH a valid IANA name.
 		rec := doJSONGinkgo(e, http.MethodPatch, "/api/v1/users/current/timezone", token,
 			map[string]string{"timezone": "America/Los_Angeles"})
-		Expect(rec.Code).To(Equal(http.StatusOK), "PATCH valid: body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK), "PATCH valid: body=%s", rec.Body.String())
 		var patched struct {
 			Timezone          string `json:"timezone"`
 			EffectiveTimezone string `json:"effectiveTimezone"`
@@ -89,7 +89,7 @@ var _ = Describe("timezone endpoints (gaka-dg7)", func() {
 
 		// GET must show the same.
 		rec = doJSONGinkgo(e, http.MethodGet, "/api/v1/users/current/timezone", token, nil)
-		Expect(rec.Code).To(Equal(http.StatusOK))
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
 		var got struct{ Timezone, EffectiveTimezone string }
 		_ = json.Unmarshal(rec.Body.Bytes(), &got)
 		Expect(got.Timezone).To(Equal("America/Los_Angeles"))
@@ -98,7 +98,7 @@ var _ = Describe("timezone endpoints (gaka-dg7)", func() {
 		// PATCH with empty clears the pick.
 		rec = doJSONGinkgo(e, http.MethodPatch, "/api/v1/users/current/timezone", token,
 			map[string]string{"timezone": ""})
-		Expect(rec.Code).To(Equal(http.StatusOK), "PATCH empty: body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK), "PATCH empty: body=%s", rec.Body.String())
 
 		rec = doJSONGinkgo(e, http.MethodGet, "/api/v1/users/current/timezone", token, nil)
 		var cleared struct{ Timezone, EffectiveTimezone string }

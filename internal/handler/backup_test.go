@@ -34,16 +34,16 @@ var _ = Describe("DBImport guards", func() {
 
 		// No auth header → 400 (missing auth).
 		rec := doRawG(e, http.MethodPost, "/api/v1/users/current/db/import?confirm=replace-all-data", "", nil)
-		Expect(rec.Code).To(Equal(http.StatusBadRequest), "no auth: got %d", rec.Code)
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest), "no auth: got %d", rec.Code)
 
 		// Bogus token → 403.
 		rec = doRawG(e, http.MethodGet, "/api/v1/users/current/db/export", "bogus", nil)
-		Expect(rec.Code).To(Equal(http.StatusForbidden), "bad token export: got %d", rec.Code)
+		Expect(rec).To(testutil.HaveStatus(http.StatusForbidden), "bad token export: got %d", rec.Code)
 
 		// Auth'd but missing the confirm param → 400, and nothing is truncated.
 		user2, _ := hz.MintUser("backupguard2_g")
 		rec = doRawG(e, http.MethodPost, "/api/v1/users/current/db/import", token, []byte("zipzip"))
-		Expect(rec.Code).To(Equal(http.StatusBadRequest), "missing confirm: got %d", rec.Code)
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest), "missing confirm: got %d", rec.Code)
 
 		var n int
 		Expect(hz.DB.Pool.QueryRow(ctx, `SELECT count(*) FROM users WHERE username=$1`, user2).Scan(&n)).To(Succeed())
@@ -51,7 +51,7 @@ var _ = Describe("DBImport guards", func() {
 
 		// Confirmed but not a zip → 400.
 		rec = doRawG(e, http.MethodPost, "/api/v1/users/current/db/import?confirm=replace-all-data", token, []byte("not a zip"))
-		Expect(rec.Code).To(Equal(http.StatusBadRequest), "garbage archive: got %d", rec.Code)
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest), "garbage archive: got %d", rec.Code)
 	})
 })
 
@@ -71,7 +71,7 @@ var _ = Describe("backup round-trip (export → mutate → import)", func() {
 
 		// Export.
 		rec := doRawG(e, http.MethodGet, "/api/v1/users/current/db/export", token, nil)
-		Expect(rec.Code).To(Equal(http.StatusOK), "export: body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK), "export: body=%s", rec.Body.String())
 		Expect(rec.Header().Get("Content-Type")).To(Equal("application/zip"))
 		Expect(rec.Header().Get("Content-Disposition")).NotTo(BeEmpty(),
 			"export missing Content-Disposition")
@@ -85,7 +85,7 @@ var _ = Describe("backup round-trip (export → mutate → import)", func() {
 
 		// Import.
 		rec = doRawG(e, http.MethodPost, "/api/v1/users/current/db/import?confirm=replace-all-data", token, archive)
-		Expect(rec.Code).To(Equal(http.StatusOK), "import: body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK), "import: body=%s", rec.Body.String())
 
 		var summary struct {
 			GooseVersion int64            `json:"gooseVersion"`
@@ -104,7 +104,7 @@ var _ = Describe("backup round-trip (export → mutate → import)", func() {
 
 		// The token used for the request was part of the dump, so it still works.
 		rec = doRawG(e, http.MethodGet, "/api/v1/users/current/db/export", token, nil)
-		Expect(rec.Code).To(Equal(http.StatusOK),
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK),
 			"token no longer valid after restoring its own backup: %d", rec.Code)
 	})
 })

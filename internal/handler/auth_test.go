@@ -44,7 +44,7 @@ func registerUserG(e http.Handler, hz *testutil.Harness, user, pw string) {
 		"username": user,
 		"password": pw,
 	})
-	Expect(rec.Code).To(Equal(http.StatusOK), "register %s: body=%s", user, rec.Body.String())
+	Expect(rec).To(testutil.HaveStatus(http.StatusOK), "register %s: body=%s", user, rec.Body.String())
 }
 
 // meanDurationG — mirror of the stdlib helper.
@@ -92,7 +92,7 @@ var _ = Describe("Register weak-password guard (gaka-e5e)", func() {
 				"username": username,
 				"password": password,
 			})
-			Expect(rec.Code).To(Equal(http.StatusBadRequest),
+			Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest),
 				"weak password %q: body=%s", password, rec.Body.String())
 
 			body := rec.Body.String()
@@ -131,7 +131,7 @@ var _ = Describe("Register strong-password path", func() {
 			"username": user,
 			"password": pw,
 		})
-		Expect(rec.Code).To(Equal(http.StatusOK), "strong register: body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK), "strong register: body=%s", rec.Body.String())
 
 		Expect(verifyLoginG(e, user, pw)).To(Equal(http.StatusOK),
 			"login with just-registered password should succeed")
@@ -150,7 +150,7 @@ var _ = Describe("Login body-size cap (gaka-bi2)", func() {
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
 
-		Expect(rec.Code).To(Equal(http.StatusRequestEntityTooLarge),
+		Expect(rec).To(testutil.HaveStatus(http.StatusRequestEntityTooLarge),
 			"403 would prove sentinel/argon2 ran on payload — DoS amplifier open. body=%s", rec.Body.String())
 		Expect(rec.Body.String()).To(ContainSubstring("payload too large"))
 	})
@@ -168,7 +168,7 @@ var _ = Describe("Register body-size cap (gaka-bi2)", func() {
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
 
-		Expect(rec.Code).To(Equal(http.StatusRequestEntityTooLarge),
+		Expect(rec).To(testutil.HaveStatus(http.StatusRequestEntityTooLarge),
 			"Any other status proves argon2 ran on payload. body=%s", rec.Body.String())
 	})
 })
@@ -198,7 +198,7 @@ var _ = Describe("Login constant-time (gaka-imm)", func() {
 				"password": "whatever-plaintext",
 			})
 			invalidUserTimes[i] = time.Since(start)
-			Expect(rec.Code).To(Equal(http.StatusForbidden))
+			Expect(rec).To(testutil.HaveStatus(http.StatusForbidden))
 			invalidBody = rec.Body.String()
 		}
 		for i := 0; i < N; i++ {
@@ -208,7 +208,7 @@ var _ = Describe("Login constant-time (gaka-imm)", func() {
 				"password": "wrong-password-xyz",
 			})
 			wrongPwTimes[i] = time.Since(start)
-			Expect(rec.Code).To(Equal(http.StatusForbidden))
+			Expect(rec).To(testutil.HaveStatus(http.StatusForbidden))
 			wrongPwBody = rec.Body.String()
 		}
 
@@ -245,7 +245,7 @@ var _ = Describe("Login cookies (gaka-b5x.1)", func() {
 		rec := doJSONReqG(e, http.MethodPost, "/auth/login", "", map[string]string{
 			"username": user, "password": pw,
 		})
-		Expect(rec.Code).To(Equal(http.StatusOK), "body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
 
 		setCookie := rec.Header().Get("Set-Cookie")
 		Expect(setCookie).To(ContainSubstring("refresh_token="))
@@ -266,7 +266,7 @@ var _ = Describe("Login cookies (gaka-b5x.1)", func() {
 		rec := doJSONReqG(e, http.MethodPost, "/auth/login", "", map[string]string{
 			"username": user, "password": pw,
 		})
-		Expect(rec.Code).To(Equal(http.StatusOK), "body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
 
 		setCookie := rec.Header().Get("Set-Cookie")
 		Expect(setCookie).NotTo(ContainSubstring("Secure"),
@@ -436,7 +436,7 @@ var _ = Describe("Login argon2 transparent rehash (gaka-awh.6)", func() {
 		rec := doJSONReqG(e, http.MethodPost, "/auth/login", "", map[string]string{
 			"username": user, "password": pw,
 		})
-		Expect(rec.Code).To(Equal(http.StatusOK), "legacy user login: body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK), "legacy user login: body=%s", rec.Body.String())
 
 		postHash, postVer := readUserRowG(hz, user)
 		Expect(postVer).To(Equal(auth.ArgonVersionCurrent),
@@ -448,7 +448,7 @@ var _ = Describe("Login argon2 transparent rehash (gaka-awh.6)", func() {
 		rec = doJSONReqG(e, http.MethodPost, "/auth/login", "", map[string]string{
 			"username": user, "password": pw,
 		})
-		Expect(rec.Code).To(Equal(http.StatusOK), "second login: body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK), "second login: body=%s", rec.Body.String())
 		post2Hash, post2Ver := readUserRowG(hz, user)
 		Expect(post2Ver).To(Equal(auth.ArgonVersionCurrent))
 		Expect(bytes.Equal(postHash, post2Hash)).To(BeTrue(),
@@ -467,7 +467,7 @@ var _ = Describe("Login argon2 transparent rehash (gaka-awh.6)", func() {
 		rec := doJSONReqG(e, http.MethodPost, "/auth/login", "", map[string]string{
 			"username": user, "password": "not-the-password",
 		})
-		Expect(rec.Code).To(Equal(http.StatusForbidden), "wrong password should 403")
+		Expect(rec).To(testutil.HaveStatus(http.StatusForbidden), "wrong password should 403")
 
 		postHash, postVer := readUserRowG(hz, user)
 		Expect(postVer).To(Equal(preVer), "argon_version changed on unauthenticated request")
@@ -488,7 +488,7 @@ var _ = Describe("Register argon2 version (gaka-awh.6)", func() {
 		rec := doJSONReqG(e, http.MethodPost, "/auth/register", "", map[string]string{
 			"username": user, "password": pw,
 		})
-		Expect(rec.Code).To(Equal(http.StatusOK), "register: body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK), "register: body=%s", rec.Body.String())
 
 		_, ver := readUserRowG(hz, user)
 		Expect(ver).To(Equal(auth.ArgonVersionCurrent),
@@ -511,7 +511,7 @@ var _ = Describe("ChangePassword argon2 version (gaka-awh.6)", func() {
 		newPw := "bravoMedium2!"
 		rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/password", token,
 			map[string]string{"currentPassword": pw, "newPassword": newPw})
-		Expect(rec.Code).To(Equal(http.StatusNoContent), "change password: body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusNoContent), "change password: body=%s", rec.Body.String())
 
 		_, ver := readUserRowG(hz, user)
 		Expect(ver).To(Equal(auth.ArgonVersionCurrent),

@@ -29,7 +29,7 @@ var _ = Describe("public profile cache headers (gaka-6jm.12)", func() {
 			"enabled": true,
 			"slug":    slug,
 		})
-		Expect(rec.Code).To(Equal(http.StatusOK), "PUT profile: body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK), "PUT profile: body=%s", rec.Body.String())
 
 		// Hit the public route.
 		req := httptest.NewRequest(http.MethodGet, "/api/public/profile/"+slug, nil)
@@ -75,7 +75,7 @@ var _ = Describe("PutPublicProfile body-size cap (gaka-bi2)", func() {
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
 
-		Expect(rec.Code).To(Equal(http.StatusRequestEntityTooLarge),
+		Expect(rec).To(testutil.HaveStatus(http.StatusRequestEntityTooLarge),
 			"400 would prove the slug regex ran on the payload — cap should fire first. body=%s",
 			rec.Body.String())
 	})

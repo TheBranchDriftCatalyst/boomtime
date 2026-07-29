@@ -52,7 +52,7 @@ var _ = Describe("Avatar SynthesizePrompt (gaka-9v4)", func() {
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
 
-		Expect(rec.Code).To(Equal(http.StatusForbidden),
+		Expect(rec).To(testutil.HaveStatus(http.StatusForbidden),
 			"synthesize-prompt as non-admin: body=%s", rec.Body.String())
 	})
 
@@ -69,7 +69,7 @@ var _ = Describe("Avatar SynthesizePrompt (gaka-9v4)", func() {
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
 
-		Expect(rec.Code).To(Equal(http.StatusServiceUnavailable),
+		Expect(rec).To(testutil.HaveStatus(http.StatusServiceUnavailable),
 			"synthesize-prompt with no LLM key: body=%s", rec.Body.String())
 		Expect(rec.Body.String()).To(ContainSubstring("LLM"))
 	})
@@ -88,7 +88,7 @@ var _ = Describe("Avatar Regenerate (gaka-9v4)", func() {
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
 
-		Expect(rec.Code).To(Equal(http.StatusServiceUnavailable),
+		Expect(rec).To(testutil.HaveStatus(http.StatusServiceUnavailable),
 			"regenerate with no shim: body=%s", rec.Body.String())
 	})
 
@@ -106,7 +106,7 @@ var _ = Describe("Avatar Regenerate (gaka-9v4)", func() {
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
 
-		Expect(rec.Code).To(Equal(http.StatusBadRequest),
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest),
 			"regenerate with empty prompt: body=%s", rec.Body.String())
 	})
 })
@@ -122,14 +122,14 @@ var _ = Describe("Avatar PublicGet (gaka-9v4)", func() {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/users/"+username+"/avatar", nil)
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
-		Expect(rec.Code).To(Equal(http.StatusNotFound), "no row: body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusNotFound), "no row: body=%s", rec.Body.String())
 
 		// (2) status=running → still 404.
 		Expect(hz.DB.SetAvatarStatus(ctx, username, db.UserAvatarStatusRunning, "")).To(Succeed())
 		req = httptest.NewRequest(http.MethodGet, "/api/v1/users/"+username+"/avatar", nil)
 		rec = httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
-		Expect(rec.Code).To(Equal(http.StatusNotFound), "running: body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusNotFound), "running: body=%s", rec.Body.String())
 
 		// (3) status=ready with bytes → 200, correct content-type, bytes match.
 		img := []byte("\x89PNG\r\n\x1a\nchibi-bytes-g")
@@ -137,7 +137,7 @@ var _ = Describe("Avatar PublicGet (gaka-9v4)", func() {
 		req = httptest.NewRequest(http.MethodGet, "/api/v1/users/"+username+"/avatar", nil)
 		rec = httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
-		Expect(rec.Code).To(Equal(http.StatusOK), "ready: body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK), "ready: body=%s", rec.Body.String())
 		Expect(rec.Header().Get("Content-Type")).To(Equal("image/png"))
 		Expect(rec.Body.String()).To(Equal(string(img)))
 		Expect(rec.Header().Get("Cache-Control")).To(ContainSubstring("max-age="))
@@ -155,7 +155,7 @@ var _ = Describe("Avatar Status (gaka-9v4)", func() {
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
 
-		Expect(rec.Code).To(Equal(http.StatusOK), "status/no-row: body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK), "status/no-row: body=%s", rec.Body.String())
 		var got map[string]any
 		Expect(json.Unmarshal(rec.Body.Bytes(), &got)).To(Succeed(), "body=%s", rec.Body.String())
 		Expect(got["status"]).To(Equal("none"), "full=%v", got)

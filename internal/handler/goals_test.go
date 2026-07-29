@@ -43,7 +43,7 @@ func createGoalG(e http.Handler, token, name, spec string) string {
 		"name": name,
 		"spec": json.RawMessage(spec),
 	})
-	Expect(rec.Code).To(Equal(http.StatusOK), "create goal %q: body=%s", name, rec.Body.String())
+	Expect(rec).To(testutil.HaveStatus(http.StatusOK), "create goal %q: body=%s", name, rec.Body.String())
 	var env struct {
 		Goal struct {
 			ID string `json:"id"`
@@ -168,7 +168,7 @@ var _ = Describe("goals owner scoping (no oracle)", func() {
 		}
 		for _, c := range cases {
 			rec := doJSONReqG(e, c.method, c.path, aliceTok, c.body)
-			Expect(rec.Code).To(Equal(http.StatusNotFound),
+			Expect(rec).To(testutil.HaveStatus(http.StatusNotFound),
 				"%s %s (alice on bob's id): got %d body=%s — want 404 (no oracle)",
 				c.method, c.path, rec.Code, rec.Body.String())
 		}
@@ -190,7 +190,7 @@ var _ = Describe("goals validation (ValidateSpec branches)", func() {
 				"name": "n_reject",
 				"spec": json.RawMessage(spec),
 			})
-			Expect(rec.Code).To(Equal(http.StatusBadRequest), "body=%s", rec.Body.String())
+			Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest))
 		},
 		Entry("unknown kind", `{"kind":"stapler"}`),
 		Entry("unknown axis", `{"kind":"time","axis":"chickens","op":">=","target_seconds":1,"window":"week"}`),
@@ -217,7 +217,7 @@ var _ = Describe("goals validation extras (all branches)", func() {
 				"name": "vr_full",
 				"spec": json.RawMessage(spec),
 			})
-			Expect(rec.Code).To(Equal(http.StatusBadRequest), "body=%s", rec.Body.String())
+			Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest))
 			Expect(len(rec.Body.String())).To(BeNumerically(">=", 5),
 				"body too short (no error hint): %q", rec.Body.String())
 		},
@@ -477,7 +477,7 @@ var _ = Describe("goals batched progress", func() {
 		bID := createGoalG(e, bobTok, "b-batch-g", weeklyGoSpecG)
 
 		rec := doJSONReqG(e, http.MethodGet, "/api/v1/users/current/goals/progress", aliceTok, nil)
-		Expect(rec.Code).To(Equal(http.StatusOK), "body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
 
 		var env struct {
 			Progress map[string]any `json:"progress"`
@@ -500,7 +500,7 @@ var _ = Describe("goals toggle endpoint", func() {
 
 		// Flip 1: no body, expect enabled=false.
 		rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/goals/"+id+"/toggle", token, nil)
-		Expect(rec.Code).To(Equal(http.StatusOK), "flip 1: body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK), "flip 1: body=%s", rec.Body.String())
 		var env struct {
 			Enabled bool `json:"enabled"`
 		}
@@ -548,18 +548,18 @@ var _ = Describe("goals create guards (shape-level)", func() {
 			"name": "",
 			"spec": json.RawMessage(weeklyGoSpecG),
 		})
-		Expect(rec.Code).To(Equal(http.StatusBadRequest), "empty name: body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest), "empty name: body=%s", rec.Body.String())
 
 		rec = doJSONReqG(e, http.MethodPost, "/api/v1/users/current/goals", token, map[string]any{
 			"name": "   ",
 			"spec": json.RawMessage(weeklyGoSpecG),
 		})
-		Expect(rec.Code).To(Equal(http.StatusBadRequest), "whitespace: body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest), "whitespace: body=%s", rec.Body.String())
 
 		rec = doJSONReqG(e, http.MethodPost, "/api/v1/users/current/goals", token, map[string]any{
 			"name": "no-spec-g",
 		})
-		Expect(rec.Code).To(Equal(http.StatusBadRequest), "missing spec: body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest), "missing spec: body=%s", rec.Body.String())
 	})
 })
 
@@ -574,17 +574,17 @@ var _ = Describe("goals PATCH guards", func() {
 		rec := doJSONReqG(e, http.MethodPatch, "/api/v1/users/current/goals/"+id, token, map[string]any{
 			"spec": json.RawMessage(`{"kind":"time","axis":"CHICKEN","op":">=","target_seconds":1,"window":"week"}`),
 		})
-		Expect(rec.Code).To(Equal(http.StatusBadRequest), "bad spec: body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest), "bad spec: body=%s", rec.Body.String())
 
 		rec = doJSONReqG(e, http.MethodPatch, "/api/v1/users/current/goals/"+id, token, map[string]any{
 			"name": "   ",
 		})
-		Expect(rec.Code).To(Equal(http.StatusBadRequest), "empty name: body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest), "empty name: body=%s", rec.Body.String())
 
 		rec = doJSONReqG(e, http.MethodPatch, "/api/v1/users/current/goals/"+id, token, map[string]any{
 			"name": "renamed-g",
 		})
-		Expect(rec.Code).To(Equal(http.StatusOK), "valid rename: body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK), "valid rename: body=%s", rec.Body.String())
 
 		getRec := doJSONReqG(e, http.MethodGet, "/api/v1/users/current/goals/"+id, token, nil)
 		var got struct {
@@ -609,7 +609,7 @@ var _ = Describe("goals rename collision", func() {
 		rec := doJSONReqG(e, http.MethodPatch, "/api/v1/users/current/goals/"+id2, token, map[string]any{
 			"name": "existing-name-g",
 		})
-		Expect(rec.Code).To(Equal(http.StatusConflict), "body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusConflict))
 	})
 })
 

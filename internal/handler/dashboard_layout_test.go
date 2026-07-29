@@ -54,7 +54,7 @@ var _ = Describe("dashboard layout (gaka-keb)", func() {
 		req.Header.Set("Authorization", "Basic "+token)
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
-		Expect(rec.Code).To(Equal(http.StatusOK), "PUT: body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK), "PUT: body=%s", rec.Body.String())
 
 		req2 := httptest.NewRequest(http.MethodGet, "/api/v1/users/current/dashboard/public_profile", nil)
 		req2.Header.Set("Authorization", "Basic "+token)
@@ -102,7 +102,7 @@ var _ = Describe("dashboard layout (gaka-keb)", func() {
 		req.Header.Set("Authorization", "Basic "+token)
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
-		Expect(rec.Code).To(Equal(http.StatusBadRequest), "PUT unknown scope: got %d", rec.Code)
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest), "PUT unknown scope: got %d", rec.Code)
 
 		req2 := httptest.NewRequest(http.MethodGet, "/api/v1/users/current/dashboard/overview", nil)
 		req2.Header.Set("Authorization", "Basic "+token)
@@ -120,7 +120,7 @@ var _ = Describe("dashboard layout (gaka-keb)", func() {
 		req.Header.Set("Authorization", "Basic "+token)
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
-		Expect(rec.Code).To(Equal(http.StatusNotFound),
+		Expect(rec).To(testutil.HaveStatus(http.StatusNotFound),
 			"FE default-layout path relies on 404 for unset layouts; got %d", rec.Code)
 	})
 
@@ -137,7 +137,7 @@ var _ = Describe("dashboard layout (gaka-keb)", func() {
 		req.Header.Set("Authorization", "Basic "+token)
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
-		Expect(rec.Code).To(Equal(http.StatusRequestEntityTooLarge),
+		Expect(rec).To(testutil.HaveStatus(http.StatusRequestEntityTooLarge),
 			"200 would prove the cap didn't fire and the row was written")
 	})
 })
@@ -152,7 +152,7 @@ var _ = Describe("public profile layout inlining", func() {
 		rec := doJSONReqG(e, http.MethodPut, "/api/v1/users/current/profile", token, map[string]any{
 			"enabled": true, "slug": slug,
 		})
-		Expect(rec.Code).To(Equal(http.StatusOK), "PUT profile: body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK), "PUT profile: body=%s", rec.Body.String())
 
 		inner := `{"cols":12,"widgets":[{"i":"grade-badge","x":0,"y":0,"w":3,"h":3,"view":null}]}`
 		body := []byte(`{"layout":` + inner + `}`)
@@ -185,7 +185,7 @@ var _ = Describe("public profile layout inlining", func() {
 		rec := doJSONReqG(e, http.MethodPut, "/api/v1/users/current/profile", token, map[string]any{
 			"enabled": true, "slug": slug,
 		})
-		Expect(rec.Code).To(Equal(http.StatusOK), "PUT profile: body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK), "PUT profile: body=%s", rec.Body.String())
 
 		req := httptest.NewRequest(http.MethodGet, "/api/public/profile/"+slug, nil)
 		rr := httptest.NewRecorder()

@@ -93,7 +93,7 @@ var _ = Describe("Stats HTTP", func() {
 		rec := doG(e, http.MethodGet,
 			"/api/v1/users/current/stats?start="+url.QueryEscape(start)+"&end="+url.QueryEscape(end),
 			token, nil)
-		Expect(rec.Code).To(Equal(http.StatusOK), "body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
 		var p statsPayloadG
 		decodeG(rec, &p)
 		got := p.projSeconds()
@@ -106,7 +106,7 @@ var _ = Describe("Stats HTTP", func() {
 		hz := testutil.NewHarness(GinkgoTB())
 		e := hz.Router()
 		rec := doG(e, http.MethodGet, "/api/v1/users/current/stats", "", nil)
-		Expect(rec.Code).To(Equal(http.StatusBadRequest))
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest))
 	})
 })
 
@@ -132,7 +132,7 @@ var _ = Describe("Curation HTTP", func() {
 		rec := doG(e, http.MethodPost, "/api/v1/users/current/curation", token, map[string]any{
 			"axis": "project", "action": "hide", "matchType": "exact", "matchValue": "secret",
 		})
-		Expect(rec.Code).To(Equal(http.StatusOK), "body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
 
 		var after statsPayloadG
 		decodeG(doG(e, http.MethodGet, statsURL, token, nil), &after)
@@ -160,7 +160,7 @@ var _ = Describe("Curation HTTP", func() {
 			"axis": "project", "action": "rename", "matchType": "exact",
 			"matchValue": "web-old", "newValue": newVal,
 		})
-		Expect(rec.Code).To(Equal(http.StatusOK), "body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
 		var created struct {
 			Rule struct{ ID int } `json:"rule"`
 		}
@@ -201,7 +201,7 @@ var _ = Describe("Curation HTTP", func() {
 			"axis": "project", "action": "rename", "matchType": "regex",
 			"matchValue": "^svc-", "newValue": svc,
 		})
-		Expect(rec.Code).To(Equal(http.StatusOK), "body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
 
 		statsURL := "/api/v1/users/current/stats?start=" + url.QueryEscape(start) + "&end=" + url.QueryEscape(end)
 		var sp statsPayloadG
@@ -238,11 +238,11 @@ var _ = Describe("Curation HTTP", func() {
 			"axis": "project", "action": "rename", "matchType": "exact",
 			"matchValue": "api-old", "newValue": newVal,
 		})
-		Expect(rec.Code).To(Equal(http.StatusOK), "body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
 
 		q := "?start=" + url.QueryEscape(start) + "&end=" + url.QueryEscape(end)
 		rec = doG(e, http.MethodGet, "/api/v1/users/current/projects/api"+q, token, nil)
-		Expect(rec.Code).To(Equal(http.StatusOK),
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK),
 			"display name 'api' should resolve; body=%s", rec.Body.String())
 
 		rrec := doG(e, http.MethodGet, "/api/v1/users/current/projects/api-old"+q, token, nil)
@@ -268,7 +268,7 @@ var _ = Describe("Curation HTTP", func() {
 			"axis": "project", "action": "rename", "matchType": "template",
 			"matchValue": "^@(.*)$", "newValue": "$1",
 		})
-		Expect(rec.Code).To(Equal(http.StatusOK), "body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
 		var created struct {
 			Rule struct {
 				ID       int    `json:"id"`
@@ -314,7 +314,7 @@ var _ = Describe("Curation HTTP", func() {
 			"axis": "project", "action": "rename", "matchType": "template",
 			"matchValue": "^@(.*)$", "newValue": `\9`,
 		})
-		Expect(rec.Code).To(Equal(http.StatusBadRequest),
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest),
 			"impossible backref should be 400; body=%s", rec.Body.String())
 
 		rec2 := doG(e, http.MethodPost, "/api/v1/users/current/curation", token, map[string]any{
@@ -390,7 +390,7 @@ var _ = Describe("Auth HTTP", func() {
 		// Register → 200 + refresh cookie
 		rec := doG(e, http.MethodPost, "/auth/register", "",
 			map[string]any{"username": username, "password": password})
-		Expect(rec.Code).To(Equal(http.StatusOK), "register body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK), "register body=%s", rec.Body.String())
 		refreshCookie := extractRefreshCookieG(rec)
 		Expect(refreshCookie).NotTo(BeEmpty(), "register should set a refresh_token cookie")
 
@@ -437,7 +437,7 @@ var _ = Describe("Files HTTP", func() {
 		rec := doG(e, http.MethodGet,
 			"/api/v1/users/current/files?start="+url.QueryEscape(start)+"&end="+url.QueryEscape(end),
 			token, nil)
-		Expect(rec.Code).To(Equal(http.StatusOK), "body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
 
 		var af activeFilesRespG
 		decodeG(rec, &af)

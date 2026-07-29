@@ -74,7 +74,7 @@ var _ = Describe("OpenAPI Docs (Swagger UI)", func() {
 	It("serves index.html at the root path", func() {
 		req := httptest.NewRequest("GET", "/api/docs/", nil)
 		rec := recordForG(h, req)
-		Expect(rec.Code).To(Equal(http.StatusOK), "body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
 		Expect(rec.Header().Get("Content-Type")).To(HavePrefix("text/html"))
 		Expect(rec.Body.String()).To(ContainSubstring("swagger-ui"))
 	})
@@ -82,7 +82,7 @@ var _ = Describe("OpenAPI Docs (Swagger UI)", func() {
 	It("serves our own swagger-initializer.js pointing at /api/openapi.json", func() {
 		req := httptest.NewRequest("GET", "/api/docs/swagger-initializer.js", nil)
 		rec := recordForG(h, req)
-		Expect(rec.Code).To(Equal(http.StatusOK))
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
 		body := rec.Body.String()
 		Expect(body).To(ContainSubstring(`"/api/openapi.json"`))
 		Expect(body).NotTo(ContainSubstring("petstore.swagger.io"),
@@ -92,7 +92,7 @@ var _ = Describe("OpenAPI Docs (Swagger UI)", func() {
 	It("serves the vendored swagger-ui.css verbatim", func() {
 		req := httptest.NewRequest("GET", "/api/docs/swagger-ui.css", nil)
 		rec := recordForG(h, req)
-		Expect(rec.Code).To(Equal(http.StatusOK))
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
 	})
 })
 
@@ -112,7 +112,7 @@ var _ = Describe("OpenAPI Auth scheme matches harness", func() {
 			e := hz.Router()
 			_, token := hz.MintUser("openapi_auth")
 			rec := doG(e, "GET", p, token, nil)
-			Expect(rec.Code).To(Equal(http.StatusOK),
+			Expect(rec).To(testutil.HaveStatus(http.StatusOK),
 				"%s WITH token: status %d body=%s", p, rec.Code, rec.Body.String())
 		})
 		It("returns 400 WITHOUT the Authorization header on "+p, func() {
@@ -121,7 +121,7 @@ var _ = Describe("OpenAPI Auth scheme matches harness", func() {
 			// no MintUser required — the missing header is the point.
 			rec := doG(e, "GET", p, "", nil)
 			// Missing Authorization → apierr.MissingAuth() → 400.
-			Expect(rec.Code).To(Equal(http.StatusBadRequest),
+			Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest),
 				"%s WITHOUT auth header: status %d", p, rec.Code)
 		})
 	}

@@ -46,7 +46,7 @@ func mintTopLangsDefG(e http.Handler, token, name string) createDefRespG {
 	})
 	rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/widget-defs", token,
 		map[string]any{"name": name, "spec": json.RawMessage(spec)})
-	Expect(rec.Code).To(Equal(http.StatusOK), "create widget-def %q: body=%s", name, rec.Body.String())
+	Expect(rec).To(testutil.HaveStatus(http.StatusOK), "create widget-def %q: body=%s", name, rec.Body.String())
 	var out createDefRespG
 	Expect(json.Unmarshal(rec.Body.Bytes(), &out)).To(Succeed())
 	Expect(out.DefID).NotTo(BeEmpty(), "empty defId: %s", rec.Body.String())
@@ -61,7 +61,7 @@ func mintMomentumDefG(e http.Handler, token, name string) createDefRespG {
 	})
 	rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/widget-defs", token,
 		map[string]any{"name": name, "spec": json.RawMessage(spec)})
-	Expect(rec.Code).To(Equal(http.StatusOK), "create momentum def: body=%s", rec.Body.String())
+	Expect(rec).To(testutil.HaveStatus(http.StatusOK), "create momentum def: body=%s", rec.Body.String())
 	var out createDefRespG
 	Expect(json.Unmarshal(rec.Body.Bytes(), &out)).To(Succeed())
 	return out
@@ -74,7 +74,7 @@ func fetchDefSvgG(e http.Handler, defID string, params string) string {
 		target += "?" + params
 	}
 	rec := doJSONReqG(e, http.MethodGet, target, "", nil)
-	Expect(rec.Code).To(Equal(http.StatusOK), "fetch widget-def svg: body=%s", rec.Body.String())
+	Expect(rec).To(testutil.HaveStatus(http.StatusOK), "fetch widget-def svg: body=%s", rec.Body.String())
 	ct := rec.Header().Get("Content-Type")
 	Expect(strings.HasPrefix(ct, "image/svg+xml")).To(BeTrue(),
 		"Content-Type = %q, want image/svg+xml", ct)
@@ -176,7 +176,7 @@ var _ = Describe("RenderCustomWidget scope gate (v1 invariants)", func() {
 		// (1) Unknown def-id → 404.
 		rec := doJSONReqG(e, http.MethodGet,
 			"/widget/svg/00000000-0000-0000-0000-000000000000/named", "", nil)
-		Expect(rec.Code).To(Equal(http.StatusNotFound), "unknown def-id: body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusNotFound), "unknown def-id: body=%s", rec.Body.String())
 
 		// (2) Valid def renders even with an unrelated hide rule.
 		start := time.Now().UTC().Add(-24 * time.Hour).Truncate(time.Hour)

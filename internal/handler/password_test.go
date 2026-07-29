@@ -55,7 +55,7 @@ var _ = Describe("ChangePassword body-size cap (gaka-bi2)", func() {
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
 
-		Expect(rec.Code).To(Equal(http.StatusRequestEntityTooLarge),
+		Expect(rec).To(testutil.HaveStatus(http.StatusRequestEntityTooLarge),
 			"401 would prove argon2 ran on the payload — DoS amplifier not closed. body=%s",
 			rec.Body.String())
 		Expect(rec.Body.String()).To(ContainSubstring("payload too large"))
@@ -73,7 +73,7 @@ var _ = Describe("ChangePassword happy paths + validation", func() {
 			"currentPassword": "test1234",
 			"newPassword":     "test5678",
 		})
-		Expect(rec.Code).To(Equal(http.StatusNoContent), "body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusNoContent))
 	})
 
 	It("wrong current password → 401", func() {
@@ -85,7 +85,7 @@ var _ = Describe("ChangePassword happy paths + validation", func() {
 			"currentPassword": "not-my-password",
 			"newPassword":     "test5678",
 		})
-		Expect(rec.Code).To(Equal(http.StatusUnauthorized), "body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusUnauthorized))
 	})
 
 	It("weak new password → 400 for short / letters-only / digits-only", func() {
@@ -98,7 +98,7 @@ var _ = Describe("ChangePassword happy paths + validation", func() {
 				"currentPassword": "test1234",
 				"newPassword":     bad,
 			})
-			Expect(rec.Code).To(Equal(http.StatusBadRequest), "weak %q: body=%s", bad, rec.Body.String())
+			Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest), "weak %q: body=%s", bad, rec.Body.String())
 		}
 	})
 })
@@ -113,7 +113,7 @@ var _ = Describe("ChangePassword shared validator (gaka-0gu regression)", func()
 			"currentPassword": "test1234",
 			"newPassword":     "日本1a",
 		})
-		Expect(rec.Code).To(Equal(http.StatusBadRequest),
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest),
 			"A 204 here means ChangePassword regressed to inline byte-based check; body=%s", rec.Body.String())
 		Expect(rec.Body.String()).To(ContainSubstring(auth.ErrPasswordTooShort.Error()),
 			"missing shared sentinel — delegation may be broken")
@@ -128,7 +128,7 @@ var _ = Describe("ChangePassword shared validator (gaka-0gu regression)", func()
 			"currentPassword": "test1234",
 			"newPassword":     "abcdefgh",
 		})
-		Expect(rec.Code).To(Equal(http.StatusBadRequest), "body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest))
 		Expect(rec.Body.String()).To(ContainSubstring(auth.ErrPasswordNoDigit.Error()))
 	})
 })
@@ -151,7 +151,7 @@ var _ = Describe("ChangePassword happy-path invariants", func() {
 			"currentPassword": oldPassword,
 			"newPassword":     newPassword,
 		})
-		Expect(rec.Code).To(Equal(http.StatusNoContent), "happy path: body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusNoContent), "happy path: body=%s", rec.Body.String())
 
 		var n int
 		Expect(hz.DB.Pool.QueryRow(context.Background(),
@@ -183,7 +183,7 @@ var _ = Describe("ChangePassword access-token revocation (gaka-abo)", func() {
 			"currentPassword": password,
 			"newPassword":     "test5678",
 		})
-		Expect(rec.Code).To(Equal(http.StatusNoContent), "change password: body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusNoContent), "change password: body=%s", rec.Body.String())
 
 		// GUARANTEE 1: browser-2's OLD access token is dead.
 		post := doJSONReqG(e, http.MethodGet, "/api/v1/users/current/stats", browser2Token, nil)
@@ -221,7 +221,7 @@ var _ = Describe("ChangePassword atomicity on DB error", func() {
 			"currentPassword": oldPassword,
 			"newPassword":     "shouldnt-persist-9",
 		})
-		Expect(rec.Code).To(Equal(http.StatusInternalServerError),
+		Expect(rec).To(testutil.HaveStatus(http.StatusInternalServerError),
 			"forced-fault expected 500: body=%s", rec.Body.String())
 
 		// GUARANTEE 1: password unchanged.

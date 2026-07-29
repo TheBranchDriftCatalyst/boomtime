@@ -38,7 +38,7 @@ func mintWidgetLinkG(e http.Handler, token, scopeType, scopeRef string) widgetLi
 	rec := doG(e, "GET",
 		fmt.Sprintf("/api/v1/users/current/widgets/link?scopeType=%s&scopeRef=%s", scopeType, scopeRef),
 		token, nil)
-	Expect(rec.Code).To(Equal(http.StatusOK),
+	Expect(rec).To(testutil.HaveStatus(http.StatusOK),
 		"mint widget link: status %d body=%s", rec.Code, rec.Body.String())
 	var out widgetLinkRespG
 	decodeG(rec, &out)
@@ -69,7 +69,7 @@ var _ = Describe("Widget Links", func() {
 		rec := doG(e, "GET",
 			"/api/v1/users/current/widgets/link?scopeType=project&scopeRef=secret-proj",
 			tokenB, nil)
-		Expect(rec.Code).To(Equal(http.StatusNotFound), "cross-owner project mint")
+		Expect(rec).To(testutil.HaveStatus(http.StatusNotFound), "cross-owner project mint")
 
 		// A can.
 		mintWidgetLinkG(e, tokenA, "project", "secret-proj")
@@ -78,13 +78,13 @@ var _ = Describe("Widget Links", func() {
 		rec = doG(e, "GET",
 			"/api/v1/users/current/widgets/link?scopeType=galaxy&scopeRef=x",
 			tokenA, nil)
-		Expect(rec.Code).To(Equal(http.StatusBadRequest), "bad scopeType")
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest), "bad scopeType")
 
 		// Unknown space id → 404.
 		rec = doG(e, "GET",
 			"/api/v1/users/current/widgets/link?scopeType=space&scopeRef=999999",
 			tokenA, nil)
-		Expect(rec.Code).To(Equal(http.StatusNotFound), "unknown space mint")
+		Expect(rec).To(testutil.HaveStatus(http.StatusNotFound), "unknown space mint")
 	})
 
 	It("list returns exactly the one minted link (user-scope has empty scopeName)", func() {
@@ -163,21 +163,21 @@ var _ = Describe("Widget Links", func() {
 
 		// B cannot roll A's link.
 		rec := doG(e, "POST", "/api/v1/users/current/widgets/link/"+orig.LinkID+"/roll", tokenB, nil)
-		Expect(rec.Code).To(Equal(http.StatusNotFound), "cross-owner roll")
+		Expect(rec).To(testutil.HaveStatus(http.StatusNotFound), "cross-owner roll")
 
 		rec = doG(e, "POST", "/api/v1/users/current/widgets/link/"+orig.LinkID+"/roll", tokenA, nil)
-		Expect(rec.Code).To(Equal(http.StatusOK), "body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
 		var rolled widgetLinkRespG
 		decodeG(rec, &rolled)
 		Expect(rolled.LinkID).NotTo(Equal(orig.LinkID), "roll must mint a new uuid")
 
 		// Old id → 404 on the public endpoint.
 		rec = doG(e, "GET", "/widget/svg/"+orig.LinkID+"/stats-card", "", nil)
-		Expect(rec.Code).To(Equal(http.StatusNotFound), "old link post-roll")
+		Expect(rec).To(testutil.HaveStatus(http.StatusNotFound), "old link post-roll")
 
 		// New id → 200.
 		rec = doG(e, "GET", "/widget/svg/"+rolled.LinkID+"/stats-card", "", nil)
-		Expect(rec.Code).To(Equal(http.StatusOK), "new link post-roll")
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK), "new link post-roll")
 
 		// List still shows exactly one link, the new id.
 		var list struct {
@@ -209,7 +209,7 @@ var _ = Describe("Widget SVG", func() {
 			link := mintWidgetLinkG(e, token, "user", "")
 			rec := doG(e, "GET",
 				"/widget/svg/"+link.LinkID+"/"+kind+"?days=30&theme=dark", "", nil)
-			Expect(rec.Code).To(Equal(http.StatusOK), "body=%s", rec.Body.String())
+			Expect(rec).To(testutil.HaveStatus(http.StatusOK))
 			Expect(rec.Header().Get("Content-Type")).To(HavePrefix("image/svg+xml"))
 			Expect(rec.Header().Get("Cache-Control")).To(ContainSubstring("max-age=300"))
 			Expect(rec.Body.String()).To(ContainSubstring("<svg"))
@@ -244,14 +244,14 @@ var _ = Describe("Widget SVG", func() {
 		link := mintWidgetLinkG(e, token, "user", "")
 
 		rec := doG(e, "GET", "/widget/svg/not-a-uuid/stats-card", "", nil)
-		Expect(rec.Code).To(Equal(http.StatusBadRequest), "bad uuid")
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest), "bad uuid")
 
 		rec = doG(e, "GET",
 			"/widget/svg/00000000-0000-0000-0000-000000000000/stats-card", "", nil)
-		Expect(rec.Code).To(Equal(http.StatusNotFound), "unknown uuid")
+		Expect(rec).To(testutil.HaveStatus(http.StatusNotFound), "unknown uuid")
 
 		rec = doG(e, "GET", "/widget/svg/"+link.LinkID+"/not-a-kind", "", nil)
-		Expect(rec.Code).To(Equal(http.StatusNotFound), "unknown kind")
+		Expect(rec).To(testutil.HaveStatus(http.StatusNotFound), "unknown kind")
 	})
 
 	It("PRIVACY GATE: a curation-hidden language MUST NOT appear in the public SVG", func() {
@@ -291,7 +291,7 @@ var _ = Describe("Widget SVG", func() {
 		for _, days := range []string{"0", "-5", "99999", "abc"} {
 			rec := doG(e, "GET",
 				"/widget/svg/"+link.LinkID+"/stats-card?days="+days, "", nil)
-			Expect(rec.Code).To(Equal(http.StatusOK),
+			Expect(rec).To(testutil.HaveStatus(http.StatusOK),
 				"days=%s should clamp; status %d", days, rec.Code)
 		}
 	})

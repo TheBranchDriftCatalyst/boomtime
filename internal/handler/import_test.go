@@ -65,7 +65,7 @@ var _ = Describe("ImportRequest (gaka-6jm.8)", func() {
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
 
-		Expect(rec.Code).To(Equal(http.StatusOK), "import submit: body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK), "import submit: body=%s", rec.Body.String())
 
 		// LOAD-BEARING: the handler must NOT have written the ciphertext eagerly.
 		_, has, err = hz.DB.GetEncryptedWakatimeKey(context.Background(), user)

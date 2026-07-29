@@ -34,7 +34,7 @@ var _ = Describe("LabelImage (gaka-myv)", func() {
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
 
-		Expect(rec.Code).To(Equal(http.StatusOK), "body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
 		Expect(rec.Header().Get("Content-Type")).To(Equal("image/png"))
 		Expect(rec.Header().Get("Cache-Control")).To(Equal("public, max-age=31536000, immutable"),
 			"regenerate cache-bust contract expects the exact envelope")
@@ -49,7 +49,7 @@ var _ = Describe("LabelImage (gaka-myv)", func() {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/labels/no-such-label-xyz-g/image", nil)
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
-		Expect(rec.Code).To(Equal(http.StatusNotFound), "body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusNotFound))
 	})
 
 	It("ignores the ?v=<epoch> cache-bust parameter — same bytes served either way", func() {
@@ -65,7 +65,7 @@ var _ = Describe("LabelImage (gaka-myv)", func() {
 			req := httptest.NewRequest(http.MethodGet, "/api/v1/labels/"+id+"/image"+v, nil)
 			rec := httptest.NewRecorder()
 			e.ServeHTTP(rec, req)
-			Expect(rec.Code).To(Equal(http.StatusOK), "v=%q body=%s", v, rec.Body.String())
+			Expect(rec).To(testutil.HaveStatus(http.StatusOK), "v=%q body=%s", v, rec.Body.String())
 			got, _ := io.ReadAll(rec.Body)
 			Expect(got).To(Equal(body), "v=%q bytes changed", v)
 		}

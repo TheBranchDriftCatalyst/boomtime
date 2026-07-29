@@ -118,7 +118,7 @@ var _ = Describe("OwnAwards (gaka-hc6.3)", func() {
 		before := countLedgerG(hz, user)
 
 		rec := getJSONG(e, "/api/v1/users/current/awards", token)
-		Expect(rec.Code).To(Equal(http.StatusOK), "body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
 
 		var awards []map[string]any
 		Expect(json.Unmarshal(rec.Body.Bytes(), &awards)).To(Succeed(), "body=%s", rec.Body.String())
@@ -146,7 +146,7 @@ var _ = Describe("PublicAwards (gaka-hc6.3)", func() {
 		before := countLedgerG(hz, user)
 
 		rec := getJSONG(e, "/api/public/profile/awardsgtestslug/awards", "")
-		Expect(rec.Code).To(Equal(http.StatusOK), "body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
 
 		var awards []map[string]any
 		Expect(json.Unmarshal(rec.Body.Bytes(), &awards)).To(Succeed())
@@ -168,7 +168,7 @@ var _ = Describe("PublicAwards (gaka-hc6.3)", func() {
 		seedPythonFiveHoursG(hz, user)
 
 		rec := getJSONG(e, "/api/public/profile/nonexistent-slug-g/awards", "")
-		Expect(rec.Code).To(Equal(http.StatusNotFound))
+		Expect(rec).To(testutil.HaveStatus(http.StatusNotFound))
 	})
 })
 
@@ -197,7 +197,7 @@ var _ = Describe("AwardsBackfill (gaka-hc6.5.1)", func() {
 		before := countLedgerG(hz, user)
 
 		rec := doPostJSONG(e, "/api/v1/users/current/awards/backfill", token, map[string]any{"days": 5})
-		Expect(rec.Code).To(Equal(http.StatusOK), "body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
 
 		var resp struct {
 			DaysProcessed int `json:"daysProcessed"`
@@ -230,13 +230,13 @@ var _ = Describe("AwardsBackfill (gaka-hc6.5.1)", func() {
 		_, token := hz.MintUser("awardsbad_g")
 
 		rec := doPostJSONG(e, "/api/v1/users/current/awards/backfill", token, map[string]any{"days": 0})
-		Expect(rec.Code).To(Equal(http.StatusBadRequest), "days=0 got %d", rec.Code)
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest), "days=0 got %d", rec.Code)
 
 		rec = doPostJSONG(e, "/api/v1/users/current/awards/backfill", token, map[string]any{"days": -5})
-		Expect(rec.Code).To(Equal(http.StatusBadRequest), "days=-5 got %d", rec.Code)
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest), "days=-5 got %d", rec.Code)
 
 		rec = doPostJSONG(e, "/api/v1/users/current/awards/backfill", token, map[string]any{"days": 1000})
-		Expect(rec.Code).To(Equal(http.StatusOK),
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK),
 			"days=1000 should clamp to 200: body=%s", rec.Body.String())
 	})
 })
