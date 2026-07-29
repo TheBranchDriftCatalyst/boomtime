@@ -195,6 +195,11 @@ export const qk = {
     slug
       ? (["awards", "streaks", "public", slug] as const)
       : (["awards", "streaks", "own"] as const),
+  // Ledger inspector on the admin labels tab (gaka-mwp-streaks). Own only.
+  awardLedger: (label?: string) =>
+    label
+      ? (["awards", "ledger", "own", label] as const)
+      : (["awards", "ledger", "own"] as const),
 
   // gaka-vh8: git-history backfill config + stats. Both are per-user
   // and admin-only; separate keys because a config save and a batch

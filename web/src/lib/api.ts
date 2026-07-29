@@ -966,6 +966,26 @@ export const api = {
     ),
   getAwardStreaks: () =>
     request<Record<string, number>>("/api/v1/users/current/awards/streaks"),
+  /** Debug inspector — full ledger rows for the caller (paginated by
+   *  `limit`, default 500). Optionally scoped to a single labelId. */
+  getAwardLedger: (opts: { label?: string; limit?: number } = {}) =>
+    request<{
+      rows: Array<{
+        labelId: string;
+        labelName: string;
+        kind: string;
+        periodType: "daily" | "weekly" | "monthly";
+        periodStart: string;
+        periodEnd: string;
+        loggedAt: string;
+      }>;
+      limit: number;
+    }>("/api/v1/users/current/awards/ledger", {
+      params: {
+        ...(opts.label ? { label: opts.label } : {}),
+        ...(opts.limit ? { limit: opts.limit } : {}),
+      },
+    }),
   getPublicAwardStreaks: (slug: string) =>
     request<Record<string, number>>(
       `/api/public/profile/${encodeURIComponent(slug)}/awards/streaks`,

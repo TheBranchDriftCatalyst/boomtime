@@ -748,6 +748,9 @@ export function AdminTab() {
         </div>
       </section>
 
+      {/* --- LEDGER INSPECTOR (gaka-mwp-streaks) ---------------------------- */}
+      <AwardLedgerInspector />
+
       {/* --- STREAK BACKFILL (gaka-mwp-streaks) ----------------------------- */}
       <StreakBackfillSection />
 
@@ -1271,6 +1274,184 @@ function LabelEditSheet({ row, onClose, onSaved, onRegen, canRegen, generatedAt 
         )}
       </ResizableSheetContent>
     </Sheet>
+  );
+}
+
+// ---- ledger inspector (gaka-mwp-streaks) ----------------------------------
+//
+// Read-only debug view of the award_ledger table for the caller. Groups
+// rows by label (with count + current streak from the /streaks endpoint)
+// and lets an operator drill into a specific label's period rows. Powered
+// by GET /api/v1/users/current/awards/ledger — no writes.
+
+function AwardLedgerInspector() {
+  const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
+  const streaks = useQuery({
+    queryKey: qk.awardStreaks(),
+    queryFn: () => api.getAwardStreaks(),
+    staleTime: 60_000,
+  });
+  const ledger = useQuery({
+    queryKey: qk.awardLedger(selectedLabel ?? undefined),
+    queryFn: () =>
+      api.getAwardLedger(selectedLabel ? { label: selectedLabel, limit: 200 } : { limit: 500 }),
+    staleTime: 30_000,
+  });
+
+  // Group rows by labelId → count + latest period, for the summary table.
+  const summary = useMemo(() => {
+    const rows = ledger.data?.rows ?? [];
+    const byLabel = new Map<
+      string,
+      { name: string; kind: string; count: number; latest: string; periodType: string }
+    >();
+    for (const r of rows) {
+      const cur = byLabel.get(r.labelId);
+      if (!cur) {
+        byLabel.set(r.labelId, {
+          name: r.labelName,
+          kind: r.kind,
+          count: 1,
+          latest: r.periodStart,
+          periodType: r.periodType,
+        });
+      } else {
+        cur.count++;
+        if (r.periodStart > cur.latest) cur.latest = r.periodStart;
+      }
+    }
+    return Array.from(byLabel.entries())
+      .map(([id, v]) => ({ id, ...v, streak: streaks.data?.[id] ?? 0 }))
+      .sort((a, b) => (b.streak - a.streak) || b.latest.localeCompare(a.latest));
+  }, [ledger.data, streaks.data]);
+
+  const totalRows = ledger.data?.rows.length ?? 0;
+
+  return (
+    <section className="rounded-md border border-border bg-card p-4">
+      <h2 className="font-mono text-sm font-semibold uppercase tracking-wider">
+        Award ledger inspector
+      </h2>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Read-only view of your persisted award history. Row count per
+        label + current streak, then click a label to see its individual
+        period rows. Powered by{" "}
+        <code className="font-mono text-[10px]">
+          GET /api/v1/users/current/awards/ledger
+        </code>
+        . No writes.
+      </p>
+
+      {totalRows === 0 && !ledger.isLoading && (
+        <p className="mt-3 text-xs text-muted-foreground">
+          No ledger rows yet — visit your profile to trigger the evaluator, or run the backfill tool below.
+        </p>
+      )}
+
+      {selectedLabel === null && summary.length > 0 && (
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[520px] border-collapse text-xs">
+            <thead>
+              <tr className="border-b border-border text-left uppercase tracking-wide text-muted-foreground">
+                <th className="py-2 pr-3 font-mono text-[10px]">Label</th>
+                <th className="py-2 pr-3 font-mono text-[10px]">Kind</th>
+                <th className="py-2 pr-3 font-mono text-[10px]">Period</th>
+                <th className="py-2 pr-3 font-mono text-[10px] tabular-nums">Rows</th>
+                <th className="py-2 pr-3 font-mono text-[10px] tabular-nums">Streak</th>
+                <th className="py-2 pr-3 font-mono text-[10px] tabular-nums">Latest period</th>
+              </tr>
+            </thead>
+            <tbody>
+              {summary.map((s) => (
+                <tr
+                  key={s.id}
+                  className="cursor-pointer border-b border-border/40 hover:bg-primary/5"
+                  onClick={() => setSelectedLabel(s.id)}
+                >
+                  <td className="py-1.5 pr-3 font-mono text-[11px] uppercase text-foreground">
+                    {s.name}
+                  </td>
+                  <td className="py-1.5 pr-3 font-mono text-[10px] uppercase text-muted-foreground">
+                    {s.kind || "—"}
+                  </td>
+                  <td className="py-1.5 pr-3 font-mono text-[10px] text-muted-foreground">
+                    {s.periodType}
+                  </td>
+                  <td className="py-1.5 pr-3 font-mono text-[11px] tabular-nums text-foreground">
+                    {s.count}
+                  </td>
+                  <td
+                    className={cn(
+                      "py-1.5 pr-3 font-mono text-[11px] tabular-nums",
+                      s.streak > 1 ? "text-amber-400" : "text-muted-foreground",
+                    )}
+                  >
+                    {s.streak > 0 ? `${s.streak}x` : "—"}
+                  </td>
+                  <td className="py-1.5 pr-3 font-mono text-[10px] tabular-nums text-muted-foreground">
+                    {s.latest.slice(0, 10)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="mt-2 text-[10px] text-muted-foreground">
+            {summary.length} labels · {totalRows} rows total (capped at 500 rows for the summary view)
+          </p>
+        </div>
+      )}
+
+      {selectedLabel !== null && (
+        <div className="mt-4 space-y-2">
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setSelectedLabel(null)}
+              title="Back to summary"
+            >
+              ← back
+            </Button>
+            <span className="font-mono text-xs uppercase tracking-wider text-primary">
+              {selectedLabel}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {ledger.data?.rows.length ?? 0} periods
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[480px] border-collapse text-xs">
+              <thead>
+                <tr className="border-b border-border text-left uppercase tracking-wide text-muted-foreground">
+                  <th className="py-2 pr-3 font-mono text-[10px]">Period start</th>
+                  <th className="py-2 pr-3 font-mono text-[10px]">Period end</th>
+                  <th className="py-2 pr-3 font-mono text-[10px]">Type</th>
+                  <th className="py-2 pr-3 font-mono text-[10px]">Logged at</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(ledger.data?.rows ?? []).map((r) => (
+                  <tr key={r.periodStart} className="border-b border-border/40">
+                    <td className="py-1.5 pr-3 font-mono text-[11px] tabular-nums text-foreground">
+                      {r.periodStart.slice(0, 10)}
+                    </td>
+                    <td className="py-1.5 pr-3 font-mono text-[10px] tabular-nums text-muted-foreground">
+                      {r.periodEnd.slice(0, 10)}
+                    </td>
+                    <td className="py-1.5 pr-3 font-mono text-[10px] text-muted-foreground">
+                      {r.periodType}
+                    </td>
+                    <td className="py-1.5 pr-3 font-mono text-[10px] tabular-nums text-muted-foreground">
+                      {new Date(r.loggedAt).toISOString().slice(0, 16).replace("T", " ")}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 

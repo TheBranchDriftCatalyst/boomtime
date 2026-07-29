@@ -120,6 +120,52 @@ func (h *Handler) PublicAwardsStreaks(c *echo.Context) error {
 	return h.awardsStreaksFor(c, owner)
 }
 
+// AwardsLedger: GET /api/v1/users/current/awards/ledger?label=<id>&limit=<n>
+// — inspector endpoint that returns the raw ledger rows (with label
+// name + kind joined in) for debug/admin viewing on the AdminTab.
+func (h *Handler) AwardsLedger(c *echo.Context) error {
+	_, owner, aerr := h.resolveUser(c)
+	if aerr != nil {
+		return respondErr(c, aerr)
+	}
+	label := c.QueryParam("label")
+	limit := 500
+	if s := c.QueryParam("limit"); s != "" {
+		if n, err := parsePositiveInt(s, 500); err == nil {
+			limit = n
+		}
+	}
+	rows, err := h.DB.ListAwardLedger(c.Request().Context(), owner, label, limit)
+	if err != nil {
+		return h.internalErr(c, "ledger query failed", err)
+	}
+	c.Response().Header().Set("Cache-Control", "private, max-age=30")
+	return c.JSON(http.StatusOK, map[string]any{
+		"rows":  rows,
+		"limit": limit,
+	})
+}
+
+// parsePositiveInt is a tiny query-param helper — parses `s` as a
+// positive int with an upper bound (`max`). Returns max on any parse
+// error so a bad ?limit=abc doesn't 400 the request.
+func parsePositiveInt(s string, max int) (int, error) {
+	var n int
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return max, nil
+		}
+		n = n*10 + int(r-'0')
+		if n > max {
+			return max, nil
+		}
+	}
+	if n <= 0 {
+		return max, nil
+	}
+	return n, nil
+}
+
 func (h *Handler) awardsStreaksFor(c *echo.Context, owner string) error {
 	tzName := h.resolveUserTZ(c.Request().Context(), owner)
 	loc, err := time.LoadLocation(tzName)

@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -158,6 +159,64 @@ ON CONFLICT (username, label_id, period_start) DO NOTHING`,
 		}
 	}
 	return written, nil
+}
+
+// LedgerRow is one persisted award record — the exact shape stored in
+// the award_ledger table, plus the label kind joined from labels for
+// FE grouping. Returned by the ledger-inspector endpoint.
+type LedgerRow struct {
+	LabelID     string    `json:"labelId"`
+	LabelName   string    `json:"labelName"`
+	Kind        string    `json:"kind"`
+	PeriodType  string    `json:"periodType"`
+	PeriodStart time.Time `json:"periodStart"`
+	PeriodEnd   time.Time `json:"periodEnd"`
+	LoggedAt    time.Time `json:"loggedAt"`
+}
+
+// ListAwardLedger returns ledger rows for one user, newest period first.
+// If labelID is non-empty, only rows for that label are returned; else
+// all labels for the user. Caps at `limit` (0 or negative → 500).
+// Joins labels to attach the display name + kind — FE consumers use
+// both for grouping and quick "what does this label represent" glance.
+func (d *DB) ListAwardLedger(ctx context.Context, username, labelID string, limit int) ([]LedgerRow, error) {
+	if limit <= 0 {
+		limit = 500
+	}
+	args := []any{username}
+	filter := ""
+	if labelID != "" {
+		filter = " AND al.label_id = $2"
+		args = append(args, labelID)
+	}
+	args = append(args, limit)
+	limitArg := "$" + fmt.Sprint(len(args))
+	rows, err := d.Pool.Query(ctx, `
+SELECT al.label_id,
+       COALESCE(l.label, al.label_id) AS label_name,
+       COALESCE(l.kind,  '') AS kind,
+       al.period_type,
+       al.period_start,
+       al.period_end,
+       al.logged_at
+FROM award_ledger al
+LEFT JOIN labels l ON l.id = al.label_id
+WHERE al.username = $1`+filter+`
+ORDER BY al.period_start DESC, al.label_id ASC
+LIMIT `+limitArg, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]LedgerRow, 0, 128)
+	for rows.Next() {
+		var r LedgerRow
+		if err := rows.Scan(&r.LabelID, &r.LabelName, &r.Kind, &r.PeriodType, &r.PeriodStart, &r.PeriodEnd, &r.LoggedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
 
 // LabelStreak reports one label's current streak length. StreakCount is

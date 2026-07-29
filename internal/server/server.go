@@ -307,6 +307,7 @@ func registerAuthRoutes(e *echo.Echo, h *handler.Handler) {
 	// profile viewers see the same badges.
 	e.POST("/api/v1/users/current/awards/log", h.AwardsLog)
 	e.GET("/api/v1/users/current/awards/streaks", h.AwardsStreaks)
+	e.GET("/api/v1/users/current/awards/ledger", h.AwardsLedger)
 	e.GET("/api/public/profile/:slug/awards/streaks", h.PublicAwardsStreaks)
 }
 
