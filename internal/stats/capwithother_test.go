@@ -1,6 +1,7 @@
 package stats
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
@@ -137,14 +138,15 @@ func TestCapWithOtherRespectsMembersCap(t *testing.T) {
 }
 
 // gaka-mwp-other: Other shouldn't dominate — if the default top-12 would leave
-// Other above 30%, grow topN until it drops below OR we hit resourceMaxN.
-func TestCapWithOtherGrowsToKeepOtherBelow30Pct(t *testing.T) {
-	// 30 entries, each 100s → grand total 3000. If we took the default top-12,
-	// Other = 18*100 = 1800, share = 60% (way above 30%). Adaptive N must grow.
+// Other above the ceiling, grow topN until it drops below OR we hit resourceMaxN.
+func TestCapWithOtherGrowsToKeepOtherBelowCeiling(t *testing.T) {
+	// 40 entries, each 100s → grand total 4000. If we took the default top-12,
+	// Other = 28*100 = 2800, share = 70% (way above ceiling). Adaptive N must
+	// grow. With ceiling = 25%, target otherSum ≤ 1000 → topN grows to 30.
 	var in []model.ResourceStats
-	for i := 0; i < 30; i++ {
+	for i := 0; i < 40; i++ {
 		in = append(in, model.ResourceStats{
-			Name:         "r" + string(rune('a'+i)),
+			Name:         fmt.Sprintf("r%02d", i),
 			TotalSeconds: 100,
 			TotalDaily:   []int64{0},
 			PctDaily:     []float64{0},
@@ -153,14 +155,14 @@ func TestCapWithOtherGrowsToKeepOtherBelow30Pct(t *testing.T) {
 	out := capWithOther(in)
 	other := out[len(out)-1]
 
-	// Sanity: Other's share must be ≤ 30% (or we exhausted the list).
+	// Sanity: Other's share must be ≤ ceiling (or we exhausted the list).
 	var total int64
 	for _, r := range in {
 		total += r.TotalSeconds
 	}
 	share := float64(other.TotalSeconds) / float64(total)
-	if share > 0.30001 {
-		t.Errorf("Other share = %.3f, want ≤ 0.30", share)
+	if share > 0.25001 {
+		t.Errorf("Other share = %.3f, want ≤ 0.25", share)
 	}
 	// Sanity: at least resourceTopN entries kept (minimum floor).
 	if len(out)-1 < 12 {

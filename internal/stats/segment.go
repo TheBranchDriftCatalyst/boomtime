@@ -236,12 +236,17 @@ const resourceTopN = 12
 // we accept the domination — better than 100 slices with unreadable labels.
 const resourceMaxN = 40
 
-// otherMaxShare (30%) is the ceiling on Other's share of the total. When
+// otherMaxShare (25%) is the ceiling on Other's share of the total. When
 // the default top-12 leaves Other above this, we grow N until Other drops
 // below the threshold (or we hit resourceMaxN). Prevents "Other" from
 // visually overshadowing every real entry in a pie/bar chart when the
 // user has a long tail of small-but-real values. gaka-mwp-other.
-const otherMaxShare = 0.30
+//
+// Tightened from 30% → 25%: a quarter-of-the-pie Other still reads as
+// the biggest slice on distributions where the true top entry is
+// ~20-25%. 25% guarantees Other is never the #1 slice on any pie/bar
+// that has any real dominant entry.
+const otherMaxShare = 0.25
 
 // otherMembersCap is the max number of tail members carried on the synthesized
 // "Other" entry for FE tooltip breakdown (gaka-7m4). Sized to comfortably
