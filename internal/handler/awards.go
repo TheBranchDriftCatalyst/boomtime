@@ -39,6 +39,12 @@ type awardLogReq struct {
 		LabelID    string `json:"labelId"`
 		PeriodType string `json:"periodType"`
 	} `json:"items"`
+	// gaka-mwp-streaks backfill: when set, the server buckets the log
+	// against THIS timestamp instead of time.Now(). Enables a client-
+	// side tool to walk N historical days, evaluate against that day's
+	// stats, and populate the ledger so streak badges immediately show
+	// real recorded history instead of "starts today". ISO-8601.
+	At string `json:"at,omitempty"`
 }
 
 // AwardsLog: POST /api/v1/users/current/awards/log
@@ -68,7 +74,20 @@ func (h *Handler) AwardsLog(c *echo.Context) error {
 	if err != nil {
 		loc = time.UTC
 	}
-	written, err := h.DB.LogAwards(c.Request().Context(), owner, items, loc, time.Now())
+	// Explicit `at` for historical backfill; otherwise use wall clock.
+	// Reject a future `at` (nonsensical + could poison the streak walker).
+	at := time.Now()
+	if req.At != "" {
+		parsed, perr := time.Parse(time.RFC3339, req.At)
+		if perr != nil {
+			return respondErr(c, apierr.BadRequest("`at` must be RFC3339"))
+		}
+		if parsed.After(time.Now().Add(time.Hour)) {
+			return respondErr(c, apierr.BadRequest("`at` cannot be in the future"))
+		}
+		at = parsed
+	}
+	written, err := h.DB.LogAwards(c.Request().Context(), owner, items, loc, at)
 	if err != nil {
 		return h.internalErr(c, "award log write failed", err)
 	}

@@ -952,10 +952,17 @@ export const api = {
       updatedAt: string;
     }>("/api/v1/admin/backfill/config", { method: "PATCH", body }),
   // gaka-mwp-streaks: award-ledger writes + reads.
-  logAwards: (items: { labelId: string; periodType: "daily" | "weekly" | "monthly" }[]) =>
+  //
+  // `at` (optional, ISO-8601) is for the backfill tool on the admin
+  // labels tab — server buckets against that instant instead of
+  // time.Now(). Rejected if in the future.
+  logAwards: (
+    items: { labelId: string; periodType: "daily" | "weekly" | "monthly" }[],
+    at?: string,
+  ) =>
     request<{ received: number; written: number }>(
       "/api/v1/users/current/awards/log",
-      { method: "POST", body: { items } },
+      { method: "POST", body: at ? { items, at } : { items } },
     ),
   getAwardStreaks: () =>
     request<Record<string, number>>("/api/v1/users/current/awards/streaks"),
