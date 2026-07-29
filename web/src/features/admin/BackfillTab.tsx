@@ -703,6 +703,178 @@ function JobQueue() {
   );
 }
 
+// ---- synthetic heartbeat inspector ----------------------------------------
+//
+// Debug surface for what a backfill run actually wrote. Collapsed by default
+// so it doesn't dominate the page even when there's a lot of backfill data.
+// Powered by the topFiles/topProjects/topLanguages rollups the server adds to
+// /admin/backfill/stats — no extra endpoints, no new query keys.
+
+type RollupAxis = "files" | "projects" | "languages";
+
+function fmtHMS(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "—";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h > 0) return `${h}h ${String(m).padStart(2, "0")}m`;
+  const s = Math.floor(seconds % 60);
+  return `${m}m ${String(s).padStart(2, "0")}s`;
+}
+
+function SyntheticInspector() {
+  const stats = useQuery({
+    queryKey: qk.backfillStats(),
+    queryFn: () => api.getBackfillStats(),
+  });
+  const [axis, setAxis] = useState<RollupAxis>("files");
+
+  const rollup = useMemo(() => {
+    if (!stats.data) return [] as { name: string; seconds: number; rows: number }[];
+    switch (axis) {
+      case "projects":
+        return stats.data.topProjects ?? [];
+      case "languages":
+        return stats.data.topLanguages ?? [];
+      case "files":
+      default:
+        return stats.data.topFiles ?? [];
+    }
+  }, [axis, stats.data]);
+
+  // Aggregate debug numbers derived from the rollups + top-line stats.
+  // These are approximations of the full picture — the top-10 rollups
+  // don't tell us total-across-all-files, so we fall back to the row
+  // count from the stats endpoint. Displayed as such.
+  const totalRows = stats.data?.totalRows ?? 0;
+  const distinctFiles = stats.data?.topFiles?.length ?? 0;
+  const distinctProjects = stats.data?.topProjects?.length ?? 0;
+  const distinctLanguages = stats.data?.topLanguages?.length ?? 0;
+  const topSeconds = rollup.reduce((sum, e) => sum + e.seconds, 0);
+
+  return (
+    <details className="border border-border bg-card p-4">
+      <summary className="cursor-pointer font-mono text-xs uppercase tracking-widest text-muted-foreground">
+        Synthetic heartbeat inspector
+      </summary>
+      <div className="mt-4 space-y-4">
+        {totalRows === 0 && (
+          <p className="text-xs text-muted-foreground">
+            No synthetic heartbeats yet — run the CLI to see rollups here.
+          </p>
+        )}
+        {totalRows > 0 && (
+          <>
+            {/* debug stats grid */}
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <DebugStat label="Total rows" value={totalRows.toLocaleString()} />
+              <DebugStat
+                label={`Sum top-10 ${axis}`}
+                value={fmtHMS(topSeconds)}
+                hint="Sum(gap_seconds ≤ 15min) across visible top-10"
+              />
+              <DebugStat label="Top files (visible)" value={String(distinctFiles)} />
+              <DebugStat
+                label="Top projects · languages"
+                value={`${distinctProjects} · ${distinctLanguages}`}
+              />
+            </div>
+
+            {/* group-by pills */}
+            <div className="flex items-center gap-1">
+              <span className="mr-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                Group by
+              </span>
+              {(["files", "projects", "languages"] as const).map((a) => (
+                <button
+                  key={a}
+                  type="button"
+                  onClick={() => setAxis(a)}
+                  className={cn(
+                    "border px-2 py-1 font-mono text-[10px] uppercase tracking-widest",
+                    axis === a
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border text-muted-foreground hover:border-primary/40 hover:text-foreground",
+                  )}
+                >
+                  {a}
+                </button>
+              ))}
+            </div>
+
+            {/* rollup table */}
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[520px] border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-border text-left uppercase tracking-wide text-muted-foreground">
+                    <th className="py-2 pr-3 font-mono text-[10px]">Name</th>
+                    <th className="py-2 pr-3 font-mono text-[10px] tabular-nums">Time credited</th>
+                    <th className="py-2 pr-3 font-mono text-[10px] tabular-nums">Rows</th>
+                    <th className="py-2 font-mono text-[10px] tabular-nums">Share</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rollup.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="py-4 text-center text-muted-foreground">
+                        No rows for this axis.
+                      </td>
+                    </tr>
+                  )}
+                  {rollup.map((r) => {
+                    const pct = topSeconds > 0 ? (r.seconds / topSeconds) * 100 : 0;
+                    return (
+                      <tr key={r.name} className="border-b border-border/40 hover:bg-primary/5">
+                        <td className="py-1.5 pr-3 font-mono text-[11px] text-foreground">
+                          {r.name}
+                        </td>
+                        <td className="py-1.5 pr-3 font-mono text-[11px] tabular-nums text-amber-500/90">
+                          {fmtHMS(r.seconds)}
+                        </td>
+                        <td className="py-1.5 pr-3 font-mono text-[11px] tabular-nums text-muted-foreground">
+                          {r.rows.toLocaleString()}
+                        </td>
+                        <td className="py-1.5 font-mono text-[11px] tabular-nums text-muted-foreground">
+                          {pct.toFixed(1)}%
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              Rollups show the top 10 per axis across all{" "}
+              <code className="font-mono">backfill:%</code> rows. Time credited
+              uses the same ≤15min gap cap as the rest of boomtime's stats. To
+              inspect an individual row, use the main Heartbeats page with{" "}
+              filter <code className="font-mono">source = backfill:git</code>.
+            </p>
+          </>
+        )}
+      </div>
+    </details>
+  );
+}
+
+function DebugStat({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) {
+  return (
+    <div className="border border-border/60 bg-background/50 p-3" title={hint}>
+      <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+        {label}
+      </div>
+      <div className="mt-1 font-mono text-sm tabular-nums text-foreground">{value}</div>
+    </div>
+  );
+}
+
 // ---- danger zone -----------------------------------------------------------
 
 function DangerZone() {
@@ -820,6 +992,7 @@ export function BackfillTab() {
       <StatsRow />
       <ConfigPanel />
       <CLIHint emails={cfg.data?.authorEmails ?? []} />
+      <SyntheticInspector />
       <JobQueue />
       <DangerZone />
     </div>

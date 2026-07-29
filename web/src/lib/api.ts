@@ -214,6 +214,14 @@ interface CrossProjectFilesPayload {
   truncated?: boolean;
 }
 
+// Top-N debug rollup entry surfaced by /api/v1/admin/backfill/stats to power
+// the Synthetic heartbeat inspector on the Backfill admin tab.
+export interface BackfillRollupEntry {
+  name: string;
+  seconds: number;
+  rows: number;
+}
+
 // --- Auth --------------------------------------------------------------------
 
 export const api = {
@@ -280,6 +288,27 @@ export const api = {
     request<void>("/api/v1/users/current/wakatime_key", {
       method: "DELETE",
     }),
+
+  // Per-user IANA timezone (gaka-dg7).
+  //
+  // GET returns {timezone, effectiveTimezone}:
+  //   - `timezone` is the raw stored value (empty = user has never picked).
+  //   - `effectiveTimezone` is what the server ACTUALLY uses via the
+  //     3-level resolver (user > BOOM_DEFAULT_TIMEZONE > "UTC"). NEVER "".
+  //
+  // PATCH validates against Go's time.LoadLocation. An empty timezone
+  // clears the explicit pick (falls back to server default in the resolver).
+  // Server rebuilds hb_rollup_daily on success so the Overview fast path
+  // serves user-local buckets immediately.
+  getTimezone: () =>
+    request<{ timezone: string; effectiveTimezone: string }>(
+      "/api/v1/users/current/timezone",
+    ),
+  updateTimezone: (timezone: string) =>
+    request<{ timezone: string; effectiveTimezone: string }>(
+      "/api/v1/users/current/timezone",
+      { method: "PATCH", body: { timezone } },
+    ),
 
   // Public profile (gaka-6jm.1). GET returns the caller's toggle + slug so
   // Settings can render the current state and the Sidebar can conditionally
@@ -928,6 +957,11 @@ export const api = {
       sources: Record<string, number>;
       oldest?: string;
       newest?: string;
+      // Debug rollups added for the Synthetic heartbeat inspector on the
+      // Backfill admin tab. Top-10 per axis across all backfill:% rows.
+      topFiles: BackfillRollupEntry[];
+      topProjects: BackfillRollupEntry[];
+      topLanguages: BackfillRollupEntry[];
     }>("/api/v1/admin/backfill/stats"),
   /** Delete backfilled heartbeats. Either pass source=<tag> (must start
    *  with "backfill:") or all=true to purge every backfill:% row for the

@@ -33,6 +33,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -453,6 +454,28 @@ type BackfillStats struct {
 	Sources   map[string]int `json:"sources"`
 	Oldest    *time.Time     `json:"oldest,omitempty"`
 	Newest    *time.Time     `json:"newest,omitempty"`
+	// Debug rollups — top-10 per axis across ALL backfill:* rows for the
+	// user. Powers the "Synthetic heartbeat inspector" section on the
+	// BackfillTab: at a glance, "did my Python time attribute correctly
+	// during the last CLI run?".
+	//
+	// Seconds are the SUM(gap_seconds) with the same <= 15min cap the
+	// rest of boomtime uses for "attributed time" (matches
+	// heartbeats_explore.go's rollup convention). Rows is the count of
+	// synthetic heartbeats contributing.
+	TopFiles     []BackfillRollupEntry `json:"topFiles"`
+	TopProjects  []BackfillRollupEntry `json:"topProjects"`
+	TopLanguages []BackfillRollupEntry `json:"topLanguages"`
+}
+
+// BackfillRollupEntry is one bucket in the TopFiles/TopProjects/TopLanguages
+// debug rollups. `Name` is the axis value (entity path / project name / lang);
+// `Seconds` is the attributed time; `Rows` is the count of synthetic
+// heartbeats. An empty Name (rare — malformed heartbeat) is skipped.
+type BackfillRollupEntry struct {
+	Name    string `json:"name"`
+	Seconds int64  `json:"seconds"`
+	Rows    int64  `json:"rows"`
 }
 
 // BackfillStatsFor returns aggregate counts + source breakdown for a
@@ -499,7 +522,59 @@ GROUP BY source`, username)
 		}
 		stats.Sources[src] = n
 	}
-	return stats, rows.Err()
+	if err := rows.Err(); err != nil {
+		return stats, err
+	}
+
+	// Top-10 rollups per axis. Same 15-minute gap cap the rest of
+	// boomtime uses so "credited time" matches what appears elsewhere
+	// (heartbeats_explore.go's group query, dashboard widgets, etc.).
+	if err := d.loadBackfillRollup(ctx, username, "entity", &stats.TopFiles); err != nil {
+		return stats, err
+	}
+	if err := d.loadBackfillRollup(ctx, username, "project", &stats.TopProjects); err != nil {
+		return stats, err
+	}
+	if err := d.loadBackfillRollup(ctx, username, "language", &stats.TopLanguages); err != nil {
+		return stats, err
+	}
+	return stats, nil
+}
+
+// loadBackfillRollup runs a top-10 group-by against the user's backfill
+// rows on a caller-supplied column. Column is hardcoded to the SAFE set
+// entity / project / language — never comes from user input, so string
+// interpolation is fine.
+func (d *DB) loadBackfillRollup(ctx context.Context, username, col string, out *[]BackfillRollupEntry) error {
+	// Whitelist check — belt-and-suspenders. Callers today only pass
+	// entity/project/language; anything else is a bug + refuse to run.
+	if col != "entity" && col != "project" && col != "language" {
+		return fmt.Errorf("loadBackfillRollup: unsupported col %q", col)
+	}
+	rows, err := d.Pool.Query(ctx, `
+SELECT `+col+`,
+       CAST(SUM(CASE WHEN gap_seconds <= 15 * 60 THEN gap_seconds ELSE 0 END) AS int8) AS seconds,
+       CAST(COUNT(*) AS int8) AS rows
+FROM heartbeats
+WHERE sender = $1
+  AND source LIKE 'backfill:%'
+  AND `+col+` IS NOT NULL
+  AND `+col+` <> ''
+GROUP BY `+col+`
+ORDER BY seconds DESC NULLS LAST
+LIMIT 10`, username)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var e BackfillRollupEntry
+		if err := rows.Scan(&e.Name, &e.Seconds, &e.Rows); err != nil {
+			return err
+		}
+		*out = append(*out, e)
+	}
+	return rows.Err()
 }
 
 // DeleteBackfilledHeartbeats removes backfill-tagged rows for

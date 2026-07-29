@@ -22,6 +22,12 @@ var exploreColumns = func() map[string]string {
 		"entity":    "entity",
 		"isWrite":   "is_write",
 		"userAgent": "user_agent",
+		// Provenance marker distinguishing real Wakatime rows (NULL) from
+		// synthetic backfill rows ("backfill:git", etc.). Exposed here so
+		// the FE explorer + the Backfill admin inspector can filter/group
+		// by it; NOT in `axes` because it isn't a curation dimension
+		// (renames/hides/rollups don't apply).
+		"source": "source",
 	}
 	for _, a := range axes {
 		m[a.name] = a.rawCol
