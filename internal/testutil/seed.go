@@ -26,6 +26,8 @@ func nz(s string) any {
 }
 
 // Seeder seeds heartbeats + derived data for one owner via the isolated DB.
+// t is a testing.TB (not *testing.T) so ginkgo callers can construct one via
+// Harness.Seeder without having a real *testing.T.
 type Seeder struct {
 	t      testing.TB
 	db     *db.DB

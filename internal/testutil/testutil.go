@@ -66,6 +66,9 @@ func ensure() error {
 
 // OpenDB provisions/migrates then connects to the isolated test DB. It Skips the
 // test when Postgres is unreachable, unless BOOM_REQUIRE_DB=1 (then it Fatals).
+//
+// Accepts testing.TB (Skipf/Fatalf/Cleanup are all on TB) so ginkgo callers
+// using GinkgoTB() work uniformly with legacy *testing.T callers.
 func OpenDB(t testing.TB) *db.DB {
 	t.Helper()
 	if err := ensure(); err != nil {
@@ -115,12 +118,6 @@ func OpenIsolatedDB(t testing.TB, suffix string) *db.DB {
 }
 
 // Harness bundles a live Handler + DB for HTTP integration tests.
-//
-// T is typed as testing.TB (not *testing.T) so callers can pass either
-// stdlib *testing.T or ginkgo's GinkgoTB() shim. Every use of the T
-// field inside this package is a testing.TB method (Helper/Fatalf/
-// Cleanup) so this widening is source-compatible with every existing
-// caller — *testing.T satisfies testing.TB. See docs/testing/ginkgo.md.
 type Harness struct {
 	T   testing.TB
 	DB  *db.DB
@@ -130,6 +127,10 @@ type Harness struct {
 
 // NewHarness builds a Handler wired to the isolated DB with a discardable logger
 // and an empty importer Hub. Registration is enabled so /auth/register works.
+//
+// Accepts testing.TB so ginkgo callers can pass ginkgo.GinkgoTB() (which
+// implements testing.TB) — legacy *testing.T callers keep working since
+// *testing.T satisfies testing.TB.
 func NewHarness(t testing.TB) *Harness {
 	t.Helper()
 	return NewHarnessWithDB(t, OpenDB(t))
