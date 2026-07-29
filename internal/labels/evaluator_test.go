@@ -321,6 +321,93 @@ func TestJSONRoundTrip_ExampleFromSeed(t *testing.T) {
 	}
 }
 
+func TestDailyAvg_Fires(t *testing.T) {
+	p := &Payload{DailyAvg: 3.5 * 3600} // 3.5 hours/day
+	cond := DailyAvgCond{Op: OpGE, Hours: 3}
+	if !EvaluateCondition(cond, p) {
+		t.Error("expected 3.5h/day ≥ 3h to fire")
+	}
+	cond.Hours = 4
+	if EvaluateCondition(cond, p) {
+		t.Error("expected 3.5h/day < 4h to not fire")
+	}
+}
+
+func TestPunchcardDowPct_Fires(t *testing.T) {
+	// 400s on dow=0 (Sun), 600s on dow=3 (Wed). Weekend fraction = 400/1000 = 40%.
+	p := &Payload{Punchcard: model.PunchcardPayload{
+		Cells: []model.PunchcardCell{
+			{Dow: 0, Seconds: 400},
+			{Dow: 3, Seconds: 600},
+		},
+		TotalSeconds: 1000,
+	}}
+	// Weekend warrior — Sat/Sun.
+	cond := PunchcardDowPctCond{DowIn: []int{0, 6}, Op: OpGE, Pct: 0.35}
+	if !EvaluateCondition(cond, p) {
+		t.Error("expected 40% dow-in-set ≥ 35% to fire")
+	}
+	cond.Pct = 0.5
+	if EvaluateCondition(cond, p) {
+		t.Error("expected 40% < 50% to not fire")
+	}
+}
+
+func TestNilPayloadNoPanic(t *testing.T) {
+	// Every primitive must survive a nil payload (defensive — an in-flight
+	// query state or a corrupt input should not crash the evaluator).
+	cases := []Condition{
+		AxisTimeCond{Axis: AxisLanguages, Value: "python", Op: OpGE, Hours: 5},
+		AxisTimeSumCond{Axis: AxisEditors, Values: []string{"vim"}, Op: OpGE, Hours: 1},
+		AxisPctCond{Axis: AxisLanguages, Value: "python", Op: OpGE, Pct: 0.5},
+		TopShareCond{Axis: AxisLanguages, Op: OpGE, Pct: 0.5},
+		DistinctCountCond{Axis: AxisLanguages, MinHoursEach: 1, Op: OpGE, N: 3},
+		PunchcardHourPctCond{HoursIn: []int{22, 23}, Op: OpGE, Pct: 0.4},
+		PunchcardDowPctCond{DowIn: []int{0, 6}, Op: OpGE, Pct: 0.4},
+		StreakCond{Which: "current", Op: OpGE, Days: 7},
+		DailyAvgCond{Op: OpGE, Hours: 3},
+		TrendCond{Window: "last7-vs-prior7", Op: OpGE, Ratio: 2},
+	}
+	for _, c := range cases {
+		// Should not panic; result value is unimportant.
+		defer func() {
+			if r := recover(); r != nil {
+				t.Errorf("nil payload panic for %T: %v", c, r)
+			}
+		}()
+		_ = EvaluateCondition(c, nil)
+	}
+}
+
+func TestEvaluateAll_NilPayloadReturnsNil(t *testing.T) {
+	catalog := []LabelSpec{
+		{
+			ID: "some", Kind: KindArchetype, Label: "SOME", Rank: 10,
+			Condition: AxisTimeCond{Axis: AxisLanguages, Value: "python", Op: OpGE, Hours: 5},
+		},
+	}
+	awards := EvaluateAll(nil, catalog)
+	if len(awards) != 0 {
+		t.Errorf("expected no awards from nil payload, got %d", len(awards))
+	}
+}
+
+func TestAxisTimeLE_Fires(t *testing.T) {
+	// <= boundary — "at most 10h of TypeScript" — a niche shape but the DSL
+	// supports it and we should prove it works.
+	p := &Payload{Languages: []model.ResourceStats{
+		{Name: "typescript", TotalSeconds: 5 * 3600},
+	}}
+	cond := AxisTimeCond{Axis: AxisLanguages, Value: "typescript", Op: OpLE, Hours: 10}
+	if !EvaluateCondition(cond, p) {
+		t.Error("expected 5h ≤ 10h to fire (<=)")
+	}
+	cond.Hours = 3
+	if EvaluateCondition(cond, p) {
+		t.Error("expected 5h > 3h to not fire (<=)")
+	}
+}
+
 func TestJSONRoundTrip_AllComposition(t *testing.T) {
 	// Composer: {"kind":"all","of":[<inner1>,<inner2>]}
 	src := []byte(`{"kind":"all","of":[` +
