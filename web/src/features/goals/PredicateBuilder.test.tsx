@@ -24,6 +24,7 @@ import { describe, expect, it } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   PredicateBuilder,
   defaultLeaf,
@@ -32,14 +33,24 @@ import type { Predicate } from "@/types/api";
 
 // Controlled harness that holds spec state and re-renders on every
 // change — mirrors the real GoalForm consumer.
+//
+// Wrapped in a QueryClientProvider because the value input's
+// AxisValueInput hook calls useQuery(getStats) for autocomplete
+// suggestions (retry:false + no fetch resolved keeps the test
+// synchronous — the datalist just stays empty).
 function Harness({ initial }: { initial?: Predicate }) {
   const [spec, setSpec] = useState<Predicate>(initial ?? defaultLeaf());
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  });
   return (
-    <div>
-      <PredicateBuilder node={spec} onChange={setSpec} />
-      {/* Debug JSON — asserted against in tests via testid. */}
-      <pre data-testid="spec-json">{JSON.stringify(spec)}</pre>
-    </div>
+    <QueryClientProvider client={qc}>
+      <div>
+        <PredicateBuilder node={spec} onChange={setSpec} />
+        {/* Debug JSON — asserted against in tests via testid. */}
+        <pre data-testid="spec-json">{JSON.stringify(spec)}</pre>
+      </div>
+    </QueryClientProvider>
   );
 }
 
@@ -229,14 +240,19 @@ describe("PredicateBuilder", () => {
     }
     function FrozenHarness() {
       const [spec, setSpec] = useState<Predicate>(() => deepFreeze(defaultLeaf()));
+      const qc = new QueryClient({
+        defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+      });
       return (
-        <div>
-          <PredicateBuilder
-            node={spec}
-            onChange={(next) => setSpec(deepFreeze(next))}
-          />
-          <pre data-testid="spec-json">{JSON.stringify(spec)}</pre>
-        </div>
+        <QueryClientProvider client={qc}>
+          <div>
+            <PredicateBuilder
+              node={spec}
+              onChange={(next) => setSpec(deepFreeze(next))}
+            />
+            <pre data-testid="spec-json">{JSON.stringify(spec)}</pre>
+          </div>
+        </QueryClientProvider>
       );
     }
     render(<FrozenHarness />);

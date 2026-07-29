@@ -68,6 +68,10 @@ func TestAxisRegistryDerivations(t *testing.T) {
 		"entity":    "entity",
 		"isWrite":   "is_write",
 		"userAgent": "user_agent",
+		// gaka-vh8: `source` is a provenance marker (NULL = real Wakatime,
+		// "backfill:git" = synthetic) exposed for FE explorer filter/group
+		// but NOT a curation axis (no rename/hide/rollup semantics).
+		"source": "source",
 	}
 	if !reflect.DeepEqual(exploreColumns, wantExploreColumns) {
 		t.Fatalf("exploreColumns = %v, want %v", exploreColumns, wantExploreColumns)
