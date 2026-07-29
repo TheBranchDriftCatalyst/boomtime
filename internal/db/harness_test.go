@@ -16,6 +16,26 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+// openTestDB is the stdlib-flavored counterpart to openTestDBG. Stdlib
+// tests (still allowed alongside ginkgo — see internal/db/auth_test.go
+// and internal/db/award_ledger_test.go) call this seam so they can share
+// the isolated DB harness without going through ginkgo. Skips (t.Skip)
+// rather than fails when the DB is unreachable — matches openTestDBG.
+func openTestDB(t *testing.T) *DB {
+	t.Helper()
+	if !dbReady {
+		t.Skip("skipping: isolated test database unavailable: " + dbSkipMsg)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	database, err := New(ctx, testDatabaseURL())
+	if err != nil {
+		t.Skipf("skipping: could not open %s: %v", testDBName, err)
+	}
+	t.Cleanup(func() { database.Close() })
+	return database
+}
+
 // openTestDBG mirrors openTestDB but for ginkgo Its. Skips the current spec
 // when the isolated test DB is unavailable, and registers a DeferCleanup to
 // close the pool at the end of the spec.
