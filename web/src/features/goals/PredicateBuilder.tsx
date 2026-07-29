@@ -134,6 +134,15 @@ function AxisValueInput({
     return arr
       .map((r) => r.name)
       .filter((n) => typeof n === "string" && n.length > 0)
+      // Filter out the display-only "Other (N more)" chart-bounding
+      // bucket from stats.capWithOther (internal/stats/segment.go). It
+      // isn't a real axis value — a goal predicate against it would
+      // never match a heartbeat. Same for a bare literal "Other" name
+      // that comes back on some axes when the top-12 cap creates a
+      // solo tail. Categories that legitimately are "Other" (the SQL
+      // COALESCE(NULL,'Other') path) still match on other queries —
+      // this filter only affects the autocomplete surface.
+      .filter((n) => !/^Other(\s*\(\d+\s*more\))?$/.test(n))
       .slice(0, 100); // browsers cap datalist rendering; 100 is plenty
   }, [axis, stats.data]);
   return (
