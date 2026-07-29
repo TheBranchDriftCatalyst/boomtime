@@ -309,6 +309,10 @@ func registerAuthRoutes(e *echo.Echo, h *handler.Handler) {
 	e.GET("/api/v1/users/current/awards/streaks", h.AwardsStreaks)
 	e.GET("/api/v1/users/current/awards/ledger", h.AwardsLedger)
 	e.GET("/api/public/profile/:slug/awards/streaks", h.PublicAwardsStreaks)
+	// gaka-hc6.3: server-side award evaluation. Replaces the client-side
+	// evaluate() call. Own variant WRITES the ledger; public variant does not.
+	e.GET("/api/v1/users/current/awards", h.OwnAwards)
+	e.GET("/api/public/profile/:slug/awards", h.PublicAwards)
 }
 
 // registerMiscRoutes: badges, widgets, leaderboards, and commits.
