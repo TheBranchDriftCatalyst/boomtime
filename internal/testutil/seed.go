@@ -2,7 +2,6 @@ package testutil
 
 import (
 	"context"
-	"testing"
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
@@ -27,7 +26,7 @@ func nz(s string) any {
 
 // Seeder seeds heartbeats + derived data for one owner via the isolated DB.
 type Seeder struct {
-	t      *testing.T
+	t      HarnessT
 	db     *db.DB
 	ctx    context.Context
 	sender string
