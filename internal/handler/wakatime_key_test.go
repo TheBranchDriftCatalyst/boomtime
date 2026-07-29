@@ -19,7 +19,6 @@ var _ = Describe("SaveWakatimeKey body-size cap (gaka-bi2)", func() {
 	It("rejects a 5 KiB body with 413 before probeWakatimeKey runs", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
-		e.POST("/api/v1/users/current/wakatime_key", hz.H.SaveWakatimeKey)
 		_, token := hz.MintUser("wkkey_413")
 
 		big := strings.Repeat("a", 5000)
