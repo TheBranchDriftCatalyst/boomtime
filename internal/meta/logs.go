@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
@@ -20,11 +21,11 @@ import (
 // "user" attribute) are dropped BEFORE the response is built. Server-scope
 // records (no owner tag) still fan out to every authenticated viewer.
 func (h *Handler) ServerLogs(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
-	afterID := queryInt64(c, "afterId", 0)
+	afterID := apihelpers.QueryInt64(c, "afterId", 0)
 	var logs []logging.LogEntry
 	if h.LogHub != nil {
 		logs = logging.FilterForUser(h.LogHub.Backfill(afterID), owner)
@@ -50,15 +51,15 @@ func (h *Handler) ServerLogs(c *echo.Context) error {
 // filter is used on the REST tail so both code paths are impossible to skew
 // apart accidentally.
 func (h *Handler) ServerLogsWS(c *echo.Context) error {
-	owner, aerr := h.resolveOwnerFromCookie(c, apierr.ExpiredRefreshToken())
+	owner, aerr := apihelpers.ResolveOwnerFromCookie(h.DB, h.Logger, c, apierr.ExpiredRefreshToken())
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	if h.LogHub == nil {
-		return respondErr(c, apierr.Generic())
+		return apihelpers.RespondErr(c, apierr.Generic())
 	}
 
-	afterID := queryInt64(c, "afterId", 0)
+	afterID := apihelpers.QueryInt64(c, "afterId", 0)
 
 	conn, err := websocket.Accept(c.Response(), c.Request(), &websocket.AcceptOptions{
 		InsecureSkipVerify: true, // same-origin; CORS handled elsewhere

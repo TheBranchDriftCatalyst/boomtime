@@ -11,19 +11,16 @@
 package meta
 
 import (
+	"log/slog"
 	"net/http"
-	"strconv"
 	"time"
 
 	boomtime "github.com/TheBranchDriftCatalyst/boomtime"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/cache"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
 	"github.com/labstack/echo/v5"
-	"log/slog"
 )
 
 // Handler bundles the SUBSET of the god-type handler.Handler's dependencies
@@ -71,75 +68,8 @@ func (h *Handler) Changelog(c *echo.Context) error {
 	return c.Blob(http.StatusOK, "text/markdown; charset=utf-8", boomtime.ChangelogMD)
 }
 
-// -- auth resolvers (domain-local copies of handler.Handler methods) --------
-//
-// Phase 8 promotes the shared auth helpers to internal/testutil/handlerhelpers/.
-// Until then each domain-package that needs an auth resolution carries its
-// own tiny copy — the alternative is a cross-domain lateral import that the
-// depguard rule (also enabled in phase 8) is meant to forbid.
-
-// resolveOwnerFromCookie resolves the owner from the HttpOnly refresh_token
-// cookie (used by the WS handshake, which cannot carry an Authorization
-// header). missingErr is the error returned when the cookie is absent — the
-// WS handshake treats an absent cookie the same as an expired one. An
-// unknown/expired token always yields ExpiredRefreshToken.
-func (h *Handler) resolveOwnerFromCookie(c *echo.Context, missingErr *apierr.Error) (string, *apierr.Error) {
-	refresh, ok := auth.ParseRefreshCookie(c.Request().Header.Get("Cookie"))
-	if !ok {
-		return "", missingErr
-	}
-	owner, ok, err := h.DB.GetUserByRefreshToken(c.Request().Context(), refresh)
-	if err != nil {
-		h.Logger.Error("refresh token lookup failed", "path", c.Request().URL.Path, "err", err)
-		return "", apierr.Generic()
-	}
-	if !ok {
-		return "", apierr.ExpiredRefreshToken()
-	}
-	return owner, nil
-}
-
-// tokenFromHeader extracts the base64(uuid) token from the Authorization header,
-// or returns MissingAuth (400) when absent.
-func tokenFromHeader(c *echo.Context) (string, *apierr.Error) {
-	tkn, ok := auth.ParseAuthHeader(c.Request().Header.Get(echo.HeaderAuthorization))
-	if !ok || tkn == "" {
-		return "", apierr.MissingAuth()
-	}
-	return tkn, nil
-}
-
-// resolveUser maps a token to its owning username. Returns InvalidToken (403)
-// if the token has no owner.
-func (h *Handler) resolveUser(c *echo.Context) (string, string, *apierr.Error) {
-	tkn, aerr := tokenFromHeader(c)
-	if aerr != nil {
-		return "", "", aerr
-	}
-	owner, ok, err := h.DB.GetUserByToken(c.Request().Context(), tkn)
-	if err != nil {
-		return "", "", apierr.Generic()
-	}
-	if !ok {
-		return "", "", apierr.InvalidToken()
-	}
-	return tkn, owner, nil
-}
-
-// respondErr renders an apierr.Error onto the context.
-func respondErr(c *echo.Context, e *apierr.Error) error {
-	return e.Write(c)
-}
-
-// queryInt64 parses an int64 query parameter with a default.
-func queryInt64(c *echo.Context, name string, def int64) int64 {
-	v := c.QueryParam(name)
-	if v == "" {
-		return def
-	}
-	n, err := strconv.ParseInt(v, 10, 64)
-	if err != nil {
-		return def
-	}
-	return n
-}
+// Shared helpers (RespondErr / TokenFromHeader / ResolveUser /
+// ResolveOwnerFromCookie / QueryInt64 / BindJSONWithLimit) live in
+// internal/apihelpers/ — every domain package imports that instead of
+// carrying a local shim. See gaka-8tn shared-helpers extraction commit
+// following phase 1.
