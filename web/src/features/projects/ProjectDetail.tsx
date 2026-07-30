@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { StatCard } from "@/components/StatCard";
 import { QueryGate } from "@/components/QueryGate";
 import { ChartCard } from "@/components/ChartCard";
+import { untaggedShareSubtitle } from "@/lib/untaggedShare";
 import { EmbedLinkButton } from "@/features/widgets/EmbedActions";
 import { ColumnChart } from "@/viz/charts/ColumnChart";
 import { FileBarChart } from "@/viz/charts/FileBarChart";
@@ -192,6 +193,9 @@ export function ProjectDetail({
             </div>
             <ChartCard
               title="Language breakdown"
+              subtitle={untaggedShareSubtitle(stats.languages, stats.totalSeconds, {
+                axis: "language",
+              })}
               embedAction={
                 project ? (
                   <EmbedLinkButton
