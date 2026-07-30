@@ -22,17 +22,26 @@ func ToProjectStatistics(t0, t1 time.Time, xs []db.ProjectStatRow, extras *db.Pr
 		allSecs += x.TotalSeconds
 	}
 	dailyTotal := dailyTotals(byDate, func(r db.ProjectStatRow) int64 { return r.TotalSeconds })
-	languages := segmentProj(byDate, func(r db.ProjectStatRow) string { return r.Language })
+	// gaka-6ci: language segment excludes rows whose source heartbeat had
+	// NULL language (browser tabs / AI console sessions). A per-project
+	// language pie shouldn't count "browsing this repo on GitHub" as a
+	// language — same rule as the global stats endpoint. Total-time /
+	// weekDay / hour / dailyTotal still aggregate over EVERY row so the
+	// project's total tracked time stays honest.
+	languages := segmentProjWhere(byDate,
+		func(r db.ProjectStatRow) bool { return !r.LanguageMissing },
+		func(r db.ProjectStatRow) string { return r.Language })
 	// Cap to top-N + "Other (N more)" ONCE, then reuse the same list for both the
 	// Languages breakdown and the per-day LanguagesDaily matrix so their day
 	// arrays (and the front-end colors keyed by list order) stay in lockstep.
 	cappedLanguages := capWithOther(languages)
 	// "Most active files" must contain only real file entities — exclude browsing
-	// domains/apps (ty='domain'/'app'/'url') so github.com / https://… never show
-	// up as files. Other segments (languages/weekDay/hour/dailyTotal/total) still
-	// aggregate over every entity, so the total-time card is unaffected.
+	// domains/apps (ty='domain'/'app'/'url') AND rows whose source heartbeat had
+	// NULL entity (gaka-6ci; a "file breakdown" of un-tagged sessions isn't
+	// meaningful). Other segments still aggregate over every entity so the
+	// total-time card is unaffected.
 	files := segmentProjWhere(byDate,
-		func(r db.ProjectStatRow) bool { return r.Ty == "file" },
+		func(r db.ProjectStatRow) bool { return r.Ty == "file" && !r.EntityMissing },
 		func(r db.ProjectStatRow) string { return r.Entity })
 
 	out := model.ProjectStatistics{

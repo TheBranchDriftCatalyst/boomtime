@@ -4,6 +4,11 @@
 --
 -- Phase A: windowless conditional SUM over precomputed gap_seconds for one
 -- project. $1 sender, $2 project, $3 start, $4 end, $5 limit, $6 IANA tz name.
+-- gaka-6ci: language_missing + entity_missing flags propagate the raw
+-- NULL discriminator through the aggregation. The GROUP BY uses raw
+-- columns (not COALESCE), so every row in a group shares the same
+-- NULL-ness on each axis — the SELECT can then read (col IS NULL)
+-- as a stable per-row value.
 WITH stats AS (
     SELECT
         ((time_sent AT TIME ZONE 'UTC') AT TIME ZONE $6)::date + interval '0h' AS day,
@@ -12,7 +17,9 @@ WITH stats AS (
         coalesce(language, 'Other') AS LANGUAGE,
         entity,
         ty,
-        CAST(sum(CASE WHEN gap_seconds <= ($5 * 60) THEN gap_seconds ELSE 0 END) AS int8) AS total_seconds
+        CAST(sum(CASE WHEN gap_seconds <= ($5 * 60) THEN gap_seconds ELSE 0 END) AS int8) AS total_seconds,
+        (language IS NULL) AS language_missing,
+        (entity IS NULL) AS entity_missing
     FROM
         heartbeats
     WHERE
@@ -31,8 +38,9 @@ WITH stats AS (
         day
 )
 SELECT
-    *,
+    day, dayofweek, hourofday, language, entity, ty, total_seconds,
     coalesce(CAST(1.0 * total_seconds / nullif (sum(total_seconds) OVER (), 0) AS numeric(13, 12)), 0) AS pct,
-    coalesce(CAST(1.0 * total_seconds / nullif (sum(total_seconds) OVER (PARTITION BY day), 0) AS numeric(13, 12)), 0) AS daily_pct
+    coalesce(CAST(1.0 * total_seconds / nullif (sum(total_seconds) OVER (PARTITION BY day), 0) AS numeric(13, 12)), 0) AS daily_pct,
+    language_missing, entity_missing
 FROM
     stats;

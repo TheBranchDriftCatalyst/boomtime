@@ -8,10 +8,13 @@
 -- Returns one row per (day, branch) plus the pct/daily_pct windows so the Go
 -- shaper can build ResourceStats aligned to the same day series as DailyTotal.
 -- $1 sender, $2 project, $3 start, $4 end, $5 limit (minutes), $6 IANA tz name.
+-- gaka-6ci: branch chart is per-branch — null-branch heartbeats
+-- (browser sessions with no VCS context) shouldn't create an 'Other'
+-- branch bucket that dominates the chart.
 WITH stats AS (
     SELECT
         ((time_sent AT TIME ZONE 'UTC') AT TIME ZONE $6)::date + interval '0h' AS day,
-        coalesce(branch, 'Other') AS branch,
+        branch,
         CAST(sum(CASE WHEN gap_seconds <= ($5 * 60) THEN gap_seconds ELSE 0 END) AS int8) AS total_seconds
     FROM
         heartbeats
@@ -20,9 +23,10 @@ WITH stats AS (
         AND project = $2
         AND time_sent >= $3
         AND time_sent <= $4
+        AND branch IS NOT NULL
     GROUP BY
         ((time_sent AT TIME ZONE 'UTC') AT TIME ZONE $6)::date + interval '0h',
-        coalesce(branch, 'Other')
+        branch
     ORDER BY
         day
 )

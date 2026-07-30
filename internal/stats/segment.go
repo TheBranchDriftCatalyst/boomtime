@@ -2,8 +2,11 @@ package stats
 
 import (
 	"fmt"
+	"os"
 	"slices"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
@@ -256,17 +259,43 @@ const resourceTopN = 12
 // we accept the domination — better than 100 slices with unreadable labels.
 const resourceMaxN = 40
 
-// otherMaxShare (25%) is the ceiling on Other's share of the total. When
-// the default top-12 leaves Other above this, we grow N until Other drops
-// below the threshold (or we hit resourceMaxN). Prevents "Other" from
-// visually overshadowing every real entry in a pie/bar chart when the
-// user has a long tail of small-but-real values. gaka-mwp-other.
+// defaultOtherMaxShare (25%) is the ceiling on Other's share of the total.
+// When the default top-12 leaves Other above this, we grow N until Other
+// drops below the threshold (or we hit resourceMaxN). Prevents "Other"
+// from visually overshadowing every real entry in a pie/bar chart when
+// the user has a long tail of small-but-real values. gaka-mwp-other.
 //
 // Tightened from 30% → 25%: a quarter-of-the-pie Other still reads as
 // the biggest slice on distributions where the true top entry is
 // ~20-25%. 25% guarantees Other is never the #1 slice on any pie/bar
 // that has any real dominant entry.
-const otherMaxShare = 0.25
+//
+// The runtime value is resolved from BOOM_OTHER_MAX_SHARE env var at
+// startup via otherMaxShareVal — override with a float in (0,1]. A
+// hostile / typo value clamps to the default. See otherMaxShare() below.
+const defaultOtherMaxShare = 0.25
+
+// otherMaxShareVal is resolved once at init and cached. Read via
+// otherMaxShare() so tests can override without racing.
+var otherMaxShareVal = loadOtherMaxShare()
+
+func loadOtherMaxShare() float64 {
+	raw := strings.TrimSpace(os.Getenv("BOOM_OTHER_MAX_SHARE"))
+	if raw == "" {
+		return defaultOtherMaxShare
+	}
+	v, err := strconv.ParseFloat(raw, 64)
+	if err != nil || v <= 0 || v > 1 {
+		// Bad input reverts to default — better than silently letting a
+		// typo like "25" (meant "0.25") produce an unbounded Other.
+		return defaultOtherMaxShare
+	}
+	return v
+}
+
+// otherMaxShare returns the currently-active cap. Kept as a function so
+// tests can flip the env + reload without race-y package-level mutation.
+func otherMaxShare() float64 { return otherMaxShareVal }
 
 // otherMembersCap is the max number of tail members carried on the synthesized
 // "Other" entry for FE tooltip breakdown (gaka-7m4). Sized to comfortably
@@ -306,7 +335,7 @@ func capWithOther(list []model.ResourceStats) []model.ResourceStats {
 		}
 		for topN < len(sorted) && topN < resourceMaxN {
 			share := float64(otherSum) / float64(grandTotal)
-			if share <= otherMaxShare {
+			if share <= otherMaxShare() {
 				break
 			}
 			// Promote the next tail entry into top, shrinking Other.

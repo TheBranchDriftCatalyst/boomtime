@@ -376,7 +376,10 @@ regrouped AS (
         day, dayofweek, hourofday,
         cl.canonical AS language,
         cen.canonical AS entity, ty,
-        CAST(SUM(base.total_seconds) AS int8) AS total_seconds
+        CAST(SUM(base.total_seconds) AS int8) AS total_seconds,
+        -- gaka-6ci: propagate axis-missing flags through the rename regroup.
+        bool_and(base.language_missing) AS language_missing,
+        bool_and(base.entity_missing) AS entity_missing
     FROM base
     JOIN clang cl ON cl.lc = lower(%s)
     JOIN cent cen ON cen.lc = lower(%s)
@@ -385,7 +388,8 @@ regrouped AS (
 SELECT
     day, dayofweek, hourofday, language, entity, ty, total_seconds,
     coalesce(CAST(1.0 * total_seconds / nullif(sum(total_seconds) OVER (), 0) AS numeric(13, 12)), 0) AS pct,
-    coalesce(CAST(1.0 * total_seconds / nullif(sum(total_seconds) OVER (PARTITION BY day), 0) AS numeric(13, 12)), 0) AS daily_pct
+    coalesce(CAST(1.0 * total_seconds / nullif(sum(total_seconds) OVER (PARTITION BY day), 0) AS numeric(13, 12)), 0) AS daily_pct,
+    language_missing, entity_missing
 FROM regrouped`,
 		inner,
 		canonicalPickCTE("clang", "base", langExpr),

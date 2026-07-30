@@ -14,10 +14,18 @@ func ToLeaderboardsPayload(rows []db.LeaderboardRow) model.LeaderboardsPayload {
 	// group by user (global)
 	global := mkGlobalList(groupBySender(rows))
 
-	// group by language, then by user within each language.
+	// group by language, then by user within each language. gaka-6ci: skip
+	// rows whose source heartbeat had NULL language (browser/AI-console
+	// sessions) so per-language leaderboards don't include a leaderboard
+	// titled 'Other' that just ranks "who browses the most". The global
+	// leaderboard above still uses the full row set — total-time-per-user
+	// includes every heartbeat, language or not.
 	byLang := map[string][]db.LeaderboardRow{}
 	var langOrder []string
 	for _, r := range rows {
+		if r.LanguageMissing {
+			continue
+		}
 		if _, ok := byLang[r.Language]; !ok {
 			langOrder = append(langOrder, r.Language)
 		}

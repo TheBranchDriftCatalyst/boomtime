@@ -80,7 +80,8 @@ func scanProjectStatRows(rows pgx.Rows) ([]ProjectStatRow, error) {
 		var r ProjectStatRow
 		var pct, dpct pgtype.Numeric
 		if err := rows.Scan(&r.Day, &r.Weekday, &r.Hour, &r.Language, &r.Entity,
-			&r.Ty, &r.TotalSeconds, &pct, &dpct); err != nil {
+			&r.Ty, &r.TotalSeconds, &pct, &dpct,
+			&r.LanguageMissing, &r.EntityMissing); err != nil {
 			return nil, err
 		}
 		r.Pct = numToFloat(pct)

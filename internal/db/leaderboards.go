@@ -74,7 +74,11 @@ func (d *DB) GetLeaderboards(ctx context.Context, start, end time.Time, requeste
 	var projExpr, langExpr string
 	projExpr, args, next = rs.remapExpr("project", "project", reqCond, next, args)
 	langExpr, args, next = rs.remapExpr("language", "language", reqCond, next, args)
-	query = fmt.Sprintf(`SELECT %s AS project, %s AS language, sender, CAST(SUM(total_seconds) AS int8) AS total_seconds
+	// gaka-6ci: bool_and preserves the missing-flag semantics across the
+	// rename regroup — a canonical name is missing iff EVERY contributing
+	// base row was null on that axis.
+	query = fmt.Sprintf(`SELECT %s AS project, %s AS language, sender, CAST(SUM(total_seconds) AS int8) AS total_seconds,
+    bool_and(project_missing) AS project_missing, bool_and(language_missing) AS language_missing
 FROM ( %s ) base
 GROUP BY lower(%s), lower(%s), sender`, caseFoldPick(projExpr), caseFoldPick(langExpr), trimSQL(query), projExpr, langExpr)
 
@@ -83,7 +87,8 @@ GROUP BY lower(%s), lower(%s), sender`, caseFoldPick(projExpr), caseFoldPick(lan
 		defer rows.Close()
 		for rows.Next() {
 			var r LeaderboardRow
-			if err := rows.Scan(&r.Project, &r.Language, &r.Sender, &r.TotalSeconds); err != nil {
+			if err := rows.Scan(&r.Project, &r.Language, &r.Sender, &r.TotalSeconds,
+				&r.ProjectMissing, &r.LanguageMissing); err != nil {
 				return err
 			}
 			out = append(out, r)

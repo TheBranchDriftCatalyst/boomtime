@@ -32,15 +32,17 @@ type StatRow struct {
 
 // ProjectStatRow mirrors Types.hs ProjectStatRow (get_projects_stats).
 type ProjectStatRow struct {
-	Day          time.Time
-	Weekday      string
-	Hour         string
-	Language     string
-	Entity       string
-	Ty           string // entity type (file/app/domain/url); the "files" list filters to 'file'
-	TotalSeconds int64
-	Pct          float64
-	DailyPct     float64
+	Day             time.Time
+	Weekday         string
+	Hour            string
+	Language        string
+	Entity          string
+	Ty              string // entity type (file/app/domain/url); the "files" list filters to 'file'
+	TotalSeconds    int64
+	Pct             float64
+	DailyPct        float64
+	LanguageMissing bool // gaka-6ci: TRUE when the source heartbeat had NULL language
+	EntityMissing   bool
 }
 
 // TimelineRow mirrors Types.hs TimelineRow (get_timeline).
@@ -53,10 +55,12 @@ type TimelineRow struct {
 
 // LeaderboardRow mirrors Types.hs LeaderboardRow (get_leaderboards).
 type LeaderboardRow struct {
-	Project      string
-	Language     string
-	Sender       string
-	TotalSeconds int64
+	Project         string
+	Language        string
+	Sender          string
+	TotalSeconds    int64
+	ProjectMissing  bool // gaka-6ci
+	LanguageMissing bool
 }
 
 // StoredUser is a validated username with password material (users table).
