@@ -57,7 +57,34 @@ var _ = Describe("New + Error()", func() {
 		Expect(*e.Extra).To(Equal("detail"))
 		Expect(e.Error()).To(Equal("bad thing"))
 	})
+
+	// gaka-d6x critique fix: pin the empty-message construction path. The
+	// original suite never exercised New(status, "", nil), so a refactor that
+	// added a nil/empty guard could silently swallow the entire message
+	// without any test failing. Empty message MUST still render as
+	// {"error":""} on the wire — same envelope shape, empty string value.
+	It("New(status, \"\", nil) renders as {\"error\":\"\"} — empty is a valid message, not a signal to drop the key", func() {
+		e := New(http.StatusInternalServerError, "", nil)
+		Expect(e.Status).To(Equal(http.StatusInternalServerError))
+		Expect(e.Message).To(Equal(""))
+		Expect(e.Extra).To(BeNil())
+		Expect(e.Error()).To(Equal(""),
+			"Error() must faithfully return the empty message — do not substitute a default")
+
+		c, rec := newCtx()
+		Expect(e.Write(c)).To(Succeed())
+		Expect(strings.TrimSpace(rec.Body.String())).To(Equal(`{"error":""}`),
+			"empty message MUST still emit the `error` key with an empty-string value")
+	})
 })
+
+// gaka-d6x critique fix: pin the standard `error` interface satisfaction at
+// compile time. This is trivially true today but is the single most
+// load-bearing property of Error() string at apierr.go:20 — if a refactor
+// ever renames the receiver method or changes its signature, *Error stops
+// being usable as an `error` and every call site breaks. A compile-time
+// var declaration is the cheapest possible drift guard.
+var _ error = (*Error)(nil)
 
 // --- gaka-d6x additions -----------------------------------------------------
 
@@ -163,11 +190,26 @@ var _ = Describe("uncovered constructors (BadRequest / NotFound / GenericHTTP)",
 		// wants to update the message post-construction (or nil-check) relies
 		// on pointer semantics. If a refactor accidentally stores a copy, the
 		// test catches it.
+		//
+		// gaka-d6x critique fix: previously used Equal(&extra) which delegates
+		// to reflect.DeepEqual on pointers — that compares the pointed-to
+		// values, NOT pointer identity, so a cloning impl would pass. Use
+		// BeIdenticalTo (== on pointers) to actually pin the invariant, and
+		// also mutate the source string after construction to prove the *Error
+		// sees the mutation (impossible if a copy was made).
 		extra := "downstream: 503"
 		e := GenericHTTP("upstream failed", &extra)
 		Expect(e.Status).To(Equal(http.StatusInternalServerError))
 		Expect(e.Message).To(Equal("upstream failed"))
-		Expect(e.Extra).To(Equal(&extra), "GenericHTTP must retain the exact pointer, not clone")
+		Expect(e.Extra).To(BeIdenticalTo(&extra),
+			"GenericHTTP must retain the exact pointer, not clone (BeIdenticalTo == pointer equality)")
+
+		// Belt-and-braces: mutate through the original pointer and check the
+		// Error sees the same underlying storage. If Extra were a clone this
+		// would fail because the clone's target wouldn't reflect the update.
+		extra = "downstream: 504 (mutated)"
+		Expect(*e.Extra).To(Equal("downstream: 504 (mutated)"),
+			"mutating the source variable must be visible via e.Extra — proves same backing storage")
 
 		// Nil Extra path (500 with no detail — must still render as
 		// omitted, not "message": null).
@@ -214,6 +256,27 @@ var _ = Describe("message interpolation constructors do not cross-contaminate fi
 				"user must appear before project — copy the format exactly from hakatime Errors.hs")
 	})
 
+	// gaka-d6x critique fix: exercise empty-string interpolation for
+	// InvalidRelation. A refactor that added `if user == "" { return ... }`
+	// would swallow the whole message; only this test would catch that.
+	It("InvalidRelation(\"\", \"\") preserves the exact template with empty splices — no nil guard swallows the message", func() {
+		e := InvalidRelation("", "")
+		Expect(e.Status).To(Equal(http.StatusNotFound))
+		Expect(e.Message).To(Equal("The user  doesn't have access to project "),
+			"empty user/project must still preserve the template — double-space between 'user' and 'doesn't' is intentional evidence of the empty splice")
+		Expect(e.Extra).To(BeNil())
+	})
+
+	// gaka-d6x critique fix: exercise empty-string interpolation for
+	// UsernameExists — same rationale as InvalidRelation above.
+	It("UsernameExists(\"\") preserves the exact template with empty splice — no nil guard swallows the message", func() {
+		e := UsernameExists("")
+		Expect(e.Status).To(Equal(http.StatusConflict))
+		Expect(e.Message).To(Equal("The username  already exists"),
+			"empty username must still preserve the template — double-space between 'username' and 'already' proves the splice happened")
+		Expect(e.Extra).To(BeNil())
+	})
+
 	It("UsernameExists embeds the offending username in Message only", func() {
 		e := UsernameExists("bob\"; DROP TABLE users;--")
 		Expect(e.Status).To(Equal(http.StatusConflict))
@@ -234,6 +297,24 @@ var _ = Describe("message interpolation constructors do not cross-contaminate fi
 			"the response body MUST remain valid JSON even when the username contains a quote")
 		Expect(decoded.Error).To(ContainSubstring(`bob"; DROP TABLE users;--`),
 			"decoded value must equal the original string once JSON un-escapes it")
+
+		// gaka-d6x critique fix: also pin the RAW WIRE BYTES so a hand-rolled
+		// body impl that bypasses encoding/json can't sneak past by producing
+		// something that happens to json.Unmarshal successfully. The wire MUST
+		// contain the escaped `bob\"` sequence and MUST NOT contain the
+		// unescaped `bob"; DROP` sequence.
+		rawBody := rec.Body.String()
+		Expect(rawBody).To(ContainSubstring(`bob\"; DROP TABLE users;--`),
+			"raw wire bytes MUST contain the JSON-escaped quote sequence")
+		Expect(rawBody).NotTo(ContainSubstring(`bob"; DROP`),
+			"raw wire bytes MUST NOT contain the un-escaped quote — that would break the JSON envelope and enable injection")
+		// And the body must remain a single well-formed JSON object with
+		// exactly the `error` key (no key-split from an unescaped quote).
+		var shape map[string]any
+		Expect(json.Unmarshal(rec.Body.Bytes(), &shape)).To(Succeed())
+		Expect(shape).To(HaveLen(1),
+			"exactly one top-level key even with injection payload — a raw-quote leak would split into 2+ keys")
+		Expect(shape).To(HaveKey("error"))
 	})
 })
 
@@ -274,5 +355,20 @@ var _ = Describe("predefined constructor message-text drift guard (hakatime Erro
 		Entry("Generic",
 			Generic(),
 			"An internal error occurred"),
+		// gaka-d6x critique fix: co-locate the interpolation constructors'
+		// exact strings with the no-arg drift guards. Previously their text
+		// was only asserted in individual It blocks, which made cross-audits
+		// of "which constructors are text-pinned" easy to miss. Using
+		// stable placeholder splices (<param>, <user>, <project>, <name>)
+		// documents the template shape and pins the surrounding text.
+		Entry("MissingQueryParam",
+			MissingQueryParam("<param>"),
+			"Missing query parameter <param>"),
+		Entry("InvalidRelation",
+			InvalidRelation("<user>", "<project>"),
+			"The user <user> doesn't have access to project <project>"),
+		Entry("UsernameExists",
+			UsernameExists("<name>"),
+			"The username <name> already exists"),
 	)
 })
