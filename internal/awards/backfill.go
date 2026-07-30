@@ -1,4 +1,4 @@
-// awards_backfill.go: server-side historical award-replay (gaka-hc6.5.1).
+// backfill.go: server-side historical award-replay (gaka-hc6.5.1).
 //
 // Unblocks the full delete of the client-side evaluator (gaka-hc6.5) by
 // moving the last runtime call site — AdminTab's StreakBackfillSection —
@@ -21,13 +21,14 @@
 //     Deliberately does NOT return per-day awards — the response would
 //     balloon and the FE has no consumer for it (it just wants to know
 //     "did the batch finish and how many rows landed").
-package handler
+package awards
 
 import (
 	"net/http"
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/labels"
 	"github.com/labstack/echo/v5"
@@ -48,16 +49,16 @@ type awardsBackfillResp struct {
 // Body: {days: N}. Server walks N days back to today, computing each
 // day's payload snapshot + writing ledger rows at that day.
 func (h *Handler) AwardsBackfill(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	var req awardsBackfillReq
-	if aerr := BindJSONWithLimit(c, &req, 4*1024); aerr != nil {
-		return respondErr(c, aerr)
+	if aerr := apihelpers.BindJSONWithLimit(c, &req, 4*1024); aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
 	}
 	if req.Days < 1 {
-		return respondErr(c, apierr.BadRequest("days must be ≥ 1"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("days must be ≥ 1"))
 	}
 	if req.Days > 365 {
 		req.Days = 365 // hard clamp; message-less silent floor is fine
@@ -75,7 +76,7 @@ func (h *Handler) AwardsBackfill(c *echo.Context) error {
 	// (safer than partially backfilling a corrupt catalog snapshot).
 	catalog, err := h.loadEvaluatorCatalog(ctx)
 	if err != nil {
-		return h.internalErr(c, "awards backfill catalog load failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "awards backfill catalog load failed", err)
 	}
 
 	start := time.Now()

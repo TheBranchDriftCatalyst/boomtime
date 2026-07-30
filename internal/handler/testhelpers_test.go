@@ -83,3 +83,19 @@ func verifyLoginG(e http.Handler, user, password string) int {
 	})
 	return rec.Code
 }
+
+// getJSONG mirrors the same-named helper that lived in
+// internal/handler/awards_eval_test.go before gaka-8tn phase 4b moved the
+// awards cluster into internal/awards/. Kept here as a local copy so
+// stats tests (bigbets_test.go — its sole caller outside of the moved
+// awards suite) keep the byte-identical invocation shape. Follow-up
+// (phase 8): promote to internal/testutil/handlerhelpers/.
+func getJSONG(e http.Handler, path, token string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Basic "+token)
+	}
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	return rec
+}

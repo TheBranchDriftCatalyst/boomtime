@@ -5,7 +5,7 @@
 // (b) malformed JSON body → 400;
 // (c) days=365 hard clamp (the >365 branch prescribed by req.Days = 365);
 // (d) cross-user isolation on ledger writes.
-package handler_test
+package awards_test
 
 import (
 	"bytes"

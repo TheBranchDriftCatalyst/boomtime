@@ -14,7 +14,7 @@
 // 1:1 case map (1 stdlib TestXxx):
 //
 //	TestLabelCoverage → label coverage sweep > "every catalog label fires against its minimum-viable seed"
-package handler_test
+package awards_test
 
 import (
 	"context"

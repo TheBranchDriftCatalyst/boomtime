@@ -12,7 +12,7 @@
 // AwardsLedger but does NOT wire AwardsLog or PublicAwardsStreaks. Those
 // are registered on a local *echo.Echo per-test — a fresh echo.New() with
 // only the needed routes avoids the duplicate-route panic entirely.
-package handler_test
+package awards_test
 
 import (
 	"context"
@@ -26,7 +26,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
 	"github.com/labstack/echo/v5"
 )
@@ -38,8 +38,8 @@ import (
 func awardsAuxRouter(hz *testutil.Harness) *echo.Echo {
 	e := echo.New()
 	h := hz.H
-	e.POST("/api/v1/users/current/awards/log", h.AwardsLog)
-	e.GET("/api/public/profile/:slug/awards/streaks", h.PublicAwardsStreaks)
+	e.POST("/api/v1/users/current/awards/log", h.Awards.AwardsLog)
+	e.GET("/api/public/profile/:slug/awards/streaks", h.Awards.PublicAwardsStreaks)
 	return e
 }
 
@@ -854,8 +854,8 @@ var _ = Describe("PublicAwards disabled-profile gate (gaka-hc6.3)", func() {
 	})
 })
 
-// Silence unused-import warnings on rare-alias branches. `_ = handler` /
-// `_ = httptest` keep the imports live even if a future edit strips a
+// Silence unused-import warnings on rare-alias branches. `_ = apihelpers`
+// / `_ = httptest` keep the imports live even if a future edit strips a
 // direct use.
-var _ = handler.BodyLimitSmall
+var _ = apihelpers.BodyLimitSmall
 var _ = httptest.NewRecorder

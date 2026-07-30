@@ -18,6 +18,7 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/awards"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/cache"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
@@ -69,6 +70,7 @@ type Handler struct {
 	Spaces  *spaces.Handler  // phase 2a
 	Goals   *goals.Handler   // phase 2b
 	Widgets *widgets.Handler // phase 3
+	Awards  *awards.Handler  // phase 4b
 }
 
 // New constructs a Handler. logHub streams server-process slog records to the
@@ -105,6 +107,7 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *impor
 		},
 		Goals:   &goals.Handler{DB: database, Logger: logger},
 		Widgets: widgets.New(database, cfg, logger, sharedCache),
+		Awards:  awards.New(database, cfg, logger),
 	}
 }
 

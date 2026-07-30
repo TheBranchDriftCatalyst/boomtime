@@ -1,4 +1,4 @@
-// awards_eval.go: server-side award evaluation (gaka-hc6.3).
+// eval.go: server-side award evaluation (gaka-hc6.3).
 //
 // Two endpoints:
 //
@@ -17,7 +17,7 @@
 // historical periods. The JIT client-eval path is the caller that's going
 // away (see gaka-hc6.4).
 
-package handler
+package awards
 
 import (
 	"errors"
@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/labels"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
@@ -35,18 +36,18 @@ import (
 
 // OwnAwards: GET /api/v1/users/current/awards
 func (h *Handler) OwnAwards(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	ctx := c.Request().Context()
 	payload, err := h.buildAwardsPayload(ctx, owner)
 	if err != nil {
-		return h.internalErr(c, "awards payload build failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "awards payload build failed", err)
 	}
 	catalog, err := h.loadEvaluatorCatalog(ctx)
 	if err != nil {
-		return h.internalErr(c, "awards catalog load failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "awards catalog load failed", err)
 	}
 	awards := labels.EvaluateAll(payload, catalog)
 
@@ -83,30 +84,30 @@ func (h *Handler) OwnAwards(c *echo.Context) error {
 func (h *Handler) PublicAwards(c *echo.Context) error {
 	slug := c.Param("slug")
 	if slug == "" {
-		return respondErr(c, apierr.BadRequest("slug is required"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("slug is required"))
 	}
 	ctx := c.Request().Context()
 	username, err := h.DB.LookupUsernameBySlug(ctx, slug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return respondErr(c, apierr.NotFound("This profile isn't public"))
+			return apihelpers.RespondErr(c, apierr.NotFound("This profile isn't public"))
 		}
-		return h.internalErr(c, "public awards slug lookup failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "public awards slug lookup failed", err)
 	}
 	enabled, _, err := h.DB.GetPublicProfile(ctx, username)
 	if err != nil {
-		return h.internalErr(c, "public awards enabled check failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "public awards enabled check failed", err)
 	}
 	if !enabled {
-		return respondErr(c, apierr.NotFound("This profile isn't public"))
+		return apihelpers.RespondErr(c, apierr.NotFound("This profile isn't public"))
 	}
 	payload, err := h.buildAwardsPayload(ctx, username)
 	if err != nil {
-		return h.internalErr(c, "public awards payload build failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "public awards payload build failed", err)
 	}
 	catalog, err := h.loadEvaluatorCatalog(ctx)
 	if err != nil {
-		return h.internalErr(c, "public awards catalog load failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "public awards catalog load failed", err)
 	}
 	awards := labels.EvaluateAll(payload, catalog)
 	// Deliberately NO ledger write here — a public visit must not pollute

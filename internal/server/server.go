@@ -11,6 +11,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/awards"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/goals"
@@ -127,6 +128,11 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	// Order preserved: /spaces/preview still registers BEFORE /spaces/:id
 	// so the static route wins path matching against Echo's param matcher.
 	spaces.Register(e, h.Spaces)
+	// gaka-8tn phase 4b: awards cluster (streak ledger + evaluator +
+	// backfill — 7 routes) extracted into internal/awards. Registered at
+	// the tail so it lands AFTER the identity-owned auth routes and
+	// preserves the pre-refactor per-endpoint matching order.
+	awards.Register(e, h.Awards)
 }
 
 // registerGoalRoutes: user-defined composite goals (gaka-wpb). CRUD +
@@ -275,22 +281,11 @@ func registerAuthRoutes(e *echo.Echo, h *handler.Handler) {
 	e.GET("/api/v1/users/current/timezone", h.GetTimezone)
 	e.PATCH("/api/v1/users/current/timezone", h.UpdateTimezone)
 
-	// gaka-mwp-streaks: award-ledger endpoints. FE evaluator POSTs the
-	// firing labels after each evaluate() run; server upserts one row
-	// per (user, label, period_start) so the streak walker can render
-	// "3x NIGHT WATCH" badges on the LabelChip. Public variant so
-	// profile viewers see the same badges.
-	e.POST("/api/v1/users/current/awards/log", h.AwardsLog)
-	e.GET("/api/v1/users/current/awards/streaks", h.AwardsStreaks)
-	e.GET("/api/v1/users/current/awards/ledger", h.AwardsLedger)
-	e.GET("/api/public/profile/:slug/awards/streaks", h.PublicAwardsStreaks)
-	// gaka-hc6.3: server-side award evaluation. Replaces the client-side
-	// evaluate() call. Own variant WRITES the ledger; public variant does not.
-	e.GET("/api/v1/users/current/awards", h.OwnAwards)
-	e.GET("/api/public/profile/:slug/awards", h.PublicAwards)
-	// gaka-hc6.5.1: historical replay. Unblocks the full delete of the
-	// client-side evaluator (which was the AdminTab backfill's last use).
-	e.POST("/api/v1/users/current/awards/backfill", h.AwardsBackfill)
+	// gaka-8tn phase 4b: award-ledger + evaluator + backfill endpoints
+	// extracted into internal/awards; the seven route strings + their
+	// registration order live in awards.Register (called at the tail of
+	// registerRoutes) so this function's remaining lines stay identity-
+	// owned for the parallel gaka-8tn phase 4a extract.
 }
 
 // registerMiscRoutes: badges, widgets, leaderboards, and commits.

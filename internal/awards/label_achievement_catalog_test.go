@@ -25,7 +25,7 @@
 //   - No shared TestMain seeding
 //   - go test -run 'TestLabelCoverage/languages-python-master' -v works
 //     standalone
-package handler_test
+package awards_test
 
 import (
 	"encoding/json"

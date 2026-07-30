@@ -1,34 +1,63 @@
-// awards.go: label-award streak ledger endpoints (gaka-mwp-streaks).
+// Package awards owns the label-award streak ledger + evaluator HTTP surface
+// (gaka-8tn phase 4b). Extracted from internal/handler/ so the awards domain
+// (log/streaks/ledger inspection + server-side evaluation + historical
+// backfill) owns its handler struct, routes, and tests as one folder.
 //
-// Two handlers:
+// Three clusters land in this package:
 //
-//   - POST /api/v1/users/current/awards/log — client sends the label ids
-//     that just fired for the caller (from the JIT client-side
-//     evaluator) plus each label's PeriodType. Server computes the
-//     current period bounds in the user's timezone and upserts one row
-//     per (username, label_id, period_start). Idempotent — a repeat
-//     visit inside the same period is a no-op.
+//   - handler.go — the streak ledger endpoints (this file):
+//     POST /awards/log, GET /awards/streaks, GET /awards/ledger, and the
+//     public /p/:slug/awards/streaks mirror. Timezone always comes from the
+//     RESOLVED user tz (gaka-dg7 resolveUserTZ), never assumed UTC.
 //
-//   - GET /api/v1/users/current/awards/streaks — returns
-//     {[labelId]: streakCount} for every label with an ACTIVE streak
-//     (i.e. fired in the current period). Streak counts back until the
-//     first gap; a break resets the count to 0 next period.
+//   - eval.go — server-side award evaluation (gaka-hc6.3):
+//     GET /awards (own, WRITES ledger) and GET /public/profile/:slug/awards
+//     (public, does NOT write). Runs the labels evaluator against the
+//     dashboard payload.
 //
-// Public variant lives alongside the /p/:slug endpoints (see
-// profile.go for the pattern) so profile viewers see the streak
-// badges too. Timezone always comes from the RESOLVED user tz
-// (gaka-dg7 resolveUserTZ), never assumed UTC.
-
-package handler
+//   - backfill.go — historical replay (gaka-hc6.5.1):
+//     POST /awards/backfill. Walks N days back computing each day's payload
+//     snapshot + writing ledger rows at that day. Idempotent.
+//
+// The award_ledger DB methods stay on *db.DB (internal/db/award_ledger.go)
+// because they're used cross-package by goals + identity.
+package awards
 
 import (
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/labstack/echo/v5"
 )
+
+// Handler bundles the SUBSET of the god-type handler.Handler's dependencies
+// that the awards domain actually reads. Everything else stays out of this
+// package.
+//
+//   - DB     — award_ledger + labels catalog + public-profile lookup +
+//     dashboard-payload query chain (GetUserActivity/Rollup, GetPunchcard,
+//     GetCategoryDaily, LoadHiddenSets, LoadRenameSets, GetUserTimezone)
+//   - Cfg    — DefaultTimezone (used by the resolveUserTZ 3-level chain)
+//   - Logger — internal log target for eval / ledger-write / backfill errors
+type Handler struct {
+	DB     *db.DB
+	Cfg    *config.Config
+	Logger *slog.Logger
+}
+
+// New constructs an awards.Handler with the passed-in shared deps.
+func New(database *db.DB, cfg *config.Config, logger *slog.Logger) *Handler {
+	return &Handler{
+		DB:     database,
+		Cfg:    cfg,
+		Logger: logger,
+	}
+}
 
 // awardLogReq is the wire body for POST /awards/log. `Items` may be
 // empty (no-op). Each item's PeriodType is trusted from the client
@@ -49,13 +78,13 @@ type awardLogReq struct {
 
 // AwardsLog: POST /api/v1/users/current/awards/log
 func (h *Handler) AwardsLog(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	var req awardLogReq
-	if aerr := BindJSONWithLimit(c, &req, 128*1024); aerr != nil {
-		return respondErr(c, aerr)
+	if aerr := apihelpers.BindJSONWithLimit(c, &req, 128*1024); aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
 	}
 	// Filter to known period types; drop lifetime (not ledger-eligible).
 	items := make([]db.AwardLogItem, 0, len(req.Items))
@@ -80,16 +109,16 @@ func (h *Handler) AwardsLog(c *echo.Context) error {
 	if req.At != "" {
 		parsed, perr := time.Parse(time.RFC3339, req.At)
 		if perr != nil {
-			return respondErr(c, apierr.BadRequest("`at` must be RFC3339"))
+			return apihelpers.RespondErr(c, apierr.BadRequest("`at` must be RFC3339"))
 		}
 		if parsed.After(time.Now().Add(time.Hour)) {
-			return respondErr(c, apierr.BadRequest("`at` cannot be in the future"))
+			return apihelpers.RespondErr(c, apierr.BadRequest("`at` cannot be in the future"))
 		}
 		at = parsed
 	}
 	written, err := h.DB.LogAwards(c.Request().Context(), owner, items, loc, at)
 	if err != nil {
-		return h.internalErr(c, "award log write failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "award log write failed", err)
 	}
 	return c.JSON(http.StatusOK, map[string]any{
 		"received": len(req.Items),
@@ -99,9 +128,9 @@ func (h *Handler) AwardsLog(c *echo.Context) error {
 
 // AwardsStreaks: GET /api/v1/users/current/awards/streaks
 func (h *Handler) AwardsStreaks(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	return h.awardsStreaksFor(c, owner)
 }
@@ -111,11 +140,11 @@ func (h *Handler) AwardsStreaks(c *echo.Context) error {
 func (h *Handler) PublicAwardsStreaks(c *echo.Context) error {
 	slug := c.Param("slug")
 	if slug == "" {
-		return respondErr(c, apierr.BadRequest("slug is required"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("slug is required"))
 	}
 	owner, err := h.DB.LookupUsernameBySlug(c.Request().Context(), slug)
 	if err != nil || owner == "" {
-		return respondErr(c, apierr.New(http.StatusNotFound, "profile not found", nil))
+		return apihelpers.RespondErr(c, apierr.New(http.StatusNotFound, "profile not found", nil))
 	}
 	return h.awardsStreaksFor(c, owner)
 }
@@ -124,9 +153,9 @@ func (h *Handler) PublicAwardsStreaks(c *echo.Context) error {
 // — inspector endpoint that returns the raw ledger rows (with label
 // name + kind joined in) for debug/admin viewing on the AdminTab.
 func (h *Handler) AwardsLedger(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	label := c.QueryParam("label")
 	limit := 500
@@ -137,7 +166,7 @@ func (h *Handler) AwardsLedger(c *echo.Context) error {
 	}
 	rows, err := h.DB.ListAwardLedger(c.Request().Context(), owner, label, limit)
 	if err != nil {
-		return h.internalErr(c, "ledger query failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "ledger query failed", err)
 	}
 	c.Response().Header().Set("Cache-Control", "private, max-age=30")
 	return c.JSON(http.StatusOK, map[string]any{
@@ -174,7 +203,7 @@ func (h *Handler) awardsStreaksFor(c *echo.Context, owner string) error {
 	}
 	streaks, err := h.DB.GetLabelStreaks(c.Request().Context(), owner, loc, time.Now())
 	if err != nil {
-		return h.internalErr(c, "streak query failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "streak query failed", err)
 	}
 	// Response is a flat map keyed by label id — small payload, easiest
 	// for the FE to look up by chip.

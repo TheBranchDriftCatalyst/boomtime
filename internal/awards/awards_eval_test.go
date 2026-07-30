@@ -7,7 +7,7 @@
 //	TestPublicAwards_404WhenProfileDisabled      → PublicAwards > "unknown slug → 404"
 //	TestAwardsBackfill_WritesHistoricalLedger    → AwardsBackfill > "5-day historical walk, idempotent second call"
 //	TestAwardsBackfill_RejectsBadDays            → AwardsBackfill > "days<1 → 400; days>365 clamps to 200"
-package handler_test
+package awards_test
 
 import (
 	"bytes"

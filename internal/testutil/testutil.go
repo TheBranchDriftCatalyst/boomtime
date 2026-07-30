@@ -257,13 +257,14 @@ func (hz *Harness) Router() *echo.Echo {
 	e.POST("/api/v1/admin/avatar/synthesize-prompt", h.SynthesizeAvatarPrompt)
 	// gaka-hc6.3 + gaka-hc6.5.1: server-side award evaluation + historical
 	// backfill. Public/own variants + the backfill entry point.
-	e.GET("/api/v1/users/current/awards", h.OwnAwards)
-	e.GET("/api/public/profile/:slug/awards", h.PublicAwards)
-	e.POST("/api/v1/users/current/awards/backfill", h.AwardsBackfill)
+	// gaka-8tn phase 4b: receivers moved to h.Awards.* (awards extracted).
+	e.GET("/api/v1/users/current/awards", h.Awards.OwnAwards)
+	e.GET("/api/public/profile/:slug/awards", h.Awards.PublicAwards)
+	e.POST("/api/v1/users/current/awards/backfill", h.Awards.AwardsBackfill)
 	// gaka-mwp-streaks: streak walker + ledger inspector — needed for the
 	// integration test's ledger-write assertion.
-	e.GET("/api/v1/users/current/awards/streaks", h.AwardsStreaks)
-	e.GET("/api/v1/users/current/awards/ledger", h.AwardsLedger)
+	e.GET("/api/v1/users/current/awards/streaks", h.Awards.AwardsStreaks)
+	e.GET("/api/v1/users/current/awards/ledger", h.Awards.AwardsLedger)
 	// gaka-0vp.18 (DRY audit): folded 8 per-file routerWithXxx helpers into
 	// the central Router() below. The per-file builders were 5-11 LOC each,
 	// existed in stdlib + ginkgo pairs (byte-identical), and were the
