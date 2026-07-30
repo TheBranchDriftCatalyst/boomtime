@@ -54,6 +54,17 @@ var _ = Describe("LanguageFromEntity", func() {
 		Entry("Dhall", "config.dhall", strptr("Dhall")),
 		Entry("no extension → nil", "noext", (*string)(nil)),
 		Entry("trailing dot → nil", "trailingdot.", (*string)(nil)),
+		// NAMED INVARIANT (gaka-d6x): a bare empty string entity must return nil.
+		// filepath.Ext("") == "" → hits the `ext == ""` outer guard directly, but
+		// pin the input-shape edge separately from the ".noext" case (which reaches
+		// the same branch via a different path). Prevents a refactor that special-
+		// cases "no dot in name" without also handling empty input.
+		Entry("empty entity → nil (direct empty-string input)", "", (*string)(nil)),
+		// NAMED INVARIANT (gaka-d6x): a bare "." entity must return nil.
+		// filepath.Ext(".") == "." → hits the `ext == "."` outer guard. Distinct
+		// from "trailingdot." (which also produces ".") because the input shape
+		// itself is a root-level dotfile-like edge case worth pinning.
+		Entry("bare dot → nil (root-level dotfile-like input)", ".", (*string)(nil)),
 	)
 
 	// NAMED INVARIANT: unknown extensions must upper-case the raw ext, so a
@@ -167,19 +178,44 @@ var _ = Describe("UserAgentInfo edge cases", func() {
 		Expect(*info.Plugin).NotTo(ContainSubstring("EXTRA_TAIL"))
 	})
 
-	// NAMED INVARIANT: each returned pointer is independent — mutating the
-	// caller's copy of *Editor must not corrupt *Platform / *Plugin. Guards
-	// against a naive shared-backing-array refactor.
-	It("returns independent string pointers per field", func() {
+	// NAMED INVARIANT (gaka-d6x): each returned pointer is a DISTINCT allocation
+	// — Platform, Editor, and Plugin must not alias the same *string. Guards
+	// against a refactor that returns the same &v across fields (e.g., a shared
+	// loop variable captured by reference, or a shared-backing-array trick).
+	// A write through one pointer must not be observable through the others.
+	It("returns independent (non-aliased) string pointers per field", func() {
 		info := UserAgentInfo("wakatime/1.0 linux go1.20 code/1 code-wakatime/4")
-		// Snapshot originals.
+		Expect(info.Platform).NotTo(BeNil())
+		Expect(info.Editor).NotTo(BeNil())
+		Expect(info.Plugin).NotTo(BeNil())
+
+		// Pointer-identity assertions: no two fields may point at the same
+		// underlying *string. BeIdenticalTo compares pointer values, not
+		// dereferenced strings.
+		Expect(info.Platform).NotTo(BeIdenticalTo(info.Editor))
+		Expect(info.Platform).NotTo(BeIdenticalTo(info.Plugin))
+		Expect(info.Editor).NotTo(BeIdenticalTo(info.Plugin))
+
+		// Snapshot originals, then write THROUGH the Editor pointer. If any two
+		// fields aliased the same *string, this write would leak into the
+		// others (since *info.Editor = "..." reassigns the pointee).
 		platOrig := *info.Platform
 		plugOrig := *info.Plugin
-		// Mutate the local Editor copy — must not alias other fields.
-		mutated := *info.Editor + "_MUTATED"
-		_ = mutated
+		*info.Editor = "MUTATED"
 		Expect(*info.Platform).To(Equal(platOrig))
 		Expect(*info.Plugin).To(Equal(plugOrig))
+	})
+
+	// NAMED INVARIANT (gaka-d6x): a single-token UA (no spaces at all) must
+	// leave Platform / Editor / Plugin nil. strings.Split("onlyone", " ") returns
+	// ["onlyone"] (len 1), so indices 1, 3, 4 are all out of range. Distinct
+	// from the empty-UA case (which also yields len 1) because the input shape
+	// — a bare identifier vs. an empty string — is a real edge worth pinning.
+	It("single-token UA (no spaces) leaves platform/editor/plugin nil", func() {
+		info := UserAgentInfo("onlyone")
+		Expect(info.Platform).To(BeNil())
+		Expect(info.Editor).To(BeNil())
+		Expect(info.Plugin).To(BeNil())
 	})
 })
 
