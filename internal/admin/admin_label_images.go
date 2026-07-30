@@ -37,7 +37,7 @@
 //   GET  /api/v1/admin/label-images/ws
 //     WebSocket. On connect the server writes an initial snapshot then
 //     streams every added/updated/removed event forever.
-package handler
+package admin
 
 import (
 	"context"
@@ -50,21 +50,6 @@ import (
 	"github.com/coder/websocket/wsjson"
 	"github.com/labstack/echo/v5"
 )
-
-// requireAdmin: 401 without a token, 403 when not on the admin allowlist.
-// Returns the resolved owner on success. The 403 path deliberately does
-// NOT distinguish "unknown admin config" from "not on the list" — both
-// look like a plain 403 to the client.
-func (h *Handler) requireAdmin(c *echo.Context) (string, *apierr.Error) {
-	_, owner, aerr := h.resolveUser(c)
-	if aerr != nil {
-		return "", aerr
-	}
-	if !h.Cfg.IsAdmin(owner) {
-		return "", apierr.New(http.StatusForbidden, "admin only", nil)
-	}
-	return owner, nil
-}
 
 // AdminLabelImagesInfo: GET /api/v1/admin/label-images.
 // Returns feature status + shim config + current row count so the Admin

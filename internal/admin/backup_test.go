@@ -3,7 +3,7 @@
 //
 //	TestDBImportGuards       → DBImport guards > "auth/confirm gating (no auth, bad token, missing confirm, garbage body)"
 //	TestDBBackupRoundTripHTTP→ backup round-trip > "export → mutate → import restores state and returns summary"
-package handler_test
+package admin_test
 
 import (
 	"archive/zip"

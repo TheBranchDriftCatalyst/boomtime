@@ -8,7 +8,7 @@
 //	fail-fast guard fires. Only reachable through a directly-constructed
 //	echo.Context (a synthetic request path that satisfies the route but
 //	leaves the param blank at handler entry).
-package handler
+package admin
 
 import (
 	"net/http"

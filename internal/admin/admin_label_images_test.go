@@ -5,7 +5,7 @@
 //	TestEvent2JSON_WireShape         → event2json > "wire shape (FE hook keys)"
 //	TestRegenResponseJob_WireShape   → regenResponseJob > "exact JSON envelope"
 //	TestJob_JSONOmitsZeroTimestamps  → Job JSON > "omits zero pointer fields"
-package handler
+package admin
 
 import (
 	"encoding/json"

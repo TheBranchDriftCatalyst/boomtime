@@ -4,7 +4,7 @@
 // the initial snapshot frame — this covers the post-Accept branches of
 // both handlers (subscribe + snapshot write + reader-goroutine cleanup)
 // that the httptest.NewRecorder path (which can't hijack) never reaches.
-package handler_test
+package admin_test
 
 import (
 	"context"

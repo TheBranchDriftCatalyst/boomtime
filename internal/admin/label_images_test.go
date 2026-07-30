@@ -4,7 +4,7 @@
 //	TestLabelImage_Served                   → LabelImage > "serves bytes + Cache-Control verbatim"
 //	TestLabelImage_NotFound                 → LabelImage > "unknown id → 404"
 //	TestLabelImage_IgnoresCacheBustParam    → LabelImage > "?v= cache-bust param is ignored"
-package handler_test
+package admin_test
 
 import (
 	"context"

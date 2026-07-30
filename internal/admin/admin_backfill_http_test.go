@@ -5,7 +5,7 @@
 // gate, cross-owner 404 (never 403 — no oracle), body-supplied
 // sourceTag/username ignored, DELETE danger-zone prefix guard, WS
 // snapshot filter.
-package handler_test
+package admin_test
 
 import (
 	"bytes"

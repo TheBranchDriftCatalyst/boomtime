@@ -8,7 +8,7 @@
 //	exceeding the configured cap is rejected before validation runs; the
 //	response body names the env var so the operator can tune it. Uses a
 //	tiny cap (16 bytes) to keep the test fast and memory-safe.
-package handler_test
+package admin_test
 
 import (
 	"context"

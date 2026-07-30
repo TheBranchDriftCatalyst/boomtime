@@ -11,7 +11,7 @@
 //	"empty list → {sources: []} (never null)" — a brand-new user with no
 //	heartbeats returns an empty array. The FE contract requires an array,
 //	not JSON null.
-package handler_test
+package admin_test
 
 import (
 	"encoding/json"

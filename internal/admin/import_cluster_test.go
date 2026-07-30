@@ -13,7 +13,7 @@
 //
 // Package convention (per import_test.go): external ginkgo variant
 // (package handler_test) so we mirror the sibling.
-package handler_test
+package admin_test
 
 import (
 	"bytes"
@@ -90,14 +90,14 @@ func newImportDeps(serverKey string) *importDeps {
 
 	e := echo.New()
 	// Full import route surface — one line per handler method under test.
-	e.POST("/api/v1/users/current/import", h.ImportRequest)
-	e.GET("/api/v1/users/current/import/config", h.ImportConfig)
-	e.POST("/api/v1/users/current/import/wakatime-range", h.WakatimeRange)
-	e.GET("/api/v1/users/current/import/jobs", h.ImportJobs)
-	e.GET("/api/v1/users/current/import/jobs/:id", h.ImportJob)
-	e.POST("/api/v1/users/current/import/jobs/:id/cancel", h.ImportJobCancel)
-	e.GET("/api/v1/users/current/import/jobs/:id/logs", h.ImportJobLogs)
-	e.GET("/api/v1/users/current/import/jobs/:id/ws", h.ImportJobWS)
+	e.POST("/api/v1/users/current/import", h.Admin.ImportRequest)
+	e.GET("/api/v1/users/current/import/config", h.Admin.ImportConfig)
+	e.POST("/api/v1/users/current/import/wakatime-range", h.Admin.WakatimeRange)
+	e.GET("/api/v1/users/current/import/jobs", h.Admin.ImportJobs)
+	e.GET("/api/v1/users/current/import/jobs/:id", h.Admin.ImportJob)
+	e.POST("/api/v1/users/current/import/jobs/:id/cancel", h.Admin.ImportJobCancel)
+	e.GET("/api/v1/users/current/import/jobs/:id/logs", h.Admin.ImportJobLogs)
+	e.GET("/api/v1/users/current/import/jobs/:id/ws", h.Admin.ImportJobWS)
 
 	deps := &importDeps{
 		Hz:     hz,

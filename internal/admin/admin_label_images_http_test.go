@@ -6,7 +6,7 @@
 // 400; ids w/o all → 400; all=true + truncate wipes existing rows;
 // idempotent per-label enqueue (`existing=true`); ID must match wire
 // `entries`.
-package handler_test
+package admin_test
 
 import (
 	"bytes"

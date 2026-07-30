@@ -13,7 +13,7 @@
 //	The error message names the env var so an operator knows what to
 //	tune. Exercised via a tiny override (100 bytes) to keep the test
 //	fast + memory-safe.
-package handler
+package admin
 
 import (
 	"os"

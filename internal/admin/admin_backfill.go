@@ -24,7 +24,7 @@
 // FE) sends. The server never trusts a body-supplied username or
 // sourceTag — both come from resolved auth + persisted config.
 
-package handler
+package admin
 
 import (
 	"context"

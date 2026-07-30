@@ -2,7 +2,7 @@
 // 1:1 case map (1 stdlib TestXxx):
 //
 //	TestImportRequestDoesNotEagerlySaveTypedKey → ImportRequest > "does not eagerly persist typed apiToken; save is deferred to worker"
-package handler_test
+package admin_test
 
 import (
 	"bytes"
@@ -42,7 +42,7 @@ var _ = Describe("ImportRequest (gaka-6jm.8)", func() {
 
 		e := echo.New()
 		e.POST("/auth/login", h.Identity.Login) // route table shim so echo doesn't 404 on middleware (gaka-8tn phase 4a)
-		e.POST("/api/v1/users/current/import", h.ImportRequest)
+		e.POST("/api/v1/users/current/import", h.Admin.ImportRequest)
 
 		// Baseline: no saved key.
 		_, has, err := hz.DB.GetEncryptedWakatimeKey(context.Background(), user)

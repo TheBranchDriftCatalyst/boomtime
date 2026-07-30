@@ -15,7 +15,7 @@
 // the feature off — that's the safer default (no sudden 404s for users
 // whose profiles are already showing images). The gate only guards writes
 // (the startup worker + the CLI regenerate command).
-package handler
+package admin
 
 import (
 	"net/http"

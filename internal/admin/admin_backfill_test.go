@@ -5,7 +5,7 @@
 //	TestBackfillEvent2JSON_WireShape          → backfillEvent2json > "wire shape (kind/job.*)"
 //	TestBackfillConfigPatch_WireShape_RoundTrips
 //	                                          → backfillConfigPatch > "round-trips PATCH body"
-package handler
+package admin
 
 import (
 	"encoding/json"
