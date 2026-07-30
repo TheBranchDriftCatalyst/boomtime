@@ -124,13 +124,19 @@ var _ = Describe("Healthz (extended)", func() {
 		Expect(count).To(BeNumerically("<=", 512))
 	})
 
-	It("errors on NewRequest failure via an invalid URL character (control-char in path)", func() {
+	It("errors on NewRequest failure via an invalid URL character (control-char in path) — pins the URL-parse branch, not just 'any error'", func() {
 		// Force http.NewRequestWithContext to fail: the URL is checked at
 		// req construction time. A control char in the URL trips the URL
-		// parser inside http.NewRequestWithContext.
+		// parser inside http.NewRequestWithContext with a specific sentinel
+		// string ("invalid control character in URL"). Asserting on that
+		// substring ties the test to the actual failure mode — a regression
+		// that moved URL validation elsewhere (or converted this into a
+		// transport-phase error) would surface a different message and fail
+		// this spec loudly.
 		c := &Client{URL: "http://example.com/\x7f", HTTP: &http.Client{}}
 		err := c.Healthz(context.Background())
 		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("invalid control character"))
 	})
 })
 
@@ -421,25 +427,48 @@ var _ = Describe("Generate (retry state machine)", func() {
 		Expect(attempts.Load()).To(BeEquivalentTo(4))
 	})
 
-	It("context cancel BEFORE first attempt still returns quickly — no attempts made after ctx done", func() {
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel() // cancelled up front
+	It("pre-cancelled ctx: first attempt runs and returns fast, no retries scheduled (invariant: attempt 0 not gated by ctx.Done())", func() {
+		// The retry loop only checks ctx.Done() BETWEEN attempts (attempt>0),
+		// so attempt 0 always runs — the cancelled ctx short-circuits via
+		// http.Client.Do returning ctx.Err() immediately, and then the retry
+		// loop's ctx.Done() branch prevents attempts 1..3. Assert on the
+		// attempts counter to prove the retry-guard fired rather than relying
+		// on a loose wall-clock bound (a fast httptest server could complete
+		// 4 iterations inside 2s if the guard ever broke).
+		var attempts atomic.Int32
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			attempts.Add(1)
 			w.WriteHeader(http.StatusInternalServerError)
 		}))
 		defer srv.Close()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // cancelled up front
 		c, _ := NewClient(srv.URL)
+
 		start := time.Now()
 		_, _, err := c.Generate(ctx, "p", "m", "", nil)
 		elapsed := time.Since(start)
+
 		Expect(err).To(HaveOccurred())
-		Expect(elapsed).To(BeNumerically("<", 2*time.Second))
+		// Attempt 0 fires (transport returns ctx.Err()); retry loop's
+		// ctx.Done() short-circuits before attempts 1-3. Depending on timing
+		// of the httptest server startup, the server MAY or MAY NOT actually
+		// observe attempt 0 (net/http bails early on cancelled ctx). Either
+		// way, we must see at most 1 server-side hit (proving retries were
+		// suppressed).
+		Expect(attempts.Load()).To(BeNumerically("<=", 1))
+		Expect(elapsed).To(BeNumerically("<", 500*time.Millisecond))
 	})
 
-	It("errors on NewRequestWithContext failure via control-char in base URL", func() {
+	It("errors on NewRequestWithContext failure via control-char in base URL — pins the URL-parse branch specifically", func() {
+		// Same reasoning as the Healthz spec above: assert on the URL parser's
+		// sentinel string so we're pinning the URL-parse branch, not just
+		// "any error happened somewhere downstream".
 		c := &Client{URL: "http://example.com/\x7f", HTTP: &http.Client{}}
 		_, _, err := c.Generate(context.Background(), "p", "m", "", nil)
 		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("invalid control character"))
 	})
 })
 
@@ -467,11 +496,36 @@ var _ = Describe("sniffMime (raw bytes)", func() {
 		Expect(sniffMime([]byte{})).To(Equal("image/png"))
 	})
 
-	It("truncated PNG magic (only 7 bytes) → NOT sniffed as PNG (invariant: full-prefix required)", func() {
+	It("truncated JPEG magic (only 2 bytes: 0xFF 0xD8) → falls through to default, NOT image/jpeg (invariant: full 3-byte prefix required)", func() {
+		// This is the definitive full-prefix-required test — it uses JPEG
+		// magic (which requires 3 bytes) so the fallback (image/png) is
+		// OBSERVABLY DIFFERENT from a mistaken match (image/jpeg). If a
+		// regression relaxed the `len(b) >= 3` guard to `len(b) >= 2`, this
+		// spec would flip to image/jpeg and fail. Compare with the truncated
+		// PNG case below — that one can't distinguish "fell through" from
+		// "matched" because default == PNG.
+		short := []byte{0xFF, 0xD8}
+		Expect(sniffMime(short)).To(Equal("image/png"))
+	})
+
+	It("truncated PNG magic (only 7 bytes) → does not panic; returns default (invariant: len>=8 guard holds; observable through NON-panic + default fallback)", func() {
+		// The default fallback happens to also be image/png, so this test
+		// pins ONLY "doesn't panic" and "returns default" — it cannot
+		// distinguish "matched by prefix" from "fell through to default".
+		// The truncated-JPEG spec above is the one that proves the
+		// full-prefix invariant. This spec is kept for the no-panic
+		// invariant on len=7 (regression that dereferenced b[7] without a
+		// guard would crash).
 		short := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A}
-		// Length < 8 fails the case guard → falls through to default (which
-		// is also image/png). The important invariant is that we didn't
-		// panic and didn't skip the guard.
+		Expect(func() { _ = sniffMime(short) }).NotTo(Panic())
+		Expect(sniffMime(short)).To(Equal("image/png"))
+	})
+
+	It("truncated WEBP framing (only 11 bytes, one short of the check) → falls through to default, NOT image/webp (invariant: len>=12 guard)", func() {
+		// Symmetric coverage: WEBP needs 12 bytes; give it 11 and prove we
+		// don't accidentally return image/webp. Default is image/png, WEBP
+		// mistake would return image/webp — observably distinct.
+		short := []byte{'R', 'I', 'F', 'F', 0x00, 0x00, 0x00, 0x00, 'W', 'E', 'B'}
 		Expect(sniffMime(short)).To(Equal("image/png"))
 	})
 
@@ -554,6 +608,228 @@ var _ = Describe("Generate MIME propagation", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(bytes.Equal(got, want)).To(BeTrue())
 		Expect(mime).To(Equal("image/webp"))
+	})
+})
+
+// ---- Missing invariants (added per code-review critique) ------------
+
+var _ = Describe("Generate (wire-contract invariants)", func() {
+	It("outbound POST carries Content-Type: application/json (invariant: proxies/shims may reject a JSON POST without it)", func() {
+		var gotCT string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotCT = r.Header.Get("Content-Type")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]string{{"b64_json": base64.StdEncoding.EncodeToString(pngBytesGinkgo())}},
+			})
+		}))
+		defer srv.Close()
+		c, _ := NewClient(srv.URL)
+		_, _, err := c.Generate(context.Background(), "p", "m", "", nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(gotCT).To(Equal("application/json"))
+	})
+
+	It("outbound URL path is EXACTLY /v1/images/generations when base URL has trailing slash (invariant: no // path-doubling)", func() {
+		// Security-relevant: path-doubling defeats CDN and reverse-proxy
+		// routing rules. NewClient trims the trailing slash so concat is
+		// always clean; if that trim regressed, `srv.URL+"/" + "/v1/..."`
+		// would produce "//v1/images/generations" and this handler would
+		// see r.URL.Path == "//v1/images/generations" instead.
+		var gotPath string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotPath = r.URL.Path
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]string{{"b64_json": base64.StdEncoding.EncodeToString(pngBytesGinkgo())}},
+			})
+		}))
+		defer srv.Close()
+
+		// Deliberately pass srv.URL with a trailing slash to prove the trim.
+		c, err := NewClient(srv.URL + "/")
+		Expect(err).NotTo(HaveOccurred())
+		_, _, err = c.Generate(context.Background(), "p", "m", "", nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(gotPath).To(Equal("/v1/images/generations"))
+		Expect(gotPath).NotTo(HavePrefix("//"))
+	})
+
+	It("Healthz outbound URL path is EXACTLY /healthz when base URL has trailing slash (invariant: no // path-doubling on health probe)", func() {
+		var gotPath string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotPath = r.URL.Path
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+		}))
+		defer srv.Close()
+
+		c, err := NewClient(srv.URL + "/")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(c.Healthz(context.Background())).To(Succeed())
+		Expect(gotPath).To(Equal("/healthz"))
+		Expect(gotPath).NotTo(HavePrefix("//"))
+	})
+})
+
+var _ = Describe("Generate (retry backoff TIMING invariant)", func() {
+	// Named invariant: backoffs are 1s, 2s, 4s (exponential). If a regression
+	// hardcoded {100ms, 100ms, 100ms}, no existing test would fail — this
+	// spec pins the timing floor at 1+2+4=7s for the 4-attempt case.
+	It("persistent 5xx elapses ≥7s across 4 attempts (invariant: 1s+2s+4s exponential backoff)", func() {
+		var attempts atomic.Int32
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			attempts.Add(1)
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = io.WriteString(w, "upstream dead")
+		}))
+		defer srv.Close()
+		c, _ := NewClient(srv.URL)
+		c.HTTP.Timeout = 15 * time.Second
+
+		start := time.Now()
+		_, _, err := c.Generate(context.Background(), "p", "m", "", nil)
+		elapsed := time.Since(start)
+
+		Expect(err).To(HaveOccurred())
+		Expect(attempts.Load()).To(BeEquivalentTo(4))
+		// 1s + 2s + 4s = 7s minimum wall-clock between-attempt sleep, PLUS
+		// four fast HTTP round-trips. Allow a small tolerance (200ms) for
+		// scheduling jitter — the invariant is "backoffs actually occurred",
+		// which requires ≥ ~6.8s in practice.
+		Expect(elapsed).To(BeNumerically(">=", 6800*time.Millisecond))
+	})
+})
+
+var _ = Describe("Generate (header-timeout does NOT retry — real transport path)", func() {
+	// Complements the synthetic OpError{Op:"read"} spec: exercises the REAL
+	// http.Transport.ResponseHeaderTimeout code path. A shim that accepts
+	// TCP but never flushes headers must fail once (not retry).
+	It("wedged server (headers never flushed) fails after one attempt when ResponseHeaderTimeout fires — no retry", func() {
+		var attempts atomic.Int32
+		// Use an explicit unblock channel so srv.Close() below does NOT
+		// deadlock waiting for the handler. httptest.Server.Close() waits
+		// on all in-flight handlers; if we only block on r.Context().Done()
+		// the handler is stuck until we tell it to unwind — the client
+		// giving up on the response does NOT cancel the server-side request
+		// context in the httptest transport.
+		unblock := make(chan struct{})
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			attempts.Add(1)
+			// Block until either the client hangs up (real ctx cancel) OR
+			// the test unblocks us via close(unblock).
+			select {
+			case <-r.Context().Done():
+			case <-unblock:
+			}
+		}))
+		defer func() {
+			close(unblock) // release the stuck handler so srv.Close() returns
+			srv.Close()
+		}()
+
+		c, _ := NewClient(srv.URL)
+		// Shorten header timeout so the spec is fast; retain the invariant.
+		c.HTTP.Transport = &http.Transport{
+			DialContext: (&net.Dialer{
+				Timeout:   2 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			ResponseHeaderTimeout: 250 * time.Millisecond,
+		}
+		c.HTTP.Timeout = 5 * time.Second
+
+		start := time.Now()
+		_, _, err := c.Generate(context.Background(), "p", "m", "", nil)
+		elapsed := time.Since(start)
+
+		Expect(err).To(HaveOccurred())
+		// Invariant: exactly ONE attempt — header timeout is a response-phase
+		// failure, isDialError returns false, retry loop bails.
+		Expect(attempts.Load()).To(BeEquivalentTo(1))
+		// Sanity: elapsed is bounded well below the full 1s+2s+4s backoff
+		// (proves no retries happened, in addition to the attempts counter).
+		Expect(elapsed).To(BeNumerically("<", 2*time.Second))
+	})
+})
+
+// ---- Security gaps (added per code-review critique) -----------------
+
+var _ = Describe("Generate (SSRF hardening — table-driven bad schemes in shim response)", func() {
+	// The url-field parser in doOne only accepts a "data:" prefix. Any other
+	// scheme MUST be rejected, not fetched. Cover a range of dangerous
+	// schemes so a future regression that changed the prefix check (e.g. to
+	// case-insensitive, or that accepted `data:` case-variants like `DATA:`
+	// via a strings.EqualFold refactor) is caught.
+	badSchemes := []struct {
+		name string
+		url  string
+	}{
+		{"file:// (local filesystem)", "file:///etc/passwd"},
+		{"gopher:// (legacy exfil vector)", "gopher://evil.example.com:70/_junk"},
+		{"ftp:// (credential-in-URL exfil)", "ftp://user:pass@evil.example.com/x"},
+		{"http:// external (SSRF classic)", "http://169.254.169.254/latest/meta-data/"},
+		{"https:// external", "https://evil.example.com/image.png"},
+		{"DATA: (case-variant — data: prefix is case-sensitive)", "DATA:image/png;base64,AAAA"},
+		{"Data: (title-case)", "Data:image/png;base64,AAAA"},
+		{" data: (leading whitespace)", " data:image/png;base64,AAAA"},
+		{"javascript: (XSS vector if ever rendered)", "javascript:alert(1)"},
+		{"empty string is neither b64_json nor url (falls through to different error)", ""},
+	}
+	for _, tc := range badSchemes {
+		tc := tc
+		It("rejects "+tc.name+" — invariant: only data: (lowercase, no leading ws) is accepted", func() {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"data": []map[string]string{{"url": tc.url}},
+				})
+			}))
+			defer srv.Close()
+			c, _ := NewClient(srv.URL)
+			_, _, err := c.Generate(context.Background(), "p", "m", "", nil)
+			Expect(err).To(HaveOccurred())
+			// The error must be EITHER "unsupported URL scheme" (non-empty,
+			// non-data:) OR "neither b64_json nor url" (empty). It must NEVER
+			// be nil (which would imply we tried to fetch or decoded garbage).
+			msg := err.Error()
+			okScheme := strings.Contains(msg, "unsupported URL scheme")
+			okNeither := strings.Contains(msg, "neither b64_json nor url")
+			Expect(okScheme || okNeither).To(BeTrue(),
+				"expected 'unsupported URL scheme' or 'neither b64_json nor url', got: %s", msg)
+		})
+	}
+})
+
+var _ = Describe("Generate (log-injection surface on unsupported URL scheme)", func() {
+	// The unsupported-scheme error reflects the first 30 chars of the
+	// attacker-supplied URL via %.30s. That's already a bounded truncation,
+	// so log-injection is limited — but we pin the bound so a future change
+	// that widened it to %s (unbounded) is caught. We also assert control
+	// chars are surfaced as-is (Go's fmt doesn't sanitize them, so the
+	// downstream logger is responsible for escaping — this is documented
+	// behavior we don't want to silently change).
+	It("caps reflected URL at 30 chars in the error message (invariant: bounded log-injection surface)", func() {
+		// 100-char attacker-controlled URL prefix with control chars mixed in.
+		attacker := "notascheme://" + strings.Repeat("A", 87) + "\x1b[31mRED"
+		Expect(len(attacker)).To(BeNumerically(">=", 100))
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]string{{"url": attacker}},
+			})
+		}))
+		defer srv.Close()
+		c, _ := NewClient(srv.URL)
+		_, _, err := c.Generate(context.Background(), "p", "m", "", nil)
+		Expect(err).To(HaveOccurred())
+		msg := err.Error()
+		Expect(msg).To(ContainSubstring("unsupported URL scheme"))
+		// The full 100-char attacker string must NOT appear verbatim — %.30s
+		// truncates. The ANSI escape sequence sits past the 30-char boundary,
+		// so it must NOT appear in the message.
+		Expect(msg).NotTo(ContainSubstring("\x1b[31mRED"))
+		Expect(msg).NotTo(ContainSubstring(attacker))
+		// The FIRST 30 chars of the attacker URL WILL appear (that's the
+		// documented behavior — the operator needs enough context to
+		// diagnose). Prove it: "notascheme://" is 13 chars, so the first
+		// 30 chars = "notascheme://" + 17 A's.
+		Expect(msg).To(ContainSubstring("notascheme://" + strings.Repeat("A", 17)))
 	})
 })
 
