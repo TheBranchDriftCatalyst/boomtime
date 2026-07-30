@@ -44,12 +44,9 @@
 // component's own tests cover the state transitions.
 import { useEffect, useId, useMemo, useState } from "react";
 import { X } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
 import { Label } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
-import { api } from "@/lib/api";
-import { qk } from "@/lib/queryKeys";
 import {
   Select,
   SelectContent,
@@ -59,6 +56,8 @@ import {
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/select";
 import { MaxPredicateDepth, MaxStreakDays } from "@/features/goals/constants";
 import { formatDuration, parseDuration } from "@/lib/duration";
+import { useAxisValues } from "@/features/rules/useAxisValues";
+import type { HeartbeatAxis } from "@/types/heartbeats";
 import type {
   GoalActiveDaysWindow,
   GoalHeartbeatAxis,
@@ -70,45 +69,20 @@ import type {
 // ---- axis-value autocomplete ---------------------------------------------
 //
 // Goal predicates target a specific axis + value (e.g. axis="language",
-// value="Go"). The value field used to be a plain <Input> — operators had to
-// know the exact string casing/spelling. `AxisValueInput` upgrades that with a
-// native <datalist> populated from the user's own recent stats so hitting
-// axis=language shows Go/Python/TypeScript/... as suggestions.
+// value="Go"). Autocomplete pulls the FULL distinct-value set for the axis
+// via useAxisValues (backed by /api/v1/heartbeats/group over an all-time
+// window), NOT /stats — /stats runs capWithOther which collapses the
+// long tail into a synthetic "Other (N more)" bucket, so autocomplete
+// against /stats silently drops any language / project the user has
+// only used a little. Predicates authored against those missing values
+// would never match a heartbeat, so completeness of this list is
+// load-bearing (gaka-cov2 audit).
 //
-// Non-existing values are STILL accepted — datalist is suggest-only, not
-// restrict-to-list. That's deliberate: an operator can author aspirational
-// goals ("learn Rust before I have any Rust time") by just typing.
+// Non-existing values are STILL accepted — the datalist is suggest-only,
+// not restrict-to-list, so operators can author aspirational goals
+// ("learn Rust before I have any Rust time") by just typing.
 //
-// Data source: /api/v1/users/current/stats windowed to the last 90 days.
-// Cached via react-query so opening the modal repeatedly doesn't re-fetch.
-// Branch + plugin axes don't come out of /stats — the datalist stays empty
-// for those, input still works as free-text.
-
-const AXIS_TO_STATS_KEY: Partial<Record<GoalHeartbeatAxis, keyof StatsAxisMap>> = {
-  language: "languages",
-  project: "projects",
-  editor: "editors",
-  category: "categories",
-  platform: "platforms",
-  machine: "machines",
-  // branch + plugin intentionally omitted — /stats doesn't surface them.
-};
-
-type StatsAxisMap = {
-  languages: ReadonlyArray<{ name: string }>;
-  projects: ReadonlyArray<{ name: string }>;
-  editors: ReadonlyArray<{ name: string }>;
-  categories?: ReadonlyArray<{ name: string }>;
-  platforms: ReadonlyArray<{ name: string }>;
-  machines: ReadonlyArray<{ name: string }>;
-};
-
-function last90(): { start: string; end: string } {
-  const end = new Date();
-  const start = new Date(end.getTime() - 90 * 24 * 60 * 60 * 1000);
-  const iso = (d: Date) => d.toISOString().slice(0, 10);
-  return { start: iso(start), end: iso(end) };
-}
+// Cached via react-query for 5 min — distinct-value lists change slowly.
 
 function AxisValueInput({
   id,
@@ -121,31 +95,24 @@ function AxisValueInput({
   value: string;
   onChange: (v: string) => void;
 }) {
-  const range = useMemo(last90, []);
-  const stats = useQuery({
-    queryKey: qk.stats(range.start, range.end, undefined, undefined),
-    queryFn: () => api.getStats({ start: range.start, end: range.end }),
-    staleTime: 5 * 60_000,
-  });
+  // GoalHeartbeatAxis is a subset of HeartbeatAxis (goals only support the
+  // 8 real curation axes; useAxisValues is typed against the wider set).
+  const { options } = useAxisValues(axis as HeartbeatAxis);
   const listId = `${id}-suggestions`;
   const suggestions = useMemo(() => {
-    const key = AXIS_TO_STATS_KEY[axis];
-    if (!key || !stats.data) return [] as string[];
-    const arr = (stats.data as unknown as StatsAxisMap)[key] ?? [];
-    return arr
-      .map((r) => r.name)
+    return options
+      .map((o) => o.value)
       .filter((n) => typeof n === "string" && n.length > 0)
-      // Filter out the display-only "Other (N more)" chart-bounding
-      // bucket from stats.capWithOther (internal/stats/segment.go). It
-      // isn't a real axis value — a goal predicate against it would
-      // never match a heartbeat. Same for a bare literal "Other" name
-      // that comes back on some axes when the top-12 cap creates a
-      // solo tail. Categories that legitimately are "Other" (the SQL
-      // COALESCE(NULL,'Other') path) still match on other queries —
-      // this filter only affects the autocomplete surface.
+      // Belt-and-braces filter for the synthetic "Other (N more)" name
+      // in case the axis-values query ever routes through a capped
+      // source. Real user-typed "Other" as a project name still works
+      // on other endpoints (the regex requires the "(N more)" suffix
+      // OR bare "Other" — a legitimate project literally named "Other"
+      // by the user still round-trips through predicate matching, just
+      // not the autocomplete).
       .filter((n) => !/^Other(\s*\(\d+\s*more\))?$/.test(n))
-      .slice(0, 100); // browsers cap datalist rendering; 100 is plenty
-  }, [axis, stats.data]);
+      .slice(0, 500); // browsers cap datalist rendering; 500 is generous
+  }, [options]);
   return (
     <>
       <Input
