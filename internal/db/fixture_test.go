@@ -134,6 +134,8 @@ var _ = ginkgo.Describe("fixture pipeline", func() {
 })
 
 // -- helpers restored from stdlib partner (gaka-0vp.17) --
+//
+//go:embed testdata/heartbeats_fixture.json
 var fixtureFS embed.FS
 
 func loadFixture(t *testing.T, d *DB, sender string) fixture.File {
