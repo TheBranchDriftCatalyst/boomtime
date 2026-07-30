@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/goals"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/wakatime"
@@ -15,32 +16,32 @@ import (
 )
 
 // Heartbeat ingests a single heartbeat: POST /api/v1/users/current/heartbeats.
-// Body is capped at BodyLimitLarge (8 MiB) — a single heartbeat is ~500 bytes so
+// Body is capped at apihelpers.BodyLimitLarge (8 MiB) — a single heartbeat is ~500 bytes so
 // the cap is generous, but bounded so an authenticated hostile client can't OOM
 // the process with a multi-GB body (gaka-d6x.handler critique fix).
 func (h *Handler) Heartbeat(c *echo.Context) error {
 	var hb model.HeartbeatPayload
-	if aerr := BindJSONWithLimit(c, &hb, BodyLimitLarge); aerr != nil {
-		return respondErr(c, aerr)
+	if aerr := apihelpers.BindJSONWithLimit(c, &hb, apihelpers.BodyLimitLarge); aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
 	}
 	return h.storeAndRespond(c, []model.HeartbeatPayload{hb})
 }
 
 // HeartbeatBulk ingests many heartbeats: POST /api/v1/users/current/heartbeats.bulk.
-// Body is capped at BodyLimitLarge (8 MiB) — enough for ~10K-20K batched
+// Body is capped at apihelpers.BodyLimitLarge (8 MiB) — enough for ~10K-20K batched
 // heartbeats but bounded to prevent DoS via oversized ingest (gaka-d6x.handler).
 func (h *Handler) HeartbeatBulk(c *echo.Context) error {
 	var hbs []model.HeartbeatPayload
-	if aerr := BindJSONWithLimit(c, &hbs, BodyLimitLarge); aerr != nil {
-		return respondErr(c, aerr)
+	if aerr := apihelpers.BindJSONWithLimit(c, &hbs, apihelpers.BodyLimitLarge); aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
 	}
 	return h.storeAndRespond(c, hbs)
 }
 
 func (h *Handler) storeAndRespond(c *echo.Context, hbs []model.HeartbeatPayload) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	ctx := c.Request().Context()
 
@@ -73,7 +74,7 @@ func (h *Handler) storeAndRespond(c *echo.Context, hbs []model.HeartbeatPayload)
 	ids, err := h.DB.SaveHeartbeats(ctx, enriched)
 	if err != nil {
 		h.Logger.Error("failed to store heartbeats", "err", err)
-		return respondErr(c, apierr.Generic())
+		return apihelpers.RespondErr(c, apierr.Generic())
 	}
 
 	// gaka-wpb: new activity might have flipped a goal — clear the cache

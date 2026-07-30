@@ -1,6 +1,7 @@
 package stats
 
 import (
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/labstack/echo/v5"
 )
 
@@ -8,12 +9,12 @@ import (
 func (h *Handler) Leaderboards(c *echo.Context) error {
 	s, aerr := h.dashboardScope(c, 30)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	// Leaderboards are cross-user, but the requester's own hide + rename + space
 	// scope apply to THEIR rows only, so the response is per-owner — cache per
 	// owner. Note: no timeLimit in the key (the query doesn't take one).
-	return h.cachedJSON(c, s.cacheKey("leaderboards", s.t0, s.t1), func() (any, error) {
+	return apihelpers.CachedJSON(h.Cache, h.Logger, c, s.cacheKey("leaderboards", s.t0, s.t1), func() (any, error) {
 		l, err := s.load(loadHidden | loadRenames)
 		if err != nil {
 			return nil, err

@@ -44,6 +44,7 @@ import (
 	"net/http"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/labelcatalog"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/imagejobs"
 	"github.com/coder/websocket"
@@ -62,12 +63,12 @@ import (
 func (h *Handler) AdminLabelImagesInfo(c *echo.Context) error {
 	_, aerr := h.requireAdmin(c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	ctx := c.Request().Context()
 	items, err := h.DB.ListLabelImagesMeta(ctx)
 	if err != nil {
-		return h.internalErr(c, "list label images failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "list label images failed", err)
 	}
 	baseline := labelcatalog.IDs()
 	if labels, lerr := h.DB.ListLabels(ctx); lerr == nil && len(labels) > 0 {
@@ -123,19 +124,19 @@ type regenResponseJob struct {
 // concurrency; the FE just fires enqueues and watches the WS.
 func (h *Handler) AdminLabelImagesRegenerate(c *echo.Context) error {
 	if _, aerr := h.requireAdmin(c); aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	if h.LabelImagesWorker == nil || h.ImageJobQueue == nil {
-		return respondErr(c, apierr.New(http.StatusServiceUnavailable,
+		return apihelpers.RespondErr(c, apierr.New(http.StatusServiceUnavailable,
 			"label-images feature is disabled — set BOOM_FEATURE_LABEL_IMAGES=on and BOOM_COMFYUI_SHIM_URL, then restart", nil))
 	}
 
 	var req regenReq
-	if aerr := BindJSONWithLimit(c, &req, 256*1024); aerr != nil {
-		return respondErr(c, aerr)
+	if aerr := apihelpers.BindJSONWithLimit(c, &req, 256*1024); aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
 	}
 	if len(req.Entries) == 0 {
-		return respondErr(c, apierr.BadRequest("`entries` is required (send [{id, prompt}, ...])"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("`entries` is required (send [{id, prompt}, ...])"))
 	}
 
 	// Build the id -> entry map, preserving per-entry overrides end-to-end
@@ -171,10 +172,10 @@ func (h *Handler) AdminLabelImagesRegenerate(c *echo.Context) error {
 			}
 		}
 	} else {
-		return respondErr(c, apierr.BadRequest("either `all: true` or a non-empty `ids` array is required"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("either `all: true` or a non-empty `ids` array is required"))
 	}
 	if len(toRun) == 0 {
-		return respondErr(c, apierr.BadRequest("nothing to regenerate — verify `ids` match the `entries` you sent"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("nothing to regenerate — verify `ids` match the `entries` you sent"))
 	}
 
 	// Truncate is a destructive DB op — preserve the pre-gaka-8bz
@@ -188,7 +189,7 @@ func (h *Handler) AdminLabelImagesRegenerate(c *echo.Context) error {
 	reqCtx := c.Request().Context()
 	if req.All && req.Truncate {
 		if err := h.DB.TruncateLabelImages(reqCtx); err != nil {
-			return h.internalErr(c, "label images truncate failed", err)
+			return apihelpers.InternalErr(h.Logger, c, "label images truncate failed", err)
 		}
 	}
 
@@ -247,15 +248,15 @@ func (h *Handler) AdminLabelImagesRegenerate(c *echo.Context) error {
 func (h *Handler) AdminLabelImagesWS(c *echo.Context) error {
 	// Cookie auth first — a bad cookie should never even trigger the
 	// upgrade handshake.
-	owner, aerr := h.resolveOwnerFromCookie(c, apierr.ExpiredRefreshToken())
+	owner, aerr := apihelpers.ResolveOwnerFromCookie(h.DB, h.Logger, c, apierr.ExpiredRefreshToken())
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	if !h.Cfg.IsAdmin(owner) {
-		return respondErr(c, apierr.New(http.StatusForbidden, "admin only", nil))
+		return apihelpers.RespondErr(c, apierr.New(http.StatusForbidden, "admin only", nil))
 	}
 	if h.ImageJobQueue == nil {
-		return respondErr(c, apierr.New(http.StatusServiceUnavailable,
+		return apihelpers.RespondErr(c, apierr.New(http.StatusServiceUnavailable,
 			"label-images feature is disabled", nil))
 	}
 

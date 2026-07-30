@@ -65,7 +65,7 @@ func (h *Handler) AwardsBackfill(c *echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
-	tzName := h.resolveUserTZ(ctx, owner)
+	tzName := apihelpers.ResolveUserTZ(h.DB, h.Logger, ctx, owner, h.Cfg.DefaultTimezone)
 	loc, terr := time.LoadLocation(tzName)
 	if terr != nil {
 		loc = time.UTC

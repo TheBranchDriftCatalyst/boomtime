@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 	"github.com/labstack/echo/v5"
 )
@@ -18,9 +19,9 @@ const defaultNumOfCommits int64 = 40
 
 // Commits: GET /api/v1/commits/:project/report?repoName&repoOwner&user&limit.
 func (h *Handler) Commits(c *echo.Context) error {
-	_, username, aerr := h.resolveUser(c)
+	_, username, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	project := c.Param("project")
 	repoName := c.QueryParam("repoName")
@@ -28,27 +29,27 @@ func (h *Handler) Commits(c *echo.Context) error {
 	user := c.QueryParam("user")
 
 	if repoName == "" {
-		return respondErr(c, apierr.MissingQueryParam("repoName"))
+		return apihelpers.RespondErr(c, apierr.MissingQueryParam("repoName"))
 	}
 	if repoOwner == "" {
-		return respondErr(c, apierr.MissingQueryParam("repoOwner"))
+		return apihelpers.RespondErr(c, apierr.MissingQueryParam("repoOwner"))
 	}
 	if user == "" {
-		return respondErr(c, apierr.MissingQueryParam("user"))
+		return apihelpers.RespondErr(c, apierr.MissingQueryParam("user"))
 	}
 
 	if h.Cfg.GithubTokenValue() == "" {
-		return respondErr(c, apierr.MissingGithubToken())
+		return apihelpers.RespondErr(c, apierr.MissingGithubToken())
 	}
 
-	numCommits := queryInt64(c, "limit", defaultNumOfCommits)
+	numCommits := apihelpers.QueryInt64(c, "limit", defaultNumOfCommits)
 
 	// Fetch one extra commit: the last commit's time cannot be computed.
 	repoCommits, err := h.fetchCommits(repoOwner, repoName, numCommits+1)
 	if err != nil {
 		h.Logger.Warn("github commit fetch failed", "err", err)
 		msg := "HTTP call to api.github.com failed"
-		return respondErr(c, apierr.GenericHTTP(msg, nil))
+		return apihelpers.RespondErr(c, apierr.GenericHTTP(msg, nil))
 	}
 
 	// Filter to the user's non-merge commits.
@@ -76,7 +77,7 @@ func (h *Handler) Commits(c *echo.Context) error {
 	if len(users) > 0 {
 		timeSpent, err = h.DB.GetTotalTimeBetween(ctx, users, projects, mins, maxs)
 		if err != nil {
-			return h.internalErr(c, "commit time aggregation failed", err)
+			return apihelpers.InternalErr(h.Logger, c, "commit time aggregation failed", err)
 		}
 	}
 

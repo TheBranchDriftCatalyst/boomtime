@@ -1,6 +1,7 @@
 package stats
 
 import (
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/labstack/echo/v5"
 )
 
@@ -19,9 +20,9 @@ const (
 func (h *Handler) ActiveFiles(c *echo.Context) error {
 	s, aerr := h.dashboardScope(c, 7)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
-	limit := int(queryInt64(c, "limit", activeFilesDefaultLimit))
+	limit := int(apihelpers.QueryInt64(c, "limit", activeFilesDefaultLimit))
 	if limit < 1 {
 		limit = activeFilesDefaultLimit
 	}
@@ -29,7 +30,7 @@ func (h *Handler) ActiveFiles(c *echo.Context) error {
 		limit = activeFilesMaxLimit
 	}
 
-	return h.cachedJSON(c, s.cacheKey("files", s.t0, s.t1, s.limit, limit), func() (any, error) {
+	return apihelpers.CachedJSON(h.Cache, h.Logger, c, s.cacheKey("files", s.t0, s.t1, s.limit, limit), func() (any, error) {
 		l, err := s.load(loadHidden | loadRenames)
 		if err != nil {
 			return nil, err

@@ -55,7 +55,7 @@ func (h *Handler) OwnAwards(c *echo.Context) error {
 	// existing (username, label_id, period_start) PK. Use the caller's
 	// resolved tz (gaka-dg7) so a user in Pacific gets their day-boundary
 	// right even when the server clock is UTC.
-	tzName := h.resolveUserTZ(ctx, owner)
+	tzName := apihelpers.ResolveUserTZ(h.DB, h.Logger, ctx, owner, h.Cfg.DefaultTimezone)
 	loc, terr := time.LoadLocation(tzName)
 	if terr != nil {
 		loc = time.UTC
@@ -133,7 +133,7 @@ func (h *Handler) buildAwardsPayload(ctx echoContext, username string) (*labels.
 // against the historical window that ended THAT day.
 func (h *Handler) buildAwardsPayloadAt(ctx echoContext, username string, at time.Time) (*labels.Payload, error) {
 	t1 := at.UTC()
-	t0 := removeDays(t1, publicProfilePayloadDays)
+	t0 := apihelpers.RemoveDays(t1, publicProfilePayloadDays)
 
 	hidden, err := h.DB.LoadHiddenSets(ctx, username)
 	if err != nil {
@@ -143,7 +143,7 @@ func (h *Handler) buildAwardsPayloadAt(ctx echoContext, username string, at time
 	if err != nil {
 		return nil, err
 	}
-	tz := h.resolveUserTZ(ctx, username)
+	tz := apihelpers.ResolveUserTZ(h.DB, h.Logger, ctx, username, h.Cfg.DefaultTimezone)
 
 	var members db.MemberSets
 	var rows []db.StatRow

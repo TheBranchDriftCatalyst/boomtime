@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
@@ -84,24 +85,24 @@ func (h *Handler) Login(c *echo.Context) error {
 	var creds model.AuthRequest
 	// gaka-bi2: 4 KiB cap. Credentials are two short strings; a fat body here
 	// would just amplify the argon2 verify below into a memory DoS.
-	if aerr := BindJSONWithLimit(c, &creds, BodyLimitSmall); aerr != nil {
-		return respondErr(c, aerr)
+	if aerr := apihelpers.BindJSONWithLimit(c, &creds, apihelpers.BodyLimitSmall); aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
 	}
 	ctx := c.Request().Context()
 
 	user, err := h.DB.GetUserByName(ctx, creds.Username)
 	if err != nil {
-		return h.internalErr(c, "user lookup failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "user lookup failed", err)
 	}
 	if user == nil {
 		// gaka-imm: burn the same ~10ms of argon2 the found-user branch
 		// spends in VerifyPassword. Result discarded — the point is to
 		// eliminate the timing gap, not to actually authenticate.
 		auth.BurnSentinelVerify(creds.Password)
-		return respondErr(c, apierr.InvalidCredentials())
+		return apihelpers.RespondErr(c, apierr.InvalidCredentials())
 	}
 	if !auth.VerifyPasswordWithVersion(creds.Password, user.HashedPassword, user.SaltUsed, user.ArgonVersion) {
-		return respondErr(c, apierr.InvalidCredentials())
+		return apihelpers.RespondErr(c, apierr.InvalidCredentials())
 	}
 
 	// gaka-awh.6 (Bravo MEDIUM): transparent rehash-on-login. If the row is
@@ -131,7 +132,7 @@ func (h *Handler) Login(c *echo.Context) error {
 
 	td := mkTokenData(creds.Username)
 	if err := h.DB.CreateAccessTokens(ctx, td, h.Cfg.SessionExpiry); err != nil {
-		return h.internalErr(c, "access token creation failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "access token creation failed", err)
 	}
 	h.setRefreshCookie(c, td)
 	return c.JSON(http.StatusOK, loginResponse(td, time.Now().UTC()))
@@ -140,12 +141,12 @@ func (h *Handler) Login(c *echo.Context) error {
 // Register: POST /auth/register.
 func (h *Handler) Register(c *echo.Context) error {
 	if !h.Cfg.EnableRegistration {
-		return respondErr(c, apierr.DisabledRegistration())
+		return apihelpers.RespondErr(c, apierr.DisabledRegistration())
 	}
 	var creds model.AuthRequest
 	// gaka-bi2: 4 KiB cap. Same rationale as Login — credentials are short.
-	if aerr := BindJSONWithLimit(c, &creds, BodyLimitSmall); aerr != nil {
-		return respondErr(c, aerr)
+	if aerr := apihelpers.BindJSONWithLimit(c, &creds, apihelpers.BodyLimitSmall); aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
 	}
 	// gaka-e5e: enforce the shared password policy BEFORE hashing +
 	// inserting. Prior to this check, POST /auth/register accepted empty
@@ -153,24 +154,24 @@ func (h *Handler) Register(c *echo.Context) error {
 	// auth.ValidatePassword's sentinel errors are user-safe by design —
 	// surface .Error() directly (no internal state leaked).
 	if err := auth.ValidatePassword(creds.Password); err != nil {
-		return respondErr(c, apierr.BadRequest(err.Error()))
+		return apihelpers.RespondErr(c, apierr.BadRequest(err.Error()))
 	}
 	ctx := c.Request().Context()
 
 	if err := auth.CreateUser(ctx, h.DB, creds.Username, creds.Password); err != nil {
 		if errors.Is(err, auth.ErrUserExists) {
-			return respondErr(c, apierr.UsernameExists(creds.Username))
+			return apihelpers.RespondErr(c, apierr.UsernameExists(creds.Username))
 		}
 		if errors.Is(err, auth.ErrInvalidCredentials) {
 			// unreachable via CreateUser; kept for symmetry with Login flow.
-			return respondErr(c, apierr.InvalidCredentials())
+			return apihelpers.RespondErr(c, apierr.InvalidCredentials())
 		}
-		return h.internalErr(c, "user creation failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "user creation failed", err)
 	}
 
 	td := mkTokenData(creds.Username)
 	if err := h.DB.CreateAccessTokens(ctx, td, h.Cfg.SessionExpiry); err != nil {
-		return h.internalErr(c, "access token creation failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "access token creation failed", err)
 	}
 	h.setRefreshCookie(c, td)
 	return c.JSON(http.StatusOK, loginResponse(td, time.Now().UTC()))
@@ -178,14 +179,14 @@ func (h *Handler) Register(c *echo.Context) error {
 
 // RefreshToken: POST /auth/refresh_token (reads refresh_token cookie).
 func (h *Handler) RefreshToken(c *echo.Context) error {
-	owner, aerr := h.resolveOwnerFromCookie(c, apierr.MissingRefreshTokenCookie())
+	owner, aerr := apihelpers.ResolveOwnerFromCookie(h.DB, h.Logger, c, apierr.MissingRefreshTokenCookie())
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 
 	td := mkTokenData(owner)
 	if err := h.DB.CreateAccessTokens(c.Request().Context(), td, h.Cfg.SessionExpiry); err != nil {
-		return h.internalErr(c, "access token creation failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "access token creation failed", err)
 	}
 	h.setRefreshCookie(c, td)
 	return c.JSON(http.StatusOK, loginResponse(td, time.Now().UTC()))
@@ -193,25 +194,25 @@ func (h *Handler) RefreshToken(c *echo.Context) error {
 
 // Logout: POST /auth/logout.
 func (h *Handler) Logout(c *echo.Context) error {
-	tkn, aerr := tokenFromHeader(c)
+	tkn, aerr := apihelpers.TokenFromHeader(c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	refresh, ok := auth.ParseRefreshCookie(c.Request().Header.Get("Cookie"))
 	if !ok {
-		return respondErr(c, apierr.MissingRefreshTokenCookie())
+		return apihelpers.RespondErr(c, apierr.MissingRefreshTokenCookie())
 	}
 	n, err := h.DB.DeleteTokens(c.Request().Context(), tkn, refresh)
 	if err != nil {
-		return h.internalErr(c, "token deletion failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "token deletion failed", err)
 	}
 	if n < 2 {
-		return respondErr(c, apierr.InvalidCredentials())
+		return apihelpers.RespondErr(c, apierr.InvalidCredentials())
 	}
 	// gaka-b5x.1: clear the client-side cookie with matching attributes
 	// (Path + Secure + SameSite) so browsers actually evict the entry.
 	h.clearRefreshCookie(c)
-	return noContent(c)
+	return apihelpers.NoContent(c)
 }
 
 // CreateAPIToken: POST /auth/create_api_token. Body is optional; when present
@@ -219,9 +220,9 @@ func (h *Handler) Logout(c *echo.Context) error {
 // human-readable label for the minted token. Empty/missing name is fine —
 // the tokens list will just show an em-dash until renamed.
 func (h *Handler) CreateAPIToken(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	var body struct {
 		Name string `json:"name"`
@@ -235,20 +236,20 @@ func (h *Handler) CreateAPIToken(c *echo.Context) error {
 	}
 	raw, err := auth.CreateAPIToken(c.Request().Context(), h.DB, owner, name)
 	if err != nil {
-		return h.internalErr(c, "api token insert failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "api token insert failed", err)
 	}
 	return c.JSON(http.StatusOK, model.TokenResponse{APIToken: raw})
 }
 
 // ListAPITokens: GET /auth/tokens.
 func (h *Handler) ListAPITokens(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	tokens, err := h.DB.ListApiTokens(c.Request().Context(), owner)
 	if err != nil {
-		return h.internalErr(c, "api token list failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "api token list failed", err)
 	}
 	return c.JSON(http.StatusOK, tokens)
 }
@@ -257,33 +258,33 @@ func (h *Handler) ListAPITokens(c *echo.Context) error {
 // owner; the response is the same whether or not a row matched (no oracle for
 // probing other users' token values).
 func (h *Handler) DeleteToken(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	id := c.Param("id")
 	if err := h.DB.DeleteAuthToken(c.Request().Context(), id, owner); err != nil {
-		return h.internalErr(c, "api token deletion failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "api token deletion failed", err)
 	}
-	return noContent(c)
+	return apihelpers.NoContent(c)
 }
 
 // UpdateToken: POST /auth/token (rename).
 func (h *Handler) UpdateToken(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	var meta model.TokenMetadata
 	// gaka-bi2: 4 KiB cap. Token metadata is a name string; no reason to
 	// accept a runaway body.
-	if aerr := BindJSONWithLimit(c, &meta, BodyLimitSmall); aerr != nil {
-		return respondErr(c, aerr)
+	if aerr := apihelpers.BindJSONWithLimit(c, &meta, apihelpers.BodyLimitSmall); aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
 	}
 	if err := h.DB.UpdateTokenMetadata(c.Request().Context(), owner, meta); err != nil {
-		return h.internalErr(c, "token metadata update failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "token metadata update failed", err)
 	}
-	return noContent(c)
+	return apihelpers.NoContent(c)
 }
 
 // CurrentUser: GET /auth/users/current (Users.hs).
@@ -292,9 +293,9 @@ func (h *Handler) UpdateToken(c *echo.Context) error {
 // (post-3-level-resolution). Wakatime editor plugins ignore unknown fields,
 // so this stays wire-safe with wakatime-compat callers.
 func (h *Handler) CurrentUser(c *echo.Context) error {
-	owner, aerr := h.resolveOwnerFromCookie(c, apierr.MissingRefreshTokenCookie())
+	owner, aerr := apihelpers.ResolveOwnerFromCookie(h.DB, h.Logger, c, apierr.MissingRefreshTokenCookie())
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	ctx := c.Request().Context()
 	// Best-effort read: on a lookup failure log and fall through to "", so

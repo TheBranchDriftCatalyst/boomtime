@@ -15,6 +15,7 @@
 package apihelpers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -244,12 +245,99 @@ func InvalidateOwnerCache(cch *cache.TTL, owner string) {
 // ptrStr is a tiny helper to embed a scalar in the apierr Extra field.
 func ptrStr(s string) *string { return &s }
 
-// removeDays / addDays: local UTC-normalized date arithmetic.
-func removeDays(t time.Time, n int) time.Time {
+// RemoveDays / AddDays: UTC-normalized date arithmetic. Exported so
+// per-domain packages that build historical windows (identity public
+// profile, awards evaluator, widgets renderer, admin backfill) can share
+// one implementation.
+func RemoveDays(t time.Time, n int) time.Time {
 	y, m, d := t.Date()
 	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC).AddDate(0, 0, -n)
 }
-func addDays(t time.Time, n int) time.Time {
+func AddDays(t time.Time, n int) time.Time {
 	y, m, d := t.Date()
 	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC).AddDate(0, 0, n)
+}
+
+func removeDays(t time.Time, n int) time.Time { return RemoveDays(t, n) }
+func addDays(t time.Time, n int) time.Time    { return AddDays(t, n) }
+
+// ---- Cache-key helpers --------------------------------------------------
+
+// CacheKeyTimeBucket is the granularity time.Time parts are truncated to
+// when building cache keys. Without bucketing, default-range requests
+// (whose end is time.Now()) mint a fresh key every second, so the TTL
+// cache never hits and only accumulates dead entries. Aligned with the
+// default 30s stats TTL. Only the KEY is bucketed — the actual query
+// range is untouched.
+const CacheKeyTimeBucket = 30 * time.Second
+
+// CacheKey builds a stable cache key: "owner|name|part|part...". time.Time
+// parts are truncated to CacheKeyTimeBucket. Byte-identical to the
+// pre-refactor per-domain implementations that lived in
+// internal/handler/handler.go, internal/widgets/helpers.go,
+// internal/stats/handler.go, and internal/admin/handler.go — collapsed
+// here so a key-format regression can only happen in one file.
+func CacheKey(owner, name string, parts ...any) string {
+	var b strings.Builder
+	b.WriteString(owner)
+	b.WriteByte('|')
+	b.WriteString(name)
+	for _, p := range parts {
+		b.WriteByte('|')
+		if t, ok := p.(time.Time); ok {
+			fmt.Fprintf(&b, "%d", t.Truncate(CacheKeyTimeBucket).Unix())
+		} else {
+			fmt.Fprint(&b, p)
+		}
+	}
+	return b.String()
+}
+
+// ---- Timezone resolver --------------------------------------------------
+
+// ResolveUserTZ returns the effective IANA name for a user's dow/hour/date
+// buckets. NEVER returns "" — safe to thread into an AT TIME ZONE bind
+// param without further guarding. On a DB lookup failure we log and fall
+// through to the operator default (or UTC) so a transient blip on the
+// users row doesn't break every stats query for that request.
+//
+// Collapsed from per-domain copies that used to live on *handler.Handler,
+// *stats.Handler, *widgets.Handler, and *awards.Handler — all four were
+// byte-identical (gaka-dg7).
+func ResolveUserTZ(database *db.DB, logger *slog.Logger, ctx context.Context, owner, defaultTZ string) string {
+	userTZ, err := database.GetUserTimezone(ctx, owner)
+	if err != nil {
+		logger.Warn("resolveUserTZ: users.timezone lookup failed; falling back to defaults",
+			"user", owner, "err", err)
+		userTZ = ""
+	}
+	return db.ResolveTimezone(userTZ, defaultTZ)
+}
+
+// ---- Space loader --------------------------------------------------------
+
+// LoadSpace resolves the optional ?space=<id> scope for a dashboard
+// request. It returns the space's MemberSets, whether a space was
+// requested (spaceParam was a valid id), and any load error. An
+// absent/blank/invalid param means "unscoped" (spaceRequested=false).
+// Membership is loaded by id only; an id that isn't the requester's
+// simply yields an empty MemberSets, which — with spaceRequested=true —
+// scopes the dashboard to nothing (match-nothing), never another owner's
+// data.
+//
+// Collapsed from the byte-identical copies previously on *handler.Handler
+// and *stats.Handler.
+func LoadSpace(database *db.DB, ctx context.Context, spaceParam string) (db.MemberSets, bool, error) {
+	if spaceParam == "" {
+		return db.MemberSets{}, false, nil
+	}
+	id, err := strconv.Atoi(spaceParam)
+	if err != nil {
+		return db.MemberSets{}, false, nil
+	}
+	ms, err := database.LoadMemberSets(ctx, id)
+	if err != nil {
+		return db.MemberSets{}, false, err
+	}
+	return ms, true, nil
 }

@@ -19,8 +19,7 @@
 // ResolveOwnerFromCookie / QueryInt64 / BindJSONWithLimit / InternalErr
 // / CachedJSON / CachedBlob / InvalidateOwnerCache) live in
 // internal/apihelpers/ — this package imports that instead of carrying
-// per-file shims (the pattern the meta phase surfaced and the spaces
-// phase adopted).
+// per-file shims (gaka-8tn phase 8 collapse).
 package identity
 
 import (
@@ -65,46 +64,33 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, cch *cache.TT
 	}
 }
 
-// resolveUser is the identity-domain adapter over apihelpers.ResolveUser
-// — a receiver method so the extracted handlers keep their previous
-// signature (`h.resolveUser(c)`) unchanged. Every call is line-identical
-// to the god-type version; only the target moves from *handler.Handler
-// to *identity.Handler.
-func (h *Handler) resolveUser(c *echo.Context) (string, string, *apierr.Error) {
-	return apihelpers.ResolveUser(h.DB, c)
-}
+// PublicProfilePayloadDays is the default window for the public dashboard
+// payload rendered by GET /api/public/profile/:slug. Exported so awards
+// (which computes the SAME payload window when evaluating
+// /public/profile/:slug/awards streaks) reads ONE canonical value — a
+// drift here vs. there would show up as a label present on /p/:slug but
+// missing on the awards mirror (gaka-hc6.3 invariant).
+const PublicProfilePayloadDays = 60
 
-// resolveOwnerFromCookie is the identity-domain adapter over
-// apihelpers.ResolveOwnerFromCookie — same rationale as resolveUser.
-// Used by RefreshToken + CurrentUser + Logout.
-func (h *Handler) resolveOwnerFromCookie(c *echo.Context, missingErr *apierr.Error) (string, *apierr.Error) {
-	return apihelpers.ResolveOwnerFromCookie(h.DB, h.Logger, c, missingErr)
-}
-
-// internalErr is the identity-domain adapter over apihelpers.InternalErr
-// — receiver-shaped so per-handler call sites stay identical.
-func (h *Handler) internalErr(c *echo.Context, msg string, err error) error {
-	return apihelpers.InternalErr(h.Logger, c, msg, err)
-}
-
-// invalidateOwnerCache is the identity-domain adapter over
-// apihelpers.InvalidateOwnerCache — receiver-shaped so timezone.go's
-// call site stays identical.
-func (h *Handler) invalidateOwnerCache(owner string) {
-	apihelpers.InvalidateOwnerCache(h.Cache, owner)
-}
+// PublicProfileTimeLimit locks the aggregation to the app default (15-min
+// gap). Exported so awards reads the SAME cap. The public payload does
+// not accept a timeLimit override — it would fragment the (currently
+// uncached) response space and expose a knob a public dashboard doesn't
+// need.
+const PublicProfileTimeLimit int64 = 15
 
 // requireAdmin: 401 without a token, 403 when not on the admin allowlist.
 // Returns the resolved owner on success. Mirror of the same method on
-// *handler.Handler (defined in internal/handler/admin_label_images.go) —
-// duplicated here because user_avatar.go's SynthesizeAvatarPrompt gates on
-// it and the admin domain is a phase-7 extraction. The two definitions
-// stay byte-identical until phase 8 collapses them.
+// *admin.Handler / *curation.Handler — kept here because
+// user_avatar.go's SynthesizeAvatarPrompt gates on it. Three byte-
+// identical copies survive because each domain guards a distinct
+// endpoint and a shared helper would need dependency-injection scaffolding
+// bigger than the 8-line body itself.
 //
 // The 403 path deliberately does NOT distinguish "unknown admin config"
 // from "not on the list" — both look like a plain 403 to the client.
 func (h *Handler) requireAdmin(c *echo.Context) (string, *apierr.Error) {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
 		return "", aerr
 	}
@@ -112,35 +98,6 @@ func (h *Handler) requireAdmin(c *echo.Context) (string, *apierr.Error) {
 		return "", apierr.New(http.StatusForbidden, "admin only", nil)
 	}
 	return owner, nil
-}
-
-// respondErr renders an apierr.Error onto the context. Package-local
-// alias for apihelpers.RespondErr so the extracted handler files keep
-// their existing `respondErr(c, ...)` call sites unchanged.
-func respondErr(c *echo.Context, e *apierr.Error) error {
-	return apihelpers.RespondErr(c, e)
-}
-
-// tokenFromHeader is the identity-domain alias for
-// apihelpers.TokenFromHeader. Kept as a package-local func (not receiver)
-// so auth.go's Logout call stays identical.
-func tokenFromHeader(c *echo.Context) (string, *apierr.Error) {
-	return apihelpers.TokenFromHeader(c)
-}
-
-// noContent renders a 204. Package-local alias for the shared helper —
-// keeps identity's call sites terse.
-func noContent(c *echo.Context) error {
-	return c.NoContent(http.StatusNoContent)
-}
-
-// removeDays subtracts n days from t, snapped to UTC midnight. Local
-// copy of the shared helper — used by profile.go's public dashboard
-// window (last publicProfilePayloadDays days). Kept private because
-// the identity package is the only caller here.
-func removeDays(t time.Time, n int) time.Time {
-	y, m, d := t.Date()
-	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC).AddDate(0, 0, -n)
 }
 
 // httpClient is the shared outbound HTTP client for the identity
@@ -152,24 +109,3 @@ func removeDays(t time.Time, n int) time.Time {
 // via SwapHTTPClientForTest. Not exported directly — tests use the
 // SwapHTTPClientForTest seam to keep the mutation site auditable.
 var httpClient = &http.Client{Timeout: 15 * time.Second}
-
-// BindJSONWithLimit / body-size limits: identity re-exports the shared
-// helpers under package-local aliases so the extracted files keep their
-// original call sites (`BindJSONWithLimit(c, &req, BodyLimitSmall)`).
-// These are the SAME buckets defined in apihelpers — the aliases keep
-// call-site diffs to zero.
-
-// BodyLimitSmall / BodyLimitMedium / BodyLimitLarge: package-local
-// aliases over apihelpers so identity handlers keep their pre-refactor
-// call sites. Delete these once phase 8 collapses call sites to the
-// apihelpers-qualified form.
-const (
-	BodyLimitSmall  = apihelpers.BodyLimitSmall
-	BodyLimitMedium = apihelpers.BodyLimitMedium
-	BodyLimitLarge  = apihelpers.BodyLimitLarge
-)
-
-// BindJSONWithLimit: package-local alias for apihelpers.BindJSONWithLimit.
-func BindJSONWithLimit(c *echo.Context, dst any, limit int64) *apierr.Error {
-	return apihelpers.BindJSONWithLimit(c, dst, limit)
-}

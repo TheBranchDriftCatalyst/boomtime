@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
@@ -64,17 +65,15 @@ var reservedSlugs = map[string]struct{}{
 	"p":        {},
 }
 
-// publicProfilePayloadDays is the default window for the public dashboard.
-// 60 days is a compromise between "enough to see patterns" and "not so wide
-// that a scraper can rebuild a long history". Matches the widget default
-// close enough that FE devs recognize the shape.
-const publicProfilePayloadDays = 60
-
-// publicProfileTimeLimit locks the aggregation to the app default (15-min
-// gap). The public payload does not accept a timeLimit override — it would
-// fragment the (currently uncached) response space and expose a knob a
-// public dashboard doesn't need.
-const publicProfileTimeLimit int64 = 15
+// publicProfilePayloadDays / publicProfileTimeLimit are the canonical
+// exported constants — see handler.go's PublicProfilePayloadDays and
+// PublicProfileTimeLimit. Local unexported aliases kept so the rest of
+// this file reads as it did pre-collapse (60 / 15). Awards imports the
+// exported form (identity.PublicProfilePayloadDays).
+const (
+	publicProfilePayloadDays        = PublicProfilePayloadDays
+	publicProfileTimeLimit    int64 = PublicProfileTimeLimit
+)
 
 // getProfileResponse is GET /api/v1/users/current/profile.
 type getProfileResponse struct {
@@ -119,13 +118,13 @@ type publicProfileResponse struct {
 // GetPublicProfile: GET /api/v1/users/current/profile (auth). Returns the
 // caller's public-profile toggle + slug.
 func (h *Handler) GetPublicProfile(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	enabled, slug, err := h.DB.GetPublicProfile(c.Request().Context(), owner)
 	if err != nil {
-		return h.internalErr(c, "public profile lookup failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "public profile lookup failed", err)
 	}
 	return c.JSON(http.StatusOK, getProfileResponse{Enabled: enabled, Slug: slug})
 }
@@ -136,15 +135,15 @@ func (h *Handler) GetPublicProfile(c *echo.Context) error {
 // reservation violation. On success, returns the persisted shape so the FE
 // can settle its local state without a follow-up GET.
 func (h *Handler) PutPublicProfile(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	var req putProfileRequest
 	// gaka-bi2: 4 KiB cap — the body is a bool + a slug bounded by
 	// publicProfileSlugRe (≤30 chars).
-	if aerr := BindJSONWithLimit(c, &req, BodyLimitSmall); aerr != nil {
-		return respondErr(c, aerr)
+	if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitSmall); aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
 	}
 	req.Slug = strings.TrimSpace(strings.ToLower(req.Slug))
 
@@ -152,15 +151,15 @@ func (h *Handler) PutPublicProfile(c *echo.Context) error {
 	// the slug (leave DB as-is) or supply a valid one (write it too).
 	if req.Enabled {
 		if req.Slug == "" {
-			return respondErr(c, apierr.BadRequest("slug is required when enabling the public profile"))
+			return apihelpers.RespondErr(c, apierr.BadRequest("slug is required when enabling the public profile"))
 		}
 	}
 	if req.Slug != "" {
 		if !publicProfileSlugRe.MatchString(req.Slug) {
-			return respondErr(c, apierr.BadRequest("slug must be 3-30 characters, lowercase letters, digits, and hyphens (no leading/trailing hyphen)"))
+			return apihelpers.RespondErr(c, apierr.BadRequest("slug must be 3-30 characters, lowercase letters, digits, and hyphens (no leading/trailing hyphen)"))
 		}
 		if _, hit := reservedSlugs[req.Slug]; hit {
-			return respondErr(c, apierr.BadRequest("that slug is reserved — please pick another"))
+			return apihelpers.RespondErr(c, apierr.BadRequest("that slug is reserved — please pick another"))
 		}
 	}
 
@@ -169,15 +168,15 @@ func (h *Handler) PutPublicProfile(c *echo.Context) error {
 		// the FE surfaces this as an inline field error.
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" { // unique_violation
-			return respondErr(c, apierr.New(http.StatusConflict, "that slug is already taken", nil))
+			return apihelpers.RespondErr(c, apierr.New(http.StatusConflict, "that slug is already taken", nil))
 		}
-		return h.internalErr(c, "public profile save failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "public profile save failed", err)
 	}
 	// Read back the persisted shape (SetPublicProfile may have left slug
 	// alone on the off-with-no-slug path, so read is the source of truth).
 	enabled, slug, err := h.DB.GetPublicProfile(c.Request().Context(), owner)
 	if err != nil {
-		return h.internalErr(c, "public profile readback failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "public profile readback failed", err)
 	}
 	h.Logger.Info("public profile updated", "user", owner, "enabled", enabled)
 	return c.JSON(http.StatusOK, getProfileResponse{Enabled: enabled, Slug: slug})
@@ -199,42 +198,42 @@ func (h *Handler) PublicProfile(c *echo.Context) error {
 	// the query and 404 immediately (also stops the DB from getting
 	// scrapper-hammered on garbage input).
 	if slug == "" || !publicProfileSlugRe.MatchString(slug) {
-		return respondErr(c, apierr.NotFound("This profile isn't public"))
+		return apihelpers.RespondErr(c, apierr.NotFound("This profile isn't public"))
 	}
 	ctx := c.Request().Context()
 
 	username, err := h.DB.LookupUsernameBySlug(ctx, slug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return respondErr(c, apierr.NotFound("This profile isn't public"))
+			return apihelpers.RespondErr(c, apierr.NotFound("This profile isn't public"))
 		}
-		return h.internalErr(c, "public profile slug lookup failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "public profile slug lookup failed", err)
 	}
 	enabled, _, err := h.DB.GetPublicProfile(ctx, username)
 	if err != nil {
-		return h.internalErr(c, "public profile enabled check failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "public profile enabled check failed", err)
 	}
 	if !enabled {
-		return respondErr(c, apierr.NotFound("This profile isn't public"))
+		return apihelpers.RespondErr(c, apierr.NotFound("This profile isn't public"))
 	}
 
 	// Build the payload. Range mirrors widget defaults (60d, 15-min gap).
 	t1 := time.Now().UTC()
-	t0 := removeDays(t1, publicProfilePayloadDays)
+	t0 := apihelpers.RemoveDays(t1, publicProfilePayloadDays)
 
 	hidden, err := h.DB.LoadHiddenSets(ctx, username)
 	if err != nil {
-		return h.internalErr(c, "public profile hidden load failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "public profile hidden load failed", err)
 	}
 	renames, err := h.DB.LoadRenameSets(ctx, username)
 	if err != nil {
-		return h.internalErr(c, "public profile rename load failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "public profile rename load failed", err)
 	}
 
 	// gaka-dg7: public profile shows the profile OWNER's data in the OWNER's
 	// timeframe — an East-coast viewer of a Pacific dev's public profile
 	// should see Pacific dow/hour buckets, not shifted-to-viewer buckets.
-	tz := h.resolveUserTZ(ctx, username)
+	tz := apihelpers.ResolveUserTZ(h.DB, h.Logger, ctx, username, h.Cfg.DefaultTimezone)
 
 	// No Space scoping for public profile — it's an account-level view.
 	// members/spaceRequested are the zero value.
@@ -248,11 +247,11 @@ func (h *Handler) PublicProfile(c *echo.Context) error {
 		rows, err = h.DB.GetUserActivity(ctx, username, t0, t1, publicProfileTimeLimit, tz, hidden, renames, members, false)
 	}
 	if err != nil {
-		return h.internalErr(c, "public profile activity query failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "public profile activity query failed", err)
 	}
 	categories, err := h.DB.GetCategoryDaily(ctx, username, t0, t1, publicProfileTimeLimit, tz, hidden, renames, members, false)
 	if err != nil {
-		return h.internalErr(c, "public profile category query failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "public profile category query failed", err)
 	}
 	payload := stats.ToStatsPayload(t0, t1, rows, categories)
 
@@ -267,7 +266,7 @@ func (h *Handler) PublicProfile(c *echo.Context) error {
 	// axes at scan time.
 	pcCells, err := h.DB.GetPunchcard(ctx, username, t0, t1, publicProfileTimeLimit, tz, hidden, members, false)
 	if err != nil {
-		return h.internalErr(c, "public profile punchcard query failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "public profile punchcard query failed", err)
 	}
 
 	// gaka-keb: read the owner's persisted layout for the public_profile
@@ -317,7 +316,7 @@ func (h *Handler) PublicProfile(c *echo.Context) error {
 	// it stable across identical payloads and cheap to compute.
 	body, err := json.Marshal(resp)
 	if err != nil {
-		return h.internalErr(c, "public profile marshal failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "public profile marshal failed", err)
 	}
 	sum := sha256.Sum256(body)
 	etag := `"` + hex.EncodeToString(sum[:8]) + `"`

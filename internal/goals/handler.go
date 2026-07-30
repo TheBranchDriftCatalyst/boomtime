@@ -1,6 +1,6 @@
 // handler.go — HTTP handlers for user-defined composite goals (gaka-wpb).
 //
-// All routes are owner-scoped via h.resolveUser(c). Cross-owner id
+// All routes are owner-scoped via apihelpers.ResolveUser(h.DB, c). Cross-owner id
 // access returns 404 — never 403 — so an attacker can't distinguish
 // "no such goal" from "not yours" (no oracle). Mirrors the same rule
 // as curation and dashboard_layout.
@@ -20,14 +20,13 @@ package goals
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/labstack/echo/v5"
@@ -39,10 +38,6 @@ type Handler struct {
 	DB     *db.DB
 	Logger *slog.Logger
 }
-
-// Body-size caps — mirrored from internal/handler.BodyLimit* while the
-// shared apihelpers package is being introduced in a parallel phase.
-const bodyLimitSmall int64 = 4 * 1024
 
 // createGoalRequest is the POST body. Description is optional; empty
 // string means "no description" (server stores NULL). Spec is a raw
@@ -71,13 +66,13 @@ type toggleGoalRequest struct {
 
 // ListGoals: GET /api/v1/users/current/goals → {goals:[Goal]}.
 func (h *Handler) ListGoals(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	goals, err := ListGoals(h.DB, c.Request().Context(), owner)
 	if err != nil {
-		return h.internalErr(c, "list goals failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "list goals failed", err)
 	}
 	return c.JSON(http.StatusOK, map[string]any{"goals": goals})
 }
@@ -85,17 +80,17 @@ func (h *Handler) ListGoals(c *echo.Context) error {
 // GetGoal: GET /api/v1/users/current/goals/:id → {goal:Goal}.
 // Owner-scoped: cross-owner id returns 404 (no oracle).
 func (h *Handler) GetGoal(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	id := c.Param("id")
 	g, err := GetGoal(h.DB, c.Request().Context(), owner, id)
 	if err != nil {
-		return h.internalErr(c, "get goal failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "get goal failed", err)
 	}
 	if g == nil {
-		return respondErr(c, apierr.NotFound("goal not found"))
+		return apihelpers.RespondErr(c, apierr.NotFound("goal not found"))
 	}
 	return c.JSON(http.StatusOK, map[string]any{"goal": g})
 }
@@ -105,25 +100,25 @@ func (h *Handler) GetGoal(c *echo.Context) error {
 // spec is 400 with the error text so the author can fix it. Duplicate
 // (owner, name) is 409.
 func (h *Handler) CreateGoal(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	var req createGoalRequest
 	// Small cap: name + description + a modest spec tree. The MEDIUM
 	// cap would work but SMALL is a tighter honest ceiling — a spec
 	// that needs 4 KiB has too many predicates.
-	if aerr := bindJSONWithLimit(c, &req, bodyLimitSmall); aerr != nil {
-		return respondErr(c, aerr)
+	if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitSmall); aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
 	}
 	if strings.TrimSpace(req.Name) == "" {
-		return respondErr(c, apierr.BadRequest("name is required"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("name is required"))
 	}
 	if len(req.Spec) == 0 {
-		return respondErr(c, apierr.BadRequest("spec is required"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("spec is required"))
 	}
 	if _, err := ValidateSpec(req.Spec); err != nil {
-		return respondErr(c, apierr.BadRequest(err.Error()))
+		return apihelpers.RespondErr(c, apierr.BadRequest(err.Error()))
 	}
 	var descPtr *string
 	if req.Description != "" {
@@ -132,9 +127,9 @@ func (h *Handler) CreateGoal(c *echo.Context) error {
 	g, err := CreateGoal(h.DB, c.Request().Context(), owner, req.Name, descPtr, req.Spec)
 	if err != nil {
 		if isUniqueViolation(err) {
-			return respondErr(c, apierr.New(http.StatusConflict, "a goal named "+req.Name+" already exists", nil))
+			return apihelpers.RespondErr(c, apierr.New(http.StatusConflict, "a goal named "+req.Name+" already exists", nil))
 		}
-		return h.internalErr(c, "create goal failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "create goal failed", err)
 	}
 	return c.JSON(http.StatusOK, map[string]any{"goal": g})
 }
@@ -145,25 +140,25 @@ func (h *Handler) CreateGoal(c *echo.Context) error {
 // returns 404 (indistinguishable from "no such id"). Duplicate
 // (owner, name) on rename is 409.
 func (h *Handler) UpdateGoal(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	id := c.Param("id")
 	var req updateGoalRequest
-	if aerr := bindJSONWithLimit(c, &req, bodyLimitSmall); aerr != nil {
-		return respondErr(c, aerr)
+	if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitSmall); aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
 	}
 	if req.Spec != nil {
 		if len(*req.Spec) == 0 {
-			return respondErr(c, apierr.BadRequest("spec cannot be empty"))
+			return apihelpers.RespondErr(c, apierr.BadRequest("spec cannot be empty"))
 		}
 		if _, err := ValidateSpec(*req.Spec); err != nil {
-			return respondErr(c, apierr.BadRequest(err.Error()))
+			return apihelpers.RespondErr(c, apierr.BadRequest(err.Error()))
 		}
 	}
 	if req.Name != nil && strings.TrimSpace(*req.Name) == "" {
-		return respondErr(c, apierr.BadRequest("name cannot be empty"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("name cannot be empty"))
 	}
 	patch := GoalPatch{
 		Name:        req.Name,
@@ -174,12 +169,12 @@ func (h *Handler) UpdateGoal(c *echo.Context) error {
 	g, err := UpdateGoal(h.DB, c.Request().Context(), owner, id, patch)
 	if err != nil {
 		if isUniqueViolation(err) {
-			return respondErr(c, apierr.New(http.StatusConflict, "a goal with that name already exists", nil))
+			return apihelpers.RespondErr(c, apierr.New(http.StatusConflict, "a goal with that name already exists", nil))
 		}
-		return h.internalErr(c, "update goal failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "update goal failed", err)
 	}
 	if g == nil {
-		return respondErr(c, apierr.NotFound("goal not found"))
+		return apihelpers.RespondErr(c, apierr.NotFound("goal not found"))
 	}
 	return c.JSON(http.StatusOK, map[string]any{"goal": g})
 }
@@ -188,17 +183,17 @@ func (h *Handler) UpdateGoal(c *echo.Context) error {
 // Idempotent-in-effect for cross-owner or already-deleted ids: still
 // 404, no distinguisher, no oracle.
 func (h *Handler) DeleteGoal(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	id := c.Param("id")
 	ok, err := DeleteGoal(h.DB, c.Request().Context(), owner, id)
 	if err != nil {
-		return h.internalErr(c, "delete goal failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "delete goal failed", err)
 	}
 	if !ok {
-		return respondErr(c, apierr.NotFound("goal not found"))
+		return apihelpers.RespondErr(c, apierr.NotFound("goal not found"))
 	}
 	return c.NoContent(http.StatusNoContent)
 }
@@ -207,23 +202,23 @@ func (h *Handler) DeleteGoal(c *echo.Context) error {
 // Body optional: omit to flip, {"enabled":bool} to set exactly.
 // Idempotent — an exact-set matching the current value returns 200.
 func (h *Handler) ToggleGoal(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	id := c.Param("id")
 	var req toggleGoalRequest
 	if c.Request().ContentLength > 0 {
-		if aerr := bindJSONWithLimit(c, &req, bodyLimitSmall); aerr != nil {
-			return respondErr(c, aerr)
+		if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitSmall); aerr != nil {
+			return apihelpers.RespondErr(c, aerr)
 		}
 	}
 	enabled, found, err := ToggleGoal(h.DB, c.Request().Context(), owner, id, req.Enabled)
 	if err != nil {
-		return h.internalErr(c, "toggle goal failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "toggle goal failed", err)
 	}
 	if !found {
-		return respondErr(c, apierr.NotFound("goal not found"))
+		return apihelpers.RespondErr(c, apierr.NotFound("goal not found"))
 	}
 	return c.JSON(http.StatusOK, map[string]any{"enabled": enabled})
 }
@@ -234,21 +229,21 @@ func (h *Handler) ToggleGoal(c *echo.Context) error {
 // PATCH, heartbeat ingest) sets last_evaluated_at NULL so the next
 // read always recomputes.
 func (h *Handler) GetGoalProgress(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	id := c.Param("id")
 	g, err := GetGoal(h.DB, c.Request().Context(), owner, id)
 	if err != nil {
-		return h.internalErr(c, "get goal (for progress) failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "get goal (for progress) failed", err)
 	}
 	if g == nil {
-		return respondErr(c, apierr.NotFound("goal not found"))
+		return apihelpers.RespondErr(c, apierr.NotFound("goal not found"))
 	}
 	prog, err := h.evalGoal(c, g)
 	if err != nil {
-		return respondErr(c, apierr.BadRequest(err.Error()))
+		return apihelpers.RespondErr(c, apierr.BadRequest(err.Error()))
 	}
 	return c.JSON(http.StatusOK, prog)
 }
@@ -265,13 +260,13 @@ func (h *Handler) GetGoalProgress(c *echo.Context) error {
 // Disabled goals are skipped — the tile renderer treats a missing
 // entry as "unknown/no data".
 func (h *Handler) GetAllGoalProgress(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	goals, err := ListGoals(h.DB, c.Request().Context(), owner)
 	if err != nil {
-		return h.internalErr(c, "list goals (for batch progress) failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "list goals (for batch progress) failed", err)
 	}
 	out := map[string]*Progress{}
 	for i := range goals {
@@ -333,56 +328,11 @@ func (h *Handler) evalGoal(c *echo.Context, g *Goal) (*Progress, error) {
 	return prog, nil
 }
 
-// ---- Local helpers (mirror internal/handler helpers until apihelpers lands) ----
-
-// respondErr renders an apierr.Error onto the context.
-func respondErr(c *echo.Context, e *apierr.Error) error {
-	return e.Write(c)
-}
-
-// resolveUser maps a token to its owning username. Mirrors the version in
-// internal/handler until the shared apihelpers package lands.
-func (h *Handler) resolveUser(c *echo.Context) (string, string, *apierr.Error) {
-	tkn, ok := auth.ParseAuthHeader(c.Request().Header.Get(echo.HeaderAuthorization))
-	if !ok || tkn == "" {
-		return "", "", apierr.MissingAuth()
-	}
-	owner, ok, err := h.DB.GetUserByToken(c.Request().Context(), tkn)
-	if err != nil {
-		return "", "", apierr.Generic()
-	}
-	if !ok {
-		return "", "", apierr.InvalidToken()
-	}
-	return tkn, owner, nil
-}
-
-// internalErr logs the underlying error with request context and renders
-// the generic 500 envelope.
-func (h *Handler) internalErr(c *echo.Context, msg string, err error) error {
-	h.Logger.Error(msg, "path", c.Request().URL.Path, "err", err)
-	return respondErr(c, apierr.Generic())
-}
-
-// bindJSONWithLimit wraps c.Bind with a http.MaxBytesReader cap on the
-// request body. Mirror of internal/handler.BindJSONWithLimit until the
-// shared apihelpers package lands.
-func bindJSONWithLimit(c *echo.Context, dst any, limit int64) *apierr.Error {
-	r := c.Request()
-	r.Body = http.MaxBytesReader(c.Response(), r.Body, limit)
-	if err := c.Bind(dst); err != nil {
-		if strings.Contains(err.Error(), "request body too large") {
-			extra := fmt.Sprintf("limit=%d", limit)
-			return apierr.New(http.StatusRequestEntityTooLarge, "payload too large", &extra)
-		}
-		return apierr.BadRequest("Invalid request body")
-	}
-	return nil
-}
-
 // isUniqueViolation reports whether err is a Postgres unique-constraint
 // violation (SQLSTATE 23505). Mirror of the same helper in
-// internal/handler/widget_defs.go.
+// internal/widgets/widget_defs.go — both are 3-line file-local helpers
+// used by exactly one CRUD path each, so DRY-ing to a shared package
+// would trade one indirection for one line saved.
 func isUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"

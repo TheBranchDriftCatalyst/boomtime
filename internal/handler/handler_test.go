@@ -18,7 +18,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
 	"github.com/labstack/echo/v5"
 )
@@ -35,7 +35,7 @@ func runBindLimitGinkgo(body []byte, dst any, limit int64) (*httptest.ResponseRe
 	e := echo.New()
 	var bound bool
 	e.POST("/test", func(c *echo.Context) error {
-		if aerr := handler.BindJSONWithLimit(c, dst, limit); aerr != nil {
+		if aerr := apihelpers.BindJSONWithLimit(c, dst, limit); aerr != nil {
 			return aerr.Write(c)
 		}
 		bound = true
@@ -57,7 +57,7 @@ var _ = Describe("BindJSONWithLimit (gaka-bi2)", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		var dst tinyPayloadGinkgo
-		rec, ok := runBindLimitGinkgo(body, &dst, handler.BodyLimitSmall)
+		rec, ok := runBindLimitGinkgo(body, &dst, apihelpers.BodyLimitSmall)
 		Expect(ok).To(BeTrue(), "bind should succeed for under-cap body")
 		Expect(rec).To(testutil.HaveStatus(http.StatusNoContent))
 		Expect(dst.CurrentPassword).To(Equal("test1234"))
@@ -67,11 +67,11 @@ var _ = Describe("BindJSONWithLimit (gaka-bi2)", func() {
 	It("rejects an over-cap body with 413 AND leaves dst zero (proves reader tripped before decode)", func() {
 		big := strings.Repeat("a", 5000)
 		body := []byte(`{"currentPassword":"` + big + `","newPassword":"test5678"}`)
-		Expect(int64(len(body))).To(BeNumerically(">", handler.BodyLimitSmall),
-			"body (%d) must exceed cap (%d) for this test to mean anything", len(body), handler.BodyLimitSmall)
+		Expect(int64(len(body))).To(BeNumerically(">", apihelpers.BodyLimitSmall),
+			"body (%d) must exceed cap (%d) for this test to mean anything", len(body), apihelpers.BodyLimitSmall)
 
 		var dst tinyPayloadGinkgo
-		rec, ok := runBindLimitGinkgo(body, &dst, handler.BodyLimitSmall)
+		rec, ok := runBindLimitGinkgo(body, &dst, apihelpers.BodyLimitSmall)
 		Expect(ok).To(BeFalse(), "bind unexpectedly succeeded for over-cap body")
 		Expect(rec).To(testutil.HaveStatus(http.StatusRequestEntityTooLarge))
 
@@ -91,7 +91,7 @@ var _ = Describe("BindJSONWithLimit (gaka-bi2)", func() {
 	It("returns 400 (not 413) on syntactically-broken JSON under the cap", func() {
 		body := []byte(`{"currentPassword": "test1234",`) // trailing comma, no closing brace
 		var dst tinyPayloadGinkgo
-		rec, ok := runBindLimitGinkgo(body, &dst, handler.BodyLimitSmall)
+		rec, ok := runBindLimitGinkgo(body, &dst, apihelpers.BodyLimitSmall)
 		Expect(ok).To(BeFalse(), "bind unexpectedly succeeded for malformed JSON")
 		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest))
 	})
@@ -105,10 +105,10 @@ var _ = Describe("BindJSONWithLimit (gaka-bi2)", func() {
 		e.POST("/test", func(c *echo.Context) error {
 			c.Request().Body = &panicReaderCloserGinkgo{r: &panicReaderGinkgo{
 				src: bytes.NewReader(body),
-				cap: handler.BodyLimitSmall + 16,
+				cap: apihelpers.BodyLimitSmall + 16,
 			}}
 			var dst tinyPayloadGinkgo
-			if aerr := handler.BindJSONWithLimit(c, &dst, handler.BodyLimitSmall); aerr != nil {
+			if aerr := apihelpers.BindJSONWithLimit(c, &dst, apihelpers.BodyLimitSmall); aerr != nil {
 				status = aerr.Status
 				return aerr.Write(c)
 			}
@@ -125,13 +125,13 @@ var _ = Describe("BindJSONWithLimit (gaka-bi2)", func() {
 	It("body sized to EXACTLY the cap binds (boundary N vs N+1)", func() {
 		prefix := `{"currentPassword":"`
 		suffix := `","newPassword":"x"}`
-		pad := int(handler.BodyLimitSmall) - len(prefix) - len(suffix)
+		pad := int(apihelpers.BodyLimitSmall) - len(prefix) - len(suffix)
 		Expect(pad).To(BeNumerically(">", 0), "scaffold too big for cap")
 		body := []byte(prefix + strings.Repeat("a", pad) + suffix)
-		Expect(int64(len(body))).To(Equal(handler.BodyLimitSmall))
+		Expect(int64(len(body))).To(Equal(apihelpers.BodyLimitSmall))
 
 		var dst tinyPayloadGinkgo
-		rec, ok := runBindLimitGinkgo(body, &dst, handler.BodyLimitSmall)
+		rec, ok := runBindLimitGinkgo(body, &dst, apihelpers.BodyLimitSmall)
 		Expect(ok).To(BeTrue(), "bind should succeed at exactly cap; got status %d body=%s", rec.Code, rec.Body.String())
 		Expect(rec).To(testutil.HaveStatus(http.StatusNoContent))
 		Expect(dst.CurrentPassword).To(HaveLen(pad))

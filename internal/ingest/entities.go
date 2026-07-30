@@ -12,6 +12,7 @@ import (
 	"net/http"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/labstack/echo/v5"
@@ -44,15 +45,15 @@ var validEntityTypes = map[string]bool{
 
 // ListEntitiesByType: GET /api/v1/users/current/heartbeats/entities?type=file&limit=500.
 func (h *Handler) ListEntitiesByType(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	ty := c.QueryParam("type")
 	if !validEntityTypes[ty] {
-		return respondErr(c, apierr.BadRequest("type must be one of file/app/domain/url"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("type must be one of file/app/domain/url"))
 	}
-	limit := int(queryInt64(c, "limit", entityListDefaultLimit))
+	limit := int(apihelpers.QueryInt64(c, "limit", entityListDefaultLimit))
 	if limit < 1 {
 		limit = entityListDefaultLimit
 	}
@@ -62,7 +63,7 @@ func (h *Handler) ListEntitiesByType(c *echo.Context) error {
 
 	entities, truncated, err := h.DB.ListEntitiesByType(c.Request().Context(), owner, ty, limit)
 	if err != nil {
-		return h.internalErr(c, "list entities failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "list entities failed", err)
 	}
 	return c.JSON(http.StatusOK, map[string]any{
 		"entities":  entities,
@@ -81,27 +82,27 @@ type redactEntitiesBody struct {
 // owner-scoped. The heartbeat still counts toward every other axis; only the
 // entity value is scrubbed. Rollup unaffected (entity isn't a rollup axis).
 func (h *Handler) RedactEntities(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	if c.QueryParam("confirm") != entityRedactConfirm {
-		return respondErr(c, apierr.BadRequest("missing confirm=redact-entities — this endpoint scrubs the entity column on heartbeat rows"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("missing confirm=redact-entities — this endpoint scrubs the entity column on heartbeat rows"))
 	}
 	var body redactEntitiesBody
 	// gaka-bi2: 64 KiB cap — batches are bounded to 500 entities; each entity
 	// is a short URL/path/app name. Medium fits comfortably (500 * ~120 chars).
-	if aerr := BindJSONWithLimit(c, &body, BodyLimitMedium); aerr != nil {
-		return respondErr(c, aerr)
+	if aerr := apihelpers.BindJSONWithLimit(c, &body, apihelpers.BodyLimitMedium); aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
 	}
 	if !validEntityTypes[body.Ty] {
-		return respondErr(c, apierr.BadRequest("ty must be one of file/app/domain/url"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("ty must be one of file/app/domain/url"))
 	}
 	if len(body.Entities) == 0 {
-		return respondErr(c, apierr.BadRequest("entities is required and must be non-empty"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("entities is required and must be non-empty"))
 	}
 	if len(body.Entities) > entityRedactBatchMax {
-		return respondErr(c, apierr.BadRequest("entities batch too large; redact in chunks of at most 500"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("entities batch too large; redact in chunks of at most 500"))
 	}
 
 	redacted, err := h.DB.RedactEntities(c.Request().Context(), owner, body.Ty, body.Entities)
@@ -112,11 +113,11 @@ func (h *Handler) RedactEntities(c *echo.Context) error {
 		// a time".
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return respondErr(c, apierr.BadRequest("timestamp collision: two of the selected entities share the same (sender, time_sent). Try redacting one entity at a time."))
+			return apihelpers.RespondErr(c, apierr.BadRequest("timestamp collision: two of the selected entities share the same (sender, time_sent). Try redacting one entity at a time."))
 		}
-		return h.internalErr(c, "redact entities failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "redact entities failed", err)
 	}
 	// Aggregations grouped by entity are stale; explore views need refresh.
-	h.invalidateOwnerCache(owner)
+	apihelpers.InvalidateOwnerCache(h.Cache, owner)
 	return c.JSON(http.StatusOK, map[string]any{"redacted": redacted})
 }

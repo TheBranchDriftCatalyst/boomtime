@@ -21,6 +21,7 @@ import (
 	"net/http"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/labstack/echo/v5"
 )
 
@@ -30,14 +31,14 @@ import (
 func (h *Handler) LabelImage(c *echo.Context) error {
 	id := c.Param("id")
 	if id == "" {
-		return respondErr(c, apierr.BadRequest("missing label id"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("missing label id"))
 	}
 	li, ok, err := h.DB.GetLabelImage(c.Request().Context(), id)
 	if err != nil {
-		return h.internalErr(c, "label image lookup failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "label image lookup failed", err)
 	}
 	if !ok {
-		return respondErr(c, apierr.NotFound("label image not found"))
+		return apihelpers.RespondErr(c, apierr.NotFound("label image not found"))
 	}
 	// One year, immutable — safe because the FE cache-busts via
 	// ?v=<generated_at.epoch> when a regenerated row bumps the timestamp.

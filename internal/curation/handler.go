@@ -12,26 +12,16 @@
 // directly, same identity/awards/ingest precedent.
 //
 // SECURITY POSTURE: every user-scoped write endpoint here binds JSON
-// under a bounded MaxBytesReader cap (BodyLimitMedium — 64 KiB — for
-// create/update; BodyLimitSmall — 4 KiB — for the toggle boolean).
+// under a bounded MaxBytesReader cap (apihelpers.BodyLimitMedium — 64 KiB — for
+// create/update; apihelpers.BodyLimitSmall — 4 KiB — for the toggle boolean).
 // Admin-gated endpoints (labels CRUD, gen-config, seed.sql) go through
 // h.requireAdmin BEFORE reading the body so a non-admin request never
 // costs a body allocation. Destructive paths (/apply, /purge) reject a
 // disabled rule with 400 so accidentally-applying a paused rule stays
 // impossible — gaka-dfd guard preserved verbatim.
 //
-// DB QUERIES STAY IN internal/db/: the receiver methods this package
-// calls remain on *db.DB because they either have non-curation callers
-// (LoadHiddenSets / LoadRenameSets are called from awards, identity,
-// widgets, spaces, handler-side stats/projects; ExploreColumn / Match*
-// / Curation* constants are shared with spaces; ListLabels / GetLabel /
-// DeleteLabelImage are called from admin_label_images, worker) or
-// share unexported helpers with cross-package callers. Only handlers
-// move here in phase 5b — the DB slice defers to phase 8 collapse,
-// mirroring the identity phase 4a / ingest phase 5a precedents.
-//
 // Shared helpers live in internal/apihelpers/ — this package imports
-// that instead of carrying per-file shims.
+// that instead of carrying per-file shims (gaka-8tn phase 8 collapse).
 package curation
 
 import (
@@ -77,39 +67,17 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, cch *cache.TT
 	}
 }
 
-// resolveUser is the curation-domain adapter over apihelpers.ResolveUser
-// — receiver-shaped so the extracted handlers keep their previous
-// signature (`h.resolveUser(c)`) unchanged. Every call is line-identical
-// to the god-type version.
-func (h *Handler) resolveUser(c *echo.Context) (string, string, *apierr.Error) {
-	return apihelpers.ResolveUser(h.DB, c)
-}
-
-// internalErr is the curation-domain adapter over apihelpers.InternalErr
-// — receiver-shaped so per-handler call sites stay identical.
-func (h *Handler) internalErr(c *echo.Context, msg string, err error) error {
-	return apihelpers.InternalErr(h.Logger, c, msg, err)
-}
-
-// invalidateOwnerCache is the curation-domain adapter over
-// apihelpers.InvalidateOwnerCache — receiver-shaped so curation.go
-// call sites stay identical.
-func (h *Handler) invalidateOwnerCache(owner string) {
-	apihelpers.InvalidateOwnerCache(h.Cache, owner)
-}
-
 // requireAdmin: 401 without a token, 403 when not on the admin allowlist.
 // Returns the resolved owner on success. Mirror of the same method on
-// *handler.Handler (defined in internal/handler/admin_label_images.go)
-// and *identity.Handler — duplicated here because the labels admin
-// endpoints gate on it and the admin domain is a phase-7 extraction.
-// The three definitions stay byte-identical until phase 8 collapses
-// them into internal/apihelpers.
+// *admin.Handler / *identity.Handler — the labels admin endpoints gate
+// on it. Three byte-identical copies survive because each domain guards a
+// distinct endpoint and a shared helper would need dependency-injection
+// scaffolding bigger than the 8-line body itself.
 //
 // The 403 path deliberately does NOT distinguish "unknown admin config"
 // from "not on the list" — both look like a plain 403 to the client.
 func (h *Handler) requireAdmin(c *echo.Context) (string, *apierr.Error) {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
 		return "", aerr
 	}
@@ -117,38 +85,4 @@ func (h *Handler) requireAdmin(c *echo.Context) (string, *apierr.Error) {
 		return "", apierr.New(http.StatusForbidden, "admin only", nil)
 	}
 	return owner, nil
-}
-
-// respondErr renders an apierr.Error onto the context. Package-local
-// alias for apihelpers.RespondErr so the extracted handler files keep
-// their existing `respondErr(c, ...)` call sites unchanged.
-func respondErr(c *echo.Context, e *apierr.Error) error {
-	return apihelpers.RespondErr(c, e)
-}
-
-// noContent renders a 204 (PostNoContent / DeleteNoContent). Package-
-// local alias so curation.go's `noContent(c)` call site stays identical.
-func noContent(c *echo.Context) error {
-	return c.NoContent(http.StatusNoContent)
-}
-
-// BindJSONWithLimit / body-size limits: curation re-exports the shared
-// helpers under package-local aliases so the extracted files keep their
-// original call sites (`BindJSONWithLimit(c, &req, BodyLimitMedium)`).
-// These are the SAME buckets defined in apihelpers — the aliases keep
-// call-site diffs to zero.
-
-// BodyLimitSmall / BodyLimitMedium / BodyLimitLarge: package-local
-// aliases over apihelpers so curation handlers keep their pre-refactor
-// call sites. Delete these once phase 8 collapses call sites to the
-// apihelpers-qualified form.
-const (
-	BodyLimitSmall  = apihelpers.BodyLimitSmall
-	BodyLimitMedium = apihelpers.BodyLimitMedium
-	BodyLimitLarge  = apihelpers.BodyLimitLarge
-)
-
-// BindJSONWithLimit: package-local alias for apihelpers.BindJSONWithLimit.
-func BindJSONWithLimit(c *echo.Context, dst any, limit int64) *apierr.Error {
-	return apihelpers.BindJSONWithLimit(c, dst, limit)
 }

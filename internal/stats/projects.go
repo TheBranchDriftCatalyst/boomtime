@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 	"github.com/labstack/echo/v5"
 )
@@ -12,7 +13,7 @@ import (
 func (h *Handler) ProjectStats(c *echo.Context) error {
 	s, aerr := h.dashboardScope(c, 7)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	project := c.Param("project")
 
@@ -21,17 +22,17 @@ func (h *Handler) ProjectStats(c *echo.Context) error {
 	// Renames load EAGERLY here (the owner check needs them before the cache).
 	renames, err := h.DB.LoadRenameSets(s.ctx, s.owner)
 	if err != nil {
-		return h.internalErr(c, "rename sets load failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "rename sets load failed", err)
 	}
 	ok, err := h.DB.CheckProjectDisplayOwner(s.ctx, s.owner, project, renames)
 	if err != nil {
-		return h.internalErr(c, "project owner check failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "project owner check failed", err)
 	}
 	if !ok {
-		return respondErr(c, apierr.InvalidRelation(s.owner, project))
+		return apihelpers.RespondErr(c, apierr.InvalidRelation(s.owner, project))
 	}
 
-	return h.cachedJSON(c, s.cacheKey("project", project, s.t0, s.t1, s.limit), func() (any, error) {
+	return apihelpers.CachedJSON(h.Cache, h.Logger, c, s.cacheKey("project", project, s.t0, s.t1, s.limit), func() (any, error) {
 		l, err := s.load(loadHidden)
 		if err != nil {
 			return nil, err
@@ -54,18 +55,18 @@ func (h *Handler) ProjectStats(c *echo.Context) error {
 func (h *Handler) ProjectList(c *echo.Context) error {
 	s, aerr := h.dashboardScope(c, 30)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	// Not cached, so the sets load eagerly. Exclude hidden values (a project
 	// surfaces only if it has non-hidden heartbeats) and relabel renamed projects
 	// (merged names collapse to one), both reversible query-time transforms.
 	l, err := s.load(loadHidden | loadRenames)
 	if err != nil {
-		return h.internalErr(c, "project list curation load failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "project list curation load failed", err)
 	}
 	projects, err := h.DB.GetAllProjects(s.ctx, s.owner, s.t0, s.t1, l.hidden, l.renames, l.members, l.spaceRequested)
 	if err != nil {
-		return h.internalErr(c, "project list query failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "project list query failed", err)
 	}
 	return c.JSON(http.StatusOK, model.ProjectListPayload{Projects: projects})
 }

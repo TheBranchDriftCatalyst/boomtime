@@ -1,9 +1,8 @@
-// ctx_helpers_test.go — internal (package handler) test helpers restored
-// after gaka-8tn phase 5a moved heartbeats_explore_test.go (the original
-// home of ctxWithQuery) into internal/ingest/. date_defaults_test.go
-// still lives here and calls ctxWithQuery — this file keeps that call
-// site working without changing the test body.
-package handler
+// ctx_helpers_test.go — external (package handler_test) test helpers
+// used by date_defaults_test.go. gaka-8tn phase 8 flipped date_defaults
+// to the external package so it could import internal/apihelpers via
+// the qualified name; ctxWithQuery moves with it.
+package handler_test
 
 import (
 	"net/http"

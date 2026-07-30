@@ -31,6 +31,7 @@ import (
 	"strings"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/labstack/echo/v5"
 )
@@ -43,11 +44,11 @@ func (h *Handler) LabelsCatalog(c *echo.Context) error {
 	ctx := c.Request().Context()
 	labels, err := h.DB.ListLabels(ctx)
 	if err != nil {
-		return h.internalErr(c, "labels list failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "labels list failed", err)
 	}
 	systemPrompt, err := h.DB.GetGenConfig(ctx)
 	if err != nil {
-		return h.internalErr(c, "label gen-config load failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "label gen-config load failed", err)
 	}
 	// Short TTL — the catalog changes rarely but when the admin does edit
 	// a row we want the change visible within a minute.
@@ -112,42 +113,42 @@ func applyLabelBody(into *db.Label, body *labelBody) {
 // the admin doesn't blast a live label by accident).
 func (h *Handler) AdminCreateLabel(c *echo.Context) error {
 	if _, aerr := h.requireAdmin(c); aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	var body labelBody
-	if aerr := BindJSONWithLimit(c, &body, BodyLimitMedium); aerr != nil {
-		return respondErr(c, aerr)
+	if aerr := apihelpers.BindJSONWithLimit(c, &body, apihelpers.BodyLimitMedium); aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
 	}
 	if body.ID == nil || strings.TrimSpace(*body.ID) == "" {
-		return respondErr(c, apierr.BadRequest("`id` is required"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("`id` is required"))
 	}
 	if body.Kind == nil || strings.TrimSpace(*body.Kind) == "" {
-		return respondErr(c, apierr.BadRequest("`kind` is required"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("`kind` is required"))
 	}
 	if body.Label == nil || strings.TrimSpace(*body.Label) == "" {
-		return respondErr(c, apierr.BadRequest("`label` is required"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("`label` is required"))
 	}
 	if len(body.Condition) == 0 {
-		return respondErr(c, apierr.BadRequest("`condition` JSONB is required"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("`condition` JSONB is required"))
 	}
 	// Fail loud if the id already exists — the admin should hit PATCH, not
 	// POST-that-silently-overwrites.
 	existing, err := h.DB.GetLabel(c.Request().Context(), *body.ID)
 	if err != nil {
-		return h.internalErr(c, "labels lookup failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "labels lookup failed", err)
 	}
 	if existing != nil {
-		return respondErr(c, apierr.BadRequest(fmt.Sprintf("label %q already exists — use PATCH to update", *body.ID)))
+		return apihelpers.RespondErr(c, apierr.BadRequest(fmt.Sprintf("label %q already exists — use PATCH to update", *body.ID)))
 	}
 
 	l := db.Label{ID: *body.ID}
 	applyLabelBody(&l, &body)
 	if err := h.DB.UpsertLabel(c.Request().Context(), l); err != nil {
-		return h.internalErr(c, "label upsert failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "label upsert failed", err)
 	}
 	created, err := h.DB.GetLabel(c.Request().Context(), l.ID)
 	if err != nil {
-		return h.internalErr(c, "post-create fetch failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "post-create fetch failed", err)
 	}
 	return c.JSON(http.StatusCreated, created)
 }
@@ -157,22 +158,22 @@ func (h *Handler) AdminCreateLabel(c *echo.Context) error {
 // the id doesn't exist (admin should use POST to create).
 func (h *Handler) AdminUpdateLabel(c *echo.Context) error {
 	if _, aerr := h.requireAdmin(c); aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	id := c.Param("id")
 	if id == "" {
-		return respondErr(c, apierr.BadRequest("missing label id in URL"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("missing label id in URL"))
 	}
 	var body labelBody
-	if aerr := BindJSONWithLimit(c, &body, BodyLimitMedium); aerr != nil {
-		return respondErr(c, aerr)
+	if aerr := apihelpers.BindJSONWithLimit(c, &body, apihelpers.BodyLimitMedium); aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
 	}
 	existing, err := h.DB.GetLabel(c.Request().Context(), id)
 	if err != nil {
-		return h.internalErr(c, "labels lookup failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "labels lookup failed", err)
 	}
 	if existing == nil {
-		return respondErr(c, apierr.NotFound("label not found"))
+		return apihelpers.RespondErr(c, apierr.NotFound("label not found"))
 	}
 	// Never allow id-rename via PATCH — an id change breaks label_images
 	// FKs + persisted award history. If the operator needs to rename,
@@ -180,11 +181,11 @@ func (h *Handler) AdminUpdateLabel(c *echo.Context) error {
 	body.ID = nil
 	applyLabelBody(existing, &body)
 	if err := h.DB.UpsertLabel(c.Request().Context(), *existing); err != nil {
-		return h.internalErr(c, "label upsert failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "label upsert failed", err)
 	}
 	fresh, err := h.DB.GetLabel(c.Request().Context(), id)
 	if err != nil {
-		return h.internalErr(c, "post-update fetch failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "post-update fetch failed", err)
 	}
 	return c.JSON(http.StatusOK, fresh)
 }
@@ -195,15 +196,15 @@ func (h *Handler) AdminUpdateLabel(c *echo.Context) error {
 // out-live their catalog entry.
 func (h *Handler) AdminDeleteLabel(c *echo.Context) error {
 	if _, aerr := h.requireAdmin(c); aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	id := c.Param("id")
 	if id == "" {
-		return respondErr(c, apierr.BadRequest("missing label id in URL"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("missing label id in URL"))
 	}
 	ctx := c.Request().Context()
 	if err := h.DB.DeleteLabel(ctx, id); err != nil {
-		return h.internalErr(c, "label delete failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "label delete failed", err)
 	}
 	// Best-effort: cascade the image row. A failure here doesn't block
 	// the DELETE — the catalog row is already gone and orphan image bytes
@@ -226,17 +227,17 @@ type genConfigBody struct {
 // optimizedPrompt to comfyui.
 func (h *Handler) AdminUpdateLabelGenConfig(c *echo.Context) error {
 	if _, aerr := h.requireAdmin(c); aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	var body genConfigBody
-	if aerr := BindJSONWithLimit(c, &body, BodyLimitMedium); aerr != nil {
-		return respondErr(c, aerr)
+	if aerr := apihelpers.BindJSONWithLimit(c, &body, apihelpers.BodyLimitMedium); aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
 	}
 	if body.SystemPrompt == nil {
-		return respondErr(c, apierr.BadRequest("`systemPrompt` is required"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("`systemPrompt` is required"))
 	}
 	if err := h.DB.SetGenConfig(c.Request().Context(), *body.SystemPrompt); err != nil {
-		return h.internalErr(c, "label gen-config update failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "label gen-config update failed", err)
 	}
 	return c.JSON(http.StatusOK, map[string]any{
 		"systemPrompt": *body.SystemPrompt,
@@ -253,16 +254,16 @@ func (h *Handler) AdminUpdateLabelGenConfig(c *echo.Context) error {
 // is hit directly.
 func (h *Handler) AdminLabelsSeedSQL(c *echo.Context) error {
 	if _, aerr := h.requireAdmin(c); aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	ctx := c.Request().Context()
 	labels, err := h.DB.ListLabels(ctx)
 	if err != nil {
-		return h.internalErr(c, "labels list failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "labels list failed", err)
 	}
 	systemPrompt, err := h.DB.GetGenConfig(ctx)
 	if err != nil {
-		return h.internalErr(c, "gen config load failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "gen config load failed", err)
 	}
 	var sb strings.Builder
 	sb.WriteString("-- +goose Up\n-- +goose StatementBegin\n\n")

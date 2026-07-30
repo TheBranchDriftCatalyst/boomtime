@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/backfilljobs"
@@ -45,11 +46,11 @@ import (
 func (h *Handler) AdminBackfillConfig(c *echo.Context) error {
 	owner, aerr := h.requireAdmin(c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	cfg, err := h.DB.GetBackfillConfig(c.Request().Context(), owner)
 	if err != nil {
-		return h.internalErr(c, "backfill config get failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "backfill config get failed", err)
 	}
 	return c.JSON(http.StatusOK, cfg)
 }
@@ -72,16 +73,16 @@ type backfillConfigPatch struct {
 func (h *Handler) AdminBackfillConfigUpdate(c *echo.Context) error {
 	owner, aerr := h.requireAdmin(c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	var p backfillConfigPatch
-	if aerr := BindJSONWithLimit(c, &p, BodyLimitMedium); aerr != nil {
-		return respondErr(c, aerr)
+	if aerr := apihelpers.BindJSONWithLimit(c, &p, apihelpers.BodyLimitMedium); aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
 	}
 	ctx := c.Request().Context()
 	cur, err := h.DB.GetBackfillConfig(ctx, owner)
 	if err != nil {
-		return h.internalErr(c, "backfill config get failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "backfill config get failed", err)
 	}
 	if p.ClusterGapSec != nil {
 		cur.ClusterGapSec = *p.ClusterGapSec
@@ -106,13 +107,13 @@ func (h *Handler) AdminBackfillConfigUpdate(c *echo.Context) error {
 	}
 	cur.Username = owner
 	if err := h.DB.SetBackfillConfig(ctx, cur); err != nil {
-		return h.internalErr(c, "backfill config set failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "backfill config set failed", err)
 	}
 	// Re-read to reflect any clamping applied in SetBackfillConfig, so
 	// the FE displays what actually persisted.
 	updated, err := h.DB.GetBackfillConfig(ctx, owner)
 	if err != nil {
-		return h.internalErr(c, "backfill config re-read failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "backfill config re-read failed", err)
 	}
 	return c.JSON(http.StatusOK, updated)
 }
@@ -121,11 +122,11 @@ func (h *Handler) AdminBackfillConfigUpdate(c *echo.Context) error {
 func (h *Handler) AdminBackfillStats(c *echo.Context) error {
 	owner, aerr := h.requireAdmin(c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	stats, err := h.DB.BackfillStatsFor(c.Request().Context(), owner)
 	if err != nil {
-		return h.internalErr(c, "backfill stats failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "backfill stats failed", err)
 	}
 	return c.JSON(http.StatusOK, stats)
 }
@@ -142,21 +143,21 @@ type enqueueJobReq struct {
 func (h *Handler) AdminBackfillEnqueueJob(c *echo.Context) error {
 	owner, aerr := h.requireAdmin(c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	if h.BackfillJobQueue == nil {
-		return respondErr(c, apierr.New(http.StatusServiceUnavailable,
+		return apihelpers.RespondErr(c, apierr.New(http.StatusServiceUnavailable,
 			"backfill queue not initialized", nil))
 	}
 	var req enqueueJobReq
-	if aerr := BindJSONWithLimit(c, &req, BodyLimitSmall); aerr != nil {
-		return respondErr(c, aerr)
+	if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitSmall); aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
 	}
 	if strings.TrimSpace(req.RepoName) == "" {
-		return respondErr(c, apierr.BadRequest("`repoName` is required"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("`repoName` is required"))
 	}
 	if req.TotalCommits < 0 {
-		return respondErr(c, apierr.BadRequest("`totalCommits` must be >= 0"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("`totalCommits` must be >= 0"))
 	}
 	job := h.BackfillJobQueue.Enqueue(backfilljobs.EnqueueInput{
 		Owner:    owner,
@@ -185,29 +186,29 @@ type jobPatchReq struct {
 func (h *Handler) AdminBackfillJobPatch(c *echo.Context) error {
 	owner, aerr := h.requireAdmin(c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	if h.BackfillJobQueue == nil {
-		return respondErr(c, apierr.New(http.StatusServiceUnavailable,
+		return apihelpers.RespondErr(c, apierr.New(http.StatusServiceUnavailable,
 			"backfill queue not initialized", nil))
 	}
 	id := c.Param("id")
 	if id == "" {
-		return respondErr(c, apierr.BadRequest("job id required"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("job id required"))
 	}
 	cur, ok := h.BackfillJobQueue.Get(id)
 	if !ok {
-		return respondErr(c, apierr.New(http.StatusNotFound, "job not found", nil))
+		return apihelpers.RespondErr(c, apierr.New(http.StatusNotFound, "job not found", nil))
 	}
 	// Cross-owner protection: an admin can only touch their own jobs.
 	// 404 (not 403) to avoid an oracle for other admins' job IDs.
 	if cur.Owner != owner {
-		return respondErr(c, apierr.New(http.StatusNotFound, "job not found", nil))
+		return apihelpers.RespondErr(c, apierr.New(http.StatusNotFound, "job not found", nil))
 	}
 
 	var req jobPatchReq
-	if aerr := BindJSONWithLimit(c, &req, BodyLimitSmall); aerr != nil {
-		return respondErr(c, aerr)
+	if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitSmall); aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
 	}
 	patch := backfilljobs.UpdatePatch{
 		Error:     req.Error,
@@ -221,7 +222,7 @@ func (h *Handler) AdminBackfillJobPatch(c *echo.Context) error {
 	case "queued", "running", "done", "error":
 		patch.Status = backfilljobs.JobStatus(strings.ToLower(req.Status))
 	default:
-		return respondErr(c, apierr.BadRequest("unknown status; use queued|running|done|error"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("unknown status; use queued|running|done|error"))
 	}
 	job, _ := h.BackfillJobQueue.Update(id, patch)
 	return c.JSON(http.StatusOK, job)
@@ -256,22 +257,22 @@ func (h *Handler) AdminBackfillJobPreview(c *echo.Context) error {
 func (h *Handler) handleBackfillJobBatch(c *echo.Context, insert bool) error {
 	owner, aerr := h.requireAdmin(c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	if h.BackfillJobQueue == nil {
-		return respondErr(c, apierr.New(http.StatusServiceUnavailable,
+		return apihelpers.RespondErr(c, apierr.New(http.StatusServiceUnavailable,
 			"backfill queue not initialized", nil))
 	}
 	id := c.Param("id")
 	if id == "" {
-		return respondErr(c, apierr.BadRequest("job id required"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("job id required"))
 	}
 	cur, ok := h.BackfillJobQueue.Get(id)
 	if !ok {
-		return respondErr(c, apierr.New(http.StatusNotFound, "job not found", nil))
+		return apihelpers.RespondErr(c, apierr.New(http.StatusNotFound, "job not found", nil))
 	}
 	if cur.Owner != owner {
-		return respondErr(c, apierr.New(http.StatusNotFound, "job not found", nil))
+		return apihelpers.RespondErr(c, apierr.New(http.StatusNotFound, "job not found", nil))
 	}
 
 	// Bigger cap here — a single batch can carry hundreds of KiB of
@@ -279,8 +280,8 @@ func (h *Handler) handleBackfillJobBatch(c *echo.Context, insert bool) error {
 	// sessions and still small enough that a hostile CLI can't wedge
 	// the server on parse alone.
 	var req heartbeatsBatchReq
-	if aerr := BindJSONWithLimit(c, &req, 4*1024*1024); aerr != nil {
-		return respondErr(c, aerr)
+	if aerr := apihelpers.BindJSONWithLimit(c, &req, 4*1024*1024); aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
 	}
 	if len(req.Sessions) == 0 {
 		return c.JSON(http.StatusOK, db.BackfillResult{})
@@ -291,7 +292,7 @@ func (h *Handler) handleBackfillJobBatch(c *echo.Context, insert bool) error {
 	// missing (defaultBackfillConfig handles this).
 	cfg, err := h.DB.GetBackfillConfig(c.Request().Context(), owner)
 	if err != nil {
-		return h.internalErr(c, "backfill config get failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "backfill config get failed", err)
 	}
 	sessions := make([]db.BackfillSession, 0, len(req.Sessions))
 	for _, s := range req.Sessions {
@@ -322,7 +323,7 @@ func (h *Handler) handleBackfillJobBatch(c *echo.Context, insert bool) error {
 		res, err = h.DB.PreviewBackfillBatch(c.Request().Context(), batch)
 	}
 	if err != nil {
-		return h.internalErr(c, "backfill batch failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "backfill batch failed", err)
 	}
 	if insert {
 		// Auto-flip queued → running and increment counters. Uses the
@@ -335,7 +336,7 @@ func (h *Handler) handleBackfillJobBatch(c *echo.Context, insert bool) error {
 	// stats for "last 7 days" would still be technically correct — but
 	// a fresh purge run invalidates old backfill row counts too, so we
 	// flush unconditionally for correctness.
-	h.invalidateOwnerCache(owner)
+	apihelpers.InvalidateOwnerCache(h.Cache, owner)
 	return c.JSON(http.StatusOK, res)
 }
 
@@ -348,15 +349,15 @@ func (h *Handler) handleBackfillJobBatch(c *echo.Context, insert bool) error {
 func (h *Handler) AdminBackfillDeleteHeartbeats(c *echo.Context) error {
 	owner, aerr := h.requireAdmin(c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	source := c.QueryParam("source")
 	all := c.QueryParam("all") == "true"
 	if source == "" && !all {
-		return respondErr(c, apierr.BadRequest("either ?source=<tag> or ?all=true is required"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("either ?source=<tag> or ?all=true is required"))
 	}
 	if source != "" && !strings.HasPrefix(source, "backfill:") {
-		return respondErr(c, apierr.BadRequest("source must start with 'backfill:'"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("source must start with 'backfill:'"))
 	}
 	pattern := source
 	if all {
@@ -364,9 +365,9 @@ func (h *Handler) AdminBackfillDeleteHeartbeats(c *echo.Context) error {
 	}
 	n, err := h.DB.DeleteBackfilledHeartbeats(c.Request().Context(), owner, pattern)
 	if err != nil {
-		return h.internalErr(c, "backfill delete failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "backfill delete failed", err)
 	}
-	h.invalidateOwnerCache(owner)
+	apihelpers.InvalidateOwnerCache(h.Cache, owner)
 	return c.JSON(http.StatusOK, map[string]any{"deleted": n})
 }
 
@@ -375,15 +376,15 @@ func (h *Handler) AdminBackfillDeleteHeartbeats(c *echo.Context) error {
 // Wire protocol matches the label-images WS (same {kind, job} events)
 // so the FE hook is a small copy-paste of useImageJobQueue.
 func (h *Handler) AdminBackfillWS(c *echo.Context) error {
-	owner, aerr := h.resolveOwnerFromCookie(c, apierr.ExpiredRefreshToken())
+	owner, aerr := apihelpers.ResolveOwnerFromCookie(h.DB, h.Logger, c, apierr.ExpiredRefreshToken())
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	if !h.Cfg.IsAdmin(owner) {
-		return respondErr(c, apierr.New(http.StatusForbidden, "admin only", nil))
+		return apihelpers.RespondErr(c, apierr.New(http.StatusForbidden, "admin only", nil))
 	}
 	if h.BackfillJobQueue == nil {
-		return respondErr(c, apierr.New(http.StatusServiceUnavailable,
+		return apihelpers.RespondErr(c, apierr.New(http.StatusServiceUnavailable,
 			"backfill queue not initialized", nil))
 	}
 	conn, err := websocket.Accept(c.Response(), c.Request(), &websocket.AcceptOptions{

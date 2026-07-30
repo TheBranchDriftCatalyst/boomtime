@@ -6,17 +6,18 @@ import (
 	"net/http"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 	"github.com/labstack/echo/v5"
 )
 
 // HealthSamples ingests a single HealthKit sample:
-// POST /api/v1/users/current/health_samples. Body capped at BodyLimitLarge
+// POST /api/v1/users/current/health_samples. Body capped at apihelpers.BodyLimitLarge
 // (gaka-d6x.handler critique fix).
 func (h *Handler) HealthSamples(c *echo.Context) error {
 	var s model.HealthSamplePayload
-	if aerr := BindJSONWithLimit(c, &s, BodyLimitLarge); aerr != nil {
-		return respondErr(c, aerr)
+	if aerr := apihelpers.BindJSONWithLimit(c, &s, apihelpers.BodyLimitLarge); aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
 	}
 	return h.storeSamples(c, []model.HealthSamplePayload{s})
 }
@@ -33,19 +34,19 @@ func (h *Handler) HealthSamples(c *echo.Context) error {
 // oversized ingest.
 func (h *Handler) HealthSamplesBulk(c *echo.Context) error {
 	r := c.Request()
-	r.Body = http.MaxBytesReader(c.Response(), r.Body, BodyLimitLarge)
+	r.Body = http.MaxBytesReader(c.Response(), r.Body, apihelpers.BodyLimitLarge)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		if err.Error() == "http: request body too large" {
-			return respondErr(c, apierr.New(http.StatusRequestEntityTooLarge, "payload too large", nil))
+			return apihelpers.RespondErr(c, apierr.New(http.StatusRequestEntityTooLarge, "payload too large", nil))
 		}
-		return respondErr(c, apierr.BadRequest("Invalid request body"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("Invalid request body"))
 	}
 	var env model.HealthSampleBulkRequest
 	if err := json.Unmarshal(body, &env); err != nil || env.Data == nil {
 		var arr []model.HealthSamplePayload
 		if err2 := json.Unmarshal(body, &arr); err2 != nil {
-			return respondErr(c, apierr.BadRequest("Invalid request body"))
+			return apihelpers.RespondErr(c, apierr.BadRequest("Invalid request body"))
 		}
 		env.Data = arr
 	}
@@ -53,19 +54,19 @@ func (h *Handler) HealthSamplesBulk(c *echo.Context) error {
 }
 
 func (h *Handler) storeSamples(c *echo.Context, ss []model.HealthSamplePayload) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	ctx := c.Request().Context()
 
 	n, err := h.DB.SaveHealthSamples(ctx, owner, ss)
 	if err != nil {
 		h.Logger.Error("failed to store health samples", "err", err)
-		return respondErr(c, apierr.Generic())
+		return apihelpers.RespondErr(c, apierr.Generic())
 	}
 
-	h.invalidateOwnerCache(owner)
+	apihelpers.InvalidateOwnerCache(h.Cache, owner)
 
 	return c.JSON(http.StatusAccepted, map[string]any{"accepted": n})
 }

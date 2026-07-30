@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/labstack/echo/v5"
@@ -113,13 +114,13 @@ func (h *Handler) probeWakatimeKey(ctx context.Context, owner, plaintext string)
 // validity + check timestamp. Deliberately does NOT include the key or any
 // prefix of the plaintext.
 func (h *Handler) GetWakatimeKey(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	info, err := h.DB.GetWakatimeKeyInfo(c.Request().Context(), owner)
 	if err != nil {
-		return h.internalErr(c, "wakatime key lookup failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "wakatime key lookup failed", err)
 	}
 	resp := wakatimeKeyGetResponse{HasSavedKey: info.HasSavedKey}
 	if info.HasSavedKey {
@@ -143,19 +144,19 @@ func (h *Handler) GetWakatimeKey(c *echo.Context) error {
 // clients don't accidentally clobber a saved key with an empty POST — use
 // DELETE for that.
 func (h *Handler) SaveWakatimeKey(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	var req wakatimeKeySaveRequest
 	// gaka-bi2: 4 KiB cap — the body is a single opaque key string; anything
 	// larger cannot be a real Wakatime API key and just wastes memory before
 	// the encrypt step.
-	if aerr := BindJSONWithLimit(c, &req, BodyLimitSmall); aerr != nil {
-		return respondErr(c, aerr)
+	if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitSmall); aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
 	}
 	if req.Key == "" {
-		return respondErr(c, apierr.BadRequest("key is required (use DELETE to clear)"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("key is required (use DELETE to clear)"))
 	}
 
 	// Validate against wakatime.com BEFORE writing. Rejecting an invalid key
@@ -164,32 +165,32 @@ func (h *Handler) SaveWakatimeKey(c *echo.Context) error {
 	// value.
 	status := h.probeWakatimeKey(c.Request().Context(), owner, req.Key)
 	if status == db.WakatimeKeyStatusInvalid {
-		return respondErr(c, apierr.BadRequest("Wakatime rejected this key — check it and try again."))
+		return apihelpers.RespondErr(c, apierr.BadRequest("Wakatime rejected this key — check it and try again."))
 	}
 
 	ct, err := auth.Encrypt([]byte(req.Key))
 	if err != nil {
-		return h.internalErr(c, "wakatime key encrypt failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "wakatime key encrypt failed", err)
 	}
 	if err := h.DB.SetEncryptedWakatimeKey(c.Request().Context(), owner, ct, status); err != nil {
-		return h.internalErr(c, "wakatime key persist failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "wakatime key persist failed", err)
 	}
 	// Log the fact of a save (no value, no length). Status stays high-level.
 	h.Logger.Info("wakatime key saved", "user", owner, "hasSavedWakatimeKey", true, "status", string(status))
-	return noContent(c)
+	return apihelpers.NoContent(c)
 }
 
 // DeleteWakatimeKey: DELETE /api/v1/users/current/wakatime_key — clear any
 // saved encrypted key + its status metadata for the caller. Idempotent (204
 // whether or not one existed) so the FE doesn't need to first-check with GET.
 func (h *Handler) DeleteWakatimeKey(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	if err := h.DB.ClearEncryptedWakatimeKey(c.Request().Context(), owner); err != nil {
-		return h.internalErr(c, "wakatime key clear failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "wakatime key clear failed", err)
 	}
 	h.Logger.Info("wakatime key cleared", "user", owner)
-	return noContent(c)
+	return apihelpers.NoContent(c)
 }

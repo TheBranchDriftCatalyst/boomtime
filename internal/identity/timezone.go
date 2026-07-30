@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/labstack/echo/v5"
 )
@@ -53,13 +54,13 @@ type timezoneGetResponse struct {
 
 // GetTimezone: GET /api/v1/users/current/timezone.
 func (h *Handler) GetTimezone(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	raw, err := h.DB.GetUserTimezone(c.Request().Context(), owner)
 	if err != nil {
-		return h.internalErr(c, "timezone lookup failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "timezone lookup failed", err)
 	}
 	effective := db.ResolveTimezone(raw, h.Cfg.DefaultTimezone)
 	return c.JSON(http.StatusOK, timezoneGetResponse{
@@ -75,15 +76,15 @@ func (h *Handler) GetTimezone(c *echo.Context) error {
 // explicit pick, which is the "revert to server default" affordance for the
 // Settings picker.
 func (h *Handler) UpdateTimezone(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	var req timezoneUpdateRequest
 	// gaka-bi2: 4 KiB cap. IANA names top out at ~40 chars; a fat body here
 	// is just a client bug or an attacker probing.
-	if aerr := BindJSONWithLimit(c, &req, BodyLimitSmall); aerr != nil {
-		return respondErr(c, aerr)
+	if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitSmall); aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
 	}
 	// Trim whitespace on the way in — pasted values from the picker can pick
 	// up trailing spaces that break LoadLocation with a "unknown time zone"
@@ -91,11 +92,11 @@ func (h *Handler) UpdateTimezone(c *echo.Context) error {
 	tz := trimTimezoneName(req.Timezone)
 	if tz != "" {
 		if _, err := time.LoadLocation(tz); err != nil {
-			return respondErr(c, apierr.BadRequest("invalid IANA timezone name"))
+			return apihelpers.RespondErr(c, apierr.BadRequest("invalid IANA timezone name"))
 		}
 	}
 	if err := h.DB.SetUserTimezone(c.Request().Context(), owner, tz); err != nil {
-		return h.internalErr(c, "timezone update failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "timezone update failed", err)
 	}
 	// Rebuilding hb_rollup_daily under the new TZ is required for the fast
 	// path (get_user_activity_rollup.sql) to report user-local buckets — the
@@ -110,7 +111,7 @@ func (h *Handler) UpdateTimezone(c *echo.Context) error {
 	}
 	// Invalidate the owner's cached aggregation payloads so the FE sees new
 	// buckets on the next dashboard load instead of the pre-change TTL blob.
-	h.invalidateOwnerCache(owner)
+	apihelpers.InvalidateOwnerCache(h.Cache, owner)
 	h.Logger.Info("user timezone updated", "user", owner, "timezone", tz)
 	effective := db.ResolveTimezone(tz, h.Cfg.DefaultTimezone)
 	return c.JSON(http.StatusOK, timezoneGetResponse{

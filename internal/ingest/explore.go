@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/labstack/echo/v5"
 )
@@ -52,14 +53,14 @@ const (
 // Returns the owner's most recent heartbeat timestamp (RFC3339 UTC, or null) and
 // total count. Powers the import "backfill from last heartbeat" button.
 func (h *Handler) HeartbeatsLatest(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	last, count, err := h.DB.LatestHeartbeat(c.Request().Context(), owner)
 	if err != nil {
 		h.Logger.Error("latest heartbeat query failed", "err", err)
-		return respondErr(c, apierr.Generic())
+		return apihelpers.RespondErr(c, apierr.Generic())
 	}
 	var lastStr *string
 	if last != nil {
@@ -76,32 +77,32 @@ func (h *Handler) HeartbeatsLatest(c *echo.Context) error {
 // Groups the user's heartbeats by one whitelisted axis with accumulated equality
 // filters. Read-only, owner-scoped.
 func (h *Handler) HeartbeatsGroup(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 
 	groupBy := c.QueryParam("groupBy")
 	groupCol, ok := db.ExploreColumn(groupBy)
 	if !ok {
-		return respondErr(c, apierr.New(http.StatusBadRequest, "Unknown groupBy axis: "+groupBy, nil))
+		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "Unknown groupBy axis: "+groupBy, nil))
 	}
 
 	filters, ferr := collectExploreFilters(c)
 	if ferr != nil {
-		return respondErr(c, ferr)
+		return apihelpers.RespondErr(c, ferr)
 	}
 
-	t0, t1 := defaultWeekRange(c)
+	t0, t1 := apihelpers.DefaultWeekRange(c)
 	// timeLimit (default 15) is the gap cutoff for the per-group attributed time.
 	// entity is an optional ILIKE substring on the entity column; empty is a
 	// no-op. Threading it here fixes the Explorer search box, which previously
 	// only narrowed the leaf-row endpoint (gaka-90x sibling fix).
 	entity := c.QueryParam("entity")
-	groups, truncated, err := h.DB.GroupHeartbeats(c.Request().Context(), owner, groupCol, t0, t1, filters, entity, exploreGroupLimit, timeLimit(c))
+	groups, truncated, err := h.DB.GroupHeartbeats(c.Request().Context(), owner, groupCol, t0, t1, filters, entity, exploreGroupLimit, apihelpers.TimeLimit(c))
 	if err != nil {
 		h.Logger.Error("heartbeats group query failed", "err", err)
-		return respondErr(c, apierr.Generic())
+		return apihelpers.RespondErr(c, apierr.Generic())
 	}
 	return c.JSON(http.StatusOK, map[string]any{
 		"groupBy":   groupBy,
@@ -114,21 +115,21 @@ func (h *Handler) HeartbeatsGroup(c *echo.Context) error {
 // Returns a page of raw heartbeat records for the given whitelist filters,
 // optional entity substring, and time range. Read-only, owner-scoped.
 func (h *Handler) HeartbeatsList(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 
 	filters, ferr := collectExploreFilters(c)
 	if ferr != nil {
-		return respondErr(c, ferr)
+		return apihelpers.RespondErr(c, ferr)
 	}
 
-	page := int(queryInt64(c, "page", 1))
+	page := int(apihelpers.QueryInt64(c, "page", 1))
 	if page < 1 {
 		page = 1
 	}
-	limit := int(queryInt64(c, "limit", exploreRowsDefault))
+	limit := int(apihelpers.QueryInt64(c, "limit", exploreRowsDefault))
 	if limit < 1 {
 		limit = exploreRowsDefault
 	}
@@ -137,11 +138,11 @@ func (h *Handler) HeartbeatsList(c *echo.Context) error {
 	}
 	entity := c.QueryParam("entity")
 
-	t0, t1 := defaultWeekRange(c)
+	t0, t1 := apihelpers.DefaultWeekRange(c)
 	items, total, err := h.DB.ListHeartbeats(c.Request().Context(), owner, t0, t1, filters, entity, page, limit)
 	if err != nil {
 		h.Logger.Error("heartbeats list query failed", "err", err)
-		return respondErr(c, apierr.Generic())
+		return apihelpers.RespondErr(c, apierr.Generic())
 	}
 	return c.JSON(http.StatusOK, map[string]any{
 		"items": items,

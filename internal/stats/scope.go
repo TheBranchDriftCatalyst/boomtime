@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/labstack/echo/v5"
 )
@@ -45,11 +46,11 @@ type dashboardScope struct {
 // dashboardScope resolves the requesting user and the common dashboard query
 // params. days picks the default range window (7 = week, 30 = month).
 func (h *Handler) dashboardScope(c *echo.Context, days int) (*dashboardScope, *apierr.Error) {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
 		return nil, aerr
 	}
-	t0, t1 := defaultRange(c, days)
+	t0, t1 := apihelpers.DefaultRange(c, days)
 	ctx := c.Request().Context()
 	return &dashboardScope{
 		h:          h,
@@ -57,11 +58,11 @@ func (h *Handler) dashboardScope(c *echo.Context, days int) (*dashboardScope, *a
 		owner:      owner,
 		t0:         t0,
 		t1:         t1,
-		limit:      timeLimit(c),
+		limit:      apihelpers.TimeLimit(c),
 		spaceParam: c.QueryParam("space"),
 		// gaka-dg7: single lookup, one place per request. resolveUserTZ never
 		// returns "" so all downstream $tz bindings are safe.
-		tz: h.resolveUserTZ(ctx, owner),
+		tz: apihelpers.ResolveUserTZ(h.DB, h.Logger, ctx, owner, h.Cfg.DefaultTimezoneValue()),
 	}, nil
 }
 
@@ -73,7 +74,7 @@ func (h *Handler) dashboardScope(c *echo.Context, days int) (*dashboardScope, *a
 // cache slot instead of serving pre-change UTC buckets under a hot key. The
 // PATCH endpoint also fires invalidateOwnerCache, so this is defense-in-depth.
 func (s *dashboardScope) cacheKey(name string, parts ...any) string {
-	return cacheKey(s.owner, name, append(parts, "space:"+s.spaceParam, "tz:"+s.tz)...)
+	return apihelpers.CacheKey(s.owner, name, append(parts, "space:"+s.spaceParam, "tz:"+s.tz)...)
 }
 
 // dashSets is the lazily loaded query-time scoping data: hide exclusions and
@@ -102,7 +103,7 @@ func (s *dashboardScope) load(sets dashLoad) (dashSets, error) {
 			return out, err
 		}
 	}
-	if out.members, out.spaceRequested, err = s.h.loadSpace(s.ctx, s.spaceParam); err != nil {
+	if out.members, out.spaceRequested, err = apihelpers.LoadSpace(s.h.DB, s.ctx, s.spaceParam); err != nil {
 		return out, err
 	}
 	return out, nil

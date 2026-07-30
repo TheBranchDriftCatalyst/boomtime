@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/labstack/echo/v5"
 )
@@ -21,13 +22,13 @@ type curationRequest struct {
 
 // ListCuration: GET /api/v1/users/current/curation → {rules:[CurationRule]}.
 func (h *Handler) ListCuration(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	rules, err := h.DB.ListCurationRules(c.Request().Context(), owner)
 	if err != nil {
-		return respondErr(c, apierr.Generic())
+		return apihelpers.RespondErr(c, apierr.Generic())
 	}
 	return c.JSON(http.StatusOK, map[string]any{"rules": rules})
 }
@@ -36,47 +37,47 @@ func (h *Handler) ListCuration(c *echo.Context) error {
 // Validates axis (whitelist) + action, creates the rule, and applies it
 // immediately (rename → backfill + rollup rebuild; hide → store only).
 func (h *Handler) CreateCuration(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	var req curationRequest
 	// gaka-bi2: 64 KiB cap — curation rules are compact JSON (axis, action,
 	// matchType, matchValue, optional newValue); pattern strings should never
 	// approach this bound.
-	if aerr := BindJSONWithLimit(c, &req, BodyLimitMedium); aerr != nil {
-		return respondErr(c, aerr)
+	if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitMedium); aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
 	}
 
 	// axis must be in the Heartbeats Explorer whitelist.
 	if _, ok := db.ExploreColumn(req.Axis); !ok {
-		return respondErr(c, apierr.New(http.StatusBadRequest, "Unknown axis: "+req.Axis, nil))
+		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "Unknown axis: "+req.Axis, nil))
 	}
 	if req.Action != db.CurationHide && req.Action != db.CurationRename {
-		return respondErr(c, apierr.New(http.StatusBadRequest, "action must be 'hide' or 'rename'", nil))
+		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "action must be 'hide' or 'rename'", nil))
 	}
 	if req.MatchValue == "" {
-		return respondErr(c, apierr.New(http.StatusBadRequest, "matchValue is required", nil))
+		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "matchValue is required", nil))
 	}
 	matchType := req.MatchType
 	if matchType == "" {
 		matchType = db.MatchExact
 	}
 	if matchType != db.MatchExact && matchType != db.MatchRegex && matchType != db.MatchTemplate {
-		return respondErr(c, apierr.New(http.StatusBadRequest, "matchType must be 'exact', 'regex', or 'template'", nil))
+		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "matchType must be 'exact', 'regex', or 'template'", nil))
 	}
 	// A template rule's target is a capture-group replacement template — it only
 	// makes sense for rename (hide has no target).
 	if matchType == db.MatchTemplate && req.Action != db.CurationRename {
-		return respondErr(c, apierr.New(http.StatusBadRequest, "matchType 'template' is only valid for a rename rule", nil))
+		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "matchType 'template' is only valid for a rename rule", nil))
 	}
 	newValue := req.NewValue
 	if req.Action == db.CurationRename {
 		if newValue == nil || *newValue == "" {
-			return respondErr(c, apierr.New(http.StatusBadRequest, "newValue is required for a rename rule", nil))
+			return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "newValue is required for a rename rule", nil))
 		}
 		if req.Axis == "day" {
-			return respondErr(c, apierr.New(http.StatusBadRequest, "the day axis cannot be renamed", nil))
+			return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "the day axis cannot be renamed", nil))
 		}
 		// Accept both Postgres `\1` and shell-style `$1` backrefs in a template;
 		// normalize `$N` -> `\N` before storing/using so either works.
@@ -90,14 +91,14 @@ func (h *Handler) CreateCuration(c *echo.Context) error {
 	// For a regex rule, validate the pattern compiles (Postgres regex) up front.
 	if matchType == db.MatchRegex {
 		if err := h.DB.ValidateRegex(ctx, req.MatchValue); err != nil {
-			return respondErr(c, apierr.New(http.StatusBadRequest, "invalid regex pattern", nil))
+			return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "invalid regex pattern", nil))
 		}
 	}
 	// For a template rule, validate the pattern compiles AND the template is a
 	// valid regexp_replace replacement (guards bad backrefs like `\9`).
 	if matchType == db.MatchTemplate {
 		if err := h.DB.ValidateTemplate(ctx, req.MatchValue, *newValue); err != nil {
-			return respondErr(c, apierr.New(http.StatusBadRequest, "invalid template rename", nil))
+			return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "invalid template rename", nil))
 		}
 	}
 
@@ -107,12 +108,12 @@ func (h *Handler) CreateCuration(c *echo.Context) error {
 	rule, err := h.DB.CreateCurationRule(ctx, owner, req.Axis, req.Action, matchType, req.MatchValue, newValue)
 	if err != nil {
 		h.Logger.Error("create curation rule failed", "err", err)
-		return respondErr(c, apierr.Generic())
+		return apihelpers.RespondErr(c, apierr.Generic())
 	}
 
 	// Both hide and rename change what dashboards show → drop this user's cached
 	// aggregations so the new rule takes effect immediately.
-	h.invalidateOwnerCache(owner)
+	apihelpers.InvalidateOwnerCache(h.Cache, owner)
 
 	return c.JSON(http.StatusOK, map[string]any{"rule": rule})
 }
@@ -122,23 +123,23 @@ func (h *Handler) CreateCuration(c *echo.Context) error {
 // un-hides, and deleting a rename rule instantly reverts the dashboards to the
 // raw (un-merged) values (raw records were never mutated).
 func (h *Handler) DeleteCuration(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		return respondErr(c, apierr.New(http.StatusBadRequest, "Invalid rule id", nil))
+		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "Invalid rule id", nil))
 	}
 	n, err := h.DB.DeleteCurationRule(c.Request().Context(), owner, id)
 	if err != nil {
-		return respondErr(c, apierr.Generic())
+		return apihelpers.RespondErr(c, apierr.Generic())
 	}
 	if n == 0 {
-		return respondErr(c, apierr.New(http.StatusNotFound, "Curation rule not found", nil))
+		return apihelpers.RespondErr(c, apierr.New(http.StatusNotFound, "Curation rule not found", nil))
 	}
-	h.invalidateOwnerCache(owner)
-	return noContent(c)
+	apihelpers.InvalidateOwnerCache(h.Cache, owner)
+	return apihelpers.NoContent(c)
 }
 
 // toggleCurationRequest is the optional POST body for the toggle endpoint.
@@ -158,20 +159,20 @@ type toggleCurationRequest struct {
 // is filtered out of LoadHiddenSets / LoadRenameSets — its effect is
 // paused. Apply and Purge reject disabled rules with 400 (see below).
 func (h *Handler) ToggleCuration(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		return respondErr(c, apierr.New(http.StatusBadRequest, "Invalid rule id", nil))
+		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "Invalid rule id", nil))
 	}
 	// Body is optional — an empty POST flips. When present it must be tiny
 	// (a single boolean); reuse the small body cap.
 	var req toggleCurationRequest
 	if c.Request().ContentLength > 0 {
-		if aerr := BindJSONWithLimit(c, &req, BodyLimitSmall); aerr != nil {
-			return respondErr(c, aerr)
+		if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitSmall); aerr != nil {
+			return apihelpers.RespondErr(c, aerr)
 		}
 	}
 	ctx := c.Request().Context()
@@ -185,14 +186,14 @@ func (h *Handler) ToggleCuration(c *echo.Context) error {
 	}
 	if err != nil {
 		h.Logger.Error("toggle curation rule failed", "err", err, "ruleId", id)
-		return respondErr(c, apierr.Generic())
+		return apihelpers.RespondErr(c, apierr.Generic())
 	}
 	if !found {
-		return respondErr(c, apierr.New(http.StatusNotFound, "Curation rule not found", nil))
+		return apihelpers.RespondErr(c, apierr.New(http.StatusNotFound, "Curation rule not found", nil))
 	}
 	// Enabling/disabling a rule changes what dashboards render → drop the
 	// owner's cached aggregations so the next fetch reflects the new state.
-	h.invalidateOwnerCache(owner)
+	apihelpers.InvalidateOwnerCache(h.Cache, owner)
 	return c.JSON(http.StatusOK, map[string]any{"enabled": newEnabled})
 }
 
@@ -201,28 +202,28 @@ func (h *Handler) ToggleCuration(c *echo.Context) error {
 // counts) a rule matches on its axis — the one literal for an exact rule, every
 // matching value for a regex rule. Owner-scoped, UNFILTERED (audit).
 func (h *Handler) CurationAffected(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		return respondErr(c, apierr.New(http.StatusBadRequest, "Invalid rule id", nil))
+		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "Invalid rule id", nil))
 	}
 	ctx := c.Request().Context()
 
 	rule, ruleOwner, err := h.DB.GetCurationRule(ctx, id)
 	if err != nil {
-		return respondErr(c, apierr.Generic())
+		return apihelpers.RespondErr(c, apierr.Generic())
 	}
 	if rule == nil || ruleOwner != owner {
-		return respondErr(c, apierr.New(http.StatusNotFound, "Curation rule not found", nil))
+		return apihelpers.RespondErr(c, apierr.New(http.StatusNotFound, "Curation rule not found", nil))
 	}
 
 	values, truncated, err := h.DB.CurationAffectedValues(ctx, owner, rule, 200)
 	if err != nil {
 		h.Logger.Error("curation affected values failed", "err", err)
-		return respondErr(c, apierr.Generic())
+		return apihelpers.RespondErr(c, apierr.Generic())
 	}
 	return c.JSON(http.StatusOK, map[string]any{"values": values, "truncated": truncated})
 }
@@ -255,19 +256,19 @@ func (h *Handler) resolveCurationRule(c *echo.Context, ctx context.Context, owne
 // One preview endpoint, two payload shapes — the FE modal dispatches on the
 // same `action` discriminator to render the appropriate UI.
 func (h *Handler) ApplyRenamePreview(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		return respondErr(c, apierr.New(http.StatusBadRequest, "Invalid rule id", nil))
+		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "Invalid rule id", nil))
 	}
 	ctx := c.Request().Context()
 
 	rule, aerr := h.resolveCurationRule(c, ctx, owner, id)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 
 	// Rule shape returned on both branches — kept identical so the FE
@@ -286,7 +287,7 @@ func (h *Handler) ApplyRenamePreview(c *echo.Context) error {
 		updSQL, delSQL, diff, total, perr := h.DB.ApplyRenamePreview(ctx, owner, rule, applyPreviewRowsCap)
 		if perr != nil {
 			h.Logger.Error("apply-rename preview failed", "err", perr, "ruleId", id)
-			return respondErr(c, apierr.New(http.StatusBadRequest, perr.Error(), nil))
+			return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, perr.Error(), nil))
 		}
 		return c.JSON(http.StatusOK, map[string]any{
 			"action":        "rename",
@@ -302,7 +303,7 @@ func (h *Handler) ApplyRenamePreview(c *echo.Context) error {
 		delRowsSQL, delRuleSQL, diff, total, perr := h.DB.PurgeHiddenPreview(ctx, owner, rule, applyPreviewRowsCap)
 		if perr != nil {
 			h.Logger.Error("purge-hidden preview failed", "err", perr, "ruleId", id)
-			return respondErr(c, apierr.New(http.StatusBadRequest, perr.Error(), nil))
+			return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, perr.Error(), nil))
 		}
 		return c.JSON(http.StatusOK, map[string]any{
 			"action":        "hide",
@@ -315,7 +316,7 @@ func (h *Handler) ApplyRenamePreview(c *echo.Context) error {
 			"rule":          ruleOut,
 		})
 	default:
-		return respondErr(c, apierr.New(http.StatusBadRequest, "unknown rule action: "+rule.Action, nil))
+		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "unknown rule action: "+rule.Action, nil))
 	}
 }
 
@@ -329,41 +330,41 @@ func (h *Handler) ApplyRenamePreview(c *echo.Context) error {
 // Idempotent-in-effect: if the mapping is already applied and 0 rows match,
 // still succeeds with rowsAffected=0 and the rule row is still removed.
 func (h *Handler) ApplyRename(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		return respondErr(c, apierr.New(http.StatusBadRequest, "Invalid rule id", nil))
+		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "Invalid rule id", nil))
 	}
 	ctx := c.Request().Context()
 
 	rule, aerr := h.resolveCurationRule(c, ctx, owner, id)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	if rule.Action != db.CurationRename {
-		return respondErr(c, apierr.New(http.StatusBadRequest, "only rename rules can be applied", nil))
+		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "only rename rules can be applied", nil))
 	}
 	// gaka-dfd: refuse to run a destructive action against a paused rule —
 	// applying-a-rule-you-just-paused is confusing and probably a mistake.
 	// The user should re-enable, verify it still matches what they expect,
 	// and then apply.
 	if !rule.Enabled {
-		return respondErr(c, apierr.New(http.StatusBadRequest, "cannot apply a disabled rule; enable it first", nil))
+		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "cannot apply a disabled rule; enable it first", nil))
 	}
 
 	rows, sqlUpd, sqlDel, err := h.DB.ApplyRenameRule(ctx, owner, rule)
 	if err != nil {
 		h.Logger.Error("apply-rename failed", "err", err, "ruleId", id)
-		return respondErr(c, apierr.Generic())
+		return apihelpers.RespondErr(c, apierr.Generic())
 	}
 
 	// The apply mutated raw heartbeats and removed a rule → dashboards, the
 	// explorer, and per-axis values all change. Drop the owner's cached
 	// aggregations so the next fetch is fresh.
-	h.invalidateOwnerCache(owner)
+	apihelpers.InvalidateOwnerCache(h.Cache, owner)
 
 	return c.JSON(http.StatusOK, map[string]any{
 		"rowsAffected": rows,
@@ -385,39 +386,39 @@ func (h *Handler) ApplyRename(c *echo.Context) error {
 // gate it behind a "type rule id N to confirm" input, and the icon in the
 // row list gets a redder destructive tint than /apply's Zap.
 func (h *Handler) PurgeHidden(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		return respondErr(c, apierr.New(http.StatusBadRequest, "Invalid rule id", nil))
+		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "Invalid rule id", nil))
 	}
 	ctx := c.Request().Context()
 
 	rule, aerr := h.resolveCurationRule(c, ctx, owner, id)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	if rule.Action != db.CurationHide {
-		return respondErr(c, apierr.New(http.StatusBadRequest, "only hide rules can be purged", nil))
+		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "only hide rules can be purged", nil))
 	}
 	// gaka-dfd: refuse to purge against a paused rule — the same reasoning
 	// as the apply guard, and purge is the more dangerous of the two.
 	if !rule.Enabled {
-		return respondErr(c, apierr.New(http.StatusBadRequest, "cannot purge a disabled rule; enable it first", nil))
+		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "cannot purge a disabled rule; enable it first", nil))
 	}
 
 	rows, sqlDelRows, sqlDelRule, err := h.DB.PurgeHiddenRule(ctx, owner, rule)
 	if err != nil {
 		h.Logger.Error("purge-hidden failed", "err", err, "ruleId", id)
-		return respondErr(c, apierr.Generic())
+		return apihelpers.RespondErr(c, apierr.Generic())
 	}
 
 	// Purge deleted raw heartbeats + removed a rule → dashboards, the
 	// explorer, and per-axis values all change. Drop the owner's cached
 	// aggregations so the next fetch is fresh.
-	h.invalidateOwnerCache(owner)
+	apihelpers.InvalidateOwnerCache(h.Cache, owner)
 
 	return c.JSON(http.StatusOK, map[string]any{
 		"rowsAffected":  rows,

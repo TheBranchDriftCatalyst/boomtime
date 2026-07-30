@@ -1,6 +1,7 @@
 package stats
 
 import (
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/labstack/echo/v5"
 )
 
@@ -10,9 +11,9 @@ import (
 func (h *Handler) Punchcard(c *echo.Context) error {
 	s, aerr := h.dashboardScope(c, 7)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
-	return h.cachedJSON(c, s.cacheKey("punchcard", s.t0, s.t1, s.limit), func() (any, error) {
+	return apihelpers.CachedJSON(h.Cache, h.Logger, c, s.cacheKey("punchcard", s.t0, s.t1, s.limit), func() (any, error) {
 		l, err := s.load(loadHidden)
 		if err != nil {
 			return nil, err
@@ -30,9 +31,9 @@ func (h *Handler) Punchcard(c *echo.Context) error {
 func (h *Handler) Sessions(c *echo.Context) error {
 	s, aerr := h.dashboardScope(c, 7)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
-	return h.cachedJSON(c, s.cacheKey("sessions", s.t0, s.t1, s.limit), func() (any, error) {
+	return apihelpers.CachedJSON(h.Cache, h.Logger, c, s.cacheKey("sessions", s.t0, s.t1, s.limit), func() (any, error) {
 		l, err := s.load(loadHidden)
 		if err != nil {
 			return nil, err
@@ -55,9 +56,9 @@ func (h *Handler) Sessions(c *echo.Context) error {
 func (h *Handler) AIActivity(c *echo.Context) error {
 	s, aerr := h.dashboardScope(c, 30)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
-	return h.cachedJSON(c, s.cacheKey("ai-activity", s.t0, s.t1), func() (any, error) {
+	return apihelpers.CachedJSON(h.Cache, h.Logger, c, s.cacheKey("ai-activity", s.t0, s.t1), func() (any, error) {
 		return h.DB.GetAIActivity(s.ctx, s.owner, s.t0, s.t1)
 	})
 }
@@ -70,9 +71,9 @@ func (h *Handler) AIActivity(c *echo.Context) error {
 func (h *Handler) HealthActivity(c *echo.Context) error {
 	s, aerr := h.dashboardScope(c, 30)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
-	return h.cachedJSON(c, s.cacheKey("health-activity", s.t0, s.t1), func() (any, error) {
+	return apihelpers.CachedJSON(h.Cache, h.Logger, c, s.cacheKey("health-activity", s.t0, s.t1), func() (any, error) {
 		return h.DB.GetHealthActivity(s.ctx, s.owner, s.t0, s.t1)
 	})
 }
@@ -86,9 +87,9 @@ func (h *Handler) HealthActivity(c *echo.Context) error {
 func (h *Handler) WorkoutList(c *echo.Context) error {
 	s, aerr := h.dashboardScope(c, 30)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
-	return h.cachedJSON(c, s.cacheKey("workouts", s.t0, s.t1), func() (any, error) {
+	return apihelpers.CachedJSON(h.Cache, h.Logger, c, s.cacheKey("workouts", s.t0, s.t1), func() (any, error) {
 		return h.DB.GetWorkouts(s.ctx, s.owner, s.t0, s.t1)
 	})
 }
@@ -98,13 +99,13 @@ func (h *Handler) WorkoutList(c *echo.Context) error {
 func (h *Handler) Momentum(c *echo.Context) error {
 	s, aerr := h.dashboardScope(c, 7)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
-	top := int(queryInt64(c, "top", 8))
+	top := int(apihelpers.QueryInt64(c, "top", 8))
 	if top < 1 {
 		top = 8
 	}
-	return h.cachedJSON(c, s.cacheKey("momentum", s.t0, s.t1, s.limit, top), func() (any, error) {
+	return apihelpers.CachedJSON(h.Cache, h.Logger, c, s.cacheKey("momentum", s.t0, s.t1, s.limit, top), func() (any, error) {
 		l, err := s.load(loadHidden | loadRenames)
 		if err != nil {
 			return nil, err

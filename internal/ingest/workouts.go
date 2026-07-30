@@ -7,18 +7,19 @@ import (
 	"strconv"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 	"github.com/labstack/echo/v5"
 )
 
 // Workouts ingests a single workout: POST /api/v1/users/current/workouts.
 // Wraps the same singleton-vs-bulk split as heartbeats so the companion app
-// can start with one-off POSTs before batching. Body capped at BodyLimitLarge
+// can start with one-off POSTs before batching. Body capped at apihelpers.BodyLimitLarge
 // (gaka-d6x.handler critique fix).
 func (h *Handler) Workouts(c *echo.Context) error {
 	var w model.WorkoutPayload
-	if aerr := BindJSONWithLimit(c, &w, BodyLimitLarge); aerr != nil {
-		return respondErr(c, aerr)
+	if aerr := apihelpers.BindJSONWithLimit(c, &w, apihelpers.BodyLimitLarge); aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
 	}
 	return h.storeWorkouts(c, []model.WorkoutPayload{w})
 }
@@ -36,15 +37,15 @@ func (h *Handler) Workouts(c *echo.Context) error {
 // oversized ingest.
 func (h *Handler) WorkoutsBulk(c *echo.Context) error {
 	r := c.Request()
-	r.Body = http.MaxBytesReader(c.Response(), r.Body, BodyLimitLarge)
+	r.Body = http.MaxBytesReader(c.Response(), r.Body, apihelpers.BodyLimitLarge)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		// http.MaxBytesReader signals oversize via "http: request body too
 		// large"; render 413 rather than 400 so the client can distinguish.
 		if err.Error() == "http: request body too large" {
-			return respondErr(c, apierr.New(http.StatusRequestEntityTooLarge, "payload too large", nil))
+			return apihelpers.RespondErr(c, apierr.New(http.StatusRequestEntityTooLarge, "payload too large", nil))
 		}
-		return respondErr(c, apierr.BadRequest("Invalid request body"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("Invalid request body"))
 	}
 	var env model.WorkoutBulkRequest
 	if err := json.Unmarshal(body, &env); err != nil || env.Data == nil {
@@ -52,7 +53,7 @@ func (h *Handler) WorkoutsBulk(c *echo.Context) error {
 		// wrap in {"data":...} and there's no reason to reject them.
 		var arr []model.WorkoutPayload
 		if err2 := json.Unmarshal(body, &arr); err2 != nil {
-			return respondErr(c, apierr.BadRequest("Invalid request body"))
+			return apihelpers.RespondErr(c, apierr.BadRequest("Invalid request body"))
 		}
 		env.Data = arr
 	}
@@ -60,21 +61,21 @@ func (h *Handler) WorkoutsBulk(c *echo.Context) error {
 }
 
 func (h *Handler) storeWorkouts(c *echo.Context, ws []model.WorkoutPayload) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	ctx := c.Request().Context()
 
 	ids, err := h.DB.SaveWorkouts(ctx, owner, ws)
 	if err != nil {
 		h.Logger.Error("failed to store workouts", "err", err)
-		return respondErr(c, apierr.Generic())
+		return apihelpers.RespondErr(c, apierr.Generic())
 	}
 
 	// Bust cached dashboard payloads so the Wellness card / Overview picks up
 	// the new workouts on the next fetch instead of waiting out the 30s TTL.
-	h.invalidateOwnerCache(owner)
+	apihelpers.InvalidateOwnerCache(h.Cache, owner)
 
 	responses := make([][]any, len(ids))
 	for i, id := range ids {

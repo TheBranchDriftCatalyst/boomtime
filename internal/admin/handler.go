@@ -14,36 +14,18 @@
 // SECURITY POSTURE: every admin-gated endpoint runs requireAdmin BEFORE
 // reading the body so a non-admin request never costs a body allocation.
 // Non-admin JSON endpoints (import cluster, backup export/import) still
-// cap the body via BindJSONWithLimit / http.MaxBytesReader. The
+// cap the body via apihelpers.BindJSONWithLimit / http.MaxBytesReader. The
 // destructive restore endpoint (DBImport) demands an explicit
 // ?confirm=replace-all-data sentinel — the belt-and-braces guard used
 // throughout boomtime for TRUNCATE-shaped writes.
 //
-// DB QUERIES STAY IN internal/db/: the receiver methods this package
-// calls (ListLabelImagesMeta, TruncateLabelImages, GetLabel, ListLabels,
-// GetLabelImage; GetBackfillConfig / SetBackfillConfig / BackfillStatsFor
-// / InsertBackfillBatch / PreviewBackfillBatch / DeleteBackfilledHeartbeats;
-// DumpAll / RestoreAll / Senders / ResyncDerived / HasActiveImportJobs;
-// GetEncryptedWakatimeKey; CreateImportJob / GetJobsByOwner / GetJobByID /
-// GetJobLogs / CancelJob / MarkRunningJobsFailed; ListSourceHealth)
-// remain on *db.DB because they either have non-admin callers (Senders,
-// ResyncDerived, GetLabel, ListLabels are called from ingest/curation/
-// worker paths; GetEncryptedWakatimeKey is also called from the
-// importer worker) or share unexported helpers across packages. Only
-// handlers move here in phase 7 — the DB slice defers to phase 8
-// collapse, mirroring the identity/awards/ingest/curation/stats
-// precedents.
-//
 // Shared helpers live in internal/apihelpers/ — this package imports
-// that instead of carrying per-file shims.
+// that instead of carrying per-file shims (gaka-8tn phase 8 collapse).
 package admin
 
 import (
-	"fmt"
 	"log/slog"
 	"net/http"
-	"strings"
-	"time"
 
 	"github.com/labstack/echo/v5"
 
@@ -84,15 +66,15 @@ import (
 //     injected pointer for symmetry with the label-images queue and so
 //     tests can wire a per-test registry with tight retention
 type Handler struct {
-	DB               *db.DB
-	Cfg              *config.Config
-	Logger           *slog.Logger
-	Cache            *cache.TTL
-	Worker           *importer.Worker
-	Hub              *importer.Hub
+	DB                *db.DB
+	Cfg               *config.Config
+	Logger            *slog.Logger
+	Cache             *cache.TTL
+	Worker            *importer.Worker
+	Hub               *importer.Hub
 	LabelImagesWorker *labelimages.Worker
-	ImageJobQueue    *imagejobs.Registry
-	BackfillJobQueue *backfilljobs.Registry
+	ImageJobQueue     *imagejobs.Registry
+	BackfillJobQueue  *backfilljobs.Registry
 }
 
 // New constructs an admin.Handler with the passed-in shared deps.
@@ -136,46 +118,18 @@ func (h *Handler) SetBackfillJobQueue(r *backfilljobs.Registry) {
 	h.BackfillJobQueue = r
 }
 
-// resolveUser is the admin-domain adapter over apihelpers.ResolveUser —
-// receiver-shaped so the extracted handlers keep their previous
-// signature (`h.resolveUser(c)`) unchanged. Every call is line-identical
-// to the god-type version.
-func (h *Handler) resolveUser(c *echo.Context) (string, string, *apierr.Error) {
-	return apihelpers.ResolveUser(h.DB, c)
-}
-
-// resolveOwnerFromCookie is the admin-domain adapter over
-// apihelpers.ResolveOwnerFromCookie — receiver-shaped so per-handler
-// call sites (WS handshake handlers, which cannot carry Authorization)
-// stay identical.
-func (h *Handler) resolveOwnerFromCookie(c *echo.Context, missingErr *apierr.Error) (string, *apierr.Error) {
-	return apihelpers.ResolveOwnerFromCookie(h.DB, h.Logger, c, missingErr)
-}
-
-// internalErr is the admin-domain adapter over apihelpers.InternalErr —
-// receiver-shaped so per-handler call sites stay identical.
-func (h *Handler) internalErr(c *echo.Context, msg string, err error) error {
-	return apihelpers.InternalErr(h.Logger, c, msg, err)
-}
-
-// invalidateOwnerCache is the admin-domain adapter over
-// apihelpers.InvalidateOwnerCache — receiver-shaped so admin_backfill.go
-// call sites stay identical.
-func (h *Handler) invalidateOwnerCache(owner string) {
-	apihelpers.InvalidateOwnerCache(h.Cache, owner)
-}
-
 // requireAdmin: 401 without a token, 403 when not on the admin allowlist.
 // Returns the resolved owner on success. Mirror of the same method on
-// *handler.Handler and *curation.Handler / *identity.Handler —
-// duplicated here because the admin label-images + backfill endpoints
-// gate on it. All copies stay byte-identical until phase 8 collapses
-// them into internal/apihelpers.
+// *identity.Handler / *curation.Handler — the admin label-images +
+// backfill endpoints gate on it. Three byte-identical copies survive
+// because each domain guards a distinct endpoint and a shared helper
+// would need dependency-injection scaffolding bigger than the 8-line
+// body itself.
 //
 // The 403 path deliberately does NOT distinguish "unknown admin config"
 // from "not on the list" — both look like a plain 403 to the client.
 func (h *Handler) requireAdmin(c *echo.Context) (string, *apierr.Error) {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
 		return "", aerr
 	}
@@ -183,77 +137,4 @@ func (h *Handler) requireAdmin(c *echo.Context) (string, *apierr.Error) {
 		return "", apierr.New(http.StatusForbidden, "admin only", nil)
 	}
 	return owner, nil
-}
-
-// respondErr renders an apierr.Error onto the context. Package-local
-// alias for apihelpers.RespondErr so the extracted handler files keep
-// their existing `respondErr(c, ...)` call sites unchanged.
-func respondErr(c *echo.Context, e *apierr.Error) error {
-	return apihelpers.RespondErr(c, e)
-}
-
-// queryInt64 is the admin-domain alias for apihelpers.QueryInt64. Kept
-// as a package-local func (not receiver) so import.go's call sites
-// (`queryInt64(c, "afterId", ...)`) stay identical.
-func queryInt64(c *echo.Context, name string, def int64) int64 {
-	return apihelpers.QueryInt64(c, name, def)
-}
-
-// cacheKeyTimeBucket / cacheKey mirror the shared helpers in
-// internal/handler + internal/stats. Kept as a package-local copy so
-// admin doesn't depend on the parent's private helpers during phase 7.
-// A follow-up phase (8) will collapse all copies into
-// internal/apihelpers/. The bytes produced by cacheKey MUST match the
-// god-type's cacheKey for the same input.
-const cacheKeyTimeBucket = 30 * time.Second
-
-// cacheKey builds a stable cache key: "owner|name|part|part...".
-// time.Time parts are truncated to cacheKeyTimeBucket. Byte-identical
-// to the pre-refactor implementation in internal/handler/handler.go.
-// SourceHealth is the only caller today (owner-prefixed, name-only —
-// no time parts) but keep the general shape so a future admin read
-// that wants a time-bucketed key doesn't need a second helper.
-func cacheKey(owner, name string, parts ...any) string {
-	var b strings.Builder
-	b.WriteString(owner)
-	b.WriteByte('|')
-	b.WriteString(name)
-	for _, p := range parts {
-		b.WriteByte('|')
-		if t, ok := p.(time.Time); ok {
-			fmt.Fprintf(&b, "%d", t.Truncate(cacheKeyTimeBucket).Unix())
-		} else {
-			fmt.Fprint(&b, p)
-		}
-	}
-	return b.String()
-}
-
-// BindJSONWithLimit / body-size limits: admin re-exports the shared
-// helpers under package-local aliases so the extracted files keep their
-// original call sites (`BindJSONWithLimit(c, &req, BodyLimitSmall)`).
-// These are the SAME buckets defined in apihelpers — the aliases keep
-// call-site diffs to zero.
-
-// BodyLimitSmall / BodyLimitMedium / BodyLimitLarge: package-local
-// aliases over apihelpers so admin handlers keep their pre-refactor
-// call sites. Delete these once phase 8 collapses call sites to the
-// apihelpers-qualified form.
-const (
-	BodyLimitSmall  = apihelpers.BodyLimitSmall
-	BodyLimitMedium = apihelpers.BodyLimitMedium
-	BodyLimitLarge  = apihelpers.BodyLimitLarge
-)
-
-// BindJSONWithLimit: package-local alias for apihelpers.BindJSONWithLimit.
-func BindJSONWithLimit(c *echo.Context, dst any, limit int64) *apierr.Error {
-	return apihelpers.BindJSONWithLimit(c, dst, limit)
-}
-
-// cachedJSON serves a cached payload for key, or computes+caches it.
-// Package-local receiver adapter over apihelpers.CachedJSON so
-// sources.go's `h.cachedJSON(c, key, compute)` call site stays byte-
-// identical.
-func (h *Handler) cachedJSON(c *echo.Context, key string, compute func() (any, error)) error {
-	return apihelpers.CachedJSON(h.Cache, h.Logger, c, key, compute)
 }

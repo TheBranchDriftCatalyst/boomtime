@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 	"github.com/labstack/echo/v5"
@@ -13,9 +14,9 @@ import (
 func (h *Handler) Stats(c *echo.Context) error {
 	s, aerr := h.dashboardScope(c, 7)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
-	return h.cachedJSON(c, s.cacheKey("stats", s.t0, s.t1, s.limit), func() (any, error) {
+	return apihelpers.CachedJSON(h.Cache, h.Logger, c, s.cacheKey("stats", s.t0, s.t1, s.limit), func() (any, error) {
 		// Apply the user's query-time hide exclusions + rename remaps (both
 		// reversible; audit views stay unfiltered/un-remapped).
 		l, err := s.load(loadHidden | loadRenames)
@@ -62,9 +63,9 @@ func (h *Handler) Stats(c *echo.Context) error {
 func (h *Handler) Timeline(c *echo.Context) error {
 	s, aerr := h.dashboardScope(c, 7)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
-	return h.cachedJSON(c, s.cacheKey("timeline", s.t0, s.t1, s.limit), func() (any, error) {
+	return apihelpers.CachedJSON(h.Cache, h.Logger, c, s.cacheKey("timeline", s.t0, s.t1, s.limit), func() (any, error) {
 		// Timeline intentionally applies neither hide nor rename — only the space scope.
 		l, err := s.load(loadNone)
 		if err != nil {
@@ -80,23 +81,23 @@ func (h *Handler) Timeline(c *echo.Context) error {
 
 // StatusbarToday: GET /api/v1/users/current/statusbar/today.
 func (h *Handler) StatusbarToday(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	ctx := c.Request().Context()
 	hidden, err := h.DB.LoadHiddenSets(ctx, owner)
 	if err != nil {
-		return respondErr(c, apierr.Generic())
+		return apihelpers.RespondErr(c, apierr.Generic())
 	}
 	// gaka-dg7: "today" bounded by the user's local midnight (per user tz +
 	// server default resolver), not UTC midnight — a 23:59 PT status bar
 	// refresh previously showed the next UTC day's (empty) window.
-	tz := h.resolveUserTZ(ctx, owner)
+	tz := apihelpers.ResolveUserTZ(h.DB, h.Logger, ctx, owner, h.Cfg.DefaultTimezoneValue())
 	total, err := h.DB.GetTotalTimeToday(ctx, owner, tz, hidden)
 	if err != nil {
 		h.Logger.Error("statusbar query failed", "err", err)
-		return respondErr(c, apierr.Generic())
+		return apihelpers.RespondErr(c, apierr.Generic())
 	}
 	return c.JSON(http.StatusOK, model.StatusBarPayload{
 		Data: model.DayGrandTotal{

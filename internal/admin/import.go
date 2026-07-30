@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
@@ -31,13 +32,13 @@ func (h *Handler) effectiveImportToken(bodyToken string) string {
 // If a job is already queued/running for this user, returns that job instead of
 // starting a second one (one active job per owner).
 func (h *Handler) ImportRequest(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	var payload model.ImportRequestPayload
 	if err := c.Bind(&payload); err != nil {
-		return respondErr(c, apierr.BadRequest("Invalid request body"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("Invalid request body"))
 	}
 
 	// gaka-6jm.8: save-on-success. Rather than persist the typed key eagerly
@@ -70,7 +71,7 @@ func (h *Handler) ImportRequest(c *echo.Context) error {
 
 	// One active job per owner: return the existing running/queued job if any.
 	if existing, err := h.DB.GetRunningJobByOwner(ctx, owner); err != nil {
-		return respondErr(c, apierr.Generic())
+		return apihelpers.RespondErr(c, apierr.Generic())
 	} else if existing != nil {
 		return c.JSON(http.StatusOK, map[string]any{
 			"jobId":     existing.ID,
@@ -87,13 +88,13 @@ func (h *Handler) ImportRequest(c *echo.Context) error {
 	item := importer.QueueItem{Requester: owner, ReqPayload: payload, TypedToken: typedToken}
 	raw, err := json.Marshal(item)
 	if err != nil {
-		return respondErr(c, apierr.Generic())
+		return apihelpers.RespondErr(c, apierr.Generic())
 	}
 
 	total := importer.TotalDays(payload.StartDate, payload.EndDate)
 	job, err := h.DB.CreateImportJob(ctx, owner, raw, payload.StartDate, payload.EndDate, total)
 	if err != nil {
-		return respondErr(c, apierr.Generic())
+		return apihelpers.RespondErr(c, apierr.Generic())
 	}
 
 	h.Worker.StartJob(job, item)
@@ -107,13 +108,13 @@ func (h *Handler) ImportRequest(c *echo.Context) error {
 
 // ImportJobs: GET /import/jobs — list this user's jobs, newest first.
 func (h *Handler) ImportJobs(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	jobs, err := h.DB.GetJobsByOwner(c.Request().Context(), owner)
 	if err != nil {
-		return respondErr(c, apierr.Generic())
+		return apihelpers.RespondErr(c, apierr.Generic())
 	}
 	return c.JSON(http.StatusOK, map[string]any{"jobs": jobs})
 }
@@ -140,7 +141,7 @@ func (h *Handler) jobForOwner(c *echo.Context, owner string) (*db.Job, *apierr.E
 // returns the owner-checked job for :id. ImportJobWS cannot use this — it
 // authenticates via cookie — so it calls jobForOwner directly.
 func (h *Handler) ownedJob(c *echo.Context) (*db.Job, *apierr.Error) {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
 		return nil, aerr
 	}
@@ -151,11 +152,11 @@ func (h *Handler) ownedJob(c *echo.Context) (*db.Job, *apierr.Error) {
 func (h *Handler) ImportJob(c *echo.Context) error {
 	job, aerr := h.ownedJob(c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	logs, err := h.DB.GetJobLogs(c.Request().Context(), job.ID, 0, 1000)
 	if err != nil {
-		return respondErr(c, apierr.Generic())
+		return apihelpers.RespondErr(c, apierr.Generic())
 	}
 	return c.JSON(http.StatusOK, map[string]any{"job": job, "logs": logs})
 }
@@ -164,12 +165,12 @@ func (h *Handler) ImportJob(c *echo.Context) error {
 func (h *Handler) ImportJobLogs(c *echo.Context) error {
 	job, aerr := h.ownedJob(c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
-	afterID := queryInt64(c, "afterId", 0)
+	afterID := apihelpers.QueryInt64(c, "afterId", 0)
 	logs, err := h.DB.GetJobLogs(c.Request().Context(), job.ID, afterID, 1000)
 	if err != nil {
-		return respondErr(c, apierr.Generic())
+		return apihelpers.RespondErr(c, apierr.Generic())
 	}
 	return c.JSON(http.StatusOK, map[string]any{"logs": logs})
 }
@@ -178,7 +179,7 @@ func (h *Handler) ImportJobLogs(c *echo.Context) error {
 func (h *Handler) ImportJobCancel(c *echo.Context) error {
 	job, aerr := h.ownedJob(c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	id := job.ID
 	ctx := c.Request().Context()
@@ -191,7 +192,7 @@ func (h *Handler) ImportJobCancel(c *echo.Context) error {
 	if !running {
 		updated, err := h.DB.CancelJob(ctx, id)
 		if err != nil {
-			return respondErr(c, apierr.Generic())
+			return apihelpers.RespondErr(c, apierr.Generic())
 		}
 		if updated != nil {
 			job = updated
@@ -219,9 +220,9 @@ func (h *Handler) ImportConfig(c *echo.Context) error {
 // WakatimeRange: POST /import/wakatime-range — discover how far back the user's
 // wakatime.com data goes so the UI can auto-populate the import date range.
 func (h *Handler) WakatimeRange(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	var body struct {
 		APIToken string `json:"apiToken"`
@@ -253,13 +254,13 @@ func (h *Handler) WakatimeRange(c *echo.Context) error {
 func (h *Handler) ImportJobWS(c *echo.Context) error {
 	// An absent cookie is reported like an expired one here (the WS client
 	// can't distinguish them anyway).
-	owner, aerr := h.resolveOwnerFromCookie(c, apierr.ExpiredRefreshToken())
+	owner, aerr := apihelpers.ResolveOwnerFromCookie(h.DB, h.Logger, c, apierr.ExpiredRefreshToken())
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	job, aerr := h.jobForOwner(c, owner)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	id := job.ID
 

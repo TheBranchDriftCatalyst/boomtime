@@ -98,7 +98,7 @@ func (h *Handler) AwardsLog(c *echo.Context) error {
 		}
 		items = append(items, db.AwardLogItem{LabelID: it.LabelID, PeriodType: pt})
 	}
-	tzName := h.resolveUserTZ(c.Request().Context(), owner)
+	tzName := apihelpers.ResolveUserTZ(h.DB, h.Logger, c.Request().Context(), owner, h.Cfg.DefaultTimezone)
 	loc, err := time.LoadLocation(tzName)
 	if err != nil {
 		loc = time.UTC
@@ -196,7 +196,7 @@ func parsePositiveInt(s string, max int) (int, error) {
 }
 
 func (h *Handler) awardsStreaksFor(c *echo.Context, owner string) error {
-	tzName := h.resolveUserTZ(c.Request().Context(), owner)
+	tzName := apihelpers.ResolveUserTZ(h.DB, h.Logger, c.Request().Context(), owner, h.Cfg.DefaultTimezone)
 	loc, err := time.LoadLocation(tzName)
 	if err != nil {
 		loc = time.UTC

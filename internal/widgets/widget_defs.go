@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/widget"
@@ -62,45 +63,45 @@ func isUniqueViolation(err error) bool {
 
 // ListWidgetDefs: GET /api/v1/users/current/widget-defs (auth).
 func (h *Handler) ListWidgetDefs(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	defs, err := h.DB.ListWidgetDefs(c.Request().Context(), owner)
 	if err != nil {
-		return h.internalErr(c, "widget def list failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "widget def list failed", err)
 	}
 	return c.JSON(http.StatusOK, map[string]any{"defs": defs})
 }
 
 // CreateWidgetDef: POST /api/v1/users/current/widget-defs (auth).
 func (h *Handler) CreateWidgetDef(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	var body widgetDefBody
 	// gaka-bi2: 64 KiB cap — the inline spec is bounded to 32 KiB
 	// (widgetDefMax) inside validateWidgetDefSpec; Medium leaves headroom for
 	// the name + envelope without letting a hostile client force a huge decode.
-	if aerr := BindJSONWithLimit(c, &body, BodyLimitMedium); aerr != nil {
-		return respondErr(c, aerr)
+	if aerr := apihelpers.BindJSONWithLimit(c, &body, apihelpers.BodyLimitMedium); aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
 	}
 	body.Name = strings.TrimSpace(body.Name)
 	if body.Name == "" {
-		return respondErr(c, apierr.BadRequest("name is required"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("name is required"))
 	}
 	if _, err := validateWidgetDefSpec(body.Spec); err != nil {
-		return respondErr(c, apierr.BadRequest("Invalid spec: "+err.Error()))
+		return apihelpers.RespondErr(c, apierr.BadRequest("Invalid spec: "+err.Error()))
 	}
 	id, err := h.DB.CreateWidgetDef(c.Request().Context(), owner, body.Name, body.Spec)
 	if err != nil {
 		// Unique-violation (username, name): report as 409 so the FE can
 		// prompt the user to rename or PATCH the existing def.
 		if isUniqueViolation(err) {
-			return respondErr(c, apierr.BadRequest("A widget with this name already exists"))
+			return apihelpers.RespondErr(c, apierr.BadRequest("A widget with this name already exists"))
 		}
-		return h.internalErr(c, "widget def create failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "widget def create failed", err)
 	}
 	return c.JSON(http.StatusOK, map[string]any{
 		"defId": id.String(),
@@ -111,54 +112,54 @@ func (h *Handler) CreateWidgetDef(c *echo.Context) error {
 // UpdateWidgetDef: PATCH /api/v1/users/current/widget-defs/:name (auth). Same
 // (owner, name) key as create — the URL name identifies the row to replace.
 func (h *Handler) UpdateWidgetDef(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	name := c.Param("name")
 	if name == "" {
-		return respondErr(c, apierr.BadRequest("name is required"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("name is required"))
 	}
 	var body widgetDefBody
 	// gaka-bi2: 64 KiB cap (see CreateWidgetDef for the reasoning).
-	if aerr := BindJSONWithLimit(c, &body, BodyLimitMedium); aerr != nil {
-		return respondErr(c, aerr)
+	if aerr := apihelpers.BindJSONWithLimit(c, &body, apihelpers.BodyLimitMedium); aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
 	}
 	if _, err := validateWidgetDefSpec(body.Spec); err != nil {
-		return respondErr(c, apierr.BadRequest("Invalid spec: "+err.Error()))
+		return apihelpers.RespondErr(c, apierr.BadRequest("Invalid spec: "+err.Error()))
 	}
 	ok, err := h.DB.UpdateWidgetDef(c.Request().Context(), owner, name, body.Spec)
 	if err != nil {
-		return h.internalErr(c, "widget def update failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "widget def update failed", err)
 	}
 	if !ok {
-		return respondErr(c, apierr.NotFound("Widget def not found"))
+		return apihelpers.RespondErr(c, apierr.NotFound("Widget def not found"))
 	}
 	// Cached SVG bytes for this def are keyed by def id — updating the spec
 	// doesn't invalidate them automatically. Sweep the owner's cache so a
 	// freshly-edited widget renders on the next fetch.
-	h.invalidateOwnerCache(owner)
+	apihelpers.InvalidateOwnerCache(h.Cache, owner)
 	return c.NoContent(http.StatusNoContent)
 }
 
 // DeleteWidgetDef: DELETE /api/v1/users/current/widget-defs/:name (auth).
 func (h *Handler) DeleteWidgetDef(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	name := c.Param("name")
 	if name == "" {
-		return respondErr(c, apierr.BadRequest("name is required"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("name is required"))
 	}
 	ok, err := h.DB.DeleteWidgetDef(c.Request().Context(), owner, name)
 	if err != nil {
-		return h.internalErr(c, "widget def delete failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "widget def delete failed", err)
 	}
 	if !ok {
-		return respondErr(c, apierr.NotFound("Widget def not found"))
+		return apihelpers.RespondErr(c, apierr.NotFound("Widget def not found"))
 	}
-	h.invalidateOwnerCache(owner)
+	apihelpers.InvalidateOwnerCache(h.Cache, owner)
 	return c.NoContent(http.StatusNoContent)
 }
 
@@ -169,26 +170,26 @@ func (h *Handler) DeleteWidgetDef(c *echo.Context) error {
 func (h *Handler) WidgetDefSvg(c *echo.Context) error {
 	id, err := uuid.Parse(c.Param("uuid"))
 	if err != nil {
-		return respondErr(c, apierr.BadRequest("Invalid widget def id"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("Invalid widget def id"))
 	}
 	ctx := c.Request().Context()
 
 	owner, saved, ok, err := h.DB.GetWidgetDef(ctx, id)
 	if err != nil {
-		return h.internalErr(c, "widget def lookup failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "widget def lookup failed", err)
 	}
 	if !ok {
-		return respondErr(c, apierr.NotFound("Widget def not found"))
+		return apihelpers.RespondErr(c, apierr.NotFound("Widget def not found"))
 	}
 	// Re-validate on read: the spec is trusted-at-write, but a schema change
 	// could invalidate an older row. Fail loudly rather than silently render
 	// with a stale layout enum.
 	def, err := validateWidgetDefSpec(saved.Spec)
 	if err != nil {
-		return h.internalErr(c, "widget def spec no longer valid", err)
+		return apihelpers.InternalErr(h.Logger, c, "widget def spec no longer valid", err)
 	}
 
-	days := queryInt64(c, "days", widgetDaysDefault)
+	days := apihelpers.QueryInt64(c, "days", widgetDaysDefault)
 	if days < 1 {
 		days = 1
 	}
@@ -202,8 +203,8 @@ func (h *Handler) WidgetDefSvg(c *echo.Context) error {
 	// asking camo/CDNs to hold on to the bytes.
 	c.Response().Header().Set("Cache-Control", "public, max-age=300, s-maxage=300")
 
-	key := cacheKey(owner, "widget-def", id.String(), days, theme, title, saved.UpdatedAt.Unix())
-	return h.cachedBlob(c, key, "image/svg+xml", func() ([]byte, error) {
+	key := apihelpers.CacheKey(owner, "widget-def", id.String(), days, theme, title, saved.UpdatedAt.Unix())
+	return apihelpers.CachedBlob(h.Cache, h.Logger, c, key, "image/svg+xml", func() ([]byte, error) {
 		t1 := time.Now().UTC()
 		t0 := removeDays(t1, int(days))
 
@@ -217,7 +218,7 @@ func (h *Handler) WidgetDefSvg(c *echo.Context) error {
 		}
 		// gaka-dg7: same owner-tz frame as WidgetSvg — a public named-def
 		// render must reflect the owner's local dow/hour buckets.
-		tz := h.resolveUserTZ(ctx, owner)
+		tz := apihelpers.ResolveUserTZ(h.DB, h.Logger, ctx, owner, h.Cfg.DefaultTimezone)
 
 		// v1: user scope. Reuse the same rollup-vs-raw gate as WidgetSvg.
 		var rows []db.StatRow

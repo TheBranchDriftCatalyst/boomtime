@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
@@ -58,9 +59,9 @@ const widgetTimeLimit int64 = 15
 // WidgetLink: GET /api/v1/users/current/widgets/link?scopeType=&scopeRef= (auth).
 // Upserts the (owner, scope) link after validating the requester owns the scope.
 func (h *Handler) WidgetLink(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	ctx := c.Request().Context()
 	scopeType := c.QueryParam("scopeType")
@@ -72,7 +73,7 @@ func (h *Handler) WidgetLink(c *echo.Context) error {
 	case db.WidgetScopeProject:
 		ok, err := h.DB.ProjectExists(ctx, owner, scopeRef)
 		if err != nil {
-			return h.internalErr(c, "widget link project check failed", err)
+			return apihelpers.InternalErr(h.Logger, c, "widget link project check failed", err)
 		}
 		if !ok {
 			// gaka-xuc: the FE gets remapped project names from ProjectList
@@ -82,31 +83,31 @@ func (h *Handler) WidgetLink(c *echo.Context) error {
 			// scope-ref back to the source project(s) at query time.
 			rs, err := h.DB.LoadRenameSets(ctx, owner)
 			if err != nil {
-				return h.internalErr(c, "widget link rename load failed", err)
+				return apihelpers.InternalErr(h.Logger, c, "widget link rename load failed", err)
 			}
 			if len(rs.ExactSourcesFor("project", scopeRef)) == 0 {
-				return respondErr(c, apierr.NotFound("Unknown project"))
+				return apihelpers.RespondErr(c, apierr.NotFound("Unknown project"))
 			}
 		}
 	case db.WidgetScopeSpace:
 		id, err := strconv.Atoi(scopeRef)
 		if err != nil {
-			return respondErr(c, apierr.BadRequest("Invalid space id"))
+			return apihelpers.RespondErr(c, apierr.BadRequest("Invalid space id"))
 		}
 		sp, _, err := h.DB.GetSpace(ctx, owner, id)
 		if err != nil {
-			return h.internalErr(c, "widget link space check failed", err)
+			return apihelpers.InternalErr(h.Logger, c, "widget link space check failed", err)
 		}
 		if sp == nil {
-			return respondErr(c, apierr.NotFound("Unknown space"))
+			return apihelpers.RespondErr(c, apierr.NotFound("Unknown space"))
 		}
 	default:
-		return respondErr(c, apierr.BadRequest("scopeType must be user, project or space"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("scopeType must be user, project or space"))
 	}
 
 	id, err := h.DB.CreateWidgetLink(ctx, owner, scopeType, scopeRef)
 	if err != nil {
-		return h.internalErr(c, "widget link creation failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "widget link creation failed", err)
 	}
 	return c.JSON(http.StatusOK, model.WidgetLinkResponse{
 		WidgetBaseURL: h.Cfg.BadgeURL + "/widget/svg/" + id.String(),
@@ -116,13 +117,13 @@ func (h *Handler) WidgetLink(c *echo.Context) error {
 
 // WidgetLinkList: GET /api/v1/users/current/widgets/links (auth) — Settings UI.
 func (h *Handler) WidgetLinkList(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	links, err := h.DB.ListWidgetLinks(c.Request().Context(), owner)
 	if err != nil {
-		return h.internalErr(c, "widget link list failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "widget link list failed", err)
 	}
 	return c.JSON(http.StatusOK, map[string]any{"links": links})
 }
@@ -132,25 +133,25 @@ func (h *Handler) WidgetLinkList(c *echo.Context) error {
 // immediately 404s (existing embeds break; the point is exactly to break
 // them). Owner-scoped: cross-owner ids 404.
 func (h *Handler) WidgetLinkRoll(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	oldID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		return respondErr(c, apierr.BadRequest("Invalid widget link id"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("Invalid widget link id"))
 	}
 	newID, ok, err := h.DB.RollWidgetLink(c.Request().Context(), owner, oldID)
 	if err != nil {
-		return h.internalErr(c, "widget link roll failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "widget link roll failed", err)
 	}
 	if !ok {
-		return respondErr(c, apierr.NotFound("Widget link not found"))
+		return apihelpers.RespondErr(c, apierr.NotFound("Widget link not found"))
 	}
 	// Any previously-cached bytes lived under the old id in the cache key, so
 	// they can't accidentally be served post-roll — but invalidate defensively
 	// (cheap; owner-prefixed sweep).
-	h.invalidateOwnerCache(owner)
+	apihelpers.InvalidateOwnerCache(h.Cache, owner)
 	return c.JSON(http.StatusOK, model.WidgetLinkResponse{
 		WidgetBaseURL: h.Cfg.BadgeURL + "/widget/svg/" + newID.String(),
 		LinkID:        newID.String(),
@@ -165,7 +166,7 @@ func (h *Handler) WidgetLinkRoll(c *echo.Context) error {
 func (h *Handler) WidgetSvg(c *echo.Context) error {
 	id, err := uuid.Parse(c.Param("uuid"))
 	if err != nil {
-		return respondErr(c, apierr.BadRequest("Invalid widget link id"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("Invalid widget link id"))
 	}
 	kind := c.Param("kind")
 	// gaka-567: "custom" is the builder-composed kind — spec is inline in the
@@ -174,20 +175,20 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 	if widget.IsCustomKind(kind) {
 		def, err := widget.DecodeDef(c.QueryParam("spec"))
 		if err != nil {
-			return respondErr(c, apierr.BadRequest("Invalid widget spec: "+err.Error()))
+			return apihelpers.RespondErr(c, apierr.BadRequest("Invalid widget spec: "+err.Error()))
 		}
 		customDef = &def
 	} else if !widget.IsKind(kind) {
-		return respondErr(c, apierr.NotFound("Unknown widget kind"))
+		return apihelpers.RespondErr(c, apierr.NotFound("Unknown widget kind"))
 	}
 	ctx := c.Request().Context()
 
 	owner, scopeType, scopeRef, ok, err := h.DB.GetWidgetLinkInfo(ctx, id)
 	if err != nil {
-		return h.internalErr(c, "widget link lookup failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "widget link lookup failed", err)
 	}
 	if !ok {
-		return respondErr(c, apierr.NotFound("Widget link not found"))
+		return apihelpers.RespondErr(c, apierr.NotFound("Widget link not found"))
 	}
 
 	// gaka-6jm.5: for project-scoped widgets, the pinned project name is baked
@@ -201,10 +202,10 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 	if scopeType == db.WidgetScopeProject {
 		hidden, err := h.DB.LoadHiddenSets(ctx, owner)
 		if err != nil {
-			return h.internalErr(c, "widget hidden sets load failed", err)
+			return apihelpers.InternalErr(h.Logger, c, "widget hidden sets load failed", err)
 		}
 		if isWidgetScopeProjectHidden(hidden, scopeRef) {
-			return respondErr(c, apierr.NotFound("Widget link not found"))
+			return apihelpers.RespondErr(c, apierr.NotFound("Widget link not found"))
 		}
 	}
 
@@ -215,7 +216,7 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 		h.Logger.Debug("record widget hit failed", "id", id, "err", err)
 	}
 
-	days := queryInt64(c, "days", widgetDaysDefault)
+	days := apihelpers.QueryInt64(c, "days", widgetDaysDefault)
 	if days < 1 {
 		days = 1
 	}
@@ -230,8 +231,8 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 	// that arrive within the TTL anyway.
 	c.Response().Header().Set("Cache-Control", "public, max-age=300, s-maxage=300")
 
-	key := cacheKey(owner, "widget", id.String(), kind, days, theme, title, spec)
-	return h.cachedBlob(c, key, "image/svg+xml", func() ([]byte, error) {
+	key := apihelpers.CacheKey(owner, "widget", id.String(), kind, days, theme, title, spec)
+	return apihelpers.CachedBlob(h.Cache, h.Logger, c, key, "image/svg+xml", func() ([]byte, error) {
 		t1 := time.Now().UTC()
 		t0 := removeDays(t1, int(days))
 
@@ -250,7 +251,7 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 		// punchcard should reflect Pacific dow/hour buckets even when a UTC
 		// requester loads the SVG). The cache key does NOT need tz appended
 		// because the owner-prefixed sweep already invalidates on a TZ change.
-		tz := h.resolveUserTZ(ctx, owner)
+		tz := apihelpers.ResolveUserTZ(h.DB, h.Logger, ctx, owner, h.Cfg.DefaultTimezone)
 
 		// Scope: project reuses the Space inclusion path via a synthesized
 		// single-project member set; space loads its rules by id (ownership was

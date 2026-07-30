@@ -41,6 +41,7 @@ import (
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/comfyui"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/labstack/echo/v5"
@@ -101,16 +102,16 @@ func (h *Handler) SynthesizeAvatarPrompt(c *echo.Context) error {
 	// this to `resolveUser` alone is a one-line change when we open the
 	// feature to arbitrary users. Until then admins keep LLM cost tight.
 	if _, aerr := h.requireAdmin(c); aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	if !h.Cfg.LLMEnabled() {
-		return respondErr(c, apierr.New(http.StatusServiceUnavailable,
+		return apihelpers.RespondErr(c, apierr.New(http.StatusServiceUnavailable,
 			"LLM not configured — set BOOM_LLM_API_KEY on the server", nil))
 	}
 
 	var req avatarSynthReq
-	if aerr := BindJSONWithLimit(c, &req, BodyLimitSmall); aerr != nil {
-		return respondErr(c, aerr)
+	if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitSmall); aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
 	}
 
 	userMsg := buildAvatarUserMessage(req)
@@ -126,7 +127,7 @@ func (h *Handler) SynthesizeAvatarPrompt(c *echo.Context) error {
 		"temperature": 0.7,
 	})
 	if err != nil {
-		return h.internalErr(c, "avatar synth: marshal upstream request", err)
+		return apihelpers.InternalErr(h.Logger, c, "avatar synth: marshal upstream request", err)
 	}
 
 	// 60s cap: gpt-4o-mini typically ships a 100-tag tokenized answer in
@@ -138,7 +139,7 @@ func (h *Handler) SynthesizeAvatarPrompt(c *echo.Context) error {
 	upstreamURL := h.Cfg.LLMBaseURL + "/chat/completions"
 	upReq, err := http.NewRequestWithContext(ctx, http.MethodPost, upstreamURL, bytes.NewReader(body))
 	if err != nil {
-		return h.internalErr(c, "avatar synth: build upstream request", err)
+		return apihelpers.InternalErr(h.Logger, c, "avatar synth: build upstream request", err)
 	}
 	upReq.Header.Set("Content-Type", "application/json")
 	upReq.Header.Set("Authorization", "Bearer "+h.Cfg.LLMAPIKey)
@@ -147,7 +148,7 @@ func (h *Handler) SynthesizeAvatarPrompt(c *echo.Context) error {
 	upResp, err := avatarLLMClient.Do(upReq)
 	if err != nil {
 		h.Logger.Warn("avatar synth: upstream call failed", "err", err)
-		return respondErr(c, apierr.New(http.StatusBadGateway,
+		return apihelpers.RespondErr(c, apierr.New(http.StatusBadGateway,
 			"LLM upstream call failed", nil))
 	}
 	defer upResp.Body.Close()
@@ -158,7 +159,7 @@ func (h *Handler) SynthesizeAvatarPrompt(c *echo.Context) error {
 		msg, _ := io.ReadAll(io.LimitReader(upResp.Body, 512))
 		h.Logger.Warn("avatar synth: upstream non-200",
 			"status", upResp.StatusCode, "body", strings.TrimSpace(string(msg)))
-		return respondErr(c, apierr.New(http.StatusBadGateway,
+		return apihelpers.RespondErr(c, apierr.New(http.StatusBadGateway,
 			fmt.Sprintf("LLM upstream returned %d", upResp.StatusCode), nil))
 	}
 
@@ -248,24 +249,24 @@ const avatarRegenTimeout = 50 * time.Minute
 // row. The FE watches /avatar/status for the terminal ready/error
 // transition — no queue registry (one avatar per user, no batching win).
 func (h *Handler) RegenerateAvatar(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	if !h.Cfg.LabelImagesEnabled() {
 		// Reuses the label-images gate: same shim, same operator toggle.
 		// Different message so the operator knows this feature is the
 		// affected caller when the shim is missing.
-		return respondErr(c, apierr.New(http.StatusServiceUnavailable,
+		return apihelpers.RespondErr(c, apierr.New(http.StatusServiceUnavailable,
 			"avatar rendering unavailable — set BOOM_FEATURE_LABEL_IMAGES=on and BOOM_COMFYUI_SHIM_URL, then restart", nil))
 	}
 
 	var req avatarRegenReq
-	if aerr := BindJSONWithLimit(c, &req, BodyLimitMedium); aerr != nil {
-		return respondErr(c, aerr)
+	if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitMedium); aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
 	}
 	if strings.TrimSpace(req.Prompt) == "" {
-		return respondErr(c, apierr.BadRequest("prompt is required"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("prompt is required"))
 	}
 
 	ctx := c.Request().Context()
@@ -273,16 +274,16 @@ func (h *Handler) RegenerateAvatar(c *echo.Context) error {
 	// job is already running, refuse cleanly instead of spawning a
 	// duplicate goroutine that would race with itself on the write path.
 	if info, ok, err := h.DB.GetUserAvatarStatus(ctx, owner); err != nil {
-		return h.internalErr(c, "avatar status lookup failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "avatar status lookup failed", err)
 	} else if ok && info.Status == db.UserAvatarStatusRunning {
-		return respondErr(c, apierr.New(http.StatusConflict,
+		return apihelpers.RespondErr(c, apierr.New(http.StatusConflict,
 			"avatar render already in flight — wait for it to finish or fail", nil))
 	}
 
 	// Reserve the row up front so a poll immediately after the 202 sees
 	// 'running' — no gap where the poll reads the old 'ready' state.
 	if err := h.DB.SetAvatarStatus(ctx, owner, db.UserAvatarStatusRunning, ""); err != nil {
-		return h.internalErr(c, "avatar reserve failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "avatar reserve failed", err)
 	}
 
 	// Detach from the request context so the goroutine survives the
@@ -302,7 +303,7 @@ func (h *Handler) RegenerateAvatar(c *echo.Context) error {
 		// isn't stuck on 'running' forever.
 		_ = h.DB.SetAvatarStatus(ctx, owner, db.UserAvatarStatusError,
 			fmt.Sprintf("comfyui client init failed: %v", cerr))
-		return h.internalErr(c, "avatar shim init failed", cerr)
+		return apihelpers.InternalErr(h.Logger, c, "avatar shim init failed", cerr)
 	}
 
 	go func() {
@@ -338,13 +339,13 @@ func (h *Handler) RegenerateAvatar(c *echo.Context) error {
 // at all, returns status="none" (not "pending") so the FE renders the
 // empty-state distinctly from a reserved-but-not-yet-running state.
 func (h *Handler) GetAvatarStatus(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	info, ok, err := h.DB.GetUserAvatarStatus(c.Request().Context(), owner)
 	if err != nil {
-		return h.internalErr(c, "avatar status failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "avatar status failed", err)
 	}
 	if !ok {
 		return c.JSON(http.StatusOK, map[string]any{
@@ -374,14 +375,14 @@ func (h *Handler) GetAvatarStatus(c *echo.Context) error {
 func (h *Handler) UserAvatar(c *echo.Context) error {
 	username := c.Param("username")
 	if username == "" {
-		return respondErr(c, apierr.BadRequest("missing username"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("missing username"))
 	}
 	av, ok, err := h.DB.GetUserAvatar(c.Request().Context(), username)
 	if err != nil {
-		return h.internalErr(c, "user avatar lookup failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "user avatar lookup failed", err)
 	}
 	if !ok || av.Status != db.UserAvatarStatusReady || len(av.ImageBytes) == 0 {
-		return respondErr(c, apierr.NotFound("avatar not ready"))
+		return apihelpers.RespondErr(c, apierr.NotFound("avatar not ready"))
 	}
 	c.Response().Header().Set("Cache-Control", "public, max-age=30")
 	return c.Blob(http.StatusOK, av.MimeType, av.ImageBytes)

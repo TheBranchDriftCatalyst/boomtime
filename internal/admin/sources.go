@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/labstack/echo/v5"
 )
 
@@ -11,12 +12,12 @@ import (
 // reporting" view. Read-only, owner-scoped, and cached like other reads. The
 // active/idle/stale/silent status is derived CLIENT-side from lastSeen.
 func (h *Handler) SourceHealth(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
-	key := cacheKey(owner, "sources-health")
-	return h.cachedJSON(c, key, func() (any, error) {
+	key := apihelpers.CacheKey(owner, "sources-health")
+	return apihelpers.CachedJSON(h.Cache, h.Logger, c, key, func() (any, error) {
 		sources, err := h.DB.ListSourceHealth(c.Request().Context(), owner)
 		if err != nil {
 			return nil, err
