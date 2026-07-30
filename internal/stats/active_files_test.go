@@ -17,7 +17,7 @@
 //	exactly 100 (or reports truncated=true), NEVER 150. A handler that
 //	passed the raw ?limit= verbatim to the DB would return 150 rows and
 //	this assertion would fail.
-package handler_test
+package stats_test
 
 import (
 	"encoding/json"

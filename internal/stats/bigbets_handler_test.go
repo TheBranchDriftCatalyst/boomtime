@@ -11,7 +11,7 @@
 // Every spec pins a named invariant (mostly: cross-user isolation +
 // shape correctness) and every user-scoped endpoint includes an
 // A-vs-B seed / read to prove the endpoint filters by owner.
-package handler_test
+package stats_test
 
 import (
 	"context"
@@ -48,12 +48,12 @@ func bigbetsRouter(hz *testutil.Harness) *echo.Echo {
 	// Auth-shim so unauth requests get a normal 4xx rather than 404.
 	// gaka-8tn phase 4a: Login moved to h.Identity.
 	e.POST("/auth/login", h.Identity.Login)
-	e.GET("/api/v1/users/current/stats/punchcard", h.Punchcard)
-	e.GET("/api/v1/users/current/stats/sessions", h.Sessions)
-	e.GET("/api/v1/users/current/stats/ai", h.AIActivity)
-	e.GET("/api/v1/users/current/stats/health", h.HealthActivity)
-	e.GET("/api/v1/users/current/workouts", h.WorkoutList)
-	e.GET("/api/v1/users/current/stats/momentum", h.Momentum)
+	e.GET("/api/v1/users/current/stats/punchcard", h.Stats.Punchcard)
+	e.GET("/api/v1/users/current/stats/sessions", h.Stats.Sessions)
+	e.GET("/api/v1/users/current/stats/ai", h.Stats.AIActivity)
+	e.GET("/api/v1/users/current/stats/health", h.Stats.HealthActivity)
+	e.GET("/api/v1/users/current/workouts", h.Stats.WorkoutList)
+	e.GET("/api/v1/users/current/stats/momentum", h.Stats.Momentum)
 	return e
 }
 

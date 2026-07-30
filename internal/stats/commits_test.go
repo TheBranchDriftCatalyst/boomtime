@@ -16,7 +16,7 @@
 //	configured but the fetch failing (invalid token → 401 upstream), the
 //	handler surfaces a generic 500 with a message referencing
 //	api.github.com. This pins the "no leak of upstream body" contract.
-package handler_test
+package stats_test
 
 import (
 	"net/http"

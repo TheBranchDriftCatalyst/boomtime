@@ -32,6 +32,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/backfilljobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/imagejobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/spaces"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/widgets"
 	labelimages "github.com/TheBranchDriftCatalyst/boomtime/internal/worker/labelimages"
 	"github.com/labstack/echo/v5"
@@ -77,6 +78,7 @@ type Handler struct {
 	Awards   *awards.Handler   // phase 4b
 	Ingest   *ingest.Handler   // phase 5a
 	Curation *curation.Handler // phase 5b
+	Stats    *stats.Handler    // phase 6
 }
 
 // New constructs a Handler. logHub streams server-process slog records to the
@@ -117,6 +119,7 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *impor
 		Awards:   awards.New(database, cfg, logger),
 		Ingest:   ingest.New(database, cfg, logger, sharedCache),
 		Curation: curation.New(database, cfg, logger, sharedCache),
+		Stats:    stats.New(database, cfg, logger, sharedCache),
 	}
 }
 

@@ -1,4 +1,4 @@
-package handler
+package stats
 
 import (
 	"net/http"
@@ -6,7 +6,6 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
 	"github.com/labstack/echo/v5"
 )
 
@@ -55,7 +54,7 @@ func (h *Handler) Stats(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		return stats.ToStatsPayload(s.t0, s.t1, rows, categories), nil
+		return ToStatsPayload(s.t0, s.t1, rows, categories), nil
 	})
 }
 
@@ -75,7 +74,7 @@ func (h *Handler) Timeline(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		return stats.ToTimelinePayload(rows), nil
+		return ToTimelinePayload(rows), nil
 	})
 }
 
@@ -102,7 +101,7 @@ func (h *Handler) StatusbarToday(c *echo.Context) error {
 	return c.JSON(http.StatusOK, model.StatusBarPayload{
 		Data: model.DayGrandTotal{
 			Categories: []string{},
-			GrandTotal: model.DayTextValue{Text: stats.CompoundDuration(&total)},
+			GrandTotal: model.DayTextValue{Text: CompoundDuration(&total)},
 		},
 	})
 }

@@ -313,6 +313,19 @@ func (c *Config) HasServerWakatimeKey() bool {
 	return c.WakatimeAPIKey != ""
 }
 
+// GithubTokenValue satisfies stats.Config — the accessor exists so the
+// stats domain can read GitHub token state live per-request WITHOUT
+// importing internal/config (which imports internal/stats for
+// GradeConfig; the reverse import would form a cycle). Live reads matter
+// because commits_test mutates hz.Cfg.GithubToken after handler
+// construction and expects the change to take effect.
+func (c *Config) GithubTokenValue() string { return c.GithubToken }
+
+// DefaultTimezoneValue satisfies stats.Config — same import-cycle
+// rationale as GithubTokenValue. Threaded through db.ResolveTimezone as
+// the 3-level chain's operator default.
+func (c *Config) DefaultTimezoneValue() string { return c.DefaultTimezone }
+
 // DatabaseURL returns a pgx-compatible connection string.
 func (c *Config) DatabaseURL() string {
 	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",

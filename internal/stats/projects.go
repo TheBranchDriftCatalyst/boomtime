@@ -1,11 +1,10 @@
-package handler
+package stats
 
 import (
 	"net/http"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
 	"github.com/labstack/echo/v5"
 )
 
@@ -47,7 +46,7 @@ func (h *Handler) ProjectStats(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		return stats.ToProjectStatistics(s.t0, s.t1, rows, extras), nil
+		return ToProjectStatistics(s.t0, s.t1, rows, extras), nil
 	})
 }
 

@@ -1,7 +1,6 @@
-package handler
+package stats
 
 import (
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
 	"github.com/labstack/echo/v5"
 )
 
@@ -39,6 +38,6 @@ func (h *Handler) ActiveFiles(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		return stats.ToActiveFilesPayload(rows, truncated), nil
+		return ToActiveFilesPayload(rows, truncated), nil
 	})
 }

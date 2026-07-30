@@ -19,7 +19,7 @@
 //	 cached payload" — alice's totalSeconds != bob's when both have distinct
 //	 seeded data. The cache key starts with `owner|`, so this pins the
 //	 no-cross-user-collision property.
-package handler_test
+package stats_test
 
 import (
 	"net/http"

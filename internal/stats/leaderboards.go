@@ -1,7 +1,6 @@
-package handler
+package stats
 
 import (
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
 	"github.com/labstack/echo/v5"
 )
 
@@ -23,6 +22,6 @@ func (h *Handler) Leaderboards(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		return stats.ToLeaderboardsPayload(rows), nil
+		return ToLeaderboardsPayload(rows), nil
 	})
 }

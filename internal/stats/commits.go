@@ -1,4 +1,4 @@
-package handler
+package stats
 
 import (
 	"encoding/base64"
@@ -37,7 +37,7 @@ func (h *Handler) Commits(c *echo.Context) error {
 		return respondErr(c, apierr.MissingQueryParam("user"))
 	}
 
-	if h.Cfg.GithubToken == "" {
+	if h.Cfg.GithubTokenValue() == "" {
 		return respondErr(c, apierr.MissingGithubToken())
 	}
 
@@ -114,7 +114,7 @@ func (h *Handler) fetchCommits(owner, name string, perPage int64) ([]model.Commi
 		return nil, err
 	}
 	// hakatime sends Basic <token>; keep parity.
-	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(h.Cfg.GithubToken)))
+	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(h.Cfg.GithubTokenValue())))
 	req.Header.Set("User-Agent", "Hakatime Server")
 
 	resp, err := httpClient.Do(req)

@@ -19,7 +19,7 @@
 //	a third time (fresh, different bytes). If invalidateOwnerCache is
 //	silently a no-op, the third read still matches the first two and
 //	this test fails.
-package handler_test
+package stats_test
 
 import (
 	"context"

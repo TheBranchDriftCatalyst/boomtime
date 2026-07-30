@@ -22,7 +22,7 @@
 //	includes both. Byte inequality is a direct consequence: identical
 //	cache-key regression would give the two callers the same payload
 //	and this test would fail.
-package handler_test
+package stats_test
 
 import (
 	"encoding/json"

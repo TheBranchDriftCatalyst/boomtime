@@ -23,6 +23,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/meta"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/spaces"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/widgets"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
@@ -124,6 +125,13 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	// triplet so the static suffix wins path matching against Echo's param
 	// matcher.
 	curation.Register(e, h.Curation)
+	// gaka-8tn phase 6: stats HTTP surface (derived + core stats + big-bet
+	// aggregations + files + projects + leaderboards + commits) extracted
+	// into internal/stats. `stats.Register` fans out the 16 routes formerly
+	// in registerStatsRoutes plus the projects + active_files + leaderboards
+	// + commits routes previously split between registerStatsRoutes and
+	// registerMiscRoutes. Route strings + order preserved verbatim.
+	stats.Register(e, h.Stats)
 	registerStatsRoutes(e, h)
 	registerMiscRoutes(e, h)
 	registerImportRoutes(e, h)
@@ -182,43 +190,16 @@ func registerHeartbeatRoutes(e *echo.Echo, h *handler.Handler) {
 // on the historical rationale; delete during phase 8 collapse.
 func registerCurationRoutes(_ *echo.Echo, _ *handler.Handler) {}
 
-// registerStatsRoutes: derived-data health plus every dashboard aggregation
-// (stats, timeline, big bets, active files, projects).
+// registerStatsRoutes: whole-database backup (dump download + destructive
+// restore). The dashboard aggregation cluster (derived + stats + timeline +
+// big-bets + files + projects + leaderboards + commits) moved to
+// stats.Register in gaka-8tn phase 6. Backup lives here until phase 7 lifts
+// admin/observability endpoints (backup + sources) into internal/admin/.
 func registerStatsRoutes(e *echo.Echo, h *handler.Handler) {
-	// Derived-data health (gap_seconds + rollup status / resync)
-	e.GET("/api/v1/users/current/derived/status", h.DerivedStatus)
-	e.POST("/api/v1/users/current/derived/resync", h.DerivedResync)
-
 	// Whole-database backup: streaming dump download + destructive restore
 	// (requires ?confirm=replace-all-data; see handler/backup.go).
 	e.GET("/api/v1/users/current/db/export", h.DBExport)
 	e.POST("/api/v1/users/current/db/import", h.DBImport)
-
-	// Stats
-	e.GET("/api/v1/users/current/stats", h.Stats)
-	e.GET("/api/v1/users/current/timeline", h.Timeline)
-	e.GET("/api/v1/users/current/statusbar/today", h.StatusbarToday)
-
-	// Stats — big-bet aggregations (council visualizations)
-	e.GET("/api/v1/users/current/stats/punchcard", h.Punchcard)
-	e.GET("/api/v1/users/current/stats/sessions", h.Sessions)
-	e.GET("/api/v1/users/current/stats/momentum", h.Momentum)
-
-	// gaka-1l9: wakatime.com AI-assistance metrics (heartbeats.ai_*).
-	e.GET("/api/v1/users/current/stats/ai", h.AIActivity)
-
-	// HealthKit metrics feed (Wellness card + Wellness page).
-	e.GET("/api/v1/users/current/stats/health", h.HealthActivity)
-
-	// Per-workout event list + per-label breakdown (Wellness events breakdown).
-	e.GET("/api/v1/users/current/workouts", h.WorkoutList)
-
-	// Cross-project active files (shared lynchpins spanning multiple projects)
-	e.GET("/api/v1/users/current/files", h.ActiveFiles)
-
-	// Projects
-	e.GET("/api/v1/users/current/projects/:project", h.ProjectStats)
-	e.GET("/api/v1/projects", h.ProjectList)
 }
 
 // registerMiscRoutes: badges, widgets, leaderboards, and commits.
@@ -278,11 +259,8 @@ func registerMiscRoutes(e *echo.Echo, h *handler.Handler) {
 	// gaka-8tn phase 3: widget-def CRUD lives in internal/widgets and is
 	// registered by widgets.Register at the top of this func.
 
-	// Leaderboards
-	e.GET("/api/v1/leaderboards", h.Leaderboards)
-
-	// Commits
-	e.GET("/api/v1/commits/:project/report", h.Commits)
+	// gaka-8tn phase 6: leaderboards + commits moved to stats.Register.
+	// Route strings preserved verbatim.
 }
 
 // registerImportRoutes: durable, resumable import jobs.

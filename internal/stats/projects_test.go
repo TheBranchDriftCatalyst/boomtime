@@ -13,7 +13,7 @@
 //
 //	"ProjectList returns her own projects" — after seeding an alpha
 //	project, ProjectList response mentions "alpha".
-package handler_test
+package stats_test
 
 import (
 	"net/http"

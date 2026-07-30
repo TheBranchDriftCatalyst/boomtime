@@ -208,12 +208,13 @@ func (hz *Harness) Router() *echo.Echo {
 	// whole-database backup (dump download + destructive restore)
 	e.GET("/api/v1/users/current/db/export", h.DBExport)
 	e.POST("/api/v1/users/current/db/import", h.DBImport)
-	// stats / aggregations
-	e.GET("/api/v1/users/current/stats", h.Stats)
-	e.GET("/api/v1/users/current/stats/momentum", h.Momentum)
-	e.GET("/api/v1/users/current/files", h.ActiveFiles)
-	e.GET("/api/v1/users/current/projects/:project", h.ProjectStats)
-	e.GET("/api/v1/projects", h.ProjectList)
+	// stats / aggregations — gaka-8tn phase 6: receivers moved to h.Stats
+	// (internal/stats).
+	e.GET("/api/v1/users/current/stats", h.Stats.Stats)
+	e.GET("/api/v1/users/current/stats/momentum", h.Stats.Momentum)
+	e.GET("/api/v1/users/current/files", h.Stats.ActiveFiles)
+	e.GET("/api/v1/users/current/projects/:project", h.Stats.ProjectStats)
+	e.GET("/api/v1/projects", h.Stats.ProjectList)
 	// embeddable widgets (auth'd link CRUD + public SVG) — gaka-8tn phase 3:
 	// domain lives at internal/widgets; test harness re-points to h.Widgets.X.
 	e.GET("/api/v1/users/current/widgets/link", h.Widgets.WidgetLink)
@@ -315,15 +316,17 @@ func (hz *Harness) Router() *echo.Echo {
 	e.GET("/api/v1/users/current/heartbeats/entities", h.Ingest.ListEntitiesByType)
 	e.POST("/api/v1/users/current/heartbeats/entities/redact", h.Ingest.RedactEntities)
 	e.GET("/api/v1/users/current/sources/health", h.SourceHealth)
-	e.GET("/api/v1/users/current/timeline", h.Timeline)
-	e.GET("/api/v1/users/current/statusbar/today", h.StatusbarToday)
-	e.GET("/api/v1/users/current/derived/status", h.DerivedStatus)
-	e.POST("/api/v1/users/current/derived/resync", h.DerivedResync)
+	// gaka-8tn phase 6: receivers moved to h.Stats (internal/stats).
+	e.GET("/api/v1/users/current/timeline", h.Stats.Timeline)
+	e.GET("/api/v1/users/current/statusbar/today", h.Stats.StatusbarToday)
+	e.GET("/api/v1/users/current/derived/status", h.Stats.DerivedStatus)
+	e.POST("/api/v1/users/current/derived/resync", h.Stats.DerivedResync)
 	// gaka-8tn phase 3: badges extracted to internal/widgets.
 	e.GET("/badge/link/:project", h.Widgets.BadgeLink)
 	e.GET("/badge/svg/:svg", h.Widgets.BadgeSvg)
-	e.GET("/api/v1/leaderboards", h.Leaderboards)
-	e.GET("/api/v1/commits/:project/report", h.Commits)
+	// gaka-8tn phase 6: leaderboards + commits moved to h.Stats.
+	e.GET("/api/v1/leaderboards", h.Stats.Leaderboards)
+	e.GET("/api/v1/commits/:project/report", h.Stats.Commits)
 	// Cleanup: also clean up the goals table for the test's sender.
 	// The parent Cleanup registered per MintUser catches every table
 	// but goals — we extend the cleanup list separately here so

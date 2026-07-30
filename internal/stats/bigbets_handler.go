@@ -1,7 +1,6 @@
-package handler
+package stats
 
 import (
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
 	"github.com/labstack/echo/v5"
 )
 
@@ -22,7 +21,7 @@ func (h *Handler) Punchcard(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		return stats.ToPunchcardPayload(cells), nil
+		return ToPunchcardPayload(cells), nil
 	})
 }
 
@@ -42,7 +41,7 @@ func (h *Handler) Sessions(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		return stats.ToSessionsPayload(s.t0, s.t1, rows), nil
+		return ToSessionsPayload(s.t0, s.t1, rows), nil
 	})
 }
 
@@ -114,6 +113,6 @@ func (h *Handler) Momentum(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		return stats.ToMomentumPayload(s.t0, s.t1, rows, top), nil
+		return ToMomentumPayload(s.t0, s.t1, rows, top), nil
 	})
 }
