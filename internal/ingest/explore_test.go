@@ -3,7 +3,7 @@
 //
 //	TestCollectExploreFiltersRejectsUnknown     → collectExploreFilters > "rejects non-whitelisted axis" + "rejects raw DB column name"
 //	TestCollectExploreFiltersAcceptsWhitelisted → collectExploreFilters > "accepts whitelisted axes, reserved params ignored, empty → IS NULL"
-package handler
+package ingest
 
 import (
 	"net/http"

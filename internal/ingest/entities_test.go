@@ -15,7 +15,7 @@
 //
 //	"redact refuses empty batch and oversize batch" — 0 or >500 entities is
 //	400; the DB layer is not called.
-package handler_test
+package ingest_test
 
 import (
 	"encoding/json"

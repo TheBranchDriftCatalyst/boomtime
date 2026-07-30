@@ -4,7 +4,7 @@
 // "insert-x get-x roundtrip") and every user-scoped write includes a
 // cross-user isolation check that would fail if the handler leaked writes
 // or reads across owners.
-package handler_test
+package ingest_test
 
 import (
 	"bytes"
@@ -380,7 +380,7 @@ var _ = Describe("Heartbeat ingest (gaka-d6x.handler)", func() {
 			silent := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
 			h := handler.New(hz.DB, cfg, silent, nil, importer.NewHub(), nil)
 			e := echo.New()
-			e.POST("/api/v1/users/current/heartbeats.bulk", h.HeartbeatBulk)
+			e.POST("/api/v1/users/current/heartbeats.bulk", h.Ingest.HeartbeatBulk)
 
 			body := []map[string]any{{
 				"time":       float64(time.Now().Unix()),

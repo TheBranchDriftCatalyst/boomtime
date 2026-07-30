@@ -151,33 +151,12 @@ func registerGoalRoutes(e *echo.Echo, h *handler.Handler) {
 	goals.Register(e, h.Goals)
 }
 
-// registerHeartbeatRoutes: ingest, the read-only explorer, and source health.
+// registerHeartbeatRoutes: source health only (ingest cluster + explorer +
+// entity endpoints moved to ingest.Register in gaka-8tn phase 5a).
 func registerHeartbeatRoutes(e *echo.Echo, h *handler.Handler) {
-	// Heartbeats (ingest)
-	e.POST("/api/v1/users/current/heartbeats", h.Heartbeat)
-	e.POST("/api/v1/users/current/heartbeats.bulk", h.HeartbeatBulk)
-
-	// HealthKit / Apple Watch ingest (extensions/boomtime-watch/).
-	// Workouts flow through the heartbeats table (ty='workout') so existing
-	// time-spent aggregations pick them up; raw samples land in health_samples.
-	e.POST("/api/v1/users/current/workouts", h.Workouts)
-	e.POST("/api/v1/users/current/workouts.bulk", h.WorkoutsBulk)
-	e.POST("/api/v1/users/current/health_samples", h.HealthSamples)
-	e.POST("/api/v1/users/current/health_samples.bulk", h.HealthSamplesBulk)
-
-	// Heartbeats Explorer (read-only audit views)
-	e.GET("/api/v1/users/current/heartbeats/group", h.HeartbeatsGroup)
-	e.GET("/api/v1/users/current/heartbeats/latest", h.HeartbeatsLatest)
-	e.GET("/api/v1/users/current/heartbeats", h.HeartbeatsList)
-
-	// Entity Explorer (gaka-90x): per-ty flat list + per-entity redact (blanks
-	// the entity column on matching heartbeat rows — row itself stays,
-	// contributing to project/language/machine totals). Redact requires
-	// ?confirm=redact-entities as an accident guard.
-	e.GET("/api/v1/users/current/heartbeats/entities", h.ListEntitiesByType)
-	e.POST("/api/v1/users/current/heartbeats/entities/redact", h.RedactEntities)
-
-	// Source health (per plugin/editor/machine last check-in — ingestion health)
+	// Source health (per plugin/editor/machine last check-in — ingestion health).
+	// Stays in the handler god-type until phase 7 lifts admin/observability
+	// endpoints into internal/admin/.
 	e.GET("/api/v1/users/current/sources/health", h.SourceHealth)
 }
 

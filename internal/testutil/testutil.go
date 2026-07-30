@@ -236,18 +236,18 @@ func (hz *Harness) Router() *echo.Echo {
 	// (SaveHeartbeats → InvalidateGoalsForOwner) clears cached
 	// progress. Just the bulk endpoint — single- and bulk-shaped
 	// requests go through the same storeAndRespond path.
-	e.POST("/api/v1/users/current/heartbeats.bulk", h.HeartbeatBulk)
+	e.POST("/api/v1/users/current/heartbeats.bulk", h.Ingest.HeartbeatBulk)
 	// gaka-d6x.handler: full ingest cluster (heartbeat single, workouts,
 	// health samples, explore reads). Wired so the ingest cluster tests
 	// exercise the real HTTP paths without re-registering routes.
-	e.POST("/api/v1/users/current/heartbeats", h.Heartbeat)
-	e.GET("/api/v1/users/current/heartbeats", h.HeartbeatsList)
-	e.GET("/api/v1/users/current/heartbeats/latest", h.HeartbeatsLatest)
-	e.GET("/api/v1/users/current/heartbeats/group", h.HeartbeatsGroup)
-	e.POST("/api/v1/users/current/workouts", h.Workouts)
-	e.POST("/api/v1/users/current/workouts.bulk", h.WorkoutsBulk)
-	e.POST("/api/v1/users/current/health_samples", h.HealthSamples)
-	e.POST("/api/v1/users/current/health_samples.bulk", h.HealthSamplesBulk)
+	e.POST("/api/v1/users/current/heartbeats", h.Ingest.Heartbeat)
+	e.GET("/api/v1/users/current/heartbeats", h.Ingest.HeartbeatsList)
+	e.GET("/api/v1/users/current/heartbeats/latest", h.Ingest.HeartbeatsLatest)
+	e.GET("/api/v1/users/current/heartbeats/group", h.Ingest.HeartbeatsGroup)
+	e.POST("/api/v1/users/current/workouts", h.Ingest.Workouts)
+	e.POST("/api/v1/users/current/workouts.bulk", h.Ingest.WorkoutsBulk)
+	e.POST("/api/v1/users/current/health_samples", h.Ingest.HealthSamples)
+	e.POST("/api/v1/users/current/health_samples.bulk", h.Ingest.HealthSamplesBulk)
 	// gaka-9v4: per-user chibi avatar. Regenerate/status are auth'd
 	// self-only, UserAvatar is public — the harness registers all three
 	// so a single handler test covers the full surface.
@@ -312,8 +312,8 @@ func (hz *Harness) Router() *echo.Echo {
 	e.GET("/healthz", h.Meta.Healthz)
 	e.GET("/api/v1/version", h.Meta.Version)
 	e.GET("/api/v1/changelog", h.Meta.Changelog)
-	e.GET("/api/v1/users/current/heartbeats/entities", h.ListEntitiesByType)
-	e.POST("/api/v1/users/current/heartbeats/entities/redact", h.RedactEntities)
+	e.GET("/api/v1/users/current/heartbeats/entities", h.Ingest.ListEntitiesByType)
+	e.POST("/api/v1/users/current/heartbeats/entities/redact", h.Ingest.RedactEntities)
 	e.GET("/api/v1/users/current/sources/health", h.SourceHealth)
 	e.GET("/api/v1/users/current/timeline", h.Timeline)
 	e.GET("/api/v1/users/current/statusbar/today", h.StatusbarToday)

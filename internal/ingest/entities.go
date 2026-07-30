@@ -5,7 +5,7 @@
 // entity value is scrubbed from audit views. Guarded by ?confirm=<magic>,
 // same belt-and-braces the DB restore endpoint uses so a stray fetch can't
 // silently scrub rows.
-package handler
+package ingest
 
 import (
 	"errors"
