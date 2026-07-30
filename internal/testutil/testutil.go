@@ -258,7 +258,10 @@ func (hz *Harness) Router() *echo.Echo {
 	// Every one is now a single route line here.
 	e.POST("/api/v1/users/current/password", h.ChangePassword)                        // was routerWithChangePassword
 	e.GET("/api/v1/labels/:id/image", h.LabelImage)                                   // was routerWithLabelImages
+	e.GET("/api/v1/users/current/widget-defs", h.ListWidgetDefs)                      // gaka-d6x.handler: added for widget_defs CRUD coverage
 	e.POST("/api/v1/users/current/widget-defs", h.CreateWidgetDef)                    // was routerWithWidgetDefs
+	e.PATCH("/api/v1/users/current/widget-defs/:name", h.UpdateWidgetDef)             // gaka-d6x.handler
+	e.DELETE("/api/v1/users/current/widget-defs/:name", h.DeleteWidgetDef)            // gaka-d6x.handler
 	e.GET("/widget/svg/:uuid/named", h.WidgetDefSvg)                                  // was routerWithWidgetDefs
 	e.GET("/api/v1/logs", h.ServerLogs)                                               // was routerWithLogs
 	e.GET("/api/v1/users/current/timezone", h.GetTimezone)                            // was routerWithTimezone
