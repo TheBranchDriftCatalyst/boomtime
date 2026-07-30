@@ -13,6 +13,7 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/goals"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
@@ -133,15 +134,11 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 // id access returns 404, never 403 (no oracle). The /goals/progress
 // batched endpoint is registered BEFORE /goals/:id so it isn't
 // shadowed by the param route (same pattern as spaces/preview).
+//
+// gaka-8tn phase 2b: routes now delegate to the goals-domain handler
+// (h.Goals) — see internal/goals/handler.go.
 func registerGoalRoutes(e *echo.Echo, h *handler.Handler) {
-	e.GET("/api/v1/users/current/goals", h.ListGoals)
-	e.POST("/api/v1/users/current/goals", h.CreateGoal)
-	e.GET("/api/v1/users/current/goals/progress", h.GetAllGoalProgress)
-	e.GET("/api/v1/users/current/goals/:id", h.GetGoal)
-	e.PATCH("/api/v1/users/current/goals/:id", h.UpdateGoal)
-	e.DELETE("/api/v1/users/current/goals/:id", h.DeleteGoal)
-	e.POST("/api/v1/users/current/goals/:id/toggle", h.ToggleGoal)
-	e.GET("/api/v1/users/current/goals/:id/progress", h.GetGoalProgress)
+	goals.Register(e, h.Goals)
 }
 
 // registerHeartbeatRoutes: ingest, the read-only explorer, and source health.

@@ -18,6 +18,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/cache"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/goals"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/meta"
@@ -56,15 +57,13 @@ type Handler struct {
 	// cheap and only holds rows when a CLI is actively streaming.
 	BackfillJobQueue *backfilljobs.Registry
 
-	// Meta is the extracted meta-domain handler (gaka-8tn phase 1).
-	// Version / Changelog / Healthz / ServerLogs / ServerLogsWS live here.
-	// See internal/meta/. The god-type Handler shrinks one domain at a
-	// time until phase 8 leaves it as a pure composition facade.
-	Meta *meta.Handler
-	// Spaces is the extracted spaces-domain handler (gaka-8tn phase 2a).
-	// Named-scope CRUD + membership rules + preview + dashboard-layout
-	// persistence live here. See internal/spaces/.
-	Spaces *spaces.Handler
+	// Extracted per-domain handler bags (gaka-8tn). Each field points at
+	// deps the domain actually reads (a subset of the god-type). The
+	// god-type shrinks one domain at a time until phase 8 leaves it as
+	// a pure composition facade.
+	Meta   *meta.Handler   // phase 1
+	Spaces *spaces.Handler // phase 2a
+	Goals  *goals.Handler  // phase 2b
 }
 
 // New constructs a Handler. logHub streams server-process slog records to the
@@ -82,11 +81,10 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *impor
 		LogHub:    logHub,
 		Cache:     sharedCache,
 		StartTime: startTime,
-		// gaka-8tn phase 1: construct the meta-domain handler with the
-		// shared deps it actually reads. Every field points at the SAME
-		// instance the god-type holds — meta.LogHub and h.LogHub are
-		// literally the same *logging.LogHub, so `hz.H.Meta.LogHub = x`
-		// in tests reaches the same ring buffer the god-type would.
+		// Per-domain handler bags (gaka-8tn). Each shares the SAME
+		// underlying instances the god-type holds (DB, sharedCache,
+		// logger, logHub) so cache invalidations from any domain reach
+		// every reader.
 		Meta: &meta.Handler{
 			Cfg:       cfg,
 			Logger:    logger,
@@ -95,15 +93,12 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *impor
 			DB:        database,
 			StartTime: startTime,
 		},
-		// gaka-8tn phase 2a: construct the spaces-domain handler with the
-		// shared deps it actually reads. DB / Logger / Cache point at the
-		// SAME instances the god-type holds so cache invalidations from
-		// spaces writes are seen by every reader that reads through h.Cache.
 		Spaces: &spaces.Handler{
 			DB:     database,
 			Logger: logger,
 			Cache:  sharedCache,
 		},
+		Goals: &goals.Handler{DB: database, Logger: logger},
 	}
 }
 

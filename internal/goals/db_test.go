@@ -14,18 +14,21 @@
 //	TestGoalsToggleExactSetOppositeValue    → It "exact-set toggle with opposite value flips"
 //	TestGoalsInvalidateEmptyOwner           → It "InvalidateGoalsForOwner: empty owner is a no-op"
 //	TestGoalsUpdateProgressNilClears        → It "UpdateGoalProgress(nil) explicitly clears"
-package db
+package goals_test
 
 import (
 	"context"
 	"encoding/json"
+
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/goals"
 
 	"github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
 // cleanupGoalsG mirrors cleanupGoals for ginkgo.
-func cleanupGoalsG(d *DB, ctx context.Context, sender string) {
+func cleanupGoalsG(d *db.DB, ctx context.Context, sender string) {
 	ginkgo.DeferCleanup(func() {
 		_, _ = d.Pool.Exec(ctx, `DELETE FROM goals WHERE owner=$1`, sender)
 	})
@@ -39,7 +42,7 @@ var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
 		cleanupGoalsG(d, ctx, fx.Sender())
 
 		desc := "one hour weekly on Go"
-		g, err := d.CreateGoal(ctx, fx.Sender(), "weekly-go", &desc, json.RawMessage(plantedSpec))
+		g, err := goals.CreateGoal(d, ctx, fx.Sender(), "weekly-go", &desc, json.RawMessage(plantedSpec))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(g).NotTo(BeNil())
 		Expect(g.Owner).To(Equal(fx.Sender()))
@@ -49,28 +52,28 @@ var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
 		Expect(g.Enabled).To(BeTrue())
 		Expect(semanticGoalsDiff(plantedSpec, string(g.Spec))).To(BeEmpty())
 
-		got, err := d.GetGoal(ctx, fx.Sender(), g.ID)
+		got, err := goals.GetGoal(d, ctx, fx.Sender(), g.ID)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(got).NotTo(BeNil())
 		Expect(semanticGoalsDiff(plantedSpec, string(got.Spec))).To(BeEmpty())
 
-		list, err := d.ListGoals(ctx, fx.Sender())
+		list, err := goals.ListGoals(d, ctx, fx.Sender())
 		Expect(err).NotTo(HaveOccurred())
 		Expect(list).To(HaveLen(1))
 		Expect(list[0].ID).To(Equal(g.ID))
 
 		newDesc := "at least 60 minutes / week on Go"
-		updated, err := d.UpdateGoal(ctx, fx.Sender(), g.ID, GoalPatch{Description: &newDesc})
+		updated, err := goals.UpdateGoal(d, ctx, fx.Sender(), g.ID, goals.GoalPatch{Description: &newDesc})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(updated).NotTo(BeNil())
 		Expect(updated.Description).NotTo(BeNil())
 		Expect(*updated.Description).To(Equal(newDesc))
 		Expect(semanticGoalsDiff(plantedSpec, string(updated.Spec))).To(BeEmpty())
 
-		ok, err := d.DeleteGoal(ctx, fx.Sender(), g.ID)
+		ok, err := goals.DeleteGoal(d, ctx, fx.Sender(), g.ID)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(ok).To(BeTrue())
-		ok, err = d.DeleteGoal(ctx, fx.Sender(), g.ID)
+		ok, err = goals.DeleteGoal(d, ctx, fx.Sender(), g.ID)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(ok).To(BeFalse())
 	})
@@ -81,17 +84,17 @@ var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
 		fx := newSenderG(d, "goals_specclear")
 		cleanupGoalsG(d, ctx, fx.Sender())
 
-		g, err := d.CreateGoal(ctx, fx.Sender(), "clear-me", nil, json.RawMessage(plantedSpec))
+		g, err := goals.CreateGoal(d, ctx, fx.Sender(), "clear-me", nil, json.RawMessage(plantedSpec))
 		Expect(err).NotTo(HaveOccurred())
 		planted := json.RawMessage(`{"hit":true,"progress":1,"sub_conditions":[]}`)
-		Expect(d.UpdateGoalProgress(ctx, fx.Sender(), g.ID, planted)).To(Succeed())
-		before, err := d.GetGoal(ctx, fx.Sender(), g.ID)
+		Expect(goals.UpdateGoalProgress(d, ctx, fx.Sender(), g.ID, planted)).To(Succeed())
+		before, err := goals.GetGoal(d, ctx, fx.Sender(), g.ID)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(len(before.LastProgress)).To(BeNumerically(">", 0))
 		Expect(before.LastEvaluatedAt).NotTo(BeNil())
 
 		newSpec := json.RawMessage(`{"kind":"time","axis":"language","value":"Go","op":">=","target_seconds":7200,"window":"week"}`)
-		after, err := d.UpdateGoal(ctx, fx.Sender(), g.ID, GoalPatch{Spec: &newSpec})
+		after, err := goals.UpdateGoal(d, ctx, fx.Sender(), g.ID, goals.GoalPatch{Spec: &newSpec})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(after.LastProgress).To(HaveLen(0))
 		Expect(after.LastEvaluatedAt).To(BeNil())
@@ -103,25 +106,25 @@ var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
 		fx := newSenderG(d, "goals_invalidate")
 		cleanupGoalsG(d, ctx, fx.Sender())
 
-		g1, _ := d.CreateGoal(ctx, fx.Sender(), "g1", nil, json.RawMessage(plantedSpec))
-		g2, _ := d.CreateGoal(ctx, fx.Sender(), "g2", nil, json.RawMessage(plantedSpec))
+		g1, _ := goals.CreateGoal(d, ctx, fx.Sender(), "g1", nil, json.RawMessage(plantedSpec))
+		g2, _ := goals.CreateGoal(d, ctx, fx.Sender(), "g2", nil, json.RawMessage(plantedSpec))
 		Expect(g1).NotTo(BeNil())
 		Expect(g2).NotTo(BeNil())
 		planted := json.RawMessage(`{"hit":false,"progress":0.5,"sub_conditions":[]}`)
-		Expect(d.UpdateGoalProgress(ctx, fx.Sender(), g1.ID, planted)).To(Succeed())
-		Expect(d.UpdateGoalProgress(ctx, fx.Sender(), g2.ID, planted)).To(Succeed())
+		Expect(goals.UpdateGoalProgress(d, ctx, fx.Sender(), g1.ID, planted)).To(Succeed())
+		Expect(goals.UpdateGoalProgress(d, ctx, fx.Sender(), g2.ID, planted)).To(Succeed())
 
 		other := newSenderG(d, "goals_invalidate_other")
 		cleanupGoalsG(d, ctx, other.Sender())
-		og, err := d.CreateGoal(ctx, other.Sender(), "og", nil, json.RawMessage(plantedSpec))
+		og, err := goals.CreateGoal(d, ctx, other.Sender(), "og", nil, json.RawMessage(plantedSpec))
 		Expect(err).NotTo(HaveOccurred())
-		Expect(d.UpdateGoalProgress(ctx, other.Sender(), og.ID, planted)).To(Succeed())
+		Expect(goals.UpdateGoalProgress(d, ctx, other.Sender(), og.ID, planted)).To(Succeed())
 
-		Expect(d.InvalidateGoalsForOwner(ctx, fx.Sender())).To(Succeed())
+		Expect(goals.InvalidateGoalsForOwner(d, ctx, fx.Sender())).To(Succeed())
 
-		after1, _ := d.GetGoal(ctx, fx.Sender(), g1.ID)
-		after2, _ := d.GetGoal(ctx, fx.Sender(), g2.ID)
-		afterO, _ := d.GetGoal(ctx, other.Sender(), og.ID)
+		after1, _ := goals.GetGoal(d, ctx, fx.Sender(), g1.ID)
+		after2, _ := goals.GetGoal(d, ctx, fx.Sender(), g2.ID)
+		afterO, _ := goals.GetGoal(d, ctx, other.Sender(), og.ID)
 		Expect(after1.LastProgress).To(HaveLen(0))
 		Expect(after1.LastEvaluatedAt).To(BeNil())
 		Expect(after2.LastProgress).To(HaveLen(0))
@@ -138,28 +141,28 @@ var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
 		cleanupGoalsG(d, ctx, alice.Sender())
 		cleanupGoalsG(d, ctx, bob.Sender())
 
-		bg, err := d.CreateGoal(ctx, bob.Sender(), "bob-goal", nil, json.RawMessage(plantedSpec))
+		bg, err := goals.CreateGoal(d, ctx, bob.Sender(), "bob-goal", nil, json.RawMessage(plantedSpec))
 		Expect(err).NotTo(HaveOccurred())
 
-		got, err := d.GetGoal(ctx, alice.Sender(), bg.ID)
+		got, err := goals.GetGoal(d, ctx, alice.Sender(), bg.ID)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(got).To(BeNil())
 
 		name := "hijacked"
-		patched, err := d.UpdateGoal(ctx, alice.Sender(), bg.ID, GoalPatch{Name: &name})
+		patched, err := goals.UpdateGoal(d, ctx, alice.Sender(), bg.ID, goals.GoalPatch{Name: &name})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(patched).To(BeNil())
-		still, _ := d.GetGoal(ctx, bob.Sender(), bg.ID)
+		still, _ := goals.GetGoal(d, ctx, bob.Sender(), bg.ID)
 		Expect(still).NotTo(BeNil())
 		Expect(still.Name).To(Equal("bob-goal"))
 
-		ok, err := d.DeleteGoal(ctx, alice.Sender(), bg.ID)
+		ok, err := goals.DeleteGoal(d, ctx, alice.Sender(), bg.ID)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(ok).To(BeFalse())
-		still, _ = d.GetGoal(ctx, bob.Sender(), bg.ID)
+		still, _ = goals.GetGoal(d, ctx, bob.Sender(), bg.ID)
 		Expect(still).NotTo(BeNil())
 
-		_, found, err := d.ToggleGoal(ctx, alice.Sender(), bg.ID, nil)
+		_, found, err := goals.ToggleGoal(d, ctx, alice.Sender(), bg.ID, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(found).To(BeFalse())
 	})
@@ -170,22 +173,22 @@ var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
 		fx := newSenderG(d, "goals_toggle")
 		cleanupGoalsG(d, ctx, fx.Sender())
 
-		g, err := d.CreateGoal(ctx, fx.Sender(), "toggle-me", nil, json.RawMessage(plantedSpec))
+		g, err := goals.CreateGoal(d, ctx, fx.Sender(), "toggle-me", nil, json.RawMessage(plantedSpec))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(g.Enabled).To(BeTrue())
 
-		newEnabled, found, err := d.ToggleGoal(ctx, fx.Sender(), g.ID, nil)
+		newEnabled, found, err := goals.ToggleGoal(d, ctx, fx.Sender(), g.ID, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(found).To(BeTrue())
 		Expect(newEnabled).To(BeFalse())
 
-		newEnabled, found, err = d.ToggleGoal(ctx, fx.Sender(), g.ID, nil)
+		newEnabled, found, err = goals.ToggleGoal(d, ctx, fx.Sender(), g.ID, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(found).To(BeTrue())
 		Expect(newEnabled).To(BeTrue())
 
 		desired := true
-		_, found, err = d.ToggleGoal(ctx, fx.Sender(), g.ID, &desired)
+		_, found, err = goals.ToggleGoal(d, ctx, fx.Sender(), g.ID, &desired)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(found).To(BeTrue())
 	})
@@ -198,11 +201,11 @@ var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
 		cleanupGoalsG(d, ctx, alice.Sender())
 		cleanupGoalsG(d, ctx, bob.Sender())
 
-		_, err := d.CreateGoal(ctx, alice.Sender(), "shared-name", nil, json.RawMessage(plantedSpec))
+		_, err := goals.CreateGoal(d, ctx, alice.Sender(), "shared-name", nil, json.RawMessage(plantedSpec))
 		Expect(err).NotTo(HaveOccurred())
-		_, err = d.CreateGoal(ctx, alice.Sender(), "shared-name", nil, json.RawMessage(plantedSpec))
+		_, err = goals.CreateGoal(d, ctx, alice.Sender(), "shared-name", nil, json.RawMessage(plantedSpec))
 		Expect(err).To(HaveOccurred(), "second create with same (owner,name) must fail")
-		_, err = d.CreateGoal(ctx, bob.Sender(), "shared-name", nil, json.RawMessage(plantedSpec))
+		_, err = goals.CreateGoal(d, ctx, bob.Sender(), "shared-name", nil, json.RawMessage(plantedSpec))
 		Expect(err).NotTo(HaveOccurred())
 	})
 
@@ -213,12 +216,12 @@ var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
 		cleanupGoalsG(d, ctx, fx.Sender())
 
 		desc0 := "initial"
-		g, err := d.CreateGoal(ctx, fx.Sender(), "orig-name", &desc0, json.RawMessage(plantedSpec))
+		g, err := goals.CreateGoal(d, ctx, fx.Sender(), "orig-name", &desc0, json.RawMessage(plantedSpec))
 		Expect(err).NotTo(HaveOccurred())
 		origUpdatedAt := g.UpdatedAt
 
 		newName := "renamed-goal"
-		g2, err := d.UpdateGoal(ctx, fx.Sender(), g.ID, GoalPatch{Name: &newName})
+		g2, err := goals.UpdateGoal(d, ctx, fx.Sender(), g.ID, goals.GoalPatch{Name: &newName})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(g2.Name).To(Equal(newName))
 		Expect(g2.Description).NotTo(BeNil())
@@ -228,13 +231,13 @@ var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
 		Expect(semanticGoalsDiff(plantedSpec, string(g2.Spec))).To(BeEmpty())
 
 		falseVal := false
-		g3, err := d.UpdateGoal(ctx, fx.Sender(), g.ID, GoalPatch{Enabled: &falseVal})
+		g3, err := goals.UpdateGoal(d, ctx, fx.Sender(), g.ID, goals.GoalPatch{Enabled: &falseVal})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(g3.Enabled).To(BeFalse())
 		Expect(g3.Name).To(Equal(newName))
 
 		desc2 := "second desc"
-		g4, err := d.UpdateGoal(ctx, fx.Sender(), g.ID, GoalPatch{Description: &desc2})
+		g4, err := goals.UpdateGoal(d, ctx, fx.Sender(), g.ID, goals.GoalPatch{Description: &desc2})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(g4.Description).NotTo(BeNil())
 		Expect(*g4.Description).To(Equal(desc2))
@@ -242,7 +245,7 @@ var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
 
 		nName := "combined"
 		nDesc := "combined desc"
-		g5, err := d.UpdateGoal(ctx, fx.Sender(), g.ID, GoalPatch{Name: &nName, Description: &nDesc})
+		g5, err := goals.UpdateGoal(d, ctx, fx.Sender(), g.ID, goals.GoalPatch{Name: &nName, Description: &nDesc})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(g5.Name).To(Equal(nName))
 		Expect(g5.Description).NotTo(BeNil())
@@ -256,11 +259,11 @@ var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
 		cleanupGoalsG(d, ctx, fx.Sender())
 
 		desc := "keep me"
-		g, err := d.CreateGoal(ctx, fx.Sender(), "noop", &desc, json.RawMessage(plantedSpec))
+		g, err := goals.CreateGoal(d, ctx, fx.Sender(), "noop", &desc, json.RawMessage(plantedSpec))
 		Expect(err).NotTo(HaveOccurred())
 		origUpdatedAt := g.UpdatedAt
 
-		back, err := d.UpdateGoal(ctx, fx.Sender(), g.ID, GoalPatch{})
+		back, err := goals.UpdateGoal(d, ctx, fx.Sender(), g.ID, goals.GoalPatch{})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(back).NotTo(BeNil())
 		Expect(back.ID).To(Equal(g.ID))
@@ -277,23 +280,23 @@ var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
 
 		fakeID := "00000000-0000-0000-0000-000000000000"
 		nm := "ghost"
-		got, err := d.UpdateGoal(ctx, fx.Sender(), fakeID, GoalPatch{Name: &nm})
+		got, err := goals.UpdateGoal(d, ctx, fx.Sender(), fakeID, goals.GoalPatch{Name: &nm})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(got).To(BeNil())
 
-		ok, err := d.DeleteGoal(ctx, fx.Sender(), fakeID)
+		ok, err := goals.DeleteGoal(d, ctx, fx.Sender(), fakeID)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(ok).To(BeFalse())
 
-		_, found, err := d.ToggleGoal(ctx, fx.Sender(), fakeID, nil)
+		_, found, err := goals.ToggleGoal(d, ctx, fx.Sender(), fakeID, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(found).To(BeFalse())
 		setTrue := true
-		_, found, err = d.ToggleGoal(ctx, fx.Sender(), fakeID, &setTrue)
+		_, found, err = goals.ToggleGoal(d, ctx, fx.Sender(), fakeID, &setTrue)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(found).To(BeFalse())
 
-		g, err := d.GetGoal(ctx, fx.Sender(), fakeID)
+		g, err := goals.GetGoal(d, ctx, fx.Sender(), fakeID)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(g).To(BeNil())
 	})
@@ -306,18 +309,18 @@ var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
 		cleanupGoalsG(d, ctx, alice.Sender())
 		cleanupGoalsG(d, ctx, bob.Sender())
 
-		a1, _ := d.CreateGoal(ctx, alice.Sender(), "a1", nil, json.RawMessage(plantedSpec))
-		a2, _ := d.CreateGoal(ctx, alice.Sender(), "a2", nil, json.RawMessage(plantedSpec))
-		b1, _ := d.CreateGoal(ctx, bob.Sender(), "b1", nil, json.RawMessage(plantedSpec))
-		b2, _ := d.CreateGoal(ctx, bob.Sender(), "b2", nil, json.RawMessage(plantedSpec))
-		b3, _ := d.CreateGoal(ctx, bob.Sender(), "b3", nil, json.RawMessage(plantedSpec))
+		a1, _ := goals.CreateGoal(d, ctx, alice.Sender(), "a1", nil, json.RawMessage(plantedSpec))
+		a2, _ := goals.CreateGoal(d, ctx, alice.Sender(), "a2", nil, json.RawMessage(plantedSpec))
+		b1, _ := goals.CreateGoal(d, ctx, bob.Sender(), "b1", nil, json.RawMessage(plantedSpec))
+		b2, _ := goals.CreateGoal(d, ctx, bob.Sender(), "b2", nil, json.RawMessage(plantedSpec))
+		b3, _ := goals.CreateGoal(d, ctx, bob.Sender(), "b3", nil, json.RawMessage(plantedSpec))
 		Expect(a1).NotTo(BeNil())
 		Expect(a2).NotTo(BeNil())
 		Expect(b1).NotTo(BeNil())
 		Expect(b2).NotTo(BeNil())
 		Expect(b3).NotTo(BeNil())
 
-		aList, err := d.ListGoals(ctx, alice.Sender())
+		aList, err := goals.ListGoals(d, ctx, alice.Sender())
 		Expect(err).NotTo(HaveOccurred())
 		Expect(aList).To(HaveLen(2))
 		aIDs := map[string]bool{}
@@ -328,7 +331,7 @@ var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
 		Expect(aIDs[a1.ID]).To(BeTrue())
 		Expect(aIDs[a2.ID]).To(BeTrue())
 
-		bList, err := d.ListGoals(ctx, bob.Sender())
+		bList, err := goals.ListGoals(d, ctx, bob.Sender())
 		Expect(err).NotTo(HaveOccurred())
 		Expect(bList).To(HaveLen(3))
 		for _, g := range bList {
@@ -342,24 +345,24 @@ var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
 		fx := newSenderG(d, "goals_exactset")
 		cleanupGoalsG(d, ctx, fx.Sender())
 
-		g, err := d.CreateGoal(ctx, fx.Sender(), "flipme", nil, json.RawMessage(plantedSpec))
+		g, err := goals.CreateGoal(d, ctx, fx.Sender(), "flipme", nil, json.RawMessage(plantedSpec))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(g.Enabled).To(BeTrue())
 
 		desiredFalse := false
-		newEnabled, found, err := d.ToggleGoal(ctx, fx.Sender(), g.ID, &desiredFalse)
+		newEnabled, found, err := goals.ToggleGoal(d, ctx, fx.Sender(), g.ID, &desiredFalse)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(found).To(BeTrue())
 		Expect(newEnabled).To(BeFalse())
-		after, _ := d.GetGoal(ctx, fx.Sender(), g.ID)
+		after, _ := goals.GetGoal(d, ctx, fx.Sender(), g.ID)
 		Expect(after.Enabled).To(BeFalse())
 
 		desiredTrue := true
-		newEnabled, found, err = d.ToggleGoal(ctx, fx.Sender(), g.ID, &desiredTrue)
+		newEnabled, found, err = goals.ToggleGoal(d, ctx, fx.Sender(), g.ID, &desiredTrue)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(found).To(BeTrue())
 		Expect(newEnabled).To(BeTrue())
-		after, _ = d.GetGoal(ctx, fx.Sender(), g.ID)
+		after, _ = goals.GetGoal(d, ctx, fx.Sender(), g.ID)
 		Expect(after.Enabled).To(BeTrue())
 	})
 
@@ -371,13 +374,13 @@ var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
 		cleanupGoalsG(d, ctx, empty.Sender())
 		cleanupGoalsG(d, ctx, other.Sender())
 
-		og, _ := d.CreateGoal(ctx, other.Sender(), "og", nil, json.RawMessage(plantedSpec))
+		og, _ := goals.CreateGoal(d, ctx, other.Sender(), "og", nil, json.RawMessage(plantedSpec))
 		Expect(og).NotTo(BeNil())
 		planted := json.RawMessage(`{"hit":true,"progress":1,"sub_conditions":[]}`)
-		Expect(d.UpdateGoalProgress(ctx, other.Sender(), og.ID, planted)).To(Succeed())
+		Expect(goals.UpdateGoalProgress(d, ctx, other.Sender(), og.ID, planted)).To(Succeed())
 
-		Expect(d.InvalidateGoalsForOwner(ctx, empty.Sender())).To(Succeed())
-		after, _ := d.GetGoal(ctx, other.Sender(), og.ID)
+		Expect(goals.InvalidateGoalsForOwner(d, ctx, empty.Sender())).To(Succeed())
+		after, _ := goals.GetGoal(d, ctx, other.Sender(), og.ID)
 		Expect(len(after.LastProgress)).To(BeNumerically(">", 0))
 		Expect(after.LastEvaluatedAt).NotTo(BeNil())
 	})
@@ -388,16 +391,16 @@ var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
 		fx := newSenderG(d, "goals_progclear")
 		cleanupGoalsG(d, ctx, fx.Sender())
 
-		g, err := d.CreateGoal(ctx, fx.Sender(), "clr", nil, json.RawMessage(plantedSpec))
+		g, err := goals.CreateGoal(d, ctx, fx.Sender(), "clr", nil, json.RawMessage(plantedSpec))
 		Expect(err).NotTo(HaveOccurred())
 		planted := json.RawMessage(`{"hit":false,"progress":0.1,"sub_conditions":[]}`)
-		Expect(d.UpdateGoalProgress(ctx, fx.Sender(), g.ID, planted)).To(Succeed())
-		mid, _ := d.GetGoal(ctx, fx.Sender(), g.ID)
+		Expect(goals.UpdateGoalProgress(d, ctx, fx.Sender(), g.ID, planted)).To(Succeed())
+		mid, _ := goals.GetGoal(d, ctx, fx.Sender(), g.ID)
 		Expect(len(mid.LastProgress)).To(BeNumerically(">", 0))
 		Expect(mid.LastEvaluatedAt).NotTo(BeNil())
 
-		Expect(d.UpdateGoalProgress(ctx, fx.Sender(), g.ID, nil)).To(Succeed())
-		after, _ := d.GetGoal(ctx, fx.Sender(), g.ID)
+		Expect(goals.UpdateGoalProgress(d, ctx, fx.Sender(), g.ID, nil)).To(Succeed())
+		after, _ := goals.GetGoal(d, ctx, fx.Sender(), g.ID)
 		Expect(after).NotTo(BeNil())
 		Expect(after.LastProgress).To(HaveLen(0))
 		Expect(after.LastEvaluatedAt).To(BeNil())

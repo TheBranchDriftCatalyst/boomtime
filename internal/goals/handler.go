@@ -1,11 +1,11 @@
-// goals.go — HTTP handlers for user-defined composite goals (gaka-wpb).
+// handler.go — HTTP handlers for user-defined composite goals (gaka-wpb).
 //
 // All routes are owner-scoped via h.resolveUser(c). Cross-owner id
 // access returns 404 — never 403 — so an attacker can't distinguish
 // "no such goal" from "not yours" (no oracle). Mirrors the same rule
 // as curation and dashboard_layout.
 //
-// Predicate validation lives in internal/stats/goals.go
+// Predicate validation lives in internal/goals/eval.go
 // (ValidateSpec); this handler surfaces its error text on 400 so
 // authors can correct their spec. The cache-freshness policy
 // (GoalCacheTTL) also lives there — this handler only reads the two
@@ -15,19 +15,34 @@
 // The batched progress endpoint (/goals/progress) is what dashboard
 // widgets hit — one HTTP round trip per dashboard render, not N per
 // goal tile.
-package handler
+package goals
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/labstack/echo/v5"
 )
+
+// Handler bundles the per-domain HTTP handler dependencies (gaka-8tn
+// phase 2b). Only holds the fields the goals domain actually reads.
+type Handler struct {
+	DB     *db.DB
+	Logger *slog.Logger
+}
+
+// Body-size caps — mirrored from internal/handler.BodyLimit* while the
+// shared apihelpers package is being introduced in a parallel phase.
+const bodyLimitSmall int64 = 4 * 1024
 
 // createGoalRequest is the POST body. Description is optional; empty
 // string means "no description" (server stores NULL). Spec is a raw
@@ -60,7 +75,7 @@ func (h *Handler) ListGoals(c *echo.Context) error {
 	if aerr != nil {
 		return respondErr(c, aerr)
 	}
-	goals, err := h.DB.ListGoals(c.Request().Context(), owner)
+	goals, err := ListGoals(h.DB, c.Request().Context(), owner)
 	if err != nil {
 		return h.internalErr(c, "list goals failed", err)
 	}
@@ -75,7 +90,7 @@ func (h *Handler) GetGoal(c *echo.Context) error {
 		return respondErr(c, aerr)
 	}
 	id := c.Param("id")
-	g, err := h.DB.GetGoal(c.Request().Context(), owner, id)
+	g, err := GetGoal(h.DB, c.Request().Context(), owner, id)
 	if err != nil {
 		return h.internalErr(c, "get goal failed", err)
 	}
@@ -98,7 +113,7 @@ func (h *Handler) CreateGoal(c *echo.Context) error {
 	// Small cap: name + description + a modest spec tree. The MEDIUM
 	// cap would work but SMALL is a tighter honest ceiling — a spec
 	// that needs 4 KiB has too many predicates.
-	if aerr := BindJSONWithLimit(c, &req, BodyLimitSmall); aerr != nil {
+	if aerr := bindJSONWithLimit(c, &req, bodyLimitSmall); aerr != nil {
 		return respondErr(c, aerr)
 	}
 	if strings.TrimSpace(req.Name) == "" {
@@ -107,14 +122,14 @@ func (h *Handler) CreateGoal(c *echo.Context) error {
 	if len(req.Spec) == 0 {
 		return respondErr(c, apierr.BadRequest("spec is required"))
 	}
-	if _, err := stats.ValidateSpec(req.Spec); err != nil {
+	if _, err := ValidateSpec(req.Spec); err != nil {
 		return respondErr(c, apierr.BadRequest(err.Error()))
 	}
 	var descPtr *string
 	if req.Description != "" {
 		descPtr = &req.Description
 	}
-	g, err := h.DB.CreateGoal(c.Request().Context(), owner, req.Name, descPtr, req.Spec)
+	g, err := CreateGoal(h.DB, c.Request().Context(), owner, req.Name, descPtr, req.Spec)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return respondErr(c, apierr.New(http.StatusConflict, "a goal named "+req.Name+" already exists", nil))
@@ -136,27 +151,27 @@ func (h *Handler) UpdateGoal(c *echo.Context) error {
 	}
 	id := c.Param("id")
 	var req updateGoalRequest
-	if aerr := BindJSONWithLimit(c, &req, BodyLimitSmall); aerr != nil {
+	if aerr := bindJSONWithLimit(c, &req, bodyLimitSmall); aerr != nil {
 		return respondErr(c, aerr)
 	}
 	if req.Spec != nil {
 		if len(*req.Spec) == 0 {
 			return respondErr(c, apierr.BadRequest("spec cannot be empty"))
 		}
-		if _, err := stats.ValidateSpec(*req.Spec); err != nil {
+		if _, err := ValidateSpec(*req.Spec); err != nil {
 			return respondErr(c, apierr.BadRequest(err.Error()))
 		}
 	}
 	if req.Name != nil && strings.TrimSpace(*req.Name) == "" {
 		return respondErr(c, apierr.BadRequest("name cannot be empty"))
 	}
-	patch := db.GoalPatch{
+	patch := GoalPatch{
 		Name:        req.Name,
 		Description: req.Description,
 		Spec:        req.Spec,
 		Enabled:     req.Enabled,
 	}
-	g, err := h.DB.UpdateGoal(c.Request().Context(), owner, id, patch)
+	g, err := UpdateGoal(h.DB, c.Request().Context(), owner, id, patch)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return respondErr(c, apierr.New(http.StatusConflict, "a goal with that name already exists", nil))
@@ -178,14 +193,14 @@ func (h *Handler) DeleteGoal(c *echo.Context) error {
 		return respondErr(c, aerr)
 	}
 	id := c.Param("id")
-	ok, err := h.DB.DeleteGoal(c.Request().Context(), owner, id)
+	ok, err := DeleteGoal(h.DB, c.Request().Context(), owner, id)
 	if err != nil {
 		return h.internalErr(c, "delete goal failed", err)
 	}
 	if !ok {
 		return respondErr(c, apierr.NotFound("goal not found"))
 	}
-	return noContent(c)
+	return c.NoContent(http.StatusNoContent)
 }
 
 // ToggleGoal: POST /api/v1/users/current/goals/:id/toggle → {enabled:bool}.
@@ -199,11 +214,11 @@ func (h *Handler) ToggleGoal(c *echo.Context) error {
 	id := c.Param("id")
 	var req toggleGoalRequest
 	if c.Request().ContentLength > 0 {
-		if aerr := BindJSONWithLimit(c, &req, BodyLimitSmall); aerr != nil {
+		if aerr := bindJSONWithLimit(c, &req, bodyLimitSmall); aerr != nil {
 			return respondErr(c, aerr)
 		}
 	}
-	enabled, found, err := h.DB.ToggleGoal(c.Request().Context(), owner, id, req.Enabled)
+	enabled, found, err := ToggleGoal(h.DB, c.Request().Context(), owner, id, req.Enabled)
 	if err != nil {
 		return h.internalErr(c, "toggle goal failed", err)
 	}
@@ -224,7 +239,7 @@ func (h *Handler) GetGoalProgress(c *echo.Context) error {
 		return respondErr(c, aerr)
 	}
 	id := c.Param("id")
-	g, err := h.DB.GetGoal(c.Request().Context(), owner, id)
+	g, err := GetGoal(h.DB, c.Request().Context(), owner, id)
 	if err != nil {
 		return h.internalErr(c, "get goal (for progress) failed", err)
 	}
@@ -254,11 +269,11 @@ func (h *Handler) GetAllGoalProgress(c *echo.Context) error {
 	if aerr != nil {
 		return respondErr(c, aerr)
 	}
-	goals, err := h.DB.ListGoals(c.Request().Context(), owner)
+	goals, err := ListGoals(h.DB, c.Request().Context(), owner)
 	if err != nil {
 		return h.internalErr(c, "list goals (for batch progress) failed", err)
 	}
-	out := map[string]*stats.Progress{}
+	out := map[string]*Progress{}
 	for i := range goals {
 		g := &goals[i]
 		if !g.Enabled {
@@ -284,13 +299,13 @@ func (h *Handler) GetAllGoalProgress(c *echo.Context) error {
 // Returns the Progress the caller should return. Errors surface as
 // validate-time issues (400 upstream); DB errors are logged and
 // bubbled here as errors too — the caller decides response shape.
-func (h *Handler) evalGoal(c *echo.Context, g *db.Goal) (*stats.Progress, error) {
+func (h *Handler) evalGoal(c *echo.Context, g *Goal) (*Progress, error) {
 	// Cache path: if we have a non-nil last_progress AND the cache
 	// timestamp is fresh, decode + return it. A cache row with a
 	// missing timestamp is treated as stale (belt-and-suspenders).
 	if len(g.LastProgress) > 0 && g.LastEvaluatedAt != nil {
-		if time.Since(*g.LastEvaluatedAt) < stats.GoalCacheTTL {
-			cached, err := stats.UnmarshalProgress(g.LastProgress)
+		if time.Since(*g.LastEvaluatedAt) < GoalCacheTTL {
+			cached, err := UnmarshalProgress(g.LastProgress)
 			if err == nil && cached != nil {
 				return cached, nil
 			}
@@ -300,21 +315,75 @@ func (h *Handler) evalGoal(c *echo.Context, g *db.Goal) (*stats.Progress, error)
 	// Recompute path: re-validate spec (defensive; a spec that survived
 	// CreateGoal/UpdateGoal is already valid, but if a manual DB write
 	// bypassed us, we don't want to walk garbage).
-	p, err := stats.ValidateSpec(g.Spec)
+	p, err := ValidateSpec(g.Spec)
 	if err != nil {
 		return nil, err
 	}
-	prog, err := stats.Evaluate(c.Request().Context(), h.DB.Pool, g.Owner, p, time.Now().UTC())
+	prog, err := Evaluate(c.Request().Context(), h.DB.Pool, g.Owner, p, time.Now().UTC())
 	if err != nil {
 		return nil, err
 	}
 	// Persist to cache (best-effort — a failure here doesn't sink the
 	// response, we just log and move on; the next call recomputes).
-	if raw, mErr := stats.MarshalProgress(prog); mErr == nil {
-		if wErr := h.DB.UpdateGoalProgress(c.Request().Context(), g.Owner, g.ID, raw); wErr != nil {
+	if raw, mErr := MarshalProgress(prog); mErr == nil {
+		if wErr := UpdateGoalProgress(h.DB, c.Request().Context(), g.Owner, g.ID, raw); wErr != nil {
 			h.Logger.Warn("goal cache write failed (non-fatal)", "goal", g.ID, "err", wErr)
 		}
 	}
 	return prog, nil
 }
 
+// ---- Local helpers (mirror internal/handler helpers until apihelpers lands) ----
+
+// respondErr renders an apierr.Error onto the context.
+func respondErr(c *echo.Context, e *apierr.Error) error {
+	return e.Write(c)
+}
+
+// resolveUser maps a token to its owning username. Mirrors the version in
+// internal/handler until the shared apihelpers package lands.
+func (h *Handler) resolveUser(c *echo.Context) (string, string, *apierr.Error) {
+	tkn, ok := auth.ParseAuthHeader(c.Request().Header.Get(echo.HeaderAuthorization))
+	if !ok || tkn == "" {
+		return "", "", apierr.MissingAuth()
+	}
+	owner, ok, err := h.DB.GetUserByToken(c.Request().Context(), tkn)
+	if err != nil {
+		return "", "", apierr.Generic()
+	}
+	if !ok {
+		return "", "", apierr.InvalidToken()
+	}
+	return tkn, owner, nil
+}
+
+// internalErr logs the underlying error with request context and renders
+// the generic 500 envelope.
+func (h *Handler) internalErr(c *echo.Context, msg string, err error) error {
+	h.Logger.Error(msg, "path", c.Request().URL.Path, "err", err)
+	return respondErr(c, apierr.Generic())
+}
+
+// bindJSONWithLimit wraps c.Bind with a http.MaxBytesReader cap on the
+// request body. Mirror of internal/handler.BindJSONWithLimit until the
+// shared apihelpers package lands.
+func bindJSONWithLimit(c *echo.Context, dst any, limit int64) *apierr.Error {
+	r := c.Request()
+	r.Body = http.MaxBytesReader(c.Response(), r.Body, limit)
+	if err := c.Bind(dst); err != nil {
+		if strings.Contains(err.Error(), "request body too large") {
+			extra := fmt.Sprintf("limit=%d", limit)
+			return apierr.New(http.StatusRequestEntityTooLarge, "payload too large", &extra)
+		}
+		return apierr.BadRequest("Invalid request body")
+	}
+	return nil
+}
+
+// isUniqueViolation reports whether err is a Postgres unique-constraint
+// violation (SQLSTATE 23505). Mirror of the same helper in
+// internal/handler/widget_defs.go.
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}

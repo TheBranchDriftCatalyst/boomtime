@@ -1,7 +1,7 @@
-// goals.go — CRUD accessors for user-defined composite goals (gaka-wpb).
+// db.go — CRUD accessors for user-defined composite goals (gaka-wpb).
 //
 // One row per (owner, name). `spec` is an opaque JSONB blob validated
-// upstream by internal/stats/goals.go before we ever see it; from this
+// upstream by internal/goals/eval.go before we ever see it; from this
 // layer's perspective the tree is just bytes. `last_progress` is a
 // separate JSONB blob written by the evaluator (via UpdateGoalProgress);
 // mutating spec ALWAYS clears it so the next read recomputes under the
@@ -10,7 +10,7 @@
 // Owner scoping is enforced on every path — a caller passing another
 // user's id gets (nil, ...) back exactly like a missing row (never leak
 // existence).
-package db
+package goals
 
 import (
 	"context"
@@ -18,6 +18,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -57,7 +58,7 @@ func scanGoal(row pgx.Row) (*Goal, error) {
 }
 
 // ListGoals returns every goal for owner, newest first.
-func (d *DB) ListGoals(ctx context.Context, owner string) ([]Goal, error) {
+func ListGoals(d *db.DB, ctx context.Context, owner string) ([]Goal, error) {
 	if owner == "" {
 		return nil, errors.New("ListGoals: empty owner")
 	}
@@ -86,7 +87,7 @@ func (d *DB) ListGoals(ctx context.Context, owner string) ([]Goal, error) {
 // GetGoal fetches one goal, owner-scoped. Returns (nil, nil) when the id is
 // absent OR belongs to another user (indistinguishable — never leak
 // existence). Any other error is bubbled unchanged.
-func (d *DB) GetGoal(ctx context.Context, owner, id string) (*Goal, error) {
+func GetGoal(d *db.DB, ctx context.Context, owner, id string) (*Goal, error) {
 	if owner == "" || id == "" {
 		return nil, errors.New("GetGoal: empty owner/id")
 	}
@@ -102,7 +103,7 @@ func (d *DB) GetGoal(ctx context.Context, owner, id string) (*Goal, error) {
 // id, timestamps, and default enabled=true). A duplicate (owner, name)
 // pair returns a wrapped pgx unique-violation error the handler surfaces
 // as 409.
-func (d *DB) CreateGoal(ctx context.Context, owner, name string, description *string, spec json.RawMessage) (*Goal, error) {
+func CreateGoal(d *db.DB, ctx context.Context, owner, name string, description *string, spec json.RawMessage) (*Goal, error) {
 	if owner == "" || name == "" {
 		return nil, errors.New("CreateGoal: empty owner/name")
 	}
@@ -138,7 +139,7 @@ type GoalPatch struct {
 // Building the UPDATE dynamically (COALESCE trick would work but hurts
 // EXPLAIN readability) keeps unaffected columns untouched at the wire level
 // too — updated_at only ticks when SOMETHING actually changed via the patch.
-func (d *DB) UpdateGoal(ctx context.Context, owner, id string, patch GoalPatch) (*Goal, error) {
+func UpdateGoal(d *db.DB, ctx context.Context, owner, id string, patch GoalPatch) (*Goal, error) {
 	if owner == "" || id == "" {
 		return nil, errors.New("UpdateGoal: empty owner/id")
 	}
@@ -177,7 +178,7 @@ func (d *DB) UpdateGoal(ctx context.Context, owner, id string, patch GoalPatch) 
 	if len(sets) == 0 {
 		// No-op patch — return the current row so callers can treat this like
 		// a plain GET (idempotent PATCH is a nicer API than 400 on empty).
-		return d.GetGoal(ctx, owner, id)
+		return GetGoal(d, ctx, owner, id)
 	}
 	sets = append(sets, "updated_at = now()")
 
@@ -189,7 +190,7 @@ func (d *DB) UpdateGoal(ctx context.Context, owner, id string, patch GoalPatch) 
 // DeleteGoal removes a goal, owner-scoped. Returns (true, nil) when a row
 // was removed, (false, nil) when the id is absent or belongs to another
 // user (never leak existence).
-func (d *DB) DeleteGoal(ctx context.Context, owner, id string) (bool, error) {
+func DeleteGoal(d *db.DB, ctx context.Context, owner, id string) (bool, error) {
 	if owner == "" || id == "" {
 		return false, errors.New("DeleteGoal: empty owner/id")
 	}
@@ -205,7 +206,7 @@ func (d *DB) DeleteGoal(ctx context.Context, owner, id string) (bool, error) {
 // read-modify-write TOCTOU on concurrent double-clicks. When `desired` is
 // non-nil, an idempotent no-op (already at desired value) still returns
 // found=true.
-func (d *DB) ToggleGoal(ctx context.Context, owner, id string, desired *bool) (newEnabled bool, found bool, err error) {
+func ToggleGoal(d *db.DB, ctx context.Context, owner, id string, desired *bool) (newEnabled bool, found bool, err error) {
 	if owner == "" || id == "" {
 		return false, false, errors.New("ToggleGoal: empty owner/id")
 	}
@@ -250,7 +251,7 @@ func (d *DB) ToggleGoal(ctx context.Context, owner, id string, desired *bool) (n
 // UpdateGoalProgress writes the evaluator's most recent output into the
 // cache columns. Owner-scoped. `progress` is stored verbatim; passing nil
 // clears the cache (used by heartbeat ingest invalidation).
-func (d *DB) UpdateGoalProgress(ctx context.Context, owner, id string, progress json.RawMessage) error {
+func UpdateGoalProgress(d *db.DB, ctx context.Context, owner, id string, progress json.RawMessage) error {
 	if owner == "" || id == "" {
 		return errors.New("UpdateGoalProgress: empty owner/id")
 	}
@@ -271,7 +272,7 @@ func (d *DB) UpdateGoalProgress(ctx context.Context, owner, id string, progress 
 // owner has. Called from the heartbeat ingest path — new activity might
 // have flipped a goal's status, so we can't serve stale progress.
 // Idempotent — a call for an owner with no goals is a no-op.
-func (d *DB) InvalidateGoalsForOwner(ctx context.Context, owner string) error {
+func InvalidateGoalsForOwner(d *db.DB, ctx context.Context, owner string) error {
 	if owner == "" {
 		return errors.New("InvalidateGoalsForOwner: empty owner")
 	}

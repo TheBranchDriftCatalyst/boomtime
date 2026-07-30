@@ -9,7 +9,6 @@ package db
 
 import (
 	"context"
-	"encoding/json"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -29,73 +28,10 @@ var (
 
 var _ = ginkgo.Describe("input-validation error branches (gaka-d6x)", func() {
 
-	// ---- goals.go ----
-
-	ginkgo.It("CreateGoal: empty owner OR empty name OR empty spec all reject early with a Go error", func() {
-		d := openTestDBG()
-		ctx := context.Background()
-
-		_, err := d.CreateGoal(ctx, "", "n", nil, json.RawMessage(`{}`))
-		Expect(err).To(HaveOccurred())
-		_, err = d.CreateGoal(ctx, "o", "", nil, json.RawMessage(`{}`))
-		Expect(err).To(HaveOccurred())
-		_, err = d.CreateGoal(ctx, "o", "n", nil, nil)
-		Expect(err).To(HaveOccurred())
-		_, err = d.CreateGoal(ctx, "o", "n", nil, json.RawMessage(``))
-		Expect(err).To(HaveOccurred())
-	})
-
-	ginkgo.It("UpdateGoal: empty owner/id reject early; empty spec inside a patch rejects", func() {
-		d := openTestDBG()
-		ctx := context.Background()
-
-		_, err := d.UpdateGoal(ctx, "", "id", GoalPatch{})
-		Expect(err).To(HaveOccurred())
-		_, err = d.UpdateGoal(ctx, "o", "", GoalPatch{})
-		Expect(err).To(HaveOccurred())
-
-		emptySpec := json.RawMessage(``)
-		_, err = d.UpdateGoal(ctx, "o", "id", GoalPatch{Spec: &emptySpec})
-		Expect(err).To(HaveOccurred(), "empty spec pointer must reject before SQL runs")
-	})
-
-	ginkgo.It("DeleteGoal / ToggleGoal reject empty owner OR id (no accidental match-all)", func() {
-		d := openTestDBG()
-		ctx := context.Background()
-		_, err := d.DeleteGoal(ctx, "", "id")
-		Expect(err).To(HaveOccurred())
-		_, err = d.DeleteGoal(ctx, "o", "")
-		Expect(err).To(HaveOccurred())
-
-		_, _, err = d.ToggleGoal(ctx, "", "id", nil)
-		Expect(err).To(HaveOccurred())
-		_, _, err = d.ToggleGoal(ctx, "o", "", nil)
-		Expect(err).To(HaveOccurred())
-	})
-
-	ginkgo.It("ToggleGoal on unknown id returns (false, false, nil) — never leak existence", func() {
-		d := openTestDBG()
-		ctx := context.Background()
-		u := mkSender("goals_toggle_missing")
-		Expect(insertFreshUser(d, ctx, u)).To(Succeed())
-		ginkgo.DeferCleanup(func() { _, _ = d.Pool.Exec(ctx, `DELETE FROM users WHERE username=$1`, u) })
-
-		newEnabled, found, err := d.ToggleGoal(ctx, u, "00000000-0000-0000-0000-000000000000", nil)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(found).To(BeFalse())
-		Expect(newEnabled).To(BeFalse())
-	})
-
-	ginkgo.It("DeleteGoal on unknown id returns (false, nil) — never leak existence", func() {
-		d := openTestDBG()
-		ctx := context.Background()
-		u := mkSender("goals_del_missing")
-		Expect(insertFreshUser(d, ctx, u)).To(Succeed())
-		ginkgo.DeferCleanup(func() { _, _ = d.Pool.Exec(ctx, `DELETE FROM users WHERE username=$1`, u) })
-		ok, err := d.DeleteGoal(ctx, u, "00000000-0000-0000-0000-000000000000")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(ok).To(BeFalse())
-	})
+	// gaka-8tn phase 2b: goals.CreateGoal / UpdateGoal / DeleteGoal /
+	// ToggleGoal input-validation branches moved to
+	// internal/goals/db_branches_test.go together with the goals package
+	// extraction. Byte-identical Its at the new location.
 
 	// ---- label_images.go ----
 

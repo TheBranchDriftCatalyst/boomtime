@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/goals"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/wakatime"
 	"github.com/labstack/echo/v5"
@@ -81,7 +82,7 @@ func (h *Handler) storeAndRespond(c *echo.Context, hbs []model.HeartbeatPayload)
 	// ingest response. The eager invalidation complements the 60s TTL
 	// stale-while-revalidate policy so freshly ingested data isn't
 	// hidden for up to a minute.
-	if err := h.DB.InvalidateGoalsForOwner(ctx, owner); err != nil {
+	if err := goals.InvalidateGoalsForOwner(h.DB, ctx, owner); err != nil {
 		h.Logger.Warn("goal cache invalidation failed after ingest (non-fatal)", "owner", owner, "err", err)
 	}
 

@@ -7,7 +7,6 @@ package db
 import (
 	"context"
 	"encoding/json"
-	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -17,43 +16,10 @@ import (
 
 var _ = ginkgo.Describe("branch coverage padding (gaka-d6x)", func() {
 
-	// ---- goals.itoaFast: zero + negative + multi-digit ----
-
-	ginkgo.It("itoaFast: pins 0, negative, and multi-digit — matches strconv.Itoa on every non-huge int", func() {
-		for _, n := range []int{0, 1, 9, 10, 99, 100, -1, -42, -12345} {
-			Expect(itoaFast(n)).To(Equal(strconv.Itoa(n)), "itoaFast(%d)", n)
-		}
-	})
-
-	// ---- goals.ListGoals rejects empty owner ----
-
-	ginkgo.It("ListGoals: empty owner rejects with a clear error", func() {
-		d := openTestDBG()
-		ctx := context.Background()
-		_, err := d.ListGoals(ctx, "")
-		Expect(err).To(HaveOccurred())
-	})
-
-	ginkgo.It("GetGoal: empty owner/id rejects with a clear error", func() {
-		d := openTestDBG()
-		ctx := context.Background()
-		_, err := d.GetGoal(ctx, "", "id")
-		Expect(err).To(HaveOccurred())
-		_, err = d.GetGoal(ctx, "o", "")
-		Expect(err).To(HaveOccurred())
-	})
-
-	ginkgo.It("InvalidateGoalsForOwner: empty owner rejects; call for owner with no rows is a no-op", func() {
-		d := openTestDBG()
-		ctx := context.Background()
-		Expect(d.InvalidateGoalsForOwner(ctx, "")).To(HaveOccurred())
-
-		// Non-owner: no-op with no error.
-		u := mkSender("goals_invalid_none")
-		Expect(insertFreshUser(d, ctx, u)).To(Succeed())
-		ginkgo.DeferCleanup(func() { _, _ = d.Pool.Exec(ctx, `DELETE FROM users WHERE username=$1`, u) })
-		Expect(d.InvalidateGoalsForOwner(ctx, u)).To(Succeed())
-	})
+	// gaka-8tn phase 2b: goals itoaFast / ListGoals / GetGoal /
+	// InvalidateGoalsForOwner branch coverage moved to
+	// internal/goals/db_branches_test.go together with the goals
+	// package extraction. Byte-identical Its at the new location.
 
 	// ---- widgets.CreateWidgetLink: project scope + case-insensitive path ----
 
@@ -402,27 +368,9 @@ var _ = ginkgo.Describe("more branch padding (gaka-d6x)", func() {
 		Expect(MigrateURL(ctx, testDatabaseURL())).To(Succeed())
 	})
 
-	ginkgo.It("CreateGoal: description=nil branch AND description=non-nil branch both round-trip", func() {
-		d := openTestDBG()
-		ctx := context.Background()
-		u := mkSender("goal_desc")
-		Expect(insertFreshUser(d, ctx, u)).To(Succeed())
-		ginkgo.DeferCleanup(func() {
-			_, _ = d.Pool.Exec(ctx, `DELETE FROM goals WHERE owner=$1`, u)
-			_, _ = d.Pool.Exec(ctx, `DELETE FROM users WHERE username=$1`, u)
-		})
-		spec := json.RawMessage(plantedSpec)
-
-		g1, err := d.CreateGoal(ctx, u, "nil-desc", nil, spec)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(g1.Description).To(BeNil())
-
-		desc := "some description"
-		g2, err := d.CreateGoal(ctx, u, "with-desc", &desc, spec)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(g2.Description).NotTo(BeNil())
-		Expect(*g2.Description).To(Equal(desc))
-	})
+	// gaka-8tn phase 2b: CreateGoal description-branch coverage moved
+	// to internal/goals/db_branches_test.go together with the goals
+	// package extraction. Byte-identical It at the new location.
 })
 
 // pgtypeNumericZero returns a zero-valued pgtype.Numeric (Valid=false).

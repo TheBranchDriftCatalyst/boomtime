@@ -222,14 +222,15 @@ func (hz *Harness) Router() *echo.Echo {
 	// gaka-wpb: goals CRUD + toggle + progress (per-goal + batched).
 	// /goals/progress registered BEFORE /goals/:id to win path matching
 	// (Echo picks the first registered match for overlapping patterns).
-	e.GET("/api/v1/users/current/goals", h.ListGoals)
-	e.POST("/api/v1/users/current/goals", h.CreateGoal)
-	e.GET("/api/v1/users/current/goals/progress", h.GetAllGoalProgress)
-	e.GET("/api/v1/users/current/goals/:id", h.GetGoal)
-	e.PATCH("/api/v1/users/current/goals/:id", h.UpdateGoal)
-	e.DELETE("/api/v1/users/current/goals/:id", h.DeleteGoal)
-	e.POST("/api/v1/users/current/goals/:id/toggle", h.ToggleGoal)
-	e.GET("/api/v1/users/current/goals/:id/progress", h.GetGoalProgress)
+	// gaka-8tn phase 2b: repointed to the goals-domain handler bag.
+	e.GET("/api/v1/users/current/goals", h.Goals.ListGoals)
+	e.POST("/api/v1/users/current/goals", h.Goals.CreateGoal)
+	e.GET("/api/v1/users/current/goals/progress", h.Goals.GetAllGoalProgress)
+	e.GET("/api/v1/users/current/goals/:id", h.Goals.GetGoal)
+	e.PATCH("/api/v1/users/current/goals/:id", h.Goals.UpdateGoal)
+	e.DELETE("/api/v1/users/current/goals/:id", h.Goals.DeleteGoal)
+	e.POST("/api/v1/users/current/goals/:id/toggle", h.Goals.ToggleGoal)
+	e.GET("/api/v1/users/current/goals/:id/progress", h.Goals.GetGoalProgress)
 	// gaka-wpb: heartbeat ingest so we can prove the invalidation hook
 	// (SaveHeartbeats → InvalidateGoalsForOwner) clears cached
 	// progress. Just the bulk endpoint — single- and bulk-shaped

@@ -41,7 +41,7 @@
 // The evaluator is stateless — reuse the pool across requests, one
 // Evaluate call per goal. The cache lives in the goals table
 // (last_progress + last_evaluated_at), NOT in this package.
-package stats
+package goals
 
 import (
 	"context"

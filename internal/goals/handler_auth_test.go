@@ -8,7 +8,7 @@
 //	"every goals endpoint fails-closed without a token" — 4xx before any
 //	DB touch, no oracle. If a future refactor drops auth from any of
 //	these, this table catches it.
-package handler_test
+package goals_test
 
 import (
 	"net/http"

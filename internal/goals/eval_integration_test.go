@@ -16,14 +16,14 @@
 //	TestEvaluate_LifetimeIncludesAncient   → Evaluate leaf > "lifetime window includes ancient rows (start pinned at epoch)"
 //	TestEvaluate_NotProgressInversion      → Evaluate not > "progress = 1 - child.progress (arithmetic, not 1-bool)"
 //	TestEvaluate_OwnerScoping              → Evaluate leaf > "owner filter present on leaf SQL"
-package stats_test
+package goals_test
 
 import (
 	"context"
 	"encoding/json"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/goals"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -60,9 +60,9 @@ var _ = Describe("Evaluate (DB integration, gaka-tst-ginkgo)", func() {
 		seedRollupRowG(hz, owner, now.AddDate(0, 0, -20), "P", "Python", "vim", 9999)
 
 		spec := `{"kind":"time","axis":"language","value":"Python","op":">=","target_seconds":3000,"window":"week"}`
-		p, err := stats.ValidateSpec(json.RawMessage(spec))
+		p, err := goals.ValidateSpec(json.RawMessage(spec))
 		Expect(err).NotTo(HaveOccurred())
-		prog, err := stats.Evaluate(context.Background(), hz.DB.Pool, owner, p, now)
+		prog, err := goals.Evaluate(context.Background(), hz.DB.Pool, owner, p, now)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(prog.SubConditions).To(HaveLen(1))
 		sc := prog.SubConditions[0]
@@ -83,9 +83,9 @@ var _ = Describe("Evaluate (DB integration, gaka-tst-ginkgo)", func() {
 		seedRollupRowG(hz, owner, now.AddDate(0, 0, -2), "P", "Rust", "vim", 2000)
 
 		spec := `{"kind":"time","axis":"language","value":null,"op":">=","target_seconds":2500,"window":"week"}`
-		p, err := stats.ValidateSpec(json.RawMessage(spec))
+		p, err := goals.ValidateSpec(json.RawMessage(spec))
 		Expect(err).NotTo(HaveOccurred())
-		prog, err := stats.Evaluate(context.Background(), hz.DB.Pool, owner, p, now)
+		prog, err := goals.Evaluate(context.Background(), hz.DB.Pool, owner, p, now)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(prog.SubConditions[0].Current).To(BeEquivalentTo(3000), "Go + Rust")
 		Expect(prog.Hit).To(BeTrue())
@@ -103,8 +103,8 @@ var _ = Describe("Evaluate (DB integration, gaka-tst-ginkgo)", func() {
 		seedRollupRowG(hz, owner, now.AddDate(0, 0, -3), "A", "Go", "vim", 600)
 
 		spec := `{"kind":"active_days","op":">=","n":2,"window":"week"}`
-		p, _ := stats.ValidateSpec(json.RawMessage(spec))
-		prog, err := stats.Evaluate(context.Background(), hz.DB.Pool, owner, p, now)
+		p, _ := goals.ValidateSpec(json.RawMessage(spec))
+		prog, err := goals.Evaluate(context.Background(), hz.DB.Pool, owner, p, now)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(prog.SubConditions[0].Current).To(BeEquivalentTo(2), "dedup on double-seed same day")
 		Expect(prog.Hit).To(BeTrue())
@@ -125,9 +125,9 @@ var _ = Describe("Evaluate (DB integration, gaka-tst-ginkgo)", func() {
 		}
 
 		spec := `{"kind":"streak","min_days":7,"condition":{"kind":"time","axis":"language","value":"Go","op":">=","target_seconds":600,"window":"day"}}`
-		p, err := stats.ValidateSpec(json.RawMessage(spec))
+		p, err := goals.ValidateSpec(json.RawMessage(spec))
 		Expect(err).NotTo(HaveOccurred())
-		prog, err := stats.Evaluate(context.Background(), hz.DB.Pool, owner, p, now)
+		prog, err := goals.Evaluate(context.Background(), hz.DB.Pool, owner, p, now)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(prog.SubConditions).To(HaveLen(1))
 		sc := prog.SubConditions[0]
@@ -149,9 +149,9 @@ var _ = Describe("Evaluate (DB integration, gaka-tst-ginkgo)", func() {
 			{"kind":"time","axis":"language","value":"Go","op":">=","target_seconds":500,"window":"week"},
 			{"kind":"time","axis":"language","value":"Rust","op":">=","target_seconds":2000,"window":"week"}
 		]}`
-		p, err := stats.ValidateSpec(json.RawMessage(spec))
+		p, err := goals.ValidateSpec(json.RawMessage(spec))
 		Expect(err).NotTo(HaveOccurred())
-		prog, err := stats.Evaluate(context.Background(), hz.DB.Pool, owner, p, now)
+		prog, err := goals.Evaluate(context.Background(), hz.DB.Pool, owner, p, now)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(prog.Hit).To(BeFalse())
 		Expect(prog.Progress).To(Equal(0.25), "min of children (max/avg would differ)")
@@ -171,9 +171,9 @@ var _ = Describe("Evaluate (DB integration, gaka-tst-ginkgo)", func() {
 			{"kind":"time","axis":"language","value":"Go","op":">=","target_seconds":500,"window":"week"},
 			{"kind":"time","axis":"language","value":"Rust","op":">=","target_seconds":2000,"window":"week"}
 		]}`
-		p, err := stats.ValidateSpec(json.RawMessage(spec))
+		p, err := goals.ValidateSpec(json.RawMessage(spec))
 		Expect(err).NotTo(HaveOccurred())
-		prog, err := stats.Evaluate(context.Background(), hz.DB.Pool, owner, p, now)
+		prog, err := goals.Evaluate(context.Background(), hz.DB.Pool, owner, p, now)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(prog.Hit).To(BeTrue())
 		Expect(prog.Progress).To(Equal(float64(1)), "max of children — passing Go leaf is at 1")
@@ -190,16 +190,16 @@ var _ = Describe("Evaluate (DB integration, gaka-tst-ginkgo)", func() {
 		spec1 := `{"kind":"not","of":[
 			{"kind":"time","axis":"project","value":"YT","op":">=","target_seconds":60,"window":"week"}
 		]}`
-		p1, _ := stats.ValidateSpec(json.RawMessage(spec1))
-		prog1, err := stats.Evaluate(context.Background(), hz.DB.Pool, owner, p1, now)
+		p1, _ := goals.ValidateSpec(json.RawMessage(spec1))
+		prog1, err := goals.Evaluate(context.Background(), hz.DB.Pool, owner, p1, now)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(prog1.Hit).To(BeFalse(), "not(passing leaf) expected hit=false")
 
 		spec2 := `{"kind":"not","of":[
 			{"kind":"time","axis":"project","value":"YT","op":">=","target_seconds":99999,"window":"week"}
 		]}`
-		p2, _ := stats.ValidateSpec(json.RawMessage(spec2))
-		prog2, err := stats.Evaluate(context.Background(), hz.DB.Pool, owner, p2, now)
+		p2, _ := goals.ValidateSpec(json.RawMessage(spec2))
+		prog2, err := goals.Evaluate(context.Background(), hz.DB.Pool, owner, p2, now)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(prog2.Hit).To(BeTrue(), "not(failing leaf) expected hit=true (safely avoided)")
 	})
@@ -212,9 +212,9 @@ var _ = Describe("Evaluate (DB integration, gaka-tst-ginkgo)", func() {
 		now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
 		// Do NOT seed anything — a min_days=0 streak must trivially hit.
 		spec := `{"kind":"streak","min_days":0,"condition":{"kind":"time","axis":"language","value":"Go","op":">=","target_seconds":600,"window":"day"}}`
-		p, err := stats.ValidateSpec(json.RawMessage(spec))
+		p, err := goals.ValidateSpec(json.RawMessage(spec))
 		Expect(err).NotTo(HaveOccurred())
-		prog, err := stats.Evaluate(context.Background(), hz.DB.Pool, owner, p, now)
+		prog, err := goals.Evaluate(context.Background(), hz.DB.Pool, owner, p, now)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(prog.Hit).To(BeTrue())
 		Expect(prog.Progress).To(Equal(float64(1)))
@@ -233,8 +233,8 @@ var _ = Describe("Evaluate (DB integration, gaka-tst-ginkgo)", func() {
 		now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
 
 		spec := `{"kind":"streak","min_days":3,"condition":{"kind":"time","axis":"language","value":"Go","op":">=","target_seconds":600,"window":"day"}}`
-		p, _ := stats.ValidateSpec(json.RawMessage(spec))
-		prog, err := stats.Evaluate(context.Background(), hz.DB.Pool, owner, p, now)
+		p, _ := goals.ValidateSpec(json.RawMessage(spec))
+		prog, err := goals.Evaluate(context.Background(), hz.DB.Pool, owner, p, now)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(prog.SubConditions).To(HaveLen(1))
 		sc := prog.SubConditions[0]
@@ -257,8 +257,8 @@ var _ = Describe("Evaluate (DB integration, gaka-tst-ginkgo)", func() {
 		seedRollupRowG(hz, owner, now.AddDate(0, 0, -4), "P", "Go", "vim", 900)
 
 		spec := `{"kind":"streak","min_days":3,"condition":{"kind":"time","axis":"language","value":"Go","op":">=","target_seconds":600,"window":"day"}}`
-		p, _ := stats.ValidateSpec(json.RawMessage(spec))
-		prog, err := stats.Evaluate(context.Background(), hz.DB.Pool, owner, p, now)
+		p, _ := goals.ValidateSpec(json.RawMessage(spec))
+		prog, err := goals.Evaluate(context.Background(), hz.DB.Pool, owner, p, now)
 		Expect(err).NotTo(HaveOccurred())
 		sc := prog.SubConditions[0]
 		Expect(sc.Current).To(BeEquivalentTo(3))
@@ -278,11 +278,11 @@ var _ = Describe("Evaluate (DB integration, gaka-tst-ginkgo)", func() {
 		seedRollupRowG(hz, ownerA, now.AddDate(0, 0, -5), "P", "Go", "vim", 600)
 
 		spec := `{"kind":"active_days","op":">=","n":1,"window":"week"}`
-		p, _ := stats.ValidateSpec(json.RawMessage(spec))
-		progA, err := stats.Evaluate(context.Background(), hz.DB.Pool, ownerA, p, now)
+		p, _ := goals.ValidateSpec(json.RawMessage(spec))
+		progA, err := goals.Evaluate(context.Background(), hz.DB.Pool, ownerA, p, now)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(progA.SubConditions[0].Current).To(BeEquivalentTo(3))
-		progB, err := stats.Evaluate(context.Background(), hz.DB.Pool, ownerB, p, now)
+		progB, err := goals.Evaluate(context.Background(), hz.DB.Pool, ownerB, p, now)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(progB.SubConditions[0].Current).To(BeEquivalentTo(0),
 			"sender filter fell off on active_days SQL?")
@@ -298,8 +298,8 @@ var _ = Describe("Evaluate (DB integration, gaka-tst-ginkgo)", func() {
 		seedRollupRowG(hz, owner, now.AddDate(0, 0, -1), "P", "Go", "vim", 9999) // yesterday — MUST be excluded
 
 		spec := `{"kind":"time","axis":"language","value":"Go","op":">=","target_seconds":1,"window":"day"}`
-		p, _ := stats.ValidateSpec(json.RawMessage(spec))
-		prog, err := stats.Evaluate(context.Background(), hz.DB.Pool, owner, p, now)
+		p, _ := goals.ValidateSpec(json.RawMessage(spec))
+		prog, err := goals.Evaluate(context.Background(), hz.DB.Pool, owner, p, now)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(prog.SubConditions[0].Current).To(BeEquivalentTo(500), "today only")
 	})
@@ -316,8 +316,8 @@ var _ = Describe("Evaluate (DB integration, gaka-tst-ginkgo)", func() {
 		seedRollupRowG(hz, owner, recent, "P", "Go", "vim", 5678)
 
 		spec := `{"kind":"time","axis":"language","value":"Go","op":">=","target_seconds":1,"window":"lifetime"}`
-		p, _ := stats.ValidateSpec(json.RawMessage(spec))
-		prog, err := stats.Evaluate(context.Background(), hz.DB.Pool, owner, p, now)
+		p, _ := goals.ValidateSpec(json.RawMessage(spec))
+		prog, err := goals.Evaluate(context.Background(), hz.DB.Pool, owner, p, now)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(prog.SubConditions[0].Current).To(BeEquivalentTo(1234+5678),
 			"ancient + recent (start pinned at epoch, not clamped)")
@@ -335,8 +335,8 @@ var _ = Describe("Evaluate (DB integration, gaka-tst-ginkgo)", func() {
 		spec := `{"kind":"not","of":[
 			{"kind":"time","axis":"language","value":"Go","op":">=","target_seconds":1000,"window":"week"}
 		]}`
-		p, _ := stats.ValidateSpec(json.RawMessage(spec))
-		prog, err := stats.Evaluate(context.Background(), hz.DB.Pool, owner, p, now)
+		p, _ := goals.ValidateSpec(json.RawMessage(spec))
+		prog, err := goals.Evaluate(context.Background(), hz.DB.Pool, owner, p, now)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(prog.Hit).To(BeTrue())
 		Expect(prog.Progress).To(Equal(0.5),
@@ -353,11 +353,11 @@ var _ = Describe("Evaluate (DB integration, gaka-tst-ginkgo)", func() {
 		seedRollupRowG(hz, ownerA, now.AddDate(0, 0, -1), "P", "Go", "vim", 10000)
 
 		spec := `{"kind":"time","axis":"language","value":"Go","op":">=","target_seconds":1000,"window":"week"}`
-		p, _ := stats.ValidateSpec(json.RawMessage(spec))
-		progA, err := stats.Evaluate(context.Background(), hz.DB.Pool, ownerA, p, now)
+		p, _ := goals.ValidateSpec(json.RawMessage(spec))
+		progA, err := goals.Evaluate(context.Background(), hz.DB.Pool, ownerA, p, now)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(progA.SubConditions[0].Current).To(BeEquivalentTo(10000))
-		progB, err := stats.Evaluate(context.Background(), hz.DB.Pool, ownerB, p, now)
+		progB, err := goals.Evaluate(context.Background(), hz.DB.Pool, ownerB, p, now)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(progB.SubConditions[0].Current).To(BeEquivalentTo(0),
 			"owner-scoping breach — leaf query lost sender filter")

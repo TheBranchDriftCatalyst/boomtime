@@ -22,7 +22,7 @@
 //	TestValidateSpec_StreakConditionValidated  → ValidateSpec > "recurses into streak's condition"
 //	TestMarshalUnmarshalProgress               → Progress > "MarshalProgress/UnmarshalProgress round-trip preserves every field"
 //	TestUnmarshalProgress_EmptyRaw             → UnmarshalProgress > "nil/empty raw returns (nil, nil) fast-path"
-package stats
+package goals
 
 import (
 	"encoding/json"

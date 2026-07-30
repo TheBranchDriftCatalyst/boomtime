@@ -16,7 +16,7 @@
 //	TestGoalsCreateMissingFields                     → goals create guards > "empty name / whitespace / missing spec → 400"
 //	TestGoalsPatchValidationAndFields                → goals patch guards > "invalid spec, whitespace name, then valid rename"
 //	TestGoalsDuplicateNameOnRename409                → goals rename > "rename-to-existing → 409"
-package handler_test
+package goals_test
 
 import (
 	"encoding/json"
