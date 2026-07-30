@@ -16,6 +16,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/admin"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/awards"
@@ -79,6 +80,7 @@ type Handler struct {
 	Ingest   *ingest.Handler   // phase 5a
 	Curation *curation.Handler // phase 5b
 	Stats    *stats.Handler    // phase 6
+	Admin    *admin.Handler    // phase 7
 }
 
 // New constructs a Handler. logHub streams server-process slog records to the
@@ -120,6 +122,7 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *impor
 		Ingest:   ingest.New(database, cfg, logger, sharedCache),
 		Curation: curation.New(database, cfg, logger, sharedCache),
 		Stats:    stats.New(database, cfg, logger, sharedCache),
+		Admin:    admin.New(database, cfg, logger, sharedCache, worker, hub),
 	}
 }
 
@@ -127,22 +130,42 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *impor
 // Called by cmd/boomtime once NewWorker succeeds; nil is fine when the
 // feature is disabled — admin handlers detect the nil worker and return
 // 503 Service Unavailable with a clear "feature disabled" message.
+//
+// gaka-8tn phase 7: propagates the wired worker to h.Admin as well,
+// because the admin regen handler lives on *admin.Handler now. Without
+// this propagation the admin endpoint would 503 in prod even after
+// cmd/boomtime successfully started the worker.
 func (h *Handler) SetLabelImagesWorker(w *labelimages.Worker) {
 	h.LabelImagesWorker = w
+	if h.Admin != nil {
+		h.Admin.SetLabelImagesWorker(w)
+	}
 }
 
 // SetImageJobQueue wires the imagejobs.Registry after construction. Called
 // by cmd/boomtime when the label-images feature is on so the admin regen
 // endpoint + WS stream have somewhere to enqueue jobs. Nil = feature off.
+//
+// gaka-8tn phase 7: propagates to h.Admin — same rationale as
+// SetLabelImagesWorker.
 func (h *Handler) SetImageJobQueue(r *imagejobs.Registry) {
 	h.ImageJobQueue = r
+	if h.Admin != nil {
+		h.Admin.SetImageJobQueue(r)
+	}
 }
 
 // SetBackfillJobQueue wires the backfilljobs.Registry (gaka-vh8). Always
 // non-nil in prod; kept as a setter for symmetry with SetImageJobQueue
 // and so tests can inject a per-test registry with tight retention.
+//
+// gaka-8tn phase 7: propagates to h.Admin — same rationale as
+// SetLabelImagesWorker.
 func (h *Handler) SetBackfillJobQueue(r *backfilljobs.Registry) {
 	h.BackfillJobQueue = r
+	if h.Admin != nil {
+		h.Admin.SetBackfillJobQueue(r)
+	}
 }
 
 // statsCacheTTL is the TTL for cached aggregation payloads (stats/timeline/

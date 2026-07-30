@@ -11,6 +11,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/admin"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/awards"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/curation"
@@ -134,7 +135,15 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	stats.Register(e, h.Stats)
 	registerStatsRoutes(e, h)
 	registerMiscRoutes(e, h)
-	registerImportRoutes(e, h)
+	// gaka-8tn phase 7: admin domain (label-images admin + git-history
+	// backfill + whole-DB backup export/import + wakatime.com import
+	// cluster + source-health observability + the public label-image GET
+	// that is the read-only face of the same subsystem). `admin.Register`
+	// fans out the 24 routes formerly split between registerImportRoutes,
+	// registerMiscRoutes, registerStatsRoutes (the backup pair), and
+	// registerHeartbeatRoutes (source-health). Route strings + order
+	// preserved verbatim.
+	admin.Register(e, h.Admin)
 	// gaka-8tn phase 1: meta + logs registration is now owned by the meta
 	// domain package. `meta.Register` fans out /api/v1/version,
 	// /api/v1/changelog, /healthz, the OpenAPI spec + Swagger UI, and the
@@ -172,14 +181,13 @@ func registerGoalRoutes(e *echo.Echo, h *handler.Handler) {
 	goals.Register(e, h.Goals)
 }
 
-// registerHeartbeatRoutes: source health only (ingest cluster + explorer +
-// entity endpoints moved to ingest.Register in gaka-8tn phase 5a).
-func registerHeartbeatRoutes(e *echo.Echo, h *handler.Handler) {
-	// Source health (per plugin/editor/machine last check-in — ingestion health).
-	// Stays in the handler god-type until phase 7 lifts admin/observability
-	// endpoints into internal/admin/.
-	e.GET("/api/v1/users/current/sources/health", h.SourceHealth)
-}
+// registerHeartbeatRoutes: no-op after gaka-8tn phase 7. The ingest
+// cluster (heartbeats + workouts + health_samples + explorer +
+// entities) moved to ingest.Register in phase 5a; source-health
+// observability moved to admin.Register in phase 7. This stub stays
+// so a `git blame` on the route table still lands on the historical
+// rationale; delete during phase 8 collapse.
+func registerHeartbeatRoutes(_ *echo.Echo, _ *handler.Handler) {}
 
 // registerCurationRoutes: data curation (hide / rename labels).
 //
@@ -190,90 +198,46 @@ func registerHeartbeatRoutes(e *echo.Echo, h *handler.Handler) {
 // on the historical rationale; delete during phase 8 collapse.
 func registerCurationRoutes(_ *echo.Echo, _ *handler.Handler) {}
 
-// registerStatsRoutes: whole-database backup (dump download + destructive
-// restore). The dashboard aggregation cluster (derived + stats + timeline +
-// big-bets + files + projects + leaderboards + commits) moved to
-// stats.Register in gaka-8tn phase 6. Backup lives here until phase 7 lifts
-// admin/observability endpoints (backup + sources) into internal/admin/.
-func registerStatsRoutes(e *echo.Echo, h *handler.Handler) {
-	// Whole-database backup: streaming dump download + destructive restore
-	// (requires ?confirm=replace-all-data; see handler/backup.go).
-	e.GET("/api/v1/users/current/db/export", h.DBExport)
-	e.POST("/api/v1/users/current/db/import", h.DBImport)
-}
+// registerStatsRoutes: no-op after gaka-8tn phase 7. The dashboard
+// aggregation cluster (derived + stats + timeline + big-bets + files +
+// projects + leaderboards + commits) moved to stats.Register in phase
+// 6; the whole-database backup pair (dump download + destructive
+// restore) moved to admin.Register in phase 7. This stub stays so a
+// `git blame` on the route table still lands on the historical
+// rationale; delete during phase 8 collapse.
+func registerStatsRoutes(_ *echo.Echo, _ *handler.Handler) {}
 
-// registerMiscRoutes: badges, widgets, leaderboards, and commits.
+// registerMiscRoutes: only the widgets fan-out is left here after
+// gaka-8tn phase 7 lifted the admin/label-images/backfill/label-image-
+// public trio into admin.Register.
 func registerMiscRoutes(e *echo.Echo, h *handler.Handler) {
 	// gaka-8tn phase 3: Badges + embeddable widgets + widget-def CRUD extracted
 	// into internal/widgets; the route strings + registration order are
 	// preserved verbatim inside widgets.Register.
 	widgets.Register(e, h.Widgets)
 
-	// gaka-8tn phase 4a: PublicProfile moved to identity.Register (see
-	// registerRoutes' identity fan-out). Route strings preserved verbatim.
-
-	// gaka-myv: shared per-archetype label image bytes. PUBLIC (no auth) —
-	// label content is fixed catalog data, not per-user data. Cache-Control
-	// is `immutable`; the FE busts via ?v=<generated_at.epoch>. Reads do
-	// NOT check the feature flag so already-generated images keep serving
-	// after a flag flip (only writes / the startup worker gate on
-	// LabelImagesEnabled).
-	e.GET("/api/v1/labels/:id/image", h.LabelImage)
-
-	// gaka-myv: Admin tab endpoints — authed AND admin-gated (see
-	// BOOM_ADMIN_USERS). Info returns config + row count; Regenerate takes
-	// the caller-supplied {entries: [{id, prompt}, ...]} snapshot so the FE
-	// catalog stays the source of truth.
-	e.GET("/api/v1/admin/label-images", h.AdminLabelImagesInfo)
-	e.POST("/api/v1/admin/label-images/regenerate", h.AdminLabelImagesRegenerate)
-	// gaka-8bz: durable WS stream of the image-job queue lifecycle.
-	// Auth uses the refresh_token cookie inside the handler (see
-	// AdminLabelImagesWS) — WS handshakes can't carry Authorization.
-	e.GET("/api/v1/admin/label-images/ws", h.AdminLabelImagesWS)
-
-	// gaka-vh8: git-history backfill admin endpoints. Config
-	// GET/PATCH, per-user stats, in-memory job registry (enqueue +
-	// PATCH + per-session heartbeat push / preview + delete), and a
-	// durable WS stream mirroring the label-images shape. All
-	// admin-gated (see requireAdmin) — the WS uses the refresh_token
-	// cookie because WS handshakes can't carry Authorization.
-	e.GET("/api/v1/admin/backfill/config", h.AdminBackfillConfig)
-	e.PATCH("/api/v1/admin/backfill/config", h.AdminBackfillConfigUpdate)
-	e.GET("/api/v1/admin/backfill/stats", h.AdminBackfillStats)
-	e.POST("/api/v1/admin/backfill/jobs", h.AdminBackfillEnqueueJob)
-	e.PATCH("/api/v1/admin/backfill/jobs/:id", h.AdminBackfillJobPatch)
-	e.POST("/api/v1/admin/backfill/jobs/:id/heartbeats", h.AdminBackfillJobHeartbeats)
-	e.POST("/api/v1/admin/backfill/jobs/:id/preview", h.AdminBackfillJobPreview)
-	e.DELETE("/api/v1/admin/backfill/heartbeats", h.AdminBackfillDeleteHeartbeats)
-	e.GET("/api/v1/admin/backfill/ws", h.AdminBackfillWS)
-
-	// gaka-8tn phase 4a: CHIBI avatar endpoints (synthesize-prompt SSE,
-	// regenerate, status, public GET) moved to identity.Register. Route
-	// strings preserved verbatim.
+	// gaka-8tn phase 4a: PublicProfile + CHIBI avatar endpoints moved
+	// to identity.Register. Route strings preserved verbatim.
 
 	// gaka-8tn phase 5b: labels catalog admin (public GET /labels/catalog +
 	// admin CRUD + gen-config PATCH + seed.sql dumper) moved to
 	// curation.Register alongside the curation-rules cluster. Route
 	// strings preserved verbatim.
 
-	// gaka-8tn phase 3: widget-def CRUD lives in internal/widgets and is
-	// registered by widgets.Register at the top of this func.
-
 	// gaka-8tn phase 6: leaderboards + commits moved to stats.Register.
 	// Route strings preserved verbatim.
+
+	// gaka-8tn phase 7: label-images admin cluster + git-history backfill
+	// cluster + the public GET /labels/:id/image endpoint moved to
+	// admin.Register. Route strings + registration order preserved
+	// verbatim.
 }
 
-// registerImportRoutes: durable, resumable import jobs.
-func registerImportRoutes(e *echo.Echo, h *handler.Handler) {
-	e.POST("/import", h.ImportRequest)
-	e.GET("/import/config", h.ImportConfig)
-	e.POST("/import/wakatime-range", h.WakatimeRange)
-	e.GET("/import/jobs", h.ImportJobs)
-	e.GET("/import/jobs/:id", h.ImportJob)
-	e.POST("/import/jobs/:id/cancel", h.ImportJobCancel)
-	e.GET("/import/jobs/:id/logs", h.ImportJobLogs)
-	e.GET("/import/jobs/:id/ws", h.ImportJobWS)
-}
+// registerImportRoutes: no-op after gaka-8tn phase 7. The wakatime.com
+// durable, resumable import job cluster moved to admin.Register. This
+// stub stays so a `git blame` on the route table still lands on the
+// historical rationale; delete during phase 8 collapse.
+func registerImportRoutes(_ *echo.Echo, _ *handler.Handler) {}
 
 // registerStatic serves the SPA: from BOOM_DASHBOARD_PATH on disk if set, else
 // from the embedded dist FS. Non-API routes fall back to index.html.

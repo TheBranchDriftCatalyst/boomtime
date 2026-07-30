@@ -205,9 +205,10 @@ func (hz *Harness) Router() *echo.Echo {
 	e.DELETE("/api/v1/users/current/spaces/:id", h.Spaces.DeleteSpace)
 	e.POST("/api/v1/users/current/spaces/:id/rules", h.Spaces.AddSpaceRule)
 	e.DELETE("/api/v1/users/current/spaces/:id/rules/:rid", h.Spaces.DeleteSpaceRule)
-	// whole-database backup (dump download + destructive restore)
-	e.GET("/api/v1/users/current/db/export", h.DBExport)
-	e.POST("/api/v1/users/current/db/import", h.DBImport)
+	// whole-database backup (dump download + destructive restore).
+	// gaka-8tn phase 7: receivers moved to h.Admin (internal/admin).
+	e.GET("/api/v1/users/current/db/export", h.Admin.DBExport)
+	e.POST("/api/v1/users/current/db/import", h.Admin.DBImport)
 	// stats / aggregations — gaka-8tn phase 6: receivers moved to h.Stats
 	// (internal/stats).
 	e.GET("/api/v1/users/current/stats", h.Stats.Stats)
@@ -273,7 +274,7 @@ func (hz *Harness) Router() *echo.Echo {
 	// biggest single source of test-code duplication before this fold.
 	// Every one is now a single route line here.
 	e.POST("/api/v1/users/current/password", h.Identity.ChangePassword)               // gaka-8tn phase 4a: h.Identity
-	e.GET("/api/v1/labels/:id/image", h.LabelImage)                                   // was routerWithLabelImages
+	e.GET("/api/v1/labels/:id/image", h.Admin.LabelImage)                             // gaka-8tn phase 7: h.Admin
 	// gaka-8tn phase 3: widget-def CRUD extracted to internal/widgets.
 	e.GET("/api/v1/users/current/widget-defs", h.Widgets.ListWidgetDefs)
 	e.POST("/api/v1/users/current/widget-defs", h.Widgets.CreateWidgetDef)
@@ -293,18 +294,19 @@ func (hz *Harness) Router() *echo.Echo {
 	// gaka-d6x.handler: admin cluster (label-images regeneration + git-history
 	// backfill CLI). Wired here so per-file test suites don't have to re-register
 	// (Echo panics on duplicate route registration).
-	e.GET("/api/v1/admin/label-images", h.AdminLabelImagesInfo)
-	e.POST("/api/v1/admin/label-images/regenerate", h.AdminLabelImagesRegenerate)
-	e.GET("/api/v1/admin/label-images/ws", h.AdminLabelImagesWS)
-	e.GET("/api/v1/admin/backfill/config", h.AdminBackfillConfig)
-	e.PATCH("/api/v1/admin/backfill/config", h.AdminBackfillConfigUpdate)
-	e.GET("/api/v1/admin/backfill/stats", h.AdminBackfillStats)
-	e.POST("/api/v1/admin/backfill/jobs", h.AdminBackfillEnqueueJob)
-	e.PATCH("/api/v1/admin/backfill/jobs/:id", h.AdminBackfillJobPatch)
-	e.POST("/api/v1/admin/backfill/jobs/:id/heartbeats", h.AdminBackfillJobHeartbeats)
-	e.POST("/api/v1/admin/backfill/jobs/:id/preview", h.AdminBackfillJobPreview)
-	e.DELETE("/api/v1/admin/backfill/heartbeats", h.AdminBackfillDeleteHeartbeats)
-	e.GET("/api/v1/admin/backfill/ws", h.AdminBackfillWS)
+	// gaka-8tn phase 7: receivers moved to h.Admin (internal/admin).
+	e.GET("/api/v1/admin/label-images", h.Admin.AdminLabelImagesInfo)
+	e.POST("/api/v1/admin/label-images/regenerate", h.Admin.AdminLabelImagesRegenerate)
+	e.GET("/api/v1/admin/label-images/ws", h.Admin.AdminLabelImagesWS)
+	e.GET("/api/v1/admin/backfill/config", h.Admin.AdminBackfillConfig)
+	e.PATCH("/api/v1/admin/backfill/config", h.Admin.AdminBackfillConfigUpdate)
+	e.GET("/api/v1/admin/backfill/stats", h.Admin.AdminBackfillStats)
+	e.POST("/api/v1/admin/backfill/jobs", h.Admin.AdminBackfillEnqueueJob)
+	e.PATCH("/api/v1/admin/backfill/jobs/:id", h.Admin.AdminBackfillJobPatch)
+	e.POST("/api/v1/admin/backfill/jobs/:id/heartbeats", h.Admin.AdminBackfillJobHeartbeats)
+	e.POST("/api/v1/admin/backfill/jobs/:id/preview", h.Admin.AdminBackfillJobPreview)
+	e.DELETE("/api/v1/admin/backfill/heartbeats", h.Admin.AdminBackfillDeleteHeartbeats)
+	e.GET("/api/v1/admin/backfill/ws", h.Admin.AdminBackfillWS)
 	// gaka-d6x.handler misc cluster: routes previously only in the production
 	// router (internal/server), now mirrored here so tests don't hand-register
 	// and hit the duplicate-route panic.
@@ -315,7 +317,8 @@ func (hz *Harness) Router() *echo.Echo {
 	e.GET("/api/v1/changelog", h.Meta.Changelog)
 	e.GET("/api/v1/users/current/heartbeats/entities", h.Ingest.ListEntitiesByType)
 	e.POST("/api/v1/users/current/heartbeats/entities/redact", h.Ingest.RedactEntities)
-	e.GET("/api/v1/users/current/sources/health", h.SourceHealth)
+	// gaka-8tn phase 7: receivers moved to h.Admin (internal/admin).
+	e.GET("/api/v1/users/current/sources/health", h.Admin.SourceHealth)
 	// gaka-8tn phase 6: receivers moved to h.Stats (internal/stats).
 	e.GET("/api/v1/users/current/timeline", h.Stats.Timeline)
 	e.GET("/api/v1/users/current/statusbar/today", h.Stats.StatusbarToday)
