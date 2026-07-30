@@ -730,11 +730,7 @@ var _ = Describe("CreateCuration re-insert reactivates a disabled rule (dedup ON
 	})
 })
 
-// mapKeys returns a sorted slice of keys for diag messages.
-func mapKeys(m map[string]any) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	return keys
-}
+// mapKeys is defined in internal/handler/bigbets_test.go — same package,
+// shared. Kept here as a comment to note the intentional single source
+// of truth (this test file used to redeclare it before gaka-d6x.handler
+// cherry-pick).

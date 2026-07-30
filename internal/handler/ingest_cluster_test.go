@@ -922,19 +922,17 @@ var _ = Describe("HealthSamples ingest (gaka-d6x.handler)", func() {
 		Expect(rec).To(testutil.HaveStatus(http.StatusForbidden))
 	})
 
-	It("POST /health_samples: non-empty single sample HITS SaveHealthSamples error branch → 500 Generic (pins the DB-error respond path)", func() {
-		// The shared migration's `idx_health_samples_dedupe` is a UNIQUE
-		// INDEX not a CONSTRAINT, so SaveHealthSamples' `INSERT ... ON
-		// CONFLICT ON CONSTRAINT idx_health_samples_dedupe` errors at
-		// prepare time (SQLSTATE 42704 in the current dev DB). This is
-		// unfortunate for production, but LOAD-BEARING here: it lets us
-		// pin the storeSamples error branch (lines 44-46: log + respond
-		// Generic) without racing pool.Close() against auth. If a future
-		// migration promotes the index to a constraint, this test starts
-		// returning 202 — flip the assertion when that happens.
+	It("POST /health_samples: single sample persists as 202 accepted", func() {
+		// This test originally exploited a prod bug where SaveHealthSamples'
+		// ON CONFLICT ON CONSTRAINT idx_health_samples_dedupe returned
+		// SQLSTATE 42704 (the index is a UNIQUE INDEX, not a constraint).
+		// Fixed in gaka-uli (a677586) — ON CONFLICT now targets the
+		// columns directly. The prior test asserted 500; now it correctly
+		// asserts 202. The error-branch coverage the old assertion was
+		// standing in for lives in the DB-pool-closed suite below.
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
-		_, tok := hz.MintUser("hs_dberr")
+		_, tok := hz.MintUser("hs_ok")
 		body := map[string]any{
 			"kind":     "heart_rate",
 			"unit":     "bpm",
@@ -942,10 +940,8 @@ var _ = Describe("HealthSamples ingest (gaka-d6x.handler)", func() {
 			"ts_start": float64(time.Now().Unix()),
 		}
 		rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/health_samples", tok, body)
-		Expect(rec).To(testutil.HaveStatus(http.StatusInternalServerError),
-			"SaveHealthSamples error MUST render as Generic 500 — never leak driver detail")
-		Expect(rec.Body.String()).To(ContainSubstring(`"error":"An internal error occurred"`),
-			"error envelope MUST be the Generic 500 payload (no SQL state leak)")
+		Expect(rec).To(testutil.HaveStatus(http.StatusAccepted),
+			"single-sample POST should persist and return 202")
 	})
 })
 
