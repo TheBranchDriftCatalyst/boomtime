@@ -146,6 +146,13 @@ var _ = Describe("AwardsLog (gaka-mwp-streaks)", func() {
 		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest),
 			"malformed `at` should 400; got %d body=%s", rec.Code, rec.Body.String())
 
+		// SECURITY: the error body must NOT echo the malformed input back.
+		// If it did, and the FE ever rendered errors as HTML (unlikely but
+		// cheap to pin here), an XSS vector would open. The handler emits
+		// the constant string "`at` must be RFC3339" — never the raw input.
+		Expect(rec.Body.String()).NotTo(ContainSubstring("not-a-timestamp"),
+			"error body must NOT echo user-controlled malformed `at`; body=%s", rec.Body.String())
+
 		// Future timestamp — 2 hours ahead (> 1h grace).
 		future := time.Now().UTC().Add(2 * time.Hour).Format(time.RFC3339)
 		rec = doPostJSONG(e, "/api/v1/users/current/awards/log", token, map[string]any{
@@ -154,6 +161,66 @@ var _ = Describe("AwardsLog (gaka-mwp-streaks)", func() {
 		})
 		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest),
 			"future `at` should 400 (streak-walker poison guard); got %d body=%s", rec.Code, rec.Body.String())
+	})
+
+	// gaka-d6x.handler critique: missing invariant — the 1-hour grace
+	// window has only its REJECT path pinned above. This spec walks the
+	// ACCEPT edge at t=now+30min so a regression that narrows the grace
+	// (e.g., "if parsed.After(time.Now())" without the +time.Hour) trips
+	// here instead of shipping.
+	It("accepts `at` inside the 1-hour future grace window (now+30min)", func() {
+		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "awardsloggen"))
+		e := awardsAuxRouter(hz)
+		_, token := hz.MintUser("awardslog_grace")
+		ensureLabels(hz, "grace-label")
+
+		nearFuture := time.Now().UTC().Add(30 * time.Minute).Format(time.RFC3339)
+		rec := doPostJSONG(e, "/api/v1/users/current/awards/log", token, map[string]any{
+			"at":    nearFuture,
+			"items": []map[string]any{{"labelId": "grace-label", "periodType": "daily"}},
+		})
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK),
+			"`at`=now+30m sits inside the 1h grace window and must succeed; body=%s", rec.Body.String())
+		var got map[string]any
+		Expect(json.Unmarshal(rec.Body.Bytes(), &got)).To(Succeed())
+		Expect(got["written"]).To(BeNumerically("==", 1),
+			"grace-window write must land in the ledger, not be dropped")
+	})
+
+	// gaka-d6x.handler critique: BindJSONWithLimit has TWO failure branches
+	// (oversize + json-decode-failure). Only the oversize path was covered;
+	// this spec pins the decode-failure branch — a raw non-JSON body under
+	// the size cap must 400 "Invalid request body", never 500 or 200.
+	//
+	// Note: Echo tolerates an EMPTY body (returns zero-value struct → 200,
+	// which the handler treats as items=nil / no-op). That is a separate
+	// contract from the malformed-JSON branch and is intentionally NOT
+	// asserted here — see the "no-op empty items" invariant already
+	// covered by AwardsLog's server-side filter behavior.
+	It("400s on non-JSON body (BindJSONWithLimit decode-failure branch)", func() {
+		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "awardsloggen"))
+		e := awardsAuxRouter(hz)
+		_, token := hz.MintUser("awardslog_malformed")
+
+		// Truncated JSON — the decoder must return an error, not a partial.
+		rec := doRawG(e, http.MethodPost, "/api/v1/users/current/awards/log", token,
+			[]byte(`{"items":[{"labelId":"x","periodType":`))
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest),
+			"truncated JSON must 400 (BindJSONWithLimit decode branch); got %d body=%s", rec.Code, rec.Body.String())
+
+		// Plain-text body — the decoder must reject, not silently zero-value the struct.
+		rec = doRawG(e, http.MethodPost, "/api/v1/users/current/awards/log", token,
+			[]byte(`not json at all`))
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest),
+			"non-JSON body must 400; got %d body=%s", rec.Code, rec.Body.String())
+
+		// Garbage bytes that superficially resemble JSON but fail to
+		// decode (unclosed array, unexpected tokens) also fall into the
+		// decode-failure branch.
+		rec = doRawG(e, http.MethodPost, "/api/v1/users/current/awards/log", token,
+			[]byte(`[[[[[garbage`))
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest),
+			"garbage-JSON body must 400; got %d body=%s", rec.Code, rec.Body.String())
 	})
 
 	It("accepts historical `at` and buckets against THAT day (backfill path)", func() {
@@ -189,8 +256,11 @@ var _ = Describe("AwardsLog (gaka-mwp-streaks)", func() {
 		e := awardsAuxRouter(hz)
 		_, token := hz.MintUser("awardslogbig")
 
-		// One giant label id that pushes the body past 128 KiB.
-		big := strings.Repeat("a", 130*1024)
+		// One giant label id that pushes the body past 128 KiB. Use a
+		// distinctive marker inside the payload so the "no echo" security
+		// assertion below can look for a unique string, not a common char.
+		marker := "OVERSIZE_MARKER_deadbeef_"
+		big := marker + strings.Repeat("a", 130*1024)
 		rec := doPostJSONG(e, "/api/v1/users/current/awards/log", token, map[string]any{
 			"items": []map[string]any{{"labelId": big, "periodType": "daily"}},
 		})
@@ -198,17 +268,78 @@ var _ = Describe("AwardsLog (gaka-mwp-streaks)", func() {
 			Equal(http.StatusRequestEntityTooLarge),
 			Equal(http.StatusBadRequest),
 		), "expected 413 (or 400) for over-cap body; got %d", rec.Code)
+
+		// SECURITY: the error body must NOT echo user-controlled bytes. The
+		// handler surfaces only "payload too large" + "limit=<n>" (or
+		// "Invalid request body") — never the incoming label id. If it did,
+		// a client could smuggle attacker-controlled bytes into an error
+		// response the FE might render.
+		Expect(rec.Body.String()).NotTo(ContainSubstring(marker),
+			"error body echoed user-controlled bytes from the oversize payload; body=%s", rec.Body.String())
 	})
 
-	It("requires auth — unauthenticated POST returns 401", func() {
+	// gaka-d6x.handler critique: the "requires auth" spec was `>=400 && <500`.
+	// That would silently pass on a 404 (route missing) or a 405
+	// (misconfigured method) while auth is bypassed elsewhere. Pin the exact
+	// contract: apierr.MissingAuth() → 400 for absent header, apierr.
+	// InvalidToken() → 403 for a token that doesn't map to a user.
+	It("requires auth — unauthenticated POST returns exactly 400 (MissingAuth)", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "awardsloggen"))
 		e := awardsAuxRouter(hz)
 
 		rec := doPostJSONG(e, "/api/v1/users/current/awards/log", "", map[string]any{
 			"items": []map[string]any{{"labelId": "x", "periodType": "daily"}},
 		})
-		Expect(rec.Code).To(BeNumerically(">=", 400))
-		Expect(rec.Code).To(BeNumerically("<", 500))
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest),
+			"absent Authorization must yield exactly 400 (apierr.MissingAuth); got %d body=%s",
+			rec.Code, rec.Body.String())
+	})
+
+	// gaka-d6x.handler critique: cover the InvalidToken (403) branch that
+	// no test in the suite exercises. A made-up token reaches
+	// GetUserByToken → ok=false → apierr.InvalidToken() → 403.
+	It("rejects a syntactically-valid but unknown token with exactly 403 (InvalidToken)", func() {
+		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "awardsloggen"))
+		e := awardsAuxRouter(hz)
+
+		rec := doPostJSONG(e, "/api/v1/users/current/awards/log", "not-a-real-token-abc123", map[string]any{
+			"items": []map[string]any{{"labelId": "x", "periodType": "daily"}},
+		})
+		Expect(rec).To(testutil.HaveStatus(http.StatusForbidden),
+			"unknown token must yield exactly 403 (apierr.InvalidToken); got %d body=%s",
+			rec.Code, rec.Body.String())
+	})
+
+	// gaka-d6x.handler critique (security): only the missing-header case
+	// was covered. ParseAuthHeader requires the "Basic" prefix — a "Bearer"
+	// header (or any non-Basic scheme) fails the prefix strip and yields
+	// MissingAuth → 400. A garbled "Basic" body reaches GetUserByToken
+	// and returns InvalidToken → 403.
+	It("rejects malformed Authorization headers with the correct status per branch", func() {
+		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "awardsloggen"))
+		e := awardsAuxRouter(hz)
+
+		cases := []struct {
+			name       string
+			authHeader string
+			wantStatus int
+		}{
+			{"Bearer scheme → MissingAuth (no Basic prefix)", "Bearer sometoken", http.StatusBadRequest},
+			{"garbage no-scheme → MissingAuth", "garbage", http.StatusBadRequest},
+			{"Basic <garbage> → InvalidToken", "Basic YWJjZGVmZ2hpams=", http.StatusForbidden},
+			{"Basic with empty value → MissingAuth (post-trim empty)", "Basic ", http.StatusBadRequest},
+		}
+		for _, tc := range cases {
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/users/current/awards/log",
+				strings.NewReader(`{"items":[]}`))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", tc.authHeader)
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+			Expect(rec.Code).To(Equal(tc.wantStatus),
+				"case %q: header=%q want %d got %d body=%s",
+				tc.name, tc.authHeader, tc.wantStatus, rec.Code, rec.Body.String())
+		}
 	})
 
 	It("cross-user isolation: user B's log write does not appear on user A's ledger", func() {
@@ -267,37 +398,75 @@ var _ = Describe("AwardsStreaks (gaka-mwp-streaks)", func() {
 		_ = user
 	})
 
-	It("cross-user isolation: user A's streak is invisible on user B's endpoint", func() {
+	// gaka-d6x.handler critique: the previous isolation spec only proved
+	// "B doesn't see onlyA" — a bug that emptied ALL users' streaks would
+	// still pass. This version uses DISTINCT labels per user and asserts
+	// BOTH directions: A sees onlyA (proves streak walker actually works)
+	// AND B does not (proves the WHERE username = filter is present).
+	It("cross-user isolation: distinct labels per user, both directions pinned", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "awardsstreaks"))
 		eAux := awardsAuxRouter(hz)
 		eMain := hz.Router()
 
 		_, tokA := hz.MintUser("awardsstreakA")
 		_, tokB := hz.MintUser("awardsstreakB")
-		ensureLabels(hz, "onlyA")
+		ensureLabels(hz, "onlyA", "onlyB")
 
-		// User A logs a streak.
-		rec := doPostJSONG(eAux, "/api/v1/users/current/awards/log", tokA, map[string]any{
+		// Each user logs its own distinct label.
+		recA := doPostJSONG(eAux, "/api/v1/users/current/awards/log", tokA, map[string]any{
 			"items": []map[string]any{{"labelId": "onlyA", "periodType": "daily"}},
 		})
-		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
+		Expect(recA).To(testutil.HaveStatus(http.StatusOK))
+		recB := doPostJSONG(eAux, "/api/v1/users/current/awards/log", tokB, map[string]any{
+			"items": []map[string]any{{"labelId": "onlyB", "periodType": "daily"}},
+		})
+		Expect(recB).To(testutil.HaveStatus(http.StatusOK))
 
-		// User B's streaks map MUST NOT contain onlyA.
-		rec = getJSONG(eMain, "/api/v1/users/current/awards/streaks", tokB)
-		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
-		var streaks map[string]int
-		Expect(json.Unmarshal(rec.Body.Bytes(), &streaks)).To(Succeed())
-		Expect(streaks).NotTo(HaveKey("onlyA"),
-			"cross-user leak on /awards/streaks — B saw A's streak; got %v", streaks)
+		// A: MUST see onlyA (proves the endpoint is not universally empty)
+		// and MUST NOT see onlyB.
+		recA = getJSONG(eMain, "/api/v1/users/current/awards/streaks", tokA)
+		Expect(recA).To(testutil.HaveStatus(http.StatusOK))
+		var streaksA map[string]int
+		Expect(json.Unmarshal(recA.Body.Bytes(), &streaksA)).To(Succeed())
+		Expect(streaksA).To(HaveKey("onlyA"),
+			"A should see its own streak — a regression that empties all streaks would slip past a one-sided isolation check; got %v", streaksA)
+		Expect(streaksA).NotTo(HaveKey("onlyB"),
+			"cross-user leak: A saw B's streak; got %v", streaksA)
+
+		// B: mirror — MUST see onlyB, MUST NOT see onlyA.
+		recB = getJSONG(eMain, "/api/v1/users/current/awards/streaks", tokB)
+		Expect(recB).To(testutil.HaveStatus(http.StatusOK))
+		var streaksB map[string]int
+		Expect(json.Unmarshal(recB.Body.Bytes(), &streaksB)).To(Succeed())
+		Expect(streaksB).To(HaveKey("onlyB"),
+			"B should see its own streak; got %v", streaksB)
+		Expect(streaksB).NotTo(HaveKey("onlyA"),
+			"cross-user leak: B saw A's streak; got %v", streaksB)
 	})
 
-	It("unauthenticated request to /awards/streaks is rejected before DB lookup", func() {
+	// gaka-d6x.handler critique: pin the exact contract, not a 4xx range.
+	// GET without header → apierr.MissingAuth() → 400.
+	It("unauthenticated GET /awards/streaks returns exactly 400 (MissingAuth)", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "awardsstreaks"))
 		e := hz.Router()
 
 		rec := getJSONG(e, "/api/v1/users/current/awards/streaks", "")
-		Expect(rec.Code).To(BeNumerically(">=", 400))
-		Expect(rec.Code).To(BeNumerically("<", 500))
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest),
+			"absent Authorization must yield exactly 400 (MissingAuth); got %d body=%s",
+			rec.Code, rec.Body.String())
+	})
+
+	// gaka-d6x.handler critique: cover the InvalidToken branch on
+	// /awards/streaks specifically. Every previous spec used a valid or
+	// empty token; a made-up token exercises the resolveUser → 403 path.
+	It("rejects unknown-token GET /awards/streaks with exactly 403 (InvalidToken)", func() {
+		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "awardsstreaks"))
+		e := hz.Router()
+
+		rec := getJSONG(e, "/api/v1/users/current/awards/streaks", "made-up-token-xyz")
+		Expect(rec).To(testutil.HaveStatus(http.StatusForbidden),
+			"unknown token must yield exactly 403 (InvalidToken); got %d body=%s",
+			rec.Code, rec.Body.String())
 	})
 })
 
@@ -336,6 +505,69 @@ var _ = Describe("PublicAwardsStreaks (gaka-mwp-streaks)", func() {
 
 		rec := getJSONG(e, "/api/public/profile/nope-not-real-slug-xyz/awards/streaks", "")
 		Expect(rec).To(testutil.HaveStatus(http.StatusNotFound))
+	})
+
+	// gaka-d6x.handler critique (security): the public streaks response
+	// MUST NOT leak the owner's username or any PII beyond the label ids.
+	// The current shape is a flat {labelId: streakCount} map; if a
+	// refactor ever added "owner" or "username" to the payload, that would
+	// be a privacy regression this test catches.
+	It("response body contains only label ids + counts — no owner/username/PII leaks", func() {
+		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "publicstreaks"))
+		e := awardsAuxRouter(hz)
+		user, token := hz.MintUser("pubstreak_nopii")
+		ensureLabels(hz, "pii-check-label")
+
+		slug := "pubslug-nopii-" + strings.ToLower(strings.ReplaceAll(user[len(user)-8:], ".", ""))
+		Expect(hz.DB.SetPublicProfile(context.Background(), user, true, slug)).To(Succeed())
+
+		r := doPostJSONG(e, "/api/v1/users/current/awards/log", token, map[string]any{
+			"items": []map[string]any{{"labelId": "pii-check-label", "periodType": "daily"}},
+		})
+		Expect(r).To(testutil.HaveStatus(http.StatusOK))
+
+		rec := getJSONG(e, "/api/public/profile/"+slug+"/awards/streaks", "")
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
+
+		body := rec.Body.String()
+		// The owner's username must not appear anywhere in the body.
+		Expect(body).NotTo(ContainSubstring(user),
+			"public streaks body leaked owner username %q; body=%s", user, body)
+		// Neither the string "username" nor "owner" should be a JSON key.
+		Expect(body).NotTo(ContainSubstring(`"username"`),
+			"public streaks body must not include a `username` field; body=%s", body)
+		Expect(body).NotTo(ContainSubstring(`"owner"`),
+			"public streaks body must not include an `owner` field; body=%s", body)
+	})
+
+	// gaka-d6x.handler critique: PublicAwardsStreaks has no test for the
+	// `enabled=false` disabled-profile branch, unlike PublicAwards (line
+	// 536-553). The current handler does NOT check enabled (unlike
+	// PublicAwards which does — see awards_eval.go:96-102); this spec
+	// documents that current-behavior gap so a future consistency fix
+	// (adding the enabled check) can flip the assertion and this test
+	// still names the invariant clearly. If it starts 404-ing that's
+	// probably an intentional fix, not a regression.
+	It("known gap: disabled profile currently 200s on /awards/streaks (unlike PublicAwards)", func() {
+		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "publicstreaks"))
+		e := awardsAuxRouter(hz)
+		user, _ := hz.MintUser("pubstreak_off")
+
+		slug := "off-slug-streak-" + strings.ToLower(strings.ReplaceAll(user[len(user)-8:], ".", ""))
+		// Enable + slug, then flip enabled=false (leaves slug intact).
+		Expect(hz.DB.SetPublicProfile(context.Background(), user, true, slug)).To(Succeed())
+		Expect(hz.DB.SetPublicProfile(context.Background(), user, false, "")).To(Succeed())
+
+		rec := getJSONG(e, "/api/public/profile/"+slug+"/awards/streaks", "")
+		// Current asymmetric behavior: streaks returns 200 for disabled
+		// profiles because LookupUsernameBySlug ignores enabled. Accept
+		// either 200 (current) or 404 (post-fix) — but log the current
+		// value so a regression from an intended 404 fix is visible.
+		Expect(rec.Code).To(Or(
+			Equal(http.StatusOK),
+			Equal(http.StatusNotFound),
+		), "disabled-profile streaks: got %d — expected 200 (current asymmetric behavior) or 404 (post-fix); body=%s",
+			rec.Code, rec.Body.String())
 	})
 })
 
@@ -422,13 +654,68 @@ var _ = Describe("AwardsLedger (gaka-mwp-streaks)", func() {
 		_ = userB
 	})
 
-	It("unauth /awards/ledger returns 4xx before DB touch (auth gate)", func() {
+	// gaka-d6x.handler critique: pin the exact contract. GET without
+	// header → apierr.MissingAuth() → 400 (never 401/404/405).
+	It("unauth /awards/ledger returns exactly 400 (MissingAuth) before DB touch", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "awardsledger"))
 		e := hz.Router()
 
 		rec := getJSONG(e, "/api/v1/users/current/awards/ledger", "")
-		Expect(rec.Code).To(BeNumerically(">=", 400))
-		Expect(rec.Code).To(BeNumerically("<", 500))
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest),
+			"absent Authorization must yield exactly 400 (MissingAuth); got %d body=%s",
+			rec.Code, rec.Body.String())
+	})
+
+	// gaka-d6x.handler critique: cover the InvalidToken (403) branch on
+	// this endpoint too — no test in the suite exercised /ledger with a
+	// made-up token.
+	It("rejects unknown-token GET /awards/ledger with exactly 403 (InvalidToken)", func() {
+		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "awardsledger"))
+		e := hz.Router()
+
+		rec := getJSONG(e, "/api/v1/users/current/awards/ledger", "made-up-token-xyz")
+		Expect(rec).To(testutil.HaveStatus(http.StatusForbidden),
+			"unknown token must yield exactly 403 (InvalidToken); got %d body=%s",
+			rec.Code, rec.Body.String())
+	})
+
+	// gaka-d6x.handler critique: ?label=<nonexistent> should return an
+	// empty rows array (not error). ListAwardLedger uses a parameterized
+	// query so SQL metacharacters are inert; this spec pins BOTH: no
+	// error path + no SQL injection oracle.
+	It("?label filter with unknown / SQL-metachar values returns 200 with empty rows (no error, no injection)", func() {
+		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "awardsledger"))
+		e := hz.Router()
+		_, tok := hz.MintUser("ledgerfilterbad")
+
+		cases := []struct {
+			name  string
+			label string
+		}{
+			{"nonexistent label", "does-not-exist-xyz"},
+			{"SQL wildcard %", "%"},
+			{"SQL LIKE _", "_"},
+			{"SQL quote injection", "x' OR '1'='1"},
+			{"SQL comment", "x-- DROP TABLE labels"},
+			{"UNION SELECT", "x' UNION SELECT username FROM users --"},
+		}
+		for _, tc := range cases {
+			// URL-escape (rough, sufficient for these ASCII payloads).
+			esc := strings.ReplaceAll(tc.label, " ", "%20")
+			esc = strings.ReplaceAll(esc, "'", "%27")
+			esc = strings.ReplaceAll(esc, "%", "%25")
+			rec := getJSONG(e, "/api/v1/users/current/awards/ledger?label="+esc, tok)
+			Expect(rec).To(testutil.HaveStatus(http.StatusOK),
+				"case %q must 200 (parameterized query treats input as literal); got %d body=%s",
+				tc.name, rec.Code, rec.Body.String())
+			var body struct {
+				Rows []map[string]any `json:"rows"`
+			}
+			Expect(json.Unmarshal(rec.Body.Bytes(), &body)).To(Succeed())
+			Expect(body.Rows).To(BeEmpty(),
+				"case %q must return empty rows (no injection oracle, no rows for a made-up label); got %d rows",
+				tc.name, len(body.Rows))
+		}
 	})
 })
 
@@ -523,13 +810,28 @@ var _ = Describe("awardsStreaksFor tz fallback", func() {
 })
 
 var _ = Describe("OwnAwards auth gate (gaka-hc6.3)", func() {
-	It("unauthenticated GET /awards returns 4xx before touching the DB", func() {
+	// gaka-d6x.handler critique: pin exact code, not a 4xx range.
+	// A loose bound would silently accept 404 (route missing) which is a
+	// documentation smell — auth is silently bypassed on the actual route.
+	It("unauthenticated GET /awards returns exactly 400 (MissingAuth) before touching the DB", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "ownawardsauth"))
 		e := hz.Router()
 
 		rec := getJSONG(e, "/api/v1/users/current/awards", "")
-		Expect(rec.Code).To(BeNumerically(">=", 400))
-		Expect(rec.Code).To(BeNumerically("<", 500))
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest),
+			"absent Authorization must yield exactly 400 (MissingAuth); got %d body=%s",
+			rec.Code, rec.Body.String())
+	})
+
+	// Companion InvalidToken spec — pin the 403 branch too.
+	It("unknown-token GET /awards returns exactly 403 (InvalidToken)", func() {
+		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "ownawardsauth"))
+		e := hz.Router()
+
+		rec := getJSONG(e, "/api/v1/users/current/awards", "made-up-token-xyz")
+		Expect(rec).To(testutil.HaveStatus(http.StatusForbidden),
+			"unknown token must yield exactly 403 (InvalidToken); got %d body=%s",
+			rec.Code, rec.Body.String())
 	})
 })
 

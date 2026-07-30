@@ -27,6 +27,17 @@ import (
 	"github.com/labstack/echo/v5"
 )
 
+// mapKeys returns the sorted key list of a JSON-decoded map — used in
+// diagnostic messages so a failing shape assertion names WHICH keys the
+// endpoint actually returned instead of a bare mismatch.
+func mapKeys(m map[string]any) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
+
 // bigbetsRouter mounts every bigbets endpoint that hz.Router() omits.
 // hz.Router() DOES register Momentum — but not Punchcard/Sessions/
 // AIActivity/HealthActivity/WorkoutList. Using a fresh echo.New() here
@@ -164,13 +175,49 @@ var _ = Describe("Punchcard (gaka-dg7)", func() {
 		_ = userB
 	})
 
-	It("unauth /stats/punchcard returns 4xx", func() {
+	// gaka-d6x.handler critique: pin exact code, not a 4xx range.
+	It("unauth /stats/punchcard returns exactly 400 (MissingAuth)", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "bigbets"))
 		e := bigbetsRouter(hz)
 
 		rec := getJSONG(e, "/api/v1/users/current/stats/punchcard", "")
-		Expect(rec.Code).To(BeNumerically(">=", 400))
-		Expect(rec.Code).To(BeNumerically("<", 500))
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest),
+			"absent Authorization must yield exactly 400 (MissingAuth); got %d body=%s",
+			rec.Code, rec.Body.String())
+	})
+
+	// gaka-d6x.handler critique: /current/ endpoints derive owner
+	// ENTIRELY from the token, so an attacker cannot supply a path prefix
+	// to spoof identity. Prove that: B (token) sees empty data even
+	// though A has seed data — B's token owns B, regardless of path.
+	// Complements the standard cross-user test: this one exercises the
+	// "stolen-token-shape" attack surface (attacker holding B's token
+	// cannot ever address A's rows via /current/).
+	It("stolen-token invariant: /current/ derives owner from token, not path or query", func() {
+		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "bigbets"))
+		e := bigbetsRouter(hz)
+		userA, _ := hz.MintUser("stolena")
+		_, tokB := hz.MintUser("stolenb")
+
+		seedRecentCodingBigbets(hz, userA, "stolenproj")
+
+		start := time.Now().UTC().Add(-14 * 24 * time.Hour).Format(time.RFC3339)
+		end := time.Now().UTC().Format(time.RFC3339)
+		url := fmt.Sprintf("/api/v1/users/current/stats/punchcard?start=%s&end=%s", start, end)
+
+		// B uses ITS OWN valid token — the /current/ prefix binds to B,
+		// not to any A-shaped hint. B must see zero seconds even though A
+		// has heavily-seeded data in the same DB.
+		rec := getJSONG(e, url, tokB)
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
+		var payload struct {
+			TotalSeconds int64 `json:"totalSeconds"`
+		}
+		Expect(json.Unmarshal(rec.Body.Bytes(), &payload)).To(Succeed())
+		Expect(payload.TotalSeconds).To(BeZero(),
+			"stolen-token invariant broken: B's token addressed A's data on /current/; got %d seconds",
+			payload.TotalSeconds)
+		_ = userA
 	})
 })
 
@@ -201,8 +248,15 @@ var _ = Describe("Sessions (gaka-dg7)", func() {
 		Expect(payloadA.Summary.Count).To(BeNumerically(">=", 1),
 			"seeded 3 daily blocks must yield >=1 session; got %d", payloadA.Summary.Count)
 		Expect(payloadA.Summary.TotalSeconds).To(BeNumerically(">", 0))
-		Expect(len(payloadA.Daily)).To(BeNumerically(">=", 3),
-			"14-day range must gap-fill >=14 daily entries; got %d", len(payloadA.Daily))
+		// gaka-d6x.handler critique: the previous assertion was `>=3` with a
+		// message claiming to pin the 14-day gap-fill invariant — a tautology
+		// where the check was 10x looser than the stated invariant. genDates
+		// on [now-14d, now] emits 15 midnight-UTC days (both endpoints
+		// truncated to day, inclusive loop). Pin the EXACT count so a bug
+		// that shrinks or expands the gap-fill by even one day trips here.
+		Expect(len(payloadA.Daily)).To(Equal(15),
+			"14-day range must gap-fill exactly 15 daily entries "+
+				"(genDates on truncateDay(t0)..truncateDay(t1) inclusive); got %d", len(payloadA.Daily))
 		Expect(payloadA.Histogram).NotTo(BeEmpty(),
 			"histogram is always populated (fixed bucket count from ToSessionsPayload)")
 
@@ -242,19 +296,52 @@ var _ = Describe("AIActivity (gaka-dg7)", func() {
 			"seeded AI heartbeat must flip hasData=true; body=%s", rec.Body.String())
 	})
 
-	It("returns hasData=false for a caller with no AI heartbeats", func() {
+	// gaka-d6x.handler critique: the previous spec only asserted
+	// hasData=false — a handler that ALWAYS returned false would pass.
+	// This version pins the FULL empty-shape contract: hasData=false AND
+	// the payload envelope is a well-formed JSON object with the expected
+	// zero-value fields, AND the Content-Type is application/json. That
+	// is a non-tautological guard: it distinguishes "empty, correctly
+	// shaped" from "always empty because the handler bailed early".
+	It("returns hasData=false with a well-formed empty envelope + JSON Content-Type", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "bigbets"))
 		e := bigbetsRouter(hz)
 		_, tok := hz.MintUser("aiempty")
 
 		rec := getJSONG(e, "/api/v1/users/current/stats/ai", tok)
 		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
-		var payload struct {
-			HasData bool `json:"hasData"`
-		}
-		Expect(json.Unmarshal(rec.Body.Bytes(), &payload)).To(Succeed())
-		Expect(payload.HasData).To(BeFalse(),
+		Expect(rec.Header().Get("Content-Type")).To(HavePrefix("application/json"),
+			"Content-Type must be JSON so the FE decoder path is exercised; got %q",
+			rec.Header().Get("Content-Type"))
+
+		// Decode into a permissive map so we can inspect ALL top-level keys
+		// (a handler that returned literally `{"hasData":false}` would pass
+		// a struct-decode but flunk this shape check).
+		var raw map[string]any
+		Expect(json.Unmarshal(rec.Body.Bytes(), &raw)).To(Succeed())
+		Expect(raw).To(HaveKey("hasData"),
+			"payload must include hasData key; got keys=%v", mapKeys(raw))
+		Expect(raw["hasData"]).To(BeFalse(),
 			"no AI heartbeats must yield hasData=false — FE skip-render depends on this")
+
+		// The envelope has stable side-fields even when hasData=false —
+		// FE renders skeletons against them, so an empty response that
+		// dropped `days` or the per-total counters would break the
+		// empty-state UI.
+		Expect(raw).To(HaveKey("days"), "empty envelope must still carry `days`; keys=%v", mapKeys(raw))
+		Expect(raw).To(HaveKey("totalInputTokens"),
+			"empty envelope must still carry `totalInputTokens`; keys=%v", mapKeys(raw))
+		Expect(raw).To(HaveKey("totalSessions"),
+			"empty envelope must still carry `totalSessions`; keys=%v", mapKeys(raw))
+		if days, ok := raw["days"].([]any); ok {
+			Expect(days).To(BeEmpty(), "days must be an empty array on hasData=false")
+		}
+		// Zero-value totals (empty state) — proves the handler didn't just
+		// early-return a `{"hasData":false}` shell.
+		Expect(raw["totalInputTokens"]).To(BeNumerically("==", 0),
+			"empty state: totalInputTokens must be 0; got %v", raw["totalInputTokens"])
+		Expect(raw["totalSessions"]).To(BeNumerically("==", 0),
+			"empty state: totalSessions must be 0; got %v", raw["totalSessions"])
 	})
 
 	It("cross-user isolation: A's AI heartbeat is invisible to B", func() {
@@ -435,12 +522,59 @@ var _ = Describe("Momentum (gaka-dg7)", func() {
 		_ = userA
 	})
 
-	It("unauth /stats/momentum returns 4xx", func() {
+	// gaka-d6x.handler critique: pin the exact contract (400 MissingAuth).
+	It("unauth /stats/momentum returns exactly 400 (MissingAuth)", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "bigbets"))
 		e := bigbetsRouter(hz)
 
 		rec := getJSONG(e, "/api/v1/users/current/stats/momentum", "")
-		Expect(rec.Code).To(BeNumerically(">=", 400))
-		Expect(rec.Code).To(BeNumerically("<", 500))
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest),
+			"absent Authorization must yield exactly 400 (MissingAuth); got %d body=%s",
+			rec.Code, rec.Body.String())
+	})
+
+	// gaka-d6x.handler critique: only ?top=0 and ?top=2 paths were
+	// covered. Pin the ?top-upper-bound behavior: the handler applies
+	// only `if top < 1 { top = 8 }` and ToMomentumPayload slices
+	// `order[:top]` which is a no-op when top > len(order). So a huge
+	// ?top just passes through — the number of returned projects is
+	// bounded by the seeded set, not by any server-side clamp. This
+	// documents the current uncapped contract so if a cap is added
+	// later (e.g., DB layer imposes a max-N) this test flags it.
+	It("?top upper bound: massive ?top does not error and is bounded by seeded project count", func() {
+		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "bigbets"))
+		e := bigbetsRouter(hz)
+		userA, tokA := hz.MintUser("momtopcap")
+
+		base := time.Now().UTC().Add(-3 * 24 * time.Hour)
+		base = time.Date(base.Year(), base.Month(), base.Day(), 10, 0, 0, 0, time.UTC)
+		sd := hz.Seeder(userA).Projects("cap-p1", "cap-p2")
+		for i, p := range []string{"cap-p1", "cap-p2"} {
+			sd.Block(testutil.HB{
+				Project:  p,
+				Language: "go",
+				Editor:   "vim",
+				Platform: "linux",
+				Category: "coding",
+				Entity:   fmt.Sprintf("cap%d.go", i),
+			}, base.Add(time.Duration(i)*time.Hour), 30, 900)
+		}
+		Expect(hz.DB.RefreshRollup(context.Background(), userA, base.Add(-time.Hour))).To(Succeed())
+
+		start := time.Now().UTC().Add(-30 * 24 * time.Hour).Format(time.RFC3339)
+		end := time.Now().UTC().Format(time.RFC3339)
+		url := fmt.Sprintf("/api/v1/users/current/stats/momentum?start=%s&end=%s&top=100000", start, end)
+
+		rec := getJSONG(e, url, tokA)
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK),
+			"massive ?top must not error; got %d body=%s", rec.Code, rec.Body.String())
+		var payload struct {
+			Projects []map[string]any `json:"projects"`
+		}
+		Expect(json.Unmarshal(rec.Body.Bytes(), &payload)).To(Succeed())
+		// Bounded by seeded project count, not by any server cap.
+		Expect(len(payload.Projects)).To(BeNumerically("<=", 2),
+			"?top=100000 with 2 seeded projects must return at most 2 (bounded by data, not cap); got %d",
+			len(payload.Projects))
 	})
 })
