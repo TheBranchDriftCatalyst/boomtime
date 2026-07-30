@@ -149,6 +149,26 @@ func segmentStat(byDate [][]db.StatRow, field func(db.StatRow) string) []model.R
 	return segment(byDate, field, statContrib)
 }
 
+// segmentStatWhere is segmentStat restricted to rows matching keep. Used by
+// per-axis pies (Languages, Editors, ...) to filter out rows whose axis was
+// NULL on the source heartbeat (gaka-6ci) — those shouldn't appear in a chart
+// titled "Languages" or "Editors" because they aren't a language / editor.
+// Days that go empty after filtering are preserved as empty slices so the
+// per-day arrays remain aligned across all segments.
+func segmentStatWhere(byDate [][]db.StatRow, keep func(db.StatRow) bool, field func(db.StatRow) string) []model.ResourceStats {
+	filtered := make([][]db.StatRow, len(byDate))
+	for i, day := range byDate {
+		var kept []db.StatRow
+		for _, r := range day {
+			if keep(r) {
+				kept = append(kept, r)
+			}
+		}
+		filtered[i] = kept
+	}
+	return segmentStat(filtered, field)
+}
+
 func segmentProj(byDate [][]db.ProjectStatRow, field func(db.ProjectStatRow) string) []model.ResourceStats {
 	return segment(byDate, field, projContrib)
 }

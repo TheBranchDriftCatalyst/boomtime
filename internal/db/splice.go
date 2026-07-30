@@ -102,7 +102,9 @@ func scanStatRows(rows pgx.Rows) ([]StatRow, error) {
 		var r StatRow
 		var pct, dpct pgtype.Numeric
 		if err := rows.Scan(&r.Day, &r.Project, &r.Language, &r.Editor, &r.Branch,
-			&r.Platform, &r.Machine, &r.Entity, &r.TotalSeconds, &pct, &dpct); err != nil {
+			&r.Platform, &r.Machine, &r.Entity, &r.TotalSeconds, &pct, &dpct,
+			&r.ProjectMissing, &r.LanguageMissing, &r.EditorMissing,
+			&r.BranchMissing, &r.PlatformMissing, &r.MachineMissing); err != nil {
 			return nil, err
 		}
 		r.Pct = numToFloat(pct)

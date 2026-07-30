@@ -257,8 +257,22 @@ func refreshRollup(ctx context.Context, q execer, sender string, since time.Time
 	// $3` (project to local wall clock) then `::date` (snap to local day).
 	// The WHERE lower bound is symmetric: local midnight -> timestamptz ->
 	// naked UTC to compare against time_sent.
+	// Insert now writes the <axis>_missing sentinel columns alongside the
+	// COALESCE'd axis values (gaka-6ci). The flag is true iff EVERY row in
+	// the group had NULL on that axis — bool_and works because within a
+	// group, either they're all NULL (heartbeats from a null-language
+	// browser session) or they all share the same literal value (which
+	// obviously isn't NULL). Mixed groups (a literal 'Other' project
+	// alongside a NULL project) are impossible under the GROUP BY because
+	// COALESCE('Other', 'Other') buckets them the same — bool_and(IS NULL)
+	// then correctly reads FALSE (some literal 'Other'), so the row
+	// survives per-axis pie discriminators.
 	_, err = q.Exec(ctx, `
-INSERT INTO hb_rollup_daily (sender, day, project, language, editor, platform, machine, category, plugin, branch, total_seconds)
+INSERT INTO hb_rollup_daily (sender, day,
+    project, language, editor, platform, machine, category, plugin, branch,
+    total_seconds,
+    project_missing, language_missing, editor_missing, platform_missing,
+    machine_missing, category_missing, plugin_missing, branch_missing)
 SELECT sender, (((time_sent AT TIME ZONE 'UTC') AT TIME ZONE $3)::date),
     coalesce(project, 'Other'), coalesce(language, 'Other'), coalesce(editor, 'Other'),
     coalesce(platform, 'Other'), coalesce(machine, 'Other'),
@@ -267,7 +281,10 @@ SELECT sender, (((time_sent AT TIME ZONE 'UTC') AT TIME ZONE $3)::date),
         WHEN workout_duration_s IS NOT NULL THEN workout_duration_s
         WHEN gap_seconds <= 900 THEN gap_seconds
         ELSE 0
-    END)
+    END),
+    bool_and(project IS NULL), bool_and(language IS NULL), bool_and(editor IS NULL),
+    bool_and(platform IS NULL), bool_and(machine IS NULL),
+    bool_and(category IS NULL), bool_and(plugin IS NULL), bool_and(branch IS NULL)
 FROM heartbeats
 WHERE sender = $1
   AND time_sent >= ((($2::timestamptz AT TIME ZONE $3)::date) AT TIME ZONE $3 AT TIME ZONE 'UTC')

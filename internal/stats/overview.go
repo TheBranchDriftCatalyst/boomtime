@@ -28,11 +28,19 @@ func ToStatsPayload(t0, t1 time.Time, xs []db.StatRow, categoryRows []db.Categor
 	}
 	dailyTotal := dailyTotals(byDate, func(r db.StatRow) int64 { return r.TotalSeconds })
 
-	projects := segmentStat(byDate, func(r db.StatRow) string { return r.Project })
-	editors := segmentStat(byDate, func(r db.StatRow) string { return r.Editor })
-	languages := segmentStat(byDate, func(r db.StatRow) string { return r.Language })
-	platforms := segmentStat(byDate, func(r db.StatRow) string { return r.Platform })
-	machines := segmentStat(byDate, func(r db.StatRow) string { return r.Machine })
+	// gaka-6ci: per-axis pies filter out rows whose axis was NULL on the
+	// source heartbeat (browser tabs with no file open, AI console tabs,
+	// plugin-less clients). Without this filter, all those null-axis rows
+	// collapse into a bucket named 'Other' (from ingest's COALESCE fallback)
+	// that renders as if it were capWithOther's synthetic aggregation cap —
+	// but it's actually just "time spent doing something with no <axis>."
+	// A Languages pie should only show real languages; the total-time card
+	// (allSecs above) still counts everything.
+	projects := segmentStatWhere(byDate, func(r db.StatRow) bool { return !r.ProjectMissing }, func(r db.StatRow) string { return r.Project })
+	editors := segmentStatWhere(byDate, func(r db.StatRow) bool { return !r.EditorMissing }, func(r db.StatRow) string { return r.Editor })
+	languages := segmentStatWhere(byDate, func(r db.StatRow) bool { return !r.LanguageMissing }, func(r db.StatRow) string { return r.Language })
+	platforms := segmentStatWhere(byDate, func(r db.StatRow) bool { return !r.PlatformMissing }, func(r db.StatRow) string { return r.Platform })
+	machines := segmentStatWhere(byDate, func(r db.StatRow) bool { return !r.MachineMissing }, func(r db.StatRow) string { return r.Machine })
 
 	// Categories are fetched separately (the StatRow set / rollup carries no
 	// category column) and aligned to the SAME day series as DailyTotal

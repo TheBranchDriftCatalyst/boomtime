@@ -3,18 +3,31 @@ package db
 import "time"
 
 // StatRow mirrors Types.hs StatRow (columns from get_user_activity).
+//
+// The *Missing flags are TRUE when every heartbeat contributing to this
+// row had NULL on that axis (browser sessions with no file open, AI
+// console tabs, plugin-less clients). Callers building per-axis pies
+// (languages, projects, editors, ...) filter WHERE NOT <axis>Missing so
+// null-axis time doesn't get collapsed into a synthetic 'Other' bucket
+// that reads like the capWithOther aggregation cap. See gaka-6ci.
 type StatRow struct {
-	Day          time.Time
-	Project      string
-	Language     string
-	Editor       string
-	Branch       string
-	Platform     string
-	Machine      string
-	Entity       string
-	TotalSeconds int64
-	Pct          float64
-	DailyPct     float64
+	Day             time.Time
+	Project         string
+	Language        string
+	Editor          string
+	Branch          string
+	Platform        string
+	Machine         string
+	Entity          string
+	TotalSeconds    int64
+	Pct             float64
+	DailyPct        float64
+	ProjectMissing  bool
+	LanguageMissing bool
+	EditorMissing   bool
+	BranchMissing   bool
+	PlatformMissing bool
+	MachineMissing  bool
 }
 
 // ProjectStatRow mirrors Types.hs ProjectStatRow (get_projects_stats).

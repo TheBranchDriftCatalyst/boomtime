@@ -16,7 +16,18 @@ WITH stats AS (
         platform,
         machine,
         'Other'::text AS entity,
-        CAST(sum(total_seconds) AS int8) AS total_seconds
+        CAST(sum(total_seconds) AS int8) AS total_seconds,
+        -- gaka-6ci: propagate the axis-missing flags. bool_and here is
+        -- collapsing the same-axis-value rows down to the 5-axis output
+        -- grain (get_user_activity_rollup drops branch/entity); the flag
+        -- for a row is TRUE only if every underlying rollup row had it
+        -- true. Branch/entity flags aren't projected (they're placeholders
+        -- in this output shape).
+        bool_and(project_missing) AS project_missing,
+        bool_and(language_missing) AS language_missing,
+        bool_and(editor_missing) AS editor_missing,
+        bool_and(platform_missing) AS platform_missing,
+        bool_and(machine_missing) AS machine_missing
     FROM
         hb_rollup_daily
     WHERE
@@ -29,8 +40,10 @@ WITH stats AS (
         day
 )
 SELECT
-    *,
+    day, project, language, editor, branch, platform, machine, entity, total_seconds,
     coalesce(CAST(1.0 * total_seconds / nullif (sum(total_seconds) OVER (), 0) AS numeric(13, 12)), 0) AS pct,
-    coalesce(CAST(1.0 * total_seconds / nullif (sum(total_seconds) OVER (PARTITION BY day), 0) AS numeric(13, 12)), 0) AS daily_pct
+    coalesce(CAST(1.0 * total_seconds / nullif (sum(total_seconds) OVER (PARTITION BY day), 0) AS numeric(13, 12)), 0) AS daily_pct,
+    project_missing, language_missing, editor_missing,
+    FALSE AS branch_missing, platform_missing, machine_missing
 FROM
     stats

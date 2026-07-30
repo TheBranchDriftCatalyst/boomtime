@@ -313,7 +313,18 @@ regrouped AS (
         cpl.canonical AS platform,
         cm.canonical AS machine,
         cen.canonical AS entity,
-        CAST(SUM(base.total_seconds) AS int8) AS total_seconds
+        CAST(SUM(base.total_seconds) AS int8) AS total_seconds,
+        -- gaka-6ci: axis-missing flags survive the remap. bool_and means
+        -- "if ANY contributing row had a real (non-null) axis value, the
+        -- regrouped row is NOT missing" — so a rename that merges a
+        -- browser session (project NULL) into a real project only marks
+        -- missing when EVERY contributor was null.
+        bool_and(base.project_missing) AS project_missing,
+        bool_and(base.language_missing) AS language_missing,
+        bool_and(base.editor_missing) AS editor_missing,
+        bool_and(base.branch_missing) AS branch_missing,
+        bool_and(base.platform_missing) AS platform_missing,
+        bool_and(base.machine_missing) AS machine_missing
     FROM base
     JOIN cproj cp ON cp.lc = lower(%s)
     JOIN clang cl ON cl.lc = lower(%s)
@@ -327,7 +338,9 @@ regrouped AS (
 SELECT
     day, project, language, editor, branch, platform, machine, entity, total_seconds,
     coalesce(CAST(1.0 * total_seconds / nullif(sum(total_seconds) OVER (), 0) AS numeric(13, 12)), 0) AS pct,
-    coalesce(CAST(1.0 * total_seconds / nullif(sum(total_seconds) OVER (PARTITION BY day), 0) AS numeric(13, 12)), 0) AS daily_pct
+    coalesce(CAST(1.0 * total_seconds / nullif(sum(total_seconds) OVER (PARTITION BY day), 0) AS numeric(13, 12)), 0) AS daily_pct,
+    project_missing, language_missing, editor_missing,
+    branch_missing, platform_missing, machine_missing
 FROM regrouped`,
 		inner,
 		canonicalPickCTE("cproj", "base", exprs[0]),

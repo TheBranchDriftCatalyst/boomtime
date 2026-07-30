@@ -17,7 +17,16 @@ WITH stats AS (
         coalesce(platform, 'Other') AS platform,
         coalesce(machine, 'Other') AS machine,
         entity,
-        CAST(sum(CASE WHEN gap_seconds <= ($4 * 60) THEN gap_seconds ELSE 0 END) AS int8) AS total_seconds
+        CAST(sum(CASE WHEN gap_seconds <= ($4 * 60) THEN gap_seconds ELSE 0 END) AS int8) AS total_seconds,
+        -- gaka-6ci: NULL-axis discriminator. Well-defined here because the
+        -- GROUP BY uses raw columns (not COALESCE'd), so every row in a
+        -- group shares the same NULL-ness on each axis.
+        (project IS NULL) AS project_missing,
+        (language IS NULL) AS language_missing,
+        (editor IS NULL) AS editor_missing,
+        (branch IS NULL) AS branch_missing,
+        (platform IS NULL) AS platform_missing,
+        (machine IS NULL) AS machine_missing
     FROM
         heartbeats
     WHERE
@@ -37,8 +46,10 @@ WITH stats AS (
         day
 )
 SELECT
-    *,
+    day, project, language, editor, branch, platform, machine, entity, total_seconds,
     coalesce(CAST(1.0 * total_seconds / nullif (sum(total_seconds) OVER (), 0) AS numeric(13, 12)), 0) AS pct,
-    coalesce(CAST(1.0 * total_seconds / nullif (sum(total_seconds) OVER (PARTITION BY day), 0) AS numeric(13, 12)), 0) AS daily_pct
+    coalesce(CAST(1.0 * total_seconds / nullif (sum(total_seconds) OVER (PARTITION BY day), 0) AS numeric(13, 12)), 0) AS daily_pct,
+    project_missing, language_missing, editor_missing,
+    branch_missing, platform_missing, machine_missing
 FROM
     stats
