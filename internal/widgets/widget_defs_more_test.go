@@ -18,7 +18,7 @@
 //   - "list returns only the caller's defs": the ListWidgetDefs endpoint
 //     is on the /users/current/* namespace; a cross-user leak would expose
 //     saved widget compositions (title + panels) across accounts.
-package handler_test
+package widgets_test
 
 import (
 	"context"

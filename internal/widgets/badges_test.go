@@ -5,7 +5,7 @@
 //	TestApplyBadgeCuration_VisibleProject     → applyBadgeCuration > "visible project passes through untouched"
 //	TestApplyBadgeCuration_NoRules            → applyBadgeCuration > "empty/nil rules → passthrough"
 //	TestApplyBadgeCuration_OtherAxesIgnored   → applyBadgeCuration > "only the project axis matters"
-package handler
+package widgets
 
 import (
 	. "github.com/onsi/ginkgo/v2"

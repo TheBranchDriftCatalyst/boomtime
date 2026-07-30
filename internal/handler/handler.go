@@ -5,6 +5,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -12,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
@@ -25,6 +28,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/backfilljobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/imagejobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/spaces"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/widgets"
 	labelimages "github.com/TheBranchDriftCatalyst/boomtime/internal/worker/labelimages"
 	"github.com/labstack/echo/v5"
 )
@@ -61,9 +65,10 @@ type Handler struct {
 	// deps the domain actually reads (a subset of the god-type). The
 	// god-type shrinks one domain at a time until phase 8 leaves it as
 	// a pure composition facade.
-	Meta   *meta.Handler   // phase 1
-	Spaces *spaces.Handler // phase 2a
-	Goals  *goals.Handler  // phase 2b
+	Meta    *meta.Handler    // phase 1
+	Spaces  *spaces.Handler  // phase 2a
+	Goals   *goals.Handler   // phase 2b
+	Widgets *widgets.Handler // phase 3
 }
 
 // New constructs a Handler. logHub streams server-process slog records to the
@@ -98,7 +103,8 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *impor
 			Logger: logger,
 			Cache:  sharedCache,
 		},
-		Goals: &goals.Handler{DB: database, Logger: logger},
+		Goals:   &goals.Handler{DB: database, Logger: logger},
+		Widgets: widgets.New(database, cfg, logger, sharedCache),
 	}
 }
 
@@ -422,4 +428,16 @@ func (h *Handler) loadSpace(ctx context.Context, spaceParam string) (db.MemberSe
 		return db.MemberSets{}, false, err
 	}
 	return ms, true, nil
+}
+
+// isUniqueViolation reports whether err is a Postgres unique-constraint
+// violation (SQLSTATE 23505). Used by goals CRUD to translate the (owner,
+// name) primary-key conflict into a friendly 409/400 instead of a 500. A
+// mirror of the same helper in internal/widgets/widget_defs.go — both were
+// originally one file-local helper in the god package; the widgets extract
+// (gaka-8tn phase 3) split them by ownership rather than DRYing to a shared
+// package, because the caller count is 2 and the impl is 3 lines.
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }

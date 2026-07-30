@@ -26,7 +26,7 @@
 //	500 body contains a distinctive marker ("boom"); the client response
 //	MUST NOT echo it. Companion to the LLM 502-no-leak assertion the
 //	critique called out as pinned-in-user_avatar but missing here.
-package handler_test
+package widgets_test
 
 import (
 	"context"

@@ -9,7 +9,7 @@
 //	  → RenderCustomWidget scope gate > "unknown def-id → 404; valid def + unrelated hide → 200"
 //	TestRenderCustomWidget_ScrubberFiltersHiddenLangInPayload
 //	  → RenderCustomWidget scrubber > "top-langs: hidden language absent from bar rows (>Label< tighter scan)"
-package handler_test
+package widgets_test
 
 import (
 	"encoding/json"

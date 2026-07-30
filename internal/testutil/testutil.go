@@ -214,11 +214,12 @@ func (hz *Harness) Router() *echo.Echo {
 	e.GET("/api/v1/users/current/files", h.ActiveFiles)
 	e.GET("/api/v1/users/current/projects/:project", h.ProjectStats)
 	e.GET("/api/v1/projects", h.ProjectList)
-	// embeddable widgets (auth'd link CRUD + public SVG)
-	e.GET("/api/v1/users/current/widgets/link", h.WidgetLink)
-	e.GET("/api/v1/users/current/widgets/links", h.WidgetLinkList)
-	e.POST("/api/v1/users/current/widgets/link/:id/roll", h.WidgetLinkRoll)
-	e.GET("/widget/svg/:uuid/:kind", h.WidgetSvg)
+	// embeddable widgets (auth'd link CRUD + public SVG) — gaka-8tn phase 3:
+	// domain lives at internal/widgets; test harness re-points to h.Widgets.X.
+	e.GET("/api/v1/users/current/widgets/link", h.Widgets.WidgetLink)
+	e.GET("/api/v1/users/current/widgets/links", h.Widgets.WidgetLinkList)
+	e.POST("/api/v1/users/current/widgets/link/:id/roll", h.Widgets.WidgetLinkRoll)
+	e.GET("/widget/svg/:uuid/:kind", h.Widgets.WidgetSvg)
 	// gaka-wpb: goals CRUD + toggle + progress (per-goal + batched).
 	// /goals/progress registered BEFORE /goals/:id to win path matching
 	// (Echo picks the first registered match for overlapping patterns).
@@ -270,12 +271,13 @@ func (hz *Harness) Router() *echo.Echo {
 	// Every one is now a single route line here.
 	e.POST("/api/v1/users/current/password", h.ChangePassword)                        // was routerWithChangePassword
 	e.GET("/api/v1/labels/:id/image", h.LabelImage)                                   // was routerWithLabelImages
-	e.GET("/api/v1/users/current/widget-defs", h.ListWidgetDefs)                      // gaka-d6x.handler: added for widget_defs CRUD coverage
-	e.POST("/api/v1/users/current/widget-defs", h.CreateWidgetDef)                    // was routerWithWidgetDefs
-	e.PATCH("/api/v1/users/current/widget-defs/:name", h.UpdateWidgetDef)             // gaka-d6x.handler
-	e.DELETE("/api/v1/users/current/widget-defs/:name", h.DeleteWidgetDef)            // gaka-d6x.handler
-	e.GET("/widget/svg/:uuid/named", h.WidgetDefSvg)                                  // was routerWithWidgetDefs
-	e.GET("/api/v1/logs", h.Meta.ServerLogs)                                          // was routerWithLogs — gaka-8tn phase 1: meta domain
+	// gaka-8tn phase 3: widget-def CRUD extracted to internal/widgets.
+	e.GET("/api/v1/users/current/widget-defs", h.Widgets.ListWidgetDefs)
+	e.POST("/api/v1/users/current/widget-defs", h.Widgets.CreateWidgetDef)
+	e.PATCH("/api/v1/users/current/widget-defs/:name", h.Widgets.UpdateWidgetDef)
+	e.DELETE("/api/v1/users/current/widget-defs/:name", h.Widgets.DeleteWidgetDef)
+	e.GET("/widget/svg/:uuid/named", h.Widgets.WidgetDefSvg)
+	e.GET("/api/v1/logs", h.Meta.ServerLogs)                                          // gaka-8tn phase 1: meta domain
 	e.GET("/api/v1/users/current/timezone", h.GetTimezone)                            // was routerWithTimezone
 	e.PATCH("/api/v1/users/current/timezone", h.UpdateTimezone)                       // was routerWithTimezone
 	e.GET("/api/v1/users/current/profile", h.GetPublicProfile)                        // was routerWithPublicProfile
@@ -315,8 +317,9 @@ func (hz *Harness) Router() *echo.Echo {
 	e.GET("/api/v1/users/current/statusbar/today", h.StatusbarToday)
 	e.GET("/api/v1/users/current/derived/status", h.DerivedStatus)
 	e.POST("/api/v1/users/current/derived/resync", h.DerivedResync)
-	e.GET("/badge/link/:project", h.BadgeLink)
-	e.GET("/badge/svg/:svg", h.BadgeSvg)
+	// gaka-8tn phase 3: badges extracted to internal/widgets.
+	e.GET("/badge/link/:project", h.Widgets.BadgeLink)
+	e.GET("/badge/svg/:svg", h.Widgets.BadgeSvg)
 	e.GET("/api/v1/leaderboards", h.Leaderboards)
 	e.GET("/api/v1/commits/:project/report", h.Commits)
 	// Cleanup: also clean up the goals table for the test's sender.

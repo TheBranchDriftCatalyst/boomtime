@@ -1,8 +1,8 @@
 // widget_defs.go: named/saved custom widget compositions (gaka-3nu). Sibling
-// to widgets.go (widget_links). Ownership is per-user; the public renderer
+// to handler.go (widget_links). Ownership is per-user; the public renderer
 // resolves the def's owner and applies the owner's curation the same way the
 // widget_link renderer does.
-package handler
+package widgets
 
 import (
 	"encoding/json"

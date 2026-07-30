@@ -5,7 +5,7 @@
 //	TestIsWidgetScopeProjectHidden_VisibleProject    → isWidgetScopeProjectHidden > "visible project passes through"
 //	TestIsWidgetScopeProjectHidden_NoRules           → isWidgetScopeProjectHidden > "empty/nil rules → false"
 //	TestIsWidgetScopeProjectHidden_OtherAxesIgnored  → isWidgetScopeProjectHidden > "project-scope keys off project axis only"
-package handler
+package widgets
 
 import (
 	. "github.com/onsi/ginkgo/v2"

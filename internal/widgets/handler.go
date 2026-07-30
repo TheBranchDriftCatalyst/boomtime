@@ -1,8 +1,8 @@
-// widgets.go: the embeddable-widget endpoints (gaka-hsj). Auth'd link CRUD
+// handler.go: the embeddable-widget endpoints (gaka-hsj). Auth'd link CRUD
 // (mint/list/delete) plus the PUBLIC SVG renderer. The public endpoint is the
 // privacy-sensitive one: it must apply the owner's hide/rename curation so
 // curated-away data never leaks into a README embed.
-package handler
+package widgets
 
 import (
 	"fmt"

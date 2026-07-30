@@ -19,6 +19,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/meta"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/spaces"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/widgets"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
 )
@@ -294,21 +295,10 @@ func registerAuthRoutes(e *echo.Echo, h *handler.Handler) {
 
 // registerMiscRoutes: badges, widgets, leaderboards, and commits.
 func registerMiscRoutes(e *echo.Echo, h *handler.Handler) {
-	// Badges
-	e.GET("/badge/link/:project", h.BadgeLink)
-	e.GET("/badge/svg/:svg", h.BadgeSvg)
-
-	// Embeddable widgets (gaka-hsj): auth'd link CRUD + PUBLIC SVG renderer.
-	e.GET("/api/v1/users/current/widgets/link", h.WidgetLink)
-	e.GET("/api/v1/users/current/widgets/links", h.WidgetLinkList)
-	e.POST("/api/v1/users/current/widgets/link/:id/roll", h.WidgetLinkRoll)
-
-	// Named/saved custom widget defs (gaka-3nu): auth'd CRUD + PUBLIC named
-	// renderer. Register the "named" public route BEFORE the generic
-	// :uuid/:kind route so it wins path matching. Ordering matters — Echo
-	// picks the first registered matcher for overlapping patterns.
-	e.GET("/widget/svg/:uuid/named", h.WidgetDefSvg)
-	e.GET("/widget/svg/:uuid/:kind", h.WidgetSvg)
+	// gaka-8tn phase 3: Badges + embeddable widgets + widget-def CRUD extracted
+	// into internal/widgets; the route strings + registration order are
+	// preserved verbatim inside widgets.Register.
+	widgets.Register(e, h.Widgets)
 
 	// Public profile — resolves slug -> user, then renders a scrubbed
 	// dashboard-shaped payload. UNAUTHENTICATED; the payload MUST go
@@ -369,10 +359,8 @@ func registerMiscRoutes(e *echo.Echo, h *handler.Handler) {
 	e.PATCH("/api/v1/admin/label-gen-config", h.AdminUpdateLabelGenConfig)
 	e.GET("/api/v1/admin/labels/seed.sql", h.AdminLabelsSeedSQL)
 
-	e.GET("/api/v1/users/current/widget-defs", h.ListWidgetDefs)
-	e.POST("/api/v1/users/current/widget-defs", h.CreateWidgetDef)
-	e.PATCH("/api/v1/users/current/widget-defs/:name", h.UpdateWidgetDef)
-	e.DELETE("/api/v1/users/current/widget-defs/:name", h.DeleteWidgetDef)
+	// gaka-8tn phase 3: widget-def CRUD lives in internal/widgets and is
+	// registered by widgets.Register at the top of this func.
 
 	// Leaderboards
 	e.GET("/api/v1/leaderboards", h.Leaderboards)
