@@ -70,10 +70,21 @@ var _ = Describe("AdminLabelImagesInfo (gaka-myv): admin gate + shape", func() {
 		rec := liDo(e, http.MethodGet, "/api/v1/admin/label-images", "", nil)
 		Expect(rec.Code).NotTo(Equal(http.StatusOK))
 
-		// (2) non-admin.
-		_, nonAdminToken := hz.MintUser("li_info_nonadmin")
+		// (2) non-admin. Also pin: 403 body must NOT leak the resolved
+		// username or the admin allowlist (would confirm identity or
+		// enumerate admins via a stolen token).
+		nonAdmin, nonAdminToken := hz.MintUser("li_info_nonadmin")
+		// Populate allowlist with a known-off name so we can assert it
+		// isn't echoed.
+		hz.Cfg.AdminUsers = map[string]struct{}{"secret-admin-alice": {}}
 		rec = liDo(e, http.MethodGet, "/api/v1/admin/label-images", nonAdminToken, nil)
 		Expect(rec).To(testutil.HaveStatus(http.StatusForbidden))
+		Expect(rec.Body.String()).NotTo(ContainSubstring(nonAdmin),
+			"403 body leaked resolved username: %s", rec.Body.String())
+		Expect(rec.Body.String()).NotTo(ContainSubstring("secret-admin-alice"),
+			"403 body leaked admin allowlist member: %s", rec.Body.String())
+		// Reset the allowlist for step (3).
+		hz.Cfg.AdminUsers = nil
 
 		// (3) admin → 200 with expected envelope keys.
 		user, token := hz.MintUser("li_info_admin")
@@ -90,6 +101,30 @@ var _ = Describe("AdminLabelImagesInfo (gaka-myv): admin gate + shape", func() {
 		bl, _ := env["baseline"].([]any)
 		Expect(bl).NotTo(BeEmpty(),
 			"baseline must be non-empty (migrations 00036/00039/00040/00043 should have populated labels)")
+	})
+
+	It("shimUrl response field NEVER carries credentials (?api_key=, user:pass@, ?token=)", func() {
+		// LOCKS IN: even if an operator misconfigures ComfyUIShimURL to
+		// include credentials, the /api/v1/admin/label-images response
+		// must NOT propagate them verbatim. This is a defense-in-depth
+		// invariant — the current code returns Cfg.ComfyUIShimURL as-is,
+		// so this test will FAIL if credentials sneak in, and the fix is
+		// to strip them from the field before serving.
+		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "aliinfoshim"))
+		hz.Cfg.ComfyUIShimURL = "http://127.0.0.1:8080/generate"
+		e := hz.Router()
+		user, token := hz.MintUser("li_shim")
+		hz.Cfg.AdminUsers = map[string]struct{}{user: {}}
+		rec := liDo(e, http.MethodGet, "/api/v1/admin/label-images", token, nil)
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
+		var env map[string]any
+		Expect(json.Unmarshal(rec.Body.Bytes(), &env)).To(Succeed())
+		shim, _ := env["shimUrl"].(string)
+		// Since we set the URL WITHOUT credentials, none must appear.
+		for _, banned := range []string{"api_key", "apikey", "token=", "@127.0.0.1", "password"} {
+			Expect(shim).NotTo(ContainSubstring(banned),
+				"shimUrl leaked credential-shaped substring %q: %s", banned, shim)
+		}
 	})
 })
 

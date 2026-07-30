@@ -202,10 +202,11 @@ var _ = Describe("AdminBackfillJobPatch (gaka-vh8): cross-owner is 404 (no oracl
 
 		// INVARIANT (cross-owner): B PATCHing A's job returns 404, NOT 403.
 		// A 403 would be an oracle for "some admin owns this id".
-		rec = bfDo(e, http.MethodPatch, "/api/v1/admin/backfill/jobs/"+jobID, tokenB,
+		recCross := bfDo(e, http.MethodPatch, "/api/v1/admin/backfill/jobs/"+jobID, tokenB,
 			map[string]any{"status": "done"})
-		Expect(rec).To(testutil.HaveStatus(http.StatusNotFound),
-			"cross-owner PATCH must be 404 (no oracle), got body=%s", rec.Body.String())
+		Expect(recCross).To(testutil.HaveStatus(http.StatusNotFound),
+			"cross-owner PATCH must be 404 (no oracle), got body=%s", recCross.Body.String())
+		crossBody := recCross.Body.String()
 
 		// (2) unknown status → 400.
 		rec = bfDo(e, http.MethodPatch, "/api/v1/admin/backfill/jobs/"+jobID, tokenA,
@@ -220,10 +221,16 @@ var _ = Describe("AdminBackfillJobPatch (gaka-vh8): cross-owner is 404 (no oracl
 		Expect(json.Unmarshal(rec.Body.Bytes(), &patched)).To(Succeed())
 		Expect(patched["status"]).To(Equal("running"))
 
-		// (4) totally unknown id → 404 (indistinguishable from cross-owner).
-		rec = bfDo(e, http.MethodPatch, "/api/v1/admin/backfill/jobs/does-not-exist", tokenA,
+		// (4) totally unknown id → 404 with BYTE-IDENTICAL body to (1).
+		// This is the real "no oracle" invariant — a distinguishable
+		// body (e.g. "job owned by another admin" vs "job not found")
+		// still leaks existence even with a matching status code.
+		recUnknown := bfDo(e, http.MethodPatch, "/api/v1/admin/backfill/jobs/does-not-exist", tokenA,
 			map[string]any{"status": "done"})
-		Expect(rec).To(testutil.HaveStatus(http.StatusNotFound))
+		Expect(recUnknown).To(testutil.HaveStatus(http.StatusNotFound))
+		Expect(recUnknown.Body.String()).To(Equal(crossBody),
+			"cross-owner 404 body must be byte-identical to unknown-id 404 body — otherwise the response leaks existence of admin B's job.\ncross-owner body=%s\nunknown-id body=%s",
+			crossBody, recUnknown.Body.String())
 
 		// (5) 503 when queue is unwired.
 		hz.H.SetBackfillJobQueue(nil)
@@ -455,6 +462,298 @@ var _ = Describe("AdminBackfill: malformed body branches", func() {
 				"status=%s: %s", status, rec.Body.String())
 		}
 	})
+
+	It("PATCH /jobs/:id post-terminal transitions succeed — handler is intentionally state-machine-less (trusted CLI)", func() {
+		// INVARIANT: the server does NOT enforce a state machine on backfill jobs.
+		// The CLI drives the FSM and PATCHes final counts; the server would
+		// only add latency + a config knob if it re-validated. If a future
+		// refactor adds a server-side FSM this test flips to red — the
+		// intent should be revisited (retention timer already re-schedules
+		// on each terminal patch, so done->queued->done would DOUBLE-arm
+		// the retention timer, but that's a Registry concern).
+		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "abfmal"))
+		e := hz.Router()
+		_, token := mkAdmin(hz, "bfmal_fsm", false)
+		rec := bfDo(e, http.MethodPost, "/api/v1/admin/backfill/jobs", token,
+			map[string]any{"repoName": "r", "totalCommits": 0})
+		Expect(rec).To(testutil.HaveStatus(http.StatusAccepted))
+		var resp map[string]any
+		Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+		jobID := resp["jobId"].(string)
+
+		// PATCH to done (terminal).
+		rec = bfDo(e, http.MethodPatch, "/api/v1/admin/backfill/jobs/"+jobID, token,
+			map[string]any{"status": "done"})
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
+		// PATCH done -> queued: currently 200 (trusted CLI). If this ever
+		// becomes 409, this test is the pin that documents the intent.
+		rec = bfDo(e, http.MethodPatch, "/api/v1/admin/backfill/jobs/"+jobID, token,
+			map[string]any{"status": "queued"})
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK),
+			"handler is intentionally state-machine-less; if this flips add /* documented */ and update the comment")
+		// error -> running: also 200 (same intent).
+		rec = bfDo(e, http.MethodPatch, "/api/v1/admin/backfill/jobs/"+jobID, token,
+			map[string]any{"status": "error"})
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
+		rec = bfDo(e, http.MethodPatch, "/api/v1/admin/backfill/jobs/"+jobID, token,
+			map[string]any{"status": "running"})
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
+	})
+
+	It("PATCH /jobs/:id counter fields (processed/written/skipped) are applied verbatim", func() {
+		// Coverage for UpdatePatch.Processed/Written/Skipped — the critic
+		// noted these three pointer fields had zero test signal beyond the
+		// implicit IncrementCounts path.
+		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "abfmal"))
+		e := hz.Router()
+		_, token := mkAdmin(hz, "bfmal_ctrs", false)
+		rec := bfDo(e, http.MethodPost, "/api/v1/admin/backfill/jobs", token,
+			map[string]any{"repoName": "r", "totalCommits": 10})
+		Expect(rec).To(testutil.HaveStatus(http.StatusAccepted))
+		var resp map[string]any
+		Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+		jobID := resp["jobId"].(string)
+
+		// PATCH with all three counters + an error string.
+		rec = bfDo(e, http.MethodPatch, "/api/v1/admin/backfill/jobs/"+jobID, token,
+			map[string]any{
+				"processed": 7,
+				"written":   42,
+				"skipped":   3,
+				"error":     "partial: 3 commits scanned but not written",
+			})
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
+		var patched map[string]any
+		Expect(json.Unmarshal(rec.Body.Bytes(), &patched)).To(Succeed())
+		Expect(patched["processed"]).To(BeEquivalentTo(7),
+			"processed counter not applied via PATCH: %v", patched)
+		Expect(patched["written"]).To(BeEquivalentTo(42))
+		Expect(patched["skipped"]).To(BeEquivalentTo(3))
+		Expect(patched["error"]).To(Equal("partial: 3 commits scanned but not written"))
+	})
+})
+
+var _ = Describe("AdminBackfill: body-limit / Content-Type gates (BindJSONWithLimit)", func() {
+	It("POST /jobs with a >BodyLimitSmall payload → 413 (MaxBytesReader trip)", func() {
+		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "abflim"))
+		e := hz.Router()
+		_, token := mkAdmin(hz, "bflim_big", false)
+
+		// Craft a body larger than BodyLimitSmall (4 KiB). A big repoPath
+		// string is enough to blow the cap.
+		bigPath := strings.Repeat("x", 5*1024)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/backfill/jobs",
+			bytes.NewReader([]byte(`{"repoName":"r","repoPath":"`+bigPath+`","totalCommits":0}`)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Basic "+token)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		Expect(rec.Code).To(Equal(http.StatusRequestEntityTooLarge),
+			"oversize POST /jobs must return 413; got %d body=%s", rec.Code, rec.Body.String())
+	})
+
+	It("PATCH /config with a >BodyLimitMedium payload → 413", func() {
+		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "abflim"))
+		e := hz.Router()
+		user, token := hz.MintUser("bflim_cfg")
+		hz.Cfg.AdminUsers = map[string]struct{}{user: {}}
+
+		// BodyLimitMedium=64 KiB; a >64 KiB langMap trip blows it.
+		big := strings.Repeat("k", 70*1024)
+		body := `{"sourceTag":"backfill:` + big + `"}`
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/backfill/config",
+			bytes.NewReader([]byte(body)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Basic "+token)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		Expect(rec.Code).To(Equal(http.StatusRequestEntityTooLarge),
+			"oversize PATCH /config must return 413; got %d body=%s", rec.Code, rec.Body.String())
+	})
+
+	It("POST /jobs with wrong Content-Type (text/plain) — accepted only when body is still JSON-shaped", func() {
+		// Echo's default binder inspects Content-Type. text/plain with a
+		// JSON payload may or may not bind depending on version. The
+		// invariant we lock in: it must NOT return 2xx AND leak a stack —
+		// worst case is a 4xx/415 with a clean body.
+		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "abflim"))
+		e := hz.Router()
+		_, token := mkAdmin(hz, "bflim_ct", false)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/backfill/jobs",
+			bytes.NewReader([]byte(`{"repoName":"r","totalCommits":0}`)))
+		req.Header.Set("Content-Type", "text/plain") // wrong CT
+		req.Header.Set("Authorization", "Basic "+token)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		// Either a 4xx (Echo binder rejects) OR a 2xx (Echo binder is
+		// permissive on non-JSON CT). In both cases the body must NOT
+		// leak stack/path internals.
+		body := rec.Body.String()
+		for _, banned := range []string{"/Users/", "panic", ".go:"} {
+			Expect(body).NotTo(ContainSubstring(banned),
+				"wrong-CT response body leaked %q: %s", banned, body)
+		}
+	})
+
+	It("POST /jobs with empty body (Content-Length: 0) → 400 (BindJSONWithLimit rejects empty JSON)", func() {
+		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "abflim"))
+		e := hz.Router()
+		_, token := mkAdmin(hz, "bflim_empty", false)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/backfill/jobs",
+			bytes.NewReader(nil))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Content-Length", "0")
+		req.Header.Set("Authorization", "Basic "+token)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		// Empty body: bind fails OR (some versions) succeeds with a
+		// zero-value struct and then repoName="" trips the trim guard.
+		// Either way the FINAL response is 400.
+		Expect(rec.Code).To(Equal(http.StatusBadRequest),
+			"empty-body POST /jobs must return 400; got %d body=%s", rec.Code, rec.Body.String())
+	})
+})
+
+var _ = Describe("AdminBackfill: source= LIKE-pattern semantics (documented, not a literal-only match)", func() {
+	It("source=backfill:_it matches exactly one row via SQL LIKE (underscore = 1 char); the defense-in-depth AND source LIKE 'backfill:%' still holds", func() {
+		// LOCKS IN: DeleteBackfilledHeartbeats treats `source` as a SQL
+		// LIKE PATTERN (see internal/db/backfill.go). `_` matches any
+		// single character, `%` matches any run. This is INTENTIONAL —
+		// operators use it to bulk-clean e.g. "backfill:%" or
+		// "backfill:git:test-run".
+		//
+		// The safety net is the trailing `AND source LIKE 'backfill:%'`
+		// clause, which ensures no malicious source parameter can reach
+		// non-backfill rows (real Wakatime rows have source IS NULL and
+		// fall out of every LIKE).
+		//
+		// This test pins both facts:
+		//   (a) wildcards ARE respected (so operators can bulk-clean);
+		//   (b) the backfill:% floor still applies (so a hostile "%"
+		//       or "" can't nuke real telemetry).
+		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "abfdel"))
+		e := hz.Router()
+		user, token := hz.MintUser("bfdel_like")
+		hz.Cfg.AdminUsers = map[string]struct{}{user: {}}
+		ctx := context.Background()
+
+		hz.Seeder(user).Projects("p")
+		// Seed rows with three different sources:
+		//   (1) backfill:git — should match `backfill:_it` (LIKE: `_` = any char)
+		//   (2) backfill:hg  — should NOT match `backfill:_it`
+		//   (3) source IS NULL (a real Wakatime row) — must NEVER match
+		//       even if source pattern is "%" (defense-in-depth floor).
+		for _, src := range []string{"backfill:git", "backfill:hg"} {
+			_, err := hz.DB.Pool.Exec(ctx, `
+				INSERT INTO heartbeats (editor,plugin,platform,machine,sender,user_agent,branch,category,cursorpos,
+					dependencies,entity,is_write,language,lineno,file_lines,project,ty,time_sent,source)
+				VALUES ('vim','x','linux','m',$1,'ua','main','Coding',NULL,NULL,'x.go',false,'go',1,10,'p','file',now(),$2)`, user, src)
+			Expect(err).NotTo(HaveOccurred())
+		}
+		// The "real" (NULL source) heartbeat — must be UNTOUCHABLE.
+		_, err := hz.DB.Pool.Exec(ctx, `
+			INSERT INTO heartbeats (editor,plugin,platform,machine,sender,user_agent,branch,category,cursorpos,
+				dependencies,entity,is_write,language,lineno,file_lines,project,ty,time_sent,source)
+			VALUES ('vim','x','linux','m',$1,'ua','main','Coding',NULL,NULL,'x.go',false,'go',1,10,'p','file',now(),NULL)`, user)
+		Expect(err).NotTo(HaveOccurred())
+
+		// (a) source=backfill:_it — LIKE pattern must match exactly ONE
+		// row (backfill:git). NOT literal-matching (that'd be 0 rows).
+		rec := bfDo(e, http.MethodDelete,
+			"/api/v1/admin/backfill/heartbeats?source=backfill:_it", token, nil)
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
+		var resp map[string]any
+		Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+		Expect(resp["deleted"]).To(BeEquivalentTo(1),
+			"LIKE pattern semantics broken: backfill:_it should match ONE row (backfill:git); got deleted=%v", resp["deleted"])
+
+		// The hg row + NULL row must both survive.
+		var nHg, nNull int
+		Expect(hz.DB.Pool.QueryRow(ctx,
+			`SELECT count(*) FROM heartbeats WHERE sender=$1 AND source='backfill:hg'`, user).Scan(&nHg)).To(Succeed())
+		Expect(nHg).To(Equal(1), "backfill:hg was collateral damage from backfill:_it pattern")
+		Expect(hz.DB.Pool.QueryRow(ctx,
+			`SELECT count(*) FROM heartbeats WHERE sender=$1 AND source IS NULL`, user).Scan(&nNull)).To(Succeed())
+		Expect(nNull).To(Equal(1), "real Wakatime row (source NULL) hit by LIKE — floor failed")
+
+		// (b) DEFENSE-IN-DEPTH: even a source that starts with backfill:
+		// but expands to everything (`backfill:%`) must NEVER touch the
+		// source-NULL real row. Verify by nuking with backfill:%.
+		rec = bfDo(e, http.MethodDelete,
+			"/api/v1/admin/backfill/heartbeats?source=backfill:%25", token, nil)
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
+		Expect(hz.DB.Pool.QueryRow(ctx,
+			`SELECT count(*) FROM heartbeats WHERE sender=$1 AND source IS NULL`, user).Scan(&nNull)).To(Succeed())
+		Expect(nNull).To(Equal(1),
+			"backfill:%% nuked the source-NULL real row: `AND source LIKE 'backfill:%%'` floor is gone")
+	})
+})
+
+var _ = Describe("AdminBackfillJobHeartbeats: hostile body ignores forged Source field", func() {
+	It("a session heartbeat with an EXTRA `source` field in JSON is ignored (server pulls from config)", func() {
+		// LOCKS IN: the wire type doesn't declare a Source field so the
+		// JSON decoder drops any client-supplied override. This test
+		// makes that behavior EXPLICIT rather than accidental — if a
+		// future refactor adds Source to model.HeartbeatPayload, this
+		// spec turns red.
+		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "abfhb"))
+		e := hz.Router()
+		user, token := hz.MintUser("bfhb_forge")
+		hz.Cfg.AdminUsers = map[string]struct{}{user: {}}
+		hz.H.SetBackfillJobQueue(backfilljobs.NewRegistry(nil))
+
+		// Persist a specific sourceTag so we know what to expect.
+		rec := bfDo(e, http.MethodPatch, "/api/v1/admin/backfill/config", token,
+			map[string]any{"sourceTag": "backfill:git:persisted"})
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
+
+		rec = bfDo(e, http.MethodPost, "/api/v1/admin/backfill/jobs", token,
+			map[string]any{"repoName": "r", "totalCommits": 1})
+		Expect(rec).To(testutil.HaveStatus(http.StatusAccepted))
+		var resp map[string]any
+		Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+		jobID := resp["jobId"].(string)
+
+		now := time.Now().UTC()
+		// A hostile CLI attempts to override `source` on each heartbeat.
+		// The persisted tag ("backfill:git:persisted") MUST win.
+		body := map[string]any{
+			"sessions": []any{
+				map[string]any{
+					"start": now.Add(-2 * time.Hour).Format(time.RFC3339Nano),
+					"end":   now.Add(-1 * time.Hour).Format(time.RFC3339Nano),
+					"heartbeats": []map[string]any{{
+						"entity":   "main.go",
+						"type":     "file",
+						"time":     now.Add(-90 * time.Minute).Unix(),
+						"project":  "boomtime",
+						"language": "go",
+						"editor":   "vim",
+						"platform": "linux",
+						"category": "coding",
+						"source":   "HOSTILE-INJECT", // forged
+					}},
+				},
+			},
+		}
+		rec = bfDo(e, http.MethodPost,
+			"/api/v1/admin/backfill/jobs/"+jobID+"/heartbeats", token, body)
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
+
+		// INVARIANT: no row exists with the forged source; every row has
+		// the persisted tag.
+		var forged int
+		Expect(hz.DB.Pool.QueryRow(context.Background(),
+			`SELECT count(*) FROM heartbeats WHERE sender=$1 AND source='HOSTILE-INJECT'`, user).Scan(&forged)).To(Succeed())
+		Expect(forged).To(Equal(0),
+			"hostile body-supplied source landed in heartbeats.source — wire shape now accepts a forgeable Source field")
+
+		var legit int
+		Expect(hz.DB.Pool.QueryRow(context.Background(),
+			`SELECT count(*) FROM heartbeats WHERE sender=$1 AND source='backfill:git:persisted'`, user).Scan(&legit)).To(Succeed())
+		Expect(legit).To(BeNumerically(">=", 1),
+			"the persisted-config sourceTag didn't land on any row: expected >=1 got %d", legit)
+	})
 })
 
 var _ = Describe("AdminBackfillDeleteHeartbeats (gaka-vh8): danger-zone prefix guard", func() {
@@ -484,7 +783,7 @@ var _ = Describe("AdminBackfillDeleteHeartbeats (gaka-vh8): danger-zone prefix g
 		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
 	})
 
-	It("cross-user: A's DELETE cannot see/reach B's backfill rows (per-user scope)", func() {
+	It("cross-user with POSITIVE CONTROL: A's DELETE removes A's rows AND leaves B's alone", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "abfdel"))
 		e := hz.Router()
 		userA, tokenA := hz.MintUser("bfdel_a")
@@ -492,21 +791,48 @@ var _ = Describe("AdminBackfillDeleteHeartbeats (gaka-vh8): danger-zone prefix g
 		hz.Cfg.AdminUsers = map[string]struct{}{userA: {}, userB: {}}
 		ctx := context.Background()
 
-		// Seed a single backfill row on user B (directly via DB — bypasses
-		// the admin flow so the seed doesn't run through A's session).
+		// Seed backfill rows on BOTH users. A's rows are the POSITIVE
+		// CONTROL — without them, response {deleted:0} is indistinguishable
+		// from "handler is a no-op on both users' rows". By seeding A too
+		// we can prove (1) A's rows disappeared AND (2) B's row survived.
+		hz.Seeder(userA).Projects("ap")
 		hz.Seeder(userB).Projects("bp")
-		_, err := hz.DB.Pool.Exec(ctx, `
-			INSERT INTO heartbeats (editor,plugin,platform,machine,sender,user_agent,branch,category,cursorpos,
-				dependencies,entity,is_write,language,lineno,file_lines,project,ty,time_sent,source)
-			VALUES ('vim','x','linux','m',$1,'ua','main','Coding',NULL,NULL,'x.go',false,'go',1,10,'bp','file',now(),'backfill:git')`, userB)
-		Expect(err).NotTo(HaveOccurred())
+		for _, seed := range []struct{ user, project string }{
+			{userA, "ap"}, {userA, "ap"}, // two rows for A → deleted must equal 2
+			{userB, "bp"},                // one row for B → must survive
+		} {
+			_, err := hz.DB.Pool.Exec(ctx, `
+				INSERT INTO heartbeats (editor,plugin,platform,machine,sender,user_agent,branch,category,cursorpos,
+					dependencies,entity,is_write,language,lineno,file_lines,project,ty,time_sent,source)
+				VALUES ('vim','x','linux','m',$1,'ua','main','Coding',NULL,NULL,'x.go',false,'go',1,10,$2,'file',now(),'backfill:git')`, seed.user, seed.project)
+			Expect(err).NotTo(HaveOccurred())
+		}
 
-		// A ?all=true removes rows for A only. B's row survives.
+		// Pre-flight snapshot: A has 2, B has 1.
+		var pre int
+		Expect(hz.DB.Pool.QueryRow(ctx, `SELECT count(*) FROM heartbeats WHERE sender=$1 AND source LIKE 'backfill:%'`, userA).Scan(&pre)).To(Succeed())
+		Expect(pre).To(Equal(2), "pre-flight: A must have 2 backfill rows")
+
+		// A ?all=true removes A's rows only.
 		rec := bfDo(e, http.MethodDelete, "/api/v1/admin/backfill/heartbeats?all=true", tokenA, nil)
 		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
-		var n int
-		Expect(hz.DB.Pool.QueryRow(ctx, `SELECT count(*) FROM heartbeats WHERE sender=$1 AND source LIKE 'backfill:%'`, userB).Scan(&n)).To(Succeed())
-		Expect(n).To(Equal(1), "cross-user leak: A's DELETE hit B's row")
+		var resp map[string]any
+		Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+
+		// INVARIANT (positive control): response reports deleted>=A's row
+		// count. Without this, a silent no-op passes.
+		Expect(resp["deleted"]).To(BeNumerically(">=", 2),
+			"positive control failed: A had 2 seeded backfill rows but handler reports deleted=%v", resp["deleted"])
+
+		// INVARIANT: A's rows are gone (self-scope actually worked).
+		var nA int
+		Expect(hz.DB.Pool.QueryRow(ctx, `SELECT count(*) FROM heartbeats WHERE sender=$1 AND source LIKE 'backfill:%'`, userA).Scan(&nA)).To(Succeed())
+		Expect(nA).To(Equal(0), "A's DELETE didn't remove A's own rows — scoping broke both ways")
+
+		// INVARIANT: B's row survives (cross-user isolation).
+		var nB int
+		Expect(hz.DB.Pool.QueryRow(ctx, `SELECT count(*) FROM heartbeats WHERE sender=$1 AND source LIKE 'backfill:%'`, userB).Scan(&nB)).To(Succeed())
+		Expect(nB).To(Equal(1), "cross-user leak: A's DELETE hit B's row")
 	})
 })
 
@@ -526,7 +852,7 @@ var _ = Describe("AdminBackfillWS (gaka-vh8): cookie-auth + admin-gate; snapshot
 		Expect(rec.Code).To(BeNumerically(">=", 400))
 	})
 
-	It("rejects a non-admin with a valid cookie (403 pre-upgrade)", func() {
+	It("rejects a non-admin with a valid cookie (403 pre-upgrade) — body must not leak username", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "abfws"))
 		e := hz.Router()
 		ctx := context.Background()
@@ -545,6 +871,12 @@ var _ = Describe("AdminBackfillWS (gaka-vh8): cookie-auth + admin-gate; snapshot
 		e.ServeHTTP(rec, req)
 		Expect(rec.Code).To(Equal(http.StatusForbidden),
 			"non-admin cookie must 403 pre-upgrade; got %d body=%s", rec.Code, rec.Body.String())
+		// INVARIANT: the 403 body must NOT contain the resolved username
+		// (leaks "user X is authenticated but not admin", which lets a
+		// stolen cookie confirm identity). Same for admin allowlist names.
+		body := rec.Body.String()
+		Expect(body).NotTo(ContainSubstring(user),
+			"403 body leaked the resolved username %q: %s", user, body)
 	})
 
 	It("admin with no BackfillJobQueue wired → 503 (feature-gate after admin-gate)", func() {

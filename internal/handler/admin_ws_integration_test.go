@@ -149,7 +149,57 @@ var _ = Describe("AdminLabelImagesWS: full handshake + snapshot frame (post-Acce
 		Expect(json.Unmarshal(raw, &frame)).To(Succeed(), "frame not JSON: %s", string(raw))
 		Expect(frame["kind"]).To(Equal("snapshot"),
 			"first frame must be snapshot, got %v", frame)
+		// INVARIANT: `jobs` is an array-or-nil, not a scalar/string/garbage.
+		// HaveKey alone would let `{"jobs": "surprise"}` pass — this pins
+		// the wire type so a future refactor can't quietly change the shape.
 		Expect(frame).To(HaveKey("jobs"))
+		Expect(frame["jobs"]).To(SatisfyAny(BeNil(), BeAssignableToTypeOf([]any{})),
+			"jobs must be array-or-nil; got %T=%v", frame["jobs"], frame["jobs"])
+	})
+
+	It("TWO admins BOTH see each other's label-images jobs (WS is intentionally NOT owner-filtered)", func() {
+		// LOCKS IN: unlike AdminBackfillWS (per-owner filter), the label-
+		// images WS is global — every connected admin sees every enqueued
+		// label-image job. This design decision was silent in the code;
+		// this test makes it a load-bearing invariant so an accidental
+		// copy of the backfill filter would fail here.
+		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "wsliup"))
+		ctx := context.Background()
+		userA, _ := hz.MintUser("wsli_2a")
+		userB, _ := hz.MintUser("wsli_2b")
+		hz.Cfg.AdminUsers = map[string]struct{}{userA: {}, userB: {}}
+		reg := imagejobs.NewRegistry(nil)
+		hz.H.SetImageJobQueue(reg)
+
+		refreshB := fmt.Sprintf("refresh-wsli2b-%d", time.Now().UnixNano())
+		Expect(hz.DB.CreateAccessTokens(ctx, testutilTokenData(userB, refreshB), 24)).To(Succeed())
+
+		srv := httptest.NewServer(hz.Router())
+		DeferCleanup(srv.Close)
+
+		conn, _, err := dialAdminWS(srv.URL, "/api/v1/admin/label-images/ws", refreshB)
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "done") })
+
+		// Drain the snapshot.
+		snapCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_, _, _ = conn.Read(snapCtx)
+
+		// Enqueue AS-IF admin A (owner tracking isn't per-user on this
+		// registry — LabelID is the natural key). B's WS still must see it.
+		_, _ = reg.Enqueue(imagejobs.EnqueueInput{LabelID: "cross-admin-label", Prompt: "p"})
+
+		liveCtx, cancel2 := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel2()
+		_, raw, rerr := conn.Read(liveCtx)
+		Expect(rerr).NotTo(HaveOccurred(), "read live: %v", rerr)
+		var frame map[string]any
+		Expect(json.Unmarshal(raw, &frame)).To(Succeed())
+		Expect(frame["kind"]).To(Equal("added"))
+		job, _ := frame["job"].(map[string]any)
+		Expect(job["labelId"]).To(Equal("cross-admin-label"),
+			"admin B did NOT see the cross-admin enqueue — label-images WS accidentally acquired owner filtering")
 	})
 
 	It("live event: after enqueue, an added frame with the labelId reaches the connected admin", func() {
