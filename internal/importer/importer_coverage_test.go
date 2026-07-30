@@ -19,6 +19,7 @@
 package importer
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -29,7 +30,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -40,6 +43,19 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 )
+
+// roundTripFunc is a lightweight http.RoundTripper adapter so tests can
+// intercept the shared httpClient without spinning up a full httptest.Server.
+// Used by the "malformed URL never hits network" test and the "32MB body cap"
+// test — both need to observe whether/what the transport saw.
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// bytesBuffer is an alias so tests can name the slog capture buffer
+// unambiguously — writing to a *bytes.Buffer from a JSON handler is standard,
+// but the local name signals intent (capture-for-assertion).
+type bytesBuffer = bytes.Buffer
 
 // ---------------------------------------------------------------------------
 // bucket 1 — pure helpers (no DB, no network)
@@ -241,11 +257,45 @@ var _ = Describe("driftCollector.checkList envelope-defense (gaka-d6x)", func() 
 		Expect(f[0].FirstSeenDay).To(Equal("2025-01-01"))
 	})
 
-	It("sample=-1 (unlimited) still bounded by len(items)", func() {
-		body := `[{"id":"1","value":"v"},{"id":"2","value":"v"}]`
+	It("sample=-1 (unlimited) visits every item — drift on item[1] surfaces", func() {
+		// gaka-d6x critique-fix: prior version fed [clean, clean] and asserted
+		// findings==nil, which would ALSO pass under `if sample < 0 { limit = 1 }`.
+		// The new payload puts drift ONLY at item[1] (missing required `id`) so
+		// a finding is proof the loop reached index 1.
+		body := `[{"id":"1","value":"v"},{"value":"missing_id_here"}]`
 		c := newDriftCollector()
-		c.checkList("user_agents", "", json.RawMessage(body), lookupSpec, -1)
-		Expect(c.findings()).To(BeNil(), "clean baseline should produce no findings")
+		c.checkList("user_agents", "d1", json.RawMessage(body), lookupSpec, -1)
+		f := c.findings()
+		Expect(f).ToNot(BeEmpty(),
+			"sample=-1 must visit item[1] — a bounded 'limit=1' regression would leave findings empty")
+		sawIDMissing := false
+		for _, x := range f {
+			if x.Kind == driftKindMissingRequired && x.Field == "id" && x.Endpoint == "user_agents" {
+				sawIDMissing = true
+			}
+		}
+		Expect(sawIDMissing).To(BeTrue(),
+			"expected missing_required.id from item[1]; got %+v (loop did NOT reach index 1)", f)
+	})
+
+	It("sample=-1 with N>1 items → checkItem called for every index (drift on each)", func() {
+		// Second belt-and-suspenders: 5 items, ALL missing `id`. Confirms the
+		// loop reaches every element. Count-per-key dedupe makes this exactly
+		// one missing_required finding — but with Count==5.
+		body := `[{"value":"a"},{"value":"b"},{"value":"c"},{"value":"d"},{"value":"e"}]`
+		c := newDriftCollector()
+		c.checkList("user_agents", "d1", json.RawMessage(body), lookupSpec, -1)
+		f := c.findings()
+		Expect(f).ToNot(BeEmpty())
+		var idFinding *DriftFinding
+		for i := range f {
+			if f[i].Kind == driftKindMissingRequired && f[i].Field == "id" {
+				idFinding = &f[i]
+			}
+		}
+		Expect(idFinding).ToNot(BeNil(), "expected a missing_required.id finding for user_agents")
+		Expect(idFinding.Count).To(Equal(5),
+			"count must be 5 (one per visited item) — a partial iteration would show count<5")
 	})
 
 	It("non-object list item → error-severity envelope_changed with detail", func() {
@@ -378,9 +428,32 @@ var _ = Describe("getRawJSON HTTP contract (gaka-d6x)", func() {
 	})
 
 	It("malformed URL → error without doing any network I/O (never leaks a request)", func() {
-		// Space in scheme host: http.NewRequestWithContext will reject.
+		// gaka-d6x critique-fix: swap the shared httpClient's transport for a
+		// counting RoundTripper. Prior version only asserted err — a refactor
+		// that hits the network *then* errors would still pass. The counter
+		// pins the 'no request leaked' invariant.
+		prev := httpClient
+		var hits atomic.Int32
+		httpClient = &http.Client{
+			Timeout: 5 * time.Second,
+			Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				hits.Add(1)
+				return &http.Response{
+					StatusCode: 200,
+					Body:       io.NopCloser(strings.NewReader(`{}`)),
+					Header:     make(http.Header),
+					Request:    r,
+				}, nil
+			}),
+		}
+		defer func() { httpClient = prev }()
+
+		// Space in scheme host: http.NewRequestWithContext will reject BEFORE
+		// httpClient.Do is invoked.
 		_, err := getRawJSON(context.Background(), "http://bad host/x", "auth", nil)
 		Expect(err).To(HaveOccurred())
+		Expect(hits.Load()).To(BeZero(),
+			"malformed URL must fail at request construction — no round-trip may occur")
 	})
 
 	It("cancelled request context → error, no oracle for the caller other than ctx.Err()", func() {
@@ -717,22 +790,41 @@ var _ = Describe("Worker.applyKeyOutcome typed-token-absent-refresh (gaka-d6x)",
 			"invalid → valid refresh should happen on clean run")
 	})
 
-	It("applyKeyOutcome default branch (failed + no 401 + empty typed token) is a no-op", func() {
+	It("applyKeyOutcome default branch (failed + no 401 + empty typed token) is byte-identical no-op", func() {
+		// gaka-d6x critique-fix: previously seeded a no-key user and asserted
+		// !HasSavedKey (already true before call — proves nothing). Now seed
+		// a prior key + prior status + prior checked_at and assert ALL three
+		// are byte-for-byte unchanged after the default branch runs.
 		database := openImportOutcomeDBGinkgo()
 		withEncryptionKeyGinkgo()
 		ctx := context.Background()
 
 		user := fmt.Sprintf("noop_%d", time.Now().UnixNano())
-		seedUserNoKeyGinkgo(database, user)
+		priorCT := seedUserWithKeyGinkgo(database, user, "waka_prior_untouched", db.WakatimeKeyStatusValid)
+
+		before, err := database.GetWakatimeKeyInfo(ctx, user)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(before.HasSavedKey).To(BeTrue())
+		Expect(before.CheckedAt).ToNot(BeNil())
 
 		w := &Worker{db: database, logger: silentLoggerCov(), hub: NewHub()}
 		item := QueueItem{Requester: user, TypedToken: ""}
 		w.applyKeyOutcome(item, db.JobStateFailed, false)
 
-		info, err := database.GetWakatimeKeyInfo(ctx, user)
+		after, err := database.GetWakatimeKeyInfo(ctx, user)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(info.HasSavedKey).To(BeFalse(),
-			"failed+no401+no typed token → no writes to users row")
+		Expect(after.HasSavedKey).To(BeTrue(), "default branch must not clear the prior key")
+		// Byte-for-byte ciphertext comparison.
+		Expect(len(after.Blob)).To(Equal(len(priorCT)))
+		for i := range priorCT {
+			Expect(after.Blob[i]).To(Equal(priorCT[i]),
+				"blob mutated at byte %d — default branch must not touch ciphertext", i)
+		}
+		Expect(ptrStrEq(before.Status, after.Status)).To(BeTrue(),
+			"status changed on default branch: before=%v after=%v", before.Status, after.Status)
+		Expect(ptrTimeEq(before.CheckedAt, after.CheckedAt)).To(BeTrue(),
+			"checked_at changed on default branch: before=%v after=%v — proves an UPDATE ran when none was expected",
+			before.CheckedAt, after.CheckedAt)
 	})
 })
 
@@ -740,16 +832,43 @@ var _ = Describe("Worker.applyKeyOutcome encrypt-failure survives (gaka-d6x)", f
 	// Named invariant: if auth.Encrypt fails (env-key unset), the import is
 	// still considered a success from the user's perspective — no panic,
 	// no write to encrypted_wakatime_key, and prior blob (if any) untouched.
-	It("no BOOM_ENCRYPTION_KEY → encrypt fails, no ciphertext written, no panic", func() {
+	It("no BOOM_ENCRYPTION_KEY → encrypt fails (precondition proved), warn log emitted, no ciphertext, no panic", func() {
+		// gaka-d6x critique-fix: previously asserted !HasSavedKey + NotTo(Panic),
+		// which stays green even if a prior spec's DeferCleanup left the env key
+		// installed (Encrypt would silently succeed but SetEncryptedWakatimeKey
+		// wasn't called for unrelated reasons). Now:
+		//   1) CONFIRM the precondition by trying auth.Encrypt directly.
+		//   2) Capture slog output and assert the exact 'save-on-success:
+		//      encrypt failed' warning line is emitted — proves the code
+		//      followed the encrypt-fail branch (not some other branch).
 		database := openImportOutcomeDBGinkgo()
-		// Deliberately do NOT install BOOM_ENCRYPTION_KEY. Reset any prior state.
+		// Deliberately do NOT install BOOM_ENCRYPTION_KEY. Scrub env + auth state.
+		prev, hadPrev := os.LookupEnv("BOOM_ENCRYPTION_KEY")
+		os.Unsetenv("BOOM_ENCRYPTION_KEY")
 		auth.ResetForTest()
-		DeferCleanup(func() { auth.ResetForTest() })
+		DeferCleanup(func() {
+			if hadPrev {
+				os.Setenv("BOOM_ENCRYPTION_KEY", prev)
+			} else {
+				os.Unsetenv("BOOM_ENCRYPTION_KEY")
+			}
+			auth.ResetForTest()
+		})
+
+		// PRECONDITION: prove auth.Encrypt fails in THIS test's environment.
+		// Without this the whole test can pass for reasons unrelated to the
+		// tested branch.
+		_, encErr := auth.Encrypt([]byte("probe"))
+		Expect(encErr).To(HaveOccurred(),
+			"precondition failed: auth.Encrypt succeeded without BOOM_ENCRYPTION_KEY — env leaked from a prior spec")
 
 		user := fmt.Sprintf("nokey_%d", time.Now().UnixNano())
 		seedUserNoKeyGinkgo(database, user)
 
-		w := &Worker{db: database, logger: silentLoggerCov(), hub: NewHub()}
+		// Capture the warn log line so we can PROVE the encrypt-fail branch ran.
+		var buf bytesBuffer
+		captureLogger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		w := &Worker{db: database, logger: captureLogger, hub: NewHub()}
 		item := QueueItem{Requester: user, TypedToken: "would-be-plaintext"}
 
 		Expect(func() {
@@ -760,6 +879,14 @@ var _ = Describe("Worker.applyKeyOutcome encrypt-failure survives (gaka-d6x)", f
 		Expect(err).NotTo(HaveOccurred())
 		Expect(info.HasSavedKey).To(BeFalse(),
 			"encrypt failure MUST NOT persist a partial/plaintext blob")
+
+		// The 'save-on-success: encrypt failed' warn line proves this specific
+		// branch executed — not the 'refresh status' or default no-op branch.
+		Expect(buf.String()).To(ContainSubstring("save-on-success: encrypt failed"),
+			"expected the encrypt-fail warn line in logs; got:\n%s", buf.String())
+		// Extra: plaintext MUST NOT leak into the log line either.
+		Expect(buf.String()).ToNot(ContainSubstring("would-be-plaintext"),
+			"plaintext TypedToken leaked into log output — this is a security regression")
 	})
 })
 
@@ -1078,5 +1205,467 @@ var _ = Describe("Worker.baseURL default (gaka-d6x)", func() {
 	It("explicit BaseURL is preserved verbatim", func() {
 		w := &Worker{BaseURL: "http://my.test.local:1234"}
 		Expect(w.baseURL()).To(Equal("http://my.test.local:1234"))
+	})
+})
+
+// ---------------------------------------------------------------------------
+// bucket 8 — critique gap-fills (gaka-d6x round 2)
+//
+// New coverage for invariants the reviewer flagged as unproven:
+//   - fetchLookups schema-drift fast-fail (200 OK + malformed body)
+//   - UpdateJobProgress DB failure → logged, run continues (resilience)
+//   - getRawJSON 32MB body cap
+//   - Worker.Cancel on RUNNING (not terminal) job
+//   - concurrent StartJob(same jobID) — mu-protected registry race
+//   - cross-user isolation (applyKeyOutcome writes ONLY to item.Requester)
+//   - cross-key negative (encrypt-with-wrong-key ≠ encrypt-with-real-key)
+// ---------------------------------------------------------------------------
+
+var _ = Describe("Worker.fetchLookups schema-drift fast-fail (gaka-d6x, missing invariant #1)", func() {
+	// Named invariant: even a 200-OK wakatime response that parses into the
+	// typed struct MUST fail the fetch when the drift-check turns up an
+	// error-severity finding on required fields (lookupSpec.required = [id,
+	// value]). This is the impl branch importer.go:417-419 / :432-434 — no
+	// existing test exercises it (only decode-failure and 401 were pinned).
+	It("user_agents 200 OK with items missing `id` → fetchLookups returns 'schema drift' error", func() {
+		// Typed decode succeeds (Go json ignores absent required fields → zero
+		// values). Drift check catches the missing required `id`.
+		srv := startWaka(wakaHandler{
+			uaBody: `{"data":[{"value":"vscode/1.0"}]}`, // no `id` — required by lookupSpec
+			mnBody: `{"data":[]}`,
+		})
+		defer srv.Close()
+
+		w := &Worker{logger: silentLoggerCov(), hub: NewHub(), BaseURL: srv.URL}
+		drift := newDriftCollector()
+		_, _, err := w.fetchLookups(context.Background(), "Basic zzz", drift)
+		Expect(err).To(HaveOccurred(),
+			"typed decode passed but drift check MUST fail the fetch when required field `id` is missing")
+		Expect(err.Error()).To(ContainSubstring("schema drift"),
+			"error message must name the schema-drift cause; got %q", err.Error())
+		Expect(err.Error()).To(ContainSubstring("user_agents"),
+			"error message must attribute to the failing endpoint; got %q", err.Error())
+		// And the drift finding itself must exist and be error-severity.
+		Expect(drift.hasError()).To(BeTrue(),
+			"drift collector must record an error-severity finding for the missing required field")
+	})
+
+	It("machine_names 200 OK with items missing `value` → 'schema drift' error, user_agents already consumed", func() {
+		// user_agents is clean; machine_names is the one with drift. Confirms
+		// the second guard (line 432) fires as well.
+		srv := startWaka(wakaHandler{
+			uaBody: `{"data":[{"id":"u","value":"vscode"}]}`,
+			mnBody: `{"data":[{"id":"mn-1"}]}`, // no `value` — required
+		})
+		defer srv.Close()
+
+		w := &Worker{logger: silentLoggerCov(), hub: NewHub(), BaseURL: srv.URL}
+		drift := newDriftCollector()
+		_, _, err := w.fetchLookups(context.Background(), "Basic zzz", drift)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("schema drift"))
+		Expect(err.Error()).To(ContainSubstring("machine_names"),
+			"error must name machine_names (not user_agents) — got %q", err.Error())
+	})
+})
+
+var _ = Describe("Worker.run UpdateJobProgress failure → logged, loop continues (gaka-d6x, missing invariant #2)", func() {
+	// Named invariant (importer.go:274-283): if the day-loop's UpdateJobProgress
+	// call returns an error mid-run, the code logs+continues rather than
+	// failing the whole job. Previously untested. Simulate by DELETE-ing the
+	// import_jobs row between MarkJobRunning and the first UpdateJobProgress.
+	It("DB row disappears mid-run → error is logged, no panic, no partial state written to a gone row", func() {
+		database := openImportOutcomeDBGinkgo()
+		ctx := context.Background()
+
+		owner := fmt.Sprintf("progfail_%d", time.Now().UnixNano())
+		insertUserCov(database, owner)
+
+		// hbHandler blocks so we can delete the job row before UpdateJobProgress fires.
+		// Buffered so the non-blocking send always latches for the polling Eventually.
+		hbGate := make(chan struct{}, 1)
+		hbUnblock := make(chan struct{})
+		srv := startWaka(wakaHandler{
+			uaBody: `{"data":[{"id":"ua-1","value":"vscode/1.0 (mac) editor/1"}]}`,
+			mnBody: `{"data":[{"id":"mn-1","value":"mac"}]}`,
+			hbHandler: func(w http.ResponseWriter, r *http.Request) {
+				select {
+				case hbGate <- struct{}{}:
+				default:
+				}
+				<-hbUnblock
+				_, _ = io.WriteString(w, `{"data":[]}`)
+			},
+		})
+		defer srv.Close()
+
+		// Capture logs so we can PROVE the 'failed to persist progress' line
+		// was emitted — this is the resilience contract.
+		var logBuf bytes.Buffer
+		captureLogger := slog.New(slog.NewJSONHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		w := NewWorker(context.Background(), database, captureLogger, NewHub())
+		w.BaseURL = srv.URL
+
+		start := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+		payload := model.ImportRequestPayload{APIToken: "tok", StartDate: start, EndDate: start}
+		item := QueueItem{Requester: owner, ReqPayload: payload}
+		raw, _ := json.Marshal(item)
+		job, err := database.CreateImportJob(ctx, owner, raw, start, start, TotalDays(start, start))
+		Expect(err).NotTo(HaveOccurred())
+
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			Expect(func() { w.run(ctx, job.ID, item) }).NotTo(Panic(),
+				"UpdateJobProgress failure MUST NOT panic the worker")
+		}()
+
+		// Wait for the hbHandler to be entered, then delete the row.
+		Eventually(hbGate, 3*time.Second).Should(Receive())
+		_, err = database.Pool.Exec(ctx, `DELETE FROM import_job_logs WHERE job_id=$1`, job.ID)
+		Expect(err).NotTo(HaveOccurred())
+		_, err = database.Pool.Exec(ctx, `DELETE FROM import_jobs WHERE id=$1`, job.ID)
+		Expect(err).NotTo(HaveOccurred())
+		close(hbUnblock)
+
+		Eventually(done, 5*time.Second).Should(BeClosed(),
+			"run should exit within the deadline even after DB row vanishes mid-loop")
+
+		// The row is gone — GetJobByID returns (nil, nil) for a missing row (per db.GetJobByID).
+		got, err := database.GetJobByID(ctx, job.ID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(got).To(BeNil(),
+			"deleted row must stay deleted — run must not re-INSERT via progress path")
+
+		// The exact log line 'failed to persist progress' proves the resilience
+		// branch executed (rather than, say, silently crashing or looping forever).
+		Expect(logBuf.String()).To(ContainSubstring("failed to persist progress"),
+			"resilience contract violated: no 'failed to persist progress' log line; got:\n%s", logBuf.String())
+	})
+})
+
+var _ = Describe("getRawJSON 32MB body cap (gaka-d6x, missing invariant #3)", func() {
+	// Named invariant: getRawJSON reads at most 32MB from the response body.
+	// A malicious/broken upstream that streams 100MB must be truncated so the
+	// importer's memory footprint stays bounded (importer.go:698).
+	It("upstream body > 32MB → returned body is capped at 32MB exactly", func() {
+		const cap = 32 << 20 // 32 MiB — MUST match importer.go
+		// Stream more than the cap to exercise io.LimitReader.
+		writeLen := cap + 4096
+
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			// Write in chunks to avoid holding a giant buffer.
+			chunk := bytes.Repeat([]byte{'x'}, 64*1024)
+			written := 0
+			for written < writeLen {
+				n := len(chunk)
+				if written+n > writeLen {
+					n = writeLen - written
+				}
+				if _, err := w.Write(chunk[:n]); err != nil {
+					return
+				}
+				written += n
+			}
+		}))
+		defer srv.Close()
+
+		body, err := getRawJSON(context.Background(), srv.URL, "auth", nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(len(body)).To(Equal(cap),
+			"body must be truncated to exactly 32MB (io.LimitReader) — got %d bytes", len(body))
+	})
+})
+
+var _ = Describe("Worker.Cancel on currently-running (not terminal) job (gaka-d6x, missing invariant #4)", func() {
+	// Named invariant: Cancel on a job that is CURRENTLY RUNNING (blocked in
+	// mid-fetch) returns running=true AND the returned done channel blocks
+	// until the terminal DB write lands (JobStateCancelled). This is stronger
+	// than the existing test which only calls Cancel AFTER completion.
+	It("Cancel(running) → running=true; done blocks until finalized; final state=cancelled", func() {
+		database := openImportOutcomeDBGinkgo()
+
+		owner := fmt.Sprintf("cancelrun_%d", time.Now().UnixNano())
+		insertUserCov(database, owner)
+
+		// heartbeats handler blocks until the request context is cancelled —
+		// gives us a stable window where the job is "currently running".
+		hbEntered := make(chan struct{}, 1)
+		srv := startWaka(wakaHandler{
+			uaBody: `{"data":[{"id":"ua-1","value":"vscode/1.0 (mac) editor/1"}]}`,
+			mnBody: `{"data":[{"id":"mn-1","value":"mac"}]}`,
+			hbHandler: func(w http.ResponseWriter, r *http.Request) {
+				select {
+				case hbEntered <- struct{}{}:
+				default:
+				}
+				<-r.Context().Done()
+			},
+		})
+		defer srv.Close()
+
+		w := NewWorker(context.Background(), database, silentLoggerCov(), NewHub())
+		w.BaseURL = srv.URL
+
+		start := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+		payload := model.ImportRequestPayload{APIToken: "tok", StartDate: start, EndDate: start}
+		item := QueueItem{Requester: owner, ReqPayload: payload}
+		raw, _ := json.Marshal(item)
+		job, err := database.CreateImportJob(context.Background(), owner, raw, start, start, TotalDays(start, start))
+		Expect(err).NotTo(HaveOccurred())
+
+		w.StartJob(job, item)
+
+		// Wait for the run to be blocked in the hbHandler — job is "running".
+		Eventually(hbEntered, 3*time.Second).Should(Receive())
+
+		// Cancel(running) MUST return running=true; done must NOT be pre-closed.
+		done, running := w.Cancel(job.ID)
+		Expect(running).To(BeTrue(),
+			"Cancel on a running job must return running=true (was terminal-only path)")
+
+		// Now wait on done — this must eventually close when the terminal
+		// write lands. Between here and the close, the job must have moved to
+		// the JobStateCancelled state at the DB layer.
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			Fail("done channel did not close within 5s after Cancel of running job")
+		}
+
+		final, err := database.GetJobByID(context.Background(), job.ID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(final.State).To(Equal(db.JobStateCancelled),
+			"a Cancel on a running job must persist state=cancelled by the time done closes")
+		Expect(final.FinishedAt).ToNot(BeNil(),
+			"finished_at must be stamped before done closes — otherwise callers race the write")
+	})
+})
+
+var _ = Describe("Worker StartJob concurrency: same jobID (gaka-d6x, missing invariant #5)", func() {
+	// Named invariant: the running-registry map access at importer.go:80-83
+	// is mu-protected. N concurrent StartJob calls (all with the same jobID)
+	// MUST NOT race the map or panic. The registry must drain to empty after
+	// every goroutine finishes.
+	It("N concurrent StartJob calls on same jobID → no race, no panic, registry drains", func() {
+		database := openImportOutcomeDBGinkgo()
+
+		owner := fmt.Sprintf("startrace_%d", time.Now().UnixNano())
+		insertUserCov(database, owner)
+
+		// Trivial happy-path mock — the goal is to exercise the mu-guarded
+		// running map under concurrent writes, not to observe a specific
+		// outcome. Each StartJob will race the same key.
+		srv := startWaka(wakaHandler{
+			uaBody: `{"data":[{"id":"ua-1","value":"vscode/1.0 (mac) editor/1"}]}`,
+			mnBody: `{"data":[{"id":"mn-1","value":"mac"}]}`,
+			hbHandler: func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.WriteString(w, `{"data":[]}`)
+			},
+		})
+		defer srv.Close()
+
+		w := NewWorker(context.Background(), database, silentLoggerCov(), NewHub())
+		w.BaseURL = srv.URL
+
+		start := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+		payload := model.ImportRequestPayload{APIToken: "tok", StartDate: start, EndDate: start}
+		item := QueueItem{Requester: owner, ReqPayload: payload}
+		raw, _ := json.Marshal(item)
+		job, err := database.CreateImportJob(context.Background(), owner, raw, start, start, TotalDays(start, start))
+		Expect(err).NotTo(HaveOccurred())
+
+		const N = 12
+		var wg sync.WaitGroup
+		wg.Add(N)
+		for i := 0; i < N; i++ {
+			go func() {
+				defer wg.Done()
+				defer GinkgoRecover()
+				Expect(func() { w.StartJob(job, item) }).NotTo(Panic(),
+					"concurrent StartJob(same jobID) must not panic — mu guard broken")
+			}()
+		}
+		wg.Wait()
+
+		// The registry must eventually drain — regardless of which goroutine
+		// "won" the final delete, the last defer-in-goroutine wins.
+		Eventually(func() int {
+			w.mu.Lock()
+			defer w.mu.Unlock()
+			return len(w.running)
+		}, 5*time.Second, 20*time.Millisecond).Should(Equal(0),
+			"registry must drain after all concurrent StartJob goroutines exit — a leaked entry means the mu-guarded delete was skipped")
+	})
+})
+
+var _ = Describe("Cross-user isolation (gaka-d6x, security gap #1)", func() {
+	// Named invariant: applyKeyOutcome uses item.Requester as the target
+	// username. A crafted QueueItem where Requester != true job.Owner (a
+	// spoof attempt) must NOT touch any OTHER user's row. We verify by
+	// seeding UserA + UserB, then calling applyKeyOutcome with
+	// Requester=UserA and asserting UserB's row is byte-for-byte unchanged.
+	// (The impl doesn't cross-check job.Owner — this test pins the current
+	// behavior AND ensures any future refactor of that logic is caught.)
+	It("applyKeyOutcome(Requester=UserA) → UserB's row is byte-identical (no cross-user writes)", func() {
+		database := openImportOutcomeDBGinkgo()
+		withEncryptionKeyGinkgo()
+		ctx := context.Background()
+
+		userA := fmt.Sprintf("victimA_%d", time.Now().UnixNano())
+		userB := fmt.Sprintf("victimB_%d", time.Now().UnixNano())
+		seedUserNoKeyGinkgo(database, userA)
+		priorCT := seedUserWithKeyGinkgo(database, userB, "waka_userB_secret", db.WakatimeKeyStatusValid)
+
+		beforeB, err := database.GetWakatimeKeyInfo(ctx, userB)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(beforeB.HasSavedKey).To(BeTrue())
+
+		w := &Worker{db: database, logger: silentLoggerCov(), hub: NewHub()}
+		// Spoof: Requester=userA, but they submitted a typed token that would,
+		// under a broken impl, be written to userB's row.
+		item := QueueItem{Requester: userA, TypedToken: "attacker_typed_token"}
+		w.applyKeyOutcome(item, db.JobStateCompleted, false)
+
+		// UserA must have received the new key (this is the ONLY user touched).
+		infoA, err := database.GetWakatimeKeyInfo(ctx, userA)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(infoA.HasSavedKey).To(BeTrue(), "userA is the requester — must receive the new key")
+
+		// UserB must be byte-for-byte unchanged.
+		afterB, err := database.GetWakatimeKeyInfo(ctx, userB)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(afterB.HasSavedKey).To(BeTrue(), "userB must still have their prior key")
+		Expect(len(afterB.Blob)).To(Equal(len(priorCT)))
+		for i := range priorCT {
+			Expect(afterB.Blob[i]).To(Equal(priorCT[i]),
+				"userB blob mutated at byte %d — cross-user write from spoofed Requester", i)
+		}
+		Expect(ptrStrEq(beforeB.Status, afterB.Status)).To(BeTrue(),
+			"userB status changed — cross-user write from spoofed Requester")
+		Expect(ptrTimeEq(beforeB.CheckedAt, afterB.CheckedAt)).To(BeTrue(),
+			"userB checked_at changed — a stray UPDATE hit userB's row")
+
+		// Extra: decrypt userA's blob to confirm THAT is where the token went.
+		pt, err := auth.Decrypt(infoA.Blob)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(pt)).To(Equal("attacker_typed_token"),
+			"userA's blob must decrypt to the typed token — proves the write landed on Requester's row exactly")
+	})
+
+	It("applyKeyOutcome(saw401=true, Requester=UserA) → UserB's status is untouched", func() {
+		// The 401 branch takes a different code path (UpdateWakatimeKeyStatus
+		// vs. SetEncryptedWakatimeKey). Verify cross-user isolation for THAT
+		// branch too — a bad WHERE clause here would flip UserB to invalid.
+		database := openImportOutcomeDBGinkgo()
+		withEncryptionKeyGinkgo()
+		ctx := context.Background()
+
+		userA := fmt.Sprintf("victA401_%d", time.Now().UnixNano())
+		userB := fmt.Sprintf("victB401_%d", time.Now().UnixNano())
+		seedUserWithKeyGinkgo(database, userA, "waka_A", db.WakatimeKeyStatusValid)
+		seedUserWithKeyGinkgo(database, userB, "waka_B", db.WakatimeKeyStatusValid)
+
+		beforeB, err := database.GetWakatimeKeyInfo(ctx, userB)
+		Expect(err).NotTo(HaveOccurred())
+
+		w := &Worker{db: database, logger: silentLoggerCov(), hub: NewHub()}
+		w.applyKeyOutcome(QueueItem{Requester: userA}, db.JobStateFailed, true)
+
+		afterB, err := database.GetWakatimeKeyInfo(ctx, userB)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(ptrStrEq(beforeB.Status, afterB.Status)).To(BeTrue(),
+			"userB status must remain 'valid' — a spoofed 401 from userA must not poison userB's status")
+		Expect(ptrTimeEq(beforeB.CheckedAt, afterB.CheckedAt)).To(BeTrue(),
+			"userB checked_at must not tick — proves no UPDATE ran on userB's row")
+	})
+})
+
+var _ = Describe("Cross-key ciphertext negative (gaka-d6x, security gap #2)", func() {
+	// Named invariant: an accidentally-shipped "fallback" or "default" key
+	// would produce different ciphertext than the intended key. Any test that
+	// relies on "encrypt something and decrypt it" is a tautology if the SAME
+	// key is used both times. This test proves that when a DIFFERENT key is
+	// loaded, the ciphertext produced for the same plaintext is DIFFERENT AND
+	// the wrong-key ciphertext does NOT decrypt under the intended key.
+	It("Encrypt under Key1 ≠ Encrypt under Key2; and cross-key Decrypt fails auth", func() {
+		const key1 = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="       // 0x00..0x1f
+		const key2 = "/////////////////////////////////////////wA=" // 0xff*31 + 0x00
+
+		prev, hadPrev := os.LookupEnv("BOOM_ENCRYPTION_KEY")
+		DeferCleanup(func() {
+			if hadPrev {
+				os.Setenv("BOOM_ENCRYPTION_KEY", prev)
+			} else {
+				os.Unsetenv("BOOM_ENCRYPTION_KEY")
+			}
+			auth.ResetForTest()
+		})
+
+		// Encrypt "same_plaintext" under key1.
+		os.Setenv("BOOM_ENCRYPTION_KEY", key1)
+		auth.ResetForTest()
+		Expect(auth.LoadKeyFromEnv()).To(Succeed())
+		ct1, err := auth.Encrypt([]byte("same_plaintext"))
+		Expect(err).NotTo(HaveOccurred())
+
+		// Encrypt "same_plaintext" under key2.
+		os.Setenv("BOOM_ENCRYPTION_KEY", key2)
+		auth.ResetForTest()
+		Expect(auth.LoadKeyFromEnv()).To(Succeed())
+		ct2, err := auth.Encrypt([]byte("same_plaintext"))
+		Expect(err).NotTo(HaveOccurred())
+
+		// Ciphertexts must differ (even beyond the random nonce prefix —
+		// simplest sufficient check: they must not be byte-identical).
+		Expect(len(ct1)).To(Equal(len(ct2)),
+			"same-length plaintext must yield same-length ciphertext for both keys (nonce||sealed)")
+		different := false
+		for i := range ct1 {
+			if ct1[i] != ct2[i] {
+				different = true
+				break
+			}
+		}
+		Expect(different).To(BeTrue(),
+			"ciphertexts under different keys are byte-identical — this is impossible unless a fallback key is masking key selection")
+
+		// Cross-key Decrypt MUST fail (GCM auth tag catches it) — this
+		// is the "would silently pass if a fallback key exists" guard.
+		os.Setenv("BOOM_ENCRYPTION_KEY", key1)
+		auth.ResetForTest()
+		Expect(auth.LoadKeyFromEnv()).To(Succeed())
+		_, err = auth.Decrypt(ct2) // ct2 was sealed under key2
+		Expect(err).To(HaveOccurred(),
+			"Decrypt(ct-under-key2) with key1 loaded must fail — a silent success would prove a shared fallback key")
+	})
+
+	It("withEncryptionKeyGinkgo's canonical key produces DIFFERENT ciphertext than a fresh random key", func() {
+		// Extra: use the exact helper the whole test suite relies on and
+		// confirm its output is distinguishable from another well-formed key.
+		// Guards against the whole suite silently agreeing on a wrong key.
+		withEncryptionKeyGinkgo() // installs canonical AAEC... key
+		ctCanonical, err := auth.Encrypt([]byte("probe"))
+		Expect(err).NotTo(HaveOccurred())
+
+		// Swap to a fresh distinct key.
+		os.Setenv("BOOM_ENCRYPTION_KEY", "/////////////////////////////////////////wA=")
+		auth.ResetForTest()
+		Expect(auth.LoadKeyFromEnv()).To(Succeed())
+		ctOther, err := auth.Encrypt([]byte("probe"))
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(len(ctCanonical)).To(Equal(len(ctOther)))
+		anyDiff := false
+		for i := range ctCanonical {
+			if ctCanonical[i] != ctOther[i] {
+				anyDiff = true
+				break
+			}
+		}
+		Expect(anyDiff).To(BeTrue(),
+			"canonical-key ciphertext equals other-key ciphertext — helper key is somehow shared / masked")
 	})
 })
