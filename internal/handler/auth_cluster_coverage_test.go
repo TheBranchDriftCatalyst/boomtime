@@ -21,11 +21,14 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -298,6 +301,23 @@ var _ = Describe("API token CRUD", func() {
 		Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
 		Expect(resp.APIToken).NotTo(BeEmpty(), "response MUST carry the raw plaintext ONCE")
 
+		// SECURITY GAP (raw-bytes assertion): the typed decoder above
+		// silently drops any additional fields the server might have
+		// added. A regression that added e.g. {"apiToken":"...",
+		// "tknId":"..."} would leak the ID/prefix alongside the raw
+		// plaintext — one leak now ties the raw to a lookup key. Assert
+		// the response body has EXACTLY ONE top-level key ("apiToken")
+		// by decoding into a generic map.
+		var allKeys map[string]json.RawMessage
+		Expect(json.Unmarshal(rec.Body.Bytes(), &allKeys)).To(Succeed(),
+			"response body was not a JSON object; body=%s", rec.Body.String())
+		Expect(allKeys).To(HaveLen(1),
+			"create-api-token response has %d top-level keys, want exactly 1 (apiToken). "+
+				"An extra key (e.g. tknId, hash, prefix) leaks metadata that ties the plaintext to a lookup key. body=%s",
+			len(allKeys), rec.Body.String())
+		Expect(allKeys).To(HaveKey("apiToken"),
+			"the sole top-level key must be 'apiToken'; body=%s", rec.Body.String())
+
 		var afterN int
 		Expect(hz.DB.Pool.QueryRow(context.Background(),
 			`SELECT count(*) FROM auth_tokens WHERE owner=$1 AND token_expiry IS NULL`,
@@ -436,7 +456,7 @@ var _ = Describe("API token CRUD", func() {
 		}
 	})
 
-	It("Delete scoped to owner: DELETE of A's token by B leaves the row intact (no oracle)", func() {
+	It("Delete scoped to owner: DELETE of A's token by B leaves the row intact (no oracle); envelope BYTE-IDENTICAL to own-token delete + non-existent-id delete", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := routerWithAuthClusterAC(hz)
 
@@ -446,6 +466,12 @@ var _ = Describe("API token CRUD", func() {
 		// Extra token on A that we want to try to delete AS B.
 		victimRaw := mintAPITokenAC(hz, userA)
 		victimID := tokenIDPrefixAC(hz, userA, victimRaw)
+
+		// A separate token on A for the own-delete comparison — we don't
+		// want the own-delete case to be a phantom (deleting non-existent
+		// row); it must actually remove one.
+		ownRaw := mintAPITokenAC(hz, userA)
+		ownID := tokenIDPrefixAC(hz, userA, ownRaw)
 
 		// GUARANTEE 1: DELETE from B against A's token → 204 (same envelope)
 		// but row STAYS. No error differentiation lets B probe which IDs
@@ -462,15 +488,50 @@ var _ = Describe("API token CRUD", func() {
 		Expect(stillThere).To(Equal(1),
 			"B's cross-owner DELETE actually deleted A's token — scope predicate is broken")
 
-		// GUARANTEE 2: DELETE by A DOES remove the row.
-		delAsA := doJSONReqG(e, http.MethodDelete, "/auth/token/"+victimID, tokenA, nil)
+		// GUARANTEE 2: DELETE by A DOES remove the row (own-delete on a
+		// DIFFERENT token so both paths hit an existing row).
+		delAsA := doJSONReqG(e, http.MethodDelete, "/auth/token/"+ownID, tokenA, nil)
 		Expect(delAsA).To(testutil.HaveStatus(http.StatusNoContent))
+		var ownGone int
 		Expect(hz.DB.Pool.QueryRow(context.Background(),
 			`SELECT count(*) FROM auth_tokens
 			 WHERE owner=$1 AND LEFT(encode(hashed_token,'hex'),12)=$2`,
-			userA, victimID).Scan(&stillThere)).To(Succeed())
-		Expect(stillThere).To(Equal(0),
+			userA, ownID).Scan(&ownGone)).To(Succeed())
+		Expect(ownGone).To(Equal(0),
 			"owner's DELETE did NOT actually remove the row")
+
+		// GUARANTEE 3 (security gap: no oracle via headers/bytes): the
+		// envelope B sees for a cross-owner DELETE must be BYTE-FOR-BYTE
+		// identical to what A sees for an own DELETE, AND identical to
+		// what any authenticated user sees when deleting a non-existent ID.
+		// If Set-Cookie / Content-Type / Content-Length / body bytes differ
+		// across paths, an attacker can distinguish "your ID exists but not
+		// yours" from "your ID exists and yours" or "no such ID". The
+		// no-oracle contract requires these to be indistinguishable.
+		nonexistID := "0000000000ff" // 12-hex-char; guaranteed nonexistent
+		delNonexist := doJSONReqG(e, http.MethodDelete, "/auth/token/"+nonexistID, tokenA, nil)
+		Expect(delNonexist).To(testutil.HaveStatus(http.StatusNoContent),
+			"nonexistent ID must 204 (matches own + cross-owner shape); body=%s", delNonexist.Body.String())
+
+		// Body-length parity: 204 responses SHOULD have empty bodies per
+		// RFC 7230 §3.3.3. Assert all three are byte-identical.
+		Expect(delAsB.Body.Bytes()).To(Equal(delAsA.Body.Bytes()),
+			"cross-owner DELETE body != own DELETE body — response bytes distinguish scope")
+		Expect(delAsB.Body.Bytes()).To(Equal(delNonexist.Body.Bytes()),
+			"cross-owner DELETE body != non-existent DELETE body — response bytes distinguish existence")
+
+		// Header-parity: drop the volatile Date header (which changes per
+		// call) and compare the rest. Any oracle in Content-Type /
+		// Content-Length / Cache-Control / etc. would surface here.
+		hdr := func(h http.Header) http.Header {
+			out := h.Clone()
+			out.Del("Date")
+			return out
+		}
+		Expect(hdr(delAsB.Header())).To(Equal(hdr(delAsA.Header())),
+			"cross-owner DELETE headers != own DELETE headers — oracle via response headers")
+		Expect(hdr(delAsB.Header())).To(Equal(hdr(delNonexist.Header())),
+			"cross-owner DELETE headers != non-existent DELETE headers — oracle via response headers")
 	})
 
 	It("Update (rename) scoped to owner: B cannot rename A's token, A's name is preserved verbatim", func() {
@@ -616,7 +677,7 @@ var _ = Describe("Logout (POST /auth/logout) — edge cases", func() {
 // -----------------------------------------------------------------------------
 
 var _ = Describe("Register (POST /auth/register) — edge cases", func() {
-	It("EnableRegistration=false → 403 DisabledRegistration BEFORE the body is read (no side effects)", func() {
+	It("EnableRegistration=false → 403 DisabledRegistration with no users row inserted", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		hz.Cfg.EnableRegistration = false
 		e := hz.Router()
@@ -636,6 +697,34 @@ var _ = Describe("Register (POST /auth/register) — edge cases", func() {
 			`SELECT count(*) FROM users WHERE username=$1`, user).Scan(&n)).To(Succeed())
 		Expect(n).To(Equal(0),
 			"registration was refused but a users row leaked — DisabledRegistration guard is running AFTER the insert")
+	})
+
+	It("EnableRegistration=false → 403 (NOT 413) on an OVER-CAP body → proves DisabledRegistration short-circuits BEFORE BindJSONWithLimit", func() {
+		// Ordering-invariant companion to the previous spec: post a >4 KiB
+		// body against a disabled-registration server. If the guard fires
+		// BEFORE BindJSONWithLimit, the response is 403 DisabledRegistration
+		// (body never read). If the guard regressed to run AFTER the bind,
+		// http.MaxBytesReader would trip first and yield 413. The status
+		// discriminates the two orderings unambiguously.
+		hz := testutil.NewHarness(GinkgoT())
+		hz.Cfg.EnableRegistration = false
+		e := hz.Router()
+
+		// 8 KiB payload — well past BodyLimitSmall (4 KiB). Content field
+		// is a huge password so json.Decode has to consume >4 KiB from Body
+		// before the object is complete.
+		big := strings.Repeat("Z", 8000)
+		body := []byte(`{"username":"reg_disabled_413","password":"` + big + `"}`)
+		req := httptest.NewRequest(http.MethodPost, "/auth/register", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+
+		Expect(rec.Code).To(Equal(http.StatusForbidden),
+			"expected 403 DisabledRegistration; got %d — a 413 here would prove BindJSONWithLimit ran BEFORE the registration-enabled guard, contradicting the ordering invariant. body=%s",
+			rec.Code, rec.Body.String())
+		Expect(rec.Code).NotTo(Equal(http.StatusRequestEntityTooLarge),
+			"body was read (413) despite disabled-registration guard being ordered-first")
 	})
 
 	It("duplicate username → 409 UsernameExists, no second row inserted", func() {
@@ -727,7 +816,7 @@ var _ = Describe("ChangePassword — auth guard", func() {
 })
 
 var _ = Describe("ChangePassword (POST /api/v1/users/current/password) — missing fields", func() {
-	It("empty currentPassword → 400 BEFORE any argon2 verify runs (no timing oracle for empty)", func() {
+	It("empty currentPassword → 400 with 'required' AND the body carries NO 'Current password is incorrect' text (proves the guard fires BEFORE VerifyPasswordWithVersion)", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
 		_, _, token := mintUserWithPasswordG(hz, "chpwd_missing_cur", "test1234")
@@ -737,12 +826,19 @@ var _ = Describe("ChangePassword (POST /api/v1/users/current/password) — missi
 			"newPassword":     "shouldnotmatter1",
 		})
 		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest),
-			"missing currentPassword must 400 not 401 (401 would prove an empty verify ran); body=%s", rec.Body.String())
+			"missing currentPassword must 400 not 401 (401 would prove VerifyPasswordWithVersion ran on empty); body=%s", rec.Body.String())
 		Expect(rec.Body.String()).To(ContainSubstring("required"),
 			"error body must name which fields are required")
+		// ORDERING INVARIANT: if the guard silently regressed AFTER
+		// VerifyPasswordWithVersion, that step's 401 envelope
+		// ("Current password is incorrect") would surface via
+		// respondErr in the body. Assert the body carries the "required"
+		// envelope EXCLUSIVELY — no VerifyPasswordWithVersion text.
+		Expect(rec.Body.String()).NotTo(ContainSubstring("Current password is incorrect"),
+			"body contains verify-side sentinel — the empty-guard ran AFTER argon2 VerifyPasswordWithVersion; body=%s", rec.Body.String())
 	})
 
-	It("empty newPassword → 400 (guard fires BEFORE ValidatePassword sentinel path)", func() {
+	It("empty newPassword → 400 with 'required' AND body does NOT contain ValidatePassword sentinel text (proves guard fires BEFORE auth.ValidatePassword)", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
 		_, _, token := mintUserWithPasswordG(hz, "chpwd_missing_new", "test1234")
@@ -753,6 +849,80 @@ var _ = Describe("ChangePassword (POST /api/v1/users/current/password) — missi
 		})
 		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest),
 			"empty newPassword must 400 with the shared 'required' message, not ErrPasswordTooShort; body=%s", rec.Body.String())
+		Expect(rec.Body.String()).To(ContainSubstring("required"),
+			"error body must name which fields are required")
+		// ORDERING INVARIANT: auth.ValidatePassword("") returns
+		// ErrPasswordTooShort ("password must be at least 8 characters").
+		// If the empty-newPassword guard regressed and short-circuited
+		// through ValidatePassword, that text would leak in the body.
+		// Grepping for that exact sentinel string forces the ordering to
+		// be observable via body content — no reliance on status alone.
+		Expect(rec.Body.String()).NotTo(ContainSubstring("password must be at least 8 characters"),
+			"body contains ErrPasswordTooShort text — the empty-guard ran AFTER auth.ValidatePassword; body=%s", rec.Body.String())
+		Expect(rec.Body.String()).NotTo(ContainSubstring("Current password is incorrect"),
+			"empty newPassword hit the argon2 verify path — guard ordering is broken; body=%s", rec.Body.String())
+	})
+})
+
+// -----------------------------------------------------------------------------
+// ChangePassword — cross-user isolation (highest-value auth mutation).
+// Every other user-scoped mutation has a B-attacks-A spec; ChangePassword
+// deserves the same treatment. resolveUser derives owner from the token, so
+// the caller-supplied body cannot pivot the write to another user's row —
+// this spec pins that invariant end-to-end (attack: B posts A's current
+// password with B's token, asserts A's hashed_password/argon_version/salt
+// are byte-for-byte unchanged).
+// -----------------------------------------------------------------------------
+
+var _ = Describe("ChangePassword — cross-user isolation", func() {
+	It("user B posts A's currentPassword with B's own token → A's row is UNCHANGED", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := hz.Router()
+
+		// Two distinct users with distinct known passwords.
+		userA, pwA, _ := mintUserWithPasswordG(hz, "chpwd_iso_a", "AaAa1111!")
+		userB, _, tokenB := mintUserWithPasswordG(hz, "chpwd_iso_b", "BbBb2222!")
+		Expect(userA).NotTo(Equal(userB))
+
+		// SNAPSHOT: capture A's password columns BEFORE the attack.
+		var preHashA, preSaltA []byte
+		var preVerA int
+		Expect(hz.DB.Pool.QueryRow(context.Background(),
+			`SELECT hashed_password, salt_used, argon_version FROM users WHERE username=$1`, userA).
+			Scan(&preHashA, &preSaltA, &preVerA)).To(Succeed())
+
+		// ATTACK: B authenticates with B's token but supplies A's password
+		// in the body. resolveUser derives owner from the token (B), so
+		// VerifyPasswordWithVersion runs against B's hash — A's password
+		// vs B's hash fails, expected 401. The important invariant is what
+		// DIDN'T happen: A's row must be byte-for-byte unchanged.
+		rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/password", tokenB,
+			map[string]string{
+				"currentPassword": pwA, // A's password
+				"newPassword":     "PwnedByB9!!",
+			})
+		// B's token → owner is B → VerifyPasswordWithVersion(A's pw, B's hash) fails → 401.
+		Expect(rec).To(testutil.HaveStatus(http.StatusUnauthorized),
+			"expected 401 (B's currentPassword field != B's stored password); body=%s", rec.Body.String())
+
+		// GUARANTEE: A's row is byte-for-byte unchanged. Any bit of drift
+		// here would mean the endpoint let a body-field pivot the write
+		// onto A's row.
+		var postHashA, postSaltA []byte
+		var postVerA int
+		Expect(hz.DB.Pool.QueryRow(context.Background(),
+			`SELECT hashed_password, salt_used, argon_version FROM users WHERE username=$1`, userA).
+			Scan(&postHashA, &postSaltA, &postVerA)).To(Succeed())
+		Expect(bytes.Equal(preHashA, postHashA)).To(BeTrue(),
+			"A's hashed_password changed after B's cross-user ChangePassword attempt")
+		Expect(bytes.Equal(preSaltA, postSaltA)).To(BeTrue(),
+			"A's salt_used changed after B's cross-user ChangePassword attempt")
+		Expect(postVerA).To(Equal(preVerA),
+			"A's argon_version changed after B's cross-user ChangePassword attempt")
+
+		// POSITIVE SIBLING: A's password STILL works (login succeeds).
+		Expect(verifyLoginG(e, userA, pwA)).To(Equal(http.StatusOK),
+			"A's password stopped working after B's cross-user attempt — A's row was clobbered")
 	})
 })
 
@@ -875,12 +1045,17 @@ var _ = Describe("DeleteWakatimeKey (DELETE /api/v1/users/current/wakatime_key)"
 		Expect(err).NotTo(HaveOccurred())
 		Expect(hz.DB.SetEncryptedWakatimeKey(context.Background(), user, ct, db.WakatimeKeyStatusValid)).To(Succeed())
 
-		// Confirm all three columns are populated pre-delete.
+		// Confirm all three columns are populated pre-delete. Scan directly
+		// into typed pointers (*time.Time for the timestamp) rather than
+		// casting to bytea — the cast hides schema drift (if the column
+		// type changed, the cast could silently coerce and mask real
+		// behavior). Using *time.Time here means a schema drift on
+		// wakatime_key_checked_at fails the Scan loudly.
 		var preBlob []byte
 		var preStatus *string
-		var preChecked *[]byte // opaque; we only care it's non-null
+		var preChecked *time.Time
 		Expect(hz.DB.Pool.QueryRow(context.Background(),
-			`SELECT encrypted_wakatime_key, wakatime_key_status, wakatime_key_checked_at::text::bytea
+			`SELECT encrypted_wakatime_key, wakatime_key_status, wakatime_key_checked_at
 			   FROM users WHERE username=$1`, user).Scan(&preBlob, &preStatus, &preChecked)).To(Succeed())
 		Expect(preBlob).NotTo(BeEmpty())
 		Expect(preStatus).NotTo(BeNil())
@@ -892,17 +1067,36 @@ var _ = Describe("DeleteWakatimeKey (DELETE /api/v1/users/current/wakatime_key)"
 		// NAMED INVARIANT: all three columns are NULL post-delete. If only
 		// the blob went NULL, a subsequent presence-probe would render a
 		// stale status/checkedAt from the last save (leaks history).
+		// Same typed-scan approach on the post-delete read, plus a
+		// standalone `IS NULL` query that avoids the scan-typing question
+		// altogether (defense in depth vs. any driver-level coercion).
 		var postBlob []byte
 		var postStatus *string
-		var postChecked *[]byte
+		var postChecked *time.Time
 		Expect(hz.DB.Pool.QueryRow(context.Background(),
-			`SELECT encrypted_wakatime_key, wakatime_key_status, wakatime_key_checked_at::text::bytea
+			`SELECT encrypted_wakatime_key, wakatime_key_status, wakatime_key_checked_at
 			   FROM users WHERE username=$1`, user).Scan(&postBlob, &postStatus, &postChecked)).To(Succeed())
 		Expect(postBlob).To(BeNil(), "DELETE left ciphertext behind")
 		Expect(postStatus).To(BeNil(),
 			"DELETE left status metadata behind — leaks 'this user WAS valid recently'")
 		Expect(postChecked).To(BeNil(),
 			"DELETE left checked_at behind — leaks last-save wall-clock")
+
+		// SECONDARY: explicit IS NULL query so a hypothetical driver-level
+		// zero-value coercion for time.Time (Go's zero time is 0001-01-01,
+		// which is NOT NULL) cannot silently pass the *time.Time check
+		// above. The predicate runs at the DB layer — no Go-side coercion
+		// can hide a stale timestamp.
+		var nullCount int
+		Expect(hz.DB.Pool.QueryRow(context.Background(),
+			`SELECT count(*) FROM users
+			  WHERE username=$1
+			    AND encrypted_wakatime_key   IS NULL
+			    AND wakatime_key_status      IS NULL
+			    AND wakatime_key_checked_at  IS NULL`,
+			user).Scan(&nullCount)).To(Succeed())
+		Expect(nullCount).To(Equal(1),
+			"post-DELETE row does not have all three columns NULL at the DB layer — driver-level coercion may be hiding stale metadata")
 	})
 
 	It("cross-user isolation: B's DELETE does NOT touch A's ciphertext", func() {
@@ -1030,6 +1224,18 @@ var _ = Describe("SaveWakatimeKey (POST /api/v1/users/current/wakatime_key)", fu
 		Expect(got.Header.Get("Authorization")).To(Equal(wantAuth),
 			"probe outbound Authorization header wrong — either the wrong encoding or the wrong material")
 		Expect(got.URL.RawQuery).To(BeEmpty(), "raw key must NOT appear in query string")
+		// NAMED INVARIANT #2b (security gap): the probe MUST target wakatime.com.
+		// A future refactor that redirected the probe to a wrong upstream (or a
+		// dev-only stub URL smuggled into prod) would silently leak the plaintext
+		// via the Basic auth header. Assert Host + Path so the invariant is
+		// enforced end-to-end. The RoundTripper we install accepts any Host, so
+		// this test is the only place that pins the destination.
+		Expect(got.URL.Host).To(Equal("wakatime.com"),
+			"probe outbound went to %q, not wakatime.com — plaintext key leaked to wrong upstream", got.URL.Host)
+		Expect(got.URL.Path).To(Equal("/api/v1/users/current"),
+			"probe path drifted from /api/v1/users/current — got %q", got.URL.Path)
+		Expect(got.URL.Scheme).To(Equal("https"),
+			"probe scheme drifted from https — plaintext Basic auth over http-in-the-clear is unacceptable")
 
 		// NAMED INVARIANT #3: ciphertext is now on the row.
 		info, err := hz.DB.GetWakatimeKeyInfo(context.Background(), user)
@@ -1341,21 +1547,33 @@ var _ = Describe("Auth cluster — internal-error branches (pool closed)", func(
 			"persist-time DB error must 500; body=%s", rec.Body.String())
 	})
 
-	It("DeleteWakatimeKey with a dead pool → 500 (Clear query fails)", func() {
+	It("DeleteWakatimeKey resolveUser failure (pool dies before token lookup) → 500 generic (no info leak, no partial mutation)", func() {
+		// HONEST NAMING: closing the pool before the request runs means
+		// resolveUser's token lookup is the FIRST DB call that trips.
+		// That is a different code branch from the ClearEncryptedWakatimeKey
+		// failure (which would require the pool to survive resolveUser but
+		// die on the Clear exec). We test the resolveUser branch here and
+		// verify:
+		//   - the response is 500 (not 401/403 — those would fingerprint
+		//     DB errors as auth failures).
+		//   - the envelope carries NO internal string (pool/conn/SELECT/closed).
+		// A separate test would need a real Clear-only fault injector
+		// (analogous to SetChangePasswordFaultInjector) to exercise the
+		// post-resolveUser Clear failure branch — filed as follow-up work.
 		hz := testutil.NewHarness(GinkgoT())
 		e := routerWithAuthClusterAC(hz)
 		_, token := hz.MintUser("wkkey_dbdown_del")
 
-		// Same approach — close pool AFTER token verified but BEFORE the
-		// Clear query. resolveUser is a pool call too, so closing here
-		// will make resolveUser fail with generic 500 which STILL hits
-		// the same branch (h.internalErr envelope). Either way we cover
-		// the failure branch of the handler.
 		hz.DB.Pool.Close()
 
 		rec := doJSONReqG(e, http.MethodDelete, "/api/v1/users/current/wakatime_key", token, nil)
 		Expect(rec).To(testutil.HaveStatus(http.StatusInternalServerError),
-			"DB outage on Clear must 500; body=%s", rec.Body.String())
+			"DB outage during resolveUser must 500 (never 401/403 — those would falsely claim auth failure); body=%s", rec.Body.String())
+		body := rec.Body.String()
+		for _, needle := range []string{"pool", "conn", "SELECT", "closed"} {
+			Expect(body).NotTo(ContainSubstring(needle),
+				"500 body leaked internal string %q on Delete-resolveUser failure: %s", needle, body)
+		}
 	})
 
 	It("ChangePassword with a dead pool → 500 (GetUserByName errors before verify)", func() {
@@ -1374,6 +1592,19 @@ var _ = Describe("Auth cluster — internal-error branches (pool closed)", func(
 	})
 
 	It("Login with a dead pool → 500 generic (never reaches sentinel verify)", func() {
+		// COUPLING NOTE (cross-suite): this spec ACTIVELY DEPENDS on the
+		// gaka-imm constant-time invariant proved in
+		// auth_test.go > "Login constant-time (gaka-imm)" > TestLogin_ConstantTimeUserEnumeration.
+		// That sibling test proves BurnSentinelVerify DOES run on the
+		// user-not-found branch (sentinel counter increments, timing
+		// delta < 3ms). Here we prove BurnSentinelVerify does NOT run
+		// on a DB-lookup-error branch (would falsely fingerprint DB
+		// errors as auth failures via 403). If a future refactor
+		// changes Login's error-handling order — for example,
+		// swallowing the GetUserByName err and falling through to the
+		// sentinel-burn — this spec catches it via the 500-not-403
+		// assertion, and the sibling suite catches the reverse regression.
+		// A refactor of Login MUST re-run BOTH suites together.
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
 
@@ -1437,6 +1668,351 @@ var _ = Describe("Auth cluster — internal-error branches (pool closed)", func(
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
 		Expect(rec).To(testutil.HaveStatus(http.StatusInternalServerError))
+	})
+})
+
+// -----------------------------------------------------------------------------
+// Missing-invariant fills (per critique):
+//
+//   - SaveWakatimeKey cross-user reverse spec (B → A untouched)
+//   - Log-scrub: plaintext key must NEVER appear in server logs
+//   - wakatime_key_status state-machine transitions (valid → 5xx → unknown)
+//   - Malformed JSON e2e on register + wakatime_key (400 not 500 stack leak)
+// -----------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------
+// SaveWakatimeKey — reverse cross-user isolation.
+// Existing spec proves "A saves → B unaffected". This spec proves the reverse:
+// "B saves → A unaffected". resolveUser scopes owner from token today, so a
+// body-supplied identity cannot pivot the write — but the invariant needs a
+// spec so a future refactor adding a body-owner field is caught.
+// -----------------------------------------------------------------------------
+
+var _ = Describe("SaveWakatimeKey — reverse cross-user isolation (B → A untouched)", func() {
+	It("B saves via own token; A's row remains byte-for-byte unchanged (existing ciphertext preserved)", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := routerWithAuthClusterAC(hz)
+		installEncryptionKeyAC()
+		installProbeStubAC(http.StatusOK, `{"data":{}}`)
+
+		userA, _ := hz.MintUser("wkkey_save_iso_rev_a")
+		_, tokenB := hz.MintUser("wkkey_save_iso_rev_b")
+
+		// Seed A with a KNOWN ciphertext + status BEFORE B's save so we
+		// can prove B's request touched exactly zero bytes on A's row.
+		aCT, err := auth.Encrypt([]byte("A-preexisting-key-must-survive"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(hz.DB.SetEncryptedWakatimeKey(context.Background(), userA, aCT, db.WakatimeKeyStatusValid)).To(Succeed())
+
+		var preBlob []byte
+		var preStatus *string
+		Expect(hz.DB.Pool.QueryRow(context.Background(),
+			`SELECT encrypted_wakatime_key, wakatime_key_status FROM users WHERE username=$1`, userA).
+			Scan(&preBlob, &preStatus)).To(Succeed())
+		Expect(preBlob).To(Equal(aCT))
+		Expect(preStatus).NotTo(BeNil())
+
+		// B saves using B's own token. resolveUser scopes owner to B —
+		// no body field can override that. But we exercise the write end
+		// to end so a future refactor that adds a body-owner field is
+		// caught by the assertion that A's row is untouched.
+		rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/wakatime_key", tokenB,
+			map[string]string{"key": "b-only-fresh-key"})
+		Expect(rec).To(testutil.HaveStatus(http.StatusNoContent), "body=%s", rec.Body.String())
+
+		// A's row: byte-for-byte unchanged.
+		var postBlob []byte
+		var postStatus *string
+		Expect(hz.DB.Pool.QueryRow(context.Background(),
+			`SELECT encrypted_wakatime_key, wakatime_key_status FROM users WHERE username=$1`, userA).
+			Scan(&postBlob, &postStatus)).To(Succeed())
+		Expect(postBlob).To(Equal(preBlob),
+			"A's encrypted_wakatime_key changed after B's save — cross-user write is possible")
+		Expect(postStatus).NotTo(BeNil())
+		Expect(*postStatus).To(Equal(*preStatus),
+			"A's wakatime_key_status changed after B's save — scope regression")
+	})
+})
+
+// -----------------------------------------------------------------------------
+// Log-leak scrub: SaveWakatimeKey MUST NEVER log the plaintext key.
+// wakatime_key.go:13-14 promises "plaintext key is NEVER logged". Test hooks
+// h.Logger onto an in-memory buffer, drives every save-path branch (200 / 401
+// / 5xx / network-error / empty-body), and greps the accumulated log output
+// for the plaintext. A regression that added even a debug-level "%v" of the
+// request struct would show up here as a needle-in-body fail.
+// -----------------------------------------------------------------------------
+
+var _ = Describe("SaveWakatimeKey — plaintext key never appears in server logs", func() {
+	It("across 200/401/5xx/net-err/empty branches, log buffer contains ZERO byte of the plaintext", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := routerWithAuthClusterAC(hz)
+		installEncryptionKeyAC()
+
+		// Swap the handler logger for one backed by an in-memory buffer.
+		// TextHandler at DEBUG level captures everything — Info, Warn, Error —
+		// so a regression at any severity trips this spec.
+		var logBuf syncBufferAC
+		prev := hz.H.Logger
+		hz.H.Logger = slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		DeferCleanup(func() { hz.H.Logger = prev })
+
+		// One plaintext string tested against every branch — the assert is
+		// binary "did the plaintext appear anywhere in the log buffer".
+		const canary = "canary-plaintext-must-never-hit-logs-8f2a1c9"
+
+		user, token := hz.MintUser("wkkey_log_scrub")
+
+		// Branch 1: 200 (probe accepts, persist happens, Info log fires).
+		installProbeStubAC(http.StatusOK, `{"data":{}}`)
+		rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/wakatime_key", token,
+			map[string]string{"key": canary})
+		Expect(rec).To(testutil.HaveStatus(http.StatusNoContent), "body=%s", rec.Body.String())
+
+		// Reset row so subsequent saves aren't no-ops (no-op paths still
+		// exercise the log branches we care about, but resetting keeps
+		// state predictable).
+		Expect(hz.DB.ClearEncryptedWakatimeKey(context.Background(), user)).To(Succeed())
+
+		// Branch 2: 401 (probe rejects, no persist, no Info log — but
+		// probeWakatimeKey may still Warn "unexpected status" for edge
+		// cases; ensure that Warn line doesn't carry the plaintext).
+		installProbeStubAC(http.StatusUnauthorized, `unauth`)
+		rec = doJSONReqG(e, http.MethodPost, "/api/v1/users/current/wakatime_key", token,
+			map[string]string{"key": canary + "-401"})
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest))
+
+		// Branch 3: 5xx (probe warns "unexpected status" — this is the
+		// Warn line most likely to accidentally include the plaintext
+		// if a future refactor added "%v" of the request struct).
+		installProbeStubAC(http.StatusInternalServerError, `server error`)
+		rec = doJSONReqG(e, http.MethodPost, "/api/v1/users/current/wakatime_key", token,
+			map[string]string{"key": canary + "-5xx"})
+		Expect(rec).To(testutil.HaveStatus(http.StatusNoContent))
+
+		// Branch 4: network error (probe warns "request failed").
+		installProbeErrStubAC(errors.New("simulated dial error carrying key context"))
+		rec = doJSONReqG(e, http.MethodPost, "/api/v1/users/current/wakatime_key", token,
+			map[string]string{"key": canary + "-neterr"})
+		Expect(rec).To(testutil.HaveStatus(http.StatusNoContent))
+
+		// Branch 5: empty-body 400 (guard fires; no probe, no Info log).
+		rec = doJSONReqG(e, http.MethodPost, "/api/v1/users/current/wakatime_key", token,
+			map[string]string{"key": ""})
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest))
+
+		// The plaintext key must appear ZERO times across ALL branches.
+		// A regression that logged the request struct via "%v" — or
+		// added an Error-level dump with the plaintext — would surface
+		// as a substring hit here.
+		got := logBuf.String()
+		Expect(got).NotTo(ContainSubstring(canary),
+			"server log leaked plaintext wakatime key across save-path branches. Log buffer contents (may include Warn/Error lines with %%v of request):\n%s", got)
+	})
+})
+
+// syncBufferAC is a goroutine-safe bytes.Buffer wrapper for slog handlers.
+// slog handlers may write from arbitrary goroutines, and bytes.Buffer is not
+// concurrency-safe. This wrapper serializes Write + String access.
+type syncBufferAC struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBufferAC) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBufferAC) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// -----------------------------------------------------------------------------
+// wakatime_key_status state-machine transitions.
+//
+// The probe-mapping table (line ~1250) covers TERMINAL state per upstream
+// code, but doesn't pin whether a subsequent save with a DIFFERENT upstream
+// verdict transitions the previously-stored status. Concretely: if a user
+// saves a valid key (status=valid), then re-saves and the probe returns 5xx,
+// does the status downgrade to 'unknown'? Currently: yes (SetEncryptedWakatimeKey
+// overwrites status column). Pin that semantic here so a future refactor
+// that reads "keep previous 'valid' on ambiguous re-save" doesn't silently
+// change user-visible state.
+// -----------------------------------------------------------------------------
+
+var _ = Describe("SaveWakatimeKey — wakatime_key_status transitions on sequential saves", func() {
+	It("valid → save-again-with-5xx-probe downgrades status to 'unknown' (5xx does NOT preserve prior 'valid')", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := routerWithAuthClusterAC(hz)
+		installEncryptionKeyAC()
+
+		user, token := hz.MintUser("wkkey_stateflow_valid_to_unk")
+
+		// STEP 1: probe returns 200 → status column = 'valid'.
+		rt1 := &stubRoundTripperAC{
+			respond: func(*http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{"data":{}}`)),
+					Header:     make(http.Header),
+				}, nil
+			},
+		}
+		restore1 := handler.SwapHTTPClientForTest(&http.Client{Transport: rt1})
+		rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/wakatime_key", token,
+			map[string]string{"key": "first-key-valid-per-probe"})
+		Expect(rec).To(testutil.HaveStatus(http.StatusNoContent), "body=%s", rec.Body.String())
+		restore1()
+
+		info, err := hz.DB.GetWakatimeKeyInfo(context.Background(), user)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(info.HasSavedKey).To(BeTrue())
+		Expect(info.Status).NotTo(BeNil())
+		Expect(*info.Status).To(Equal(string(db.WakatimeKeyStatusValid)),
+			"STEP 1: status should be 'valid' after 2xx probe; got %v", info.Status)
+
+		// STEP 2: probe now returns 5xx. Save-on-success invariant says
+		// the ciphertext still persists (with new key). Question this spec
+		// pins: does the previously-'valid' column get downgraded to
+		// 'unknown', or does it keep the 'valid' state?
+		//
+		// DESIGN: downgrade to 'unknown'. Rationale: the 5xx save wrote
+		// NEW ciphertext (different key); a 'valid' status carried over
+		// from the PREVIOUS key would lie about the new key's validity.
+		installProbeStubAC(http.StatusInternalServerError, `upstream 5xx`)
+		rec = doJSONReqG(e, http.MethodPost, "/api/v1/users/current/wakatime_key", token,
+			map[string]string{"key": "second-key-5xx-per-probe"})
+		Expect(rec).To(testutil.HaveStatus(http.StatusNoContent))
+
+		info, err = hz.DB.GetWakatimeKeyInfo(context.Background(), user)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(info.HasSavedKey).To(BeTrue(), "save-on-success invariant: 5xx still persists new ciphertext")
+		Expect(info.Status).NotTo(BeNil())
+		Expect(*info.Status).To(Equal(string(db.WakatimeKeyStatusUnknown)),
+			"STEP 2: previously 'valid' status should DOWNGRADE to 'unknown' after 5xx save. "+
+				"A regression that preserved the stale 'valid' would lie about the newly-stored key's provenance; got %v",
+			info.Status)
+	})
+
+	It("unknown → save-again-with-200 upgrades to 'valid' (successful re-probe clears the yellow dot)", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := routerWithAuthClusterAC(hz)
+		installEncryptionKeyAC()
+
+		user, token := hz.MintUser("wkkey_stateflow_unk_to_valid")
+
+		// STEP 1: probe returns 5xx → status column = 'unknown', ciphertext saved.
+		installProbeStubAC(http.StatusInternalServerError, `upstream 5xx`)
+		rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/wakatime_key", token,
+			map[string]string{"key": "first-key-unknown-per-probe"})
+		Expect(rec).To(testutil.HaveStatus(http.StatusNoContent), "body=%s", rec.Body.String())
+
+		info, err := hz.DB.GetWakatimeKeyInfo(context.Background(), user)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(*info.Status).To(Equal(string(db.WakatimeKeyStatusUnknown)),
+			"STEP 1: status should be 'unknown' after 5xx probe; got %v", info.Status)
+
+		// STEP 2: re-save with 200 upstream. Must UPGRADE to 'valid'.
+		installProbeStubAC(http.StatusOK, `{"data":{}}`)
+		rec = doJSONReqG(e, http.MethodPost, "/api/v1/users/current/wakatime_key", token,
+			map[string]string{"key": "second-key-valid-per-probe"})
+		Expect(rec).To(testutil.HaveStatus(http.StatusNoContent))
+
+		info, err = hz.DB.GetWakatimeKeyInfo(context.Background(), user)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(*info.Status).To(Equal(string(db.WakatimeKeyStatusValid)),
+			"STEP 2: 'unknown' status must UPGRADE to 'valid' after 2xx re-save; got %v", info.Status)
+	})
+})
+
+// -----------------------------------------------------------------------------
+// Malformed-JSON e2e (safety-net for the shared helper BindJSONWithLimit).
+//
+// TestBindJSONWithLimit_MalformedJSON covers the helper directly, but that
+// unit test doesn't prove the auth-cluster endpoints wire it correctly. This
+// spec posts syntactically-broken JSON at POST /auth/register and POST
+// /api/v1/users/current/wakatime_key and asserts a client-safe 400 with NO
+// server-internals leak (no stack trace, no "goroutine", no ".go:" file
+// paths).
+// -----------------------------------------------------------------------------
+
+var _ = Describe("Auth cluster — malformed JSON on POST endpoints", func() {
+	It("POST /auth/register with malformed JSON → 400 (never 500) with NO stack-trace/internal-string leak", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := hz.Router()
+
+		// Unterminated JSON object. Content-Length says 42; the body
+		// itself is a truncated JSON.
+		malformed := []byte(`{"username":"reg_malformed","password":"abc`)
+		req := httptest.NewRequest(http.MethodPost, "/auth/register", bytes.NewReader(malformed))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+
+		Expect(rec.Code).To(Equal(http.StatusBadRequest),
+			"malformed register JSON must 400; got %d body=%s", rec.Code, rec.Body.String())
+
+		body := rec.Body.String()
+		for _, needle := range []string{
+			"goroutine", ".go:", "runtime.", "panic:",
+			"json.SyntaxError", "invalid character",
+			"pgx", "pgconn", "SELECT", "INSERT",
+		} {
+			Expect(body).NotTo(ContainSubstring(needle),
+				"malformed-register 400 body leaks internal string %q: body=%s", needle, body)
+		}
+	})
+
+	It("POST /api/v1/users/current/wakatime_key with malformed JSON → 400 (never 500), NO plaintext or stack leak, probe never runs", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := routerWithAuthClusterAC(hz)
+		installEncryptionKeyAC()
+
+		// Install a stub that FAILS the test if the probe fires — a
+		// malformed body must never reach probeWakatimeKey.
+		rt := &stubRoundTripperAC{
+			respond: func(*http.Request) (*http.Response, error) {
+				defer GinkgoRecover()
+				Fail("malformed-body POST reached the wakatime probe — BindJSONWithLimit didn't guard")
+				return nil, errors.New("unreachable")
+			},
+		}
+		restore := handler.SwapHTTPClientForTest(&http.Client{Transport: rt})
+		DeferCleanup(restore)
+
+		_, token := hz.MintUser("wkkey_malformed")
+
+		// Unterminated JSON; a plaintext canary is present so we can
+		// prove even a malformed body doesn't reflect the value.
+		const canary = "malformed-plaintext-canary-2f8b"
+		malformed := []byte(`{"key":"` + canary + `` /* no closing quote or brace */)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/users/current/wakatime_key", bytes.NewReader(malformed))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Basic "+token)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+
+		Expect(rec.Code).To(Equal(http.StatusBadRequest),
+			"malformed wakatime_key JSON must 400; got %d body=%s", rec.Code, rec.Body.String())
+		Expect(rt.callCount.Load()).To(BeZero(),
+			"malformed body triggered a probe call — key would leak upstream on any nontrivial regression")
+
+		body := rec.Body.String()
+		// The canary MUST NOT be reflected — a naive error handler that
+		// echoed the request body in the error message would leak the key.
+		Expect(body).NotTo(ContainSubstring(canary),
+			"400 response echoed the malformed-body plaintext canary — key reflected to caller")
+		for _, needle := range []string{
+			"goroutine", ".go:", "runtime.", "panic:",
+			"json.SyntaxError", "invalid character",
+		} {
+			Expect(body).NotTo(ContainSubstring(needle),
+				"malformed-wakatime_key 400 body leaks internal string %q: body=%s", needle, body)
+		}
 	})
 })
 
