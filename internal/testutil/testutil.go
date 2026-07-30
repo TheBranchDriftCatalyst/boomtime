@@ -299,6 +299,23 @@ func (hz *Harness) Router() *echo.Echo {
 	e.POST("/api/v1/admin/backfill/jobs/:id/preview", h.AdminBackfillJobPreview)
 	e.DELETE("/api/v1/admin/backfill/heartbeats", h.AdminBackfillDeleteHeartbeats)
 	e.GET("/api/v1/admin/backfill/ws", h.AdminBackfillWS)
+	// gaka-d6x.handler misc cluster: routes previously only in the production
+	// router (internal/server), now mirrored here so tests don't hand-register
+	// and hit the duplicate-route panic.
+	e.GET("/healthz", h.Healthz)
+	e.GET("/api/v1/version", h.Version)
+	e.GET("/api/v1/changelog", h.Changelog)
+	e.GET("/api/v1/users/current/heartbeats/entities", h.ListEntitiesByType)
+	e.POST("/api/v1/users/current/heartbeats/entities/redact", h.RedactEntities)
+	e.GET("/api/v1/users/current/sources/health", h.SourceHealth)
+	e.GET("/api/v1/users/current/timeline", h.Timeline)
+	e.GET("/api/v1/users/current/statusbar/today", h.StatusbarToday)
+	e.GET("/api/v1/users/current/derived/status", h.DerivedStatus)
+	e.POST("/api/v1/users/current/derived/resync", h.DerivedResync)
+	e.GET("/badge/link/:project", h.BadgeLink)
+	e.GET("/badge/svg/:svg", h.BadgeSvg)
+	e.GET("/api/v1/leaderboards", h.Leaderboards)
+	e.GET("/api/v1/commits/:project/report", h.Commits)
 	// Cleanup: also clean up the goals table for the test's sender.
 	// The parent Cleanup registered per MintUser catches every table
 	// but goals — we extend the cleanup list separately here so

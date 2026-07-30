@@ -49,6 +49,22 @@ func doRawG(e http.Handler, method, target, token string, body []byte) *httptest
 	return rec
 }
 
+// decodeJSONBody unmarshals a JSON payload into dst. Kept as a shared
+// helper so per-test decoders stay one line.
+func decodeJSONBody(b []byte, dst any) error { return json.Unmarshal(b, dst) }
+
+// lastSegment returns the trailing path segment after the final '/'. Used
+// by the badges tests to extract the uuid from `<BadgeURL>/badge/svg/<uuid>`
+// without pulling in net/url just to peel off one path element.
+func lastSegment(s string) string {
+	for i := len(s) - 1; i >= 0; i-- {
+		if s[i] == '/' {
+			return s[i+1:]
+		}
+	}
+	return s
+}
+
 // mintUserWithPasswordG mirrors password_test.go's helper of the same name.
 func mintUserWithPasswordG(hz *testutil.Harness, prefix, password string) (user, plain, token string) {
 	ctx := context.Background()

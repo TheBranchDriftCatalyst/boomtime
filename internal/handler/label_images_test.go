@@ -20,6 +20,7 @@ import (
 
 // routerWithLabelImagesGinkgo — mirror of the stdlib file's helper.
 // Distinct name avoids duplicate-symbol collision.
+
 var _ = Describe("LabelImage (gaka-myv)", func() {
 	It("serves saved bytes with the exact Cache-Control envelope", func() {
 		hz := testutil.NewHarness(GinkgoT())
