@@ -27,8 +27,34 @@ import {
 } from "@radix-ui/react-tooltip";
 import { cn } from "@/lib/utils";
 import { LabelImage } from "@/features/publicprofile/labels/LabelImage";
-import type { LabelAward } from "@/features/publicprofile/labels/types";
+import type { LabelAward, LabelSpec } from "@/features/publicprofile/labels/types";
 import { formatCondition } from "@/features/publicprofile/labels/formatCondition";
+
+// Kind → default period mapping. Mirrors the KIND_DEFAULT_PERIOD map in
+// internal/db/award_ledger.go (KindDefaultPeriod) and useAwardStreaks so
+// the tooltip label matches what the ledger actually records.
+// A per-label periodDefault override on the spec wins over this default —
+// forwarded via LabelAward.periodDefault when present.
+function kindPeriodLabel(kind: LabelSpec["kind"], override?: string): string | null {
+  const pt = (override && override !== "") ? override : defaultForKind(kind);
+  if (!pt || pt === "lifetime") return null;
+  return pt;
+}
+
+function defaultForKind(kind: LabelSpec["kind"]): string {
+  switch (kind) {
+    case "tier":
+    case "tribe":
+      return "lifetime";
+    case "archetype":
+    case "meme":
+      return "weekly";
+    case "patch":
+      return "daily";
+    default:
+      return "weekly";
+  }
+}
 
 export interface LabelChipProps {
   award: LabelAward;
@@ -169,11 +195,26 @@ export function LabelChip({
               <div className="font-mono text-[12px] font-semibold uppercase tracking-[0.14em] text-[color:var(--primary)] leading-tight">
                 {award.label}
               </div>
-              {streak && streak > 1 ? (
-                <div className="rounded-sm border border-amber-400 px-1.5 py-[1px] font-mono text-[10px] font-bold text-amber-400">
-                  {streak}× streak
-                </div>
-              ) : null}
+              <div className="flex items-center gap-1 shrink-0">
+                {(() => {
+                  const period = kindPeriodLabel(award.kind, award.periodDefault);
+                  if (!period) return null;
+                  return (
+                    <div
+                      className="rounded-sm border border-[color:var(--primary)]/60 bg-[color:var(--primary)]/10 px-1.5 py-[1px] font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-[color:var(--primary)]"
+                      title={`Streak cadence: ${period}`}
+                      data-testid="label-period-chip"
+                    >
+                      {period}
+                    </div>
+                  );
+                })()}
+                {streak && streak > 1 ? (
+                  <div className="rounded-sm border border-amber-400 px-1.5 py-[1px] font-mono text-[10px] font-bold text-amber-400">
+                    {streak}× streak
+                  </div>
+                ) : null}
+              </div>
             </div>
             {award.description && (
               <div className="text-[11px] leading-snug text-[color:var(--foreground)]">

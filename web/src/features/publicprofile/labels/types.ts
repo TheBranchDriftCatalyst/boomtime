@@ -270,6 +270,12 @@ export interface LabelAward {
    *  so downstream (LabelChip tooltip) can render "Fires when: X ≥ Y"
    *  without a separate catalog lookup. */
   condition?: Condition;
+  /** Per-label period override. Empty / undefined = use the kind default
+   *  (tier/tribe = lifetime, archetype/meme = weekly, patch = daily).
+   *  Rendered as a "weekly" / "daily" / "monthly" info chip on the
+   *  LabelChip tooltip so operators can see the streak cadence without
+   *  opening the catalog editor. */
+  periodDefault?: string;
 }
 
 /** Convenience alias — the evaluator reads the same shape everywhere. */

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { NavLink } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -52,13 +53,21 @@ interface SidebarProps {
   onCreateSpace: () => void;
 }
 
-/** Spaces — dynamic, user-created scoped dashboards. */
+/** Spaces — dynamic, user-created scoped dashboards. Also hosts the
+ * public-profile link (it's semantically a scoped, publishable view of
+ * the caller's data — a "space" by any reasonable stretch). The
+ * publicProfileSlot is rendered ABOVE the user-created spaces list so
+ * operators see their public link first when scanning the group. The
+ * inner component decides whether to render (only if the caller has
+ * their public profile enabled) so passing null here means no slot. */
 function SpacesNavGroup({
   collapsed,
   onCreateSpace,
+  publicProfileSlot,
 }: {
   collapsed: boolean;
   onCreateSpace: () => void;
+  publicProfileSlot?: ReactNode;
 }) {
   const { data: spaces } = useSpaces();
 
@@ -74,6 +83,8 @@ function SpacesNavGroup({
       {collapsed && (
         <div className="mx-3 mb-1 border-t border-sidebar-border" />
       )}
+
+      {publicProfileSlot}
 
       {(spaces ?? []).map((space) => {
         const initial = space.name.trim().charAt(0).toUpperCase() || "S";
@@ -220,11 +231,16 @@ export function Sidebar({
           </NavLink>
         ))}
 
-        <PublicProfileNavLink collapsed={collapsed} />
-
         <AdminNavLink collapsed={collapsed} />
 
-        <SpacesNavGroup collapsed={collapsed} onCreateSpace={onCreateSpace} />
+        {/* Public profile lives in the Spaces group — it's semantically a
+            "space" too (a scoped, publishable view of your data). Order:
+            Public profile first, then user-created Spaces, then New space. */}
+        <SpacesNavGroup
+          collapsed={collapsed}
+          onCreateSpace={onCreateSpace}
+          publicProfileSlot={<PublicProfileNavLink collapsed={collapsed} />}
+        />
       </nav>
 
       <div className="space-y-1 border-t p-3">
