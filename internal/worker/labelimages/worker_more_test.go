@@ -45,11 +45,24 @@
 //   systemPrompt() cache:
 //     - two consecutive calls within TTL result in exactly ONE DB read
 //       (the sysFetched timestamp gates the second call)
+//     - after TTL expiry (simulated by resetting sysFetched to zero-time),
+//       the next call MUST re-read the DB and pick up an admin edit
+//     - sysMu actually serializes concurrent systemPrompt() callers so
+//       parallel generateAndSave invocations converge on one cached value
+//       (positive spec for the mutex — not just `go test -race` coverage)
 //
 //   generateAndSave error paths:
 //     - shim 500 → wrapped "shim:" error, no DB row written
 //     - per-entry Seed override is passed through to SaveLabelImage's seed
 //       column verbatim
+//     - per-entry Size override is passed through to the shim request
+//     - final saved `prompt` column carries the FULL 3-segment composition
+//       (systemPrompt + description + entryPrompt) — the "provenance is
+//       self-contained" claim in worker.go:344-346
+//
+//   RegenerateEntry model-fallback:
+//     - empty per-entry Model falls back to worker.model (parity with Run
+//       loop; the "override-wins" path is covered elsewhere)
 package labelimages
 
 import (
@@ -60,7 +73,9 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/comfyui"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
@@ -217,11 +232,37 @@ var _ = Describe("Worker.catalog() DB-first source-of-truth (gaka-d6x)", func() 
 			"pool-closed error path MUST fall back to compiled baseline, not return empty")
 	})
 
-	It("uses explicit worker.entries when set, bypassing DB entirely (unit-test injection)", func() {
-		injected := []labelcatalog.Entry{{ID: "inject-1", Prompt: "p"}}
-		// db is nil — proves the DB path is not taken.
-		w := &Worker{db: nil, entries: injected, logger: silentLogger()}
-		Expect(w.catalog()).To(Equal(injected))
+	It("uses explicit worker.entries even when DB has DIFFERENT populated rows (short-circuit proof)", func() {
+		// Stronger than a nil-DB check: point the worker at a real DB that
+		// WOULD return non-empty rows, and inject an entries slice with a
+		// disjoint ID set. If the branch `if w.entries != nil { return w.entries }`
+		// were removed, catalog() would fall through to the DB path and
+		// return DB rows — the injected sentinel would be absent.
+		d := openTestDBGinkgo()
+		DeferCleanup(func() { d.Close() })
+		ctx := context.Background()
+
+		// Seed a DB row with a distinctive id that MUST NOT appear in the
+		// returned catalog if the short-circuit works.
+		Expect(d.UpsertLabel(ctx, db.Label{
+			ID: "test-cat-db-should-not-appear", Kind: "archetype", Label: "X",
+			OptimizedPrompt: "db-prompt-should-not-appear",
+			Condition:       json.RawMessage(`{}`),
+		})).To(Succeed())
+		DeferCleanup(func() { _ = d.DeleteLabel(ctx, "test-cat-db-should-not-appear") })
+
+		injected := []labelcatalog.Entry{{ID: "inject-only-1", Prompt: "p-inject-1"}}
+		w := &Worker{db: d, entries: injected, logger: silentLogger()}
+
+		got := w.catalog()
+		Expect(got).To(Equal(injected),
+			"explicit entries MUST short-circuit and return exactly the injected slice")
+		for _, e := range got {
+			Expect(e.ID).NotTo(Equal("test-cat-db-should-not-appear"),
+				"DB rows MUST NOT leak through when explicit entries is set")
+			Expect(e.Prompt).NotTo(ContainSubstring("db-prompt-should-not-appear"),
+				"DB prompt MUST NOT leak through when explicit entries is set")
+		}
 	})
 
 	It("with a nil DB and nil entries, returns compiled baseline", func() {
@@ -724,45 +765,67 @@ var _ = Describe("generateAndSave (gaka-d6x)", func() {
 			"save-phase failure MUST be labeled 'save:' to distinguish from shim-phase")
 	})
 
-	It("catalog(): rows all-with-empty-prompt fall back to compiled baseline (warn-log branch)", func() {
+	It("catalog(): when DB is present but yields zero non-empty prompts, returns the FULL compiled baseline (warn-log branch)", func() {
+		// This test actually exercises worker.go:132-137 (the "DB non-empty
+		// rows but all filtered → warn + baseline" fallback path) by blanking
+		// every existing labels.optimized_prompt in a transaction we roll back
+		// via DeferCleanup. If the impl deleted the fallback and returned an
+		// empty slice, len(got) == 0 would trip the assertion below.
 		d := openTestDBGinkgo()
 		DeferCleanup(func() { d.Close() })
 		ctx := context.Background()
 
-		// Insert only rows with empty OptimizedPrompt so the DB path
-		// returns zero non-empty entries, forcing the fallback.
-		ids := []string{"test-cat-empty-1", "test-cat-empty-2"}
-		for _, id := range ids {
-			Expect(d.UpsertLabel(ctx, db.Label{
-				ID: id, Kind: "tier", Label: id,
-				OptimizedPrompt: "",
-				Condition:       json.RawMessage(`{}`),
-			})).To(Succeed())
+		// Snapshot every existing (id, optimized_prompt) so we can restore.
+		type row struct {
+			id string
+			op string
+		}
+		var snapshot []row
+		{
+			rs, err := d.Pool.Query(ctx, `SELECT id, optimized_prompt FROM labels`)
+			Expect(err).NotTo(HaveOccurred())
+			for rs.Next() {
+				var r row
+				Expect(rs.Scan(&r.id, &r.op)).To(Succeed())
+				snapshot = append(snapshot, r)
+			}
+			rs.Close()
 		}
 		DeferCleanup(func() {
-			for _, id := range ids {
-				_ = d.DeleteLabel(ctx, id)
+			for _, r := range snapshot {
+				_, _ = d.Pool.Exec(context.Background(),
+					`UPDATE labels SET optimized_prompt = $1 WHERE id = $2`, r.op, r.id)
 			}
 		})
 
-		// We can't easily assert the WHOLE catalog equals baseline (the DB
-		// may have other pre-existing labels with prompts), so instead
-		// build a worker with a single-row scenario. Skip if the DB has
-		// other populated labels — we just need to prove NON-empty behavior
-		// when all seeded rows are empty.
-		//
-		// Instead: use a scratch DB approach — count DB non-empty prompts,
-		// and if zero (unlikely in a real seeded DB but possible in a bare
-		// migrated one), then the returned catalog must equal baseline.
+		// Blank every prompt so ListLabels returns rows but the catalog()
+		// reducer filters them all out — that is the branch under test.
+		_, err := d.Pool.Exec(ctx, `UPDATE labels SET optimized_prompt = ''`)
+		Expect(err).NotTo(HaveOccurred())
+
+		// Also insert a row that would exist post-migration but pre-manifest
+		// (still empty) — proves the branch fires regardless of row count.
+		Expect(d.UpsertLabel(ctx, db.Label{
+			ID: "test-cat-all-empty", Kind: "tier", Label: "T",
+			OptimizedPrompt: "",
+			Condition:       json.RawMessage(`{}`),
+		})).To(Succeed())
+		DeferCleanup(func() { _ = d.DeleteLabel(context.Background(), "test-cat-all-empty") })
+
 		w := &Worker{db: d, logger: silentLogger()}
 		got := w.catalog()
 
-		// Whatever the DB has, our all-empty ids MUST NOT appear (skipped).
-		for _, e := range got {
-			for _, id := range ids {
-				Expect(e.ID).NotTo(Equal(id),
-					"rows with empty optimized_prompt must be filtered from catalog()")
-			}
+		// The load-bearing assertion: with DB non-empty but zero usable rows,
+		// the catalog MUST be the compiled baseline verbatim — same slice,
+		// same length, same per-index ID. If the fallback branch were
+		// removed, this returns [] and every assertion below fails.
+		Expect(got).To(HaveLen(len(labelcatalog.Entries)),
+			"empty-prompt fallback MUST return the FULL compiled baseline, not an empty slice")
+		for i, want := range labelcatalog.Entries {
+			Expect(got[i].ID).To(Equal(want.ID),
+				"baseline order + ID must match at index %d — proves compiled slice returned, not synthesized", i)
+			Expect(got[i].Prompt).To(Equal(want.Prompt),
+				"baseline prompt must match at index %d — proves DB filtered rows were not partially merged", i)
 		}
 	})
 
@@ -789,5 +852,207 @@ var _ = Describe("generateAndSave (gaka-d6x)", func() {
 		Expect(lastReq.Seed).NotTo(BeNil(), "seed MUST be sent when non-nil")
 		Expect(*lastReq.Seed).To(Equal(seed),
 			"per-entry Seed must be passed to the shim verbatim (provenance invariant)")
+	})
+
+	It("threads per-entry Size through to the shim request verbatim", func() {
+		// Size is documented in worker.go:322 as a per-entry override but no
+		// spec previously verified it lands on the shim request — Seed and
+		// Model were covered, Size was not. If the impl dropped `e.Size`
+		// from the Generate call, this would still pass Seed/Model tests but
+		// silently regress the size override.
+		d := openTestDBGinkgo()
+		DeferCleanup(func() { d.Close() })
+		ctx := context.Background()
+
+		id := "test-gs-size"
+		cleanupTestRowsGinkgo(d, id)
+		DeferCleanup(func() { cleanupTestRowsGinkgo(d, id) })
+
+		var lastReq *shimReq
+		srv := recordingShim(nil, &lastReq)
+		DeferCleanup(srv.Close)
+		client, _ := comfyui.NewClient(srv.URL)
+
+		e := labelcatalog.Entry{ID: id, Prompt: "p", Size: "512x768"}
+		w := newWorkerForTest(d, client, "m", silentLogger(), nil)
+
+		Expect(w.generateAndSave(ctx, e)).To(Succeed())
+		Expect(lastReq).NotTo(BeNil())
+		Expect(lastReq.Size).To(Equal("512x768"),
+			"per-entry Size must be passed to the shim verbatim (parity with Model + Seed overrides)")
+	})
+
+	It("persists the FULL 3-segment composed prompt (systemPrompt + description + entryPrompt) to the DB", func() {
+		// Pins the provenance invariant claimed in worker.go:344-346 — the
+		// saved `prompt` column MUST carry the composed final prompt so a
+		// reader of the row can reproduce the image without a separate
+		// systemPrompt lookup. Previously covered only for empty-description
+		// (partner file line 116-120); this spec pins the full 3-segment case.
+		d := openTestDBGinkgo()
+		DeferCleanup(func() { d.Close() })
+		ctx := context.Background()
+
+		// Snapshot + restore the singleton system prompt so we don't leak
+		// state to other specs.
+		original, err := d.GetGenConfig(ctx)
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() { _ = d.SetGenConfig(context.Background(), original) })
+
+		const (
+			sysP  = "sys-STYLE-prefix"
+			descP = "desc-NARRATIVE-middle"
+			entP  = "entry-SCENE-suffix"
+		)
+		Expect(d.SetGenConfig(ctx, sysP)).To(Succeed())
+
+		id := "test-gs-full-prompt"
+		cleanupTestRowsGinkgo(d, id)
+		DeferCleanup(func() { cleanupTestRowsGinkgo(d, id) })
+
+		srv := recordingShim(nil, nil)
+		DeferCleanup(srv.Close)
+		client, _ := comfyui.NewClient(srv.URL)
+
+		w := newWorkerForTest(d, client, "m", silentLogger(), nil)
+		e := labelcatalog.Entry{ID: id, Prompt: entP, Description: descP}
+		Expect(w.generateAndSave(ctx, e)).To(Succeed())
+
+		got, ok, err := d.GetLabelImage(ctx, id)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(ok).To(BeTrue())
+		want := buildFinalPrompt(sysP, descP, entP)
+		Expect(got.Prompt).To(Equal(want),
+			"saved prompt MUST be the FULL composed final prompt (self-contained provenance)")
+		// Belt-and-braces: all three segments must be substrings so a future
+		// join-order swap still trips the assertion via a segment-absent
+		// failure mode, not just a whole-string mismatch.
+		Expect(got.Prompt).To(ContainSubstring(sysP), "systemPrompt segment must be present in persisted prompt")
+		Expect(got.Prompt).To(ContainSubstring(descP), "description segment must be present in persisted prompt")
+		Expect(got.Prompt).To(ContainSubstring(entP), "entry prompt segment must be present in persisted prompt")
+	})
+})
+
+// ------- RegenerateEntry model-fallback branch -------
+
+var _ = Describe("Worker.RegenerateEntry Model fallback (gaka-d6x)", func() {
+	It("falls back to worker.model when entry.Model is empty (parity with Run-loop path)", func() {
+		// The override-wins path is covered at line 270 with an entry that
+		// SETS Model. This spec pins the OTHER branch: `if model == ""
+		// { model = w.model }` at worker.go:328-331. Without this, deleting
+		// the fallback would break the imagejobs Executor's default-model
+		// path but the existing tests would still pass.
+		d := openTestDBGinkgo()
+		DeferCleanup(func() { d.Close() })
+		ctx := context.Background()
+
+		id := "test-re-model-fallback"
+		cleanupTestRowsGinkgo(d, id)
+		DeferCleanup(func() { cleanupTestRowsGinkgo(d, id) })
+
+		var lastReq *shimReq
+		srv := recordingShim(nil, &lastReq)
+		DeferCleanup(srv.Close)
+		client, _ := comfyui.NewClient(srv.URL)
+
+		const workerDefault = "worker-default-model-fallback"
+		w := newWorkerForTest(d, client, workerDefault, silentLogger(), nil)
+
+		// Model is intentionally empty on the entry — worker.model should win.
+		e := labelcatalog.Entry{ID: id, Prompt: "fresh"}
+		Expect(w.RegenerateEntry(ctx, e)).To(Succeed())
+
+		got, ok, err := d.GetLabelImage(ctx, id)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(ok).To(BeTrue())
+		Expect(got.Model).To(Equal(workerDefault),
+			"empty entry.Model MUST fall back to worker.model on the persisted row")
+		Expect(lastReq).NotTo(BeNil())
+		Expect(lastReq.Model).To(Equal(workerDefault),
+			"empty entry.Model MUST fall back to worker.model on the shim request too")
+	})
+})
+
+// ------- systemPrompt TTL-refresh + mutex serialization -------
+
+var _ = Describe("Worker.systemPrompt cache refresh + mutex (gaka-d6x)", func() {
+	It("re-reads the DB after TTL expiry so admin edits become visible on the next batch", func() {
+		// Complements the within-TTL cache-hit spec at line 457. Simulates
+		// TTL expiry by resetting w.sysFetched to the zero-time (which makes
+		// `time.Since(zero) >= systemPromptCacheTTL` trivially true) between
+		// the two calls. Without this, flipping the impl's TTL comparison
+		// from `<` to `>` would break only cache-hits — the refresh path
+		// would go unverified.
+		d := openTestDBGinkgo()
+		DeferCleanup(func() { d.Close() })
+		ctx := context.Background()
+
+		original, err := d.GetGenConfig(ctx)
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() { _ = d.SetGenConfig(context.Background(), original) })
+
+		Expect(d.SetGenConfig(ctx, "TTL-BEFORE")).To(Succeed())
+
+		w := &Worker{db: d, logger: silentLogger()}
+		first := w.systemPrompt(ctx)
+		Expect(first).To(Equal("TTL-BEFORE"))
+
+		// Admin flips the row underneath.
+		Expect(d.SetGenConfig(ctx, "TTL-AFTER")).To(Succeed())
+
+		// Simulate TTL expiry by resetting the fetched-at timestamp so the
+		// gate `time.Since(w.sysFetched) < systemPromptCacheTTL` is FALSE.
+		w.sysMu.Lock()
+		w.sysFetched = time.Time{}
+		w.sysMu.Unlock()
+
+		second := w.systemPrompt(ctx)
+		Expect(second).To(Equal("TTL-AFTER"),
+			"post-TTL call MUST re-read the DB — admin edits should become visible on the next regen batch")
+	})
+
+	It("serializes concurrent systemPrompt() callers via sysMu (positive mutex spec)", func() {
+		// Positive spec for the sysMu invariant flagged in the critique: only
+		// `go test -race` catches an outright missing lock. This spec proves
+		// that N parallel goroutines converge on ONE cached value even when
+		// they all miss the cache simultaneously. If the mutex were removed,
+		// each goroutine could race, over-write w.sysPrompt, and observe
+		// inconsistent results.
+		d := openTestDBGinkgo()
+		DeferCleanup(func() { d.Close() })
+		ctx := context.Background()
+
+		original, err := d.GetGenConfig(ctx)
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() { _ = d.SetGenConfig(context.Background(), original) })
+
+		Expect(d.SetGenConfig(ctx, "MUTEX-VALUE")).To(Succeed())
+
+		w := &Worker{db: d, logger: silentLogger()}
+
+		const N = 16
+		var wg sync.WaitGroup
+		results := make([]string, N)
+		for i := 0; i < N; i++ {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				defer GinkgoRecover()
+				results[idx] = w.systemPrompt(ctx)
+			}(i)
+		}
+		wg.Wait()
+
+		for i, r := range results {
+			Expect(r).To(Equal("MUTEX-VALUE"),
+				"goroutine %d observed a torn/inconsistent cached prompt — sysMu MUST serialize", i)
+		}
+		// After all goroutines return, the cache field MUST also hold the
+		// single canonical value — proves no late writer clobbered it.
+		w.sysMu.Lock()
+		defer w.sysMu.Unlock()
+		Expect(w.sysPrompt).To(Equal("MUTEX-VALUE"),
+			"post-batch cached sysPrompt MUST be the single canonical value")
+		Expect(w.sysFetched.IsZero()).To(BeFalse(),
+			"sysFetched MUST be advanced past zero-time exactly once")
 	})
 })
