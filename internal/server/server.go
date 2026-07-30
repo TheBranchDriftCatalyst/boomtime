@@ -112,7 +112,6 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	registerHeartbeatRoutes(e, h)
 	registerCurationRoutes(e, h)
 	registerStatsRoutes(e, h)
-	registerAuthRoutes(e, h)
 	registerMiscRoutes(e, h)
 	registerImportRoutes(e, h)
 	// gaka-8tn phase 1: meta + logs registration is now owned by the meta
@@ -245,23 +244,6 @@ func registerStatsRoutes(e *echo.Echo, h *handler.Handler) {
 	// Projects
 	e.GET("/api/v1/users/current/projects/:project", h.ProjectStats)
 	e.GET("/api/v1/projects", h.ProjectList)
-}
-
-// registerAuthRoutes: awards ledger + server-side awards evaluation.
-//
-// gaka-8tn phase 4a: the login/register/refresh + api-token CRUD +
-// change-password + public profile + wakatime key + timezone routes
-// moved to identity.Register (see the identity fan-out at the top of
-// registerRoutes). Awards stays here until phase 4b lifts it into the
-// identity package alongside the rest of the user-scoped surface.
-func registerAuthRoutes(e *echo.Echo, h *handler.Handler) {
-	// gaka-8tn phase 4a: identity domain owns every route this function
-	// used to register — see identity.Register() called at the tail of
-	// registerRoutes. Kept as a stub so the registerRoutes fan-out
-	// preserves its shape until phase 8 collapses the wrappers.
-	// gaka-8tn phase 4b: awards routes moved to awards.Register.
-	_ = e
-	_ = h
 }
 
 // registerMiscRoutes: badges, widgets, leaderboards, and commits.

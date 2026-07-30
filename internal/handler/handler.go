@@ -473,16 +473,7 @@ func (h *Handler) resolveUserTZ(ctx context.Context, owner string) string {
 	return db.ResolveTimezone(userTZ, h.Cfg.DefaultTimezone)
 }
 
-// publicProfilePayloadDays / publicProfileTimeLimit are the WINDOW +
-// gap-cap used by the public-profile endpoint (see
-// internal/identity/profile.go for the canonical definition). Awards
-// evaluation borrows the same shape so streak walks over the exact same
-// window the profile page renders — the two must stay in sync.
-//
-// gaka-8tn phase 4a: identity took the canonical definition. This
-// duplicate stays in package handler until phase 4b lifts awards into
-// identity. Values MUST match internal/identity/profile.go.
-const (
-	publicProfilePayloadDays       = 60
-	publicProfileTimeLimit   int64 = 15
-)
+// publicProfilePayloadDays / publicProfileTimeLimit — canonical constants
+// live in internal/identity/profile.go and are duplicated in
+// internal/awards/helpers.go (both domains own their own window). The
+// handler-package copies were dead after phase 4 and got deleted here.
