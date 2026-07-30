@@ -8,7 +8,7 @@
 //	TestAvatar_Regenerate_400OnEmptyPrompt        → Regenerate > "empty prompt → 400 with shim on"
 //	TestAvatar_PublicGet_404WhenNotReady          → PublicGet > "no row / running row → 404; ready row → 200 with bytes"
 //	TestAvatar_Status_None                        → Status > "no row → {status:none}"
-package handler_test
+package identity_test
 
 import (
 	"context"

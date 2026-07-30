@@ -21,7 +21,7 @@
 //     Format is intentionally narrow (lowercase, digits, hyphens; 3-30 chars)
 //     so slugs stay URL-safe, human-readable, and can never look like a
 //     reserved route path.
-package handler
+package identity
 
 import (
 	"crypto/sha256"

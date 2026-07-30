@@ -1,4 +1,4 @@
-package handler
+package identity
 
 // timezone.go (gaka-dg7): per-user IANA timezone endpoints + shared resolver.
 //

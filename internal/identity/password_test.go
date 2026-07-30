@@ -10,7 +10,7 @@
 //	TestChangePasswordHappyPath                       → ChangePassword > "happy path: old dead, new works, refresh tokens revoked"
 //	TestChangePassword_RevokesOtherAccessTokens       → ChangePassword revocation (gaka-abo) > "other access token revoked, own survives, other refresh dead"
 //	TestChangePassword_AtomicOnDBError                → ChangePassword atomicity > "fault-injected tx rolls back password AND refresh-token revoke"
-package handler_test
+package identity_test
 
 import (
 	"bytes"

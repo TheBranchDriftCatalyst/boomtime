@@ -11,7 +11,7 @@
 //   - probeWakatimeKey is exercised end-to-end via an in-process RoundTripper
 //     that captures the outbound request (so we test the code path without
 //     touching wakatime.com).
-package handler_test
+package identity_test
 
 import (
 	"bytes"
@@ -35,7 +35,7 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/identity"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
 )
 
@@ -52,14 +52,16 @@ import (
 func routerWithAuthClusterAC(hz *testutil.Harness) http.Handler {
 	e := hz.Router()
 	h := hz.H
-	e.POST("/auth/logout", h.Logout)
-	e.POST("/auth/create_api_token", h.CreateAPIToken)
-	e.GET("/auth/tokens", h.ListAPITokens)
-	e.DELETE("/auth/token/:id", h.DeleteToken)
-	e.POST("/auth/token", h.UpdateToken)
-	e.GET("/auth/users/current", h.CurrentUser)
-	e.GET("/api/v1/users/current/wakatime_key", h.GetWakatimeKey)
-	e.DELETE("/api/v1/users/current/wakatime_key", h.DeleteWakatimeKey)
+	// gaka-8tn phase 4a: receivers moved from h.* to h.Identity.* — the
+	// production server registers these under identity.Register too.
+	e.POST("/auth/logout", h.Identity.Logout)
+	e.POST("/auth/create_api_token", h.Identity.CreateAPIToken)
+	e.GET("/auth/tokens", h.Identity.ListAPITokens)
+	e.DELETE("/auth/token/:id", h.Identity.DeleteToken)
+	e.POST("/auth/token", h.Identity.UpdateToken)
+	e.GET("/auth/users/current", h.Identity.CurrentUser)
+	e.GET("/api/v1/users/current/wakatime_key", h.Identity.GetWakatimeKey)
+	e.DELETE("/api/v1/users/current/wakatime_key", h.Identity.DeleteWakatimeKey)
 	return e
 }
 
@@ -116,7 +118,7 @@ func (s *stubRoundTripperAC) RoundTrip(r *http.Request) (*http.Response, error) 
 	return s.respond(r)
 }
 
-// installProbeStubAC swaps handler.httpClient (via the test seam) for one
+// installProbeStubAC swaps identity.httpClient (via the test seam) for one
 // backed by rt. Returns the roundtripper so specs can inspect callCount /
 // lastReq. Cleanup is registered on the current spec.
 func installProbeStubAC(status int, body string) *stubRoundTripperAC {
@@ -130,7 +132,7 @@ func installProbeStubAC(status int, body string) *stubRoundTripperAC {
 		},
 	}
 	client := &http.Client{Transport: rt}
-	restore := handler.SwapHTTPClientForTest(client)
+	restore := identity.SwapHTTPClientForTest(client)
 	DeferCleanup(restore)
 	return rt
 }
@@ -146,7 +148,7 @@ func installProbeErrStubAC(err error) *stubRoundTripperAC {
 		},
 	}
 	client := &http.Client{Transport: rt}
-	restore := handler.SwapHTTPClientForTest(client)
+	restore := identity.SwapHTTPClientForTest(client)
 	DeferCleanup(restore)
 	return rt
 }
@@ -1143,7 +1145,7 @@ var _ = Describe("SaveWakatimeKey (POST /api/v1/users/current/wakatime_key)", fu
 				return nil, errors.New("unreachable")
 			},
 		}
-		restore := handler.SwapHTTPClientForTest(&http.Client{Transport: rt})
+		restore := identity.SwapHTTPClientForTest(&http.Client{Transport: rt})
 		DeferCleanup(restore)
 
 		user, token := hz.MintUser("wkkey_save_empty")
@@ -1437,12 +1439,12 @@ var _ = Describe("probeWakatimeKey status mapping", func() {
 		srv := httptest.NewServer(mux)
 		DeferCleanup(srv.Close)
 
-		// Point the handler.httpClient at a client whose RoundTripper
+		// Point the identity.httpClient at a client whose RoundTripper
 		// REWRITES the URL to our test server (const wakatimeProbeURL
 		// cannot be changed at test time).
 		u := srv.URL
 		rt := &rewriteRoundTripperAC{target: u}
-		restore := handler.SwapHTTPClientForTest(&http.Client{Transport: rt})
+		restore := identity.SwapHTTPClientForTest(&http.Client{Transport: rt})
 		DeferCleanup(restore)
 
 		user, token := hz.MintUser("wkkey_probe_map")
@@ -1538,7 +1540,7 @@ var _ = Describe("Auth cluster — internal-error branches (pool closed)", func(
 				}, nil
 			},
 		}
-		restore := handler.SwapHTTPClientForTest(&http.Client{Transport: rt})
+		restore := identity.SwapHTTPClientForTest(&http.Client{Transport: rt})
 		DeferCleanup(restore)
 
 		rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/wakatime_key", token,
@@ -1862,7 +1864,7 @@ var _ = Describe("SaveWakatimeKey — wakatime_key_status transitions on sequent
 				}, nil
 			},
 		}
-		restore1 := handler.SwapHTTPClientForTest(&http.Client{Transport: rt1})
+		restore1 := identity.SwapHTTPClientForTest(&http.Client{Transport: rt1})
 		rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/wakatime_key", token,
 			map[string]string{"key": "first-key-valid-per-probe"})
 		Expect(rec).To(testutil.HaveStatus(http.StatusNoContent), "body=%s", rec.Body.String())
@@ -1981,7 +1983,7 @@ var _ = Describe("Auth cluster — malformed JSON on POST endpoints", func() {
 				return nil, errors.New("unreachable")
 			},
 		}
-		restore := handler.SwapHTTPClientForTest(&http.Client{Transport: rt})
+		restore := identity.SwapHTTPClientForTest(&http.Client{Transport: rt})
 		DeferCleanup(restore)
 
 		_, token := hz.MintUser("wkkey_malformed")

@@ -25,7 +25,7 @@
 //	  → the ONLY failure mode left is the size cap. If a future refactor
 //	  drops BindJSONWithLimit, this test flips to 200 and screams instead
 //	  of silently passing.
-package handler_test
+package identity_test
 
 import (
 	"encoding/json"

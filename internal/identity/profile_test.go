@@ -3,7 +3,7 @@
 //
 //	TestPublicProfileCacheHeadersTightPolicy → public profile cache headers > "tight policy (max-age=60, must-revalidate, no s-maxage, quoted ETag)"
 //	TestPutPublicProfile_BodySizeCap_413     → PutPublicProfile body-size cap > "5 KiB body → 413 before slug regex runs"
-package handler_test
+package identity_test
 
 import (
 	"bytes"

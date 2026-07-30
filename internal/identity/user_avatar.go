@@ -26,7 +26,7 @@
 // design: LLM cost is per-token and unbounded per user in the wrong hands,
 // so the first cut restricts it to admins-or-self. `requireAdminOrSelf`
 // centralises the check so opening it up is a one-line change.
-package handler
+package identity
 
 import (
 	"bufio"

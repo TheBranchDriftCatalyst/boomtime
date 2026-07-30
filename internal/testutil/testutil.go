@@ -173,10 +173,10 @@ func NewHarnessWithDB(t HarnessT, database *db.DB) *Harness {
 func (hz *Harness) Router() *echo.Echo {
 	e := echo.New()
 	h := hz.H
-	// auth
-	e.POST("/auth/login", h.Login)
-	e.POST("/auth/register", h.Register)
-	e.POST("/auth/refresh_token", h.RefreshToken)
+	// auth — gaka-8tn phase 4a: receivers moved to h.Identity (internal/identity).
+	e.POST("/auth/login", h.Identity.Login)
+	e.POST("/auth/register", h.Identity.Register)
+	e.POST("/auth/refresh_token", h.Identity.RefreshToken)
 	// curation
 	e.GET("/api/v1/users/current/curation", h.ListCuration)
 	e.POST("/api/v1/users/current/curation", h.CreateCuration)
@@ -251,10 +251,11 @@ func (hz *Harness) Router() *echo.Echo {
 	// gaka-9v4: per-user chibi avatar. Regenerate/status are auth'd
 	// self-only, UserAvatar is public — the harness registers all three
 	// so a single handler test covers the full surface.
-	e.POST("/api/v1/users/current/avatar/regenerate", h.RegenerateAvatar)
-	e.GET("/api/v1/users/current/avatar/status", h.GetAvatarStatus)
-	e.GET("/api/v1/users/:username/avatar", h.UserAvatar)
-	e.POST("/api/v1/admin/avatar/synthesize-prompt", h.SynthesizeAvatarPrompt)
+	// gaka-8tn phase 4a: receivers moved to h.Identity (internal/identity).
+	e.POST("/api/v1/users/current/avatar/regenerate", h.Identity.RegenerateAvatar)
+	e.GET("/api/v1/users/current/avatar/status", h.Identity.GetAvatarStatus)
+	e.GET("/api/v1/users/:username/avatar", h.Identity.UserAvatar)
+	e.POST("/api/v1/admin/avatar/synthesize-prompt", h.Identity.SynthesizeAvatarPrompt)
 	// gaka-hc6.3 + gaka-hc6.5.1: server-side award evaluation + historical
 	// backfill. Public/own variants + the backfill entry point.
 	// gaka-8tn phase 4b: receivers moved to h.Awards.* (awards extracted).
@@ -270,7 +271,7 @@ func (hz *Harness) Router() *echo.Echo {
 	// existed in stdlib + ginkgo pairs (byte-identical), and were the
 	// biggest single source of test-code duplication before this fold.
 	// Every one is now a single route line here.
-	e.POST("/api/v1/users/current/password", h.ChangePassword)                        // was routerWithChangePassword
+	e.POST("/api/v1/users/current/password", h.Identity.ChangePassword)               // gaka-8tn phase 4a: h.Identity
 	e.GET("/api/v1/labels/:id/image", h.LabelImage)                                   // was routerWithLabelImages
 	// gaka-8tn phase 3: widget-def CRUD extracted to internal/widgets.
 	e.GET("/api/v1/users/current/widget-defs", h.Widgets.ListWidgetDefs)
@@ -279,15 +280,15 @@ func (hz *Harness) Router() *echo.Echo {
 	e.DELETE("/api/v1/users/current/widget-defs/:name", h.Widgets.DeleteWidgetDef)
 	e.GET("/widget/svg/:uuid/named", h.Widgets.WidgetDefSvg)
 	e.GET("/api/v1/logs", h.Meta.ServerLogs)                                          // gaka-8tn phase 1: meta domain
-	e.GET("/api/v1/users/current/timezone", h.GetTimezone)                            // was routerWithTimezone
-	e.PATCH("/api/v1/users/current/timezone", h.UpdateTimezone)                       // was routerWithTimezone
-	e.GET("/api/v1/users/current/profile", h.GetPublicProfile)                        // was routerWithPublicProfile
-	e.PUT("/api/v1/users/current/profile", h.PutPublicProfile)                        // was routerWithPublicProfile
-	e.GET("/api/public/profile/:slug", h.PublicProfile)                               // was routerWithPublicProfile
+	e.GET("/api/v1/users/current/timezone", h.Identity.GetTimezone)                   // gaka-8tn phase 4a: h.Identity
+	e.PATCH("/api/v1/users/current/timezone", h.Identity.UpdateTimezone)              // gaka-8tn phase 4a: h.Identity
+	e.GET("/api/v1/users/current/profile", h.Identity.GetPublicProfile)               // gaka-8tn phase 4a: h.Identity
+	e.PUT("/api/v1/users/current/profile", h.Identity.PutPublicProfile)               // gaka-8tn phase 4a: h.Identity
+	e.GET("/api/public/profile/:slug", h.Identity.PublicProfile)                      // gaka-8tn phase 4a: h.Identity
 	e.GET("/api/v1/users/current/dashboard/:scope", h.Spaces.GetDashboardLayout)      // gaka-8tn phase 2a: moved to h.Spaces
 	e.PUT("/api/v1/users/current/dashboard/:scope", h.Spaces.PutDashboardLayout)      // gaka-8tn phase 2a
 	e.DELETE("/api/v1/users/current/dashboard/:scope", h.Spaces.DeleteDashboardLayout) // gaka-8tn phase 2a
-	e.POST("/api/v1/users/current/wakatime_key", h.SaveWakatimeKey)                   // was routerWithWakatimeKey
+	e.POST("/api/v1/users/current/wakatime_key", h.Identity.SaveWakatimeKey)          // gaka-8tn phase 4a: h.Identity
 	// gaka-d6x.handler: admin cluster (label-images regeneration + git-history
 	// backfill CLI). Wired here so per-file test suites don't have to re-register
 	// (Echo panics on duplicate route registration).

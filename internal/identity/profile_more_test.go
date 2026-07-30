@@ -24,7 +24,7 @@
 //
 //	"public GET on a disabled profile → 404" — an enable-toggle=false
 //	profile must return 404, not the payload.
-package handler_test
+package identity_test
 
 import (
 	"encoding/json"

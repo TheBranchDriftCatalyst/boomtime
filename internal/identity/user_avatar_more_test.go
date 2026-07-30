@@ -43,7 +43,7 @@
 //	tests only asserted StatusBadGateway; the no-leak substring check
 //	was missing. Added a stub that returns 500 with a distinctive body,
 //	then asserts that substring never appears in the client response.
-package handler_test
+package identity_test
 
 import (
 	"bytes"

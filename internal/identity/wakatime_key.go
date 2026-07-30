@@ -1,4 +1,4 @@
-package handler
+package identity
 
 // wakatime_key.go — endpoints for the encrypted-at-rest imported Wakatime API
 // key (gaka-6jm.2).

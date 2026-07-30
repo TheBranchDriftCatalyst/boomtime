@@ -16,7 +16,7 @@
 //	TestLogin_WrongPasswordDoesNotUpgrade                     → Login argon2 rehash > "wrong password does NOT rehash the v1 row"
 //	TestCreateUser_StartsAtV2_BravoRegression                 → Register argon2 > "new users land at ArgonVersionCurrent"
 //	TestChangePassword_StoresAtV2                             → ChangePassword argon2 > "v1 user changes pw → row is v2"
-package handler_test
+package identity_test
 
 import (
 	"bytes"
@@ -380,7 +380,7 @@ var _ = Describe("Logout clears refresh cookie", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		hz.Cfg.CookieSecure = true
 		e := hz.Router()
-		e.POST("/auth/logout", hz.H.Logout)
+		e.POST("/auth/logout", hz.H.Identity.Logout)
 
 		user := "logout_clears_g"
 		pw := "test1234"

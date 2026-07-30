@@ -46,7 +46,8 @@ func bigbetsRouter(hz *testutil.Harness) *echo.Echo {
 	e := echo.New()
 	h := hz.H
 	// Auth-shim so unauth requests get a normal 4xx rather than 404.
-	e.POST("/auth/login", h.Login)
+	// gaka-8tn phase 4a: Login moved to h.Identity.
+	e.POST("/auth/login", h.Identity.Login)
 	e.GET("/api/v1/users/current/stats/punchcard", h.Punchcard)
 	e.GET("/api/v1/users/current/stats/sessions", h.Sessions)
 	e.GET("/api/v1/users/current/stats/ai", h.AIActivity)

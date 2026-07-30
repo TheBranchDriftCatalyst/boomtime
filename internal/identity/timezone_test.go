@@ -3,7 +3,7 @@
 //
 //	TestUpdateTimezone_RejectsInvalidIANA → timezone endpoints > "PATCH invalid IANA → 400, no DB write"
 //	TestUpdateTimezone_ValidRoundtrips    → timezone endpoints > "PATCH valid IANA round-trips through GET; empty clears"
-package handler_test
+package identity_test
 
 import (
 	"bytes"

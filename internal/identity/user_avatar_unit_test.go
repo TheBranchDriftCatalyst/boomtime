@@ -8,7 +8,7 @@
 //	branch comma-joins the labels. The synopsis is trimmed. Pure function,
 //	pinned so a downstream prompt author never sees an accidentally-blank
 //	profile string.
-package handler
+package identity
 
 import (
 	"strings"

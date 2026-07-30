@@ -1,4 +1,4 @@
-package handler
+package identity
 
 import (
 	"errors"

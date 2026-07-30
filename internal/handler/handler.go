@@ -23,6 +23,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/goals"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/identity"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/meta"
@@ -70,7 +71,8 @@ type Handler struct {
 	Spaces  *spaces.Handler  // phase 2a
 	Goals   *goals.Handler   // phase 2b
 	Widgets *widgets.Handler // phase 3
-	Awards  *awards.Handler  // phase 4b
+	Identity *identity.Handler // phase 4a
+	Awards   *awards.Handler   // phase 4b
 }
 
 // New constructs a Handler. logHub streams server-process slog records to the
@@ -106,8 +108,9 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *impor
 			Cache:  sharedCache,
 		},
 		Goals:   &goals.Handler{DB: database, Logger: logger},
-		Widgets: widgets.New(database, cfg, logger, sharedCache),
-		Awards:  awards.New(database, cfg, logger),
+		Widgets:  widgets.New(database, cfg, logger, sharedCache),
+		Identity: identity.New(database, cfg, logger, sharedCache),
+		Awards:   awards.New(database, cfg, logger),
 	}
 }
 
@@ -444,3 +447,42 @@ func isUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
+
+// resolveUserTZ returns the effective IANA name for a user's dow/hour/date
+// buckets. NEVER returns "" — safe to thread into an AT TIME ZONE bind
+// param without further guarding. On a DB lookup failure we log and fall
+// through to the operator default (or UTC) so a transient blip on the
+// users row doesn't break every stats query for that request.
+//
+// gaka-8tn phase 4a: identity's timezone.go moved to internal/identity/
+// and took the original definition with it, but the awards / stats /
+// scope helpers still call this on the god-type receiver. This copy
+// stays in package handler until phase 4b lifts awards into identity
+// (which will make the identity method the sole reader). Keeping the
+// duplicate is preferable to changing the receiver at ~10 call sites
+// mid-refactor — the two definitions are byte-identical and mirror the
+// same rationale in internal/identity/timezone.go / internal/widgets/
+// helpers.go.
+func (h *Handler) resolveUserTZ(ctx context.Context, owner string) string {
+	userTZ, err := h.DB.GetUserTimezone(ctx, owner)
+	if err != nil {
+		h.Logger.Warn("resolveUserTZ: users.timezone lookup failed; falling back to defaults",
+			"user", owner, "err", err)
+		userTZ = ""
+	}
+	return db.ResolveTimezone(userTZ, h.Cfg.DefaultTimezone)
+}
+
+// publicProfilePayloadDays / publicProfileTimeLimit are the WINDOW +
+// gap-cap used by the public-profile endpoint (see
+// internal/identity/profile.go for the canonical definition). Awards
+// evaluation borrows the same shape so streak walks over the exact same
+// window the profile page renders — the two must stay in sync.
+//
+// gaka-8tn phase 4a: identity took the canonical definition. This
+// duplicate stays in package handler until phase 4b lifts awards into
+// identity. Values MUST match internal/identity/profile.go.
+const (
+	publicProfilePayloadDays       = 60
+	publicProfileTimeLimit   int64 = 15
+)

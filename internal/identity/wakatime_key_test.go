@@ -2,7 +2,7 @@
 // 1:1 case map (1 stdlib TestXxx):
 //
 //	TestSaveWakatimeKey_BodySizeCap_413 → SaveWakatimeKey body-size cap > "5 KiB body → 413, no probe"
-package handler_test
+package identity_test
 
 import (
 	"bytes"

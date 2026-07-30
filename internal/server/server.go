@@ -16,6 +16,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/goals"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/identity"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/meta"
@@ -128,10 +129,13 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	// Order preserved: /spaces/preview still registers BEFORE /spaces/:id
 	// so the static route wins path matching against Echo's param matcher.
 	spaces.Register(e, h.Spaces)
+	// gaka-8tn phase 4a: identity (auth + password + profile + timezone +
+	// wakatime_key + avatar) extracted into internal/identity.
+	identity.Register(e, h.Identity)
 	// gaka-8tn phase 4b: awards cluster (streak ledger + evaluator +
-	// backfill — 7 routes) extracted into internal/awards. Registered at
-	// the tail so it lands AFTER the identity-owned auth routes and
-	// preserves the pre-refactor per-endpoint matching order.
+	// backfill — 7 routes) extracted into internal/awards. Registered
+	// AFTER identity so /awards/* auth checks resolve against the
+	// identity-owned session middleware in the same order as pre-refactor.
 	awards.Register(e, h.Awards)
 }
 
@@ -243,49 +247,21 @@ func registerStatsRoutes(e *echo.Echo, h *handler.Handler) {
 	e.GET("/api/v1/projects", h.ProjectList)
 }
 
-// registerAuthRoutes: login/register/refresh + API token management.
+// registerAuthRoutes: awards ledger + server-side awards evaluation.
+//
+// gaka-8tn phase 4a: the login/register/refresh + api-token CRUD +
+// change-password + public profile + wakatime key + timezone routes
+// moved to identity.Register (see the identity fan-out at the top of
+// registerRoutes). Awards stays here until phase 4b lifts it into the
+// identity package alongside the rest of the user-scoped surface.
 func registerAuthRoutes(e *echo.Echo, h *handler.Handler) {
-	e.POST("/auth/login", h.Login)
-	e.POST("/auth/register", h.Register)
-	e.POST("/auth/refresh_token", h.RefreshToken)
-	e.POST("/auth/logout", h.Logout)
-	e.POST("/auth/create_api_token", h.CreateAPIToken)
-	e.GET("/auth/tokens", h.ListAPITokens)
-	e.DELETE("/auth/token/:id", h.DeleteToken)
-	e.POST("/auth/token", h.UpdateToken)
-	e.GET("/auth/users/current", h.CurrentUser)
-	// Change password (gaka-6jm): auth'd, re-verifies the current password,
-	// re-hashes with argon2id, and revokes every refresh token for the owner
-	// so other browsers get bounced. Registered under the users/current tree
-	// (not /auth/) so it uses the same access-token auth as sibling
-	// /api/v1/users/current/* endpoints.
-	e.POST("/api/v1/users/current/password", h.ChangePassword)
-	// Public profile (gaka-6jm.1): auth'd GET/PUT for the caller's own
-	// enable-toggle + slug. The PUBLIC read endpoint that resolves the slug
-	// lives in registerMiscRoutes near /widget/svg/ — same public-payload
-	// audience, and both must apply the widget.Scrub scrubber.
-	e.GET("/api/v1/users/current/profile", h.GetPublicProfile)
-	e.PUT("/api/v1/users/current/profile", h.PutPublicProfile)
-	// Encrypted-at-rest imported Wakatime API key (gaka-6jm.2). GET reports
-	// only {"hasSavedKey": bool} — plaintext is never returned. POST persists
-	// a user-supplied key under AES-256-GCM. DELETE clears it.
-	e.GET("/api/v1/users/current/wakatime_key", h.GetWakatimeKey)
-	e.POST("/api/v1/users/current/wakatime_key", h.SaveWakatimeKey)
-	e.DELETE("/api/v1/users/current/wakatime_key", h.DeleteWakatimeKey)
-	// User IANA timezone (gaka-dg7). GET reports the raw stored value
-	// (''=unset) alongside the server's 3-level-resolved effectiveTimezone
-	// so the FE can render "your choice" vs "server default" and only
-	// auto-detect-and-prompt when the two differ. PATCH validates via
-	// time.LoadLocation and rebuilds hb_rollup_daily so the dashboard fast
-	// path immediately serves user-local buckets.
-	e.GET("/api/v1/users/current/timezone", h.GetTimezone)
-	e.PATCH("/api/v1/users/current/timezone", h.UpdateTimezone)
-
-	// gaka-8tn phase 4b: award-ledger + evaluator + backfill endpoints
-	// extracted into internal/awards; the seven route strings + their
-	// registration order live in awards.Register (called at the tail of
-	// registerRoutes) so this function's remaining lines stay identity-
-	// owned for the parallel gaka-8tn phase 4a extract.
+	// gaka-8tn phase 4a: identity domain owns every route this function
+	// used to register — see identity.Register() called at the tail of
+	// registerRoutes. Kept as a stub so the registerRoutes fan-out
+	// preserves its shape until phase 8 collapses the wrappers.
+	// gaka-8tn phase 4b: awards routes moved to awards.Register.
+	_ = e
+	_ = h
 }
 
 // registerMiscRoutes: badges, widgets, leaderboards, and commits.
@@ -295,10 +271,8 @@ func registerMiscRoutes(e *echo.Echo, h *handler.Handler) {
 	// preserved verbatim inside widgets.Register.
 	widgets.Register(e, h.Widgets)
 
-	// Public profile — resolves slug -> user, then renders a scrubbed
-	// dashboard-shaped payload. UNAUTHENTICATED; the payload MUST go
-	// through widget.Scrub before serialization. See internal/handler/profile.go.
-	e.GET("/api/public/profile/:slug", h.PublicProfile)
+	// gaka-8tn phase 4a: PublicProfile moved to identity.Register (see
+	// registerRoutes' identity fan-out). Route strings preserved verbatim.
 
 	// gaka-myv: shared per-archetype label image bytes. PUBLIC (no auth) —
 	// label content is fixed catalog data, not per-user data. Cache-Control
@@ -335,14 +309,9 @@ func registerMiscRoutes(e *echo.Echo, h *handler.Handler) {
 	e.DELETE("/api/v1/admin/backfill/heartbeats", h.AdminBackfillDeleteHeartbeats)
 	e.GET("/api/v1/admin/backfill/ws", h.AdminBackfillWS)
 
-	// gaka-9v4: per-user CHIBI avatar. Prompt-synthesis SSE is authed
-	// (any logged-in user; server-side LLM key never touches the FE).
-	// Regenerate + status are self-only (resolveUser gates on token).
-	// Public GET serves the ready image bytes to the profile hero.
-	e.POST("/api/v1/admin/avatar/synthesize-prompt", h.SynthesizeAvatarPrompt)
-	e.POST("/api/v1/users/current/avatar/regenerate", h.RegenerateAvatar)
-	e.GET("/api/v1/users/current/avatar/status", h.GetAvatarStatus)
-	e.GET("/api/v1/users/:username/avatar", h.UserAvatar)
+	// gaka-8tn phase 4a: CHIBI avatar endpoints (synthesize-prompt SSE,
+	// regenerate, status, public GET) moved to identity.Register. Route
+	// strings preserved verbatim.
 
 	// gaka-364.3: DB-backed labels catalog. Public GET returns the whole
 	// catalog for the FE evaluator + admin table; admin CRUD lets a

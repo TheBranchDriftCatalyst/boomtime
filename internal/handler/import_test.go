@@ -41,7 +41,7 @@ var _ = Describe("ImportRequest (gaka-6jm.8)", func() {
 		h := handler.New(hz.DB, cfg, silent, worker, hub, nil)
 
 		e := echo.New()
-		e.POST("/auth/login", h.Login) // route table shim so echo doesn't 404 on middleware
+		e.POST("/auth/login", h.Identity.Login) // route table shim so echo doesn't 404 on middleware (gaka-8tn phase 4a)
 		e.POST("/api/v1/users/current/import", h.ImportRequest)
 
 		// Baseline: no saved key.
