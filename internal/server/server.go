@@ -13,6 +13,7 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/awards"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/curation"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/goals"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
@@ -110,7 +111,14 @@ func NewWithHandler(database *db.DB, cfg *config.Config, logger *slog.Logger, wo
 // registration sequence.
 func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	registerHeartbeatRoutes(e, h)
-	registerCurationRoutes(e, h)
+	// gaka-8tn phase 5b: curation (hide/rename rules + destructive triplet +
+	// labels catalog admin) extracted into internal/curation. `curation.Register`
+	// fans out the 8 /curation/... routes formerly in registerCurationRoutes
+	// plus the 6 labels-catalog + admin routes formerly in registerMiscRoutes.
+	// Order preserved: /curation/:id/preview still registers BEFORE the /:id
+	// triplet so the static suffix wins path matching against Echo's param
+	// matcher.
+	curation.Register(e, h.Curation)
 	registerStatsRoutes(e, h)
 	registerMiscRoutes(e, h)
 	registerImportRoutes(e, h)
@@ -162,29 +170,12 @@ func registerHeartbeatRoutes(e *echo.Echo, h *handler.Handler) {
 
 // registerCurationRoutes: data curation (hide / rename labels).
 //
-// The /curation/:id/{preview,apply,purge} triplet operates on the same
-// curation_rules table as the CRUD endpoints, but for the DESTRUCTIVE
-// rewrite/delete paths:
-//   - /preview: dispatches on rule.action; renames get the apply-preview
-//     shape (UPDATE + rule-delete SQL), hides get the purge-preview shape
-//     (DELETE heartbeats + rule-delete SQL). One preview, two payloads.
-//   - /apply: rename rules only. UPDATE heartbeats + DELETE rule (one tx).
-//   - /purge: hide rules only. DELETE heartbeats + DELETE rule (one tx).
-// Cross-action requests return 400 (apply-on-hide, purge-on-rename). See
-// internal/handler/curation.go for the SQL contract + regression tests
-// that guard preview===run string identity for both destructive paths.
-func registerCurationRoutes(e *echo.Echo, h *handler.Handler) {
-	e.GET("/api/v1/users/current/curation", h.ListCuration)
-	e.POST("/api/v1/users/current/curation", h.CreateCuration)
-	e.DELETE("/api/v1/users/current/curation/:id", h.DeleteCuration)
-	e.GET("/api/v1/users/current/curation/:id/affected", h.CurationAffected)
-	e.GET("/api/v1/users/current/curation/:id/preview", h.ApplyRenamePreview)
-	e.POST("/api/v1/users/current/curation/:id/apply", h.ApplyRename)
-	e.POST("/api/v1/users/current/curation/:id/purge", h.PurgeHidden)
-	// gaka-dfd: pause/resume a rule without deleting it. Body optional —
-	// empty POST flips, {"enabled":true|false} sets an exact value.
-	e.POST("/api/v1/users/current/curation/:id/toggle", h.ToggleCuration)
-}
+// gaka-8tn phase 5b: the /curation cluster + labels catalog admin
+// routes moved to curation.Register (see registerRoutes' curation
+// fan-out). Route strings preserved verbatim. This function stays as
+// a documented no-op so a `git blame` on the route table still lands
+// on the historical rationale; delete during phase 8 collapse.
+func registerCurationRoutes(_ *echo.Echo, _ *handler.Handler) {}
 
 // registerStatsRoutes: derived-data health plus every dashboard aggregation
 // (stats, timeline, big bets, active files, projects).
@@ -274,15 +265,10 @@ func registerMiscRoutes(e *echo.Echo, h *handler.Handler) {
 	// regenerate, status, public GET) moved to identity.Register. Route
 	// strings preserved verbatim.
 
-	// gaka-364.3: DB-backed labels catalog. Public GET returns the whole
-	// catalog for the FE evaluator + admin table; admin CRUD lets a
-	// whitelisted operator edit labels + the global gen-config live.
-	e.GET("/api/v1/labels/catalog", h.LabelsCatalog)
-	e.POST("/api/v1/admin/labels", h.AdminCreateLabel)
-	e.PATCH("/api/v1/admin/labels/:id", h.AdminUpdateLabel)
-	e.DELETE("/api/v1/admin/labels/:id", h.AdminDeleteLabel)
-	e.PATCH("/api/v1/admin/label-gen-config", h.AdminUpdateLabelGenConfig)
-	e.GET("/api/v1/admin/labels/seed.sql", h.AdminLabelsSeedSQL)
+	// gaka-8tn phase 5b: labels catalog admin (public GET /labels/catalog +
+	// admin CRUD + gen-config PATCH + seed.sql dumper) moved to
+	// curation.Register alongside the curation-rules cluster. Route
+	// strings preserved verbatim.
 
 	// gaka-8tn phase 3: widget-def CRUD lives in internal/widgets and is
 	// registered by widgets.Register at the top of this func.

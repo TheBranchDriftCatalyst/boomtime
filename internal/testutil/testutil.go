@@ -177,25 +177,25 @@ func (hz *Harness) Router() *echo.Echo {
 	e.POST("/auth/login", h.Identity.Login)
 	e.POST("/auth/register", h.Identity.Register)
 	e.POST("/auth/refresh_token", h.Identity.RefreshToken)
-	// curation
-	e.GET("/api/v1/users/current/curation", h.ListCuration)
-	e.POST("/api/v1/users/current/curation", h.CreateCuration)
-	e.DELETE("/api/v1/users/current/curation/:id", h.DeleteCuration)
-	e.GET("/api/v1/users/current/curation/:id/affected", h.CurationAffected)
+	// curation — gaka-8tn phase 5b: receivers moved to h.Curation (internal/curation).
+	e.GET("/api/v1/users/current/curation", h.Curation.ListCuration)
+	e.POST("/api/v1/users/current/curation", h.Curation.CreateCuration)
+	e.DELETE("/api/v1/users/current/curation/:id", h.Curation.DeleteCuration)
+	e.GET("/api/v1/users/current/curation/:id/affected", h.Curation.CurationAffected)
 	// gaka-d6x.handler: extra curation routes (preview/apply/purge/toggle)
 	// so the full curation cluster is testable via testutil.Router without
 	// per-file re-wiring (which would duplicate + panic).
-	e.GET("/api/v1/users/current/curation/:id/preview", h.ApplyRenamePreview)
-	e.POST("/api/v1/users/current/curation/:id/apply", h.ApplyRename)
-	e.POST("/api/v1/users/current/curation/:id/purge", h.PurgeHidden)
-	e.POST("/api/v1/users/current/curation/:id/toggle", h.ToggleCuration)
-	// labels catalog (public GET + admin CRUD).
-	e.GET("/api/v1/labels/catalog", h.LabelsCatalog)
-	e.POST("/api/v1/admin/labels", h.AdminCreateLabel)
-	e.PATCH("/api/v1/admin/labels/:id", h.AdminUpdateLabel)
-	e.DELETE("/api/v1/admin/labels/:id", h.AdminDeleteLabel)
-	e.PATCH("/api/v1/admin/label-gen-config", h.AdminUpdateLabelGenConfig)
-	e.GET("/api/v1/admin/labels/seed.sql", h.AdminLabelsSeedSQL)
+	e.GET("/api/v1/users/current/curation/:id/preview", h.Curation.ApplyRenamePreview)
+	e.POST("/api/v1/users/current/curation/:id/apply", h.Curation.ApplyRename)
+	e.POST("/api/v1/users/current/curation/:id/purge", h.Curation.PurgeHidden)
+	e.POST("/api/v1/users/current/curation/:id/toggle", h.Curation.ToggleCuration)
+	// labels catalog (public GET + admin CRUD) — gaka-8tn phase 5b: h.Curation.
+	e.GET("/api/v1/labels/catalog", h.Curation.LabelsCatalog)
+	e.POST("/api/v1/admin/labels", h.Curation.AdminCreateLabel)
+	e.PATCH("/api/v1/admin/labels/:id", h.Curation.AdminUpdateLabel)
+	e.DELETE("/api/v1/admin/labels/:id", h.Curation.AdminDeleteLabel)
+	e.PATCH("/api/v1/admin/label-gen-config", h.Curation.AdminUpdateLabelGenConfig)
+	e.GET("/api/v1/admin/labels/seed.sql", h.Curation.AdminLabelsSeedSQL)
 	// spaces — gaka-8tn phase 2a: receivers moved to h.Spaces (internal/spaces).
 	e.GET("/api/v1/users/current/spaces", h.Spaces.ListSpaces)
 	e.POST("/api/v1/users/current/spaces", h.Spaces.CreateSpace)

@@ -21,6 +21,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/awards"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/cache"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/curation"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/goals"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/identity"
@@ -75,6 +76,7 @@ type Handler struct {
 	Identity *identity.Handler // phase 4a
 	Awards   *awards.Handler   // phase 4b
 	Ingest   *ingest.Handler   // phase 5a
+	Curation *curation.Handler // phase 5b
 }
 
 // New constructs a Handler. logHub streams server-process slog records to the
@@ -114,6 +116,7 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *impor
 		Identity: identity.New(database, cfg, logger, sharedCache),
 		Awards:   awards.New(database, cfg, logger),
 		Ingest:   ingest.New(database, cfg, logger, sharedCache),
+		Curation: curation.New(database, cfg, logger, sharedCache),
 	}
 }
 
