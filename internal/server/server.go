@@ -19,6 +19,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/identity"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/ingest"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/meta"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/spaces"
@@ -111,6 +112,10 @@ func NewWithHandler(database *db.DB, cfg *config.Config, logger *slog.Logger, wo
 // registration sequence.
 func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	registerHeartbeatRoutes(e, h)
+	// gaka-8tn phase 5a: ingest (heartbeats + workouts + health_samples +
+	// heartbeats explorer + entities) extracted into internal/ingest.
+	// Registered EARLY so /heartbeats.bulk stays the fast-path first-match.
+	ingest.Register(e, h.Ingest)
 	// gaka-8tn phase 5b: curation (hide/rename rules + destructive triplet +
 	// labels catalog admin) extracted into internal/curation. `curation.Register`
 	// fans out the 8 /curation/... routes formerly in registerCurationRoutes
