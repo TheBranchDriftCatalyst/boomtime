@@ -182,6 +182,20 @@ func (hz *Harness) Router() *echo.Echo {
 	e.POST("/api/v1/users/current/curation", h.CreateCuration)
 	e.DELETE("/api/v1/users/current/curation/:id", h.DeleteCuration)
 	e.GET("/api/v1/users/current/curation/:id/affected", h.CurationAffected)
+	// gaka-d6x.handler: extra curation routes (preview/apply/purge/toggle)
+	// so the full curation cluster is testable via testutil.Router without
+	// per-file re-wiring (which would duplicate + panic).
+	e.GET("/api/v1/users/current/curation/:id/preview", h.ApplyRenamePreview)
+	e.POST("/api/v1/users/current/curation/:id/apply", h.ApplyRename)
+	e.POST("/api/v1/users/current/curation/:id/purge", h.PurgeHidden)
+	e.POST("/api/v1/users/current/curation/:id/toggle", h.ToggleCuration)
+	// labels catalog (public GET + admin CRUD).
+	e.GET("/api/v1/labels/catalog", h.LabelsCatalog)
+	e.POST("/api/v1/admin/labels", h.AdminCreateLabel)
+	e.PATCH("/api/v1/admin/labels/:id", h.AdminUpdateLabel)
+	e.DELETE("/api/v1/admin/labels/:id", h.AdminDeleteLabel)
+	e.PATCH("/api/v1/admin/label-gen-config", h.AdminUpdateLabelGenConfig)
+	e.GET("/api/v1/admin/labels/seed.sql", h.AdminLabelsSeedSQL)
 	// spaces
 	e.GET("/api/v1/users/current/spaces", h.ListSpaces)
 	e.POST("/api/v1/users/current/spaces", h.CreateSpace)
