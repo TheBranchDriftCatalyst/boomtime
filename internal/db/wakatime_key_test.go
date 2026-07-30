@@ -24,23 +24,8 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// -- stdlib DB harness (mirrors openTestDBG for testing.T) --
-
-// openTestDB opens the shared isolated boomtime_test database provisioned by
-// TestMain. Skips the current test if the DB is unavailable (mirrors ginkgo
-// helper openTestDBG). Closes the pool with t.Cleanup.
-func openTestDB(t *testing.T) *DB {
-	t.Helper()
-	if !dbReady {
-		t.Skipf("skipping: isolated test database unavailable: %s", dbSkipMsg)
-	}
-	d, err := New(context.Background(), testDatabaseURL())
-	if err != nil {
-		t.Skipf("skipping: could not open %s: %v", testDBName, err)
-	}
-	t.Cleanup(func() { d.Close() })
-	return d
-}
+// openTestDB lives in harness_test.go — shared with the other
+// stdlib-flavored *_test.go files in this package.
 
 // -- inline AES-GCM helper (mirrors internal/auth.Encrypt / Decrypt without
 // creating an import cycle). Layout: nonce (12B) || sealed (ct || tag). --
