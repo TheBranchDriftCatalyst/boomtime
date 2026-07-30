@@ -225,7 +225,7 @@ tasks:
       - 'BOOM_TEST_DATABASE_URL="{{.TEST_DB_URL}}" go test ./...'
 
   test:coverage:
-    desc: Run tests with coverage profile + open HTML report (gaka-cov)
+    desc: Run tests with coverage profile + open HTML report
     cmds:
       - task: db:up
       - 'BOOM_TEST_DATABASE_URL="{{.TEST_DB_URL}}" go test -coverprofile=/tmp/boomtime_cov.out -covermode=atomic ./internal/... || true'
@@ -239,35 +239,11 @@ tasks:
       - 'test -f /tmp/boomtime_cov.out || { echo "no profile — run: task test:coverage"; exit 1; }'
       - 'go tool cover -func=/tmp/boomtime_cov.out | awk ''$1 ~ /^github/ { split($1,a,"/"); pkg=a[5]; gsub(/%/,"",$NF); sum[pkg]+=$NF; n[pkg]++ } END { for (p in sum) printf "%-25s %.1f%%\n", p, sum[p]/n[p] }'' | sort -k2 -n'
 
-  test:coverage:
-    desc: Run tests with coverage profile + open HTML report (gaka-se2 epic)
+  test:domain:
+    desc: 'Run tests for one domain (gaka-arch phase gates). Vars: DOMAIN (e.g. meta, ingest, curation)'
     cmds:
       - task: db:up
-      - 'BOOM_TEST_DATABASE_URL="{{.TEST_DB_URL}}" go test -coverprofile=/tmp/boomtime_cov.out -covermode=atomic ./internal/... || true'
-      - 'go tool cover -html=/tmp/boomtime_cov.out -o /tmp/boomtime_cov.html'
-      - 'echo "✓ HTML report: file:///tmp/boomtime_cov.html"'
-      - 'go tool cover -func=/tmp/boomtime_cov.out | tail -1'
-
-  test:coverage:summary:
-    desc: Print per-package coverage summary (requires prior test:coverage run)
-    cmds:
-      - 'test -f /tmp/boomtime_cov.out || { echo "no profile — run: task test:coverage"; exit 1; }'
-      - 'go tool cover -func=/tmp/boomtime_cov.out | awk ''$1 ~ /^github/ { split($1,a,"/"); pkg=a[5]; gsub(/%/,"",$NF); sum[pkg]+=$NF; n[pkg]++ } END { for (p in sum) printf "%-25s %.1f%%\n", p, sum[p]/n[p] }'' | sort -k2 -n'
-
-  test:coverage:
-    desc: Run tests with coverage profile + open HTML report (gaka-se2 epic)
-    cmds:
-      - task: db:up
-      - 'BOOM_TEST_DATABASE_URL="{{.TEST_DB_URL}}" go test -coverprofile=/tmp/boomtime_cov.out -covermode=atomic ./internal/... || true'
-      - 'go tool cover -html=/tmp/boomtime_cov.out -o /tmp/boomtime_cov.html'
-      - 'echo "✓ HTML report: file:///tmp/boomtime_cov.html"'
-      - 'go tool cover -func=/tmp/boomtime_cov.out | tail -1'
-
-  test:coverage:summary:
-    desc: Print per-package coverage summary (requires prior test:coverage run)
-    cmds:
-      - 'test -f /tmp/boomtime_cov.out || { echo "no profile — run: task test:coverage"; exit 1; }'
-      - 'go tool cover -func=/tmp/boomtime_cov.out | awk ''$1 ~ /^github/ { split($1,a,"/"); pkg=a[5]; gsub(/%/,"",$NF); sum[pkg]+=$NF; n[pkg]++ } END { for (p in sum) printf "%-25s %.1f%%\n", p, sum[p]/n[p] }'' | sort -k2 -n'
+      - 'BOOM_TEST_DATABASE_URL="{{.TEST_DB_URL}}" go test -count=1 -race ./internal/{{.DOMAIN}}/...'
 
   test:db:reset:
     desc: Drop and recreate the isolated boomtime_test database
