@@ -17,6 +17,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/meta"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/spaces"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
 )
@@ -106,7 +107,6 @@ func NewWithHandler(database *db.DB, cfg *config.Config, logger *slog.Logger, wo
 func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	registerHeartbeatRoutes(e, h)
 	registerCurationRoutes(e, h)
-	registerSpaceRoutes(e, h)
 	registerStatsRoutes(e, h)
 	registerAuthRoutes(e, h)
 	registerMiscRoutes(e, h)
@@ -118,6 +118,13 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	// route set as pre-refactor registerLogRoutes + registerMetaRoutes.
 	meta.Register(e, h.Meta)
 	registerGoalRoutes(e, h)
+	// gaka-8tn phase 2a: spaces + dashboard-layout registration is now
+	// owned by the spaces domain package. `spaces.Register` fans out the
+	// eight /spaces/... routes (formerly registerSpaceRoutes) plus the
+	// three /dashboard/:scope routes (formerly buried in registerAuthRoutes).
+	// Order preserved: /spaces/preview still registers BEFORE /spaces/:id
+	// so the static route wins path matching against Echo's param matcher.
+	spaces.Register(e, h.Spaces)
 }
 
 // registerGoalRoutes: user-defined composite goals (gaka-wpb). CRUD +
@@ -193,20 +200,6 @@ func registerCurationRoutes(e *echo.Echo, h *handler.Handler) {
 	e.POST("/api/v1/users/current/curation/:id/toggle", h.ToggleCuration)
 }
 
-// registerSpaceRoutes: spaces (named, scoped dashboards). The static
-// `/spaces/preview` route is registered before `/spaces/:id` so it is not
-// shadowed by the param route.
-func registerSpaceRoutes(e *echo.Echo, h *handler.Handler) {
-	e.GET("/api/v1/users/current/spaces", h.ListSpaces)
-	e.POST("/api/v1/users/current/spaces", h.CreateSpace)
-	e.GET("/api/v1/users/current/spaces/preview", h.SpacePreview)
-	e.GET("/api/v1/users/current/spaces/:id", h.GetSpace)
-	e.PATCH("/api/v1/users/current/spaces/:id", h.UpdateSpace)
-	e.DELETE("/api/v1/users/current/spaces/:id", h.DeleteSpace)
-	e.POST("/api/v1/users/current/spaces/:id/rules", h.AddSpaceRule)
-	e.DELETE("/api/v1/users/current/spaces/:id/rules/:rid", h.DeleteSpaceRule)
-}
-
 // registerStatsRoutes: derived-data health plus every dashboard aggregation
 // (stats, timeline, big bets, active files, projects).
 func registerStatsRoutes(e *echo.Echo, h *handler.Handler) {
@@ -269,12 +262,6 @@ func registerAuthRoutes(e *echo.Echo, h *handler.Handler) {
 	// audience, and both must apply the widget.Scrub scrubber.
 	e.GET("/api/v1/users/current/profile", h.GetPublicProfile)
 	e.PUT("/api/v1/users/current/profile", h.PutPublicProfile)
-	// Dashboard layout persistence (gaka-keb). Per-user, per-scope. Scope
-	// today is "public_profile"; the handler enforces the small allowlist so
-	// a stale FE can't squat rows for future scopes.
-	e.GET("/api/v1/users/current/dashboard/:scope", h.GetDashboardLayout)
-	e.PUT("/api/v1/users/current/dashboard/:scope", h.PutDashboardLayout)
-	e.DELETE("/api/v1/users/current/dashboard/:scope", h.DeleteDashboardLayout)
 	// Encrypted-at-rest imported Wakatime API key (gaka-6jm.2). GET reports
 	// only {"hasSavedKey": bool} — plaintext is never returned. POST persists
 	// a user-supplied key under AES-256-GCM. DELETE clears it.

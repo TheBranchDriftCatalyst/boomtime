@@ -23,6 +23,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/meta"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/backfilljobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/imagejobs"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/spaces"
 	labelimages "github.com/TheBranchDriftCatalyst/boomtime/internal/worker/labelimages"
 	"github.com/labstack/echo/v5"
 )
@@ -60,6 +61,10 @@ type Handler struct {
 	// See internal/meta/. The god-type Handler shrinks one domain at a
 	// time until phase 8 leaves it as a pure composition facade.
 	Meta *meta.Handler
+	// Spaces is the extracted spaces-domain handler (gaka-8tn phase 2a).
+	// Named-scope CRUD + membership rules + preview + dashboard-layout
+	// persistence live here. See internal/spaces/.
+	Spaces *spaces.Handler
 }
 
 // New constructs a Handler. logHub streams server-process slog records to the
@@ -89,6 +94,15 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *impor
 			LogHub:    logHub,
 			DB:        database,
 			StartTime: startTime,
+		},
+		// gaka-8tn phase 2a: construct the spaces-domain handler with the
+		// shared deps it actually reads. DB / Logger / Cache point at the
+		// SAME instances the god-type holds so cache invalidations from
+		// spaces writes are seen by every reader that reads through h.Cache.
+		Spaces: &spaces.Handler{
+			DB:     database,
+			Logger: logger,
+			Cache:  sharedCache,
 		},
 	}
 }

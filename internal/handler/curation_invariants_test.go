@@ -366,6 +366,25 @@ var _ = Describe("Spaces writes invalidate the owner cache", func() {
 	})
 })
 
+// createSpaceH — local mirror of the helper originally colocated in
+// spaces_http_test.go (moved to internal/spaces/ in gaka-8tn phase 2a).
+// Kept here so the cross-domain shape check below stays in the
+// handler_test package without pulling in the spaces test binary.
+func createSpaceH(e http.Handler, token, name string) int {
+	rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/spaces", token,
+		map[string]any{"name": name})
+	ExpectWithOffset(1, rec).To(testutil.HaveStatus(http.StatusOK),
+		"create space %q: body=%s", name, rec.Body.String())
+	var out struct {
+		Space struct {
+			ID int `json:"id"`
+		} `json:"space"`
+	}
+	ExpectWithOffset(1, json.Unmarshal(rec.Body.Bytes(), &out)).To(Succeed())
+	ExpectWithOffset(1, out.Space.ID).NotTo(BeZero())
+	return out.Space.ID
+}
+
 // -----------------------------------------------------------------------
 // SPACES: GetSpace shape TYPE assertions (missing invariant — was only
 // checking key presence, not the type of `position` or `rules[].axis`).

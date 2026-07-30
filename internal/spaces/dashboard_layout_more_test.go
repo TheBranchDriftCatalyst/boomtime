@@ -3,7 +3,7 @@
 // the malformed-JSON reject branch on PUT, the missing-layout-field 400
 // branch, and cross-user isolation on both PUT and DELETE (a layout row is
 // keyed on (username, scope) — a leak would let user B stomp A's layout).
-package handler_test
+package spaces_test
 
 import (
 	"bytes"

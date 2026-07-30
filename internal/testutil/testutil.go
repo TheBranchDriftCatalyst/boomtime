@@ -196,15 +196,15 @@ func (hz *Harness) Router() *echo.Echo {
 	e.DELETE("/api/v1/admin/labels/:id", h.AdminDeleteLabel)
 	e.PATCH("/api/v1/admin/label-gen-config", h.AdminUpdateLabelGenConfig)
 	e.GET("/api/v1/admin/labels/seed.sql", h.AdminLabelsSeedSQL)
-	// spaces
-	e.GET("/api/v1/users/current/spaces", h.ListSpaces)
-	e.POST("/api/v1/users/current/spaces", h.CreateSpace)
-	e.GET("/api/v1/users/current/spaces/preview", h.SpacePreview)
-	e.GET("/api/v1/users/current/spaces/:id", h.GetSpace)
-	e.PATCH("/api/v1/users/current/spaces/:id", h.UpdateSpace)
-	e.DELETE("/api/v1/users/current/spaces/:id", h.DeleteSpace)
-	e.POST("/api/v1/users/current/spaces/:id/rules", h.AddSpaceRule)
-	e.DELETE("/api/v1/users/current/spaces/:id/rules/:rid", h.DeleteSpaceRule)
+	// spaces — gaka-8tn phase 2a: receivers moved to h.Spaces (internal/spaces).
+	e.GET("/api/v1/users/current/spaces", h.Spaces.ListSpaces)
+	e.POST("/api/v1/users/current/spaces", h.Spaces.CreateSpace)
+	e.GET("/api/v1/users/current/spaces/preview", h.Spaces.SpacePreview)
+	e.GET("/api/v1/users/current/spaces/:id", h.Spaces.GetSpace)
+	e.PATCH("/api/v1/users/current/spaces/:id", h.Spaces.UpdateSpace)
+	e.DELETE("/api/v1/users/current/spaces/:id", h.Spaces.DeleteSpace)
+	e.POST("/api/v1/users/current/spaces/:id/rules", h.Spaces.AddSpaceRule)
+	e.DELETE("/api/v1/users/current/spaces/:id/rules/:rid", h.Spaces.DeleteSpaceRule)
 	// whole-database backup (dump download + destructive restore)
 	e.GET("/api/v1/users/current/db/export", h.DBExport)
 	e.POST("/api/v1/users/current/db/import", h.DBImport)
@@ -280,9 +280,9 @@ func (hz *Harness) Router() *echo.Echo {
 	e.GET("/api/v1/users/current/profile", h.GetPublicProfile)                        // was routerWithPublicProfile
 	e.PUT("/api/v1/users/current/profile", h.PutPublicProfile)                        // was routerWithPublicProfile
 	e.GET("/api/public/profile/:slug", h.PublicProfile)                               // was routerWithPublicProfile
-	e.GET("/api/v1/users/current/dashboard/:scope", h.GetDashboardLayout)             // was routerWithDashboardLayout
-	e.PUT("/api/v1/users/current/dashboard/:scope", h.PutDashboardLayout)             // was routerWithDashboardLayout
-	e.DELETE("/api/v1/users/current/dashboard/:scope", h.DeleteDashboardLayout)       // was routerWithDashboardLayout
+	e.GET("/api/v1/users/current/dashboard/:scope", h.Spaces.GetDashboardLayout)      // gaka-8tn phase 2a: moved to h.Spaces
+	e.PUT("/api/v1/users/current/dashboard/:scope", h.Spaces.PutDashboardLayout)      // gaka-8tn phase 2a
+	e.DELETE("/api/v1/users/current/dashboard/:scope", h.Spaces.DeleteDashboardLayout) // gaka-8tn phase 2a
 	e.POST("/api/v1/users/current/wakatime_key", h.SaveWakatimeKey)                   // was routerWithWakatimeKey
 	// gaka-d6x.handler: admin cluster (label-images regeneration + git-history
 	// backfill CLI). Wired here so per-file test suites don't have to re-register

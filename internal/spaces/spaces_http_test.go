@@ -19,7 +19,7 @@
 //   - "SpacePreview axis + matchType"    → SpacePreview
 //   - "SpacePreview regex compile guard" → SpacePreview
 //   - "ListSpaces isolation"             → cross-user
-package handler_test
+package spaces_test
 
 import (
 	"encoding/json"

@@ -14,7 +14,7 @@
 // stale catalog on either side); server-side validation would require pulling
 // the widget-kind whitelist into the handler and risks a spec drift the FE
 // wouldn't notice.
-package handler
+package spaces
 
 import (
 	"encoding/json"
@@ -22,6 +22,7 @@ import (
 	"net/http"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/labstack/echo/v5"
 )
 
@@ -41,20 +42,20 @@ var dashboardLayoutScopes = map[string]struct{}{
 // `updatedAt` timestamp for optimistic-concurrency) without a breaking
 // change on the wire.
 func (h *Handler) GetDashboardLayout(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	scope := c.Param("scope")
 	if _, ok := dashboardLayoutScopes[scope]; !ok {
-		return respondErr(c, apierr.BadRequest("unknown dashboard scope"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("unknown dashboard scope"))
 	}
 	raw, found, err := h.DB.GetDashboardLayout(c.Request().Context(), owner, scope)
 	if err != nil {
-		return h.internalErr(c, "dashboard layout lookup failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "dashboard layout lookup failed", err)
 	}
 	if !found {
-		return respondErr(c, apierr.NotFound("no layout saved"))
+		return apihelpers.RespondErr(c, apierr.NotFound("no layout saved"))
 	}
 	// Envelope manually so `layout` field stays byte-identical to what was
 	// persisted (json.Marshal on a struct with a RawMessage does honor the
@@ -74,21 +75,21 @@ func (h *Handler) GetDashboardLayout(c *echo.Context) error {
 // GETs. The layout bytes are preserved verbatim through Set/Get — see the
 // gaka-25r round-trip regression test.
 func (h *Handler) PutDashboardLayout(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	scope := c.Param("scope")
 	if _, ok := dashboardLayoutScopes[scope]; !ok {
-		return respondErr(c, apierr.BadRequest("unknown dashboard scope"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("unknown dashboard scope"))
 	}
 
-	// Small cap (4 KiB) — see BodyLimitSmall doc for the amp-attack framing.
+	// Small cap (4 KiB) — see apihelpers.BodyLimitSmall doc for the amp-attack framing.
 	// Use a plain body read + json.Unmarshal so the inner `layout` field
 	// reaches the DB verbatim (the anti-tautology round-trip test depends
 	// on byte-preservation of that inner value).
 	r := c.Request()
-	r.Body = http.MaxBytesReader(c.Response(), r.Body, BodyLimitSmall)
+	r.Body = http.MaxBytesReader(c.Response(), r.Body, apihelpers.BodyLimitSmall)
 	var env struct {
 		Layout json.RawMessage `json:"layout"`
 	}
@@ -98,22 +99,23 @@ func (h *Handler) PutDashboardLayout(c *echo.Context) error {
 		// 413 vs 400.
 		var mbre *http.MaxBytesError
 		if errors.As(err, &mbre) {
-			return respondErr(c, apierr.New(http.StatusRequestEntityTooLarge, "payload too large", ptrStr("limit=4096")))
+			limit := "limit=4096"
+			return apihelpers.RespondErr(c, apierr.New(http.StatusRequestEntityTooLarge, "payload too large", &limit))
 		}
-		return respondErr(c, apierr.BadRequest("invalid JSON body"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("invalid JSON body"))
 	}
 	if len(env.Layout) == 0 || string(env.Layout) == "null" {
-		return respondErr(c, apierr.BadRequest("missing 'layout' field"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("missing 'layout' field"))
 	}
 
 	if err := h.DB.SetDashboardLayout(c.Request().Context(), owner, scope, env.Layout); err != nil {
-		return h.internalErr(c, "dashboard layout save failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "dashboard layout save failed", err)
 	}
 	// Read back so we return the persisted envelope (byte-identical to the
 	// input for JSONB; deterministic settle target for the FE).
 	raw, _, err := h.DB.GetDashboardLayout(c.Request().Context(), owner, scope)
 	if err != nil {
-		return h.internalErr(c, "dashboard layout readback failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "dashboard layout readback failed", err)
 	}
 	return c.JSON(http.StatusOK, map[string]json.RawMessage{"layout": raw})
 }
@@ -122,16 +124,16 @@ func (h *Handler) PutDashboardLayout(c *echo.Context) error {
 // (auth). Drops the saved row so subsequent renders use the default layout.
 // Idempotent — 204 whether or not a row existed.
 func (h *Handler) DeleteDashboardLayout(c *echo.Context) error {
-	_, owner, aerr := h.resolveUser(c)
+	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
 	if aerr != nil {
-		return respondErr(c, aerr)
+		return apihelpers.RespondErr(c, aerr)
 	}
 	scope := c.Param("scope")
 	if _, ok := dashboardLayoutScopes[scope]; !ok {
-		return respondErr(c, apierr.BadRequest("unknown dashboard scope"))
+		return apihelpers.RespondErr(c, apierr.BadRequest("unknown dashboard scope"))
 	}
 	if err := h.DB.DeleteDashboardLayout(c.Request().Context(), owner, scope); err != nil {
-		return h.internalErr(c, "dashboard layout delete failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "dashboard layout delete failed", err)
 	}
 	return c.NoContent(http.StatusNoContent)
 }
