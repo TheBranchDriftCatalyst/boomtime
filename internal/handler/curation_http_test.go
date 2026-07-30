@@ -30,6 +30,7 @@
 package handler_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -41,6 +42,20 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
 )
+
+// countHeartbeatsWithLanguage returns the number of heartbeat rows for `owner`
+// whose `language` column exactly equals `lang`. Used by the destructive-path
+// specs to verify the underlying raw data actually changed — not just that the
+// handler returned a rowsAffected > 0.
+func countHeartbeatsWithLanguage(hz *testutil.Harness, owner, lang string) int64 {
+	var n int64
+	err := hz.DB.Pool.QueryRow(context.Background(),
+		`SELECT count(*) FROM heartbeats WHERE sender=$1 AND language=$2`,
+		owner, lang).Scan(&n)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(),
+		"count heartbeats sender=%s language=%s: %v", owner, lang, err)
+	return n
+}
 
 // createRule POSTs to /curation and returns the id from the response. On a
 // non-2xx it fails the spec with the body for diagnosability.
@@ -485,6 +500,12 @@ var _ = Describe("ApplyRename destructive path", func() {
 		e := hz.Router()
 		user, token := hz.MintUser("cur_apl_ok")
 		seedRenameableHeartbeats(hz, user)
+		// Baseline: seeded rows are on the OLD label ("Python").
+		Expect(countHeartbeatsWithLanguage(hz, user, "Python")).To(BeNumerically(">", 0),
+			"precondition: fixture must have Python rows before apply")
+		Expect(countHeartbeatsWithLanguage(hz, user, "python")).To(BeZero(),
+			"precondition: fixture must NOT already contain the new label")
+
 		newVal := "python"
 		id := createRule(e, token, map[string]any{
 			"axis": "language", "action": "rename", "matchType": "exact",
@@ -503,6 +524,17 @@ var _ = Describe("ApplyRename destructive path", func() {
 		// Should have touched >0 rows on our seeded fixture.
 		Expect(got["rowsAffected"]).To(BeNumerically(">", 0),
 			"apply on seeded Python rows must rewrite >0 rows: %+v", got)
+
+		// Non-tautological invariant: the RAW heartbeat rows now carry the new
+		// value. A DB layer that reported rowsAffected=N + cleared the rule row
+		// without actually rewriting heartbeats would pass the shape check
+		// above but fail here — silently orphaning the raw data claim in the
+		// handler comment. Assert the whole seeded set flipped: old label is
+		// gone, new label carries every original row.
+		Expect(countHeartbeatsWithLanguage(hz, user, "Python")).To(BeZero(),
+			"apply MUST rewrite every seeded 'Python' row — none may remain")
+		Expect(countHeartbeatsWithLanguage(hz, user, "python")).To(BeNumerically(">", 0),
+			"apply MUST land the new label 'python' on the rewritten rows")
 
 		// Rule must be gone from the DB.
 		listRec := doJSONReqG(e, http.MethodGet, "/api/v1/users/current/curation", token, nil)
@@ -578,6 +610,10 @@ var _ = Describe("PurgeHidden destructive path", func() {
 		e := hz.Router()
 		user, token := hz.MintUser("cur_pge_ok")
 		seedRenameableHeartbeats(hz, user)
+		// Baseline: seeded rows exist on the target language.
+		Expect(countHeartbeatsWithLanguage(hz, user, "Python")).To(BeNumerically(">", 0),
+			"precondition: fixture must have Python rows before purge")
+
 		id := createRule(e, token, map[string]any{
 			"axis": "language", "action": "hide", "matchType": "exact", "matchValue": "Python",
 		})
@@ -593,6 +629,13 @@ var _ = Describe("PurgeHidden destructive path", func() {
 		Expect(got).To(HaveKey("sqlDeleteRule"))
 		Expect(got["rowsAffected"]).To(BeNumerically(">", 0),
 			"purge on seeded Python rows must delete >0 rows: %+v", got)
+
+		// Non-tautological invariant: the RAW heartbeat rows are gone from the
+		// DB — a delete-that-doesn't-delete would still pass the shape check
+		// above (this is the scariest endpoint in the family — the handler
+		// comment says so, and the test must match).
+		Expect(countHeartbeatsWithLanguage(hz, user, "Python")).To(BeZero(),
+			"purge MUST have removed every seeded Python heartbeat — none may remain")
 
 		listRec := doJSONReqG(e, http.MethodGet, "/api/v1/users/current/curation", token, nil)
 		var listOut struct {

@@ -62,7 +62,7 @@ var _ = Describe("CreateSpace input + isolation", func() {
 		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest))
 	})
 
-	It("400s on a duplicate name (per-owner uniqueness)", func() {
+	It("400s on a duplicate name (per-owner uniqueness) with a fixed operator message + never leaks pg schema names", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
 		_, token := hz.MintUser("sp_dupe")
@@ -72,14 +72,40 @@ var _ = Describe("CreateSpace input + isolation", func() {
 			map[string]any{"name": name})
 		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest),
 			"duplicate name must 400, got %d body=%s", rec.Code, rec.Body.String())
+		// Pin the operator string — a regression that surfaces the raw pg
+		// diagnostic would still 400, but would leak schema names like
+		// "spaces_owner_name_key" and the "pq:" driver prefix to the client.
+		Expect(rec.Body.String()).To(ContainSubstring("Could not create space"),
+			"duplicate-name response must carry the fixed operator message")
+		Expect(rec.Body.String()).NotTo(ContainSubstring("pq:"),
+			"duplicate-name response must NEVER surface the pq driver prefix")
+		Expect(rec.Body.String()).NotTo(ContainSubstring("constraint"),
+			"duplicate-name response must NEVER surface pg constraint names")
+		Expect(rec.Body.String()).NotTo(ContainSubstring("_owner_name_key"),
+			"duplicate-name response must NEVER surface the pg index name")
 	})
 
-	It("returns 401 without an auth token", func() {
+	It("permits the SAME name for two different owners (per-owner uniqueness — not global)", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := hz.Router()
+		_, tokenA := hz.MintUser("sp_dupe_iso_a")
+		_, tokenB := hz.MintUser("sp_dupe_iso_b")
+		name := "work" // both users pick the same short name
+
+		// Both creates MUST succeed — an accidental migration that made the
+		// name globally unique would 400 on the second POST and let user A
+		// squat on user B's namespace.
+		aID := createSpaceH(e, tokenA, name)
+		bID := createSpaceH(e, tokenB, name)
+		Expect(aID).NotTo(Equal(bID), "each owner gets a distinct space id under the same name")
+	})
+
+	It("returns exactly 400 (MissingAuth) without an auth token — never 500", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
 		rec := doJSONReqG(e, http.MethodGet, "/api/v1/users/current/spaces", "", nil)
-		Expect(rec.Code).To(BeNumerically(">=", 400),
-			"unauth GET spaces must be a 4xx, got %d", rec.Code)
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest),
+			"unauth GET spaces must be exactly 400, got %d", rec.Code)
 	})
 })
 

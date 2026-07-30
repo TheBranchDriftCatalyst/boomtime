@@ -4,8 +4,13 @@
 //	_, owner, aerr := h.resolveUser(c); if aerr != nil { return respondErr(c, aerr) }
 //
 // The happy paths are exercised in curation_http_test.go; here we pin the
-// 401 branch for every handler so a regression that skips resolveUser
-// (e.g. someone accidentally removes the guard) trips a test.
+// exact status a missing- or invalid-token request returns for every
+// endpoint. Two branches are exercised separately (never collapsed into
+// "any 4xx or 5xx"), because a regression that panics before the auth
+// check and returns 500 would slip through a `>=400` assertion:
+//
+//   - Missing Authorization header → apierr.MissingAuth() → 400.
+//   - Present-but-unknown token   → apierr.InvalidToken() → 403.
 //
 // Also covers unauth on spaces + labels admin endpoints.
 package handler_test
@@ -20,7 +25,7 @@ import (
 )
 
 var _ = Describe("Curation endpoints reject unauthenticated requests", func() {
-	It("401s ListCuration / CreateCuration / DeleteCuration / Toggle / Affected / Preview / Apply / Purge", func() {
+	It("returns exactly 400 (MissingAuth) with NO Authorization header, on every endpoint", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
 		paths := []struct {
@@ -37,17 +42,46 @@ var _ = Describe("Curation endpoints reject unauthenticated requests", func() {
 		}
 		for _, p := range paths {
 			rec := doJSONReqG(e, p.method, p.path, "", nil)
-			Expect(rec.Code).To(BeNumerically(">=", 400),
-				"%s %s must reject unauth (>=400), got %d", p.method, p.path, rec.Code)
-			// Not a 200 leaking data.
-			Expect(rec.Code).NotTo(Equal(http.StatusOK),
-				"%s %s leaked a 200 response without a token", p.method, p.path)
+			// Pin the EXACT contract — a regression that returns 500
+			// (e.g. panicking before the auth check) or 200 would trip
+			// this assertion instead of quietly passing `>= 400`.
+			Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest),
+				"%s %s: MissingAuth must be exactly 400 (never 500 masking an auth check)",
+				p.method, p.path)
+			// The body must NOT contain any partial data leaks — the
+			// handler must reject BEFORE serializing anything from a
+			// user-scoped resource.
+			Expect(rec.Body.String()).NotTo(ContainSubstring(`"rules"`),
+				"%s %s: unauth body leaked 'rules' key (partial serialization?)", p.method, p.path)
+			Expect(rec.Body.String()).NotTo(ContainSubstring(`"spaces"`),
+				"%s %s: unauth body leaked 'spaces' key (partial serialization?)", p.method, p.path)
+		}
+	})
+
+	It("returns exactly 403 (InvalidToken) with an unknown-but-well-formed Authorization header", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := hz.Router()
+		paths := []struct {
+			method, path string
+		}{
+			{http.MethodGet, "/api/v1/users/current/curation"},
+			{http.MethodPost, "/api/v1/users/current/curation"},
+			{http.MethodPost, "/api/v1/users/current/curation/1/apply"},
+			{http.MethodPost, "/api/v1/users/current/curation/1/purge"},
+		}
+		// A syntactically valid but unknown token — MissingAuth fires only
+		// when the header is absent; a lookup miss returns InvalidToken (403).
+		bogus := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		for _, p := range paths {
+			rec := doJSONReqG(e, p.method, p.path, bogus, nil)
+			Expect(rec).To(testutil.HaveStatus(http.StatusForbidden),
+				"%s %s: unknown token must be exactly 403, never 500", p.method, p.path)
 		}
 	})
 })
 
 var _ = Describe("Space endpoints reject unauthenticated requests", func() {
-	It("401s every /users/current/spaces endpoint", func() {
+	It("returns exactly 400 (MissingAuth) with no Authorization on every endpoint", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
 		paths := []struct {
@@ -64,16 +98,33 @@ var _ = Describe("Space endpoints reject unauthenticated requests", func() {
 		}
 		for _, p := range paths {
 			rec := doJSONReqG(e, p.method, p.path, "", nil)
-			Expect(rec.Code).To(BeNumerically(">=", 400),
-				"%s %s must reject unauth, got %d", p.method, p.path, rec.Code)
-			Expect(rec.Code).NotTo(Equal(http.StatusOK),
-				"%s %s leaked 200 without token", p.method, p.path)
+			Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest),
+				"%s %s: MissingAuth must be exactly 400", p.method, p.path)
+			Expect(rec.Body.String()).NotTo(ContainSubstring(`"spaces"`),
+				"%s %s: unauth body leaked 'spaces' key", p.method, p.path)
+		}
+	})
+
+	It("returns exactly 403 (InvalidToken) with a bogus token", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := hz.Router()
+		bogus := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		paths := []struct {
+			method, path string
+		}{
+			{http.MethodGet, "/api/v1/users/current/spaces"},
+			{http.MethodPost, "/api/v1/users/current/spaces"},
+		}
+		for _, p := range paths {
+			rec := doJSONReqG(e, p.method, p.path, bogus, nil)
+			Expect(rec).To(testutil.HaveStatus(http.StatusForbidden),
+				"%s %s: unknown token must be exactly 403", p.method, p.path)
 		}
 	})
 })
 
 var _ = Describe("Admin label endpoints reject unauthenticated requests", func() {
-	It("401s POST /admin/labels, PATCH /admin/labels/:id, DELETE /admin/labels/:id, PATCH /admin/label-gen-config, GET /admin/labels/seed.sql", func() {
+	It("returns exactly 400 (MissingAuth) with no Authorization on every admin endpoint", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
 		paths := []struct {
@@ -87,8 +138,25 @@ var _ = Describe("Admin label endpoints reject unauthenticated requests", func()
 		}
 		for _, p := range paths {
 			rec := doJSONReqG(e, p.method, p.path, "", nil)
-			Expect(rec.Code).To(BeNumerically(">=", 400),
-				"%s %s must reject unauth, got %d", p.method, p.path, rec.Code)
+			Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest),
+				"%s %s: MissingAuth must be exactly 400 (not 500)", p.method, p.path)
+		}
+	})
+
+	It("returns exactly 403 (InvalidToken) on admin endpoints with a bogus token", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := hz.Router()
+		bogus := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		paths := []struct {
+			method, path string
+		}{
+			{http.MethodPost, "/api/v1/admin/labels"},
+			{http.MethodGet, "/api/v1/admin/labels/seed.sql"},
+		}
+		for _, p := range paths {
+			rec := doJSONReqG(e, p.method, p.path, bogus, nil)
+			Expect(rec).To(testutil.HaveStatus(http.StatusForbidden),
+				"%s %s: unknown token must be exactly 403", p.method, p.path)
 		}
 	})
 })
