@@ -14,22 +14,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// openTestDB is the stdlib partner of openTestDBG — same skip-on-unavailable
-// contract, same DeferCleanup wiring via t.Cleanup.
-func openTestDB(t *testing.T) *DB {
-	t.Helper()
-	if !dbReady {
-		t.Skip("skipping: isolated test database unavailable: " + dbSkipMsg)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	d, err := New(ctx, testDatabaseURL())
-	if err != nil {
-		t.Skip("skipping: could not open " + testDBName + ": " + err.Error())
-	}
-	t.Cleanup(func() { d.Close() })
-	return d
-}
+// openTestDB lives in harness_test.go — shared with the other
+// stdlib-flavored *_test.go files in this package.
 
 // cleanupLayoutOwner nukes any dashboard_layouts rows the test created —
 // deleteSenderRows in harness_test.go doesn't know about this table.
