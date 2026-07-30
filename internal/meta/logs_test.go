@@ -4,7 +4,7 @@
 //	TestServerLogs_OwnerFilterIsWired       → ServerLogs > "owner filter is wired (A sees own+server, B messages absent)"
 //	TestServerLogs_UnauthenticatedIsRejected→ ServerLogs > "unauthenticated → 4xx (fail-closed)"
 //	TestServerLogs_EmptyHubYieldsEmptyArray → ServerLogs > "empty hub → {logs:[]} not null"
-package handler_test
+package meta_test
 
 import (
 	"encoding/json"
@@ -53,7 +53,7 @@ var _ = Describe("ServerLogs owner-scope filter (gaka-awh.2)", func() {
 	It("filters cross-tenant records: A sees own+server-scope, never B's", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		hub := logging.NewLogHub(64)
-		hz.H.LogHub = hub // override the nil harness default
+		hz.H.Meta.LogHub = hub // override the nil harness default
 		e := hz.Router()
 
 		userA, tokenA := hz.MintUser("awhg_A")
@@ -81,7 +81,7 @@ var _ = Describe("ServerLogs owner-scope filter (gaka-awh.2)", func() {
 
 	It("rejects unauthenticated calls with 4xx (fail-closed, not silent partial data)", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		hz.H.LogHub = logging.NewLogHub(8)
+		hz.H.Meta.LogHub = logging.NewLogHub(8)
 		e := hz.Router()
 
 		rec := doJSONReqG(e, http.MethodGet, "/api/v1/logs", "", nil)
@@ -92,7 +92,7 @@ var _ = Describe("ServerLogs owner-scope filter (gaka-awh.2)", func() {
 
 	It("empty hub returns {logs:[]} — never null (FE contract)", func() {
 		hz := testutil.NewHarness(GinkgoT())
-		hz.H.LogHub = logging.NewLogHub(8)
+		hz.H.Meta.LogHub = logging.NewLogHub(8)
 		e := hz.Router()
 		_, token := hz.MintUser("awhg_empty")
 

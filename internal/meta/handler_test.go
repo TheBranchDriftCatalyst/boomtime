@@ -3,7 +3,7 @@
 //
 //	TestVersionEndpoint    → Version endpoint > 2 Its (configured version / dev fallback)
 //	TestChangelogEndpoint  → Changelog endpoint > "serves embedded MD verbatim"
-package handler
+package meta
 
 import (
 	"encoding/json"

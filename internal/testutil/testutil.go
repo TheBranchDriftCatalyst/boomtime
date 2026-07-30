@@ -274,7 +274,7 @@ func (hz *Harness) Router() *echo.Echo {
 	e.PATCH("/api/v1/users/current/widget-defs/:name", h.UpdateWidgetDef)             // gaka-d6x.handler
 	e.DELETE("/api/v1/users/current/widget-defs/:name", h.DeleteWidgetDef)            // gaka-d6x.handler
 	e.GET("/widget/svg/:uuid/named", h.WidgetDefSvg)                                  // was routerWithWidgetDefs
-	e.GET("/api/v1/logs", h.ServerLogs)                                               // was routerWithLogs
+	e.GET("/api/v1/logs", h.Meta.ServerLogs)                                          // was routerWithLogs — gaka-8tn phase 1: meta domain
 	e.GET("/api/v1/users/current/timezone", h.GetTimezone)                            // was routerWithTimezone
 	e.PATCH("/api/v1/users/current/timezone", h.UpdateTimezone)                       // was routerWithTimezone
 	e.GET("/api/v1/users/current/profile", h.GetPublicProfile)                        // was routerWithPublicProfile
@@ -302,9 +302,11 @@ func (hz *Harness) Router() *echo.Echo {
 	// gaka-d6x.handler misc cluster: routes previously only in the production
 	// router (internal/server), now mirrored here so tests don't hand-register
 	// and hit the duplicate-route panic.
-	e.GET("/healthz", h.Healthz)
-	e.GET("/api/v1/version", h.Version)
-	e.GET("/api/v1/changelog", h.Changelog)
+	// gaka-8tn phase 1: meta domain endpoints. Router still mirrors the
+	// production route table but the receivers are now on h.Meta.
+	e.GET("/healthz", h.Meta.Healthz)
+	e.GET("/api/v1/version", h.Meta.Version)
+	e.GET("/api/v1/changelog", h.Meta.Changelog)
 	e.GET("/api/v1/users/current/heartbeats/entities", h.ListEntitiesByType)
 	e.POST("/api/v1/users/current/heartbeats/entities/redact", h.RedactEntities)
 	e.GET("/api/v1/users/current/sources/health", h.SourceHealth)

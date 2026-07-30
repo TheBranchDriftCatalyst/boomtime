@@ -16,7 +16,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/openapi"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/meta"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
 )
@@ -111,8 +111,12 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	registerAuthRoutes(e, h)
 	registerMiscRoutes(e, h)
 	registerImportRoutes(e, h)
-	registerLogRoutes(e, h)
-	registerMetaRoutes(e, h)
+	// gaka-8tn phase 1: meta + logs registration is now owned by the meta
+	// domain package. `meta.Register` fans out /api/v1/version,
+	// /api/v1/changelog, /healthz, the OpenAPI spec + Swagger UI, and the
+	// /api/v1/logs REST + WS endpoints. Order preserved: same effective
+	// route set as pre-refactor registerLogRoutes + registerMetaRoutes.
+	meta.Register(e, h.Meta)
 	registerGoalRoutes(e, h)
 }
 
@@ -131,20 +135,6 @@ func registerGoalRoutes(e *echo.Echo, h *handler.Handler) {
 	e.DELETE("/api/v1/users/current/goals/:id", h.DeleteGoal)
 	e.POST("/api/v1/users/current/goals/:id/toggle", h.ToggleGoal)
 	e.GET("/api/v1/users/current/goals/:id/progress", h.GetGoalProgress)
-}
-
-// registerMetaRoutes: build/version disclosure + embedded changelog + the
-// public health probe + self-hosted OpenAPI spec and Swagger UI (gaka-lfc).
-// All are intentionally unauthenticated (see internal/handler/meta.go,
-// internal/handler/healthz.go, internal/openapi).
-func registerMetaRoutes(e *echo.Echo, h *handler.Handler) {
-	e.GET("/api/v1/version", h.Version)
-	e.GET("/api/v1/changelog", h.Changelog)
-	e.GET("/healthz", h.Healthz)
-	// OpenAPI 3 spec + embedded Swagger UI. Public: the spec + docs are
-	// self-hosted transparency, not user data. Auth'd endpoints inside the
-	// spec still require the Authorize dialog to be filled in for Try-it-out.
-	openapi.Register(e)
 }
 
 // registerHeartbeatRoutes: ingest, the read-only explorer, and source health.
@@ -417,12 +407,6 @@ func registerImportRoutes(e *echo.Echo, h *handler.Handler) {
 	e.POST("/import/jobs/:id/cancel", h.ImportJobCancel)
 	e.GET("/import/jobs/:id/logs", h.ImportJobLogs)
 	e.GET("/import/jobs/:id/ws", h.ImportJobWS)
-}
-
-// registerLogRoutes: server process logs (live slog stream + REST tail fallback).
-func registerLogRoutes(e *echo.Echo, h *handler.Handler) {
-	e.GET("/api/v1/logs", h.ServerLogs)
-	e.GET("/api/v1/logs/ws", h.ServerLogsWS)
 }
 
 // registerStatic serves the SPA: from BOOM_DASHBOARD_PATH on disk if set, else

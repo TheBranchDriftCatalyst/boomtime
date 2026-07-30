@@ -224,6 +224,12 @@ tasks:
       - task: db:up
       - 'BOOM_TEST_DATABASE_URL="{{.TEST_DB_URL}}" go test ./...'
 
+  test:domain:
+    desc: 'Run tests for a single domain package (gaka-8tn refactor). Usage: task test:domain -- meta'
+    cmds:
+      - task: db:up
+      - 'BOOM_TEST_DATABASE_URL="{{.TEST_DB_URL}}" go test ./internal/{{.CLI_ARGS}}/...'
+
   test:coverage:
     desc: Run tests with coverage profile + open HTML report
     cmds:

@@ -4,7 +4,7 @@
 // Response body is INTENTIONALLY non-sensitive: version, branch, commit, build
 // time, uptime, DB reachability, and current migration version. No secrets, no
 // per-user data, no request paths — safe to expose on the public internet.
-package handler
+package meta
 
 import (
 	"context"

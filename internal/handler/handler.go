@@ -20,6 +20,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/meta"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/backfilljobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/imagejobs"
 	labelimages "github.com/TheBranchDriftCatalyst/boomtime/internal/worker/labelimages"
@@ -53,12 +54,20 @@ type Handler struct {
 	// unlike ImageJobQueue there is no feature flag, the registry is
 	// cheap and only holds rows when a CLI is actively streaming.
 	BackfillJobQueue *backfilljobs.Registry
+
+	// Meta is the extracted meta-domain handler (gaka-8tn phase 1).
+	// Version / Changelog / Healthz / ServerLogs / ServerLogsWS live here.
+	// See internal/meta/. The god-type Handler shrinks one domain at a
+	// time until phase 8 leaves it as a pure composition facade.
+	Meta *meta.Handler
 }
 
 // New constructs a Handler. logHub streams server-process slog records to the
 // Logs tab; pass nil to disable (Logs endpoints handle a nil hub — see
 // handler/logs.go).
 func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *importer.Worker, hub *importer.Hub, logHub *logging.LogHub) *Handler {
+	sharedCache := cache.New(statsCacheTTL())
+	startTime := time.Now()
 	return &Handler{
 		DB:        database,
 		Cfg:       cfg,
@@ -66,8 +75,21 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *impor
 		Worker:    worker,
 		Hub:       hub,
 		LogHub:    logHub,
-		Cache:     cache.New(statsCacheTTL()),
-		StartTime: time.Now(),
+		Cache:     sharedCache,
+		StartTime: startTime,
+		// gaka-8tn phase 1: construct the meta-domain handler with the
+		// shared deps it actually reads. Every field points at the SAME
+		// instance the god-type holds — meta.LogHub and h.LogHub are
+		// literally the same *logging.LogHub, so `hz.H.Meta.LogHub = x`
+		// in tests reaches the same ring buffer the god-type would.
+		Meta: &meta.Handler{
+			Cfg:       cfg,
+			Logger:    logger,
+			Cache:     sharedCache,
+			LogHub:    logHub,
+			DB:        database,
+			StartTime: startTime,
+		},
 	}
 }
 

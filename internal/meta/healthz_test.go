@@ -10,7 +10,7 @@
 //	"no auth required" — the endpoint intentionally rejects nothing; a
 //	request with no Authorization header still gets 200 + JSON. Prevents a
 //	future middleware pass from silently gating the k8s liveness probe.
-package handler_test
+package meta_test
 
 import (
 	"encoding/json"
@@ -21,7 +21,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/meta"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
 )
 
@@ -43,7 +43,7 @@ var _ = Describe("Healthz endpoint (gaka-d6x.handler)", func() {
 
 		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
 
-		var got handler.HealthzResponse
+		var got meta.HealthzResponse
 		Expect(json.Unmarshal(rec.Body.Bytes(), &got)).To(Succeed(),
 			"body=%s", rec.Body.String())
 
@@ -91,7 +91,7 @@ var _ = Describe("Healthz endpoint (gaka-d6x.handler)", func() {
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
 
-		var got handler.HealthzResponse
+		var got meta.HealthzResponse
 		Expect(json.Unmarshal(rec.Body.Bytes(), &got)).To(Succeed())
 		parsed, err := time.Parse(time.RFC3339, got.StartedAt)
 		Expect(err).NotTo(HaveOccurred(), "startedAt is not RFC3339: %q", got.StartedAt)
