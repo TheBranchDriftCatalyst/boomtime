@@ -256,6 +256,21 @@ func (hz *Harness) Router() *echo.Echo {
 	e.PUT("/api/v1/users/current/dashboard/:scope", h.PutDashboardLayout)             // was routerWithDashboardLayout
 	e.DELETE("/api/v1/users/current/dashboard/:scope", h.DeleteDashboardLayout)       // was routerWithDashboardLayout
 	e.POST("/api/v1/users/current/wakatime_key", h.SaveWakatimeKey)                   // was routerWithWakatimeKey
+	// gaka-d6x.handler: admin cluster (label-images regeneration + git-history
+	// backfill CLI). Wired here so per-file test suites don't have to re-register
+	// (Echo panics on duplicate route registration).
+	e.GET("/api/v1/admin/label-images", h.AdminLabelImagesInfo)
+	e.POST("/api/v1/admin/label-images/regenerate", h.AdminLabelImagesRegenerate)
+	e.GET("/api/v1/admin/label-images/ws", h.AdminLabelImagesWS)
+	e.GET("/api/v1/admin/backfill/config", h.AdminBackfillConfig)
+	e.PATCH("/api/v1/admin/backfill/config", h.AdminBackfillConfigUpdate)
+	e.GET("/api/v1/admin/backfill/stats", h.AdminBackfillStats)
+	e.POST("/api/v1/admin/backfill/jobs", h.AdminBackfillEnqueueJob)
+	e.PATCH("/api/v1/admin/backfill/jobs/:id", h.AdminBackfillJobPatch)
+	e.POST("/api/v1/admin/backfill/jobs/:id/heartbeats", h.AdminBackfillJobHeartbeats)
+	e.POST("/api/v1/admin/backfill/jobs/:id/preview", h.AdminBackfillJobPreview)
+	e.DELETE("/api/v1/admin/backfill/heartbeats", h.AdminBackfillDeleteHeartbeats)
+	e.GET("/api/v1/admin/backfill/ws", h.AdminBackfillWS)
 	// Cleanup: also clean up the goals table for the test's sender.
 	// The parent Cleanup registered per MintUser catches every table
 	// but goals — we extend the cleanup list separately here so
@@ -291,6 +306,7 @@ func (hz *Harness) Cleanup(sender string) {
 	hz.T.Cleanup(func() {
 		for _, q := range []string{
 			`DELETE FROM heartbeats WHERE sender=$1`,
+			`DELETE FROM backfill_config WHERE username=$1`,
 			`DELETE FROM curation_rules WHERE sender=$1`,
 			`DELETE FROM hb_rollup_daily WHERE sender=$1`,
 			`DELETE FROM spaces WHERE owner=$1`,
