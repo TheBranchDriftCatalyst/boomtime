@@ -235,6 +235,17 @@ func (hz *Harness) Router() *echo.Echo {
 	// progress. Just the bulk endpoint — single- and bulk-shaped
 	// requests go through the same storeAndRespond path.
 	e.POST("/api/v1/users/current/heartbeats.bulk", h.HeartbeatBulk)
+	// gaka-d6x.handler: full ingest cluster (heartbeat single, workouts,
+	// health samples, explore reads). Wired so the ingest cluster tests
+	// exercise the real HTTP paths without re-registering routes.
+	e.POST("/api/v1/users/current/heartbeats", h.Heartbeat)
+	e.GET("/api/v1/users/current/heartbeats", h.HeartbeatsList)
+	e.GET("/api/v1/users/current/heartbeats/latest", h.HeartbeatsLatest)
+	e.GET("/api/v1/users/current/heartbeats/group", h.HeartbeatsGroup)
+	e.POST("/api/v1/users/current/workouts", h.Workouts)
+	e.POST("/api/v1/users/current/workouts.bulk", h.WorkoutsBulk)
+	e.POST("/api/v1/users/current/health_samples", h.HealthSamples)
+	e.POST("/api/v1/users/current/health_samples.bulk", h.HealthSamplesBulk)
 	// gaka-9v4: per-user chibi avatar. Regenerate/status are auth'd
 	// self-only, UserAvatar is public — the harness registers all three
 	// so a single handler test covers the full surface.
@@ -322,6 +333,12 @@ func (hz *Harness) Cleanup(sender string) {
 	ctx := context.Background()
 	hz.T.Cleanup(func() {
 		for _, q := range []string{
+			// gaka-d6x.handler: health_samples + health_rollup_daily are
+			// owner-scoped and are populated by the ingest cluster tests.
+			// workout_details cascades on heartbeats delete (FK CASCADE)
+			// so it doesn't need an explicit row here.
+			`DELETE FROM health_samples WHERE owner=$1`,
+			`DELETE FROM health_rollup_daily WHERE owner=$1`,
 			`DELETE FROM heartbeats WHERE sender=$1`,
 			`DELETE FROM backfill_config WHERE username=$1`,
 			`DELETE FROM curation_rules WHERE sender=$1`,
