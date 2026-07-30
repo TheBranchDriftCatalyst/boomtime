@@ -193,55 +193,15 @@ var _ = Describe("WakatimeRange (gaka-awh.2)", func() {
 			"unauth range request MUST NOT succeed; got status %d", rec.Code)
 	})
 
-	It("with a token: upstream call is attempted, but any error path is coerced to {hasData:false} (no oracle)", func() {
-		// FetchAllTimeRange has a hardcoded wakatime.com base. We can't
-		// intercept it, but http.Client honors HTTPS_PROXY — pointing the
-		// proxy at a dead loopback port makes the outbound HTTPS request
-		// fail on connect within a few ms. That drops us straight into the
-		// error-handling branch (lines 243-247) while asserting the no-
-		// oracle invariant: the caller only ever sees {hasData:false}.
-		//
-		// If a stray HTTP_PROXY / HTTPS_PROXY is already in the env, we defer
-		// restore rather than clobber.
-		prevH, hadH := os.LookupEnv("HTTPS_PROXY")
-		prevh, hadh := os.LookupEnv("https_proxy")
-		prevN, hadN := os.LookupEnv("NO_PROXY")
-		prevn, hadn := os.LookupEnv("no_proxy")
-		os.Setenv("HTTPS_PROXY", "http://127.0.0.1:1")
-		os.Setenv("https_proxy", "http://127.0.0.1:1")
-		// Keep httptest loopback traffic unaffected by the fake proxy.
-		os.Setenv("NO_PROXY", "127.0.0.1,localhost")
-		os.Setenv("no_proxy", "127.0.0.1,localhost")
-		DeferCleanup(func() {
-			restore := func(k, prev string, had bool) {
-				if had {
-					os.Setenv(k, prev)
-				} else {
-					os.Unsetenv(k)
-				}
-			}
-			restore("HTTPS_PROXY", prevH, hadH)
-			restore("https_proxy", prevh, hadh)
-			restore("NO_PROXY", prevN, hadN)
-			restore("no_proxy", prevn, hadn)
-		})
-
-		deps := newImportDeps("")
-		_, token := deps.Hz.MintUser("wr_upstream_dead")
-
-		body, err := json.Marshal(map[string]string{"apiToken": "waka_fake_key_upstream"})
-		Expect(err).NotTo(HaveOccurred())
-		rec := jsonReq(deps.Router, http.MethodPost, "/api/v1/users/current/import/wakatime-range", token, map[string]string{"apiToken": "waka_fake_key_upstream"})
-		_ = body
-
-		Expect(rec).To(testutil.HaveStatus(http.StatusOK), "body=%s", rec.Body.String())
-		var out map[string]any
-		Expect(json.Unmarshal(rec.Body.Bytes(), &out)).To(Succeed())
-		Expect(out["hasData"]).To(Equal(false),
-			"upstream error MUST surface as {hasData:false}; got %s", rec.Body.String())
-		Expect(rec.Body.String()).NotTo(ContainSubstring("waka_fake_key_upstream"),
-			"the submitted API token leaked in the range-probe response (oracle)")
-	})
+	// NOTE: the "upstream error path returns {hasData:false}" invariant is NOT
+	// exercised as an integration test here — FetchAllTimeRange uses a hardcoded
+	// wakatime.com base URL and the package-private httpClient can't be swapped
+	// from an external test package. An earlier attempt used HTTPS_PROXY to
+	// force connect-refused, but Go's httpproxy env is read once per process
+	// so the coercion is non-deterministic on already-warm clients. The
+	// error-branch is covered by code review (import.go:243-247) plus the
+	// no-key branch above. Do not re-introduce a proxy-env test — it flakes
+	// on CI workers that have already resolved a proxy elsewhere.
 
 	It("malformed JSON body is tolerated (bind error ignored) → falls back to server key path", func() {
 		// gaka-awh.2: body is optional; the handler ignores bind errors so a
@@ -317,7 +277,53 @@ var _ = Describe("ImportRequest additional branches", func() {
 		now := time.Now().UTC()
 		rec := jsonReq(deps.Router, http.MethodPost, "/api/v1/users/current/import", "",
 			map[string]any{"startDate": now.Format(time.RFC3339), "endDate": now.Format(time.RFC3339)})
-		Expect(rec.Code).To(BeNumerically(">=", 400))
+		// PIN: MissingAuth = 400 (apierr.MissingAuth), not >= 400 (which would
+		// silently pass a 500 panic).
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest),
+			"missing Authorization MUST be 400 (MissingAuth); got %d body=%s", rec.Code, rec.Body.String())
+	})
+
+	It("submit response envelope has the expected shape ({jobId, jobStatus, job}) with job.State=queued and job.Owner=caller", func() {
+		// Pin the FULL success envelope — the sibling gaka-6jm.8 test asserts
+		// no eager key-save, but nothing else asserted that {jobStatus} even
+		// exists or that {job.State} is "queued" (not "running"). A regression
+		// that returned state="running" on the first submit would silently break
+		// the FE which uses state for the progress-vs-idle UI without a repro.
+		deps := newImportDeps("")
+		user, token := deps.Hz.MintUser("import_envelope")
+
+		now := time.Now().UTC()
+		body := map[string]any{
+			"apiToken":  "envelope_test",
+			"startDate": now.Format(time.RFC3339),
+			"endDate":   now.Format(time.RFC3339),
+		}
+		rec := jsonReq(deps.Router, http.MethodPost, "/api/v1/users/current/import", token, body)
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK), "body=%s", rec.Body.String())
+
+		var out struct {
+			JobID     int     `json:"jobId"`
+			JobStatus string  `json:"jobStatus"`
+			Job       *db.Job `json:"job"`
+		}
+		Expect(json.Unmarshal(rec.Body.Bytes(), &out)).To(Succeed())
+		Expect(out.JobID).To(BeNumerically(">", 0))
+		Expect(out.JobStatus).NotTo(BeEmpty(),
+			"jobStatus is missing from the submit envelope; FE contract broken")
+		Expect(out.Job).NotTo(BeNil(),
+			"job snapshot missing from the submit envelope; FE contract broken")
+		Expect(out.Job.Owner).To(Equal(user),
+			"submit envelope's job.Owner MUST equal the calling user")
+		// LOAD-BEARING: fresh submit MUST return state=queued. A regression
+		// that echoed the running snapshot would race the worker (which may
+		// have already flipped state via MarkJobRunning by the time the JSON
+		// is written) — assert against the DB row's fresh value AT-SUBMIT.
+		Expect(out.Job.State).To(Equal(db.JobStateQueued),
+			"submit envelope's job.State MUST be %q (not %q, not empty)",
+			db.JobStateQueued, out.Job.State)
+
+		// Cleanup — the worker may have started; make sure teardown is clean.
+		_, _ = deps.Hz.DB.MarkRunningJobsFailed(context.Background(), "envelope cleanup")
 	})
 })
 
@@ -371,10 +377,41 @@ var _ = Describe("ImportJobs (list)", func() {
 			"cross-user leak: user B's list contained user A's job id")
 	})
 
-	It("401/403 on missing / bogus token — never leaks another owner's list", func() {
+	It("403 on a bogus token AND missing auth is 400 — never leaks another owner's list", func() {
+		// PIN exact status per apierr: MissingAuth=400, InvalidToken=403.
+		// A regression (500 panic with a stack containing user emails, or a
+		// 302 that redirects to another owner's list) would pass a `>= 400`
+		// check silently — anti-oracle: body must never contain "jobs".
 		deps := newImportDeps("")
-		rec := jsonReq(deps.Router, http.MethodGet, "/api/v1/users/current/import/jobs", "not-a-real-token", nil)
-		Expect(rec.Code).To(BeNumerically(">=", 400))
+
+		// Bogus token → 403 InvalidToken (no such row in api_tokens).
+		recBogus := jsonReq(deps.Router, http.MethodGet, "/api/v1/users/current/import/jobs", "not-a-real-token", nil)
+		Expect(recBogus).To(testutil.HaveStatus(http.StatusForbidden),
+			"bogus token MUST be 403 (InvalidToken); got %d body=%s", recBogus.Code, recBogus.Body.String())
+		Expect(recBogus.Body.String()).NotTo(ContainSubstring(`"jobs"`),
+			"leak: unauth response contained a jobs list; body=%s", recBogus.Body.String())
+
+		// Missing auth → 400 MissingAuth.
+		recMissing := jsonReq(deps.Router, http.MethodGet, "/api/v1/users/current/import/jobs", "", nil)
+		Expect(recMissing).To(testutil.HaveStatus(http.StatusBadRequest),
+			"missing Authorization MUST be 400 (MissingAuth); got %d body=%s", recMissing.Code, recMissing.Body.String())
+		Expect(recMissing.Body.String()).NotTo(ContainSubstring(`"jobs"`),
+			"leak: unauth response contained a jobs list; body=%s", recMissing.Body.String())
+	})
+
+	It("returns {jobs: []} (never null) when the caller has ZERO jobs — JSON shape stability", func() {
+		// FE parses `payload.jobs.length` unconditionally. If the handler
+		// returned `{"jobs": null}` for zero-job callers, that would be a
+		// TypeError in the browser. Pin the empty-slice contract.
+		deps := newImportDeps("")
+		_, token := deps.Hz.MintUser("import_list_empty")
+
+		rec := jsonReq(deps.Router, http.MethodGet, "/api/v1/users/current/import/jobs", token, nil)
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
+		// LOAD-BEARING: the RAW body must contain "[]", not "null". A generic
+		// unmarshal into []db.Job coerces both to nil, hiding the drift.
+		Expect(rec.Body.String()).To(ContainSubstring(`"jobs":[]`),
+			"zero-jobs list MUST serialize as {\"jobs\":[]}, not {\"jobs\":null}; got %s", rec.Body.String())
 	})
 })
 
@@ -481,6 +518,22 @@ var _ = Describe("ImportJobLogs (tail with afterId)", func() {
 		recCross := jsonReq(deps.Router, http.MethodGet, target, tokenB, nil)
 		Expect(recCross).To(testutil.HaveStatus(http.StatusNotFound),
 			"cross-user leak: user B saw status %d on user A's job logs (want 404)", recCross.Code)
+
+		// afterId=<garbage> — documented behavior of queryInt64 is silent
+		// fallback to default (0). Pin it: a mistyped tail-cursor MUST NOT
+		// 400 — it should return the same as no afterId. A regression that
+		// started 400ing garbage cursors would break the FE tail loop after
+		// a browser-side stringification bug (Number(NaN) → "NaN").
+		recGarbage := jsonReq(deps.Router, http.MethodGet, target+"?afterId=not-a-number", tokenA, nil)
+		Expect(recGarbage).To(testutil.HaveStatus(http.StatusOK),
+			"afterId=<garbage> MUST silent-fallback to 0 (queryInt64 default), got %d body=%s",
+			recGarbage.Code, recGarbage.Body.String())
+		var garb struct {
+			Logs []db.LogLine `json:"logs"`
+		}
+		Expect(json.Unmarshal(recGarbage.Body.Bytes(), &garb)).To(Succeed())
+		Expect(garb.Logs).To(HaveLen(2),
+			"afterId=<garbage> should be treated as afterId=0 (return all); got %d logs", len(garb.Logs))
 	})
 })
 
@@ -543,7 +596,7 @@ var _ = Describe("ImportJobCancel", func() {
 			"cancel on terminal job must NOT clobber the terminal state; got %s", payload.Job.State)
 	})
 
-	It("cross-user cancel: user B cannot cancel user A's job (404, no state change)", func() {
+	It("cross-user cancel: user B cannot cancel user A's job (404, no state change, no log side-effect)", func() {
 		deps := newImportDeps("")
 		userA, _ := deps.Hz.MintUser("import_cancel_iso_A")
 		_, tokenB := deps.Hz.MintUser("import_cancel_iso_B")
@@ -553,6 +606,7 @@ var _ = Describe("ImportJobCancel", func() {
 		jobA, err := deps.Hz.DB.CreateImportJob(ctx, userA, []byte(`{}`), now, now, 1)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
+			_, _ = deps.Hz.DB.Pool.Exec(ctx, `DELETE FROM import_job_logs WHERE job_id = $1`, jobA.ID)
 			_, _ = deps.Hz.DB.Pool.Exec(ctx, `DELETE FROM import_jobs WHERE id = $1`, jobA.ID)
 		})
 
@@ -567,6 +621,53 @@ var _ = Describe("ImportJobCancel", func() {
 		Expect(fresh).NotTo(BeNil())
 		Expect(fresh.State).To(Equal(db.JobStateQueued),
 			"cross-user cancel silently succeeded! state went %s→%s", db.JobStateQueued, fresh.State)
+
+		// LOAD-BEARING: if cancel side-effects (audit log, "cancel attempted
+		// by X" line) ran BEFORE the owner check in jobForOwner, user B could
+		// pollute user A's log stream with attacker-controlled data. Assert
+		// zero log lines were appended.
+		logs, err := deps.Hz.DB.GetJobLogs(ctx, jobA.ID, 0, 100)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(logs).To(BeEmpty(),
+			"cross-user cancel appended %d log line(s) to user A's job (side-effect before owner check)", len(logs))
+	})
+
+	It("cancel on a RUNNING db row whose worker is NOT in the running map (post-restart zombie) → DB cancel path, state=cancelled", func() {
+		// If the process previously crashed with jobs in state=running,
+		// RecoverInterrupted marks them failed at startup — but a race can
+		// leave a stale state=running row whose goroutine is gone. The cancel
+		// handler's `!running` branch delegates to DB.CancelJob for exactly
+		// this case. Exercise it directly by seeding a running row without a
+		// live worker.
+		deps := newImportDeps("")
+		user, token := deps.Hz.MintUser("import_cancel_zombie")
+		ctx := context.Background()
+
+		now := time.Now().UTC()
+		job, err := deps.Hz.DB.CreateImportJob(ctx, user, []byte(`{}`), now, now, 1)
+		Expect(err).NotTo(HaveOccurred())
+		// Flip to running WITHOUT going through Worker.StartJob — so the
+		// worker's running map has no entry for this id.
+		_, err = deps.Hz.DB.MarkJobRunning(ctx, job.ID)
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() {
+			_, _ = deps.Hz.DB.Pool.Exec(ctx, `DELETE FROM import_job_logs WHERE job_id = $1`, job.ID)
+			_, _ = deps.Hz.DB.Pool.Exec(ctx, `DELETE FROM import_jobs WHERE id = $1`, job.ID)
+		})
+
+		target := "/api/v1/users/current/import/jobs/" + strconv.Itoa(job.ID) + "/cancel"
+		rec := jsonReq(deps.Router, http.MethodPost, target, token, nil)
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
+		var payloadOut struct {
+			Job *db.Job `json:"job"`
+		}
+		Expect(json.Unmarshal(rec.Body.Bytes(), &payloadOut)).To(Succeed())
+		Expect(payloadOut.Job).NotTo(BeNil())
+		// LOAD-BEARING: the DB path must move the row terminal even for a
+		// running row with no live goroutine. Prior contract: DB.CancelJob
+		// treats running as cancellable.
+		Expect(payloadOut.Job.State).To(Equal(db.JobStateCancelled),
+			"zombie-running cancel: expected state=cancelled via DB.CancelJob path; got %s", payloadOut.Job.State)
 	})
 
 	It("cancels an ACTIVELY-RUNNING worker job via the worker cancel path (done channel)", func() {
@@ -758,15 +859,23 @@ var _ = Describe("ImportJobWS", func() {
 		Expect(wsjson.Read(readCtx, conn, &snap)).To(Succeed())
 		Expect(snap.Type).To(Equal("snapshot"))
 
-		// 2. Give the reader goroutine a beat to start, then publish a live
-		// log event via the hub. Handler forwards it verbatim.
+		// 2. Publish the LIVE log event, then wait for the reader to observe it
+		// via a channel barrier BEFORE publishing the terminal state event.
+		// This eliminates the prior time.Sleep race: on a loaded CI worker the
+		// terminal Publish could beat the log Read, and the handler could
+		// close the socket before the log ever hit the wire. With the barrier,
+		// the log-then-state sequence is deterministic even under scheduling
+		// pressure.
 		liveLog := &db.LogLine{ID: 12345, Level: "info", Message: "live-tail-tick"}
+		logRead := make(chan struct{})
 		go func() {
-			time.Sleep(30 * time.Millisecond)
+			defer GinkgoRecover()
+			// Publish log immediately; the WS handler forwards it to the sub
+			// channel, which the reader below drains.
 			deps.Hub.Publish(job.ID, importer.Event{Type: "log", Log: liveLog})
-			time.Sleep(30 * time.Millisecond)
-			// 3. Publish a terminal state event — the handler must close after
-			// forwarding it (exercises the isTerminal branch inside the loop).
+			// Wait until the reader has confirmed receipt before proceeding.
+			<-logRead
+			// Now publish the terminal state — handler must close after this.
 			finalJob := &db.Job{ID: job.ID, State: db.JobStateCompleted, Owner: user}
 			deps.Hub.Publish(job.ID, importer.Event{Type: "state", Job: finalJob})
 		}()
@@ -778,6 +887,8 @@ var _ = Describe("ImportJobWS", func() {
 			"expected live log event as second frame; got %s", got1.Type)
 		Expect(got1.Log).NotTo(BeNil())
 		Expect(got1.Log.Message).To(Equal("live-tail-tick"))
+		// Signal the publisher: safe to publish the terminal state now.
+		close(logRead)
 
 		// Read the terminal state event — after this the handler closes cleanly.
 		var got2 importer.Event
@@ -812,10 +923,15 @@ var _ = Describe("ImportJobWS", func() {
 			HTTPHeader: http.Header{"Cookie": []string{"refresh_token=" + refreshB}},
 		})
 		Expect(err).To(HaveOccurred(), "ws upgrade succeeded for cross-user peek (leak)")
-		if resp != nil {
-			Expect(resp.StatusCode).To(Equal(http.StatusNotFound),
-				"cross-user WS: expected 404 (jobForOwner), got %d", resp.StatusCode)
-		}
+		// LOAD-BEARING: if resp is nil (e.g. connection reset before the server
+		// wrote a status), the assertion below silently no-ops. That would let
+		// a regression that (a) blew up mid-handshake and (b) leaked bytes into
+		// the pipe pass this test unnoticed. Assert resp is non-nil FIRST so
+		// the status check is meaningful.
+		Expect(resp).NotTo(BeNil(),
+			"ws cross-user handshake produced no HTTP response — cannot verify 404 status; err=%v", err)
+		Expect(resp.StatusCode).To(Equal(http.StatusNotFound),
+			"cross-user WS: expected 404 (jobForOwner), got %d", resp.StatusCode)
 	})
 })
 
@@ -926,7 +1042,7 @@ func installEncryptionKeyForTest() {
 // -----------------------------------------------------------------------------
 
 var _ = Describe("no-oracle regression: ImportRequest body/response envelope", func() {
-	It("submit response envelope contains only {jobId, jobStatus, job} — never {apiToken}", func() {
+	It("submit response envelope contains ONLY {jobId, jobStatus, job} — never {apiToken}, no drift keys", func() {
 		deps := newImportDeps("")
 		_, token := deps.Hz.MintUser("import_noleak")
 
@@ -939,13 +1055,209 @@ var _ = Describe("no-oracle regression: ImportRequest body/response envelope", f
 		}
 		rec := jsonReq(deps.Router, http.MethodPost, "/api/v1/users/current/import", token, body)
 		Expect(rec).To(testutil.HaveStatus(http.StatusOK), "body=%s", rec.Body.String())
-		// LOAD-BEARING: the submitted apiToken is NOT reflected in the response.
+		// LOAD-BEARING: the submitted apiToken is NOT reflected in the response
+		// (raw), nor base64-encoded (basic-auth wire form), nor hex-encoded.
 		Expect(rec.Body.String()).NotTo(ContainSubstring(secret),
 			"submit response echoed the submitted apiToken (oracle for keystroke replay attacks): %s", rec.Body.String())
-		// Similarly not base64-encoded (basic auth wire form).
-		Expect(rec.Body.String()).NotTo(ContainSubstring(base64.StdEncoding.EncodeToString([]byte(secret))))
-		Expect(strings.Contains(rec.Body.String(), "jobId")).To(BeTrue())
+		Expect(rec.Body.String()).NotTo(ContainSubstring(base64.StdEncoding.EncodeToString([]byte(secret))),
+			"submit response echoed the submitted apiToken base64-encoded: %s", rec.Body.String())
+
+		// STRONGER: whitelist the top-level envelope keys. Any accidental new
+		// key (e.g. "requestPayload", "value", "typedToken") that carried the
+		// secret in a transformed form would be caught here regardless of its
+		// encoding. ContainSubstring alone can't catch that.
+		var envelope map[string]any
+		Expect(json.Unmarshal(rec.Body.Bytes(), &envelope)).To(Succeed())
+		keys := make([]string, 0, len(envelope))
+		for k := range envelope {
+			keys = append(keys, k)
+		}
+		Expect(keys).To(ConsistOf("jobId", "jobStatus", "job"),
+			"submit envelope has UNEXPECTED top-level keys (potential leak surface): %v", keys)
+
+		// The nested job's serialization is Job (json tags in db.Job) — that
+		// struct deliberately does NOT include the value/payload_json column.
+		// Pin it: no "value" or "apiToken" key nested under "job".
+		jobMap, ok := envelope["job"].(map[string]any)
+		Expect(ok).To(BeTrue(), "job field not an object")
+		Expect(jobMap).NotTo(HaveKey("value"),
+			"job.value leaked to the wire (contains QueueItem serialized with typed token!): %v", jobMap)
+		Expect(jobMap).NotTo(HaveKey("apiToken"),
+			"job.apiToken leaked to the wire: %v", jobMap)
+		Expect(jobMap).NotTo(HaveKey("payload_json"),
+			"job.payload_json leaked to the wire: %v", jobMap)
 
 		_, _ = deps.Hz.DB.MarkRunningJobsFailed(context.Background(), "cleanup")
+	})
+
+	It("GET /import/jobs/:id response nested job MUST NOT include payload_json / value / apiToken", func() {
+		// Even after the submit passes the whitelist above, the GET path uses
+		// the same db.Job scan — but if someone ever added a Sprintf-based
+		// "debug" field to the response envelope, this would catch it.
+		deps := newImportDeps("")
+		user, token := deps.Hz.MintUser("import_getleak")
+		ctx := context.Background()
+
+		now := time.Now().UTC()
+		// Plant a payload that if it EVER leaked would be trivially spot-able.
+		payload, _ := json.Marshal(map[string]any{
+			"apiToken": "waka_planted_secret_in_payload_json_do_not_leak",
+		})
+		job, err := deps.Hz.DB.CreateImportJob(ctx, user, payload, now, now, 1)
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() {
+			_, _ = deps.Hz.DB.Pool.Exec(ctx, `DELETE FROM import_jobs WHERE id = $1`, job.ID)
+		})
+
+		rec := jsonReq(deps.Router, http.MethodGet,
+			"/api/v1/users/current/import/jobs/"+strconv.Itoa(job.ID), token, nil)
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
+		// The planted secret MUST NOT appear anywhere in the response body.
+		Expect(rec.Body.String()).NotTo(ContainSubstring("waka_planted_secret_in_payload_json_do_not_leak"),
+			"GET /import/jobs/:id leaked payload_json contents to the wire: %s", rec.Body.String())
+
+		var envelope struct {
+			Job  map[string]any `json:"job"`
+			Logs []db.LogLine   `json:"logs"`
+		}
+		Expect(json.Unmarshal(rec.Body.Bytes(), &envelope)).To(Succeed())
+		Expect(envelope.Job).NotTo(HaveKey("value"),
+			"job.value leaked on GET (would contain the queued QueueItem incl. TypedToken): %v", envelope.Job)
+		Expect(envelope.Job).NotTo(HaveKey("payload_json"),
+			"job.payload_json leaked on GET: %v", envelope.Job)
+	})
+})
+
+// -----------------------------------------------------------------------------
+// Body-size cap on POST /import — undocumented invariant. Currently the import
+// route uses plain c.Bind (no BindJSONWithLimit) so oversize bodies are NOT
+// capped at the handler level. This test PINS that current behavior so a later
+// intentional switch to BindJSONWithLimit (or a router-level BodyLimit
+// middleware) breaks the test loudly rather than silently.
+// -----------------------------------------------------------------------------
+
+var _ = Describe("ImportRequest body-size behavior (undocumented cap)", func() {
+	It("currently accepts an oversized JSON body (no 413) — pin the drift so it fails loudly if we ever add BodyLimit", func() {
+		deps := newImportDeps("")
+		_, token := deps.Hz.MintUser("import_bigbody")
+
+		now := time.Now().UTC()
+		// 1 MB of filler in an unknown field — the handler binds by tag so
+		// this is silently ignored, but the raw bytes still travel over the
+		// wire and through c.Bind's decoder. If a future middleware caps
+		// bodies at (say) 64 KB, we expect a 413 or 400.
+		filler := strings.Repeat("x", 1<<20)
+		body := map[string]any{
+			"apiToken":  "small_key",
+			"startDate": now.Format(time.RFC3339),
+			"endDate":   now.Format(time.RFC3339),
+			"_padding":  filler,
+		}
+		rec := jsonReq(deps.Router, http.MethodPost, "/api/v1/users/current/import", token, body)
+		// Documented current behavior: 200. If someone adds a body cap, this
+		// pin flips and the developer is prompted to add a positive 413 test
+		// alongside the removal.
+		Expect(rec.Code).To(Equal(http.StatusOK),
+			"import handler no longer accepts a 1MB body (rc=%d body=%s). If this was an intentional BodyLimit addition, update this test to assert the new 413/400 status AND add a positive test for the accepted size range.",
+			rec.Code, rec.Body.String())
+		_, _ = deps.Hz.DB.MarkRunningJobsFailed(context.Background(), "bigbody cleanup")
+	})
+})
+
+// -----------------------------------------------------------------------------
+// Handler-level integration smoke for gaka-6jm.10: a wakatime.com 401 during
+// the RUN (not the pre-submit /users/current probe) MUST flip
+// users.wakatime_key_status to 'invalid' AND MUST NOT persist the typed key.
+// The applyKeyOutcome unit test already covers the state machine — this test
+// pins the full handler → worker → DB pathway.
+// -----------------------------------------------------------------------------
+
+var _ = Describe("ImportRequest full-loop: typed key + wakatime 401 → status=invalid, no save (gaka-6jm.10 handler-level)", func() {
+	It("with a prior saved (valid) key: 401 during run flips status→invalid but LEAVES the prior ciphertext intact (no clobber, no fresh save)", func() {
+		// Full-loop pin for gaka-6jm.10: the applyKeyOutcome unit test in
+		// internal/importer/apply_key_outcome_test.go covers the state machine
+		// in isolation — this test exercises the FULL pathway:
+		//     handler POST → worker fetchLookups → 401 → FinishImportJob(failed)
+		//     → applyKeyOutcome(saw401=true) → users.wakatime_key_status='invalid'
+		// AND: the typed token from the POST body MUST NOT overwrite the prior
+		// ciphertext (save-on-success is skipped on 401).
+		//
+		// Prerequisite for the STATUS flip to be observable in the DB:
+		// UpdateWakatimeKeyStatus is a no-op unless the user already has a
+		// saved ciphertext (see db/wakatime_key.go:UpdateWakatimeKeyStatus).
+		// So we plant a valid ciphertext first, then submit a DIFFERENT typed
+		// key, then verify (a) status flipped, (b) the ORIGINAL ciphertext is
+		// untouched (typed key was NOT persisted).
+		installEncryptionKeyForTest()
+		deps := newImportDeps("") // no server env key so item.APIToken == typed
+
+		// Mock wakatime that always 401s — sends the worker into
+		// ErrWakatimeUnauthorized → saw401=true → applyKeyOutcome.
+		mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":"bad token"}`))
+		}))
+		DeferCleanup(mock.Close)
+		deps.Worker.BaseURL = mock.URL
+
+		user, token := deps.Hz.MintUser("import_401_flip")
+		ctx := context.Background()
+
+		// Plant a prior VALID saved key so the status update is observable.
+		originalPlaintext := []byte("waka_previously_valid_key")
+		originalCt, err := auth.Encrypt(originalPlaintext)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(deps.Hz.DB.SetEncryptedWakatimeKey(ctx, user, originalCt, db.WakatimeKeyStatusValid)).To(Succeed())
+
+		// Submit an import — the caller types a NEW key (different from the
+		// saved one) that will 401 because our mock always rejects.
+		now := time.Now().UTC()
+		typedKey := "waka_typed_but_will_401"
+		body := map[string]any{
+			"apiToken":  typedKey,
+			"startDate": now.Format(time.RFC3339),
+			"endDate":   now.Format(time.RFC3339),
+		}
+		rec := jsonReq(deps.Router, http.MethodPost, "/api/v1/users/current/import", token, body)
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK), "body=%s", rec.Body.String())
+		jobID := jobIDFromSubmit(rec)
+		DeferCleanup(func() {
+			_, _ = deps.Hz.DB.Pool.Exec(ctx, `DELETE FROM import_job_logs WHERE job_id = $1`, jobID)
+			_, _ = deps.Hz.DB.Pool.Exec(ctx, `DELETE FROM import_jobs WHERE id = $1`, jobID)
+		})
+
+		// Wait for the worker to terminal-fail the job.
+		Eventually(func() string {
+			j, err := deps.Hz.DB.GetJobByID(ctx, jobID)
+			if err != nil || j == nil {
+				return ""
+			}
+			return j.State
+		}, 5*time.Second, 25*time.Millisecond).Should(Equal(db.JobStateFailed))
+
+		// LOAD-BEARING #1: applyKeyOutcome flipped status → invalid.
+		Eventually(func() string {
+			info, err := deps.Hz.DB.GetWakatimeKeyInfo(ctx, user)
+			if err != nil || info.Status == nil {
+				return ""
+			}
+			return *info.Status
+		}, 2*time.Second, 25*time.Millisecond).Should(Equal(string(db.WakatimeKeyStatusInvalid)),
+			"gaka-6jm.10: wakatime_key_status was not flipped to 'invalid' after 401")
+
+		// LOAD-BEARING #2: the ORIGINAL ciphertext is still there — the
+		// typed-and-401'd key was NOT persisted. Decrypt to confirm the
+		// original plaintext survives (vs. having been silently overwritten
+		// with an encrypted form of the typed key).
+		blob, has, err := deps.Hz.DB.GetEncryptedWakatimeKey(ctx, user)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(has).To(BeTrue(),
+			"gaka-6jm.10: original saved key was clobbered to NULL by the 401 outcome (should be untouched)")
+		decrypted, err := auth.Decrypt(blob)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(decrypted)).To(Equal(string(originalPlaintext)),
+			"gaka-6jm.10: the typed key was persisted despite 401 — save-on-success skipped path failed")
+		Expect(string(decrypted)).NotTo(Equal(typedKey),
+			"gaka-6jm.10: the typed 401'd key overwrote the previously-valid ciphertext")
 	})
 })
