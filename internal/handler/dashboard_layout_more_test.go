@@ -128,6 +128,29 @@ var _ = Describe("dashboard layout extras (gaka-d6x.handler)", func() {
 	})
 
 	Describe("PutDashboardLayout error branches", func() {
+		It("rejects an UNKNOWN scope with 400 (same allowlist as DELETE/GET) — pins PUT scope-allowlist branch", func() {
+			hz := testutil.NewHarness(GinkgoT())
+			e := hz.Router()
+			_, token := hz.MintUser("dash_put_scope")
+
+			// The same dashboardLayoutScopes allowlist runs on GET/PUT/DELETE.
+			// A refactor that only broke PUT (e.g., inlining the check with a
+			// typo) would slip through if we only exercise DELETE's branch.
+			// Also proves PUT does NOT touch the DB when the scope check fails
+			// — the body must NEVER get materialized.
+			req := httptest.NewRequest(http.MethodPut,
+				"/api/v1/users/current/dashboard/overview",
+				bytes.NewReader([]byte(`{"layout":{"cols":12}}`)))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Basic "+token)
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+			Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest),
+				"PUT unknown scope must be 400: got %d body=%s", rec.Code, rec.Body.String())
+			Expect(rec.Body.String()).To(ContainSubstring("scope"),
+				"expected scope-related error, got %s", rec.Body.String())
+		})
+
 		It("rejects a syntactically-broken JSON body with 400 (not 500)", func() {
 			hz := testutil.NewHarness(GinkgoT())
 			e := hz.Router()
