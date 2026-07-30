@@ -321,17 +321,80 @@ func TestBucketKey_AuthenticatedRequestBucketsPerUserNotIP(t *testing.T) {
 	}
 }
 
-// TestBucketKey_WakatimeProbeUsesUserKeyWhenAuthenticated pins the
-// INVARIANT: the wakatime-probe group specifically checks for a user
-// FIRST (multi-IP abuse of one account still throttles). This exercises
-// the "if group == groupWakatimeProbe && owner != ''" branch that's
-// otherwise unreachable in the fallback tests.
-func TestBucketKey_WakatimeProbeUsesUserKeyWhenAuthenticated(t *testing.T) {
+// TestBucketKey_WakatimeProbeChecksUserBeforeGenericFallback pins the
+// INVARIANT that the wakatime-probe group runs its OWN user-lookup branch
+// BEFORE falling through to the generic branch — deletion of the
+// `if group == groupWakatimeProbe` block MUST fail this test.
+//
+// The trick: use a userLookup that returns "" on the FIRST call and
+// "alice" on the SECOND call. With the probe branch intact, the middleware
+// invokes userLookup twice (once from the probe branch, once from the
+// generic branch) so the second call wins and the key becomes "user:alice".
+// If the probe branch is deleted, only ONE call happens (generic branch),
+// which returns "" and falls back to "ip:...". This lets us distinguish
+// the two code paths with a single assertion, even though both paths would
+// produce the same key under any single-return stub.
+//
+// We ALSO assert callCount == 2 as a defensive independent signal: any
+// refactor that shorts a call still trips the count check.
+func TestBucketKey_WakatimeProbeChecksUserBeforeGenericFallback(t *testing.T) {
+	var callCount int
+	lookup := func(*echo.Context) string {
+		callCount++
+		if callCount == 1 {
+			return "" // first call (from probe branch) misses → fall through
+		}
+		return "alice" // second call (from generic branch) hits
+	}
 	s := &rateLimitStore{
 		buckets:    map[endpointGroup]*sync.Map{groupWakatimeProbe: {}, groupDefault: {}},
 		configs:    map[endpointGroup]bucketConfig{groupWakatimeProbe: {Rate: rate.Every(12), Burst: 5}, groupDefault: {Rate: 60, Burst: 60}},
 		logger:     silentLogger(),
-		userLookup: func(*echo.Context) string { return "alice" },
+		userLookup: lookup,
+		stop:       make(chan struct{}),
+	}
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/users/current/wakatime_key", nil)
+	req.RemoteAddr = "203.0.113.9:12345"
+	c := e.NewContext(req, httptest.NewRecorder())
+
+	key := s.bucketKey(c, groupWakatimeProbe)
+
+	// If the probe branch was deleted, callCount would be 1 (only the
+	// generic branch ran) and key would be "ip:203.0.113.9" (the generic
+	// branch got "" from call #1 and fell to IP). Both assertions below
+	// would fail.
+	if callCount != 2 {
+		t.Errorf("wakatime-probe MUST call userLookup twice (once from probe branch, once from generic) — got %d calls; deletion of the `if group == groupWakatimeProbe` block would drop this to 1",
+			callCount)
+	}
+	if key != "user:alice" {
+		t.Errorf("wakatime-probe branch must delegate to generic branch on miss — got key %q, expected \"user:alice\"; if key is \"ip:...\" the probe branch was likely deleted",
+			key)
+	}
+}
+
+// TestBucketKey_WakatimeProbeUsesUserKeyOnFirstLookup pins the
+// COMPLEMENTARY INVARIANT: when userLookup succeeds on the FIRST call
+// (from within the probe branch), the middleware returns immediately —
+// the generic branch MUST NOT run. Combined with the test above, this
+// pins BOTH sides of the branch:
+//   - success path: 1 call from probe, generic never runs
+//   - miss path: 1 call from probe (miss) + 1 from generic (hit) = 2
+//
+// Any refactor that swaps the order or drops one branch trips at least
+// one of these tests.
+func TestBucketKey_WakatimeProbeUsesUserKeyOnFirstLookup(t *testing.T) {
+	var callCount int
+	lookup := func(*echo.Context) string {
+		callCount++
+		return "alice"
+	}
+	s := &rateLimitStore{
+		buckets:    map[endpointGroup]*sync.Map{groupWakatimeProbe: {}, groupDefault: {}},
+		configs:    map[endpointGroup]bucketConfig{groupWakatimeProbe: {Rate: rate.Every(12), Burst: 5}, groupDefault: {Rate: 60, Burst: 60}},
+		logger:     silentLogger(),
+		userLookup: lookup,
 		stop:       make(chan struct{}),
 	}
 	e := echo.New()
@@ -342,6 +405,13 @@ func TestBucketKey_WakatimeProbeUsesUserKeyWhenAuthenticated(t *testing.T) {
 	key := s.bucketKey(c, groupWakatimeProbe)
 	if key != "user:alice" {
 		t.Errorf("wakatime-probe with auth should bucket by user, got %q", key)
+	}
+	// Success-in-probe-branch MUST early-return: exactly 1 call.
+	// A refactor that swaps probe/generic order or drops the early-return
+	// would produce 2 calls here.
+	if callCount != 1 {
+		t.Errorf("wakatime-probe MUST early-return after probe-branch hit — expected 1 userLookup call, got %d",
+			callCount)
 	}
 }
 
@@ -367,6 +437,91 @@ func TestUserLookupFromDB_NilDBReturnsEmptyString(t *testing.T) {
 	}
 }
 
+// --- bucketFromEnv malformed-value WARN emission --------------------------
+
+// TestBucketFromEnv_MalformedValuesPreserveDefaultAndEmitWarn pins two
+// coupled INVARIANTS for the env-override parser:
+//
+//  1. A malformed value (unparseable float for _RATE, unparseable int for
+//     _BURST) MUST NOT override the default — silent acceptance would let a
+//     typo in ops config secretly weaken (or accidentally strengthen) the
+//     limit. This is a real operator gotcha: BOOM_RATELIMIT_AUTH_WRITE_RATE
+//     is easy to typo (e.g. "0..5" or "5s") and the outcome should be that
+//     the default wins, NOT that the limiter silently no-ops.
+//
+//  2. On every malformed value, a WARN log record MUST be emitted so the
+//     operator sees the ignored override in startup logs. Silent drop plus
+//     silent default would leave the operator convinced their override
+//     took effect.
+//
+// The existing ginkgo test at ratelimit_test.go:161 covers invariant #1
+// but does NOT prove the WARN is emitted — this test closes that gap.
+func TestBucketFromEnv_MalformedValuesPreserveDefaultAndEmitWarn(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	def := bucketConfig{Rate: 42.0, Burst: 7}
+
+	// Malformed rate: "abc" is not a float.
+	t.Setenv("BOOM_RATELIMIT_AUTH_WRITE_RATE", "abc")
+	// Malformed burst: "notanint" is not an int.
+	t.Setenv("BOOM_RATELIMIT_AUTH_WRITE_BURST", "notanint")
+
+	got := bucketFromEnv(groupAuthWrite, def, logger)
+
+	// Invariant #1: default preserved on BOTH fields.
+	if float64(got.Rate) != 42.0 {
+		t.Errorf("malformed RATE must preserve default; got rate=%v want 42", got.Rate)
+	}
+	if got.Burst != 7 {
+		t.Errorf("malformed BURST must preserve default; got burst=%d want 7", got.Burst)
+	}
+
+	// Invariant #2: WARN emitted for BOTH env vars. Operators grep on the
+	// exact env var name to find their typo — assert both names appear.
+	logStr := buf.String()
+	if !strings.Contains(logStr, `"level":"WARN"`) {
+		t.Errorf("malformed values must emit WARN records; got: %s", logStr)
+	}
+	for _, want := range []string{
+		`"env":"BOOM_RATELIMIT_AUTH_WRITE_RATE"`,
+		`"env":"BOOM_RATELIMIT_AUTH_WRITE_BURST"`,
+		`"value":"abc"`,
+		`"value":"notanint"`,
+	} {
+		if !strings.Contains(logStr, want) {
+			t.Errorf("WARN payload missing %q — operator grep contract broken; got: %s", want, logStr)
+		}
+	}
+}
+
+// TestBucketFromEnv_ZeroOrNegativeValuesPreserveDefault pins the INVARIANT
+// that a valid-syntax-but-nonsense value (rate=0 disables the limiter
+// entirely; burst=-5 is nonsensical) is treated as malformed — the default
+// wins. Without this guard, an operator who mistakenly sets
+// BOOM_RATELIMIT_AUTH_WRITE_BURST=0 could silently disable the auth-write
+// bucket, opening credential stuffing wide open.
+func TestBucketFromEnv_ZeroOrNegativeValuesPreserveDefault(t *testing.T) {
+	logger := silentLogger()
+	def := bucketConfig{Rate: 42.0, Burst: 7}
+
+	// Zero rate — disables the limiter; must not override.
+	t.Setenv("BOOM_RATELIMIT_AUTH_WRITE_RATE", "0")
+	// Negative burst — nonsensical; must not override.
+	t.Setenv("BOOM_RATELIMIT_AUTH_WRITE_BURST", "-5")
+
+	got := bucketFromEnv(groupAuthWrite, def, logger)
+
+	if float64(got.Rate) != 42.0 {
+		t.Errorf("rate=0 must NOT override default (would disable limiter); got %v", got.Rate)
+	}
+	if got.Burst != 7 {
+		t.Errorf("burst=-5 must NOT override default; got %d", got.Burst)
+	}
+}
+
+// --- userLookupFromDB read-only invariant --------------------------------
+
 // --- installRateLimit production path -------------------------------------
 
 // TestInstallRateLimit_EnabledPathWiresStoreAndBuckets pins the INVARIANT
@@ -390,6 +545,11 @@ func TestInstallRateLimit_EnabledPathWiresStoreAndBuckets(t *testing.T) {
 	if store == nil {
 		t.Fatal("installRateLimit must return non-nil store when NOT disabled")
 	}
+	// Close the store's stop channel on test end so the background
+	// cleanupLoop goroutine exits — prevents a per-test-invocation leak
+	// that would flag under -race on repeat runs (missing-invariant #2
+	// from the critique).
+	t.Cleanup(func() { close(store.stop) })
 	// The three default groups MUST be present.
 	for _, g := range []endpointGroup{groupAuthWrite, groupWakatimeProbe, groupDefault} {
 		if _, ok := store.configs[g]; !ok {

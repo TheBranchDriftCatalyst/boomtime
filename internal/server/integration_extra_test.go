@@ -197,6 +197,113 @@ func TestUserCtxMiddleware_UnknownTokenDoesNotStamp(t *testing.T) {
 	}
 }
 
+// TestUserCtxMiddleware_DBErrorPathIsFailOpen pins the security-critical
+// INVARIANT explicitly named in userCtxMiddleware's docstring: on a DB
+// error (pool closed, connection failure, non-ErrNoRows), the middleware
+// MUST fail-open (return next(c) unchanged) — NOT deny the request AND
+// NOT stamp a stale/misresolved user into the ctx.
+//
+// This branch is otherwise unreachable in the happy-path tests. The
+// forcing mechanism: install the middleware with a database whose pool
+// is CLOSED — every GetUserByToken returns an err (not ErrNoRows), which
+// the middleware must treat identically to "unknown token": no stamp,
+// no denial. A regression that stamps SOME user on DB error would
+// re-open the cross-tenant LogHub leak gaka-ar7 closed.
+func TestUserCtxMiddleware_DBErrorPathIsFailOpen(t *testing.T) {
+	database := testutil.OpenDB(t)
+	// Mint a real token so ParseAuthHeader accepts it. We're not going to
+	// use it against the closed pool — we'll close the pool BEFORE the
+	// request runs so GetUserByToken errors out.
+	_, aliceTok := mintUserAndToken(t, database, "alice")
+
+	// Deliberately close the pool BEFORE the middleware runs. This is the
+	// closest test-controllable analogue of the production "DB briefly
+	// unreachable" state. GetUserByToken will now return an error (not
+	// ErrNoRows) on every call.
+	database.Close()
+
+	e := echo.New()
+	e.Use(userCtxMiddleware(database))
+	var stamped string
+	e.GET("/x", func(c *echo.Context) error {
+		stamped = db.UserFrom(c.Request().Context())
+		return c.String(http.StatusOK, "ok")
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.Header.Set(echo.HeaderAuthorization, "Basic "+aliceTok)
+	e.ServeHTTP(rec, req)
+
+	// Fail-open: request MUST NOT be denied (the handler ran and wrote 200).
+	if rec.Code != http.StatusOK {
+		t.Fatalf("DB error must NOT deny request (fail-open contract); got status %d", rec.Code)
+	}
+	// No stamp: a DB error MUST leave the ctx unstamped — never fake a
+	// user. Wrong-user attribution would re-open gaka-ar7's cross-tenant
+	// LogHub leak.
+	if stamped != "" {
+		t.Errorf("DB error must NOT stamp any user into ctx; got %q — would cross-attribute SQL to wrong owner", stamped)
+	}
+}
+
+// TestUserLookupFromDB_CanceledContextDoesNotStampNorCrash pins the
+// INVARIANT that a canceled request-scope context (client dropped the
+// connection mid-request) does NOT cause userLookupFromDB to:
+//   - panic
+//   - resolve to some stale/cached user (wrong-user leak)
+//   - return non-empty for a token that the DB can't be reached to verify
+//
+// This matters because GetUserByToken's best-effort UPDATE (bump
+// last_usage) runs AFTER the SELECT — if the SELECT gets past a canceled
+// ctx, the UPDATE would try to bump against a canceled conn and
+// error-out. The invariant is: however the ctx unwinds, we return "" (no
+// oracle) or the correct owner — NEVER a fake one.
+func TestUserLookupFromDB_CanceledContextDoesNotStampNorCrash(t *testing.T) {
+	database := testutil.OpenDB(t)
+	alice, aliceTok := mintUserAndToken(t, database, "alice")
+
+	lookup := userLookupFromDB(database)
+	e := echo.New()
+
+	// Canceled context: the query MUST NOT resolve to alice under a
+	// pre-canceled ctx (pgx short-circuits with ctx.Err()). We assert on
+	// "not alice" rather than "" strictly, because the exact behavior
+	// depends on whether pgx has time to complete the SELECT — but the
+	// invariant is: it MUST NOT falsely stamp SOME OTHER user.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel BEFORE the request
+	req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
+	req.Header.Set(echo.HeaderAuthorization, "Basic "+aliceTok)
+	c := e.NewContext(req, httptest.NewRecorder())
+
+	// The main invariant: MUST NOT panic. If it panics, the whole
+	// request pipeline for anyone using the pool goes down.
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("userLookupFromDB MUST NOT panic on canceled ctx; got: %v", r)
+		}
+	}()
+	got := lookup(c)
+
+	// Under a pre-canceled ctx, pgx errors out on Query — the lookup
+	// MUST return "" (its error swallow path). NEVER some other user.
+	if got != "" && got != alice {
+		t.Errorf("canceled ctx MUST return \"\" or the token's actual owner — got %q (wrong-user leak)", got)
+	}
+
+	// Sanity: with a fresh non-canceled ctx and the SAME token, we still
+	// resolve correctly (proves the DB pool wasn't wedged by the previous
+	// canceled call — a real regression would leave the pool broken for
+	// every subsequent request).
+	req2 := httptest.NewRequest(http.MethodGet, "/", nil)
+	req2.Header.Set(echo.HeaderAuthorization, "Basic "+aliceTok)
+	c2 := e.NewContext(req2, httptest.NewRecorder())
+	if got := lookup(c2); got != alice {
+		t.Errorf("after canceled ctx, fresh lookup must still resolve alice; got %q — pool may be wedged", got)
+	}
+}
+
 // --- New / NewWithHandler wiring -----------------------------------------
 
 // TestNewWithHandler_WiresCorsRateLimitAndStaticInCorrectOrder pins the
@@ -312,9 +419,15 @@ func TestNewWithHandler_WiresCorsRateLimitAndStaticInCorrectOrder(t *testing.T) 
 
 // TestNew_ConvenienceWrapperReturnsSameEcho pins the INVARIANT that the
 // New wrapper (kept for backward-compat with older cmd/boomtime callers)
-// produces the SAME echo instance shape as NewWithHandler — same routes,
-// same middlewares. If someone splits the two apart in a refactor we
-// catch it here.
+// produces the SAME route SET as NewWithHandler — not just the same COUNT.
+//
+// Route count alone is a weak proxy: a refactor that drops /auth/login and
+// adds /auth/signin preserves the count but silently rewires the FE against
+// a broken endpoint. Instead, we build a set of (method, path) pairs from
+// BOTH echoes and require exact set equality. As a defense-in-depth signal
+// we also assert a canary sample of critical routes (/auth/login,
+// /api/v1/version, /healthz) is present in BOTH — even if the set-equality
+// check regresses to a permissive alternative, a missing canary trips.
 func TestNew_ConvenienceWrapperReturnsSameEcho(t *testing.T) {
 	database := testutil.OpenDB(t)
 	cfg := &config.Config{Port: 8080, EnableRegistration: true, SessionExpiry: 24, DBPort: 5432}
@@ -326,12 +439,52 @@ func TestNew_ConvenienceWrapperReturnsSameEcho(t *testing.T) {
 	if e == nil {
 		t.Fatal("New returned nil")
 	}
-	// Route count is a proxy for "wiring intact"; it must match what
-	// NewWithHandler produces.
 	e2, _ := NewWithHandler(database, cfg, logger, nil, importer.NewHub(), nil)
-	if len(e.Router().Routes()) != len(e2.Router().Routes()) {
-		t.Errorf("New and NewWithHandler must produce the same route set; got %d vs %d",
-			len(e.Router().Routes()), len(e2.Router().Routes()))
+
+	// Build (method+path) sets for both echoes.
+	routeSet := func(e *echo.Echo) map[string]struct{} {
+		out := make(map[string]struct{})
+		for _, r := range e.Router().Routes() {
+			out[r.Method+" "+r.Path] = struct{}{}
+		}
+		return out
+	}
+	set1 := routeSet(e)
+	set2 := routeSet(e2)
+
+	// Set equality: every route in set1 must be in set2 AND vice versa.
+	// A refactor that renames /auth/login → /auth/signin would preserve the
+	// count but break this check.
+	for k := range set1 {
+		if _, ok := set2[k]; !ok {
+			t.Errorf("route %q registered by New but MISSING from NewWithHandler", k)
+		}
+	}
+	for k := range set2 {
+		if _, ok := set1[k]; !ok {
+			t.Errorf("route %q registered by NewWithHandler but MISSING from New", k)
+		}
+	}
+
+	// Canary routes: the FE, kubelet, and CLI depend on these specific
+	// (method, path) pairs. If ANY of them disappears in either echo we
+	// want to fail loudly — the SPA and health probes would stop working
+	// silently otherwise.
+	canaries := []string{
+		"POST /auth/login",
+		"POST /auth/register",
+		"POST /auth/refresh_token",
+		"POST /auth/logout",
+		"GET /api/v1/version",
+		"GET /healthz",
+	}
+	for _, canary := range canaries {
+		if _, ok := set1[canary]; !ok {
+			t.Errorf("canary route %q MISSING from New() — FE/kubelet/CLI will break", canary)
+		}
+		if _, ok := set2[canary]; !ok {
+			t.Errorf("canary route %q MISSING from NewWithHandler() — FE/kubelet/CLI will break", canary)
+		}
 	}
 }
 
