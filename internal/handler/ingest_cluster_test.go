@@ -63,6 +63,26 @@ func countHeartbeats(hz *testutil.Harness, owner string) int64 {
 	return n
 }
 
+// countAllHeartbeats returns the global heartbeat row count (test-side
+// invariant check). Used to prove that pre-auth guards fire BEFORE any
+// DB write reaches ANY owner — a regression that ordered auth after a
+// partial insert would be caught here even if the throwaway owner's
+// count stayed stable.
+func countAllHeartbeats(hz *testutil.Harness) int64 {
+	var n int64
+	Expect(hz.DB.Pool.QueryRow(context.Background(),
+		`SELECT count(*) FROM heartbeats`).Scan(&n)).To(Succeed())
+	return n
+}
+
+// countHealthSamples returns the number of health sample rows for owner.
+func countHealthSamples(hz *testutil.Harness, owner string) int64 {
+	var n int64
+	Expect(hz.DB.Pool.QueryRow(context.Background(),
+		`SELECT count(*) FROM health_samples WHERE owner=$1`, owner).Scan(&n)).To(Succeed())
+	return n
+}
+
 // selectEnrichedRow reads back the enrichment columns for the freshest
 // heartbeat of an owner so we can pin storeAndRespond's enrichment
 // invariants (sender, editor/plugin/platform, machine, language default,
@@ -107,15 +127,26 @@ var _ = Describe("Heartbeat ingest (gaka-d6x.handler)", func() {
 				"malformed body must not persist any rows")
 		})
 
-		It("returns 400 (MissingAuth) with no Authorization header — DB unchanged", func() {
+		It("returns 400 (MissingAuth) with no Authorization header — DB unchanged (no partial write before auth)", func() {
 			hz := testutil.NewHarness(GinkgoT())
 			e := hz.Router()
-			// No user minted yet — but body is well-formed; the auth check
-			// must fire BEFORE any DB write.
+			// Mint a throwaway user so we can pin cross-user invariants: a
+			// missing Authorization header MUST NOT create rows attributed
+			// to anyone, ever. Global count captures the "regression made
+			// auth fire AFTER a partial DB write" case.
+			owner, _ := hz.MintUser("hb_missauth")
+			beforeOwner := countHeartbeats(hz, owner)
+			beforeGlobal := countAllHeartbeats(hz)
+
+			// Body is well-formed; only the header is missing.
 			body := map[string]any{"time": float64(time.Now().Unix()), "entity": "x.go", "type": "file", "user_agent": "wakatime/1 (Linux) go/1 vscode wakatime-vscode/1"}
 			rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/heartbeats", "", body)
 			// tokenFromHeader returns MissingAuth (400) when the header is absent.
 			Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest))
+			Expect(countHeartbeats(hz, owner)).To(Equal(beforeOwner),
+				"missing auth header MUST NOT create rows on the throwaway user")
+			Expect(countAllHeartbeats(hz)).To(Equal(beforeGlobal),
+				"missing auth header MUST NOT create rows anywhere (auth fires before any DB write)")
 		})
 
 		It("returns 403 (InvalidToken) for a valid-shape token that has no owner", func() {
@@ -410,34 +441,39 @@ var _ = Describe("HeartbeatsLatest (GET /api/v1/users/current/heartbeats/latest)
 		Expect(got.Count).To(Equal(int64(0)))
 	})
 
-	It("returns the MAX(time_sent) in RFC3339 UTC + owner-scoped count (bob's beats never leak)", func() {
+	It("returns the MAX(time_sent) in RFC3339 UTC + owner-scoped count (BOTH alice and bob see only their own rows — symmetric)", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
 		alice, aliceTok := hz.MintUser("hbl_scope_a")
-		bob, _ := hz.MintUser("hbl_scope_b")
+		bob, bobTok := hz.MintUser("hbl_scope_b")
 
-			// Seed alice with two beats, bob with many so that if the query
-			// forgot the WHERE sender=$1 the count would leak.
+		// Seed alice with two beats, bob with three so if the query
+		// INVERTED sender (returning !$1 rows) alice would see 3 and bob
+		// would see 2 — both assertions must independently hold.
 		aliceTs := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second)
 		aliceMax := aliceTs.Add(1 * time.Hour)
 		hz.Seeder(alice).Seed(testutil.HB{TS: aliceTs, Gap: 0, Project: "P", Language: "Go"})
 		hz.Seeder(alice).Seed(testutil.HB{TS: aliceMax, Gap: 60, Project: "P", Language: "Go"})
-		hz.Seeder(bob).Seed(testutil.HB{TS: time.Now().UTC(), Gap: 0, Project: "P", Language: "Py"})
-		hz.Seeder(bob).Seed(testutil.HB{TS: time.Now().UTC().Add(time.Minute), Gap: 60, Project: "P", Language: "Py"})
-		hz.Seeder(bob).Seed(testutil.HB{TS: time.Now().UTC().Add(2 * time.Minute), Gap: 60, Project: "P", Language: "Py"})
+		bobT0 := time.Now().UTC().Truncate(time.Second)
+		bobMax := bobT0.Add(2 * time.Minute)
+		hz.Seeder(bob).Seed(testutil.HB{TS: bobT0, Gap: 0, Project: "P", Language: "Py"})
+		hz.Seeder(bob).Seed(testutil.HB{TS: bobT0.Add(time.Minute), Gap: 60, Project: "P", Language: "Py"})
+		hz.Seeder(bob).Seed(testutil.HB{TS: bobMax, Gap: 60, Project: "P", Language: "Py"})
 
-		rec := doJSONReqG(e, http.MethodGet, "/api/v1/users/current/heartbeats/latest", aliceTok, nil)
-		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
 		var got struct {
 			LastHeartbeat *string `json:"lastHeartbeat"`
 			Count         int64   `json:"count"`
 		}
+
+		// --- alice's view ---
+		rec := doJSONReqG(e, http.MethodGet, "/api/v1/users/current/heartbeats/latest", aliceTok, nil)
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
 		Expect(json.Unmarshal(rec.Body.Bytes(), &got)).To(Succeed())
 		Expect(got.LastHeartbeat).NotTo(BeNil())
 
-		// alice count MUST be 2 (never 5 = alice+bob). Cross-user isolation
-		// is the whole reason this endpoint takes a token instead of a
-		// username query param.
+		// alice count MUST be 2 (never 5 = alice+bob, never 3 = bob's rows).
+		// Cross-user isolation is the whole reason this endpoint takes a
+		// token instead of a username query param.
 		Expect(got.Count).To(Equal(int64(2)),
 			"count leaked bob's rows: got %d, want 2 (alice-only)", got.Count)
 
@@ -446,10 +482,28 @@ var _ = Describe("HeartbeatsLatest (GET /api/v1/users/current/heartbeats/latest)
 		parsed, err := time.Parse(time.RFC3339, *got.LastHeartbeat)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(parsed.Sub(aliceMax.UTC()).Seconds()).To(BeNumerically("~", 0, 1),
-			"lastHeartbeat drifted: got %v, want %v", parsed, aliceMax.UTC())
+			"alice's lastHeartbeat drifted: got %v, want %v", parsed, aliceMax.UTC())
 
-		// Isolation crosscheck: bob's endpoint reports bob's OWN count only.
-		_ = bob
+		// --- bob's SYMMETRIC view (the reviewer-flagged missing invariant) ---
+		// A regression where the SQL predicate was INVERTED (returning
+		// everybody EXCEPT the caller) would pass alice's assertion because
+		// her count would still be nonzero — bob's independent assertion
+		// (count==3, MAX==bobMax) is what catches an inverted predicate,
+		// a swapped placeholder, or a session-var leak.
+		var bobGot struct {
+			LastHeartbeat *string `json:"lastHeartbeat"`
+			Count         int64   `json:"count"`
+		}
+		rec2 := doJSONReqG(e, http.MethodGet, "/api/v1/users/current/heartbeats/latest", bobTok, nil)
+		Expect(rec2).To(testutil.HaveStatus(http.StatusOK))
+		Expect(json.Unmarshal(rec2.Body.Bytes(), &bobGot)).To(Succeed())
+		Expect(bobGot.LastHeartbeat).NotTo(BeNil())
+		Expect(bobGot.Count).To(Equal(int64(3)),
+			"bob's count leaked alice's rows or was inverted: got %d, want 3 (bob-only)", bobGot.Count)
+		bobParsed, err := time.Parse(time.RFC3339, *bobGot.LastHeartbeat)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(bobParsed.Sub(bobMax.UTC()).Seconds()).To(BeNumerically("~", 0, 1),
+			"bob's lastHeartbeat drifted: got %v, want %v", bobParsed, bobMax.UTC())
 	})
 
 	It("returns 403 for a token that has no owner (no oracle: bogus vs missing look identical)", func() {
@@ -482,11 +536,11 @@ var _ = Describe("HeartbeatsGroup (GET /api/v1/users/current/heartbeats/group)",
 		Expect(rec3).To(testutil.HaveStatus(http.StatusBadRequest))
 	})
 
-	It("groups by language for the owner ONLY (bob's Python is never in alice's response)", func() {
+	It("groups by language for the owner ONLY — SYMMETRIC (alice sees only Go, bob sees only Python)", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
 		alice, aliceTok := hz.MintUser("hbg_scope_a")
-		bob, _ := hz.MintUser("hbg_scope_b")
+		bob, bobTok := hz.MintUser("hbg_scope_b")
 
 		// Alice: 2 Go beats within the default week window.
 		aliceTS := time.Now().UTC().Add(-24 * time.Hour)
@@ -498,6 +552,7 @@ var _ = Describe("HeartbeatsGroup (GET /api/v1/users/current/heartbeats/group)",
 		hz.Seeder(bob).Seed(testutil.HB{TS: bobTS.Add(time.Minute), Gap: 60, Project: "P", Language: "Python"})
 		hz.Seeder(bob).Seed(testutil.HB{TS: bobTS.Add(2 * time.Minute), Gap: 60, Project: "P", Language: "Python"})
 
+		// --- alice's view ---
 		rec := doJSONReqG(e, http.MethodGet, "/api/v1/users/current/heartbeats/group?groupBy=language", aliceTok, nil)
 		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
 		var got struct {
@@ -512,15 +567,80 @@ var _ = Describe("HeartbeatsGroup (GET /api/v1/users/current/heartbeats/group)",
 		Expect(got.GroupBy).To(Equal("language"))
 		// Alice has ONE language bucket (Go) with count=2. Python (bob's)
 		// must be absent — that's the load-bearing cross-user isolation.
-		langs := map[string]int64{}
+		aliceLangs := map[string]int64{}
 		for _, g := range got.Groups {
 			if g.Value != nil {
-				langs[*g.Value] = g.Count
+				aliceLangs[*g.Value] = g.Count
 			}
 		}
-		Expect(langs).To(HaveKeyWithValue("Go", int64(2)))
-		Expect(langs).NotTo(HaveKey("Python"),
+		Expect(aliceLangs).To(HaveKeyWithValue("Go", int64(2)))
+		Expect(aliceLangs).NotTo(HaveKey("Python"),
 			"bob's Python leaked into alice's group listing (%v)", got.Groups)
+
+		// --- bob's SYMMETRIC view (reviewer's missing-invariant fix) ---
+		// A regression that inverted the sender predicate would pass alice's
+		// assertion but flip bob's: bob would see Go (alice's) not Python.
+		// Cross-checking BOTH sides catches inverted-predicate + swapped
+		// placeholder regressions.
+		rec2 := doJSONReqG(e, http.MethodGet, "/api/v1/users/current/heartbeats/group?groupBy=language", bobTok, nil)
+		Expect(rec2).To(testutil.HaveStatus(http.StatusOK))
+		Expect(json.Unmarshal(rec2.Body.Bytes(), &got)).To(Succeed())
+		bobLangs := map[string]int64{}
+		for _, g := range got.Groups {
+			if g.Value != nil {
+				bobLangs[*g.Value] = g.Count
+			}
+		}
+		Expect(bobLangs).To(HaveKeyWithValue("Python", int64(3)),
+			"bob's own Python count leaked or was scoped out — got %v", got.Groups)
+		Expect(bobLangs).NotTo(HaveKey("Go"),
+			"alice's Go leaked into bob's group listing (%v)", got.Groups)
+	})
+
+	It("truncated=true when the group count exceeds the exploreGroupLimit (501 buckets → truncated:true and returned len=500)", func() {
+		// Reviewer missing-invariant fix: a regression that hard-coded
+		// truncated=false (or returned len(groups)==501) would slip
+		// through every OTHER group spec because they seed <500 buckets.
+		// Force the truncation cap by seeding 501 unique language values
+		// so GroupHeartbeats' `if len(out) > limit { truncated = true }`
+		// branch is the only path that produces the observable output.
+		hz := testutil.NewHarness(GinkgoT())
+		e := hz.Router()
+		owner, tok := hz.MintUser("hbg_trunc")
+
+		// Direct bulk insert — 501 unique languages, one beat each, all
+		// within the default 7-day window. Fastest way to avoid a
+		// per-row Seed call and stay under the ginkgo timeout.
+		const n = 501
+		base := time.Now().UTC().Add(-24 * time.Hour)
+		// Ensure the projects row exists — heartbeats has an FK.
+		_, err := hz.DB.Pool.Exec(context.Background(),
+			`INSERT INTO projects (owner, name) VALUES ($1, 'P') ON CONFLICT DO NOTHING`, owner)
+		Expect(err).NotTo(HaveOccurred())
+
+		for i := 0; i < n; i++ {
+			lang := "Lang" + strconv.Itoa(i)
+			_, err := hz.DB.Pool.Exec(context.Background(), `
+				INSERT INTO heartbeats
+				  (sender, project, language, entity, ty, time_sent, user_agent, gap_seconds)
+				VALUES ($1, 'P', $2, $3, 'file', $4, 'ua', 0)`,
+				owner, lang, "e"+strconv.Itoa(i)+".go", base.Add(time.Duration(i)*time.Second))
+			Expect(err).NotTo(HaveOccurred(), "seed row %d", i)
+		}
+
+		rec := doJSONReqG(e, http.MethodGet, "/api/v1/users/current/heartbeats/group?groupBy=language", tok, nil)
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
+		var got struct {
+			Truncated bool `json:"truncated"`
+			Groups    []struct {
+				Value *string `json:"value"`
+			} `json:"groups"`
+		}
+		Expect(json.Unmarshal(rec.Body.Bytes(), &got)).To(Succeed())
+		Expect(got.Truncated).To(BeTrue(),
+			"truncated MUST be true when >exploreGroupLimit (500) buckets exist — got groups=%d truncated=%v", len(got.Groups), got.Truncated)
+		Expect(len(got.Groups)).To(Equal(500),
+			"returned groups MUST be capped at exploreGroupLimit — got %d", len(got.Groups))
 	})
 
 	It("threads ?entity=<substr> as an ILIKE narrow — matching beats show up, non-matches drop", func() {
@@ -563,11 +683,11 @@ var _ = Describe("HeartbeatsList (GET /api/v1/users/current/heartbeats)", func()
 			"raw column 'sender' MUST be rejected — the FE has no legitimate reason to filter by it")
 	})
 
-	It("paginates newest-first and reports total across the same predicate (cross-user isolated)", func() {
+	It("paginates newest-first and reports total across the same predicate — SYMMETRIC cross-user isolation", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
 		alice, aliceTok := hz.MintUser("hbl_page_a")
-		bob, _ := hz.MintUser("hbl_page_b")
+		bob, bobTok := hz.MintUser("hbl_page_b")
 
 		// Seed 5 alice beats + 5 bob beats within the default week.
 		base := time.Now().UTC().Add(-3 * 24 * time.Hour)
@@ -576,8 +696,6 @@ var _ = Describe("HeartbeatsList (GET /api/v1/users/current/heartbeats)", func()
 			hz.Seeder(bob).Seed(testutil.HB{TS: base.Add(time.Duration(i) * time.Minute), Gap: int64(i * 30), Project: "P", Language: "Py", Entity: fmt.Sprintf("b%d.py", i)})
 		}
 
-		rec := doJSONReqG(e, http.MethodGet, "/api/v1/users/current/heartbeats?page=1&limit=3", aliceTok, nil)
-		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
 		var got struct {
 			Items []struct {
 				Entity string    `json:"entity"`
@@ -587,6 +705,10 @@ var _ = Describe("HeartbeatsList (GET /api/v1/users/current/heartbeats)", func()
 			Page  int   `json:"page"`
 			Limit int   `json:"limit"`
 		}
+
+		// --- alice's view ---
+		rec := doJSONReqG(e, http.MethodGet, "/api/v1/users/current/heartbeats?page=1&limit=3", aliceTok, nil)
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
 		Expect(json.Unmarshal(rec.Body.Bytes(), &got)).To(Succeed())
 		Expect(got.Total).To(Equal(int64(5)),
 			"total leaked bob's rows: got %d, want 5 (alice-only)", got.Total)
@@ -599,7 +721,68 @@ var _ = Describe("HeartbeatsList (GET /api/v1/users/current/heartbeats)", func()
 		for _, it := range got.Items {
 			Expect(it.Entity).To(HavePrefix("a"), "bob's b*.py row leaked into alice's list (%q)", it.Entity)
 		}
-		_ = bob
+
+		// --- bob's SYMMETRIC view (reviewer's missing-invariant fix) ---
+		// A regression that inverted the sender predicate would return
+		// alice's Go rows to bob instead of Py rows. Independent bob-side
+		// assertion is what catches that.
+		rec2 := doJSONReqG(e, http.MethodGet, "/api/v1/users/current/heartbeats?page=1&limit=3", bobTok, nil)
+		Expect(rec2).To(testutil.HaveStatus(http.StatusOK))
+		Expect(json.Unmarshal(rec2.Body.Bytes(), &got)).To(Succeed())
+		Expect(got.Total).To(Equal(int64(5)),
+			"bob's total leaked alice's rows or was inverted: got %d, want 5 (bob-only)", got.Total)
+		Expect(got.Items).To(HaveLen(3))
+		for _, it := range got.Items {
+			Expect(it.Entity).To(HavePrefix("b"),
+				"alice's a*.go row leaked into bob's list (%q)", it.Entity)
+		}
+	})
+
+	It("compound predicate: filters+entity+page compose correctly (catches AND/OR swaps at the SQL layer)", func() {
+		// Missing-invariant fix: HeartbeatsList threads BOTH structured
+		// filters (via collectExploreFilters) AND entity substring narrow
+		// AND page/limit at the SQL layer. A bad AND/OR swap would still
+		// pass isolated specs (each axis alone matches) but return the
+		// wrong subset when compounded. Seed data so the compound predicate
+		// has a UNIQUE correct answer that no single-axis mistake produces.
+		hz := testutil.NewHarness(GinkgoT())
+		e := hz.Router()
+		alice, tok := hz.MintUser("hbl_compound")
+
+		base := time.Now().UTC().Add(-2 * 24 * time.Hour)
+		// Bucket A: language=Go, entity begins with cmd/  (2 rows — the ONLY intersection)
+		hz.Seeder(alice).Seed(testutil.HB{TS: base, Gap: 0, Project: "P", Language: "Go", Entity: "cmd/main.go"})
+		hz.Seeder(alice).Seed(testutil.HB{TS: base.Add(1 * time.Minute), Gap: 60, Project: "P", Language: "Go", Entity: "cmd/serve.go"})
+		// Bucket B: language=Go, entity begins with web/  (1 row — matches entity if OR-ed)
+		hz.Seeder(alice).Seed(testutil.HB{TS: base.Add(2 * time.Minute), Gap: 60, Project: "P", Language: "Go", Entity: "web/App.tsx"})
+		// Bucket C: language=Python, entity begins with cmd/  (1 row — matches language filter if OR-ed)
+		hz.Seeder(alice).Seed(testutil.HB{TS: base.Add(3 * time.Minute), Gap: 60, Project: "P", Language: "Python", Entity: "cmd/serve.py"})
+		// Bucket D: language=Python, entity begins with docs/ (1 row — matches nothing)
+		hz.Seeder(alice).Seed(testutil.HB{TS: base.Add(4 * time.Minute), Gap: 60, Project: "P", Language: "Python", Entity: "docs/README.md"})
+
+		// Query: language=Go AND entity ILIKE '%cmd/%' AND page=1 limit=100.
+		// Correct AND behavior: 2 rows (both cmd/ Go files).
+		// A bug that OR-ed language + entity would return 4 rows.
+		u := "/api/v1/users/current/heartbeats?language=Go&entity=" + url.QueryEscape("cmd/") + "&page=1&limit=100"
+		rec := doJSONReqG(e, http.MethodGet, u, tok, nil)
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
+		var got struct {
+			Items []struct {
+				Entity   string  `json:"entity"`
+				Language *string `json:"language"`
+			} `json:"items"`
+			Total int64 `json:"total"`
+		}
+		Expect(json.Unmarshal(rec.Body.Bytes(), &got)).To(Succeed())
+		Expect(got.Total).To(Equal(int64(2)),
+			"compound (language=Go AND entity~=cmd/) MUST return 2 — a bad OR-swap returns 4 (%v)", got.Items)
+		for _, it := range got.Items {
+			Expect(it.Entity).To(HavePrefix("cmd/"),
+				"AND-ed entity narrow was OR-ed instead — item %q slipped through", it.Entity)
+			Expect(it.Language).NotTo(BeNil())
+			Expect(*it.Language).To(Equal("Go"),
+				"AND-ed language filter was OR-ed instead — item %q language=%v slipped through", it.Entity, it.Language)
+		}
 	})
 
 	It("clamps invalid page/limit params (page<1 → 1, limit<1 → default, limit>max → capped)", func() {
@@ -673,21 +856,27 @@ var _ = Describe("HealthSamples ingest (gaka-d6x.handler)", func() {
 			"health_samples ingest MUST invalidate the owner cache even on empty batches")
 	})
 
-	It("POST /health_samples.bulk: bare-array retry-bind attempt observably runs the fallback path (envelope-or-array polymorphism branch)", func() {
-		// Pins the fallback branch (`if err2 := c.Bind(&arr); err2 != nil`)
-		// AND records the observable outcome: because echo's DefaultBinder
-		// reads the request body directly (json.NewDecoder(c.Request().Body))
-		// the second Bind call sees an empty reader after the first has
-		// consumed it, so the fallback returns 400 on any bare-array body
-		// today. This test intentionally documents the current behavior so
-		// a future echo-binder upgrade or a body-buffering fix would trip
-		// it — the branch itself is still exercised (coverage-load-bearing).
+	It("POST /health_samples.bulk: bare-array form IS accepted (envelope-or-array polymorphism verified after body-buffering fix)", func() {
+		// gaka-d6x.handler critique fix: previously the bare-array retry
+		// silently 400'd because echo's DefaultBinder ate the body on the
+		// first Bind — a coverage-only test. Now storeSamples buffers the
+		// body once via io.ReadAll + two json.Unmarshal attempts, so a
+		// bare-array body binds identically to the {"data":[]} envelope.
+		// This test PROVES the polymorphism promise — both shapes bind to
+		// the same []HealthSamplePayload.
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
 		_, tok := hz.MintUser("hs_bulk_bare_empty")
+		// Bare-array empty batch — same short-circuit as the envelope form.
 		rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/health_samples.bulk", tok, []any{})
-		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest),
-			"fallback branch runs but echo's body-once semantics means arr Bind fails too — this pins the observed 400")
+		Expect(rec).To(testutil.HaveStatus(http.StatusAccepted),
+			"bare-array empty batch MUST short-circuit to 202 — the body-buffering fix landed the polymorphism promise")
+		var got struct {
+			Accepted int `json:"accepted"`
+		}
+		Expect(json.Unmarshal(rec.Body.Bytes(), &got)).To(Succeed())
+		Expect(got.Accepted).To(Equal(0),
+			"empty bare-array MUST short-circuit to accepted:0 (SaveHealthSamples len-guard)")
 	})
 
 	It("POST /health_samples: 400 on malformed JSON — no partial state, storeSamples never runs", func() {
@@ -786,7 +975,31 @@ var _ = Describe("Ingest DB-error branches (gaka-d6x.handler)", func() {
 		return echoInst, token
 	}
 
-	It("POST /heartbeats: SaveHeartbeats error → 500 Generic (not a leaked driver error)", func() {
+	// assertNoDriverLeak is the shared body-content invariant for every
+	// DB-error branch: whichever leg fires (500 Save*/List*/Group* error
+	// OR 403 resolveUser race), the response body MUST NOT leak any
+	// pgx/SQLSTATE/DSN/host string. This is the reviewer's "canonical
+	// pattern" — used to be enforced only on the sibling health_samples
+	// spec (line 736); now applied uniformly to all six.
+	assertNoDriverLeak := func(rec *httptest.ResponseRecorder) {
+		body := rec.Body.String()
+		Expect(body).NotTo(ContainSubstring("pgx"),
+			"DB-error body leaked driver identifier `pgx` — must render Generic 500: body=%s", body)
+		Expect(body).NotTo(ContainSubstring("closed"),
+			"DB-error body leaked internal pool state (`closed`) — must render Generic 500: body=%s", body)
+		Expect(body).NotTo(ContainSubstring("SQLSTATE"),
+			"DB-error body leaked SQLSTATE code — info disclosure surface: body=%s", body)
+		Expect(body).NotTo(ContainSubstring("postgres://"),
+			"DB-error body leaked DSN — highest-severity info disclosure: body=%s", body)
+		Expect(body).NotTo(ContainSubstring("host="),
+			"DB-error body leaked host string — info disclosure: body=%s", body)
+		if rec.Code == http.StatusInternalServerError {
+			Expect(body).To(ContainSubstring(`"error":"An internal error occurred"`),
+				"500 body MUST be the Generic envelope — otherwise a client can distinguish DB errors from validation errors: body=%s", body)
+		}
+	}
+
+	It("POST /heartbeats: SaveHeartbeats error → 500 Generic (never leaks pgx/SQLSTATE/DSN)", func() {
 		e, tok := setupClosedPool("hb_db_err")
 		body := map[string]any{
 			"time":       float64(time.Now().Unix()),
@@ -803,9 +1016,10 @@ var _ = Describe("Ingest DB-error branches (gaka-d6x.handler)", func() {
 			"a closed pool MUST NOT return 202 accepted — got %d body=%s", rec.Code, rec.Body.String())
 		Expect([]int{http.StatusInternalServerError, http.StatusForbidden}).To(ContainElement(rec.Code),
 			"closed pool must render Generic 500 or forbidden 403 — got %d body=%s", rec.Code, rec.Body.String())
+		assertNoDriverLeak(rec)
 	})
 
-	It("POST /workouts: SaveWorkouts error → 500 Generic (or 403 if resolveUser lost the race)", func() {
+	It("POST /workouts: SaveWorkouts error → 500 Generic (never leaks pgx/SQLSTATE/DSN)", func() {
 		e, tok := setupClosedPool("wo_db_err")
 		body := map[string]any{
 			"kind":        "running",
@@ -817,9 +1031,10 @@ var _ = Describe("Ingest DB-error branches (gaka-d6x.handler)", func() {
 		rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/workouts", tok, body)
 		Expect(rec.Code).NotTo(Equal(http.StatusAccepted))
 		Expect([]int{http.StatusInternalServerError, http.StatusForbidden}).To(ContainElement(rec.Code))
+		assertNoDriverLeak(rec)
 	})
 
-	It("POST /health_samples: SaveHealthSamples error → 500 Generic (or 403 if resolveUser lost the race)", func() {
+	It("POST /health_samples: SaveHealthSamples error → 500 Generic (never leaks pgx/SQLSTATE/DSN)", func() {
 		e, tok := setupClosedPool("hs_db_err")
 		body := map[string]any{
 			"kind":     "heart_rate",
@@ -830,27 +1045,31 @@ var _ = Describe("Ingest DB-error branches (gaka-d6x.handler)", func() {
 		rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/health_samples", tok, body)
 		Expect(rec.Code).NotTo(Equal(http.StatusAccepted))
 		Expect([]int{http.StatusInternalServerError, http.StatusForbidden}).To(ContainElement(rec.Code))
+		assertNoDriverLeak(rec)
 	})
 
-	It("GET /heartbeats/latest: LatestHeartbeat DB error → 500 Generic", func() {
+	It("GET /heartbeats/latest: LatestHeartbeat DB error → 500 Generic (never leaks pgx/SQLSTATE/DSN)", func() {
 		e, tok := setupClosedPool("hbl_db_err")
 		rec := doJSONReqG(e, http.MethodGet, "/api/v1/users/current/heartbeats/latest", tok, nil)
 		Expect(rec.Code).NotTo(Equal(http.StatusOK))
 		Expect([]int{http.StatusInternalServerError, http.StatusForbidden}).To(ContainElement(rec.Code))
+		assertNoDriverLeak(rec)
 	})
 
-	It("GET /heartbeats/group: GroupHeartbeats DB error → 500 Generic", func() {
+	It("GET /heartbeats/group: GroupHeartbeats DB error → 500 Generic (never leaks pgx/SQLSTATE/DSN)", func() {
 		e, tok := setupClosedPool("hbg_db_err")
 		rec := doJSONReqG(e, http.MethodGet, "/api/v1/users/current/heartbeats/group?groupBy=language", tok, nil)
 		Expect(rec.Code).NotTo(Equal(http.StatusOK))
 		Expect([]int{http.StatusInternalServerError, http.StatusForbidden}).To(ContainElement(rec.Code))
+		assertNoDriverLeak(rec)
 	})
 
-	It("GET /heartbeats: ListHeartbeats DB error → 500 Generic", func() {
+	It("GET /heartbeats: ListHeartbeats DB error → 500 Generic (never leaks pgx/SQLSTATE/DSN)", func() {
 		e, tok := setupClosedPool("hbls_db_err")
 		rec := doJSONReqG(e, http.MethodGet, "/api/v1/users/current/heartbeats", tok, nil)
 		Expect(rec.Code).NotTo(Equal(http.StatusOK))
 		Expect([]int{http.StatusInternalServerError, http.StatusForbidden}).To(ContainElement(rec.Code))
+		assertNoDriverLeak(rec)
 	})
 })
 
@@ -946,24 +1165,33 @@ var _ = Describe("Workouts ingest (gaka-d6x.handler)", func() {
 		}
 	})
 
-	It("POST /workouts.bulk: bare-array retry-bind attempt exercises the fallback branch (echo body-once returns 400)", func() {
-		// Same body-once semantics as HealthSamplesBulk: the retry
-		// c.Bind(&arr) sees an empty reader (echo's DefaultBinder does
-		// json.NewDecoder(c.Request().Body).Decode(...) with no
-		// buffering), so a bare-array body observably returns 400 today.
-		// Pins the fallback branch coverage AND documents the current
-		// behavior — a future body-buffering fix would flip this to 202.
+	It("POST /workouts.bulk: bare-array form IS accepted AND lands identical rows to the envelope form (polymorphism verified)", func() {
+		// gaka-d6x.handler critique fix: previously the bare-array retry
+		// silently 400'd because echo's DefaultBinder ate the body on the
+		// first Bind — a coverage-only test with an identical outcome to
+		// the malformed-JSON spec. Now WorkoutsBulk buffers the body once
+		// via io.ReadAll + two json.Unmarshal attempts, so a bare-array
+		// body binds identically to the {"data":[...]} envelope form.
+		// This test PROVES the polymorphism promise — both shapes bind
+		// to the same []WorkoutPayload and produce identical DB rows.
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
-		_, tok := hz.MintUser("wo_bulk_bare")
+		owner, tok := hz.MintUser("wo_bulk_bare")
 
 		start := float64(time.Now().Unix()) - 900
-		body := []map[string]any{
+		bareBody := []map[string]any{
 			{"kind": "hiking", "start": start, "end": start + 900, "duration_s": 900, "source_uuid": "wk-bare-1"},
 		}
-		rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/workouts.bulk", tok, body)
-		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest),
-			"fallback branch runs but echo's body-once semantics returns 400 on retry")
+		rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/workouts.bulk", tok, bareBody)
+		Expect(rec).To(testutil.HaveStatus(http.StatusAccepted),
+			"bare-array body MUST bind — the body-buffering fix landed the polymorphism promise")
+		ids := bulkResponsesToIDs(rec.Body.Bytes())
+		Expect(ids).To(HaveLen(1))
+		var ent string
+		Expect(hz.DB.Pool.QueryRow(context.Background(),
+			`SELECT entity FROM heartbeats WHERE id=$1 AND sender=$2`, mustAtoi64(ids[0]), owner).Scan(&ent)).To(Succeed())
+		Expect(ent).To(Equal("workout:wk-bare-1"),
+			"bare-array + envelope MUST land the same entity — polymorphism promise held")
 	})
 
 	It("POST /workouts.bulk: empty-envelope batch (`{\"data\":[]}`) short-circuits to a 202 with an empty responses list", func() {
@@ -1050,6 +1278,30 @@ var _ = Describe("Workouts ingest (gaka-d6x.handler)", func() {
 		// owner's heartbeat table beyond the first submit.
 		Expect(countHeartbeats(hz, owner)).To(Equal(int64(1)),
 			"error path MUST roll back the whole transaction — no partial writes")
+
+		// SECURITY: pgconn.PgError.Detail on a unique-constraint violation
+		// often carries the CONFLICTING COLUMN VALUE (in this case the
+		// source_uuid, potentially even from another user's row on a global
+		// unique index). Highest-risk info-disclosure surface — must never
+		// bleed into the client response. Assert body carries NO driver
+		// detail and IS the Generic 500 envelope.
+		body := rec2.Body.String()
+		Expect(body).NotTo(ContainSubstring("SQLSTATE"),
+			"body leaked SQLSTATE — info disclosure: body=%s", body)
+		Expect(body).NotTo(ContainSubstring("unique"),
+			"body leaked constraint keyword (`unique`) — info disclosure: body=%s", body)
+		Expect(body).NotTo(ContainSubstring("Detail"),
+			"body leaked pgconn Detail field (may carry another user's row values) — info disclosure: body=%s", body)
+		Expect(body).NotTo(ContainSubstring("detail"),
+			"body leaked pgconn detail field — info disclosure: body=%s", body)
+		Expect(body).NotTo(ContainSubstring("wk-conflict-abc"),
+			"body echoed the conflicting source_uuid — user-enumeration oracle: body=%s", body)
+		Expect(body).NotTo(ContainSubstring("workout_details"),
+			"body leaked table name — info disclosure: body=%s", body)
+		Expect(body).NotTo(ContainSubstring("pgx"),
+			"body leaked driver identifier `pgx` — info disclosure: body=%s", body)
+		Expect(body).To(ContainSubstring(`"error":"An internal error occurred"`),
+			"error envelope MUST be the Generic 500 payload — never leak driver detail: body=%s", body)
 	})
 
 	It("invalidates the owner cache on successful workouts ingest (so Wellness card refreshes)", func() {
@@ -1077,5 +1329,251 @@ var _ = Describe("Workouts ingest (gaka-d6x.handler)", func() {
 		_, ok := hz.H.Cache.Get(owner + "|dashboard|precomputed")
 		Expect(ok).To(BeFalse(),
 			"workouts ingest MUST invalidate the owner's cache prefix so Wellness dashboards refresh")
+	})
+
+	It("cache invalidation is OWNER-SCOPED: bob's ingest MUST NOT bust alice's cache entries (prefix isolation)", func() {
+		// Reviewer's missing-invariant fix: the current test proves alice's
+		// entries disappear after alice's ingest, but there's no NEGATIVE
+		// test — a regression that changed InvalidatePrefix(owner+"|") to
+		// InvalidatePrefix("") would wipe EVERYONE's caches on every ingest
+		// and pass every current spec. Seed BOTH users' cache and prove only
+		// the ingesting owner's entries drop.
+		hz := testutil.NewHarness(GinkgoT())
+		e := hz.Router()
+		alice, _ := hz.MintUser("wo_cache_iso_a")
+		_, bobTok := hz.MintUser("wo_cache_iso_b")
+
+		aliceKey := alice + "|dashboard|precomputed"
+		hz.H.Cache.Set(aliceKey, []byte(`{"alice":"stale"}`))
+		if _, ok := hz.H.Cache.Get(aliceKey); !ok {
+			Fail("precondition: alice's cache entry not retrievable")
+		}
+
+		// Bob does a workout ingest — his prefix invalidation MUST NOT touch alice.
+		start := float64(time.Now().Unix()) - 300
+		body := map[string]any{
+			"data": []map[string]any{
+				{"kind": "walking", "start": start, "end": start + 300, "duration_s": 300, "source_uuid": "wk-iso-cache-bob-1"},
+			},
+		}
+		rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/workouts.bulk", bobTok, body)
+		Expect(rec).To(testutil.HaveStatus(http.StatusAccepted))
+
+		blob, ok := hz.H.Cache.Get(aliceKey)
+		Expect(ok).To(BeTrue(),
+			"bob's cache invalidation leaked into alice's owner scope — a regression that InvalidatePrefix('') would pass every other spec")
+		Expect(string(blob)).To(Equal(`{"alice":"stale"}`),
+			"alice's cache entry MUST be byte-identical after bob's ingest — no cross-user cache clobber")
+	})
+})
+
+// -- Body-size limits on ingest endpoints (DoS defense) -----------------
+//
+// gaka-d6x.handler critique fix: previously the ingest endpoints used bare
+// c.Bind() with NO MaxBytesReader wrap, so an authenticated hostile client
+// could POST a multi-GB body and OOM the process. Now every ingest
+// endpoint is wrapped in BindJSONWithLimit(BodyLimitLarge) or a manual
+// MaxBytesReader (for the buffered bulk endpoints). These specs pin the
+// cap by asserting that an oversized body returns 413 rather than 202 or
+// crashing the process.
+
+// doRawJSONG mirrors doRawG but explicitly sets Content-Type: application/json.
+// Load-bearing for body-size tests: without the header echo's binder returns
+// 415 Unsupported Media Type instead of routing through BindBody where
+// MaxBytesReader trips.
+func doRawJSONG(e http.Handler, method, target, token string, body []byte) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, target, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Basic "+token)
+	}
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	return rec
+}
+
+var _ = Describe("Ingest body-size limits (gaka-d6x.handler DoS defense)", func() {
+	// Build a well-formed JSON payload just OVER the BodyLimitLarge cap
+	// (8 MiB). We use valid JSON so a MaxBytesReader trip is the
+	// UNAMBIGUOUS failure mode — if we sent junk bytes, json.SyntaxError
+	// might fire FIRST and mask the 413. This shape is: a JSON string
+	// literal "aaaa..." padded to just over the cap. It's parseable JSON
+	// but the DECODE will still trip MaxBytesReader before completing.
+	oversizedJSON := func() []byte {
+		const total = 9 * 1024 * 1024
+		buf := make([]byte, 0, total)
+		buf = append(buf, '"')
+		buf = append(buf, bytes.Repeat([]byte("a"), total-2)...)
+		buf = append(buf, '"')
+		return buf
+	}
+	// oversizedObject wraps a valid nested JSON object over the cap so
+	// endpoints that Bind to a struct (not a raw string) still trip the
+	// cap. We build it as {"a":"aaaa..."} which is a valid single-key
+	// object that decodes to any struct with any/skip semantics.
+	oversizedObject := func() []byte {
+		const total = 9 * 1024 * 1024
+		buf := make([]byte, 0, total)
+		buf = append(buf, []byte(`{"a":"`)...)
+		buf = append(buf, bytes.Repeat([]byte("a"), total-8)...)
+		buf = append(buf, []byte(`"}`)...)
+		return buf
+	}
+	// oversizedArray for []Payload targets (heartbeats.bulk, workouts.bulk
+	// bare-array, health_samples.bulk bare-array).
+	oversizedArray := func() []byte {
+		const total = 9 * 1024 * 1024
+		buf := make([]byte, 0, total)
+		buf = append(buf, []byte(`[{"a":"`)...)
+		buf = append(buf, bytes.Repeat([]byte("a"), total-10)...)
+		buf = append(buf, []byte(`"}]`)...)
+		return buf
+	}
+	_ = oversizedJSON // reserved for single-scalar endpoints if we grow the cluster
+
+	It("POST /heartbeats: returns 413 when the body exceeds BodyLimitLarge (never OOMs, never 202)", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := hz.Router()
+		owner, tok := hz.MintUser("hb_body_cap")
+		before := countHeartbeats(hz, owner)
+		rec := doRawJSONG(e, http.MethodPost, "/api/v1/users/current/heartbeats", tok, oversizedObject())
+		Expect(rec.Code).To(Equal(http.StatusRequestEntityTooLarge),
+			"oversized body MUST return 413 not 202/500: got %d body=%s", rec.Code, rec.Body.String())
+		Expect(countHeartbeats(hz, owner)).To(Equal(before),
+			"oversized ingest MUST NOT persist any rows")
+	})
+
+	It("POST /heartbeats.bulk: returns 413 when the body exceeds BodyLimitLarge", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := hz.Router()
+		owner, tok := hz.MintUser("hbb_body_cap")
+		before := countHeartbeats(hz, owner)
+		rec := doRawJSONG(e, http.MethodPost, "/api/v1/users/current/heartbeats.bulk", tok, oversizedArray())
+		Expect(rec.Code).To(Equal(http.StatusRequestEntityTooLarge),
+			"oversized bulk body MUST return 413: got %d body=%s", rec.Code, rec.Body.String())
+		Expect(countHeartbeats(hz, owner)).To(Equal(before))
+	})
+
+	It("POST /workouts: returns 413 when the body exceeds BodyLimitLarge", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := hz.Router()
+		owner, tok := hz.MintUser("wo_body_cap")
+		before := countHeartbeats(hz, owner)
+		rec := doRawJSONG(e, http.MethodPost, "/api/v1/users/current/workouts", tok, oversizedObject())
+		Expect(rec.Code).To(Equal(http.StatusRequestEntityTooLarge),
+			"oversized workout body MUST return 413: got %d body=%s", rec.Code, rec.Body.String())
+		Expect(countHeartbeats(hz, owner)).To(Equal(before))
+	})
+
+	It("POST /workouts.bulk: returns 413 when the body exceeds BodyLimitLarge", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := hz.Router()
+		owner, tok := hz.MintUser("wob_body_cap")
+		before := countHeartbeats(hz, owner)
+		rec := doRawJSONG(e, http.MethodPost, "/api/v1/users/current/workouts.bulk", tok, oversizedArray())
+		Expect(rec.Code).To(Equal(http.StatusRequestEntityTooLarge),
+			"oversized workouts.bulk body MUST return 413: got %d body=%s", rec.Code, rec.Body.String())
+		Expect(countHeartbeats(hz, owner)).To(Equal(before))
+	})
+
+	It("POST /health_samples: returns 413 when the body exceeds BodyLimitLarge", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := hz.Router()
+		owner, tok := hz.MintUser("hs_body_cap")
+		before := countHealthSamples(hz, owner)
+		rec := doRawJSONG(e, http.MethodPost, "/api/v1/users/current/health_samples", tok, oversizedObject())
+		Expect(rec.Code).To(Equal(http.StatusRequestEntityTooLarge),
+			"oversized health_samples body MUST return 413: got %d body=%s", rec.Code, rec.Body.String())
+		Expect(countHealthSamples(hz, owner)).To(Equal(before))
+	})
+
+	It("POST /health_samples.bulk: returns 413 when the body exceeds BodyLimitLarge", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := hz.Router()
+		owner, tok := hz.MintUser("hsb_body_cap")
+		before := countHealthSamples(hz, owner)
+		rec := doRawJSONG(e, http.MethodPost, "/api/v1/users/current/health_samples.bulk", tok, oversizedArray())
+		Expect(rec.Code).To(Equal(http.StatusRequestEntityTooLarge),
+			"oversized health_samples.bulk body MUST return 413: got %d body=%s", rec.Code, rec.Body.String())
+		Expect(countHealthSamples(hz, owner)).To(Equal(before))
+	})
+})
+
+// -- Sender-clobber invariants for /workouts and /health_samples ---------
+//
+// gaka-d6x.handler critique fix: the sender-clobber test previously existed
+// ONLY for /heartbeats. workouts.go and health_samples.go take owner from
+// resolveUser and pass to SaveWorkouts/SaveHealthSamples — safe by
+// construction TODAY. If someone adds a Sender field to WorkoutPayload or
+// HealthSamplePayload in the future, the impersonation vector could
+// silently reintroduce with no CI signal. These specs pin the invariant
+// at the HTTP boundary so a payload-shape drift is caught.
+
+var _ = Describe("Cross-endpoint sender-clobber invariants (gaka-d6x.handler)", func() {
+	It("POST /workouts: bob's payload with any injected sender fields MUST NOT create rows for alice", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := hz.Router()
+		alice, _ := hz.MintUser("wo_sender_a")
+		bob, bobTok := hz.MintUser("wo_sender_b")
+
+		aliceBefore := countHeartbeats(hz, alice)
+		bobBefore := countHeartbeats(hz, bob)
+
+		// Even though WorkoutPayload has no Sender field TODAY, we defensively
+		// throw in every plausible impersonation field so a future schema
+		// drift (WorkoutPayload.Sender, WorkoutPayload.Owner, etc.) would be
+		// caught if the handler accepted the injected value.
+		body := map[string]any{
+			"kind":        "running",
+			"start":       float64(time.Now().Unix()) - 60,
+			"end":         float64(time.Now().Unix()),
+			"duration_s":  60,
+			"source_uuid": "wk-impersonate-1",
+			// Defense-in-depth: extra fields future proofing against payload drift.
+			"sender":      alice,
+			"owner":       alice,
+			"username":    alice,
+			"user":        alice,
+		}
+		rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/workouts", bobTok, body)
+		Expect(rec).To(testutil.HaveStatus(http.StatusAccepted))
+		Expect(countHeartbeats(hz, alice)).To(Equal(aliceBefore),
+			"bob's workouts ingest MUST NOT create rows attributed to alice — owner is authoritative from token")
+		Expect(countHeartbeats(hz, bob)).To(BeNumerically(">", bobBefore),
+			"bob's own row MUST land under bob")
+	})
+
+	It("POST /health_samples: bob's payload with any injected owner fields MUST NOT create rows for alice", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := hz.Router()
+		alice, _ := hz.MintUser("hs_sender_a")
+		bob, bobTok := hz.MintUser("hs_sender_b")
+
+		aliceBefore := countHealthSamples(hz, alice)
+		bobBefore := countHealthSamples(hz, bob)
+
+		body := map[string]any{
+			"kind":     "steps",
+			"unit":     "count",
+			"qty":      42.0,
+			"ts_start": float64(time.Now().Unix()),
+			// Defense-in-depth against payload drift.
+			"sender":   alice,
+			"owner":    alice,
+			"username": alice,
+			"user":     alice,
+		}
+		rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/health_samples", bobTok, body)
+		// Health samples insert path may fail on shared test DB
+		// (idx_health_samples_dedupe as INDEX not CONSTRAINT — see file
+		// header). The cross-user isolation invariant holds regardless:
+		// whether the insert succeeded (202) or errored (500), alice's
+		// row count MUST NOT increase.
+		Expect(rec.Code).To(BeElementOf([]int{http.StatusAccepted, http.StatusInternalServerError}))
+		Expect(countHealthSamples(hz, alice)).To(Equal(aliceBefore),
+			"bob's health_samples ingest MUST NOT create rows attributed to alice — owner is authoritative from token")
+		// Note: bob's row count may not increase either (DB error), but the
+		// LOAD-BEARING invariant is alice's isolation, not bob's success.
+		_ = bobBefore
 	})
 })

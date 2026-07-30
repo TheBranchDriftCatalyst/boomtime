@@ -14,19 +14,24 @@ import (
 )
 
 // Heartbeat ingests a single heartbeat: POST /api/v1/users/current/heartbeats.
+// Body is capped at BodyLimitLarge (8 MiB) — a single heartbeat is ~500 bytes so
+// the cap is generous, but bounded so an authenticated hostile client can't OOM
+// the process with a multi-GB body (gaka-d6x.handler critique fix).
 func (h *Handler) Heartbeat(c *echo.Context) error {
 	var hb model.HeartbeatPayload
-	if err := c.Bind(&hb); err != nil {
-		return respondErr(c, apierr.BadRequest("Invalid request body"))
+	if aerr := BindJSONWithLimit(c, &hb, BodyLimitLarge); aerr != nil {
+		return respondErr(c, aerr)
 	}
 	return h.storeAndRespond(c, []model.HeartbeatPayload{hb})
 }
 
 // HeartbeatBulk ingests many heartbeats: POST /api/v1/users/current/heartbeats.bulk.
+// Body is capped at BodyLimitLarge (8 MiB) — enough for ~10K-20K batched
+// heartbeats but bounded to prevent DoS via oversized ingest (gaka-d6x.handler).
 func (h *Handler) HeartbeatBulk(c *echo.Context) error {
 	var hbs []model.HeartbeatPayload
-	if err := c.Bind(&hbs); err != nil {
-		return respondErr(c, apierr.BadRequest("Invalid request body"))
+	if aerr := BindJSONWithLimit(c, &hbs, BodyLimitLarge); aerr != nil {
+		return respondErr(c, aerr)
 	}
 	return h.storeAndRespond(c, hbs)
 }

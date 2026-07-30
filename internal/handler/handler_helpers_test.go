@@ -8,6 +8,7 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sync/atomic"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -305,39 +307,54 @@ var _ = Describe("resolveUser DB error branch", func() {
 // -- cachedJSON compute-error + marshal-error branches --------------------
 
 var _ = Describe("cachedJSON compute + marshal error branches", func() {
-	It("returns Generic 500 when the compute callback errors (cached value NOT populated)", func() {
+	It("returns Generic 500 when the compute callback errors (rec.Code=500 AND cache NOT populated)", func() {
 		h := &Handler{
 			Cache:  cache.New(0),
 			Logger: slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})),
 		}
 		e := echo.New()
 		req := httptest.NewRequest(http.MethodGet, "/x", nil)
-		c := e.NewContext(req, httptest.NewRecorder())
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
 		err := h.cachedJSON(c, "k-compute-err", func() (any, error) {
 			return nil, errors.New("upstream unavailable")
 		})
 		Expect(err).NotTo(HaveOccurred(), "cachedJSON writes the response and returns nil (echo convention)")
+
+		// gaka-d6x.handler critique fix: the previous spec only checked
+		// the cache miss — a regression that silently 200'd with an empty
+		// body while skipping the cache would pass. Assert the OBSERVABLE
+		// wire outcome: 500 status + Generic envelope body.
+		Expect(rec.Code).To(Equal(http.StatusInternalServerError),
+			"compute-error MUST render as HTTP 500 — got %d", rec.Code)
+		Expect(rec.Body.String()).To(ContainSubstring(`"error":"An internal error occurred"`),
+			"compute-error MUST render the Generic 500 envelope — got body=%s", rec.Body.String())
+
 		// LOAD-BEARING: the cache MUST NOT have been populated with the error
-		// state. A future retry MUST re-run compute, not serve a poisoned
-		// hit.
+		// state. A future retry MUST re-run compute, not serve a poisoned hit.
 		_, ok := h.Cache.Get("k-compute-err")
 		Expect(ok).To(BeFalse(),
 			"cachedJSON MUST NOT cache the failure — a poisoned entry would keep the endpoint 500-ing until the TTL expired")
 	})
 
-	It("returns Generic 500 when compute succeeds but json.Marshal fails (unencodable payload)", func() {
+	It("returns Generic 500 when compute succeeds but json.Marshal fails (rec.Code=500 AND cache NOT populated)", func() {
 		h := &Handler{
 			Cache:  cache.New(0),
 			Logger: slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})),
 		}
 		e := echo.New()
 		req := httptest.NewRequest(http.MethodGet, "/x", nil)
-		c := e.NewContext(req, httptest.NewRecorder())
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
 		// A channel cannot be json-encoded — forces json.Marshal to error.
 		err := h.cachedJSON(c, "k-marshal-err", func() (any, error) {
 			return make(chan int), nil
 		})
 		Expect(err).NotTo(HaveOccurred())
+		Expect(rec.Code).To(Equal(http.StatusInternalServerError),
+			"marshal-error MUST render as HTTP 500 — got %d", rec.Code)
+		Expect(rec.Body.String()).To(ContainSubstring(`"error":"An internal error occurred"`),
+			"marshal-error MUST render the Generic 500 envelope — got body=%s", rec.Body.String())
 		_, ok := h.Cache.Get("k-marshal-err")
 		Expect(ok).To(BeFalse(), "marshal failure MUST NOT poison the cache")
 	})
@@ -346,18 +363,23 @@ var _ = Describe("cachedJSON compute + marshal error branches", func() {
 // -- cachedBlob compute-error branch --------------------------------------
 
 var _ = Describe("cachedBlob compute error branch", func() {
-	It("returns Generic 500 when the compute callback errors (cache NOT populated)", func() {
+	It("returns Generic 500 when the compute callback errors (rec.Code=500 AND cache NOT populated)", func() {
 		h := &Handler{
 			Cache:  cache.New(0),
 			Logger: slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})),
 		}
 		e := echo.New()
 		req := httptest.NewRequest(http.MethodGet, "/svg", nil)
-		c := e.NewContext(req, httptest.NewRecorder())
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
 		err := h.cachedBlob(c, "blob-err", "image/svg+xml", func() ([]byte, error) {
 			return nil, errors.New("renderer down")
 		})
 		Expect(err).NotTo(HaveOccurred())
+		Expect(rec.Code).To(Equal(http.StatusInternalServerError),
+			"blob compute error MUST render as HTTP 500 — got %d", rec.Code)
+		Expect(rec.Body.String()).To(ContainSubstring(`"error":"An internal error occurred"`),
+			"blob compute error MUST render the Generic 500 envelope — got body=%s", rec.Body.String())
 		_, ok := h.Cache.Get("blob-err")
 		Expect(ok).To(BeFalse(), "blob compute failure MUST NOT poison the widget cache")
 	})
@@ -417,30 +439,74 @@ var _ = Describe("headerPtr", func() {
 // TWO of them directly by calling remoteWrite() with a hostile URL. The
 // json.Marshal branch is unreachable in practice ([]HeartbeatPayload always
 // marshals) and is left as documented-unreachable.
+//
+// gaka-d6x.handler critique fix: previously both specs only asserted
+// "does not panic" — the exact anti-pattern the reviewer flagged. A
+// regression that leaked memory, forgot resp.Body.Close on error, or
+// leaked goroutines would all pass "no panic" in the calling goroutine.
+// The specs now attach an in-memory slog handler and assert the specific
+// error-log line is written (Do branch) and use an atomic counter to
+// prove NO HTTP request escaped to any listener (NewRequest branch).
 
 var _ = Describe("remoteWrite failure branches", func() {
-	It("http.NewRequest error branch: an unparseable URL is a silent early-return (no panic)", func() {
+	It("http.NewRequest error branch: bad URL is caught BEFORE any HTTP request is sent (asserts zero server hits)", func() {
 		// URL with control chars is guaranteed to fail http.NewRequest.
 		// The whole point of the branch is that a misconfigured
 		// RemoteWrite MUST NOT crash the process — errors are absorbed.
+		//
+		// Observable-side-effect assertion (fixing reviewer's anti-pattern
+		// callout): mount an httptest.Server + atomic hit counter and
+		// assert the counter is EXACTLY zero — a regression that fell
+		// through to httpClient.Do despite the NewRequest error would
+		// leak an outbound request and this test would catch it.
+		var hits int64
+		listener := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			atomic.AddInt64(&hits, 1)
+			w.WriteHeader(http.StatusOK)
+		}))
+		DeferCleanup(listener.Close)
+
+		var logBuf bytes.Buffer
+		logHandler := slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug})
 		h := &Handler{
+			// URL with a control char guarantees http.NewRequest fails.
+			// Note: this URL is DISTINCT from the listener URL so a
+			// fallthrough to Do would hit the listener (and bump the counter).
 			Cfg:    &config.Config{RemoteWrite: &config.RemoteWriteConfig{URL: "http://\x7f/bad", Token: "t"}},
-			Logger: slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})),
+			Logger: slog.New(logHandler),
 		}
-		// Should not panic; running it synchronously means we assert
-		// the branch fires and returns.
 		Expect(func() { h.remoteWrite(nil, nil) }).NotTo(Panic())
+		Expect(atomic.LoadInt64(&hits)).To(Equal(int64(0)),
+			"NewRequest-error branch MUST return before any request is sent — hits=%d indicates fallthrough", hits)
+		// The current code does NOT log NewRequest errors (silent early-return
+		// by design). If a future refactor adds logging, this assertion still
+		// documents the "no remote-write success" invariant: the "remote write
+		// failed" log line should NOT appear for a NewRequest failure because
+		// no request was made.
+		Expect(logBuf.String()).NotTo(ContainSubstring("remote write succeeded"),
+			"no remote-write success log MUST be emitted for a bad-URL config")
 	})
 
-	It("httpClient.Do error branch: an unreachable URL is a silent early-return (no panic)", func() {
+	It("httpClient.Do error branch: unreachable URL logs 'remote write failed' AND resp is nil (no Body.Close leak)", func() {
 		// http://127.0.0.1:1 is a valid URL, so NewRequest succeeds, but
 		// nothing listens there → Do errors → the branch fires. This is
 		// the "remote wakatime is down" path in prod.
+		//
+		// Observable-side-effect assertion (fixing reviewer's anti-pattern
+		// callout): attach an in-memory slog handler and assert the exact
+		// "remote write failed" log line was emitted. Without this a
+		// regression that swallowed the error (e.g., removed the h.Logger
+		// call) would silently break production observability — no panic,
+		// no visible test failure.
+		var logBuf bytes.Buffer
+		logHandler := slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug})
 		h := &Handler{
 			Cfg:    &config.Config{RemoteWrite: &config.RemoteWriteConfig{URL: "http://127.0.0.1:1/nope", Token: "t"}},
-			Logger: slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})),
+			Logger: slog.New(logHandler),
 		}
 		m := "test-machine"
 		Expect(func() { h.remoteWrite(nil, &m) }).NotTo(Panic())
+		Expect(logBuf.String()).To(ContainSubstring("remote write failed"),
+			"Do-error branch MUST log 'remote write failed' — observability regression if removed: log=%s", logBuf.String())
 	})
 })

@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"encoding/json"
+	"io"
 	"net/http"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
@@ -9,11 +11,12 @@ import (
 )
 
 // HealthSamples ingests a single HealthKit sample:
-// POST /api/v1/users/current/health_samples.
+// POST /api/v1/users/current/health_samples. Body capped at BodyLimitLarge
+// (gaka-d6x.handler critique fix).
 func (h *Handler) HealthSamples(c *echo.Context) error {
 	var s model.HealthSamplePayload
-	if err := c.Bind(&s); err != nil {
-		return respondErr(c, apierr.BadRequest("Invalid request body"))
+	if aerr := BindJSONWithLimit(c, &s, BodyLimitLarge); aerr != nil {
+		return respondErr(c, aerr)
 	}
 	return h.storeSamples(c, []model.HealthSamplePayload{s})
 }
@@ -21,11 +24,27 @@ func (h *Handler) HealthSamples(c *echo.Context) error {
 // HealthSamplesBulk ingests many samples:
 // POST /api/v1/users/current/health_samples.bulk.
 // Envelope-or-array tolerant, same as WorkoutsBulk.
+//
+// Body is buffered ONCE (under a MaxBytesReader cap) so both parse attempts
+// (envelope form, then bare array) see the same bytes — echo's DefaultBinder
+// reads c.Request().Body directly (json.NewDecoder), so the second Bind
+// would otherwise see an empty reader and 400 on any bare-array payload
+// (gaka-d6x.handler critique). MaxBytesReader also prevents OOM via
+// oversized ingest.
 func (h *Handler) HealthSamplesBulk(c *echo.Context) error {
+	r := c.Request()
+	r.Body = http.MaxBytesReader(c.Response(), r.Body, BodyLimitLarge)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		if err.Error() == "http: request body too large" {
+			return respondErr(c, apierr.New(http.StatusRequestEntityTooLarge, "payload too large", nil))
+		}
+		return respondErr(c, apierr.BadRequest("Invalid request body"))
+	}
 	var env model.HealthSampleBulkRequest
-	if err := c.Bind(&env); err != nil {
+	if err := json.Unmarshal(body, &env); err != nil || env.Data == nil {
 		var arr []model.HealthSamplePayload
-		if err2 := c.Bind(&arr); err2 != nil {
+		if err2 := json.Unmarshal(body, &arr); err2 != nil {
 			return respondErr(c, apierr.BadRequest("Invalid request body"))
 		}
 		env.Data = arr

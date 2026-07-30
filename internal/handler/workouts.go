@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 
@@ -11,11 +13,12 @@ import (
 
 // Workouts ingests a single workout: POST /api/v1/users/current/workouts.
 // Wraps the same singleton-vs-bulk split as heartbeats so the companion app
-// can start with one-off POSTs before batching.
+// can start with one-off POSTs before batching. Body capped at BodyLimitLarge
+// (gaka-d6x.handler critique fix).
 func (h *Handler) Workouts(c *echo.Context) error {
 	var w model.WorkoutPayload
-	if err := c.Bind(&w); err != nil {
-		return respondErr(c, apierr.BadRequest("Invalid request body"))
+	if aerr := BindJSONWithLimit(c, &w, BodyLimitLarge); aerr != nil {
+		return respondErr(c, aerr)
 	}
 	return h.storeWorkouts(c, []model.WorkoutPayload{w})
 }
@@ -24,13 +27,31 @@ func (h *Handler) Workouts(c *echo.Context) error {
 // Accepts the {"data": [...]} envelope the Swift companion produces from
 // HKAnchoredObjectQuery batches; a bare array is also tolerated for parity
 // with the heartbeats endpoint (some ad-hoc callers may prefer it).
+//
+// Body is buffered ONCE (under a MaxBytesReader cap) so both parse attempts
+// (envelope form, then bare array) see the same bytes — echo's DefaultBinder
+// reads c.Request().Body directly (json.NewDecoder), so the second Bind would
+// otherwise see an empty reader and 400 on any bare-array payload
+// (gaka-d6x.handler critique). The MaxBytesReader also prevents OOM via
+// oversized ingest.
 func (h *Handler) WorkoutsBulk(c *echo.Context) error {
+	r := c.Request()
+	r.Body = http.MaxBytesReader(c.Response(), r.Body, BodyLimitLarge)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		// http.MaxBytesReader signals oversize via "http: request body too
+		// large"; render 413 rather than 400 so the client can distinguish.
+		if err.Error() == "http: request body too large" {
+			return respondErr(c, apierr.New(http.StatusRequestEntityTooLarge, "payload too large", nil))
+		}
+		return respondErr(c, apierr.BadRequest("Invalid request body"))
+	}
 	var env model.WorkoutBulkRequest
-	if err := c.Bind(&env); err != nil {
+	if err := json.Unmarshal(body, &env); err != nil || env.Data == nil {
 		// Fall back to a bare array — callers using curl -d "[...]" won't
 		// wrap in {"data":...} and there's no reason to reject them.
 		var arr []model.WorkoutPayload
-		if err2 := c.Bind(&arr); err2 != nil {
+		if err2 := json.Unmarshal(body, &arr); err2 != nil {
 			return respondErr(c, apierr.BadRequest("Invalid request body"))
 		}
 		env.Data = arr

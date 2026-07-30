@@ -232,11 +232,15 @@ func respondErr(c *echo.Context, e *apierr.Error) error {
 //   - Small (4 KiB): auth credentials, single-field secrets, small JSON toggles.
 //   - Medium (64 KiB): JSON-config endpoints that can carry a modest list of
 //     rules, member sets, or spec blobs (curation, spaces, widget-defs).
-//   - Heartbeat/telemetry ingest is left uncapped here — those bulk endpoints
-//     legitimately carry batched telemetry and are handled elsewhere.
+//   - Large (8 MiB): batched telemetry ingest (heartbeats/workouts/health_samples
+//     bulk endpoints). Enough for ~10K-20K batched heartbeats — matches a full
+//     day of aggressive vscode ingest — but still bounded so a hostile
+//     authenticated client can't OOM the process with a multi-GB body.
+//     (gaka-d6x.handler critique fix: was uncapped, a real DoS surface.)
 const (
 	BodyLimitSmall  int64 = 4 * 1024
 	BodyLimitMedium int64 = 64 * 1024
+	BodyLimitLarge  int64 = 8 * 1024 * 1024
 )
 
 // BindJSONWithLimit wraps c.Bind with a http.MaxBytesReader cap on the request
