@@ -56,6 +56,50 @@
 //     Primitives that implement io.Writer semantics (fmt.Fprintf) rely on
 //     Frame satisfying io.Writer — the property is that bytes written flow
 //     through verbatim.
+//
+//   - "Frame.Close is idempotent AND non-mutating on repeated calls"
+//     Callers may defer Close inside a helper and Close again at the top
+//     level. Assertion snapshots the first return BEFORE the second Close
+//     so the equality check actually pins non-mutation (Close returns
+//     buf.Bytes(), a shared-array slice — direct equality would be
+//     tautological).
+//
+//   - "renderPanel placeholder branch fires INSTEAD of Emit* empty-state"
+//     PanelCalendar / PanelPunchcard nil-data branches emit distinct short
+//     placeholder strings ("No days" / "No punchcard") — NOT the Emit*
+//     empty-state variants ("No days in range" / "No punchcard data"). A
+//     regression that dropped the nil-check would fall through to Emit* and
+//     the Emit* string would appear — the two-witness assertion catches it.
+//
+//   - "ScrubMomentum case-insensitive: hides HAKATIME, keeps 'public',
+//     returns NEW pointer"
+//     Positive + negative + mutation-safety witnesses on the security-
+//     critical case-toggle branch. Guards against (1) case-toggle leakage,
+//     (2) over-filter regressions dropping all rows, (3) refactors that
+//     silently mutate the caller's payload.
+//
+//   - "ScrubMomentum all-hidden returns non-nil payload with Weeks preserved"
+//     Edge case; Projects becomes empty but the payload stays a valid
+//     *MomentumPayload (Weeks axis intact) — downstream consumers never
+//     observe a nil.
+//
+//   - "Scrub (StatsPayload) case-insensitive with sibling survival"
+//     Sibling security assertion to the ScrubMomentum case-toggle — the
+//     StatsPayload path also lower-cases hide rules; a case-toggled project
+//     must not slip through, a non-hidden sibling must survive.
+//
+//   - "EncodeDef multi-panel round-trip preserves ORDER"
+//     Panel[0..N-1] indices survive Marshal→base64→base64→Unmarshal. A bug
+//     that used a map or a sort would silently reorder.
+//
+//   - "IsCustomKind rejects whitespace / unicode look-alikes"
+//     Defense-in-depth for the URL-path guard: leading/trailing whitespace,
+//     newline, tab, and fullwidth-unicode 'ｃｕｓｔｏｍ' must all be rejected.
+//
+//   - "colorAt palette wraparound: i, len-1, len, len+1"
+//     Pins the modulo arithmetic (i % len(Palette)) — a saturating-clamp
+//     bug would return Palette[len-1] for i>=len instead of wrapping to
+//     Palette[0].
 package widget
 
 import (
@@ -193,21 +237,42 @@ var _ = Describe("renderPanel placeholders", func() {
 	// Every panel that has a data-missing branch must draw its labeled
 	// placeholder — the composition never leaves a blank hole.
 
-	It("PanelCalendar with empty DailyTotal draws 'No days'", func() {
+	// Invariant: the panel dispatcher's nil-DailyTotal branch draws
+	// panelPlaceholder("No days"). EmitCalendar has its OWN "No days in range"
+	// message that fires when it is invoked with an empty daily slice. A
+	// regression that removed the len==0 early-return in custom.go's
+	// PanelCalendar case would still satisfy a substring match on "No days" —
+	// forbid the EmitCalendar-branch string to prove which branch fired.
+	It("PanelCalendar with empty DailyTotal draws 'No days' (placeholder branch, NOT EmitCalendar)", func() {
 		d := &Data{Payload: &model.StatsPayload{}}
 		def := Def{Layout: Layout1, Panels: []Panel{{Kind: PanelCalendar}}}
 		b, err := RenderCustom(d, def, Options{})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(strings.Contains(string(b), "No days")).To(BeTrue(),
+		s := string(b)
+		Expect(strings.Contains(s, "No days")).To(BeTrue(),
 			"missing DailyTotal must draw the 'No days' placeholder")
+		Expect(strings.Contains(s, "No days in range")).To(BeFalse(),
+			"the 'No days in range' message belongs to EmitCalendar's empty-state "+
+				"branch — its presence would mean the placeholder short-circuit was "+
+				"bypassed and EmitCalendar's own fallback ran instead")
 	})
 
-	It("PanelPunchcard with nil Punchcard draws 'No punchcard'", func() {
+	// Invariant: the panel dispatcher's nil-Punchcard branch draws
+	// panelPlaceholder("No punchcard"). EmitPunchcard has its OWN "No punchcard
+	// data" empty-state text. The dispatcher branch must fire; EmitPunchcard's
+	// message must NOT appear (proving no double-dispatch).
+	It("PanelPunchcard with nil Punchcard draws 'No punchcard' (placeholder branch, NOT EmitPunchcard)", func() {
 		d := &Data{Payload: dataFixture().Payload}
 		def := Def{Layout: Layout1, Panels: []Panel{{Kind: PanelPunchcard}}}
 		b, err := RenderCustom(d, def, Options{})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(strings.Contains(string(b), "No punchcard")).To(BeTrue())
+		s := string(b)
+		Expect(strings.Contains(s, "No punchcard")).To(BeTrue(),
+			"nil Punchcard must draw the 'No punchcard' placeholder")
+		Expect(strings.Contains(s, "No punchcard data")).To(BeFalse(),
+			"the 'No punchcard data' message belongs to EmitPunchcard's own "+
+				"empty-state branch — its presence would mean the placeholder "+
+				"short-circuit was bypassed and EmitPunchcard ran with a nil payload")
 	})
 
 	It("PanelGrade with nil Grade draws 'No grade'", func() {
@@ -482,15 +547,27 @@ var _ = Describe("Frame plumbing", func() {
 
 	// Close is documented as idempotent — a caller may Close inside a helper
 	// and again at the top level. Double-close must not produce "</svg></svg>".
-	It("Frame.Close is idempotent (double-close does not duplicate </svg>)", func() {
+	//
+	// IMPORTANT: Close() returns f.buf.Bytes(), which is a slice pointing into
+	// the internal buffer. Comparing `first` and `second` directly with Equal
+	// would be tautological — they share the same backing array and would
+	// observe any mutation `second` made in-place. We snapshot `first` into a
+	// fresh []byte BEFORE calling Close a second time; the equality check then
+	// meaningfully verifies non-mutation between the two calls.
+	It("Frame.Close is idempotent (double-close does not duplicate </svg> and does not mutate)", func() {
 		f := OpenFrame(100, 50, themes["dark"], "T", "")
 		first := f.Close()
+		firstCopy := append([]byte(nil), first...) // detach from the shared backing array
 		second := f.Close()
-		// Both calls return the same byte slice.
-		Expect(string(first)).To(Equal(string(second)),
-			"double-close must return identical bytes")
+		Expect(string(firstCopy)).To(Equal(string(second)),
+			"double-close must be a no-op: second Close must not mutate the buffer "+
+				"(snapshot-vs-second-return equality proves it)")
 		Expect(strings.Count(string(second), "</svg>")).To(Equal(1),
 			"Close must emit exactly one </svg> regardless of call count")
+		// Also verify triple-close: nothing changes on the third call either.
+		third := f.Close()
+		Expect(string(firstCopy)).To(Equal(string(third)),
+			"triple-close must also be a no-op")
 	})
 
 	// BodyTop bumps when a subtitle is provided — layout math depends on this.
@@ -527,7 +604,15 @@ var _ = Describe("ScrubMomentum invariants — additional coverage", func() {
 	// ScrubMomentum must be case-insensitive on the hide match: a stored
 	// hide rule "HAKATIME" hides "hakatime" and vice versa. This is a
 	// SECURITY property — case-toggling a project name must not exfiltrate it.
-	It("ScrubMomentum hide match is case-insensitive (security property)", func() {
+	//
+	// Positive-witness half: hidden name is dropped.
+	// Negative-witness half: sibling non-hidden name SURVIVES (over-filter
+	// regression — e.g. "drop ALL rows on any hide match" — would still pass a
+	// hidden-name-absent check but the survivor assertion catches it).
+	// Copy-not-mutate half: the returned *MomentumPayload must be a NEW pointer
+	// (mutation-safety in the case-toggle path; a refactor that removed the
+	// copy for the case-insensitive branch would silently mutate the input).
+	It("ScrubMomentum hide match is case-insensitive (security property) — hides HAKATIME, keeps 'public', returns new payload", func() {
 		mp := &model.MomentumPayload{
 			Weeks: []string{"2026-01-05"},
 			Projects: []model.MomentumProject{
@@ -542,6 +627,46 @@ var _ = Describe("ScrubMomentum invariants — additional coverage", func() {
 		}
 		Expect(names).NotTo(ContainElement("HAKATIME"),
 			"case-toggled project name must not slip past the hide filter")
+		Expect(names).To(ContainElement("public"),
+			"sibling non-hidden project must SURVIVE the scrub — over-filtering "+
+				"(dropping all rows on any hide rule) would pass the hidden-name "+
+				"assertion but fail here")
+		// Mutation-safety property in the case-toggle branch: got must be a
+		// distinct pointer, and mp.Projects must still contain the original
+		// case-toggled row.
+		Expect(got).NotTo(BeIdenticalTo(mp),
+			"case-insensitive hide path must return a NEW *MomentumPayload — a "+
+				"refactor that dropped the copy for this branch would silently "+
+				"mutate the caller's payload")
+		Expect(mp.Projects).To(HaveLen(2),
+			"input payload's project slice must not be truncated (mutation-safety)")
+		Expect(mp.Projects[0].Name).To(Equal("HAKATIME"),
+			"input payload's first project must remain 'HAKATIME' verbatim (mutation-safety)")
+	})
+
+	// Edge case: EVERY project matches the hide set → out.Projects is empty
+	// but the payload itself must remain a valid *MomentumPayload (non-nil)
+	// with the Weeks axis preserved. Defends against a future refactor that
+	// might collapse "all filtered" to nil and crash downstream consumers.
+	It("ScrubMomentum with all projects hidden returns a non-nil payload with Weeks preserved and Projects empty", func() {
+		weeks := []string{"2026-01-05", "2026-01-12", "2026-01-19"}
+		mp := &model.MomentumPayload{
+			Weeks: weeks,
+			Projects: []model.MomentumProject{
+				{Name: "secret-a", Weekly: []int64{10, 20, 30}, TotalSeconds: 60},
+				{Name: "secret-b", Weekly: []int64{5, 5, 5}, TotalSeconds: 15},
+			},
+		}
+		got := ScrubMomentum(mp, model.HiddenSetsMap{"project": {"secret-a", "secret-b"}})
+		Expect(got).NotTo(BeNil(),
+			"all-hidden must still return a valid *MomentumPayload (not nil)")
+		Expect(got.Projects).To(BeEmpty(),
+			"all-hidden must produce an empty Projects slice")
+		Expect(got.Weeks).To(Equal(weeks),
+			"Weeks axis is temporal and must be preserved verbatim even when "+
+				"all projects are filtered out")
+		// And the input remains untouched.
+		Expect(mp.Projects).To(HaveLen(2), "input mutation-safety on the all-hidden branch")
 	})
 
 	// Non-project axes in the hide set must NOT affect ScrubMomentum — it
@@ -554,5 +679,134 @@ var _ = Describe("ScrubMomentum invariants — additional coverage", func() {
 		got := ScrubMomentum(mp, model.HiddenSetsMap{"language": {"public-a"}})
 		Expect(got).To(BeIdenticalTo(mp),
 			"non-project axis must be a no-op — return input pointer unchanged")
+	})
+})
+
+var _ = Describe("Scrub (StatsPayload) case-insensitivity — OtherMembers tail security", func() {
+	// Sibling to ScrubMomentum's case-insensitive test. By contract (see
+	// scrub.go), Scrub for StatsPayload ONLY filters the OtherMembers tail
+	// on curated axes — the DB predicate already excludes hidden values from
+	// the top-N rows. The last-line-of-defense here is: a case-toggled hidden
+	// member ("HAKATIME") in an OtherMembers tail must NOT survive a
+	// lowercased hide rule ("hakatime"). A sibling non-hidden member must
+	// SURVIVE (over-filter regression guard — dropping the whole tail on any
+	// hit would still pass a hidden-absent check but fail the survivor check).
+	// The input payload must remain unmutated on the case-toggle branch.
+	It("Scrub hide match is case-insensitive on OtherMembers tail; siblings survive; input unmutated", func() {
+		p := &model.StatsPayload{
+			Projects: []model.ResourceStats{
+				{
+					Name:         "Other (2 more)",
+					TotalSeconds: 150,
+					OtherMembers: []model.OtherMember{
+						{Name: "HAKATIME", TotalSeconds: 100},
+						{Name: "public-shared", TotalSeconds: 50},
+					},
+				},
+			},
+		}
+		got := Scrub(p, model.HiddenSetsMap{"project": {"hakatime"}})
+		Expect(got.Projects).To(HaveLen(1),
+			"the Other-bucket row itself must remain (only members are scrubbed)")
+		gotMembers := got.Projects[0].OtherMembers
+		names := make([]string, 0, len(gotMembers))
+		for _, m := range gotMembers {
+			names = append(names, m.Name)
+		}
+		Expect(names).NotTo(ContainElement("HAKATIME"),
+			"case-toggled 'HAKATIME' must be stripped from OtherMembers by a "+
+				"lowercased hide rule 'hakatime' — case-insensitive comparison "+
+				"is the security property")
+		Expect(names).To(ContainElement("public-shared"),
+			"non-hidden sibling member must SURVIVE — over-filter regression "+
+				"(dropping the whole tail on any hit) would pass a hidden-absent "+
+				"check but fail this survivor check")
+		// Input mutation-safety on the case-toggle branch: the source payload
+		// must still hold the original 2 members in the original order.
+		Expect(p.Projects[0].OtherMembers).To(HaveLen(2),
+			"Scrub must not mutate the input payload's OtherMembers tail")
+		Expect(p.Projects[0].OtherMembers[0].Name).To(Equal("HAKATIME"),
+			"input payload's tail member[0] must remain 'HAKATIME' verbatim")
+		Expect(p.Projects[0].OtherMembers[1].Name).To(Equal("public-shared"),
+			"input payload's tail member[1] must remain 'public-shared' verbatim")
+	})
+})
+
+var _ = Describe("EncodeDef round-trip preserves multi-panel order", func() {
+	// Panel ORDER matters for user-authored specs: rendering the panels in
+	// left-to-right / top-to-bottom order is part of the spec's public shape.
+	// The earlier round-trip sweep tested only ONE panel per Def under Layout1.
+	// A multi-panel Def under Layout3Horz proves that Marshal→base64→base64→
+	// Unmarshal preserves the [Grade, Punchcard, TopLangs] ordering — a bug
+	// that used a map or a sort would silently reorder and this test would
+	// catch it.
+	It("Layout3Horz with 3 distinct panel kinds preserves the exact panel order", func() {
+		orig := Def{
+			Layout: Layout3Horz,
+			Title:  "order-preservation",
+			Panels: []Panel{
+				{Kind: PanelGrade},
+				{Kind: PanelPunchcard},
+				{Kind: PanelTopLangs},
+			},
+		}
+		enc, err := EncodeDef(orig)
+		Expect(err).NotTo(HaveOccurred())
+		got, err := DecodeDef(enc)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(got.Panels).To(HaveLen(3), "decoded Def must retain all 3 panels")
+		Expect(got.Panels[0].Kind).To(Equal(PanelGrade),
+			"panel[0] must remain PanelGrade after round-trip (order preservation)")
+		Expect(got.Panels[1].Kind).To(Equal(PanelPunchcard),
+			"panel[1] must remain PanelPunchcard after round-trip (order preservation)")
+		Expect(got.Panels[2].Kind).To(Equal(PanelTopLangs),
+			"panel[2] must remain PanelTopLangs after round-trip (order preservation)")
+		Expect(got.Layout).To(Equal(Layout3Horz))
+		Expect(got.Title).To(Equal("order-preservation"))
+	})
+})
+
+var _ = Describe("IsCustomKind unicode / whitespace guard", func() {
+	// IsCustomKind is the URL-path guard that decides whether to parse ?spec=.
+	// The exact-literal test already asserts positive/negative cases, but
+	// URL-path guards commonly get attacked with leading/trailing whitespace
+	// or unicode look-alikes. Assert defense-in-depth: these must all be
+	// rejected because IsCustomKind uses exact equality.
+	It("rejects whitespace-padded, newline-suffixed, and fullwidth-unicode variants", func() {
+		Expect(IsCustomKind(" custom")).To(BeFalse(),
+			"leading whitespace must not be accepted as 'custom'")
+		Expect(IsCustomKind("custom ")).To(BeFalse(),
+			"trailing whitespace must not be accepted as 'custom'")
+		Expect(IsCustomKind("custom\n")).To(BeFalse(),
+			"trailing newline must not be accepted as 'custom'")
+		Expect(IsCustomKind("\tcustom")).To(BeFalse(),
+			"leading tab must not be accepted as 'custom'")
+		// Fullwidth Latin 'ｃｕｓｔｏｍ' (U+FF43 U+FF55 U+FF53 U+FF54 U+FF4F U+FF4D)
+		// is a unicode look-alike; must not match exact ASCII 'custom'.
+		Expect(IsCustomKind("ｃｕｓｔｏｍ")).To(BeFalse(),
+			"fullwidth unicode look-alike must not match 'custom'")
+	})
+})
+
+var _ = Describe("colorAt palette wraparound", func() {
+	// The empty-palette test verifies one branch of colorAt (fallback to Accent).
+	// The OTHER branch is the i % len(Palette) wraparound. Assert:
+	//   - Palette[0] at i=0
+	//   - Palette[len-1] at i=len-1
+	//   - Palette[0] at i=len (wraparound to first)
+	//   - Palette[1] at i=len+1
+	// This pins the modulo arithmetic; a bug that used a raw i (panic on
+	// out-of-range) or a saturating clamp (always return last) would fail
+	// distinct assertions here.
+	It("cycles the palette modulo len(Palette): i, len-1, len, len+1", func() {
+		t := Theme{Accent: "#deadbe", Palette: []string{"#111111", "#222222", "#333333"}}
+		Expect(t.colorAt(0)).To(Equal("#111111"), "i=0 returns Palette[0]")
+		Expect(t.colorAt(1)).To(Equal("#222222"), "i=1 returns Palette[1]")
+		Expect(t.colorAt(2)).To(Equal("#333333"), "i=len-1 returns Palette[len-1]")
+		Expect(t.colorAt(3)).To(Equal("#111111"),
+			"i=len must wrap to Palette[0] (modulo arithmetic — a saturating "+
+				"clamp bug would return Palette[len-1] here)")
+		Expect(t.colorAt(4)).To(Equal("#222222"), "i=len+1 wraps to Palette[1]")
+		Expect(t.colorAt(6)).To(Equal("#111111"), "i=2*len wraps to Palette[0]")
 	})
 })
