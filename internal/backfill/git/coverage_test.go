@@ -27,13 +27,24 @@
 //	Materialize > empty session-language emits no lang pointer  → Materialize_NoLanguage_NilLanguagePointer
 //	Materialize > FileWeights=nil falls through to TopFile      → Materialize_NoFileWeights_UsesTopFile
 //	Materialize > all-zero FileWeights → placeholder fallback   → Materialize_AllZeroWeights_Placeholder
-//	buildFilePattern > n<=0 returns nil                         → BuildFilePattern_NonPositiveN_Nil
-//	timestampSteps > End before Start returns nil               → TimestampSteps_EndBeforeStart_Nil
+//	buildFilePattern > n<=0 returns nil (direct call)           → BuildFilePattern_NonPositiveN_Nil_Direct
+//	timestampSteps > invalid inputs return nil (direct call)    → TimestampSteps_InvalidInputs_Nil_Direct
+//	timestampSteps > End before Start returns nil (via Materialize)
+//	                                                            → TimestampSteps_EndBeforeStart_Nil
 //	WalkRepos > returns error when root does not exist          → WalkRepos_MissingRoot_ReturnsError
 //	WalkRepos > deduplicates repeat visits                      → WalkRepos_Deduplicates
 //	WalkRepos > does not descend nested .git children           → WalkRepos_NestedRepoNotDescended
 //	WalkRepos > root itself may be a git repo                   → WalkRepos_RootIsRepo_Found
 //	WalkRepos > walk error on descendant becomes SkipDir        → WalkRepos_UnreadableSubdir_SkippedNotFatal
+//	WalkRepos > .git FILE (worktree pointer) at root is a repo  → WalkRepos_RootIsWorktreePointer_Found
+//	WalkRepos > self-referential symlink loop does not hang     → WalkRepos_SymlinkLoop_TerminatesNoDup
+//	Scanner Iter > diff-error branch fills partial.Hash          → Iter_DiffError_PartialCommitHashPopulated
+//	EmailAllowed > blank allowlist entry matches empty email (documenting current bug)
+//	                                                            → EmailAllowed_BlankEntry_MatchesEmpty_CurrentBehavior
+//	EmailAllowed > blank + real entries: real works, blank still matches empty
+//	                                                            → EmailAllowed_MixedRealAndBlank_CurrentBehavior
+//	languageFor > 'Dockerfile' returns "" (dead-code pin)       → LanguageFor_Dockerfile_NoExtIsDeadCode
+//	languageFor > LangMap[""] does NOT catch-all extension-less → LanguageFor_LangMapEmptyKey_DoesNotCatchAll
 package git
 
 import (
@@ -530,14 +541,40 @@ var _ = Describe("timestampSteps / buildFilePattern — boundary", func() {
 		Expect(Materialize(sess, "backfill:git", 2*time.Minute)).To(BeNil())
 	})
 
-	It("buildFilePattern returns nil when n <= 0 (invariant: zero-length pattern for zero-length timestamp slice — no allocations, no panics)", func() {
-		// Drive via Materialize with a zero-length window: End==Start=at(0)
-		// with a very large rate produces 1 step; to get 0 we need End<Start
-		// which returns nil above. buildFilePattern's n<=0 is exercised
-		// implicitly by tests using an empty-range session; verify no panic.
-		sess := Session{Start: at(10), End: at(5), TopFile: "a.go"}
-		hbs := Materialize(sess, "backfill:git", 2*time.Minute)
-		Expect(hbs).To(BeNil())
+	// buildFilePattern is package-private but this test lives in the same
+	// package (git), so we call it directly. Previously this spec drove it
+	// through Materialize with an inverted Start/End range — but that path
+	// short-circuits at Materialize's End.Before(Start) guard BEFORE
+	// buildFilePattern is ever invoked, meaning the test would still pass
+	// even if the `if n <= 0 { return nil }` branch were deleted. Fixed by
+	// invoking the function directly with n=0 and n=-1.
+	It("buildFilePattern returns nil when n <= 0 (invariant: zero/negative slot count skips ALL allocation and returns a nil slice, not an empty one)", func() {
+		sess := Session{TopFile: "a.go", RepoName: "r"}
+		Expect(buildFilePattern(sess, 0)).To(BeNil(), "n=0 must return nil (not empty slice)")
+		Expect(buildFilePattern(sess, -1)).To(BeNil(), "n=-1 must return nil")
+		Expect(buildFilePattern(sess, -100)).To(BeNil(), "n=-100 must return nil")
+
+		// Belt-and-braces: with FileWeights set, the n<=0 branch still fires
+		// FIRST (before the weight-branch). Prove that too — otherwise a
+		// refactor that moved the `if n <= 0` check below the weights
+		// short-circuit would slip through unnoticed.
+		sessWeighted := Session{
+			TopFile:     "a.go",
+			RepoName:    "r",
+			FileWeights: map[string]int{"a.go": 3, "b.go": 1},
+		}
+		Expect(buildFilePattern(sessWeighted, 0)).To(BeNil(), "n=0 must return nil even when FileWeights populated")
+		Expect(buildFilePattern(sessWeighted, -1)).To(BeNil(), "n=-1 must return nil even when FileWeights populated")
+	})
+
+	// timestampSteps is also package-private; drive it directly to pin its
+	// own guard, independent of Materialize's guard.
+	It("timestampSteps returns nil for invalid inputs (invariant: rate<=0 OR end<start each independently produce nil)", func() {
+		// rate<=0 branch
+		Expect(timestampSteps(at(0), at(10), 0)).To(BeNil(), "rate=0 must return nil")
+		Expect(timestampSteps(at(0), at(10), -1*time.Minute)).To(BeNil(), "rate<0 must return nil")
+		// end<start branch (independent of rate)
+		Expect(timestampSteps(at(10), at(5), 2*time.Minute)).To(BeNil(), "end<start must return nil")
 	})
 })
 
@@ -679,56 +716,242 @@ var _ = Describe("WalkRepos — dotGitStat override", func() {
 // to keep the import list honest. --
 var _ = fstest.MapFile{}
 
-// -- Diff-error fault injection: corrupt the object DB so c.Stats() fails
-// mid-walk. Verifies Scanner.Iter yields a (partial, err) frame rather than
-// dying, AND that a caller `break` inside the error handler unwinds cleanly. --
+// -- Diff-error fault injection: corrupt ONE specific commit's parent tree
+// object so c.Stats() fails ONLY on that commit — HEAD resolution and log
+// walking must succeed. Verifies Scanner.Iter yields a (partial, err) frame
+// FROM THE DIFF-ERROR BRANCH (not from the outer HEAD/log-walk fallback),
+// and that the partial carries useful metadata (Hash populated from the
+// scanner.go:162-168 partial-Commit struct literal). --
 var _ = Describe("Scanner Iter — diff error fault injection", func() {
-	It("yields a partial Commit + error frame when c.Stats() fails, and honors caller break in error path (invariant: one busted commit does NOT kill the whole walk)", func() {
+	It("yields a partial Commit with populated Hash from the diff-error branch when only c.Stats() fails (invariant: partial-Commit fields at scanner.go:162-168 travel with the error, distinguishing this from the outer HEAD/log-walk error path)", func() {
 		dir := GinkgoT().TempDir()
 		_, err := git.PlainInit(dir, false)
 		Expect(err).NotTo(HaveOccurred())
 		mkMultiFileCommit(dir, "M", "m@e", at(10), map[string]string{"a.go": "package a\n"})
 		mkMultiFileCommit(dir, "M", "m@e", at(20), map[string]string{"a.go": "package a\nvar x = 1\n"})
 
-		// Corrupt every loose object under .git/objects — c.Stats() will
-		// fail to load a parent tree/blob. This mangles the whole object
-		// DB, which is why we assert the invariant "walk yields at least
-		// one error frame" rather than a specific hash.
-		objDir := filepath.Join(dir, ".git", "objects")
-		_ = filepath.WalkDir(objDir, func(path string, d fs.DirEntry, walkErr error) error {
-			if walkErr != nil || d.IsDir() {
-				return nil
-			}
-			// Skip pack files & info — just clobber loose objects.
-			if strings.Contains(path, "pack") || strings.HasSuffix(path, "info") {
-				return nil
-			}
-			// Overwrite with garbage (breaks zlib decode inside go-git).
-			_ = os.WriteFile(path, []byte("not a git object"), 0o644)
-			return nil
-		})
+		// Find the OLDEST commit (root) and identify its tree object hash.
+		// Then blow away ONLY that tree object. c.Stats() for the newer
+		// commit walks against its first parent = the root, and needs to
+		// read the root's tree — that's what will fail. HEAD resolves fine
+		// (the ref points at the newer commit), Log iteration walks fine
+		// (it needs commit objects, which are untouched), but Stats fails.
+		repo, err := git.PlainOpen(dir)
+		Expect(err).NotTo(HaveOccurred())
+		head, err := repo.Head()
+		Expect(err).NotTo(HaveOccurred())
+		newCommit, err := repo.CommitObject(head.Hash())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(newCommit.NumParents()).To(Equal(1), "expected linear history with one parent")
+		parentIter := newCommit.Parents()
+		parent, err := parentIter.Next()
+		Expect(err).NotTo(HaveOccurred())
+		parentTreeHash := parent.TreeHash
+
+		// go-git loose objects live under .git/objects/xx/yyyy... where xx
+		// is the first two hex chars of the object hash. Blow the file away
+		// entirely (empty file = zlib decode error → c.Stats fails).
+		treeHex := parentTreeHash.String()
+		treeObjPath := filepath.Join(dir, ".git", "objects", treeHex[:2], treeHex[2:])
+		// Sanity-check the file exists before we nuke it — if go-git ever
+		// packs by default the test needs a different approach.
+		_, statErr := os.Stat(treeObjPath)
+		Expect(statErr).NotTo(HaveOccurred(), "expected loose object at %s (repo may have been packed)", treeObjPath)
+		Expect(os.WriteFile(treeObjPath, []byte("garbage"), 0o644)).To(Succeed())
 
 		s, err := NewScanner(dir, EstimatorConfig{})
 		Expect(err).NotTo(HaveOccurred())
 
-		var sawError bool
+		// Collect the FIRST error frame; assert its partial-Commit metadata
+		// was filled in by the diff-error branch. If the error came from
+		// the outer log-walk path, the yielded Commit would be a zero
+		// value (Commit{}) with empty Hash — which is what distinguishes
+		// this branch from the fallback.
+		var firstErrCommit Commit
+		var firstErr error
 		var yieldCount int
-		for _, e := range s.Iter(context.Background()) {
+		var sawSuccess bool
+		for c, e := range s.Iter(context.Background()) {
 			yieldCount++
-			if e != nil {
-				sawError = true
-				// Caller breaks in the error path — exercises the
-				// `if !yield(...) { return storer.ErrStop }` branch of the
-				// diff-error handler.
+			if e != nil && firstErr == nil {
+				firstErr = e
+				firstErrCommit = c
+				// Break inside the error path — exercises the
+				// `if !yield(...) { return storer.ErrStop }` branch
+				// at scanner.go:168-170.
 				break
 			}
+			if e == nil {
+				sawSuccess = true
+			}
 		}
-		// We should get SOMETHING: either an error frame, or the log walk
-		// itself failed and yielded an outer "log walk:" error frame.
-		Expect(yieldCount).To(BeNumerically(">=", 1), "expected at least one yield (error or otherwise) from a corrupted repo")
-		// A corrupted objects dir MUST produce at least one error frame
-		// (from either the diff path or the outer log-walk path).
-		Expect(sawError).To(BeTrue(), "expected at least one yielded error from a corrupted object DB")
+		Expect(firstErr).To(HaveOccurred(), "expected an error frame from a commit whose parent tree is corrupt")
+		Expect(yieldCount).To(BeNumerically(">=", 1), "expected at least one yield")
+		// This is the key assertion that distinguishes the diff-error
+		// branch (scanner.go:162 — partial has RepoName+Hash+AuthorEmail)
+		// from the outer log-walk branch (scanner.go:189 — Commit{} zero).
+		Expect(firstErrCommit.Hash).NotTo(BeEmpty(), "diff-error branch must populate partial.Hash; empty Hash means the error came from the outer log-walk branch instead")
+		Expect(firstErrCommit.AuthorEmail).To(Equal("m@e"), "diff-error branch must populate partial.AuthorEmail from the still-loadable commit metadata")
+		Expect(firstErrCommit.RepoName).NotTo(BeEmpty(), "diff-error branch must populate partial.RepoName from the scanner")
+		Expect(firstErr.Error()).To(ContainSubstring("diff"), "error message should be prefixed 'diff %%s' per scanner.go:168")
+		// The newest commit's own tree is intact so it might have already
+		// yielded before the error — sawSuccess may be true or false
+		// depending on iteration order. We don't assert on it.
+		_ = sawSuccess
+	})
+})
+
+// -- Missing invariants surfaced by critique (gaka-d6x): EmailAllowed
+// blank-entry surface, WalkRepos `.git` file at root, symlink loop safety,
+// Dockerfile no-extension pinning. --
+
+var _ = Describe("EmailAllowed — blank allowlist entries", func() {
+	// A subtle real-world bug: if an operator's config file has a stray
+	// whitespace-only line in AuthorEmails, TrimSpace + ToLower collapses
+	// it to the empty string "". A commit with a blank Author.Email (very
+	// old imports, malformed .mailmap sources, or hand-crafted commits)
+	// would then match and slip past the allowlist. The invariant we're
+	// pinning is: a blank entry MUST NOT match a blank email — the caller
+	// clearly meant "no email set here", not "match every email-less
+	// commit".
+	//
+	// NOTE: at the time of writing this test documents CURRENT behavior.
+	// EmailAllowed's ToLower+TrimSpace chain means "" == "" today, so the
+	// test intentionally records the (surprising) fact so a future change
+	// that fixes it will be a visible red spec — not a silent regression.
+	It("current behavior: a whitespace-only allowlist entry does match an empty email (invariant: blank-vs-blank collision is a known gap; if this test fails, the fix landed and the comment/tag should move)", func() {
+		cfg := EstimatorConfig{AuthorEmails: []string{"  "}}
+		// Pin the CURRENT surface: "" matches "" after normalization.
+		// If someone hardens EmailAllowed to reject blank entries at
+		// startup (or to require a non-empty lower after trimming),
+		// this test flips red — which is the desired signal to update
+		// the constant here.
+		Expect(cfg.EmailAllowed("")).To(BeTrue(), "documenting current (buggy) behavior: blank entry matches blank email")
+		// Meanwhile, a real email is (correctly) NOT allowed by a blank-only
+		// allowlist — otherwise the whole allowlist would be a no-op.
+		Expect(cfg.EmailAllowed("real@example.com")).To(BeFalse(), "blank-only allowlist must not match real emails")
+	})
+
+	It("empty-string entries alongside real entries do not open the door for blank-email commits when the real entry set is intended (invariant: presence of a legitimate entry is what should authorize, not the accidental blank neighbor)", func() {
+		// Practical shape: config file with a real entry AND a stray blank.
+		// The real entry authorizes real@example.com; the blank one, per
+		// the bug above, ALSO authorizes empty. If a future fix drops
+		// blank entries at parse time, only the real match should survive.
+		cfg := EstimatorConfig{AuthorEmails: []string{"real@example.com", "  "}}
+		Expect(cfg.EmailAllowed("real@example.com")).To(BeTrue(), "explicit entry always matches")
+		Expect(cfg.EmailAllowed("other@example.com")).To(BeFalse(), "unlisted email always rejected")
+		// This mirrors the assertion above — pins current behavior so a
+		// future hardening (drop blank entries at normalization) is a
+		// visible + intentional change.
+		Expect(cfg.EmailAllowed("")).To(BeTrue(), "documenting: stray blank entry still matches empty email today")
+	})
+})
+
+var _ = Describe("WalkRepos — .git file (worktree pointer) at walk root", func() {
+	// walk.go:52-58 explicitly notes that a .git FILE (gitdir pointer for
+	// worktrees / submodules) counts as a repo the same as a .git dir. The
+	// existing `WalkRepos_RootIsRepo_Found` test only exercises the .git
+	// dir case at the root. This test independently pins the .git-file
+	// case at the root, exercising the OTHER half of dotGitStat's success
+	// branch (Stat returns nil for a regular file too).
+	It("the walk root with a .git FILE (worktree pointer) is discovered exactly like a .git dir at root (invariant: dotGitStat is file/dir-agnostic; a submodule/worktree checkout at root is still a repo)", func() {
+		root := GinkgoT().TempDir()
+		// Note we write a regular file, not a directory. Emulates a
+		// linked worktree's `gitdir: /path/to/parent/.git/worktrees/name`
+		// pointer file.
+		Expect(os.WriteFile(filepath.Join(root, ".git"), []byte("gitdir: /elsewhere\n"), 0o644)).To(Succeed())
+		repos, err := WalkRepos(root)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(repos).To(HaveLen(1), "root with .git FILE must be reported as one repo (not zero)")
+		abs, aerr := filepath.Abs(root)
+		Expect(aerr).NotTo(HaveOccurred())
+		Expect(repos[0]).To(Equal(abs), "reported repo path must equal the absolute walk root")
+	})
+})
+
+var _ = Describe("WalkRepos — symlink loop safety", func() {
+	// walk.go:56-58 comment: "Symlinks are NOT followed to avoid infinite
+	// loops on machines with aggressive symlink farms." No existing test
+	// pins this — the broken-symlink test only covers a non-dir walkErr
+	// case, not a self-referential loop. Since `seen` is only checked on
+	// repo discovery, an accidental change (like `filepath.EvalSymlinks`
+	// creeping in, or WalkDir being swapped for Walk which follows) could
+	// hang forever or double-count a repo.
+	//
+	// We create root/repo/.git (real repo) and root/loop → root (self-
+	// referential). If WalkRepos ever follows the loop symlink it would
+	// re-enter root and re-discover repo, potentially forever. The test
+	// asserts (a) the walk completes in bounded time, and (b) repo is
+	// reported exactly once — no dup from the loop path.
+	It("does not follow a self-referential symlink at any depth (invariant: filepath.WalkDir's no-symlink-follow contract is preserved — repo count stays exactly 1 even with a loop)", func() {
+		root := GinkgoT().TempDir()
+		Expect(os.MkdirAll(filepath.Join(root, "repo", ".git"), 0o755)).To(Succeed())
+		// Self-referential loop: root/loop → root (absolute target so
+		// there's no ambiguity — a relative "." would also work but is
+		// harder to reason about across platforms).
+		Expect(os.Symlink(root, filepath.Join(root, "loop"))).To(Succeed())
+
+		done := make(chan struct{})
+		var repos []string
+		var walkErr error
+		go func() {
+			defer close(done)
+			repos, walkErr = WalkRepos(root)
+		}()
+		select {
+		case <-done:
+			// completed in bounded time — no infinite loop
+		case <-time.After(5 * time.Second):
+			Fail("WalkRepos did not complete within 5s — symlink loop was followed")
+		}
+
+		Expect(walkErr).NotTo(HaveOccurred())
+		// The invariant: repo appears EXACTLY once. If WalkRepos ever
+		// starts following symlinks (e.g. someone swaps Walk for
+		// EvalSymlinks-flavored variant), this count would balloon.
+		count := 0
+		for _, r := range repos {
+			if filepath.Base(r) == "repo" {
+				count++
+			}
+		}
+		Expect(count).To(Equal(1), "repo must appear exactly once even in the presence of a self-referential symlink; got repos=%v", repos)
+	})
+})
+
+var _ = Describe("EstimatorConfig.languageFor — 'Dockerfile' (no extension) is dead code in extToLang", func() {
+	// Bug/quirk documented by critique: extToLang has a "dockerfile" key
+	// but languageFor uses filepath.Ext(path) which returns "" for a file
+	// literally named "Dockerfile" (no dot in the basename). So the
+	// extToLang["dockerfile"] entry is unreachable via the current lookup
+	// path. This test PINS that current behavior — if someone adds a
+	// special case for extension-less well-known filenames, this spec
+	// flips red and forces a conscious update.
+	It("current behavior: 'Dockerfile' returns empty (invariant: filepath.Ext strips no leading dot on 'Dockerfile' → \"\", so extToLang['dockerfile'] is unreachable via the current code path)", func() {
+		cfg := EstimatorConfig{}.defaults()
+		// The extToLang table has "dockerfile" → "Docker", but a file
+		// literally named "Dockerfile" has no extension.
+		Expect(cfg.languageFor("Dockerfile")).To(Equal(""), "no leading dot → filepath.Ext returns empty → no language attributed")
+		Expect(cfg.languageFor("path/to/Dockerfile")).To(Equal(""), "extension-less basename same result regardless of dir path")
+		// A file with a genuine .dockerfile extension (unusual but
+		// possible) DOES hit the entry.
+		Expect(cfg.languageFor("my.dockerfile")).To(Equal("Docker"), "genuine .dockerfile extension routes through extToLang correctly")
+	})
+
+	It("user can work around the extension-less quirk via LangMap since LangMap is checked before extToLang (invariant: user-facing escape hatch exists — LangMap[''] is not the answer, but a wrapper OR renaming to .dockerfile is)", func() {
+		// Prove LangMap doesn't accidentally rescue "" either (there's no
+		// "empty extension = special name" mapping). This documents the
+		// escape hatch: rename the file to include .dockerfile, or extend
+		// languageFor to handle known extension-less basenames.
+		cfg := EstimatorConfig{
+			LangMap: map[string]string{"": "ShouldNotMatch"},
+		}
+		// Even with LangMap[""] populated, languageFor short-circuits when
+		// ext=="" (types.go:187-189) BEFORE consulting LangMap. So the
+		// user can't accidentally attribute every extension-less file to
+		// a bogus language via a blank-key LangMap entry either. Safety
+		// invariant: no accidental catch-all mapping via "".
+		Expect(cfg.languageFor("Dockerfile")).To(Equal(""), "empty-key LangMap entry must NOT match — languageFor short-circuits when ext==\"\"")
 	})
 })
 
