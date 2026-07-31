@@ -6,8 +6,19 @@ package widget
 
 import (
 	"bytes"
+	_ "embed"
 	"fmt"
 )
+
+// frameStyleCSS is the shared <style> block (keyframes + class rules) that
+// every card frame emits inline. Extracted from a raw-string constant in the
+// package source (gaka-8tn.1) so an editor / diff viewer can highlight it
+// as CSS. The bytes are served verbatim inside each SVG — do NOT re-indent
+// or reformat this file or the golden-hash test in openapi will need to move
+// its widget cousin too.
+//
+//go:embed frame_style.css
+var frameStyleCSS []byte
 
 // Frame is a card renderer that any widget kind can compose into.
 type Frame struct {
@@ -29,20 +40,10 @@ func OpenFrame(w, h int, th Theme, title, subtitle string) *Frame {
 		w, h, w, h, xmlEscape(title))
 	// Shared CSS: fade-in-up entrance, bar scale-x grow, grade-ring dasharray
 	// reveal. Delays are staggered per row/panel. transform-box=fill-box lets
-	// the bar grow anchor to the rect's own left edge.
-	f.buf.WriteString(`<style>
-@keyframes fadeInUp { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes growBar { from { transform: scaleX(0); } to { transform: scaleX(1); } }
-@keyframes ringFill { from { stroke-dasharray: 0 10000; } }
-.row { opacity: 0; animation: fadeInUp 0.5s ease-out forwards; }
-.fade { opacity: 0; animation: fadeInUp 0.6s ease-out forwards; }
-.bar-fill { transform: scaleX(0); transform-box: fill-box; transform-origin: left center; animation: growBar 0.8s ease-out forwards; }
-.row:hover .bar-fill { filter: brightness(1.25); }
-.row:hover text { filter: brightness(1.2); }
-.ring { animation: ringFill 1.2s ease-out forwards; }
-.cell:hover { filter: brightness(1.4); }
-text { font-family: 'Segoe UI', Ubuntu, Sans-Serif; }
-</style>`)
+	// the bar grow anchor to the rect's own left edge. Body extracted to
+	// frame_style.css so a syntax highlighter can help — served verbatim,
+	// byte-identical to the pre-extraction inline literal.
+	f.buf.Write(frameStyleCSS)
 	fmt.Fprintf(&f.buf,
 		`<rect x="0.5" y="0.5" width="%d" height="%d" rx="4.5" fill="%s" stroke="%s"/>`,
 		w, h, th.Background, th.Border)
