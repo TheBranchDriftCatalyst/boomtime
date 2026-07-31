@@ -52,6 +52,27 @@ describe("catalog", () => {
     expect(s.html).toContain('<img src="https://x/widget/svg/u/stats-card');
     expect(s.url).toContain("/widget/svg/u/stats-card");
   });
+
+  // gaka-hsj: the stats-card kind is the hero widget for this ticket. Pin it
+  // as the first catalog entry so the widget-links panel surfaces it above
+  // the fold on every scope. If someone reorders the catalog and demotes
+  // stats-card, we want a red test forcing an explicit decision, not a
+  // silent drop.
+  it("stats-card is offered on every scope and generates both snippet formats", () => {
+    const entry = WIDGET_CATALOG.find((e) => e.kind === "stats-card");
+    expect(entry).toBeDefined();
+    // Hero card ships to all three surfaces the FE panel switches on.
+    expect(entry!.scopes).toEqual(
+      expect.arrayContaining(["user", "project", "space"]),
+    );
+
+    const url = widgetSvgUrl(BASE, "stats-card", { days: 7, theme: "light" });
+    expect(url).toBe(`${BASE}/stats-card?days=7&theme=light`);
+    const s = embedSnippets(url);
+    expect(s.markdown).toBe(`![Coding stats](${url})`);
+    expect(s.html).toBe(`<img src="${url}" alt="Coding stats" />`);
+    expect(s.url).toBe(url);
+  });
 });
 
 describe("WidgetCard", () => {

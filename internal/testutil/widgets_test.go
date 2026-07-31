@@ -282,6 +282,55 @@ var _ = Describe("Widget SVG", func() {
 			"non-hidden language should still render")
 	})
 
+	// gaka-hsj privacy guard: heartbeats carry a `entity` field (the source
+	// filename — e.g. /secret/customer-list.sql). The public embeddable SVG
+	// aggregates by project/language/editor and MUST NEVER leak that string
+	// into rendered chrome. Today the StatsPayload never includes filenames,
+	// so this test is a regression guard: if someone adds an "active files"
+	// panel to a widget kind, the panel MUST scrub or exclude filenames
+	// before this test will pass.
+	It("PRIVACY GATE: heartbeat entity (filename) MUST NOT appear in any public SVG kind", func() {
+		hz := testutil.NewHarness(GinkgoTB())
+		e := hz.Router()
+		user, token := hz.MintUser("widget_filename_leak")
+
+		const sensitive = "/customers/pii-export-2026.sql"
+		start := time.Now().UTC().Add(-48 * time.Hour).Truncate(time.Hour)
+		sdr := hz.Seeder(user)
+		// Seed a block whose entity carries the sensitive filename. The
+		// project/language values are intentionally boring — the whole point
+		// is to prove that even when the aggregation buckets are safe, the
+		// underlying filename never leaks.
+		sdr.Block(testutil.HB{
+			Project: "proj-x", Language: "SQL", Editor: "vim",
+			Entity: sensitive, Ty: "file",
+		}, start, 10, 60)
+		sdr.RefreshRollup(start.Add(-time.Hour))
+
+		link := mintWidgetLinkG(e, token, "user", "")
+
+		// Every public kind: filename must be absent from the SVG body. If any
+		// kind ever adds an entity list, that kind will fail here and force a
+		// scrub decision — better a red test than a live PII embed.
+		for _, kind := range []string{
+			"stats-card", "stats-card-with-grade", "top-langs",
+			"top-projects", "badge", "activity-heatmap", "cumulative-area",
+			"heatmap-projects", "heatmap-languages", "profile-summary",
+		} {
+			rec := doG(e, "GET", "/widget/svg/"+link.LinkID+"/"+kind+"?days=30", "", nil)
+			Expect(rec).To(testutil.HaveStatus(http.StatusOK),
+				"kind=%s render failed: body=%s", kind, rec.Body.String())
+			Expect(rec.Body.String()).NotTo(ContainSubstring(sensitive),
+				"PRIVACY LEAK (gaka-hsj): heartbeat entity %q surfaced in kind=%s SVG body",
+				sensitive, kind)
+			// Also assert the file extension stem alone doesn't leak — a
+			// half-scrub that keeps the tail could still expose enough to
+			// identify the resource.
+			Expect(rec.Body.String()).NotTo(ContainSubstring("pii-export"),
+				"PRIVACY LEAK (gaka-hsj): entity stem 'pii-export' leaked in kind=%s SVG body", kind)
+		}
+	})
+
 	It("absurd days values (0, -5, 99999, abc) all clamp — endpoint stays 200", func() {
 		hz := testutil.NewHarness(GinkgoTB())
 		e := hz.Router()

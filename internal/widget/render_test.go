@@ -18,6 +18,8 @@
 package widget
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 	"time"
 
@@ -27,6 +29,14 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
 )
+
+// hashHex is the pinning-test helper: sha256 hex of the raw render bytes.
+// Kept in this file (not testutil) because the pinning invariant is scoped to
+// this package — an internal API drift, not an HTTP-layer one.
+func hashHex(b []byte) string {
+	h := sha256.Sum256(b)
+	return hex.EncodeToString(h[:])
+}
 
 var _ = Describe("Render", func() {
 	It("every kind renders well-formed, camo-safe SVG", func() {
@@ -222,6 +232,58 @@ var _ = Describe("Render + IsKind reject unknown kinds", func() {
 		_, err := Render("nope", dataFixture(), Options{})
 		Expect(err).To(HaveOccurred(), "unknown kind should error")
 		Expect(IsKind("nope")).To(BeFalse(), "IsKind(nope) should be false")
+	})
+})
+
+// Byte-identical render invariant (gaka-hsj). The public /widget/svg endpoint
+// serves these bytes through GitHub camo and other aggressive HTTP caches; any
+// non-determinism inside Render (e.g. someone reaches for time.Now, a map-range
+// leak, or a rand.Float call in a primitive) silently invalidates every camo
+// snapshot and burns cache entries. Pinning the SHA256 of the output for a
+// fixed payload catches that class of regression on the first run.
+//
+// The hashes below were captured on 2026-07-31; if you INTENTIONALLY change the
+// SVG output for stats-card / top-langs / badge, update BOTH the hash AND the
+// timestamp above so the next reviewer knows this is a deliberate re-baseline.
+var _ = Describe("Render bytes are stable for a fixed payload (gaka-hsj)", func() {
+	// payloadFixture (defined at the bottom of this file) is intentionally
+	// small + deterministic — no time.Now, no random data. Adding TotalDaily
+	// series (as dataFixture does for the heatmap twins) would change the
+	// hash; the pinned kinds below all render from the plain payload only.
+	It("stats-card renders byte-identically across runs (fixed payload)", func() {
+		d := &Data{Payload: payloadFixture()}
+		want := "506119adee7341d4cc5656adb190e8f08206bc562d486ec2e75b5997088dd57a"
+		a, err := Render("stats-card", d, Options{Theme: "dark", Subtitle: "last 30 days"})
+		Expect(err).NotTo(HaveOccurred())
+		b, err := Render("stats-card", d, Options{Theme: "dark", Subtitle: "last 30 days"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(a).To(Equal(b), "stats-card render is non-deterministic between calls")
+		Expect(hashHex(a)).To(Equal(want),
+			"stats-card SVG bytes drifted from the pinned SHA256 — either an intentional visual change (update the hash + timestamp above) or an accidental regression. body:\n%s", string(a))
+	})
+
+	It("top-langs renders byte-identically across runs (fixed payload)", func() {
+		d := &Data{Payload: payloadFixture()}
+		want := "75f22747f9d335ad284f63bf8b68f6b0e7bd223c87ead5f4260a49a3c6c720b4"
+		a, err := Render("top-langs", d, Options{Theme: "dark", Subtitle: "last 30 days"})
+		Expect(err).NotTo(HaveOccurred())
+		b, err := Render("top-langs", d, Options{Theme: "dark", Subtitle: "last 30 days"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(a).To(Equal(b), "top-langs render is non-deterministic between calls")
+		Expect(hashHex(a)).To(Equal(want),
+			"top-langs SVG bytes drifted from the pinned SHA256. body:\n%s", string(a))
+	})
+
+	It("badge renders byte-identically across runs (fixed payload)", func() {
+		d := &Data{Payload: payloadFixture()}
+		want := "71768648b56b832b72c72a633b982a17a543413cdfba0a869a5fd156ccae2438"
+		a, err := Render("badge", d, Options{Theme: "dark", Subtitle: "last 30 days"})
+		Expect(err).NotTo(HaveOccurred())
+		b, err := Render("badge", d, Options{Theme: "dark", Subtitle: "last 30 days"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(a).To(Equal(b), "badge render is non-deterministic between calls")
+		Expect(hashHex(a)).To(Equal(want),
+			"badge SVG bytes drifted from the pinned SHA256. body:\n%s", string(a))
 	})
 })
 
