@@ -5,7 +5,7 @@
 //   (b) it BECOMES enabled after the SSE stream lands one delta.
 // This catches the exact regression that would ship a "click RENDER
 // with an empty prompt" 400.
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AvatarTab, deriveSummary } from "@/features/settings/avatar/AvatarTab";
@@ -109,8 +109,14 @@ describe("AvatarTab", () => {
   });
 
   it("streams the SSE prompt into the textarea when SYNTHESIZE is clicked", async () => {
-    // Encode a two-frame OpenAI-shaped SSE body. We use a hand-rolled
-    // Response with a ReadableStream so msw can proxy the streaming path.
+    // gaka-say: the previous MSW-proxied version tripped on a jsdom-vs-undici
+    // AbortController mismatch — MSW's `instanceof AbortSignal` check fires
+    // against jsdom's shim, not Node's native class, so the fetch immediately
+    // rejected with "Expected signal ("AbortSignal {}") to be an instance of
+    // AbortSignal" before the stream ever ran. Stubbing fetch directly
+    // sidesteps that entire class hierarchy — same observable assertion, no
+    // MSW-in-the-middle. If we ever swap to happy-dom or MSW ships a fix, we
+    // can restore the MSW handler form.
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       start(controller) {
@@ -128,35 +134,46 @@ describe("AvatarTab", () => {
         controller.close();
       },
     });
-    server.use(
-      http.post(
-        "/api/v1/admin/avatar/synthesize-prompt",
-        () =>
-          new HttpResponse(stream, {
-            status: 200,
-            headers: { "Content-Type": "text/event-stream" },
-          }),
-      ),
-    );
+    const originalFetch = globalThis.fetch;
+    const fetchStub = vi
+      .fn<typeof fetch>()
+      .mockImplementation(
+        async (input: RequestInfo | URL, _init?: RequestInit) => {
+          const url = typeof input === "string" ? input : input.toString();
+          if (url.includes("/api/v1/admin/avatar/synthesize-prompt")) {
+            return new Response(stream, {
+              status: 200,
+              headers: { "Content-Type": "text/event-stream" },
+            });
+          }
+          // Delegate everything else (MSW handlers for auth/avatar status
+          // are still needed for the tab mount).
+          return originalFetch(input, _init);
+        },
+      );
+    globalThis.fetch = fetchStub as unknown as typeof fetch;
+    try {
+      const user = userEvent.setup();
+      renderWithProviders(<AvatarTab />);
 
-    const user = userEvent.setup();
-    renderWithProviders(<AvatarTab />);
+      await user.click(await screen.findByTestId("avatar-synthesize-btn"));
 
-    await user.click(await screen.findByTestId("avatar-synthesize-btn"));
-
-    // After the stream drains, the textarea should contain the concatenated
-    // deltas. Wait on the final assembled text — a plain
-    // toHaveValue on the interim state would race the second frame.
-    await waitFor(
-      () => {
-        const textarea = screen.getByTestId(
-          "avatar-prompt-textarea",
-        ) as HTMLTextAreaElement;
-        expect(textarea.value).toBe("chibi portrait, cel shading");
-      },
-      { timeout: 2000 },
-    );
-    // And the RENDER button enables as a side effect.
-    expect(screen.getByTestId("avatar-render-btn")).not.toBeDisabled();
+      // After the stream drains, the textarea should contain the concatenated
+      // deltas. Wait on the final assembled text — a plain
+      // toHaveValue on the interim state would race the second frame.
+      await waitFor(
+        () => {
+          const textarea = screen.getByTestId(
+            "avatar-prompt-textarea",
+          ) as HTMLTextAreaElement;
+          expect(textarea.value).toBe("chibi portrait, cel shading");
+        },
+        { timeout: 2000 },
+      );
+      // And the RENDER button enables as a side effect.
+      expect(screen.getByTestId("avatar-render-btn")).not.toBeDisabled();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });
