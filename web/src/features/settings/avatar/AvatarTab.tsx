@@ -45,7 +45,14 @@ interface AvatarSummary {
 // requires a PublicDashboardPayload which auth'd Settings doesn't have
 // on hand. A dumber summary is fine here: the LLM's job is to translate
 // vibes into diffusion tags, not to produce a formal profile.
-function deriveSummary(input: {
+//
+// `topLanguage.pct` is a 0..1 share (matches how the rest of the app
+// carries pct in label DSL; see labels/types.ts `pct: number; // 0..1`).
+// Multiply by 100 at the render site — reading the raw
+// ResourceStats.totalPct directly would render "PYTHON 0%" because the
+// backend also emits totalPct as a 0..1 decimal (same bug as the public-
+// profile chip list, see WidgetRenderer's ChipList note).
+export function deriveSummary(input: {
   topLanguage?: { name: string; pct: number };
   topEditor?: { name: string };
   topPlatform?: { name: string };
@@ -54,7 +61,7 @@ function deriveSummary(input: {
   const labels: string[] = [];
   if (input.topLanguage) {
     labels.push(
-      `${input.topLanguage.name.toUpperCase()} ${Math.round(input.topLanguage.pct)}%`,
+      `${input.topLanguage.name.toUpperCase()} ${Math.round(input.topLanguage.pct * 100)}%`,
     );
   }
   if (input.topEditor) labels.push(`${input.topEditor.name.toUpperCase()} USER`);

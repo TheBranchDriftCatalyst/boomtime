@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { AvatarTab } from "@/features/settings/avatar/AvatarTab";
+import { AvatarTab, deriveSummary } from "@/features/settings/avatar/AvatarTab";
 import { authStore } from "@/features/auth/auth";
 import { renderWithProviders } from "@/test/renderWithProviders";
 import { server } from "@/test/msw/server";
@@ -44,6 +44,37 @@ beforeEach(() => {
     tokenUsername: "panda",
   });
   server.use(...baseHandlers());
+});
+
+// deriveSummary: percentage scale regression tests. The call site
+// passes ResourceStats.totalPct (0..1 decimal from the backend rollup
+// SQL — see WidgetRenderer's ChipList note) as `pct`, so the label
+// path MUST multiply by 100. A regression that drops the *100 would
+// render "PYTHON 0%" for a 15%-of-30d language.
+describe("deriveSummary — top-language percent scale", () => {
+  it("renders topLanguage.pct=0.15 as '15%' (not '0%')", () => {
+    const s = deriveSummary({
+      topLanguage: { name: "python", pct: 0.15 },
+    });
+    expect(s.topLabels[0]).toBe("PYTHON 15%");
+  });
+
+  it("renders topLanguage.pct=1.0 as '100%' (full-share language)", () => {
+    // A single-language 30d window is the edge case where the raw 0..1
+    // value looks identical to a percent-scaled '1%' at first glance —
+    // pin it so the regression can't sneak past.
+    const s = deriveSummary({
+      topLanguage: { name: "go", pct: 1.0 },
+    });
+    expect(s.topLabels[0]).toBe("GO 100%");
+  });
+
+  it("falls back to 'NEW OPERATOR' when there's no dominant trait at all", () => {
+    // Preserved behavior — otherwise the LLM synthesizer chokes on an
+    // empty topLabels array.
+    const s = deriveSummary({});
+    expect(s.topLabels).toEqual(["NEW OPERATOR"]);
+  });
 });
 
 describe("AvatarTab", () => {
