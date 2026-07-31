@@ -51,7 +51,7 @@ var _ = Describe("Leaderboards (gaka-d6x.handler)", func() {
 	It("authed empty user returns 200 with a {global, lang:{}} envelope", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
-		_, token := hz.MintUser("lb_empty")
+		lbEmptyUser, token := hz.MintUser("lb_empty")
 
 		rec := doJSONReqG(e, http.MethodGet, "/api/v1/leaderboards", token, nil)
 		Expect(rec).To(testutil.HaveStatus(http.StatusOK), "body=%s", rec.Body.String())
@@ -68,10 +68,14 @@ var _ = Describe("Leaderboards (gaka-d6x.handler)", func() {
 		// contract pin for the empty state.
 		Expect(env.Lang).NotTo(BeNil(),
 			"lang must render as {} not null: %s", rec.Body.String())
-		// `global` may currently render as null OR [] depending on the DB
-		// path; empty-state length is the invariant that matters here.
-		Expect(env.Global).To(BeEmpty(),
-			"empty state: no users → global must have 0 entries; got %+v", env.Global)
+		// `global` is a WHOLE-DB view — asserting it's globally empty would
+		// fail under any parallel test that seeds heartbeats into the shared
+		// test DB (gaka-peu). The per-owner invariant we actually want is
+		// that our zero-heartbeat user does NOT appear in the top-N.
+		for _, row := range env.Global {
+			Expect(row["user"]).NotTo(Equal(lbEmptyUser),
+				"user with zero heartbeats must not appear in the global leaderboard: %+v", row)
+		}
 	})
 
 	It("cache is per-owner: alice's curation rule affects HER payload but NOT bob's", func() {
