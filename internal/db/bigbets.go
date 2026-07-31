@@ -37,9 +37,27 @@ type CategoryDailyRow struct {
 // MODE() picks the most common raw casing as the display label. The wrap runs
 // even with no rename rule active so pure case variants still collapse.
 func (d *DB) GetCategoryDaily(ctx context.Context, sender string, start, end time.Time, limit int64, tz string, hs HiddenSets, rs RenameSets, ms MemberSets, spaceRequested bool) ([]CategoryDailyRow, error) {
-	// gaka-dg7: $5 = IANA tz for the day bucket; predicates start at $6.
-	query, args, next := applyScopes(qGetCategoryDaily, bigBetRangeAnchor,
-		hs, ms, spaceRequested, rawHeartbeatCols, []any{sender, start, end, limit, tz}, 6)
+	return d.categoryDaily(ctx, qGetCategoryDaily, bigBetRangeAnchor,
+		[]any{sender, start, end, limit, tz}, 6, rawHeartbeatCols, hs, rs, ms, spaceRequested)
+}
+
+// GetCategoryDailyRollup mirrors GetCategoryDaily but reads the pre-aggregated
+// hb_rollup_daily (gaka-o4m). Fast path for the Overview at the default 15-min
+// limit — callers must guard with the same rollup-axes gate as the stats fast
+// path (no hide / no Space rule on axes outside RollupAxes). $tz is accepted
+// for signature parity with the raw variant but is unused: the rollup's `day`
+// column is already computed in the sender's TZ at ingest.
+func (d *DB) GetCategoryDailyRollup(ctx context.Context, sender string, start, end time.Time, hs HiddenSets, rs RenameSets, ms MemberSets, spaceRequested bool) ([]CategoryDailyRow, error) {
+	return d.categoryDaily(ctx, qGetCategoryDailyRoll, rollupRangeAnchor,
+		[]any{sender, start, end}, 4, rollupCols, hs, rs, ms, spaceRequested)
+}
+
+// categoryDaily is the shared regroup+scan machinery for both the raw and
+// rollup category-daily queries. `cols` is the axis→column map used by the
+// hide / space splices (raw heartbeats vs rollup columns).
+func (d *DB) categoryDaily(ctx context.Context, baseQuery, anchor string, baseArgs []any, next int, cols map[string]string, hs HiddenSets, rs RenameSets, ms MemberSets, spaceRequested bool) ([]CategoryDailyRow, error) {
+	query, args, next := applyScopes(baseQuery, anchor,
+		hs, ms, spaceRequested, cols, baseArgs, next)
 	// Always wrap: re-group (day, lower(category)) picking a canonical display
 	// casing GLOBALLY across all days (highest-total variant wins; alphabetical
 	// tie-break). The rename remap is spliced into the SELECT (identity when no
@@ -157,8 +175,27 @@ type MomentumRow struct {
 // rename re-groups the (project, week) rows by the remapped project (merges).
 func (d *DB) GetMomentum(ctx context.Context, sender string, start, end time.Time, limit int64, tz string, hs HiddenSets, rs RenameSets, ms MemberSets, spaceRequested bool) ([]MomentumRow, error) {
 	// gaka-dg7: $5 = IANA tz for the ISO Monday week-start bucket.
-	query, args, next := applyScopes(qGetMomentum, bigBetRangeAnchor,
-		hs, ms, spaceRequested, rawHeartbeatCols, []any{sender, start, end, limit, tz}, 6)
+	return d.momentum(ctx, qGetMomentum, bigBetRangeAnchor,
+		[]any{sender, start, end, limit, tz}, 6, rawHeartbeatCols, hs, rs, ms, spaceRequested)
+}
+
+// GetMomentumRollup mirrors GetMomentum but reads the pre-aggregated
+// hb_rollup_daily (gaka-o4m). Fast path for the Momentum widget at the default
+// 15-min limit — callers must guard with the same rollup-axes gate as the
+// stats fast path (no hide / no Space rule on axes outside RollupAxes). $tz
+// is accepted for signature parity with the raw variant but is unused: the
+// rollup's `day` column is already computed in the sender's TZ at ingest, so
+// date_trunc('week', day) yields the same ISO Monday user-local bucket.
+func (d *DB) GetMomentumRollup(ctx context.Context, sender string, start, end time.Time, hs HiddenSets, rs RenameSets, ms MemberSets, spaceRequested bool) ([]MomentumRow, error) {
+	return d.momentum(ctx, qGetMomentumRoll, rollupRangeAnchor,
+		[]any{sender, start, end}, 4, rollupCols, hs, rs, ms, spaceRequested)
+}
+
+// momentum is the shared regroup+scan machinery for both the raw and rollup
+// momentum queries. `cols` is the axis→column map for the hide / space splices.
+func (d *DB) momentum(ctx context.Context, baseQuery, anchor string, baseArgs []any, next int, cols map[string]string, hs HiddenSets, rs RenameSets, ms MemberSets, spaceRequested bool) ([]MomentumRow, error) {
+	query, args, next := applyScopes(baseQuery, anchor,
+		hs, ms, spaceRequested, cols, baseArgs, next)
 	// Always wrap: fold project casing and pick a canonical display GLOBALLY
 	// across all weeks (highest-total variant wins; alphabetical ASC tie-break)
 	// so a project doesn't surface as two rows when its case-mix changes across

@@ -35,13 +35,16 @@ var (
 	qGetProjBranchDaily  = mustQuery("get_project_branch_daily.sql")
 	qGetTimeline         = mustQuery("get_timeline.sql")
 	qGetLeaderboards     = mustQuery("get_leaderboards.sql")
+	qGetLeaderboardsRoll = mustQuery("get_leaderboards_rollup.sql")
 	qGetTimeBetween      = mustQuery("get_time_between.sql")
 	qGetTimeToday        = mustQuery("get_time_today.sql")
 	qGetTotalProject     = mustQuery("get_total_project_time.sql")
 	qGetCategoryDaily    = mustQuery("get_category_daily.sql")
+	qGetCategoryDailyRoll = mustQuery("get_category_daily_rollup.sql")
 	qGetPunchcard        = mustQuery("get_punchcard.sql")
 	qGetSessions         = mustQuery("get_sessions.sql")
 	qGetMomentum         = mustQuery("get_momentum.sql")
+	qGetMomentumRoll     = mustQuery("get_momentum_rollup.sql")
 )
 
 // DB wraps a pgx pool.

@@ -2,6 +2,7 @@ package stats
 
 import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/labstack/echo/v5"
 )
 
@@ -110,7 +111,19 @@ func (h *Handler) Momentum(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		rows, err := h.DB.GetMomentum(s.ctx, s.owner, s.t0, s.t1, s.limit, s.tz, l.hidden, l.renames, l.members, l.spaceRequested)
+		// gaka-o4m: same rollup fast-path gate as the stats handler. Project
+		// (the only renamable output axis here) IS a rollup axis; the rollup's
+		// per-day sums roll up to weeks via date_trunc('week', day) and the
+		// output row shape (project, week_start, total_seconds) is unchanged.
+		var rows []db.MomentumRow
+		switch {
+		case s.limit == 15 &&
+			!l.hidden.HasHiddenOutside(db.RollupAxes) &&
+			(!l.spaceRequested || !l.members.HasMemberOutside(db.RollupAxes)):
+			rows, err = h.DB.GetMomentumRollup(s.ctx, s.owner, s.t0, s.t1, l.hidden, l.renames, l.members, l.spaceRequested)
+		default:
+			rows, err = h.DB.GetMomentum(s.ctx, s.owner, s.t0, s.t1, s.limit, s.tz, l.hidden, l.renames, l.members, l.spaceRequested)
+		}
 		if err != nil {
 			return nil, err
 		}

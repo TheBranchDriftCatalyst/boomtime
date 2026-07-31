@@ -2,6 +2,7 @@ package stats
 
 import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/labstack/echo/v5"
 )
 
@@ -19,7 +20,21 @@ func (h *Handler) Leaderboards(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		rows, err := h.DB.GetLeaderboards(s.ctx, s.t0, s.t1, s.owner, l.hidden, l.renames, l.members, l.spaceRequested)
+		// gaka-o4m: the raw leaderboards query hardcodes a 15-min gap cutoff
+		// (no timeLimit param), which is exactly what the rollup captured at
+		// ingest — so summing rollup total_seconds reproduces the raw sum
+		// byte-for-byte whenever the requester's hide + Space rules stay
+		// within the rollup axes. The multi-user machinery (requester-only
+		// hide/rename via `sender = $req`, `sender <> $req` bypass on the
+		// scope) is column-independent and works identically on both tables.
+		var rows []db.LeaderboardRow
+		switch {
+		case !l.hidden.HasHiddenOutside(db.RollupAxes) &&
+			(!l.spaceRequested || !l.members.HasMemberOutside(db.RollupAxes)):
+			rows, err = h.DB.GetLeaderboardsRollup(s.ctx, s.t0, s.t1, s.owner, l.hidden, l.renames, l.members, l.spaceRequested)
+		default:
+			rows, err = h.DB.GetLeaderboards(s.ctx, s.t0, s.t1, s.owner, l.hidden, l.renames, l.members, l.spaceRequested)
+		}
 		if err != nil {
 			return nil, err
 		}

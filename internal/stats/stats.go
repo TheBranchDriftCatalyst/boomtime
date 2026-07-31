@@ -51,7 +51,21 @@ func (h *Handler) Stats(c *echo.Context) error {
 		// still needs its own scan) and respect the same all-axis hide exclusion +
 		// rename remap + timeLimit + space. gaka-dg7: same tz as the activity
 		// scan so both series bucket on the same day boundary.
-		categories, err := h.DB.GetCategoryDaily(s.ctx, s.owner, s.t0, s.t1, s.limit, s.tz, l.hidden, l.renames, l.members, l.spaceRequested)
+		//
+		// gaka-o4m: same rollup fast-path gate as the activity scan above — at
+		// the default 15-min limit with no hide / no Space rule outside
+		// RollupAxes, serve the pre-aggregated hb_rollup_daily instead of scanning
+		// raw heartbeats. Category IS a rollup axis so the pie's output shape is
+		// unchanged (day, category, total_seconds, pct, daily_pct).
+		var categories []db.CategoryDailyRow
+		switch {
+		case s.limit == 15 &&
+			!l.hidden.HasHiddenOutside(db.RollupAxes) &&
+			(!l.spaceRequested || !l.members.HasMemberOutside(db.RollupAxes)):
+			categories, err = h.DB.GetCategoryDailyRollup(s.ctx, s.owner, s.t0, s.t1, l.hidden, l.renames, l.members, l.spaceRequested)
+		default:
+			categories, err = h.DB.GetCategoryDaily(s.ctx, s.owner, s.t0, s.t1, s.limit, s.tz, l.hidden, l.renames, l.members, l.spaceRequested)
+		}
 		if err != nil {
 			return nil, err
 		}

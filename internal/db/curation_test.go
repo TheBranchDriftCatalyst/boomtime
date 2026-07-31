@@ -52,11 +52,14 @@ var _ = ginkgo.Describe("curation exclusion", func() {
 			{"rollup", qGetUserActivityRoll, rollupRangeAnchor},
 			{"projects_stats", qGetProjectsStats, projectStatsRangeAnchor},
 			{"leaderboards", qGetLeaderboards, leaderboardsRangeAnchor},
+			{"leaderboards_rollup", qGetLeaderboardsRoll, leaderboardsRollupRangeAnchor},
 			{"time_today", qGetTimeToday, timeTodayRangeAnchor},
 			{"category_daily", qGetCategoryDaily, bigBetRangeAnchor},
+			{"category_daily_rollup", qGetCategoryDailyRoll, rollupRangeAnchor},
 			{"punchcard", qGetPunchcard, bigBetRangeAnchor},
 			{"sessions", qGetSessions, bigBetRangeAnchor},
 			{"momentum", qGetMomentum, bigBetRangeAnchor},
+			{"momentum_rollup", qGetMomentumRoll, rollupRangeAnchor},
 		}
 		for _, a := range anchors {
 			got := injectAfter(a.query, a.anch, "X")

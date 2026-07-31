@@ -14,13 +14,40 @@ import (
 // leaderboardsRangeAnchor is the inner range-end clause of get_leaderboards.sql.
 const leaderboardsRangeAnchor = "AND time_sent <= $2"
 
+// leaderboardsRollupRangeAnchor is the inner range-end clause of
+// get_leaderboards_rollup.sql. Same shape ($2 upper bound) but on the rollup's
+// `day::date` column, not raw heartbeats' `time_sent`.
+const leaderboardsRollupRangeAnchor = "AND day <= $2::date"
+
 // GetLeaderboards aggregates coding time across ALL users. Both hide and rename
 // apply to the REQUESTER's own rows only (multi-user safe: one user's curation
 // must not alter other users' leaderboard contributions). Hide excludes with
 // `AND NOT (sender = $req AND <col> = ANY($n))`; rename re-groups the requester's
 // project/language via `CASE WHEN sender = $req AND col = ANY(..) THEN ..`.
 func (d *DB) GetLeaderboards(ctx context.Context, start, end time.Time, requester string, hs HiddenSets, rs RenameSets, ms MemberSets, spaceRequested bool) ([]LeaderboardRow, error) {
-	query := qGetLeaderboards
+	return d.leaderboards(ctx, qGetLeaderboards, leaderboardsRangeAnchor,
+		rawHeartbeatCols, start, end, requester, hs, rs, ms, spaceRequested)
+}
+
+// GetLeaderboardsRollup mirrors GetLeaderboards but reads the pre-aggregated
+// hb_rollup_daily (gaka-o4m). The raw query uses a hardcoded gap_seconds <=
+// (15 * 60) filter which is exactly what the rollup captured at ingest, so
+// summing rollup total_seconds reproduces the raw sum at the 15-min limit.
+// Callers must guard with the requester-scoped rollup-axes gate (no hide / no
+// Space rule on axes outside RollupAxes) — same policy as the stats fast path.
+func (d *DB) GetLeaderboardsRollup(ctx context.Context, start, end time.Time, requester string, hs HiddenSets, rs RenameSets, ms MemberSets, spaceRequested bool) ([]LeaderboardRow, error) {
+	return d.leaderboards(ctx, qGetLeaderboardsRoll, leaderboardsRollupRangeAnchor,
+		rollupCols, start, end, requester, hs, rs, ms, spaceRequested)
+}
+
+// leaderboards is the shared regroup+scan machinery for both the raw and
+// rollup leaderboard queries. `cols` is the axis→column map for the hide /
+// space splices (raw heartbeats vs rollup columns — same names, different
+// tables). The multi-user requester-scoping (sender = $req arms for hide /
+// rename, sender <> $req bypass for the space scope) is column-independent
+// and works identically on both tables.
+func (d *DB) leaderboards(ctx context.Context, baseQuery, anchor string, cols map[string]string, start, end time.Time, requester string, hs HiddenSets, rs RenameSets, ms MemberSets, spaceRequested bool) ([]LeaderboardRow, error) {
+	query := baseQuery
 	args := []any{start, end}
 
 	// A single $req param is reused by hide, rename, and space scope when active.
@@ -37,9 +64,9 @@ func (d *DB) GetLeaderboards(ctx context.Context, start, end time.Time, requeste
 	if hs.AnyHidden() {
 		ensureRequester()
 		var pred string
-		pred, args, next = exclusionPredicate(hs, rawHeartbeatCols,
+		pred, args, next = exclusionPredicate(hs, cols,
 			fmt.Sprintf("sender = $%d", requesterArg), next, args)
-		query = injectAfter(query, leaderboardsRangeAnchor, pred)
+		query = injectAfter(query, anchor, pred)
 	}
 
 	// Space scope (?space=): the requester's OWN rows are restricted to those
@@ -49,9 +76,9 @@ func (d *DB) GetLeaderboards(ctx context.Context, start, end time.Time, requeste
 	if spaceRequested {
 		ensureRequester()
 		var pred string
-		pred, args, next = spaceScopePredicate(ms, rawHeartbeatCols,
+		pred, args, next = spaceScopePredicate(ms, cols,
 			fmt.Sprintf("sender <> $%d", requesterArg), next, args, spaceRequested)
-		query = injectAfter(query, leaderboardsRangeAnchor, pred)
+		query = injectAfter(query, anchor, pred)
 	}
 
 	// Requester-scoped rename: re-group by remapped project/language (only the
