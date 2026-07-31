@@ -67,6 +67,10 @@ const (
 	tagIntegration = "Integrations"
 	tagGoals       = "Goals"
 	tagAwards      = "Awards"
+	tagWorkouts    = "Workouts + Health"
+	tagAvatar      = "Avatar"
+	tagAdmin       = "Admin"
+	tagBackfill    = "Backfill"
 )
 
 var (
@@ -1013,6 +1017,285 @@ func build() (*openapi3.T, error) {
 		op := &openapi3.Operation{Tags: []string{tagAwards}, Summary: "Historical award replay (own)",
 			Description: "Replays evaluate() day-by-day over the caller's history and writes the ledger. Unblocks the full deletion of the client-side evaluator. Long-running — response arrives when replay completes."}
 		setStatus(op, http.StatusOK, rInline("{daysScanned:int, awardsWritten:int}.", mapObject()))
+		stdErrors(op, "401", "403", "500")
+		return op
+	}())
+
+	// ==== HEALTHZ (gaka-lfc drift backfill — gaka-08m) =======================
+	doc.AddOperation("/healthz", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagMeta}, Summary: "Liveness + DB reachability probe",
+			Description: "Unauthenticated probe used by container orchestrators + uptime monitors. Returns {status,uptime,db:{ok,schema},build:{version,commit,branch,buildTime}}. Never returns 500 for DB unreachability — reports ok=false in the envelope so probes can distinguish 'process alive' from 'db up' via 200 body inspection.",
+			Security:    &public}
+		setStatus(op, http.StatusOK, rInline("Health probe envelope.", mapObject()))
+		return op
+	}())
+
+	// ==== WORKOUTS + HEALTH SAMPLES (Apple Watch ingest — gaka-08m) =========
+	//
+	// Owner-scoped ingest endpoints for HealthKit data (workouts + raw
+	// samples). Workouts flow through the heartbeats table (ty='workout') so
+	// time-spent aggregations pick them up; raw samples land in health_samples.
+
+	doc.AddOperation("/api/v1/users/current/workouts", "POST", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagWorkouts}, Summary: "Ingest one workout (Apple Watch)",
+			Description: "Single-workout POST from boomtime-watch. Persists a heartbeats row with ty='workout' plus a workout_details child. Body cap: 8 MiB."}
+		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{Required: true,
+			Description: "Workout envelope: {startTime, endTime, activityType, ...HealthKit fields}.",
+			Content:     openapi3.NewContentWithJSONSchema(openapi3.NewObjectSchema())}}
+		setStatus(op, http.StatusAccepted, rInline("Accepted.", mapObject()))
+		stdErrors(op, "400", "401", "403", "413", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/current/workouts.bulk", "POST", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagWorkouts}, Summary: "Ingest a batch of workouts",
+			Description: "Bulk POST from boomtime-watch. Same shape as the single endpoint but takes an array. Body cap: 8 MiB."}
+		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{Required: true,
+			Description: "Array of workout envelopes.",
+			Content:     openapi3.NewContentWithJSONSchema(func() *openapi3.Schema { s := openapi3.NewArraySchema(); s.Items = &openapi3.SchemaRef{Value: openapi3.NewObjectSchema()}; return s }())}}
+		setStatus(op, http.StatusAccepted, rInline("Accepted.", mapObject()))
+		stdErrors(op, "400", "401", "403", "413", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/current/workouts", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagWorkouts}, Summary: "List workouts",
+			Description: "Read-only view of the caller's workout history (heartbeats WHERE ty='workout' joined with workout_details)."}
+		setStatus(op, http.StatusOK, rInline("{workouts:[...]}.", mapObject()))
+		stdErrors(op, "401", "403", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/current/health_samples", "POST", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagWorkouts}, Summary: "Ingest one health sample",
+			Description: "Single HealthKit sample (steps, heart-rate, sleep, etc.). Deduped by (owner, type, startTime, endTime). Body cap: 8 MiB."}
+		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{Required: true,
+			Content: openapi3.NewContentWithJSONSchema(openapi3.NewObjectSchema())}}
+		setStatus(op, http.StatusAccepted, rInline("Accepted.", mapObject()))
+		stdErrors(op, "400", "401", "403", "413", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/current/health_samples.bulk", "POST", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagWorkouts}, Summary: "Ingest a batch of health samples",
+			Description: "Bulk sample upsert. Same dedupe semantics as the single endpoint. Body cap: 8 MiB."}
+		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{Required: true,
+			Content: openapi3.NewContentWithJSONSchema(func() *openapi3.Schema { s := openapi3.NewArraySchema(); s.Items = &openapi3.SchemaRef{Value: openapi3.NewObjectSchema()}; return s }())}}
+		setStatus(op, http.StatusAccepted, rInline("Accepted.", mapObject()))
+		stdErrors(op, "400", "401", "403", "413", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/current/stats/health", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagWorkouts}, Summary: "Health aggregations (Wellness card)",
+			Description: "Aggregated health metrics for the dashboard Wellness card: sleep totals, avg heart rate, steps, workouts breakdown."}
+		setStatus(op, http.StatusOK, rInline("Wellness payload.", mapObject()))
+		stdErrors(op, "401", "403", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/current/stats/ai", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagStats}, Summary: "AI-assisted coding activity breakdown",
+			Description: "Per-day AI-vs-manual attribution derived from user_agent parsing (Copilot, Cursor, etc.)."}
+		setStatus(op, http.StatusOK, rInline("AI activity payload.", mapObject()))
+		stdErrors(op, "401", "403", "500")
+		return op
+	}())
+
+	// ==== ENTITY EXPLORER (gaka-90x — drift backfill gaka-08m) ==============
+	doc.AddOperation("/api/v1/users/current/heartbeats/entities", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagExplorer}, Summary: "List entities by axis",
+			Description: "Per-type flat list of entities the caller has heartbeats for (?ty=file|project|...)."}
+		op.Parameters = openapi3.Parameters{
+			{Value: &openapi3.Parameter{Name: "ty", In: "query", Required: true, Description: "Entity type (file, project, language, editor, machine, ...)",
+				Schema: &openapi3.SchemaRef{Value: openapi3.NewStringSchema()}}},
+		}
+		setStatus(op, http.StatusOK, rInline("{entities:[{value,count}]}.", mapObject()))
+		stdErrors(op, "400", "401", "403", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/current/heartbeats/entities/redact", "POST", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagExplorer}, Summary: "Redact an entity across all heartbeats",
+			Description: "Blanks the entity column on matching heartbeat rows (rows remain, contributing to project/language/machine totals). Requires ?confirm=redact-entities as an accident guard. Body cap: 64 KiB."}
+		op.Parameters = openapi3.Parameters{
+			{Value: &openapi3.Parameter{Name: "confirm", In: "query", Required: true, Description: "Must be 'redact-entities'.",
+				Schema: &openapi3.SchemaRef{Value: openapi3.NewStringSchema()}}},
+		}
+		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{Required: true,
+			Description: "{ty, values:[...]}",
+			Content:     openapi3.NewContentWithJSONSchema(openapi3.NewObjectSchema())}}
+		setStatus(op, http.StatusOK, rInline("{rowsAffected:int}.", mapObject()))
+		stdErrors(op, "400", "401", "403", "413", "500")
+		return op
+	}())
+
+	// ==== AVATARS (gaka-9v4 — drift backfill gaka-08m) ======================
+	doc.AddOperation("/api/v1/users/current/avatar/status", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagAvatar}, Summary: "Own avatar status",
+			Description: "Reports whether the caller has an avatar pending, ready, or absent."}
+		setStatus(op, http.StatusOK, rInline("{status:'none'|'pending'|'ready', ...}.", mapObject()))
+		stdErrors(op, "401", "403", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/current/avatar/regenerate", "POST", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagAvatar}, Summary: "Regenerate own avatar",
+			Description: "Enqueues a fresh avatar synthesis job for the caller. Idempotent — a queued/running job is returned instead of duplicating work."}
+		setStatus(op, http.StatusAccepted, rInline("{jobId, existing:bool}.", mapObject()))
+		stdErrors(op, "401", "403", "500", "503")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/{username}/avatar", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagAvatar}, Summary: "Public avatar image (PNG)",
+			Description: "Public read of a user's avatar. Returns image/png bytes. Cached; falls back to the deterministic default when the user has none.",
+			Security:    &public,
+			Parameters:  openapi3.Parameters{pathParamStr("username", "Target username.")}}
+		setStatus(op, http.StatusOK, rBlob("Avatar image.", "image/png"))
+		stdErrors(op, "404", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/admin/avatar/synthesize-prompt", "POST", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagAvatar, tagAdmin}, Summary: "Admin-only: synthesize an avatar prompt from stats",
+			Description: "Runs the LLM prompt-synthesis pass for a target user's stats snapshot. Admin-gated via BOOM_ADMIN_USERS."}
+		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{Required: true,
+			Description: "{username, ...stats fields}",
+			Content:     openapi3.NewContentWithJSONSchema(openapi3.NewObjectSchema())}}
+		setStatus(op, http.StatusOK, rInline("{prompt:string}.", mapObject()))
+		stdErrors(op, "400", "401", "403", "500")
+		return op
+	}())
+
+	// ==== WIDGET DEFS + NAMED SVG (gaka-08m drift backfill) =================
+	//
+	// Per-user named widget templates + the public render endpoint for
+	// resolving them.
+
+	doc.AddOperation("/api/v1/users/current/widget-defs", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagWidgets}, Summary: "List own widget definitions",
+			Description: "Returns every saved widget-def (JSONB spec + name + createdAt) for the caller."}
+		setStatus(op, http.StatusOK, rInline("{widgetDefs:[...]}.", mapObject()))
+		stdErrors(op, "401", "403", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/current/widget-defs", "POST", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagWidgets}, Summary: "Create a named widget definition",
+			Description: "Persists a widget spec under a caller-owned name. Names are unique per owner. Body cap: 64 KiB."}
+		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{Required: true,
+			Description: "{name, spec}",
+			Content:     openapi3.NewContentWithJSONSchema(openapi3.NewObjectSchema())}}
+		setStatus(op, http.StatusOK, rInline("Created def wrapped as {widgetDef:...}.", mapObject()))
+		stdErrors(op, "400", "401", "403", "409", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/current/widget-defs/{name}", "PATCH", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagWidgets}, Summary: "Update a named widget definition",
+			Description: "Partial update of an existing widget def's spec. Body cap: 64 KiB.",
+			Parameters:  openapi3.Parameters{pathParamStr("name", "Widget-def name (owner-scoped).")}}
+		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{Required: true,
+			Content: openapi3.NewContentWithJSONSchema(openapi3.NewObjectSchema())}}
+		setStatus(op, http.StatusOK, rInline("Updated def wrapped as {widgetDef:...}.", mapObject()))
+		stdErrors(op, "400", "401", "403", "404", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/current/widget-defs/{name}", "DELETE", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagWidgets}, Summary: "Delete a named widget definition",
+			Description: "Removes the widget-def row. Existing widget-links that reference the same name will 404 on their public /widget/svg/:uuid/named until the def is recreated.",
+			Parameters:  openapi3.Parameters{pathParamStr("name", "Widget-def name.")}}
+		setStatus(op, http.StatusNoContent, &openapi3.ResponseRef{Value: &openapi3.Response{
+			Description: func() *string { s := "Deleted."; return &s }()}})
+		stdErrors(op, "401", "403", "404", "500")
+		return op
+	}())
+	doc.AddOperation("/widget/svg/{uuid}/named", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagWidgets}, Summary: "Public: named widget SVG",
+			Description: "Renders a widget-def SVG by name resolved through the caller's public widget-link. Public — no auth. Returns image/svg+xml.",
+			Security:    &public,
+			Parameters: openapi3.Parameters{
+				pathParamStr("uuid", "Widget-link UUID."),
+				{Value: &openapi3.Parameter{Name: "name", In: "query", Required: true, Description: "Widget-def name to render.",
+					Schema: &openapi3.SchemaRef{Value: openapi3.NewStringSchema()}}},
+			}}
+		setStatus(op, http.StatusOK, rBlob("Rendered SVG.", "image/svg+xml"))
+		stdErrors(op, "400", "404", "500")
+		return op
+	}())
+
+	// ==== ADMIN BACKFILL (gaka-vh8 — gaka-dam) ==============================
+	//
+	// Git-history backfill CLI admin plane. Config CRUD + per-job lifecycle
+	// (jobs are the durable side of the git-history walk).
+
+	doc.AddOperation("/api/v1/admin/backfill/config", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagBackfill, tagAdmin}, Summary: "Get backfill config",
+			Description: "Returns the caller's backfill_config row (idle windows, per-commit heartbeat mint rate, etc.). Admin-gated."}
+		setStatus(op, http.StatusOK, rInline("Config row.", mapObject()))
+		stdErrors(op, "401", "403", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/admin/backfill/config", "PATCH", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagBackfill, tagAdmin}, Summary: "Update backfill config",
+			Description: "Partial update of the caller's backfill_config. Admin-gated. Body cap: 64 KiB."}
+		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{Required: true,
+			Content: openapi3.NewContentWithJSONSchema(openapi3.NewObjectSchema())}}
+		setStatus(op, http.StatusOK, rInline("Persisted config row.", mapObject()))
+		stdErrors(op, "400", "401", "403", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/admin/backfill/stats", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagBackfill, tagAdmin}, Summary: "Backfill stats",
+			Description: "Aggregated backfill queue / DB row counts for the admin dashboard."}
+		setStatus(op, http.StatusOK, rInline("{jobsActive, heartbeatsInserted, ...}.", mapObject()))
+		stdErrors(op, "401", "403", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/admin/backfill/jobs", "POST", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagBackfill, tagAdmin}, Summary: "Enqueue a backfill job",
+			Description: "Creates a new backfill job (git repo + branch + date range). Returns the job row with jobId."}
+		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{Required: true,
+			Description: "{repoPath, branch, since, until, ...}",
+			Content:     openapi3.NewContentWithJSONSchema(openapi3.NewObjectSchema())}}
+		setStatus(op, http.StatusAccepted, rInline("{jobId, ...}.", mapObject()))
+		stdErrors(op, "400", "401", "403", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/admin/backfill/jobs/{id}", "PATCH", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagBackfill, tagAdmin}, Summary: "Update backfill job (cancel etc.)",
+			Description: "Partial update: usually {status:'cancelled'} to stop an in-flight walk. Body cap: 64 KiB.",
+			Parameters:  openapi3.Parameters{pathParamStr("id", "Backfill job id.")}}
+		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{Required: true,
+			Content: openapi3.NewContentWithJSONSchema(openapi3.NewObjectSchema())}}
+		setStatus(op, http.StatusOK, rInline("Updated job row.", mapObject()))
+		stdErrors(op, "400", "401", "403", "404", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/admin/backfill/jobs/{id}/heartbeats", "POST", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagBackfill, tagAdmin}, Summary: "Feed CLI-walked heartbeats to a job",
+			Description: "CLI streams parsed git-log heartbeats into the job's staging area. Idempotent on (owner, commitSha, filePath). Body cap: 8 MiB.",
+			Parameters:  openapi3.Parameters{pathParamStr("id", "Backfill job id.")}}
+		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{Required: true,
+			Content: openapi3.NewContentWithJSONSchema(func() *openapi3.Schema { s := openapi3.NewArraySchema(); s.Items = &openapi3.SchemaRef{Value: openapi3.NewObjectSchema()}; return s }())}}
+		setStatus(op, http.StatusAccepted, rInline("{staged:int}.", mapObject()))
+		stdErrors(op, "400", "401", "403", "404", "413", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/admin/backfill/jobs/{id}/preview", "POST", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagBackfill, tagAdmin}, Summary: "Preview a backfill's DB impact",
+			Description: "Dry-run: returns the row counts that would be inserted (per language / project / date bucket) without touching the live heartbeats table.",
+			Parameters:  openapi3.Parameters{pathParamStr("id", "Backfill job id.")}}
+		setStatus(op, http.StatusOK, rInline("Preview envelope with per-bucket counts.", mapObject()))
+		stdErrors(op, "400", "401", "403", "404", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/admin/backfill/heartbeats", "DELETE", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagBackfill, tagAdmin}, Summary: "Purge backfill-sourced heartbeats",
+			Description: "Deletes heartbeats attributed to a backfill source (WHERE user_agent LIKE 'boomtime-backfill%'). Owner-scoped destructive op — requires ?confirm.",
+			Parameters: openapi3.Parameters{
+				{Value: &openapi3.Parameter{Name: "confirm", In: "query", Required: true, Description: "Must be a truthy value.",
+					Schema: &openapi3.SchemaRef{Value: openapi3.NewStringSchema()}}},
+			}}
+		setStatus(op, http.StatusOK, rInline("{rowsDeleted:int}.", mapObject()))
+		stdErrors(op, "400", "401", "403", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/admin/backfill/ws", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagBackfill, tagAdmin}, Summary: "Live backfill job stream (WebSocket)",
+			Description: "WebSocket. Streams job lifecycle events (queued -> running -> done|error) for the admin dashboard. Auths via the HttpOnly refresh_token cookie because WS handshakes cannot carry an Authorization header.",
+			Security:    &openapi3.SecurityRequirements{{"refreshCookie": []string{}}}}
+		setStatus(op, http.StatusSwitchingProtocols, &openapi3.ResponseRef{Value: &openapi3.Response{
+			Description: func() *string { s := "WebSocket upgrade."; return &s }()}})
 		stdErrors(op, "401", "403", "500")
 		return op
 	}())
