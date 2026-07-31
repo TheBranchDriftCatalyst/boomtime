@@ -5,7 +5,7 @@ import { cssVar } from "@/viz/d3/useChartFrame";
 import { useD3Surface } from "@/viz/d3/useD3Surface";
 import { ChartSurface } from "@/viz/d3/ChartSurface";
 import { tooltipHtml } from "@/viz/d3/tooltip";
-import { fmtPct } from "@/viz/d3/tooltipContent";
+import { fmtPct, timeValueContent } from "@/viz/d3/tooltipContent";
 import { formatDay, styleAxis } from "@/viz/d3/axes";
 import { colorAt } from "@/viz/d3/color";
 import { EmptyChart } from "@/viz/d3/EmptyChart";
@@ -81,16 +81,13 @@ export function AuthoringVsReading({
         .attr("stroke", card)
         .attr("stroke-width", 1)
         .on("mousemove", (event, d) => {
-          const share = total > 0 ? (d.data.value / total) * 100 : 0;
+          // gaka-9pt: shared time+share builder — same shape everywhere.
           showTip(
             event,
             tooltipHtml({
               title: d.data.label,
               titleSwatch: d.data.color,
-              rows: [
-                { label: "Time", value: secondsToHms(d.data.value) },
-                { label: "Share", value: fmtPct(share) },
-              ],
+              rows: timeValueContent(d.data.value, total, secondsToHms),
             }),
           );
         })
@@ -168,6 +165,35 @@ export function AuthoringVsReading({
           .attr("fill", muted)
           .style("font-size", "10px")
           .text("Authoring ratio over time");
+
+        // gaka-9pt: hover targets on the line. Previously the ratio-over-time
+        // line was silent; now every point exposes its date + ratio %. Use
+        // transparent-but-larger circles as the hit target so pointing at the
+        // line (not exactly the vertex) still fires.
+        lg.selectAll("circle.pt")
+          .data(lineData)
+          .join("circle")
+          .attr("class", "pt")
+          .attr("cx", (d) => x(d.date))
+          .attr("cy", (d) => y(d.r))
+          .attr("r", 8)
+          .attr("fill", "transparent")
+          .on("mousemove", (event, d) => {
+            showTip(
+              event,
+              tooltipHtml({
+                title: d3.timeFormat("%d %b %Y")(d.date),
+                titleSwatch: WRITE_COLOR,
+                rows: [
+                  {
+                    label: "Authoring ratio",
+                    value: fmtPct(d.r * 100),
+                  },
+                ],
+              }),
+            );
+          })
+          .on("mouseleave", hideTip);
       }
     },
     [hasData, slices, write, read, dates, ratio],

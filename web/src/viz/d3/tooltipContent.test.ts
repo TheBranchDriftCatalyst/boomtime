@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  deltaContent,
   escapeHtml,
   fmtDateRange,
   fmtDelta,
   fmtPct,
   fmtRank,
   otherBreakdownContent,
+  rankedContent,
+  timeValueContent,
   tooltipHtml,
   type TooltipSpec,
 } from "./tooltipContent";
@@ -282,5 +285,84 @@ describe("otherBreakdownContent (gaka-7m4)", () => {
     const { rows, footer } = otherBreakdownContent({}, hms);
     expect(rows).toHaveLength(0);
     expect(footer).toBe("");
+  });
+});
+
+// gaka-9pt: shared row-builder helpers so charts don't reimplement the same
+// "Time + Share" / "…+ rank" / "…+ delta" shapes over and over.
+describe("timeValueContent (gaka-9pt)", () => {
+  const hms = (s: number) => `${s}s`;
+
+  it("returns Time + Share rows when value > 0", () => {
+    const rows = timeValueContent(300, 1200, hms);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toEqual({ label: "Time", value: "300s" });
+    expect(rows[1]).toEqual({ label: "Share", value: "25.0%" });
+  });
+
+  it("collapses to a single 0 row when value <= 0 (no misleading 0.0%)", () => {
+    const rows = timeValueContent(0, 1200, hms);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual({ label: "Time", value: "0" });
+  });
+
+  it("honours custom timeLabel / shareLabel (denominator honesty)", () => {
+    const rows = timeValueContent(300, 1200, hms, {
+      timeLabel: "Activity",
+      shareLabel: "Share of day",
+    });
+    expect(rows[0].label).toBe("Activity");
+    expect(rows[1].label).toBe("Share of day");
+  });
+
+  it("handles a zero total without dividing by zero", () => {
+    const rows = timeValueContent(300, 0, hms);
+    // 300 > 0 so we take the 2-row branch, but share falls back to 0%.
+    expect(rows).toHaveLength(2);
+    expect(rows[1].value).toBe("0.0%");
+  });
+});
+
+describe("rankedContent (gaka-9pt)", () => {
+  const hms = (s: number) => `${s}s`;
+
+  it("bundles timeValueContent rows + a #R of N footer", () => {
+    const { rows, footer } = rankedContent(300, 1200, 3, 14, hms);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].value).toBe("300s");
+    expect(footer).toBe("#3 of 14");
+  });
+
+  it("collapses the footer when rank or base is invalid", () => {
+    const { footer } = rankedContent(300, 1200, 0, 14, hms);
+    expect(footer).toBe("");
+  });
+
+  it("preserves the zero-value collapse behaviour of timeValueContent", () => {
+    const { rows } = rankedContent(0, 1200, 3, 14, hms);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].value).toBe("0");
+  });
+});
+
+describe("deltaContent (gaka-9pt)", () => {
+  const hms = (s: number) => `${s}s`;
+
+  it("bundles timeValueContent rows + a fmtDelta footer with the arrow", () => {
+    const { rows, footer } = deltaContent(5400, 10800, 3600, hms);
+    expect(rows).toHaveLength(2);
+    expect(footer).toContain("▲");
+    expect(footer).toContain("+50%");
+  });
+
+  it("collapses the footer when both current and prior are 0", () => {
+    const { rows, footer } = deltaContent(0, 0, 0, hms);
+    expect(rows).toHaveLength(1); // 0 value collapse
+    expect(footer).toBe("");
+  });
+
+  it("emits (new) when prior is 0 but current > 0", () => {
+    const { footer } = deltaContent(3600, 3600, 0, hms);
+    expect(footer).toContain("(new)");
   });
 });

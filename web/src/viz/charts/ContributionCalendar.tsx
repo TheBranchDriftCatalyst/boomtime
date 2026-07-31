@@ -5,7 +5,7 @@ import { useD3Surface } from "@/viz/d3/useD3Surface";
 import { ChartSurface } from "@/viz/d3/ChartSurface";
 import { secondsToHms } from "@/lib/utils";
 import { tooltipHtml } from "@/viz/d3/tooltip";
-import { fmtPct } from "@/viz/d3/tooltipContent";
+import { rankedContent } from "@/viz/d3/tooltipContent";
 import { emptyFloor } from "@/viz/d3/color";
 import { EmptyChart } from "@/viz/d3/EmptyChart";
 
@@ -92,6 +92,17 @@ export function ContributionCalendar({ dates, values }: ContributionCalendarProp
         .attr("height", CELL)
         .attr("rx", 2)
         .attr("fill", emptyCell);
+      // gaka-9pt: rank ACTIVE days by seconds desc. Ranking against every day
+      // in the window (many 0-seconds days on quiet ranges) would make even
+      // top days look unimportant; the calendar is exactly about "which days
+      // were my best?".
+      const dayRank = new Map<number, number>();
+      [...days]
+        .filter((d) => d.value > 0)
+        .sort((a, b) => b.value - a.value)
+        .forEach((d, i) => dayRank.set(d.date.getTime(), i + 1));
+      const activeDays = dayRank.size;
+
       cellG
         .append("rect")
         .attr("width", CELL)
@@ -100,22 +111,37 @@ export function ContributionCalendar({ dates, values }: ContributionCalendarProp
         .attr("fill", base)
         .attr("fill-opacity", (d) => opacity(d.value))
         .on("mousemove", (event, d) => {
-          const share = total > 0 ? (d.value / total) * 100 : 0;
-          const rows0 =
-            d.value > 0
-              ? [
-                  { label: "Time", value: secondsToHms(d.value) },
-                  { label: "Share of window", value: fmtPct(share) },
-                ]
-              : [{ label: "Activity", value: "No activity" }];
           const isPeak = d.value > 0 && d.value === maxVal;
+          let rows0: { label: string; value: string; muted?: boolean }[];
+          let footer: string | undefined;
+          if (d.value > 0) {
+            const rk = dayRank.get(d.date.getTime()) ?? 0;
+            const built = rankedContent(
+              d.value,
+              total,
+              rk,
+              activeDays,
+              secondsToHms,
+              { shareLabel: "Share of window" },
+            );
+            rows0 = built.rows;
+            // Peak day flag takes precedence over rank in the footer — it's
+            // the more prominent signal on the top cell. Rank still surfaces
+            // for #2..#N cells via fmtRank.
+            footer = isPeak
+              ? "Peak day in this window"
+              : built.footer || undefined;
+          } else {
+            rows0 = [{ label: "Activity", value: "No activity" }];
+            footer = undefined;
+          }
           showTip(
             event,
             tooltipHtml({
               title: d3.timeFormat("%a %d %b %Y")(d.date),
               titleSwatch: d.value > 0 ? base : undefined,
               rows: rows0,
-              footer: isPeak ? "Peak day in this window" : undefined,
+              footer,
             }),
           );
         })

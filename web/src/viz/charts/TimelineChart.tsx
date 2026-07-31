@@ -5,6 +5,7 @@ import { cssVar } from "@/viz/d3/useChartFrame";
 import { useD3Surface } from "@/viz/d3/useD3Surface";
 import { ChartSurface } from "@/viz/d3/ChartSurface";
 import { tooltipHtml } from "@/viz/d3/tooltip";
+import { fmtPct, fmtRank } from "@/viz/d3/tooltipContent";
 import { styleAxis } from "@/viz/d3/axes";
 
 import { colorAt } from "@/viz/d3/color";
@@ -94,6 +95,32 @@ export function TimelineChart({ timeline, height = 350 }: TimelineChartProps) {
         .append("title")
         .text((d) => String(d));
 
+      // gaka-9pt: precompute per-lane totals + per-segment rank within lane so
+      // hovering a range-bar tells "how big a chunk of this lang's work is
+      // this segment, and where does it rank against sibling segments".
+      const laneTotal = new Map<string, number>();
+      const laneSegments = new Map<string, Segment[]>();
+      for (const s of segments) {
+        const dur = (s.end.getTime() - s.start.getTime()) / 1000;
+        laneTotal.set(s.lang, (laneTotal.get(s.lang) ?? 0) + dur);
+        const list = laneSegments.get(s.lang) ?? [];
+        list.push(s);
+        laneSegments.set(s.lang, list);
+      }
+      // Rank within lane keyed by (start ISO + end ISO) — segments are unique
+      // by (lang, start, end); use a WeakMap keyed on the Segment reference.
+      const segRank = new WeakMap<Segment, number>();
+      for (const [, segs] of laneSegments) {
+        [...segs]
+          .sort(
+            (a, b) =>
+              b.end.getTime() -
+              b.start.getTime() -
+              (a.end.getTime() - a.start.getTime()),
+          )
+          .forEach((s, i) => segRank.set(s, i + 1));
+      }
+
       g.selectAll("rect.seg")
         .data(segments)
         .join("rect")
@@ -108,13 +135,22 @@ export function TimelineChart({ timeline, height = 350 }: TimelineChartProps) {
           const dur = (d.end.getTime() - d.start.getTime()) / 1000;
           const startFmt = d3.timeFormat("%d %b, %H:%M")(d.start);
           const endFmt = d3.timeFormat("%H:%M")(d.end);
+          const laneT = laneTotal.get(d.lang) ?? 0;
+          const share = laneT > 0 ? (dur / laneT) * 100 : 0;
+          const laneSegs = laneSegments.get(d.lang) ?? [];
+          const rk = segRank.get(d) ?? 0;
           showTip(
             event,
             tooltipHtml({
               title: d.lang,
               titleSwatch: colorAt(d.colorIndex),
               subtitle: `${startFmt} → ${endFmt}`,
-              rows: [{ label: "Duration", value: secondsToHms(dur) }],
+              rows: [
+                { label: "Duration", value: secondsToHms(dur) },
+                { label: "Share of lane", value: fmtPct(share) },
+                { label: "Lane total", value: secondsToHms(laneT), muted: true },
+              ],
+              footer: fmtRank(rk, laneSegs.length) || undefined,
             }),
           );
         })

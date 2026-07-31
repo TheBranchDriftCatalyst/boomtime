@@ -4,7 +4,7 @@ import { cssVar } from "@/viz/d3/useChartFrame";
 import { useD3Surface } from "@/viz/d3/useD3Surface";
 import { ChartSurface } from "@/viz/d3/ChartSurface";
 import { tooltipHtml } from "@/viz/d3/tooltip";
-import { fmtPct } from "@/viz/d3/tooltipContent";
+import { rankedContent } from "@/viz/d3/tooltipContent";
 import { gridlines, hoursTickFormat, styleAxis } from "@/viz/d3/axes";
 import { colorAt } from "@/viz/d3/color";
 import { EmptyChart } from "@/viz/d3/EmptyChart";
@@ -71,6 +71,17 @@ export function HourBarChart({ hour, height = 320 }: HourBarChartProps) {
       const total = d3.sum(values);
       const color = colorAt(0);
 
+      // Rank across ACTIVE hours (hours with y > 0). Ranking against all 24
+      // would degrade on quiet ranges — a "3rd of 24" reads as "unimportant"
+      // when only 3 hours are active at all. `rank` maps hour-of-day -> 1-based
+      // rank; `activeHours` is the base for `#R of N`.
+      const rank = new Map<number, number>();
+      data
+        .filter((d) => d.y > 0)
+        .sort((a, b) => b.y - a.y)
+        .forEach((d, i) => rank.set(d.h, i + 1));
+      const activeHours = rank.size;
+
       g.selectAll("rect.bar")
         .data(data)
         .join("rect")
@@ -82,21 +93,26 @@ export function HourBarChart({ hour, height = 320 }: HourBarChartProps) {
         .attr("rx", 3)
         .attr("fill", color)
         .on("mousemove", (event, d) => {
-          const share = total > 0 ? (d.y / total) * 100 : 0;
           const nextH = (d.h + 1) % 24;
+          const title = `${String(d.h).padStart(2, "0")}:00–${String(nextH).padStart(2, "0")}:00`;
+          const r = rank.get(d.h) ?? 0;
+          // gaka-9pt: rankedContent gives us Activity + Share + rank in one
+          // call. Empty hours still render a single "Activity: 0" row and no
+          // rank (r === 0 makes fmtRank collapse) — keeps the layout stable.
+          const { rows, footer } = rankedContent(d.y, total, r, activeHours, secondsToHms, {
+            timeLabel: "Activity",
+            shareLabel: "Share of day",
+          });
+          const combinedFooter = footer
+            ? `${footer} · Local time`
+            : "Local time";
           showTip(
             event,
             tooltipHtml({
-              title: `${String(d.h).padStart(2, "0")}:00–${String(nextH).padStart(2, "0")}:00`,
+              title,
               titleSwatch: color,
-              rows:
-                d.y > 0
-                  ? [
-                      { label: "Activity", value: secondsToHms(d.y) },
-                      { label: "Share of day", value: fmtPct(share) },
-                    ]
-                  : [{ label: "Activity", value: "0" }],
-              footer: "Local time",
+              rows,
+              footer: combinedFooter,
             }),
           );
         })

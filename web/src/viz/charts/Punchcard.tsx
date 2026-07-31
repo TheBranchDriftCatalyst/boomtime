@@ -4,7 +4,7 @@ import { cssVar } from "@/viz/d3/useChartFrame";
 import { useD3Surface } from "@/viz/d3/useD3Surface";
 import { ChartSurface } from "@/viz/d3/ChartSurface";
 import { tooltipHtml } from "@/viz/d3/tooltip";
-import { fmtPct } from "@/viz/d3/tooltipContent";
+import { rankedContent } from "@/viz/d3/tooltipContent";
 import { styleAxis } from "@/viz/d3/axes";
 import { colorAt } from "@/viz/d3/color";
 import { EmptyChart } from "@/viz/d3/EmptyChart";
@@ -64,8 +64,18 @@ export function Punchcard({ data, height = 260 }: PunchcardProps) {
       const total = d3.sum(data.cells, (c) => c.seconds) || 1;
       const color = colorAt(0);
 
+      // gaka-9pt: rank across ACTIVE cells only. On the 7×24 grid most cells
+      // are 0; ranking against all 168 would make even a top-3 cell look
+      // unimportant ("#3 of 168"). Rank map by `${dow}-${hour}` key.
+      const activeCells = data.cells.filter((c) => c.seconds > 0);
+      const cellRank = new Map<string, number>();
+      [...activeCells]
+        .sort((a, b) => b.seconds - a.seconds)
+        .forEach((c, i) => cellRank.set(`${c.dow}-${c.hour}`, i + 1));
+      const rankBase = activeCells.length;
+
       g.selectAll("circle.punch")
-        .data(data.cells.filter((c) => c.seconds > 0))
+        .data(activeCells)
         .join("circle")
         .attr("class", "punch")
         .attr("cx", (c) => (x(c.hour) ?? 0) + x.bandwidth() / 2)
@@ -74,18 +84,26 @@ export function Punchcard({ data, height = 260 }: PunchcardProps) {
         .attr("fill", color)
         .attr("fill-opacity", 0.85)
         .on("mousemove", (event, c) => {
-          const share = (c.seconds / total) * 100;
           const nextH = (c.hour + 1) % 24;
+          const rk = cellRank.get(`${c.dow}-${c.hour}`) ?? 0;
+          const { rows, footer } = rankedContent(
+            c.seconds,
+            total,
+            rk,
+            rankBase,
+            secondsToHms,
+            { shareLabel: "Share of week" },
+          );
+          // Preserve the UTC context that already lived in the footer; chain
+          // it with the rank string when rank is present.
+          const combinedFooter = footer ? `${footer} · UTC` : "UTC";
           showTip(
             event,
             tooltipHtml({
               title: `${DOW[c.dow]} ${String(c.hour).padStart(2, "0")}:00–${String(nextH).padStart(2, "0")}:00`,
               titleSwatch: color,
-              rows: [
-                { label: "Time", value: secondsToHms(c.seconds) },
-                { label: "Share of week", value: fmtPct(share) },
-              ],
-              footer: "UTC",
+              rows,
+              footer: combinedFooter,
             }),
           );
         })

@@ -246,3 +246,76 @@ function shortDuration(seconds: number): string {
   if (m > 0) return `${m}m`;
   return `${s}s`;
 }
+
+// ---------------------------------------------------------------------------
+// Row-builders (gaka-9pt)
+//
+// Shared "shape" helpers so charts don't repeat the same 2-3 rows verbatim.
+// Every helper returns `TooltipRow[]` — callers still assemble the final
+// `TooltipSpec` (title / titleSwatch / subtitle / footer) themselves because
+// those fields carry chart-specific context (dates, ranges, delta arrows).
+//
+// Convention: `shareLabel` is the ACCURATE denominator label — pass
+// "Share of day" / "Share of week" / "Share of bucket" rather than a generic
+// "Share" so hovers stay honest about what they're a share OF.
+
+/**
+ * Value + share pair. The bread-and-butter of every top-N and time-series
+ * tooltip. `seconds === 0` collapses to a single "0" row so an empty cell
+ * doesn't render a misleading "0.0%" line.
+ *
+ * `formatTime` is caller-provided (same shape as `otherBreakdownContent`) so
+ * every chart keeps its existing time format (`secondsToHms`, `secondsToCompact`,
+ * ISO H:MM…) without dragging `@/lib/utils` into this module.
+ */
+export function timeValueContent(
+  seconds: number,
+  totalSeconds: number,
+  formatTime: (seconds: number) => string,
+  opts: { timeLabel?: string; shareLabel?: string } = {},
+): TooltipRow[] {
+  const timeLabel = opts.timeLabel ?? "Time";
+  const shareLabel = opts.shareLabel ?? "Share";
+  if (seconds <= 0) return [{ label: timeLabel, value: "0" }];
+  const share = totalSeconds > 0 ? (seconds / totalSeconds) * 100 : 0;
+  return [
+    { label: timeLabel, value: formatTime(seconds) },
+    { label: shareLabel, value: fmtPct(share) },
+  ];
+}
+
+/**
+ * `timeValueContent` + a `#R of N` footer. Returns both so the caller can
+ * still add a swatch/subtitle. Rank is 1-indexed; a non-positive rank or
+ * total collapses the footer to "".
+ */
+export function rankedContent(
+  seconds: number,
+  totalSeconds: number,
+  rank: number,
+  rankBase: number,
+  formatTime: (seconds: number) => string,
+  opts: { timeLabel?: string; shareLabel?: string } = {},
+): { rows: TooltipRow[]; footer: string } {
+  return {
+    rows: timeValueContent(seconds, totalSeconds, formatTime, opts),
+    footer: fmtRank(rank, rankBase),
+  };
+}
+
+/**
+ * `timeValueContent` + a `fmtDelta`-formatted footer. Prior is the previous
+ * period's value in seconds; when both are 0 the footer collapses.
+ */
+export function deltaContent(
+  seconds: number,
+  totalSeconds: number,
+  priorSeconds: number,
+  formatTime: (seconds: number) => string,
+  opts: { timeLabel?: string; shareLabel?: string } = {},
+): { rows: TooltipRow[]; footer: string } {
+  return {
+    rows: timeValueContent(seconds, totalSeconds, formatTime, opts),
+    footer: fmtDelta(seconds, priorSeconds),
+  };
+}
