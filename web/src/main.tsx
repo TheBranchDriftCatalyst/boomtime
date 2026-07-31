@@ -1,11 +1,9 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter } from "react-router";
+import { createBrowserRouter, RouterProvider } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
-import { App } from "@/app/App";
-import { AnalyticsTracker } from "@/app/AnalyticsTracker";
-import { AuthProvider } from "@/features/auth/useAuth";
+import { RootLayout } from "@/app/App";
 import { CatalystProvider } from "@thebranchdriftcatalyst/catalyst-ui/contexts/CatalystProvider";
 import { TooltipProvider } from "@thebranchdriftcatalyst/catalyst-ui/ui/tooltip";
 import { authStore } from "@/features/auth/auth";
@@ -26,6 +24,24 @@ const queryClient = new QueryClient({
   },
 });
 
+// gaka-ie3: migrated from <BrowserRouter> + <Routes> to
+// createBrowserRouter + <RouterProvider> so the data-router-only APIs
+// (useBlocker, unstable_usePrompt) are available. The route table is
+// declared in @/app/App (`ROUTES`); RootLayout wraps every child with
+// AuthProvider + AnalyticsTracker via <Outlet/>.
+const router = createBrowserRouter([
+  {
+    element: <RootLayout />,
+    children: [
+      // The single catchall — the app's Routes decide what to render.
+      // A future refactor could push those definitions up into this
+      // config table for loader-based data fetching; today's App.tsx
+      // still uses nested <Routes> which just work as a leaf.
+      { path: "*", lazy: () => import("@/app/App").then((m) => ({ Component: m.AppRoutes })) },
+    ],
+  },
+]);
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     {/*
@@ -43,13 +59,8 @@ createRoot(document.getElementById("root")!).render(
       */}
       <TooltipProvider delayDuration={200}>
         <QueryClientProvider client={queryClient}>
-          <BrowserRouter>
-            <AnalyticsTracker />
-            <AuthProvider>
-              <App />
-              <Toaster position="top-right" richColors />
-            </AuthProvider>
-          </BrowserRouter>
+          <RouterProvider router={router} />
+          <Toaster position="top-right" richColors />
         </QueryClientProvider>
       </TooltipProvider>
     </CatalystProvider>

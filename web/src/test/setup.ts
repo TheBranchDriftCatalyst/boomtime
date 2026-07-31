@@ -47,6 +47,24 @@ if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {};
 }
 
+// jsdom lacks ResizeObserver (used by grid WidgetHost's useMeasuredSize
+// and viz/d3/useChartFrame). Shim as a no-op: tests can't measure the
+// DOM anyway so an observer that never fires is the honest answer.
+// Without this, any test that mounts a grid tile crashes inside
+// commitHookLayoutEffects, blanking the render tree.
+type ResizeObserverInit = {
+  observe: (target: Element) => void;
+  unobserve: (target: Element) => void;
+  disconnect: () => void;
+};
+if (typeof (globalThis as { ResizeObserver?: unknown }).ResizeObserver === "undefined") {
+  (globalThis as { ResizeObserver?: unknown }).ResizeObserver = class {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  } as unknown as ResizeObserverInit;
+}
+
 // jsdom lacks Element.prototype.hasPointerCapture / setPointerCapture /
 // releasePointerCapture. Radix UI's Select (and other pointer-capture
 // primitives — Slider, Toggle, Popover triggers) call these under

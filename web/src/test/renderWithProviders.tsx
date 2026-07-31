@@ -1,7 +1,7 @@
 import type { ReactElement, ReactNode } from "react";
 import { render, type RenderOptions } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter } from "react-router";
+import { createMemoryRouter, RouterProvider } from "react-router";
 import { ThemeProvider } from "@thebranchdriftcatalyst/catalyst-ui/contexts/Theme";
 import { AuthProvider } from "@/features/auth/useAuth";
 
@@ -34,26 +34,31 @@ export function Providers({
 }: ProvidersProps) {
   const qc = queryClient ?? makeTestQueryClient();
 
-  let tree: ReactNode = (
+  const inner: ReactNode = withAuth ? (
+    <AuthProvider>{children}</AuthProvider>
+  ) : (
+    children
+  );
+
+  const wrapped: ReactNode = (
     <ThemeProvider>
-      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+      <QueryClientProvider client={qc}>{inner}</QueryClientProvider>
     </ThemeProvider>
   );
 
-  if (withAuth) {
-    tree = (
-      <ThemeProvider>
-        <QueryClientProvider client={qc}>
-          <AuthProvider>{children}</AuthProvider>
-        </QueryClientProvider>
-      </ThemeProvider>
-    );
-  }
-
   if (withRouter) {
-    return <MemoryRouter initialEntries={initialEntries}>{tree}</MemoryRouter>;
+    // gaka-ie3: build a data router via createMemoryRouter so tests can
+    // exercise data-router-only APIs (unstable_usePrompt in ProfileEditor
+    // + any future useBlocker use). A catchall route wraps `wrapped` so
+    // useParams-consuming components can be tested by passing initial
+    // entries like ["/p/panda"] — the calling test wraps its own
+    // <Route path=":slug"> inside `children` when it cares.
+    const router = createMemoryRouter([{ path: "*", element: wrapped }], {
+      initialEntries,
+    });
+    return <RouterProvider router={router} />;
   }
-  return <>{tree}</>;
+  return <>{wrapped}</>;
 }
 
 interface RenderWithProvidersOptions extends Omit<RenderOptions, "wrapper"> {

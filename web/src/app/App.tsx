@@ -1,10 +1,12 @@
 import { lazy, Suspense } from "react";
-import { Navigate, Route, Routes } from "react-router";
+import { Navigate, Outlet, Route, Routes } from "react-router";
 import { AppShell } from "@/layout/AppShell";
 import { ProtectedRoute } from "@/app/ProtectedRoute";
 import { AdminRoute } from "@/app/AdminRoute";
 import { useAuth } from "@/features/auth/useAuth";
 import { Spinner } from "@/components/Spinner";
+import { AnalyticsTracker } from "@/app/AnalyticsTracker";
+import { AuthProvider } from "@/features/auth/useAuth";
 // Auth pages are eagerly imported: the pre-auth bundle is tiny and Login is
 // the most-common landing page after a fresh visit — code-splitting it just
 // costs a network round-trip on the critical path.
@@ -62,10 +64,14 @@ const Logs = lazy(() =>
   import("@/features/logs/Logs").then((m) => ({ default: m.Logs })),
 );
 // Public profile lives OUTSIDE the /app tree — /p/:slug is unauthenticated
-// and renders its own minimal shell (no sidebar, no header).
-const PublicDashboard = lazy(() =>
-  import("@/features/publicprofile/PublicDashboard").then((m) => ({
-    default: m.PublicDashboard,
+// for anonymous visitors and renders its own minimal shell (no sidebar,
+// no header). gaka-ie3: the route now points at EditableProfilePage which
+// dispatches to the read-only PublicDashboard for non-owners and to the
+// inline editor for the caller-owns-this-profile case. Non-owner paths
+// are byte-identical to the previous behavior.
+const EditableProfilePage = lazy(() =>
+  import("@/features/publicprofile/EditableProfilePage").then((m) => ({
+    default: m.EditableProfilePage,
   })),
 );
 
@@ -92,18 +98,36 @@ function PageFallback() {
   );
 }
 
-export function App() {
+// gaka-ie3: split into two exports for the data-router migration.
+// `RootLayout` is the top-level route element mounted by
+// createBrowserRouter — it owns providers that historically lived in
+// main.tsx (AuthProvider + AnalyticsTracker) but need access to the
+// router context. `AppRoutes` is the leaf that renders the classic
+// nested <Routes> tree; lazy-loaded by the root config so future
+// per-route lazy-loading remains straightforward.
+export function RootLayout() {
+  return (
+    <AuthProvider>
+      <AnalyticsTracker />
+      <Outlet />
+    </AuthProvider>
+  );
+}
+
+export function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<RootRedirect />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
-      {/* Public profile — unauthenticated, no shell. */}
+      {/* Public profile — anonymous for visitors, editable for owners
+          (gaka-ie3). EditableProfilePage handles the owner-check + mode
+          toggle; non-owners get the read-only PublicDashboard render. */}
       <Route
         path="/p/:slug"
         element={
           <Suspense fallback={<PageFallback />}>
-            <PublicDashboard />
+            <EditableProfilePage />
           </Suspense>
         }
       />
