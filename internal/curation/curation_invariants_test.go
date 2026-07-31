@@ -522,7 +522,7 @@ var _ = Describe("AdminLabelsSeedSQL escapes single quotes in EVERY string field
 			"optimizedPrompt": "prompt's",
 			"rank":            10,
 			"tier":            "tier's",
-			"condition":       json.RawMessage(`{"kind":"axis-time","axis":"languages","value":"go","op":"ge","hours":1}`),
+			"condition":       json.RawMessage(`{"kind":"axis-time","axis":"languages","value":"go","op":">=","hours":1}`),
 		}
 		cRec := doJSONReqG(e, http.MethodPost, "/api/v1/admin/labels", token, body)
 		Expect(cRec).To(testutil.HaveStatus(http.StatusCreated), "body=%s", cRec.Body.String())

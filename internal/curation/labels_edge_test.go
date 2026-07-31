@@ -101,7 +101,7 @@ var _ = Describe("AdminUpdateLabel — reject condition-body via raw JSONB overw
 		cRec := doJSONReqG(e, http.MethodPost, "/api/v1/admin/labels", token, mkLabelBody(id))
 		Expect(cRec).To(testutil.HaveStatus(http.StatusCreated))
 
-		newCond := json.RawMessage(`{"kind":"axis-time","axis":"languages","value":"rust","op":"ge","hours":2}`)
+		newCond := json.RawMessage(`{"kind":"axis-time","axis":"languages","value":"rust","op":">=","hours":2}`)
 		pRec := doJSONReqG(e, http.MethodPatch, "/api/v1/admin/labels/"+id, token,
 			map[string]any{"condition": newCond})
 		Expect(pRec).To(testutil.HaveStatus(http.StatusOK), "body=%s", pRec.Body.String())

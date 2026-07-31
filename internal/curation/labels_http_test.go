@@ -57,7 +57,7 @@ func mkLabelBody(id string) map[string]any {
 		"optimizedPrompt": "",
 		"rank":            10,
 		"tier":            "novice",
-		"condition":       json.RawMessage(`{"kind":"axis-time","axis":"languages","value":"go","op":"ge","hours":1}`),
+		"condition":       json.RawMessage(`{"kind":"axis-time","axis":"languages","value":"go","op":">=","hours":1}`),
 	}
 }
 
@@ -194,6 +194,77 @@ var _ = Describe("AdminCreateLabel guardrails", func() {
 		Expect(rec2).To(testutil.HaveStatus(http.StatusBadRequest),
 			"POST-overwrite must NOT silently upsert; admin should use PATCH instead")
 		Expect(rec2.Body.String()).To(ContainSubstring("already exists"))
+	})
+})
+
+var _ = Describe("AdminCreateLabel + PATCH: server-side condition validation (gaka-6uf)", func() {
+	It("POST 400s a syntactically-decodable but semantically-invalid condition with a JSON pointer path", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := hz.Router()
+		user, token := hz.MintUser("lb_val_post")
+		grantAdmin(hz, user)
+		id := "test-val-" + time.Now().Format("150405.000000000")
+		cleanupLabel(hz, id)
+
+		// Bad op (=== instead of >= / <=). Pre-refactor: silently accepted +
+		// evaluator always-false. Post gaka-6uf: rejected at write time.
+		body := mkLabelBody(id)
+		body["condition"] = json.RawMessage(`{"kind":"axis-time","axis":"languages","value":"go","op":"===","hours":5}`)
+
+		rec := doJSONReqG(e, http.MethodPost, "/api/v1/admin/labels", token, body)
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest), "body=%s", rec.Body.String())
+		Expect(rec.Body.String()).To(ContainSubstring("/op"),
+			"error must carry the JSON pointer to the offending field: got %s", rec.Body.String())
+
+		// The row MUST NOT exist post-rejection.
+		got, err := hz.DB.GetLabel(context.Background(), id)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(got).To(BeNil(), "rejected create must not persist a row")
+	})
+
+	It("PATCH 400s an invalid condition and leaves the existing row untouched", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := hz.Router()
+		user, token := hz.MintUser("lb_val_patch")
+		grantAdmin(hz, user)
+		id := "test-valp-" + time.Now().Format("150405.000000000")
+		cleanupLabel(hz, id)
+
+		// Seed a valid label first.
+		cRec := doJSONReqG(e, http.MethodPost, "/api/v1/admin/labels", token, mkLabelBody(id))
+		Expect(cRec).To(testutil.HaveStatus(http.StatusCreated))
+
+		// PATCH with pct=50 (author mistake: DSL uses 0..1, they meant 0.5).
+		pRec := doJSONReqG(e, http.MethodPatch, "/api/v1/admin/labels/"+id, token, map[string]any{
+			"condition": json.RawMessage(`{"kind":"axis-pct","axis":"languages","value":"go","op":">=","pct":50}`),
+		})
+		Expect(pRec).To(testutil.HaveStatus(http.StatusBadRequest), "body=%s", pRec.Body.String())
+		Expect(pRec.Body.String()).To(ContainSubstring("/pct"))
+
+		// Row still has the original axis-time condition.
+		got, err := hz.DB.GetLabel(context.Background(), id)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(got).ToNot(BeNil())
+		Expect(string(got.Condition)).To(ContainSubstring(`"axis-time"`),
+			"rejected PATCH must not overwrite the persisted condition")
+	})
+
+	It("PATCH without a `condition` field still allows partial updates to other fields", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		e := hz.Router()
+		user, token := hz.MintUser("lb_val_partial")
+		grantAdmin(hz, user)
+		id := "test-valpt-" + time.Now().Format("150405.000000000")
+		cleanupLabel(hz, id)
+
+		cRec := doJSONReqG(e, http.MethodPost, "/api/v1/admin/labels", token, mkLabelBody(id))
+		Expect(cRec).To(testutil.HaveStatus(http.StatusCreated))
+
+		// PATCH label only — validator MUST NOT trip on the absent condition.
+		pRec := doJSONReqG(e, http.MethodPatch, "/api/v1/admin/labels/"+id, token, map[string]any{
+			"label": "Renamed-No-Cond",
+		})
+		Expect(pRec).To(testutil.HaveStatus(http.StatusOK), "body=%s", pRec.Body.String())
 	})
 })
 

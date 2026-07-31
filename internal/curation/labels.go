@@ -33,6 +33,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/labels"
 	"github.com/labstack/echo/v5"
 )
 
@@ -131,6 +132,14 @@ func (h *Handler) AdminCreateLabel(c *echo.Context) error {
 	if len(body.Condition) == 0 {
 		return apihelpers.RespondErr(c, apierr.BadRequest("`condition` JSONB is required"))
 	}
+	// gaka-6uf: schema-validate the condition BEFORE the DB write. Without
+	// this, malformed conditions (bad op, missing required field, out-of-
+	// range enum) sit in the DB until evaluator load and either always- or
+	// never-fire silently. The rich JSON-pointer path helps the FE surface
+	// the offending field inline.
+	if err := labels.ValidateCondition(body.Condition); err != nil {
+		return apihelpers.RespondErr(c, apierr.BadRequest("condition: "+err.Error()))
+	}
 	// Fail loud if the id already exists — the admin should hit PATCH, not
 	// POST-that-silently-overwrites.
 	existing, err := h.DB.GetLabel(c.Request().Context(), *body.ID)
@@ -174,6 +183,14 @@ func (h *Handler) AdminUpdateLabel(c *echo.Context) error {
 	}
 	if existing == nil {
 		return apihelpers.RespondErr(c, apierr.NotFound("label not found"))
+	}
+	// gaka-6uf: when the PATCH body includes a condition, schema-validate it
+	// before the write. Partial-PATCH-omit-condition still allowed (nil = no
+	// change). Same rich JSON-pointer path surfaces on the FE.
+	if len(body.Condition) > 0 {
+		if err := labels.ValidateCondition(body.Condition); err != nil {
+			return apihelpers.RespondErr(c, apierr.BadRequest("condition: "+err.Error()))
+		}
 	}
 	// Never allow id-rename via PATCH — an id change breaks label_images
 	// FKs + persisted award history. If the operator needs to rename,
