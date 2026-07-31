@@ -59,6 +59,13 @@ import { useLabelsCatalog } from "@/features/publicprofile/labels/useLabelsCatal
 import type { LabelCatalogRow } from "@/features/publicprofile/labels/types";
 import { LabelImage } from "@/features/publicprofile/labels/LabelImage";
 import { useImageJobQueue, type JobState } from "./useImageJobQueue";
+import { ConditionBuilder } from "./ConditionBuilder";
+import type { Condition } from "@/features/publicprofile/labels/types";
+import {
+  formatConditionJson,
+  newCondition as newDefaultCondition,
+  parseConditionJson,
+} from "./ConditionBuilder/schema";
 
 // --- ResizableSheetContent --------------------------------------------------
 //
@@ -1138,22 +1145,44 @@ function LabelEditSheet({ row, onClose, onSaved, onRegen, canRegen, generatedAt 
               </div>
 
               <div>
-                <UILabel htmlFor="ed-cond">Condition (raw JSONB)</UILabel>
-                <Textarea
-                  id="ed-cond"
-                  value={draft.conditionJson}
-                  onChange={(e) => {
-                    setDraft({ ...draft, conditionJson: e.target.value });
-                    setConditionErr(null);
-                  }}
-                  rows={8}
-                  className="font-mono text-[11px]"
-                />
-                {conditionErr && (
-                  <p className="mt-1 text-[11px] text-destructive">
-                    {conditionErr}
-                  </p>
-                )}
+                <UILabel>Condition</UILabel>
+                {(() => {
+                  // gaka-6uf: swap the raw JSONB textarea for the typed
+                  // ConditionBuilder. The Builder still stores the tree
+                  // via conditionJson (round-tripped via formatConditionJson)
+                  // so the existing save mutation shape is unchanged. If
+                  // the current draft doesn't parse (e.g. an existing DB
+                  // row with a legacy shape), fall back to a fresh
+                  // axis-time default so the user has SOMETHING to edit;
+                  // the Raw JSON tab lets them recover the original text.
+                  const { condition, error } = parseConditionJson(draft.conditionJson);
+                  const value: Condition = condition ?? newDefaultCondition("axis-time");
+                  return (
+                    <>
+                      {error && !condition && (
+                        <p className="mb-1 text-[11px] text-amber-500">
+                          Current condition failed schema ({error}). Edit via
+                          the Raw JSON tab to recover.
+                        </p>
+                      )}
+                      <ConditionBuilder
+                        value={value}
+                        onChange={(next) => {
+                          setDraft({
+                            ...draft,
+                            conditionJson: formatConditionJson(next),
+                          });
+                          setConditionErr(null);
+                        }}
+                      />
+                      {conditionErr && (
+                        <p className="mt-1 text-[11px] text-destructive">
+                          {conditionErr}
+                        </p>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
 
               <div className="border-t border-border pt-4">
