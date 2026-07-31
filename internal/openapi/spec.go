@@ -66,6 +66,7 @@ const (
 	tagProfile     = "Public Profile"
 	tagIntegration = "Integrations"
 	tagGoals       = "Goals"
+	tagAwards      = "Awards"
 )
 
 var (
@@ -930,6 +931,89 @@ func build() (*openapi3.T, error) {
 			Parameters:  openapi3.Parameters{pathParamStr("slug", "Public profile slug (3-30 chars, lowercase alphanumeric + hyphens).")}}
 		setStatus(op, http.StatusOK, rInline("Scrubbed activity summary.", body))
 		stdErrors(op, "404", "500")
+		return op
+	}())
+
+	// ==== AWARDS (gaka-mwp-streaks + gaka-hc6) ==============================
+	//
+	// Server-side award evaluation + streak ledger + historical backfill.
+	// The own variants require a valid API token; the public variants resolve
+	// the target user via the public profile slug and require no auth.
+	// Response bodies are intentionally documented as open-ended objects
+	// because the awards catalog + label spec shape evolves rapidly — the
+	// FE tolerates unknown award kinds by design.
+
+	doc.AddOperation("/api/v1/users/current/awards", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagAwards}, Summary: "Server-side award evaluation (own)",
+			Description: "Evaluates every label rule against the caller's last 60 days and returns firing awards. Writes the ledger as a side effect (streak walker reads the ledger)."}
+		setStatus(op, http.StatusOK, rInline("Awards payload: {labels:[{id,name,kind,firing,...}], evaluatedAt}.", mapObject()))
+		stdErrors(op, "401", "403", "500")
+		return op
+	}())
+	doc.AddOperation("/api/public/profile/{slug}/awards", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagAwards}, Summary: "Server-side award evaluation (public)",
+			Description: "Same shape as the own variant but resolved via the public slug. Does NOT write to the ledger — a profile viewer must not perturb streak state.",
+			Security:    &public,
+			Parameters:  openapi3.Parameters{pathParamStr("slug", "Public profile slug.")}}
+		setStatus(op, http.StatusOK, rInline("Awards payload (public — no ledger side effect).", mapObject()))
+		stdErrors(op, "400", "404", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/current/awards/streaks", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagAwards}, Summary: "Label streaks (own)",
+			Description: "Streak walker output: {labelId -> {daily:N, weekly:N, monthly:N}} for the caller. TZ-aware via users.timezone."}
+		setStatus(op, http.StatusOK, rInline("Streaks map keyed by labelId with per-period counts.", mapObject()))
+		stdErrors(op, "401", "403", "500")
+		return op
+	}())
+	doc.AddOperation("/api/public/profile/{slug}/awards/streaks", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagAwards}, Summary: "Label streaks (public)",
+			Description: "Same shape as the own variant; target user derived from the public slug.",
+			Security:    &public,
+			Parameters:  openapi3.Parameters{pathParamStr("slug", "Public profile slug.")}}
+		setStatus(op, http.StatusOK, rInline("Streaks map keyed by labelId with per-period counts.", mapObject()))
+		stdErrors(op, "400", "404", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/current/awards/ledger", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagAwards}, Summary: "Award ledger inspector (own)",
+			Description: "Debug/admin view of the raw award_ledger rows with label name + kind joined. Cache-Control: private, max-age=30."}
+		op.Parameters = openapi3.Parameters{
+			{Value: &openapi3.Parameter{Name: "label", In: "query", Description: "Filter to a single label id.",
+				Schema: &openapi3.SchemaRef{Value: openapi3.NewStringSchema()}}},
+			{Value: &openapi3.Parameter{Name: "limit", In: "query", Description: "Row cap (default 500, max 500).",
+				Schema: &openapi3.SchemaRef{Value: openapi3.NewIntegerSchema()}}},
+		}
+		setStatus(op, http.StatusOK, rInline("{rows:[{owner,labelId,name,kind,periodType,periodStart,evaluatedAt}], limit}.", mapObject()))
+		stdErrors(op, "401", "403", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/current/awards/log", "POST", func() *openapi3.Operation {
+		reqBody := openapi3.NewObjectSchema()
+		reqBody.Properties = openapi3.Schemas{
+			"items": &openapi3.SchemaRef{Value: func() *openapi3.Schema {
+				a := openapi3.NewArraySchema()
+				a.Items = &openapi3.SchemaRef{Value: openapi3.NewObjectSchema()}
+				return a
+			}()},
+			"at": &openapi3.SchemaRef{Value: openapi3.NewStringSchema().WithFormat("date-time")},
+		}
+		reqBody.Required = []string{"items"}
+		op := &openapi3.Operation{Tags: []string{tagAwards}, Summary: "Persist firing awards to the ledger (own)",
+			Description: "FE evaluator POST after each evaluate() run. Upserts one row per (user, label, period_start). `at` is optional RFC3339 for historical backfill (rejected if in the future). Body cap: 128 KiB."}
+		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{
+			Required: true, Description: "{items:[{labelId, periodType:'daily'|'weekly'|'monthly'}], at?}.",
+			Content: openapi3.NewContentWithJSONSchema(reqBody),
+		}}
+		setStatus(op, http.StatusOK, rInline("{received:int, written:int}.", mapObject()))
+		stdErrors(op, "400", "401", "403", "413", "500")
+		return op
+	}())
+	doc.AddOperation("/api/v1/users/current/awards/backfill", "POST", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagAwards}, Summary: "Historical award replay (own)",
+			Description: "Replays evaluate() day-by-day over the caller's history and writes the ledger. Unblocks the full deletion of the client-side evaluator. Long-running — response arrives when replay completes."}
+		setStatus(op, http.StatusOK, rInline("{daysScanned:int, awardsWritten:int}.", mapObject()))
+		stdErrors(op, "401", "403", "500")
 		return op
 	}())
 
