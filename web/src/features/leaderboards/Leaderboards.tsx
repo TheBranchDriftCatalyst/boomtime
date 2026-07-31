@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
 import { QueryGate } from "@/components/QueryGate";
-import { PageToolbar } from "@/components/toolbar/PageToolbar";
+import { PageToolbar } from "@thebranchdriftcatalyst/catalyst-ui/components/PageToolbar";
 import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";

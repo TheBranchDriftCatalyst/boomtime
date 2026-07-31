@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { Trash2 } from "lucide-react";
-import { PageToolbar } from "@/components/toolbar/PageToolbar";
+import { PageToolbar } from "@thebranchdriftcatalyst/catalyst-ui/components/PageToolbar";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
-import { LogTerminal, type LogTerminalLine } from "@/components/LogTerminal";
+import { LogViewer, type LogViewerLine } from "@thebranchdriftcatalyst/catalyst-ui/components/LogViewer";
 import { useLogsSocket, type SocketStatus } from "@/features/logs/useLogsSocket";
 import { cn } from "@/lib/utils";
 
@@ -35,7 +35,7 @@ export function Logs({ embedded = false }: { embedded?: boolean }) {
   const { logs, status, clear } = useLogsSocket();
   const [filter, setFilter] = useState<LevelFilter>("all");
 
-  const visible = useMemo<LogTerminalLine[]>(() => {
+  const visible = useMemo<LogViewerLine[]>(() => {
     const matching =
       filter === "all"
         ? logs
@@ -90,7 +90,7 @@ export function Logs({ embedded = false }: { embedded?: boolean }) {
         <PageToolbar title="Logs">{controls}</PageToolbar>
       )}
 
-      <LogTerminal
+      <LogViewer
         logs={visible}
         height="h-[70vh]"
         emptyText={

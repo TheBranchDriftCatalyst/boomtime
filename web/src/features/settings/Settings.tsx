@@ -1,5 +1,5 @@
 import { Navigate, useSearchParams } from "react-router";
-import { PageToolbar } from "@/components/toolbar/PageToolbar";
+import { PageToolbar } from "@thebranchdriftcatalyst/catalyst-ui/components/PageToolbar";
 import { cn } from "@/lib/utils";
 import { CurationTab } from "@/features/curation/CurationTab";
 import { RemappingsTab } from "@/features/curation/RemappingsTab";

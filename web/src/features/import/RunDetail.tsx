@@ -5,8 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@thebranchdriftcatalys
 import { QueryGate } from "@/components/QueryGate";
 import { ImportStateBadge } from "@/features/import/ImportStateBadge";
 import { DriftBanner } from "@/features/import/DriftBanner";
-import { LogTerminal } from "@/components/LogTerminal";
-import { LabeledStat } from "@/components/LabeledStat";
+import { LogViewer } from "@thebranchdriftcatalyst/catalyst-ui/components/LogViewer";
+import { LabeledStat } from "@thebranchdriftcatalyst/catalyst-ui/ui/labeled-stat";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
 import { formatElapsed } from "@/lib/utils";
@@ -66,7 +66,7 @@ export function RunDetail({ jobId, onClose }: RunDetailProps) {
               </div>
             )}
             <DriftBanner findings={data.job.drift} />
-            <LogTerminal logs={data.logs} />
+            <LogViewer logs={data.logs} />
           </>
           )}
         </QueryGate>

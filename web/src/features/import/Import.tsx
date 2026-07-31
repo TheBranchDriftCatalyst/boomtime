@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { PageToolbar } from "@/components/toolbar/PageToolbar";
-import { Spinner } from "@/components/Spinner";
+import { PageToolbar } from "@thebranchdriftcatalyst/catalyst-ui/components/PageToolbar";
+import { Spinner } from "@thebranchdriftcatalyst/catalyst-ui/ui/spinner";
 import { CurrentRunPanel } from "@/features/import/CurrentRunPanel";
 import { HistoryList } from "@/features/import/HistoryList";
 import { RunDetail } from "@/features/import/RunDetail";

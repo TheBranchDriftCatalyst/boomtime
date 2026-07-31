@@ -4,7 +4,7 @@ import { AppShell } from "@/layout/AppShell";
 import { ProtectedRoute } from "@/app/ProtectedRoute";
 import { AdminRoute } from "@/app/AdminRoute";
 import { useAuth } from "@/features/auth/useAuth";
-import { Spinner } from "@/components/Spinner";
+import { Spinner } from "@thebranchdriftcatalyst/catalyst-ui/ui/spinner";
 import { AnalyticsTracker } from "@/app/AnalyticsTracker";
 import { AuthProvider } from "@/features/auth/useAuth";
 // Auth pages are eagerly imported: the pre-auth bundle is tiny and Login is

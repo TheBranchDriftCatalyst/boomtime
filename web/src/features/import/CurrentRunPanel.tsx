@@ -5,8 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@thebranchdriftcatalys
 import { Progress } from "@thebranchdriftcatalyst/catalyst-ui/ui/progress";
 import { ImportStateBadge } from "@/features/import/ImportStateBadge";
 import { DriftBanner } from "@/features/import/DriftBanner";
-import { LogTerminal } from "@/components/LogTerminal";
-import { LabeledStat } from "@/components/LabeledStat";
+import { LogViewer } from "@thebranchdriftcatalyst/catalyst-ui/components/LogViewer";
+import { LabeledStat } from "@thebranchdriftcatalyst/catalyst-ui/ui/labeled-stat";
 import { formatElapsed } from "@/lib/utils";
 import { isTerminalState } from "@/types/api";
 import type { ImportJob, ImportLogLine } from "@/types/api";
@@ -102,7 +102,7 @@ export function CurrentRunPanel({
           de-duplicated server-side, so no duplicates are created.
         </p>
 
-        <LogTerminal logs={logs} />
+        <LogViewer logs={logs} />
       </CardContent>
     </Card>
   );

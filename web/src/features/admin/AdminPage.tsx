@@ -9,7 +9,7 @@
 // Children are lazy-loaded at the route boundary (see App.tsx). This
 // component itself only owns the shell + tab strip.
 import { NavLink, Outlet } from "react-router";
-import { PageToolbar } from "@/components/toolbar/PageToolbar";
+import { PageToolbar } from "@thebranchdriftcatalyst/catalyst-ui/components/PageToolbar";
 import { cn } from "@/lib/utils";
 
 const TABS = [

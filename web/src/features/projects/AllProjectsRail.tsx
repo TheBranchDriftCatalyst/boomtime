@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { Calculator, Clock, Code, Crown } from "lucide-react";
-import { StatCard } from "@/components/StatCard";
+import { StatCard } from "@thebranchdriftcatalyst/catalyst-ui/components/StatCard";
 import { TopProjectsBar } from "@/features/projects/TopProjectsBar";
 import { CrossProjectFilesTable } from "@/features/projects/CrossProjectFilesTable";
-import { Spinner } from "@/components/Spinner";
+import { Spinner } from "@thebranchdriftcatalyst/catalyst-ui/ui/spinner";
 import { QueryGate } from "@/components/QueryGate";
 import { ChartCard } from "@/components/ChartCard";
 import { api } from "@/lib/api";
@@ -65,25 +65,25 @@ export function AllProjectsRail({
             <StatCard
               name="Total tracked time"
               value={secondsToHms(agg.totalSeconds)}
-              icon={Clock}
+              icon={<Clock className="h-6 w-6" />}
               accent="primary"
             />
             <StatCard
               name="Total projects"
               value={agg.projectsCount}
-              icon={Calculator}
+              icon={<Calculator className="h-6 w-6" />}
               accent="info"
             />
             <StatCard
               name="Most active project"
               value={topByName(agg.projects)}
-              icon={Crown}
+              icon={<Crown className="h-6 w-6" />}
               accent="success"
             />
             <StatCard
               name="Most active language"
               value={topByName(agg.languages)}
-              icon={Code}
+              icon={<Code className="h-6 w-6" />}
               accent="warning"
             />
           </div>

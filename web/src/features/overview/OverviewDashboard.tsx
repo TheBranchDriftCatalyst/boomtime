@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Calculator, Clock, Code, Crown } from "lucide-react";
-import { StatCard } from "@/components/StatCard";
+import { StatCard } from "@thebranchdriftcatalyst/catalyst-ui/components/StatCard";
 import { QueryGate } from "@/components/QueryGate";
 import { ChartCard } from "@/components/ChartCard";
 import { WidgetsPanel } from "@/features/widgets/WidgetsPanel";
@@ -20,7 +20,7 @@ import { CategoryStreamgraph } from "@/viz/charts/CategoryStreamgraph";
 import { Punchcard } from "@/viz/charts/Punchcard";
 import { DeepWorkSessions } from "@/viz/charts/DeepWorkSessions";
 import { MomentumGrid } from "@/viz/charts/MomentumGrid";
-import { PageToolbar } from "@/components/toolbar/PageToolbar";
+import { PageToolbar } from "@thebranchdriftcatalyst/catalyst-ui/components/PageToolbar";
 import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
 import { TimeLimitDropdown } from "@/components/toolbar/TimeLimitDropdown";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
@@ -209,25 +209,25 @@ export function OverviewDashboard({
             <StatCard
               name="Total tracked time"
               value={secondsToHms(stats.totalSeconds)}
-              icon={Clock}
+              icon={<Clock className="h-6 w-6" />}
               accent="primary"
             />
             <StatCard
               name="Total projects"
               value={stats.projectsCount}
-              icon={Calculator}
+              icon={<Calculator className="h-6 w-6" />}
               accent="info"
             />
             <StatCard
               name="Most active project"
               value={mostActiveProject}
-              icon={Crown}
+              icon={<Crown className="h-6 w-6" />}
               accent="success"
             />
             <StatCard
               name="Most active language"
               value={mostActiveLang}
-              icon={Code}
+              icon={<Code className="h-6 w-6" />}
               accent="warning"
             />
           </div>

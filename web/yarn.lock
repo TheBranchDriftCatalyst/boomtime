@@ -1476,10 +1476,10 @@
   resolved "https://registry.yarnpkg.com/@testing-library/user-event/-/user-event-14.6.1.tgz#13e09a32d7a8b7060fe38304788ebf4197cd2149"
   integrity sha512-vq7fv0rnt+QTXgPxr5Hjc210p6YKq2kmdziLgnsZGgLJ9e6VAShx1pACLuRjd/AS/sr7phAR58OIIpf0LlmQNw==
 
-"@thebranchdriftcatalyst/catalyst-ui@^2.5.2":
-  version "2.5.2"
-  resolved "https://registry.yarnpkg.com/@thebranchdriftcatalyst/catalyst-ui/-/catalyst-ui-2.5.2.tgz#b87018be1dd0e0d0732b31aff1403ce2b2cb2e3d"
-  integrity sha512-UUHFFaruOtRbHJJU+W4aeadNU0G1bro8mFYV4jzcV6pQDHuIb9pLEpHC2f8ePQV75ilIm4T6NiBjy9FmYXCHDQ==
+"@thebranchdriftcatalyst/catalyst-ui@^2.6.0":
+  version "2.6.0"
+  resolved "https://registry.yarnpkg.com/@thebranchdriftcatalyst/catalyst-ui/-/catalyst-ui-2.6.0.tgz#cb65de83592a967bdbbbd82705b78ae69d95d126"
+  integrity sha512-YE9DSA/Qyhjs2rylrit6FJ+FO4jPFnO8rH9ZYJaR9jM7GgSHdPup8209Iikq1QuFn76kVXhaD7NbjU8yz72bfA==
   dependencies:
     "@hookform/resolvers" "^5.2.2"
     "@icons-pack/react-simple-icons" "^13.8.0"

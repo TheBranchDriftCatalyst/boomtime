@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { EraserIcon } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
-import { Spinner } from "@/components/Spinner";
+import { Spinner } from "@thebranchdriftcatalyst/catalyst-ui/ui/spinner";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Card, CardContent } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";

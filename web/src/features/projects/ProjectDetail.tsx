@@ -2,7 +2,7 @@ import type { Ref } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Clock, Code, FileText, GitBranch, Link as LinkIcon } from "lucide-react";
 import { toast } from "sonner";
-import { StatCard } from "@/components/StatCard";
+import { StatCard } from "@thebranchdriftcatalyst/catalyst-ui/components/StatCard";
 import { QueryGate } from "@/components/QueryGate";
 import { ChartCard } from "@/components/ChartCard";
 import { untaggedShareSubtitle } from "@/lib/untaggedShare";
@@ -139,25 +139,25 @@ export function ProjectDetail({
             <StatCard
               name={`${detailHeading} · tracked time`}
               value={secondsToHms(stats.totalSeconds)}
-              icon={Clock}
+              icon={<Clock className="h-6 w-6" />}
               accent="primary"
             />
             <StatCard
               name="Languages"
               value={stats.languagesCount}
-              icon={Code}
+              icon={<Code className="h-6 w-6" />}
               accent="info"
             />
             <StatCard
               name="Files touched"
               value={stats.filesCount}
-              icon={FileText}
+              icon={<FileText className="h-6 w-6" />}
               accent="success"
             />
             <StatCard
               name="Most active language"
               value={mostActiveLang}
-              icon={Code}
+              icon={<Code className="h-6 w-6" />}
               accent="warning"
             />
           </div>

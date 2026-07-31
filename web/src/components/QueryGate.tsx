@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Spinner } from "@/components/Spinner";
+import { Spinner } from "@thebranchdriftcatalyst/catalyst-ui/ui/spinner";
 
 /** The slice of a TanStack `useQuery` result the gate needs. */
 interface GateableQuery<T> {

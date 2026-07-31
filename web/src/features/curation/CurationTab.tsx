@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { toast } from "sonner";
-import { Spinner } from "@/components/Spinner";
+import { Spinner } from "@thebranchdriftcatalyst/catalyst-ui/ui/spinner";
 import { HiddenProjectsCard } from "@/features/curation/HiddenProjectsCard";
 import { HiddenSourcesCard } from "@/features/curation/HiddenSourcesCard";
 import {

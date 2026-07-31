@@ -21,7 +21,7 @@
 import { lazy, Suspense, useState } from "react";
 import { useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Spinner } from "@/components/Spinner";
+import { Spinner } from "@thebranchdriftcatalyst/catalyst-ui/ui/spinner";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
 import { useAuth } from "@/features/auth/useAuth";

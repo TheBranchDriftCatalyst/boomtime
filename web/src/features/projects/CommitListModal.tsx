@@ -11,7 +11,7 @@ import {
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/dialog";
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
 import { Label } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
-import { Spinner } from "@/components/Spinner";
+import { Spinner } from "@thebranchdriftcatalyst/catalyst-ui/ui/spinner";
 import { api } from "@/lib/api";
 import { secondsToHms } from "@/lib/utils";
 import type { Commit } from "@/types/api";

@@ -15,7 +15,7 @@ import { useState } from "react";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
-import { Spinner } from "@/components/Spinner";
+import { Spinner } from "@thebranchdriftcatalyst/catalyst-ui/ui/spinner";
 import { GoalForm } from "@/features/goals/GoalForm";
 import { GoalsList } from "@/features/goals/GoalsList";
 import { useGoalMutations, useGoalsQuery } from "@/features/goals/useGoals";

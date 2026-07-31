@@ -12,7 +12,7 @@
 // letting the child mount + fetch + 403 for a beat.
 import type { ReactNode } from "react";
 import { Navigate } from "react-router";
-import { Spinner } from "@/components/Spinner";
+import { Spinner } from "@thebranchdriftcatalyst/catalyst-ui/ui/spinner";
 import { useIsAdmin } from "@/features/auth/useIsAdmin";
 
 export function AdminRoute({ children }: { children: ReactNode }) {

@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Braces, Files, Search, Table2 } from "lucide-react";
-import { PageToolbar } from "@/components/toolbar/PageToolbar";
+import { PageToolbar } from "@thebranchdriftcatalyst/catalyst-ui/components/PageToolbar";
 import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
 import { TimeLimitDropdown } from "@/components/toolbar/TimeLimitDropdown";
-import { Spinner } from "@/components/Spinner";
+import { Spinner } from "@thebranchdriftcatalyst/catalyst-ui/ui/spinner";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Card, CardContent } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";

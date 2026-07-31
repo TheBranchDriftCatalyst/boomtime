@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { PageToolbar } from "@/components/toolbar/PageToolbar";
+import { PageToolbar } from "@thebranchdriftcatalyst/catalyst-ui/components/PageToolbar";
 import { WidgetsPanel } from "@/features/widgets/WidgetsPanel";
 import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
 import { TimeLimitDropdown } from "@/components/toolbar/TimeLimitDropdown";

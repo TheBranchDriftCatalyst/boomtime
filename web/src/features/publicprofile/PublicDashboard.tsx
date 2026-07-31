@@ -18,7 +18,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useParams } from "react-router";
-import { Spinner } from "@/components/Spinner";
+import { Spinner } from "@thebranchdriftcatalyst/catalyst-ui/ui/spinner";
 import { api, ApiError } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
 import {

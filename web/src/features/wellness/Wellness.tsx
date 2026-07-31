@@ -12,7 +12,7 @@ import {
   PersonStanding,
   Zap,
 } from "lucide-react";
-import { PageToolbar } from "@/components/toolbar/PageToolbar";
+import { PageToolbar } from "@thebranchdriftcatalyst/catalyst-ui/components/PageToolbar";
 import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
 import { ChartCard } from "@/components/ChartCard";
 import { QueryGate } from "@/components/QueryGate";

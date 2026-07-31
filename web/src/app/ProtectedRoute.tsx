@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Navigate } from "react-router";
-import { Spinner } from "@/components/Spinner";
+import { Spinner } from "@thebranchdriftcatalyst/catalyst-ui/ui/spinner";
 import { useAuth } from "@/features/auth/useAuth";
 
 export function ProtectedRoute({ children }: { children: ReactNode }) {

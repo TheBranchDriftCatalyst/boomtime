@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
 import { toast } from "sonner";
-import { Spinner } from "@/components/Spinner";
+import { Spinner } from "@thebranchdriftcatalyst/catalyst-ui/ui/spinner";
 import { DestructiveActionDialog } from "@/features/curation/DestructiveActionDialog";
 import { NameRemappingsCard } from "@/features/curation/NameRemappingsCard";
 import {

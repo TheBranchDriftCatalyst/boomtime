@@ -6,7 +6,7 @@ import { qk } from "@/lib/queryKeys";
 import { formatBytes } from "@/lib/utils";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Card, CardContent, CardHeader } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
-import { LabeledStat } from "@/components/LabeledStat";
+import { LabeledStat } from "@thebranchdriftcatalyst/catalyst-ui/ui/labeled-stat";
 
 /**
  * Shows the health of the precomputed derived tables (gap_seconds + the daily
