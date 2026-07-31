@@ -330,18 +330,35 @@ function ChipList({ items }: { items: ResourceStats[] }) {
   // grid tile's own `overflow: hidden` still guards catastrophic overflow,
   // but 6-8 chips at h=2 will wrap onto 2 rows without needing a scrollbar.
   // Chips also shrink one step at the base size to leave more room.
+  //
+  // Percent scale note: backend `totalPct` is emitted as a 0..1 decimal
+  // (from `total_seconds / SUM(total_seconds) OVER ()` in the rollup SQL,
+  // summed across days by segment.go). Rendering `Math.round(totalPct)`
+  // directly makes every chip read "0%" or "1%" (the "Categories 1%,
+  // Browsing 0%, ..." bug). Mirror PieChart's approach and recompute the
+  // share from totalSeconds over the rendered set — that also stays
+  // internally consistent when the pie filters below MIN_SLICE_SECONDS and
+  // the chip list doesn't, so both views agree on the visible-set share.
+  const grand = items.reduce((s, it) => s + (it.totalSeconds || 0), 0) || 1;
   return (
-    <div className="dossier-chips flex h-full w-full flex-wrap content-center items-center gap-1.5 px-3 py-2">
-      {items.map((it) => (
-        <span
-          key={it.name}
-          className="dossier-chip inline-flex items-center gap-1 rounded-sm border border-[color:var(--primary)]/40 bg-[color:var(--primary)]/10 px-2 py-[3px] font-mono text-[10px] uppercase tracking-[0.08em] whitespace-nowrap"
-          style={{ fontSize: Math.max(10, Math.min(14, 10 + (it.totalPct ?? 0) / 10)) + "px" }}
-        >
-          <span>{it.name}</span>
-          <span className="opacity-60">{Math.round(it.totalPct ?? 0)}%</span>
-        </span>
-      ))}
+    <div
+      className="dossier-chips flex h-full w-full flex-wrap content-center items-center gap-1.5 px-3 py-2"
+      data-testid="dossier-chips"
+    >
+      {items.map((it) => {
+        const pct = (it.totalSeconds / grand) * 100;
+        return (
+          <span
+            key={it.name}
+            data-testid="dossier-chip"
+            className="dossier-chip inline-flex items-center gap-1 rounded-sm border border-[color:var(--primary)]/40 bg-[color:var(--primary)]/10 px-2 py-[3px] font-mono text-[10px] uppercase tracking-[0.08em] whitespace-nowrap"
+            style={{ fontSize: Math.max(10, Math.min(14, 10 + pct / 10)) + "px" }}
+          >
+            <span>{it.name}</span>
+            <span className="opacity-60">{Math.round(pct)}%</span>
+          </span>
+        );
+      })}
     </div>
   );
 }
