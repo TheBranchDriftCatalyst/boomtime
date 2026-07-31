@@ -116,8 +116,9 @@ function DashboardBody({ data, slug }: { data: PublicDashboardPayload; slug: str
   );
 
   // In-memory storage: the public page is read-only. View toggles + drag
-  // are all client-side state and evaporate on refresh. The owner uses the
-  // Settings editor (DashboardEditorCard) to persist changes.
+  // are all client-side state and evaporate on refresh. The owner uses
+  // the inline ProfileEditor (rendered by EditableProfilePage when the
+  // caller owns the profile) to persist changes; see gaka-ie3.
   const storage = useMemo(() => memoryAdapter(seed), [seed]);
 
   const version = window.location.host;

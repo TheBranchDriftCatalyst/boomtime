@@ -10,31 +10,24 @@ import { Changelog } from "@/features/changelog/Changelog";
 // /app/admin. Keep this file lean and non-admin-only.
 import { AvatarTab } from "@/features/settings/avatar/AvatarTab";
 import { ChangePasswordCard } from "@/features/settings/ChangePasswordCard";
-import { DashboardEditorCard } from "@/features/settings/DashboardEditorCard";
 import { PluginSetup } from "@/features/settings/PluginSetup";
 import { PublicProfileCard } from "@/features/settings/PublicProfileCard";
 import { TimezoneCard } from "@/features/settings/TimezoneCard";
 import { TokensTab } from "@/features/tokens/TokensTab";
-import { useQuery } from "@tanstack/react-query";
-import { api } from "@/lib/api";
-import { qk } from "@/lib/queryKeys";
 
 // ProfileTab: bundles the account-level cards (change password + public
-// profile toggle + composable dashboard editor). The editor is gated on
-// the profile being enabled — no point letting the owner arrange tiles
-// their public URL can't serve.
+// profile toggle). gaka-ie3: the composable dashboard EDITOR was moved
+// out of Settings and into the public profile page itself — visiting
+// /p/<your-slug> as the owner now renders an inline edit-mode toggle.
+// Settings keeps only the enable-toggle + slug field via
+// <PublicProfileCard/>, so this tab is the one-stop shop for account-
+// level toggles without duplicating the layout editor's chrome.
 function ProfileTab() {
-  const { data: profile } = useQuery({
-    queryKey: qk.publicProfile(),
-    queryFn: () => api.getPublicProfile(),
-    staleTime: 30_000,
-  });
   return (
     <div className="space-y-6">
       <ChangePasswordCard />
       <TimezoneCard />
       <PublicProfileCard />
-      {profile?.enabled && <DashboardEditorCard />}
     </div>
   );
 }
