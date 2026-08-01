@@ -149,15 +149,9 @@ function DashboardBody({ data, slug }: { data: PublicDashboardPayload; slug: str
            * nothing on no-WebGL / reduced-motion clients — the hero stays
            * fully legible without it. */}
           <HeroBackdrop />
-          <div className="public-dashboard__hero-meta">
-            &gt; PROFILE
-            {/* Katakana signage: only visible under .theme-arasaka.
-             * プロファイル = "profile". See ./arasaka.css .arasaka-katakana. */}
-            <span className="arasaka-katakana" aria-hidden>プロファイル</span>
-            {/* gaka-174.1: date lives in the SERVICE PERIOD field now — keep
-             * the meta line to the identity handle only. */}
-            {" · "}{data.username}@boomtime
-          </div>
+          {/* gaka-174: the "> PROFILE · <user>@boomtime" meta line was
+           * redundant with the big title + the SERVICE RECORD strip and just
+           * ate vertical space — removed. */}
           <h1 className="public-dashboard__hero-title" data-testid="public-username">
             {data.username}
           </h1>
