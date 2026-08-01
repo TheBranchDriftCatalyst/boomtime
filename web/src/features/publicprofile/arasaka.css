@@ -432,3 +432,61 @@
   font-size: 9px;
   letter-spacing: 0.3em;
 }
+
+/* --------------------------------------------------------------------- *
+ * DOSSIER FOUNDATION amp (gaka-174.1).                                  *
+ * The frame + labeled field rail (base look in dossier.css) get the     *
+ * full corpo-file treatment under Arasaka: brighter crimson spine,      *
+ * amber field labels, a live STATUS pulse.                              *
+ * --------------------------------------------------------------------- */
+.theme-arasaka .public-dashboard__frame {
+  --dossier-line: color-mix(in oklab, var(--primary) 55%, transparent);
+}
+.theme-arasaka .dossier-corner {
+  width: 16px;
+  height: 16px;
+  border-color: var(--primary);
+  box-shadow: 0 0 6px color-mix(in oklab, var(--primary) 60%, transparent);
+}
+
+.theme-arasaka .public-dashboard__dossier-fields {
+  border-color: color-mix(in oklab, var(--primary) 45%, transparent);
+  border-radius: 2px;
+  background: color-mix(in oklab, var(--primary) 6%, var(--background));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--primary) 12%, transparent),
+    0 0 18px color-mix(in oklab, var(--primary) 10%, transparent);
+}
+.theme-arasaka .dossier-field {
+  border-right-color: color-mix(in oklab, var(--primary) 30%, transparent);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+.theme-arasaka .dossier-field__label {
+  color: var(--arasaka-amber);
+  letter-spacing: 0.26em;
+}
+.theme-arasaka .dossier-field__value {
+  color: color-mix(in oklab, var(--primary) 92%, white);
+  text-shadow: 0 0 8px color-mix(in oklab, var(--primary) 40%, transparent);
+}
+.theme-arasaka .dossier-field__value--accent {
+  color: var(--arasaka-amber);
+}
+.theme-arasaka .dossier-field__value--accent::before {
+  color: var(--arasaka-amber);
+  filter: drop-shadow(0 0 4px var(--arasaka-amber));
+}
+.theme-arasaka .public-dashboard__footer {
+  border-top-color: color-mix(in oklab, var(--primary) 35%, transparent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Live "operative online" tell — the STATUS dot breathes. */
+  .theme-arasaka .dossier-field__value--accent::before {
+    animation: arasaka-status-pulse 2s ease-in-out infinite;
+  }
+  @keyframes arasaka-status-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+}

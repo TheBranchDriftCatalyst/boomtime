@@ -31,9 +31,11 @@ import {
 } from "@/lib/grid";
 import { WIDGET_CATALOG } from "@/features/widgets/catalog";
 import { WidgetRenderer } from "@/features/widgets/renderers/WidgetRenderer";
+import { DossierThemeControl, ReclassifyOverlay } from "./ProfileChrome";
 import { PUBLIC_PROFILE_DEFAULT_LAYOUT } from "./defaults";
 import "./hacker.css";
 import "./arasaka.css";
+import "./dossier.css";
 
 /** Deep-ish equality check used for the "is the draft dirty?" gate. The
  * layout is a small array (<20 entries) of primitive-valued items, so
@@ -438,6 +440,11 @@ export function ProfileEditor({ slug }: ProfileEditorProps) {
           {saving ? "Saving…" : "Save"}
         </Button>
       </div>
+
+      {/* gaka-174.2: theme control (bottom-left so it clears the Save chrome)
+       * + reclassify sweep, so owners can preview dossier skins while editing. */}
+      <DossierThemeControl placement="bl" />
+      <ReclassifyOverlay />
     </div>
   );
 }

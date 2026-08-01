@@ -28,12 +28,18 @@ import {
 } from "@/lib/grid";
 import { WIDGET_CATALOG } from "@/features/widgets/catalog";
 import { WidgetRenderer } from "@/features/widgets/renderers/WidgetRenderer";
+import { DossierThemeControl, ReclassifyOverlay } from "./ProfileChrome";
+import { HeroBackdrop } from "./HeroBackdrop";
 import { PUBLIC_PROFILE_DEFAULT_LAYOUT } from "./defaults";
 import type { PublicDashboardPayload } from "@/types/stats";
 import "./hacker.css";
 // Arasaka overrides are scoped by .theme-arasaka .public-dashboard, so
 // this import is a no-op for every other theme. See ./arasaka.css.
 import "./arasaka.css";
+// Dossier foundation (gaka-174.1). Loaded LAST so its clean-mode classline
+// rule wins over arasaka.css's base `display:none`; arasaka's higher-
+// specificity `.theme-arasaka …` rules still win under that theme.
+import "./dossier.css";
 
 export function PublicDashboard() {
   const { slug = "" } = useParams<{ slug: string }>();
@@ -125,19 +131,32 @@ function DashboardBody({ data, slug }: { data: PublicDashboardPayload; slug: str
 
   return (
     <div className="public-dashboard">
-      <div className="mx-auto max-w-7xl px-4">
-        {/* gaka-k2p: dossier classification banner. Hidden by CSS under
-         * every non-Arasaka theme so it doesn't leak into the boomtime
-         * look. Placed OUTSIDE the hero so the border-top hairline reads
-         * as a stripe across the top of the frame. */}
+      {/* gaka-174.1: the whole page reads as one dossier "file". The frame
+       * carries the spine hairlines + corner registration marks; the inner
+       * column holds the classification strip, hero, grid, and footer. */}
+      <div className="public-dashboard__frame mx-auto max-w-7xl">
+        <span className="dossier-corner dossier-corner--tl" aria-hidden />
+        <span className="dossier-corner dossier-corner--tr" aria-hidden />
+        <span className="dossier-corner dossier-corner--bl" aria-hidden />
+        <span className="dossier-corner dossier-corner--br" aria-hidden />
+
+        {/* gaka-k2p + gaka-174.1: dossier classification strip. Clean mode
+         * shows a restrained neutral line; the arasaka theme restores the
+         * loud CLEARANCE/CLASSIFIED/katakana embellishments (dossier.css). */}
         <DossierClassLine username={data.username} slug={slug} />
         <header className="public-dashboard__hero">
+          {/* gaka-174.3: lazy WebGL ambient field behind the hero. Renders
+           * nothing on no-WebGL / reduced-motion clients — the hero stays
+           * fully legible without it. */}
+          <HeroBackdrop />
           <div className="public-dashboard__hero-meta">
             &gt; PROFILE
             {/* Katakana signage: only visible under .theme-arasaka.
              * プロファイル = "profile". See ./arasaka.css .arasaka-katakana. */}
             <span className="arasaka-katakana" aria-hidden>プロファイル</span>
-            {" · "}{data.username}@boomtime · {fmtRange(data.startDate, data.endDate)}
+            {/* gaka-174.1: date lives in the SERVICE PERIOD field now — keep
+             * the meta line to the identity handle only. */}
+            {" · "}{data.username}@boomtime
           </div>
           <h1 className="public-dashboard__hero-title" data-testid="public-username">
             {data.username}
@@ -150,6 +169,18 @@ function DashboardBody({ data, slug }: { data: PublicDashboardPayload; slug: str
               <span className="arasaka-katakana" aria-hidden>オペレーター</span>
             </span>
           </div>
+
+          {/* gaka-174.1: labeled dossier field rail — the element that turns
+           * the header into a service record instead of a page title. */}
+          <dl className="public-dashboard__dossier-fields">
+            <DossierField label="Subject" value={data.username} />
+            <DossierField label="Designation" value="Keystroke-Hacker" />
+            <DossierField
+              label="Service Period"
+              value={fmtRange(data.startDate, data.endDate)}
+            />
+            <DossierField label="Status" value="Active" accent />
+          </dl>
         </header>
 
         <div className="public-dashboard__grid">
@@ -170,6 +201,39 @@ function DashboardBody({ data, slug }: { data: PublicDashboardPayload; slug: str
           <span className="public-dashboard__footer-cursor" aria-hidden>▎</span>
         </footer>
       </div>
+
+      {/* gaka-174.2: floating dossier controls + the reclassify sweep that
+       * plays when the theme (dossier skin) changes. Available to any viewer;
+       * owner-canonical persistence is the follow-up half of gaka-174.2. */}
+      <DossierThemeControl />
+      <ReclassifyOverlay />
+    </div>
+  );
+}
+
+// gaka-174.1: one labeled cell in the dossier field rail. Rendered as a
+// <div> inside a <dl> is fine for our purposes — this is decorative chrome,
+// not a semantic definition list consumers depend on.
+function DossierField({
+  label,
+  value,
+  accent = false,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+}) {
+  return (
+    <div className="dossier-field">
+      <dt className="dossier-field__label">{label}</dt>
+      <dd
+        className={
+          "dossier-field__value" +
+          (accent ? " dossier-field__value--accent" : "")
+        }
+      >
+        {value}
+      </dd>
     </div>
   );
 }
@@ -201,18 +265,28 @@ function DossierClassLine({ username, slug }: { username: string; slug: string }
   const fileId = shortHash(slug || username);
   const rev = new Date().toISOString().slice(0, 10).replace(/-/g, ".");
   const subject = username.toUpperCase();
+  // gaka-174.1: the strip renders a RESTRAINED neutral line in clean mode
+  // ("SERVICE RECORD · SUBJECT: … · FILE #… · REV …"). The arasaka-only spans
+  // (hidden by dossier.css outside .theme-arasaka) restore the loud
+  // CLEARANCE/CLASSIFIED/-ARASAKA-∞ embellishments — keeping the exact strings
+  // the public-profile-dossier e2e asserts under the arasaka theme.
   return (
     <div className="public-dashboard__classline" aria-hidden>
-      <span className="public-dashboard__classline-block">▓</span>
+      <span className="public-dashboard__classline-block dossier-arasaka-only">
+        ▓
+      </span>
       <span className="public-dashboard__classline-text">
-        CLEARANCE: PUBLIC · SUBJECT: {subject} · FILE #{fileId}-ARASAKA-∞ ·{" "}
-        <span className="public-dashboard__classline-stamp">
+        <span className="dossier-arasaka-only">CLEARANCE: PUBLIC · </span>
+        SERVICE RECORD · SUBJECT: {subject} · FILE #{fileId}
+        <span className="dossier-arasaka-only">-ARASAKA-∞</span>
+        {" · "}
+        <span className="public-dashboard__classline-stamp dossier-arasaka-only">
           CLASSIFIED: LVL-2
         </span>
-        {" · REV "}
-        {rev}
+        <span className="dossier-arasaka-only">{" · "}</span>
+        REV {rev}
       </span>
-      <span className="public-dashboard__classline-cursor" aria-hidden />
+      <span className="public-dashboard__classline-cursor dossier-arasaka-only" aria-hidden />
     </div>
   );
 }

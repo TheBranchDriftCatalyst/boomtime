@@ -1,0 +1,309 @@
+/* dossier.css — "operative dossier / character-sheet" visual foundation for
+ * the public profile (gaka-174.1, epic gaka-174).
+ *
+ * Additive layer that loads AFTER hacker.css + arasaka.css. Base rules target
+ * ALL non-Arasaka themes ("clean mode") at a RESTRAINED intensity — a quiet
+ * premium document. The louder .theme-arasaka overrides keep living in
+ * arasaka.css and get amped further in the propagate pass (still gaka-174.1).
+ *
+ * Everything is driven off theme CSS vars (--primary / --border / --card / …),
+ * so the theme switcher (gaka-174.2) reskins the whole dossier for free.
+ */
+
+/* ---------------------------------------------------------------------------
+ * Document frame — the page reads as ONE file, not a loose card grid.
+ * ------------------------------------------------------------------------- */
+.public-dashboard__frame {
+  position: relative;
+  margin-inline: auto;
+  padding: 0 clamp(16px, 4vw, 40px);
+  /* Quiet hairline in clean mode; picks up a hint of the theme accent. */
+  --dossier-line: color-mix(in oklab, var(--primary) 22%, var(--border));
+}
+
+/* Left + right rules that read as the spine of a printed document. Faded at
+ * the ends so they don't box the page in hard. */
+.public-dashboard__frame::before,
+.public-dashboard__frame::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(
+    to bottom,
+    transparent 0,
+    var(--dossier-line) 5%,
+    var(--dossier-line) 95%,
+    transparent 100%
+  );
+  pointer-events: none;
+}
+.public-dashboard__frame::before { left: 0; }
+.public-dashboard__frame::after { right: 0; }
+
+/* Corner registration marks — the blueprint/dossier tell. */
+.dossier-corner {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--dossier-line);
+  pointer-events: none;
+}
+.dossier-corner--tl { top: -1px; left: -1px; border-right: 0; border-bottom: 0; }
+.dossier-corner--tr { top: -1px; right: -1px; border-left: 0; border-bottom: 0; }
+.dossier-corner--bl { bottom: -1px; left: -1px; border-right: 0; border-top: 0; }
+.dossier-corner--br { bottom: -1px; right: -1px; border-left: 0; border-top: 0; }
+
+/* ---------------------------------------------------------------------------
+ * Classification strip — restrained, visible in clean mode.
+ *
+ * arasaka.css sets `.public-dashboard__classline { display:none }` as the base
+ * (0,1,0). This rule (also 0,1,0, but imported LATER) re-enables a QUIET strip
+ * for clean mode; arasaka's higher-specificity `.theme-arasaka …` rule still
+ * wins for the loud, typed-in, amber-stamped version.
+ * ------------------------------------------------------------------------- */
+.public-dashboard__classline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 26px;
+  margin: 2px 0 22px;
+  padding: 5px 0;
+  font-family: var(--grid-tile-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  border-top: 1px solid var(--dossier-line);
+  border-bottom: 1px solid var(--dossier-line);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.public-dashboard__classline-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Arasaka-only embellishments — hidden in clean mode, restored under the
+ * arasaka theme so the e2e strings (CLEARANCE / CLASSIFIED / katakana) and the
+ * loud look survive unchanged. */
+.dossier-arasaka-only { display: none; }
+.theme-arasaka .dossier-arasaka-only { display: inline; }
+.theme-arasaka .public-dashboard__classline-block.dossier-arasaka-only,
+.theme-arasaka .public-dashboard__classline-stamp.dossier-arasaka-only {
+  display: inline-flex;
+}
+
+/* ---------------------------------------------------------------------------
+ * Hero — dossier header.
+ * ------------------------------------------------------------------------- */
+.public-dashboard__hero { padding-top: 26px; }
+
+/* gaka-174.3: ambient WebGL backdrop layer. Bleeds slightly past the hero box
+ * and fades out at the bottom so it dissolves into the page rather than
+ * ending on a hard edge. Sits behind the hero content (which is lifted to
+ * z-index:1 below). */
+.public-dashboard__hero-backdrop {
+  position: absolute;
+  inset: -24px -40px -8px;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.9) 0%,
+    rgba(0, 0, 0, 1) 45%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.9) 0%,
+    rgba(0, 0, 0, 1) 45%,
+    transparent 100%
+  );
+}
+/* Keep the hero's real content above the backdrop. */
+.public-dashboard__hero > *:not(.public-dashboard__hero-backdrop) {
+  position: relative;
+  z-index: 1;
+}
+
+/* Clean mode leans professional: drop the heavy neon glow the base hero ships.
+ * `.theme-arasaka .public-dashboard__hero-title` (0,2,0) re-adds the glow, so
+ * this only affects non-arasaka themes. */
+.public-dashboard__hero-title {
+  text-shadow: 0 0 1px color-mix(in oklab, var(--primary) 30%, transparent);
+}
+
+/* Labeled field rail under the name — the element that reads "dossier". */
+.public-dashboard__dossier-fields {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 22px 0 4px;
+  border: 1px solid var(--dossier-line);
+  border-radius: 3px;
+  overflow: hidden;
+  background: color-mix(in oklab, var(--card) 55%, transparent);
+}
+.dossier-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 18px 10px;
+  min-width: 132px;
+  border-right: 1px solid var(--dossier-line);
+}
+.dossier-field:last-child { border-right: 0; }
+.dossier-field__label {
+  font-family: var(--grid-tile-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--muted-foreground) 82%, var(--primary));
+}
+.dossier-field__value {
+  font-family: var(--grid-tile-font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--foreground);
+}
+.dossier-field__value--accent { color: var(--primary); }
+.dossier-field__value--accent::before {
+  content: "●";
+  margin-right: 6px;
+  font-size: 8px;
+  vertical-align: 2px;
+  color: var(--primary);
+  filter: drop-shadow(0 0 3px color-mix(in oklab, var(--primary) 70%, transparent));
+}
+
+/* ---------------------------------------------------------------------------
+ * Footer — sit it on the document baseline.
+ * ------------------------------------------------------------------------- */
+.public-dashboard__footer {
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--dossier-line);
+}
+
+/* ---------------------------------------------------------------------------
+ * Motion — a single orchestrated reveal on mount. Skipped under
+ * prefers-reduced-motion (and arasaka runs its own bootup/type-in anyway).
+ * ------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: no-preference) {
+  .public-dashboard__classline,
+  .public-dashboard__hero-title,
+  .public-dashboard__dossier-fields {
+    animation: dossier-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .public-dashboard__hero-title { animation-delay: 0.05s; }
+  .public-dashboard__dossier-fields { animation-delay: 0.12s; }
+}
+@keyframes dossier-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ---------------------------------------------------------------------------
+ * Floating dossier control cluster (gaka-174.2) — theme switcher today, the
+ * date-range control (gaka-174.7) joins it later. Bottom-right so it never
+ * collides with the owner's top-right Edit/Preview toggle.
+ * ------------------------------------------------------------------------- */
+.dossier-control {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 45;
+}
+.dossier-control--bl {
+  right: auto;
+  left: 16px;
+}
+.dossier-control__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 11px;
+  font-family: var(--grid-tile-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--foreground);
+  background: color-mix(in oklab, var(--card) 86%, transparent);
+  border: 1px solid
+    color-mix(in oklab, var(--primary) 30%, var(--border));
+  border-radius: 3px;
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, box-shadow 0.15s;
+}
+.dossier-control__btn:hover {
+  border-color: var(--primary);
+  box-shadow: 0 0 12px color-mix(in oklab, var(--primary) 25%, transparent);
+}
+.dossier-control__btn-label { opacity: 0.85; }
+
+/* ---------------------------------------------------------------------------
+ * Reclassify sweep (gaka-174.1 mode transition) — a crimson light bar wipes
+ * across on theme change, with a brief "RECLASSIFYING" stamp. Decorative and
+ * pointer-events:none. Entirely gated behind prefers-reduced-motion: with
+ * reduced motion the overlay renders nothing visible.
+ * ------------------------------------------------------------------------- */
+.dossier-reclassify {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  overflow: hidden;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .dossier-reclassify::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      /* bright leading edge */
+      linear-gradient(
+        90deg,
+        transparent 48%,
+        color-mix(in oklab, var(--primary) 85%, white) 50%,
+        transparent 52%
+      ),
+      /* soft crimson body */
+      linear-gradient(
+        90deg,
+        transparent 0%,
+        color-mix(in oklab, var(--primary) 10%, transparent) 30%,
+        color-mix(in oklab, var(--primary) 60%, transparent) 50%,
+        color-mix(in oklab, var(--primary) 10%, transparent) 70%,
+        transparent 100%
+      );
+    transform: translateX(-100%);
+    animation: dossier-sweep 0.7s cubic-bezier(0.4, 0, 0.2, 1) both;
+  }
+  .dossier-reclassify::before {
+    content: "RECLASSIFYING";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-family: var(--grid-tile-font-mono);
+    font-size: 11px;
+    letter-spacing: 0.42em;
+    text-transform: uppercase;
+    color: var(--primary);
+    text-shadow: 0 0 12px color-mix(in oklab, var(--primary) 55%, transparent);
+    animation: dossier-sweep-label 0.7s steps(8, end) both;
+  }
+  @keyframes dossier-sweep {
+    to { transform: translateX(100%); }
+  }
+  @keyframes dossier-sweep-label {
+    0%, 12% { opacity: 0; }
+    30%, 55% { opacity: 1; }
+    80%, 100% { opacity: 0; }
+  }
+}
