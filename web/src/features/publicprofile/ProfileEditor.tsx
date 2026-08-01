@@ -31,7 +31,7 @@ import {
 } from "@/lib/grid";
 import { WIDGET_CATALOG } from "@/features/widgets/catalog";
 import { WidgetRenderer } from "@/features/widgets/renderers/WidgetRenderer";
-import { DossierThemeControl, ReclassifyOverlay } from "./ProfileChrome";
+import { DossierControls, ReclassifyOverlay } from "./ProfileChrome";
 import { PUBLIC_PROFILE_DEFAULT_LAYOUT } from "./defaults";
 import "./hacker.css";
 import "./arasaka.css";
@@ -443,7 +443,7 @@ export function ProfileEditor({ slug }: ProfileEditorProps) {
 
       {/* gaka-174.2: theme control (bottom-left so it clears the Save chrome)
        * + reclassify sweep, so owners can preview dossier skins while editing. */}
-      <DossierThemeControl placement="bl" />
+      <DossierControls placement="bl" />
       <ReclassifyOverlay />
     </div>
   );

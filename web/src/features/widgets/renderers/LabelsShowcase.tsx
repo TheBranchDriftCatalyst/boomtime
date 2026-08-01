@@ -13,6 +13,7 @@ import { useAwardStreaks } from "@/features/publicprofile/labels/useAwardStreaks
 import type { LabelAward } from "@/features/publicprofile/labels/types";
 import { LabelChip } from "@/features/publicprofile/labels/LabelChip";
 import { TrophyShelf, trophyShelfSupported } from "@/features/widgets/renderers/TrophyShelf";
+import { useFeatureFlag } from "@/lib/featureFlags";
 import "./TrophyShelf.css";
 
 // gaka-364.1: "meme" group renders FIRST so the OP shiznit lands top of the
@@ -41,6 +42,9 @@ export interface LabelsShowcaseProps {
 }
 
 export function LabelsShowcase(_: LabelsShowcaseProps) {
+  // gaka-174.5: the 3D medallion shelf is opt-in behind a feature flag; the
+  // classic chip grid is the default. Flip it on via the dossier flipper.
+  const [labels3D] = useFeatureFlag("labels3D");
   const awards = useAwards();
   // Streaks map still comes from its own endpoint — the LabelChip needs
   // it to render Nx badges. Server-side ledger writes on /awards mean
@@ -55,10 +59,10 @@ export function LabelsShowcase(_: LabelsShowcaseProps) {
     );
   }
 
-  // gaka-174.5: when WebGL is available, showcase the awards as glossy 3D
-  // medallions. No-WebGL / reduced-motion clients fall through to the flat
-  // chip grid below (which also keeps the hover-tooltip descriptions).
-  if (trophyShelfSupported()) {
+  // gaka-174.5: 3D medallions only when the viewer has flipped the flag ON
+  // AND the client supports WebGL. Otherwise fall through to the classic chip
+  // grid (the default), which also keeps the hover-tooltip descriptions.
+  if (labels3D && trophyShelfSupported()) {
     return <TrophyShelf awards={awards} />;
   }
 

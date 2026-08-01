@@ -28,7 +28,7 @@ import {
 } from "@/lib/grid";
 import { WIDGET_CATALOG } from "@/features/widgets/catalog";
 import { WidgetRenderer } from "@/features/widgets/renderers/WidgetRenderer";
-import { DossierThemeControl, ReclassifyOverlay } from "./ProfileChrome";
+import { DossierControls, ReclassifyOverlay } from "./ProfileChrome";
 import { HeroBackdrop } from "./HeroBackdrop";
 import { PUBLIC_PROFILE_DEFAULT_LAYOUT } from "./defaults";
 import type { PublicDashboardPayload } from "@/types/stats";
@@ -205,7 +205,7 @@ function DashboardBody({ data, slug }: { data: PublicDashboardPayload; slug: str
       {/* gaka-174.2: floating dossier controls + the reclassify sweep that
        * plays when the theme (dossier skin) changes. Available to any viewer;
        * owner-canonical persistence is the follow-up half of gaka-174.2. */}
-      <DossierThemeControl />
+      <DossierControls />
       <ReclassifyOverlay />
     </div>
   );

@@ -217,6 +217,8 @@
   right: 16px;
   bottom: 16px;
   z-index: 45;
+  display: flex;
+  gap: 8px;
 }
 .dossier-control--bl {
   right: auto;
