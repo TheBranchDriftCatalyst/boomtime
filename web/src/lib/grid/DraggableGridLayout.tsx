@@ -19,7 +19,7 @@ import "react-resizable/css/styles.css";
 import "./grid.css";
 
 import { WidgetHost } from "./WidgetHost";
-import { buildDefaultLayout, mergeLayouts } from "./layout-evolution";
+import { buildDefaultLayout } from "./layout-evolution";
 import type { GridLayoutItem, StorageAdapter, WidgetInstance } from "./types";
 
 // Direct runtime references. `Responsive` is well-typed; `useContainerWidth`
@@ -48,9 +48,10 @@ type Layout = {
 };
 
 export interface DraggableGridLayoutProps {
-  /** Ordered list of widget instances available for this dashboard. New
-   * instances added over time are additively merged into any persisted
-   * layout by `layout-evolution.mergeLayouts`. */
+  /** Widget instances available for this dashboard (the full catalog for the
+   * scope). The rendered set is the intersection of a saved layout with this
+   * list — instances NOT in the saved layout are available to add (via an
+   * editor palette) but are not auto-injected, so intentional removals stick. */
   instances: WidgetInstance[];
   /** Persistence adapter. `null` return from adapter.load() = fall back to
    * defaults. save() fires on every layout change (drag/resize/view). */
@@ -79,8 +80,13 @@ export function DraggableGridLayout({
   );
   const { width, containerRef, mounted } = useContainerWidth();
 
-  // Load persisted layout once on mount; merge with defaults so new
-  // instances not yet in the persisted set get appended.
+  // Load persisted layout once on mount. A saved layout is AUTHORITATIVE:
+  // we render exactly what the user saved (minus keys whose widget no longer
+  // exists in the catalog), and never auto-append catalog widgets they left
+  // out. Auto-appending defaults here made intentional removals impossible —
+  // a removed widget is indistinguishable from a brand-new one, so it came
+  // straight back on the next load ("save re-adds everything"). New catalog
+  // widgets stay discoverable via the editor palette (catalog − in-layout).
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -89,7 +95,7 @@ export function DraggableGridLayout({
       const defaults = buildDefaultLayout(instances, cols);
       const initial =
         persisted && persisted.length > 0
-          ? mergeLayouts(persisted, defaults)
+          ? persisted.filter((w) => instances.some((i) => i.key === w.i))
           : (seedLayout ?? defaults);
       setLayout(initial);
     })();
