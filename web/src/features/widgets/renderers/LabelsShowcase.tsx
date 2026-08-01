@@ -12,6 +12,8 @@ import { useAwards } from "@/features/publicprofile/labels/useAwards";
 import { useAwardStreaks } from "@/features/publicprofile/labels/useAwardStreaks";
 import type { LabelAward } from "@/features/publicprofile/labels/types";
 import { LabelChip } from "@/features/publicprofile/labels/LabelChip";
+import { TrophyShelf, trophyShelfSupported } from "@/features/widgets/renderers/TrophyShelf";
+import "./TrophyShelf.css";
 
 // gaka-364.1: "meme" group renders FIRST so the OP shiznit lands top of the
 // showcase widget the same way it lands top of the hero tagline. Rank-desc
@@ -51,6 +53,13 @@ export function LabelsShowcase(_: LabelsShowcaseProps) {
         NO LABELS YET · KEEP CODING
       </div>
     );
+  }
+
+  // gaka-174.5: when WebGL is available, showcase the awards as glossy 3D
+  // medallions. No-WebGL / reduced-motion clients fall through to the flat
+  // chip grid below (which also keeps the hover-tooltip descriptions).
+  if (trophyShelfSupported()) {
+    return <TrophyShelf awards={awards} />;
   }
 
   const groups = new Map<LabelAward["kind"], LabelAward[]>();

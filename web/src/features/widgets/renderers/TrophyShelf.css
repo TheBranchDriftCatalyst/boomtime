@@ -1,0 +1,9 @@
+/* TrophyShelf (gaka-174.5) — positioned host for the R3F medallion canvas.
+ * Fills the labels-showcase tile; the <Canvas> inside is absolute-inset. */
+.labels-trophy-shelf {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  min-height: 160px;
+  overflow: hidden;
+}
