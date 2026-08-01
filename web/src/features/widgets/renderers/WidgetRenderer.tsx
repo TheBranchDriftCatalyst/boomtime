@@ -13,7 +13,6 @@ import { ContributionCalendar } from "@/viz/charts/ContributionCalendar";
 import { secondsToCompact, secondsToHms } from "@/lib/utils";
 import type { PublicDashboardPayload, ResourceStats } from "@/types/stats";
 import {
-  computeGrade,
   currentStreak,
   longestStreakInRange,
 } from "@/features/publicprofile/grade";
@@ -23,6 +22,7 @@ import {
 // show the "No goals yet" placeholder — private-by-default.
 import { GoalProgress } from "@/features/widgets/renderers/GoalProgress";
 import { GoalRing } from "@/features/widgets/renderers/GoalRing";
+import { HoloGradeBadge } from "@/features/widgets/renderers/HoloGradeBadge";
 import { GoalList } from "@/features/widgets/renderers/GoalList";
 // gaka-364: label evaluator drives the hero tagline (top-3 awards) +
 // the labels-showcase widget. gaka-hc6.4: awards come from the server
@@ -59,7 +59,7 @@ export function WidgetRenderer({ kind, view, data, ctx }: WidgetRendererProps) {
       return <HeroIdentity data={data} />;
 
     case "grade-badge":
-      return <GradeBadge data={data} />;
+      return <HoloGradeBadge data={data} />;
 
     case "total-time-stat":
       // gaka-k2p: compact `366h 47m` instead of the wrappy
@@ -267,28 +267,6 @@ function HeroIdentity({ data }: { data: PublicDashboardPayload }) {
             </div>
           )}
         </div>
-      </div>
-    </div>
-  );
-}
-
-function GradeBadge({ data }: { data: PublicDashboardPayload }) {
-  const grade = computeGrade(data);
-  const pctStr = `${Math.round(grade.percentile)}th`;
-  return (
-    <div className="flex h-full w-full flex-col items-center justify-center gap-1 px-2 text-center">
-      <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-[color:var(--muted-foreground)]">
-        &gt; RANK
-      </div>
-      <div
-        className="font-mono text-6xl font-bold leading-none text-[color:var(--primary)]"
-        style={{ filter: "drop-shadow(0 0 24px var(--primary))" }}
-        data-testid="grade-badge-letter"
-      >
-        {grade.level}
-      </div>
-      <div className="font-mono text-[10px] tracking-[0.12em] text-[color:var(--muted-foreground)]">
-        {pctStr} PERCENTILE
       </div>
     </div>
   );

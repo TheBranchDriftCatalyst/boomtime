@@ -1,0 +1,146 @@
+/* HoloGradeBadge (gaka-174.6) — pointer-reactive holographic grade badge.
+ * Foil + glare track the cursor; a faint idle shimmer keeps it alive at rest.
+ * All motion is gated behind prefers-reduced-motion. */
+
+.holo-badge {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  perspective: 620px;
+  /* pointer-driven state (updated in JS); safe defaults for no-pointer. */
+  --mx: 0.5;
+  --my: 0.35;
+  --rx: 0deg;
+  --ry: 0deg;
+}
+
+.holo-badge__inner {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 18px;
+  text-align: center;
+  transform: rotateX(var(--rx)) rotateY(var(--ry));
+  transform-style: preserve-3d;
+  transition: transform 0.2s ease-out;
+}
+
+.holo-badge__rank,
+.holo-badge__pct {
+  font-family: var(--grid-tile-font-mono, ui-monospace, monospace);
+  color: var(--muted-foreground);
+  position: relative;
+  z-index: 2;
+}
+.holo-badge__rank {
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+.holo-badge__pct {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.holo-badge__letter {
+  position: relative;
+  z-index: 2;
+  font-family: var(--grid-tile-font-mono, ui-monospace, monospace);
+  font-size: 3.75rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--primary);
+  filter: drop-shadow(0 0 22px color-mix(in oklab, var(--primary) 65%, transparent));
+}
+
+/* Iridescent foil copy of the letter, hue-swept by cursor X. color-dodge over
+ * the crimson/primary base gives the metallic holo shimmer. */
+.holo-badge__letter::after {
+  content: attr(data-letter);
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    calc(var(--mx) * 340deg + 20deg),
+    hsl(320 100% 68%),
+    hsl(190 100% 62%),
+    hsl(140 100% 62%),
+    hsl(48 100% 62%),
+    hsl(320 100% 68%)
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  mix-blend-mode: color-dodge;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* Full-tile foil band, positioned by the pointer; soft-light keeps it subtle. */
+.holo-badge__foil {
+  position: absolute;
+  inset: 0;
+  border-radius: 4px;
+  background: linear-gradient(
+    115deg,
+    transparent 32%,
+    color-mix(in oklab, var(--primary) 22%, transparent) 44%,
+    color-mix(in oklab, white 34%, transparent) 50%,
+    color-mix(in oklab, var(--primary) 22%, transparent) 56%,
+    transparent 68%
+  );
+  background-size: 280% 280%;
+  background-position: calc(var(--mx) * 100%) calc(var(--my) * 100%);
+  mix-blend-mode: soft-light;
+  opacity: 0.7;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Specular glare that follows the cursor. */
+.holo-badge__glare {
+  position: absolute;
+  inset: -25%;
+  background: radial-gradient(
+    circle at calc(var(--mx) * 100%) calc(var(--my) * 100%),
+    color-mix(in oklab, white 40%, transparent) 0%,
+    transparent 38%
+  );
+  mix-blend-mode: overlay;
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Idle shimmer — sweeps the foil hue slowly so the badge lives without a
+ * cursor. Intensifies on hover. */
+@media (prefers-reduced-motion: no-preference) {
+  .holo-badge__foil {
+    animation: holo-idle-sweep 6s ease-in-out infinite;
+  }
+  .holo-badge__letter::after {
+    animation: holo-idle-hue 8s linear infinite;
+  }
+  .holo-badge:hover .holo-badge__foil,
+  .holo-badge:hover .holo-badge__letter::after {
+    animation-play-state: paused;
+  }
+  .holo-badge:hover .holo-badge__foil { opacity: 0.9; }
+  .holo-badge:hover .holo-badge__glare { opacity: 0.75; }
+  .holo-badge:hover .holo-badge__letter::after { opacity: 0.8; }
+}
+
+@keyframes holo-idle-sweep {
+  0%, 100% { background-position: 15% 40%; }
+  50% { background-position: 85% 60%; }
+}
+@keyframes holo-idle-hue {
+  from { filter: hue-rotate(0deg); }
+  to { filter: hue-rotate(360deg); }
+}
