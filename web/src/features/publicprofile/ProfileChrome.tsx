@@ -9,7 +9,7 @@
 // visitor re-skinning changes THEIR preference only. Feature flags are the
 // same — per-browser viewer preferences, default-off.
 import { useEffect, useRef, useState } from "react";
-import { FlaskConical, Palette } from "lucide-react";
+import { CalendarRange, FlaskConical, Palette } from "lucide-react";
 import {
   useTheme,
   THEME_REGISTRY,
@@ -25,6 +25,43 @@ import {
   DropdownMenuTrigger,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/dropdown-menu";
 import { FEATURE_FLAGS, useFeatureFlag } from "@/lib/featureFlags";
+import { RANGE_PRESETS, useProfileRange } from "./profileRange";
+
+function RangeControl() {
+  const [days, setDays] = useProfileRange();
+  const current = RANGE_PRESETS.find((r) => r.days === days);
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="dossier-control__btn"
+          title="Service-record window"
+          aria-label="Change stats date range"
+          data-testid="profile-range-control"
+        >
+          <CalendarRange size={12} aria-hidden />
+          <span className="dossier-control__btn-label">
+            {current?.label ?? `${days}D`}
+          </span>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-44">
+        <DropdownMenuLabel>Service record</DropdownMenuLabel>
+        <DropdownMenuRadioGroup
+          value={String(days)}
+          onValueChange={(v) => setDays(Number(v))}
+        >
+          {RANGE_PRESETS.map((r) => (
+            <DropdownMenuRadioItem key={r.days} value={String(r.days)}>
+              Last {r.label}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 function ThemeControl() {
   const { theme, setTheme } = useTheme();
@@ -129,6 +166,7 @@ export function DossierControls({
       data-testid="profile-controls"
     >
       <FlagsFlipper />
+      <RangeControl />
       <ThemeControl />
     </div>
   );

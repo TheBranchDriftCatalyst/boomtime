@@ -32,6 +32,7 @@ import {
 import { WIDGET_CATALOG } from "@/features/widgets/catalog";
 import { WidgetRenderer } from "@/features/widgets/renderers/WidgetRenderer";
 import { DossierControls, ReclassifyOverlay } from "./ProfileChrome";
+import { useProfileRange } from "./profileRange";
 import { PUBLIC_PROFILE_DEFAULT_LAYOUT } from "./defaults";
 import "./hacker.css";
 import "./arasaka.css";
@@ -56,9 +57,12 @@ export function ProfileEditor({ slug }: ProfileEditorProps) {
   // data (not a synthetic PREVIEW). Shares qk.publicDashboard(slug) with
   // the PublicDashboard route so preview<->edit toggling reuses the same
   // network round-trip.
+  // gaka-174.7: match the read view — the selected window drives the editor's
+  // preview payload too, so an owner sees the layout against the same range.
+  const [rangeDays] = useProfileRange();
   const { data: payload, isLoading: payloadLoading } = useQuery({
-    queryKey: qk.publicDashboard(slug),
-    queryFn: () => api.getPublicDashboard(slug),
+    queryKey: [...qk.publicDashboard(slug), rangeDays],
+    queryFn: () => api.getPublicDashboard(slug, rangeDays),
     enabled: !!slug,
     retry: false,
   });

@@ -30,6 +30,7 @@ import { WIDGET_CATALOG } from "@/features/widgets/catalog";
 import { WidgetRenderer } from "@/features/widgets/renderers/WidgetRenderer";
 import { DossierControls, ReclassifyOverlay } from "./ProfileChrome";
 import { HeroBackdrop } from "./HeroBackdrop";
+import { useProfileRange } from "./profileRange";
 import { PUBLIC_PROFILE_DEFAULT_LAYOUT } from "./defaults";
 import type { PublicDashboardPayload } from "@/types/stats";
 import "./hacker.css";
@@ -44,9 +45,13 @@ import "./dossier.css";
 export function PublicDashboard() {
   const { slug = "" } = useParams<{ slug: string }>();
 
+  // gaka-174.7: the selected stats window drives the payload query. The
+  // query key carries `rangeDays` so switching windows refetches; the base
+  // qk.publicDashboard(slug) stays a prefix so invalidations still match.
+  const [rangeDays] = useProfileRange();
   const { data, isLoading, error } = useQuery({
-    queryKey: qk.publicDashboard(slug),
-    queryFn: () => api.getPublicDashboard(slug),
+    queryKey: [...qk.publicDashboard(slug), rangeDays],
+    queryFn: () => api.getPublicDashboard(slug, rangeDays),
     enabled: !!slug,
     retry: (failureCount, err) => {
       if (err instanceof ApiError && err.status === 404) return false;

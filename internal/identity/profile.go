@@ -30,6 +30,7 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -217,9 +218,28 @@ func (h *Handler) PublicProfile(c *echo.Context) error {
 		return apihelpers.RespondErr(c, apierr.NotFound("This profile isn't public"))
 	}
 
-	// Build the payload. Range mirrors widget defaults (60d, 15-min gap).
+	// Build the payload. Range defaults to the canonical window (60d, 15-min
+	// gap) but a visitor may re-scope the STATS via ?days=N (gaka-174.7).
+	//
+	// This rescopes ONLY the dashboard stats. Labels/awards are computed by a
+	// SEPARATE endpoint (/api/public/profile/:slug/awards) that keeps reading
+	// the canonical publicProfilePayloadDays constant — so a re-scoped view
+	// never desyncs the award ledger / streaks (the gaka-hc6.3 invariant is on
+	// the canonical computation, which is unchanged here).
+	days := publicProfilePayloadDays
+	if q := c.QueryParam("days"); q != "" {
+		if n, perr := strconv.Atoi(q); perr == nil {
+			// Clamp to a sane window: at least a day, at most a year.
+			if n < 1 {
+				n = 1
+			} else if n > 365 {
+				n = 365
+			}
+			days = n
+		}
+	}
 	t1 := time.Now().UTC()
-	t0 := apihelpers.RemoveDays(t1, publicProfilePayloadDays)
+	t0 := apihelpers.RemoveDays(t1, days)
 
 	hidden, err := h.DB.LoadHiddenSets(ctx, username)
 	if err != nil {

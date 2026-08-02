@@ -326,9 +326,13 @@ export const api = {
       { method: "PUT", body },
     ),
   // Public payload — no auth. Used by the /p/:slug dashboard route.
-  getPublicDashboard: (slug: string) =>
+  // gaka-174.7: optional `days` re-scopes the STATS window (server clamps to
+  // 1..365, default 60). Labels/awards come from a separate endpoint that
+  // stays on the canonical window, so re-scoping never touches them.
+  getPublicDashboard: (slug: string, days?: number) =>
     request<PublicDashboardPayload>(
-      `/api/public/profile/${encodeURIComponent(slug)}`,
+      `/api/public/profile/${encodeURIComponent(slug)}` +
+        (days ? `?days=${days}` : ""),
       { auth: false },
     ),
 
