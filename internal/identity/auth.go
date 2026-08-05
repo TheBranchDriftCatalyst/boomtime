@@ -82,6 +82,15 @@ func loginResponse(td db.TokenData, now time.Time) model.LoginResponse {
 // whose result is discarded. Both branches now burn the same ~10ms of CPU
 // and return the identical InvalidCredentials envelope.
 func (h *Handler) Login(c *echo.Context) error {
+	// gaka-93f.11.4: under BOOM_AUTH_PROVIDER=oidc, password login is disabled —
+	// sign-in goes through Authentik (/auth/login/oidc). Reject early with a
+	// clear message so a stale password form can't mint a half-working local
+	// session (bearer resolves locally, but the cookie-authed paths expect an
+	// oidc_session). The FE hides the password form under oidc; this is the
+	// server-side backstop.
+	if auth.CurrentResolver().ProviderName() == "oidc" {
+		return apihelpers.RespondErr(c, apierr.Forbidden("password login is disabled on this server — sign in with Authentik"))
+	}
 	var creds model.AuthRequest
 	// gaka-bi2: 4 KiB cap. Credentials are two short strings; a fat body here
 	// would just amplify the argon2 verify below into a memory DoS.

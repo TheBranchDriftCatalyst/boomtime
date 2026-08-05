@@ -319,6 +319,21 @@ func userLookupFromDB(database *db.DB) func(c *echo.Context) string {
 }
 
 // middleware returns the echo middleware that consults the store.
+// isStaticAssetPath reports whether a GET path serves a static SPA file — the
+// build's hashed, immutable chunks under /assets/, plus the handful of root
+// static files. These are cheap file reads fetched in bursts on every page
+// load; they must never be rate-limited. It matches ONLY these paths (never the
+// /api, /auth, /badge, /import surfaces), so the abuse-facing endpoints stay
+// bucketed. gaka-93f.23 tracks reducing the chunk count itself.
+func isStaticAssetPath(p string) bool {
+	return strings.HasPrefix(p, "/assets/") ||
+		p == "/favicon.ico" ||
+		p == "/robots.txt" ||
+		p == "/manifest.json" ||
+		p == "/manifest.webmanifest" ||
+		p == "/boomtime.svg"
+}
+
 func (s *rateLimitStore) middleware() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
@@ -328,6 +343,16 @@ func (s *rateLimitStore) middleware() echo.MiddlewareFunc {
 				return next(c)
 			}
 			if req.Method == http.MethodGet && req.URL.Path == "/healthz" {
+				return next(c)
+			}
+			// gaka-93f.11.5: never rate-limit static SPA assets. A single page load
+			// fetches dozens of immutable hashed chunks (/assets/*.js|css) in one
+			// burst; counting them drains the default IP bucket and 429s the app's
+			// OWN JavaScript, breaking the load (and feeding the stale-chunk
+			// auto-reload into a retry storm). Rate limiting targets the API /
+			// auth / ingest surface, not static file serving. The other common
+			// root static files (favicon, logo, manifest) are exempted too.
+			if req.Method == http.MethodGet && isStaticAssetPath(req.URL.Path) {
 				return next(c)
 			}
 			group := classifyEndpoint(req.Method, req.URL.Path)
