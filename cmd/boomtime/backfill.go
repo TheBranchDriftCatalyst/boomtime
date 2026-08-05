@@ -50,6 +50,7 @@ func backfillCmd() *cobra.Command {
 		Short: "Backfill boomtime with historical activity (git, ...)",
 	}
 	cmd.AddCommand(backfillGitCmd())
+	cmd.AddCommand(backfillLastContextCmd())
 	return cmd
 }
 

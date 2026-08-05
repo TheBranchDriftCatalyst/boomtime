@@ -79,6 +79,22 @@ func (h *Handler) storeAndRespond(c *echo.Context, hbs []model.HeartbeatPayload)
 		enriched[i] = hb
 	}
 
+	// Resolve WakaTime `<<LAST_PROJECT>>` / `<<LAST_BRANCH>>` / `<<LAST_LANGUAGE>>`
+	// template tokens to this sender's last-known real value per axis (see
+	// lastcontext.go). Strict no-op — and zero extra DB work — for any batch
+	// with no placeholder: the guard short-circuits before the seed query, so
+	// normal ingest is byte-identical to before this shipped. Substituting here
+	// (before Save*) means BOTH the rollup and raw save paths persist resolved
+	// values, and the literal token never lands in the heartbeats table.
+	if batchHasLastPlaceholder(enriched) {
+		seedProject, seedLanguage, seedBranch, err := h.DB.GetLastKnownContext(ctx, owner)
+		if err != nil {
+			h.Logger.Error("failed to seed last-known context for placeholder substitution", "owner", owner, "err", err)
+			return apihelpers.RespondErr(c, apierr.Generic())
+		}
+		substituteLastContext(enriched, seedProject, seedLanguage, seedBranch)
+	}
+
 	// gaka-0oe.3: skip the expensive phase-3 rollup/gap maintenance for
 	// identities denied CapGenerateRollups when BOOM_FEATURE_ROLLUP_SKIP is on
 	// (e.g. an ingest-only service tier). Flag off => full caps => always the

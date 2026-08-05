@@ -219,5 +219,27 @@ var _ = Describe("UserAgentInfo edge cases", func() {
 	})
 })
 
+var _ = Describe("IsLastPlaceholder", func() {
+	DescribeTable("classifies a value as a <<...>> template token or a real value",
+		func(in string, want bool) {
+			Expect(IsLastPlaceholder(in)).To(Equal(want))
+		},
+		// The three tokens macos-wakatime actually sends.
+		Entry("LAST_PROJECT", "<<LAST_PROJECT>>", true),
+		Entry("LAST_BRANCH", "<<LAST_BRANCH>>", true),
+		Entry("LAST_LANGUAGE", "<<LAST_LANGUAGE>>", true),
+		// Any future <<...>> token is covered by shape alone.
+		Entry("unknown future token", "<<LAST_MACHINE>>", true),
+		Entry("empty inner is still a placeholder, never a real value", "<<>>", true),
+		// Real values must NOT be treated as placeholders.
+		Entry("real project name", "boomtime", false),
+		Entry("empty string", "", false),
+		Entry("only opening delimiter", "<<LAST_PROJECT", false),
+		Entry("only closing delimiter", "LAST_PROJECT>>", false),
+		Entry("angle brackets mid-string", "a<<b>>c", false),
+		Entry("single-char shy of a delimiter", "<>", false),
+	)
+})
+
 // -- restored from internal/wakatime/wakatime_test.go during kill-switch (gaka-0vp.17) --
 func strptr(s string) *string { return &s }

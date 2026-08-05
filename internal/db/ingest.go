@@ -316,6 +316,199 @@ GROUP BY sender, (((time_sent AT TIME ZONE 'UTC') AT TIME ZONE $3)::date), coale
 	return err
 }
 
+// GetLastKnownContext returns the most recent REAL (non-null, non-placeholder)
+// value of each context axis — project, language, branch — for `sender`, each
+// resolved independently. A placeholder is any value matching `<<%>>` (see
+// wakatime.IsLastPlaceholder); those are excluded so a stored template token
+// can never seed another substitution. Any axis with no real value ever comes
+// back nil.
+//
+// This is the DB seed for the ingest-time substitution pass (internal/ingest):
+// it primes the running "last known" per axis before the batch's own
+// forward-fill takes over. Three correlated single-row lookups — cheap, and
+// only called when a batch actually carries a placeholder.
+func (d *DB) GetLastKnownContext(ctx context.Context, sender string) (project, language, branch *string, err error) {
+	err = d.Pool.QueryRow(ctx, `
+SELECT
+  (SELECT project  FROM heartbeats WHERE sender = $1 AND project  IS NOT NULL AND project  NOT LIKE '<<%>>' ORDER BY time_sent DESC LIMIT 1),
+  (SELECT language FROM heartbeats WHERE sender = $1 AND language IS NOT NULL AND language NOT LIKE '<<%>>' ORDER BY time_sent DESC LIMIT 1),
+  (SELECT branch   FROM heartbeats WHERE sender = $1 AND branch   IS NOT NULL AND branch   NOT LIKE '<<%>>' ORDER BY time_sent DESC LIMIT 1)
+`, sender).Scan(&project, &language, &branch)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return project, language, branch, nil
+}
+
+// LastContextBackfillResult reports what `backfill last-context` did (or, in
+// dry-run, WOULD do). Per axis: `*Substituted` rows had a prior real value and
+// were rewritten to it; `*Nulled` rows had no prior real value and had the
+// literal placeholder dropped to NULL. AffectedSenders is every sender that
+// held any placeholder row — the set whose rollups must be rebuilt afterward.
+type LastContextBackfillResult struct {
+	ProjectSubstituted  int64
+	ProjectNulled       int64
+	LanguageSubstituted int64
+	LanguageNulled      int64
+	BranchSubstituted   int64
+	BranchNulled        int64
+	AffectedSenders     []string
+	DryRun              bool
+}
+
+// lastCtxAxes are the three context columns the backfill rewrites. Hardcoded
+// (never user input) so it's safe to interpolate into the axis SQL below.
+var lastCtxAxes = []string{"project", "language", "branch"}
+
+// BackfillLastContext resolves stored `<<LAST_*>>` placeholder rows across the
+// WHOLE heartbeats table (all senders), mirroring the ingest-time substitution
+// for rows written before that shipped. For each axis independently, a
+// placeholder row is rewritten to the sender's most recent real value at an
+// earlier time_sent; a placeholder with no prior real value has the literal
+// dropped to NULL (never left verbatim). All writes run in ONE transaction —
+// either every axis is fixed or none is.
+//
+// dryRun reports the same per-axis counts (what WOULD change) and the affected
+// senders without writing.
+//
+// The rollups are NOT rebuilt here — changing project/branch/language shifts
+// hb_rollup_daily buckets, so the caller MUST refresh each AffectedSenders
+// rollup afterward (RefreshRollup from epoch). The `backfill last-context`
+// command does this; see cmd/boomtime/backfill_lastcontext.go.
+func (d *DB) BackfillLastContext(ctx context.Context, dryRun bool) (LastContextBackfillResult, error) {
+	res := LastContextBackfillResult{DryRun: dryRun}
+
+	senders, err := d.lastCtxAffectedSenders(ctx)
+	if err != nil {
+		return res, err
+	}
+	res.AffectedSenders = senders
+
+	if dryRun {
+		for _, col := range lastCtxAxes {
+			sub, nul, err := d.lastCtxDryRunCounts(ctx, col)
+			if err != nil {
+				return res, err
+			}
+			setLastCtxCount(&res, col, sub, nul)
+		}
+		return res, nil
+	}
+
+	tx, err := d.Pool.Begin(ctx)
+	if err != nil {
+		return res, err
+	}
+	defer tx.Rollback(ctx)
+
+	for _, col := range lastCtxAxes {
+		// Substitute BEFORE null-out: substitution rewrites the rows that have
+		// a prior real value to a non-placeholder, so the subsequent null-out
+		// (which matches `<<%>>`) only touches the leftover no-prior rows.
+		sub, err := lastCtxSubstitute(ctx, tx, col)
+		if err != nil {
+			return res, err
+		}
+		nul, err := lastCtxNullOut(ctx, tx, col)
+		if err != nil {
+			return res, err
+		}
+		setLastCtxCount(&res, col, sub, nul)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return res, err
+	}
+	return res, nil
+}
+
+// lastCtxAffectedSenders lists every sender holding at least one placeholder
+// row on any axis — the rollup-rebuild set.
+func (d *DB) lastCtxAffectedSenders(ctx context.Context) ([]string, error) {
+	rows, err := d.Pool.Query(ctx, `
+SELECT DISTINCT sender FROM heartbeats
+WHERE sender IS NOT NULL
+  AND (project LIKE '<<%>>' OR branch LIKE '<<%>>' OR language LIKE '<<%>>')
+ORDER BY sender`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+// lastCtxDryRunCounts returns (substitutable, nullable) row counts for one axis
+// without writing.
+func (d *DB) lastCtxDryRunCounts(ctx context.Context, col string) (sub, nul int64, err error) {
+	// %[1]s = column; %% => literal % for LIKE. Column is a constant from
+	// lastCtxAxes, never user input — no injection surface.
+	q := `
+SELECT
+  count(*) FILTER (WHERE ` + lastCtxPriorExists(col) + `),
+  count(*) FILTER (WHERE NOT (` + lastCtxPriorExists(col) + `))
+FROM heartbeats h
+WHERE h.` + col + ` LIKE '<<%>>'`
+	err = d.Pool.QueryRow(ctx, q).Scan(&sub, &nul)
+	return sub, nul, err
+}
+
+// lastCtxPriorExists is the correlated-subquery predicate "sender has an
+// earlier real value on this axis". Shared by the count and substitute SQL so
+// they can never diverge.
+func lastCtxPriorExists(col string) string {
+	return `EXISTS (SELECT 1 FROM heartbeats h2
+		WHERE h2.sender = h.sender AND h2.time_sent < h.time_sent
+		  AND h2.` + col + ` IS NOT NULL AND h2.` + col + ` NOT LIKE '<<%>>')`
+}
+
+// lastCtxSubstitute rewrites placeholder rows that HAVE a prior real value to
+// that value. Returns rows affected.
+func lastCtxSubstitute(ctx context.Context, tx pgx.Tx, col string) (int64, error) {
+	q := `
+UPDATE heartbeats h
+SET ` + col + ` = (
+    SELECT h2.` + col + ` FROM heartbeats h2
+    WHERE h2.sender = h.sender AND h2.time_sent < h.time_sent
+      AND h2.` + col + ` IS NOT NULL AND h2.` + col + ` NOT LIKE '<<%>>'
+    ORDER BY h2.time_sent DESC LIMIT 1)
+WHERE h.` + col + ` LIKE '<<%>>'
+  AND ` + lastCtxPriorExists(col)
+	tag, err := tx.Exec(ctx, q)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
+// lastCtxNullOut drops any remaining literal placeholder (no prior real value)
+// to NULL. Returns rows affected.
+func lastCtxNullOut(ctx context.Context, tx pgx.Tx, col string) (int64, error) {
+	tag, err := tx.Exec(ctx, `UPDATE heartbeats SET `+col+` = NULL WHERE `+col+` LIKE '<<%>>'`)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
+func setLastCtxCount(res *LastContextBackfillResult, col string, sub, nul int64) {
+	switch col {
+	case "project":
+		res.ProjectSubstituted, res.ProjectNulled = sub, nul
+	case "language":
+		res.LanguageSubstituted, res.LanguageNulled = sub, nul
+	case "branch":
+		res.BranchSubstituted, res.BranchNulled = sub, nul
+	}
+}
+
 func unixToTime(sec float64) time.Time {
 	s := int64(sec)
 	ns := int64((sec - float64(s)) * 1e9)

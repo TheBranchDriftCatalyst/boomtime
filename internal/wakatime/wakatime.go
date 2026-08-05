@@ -32,6 +32,21 @@ func UserAgentInfo(ua string) EditorInfo {
 	}
 }
 
+// IsLastPlaceholder reports whether s is a Wakatime "last-known" template
+// token — a value the editor/app sends in a context axis (project / branch /
+// language) when it has no real value and expects the SERVER to substitute the
+// user's most recent real value for that axis. wakatime.com does this
+// server-side; boomtime replicates it (see internal/ingest substitution pass +
+// the `backfill last-context` command).
+//
+// The macos-wakatime app emits <<LAST_PROJECT>>, <<LAST_BRANCH>>, and
+// <<LAST_LANGUAGE>>. We match the general `<<...>>` shape (prefix "<<", suffix
+// ">>") so any future <<LAST_*>> token is covered without a code change. A bare
+// "<<>>" also matches — it's still a placeholder, never a real value.
+func IsLastPlaceholder(s string) bool {
+	return strings.HasPrefix(s, "<<") && strings.HasSuffix(s, ">>")
+}
+
 // LanguageFromEntity derives a language name from a file entity's extension,
 // reproducing addMissingLang in Heartbeats.hs. Returns nil when no language
 // can be determined.
