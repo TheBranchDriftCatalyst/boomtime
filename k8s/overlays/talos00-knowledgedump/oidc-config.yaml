@@ -43,13 +43,14 @@ metadata:
   labels:
     app.kubernetes.io/name: boomtime
 data:
-  # Link-then-flip migration: PROD starts on LOCAL password auth so the running
-  # deployment is unchanged and existing accounts keep working. The operator
-  # signs in locally, links their superuser to Authentik (/auth/link/oidc),
-  # verifies, and ONLY THEN flips this to "oidc" (step 8 of the runbook). Do NOT
-  # ship this as "oidc" — that would lock everyone out until linking + hardening
-  # (gaka-93f.12) lands.
-  BOOM_AUTH_PROVIDER: "local"
+  # FLIPPED to oidc 2026-08-05. Prereqs verified before the flip: superuser
+  # `panda` linked to Authentik user `Panda` (sub-match confirmed against the
+  # prod DB), `Panda` ∈ boomtime-admin group → role=admin, OIDC discovery works
+  # via the internal Traefik hostAlias (Cloudflare out of the pod path), and all
+  # red-team session hardening (gaka-93f.14/.16/.17) is deployed. Password login
+  # is now OFF — login is Authentik-only. ROLLBACK: set back to "local" (panda
+  # still has a password) and redeploy.
+  BOOM_AUTH_PROVIDER: "oidc"
 
   # CONFIRMED (live Authentik export 2026-08-04): the portal host is
   # `auth.knowledgedump.space` (Traefik IngressRoute in talos-homelab), and the
