@@ -22,6 +22,10 @@ import (
 
 const mockKID = "mock-key-1"
 
+// mockNonce is baked into the id_token AND passed to HandleCallback so the
+// gaka-93f.16 nonce check passes deterministically in tests.
+const mockNonce = "mock-nonce-abc123"
+
 // mockAuthentik spins an httptest OIDC provider signing id_tokens with `key`.
 // `groups` is baked into the issued id_token. Returns the server (caller sets
 // DeferCleanup) + the issuer URL (trailing slash, as NewOIDCResolver expects).
@@ -60,6 +64,7 @@ func mockAuthentik(key *rsa.PrivateKey, clientID, sub, preferred string, groups 
 			"email":              preferred + "@example.com",
 			"preferred_username": preferred,
 			"groups":             groups,
+			"nonce":              mockNonce,
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"access_token": "mock-access-token",
@@ -106,7 +111,7 @@ var _ = Describe("OIDCResolver.HandleCallback (mock Authentik)", func() {
 		resolver, err := NewOIDCResolver(ctx, issuer, "", clientID, "secret", server.URL+"/cb", g2r, true /*autoprovision*/)
 		Expect(err).NotTo(HaveOccurred())
 
-		res, aerr := resolver.HandleCallback(ctx, database, "any-code")
+		res, aerr := resolver.HandleCallback(ctx, database, "any-code", mockNonce)
 		Expect(aerr).To(BeNil())
 		Expect(res.Identity.Username).To(Equal(preferred))
 		Expect(res.Identity.Role).To(Equal(RoleFull))
@@ -139,7 +144,7 @@ var _ = Describe("OIDCResolver.HandleCallback (mock Authentik)", func() {
 		resolver, err := NewOIDCResolver(ctx, issuer, "", clientID, "secret", server.URL+"/cb", g2r, false /*autoprovision OFF*/)
 		Expect(err).NotTo(HaveOccurred())
 
-		res, aerr := resolver.HandleCallback(ctx, database, "any-code")
+		res, aerr := resolver.HandleCallback(ctx, database, "any-code", mockNonce)
 		Expect(res).To(BeNil())
 		Expect(aerr).NotTo(BeNil())
 		Expect(aerr.Status).To(Equal(http.StatusForbidden))
@@ -160,11 +165,39 @@ var _ = Describe("OIDCResolver.HandleCallback (mock Authentik)", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		// First login provisions.
-		_, aerr := resolver.HandleCallback(ctx, database, "code-1")
+		_, aerr := resolver.HandleCallback(ctx, database, "code-1", mockNonce)
 		Expect(aerr).To(BeNil())
 		// Second login must resolve to the SAME user (not a collision-suffixed new one).
-		res2, aerr2 := resolver.HandleCallback(ctx, database, "code-2")
+		res2, aerr2 := resolver.HandleCallback(ctx, database, "code-2", mockNonce)
 		Expect(aerr2).To(BeNil())
 		Expect(res2.Identity.Username).To(Equal(preferred))
+	})
+
+	It("rejects an id_token whose nonce does not match the expected nonce (gaka-93f.16)", func() {
+		database := openServiceTestDB()
+		ctx := context.Background()
+
+		key, err := rsa.GenerateKey(rand.Reader, 2048)
+		Expect(err).NotTo(HaveOccurred())
+		sub := "sub-nonce-" + time.Now().Format("150405.000000000")
+		preferred := uniqueUsername("oidcnonce")
+
+		server, issuer := mockAuthentik(key, clientID, sub, preferred, []string{"boomtime-full"})
+		DeferCleanup(server.Close)
+		resolver, err := NewOIDCResolver(ctx, issuer, "", clientID, "secret", server.URL+"/cb", g2r, true)
+		Expect(err).NotTo(HaveOccurred())
+
+		// id_token carries mockNonce, but we present a DIFFERENT expected nonce
+		// (as a replayed/injected token would) → 401, no provisioning.
+		res, aerr := resolver.HandleCallback(ctx, database, "any-code", "wrong-nonce")
+		Expect(res).To(BeNil())
+		Expect(aerr).NotTo(BeNil())
+		Expect(aerr.Status).To(Equal(http.StatusUnauthorized))
+
+		// An empty expected nonce (missing cookie) must also fail closed.
+		res2, aerr2 := resolver.HandleCallback(ctx, database, "any-code", "")
+		Expect(res2).To(BeNil())
+		Expect(aerr2).NotTo(BeNil())
+		Expect(aerr2.Status).To(Equal(http.StatusUnauthorized))
 	})
 })

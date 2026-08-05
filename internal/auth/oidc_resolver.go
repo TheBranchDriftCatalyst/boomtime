@@ -117,7 +117,7 @@ type CallbackResult struct {
 // extracts the claims — the shared front half of both the login callback and
 // the account-link callback. Returns the claims, their JSON, the id_token
 // expiry, and the provider refresh_token.
-func (r *OIDCResolver) exchangeAndVerify(ctx context.Context, code string) (oidcClaims, []byte, time.Time, string, *apierr.Error) {
+func (r *OIDCResolver) exchangeAndVerify(ctx context.Context, code, expectedNonce string) (oidcClaims, []byte, time.Time, string, *apierr.Error) {
 	var zero oidcClaims
 	tok, err := r.oauth2.Exchange(ctx, code)
 	if err != nil {
@@ -130,6 +130,15 @@ func (r *OIDCResolver) exchangeAndVerify(ctx context.Context, code string) (oidc
 	idToken, err := r.verifier.Verify(ctx, rawIDToken)
 	if err != nil {
 		return zero, nil, time.Time{}, "", apierr.New(http.StatusUnauthorized, "OIDC id_token verification failed", nil)
+	}
+	// gaka-93f.16: verify the nonce we minted at authorize-time is echoed in the
+	// id_token (OIDC core §3.1.3.7 step 11). go-oidc does NOT check this
+	// automatically — without it, an id_token minted for a different auth request
+	// at the same issuer could be injected. We ALWAYS send a nonce, so an empty
+	// or mismatched idToken.Nonce (incl. a missing state/nonce cookie →
+	// expectedNonce=="") fails closed.
+	if idToken.Nonce == "" || idToken.Nonce != expectedNonce {
+		return zero, nil, time.Time{}, "", apierr.New(http.StatusUnauthorized, "OIDC id_token nonce mismatch", nil)
 	}
 	var claims oidcClaims
 	if err := idToken.Claims(&claims); err != nil {
@@ -144,8 +153,8 @@ func (r *OIDCResolver) exchangeAndVerify(ctx context.Context, code string) (oidc
 
 // HandleCallback (login mode): exchange + verify + provision/lookup (design
 // §6.5) + create the server-side oidc_session.
-func (r *OIDCResolver) HandleCallback(ctx context.Context, database *db.DB, code string) (*CallbackResult, *apierr.Error) {
-	claims, claimsJSON, expiry, refresh, aerr := r.exchangeAndVerify(ctx, code)
+func (r *OIDCResolver) HandleCallback(ctx context.Context, database *db.DB, code, expectedNonce string) (*CallbackResult, *apierr.Error) {
+	claims, claimsJSON, expiry, refresh, aerr := r.exchangeAndVerify(ctx, code, expectedNonce)
 	if aerr != nil {
 		return nil, aerr
 	}
@@ -176,8 +185,8 @@ func (r *OIDCResolver) HandleCallback(ctx context.Context, database *db.DB, code
 // logged in as. Does NOT create a session (the caller keeps theirs). Idempotent
 // if already linked to the same user; 409 if the identity belongs to a
 // different account.
-func (r *OIDCResolver) HandleLink(ctx context.Context, database *db.DB, code, currentUsername string) *apierr.Error {
-	claims, claimsJSON, _, _, aerr := r.exchangeAndVerify(ctx, code)
+func (r *OIDCResolver) HandleLink(ctx context.Context, database *db.DB, code, currentUsername, expectedNonce string) *apierr.Error {
+	claims, claimsJSON, _, _, aerr := r.exchangeAndVerify(ctx, code, expectedNonce)
 	if aerr != nil {
 		return aerr
 	}
@@ -214,6 +223,13 @@ func (r *OIDCResolver) resolveOrProvision(ctx context.Context, database *db.DB, 
 	}
 	if preferred == "" {
 		return "", apierr.New(http.StatusBadRequest, "OIDC identity has neither preferred_username nor email", nil)
+	}
+	// gaka-93f.18: never insert an IdP-supplied username verbatim. Reject
+	// control chars / whitespace / '|' (cache-key delimiter) / non-ASCII before
+	// it can become a boomtime username. Fail closed with a clear 400 rather
+	// than provisioning a hostile/namespace-colliding account.
+	if err := ValidateUsername(preferred); err != nil {
+		return "", apierr.New(http.StatusBadRequest, "OIDC preferred_username is not an acceptable boomtime username: "+err.Error(), nil)
 	}
 
 	// NOTE: username-based autolink was REMOVED (gaka-93f.12, red-team HIGH).

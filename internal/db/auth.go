@@ -198,6 +198,42 @@ func (d *DB) CreateAccessTokens(ctx context.Context, td TokenData, expiryHours i
 	return tx.Commit(ctx)
 }
 
+// CreateOIDCAccessToken mints ONLY a short-lived (30 min) access bearer for an
+// OIDC web user (gaka-93f.14) — NO local refresh_token row. Under
+// BOOM_AUTH_PROVIDER=oidc the browser session IS the oidc_sessions cookie; the
+// FE calls /auth/refresh_token only to obtain a bearer for the Authorization-
+// header API surface. Minting a local refresh token there (as CreateAccessTokens
+// does) + overwriting the session cookie converted the federated session into a
+// standalone, unrevocable local credential that outlived the id_token. By
+// issuing only the 30-min access token and leaving the oidc_sessions cookie
+// intact, the bearer is inherently short and the FE must re-present the (server-
+// revocable, expiring) OIDC session cookie to get the next one.
+func (d *DB) CreateOIDCAccessToken(ctx context.Context, owner, rawToken string) error {
+	_, err := d.Pool.Exec(ctx,
+		`INSERT INTO auth_tokens(owner, hashed_token, token_expiry)
+		 VALUES ($1, $2, NOW() + interval '30 minutes')`,
+		owner, hashSessionToken(rawToken))
+	return err
+}
+
+// DeleteUserAccessTokens revokes every access + refresh token for a user
+// (gaka-93f.14). Called on OIDC logout so any bearers the FE minted via
+// /auth/refresh_token die immediately with the session, not 30 min later.
+func (d *DB) DeleteUserAccessTokens(ctx context.Context, owner string) error {
+	tx, err := d.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx, `DELETE FROM auth_tokens WHERE owner = $1`, owner); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `DELETE FROM refresh_tokens WHERE owner = $1`, owner); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 // InsertAPIToken stores the SHA-256 of a base64(uuid) token with a null
 // expiry (never expires). The raw token value is thrown away at the
 // boundary — a DB read no longer yields a usable API token

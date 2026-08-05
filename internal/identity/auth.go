@@ -172,6 +172,13 @@ func (h *Handler) Register(c *echo.Context) error {
 	if err := auth.ValidatePassword(creds.Password); err != nil {
 		return apihelpers.RespondErr(c, apierr.BadRequest(err.Error()))
 	}
+	// gaka-93f.18: validate the username before hashing/inserting. Prior to
+	// this, register accepted arbitrary usernames (control chars, whitespace,
+	// the cache-key delimiter '|', unicode homoglyphs). ValidateUsername's
+	// message is user-safe.
+	if err := auth.ValidateUsername(creds.Username); err != nil {
+		return apihelpers.RespondErr(c, apierr.BadRequest(err.Error()))
+	}
 	ctx := c.Request().Context()
 
 	if err := auth.CreateUser(ctx, h.DB, creds.Username, creds.Password); err != nil {
@@ -199,9 +206,26 @@ func (h *Handler) RefreshToken(c *echo.Context) error {
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
+	ctx := c.Request().Context()
+
+	// gaka-93f.14: under OIDC the browser session IS the oidc_sessions cookie
+	// (already validated by IdentifyOwnerFromCookie above). Mint ONLY a short
+	// access bearer for the Authorization-header API surface — do NOT create a
+	// local refresh token and do NOT overwrite the session cookie. Doing either
+	// (as the local path below does) clobbered the OIDC session cookie and handed
+	// out a standalone local credential that escaped the session's lifetime and
+	// server-side revocation. The FE must re-present the (expiring, revocable)
+	// OIDC session cookie to obtain each subsequent bearer.
+	if auth.CurrentResolver().ProviderName() == "oidc" {
+		td := mkTokenData(owner)
+		if err := h.DB.CreateOIDCAccessToken(ctx, owner, td.Token); err != nil {
+			return apihelpers.InternalErr(h.Logger, c, "access token creation failed", err)
+		}
+		return c.JSON(http.StatusOK, loginResponse(td, time.Now().UTC()))
+	}
 
 	td := mkTokenData(owner)
-	if err := h.DB.CreateAccessTokens(c.Request().Context(), td, h.Cfg.SessionExpiry); err != nil {
+	if err := h.DB.CreateAccessTokens(ctx, td, h.Cfg.SessionExpiry); err != nil {
 		return apihelpers.InternalErr(h.Logger, c, "access token creation failed", err)
 	}
 	h.setRefreshCookie(c, td)
@@ -222,10 +246,18 @@ func (h *Handler) Logout(c *echo.Context) error {
 		if !ok {
 			return apihelpers.RespondErr(c, apierr.MissingRefreshTokenCookie())
 		}
-		if err := h.DB.DeleteOIDCSession(c.Request().Context(), refresh); err != nil {
+		ctx := c.Request().Context()
+		// gaka-93f.14: revoke any bearers this user minted via /auth/refresh_token
+		// so they die WITH the session, not up to 30 min later. Resolve the owner
+		// from the session before deleting it.
+		if owner, found, _ := h.DB.GetOIDCSessionUser(ctx, refresh); found && owner != "" {
+			_ = h.DB.DeleteUserAccessTokens(ctx, owner)
+		}
+		if err := h.DB.DeleteOIDCSession(ctx, refresh); err != nil {
 			return apihelpers.InternalErr(h.Logger, c, "oidc session deletion failed", err)
 		}
 		h.clearRefreshCookie(c)
+		h.clearOIDCFlowCookies(c)
 		return apihelpers.NoContent(c)
 	}
 
@@ -247,6 +279,7 @@ func (h *Handler) Logout(c *echo.Context) error {
 	// gaka-b5x.1: clear the client-side cookie with matching attributes
 	// (Path + Secure + SameSite) so browsers actually evict the entry.
 	h.clearRefreshCookie(c)
+	h.clearOIDCFlowCookies(c)
 	return apihelpers.NoContent(c)
 }
 

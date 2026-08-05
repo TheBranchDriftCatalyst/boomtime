@@ -24,6 +24,35 @@ import (
 
 const oidcStateCookie = "oidc_state"
 
+// oidcNonceCookie stores the OIDC nonce (gaka-93f.16) so the callback can assert
+// the id_token echoes it. Same lifetime/attrs as the state cookie.
+const oidcNonceCookie = "oidc_nonce"
+
+// setOIDCFlowCookie writes one of the short-lived OIDC-flow CSRF cookies
+// (state/nonce). SameSite=Lax so it survives the top-level redirect back from
+// the provider; HttpOnly + optional Secure.
+func (h *Handler) setOIDCFlowCookie(c *echo.Context, name, value string) {
+	c.SetCookie(&http.Cookie{
+		Name:     name,
+		Value:    value,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   h.Cfg.CookieSecure,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   600,
+	})
+}
+
+// clearOIDCFlowCookies expires the state+nonce cookies (gaka-93f.17). Called on
+// logout so an abandoned in-flight link flow can't be completed by a DIFFERENT
+// user on the same (shared/kiosk) browser: without the oidc_state cookie the
+// callback's CSRF check fails, so the stale link intent can never be consumed.
+func (h *Handler) clearOIDCFlowCookies(c *echo.Context) {
+	for _, name := range []string{oidcStateCookie, oidcNonceCookie} {
+		c.SetCookie(&http.Cookie{Name: name, Value: "", Path: "/", MaxAge: -1})
+	}
+}
+
 // oidcResolver returns the constructed *auth.OIDCResolver (available whenever
 // OIDC is CONFIGURED, so the link flow works under provider=local too), or nil.
 func oidcResolver() *auth.OIDCResolver {
@@ -48,7 +77,18 @@ type linkIntent struct {
 func putLinkIntent(state, username string) {
 	linkIntents.Lock()
 	defer linkIntents.Unlock()
-	linkIntents.m[state] = linkIntent{username: username, expiry: time.Now().Add(10 * time.Minute)}
+	// gaka-93f.17/.19: reap expired intents on every insert so an authenticated
+	// user who repeatedly STARTS (and abandons) link flows can't grow the map
+	// without bound — abandoned intents are otherwise only removed when their
+	// exact random state is later presented (never). The map is tiny in
+	// practice, so the linear sweep is cheap.
+	now := time.Now()
+	for k, v := range linkIntents.m {
+		if now.After(v.expiry) {
+			delete(linkIntents.m, k)
+		}
+	}
+	linkIntents.m[state] = linkIntent{username: username, expiry: now.Add(10 * time.Minute)}
 }
 
 // takeLinkIntent consumes (one-shot) the link intent for state, if present and
@@ -77,17 +117,9 @@ func (h *Handler) LoginOIDC(c *echo.Context) error {
 	if err1 != nil || err2 != nil {
 		return apihelpers.RespondErr(c, apierr.Generic())
 	}
-	// Short-lived CSRF state cookie. SameSite=Lax so it survives the top-level
-	// redirect back from the provider.
-	c.SetCookie(&http.Cookie{
-		Name:     oidcStateCookie,
-		Value:    state,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   h.Cfg.CookieSecure,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   600,
-	})
+	// Short-lived CSRF state + nonce cookies (gaka-93f.16).
+	h.setOIDCFlowCookie(c, oidcStateCookie, state)
+	h.setOIDCFlowCookie(c, oidcNonceCookie, nonce)
 	return c.Redirect(http.StatusFound, resolver.AuthCodeURL(state, nonce))
 }
 
@@ -112,15 +144,8 @@ func (h *Handler) LinkOIDC(c *echo.Context) error {
 		return apihelpers.RespondErr(c, apierr.Generic())
 	}
 	putLinkIntent(state, owner)
-	c.SetCookie(&http.Cookie{
-		Name:     oidcStateCookie,
-		Value:    state,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   h.Cfg.CookieSecure,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   600,
-	})
+	h.setOIDCFlowCookie(c, oidcStateCookie, state)
+	h.setOIDCFlowCookie(c, oidcNonceCookie, nonce)
 	return c.Redirect(http.StatusFound, resolver.AuthCodeURL(state, nonce))
 }
 
@@ -136,8 +161,15 @@ func (h *Handler) CallbackOIDC(c *echo.Context) error {
 	if cerr != nil || stateCookie.Value == "" || stateCookie.Value != c.QueryParam("state") {
 		return h.oidcErrorRedirect(c, "state_mismatch")
 	}
-	// One-shot: clear the state cookie.
+	// Capture the nonce we set at authorize-time (gaka-93f.16); a missing cookie
+	// leaves it "" so exchangeAndVerify fails closed.
+	nonce := ""
+	if nc, nerr := c.Cookie(oidcNonceCookie); nerr == nil {
+		nonce = nc.Value
+	}
+	// One-shot: clear both flow cookies.
 	c.SetCookie(&http.Cookie{Name: oidcStateCookie, Value: "", Path: "/", MaxAge: -1})
+	c.SetCookie(&http.Cookie{Name: oidcNonceCookie, Value: "", Path: "/", MaxAge: -1})
 
 	if c.QueryParam("error") != "" {
 		return h.oidcErrorRedirect(c, "provider_error")
@@ -151,7 +183,7 @@ func (h *Handler) CallbackOIDC(c *echo.Context) error {
 	// bind the resolved identity to the initiating user and keep their existing
 	// session — do NOT mint a new one.
 	if username, ok := takeLinkIntent(c.QueryParam("state")); ok {
-		if aerr := resolver.HandleLink(c.Request().Context(), h.DB, code, username); aerr != nil {
+		if aerr := resolver.HandleLink(c.Request().Context(), h.DB, code, username, nonce); aerr != nil {
 			h.Logger.Warn("oidc link failed", "user", username, "status", aerr.Status, "msg", aerr.Message)
 			reason := "error"
 			if aerr.Status == http.StatusConflict {
@@ -163,7 +195,7 @@ func (h *Handler) CallbackOIDC(c *echo.Context) error {
 		return c.Redirect(http.StatusFound, "/app/settings?tab=profile&link=success")
 	}
 
-	result, aerr := resolver.HandleCallback(c.Request().Context(), h.DB, code)
+	result, aerr := resolver.HandleCallback(c.Request().Context(), h.DB, code, nonce)
 	if aerr != nil {
 		h.Logger.Warn("oidc callback failed", "status", aerr.Status, "msg", aerr.Message)
 		return h.oidcErrorRedirect(c, "login_failed")
