@@ -34,7 +34,9 @@ export interface D3SurfaceCtx {
 }
 
 export interface D3Surface {
-  ref: React.RefObject<HTMLDivElement | null>;
+  /** Callback ref (gaka-3nw) — attaches the ResizeObserver even when the host
+   *  div mounts later than the first render (post-load ChartSurface swap-in). */
+  ref: (node: HTMLDivElement | null) => void;
   svgRef: React.RefObject<SVGSVGElement | null>;
   frame: ChartFrame;
   height: number;
@@ -72,7 +74,7 @@ export function useD3Surface(
   deps: React.DependencyList,
 ): D3Surface {
   const { height, margin, sizeToFrame = true } = options;
-  const { ref, frame } = useChartFrame(height);
+  const { ref, node: container, frame } = useChartFrame(height);
   const svgRef = useRef<SVGSVGElement | null>(null);
 
   // Read the latest draw/margin from refs so they aren't (unstatable)
@@ -84,13 +86,15 @@ export function useD3Surface(
   marginRef.current = margin;
 
   useEffect(() => {
-    const node = svgRef.current;
-    d3.select(node).selectAll("*").remove();
-    const container = ref.current;
-    if (!node || !container) return;
+    const svgEl = svgRef.current;
+    d3.select(svgEl).selectAll("*").remove();
+    // gaka-3nw: `container` is the frame node tracked via a callback ref, so it
+    // is present the moment the host div mounts (even post-load). Kept in the
+    // deps below so the draw re-runs when the node finally attaches.
+    if (!svgEl || !container) return;
     if (sizeToFrame && frame.width === 0) return;
 
-    const svg = d3.select(node);
+    const svg = d3.select(svgEl);
     const width = frame.width;
     const m = marginRef.current;
     svg.attr("height", height);
@@ -127,9 +131,12 @@ export function useD3Surface(
       tip?.remove();
     };
     // Chart data deps are spread in; size/theme deps appended (frame.width
-    // only when the svg tracks the frame). `ref`/`svgRef` are stable.
+    // only when the svg tracks the frame). `container` (gaka-3nw) re-runs the
+    // draw when the host node attaches after a load-gated render — the trigger
+    // for sizeToFrame:false charts, whose width slot is a constant 0. `svgRef`
+    // is stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [...deps, height, sizeToFrame, sizeToFrame ? frame.width : 0, frame.themeKey]);
+  }, [...deps, height, sizeToFrame, sizeToFrame ? frame.width : 0, frame.themeKey, container]);
 
   return { ref, svgRef, frame, height };
 }

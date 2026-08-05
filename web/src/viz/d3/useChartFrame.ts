@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 export interface ChartFrame {
   width: number;
@@ -20,23 +20,37 @@ export interface ChartFrame {
  * provider toggled the `.dark` class.
  */
 export function useChartFrame(height: number): {
-  ref: React.RefObject<HTMLDivElement | null>;
+  ref: (node: HTMLDivElement | null) => void;
+  node: HTMLDivElement | null;
   frame: ChartFrame;
 } {
-  const ref = useRef<HTMLDivElement | null>(null);
+  const [node, setNode] = useState<HTMLDivElement | null>(null);
   const [width, setWidth] = useState(0);
   const [themeKey, setThemeKey] = useState(0);
 
+  // gaka-3nw: a CALLBACK ref (not useRef) so the ResizeObserver attaches
+  // whenever the measured node mounts — crucially INCLUDING later than the
+  // first render. A chart renders <EmptyChart> (which mounts no ChartSurface,
+  // so this ref never attaches) while its query is loading, then swaps in
+  // <ChartSurface> once data arrives. The previous `useRef` + `[]`-effect
+  // observed exactly once at mount, found `ref.current` still null, and bailed
+  // forever — leaving `frame.width` pinned at 0, so useD3Surface's
+  // `frame.width === 0` guard skipped the D3 draw and the chart stayed
+  // permanently blank. Coding-punchcard was the reliable victim (its query is
+  // the slowest, ~2.2s, so it always lost the load race); every EmptyChart-
+  // gated chart shared the latent bug. A callback ref fires on every
+  // attach/detach, so the observer re-binds when the real node appears.
+  const ref = useCallback((n: HTMLDivElement | null) => setNode(n), []);
+
   useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
+    if (!node) return;
     const ro = new ResizeObserver((entries) => {
       for (const entry of entries) setWidth(entry.contentRect.width);
     });
-    ro.observe(el);
-    setWidth(el.clientWidth);
+    ro.observe(node);
+    setWidth(node.clientWidth);
     return () => ro.disconnect();
-  }, []);
+  }, [node]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -45,7 +59,7 @@ export function useChartFrame(height: number): {
     return () => mo.disconnect();
   }, []);
 
-  return { ref, frame: { width, height, themeKey } };
+  return { ref, node, frame: { width, height, themeKey } };
 }
 
 /**
