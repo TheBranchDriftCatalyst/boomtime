@@ -1,0 +1,21 @@
+---
+# gaka-93f — activate the RBAC user-model substrate in prod.
+#
+# Flips BOOM_FEATURE_USER_MODEL on: from here the Identify path enforces each
+# user's role/capabilities (instead of returning all-caps) and disabled_at
+# fails closed. Verified SAFE before flipping (2026-08-05): both existing users
+# (panda, e2e-playwright-user) are role=full and active → they keep every
+# capability except the admin cap (which no HTTP endpoint gates on — admin
+# access stays via BOOM_ADMIN_USERS=panda). No user is disabled, so the
+# fail-closed path is a no-op. This is a SEPARATE flip from BOOM_AUTH_PROVIDER,
+# which stays "local" here (the OIDC login flip is a later, prepped step).
+#
+# ROLLBACK: remove this patch from kustomization.yaml (reverts to all-caps).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: boomtime-config
+  labels:
+    app.kubernetes.io/name: boomtime
+data:
+  BOOM_FEATURE_USER_MODEL: "true"
