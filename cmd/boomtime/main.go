@@ -173,6 +173,17 @@ func runCmd() *cobra.Command {
 			}
 			defer database.Close()
 
+			// gaka-93f.27: reap avatar renders orphaned by a restart. The render
+			// runs as an in-process goroutine (identity.RegenerateAvatar), so any
+			// row still 'running' at boot is stale (its goroutine died with the
+			// old process) and the FE would poll it forever. Best-effort — a
+			// failure here must never block startup.
+			if n, rerr := database.ReapOrphanedAvatarRenders(ctx); rerr != nil {
+				logger.Warn("avatar reaper failed", "err", rerr)
+			} else if n > 0 {
+				logger.Info("reaped orphaned avatar renders", "count", n)
+			}
+
 			// gaka-awh.5: legacy raw-token backfill now lives in migration
 			// 00030_backfill_hashed_tokens.sql (SQL via pgcrypto.digest).
 			// No boot-time step required.

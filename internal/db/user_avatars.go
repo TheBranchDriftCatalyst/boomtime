@@ -125,6 +125,27 @@ func (d *DB) SetAvatarStatus(ctx context.Context, username string, status UserAv
 	return err
 }
 
+// ReapOrphanedAvatarRenders flips every 'running' avatar row to 'error' at
+// startup (gaka-93f.27). The render is an in-process goroutine (see
+// identity.RegenerateAvatar) that cannot survive a process restart — so any row
+// still 'running' when the server boots is definitionally orphaned (its
+// goroutine died with the previous process). Without this, a pod restart mid-
+// render leaves the row stuck 'running' forever and the FE polls it
+// indefinitely (observed: a row stuck ~8 days across many deploys). Returns the
+// number of rows reaped so the caller can log it.
+func (d *DB) ReapOrphanedAvatarRenders(ctx context.Context) (int64, error) {
+	tag, err := d.Pool.Exec(ctx, `
+		UPDATE user_avatars
+		   SET status        = 'error',
+		       error_message = 'render interrupted by a server restart — click RENDER to retry',
+		       updated_at    = now()
+		 WHERE status = 'running'`)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 // GetUserAvatar reads the full row (including bytes). Returns (nil, false,
 // nil) when the user has no avatar row at all so the handler can 404
 // without an internal-error branch. Callers serving the image should also
