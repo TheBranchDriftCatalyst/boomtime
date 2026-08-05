@@ -10,7 +10,10 @@ import type { ReactNode } from "react";
 /** One layout entry — the position + optional per-widget config carried
  * across sessions. `i` is a caller-defined stable id (widget kind in
  * boomtime). `view` and `hidden` are optional extension slots for chart-
- * toggle state and edit-mode "hide but keep placement" state. */
+ * toggle state and edit-mode "hide but keep placement" state. `config` is an
+ * opaque per-widget config blob (gaka-lzr) — the primitive never inspects it,
+ * only round-trips it; the consumer (boomtime's widget config schema) owns its
+ * shape. Kept as `Record<string, unknown>` so the primitive stays domain-free. */
 export interface GridLayoutItem {
   i: string;
   x: number;
@@ -19,6 +22,7 @@ export interface GridLayoutItem {
   h: number;
   view?: string | null;
   hidden?: boolean;
+  config?: Record<string, unknown>;
 }
 
 /** A widget instance to render at a layout entry. The primitive doesn't
@@ -28,7 +32,13 @@ export interface GridLayoutItem {
 export interface WidgetInstance {
   key: string;
   displayName?: string;
-  render: (ctx: { view?: string; width: number; height: number }) => ReactNode;
+  render: (ctx: {
+    view?: string;
+    width: number;
+    height: number;
+    /** The layout entry's opaque per-widget config blob (gaka-lzr), if any. */
+    config?: Record<string, unknown>;
+  }) => ReactNode;
   defaultLayout?: { w: number; h: number };
   /** When set, ChartToggle in the tile header will offer these view options. */
   views?: { id: string; label: string; icon?: string }[];

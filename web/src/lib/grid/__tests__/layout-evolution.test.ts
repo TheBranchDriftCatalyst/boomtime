@@ -3,8 +3,8 @@
 // tests exist as guardrails for a subtle regression (dropping additions,
 // or duplicating a key on merge).
 import { describe, expect, it } from "vitest";
-import { buildDefaultLayout, mergeLayouts } from "../layout-evolution";
-import type { WidgetInstance } from "../types";
+import { applyPositions, buildDefaultLayout, mergeLayouts } from "../layout-evolution";
+import type { GridLayoutItem, WidgetInstance } from "../types";
 
 const inst = (key: string, w = 6, h = 3): WidgetInstance => ({
   key,
@@ -52,5 +52,45 @@ describe("mergeLayouts", () => {
     const defaults = [{ i: "a", x: 0, y: 0, w: 6, h: 3, view: null as string | null }];
     const merged = mergeLayouts(persisted, defaults);
     expect(merged).toEqual(persisted);
+  });
+
+  it("preserves a config blob across merge (config rides on the whole item)", () => {
+    const persisted: GridLayoutItem[] = [
+      { i: "a", x: 3, y: 5, w: 6, h: 3, view: "bar", config: { topN: 8, title: "Mine" } },
+    ];
+    const defaults: GridLayoutItem[] = [{ i: "b", x: 6, y: 0, w: 6, h: 3, view: null }];
+    const merged = mergeLayouts(persisted, defaults);
+    expect(merged[0].config).toEqual({ topN: 8, title: "Mine" });
+  });
+});
+
+// gaka-lzr: applyPositions is the drag/resize merge — RGL's onLayoutChange
+// only carries geometry, so this MUST preserve view/hidden/config or every
+// drag would wipe a widget's chart-toggle view + its config blob.
+describe("applyPositions", () => {
+  it("merges new geometry while preserving view/hidden/config metadata", () => {
+    const prev: GridLayoutItem[] = [
+      { i: "a", x: 0, y: 0, w: 6, h: 3, view: "pie", hidden: false, config: { topN: 5 } },
+      { i: "b", x: 6, y: 0, w: 6, h: 3, view: null },
+    ];
+    // RGL reports a drag: "a" moved to x=3,y=2 and grew to w=8; geometry only.
+    const next = [
+      { i: "a", x: 3, y: 2, w: 8, h: 4 },
+      { i: "b", x: 0, y: 6, w: 6, h: 3 },
+    ];
+    const merged = applyPositions(prev, next);
+    expect(merged[0]).toEqual({
+      i: "a", x: 3, y: 2, w: 8, h: 4, view: "pie", hidden: false, config: { topN: 5 },
+    });
+    expect(merged[1]).toEqual({
+      i: "b", x: 0, y: 6, w: 6, h: 3, view: null, hidden: undefined, config: undefined,
+    });
+  });
+
+  it("defaults metadata for an item with no prior entry", () => {
+    const merged = applyPositions([], [{ i: "new", x: 0, y: 0, w: 4, h: 2 }]);
+    expect(merged[0]).toEqual({
+      i: "new", x: 0, y: 0, w: 4, h: 2, view: null, hidden: undefined, config: undefined,
+    });
   });
 });

@@ -23,6 +23,13 @@ export const FEATURE_FLAGS: FeatureFlagDef[] = [
       "Render the labels showcase as glossy 3D coins instead of the classic chips.",
     default: false,
   },
+  {
+    key: "overviewEditor",
+    label: "Dashboard edit mode",
+    description:
+      "Enable the in-app Overview edit/preview mode: drag, add, and configure widgets on your dashboard (gaka-lzr).",
+    default: false,
+  },
 ];
 
 const PREFIX = "boomtime:flag:";

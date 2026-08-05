@@ -19,7 +19,7 @@ import "react-resizable/css/styles.css";
 import "./grid.css";
 
 import { WidgetHost } from "./WidgetHost";
-import { buildDefaultLayout } from "./layout-evolution";
+import { applyPositions, buildDefaultLayout } from "./layout-evolution";
 import type { GridLayoutItem, StorageAdapter, WidgetInstance } from "./types";
 
 // Direct runtime references. `Responsive` is well-typed; `useContainerWidth`
@@ -65,6 +65,12 @@ export interface DraggableGridLayoutProps {
   rowHeight?: number;
   /** If provided, INITIAL layout that seeds when storage returns null. */
   seedLayout?: GridLayoutItem[];
+  /** Edit-mode tile selection (gaka-lzr). When set, the matching tile gets
+   * `data-selected` for styling and the config sidebar targets it. */
+  selectedKey?: string | null;
+  /** Fired when a tile is selected (its key) or the empty grid is clicked
+   * (null, to clear). Only wired in edit mode. */
+  onSelectTile?: (key: string | null) => void;
 }
 
 export function DraggableGridLayout({
@@ -74,6 +80,8 @@ export function DraggableGridLayout({
   cols = 12,
   rowHeight = 48,
   seedLayout,
+  selectedKey,
+  onSelectTile,
 }: DraggableGridLayoutProps) {
   const [layout, setLayout] = useState<GridLayoutItem[]>(() =>
     seedLayout ?? buildDefaultLayout(instances, cols),
@@ -129,20 +137,9 @@ export function DraggableGridLayout({
     // would trample the seed layout on a page load. We also honor the
     // `static: true` per-item flag so drag never fires here in read-only.
     if (!editable) return;
-    // Preserve per-item view/hidden metadata across RGL's shape.
-    const byI = new Map(layout.map((w) => [w.i, w]));
-    const merged: GridLayoutItem[] = next.map((n) => {
-      const prev = byI.get(n.i);
-      return {
-        i: n.i,
-        x: n.x,
-        y: n.y,
-        w: n.w,
-        h: n.h,
-        view: prev?.view ?? null,
-        hidden: prev?.hidden,
-      };
-    });
+    // Preserve per-item view/hidden/config metadata across RGL's geometry-only
+    // shape (gaka-lzr). Extracted to a pure helper so the contract is tested.
+    const merged = applyPositions(layout, next);
     setLayout(merged);
     void storage.save(merged);
   };
@@ -173,6 +170,14 @@ export function DraggableGridLayout({
       style={{ width: "100%" }}
       className={`catalyst-grid${editable ? " catalyst-grid--editing" : ""}`}
       data-testid="catalyst-grid"
+      // Clicking empty grid space (not a tile) clears the selection (gaka-lzr).
+      onClick={
+        editable && onSelectTile
+          ? (e) => {
+              if (e.target === e.currentTarget) onSelectTile(null);
+            }
+          : undefined
+      }
     >
       {mounted && width > 0 && (
         <Responsive
@@ -198,7 +203,10 @@ export function DraggableGridLayout({
                   tileIndex={idx}
                   instance={inst}
                   view={w.view ?? undefined}
+                  config={w.config}
                   editable={editable}
+                  selected={selectedKey === w.i}
+                  onSelect={onSelectTile ? () => onSelectTile(w.i) : undefined}
                   onViewChange={(v) => handleViewChange(w.i, v)}
                   onRemove={() => handleRemove(w.i)}
                 />

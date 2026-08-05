@@ -21,7 +21,13 @@ export interface WidgetHostProps {
   tileIndex: number;
   instance: WidgetInstance;
   view?: string;
+  /** Opaque per-widget config blob (gaka-lzr), forwarded to instance.render. */
+  config?: Record<string, unknown>;
   editable: boolean;
+  /** Edit-mode selection state — drives `data-selected` styling. */
+  selected?: boolean;
+  /** Fired when the tile header is clicked in edit mode (select this tile). */
+  onSelect?: () => void;
   onViewChange: (v: string) => void;
   onRemove?: () => void;
   // ⬇ react-grid-layout injection
@@ -34,7 +40,19 @@ export interface WidgetHostProps {
 }
 
 export const WidgetHost = forwardRef<HTMLDivElement, WidgetHostProps>(function WidgetHost(
-  { tileIndex, instance, view, editable, onViewChange, onRemove, children, ...gridProps },
+  {
+    tileIndex,
+    instance,
+    view,
+    config,
+    editable,
+    selected,
+    onSelect,
+    onViewChange,
+    onRemove,
+    children,
+    ...gridProps
+  },
   ref,
 ) {
   const [measuredRef, size] = useMeasuredSize<HTMLDivElement>();
@@ -60,13 +78,19 @@ export const WidgetHost = forwardRef<HTMLDivElement, WidgetHostProps>(function W
         ["--tile-index" as any]: tileIndex,
       }}
       data-widget-key={instance.key}
+      data-selected={selected || undefined}
     >
       <span className="catalyst-grid-tile__corner catalyst-grid-tile__corner--tl" aria-hidden>┌</span>
       <span className="catalyst-grid-tile__corner catalyst-grid-tile__corner--tr" aria-hidden>┐</span>
       <span className="catalyst-grid-tile__corner catalyst-grid-tile__corner--bl" aria-hidden>└</span>
       <span className="catalyst-grid-tile__corner catalyst-grid-tile__corner--br" aria-hidden>┘</span>
 
-      <header className="catalyst-grid-tile__header">
+      <header
+        className="catalyst-grid-tile__header"
+        // Click (not drag) selects the tile in edit mode (gaka-lzr). RGL still
+        // starts a drag on mousedown+move; a plain click falls through here.
+        onClick={editable && onSelect ? onSelect : undefined}
+      >
         <span className="catalyst-grid-tile__prompt" aria-hidden>▎</span>
         <span className="catalyst-grid-tile__title">
           {(instance.displayName ?? instance.key).toUpperCase()}
@@ -82,7 +106,11 @@ export const WidgetHost = forwardRef<HTMLDivElement, WidgetHostProps>(function W
         {editable ? (
           <button
             type="button"
-            onClick={onRemove}
+            onClick={(e) => {
+              // Don't let the remove click bubble to the header's select.
+              e.stopPropagation();
+              onRemove?.();
+            }}
             aria-label={`Remove ${instance.displayName ?? instance.key}`}
             className="catalyst-grid-tile__remove no-drag"
           >
@@ -100,7 +128,7 @@ export const WidgetHost = forwardRef<HTMLDivElement, WidgetHostProps>(function W
       </header>
 
       <div className="catalyst-grid-tile__body">
-        {instance.render({ view: currentView, width: size.width, height: size.height })}
+        {instance.render({ view: currentView, width: size.width, height: size.height, config })}
       </div>
 
       <span className="catalyst-grid-tile__id" aria-hidden>#{instance.key}</span>
