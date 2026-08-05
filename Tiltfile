@@ -18,6 +18,7 @@
 allow_k8s_contexts([
     'k3d-boomtime',
     'k3d-local',
+    'k3d-catalyst-dev',  # shared local k3d dev cluster (boomtime runs in its own ns)
     'kind-boomtime',
     'kind-local',
     'rancher-desktop',
@@ -41,6 +42,7 @@ docker_build(
         './go.mod',
         './go.sum',
         './.air.toml',
+        './CHANGELOG.md',  # embed.go //go:embed CHANGELOG.md needs it in-context
     ],
     live_update=[
         sync('./cmd', '/src/cmd'),
@@ -65,4 +67,33 @@ k8s_resource(
     'boomtime-postgres',
     port_forwards=['5432:5432'],
     labels=['db'],
+)
+
+# ── Authentik dev stack (gaka-93f.8) ─────────────────────────────────────────
+# Self-contained OIDC provider for exercising the boomtime login flow. Heavy +
+# slow to boot (DB migrate → blueprint apply); give it a minute after `tilt up`.
+# boomtime still runs BOOM_AUTH_PROVIDER=local — this is here so the OIDC
+# resolver (gaka-0oe.11) has a real Authentik + declared boomtime app to hit.
+# UI + issuer at http://localhost:9000 (akadmin / see authentik-secrets).
+k8s_resource(
+    'authentik-postgres',
+    labels=['authentik'],
+)
+
+k8s_resource(
+    'authentik-redis',
+    labels=['authentik'],
+)
+
+k8s_resource(
+    'authentik-server',
+    port_forwards=['9000:9000'],
+    labels=['authentik'],
+    resource_deps=['authentik-postgres', 'authentik-redis'],
+)
+
+k8s_resource(
+    'authentik-worker',
+    labels=['authentik'],
+    resource_deps=['authentik-postgres', 'authentik-redis'],
 )

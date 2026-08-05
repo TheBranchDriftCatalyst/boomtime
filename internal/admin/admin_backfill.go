@@ -376,7 +376,7 @@ func (h *Handler) AdminBackfillDeleteHeartbeats(c *echo.Context) error {
 // Wire protocol matches the label-images WS (same {kind, job} events)
 // so the FE hook is a small copy-paste of useImageJobQueue.
 func (h *Handler) AdminBackfillWS(c *echo.Context) error {
-	owner, aerr := apihelpers.ResolveOwnerFromCookie(h.DB, h.Logger, c, apierr.ExpiredRefreshToken())
+	owner, aerr := apihelpers.IdentifyOwnerFromCookie(h.DB, h.Logger, c, apierr.ExpiredRefreshToken())
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}

@@ -79,6 +79,10 @@ func Register(e *echo.Echo, h *Handler) {
 	// catalog stays the source of truth.
 	e.GET("/api/v1/admin/label-images", h.AdminLabelImagesInfo)
 	e.POST("/api/v1/admin/label-images/regenerate", h.AdminLabelImagesRegenerate)
+
+	// gaka-93f.6: admin caps dashboard — users + roles/tiers + effective
+	// capabilities. Admin-gated in the handler (requireAdmin).
+	e.GET("/api/v1/admin/users", h.ListUsers)
 	// gaka-8bz: durable WS stream of the image-job queue lifecycle.
 	// Auth uses the refresh_token cookie inside the handler (see
 	// AdminLabelImagesWS) — WS handshakes can't carry Authorization.

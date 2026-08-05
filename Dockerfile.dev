@@ -2,7 +2,14 @@
 # docker-compose, so this image only needs the toolchain, not the code.
 FROM golang:1.25-alpine
 
-RUN apk add --no-cache git ca-certificates curl bash
+RUN apk add --no-cache git ca-certificates curl bash bash-completion
+
+# Dev shell completion (gaka-0oe.10): the binary is built at runtime by air
+# (./tmp/boomtime), so we can't bake completions at image-build time like the
+# prod Dockerfile does. Instead, source them live from the air-built binary
+# when an interactive bash shell opens (e.g. `kubectl exec -it ... -- bash`).
+RUN printf '%s\n' '[ -x /src/tmp/boomtime ] && source <(/src/tmp/boomtime completion bash 2>/dev/null)' \
+    > /etc/profile.d/boomtime-completion.sh
 
 # air (live reload). Pinned to the version validated for this project.
 RUN go install github.com/air-verse/air@v1.65.2

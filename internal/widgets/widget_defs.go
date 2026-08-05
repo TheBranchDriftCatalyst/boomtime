@@ -63,7 +63,7 @@ func isUniqueViolation(err error) bool {
 
 // ListWidgetDefs: GET /api/v1/users/current/widget-defs (auth).
 func (h *Handler) ListWidgetDefs(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -76,7 +76,7 @@ func (h *Handler) ListWidgetDefs(c *echo.Context) error {
 
 // CreateWidgetDef: POST /api/v1/users/current/widget-defs (auth).
 func (h *Handler) CreateWidgetDef(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -112,7 +112,7 @@ func (h *Handler) CreateWidgetDef(c *echo.Context) error {
 // UpdateWidgetDef: PATCH /api/v1/users/current/widget-defs/:name (auth). Same
 // (owner, name) key as create — the URL name identifies the row to replace.
 func (h *Handler) UpdateWidgetDef(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -144,7 +144,7 @@ func (h *Handler) UpdateWidgetDef(c *echo.Context) error {
 
 // DeleteWidgetDef: DELETE /api/v1/users/current/widget-defs/:name (auth).
 func (h *Handler) DeleteWidgetDef(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}

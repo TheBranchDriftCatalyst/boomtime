@@ -249,7 +249,7 @@ const avatarRegenTimeout = 50 * time.Minute
 // row. The FE watches /avatar/status for the terminal ready/error
 // transition — no queue registry (one avatar per user, no batching win).
 func (h *Handler) RegenerateAvatar(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -339,7 +339,7 @@ func (h *Handler) RegenerateAvatar(c *echo.Context) error {
 // at all, returns status="none" (not "pending") so the FE renders the
 // empty-state distinctly from a reserved-but-not-yet-running state.
 func (h *Handler) GetAvatarStatus(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}

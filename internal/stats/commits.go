@@ -19,7 +19,7 @@ const defaultNumOfCommits int64 = 40
 
 // Commits: GET /api/v1/commits/:project/report?repoName&repoOwner&user&limit.
 func (h *Handler) Commits(c *echo.Context) error {
-	_, username, aerr := apihelpers.ResolveUser(h.DB, c)
+	username, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}

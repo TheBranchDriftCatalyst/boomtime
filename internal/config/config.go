@@ -44,6 +44,56 @@ type Config struct {
 	Env                string // "dev" or "prod"
 	HTTPLog            bool
 
+	// AuthProvider selects the identity backend (gaka-93f / gaka-0oe.11).
+	// "local" = today's username+password + refresh cookie. "oidc" =
+	// Authentik (the OIDCResolver, landing in a later bead). Read here now so
+	// the public config endpoint and FE can branch the signup CTA before the
+	// resolver swap lands. Default "local" preserves today's behavior.
+	AuthProvider string
+
+	// OIDC (Authentik) config (gaka-0oe.11). Consumed only when
+	// AuthProvider=="oidc"; staged otherwise. See docs/design/user-model-and-
+	// oidc.md §6.
+	OIDCIssuer       string          // discovery base, trailing slash required
+	// OIDCAuthorizeURL optionally overrides the BROWSER-facing authorization
+	// endpoint (BOOM_OIDC_AUTHORIZE_URL). Needed in split-horizon dev: the pod
+	// discovers + exchanges tokens via the cluster-internal issuer
+	// (authentik-server:9000), but the browser must be redirected to a
+	// host-reachable URL (localhost:9000). Empty = use the discovered endpoint.
+	OIDCAuthorizeURL string
+	OIDCClientID     string          // OAuth2 client_id (Authentik app)
+	OIDCClientSecret string          // OAuth2 client_secret (from a Secret)
+	OIDCRedirectURL  string          // {origin}/auth/callback/oidc
+	OIDCGroupToRole  map[string]string // Authentik group name → boomtime role
+	OIDCAutoprovision bool           // mint a boomtime user on first login
+	OIDCAutolinkEmail bool           // DEPRECATED no-op (gaka-93f.12): username-based autolink was removed as an account-takeover vector. Parsed for env compat only; nothing reads it. Use the authenticated link flow (HandleLink).
+
+	// FeatureBilling advertises whether the Stripe SaaS billing surface
+	// (checkout / webhooks / tier flips, gaka-93f Phase 4) is live. Default
+	// off; flipped on once the billing subsystem ships. Surfaced by
+	// /api/v1/config/public so the FE can show/hide pricing + upgrade UI.
+	FeatureBilling bool
+
+	// BetaUserRegistration is the server-side kill switch for the beta
+	// onboarding preview (the FE ?enable_beta_user_registration=true flow,
+	// gaka-93f.1). Default true so the preview works in dev; set false in a
+	// shared/prod instance to disable the preview flow entirely regardless of
+	// the URL flag. The URL flag is client-driven; this gates it server-side.
+	BetaUserRegistration bool
+
+	// FeatureUserModel is the master switch for the user-demarcation substrate
+	// (gaka-0oe.1). Default OFF: apihelpers.Identify returns an all-capability
+	// Identity so no gate ever fires and behavior is byte-identical to
+	// pre-substrate. When ON, the resolver reads the real role/capabilities
+	// and fails closed on disabled accounts. The migration + columns exist
+	// regardless — this flag only affects the READ/GATE paths.
+	FeatureUserModel bool
+
+	// FeatureRollupSkip lets ingest skip the expensive rollup/gap machinery
+	// for identities that lack CapGenerateRollups (gaka-0oe.3). No effect
+	// unless FeatureUserModel is also on. Surfaced by /healthz for ops.
+	FeatureRollupSkip bool
+
 	// CookieSecure controls the Secure attribute on the refresh_token cookie
 	// (gaka-b5x part 1). Defaults to true when BOOM_ENV names a production
 	// environment ("prod" / "production") so a prod deploy behind TLS never
@@ -236,6 +286,23 @@ func Load() *Config {
 		Env:                env,
 		HTTPLog:            getEnvBool("BOOM_HTTP_LOG", true),
 
+		// gaka-93f: user-model / OIDC / billing advertisement flags. All
+		// default to today's behavior (local auth, no billing) and are
+		// surfaced read-only via GET /api/v1/config/public.
+		AuthProvider:         getEnv("BOOM_AUTH_PROVIDER", "local"),
+		OIDCIssuer:           getEnv("BOOM_OIDC_ISSUER", ""),
+		OIDCAuthorizeURL:     getEnv("BOOM_OIDC_AUTHORIZE_URL", ""),
+		OIDCClientID:         getEnv("BOOM_OIDC_CLIENT_ID", ""),
+		OIDCClientSecret:     getEnv("BOOM_OIDC_CLIENT_SECRET", ""),
+		OIDCRedirectURL:      getEnv("BOOM_OIDC_REDIRECT_URL", ""),
+		OIDCGroupToRole:      parseGroupToRole(getEnv("BOOM_AUTHENTIK_GROUP_TO_ROLE", "")),
+		OIDCAutoprovision:    getEnvBool("BOOM_OIDC_AUTOPROVISION", false),
+		OIDCAutolinkEmail:    getEnvBool("BOOM_OIDC_AUTOLINK_EMAIL", false),
+		FeatureBilling:       getEnvBool("BOOM_FEATURE_BILLING", false),
+		BetaUserRegistration: getEnvBool("BOOM_BETA_USER_REGISTRATION", true),
+		FeatureUserModel:     getEnvBool("BOOM_FEATURE_USER_MODEL", false),
+		FeatureRollupSkip:    getEnvBool("BOOM_FEATURE_ROLLUP_SKIP", false),
+
 		DBHost: getEnv("BOOM_DB_HOST", "localhost"),
 		DBPort: getEnvInt("BOOM_DB_PORT", 5432),
 		DBName: getEnv("BOOM_DB_NAME", "boomtime"),
@@ -358,6 +425,34 @@ func parseAdminUsers(csv string) map[string]struct{} {
 	return out
 }
 
+// parseGroupToRole parses BOOM_AUTHENTIK_GROUP_TO_ROLE — a comma-separated list
+// of "group:role" pairs (e.g. "boomtime-admin:admin,boomtime-full:full") — into
+// a map. Malformed pairs (no colon, empty side) are skipped. First match wins
+// at resolve time (see auth.RoleFromGroups); an identity in no mapped group
+// falls back to RoleLight (fail-closed to the cheapest tier).
+func parseGroupToRole(csv string) map[string]string {
+	csv = strings.TrimSpace(csv)
+	if csv == "" {
+		return nil
+	}
+	out := map[string]string{}
+	for _, pair := range strings.Split(csv, ",") {
+		i := strings.IndexByte(pair, ':')
+		if i < 0 {
+			continue
+		}
+		group := strings.TrimSpace(pair[:i])
+		role := strings.TrimSpace(pair[i+1:])
+		if group != "" && role != "" {
+			out[group] = role
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 // IsAdmin reports whether `username` is on the admin allowlist. Empty list
 // (default) means nobody is an admin — safer than "everybody is an admin".
 func (c *Config) IsAdmin(username string) bool {
@@ -384,4 +479,12 @@ func (c *Config) LabelImagesEnabled() bool {
 // the key gates the feature.
 func (c *Config) LLMEnabled() bool {
 	return strings.TrimSpace(c.LLMAPIKey) != ""
+}
+
+// OIDCEnabled reports whether the OIDC (Authentik) auth provider is selected
+// (gaka-93f / gaka-0oe.11). Derived from BOOM_AUTH_PROVIDER. The FE reads this
+// via /api/v1/config/public to swap the signup CTA to "Continue with
+// Authentik" and to hide the local password form when appropriate.
+func (c *Config) OIDCEnabled() bool {
+	return strings.EqualFold(strings.TrimSpace(c.AuthProvider), "oidc")
 }

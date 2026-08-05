@@ -54,7 +54,7 @@ type timezoneGetResponse struct {
 
 // GetTimezone: GET /api/v1/users/current/timezone.
 func (h *Handler) GetTimezone(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -76,7 +76,7 @@ func (h *Handler) GetTimezone(c *echo.Context) error {
 // explicit pick, which is the "revert to server default" affordance for the
 // Settings picker.
 func (h *Handler) UpdateTimezone(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}

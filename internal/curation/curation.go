@@ -22,7 +22,7 @@ type curationRequest struct {
 
 // ListCuration: GET /api/v1/users/current/curation → {rules:[CurationRule]}.
 func (h *Handler) ListCuration(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -37,7 +37,7 @@ func (h *Handler) ListCuration(c *echo.Context) error {
 // Validates axis (whitelist) + action, creates the rule, and applies it
 // immediately (rename → backfill + rollup rebuild; hide → store only).
 func (h *Handler) CreateCuration(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -123,7 +123,7 @@ func (h *Handler) CreateCuration(c *echo.Context) error {
 // un-hides, and deleting a rename rule instantly reverts the dashboards to the
 // raw (un-merged) values (raw records were never mutated).
 func (h *Handler) DeleteCuration(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -159,7 +159,7 @@ type toggleCurationRequest struct {
 // is filtered out of LoadHiddenSets / LoadRenameSets — its effect is
 // paused. Apply and Purge reject disabled rules with 400 (see below).
 func (h *Handler) ToggleCuration(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -202,7 +202,7 @@ func (h *Handler) ToggleCuration(c *echo.Context) error {
 // counts) a rule matches on its axis — the one literal for an exact rule, every
 // matching value for a regex rule. Owner-scoped, UNFILTERED (audit).
 func (h *Handler) CurationAffected(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -256,7 +256,7 @@ func (h *Handler) resolveCurationRule(c *echo.Context, ctx context.Context, owne
 // One preview endpoint, two payload shapes — the FE modal dispatches on the
 // same `action` discriminator to render the appropriate UI.
 func (h *Handler) ApplyRenamePreview(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -330,7 +330,7 @@ func (h *Handler) ApplyRenamePreview(c *echo.Context) error {
 // Idempotent-in-effect: if the mapping is already applied and 0 rows match,
 // still succeeds with rowsAffected=0 and the rule row is still removed.
 func (h *Handler) ApplyRename(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -386,7 +386,7 @@ func (h *Handler) ApplyRename(c *echo.Context) error {
 // gate it behind a "type rule id N to confirm" input, and the icon in the
 // row list gets a redder destructive tint than /apply's Zap.
 func (h *Handler) PurgeHidden(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}

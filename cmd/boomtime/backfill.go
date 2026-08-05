@@ -240,6 +240,10 @@ Example:
 	cmd.Flags().StringVar(&untilRaw, "until", "", "only consider commits on/before YYYY-MM-DD")
 	cmd.Flags().IntVar(&concurrency, "concurrency", 1, "parallel repo scans (currently sequential)")
 	cmd.Flags().IntVar(&batchSize, "batch-size", 50, "sessions per HTTP batch")
+	// Smart completion: --root is a filesystem path — complete directories.
+	_ = cmd.RegisterFlagCompletionFunc("root", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		return nil, cobra.ShellCompDirectiveFilterDirs
+	})
 	return cmd
 }
 

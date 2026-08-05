@@ -27,6 +27,20 @@ type HealthzResponse struct {
 	UptimeSeconds  int64  `json:"uptimeSeconds"`
 	DBReachable    bool   `json:"dbReachable"`
 	SchemaVersion  int64  `json:"schemaVersion"`
+	// Features is the effective user-model substrate switch map (gaka-0oe.1):
+	// {user_model: on|off, auth_provider: local|oidc, rollup_skip: on|off}.
+	// Gives ops a one-shot check of which substrate is active in a running
+	// deploy without shelling into the pod.
+	Features map[string]string `json:"features"`
+}
+
+// onOff renders a bool as the "on"/"off" strings the /healthz features map
+// (and the boot log) use.
+func onOff(b bool) string {
+	if b {
+		return "on"
+	}
+	return "off"
 }
 
 // Healthz: GET /healthz — unauthenticated, always JSON. Returns 200 with a
@@ -67,5 +81,10 @@ func (h *Handler) Healthz(c *echo.Context) error {
 		UptimeSeconds: int64(now.Sub(h.StartTime).Seconds()),
 		DBReachable:   dbOK,
 		SchemaVersion: schemaVer,
+		Features: map[string]string{
+			"user_model":    onOff(h.Cfg.FeatureUserModel),
+			"auth_provider": h.Cfg.AuthProvider,
+			"rollup_skip":   onOff(h.Cfg.FeatureRollupSkip),
+		},
 	})
 }

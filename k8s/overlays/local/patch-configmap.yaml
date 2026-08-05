@@ -10,3 +10,33 @@ data:
   BOOM_LOG_LEVEL: "debug"
   BOOM_ENABLE_REGISTRATION: "true"
   BOOM_BADGE_URL: "http://boomtime.local"
+  # ── OIDC (Authentik) dev wiring — matches authentik.yaml blueprints ─────────
+  # boomtime STILL runs BOOM_AUTH_PROVIDER=local; these vars are staged so the
+  # OIDC resolver (gaka-0oe.11) can be flipped on without re-plumbing. The
+  # client_secret is NOT here — it lives in the boomtime-secrets Secret
+  # (secrets.yaml), mirroring the prod split (§6.7).
+  #
+  # ISSUER is the CLUSTER-INTERNAL service URL (boomtime server → Authentik for
+  # token/JWKS calls). The BROWSER-facing issuer differs — under Tilt the lead
+  # port-forwards authentik-server to http://localhost:9000, so the browser hits
+  # localhost:9000 while the pod resolves authentik-server:9000. Authentik
+  # derives the id_token `issuer` from the request host, so this split can cause
+  # an issuer-mismatch on token validation — the lead may need to set an
+  # AUTHENTIK base URL or align both sides at bring-up. Flagged, not solved here.
+  # Default LOCAL (push-safe; password login works). OIDC is still fully
+  # configured below, so the account-LINK flow (/auth/link/oidc, gaka-b5n.4)
+  # works — link your password account to Authentik, THEN flip this to "oidc"
+  # for full OIDC login. Split-horizon: the pod discovers/exchanges via the
+  # cluster-internal issuer (authentik-server:9000); the browser is redirected
+  # to the host-reachable authorize URL via BOOM_OIDC_AUTHORIZE_URL.
+  BOOM_AUTH_PROVIDER: "local"
+  BOOM_OIDC_ISSUER: "http://authentik-server:9000/application/o/boomtime/"
+  BOOM_OIDC_AUTHORIZE_URL: "http://localhost:9000/application/o/authorize/"
+  BOOM_OIDC_CLIENT_ID: "boomtime"
+  BOOM_OIDC_REDIRECT_URL: "http://localhost:8080/auth/callback/oidc"
+  BOOM_AUTHENTIK_GROUP_TO_ROLE: "boomtime-admin:admin,boomtime-full:full,boomtime-light:light"
+  BOOM_OIDC_AUTOPROVISION: "true"
+  BOOM_OIDC_AUTOLINK_EMAIL: "false"
+  # dev demo: make 'admin' an operator so the Admin > Users caps dashboard is
+  # viewable (requireAdmin gates on this allowlist). gaka-93f.6.
+  BOOM_ADMIN_USERS: "admin"

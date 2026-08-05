@@ -42,7 +42,7 @@ var dashboardLayoutScopes = map[string]struct{}{
 // `updatedAt` timestamp for optimistic-concurrency) without a breaking
 // change on the wire.
 func (h *Handler) GetDashboardLayout(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -75,7 +75,7 @@ func (h *Handler) GetDashboardLayout(c *echo.Context) error {
 // GETs. The layout bytes are preserved verbatim through Set/Get — see the
 // gaka-25r round-trip regression test.
 func (h *Handler) PutDashboardLayout(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -124,7 +124,7 @@ func (h *Handler) PutDashboardLayout(c *echo.Context) error {
 // (auth). Drops the saved row so subsequent renders use the default layout.
 // Idempotent — 204 whether or not a row existed.
 func (h *Handler) DeleteDashboardLayout(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}

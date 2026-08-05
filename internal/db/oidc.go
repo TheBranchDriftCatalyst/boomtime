@@ -1,0 +1,212 @@
+// oidc.go — server-side OIDC session store + external-identity provisioning
+// (gaka-0oe.11). Session cookie values + provider refresh tokens are stored
+// SHA-256-hashed only (same posture as auth.go's hashed_token columns).
+package db
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+)
+
+// ---- OIDC browser sessions ----
+
+// CreateOIDCSession stores an OIDC session: hashed opaque cookie → (username,
+// id_token expiry, hashed provider refresh). rawSessionID/rawRefresh are
+// plaintext; only their SHA-256 is persisted.
+func (d *DB) CreateOIDCSession(ctx context.Context, rawSessionID, username string, expiry time.Time, rawRefresh string) error {
+	var hashedRefresh []byte
+	if rawRefresh != "" {
+		hashedRefresh = hashSessionToken(rawRefresh)
+	}
+	_, err := d.Pool.Exec(ctx,
+		`INSERT INTO oidc_sessions (hashed_session_id, username, id_token_expiry, hashed_refresh)
+		 VALUES ($1, $2, $3, $4)`,
+		hashSessionToken(rawSessionID), username, expiry, hashedRefresh)
+	return err
+}
+
+// GetOIDCSessionUser returns the username for a non-expired OIDC session cookie,
+// or ("", false, nil) if absent/expired.
+func (d *DB) GetOIDCSessionUser(ctx context.Context, rawSessionID string) (string, bool, error) {
+	row := d.Pool.QueryRow(ctx,
+		`SELECT username FROM oidc_sessions
+		 WHERE hashed_session_id = $1 AND id_token_expiry > $2`,
+		hashSessionToken(rawSessionID), time.Now().UTC())
+	var username string
+	if err := row.Scan(&username); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	return username, true, nil
+}
+
+// DeleteOIDCSession removes an OIDC session (logout).
+func (d *DB) DeleteOIDCSession(ctx context.Context, rawSessionID string) error {
+	_, err := d.Pool.Exec(ctx, `DELETE FROM oidc_sessions WHERE hashed_session_id = $1`,
+		hashSessionToken(rawSessionID))
+	return err
+}
+
+// ---- External identities + provisioning ----
+
+// GetUserByExternalIdentity resolves (provider, sub) to a boomtime username,
+// or ("", false, nil) if there's no link.
+func (d *DB) GetUserByExternalIdentity(ctx context.Context, provider, sub string) (string, bool, error) {
+	row := d.Pool.QueryRow(ctx,
+		`SELECT username FROM user_external_identities WHERE provider = $1 AND sub = $2`,
+		provider, sub)
+	var username string
+	if err := row.Scan(&username); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	return username, true, nil
+}
+
+// TouchExternalIdentity refreshes the cached email/claims + last_seen_at for an
+// existing (provider, sub) on a returning login.
+func (d *DB) TouchExternalIdentity(ctx context.Context, provider, sub, email string, claimsJSON []byte) error {
+	_, err := d.Pool.Exec(ctx,
+		`UPDATE user_external_identities SET email = $3, claims = $4, last_seen_at = now()
+		 WHERE provider = $1 AND sub = $2`,
+		provider, sub, email, claimsJSON)
+	return err
+}
+
+// LinkExternalIdentity attaches (provider, sub) to an EXISTING username. Used
+// by the authenticated account-link flow (HandleLink) — binding is always to
+// the caller's own logged-in session. Fails on the UNIQUE(provider, sub)
+// constraint if that identity is already linked (surfaced as a 409 conflict).
+func (d *DB) LinkExternalIdentity(ctx context.Context, username, provider, sub, email string, claimsJSON []byte) error {
+	_, err := d.Pool.Exec(ctx,
+		`INSERT INTO user_external_identities (username, provider, sub, email, claims)
+		 VALUES ($1, $2, $3, $4, $5)`,
+		username, provider, sub, email, claimsJSON)
+	return err
+}
+
+// ExternalIdentityRow is a linked identity rendered in account settings.
+type ExternalIdentityRow struct {
+	Provider   string
+	Sub        string
+	Email      string
+	CreatedAt  time.Time
+	LastSeenAt time.Time
+}
+
+// ListExternalIdentities returns a user's linked external identities.
+func (d *DB) ListExternalIdentities(ctx context.Context, username string) ([]ExternalIdentityRow, error) {
+	rows, err := d.Pool.Query(ctx,
+		`SELECT provider, sub, COALESCE(email,''), created_at, last_seen_at
+		 FROM user_external_identities WHERE username = $1 ORDER BY provider`, username)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ExternalIdentityRow
+	for rows.Next() {
+		var r ExternalIdentityRow
+		if err := rows.Scan(&r.Provider, &r.Sub, &r.Email, &r.CreatedAt, &r.LastSeenAt); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// DeleteExternalIdentity unlinks a provider from a user. Returns false if there
+// was no such link.
+func (d *DB) DeleteExternalIdentity(ctx context.Context, username, provider string) (bool, error) {
+	tag, err := d.Pool.Exec(ctx,
+		`DELETE FROM user_external_identities WHERE username = $1 AND provider = $2`, username, provider)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+// CountExternalIdentities counts a user's linked identities (unlink guard).
+func (d *DB) CountExternalIdentities(ctx context.Context, username string) (int, error) {
+	var n int
+	err := d.Pool.QueryRow(ctx,
+		`SELECT count(*) FROM user_external_identities WHERE username = $1`, username).Scan(&n)
+	return n, err
+}
+
+// HasUsablePassword reports whether the user has non-empty password material
+// (i.e. can log in locally). OIDC-provisioned users have empty material.
+func (d *DB) HasUsablePassword(ctx context.Context, username string) (bool, error) {
+	var ok bool
+	err := d.Pool.QueryRow(ctx,
+		`SELECT length(hashed_password) > 0 FROM users WHERE username = $1`, username).Scan(&ok)
+	return ok, err
+}
+
+// UserExists reports whether a username is taken. General-purpose helper
+// (previously the autolink-by-username check, removed in gaka-93f.12).
+func (d *DB) UserExists(ctx context.Context, username string) (bool, error) {
+	var exists bool
+	err := d.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE username=$1)`, username).Scan(&exists)
+	return exists, err
+}
+
+// ProvisionOIDCUser mints a NEW user (no password → local login disabled) plus
+// its external-identity link, in one transaction. The username is uniquified
+// with a numeric suffix if taken; role lands on the users row. Returns the
+// final username.
+func (d *DB) ProvisionOIDCUser(ctx context.Context, preferredUsername, provider, sub, email, role string, claimsJSON []byte) (string, error) {
+	tx, err := d.Pool.Begin(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback(ctx)
+
+	username, err := uniqueUsername(ctx, tx, preferredUsername)
+	if err != nil {
+		return "", err
+	}
+
+	// Empty password material = local login path is inert for this user
+	// (VerifyPassword fails on an empty hash). Role from the provider groups;
+	// capabilities '{}' means "use the role's defaults".
+	if _, err = tx.Exec(ctx,
+		`INSERT INTO users (username, hashed_password, salt_used, argon_version, role, capabilities)
+		 VALUES ($1, ''::bytea, ''::bytea, 2, $2, '{}'::jsonb)`,
+		username, role); err != nil {
+		return "", err
+	}
+	if _, err = tx.Exec(ctx,
+		`INSERT INTO user_external_identities (username, provider, sub, email, claims)
+		 VALUES ($1, $2, $3, $4, $5)`,
+		username, provider, sub, email, claimsJSON); err != nil {
+		return "", err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return "", err
+	}
+	return username, nil
+}
+
+// uniqueUsername returns preferred, or preferred-2, preferred-3, … until free.
+func uniqueUsername(ctx context.Context, tx pgx.Tx, preferred string) (string, error) {
+	candidate := preferred
+	for i := 2; i < 1000; i++ {
+		var exists bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE username = $1)`, candidate).Scan(&exists); err != nil {
+			return "", err
+		}
+		if !exists {
+			return candidate, nil
+		}
+		candidate = fmt.Sprintf("%s-%d", preferred, i)
+	}
+	return "", errors.New("could not find a free username after 1000 attempts")
+}

@@ -1,0 +1,270 @@
+// oidc_resolver.go — the OIDCResolver (Authentik) implementation of
+// IdentityResolver (gaka-0oe.11). Web sessions become boomtime opaque cookies
+// backed by oidc_sessions; editor plugins keep using local API tokens
+// (ResolveBearer delegates to local). The login START + callback live in the
+// identity handlers, which call AuthCodeURL / HandleCallback on this concrete
+// type (the callback must create the session, which the generic interface
+// CompleteLogin can't return).
+package auth
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/coreos/go-oidc/v3/oidc"
+	"golang.org/x/oauth2"
+
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+)
+
+// OIDCProviderName is the value stored in user_external_identities.provider.
+const OIDCProviderName = "authentik"
+
+// OIDCResolver authenticates via an OIDC provider.
+type OIDCResolver struct {
+	provider      *oidc.Provider
+	verifier      *oidc.IDTokenVerifier
+	oauth2        oauth2.Config
+	groupToRole   map[string]string
+	autoprovision bool
+}
+
+// NewOIDCResolver runs OIDC discovery against issuer and builds the verifier +
+// oauth2 config. Returns an error if the issuer is unreachable (boot fails
+// loudly rather than silently falling back).
+func NewOIDCResolver(ctx context.Context, issuer, authorizeURLOverride, clientID, clientSecret, redirectURL string, groupToRole map[string]string, autoprovision bool) (*OIDCResolver, error) {
+	provider, err := oidc.NewProvider(ctx, strings.TrimRight(issuer, "/")+"/")
+	if err != nil {
+		return nil, fmt.Errorf("oidc discovery (%s): %w", issuer, err)
+	}
+	endpoint := provider.Endpoint()
+	// Split-horizon dev: discovery/token/jwks stay on the cluster-internal
+	// issuer (pod-reachable), but the browser must be redirected to a
+	// host-reachable authorize URL. The id_token issuer is minted at the token
+	// endpoint (still the cluster URL), so verification is unaffected.
+	if authorizeURLOverride != "" {
+		endpoint.AuthURL = authorizeURLOverride
+	}
+	return &OIDCResolver{
+		provider: provider,
+		verifier: provider.Verifier(&oidc.Config{ClientID: clientID}),
+		oauth2: oauth2.Config{
+			ClientID:     clientID,
+			ClientSecret: clientSecret,
+			RedirectURL:  redirectURL,
+			Endpoint:     endpoint,
+			Scopes:       []string{oidc.ScopeOpenID, "email", "profile", "groups"},
+		},
+		groupToRole:   groupToRole,
+		autoprovision: autoprovision,
+	}, nil
+}
+
+func (r *OIDCResolver) ProviderName() string { return "oidc" }
+
+// AuthCodeURL builds the authorize redirect for the login-start handler.
+func (r *OIDCResolver) AuthCodeURL(state, nonce string) string {
+	return r.oauth2.AuthCodeURL(state, oidc.Nonce(nonce))
+}
+
+// ResolveBearer: editor plugins keep local API tokens even under OIDC — the
+// OIDC path is web-session only.
+func (r *OIDCResolver) ResolveBearer(ctx context.Context, database *db.DB, token string) (*Identity, *apierr.Error) {
+	return LocalPasswordResolver{}.ResolveBearer(ctx, database, token)
+}
+
+// ResolveCookie: the web session cookie is an opaque id → oidc_sessions → user.
+func (r *OIDCResolver) ResolveCookie(ctx context.Context, database *db.DB, sessionID string) (*Identity, *apierr.Error) {
+	username, ok, err := database.GetOIDCSessionUser(ctx, sessionID)
+	if err != nil {
+		return nil, apierr.Generic()
+	}
+	if !ok {
+		return nil, apierr.ExpiredRefreshToken()
+	}
+	return resolveIdentity(ctx, database, username)
+}
+
+// CompleteLogin (interface) is unused for OIDC — the callback goes through
+// HandleCallback (concrete) because it must create the server-side session.
+func (r *OIDCResolver) CompleteLogin(_ context.Context, _ *db.DB, _, _ string) (*Identity, *apierr.Error) {
+	return nil, apierr.NotFound("OIDC callback is handled via HandleCallback")
+}
+
+// oidcClaims is the subset read from the verified id_token.
+type oidcClaims struct {
+	Sub               string   `json:"sub"`
+	Email             string   `json:"email"`
+	PreferredUsername string   `json:"preferred_username"`
+	Groups            []string `json:"groups"`
+}
+
+// CallbackResult is what HandleCallback hands the handler to mint the cookie.
+type CallbackResult struct {
+	Identity  *Identity
+	SessionID string    // raw opaque cookie value
+	Expiry    time.Time // session validity (= id_token expiry)
+}
+
+// exchangeAndVerify does the code exchange + id_token JWKS verification and
+// extracts the claims — the shared front half of both the login callback and
+// the account-link callback. Returns the claims, their JSON, the id_token
+// expiry, and the provider refresh_token.
+func (r *OIDCResolver) exchangeAndVerify(ctx context.Context, code string) (oidcClaims, []byte, time.Time, string, *apierr.Error) {
+	var zero oidcClaims
+	tok, err := r.oauth2.Exchange(ctx, code)
+	if err != nil {
+		return zero, nil, time.Time{}, "", apierr.New(http.StatusBadGateway, "OIDC token exchange failed", nil)
+	}
+	rawIDToken, ok := tok.Extra("id_token").(string)
+	if !ok {
+		return zero, nil, time.Time{}, "", apierr.New(http.StatusBadGateway, "OIDC response missing id_token", nil)
+	}
+	idToken, err := r.verifier.Verify(ctx, rawIDToken)
+	if err != nil {
+		return zero, nil, time.Time{}, "", apierr.New(http.StatusUnauthorized, "OIDC id_token verification failed", nil)
+	}
+	var claims oidcClaims
+	if err := idToken.Claims(&claims); err != nil {
+		return zero, nil, time.Time{}, "", apierr.Generic()
+	}
+	if claims.Sub == "" {
+		return zero, nil, time.Time{}, "", apierr.New(http.StatusUnauthorized, "OIDC id_token missing sub claim", nil)
+	}
+	claimsJSON, _ := json.Marshal(claims)
+	return claims, claimsJSON, idToken.Expiry, tok.RefreshToken, nil
+}
+
+// HandleCallback (login mode): exchange + verify + provision/lookup (design
+// §6.5) + create the server-side oidc_session.
+func (r *OIDCResolver) HandleCallback(ctx context.Context, database *db.DB, code string) (*CallbackResult, *apierr.Error) {
+	claims, claimsJSON, expiry, refresh, aerr := r.exchangeAndVerify(ctx, code)
+	if aerr != nil {
+		return nil, aerr
+	}
+	role := string(RoleFromGroups(claims.Groups, r.groupToRole))
+	username, aerr := r.resolveOrProvision(ctx, database, claims, role, claimsJSON)
+	if aerr != nil {
+		return nil, aerr
+	}
+	if expiry.IsZero() {
+		expiry = time.Now().Add(8 * time.Hour)
+	}
+	sessionID, err := randToken()
+	if err != nil {
+		return nil, apierr.Generic()
+	}
+	if err := database.CreateOIDCSession(ctx, sessionID, username, expiry, refresh); err != nil {
+		return nil, apierr.Generic()
+	}
+	ident, aerr := resolveIdentity(ctx, database, username)
+	if aerr != nil {
+		return nil, aerr
+	}
+	return &CallbackResult{Identity: ident, SessionID: sessionID, Expiry: expiry}, nil
+}
+
+// HandleLink (link mode, gaka-b5n.4): exchange + verify, then bind the resolved
+// (authentik, sub) to currentUsername — the account the caller is ALREADY
+// logged in as. Does NOT create a session (the caller keeps theirs). Idempotent
+// if already linked to the same user; 409 if the identity belongs to a
+// different account.
+func (r *OIDCResolver) HandleLink(ctx context.Context, database *db.DB, code, currentUsername string) *apierr.Error {
+	claims, claimsJSON, _, _, aerr := r.exchangeAndVerify(ctx, code)
+	if aerr != nil {
+		return aerr
+	}
+	existing, ok, err := database.GetUserByExternalIdentity(ctx, OIDCProviderName, claims.Sub)
+	if err != nil {
+		return apierr.Generic()
+	}
+	if ok {
+		if existing == currentUsername {
+			return nil // already linked — idempotent
+		}
+		return apierr.New(http.StatusConflict, "this Authentik identity is already linked to another account", nil)
+	}
+	if err := database.LinkExternalIdentity(ctx, currentUsername, OIDCProviderName, claims.Sub, claims.Email, claimsJSON); err != nil {
+		return apierr.Generic()
+	}
+	return nil
+}
+
+// resolveOrProvision implements the design §6.5 lookup/link/provision cascade.
+func (r *OIDCResolver) resolveOrProvision(ctx context.Context, database *db.DB, claims oidcClaims, role string, claimsJSON []byte) (string, *apierr.Error) {
+	// Existing link → refresh role from current groups + touch claims.
+	if username, ok, err := database.GetUserByExternalIdentity(ctx, OIDCProviderName, claims.Sub); err != nil {
+		return "", apierr.Generic()
+	} else if ok {
+		_, _ = database.SetUserRole(ctx, username, role)
+		_ = database.TouchExternalIdentity(ctx, OIDCProviderName, claims.Sub, claims.Email, claimsJSON)
+		return username, nil
+	}
+
+	preferred := claims.PreferredUsername
+	if preferred == "" {
+		preferred = localpart(claims.Email)
+	}
+	if preferred == "" {
+		return "", apierr.New(http.StatusBadRequest, "OIDC identity has neither preferred_username nor email", nil)
+	}
+
+	// NOTE: username-based autolink was REMOVED (gaka-93f.12, red-team HIGH).
+	// Matching an IdP-supplied preferred_username against an existing boomtime
+	// account and binding to it — with no email_verified check — was an
+	// unauthenticated account-takeover primitive (name your Authentik user
+	// "admin" → own the admin account). Linking an existing account to OIDC now
+	// goes ONLY through the authenticated link flow (HandleLink), which is
+	// state + live-session bound. There is no auto-link on first login.
+
+	// Autoprovision a NEW user (opt-in, default off). Never binds to an
+	// existing account — ProvisionOIDCUser fails closed on a username collision.
+	if !r.autoprovision {
+		return "", apierr.New(http.StatusForbidden, "no boomtime account for this identity; ask an admin to create one", nil)
+	}
+	username, err := database.ProvisionOIDCUser(ctx, preferred, OIDCProviderName, claims.Sub, claims.Email, role, claimsJSON)
+	if err != nil {
+		return "", apierr.Generic()
+	}
+	return username, nil
+}
+
+// randToken returns a URL-safe 256-bit random string (state, nonce, session id).
+func randToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// RandToken is the exported form for the login-start handler's state/nonce.
+func RandToken() (string, error) { return randToken() }
+
+func localpart(email string) string {
+	if i := strings.IndexByte(email, '@'); i > 0 {
+		return email[:i]
+	}
+	return ""
+}
+
+// oidcInstance is the constructed OIDCResolver, kept available for the
+// account-LINK flow even when the ACTIVE auth provider is local (you link your
+// existing password account to Authentik BEFORE flipping to oidc). Set at boot
+// whenever OIDC is configured (BOOM_OIDC_ISSUER present); independent of
+// SetResolver (which sets the active login provider).
+var oidcInstance *OIDCResolver
+
+// SetOIDCResolver stores the constructed OIDC resolver for the link flow.
+func SetOIDCResolver(r *OIDCResolver) { oidcInstance = r }
+
+// OIDCResolverInstance returns the constructed OIDC resolver (nil if OIDC isn't
+// configured). Used by the /auth/link/oidc + /auth/login/oidc handlers.
+func OIDCResolverInstance() *OIDCResolver { return oidcInstance }

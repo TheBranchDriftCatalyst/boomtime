@@ -21,7 +21,7 @@ import (
 // "user" attribute) are dropped BEFORE the response is built. Server-scope
 // records (no owner tag) still fan out to every authenticated viewer.
 func (h *Handler) ServerLogs(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -51,7 +51,7 @@ func (h *Handler) ServerLogs(c *echo.Context) error {
 // filter is used on the REST tail so both code paths are impossible to skew
 // apart accidentally.
 func (h *Handler) ServerLogsWS(c *echo.Context) error {
-	owner, aerr := apihelpers.ResolveOwnerFromCookie(h.DB, h.Logger, c, apierr.ExpiredRefreshToken())
+	owner, aerr := apihelpers.IdentifyOwnerFromCookie(h.DB, h.Logger, c, apierr.ExpiredRefreshToken())
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}

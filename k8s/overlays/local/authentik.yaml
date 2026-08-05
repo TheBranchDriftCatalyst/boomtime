@@ -1,0 +1,434 @@
+---
+# ─────────────────────────────────────────────────────────────────────────────
+# Authentik dev stack for the LOCAL Tilt/k3d overlay (gaka-93f.8, Phase 2).
+#
+# Stands up a self-contained Authentik (server + worker + its own Postgres +
+# Redis) alongside boomtime so the OIDC login flow can be exercised end-to-end
+# WITHOUT any click-ops: the boomtime OAuth2 provider, application, and the
+# three role groups are declared as Authentik *blueprints* (see the
+# authentik-blueprints ConfigMap at the bottom) and auto-applied on boot.
+#
+# DEV-ONLY. Everything here is throwaway:
+#   - emptyDir volumes (state is lost on `tilt down`, exactly like postgres.yaml)
+#   - committed stub credentials (secret key, bootstrap password/token, client
+#     secret). These are NOT secrets — they are fixtures so the whole stack is
+#     reproducible from git. NEVER reuse any of these values in prod. Prod
+#     Authentik lives in the user's Talos cluster and is configured separately
+#     (see docs/design/user-model-and-oidc.md §6.7).
+#
+# boomtime itself still runs with BOOM_AUTH_PROVIDER=local — the OIDC resolver
+# that consumes this lands in gaka-0oe.11. This overlay just makes a working
+# Authentik + declared boomtime app available at http://localhost:9000.
+# ─────────────────────────────────────────────────────────────────────────────
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: authentik-secrets
+  labels:
+    app.kubernetes.io/part-of: authentik
+    app.kubernetes.io/component: identity
+# DEV STUB VALUES — committed on purpose, NOT for prod. Regenerate real ones
+# for any non-local environment (`openssl rand -base64 60` for the secret key).
+type: Opaque
+stringData:
+  # Django SECRET_KEY equivalent — signs sessions/cookies inside Authentik.
+  AUTHENTIK_SECRET_KEY: "dev-only-authentik-secret-key-do-not-use-in-prod-0f3c9a7e1b6d4482a5e0c2f8b19d7346"
+  # akadmin bootstrap password — log in to the Authentik UI at
+  # http://localhost:9000 with user `akadmin` / this password.
+  AUTHENTIK_BOOTSTRAP_PASSWORD: "akadmin-dev-password"
+  # A known API token for `akadmin` so the lead can hit the Authentik API
+  # (Authorization: Bearer <this>) without minting one in the UI.
+  AUTHENTIK_BOOTSTRAP_TOKEN: "boomtime-dev-authentik-bootstrap-token-000111222"
+  # Postgres creds for Authentik's OWN database (separate from boomtime's).
+  AUTHENTIK_POSTGRESQL__PASSWORD: "authentik-dev"
+  # Mirror of the pg password for the postgres container's own env.
+  POSTGRES_PASSWORD: "authentik-dev"
+---
+# ── Authentik Postgres (its own DB, isolated from boomtime-postgres) ──────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authentik-postgres
+  labels:
+    app: authentik-postgres
+    app.kubernetes.io/part-of: authentik
+    app.kubernetes.io/component: database
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: authentik-postgres
+  template:
+    metadata:
+      labels:
+        app: authentik-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: authentik
+            - name: POSTGRES_USER
+              value: authentik
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: authentik-secrets
+                  key: POSTGRES_PASSWORD
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+              subPath: pgdata
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+      volumes:
+        - name: pgdata
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: authentik-postgres
+  labels:
+    app: authentik-postgres
+    app.kubernetes.io/part-of: authentik
+spec:
+  type: ClusterIP
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+  selector:
+    app: authentik-postgres
+---
+# ── Authentik Redis (cache + task broker) ────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authentik-redis
+  labels:
+    app: authentik-redis
+    app.kubernetes.io/part-of: authentik
+    app.kubernetes.io/component: cache
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: authentik-redis
+  template:
+    metadata:
+      labels:
+        app: authentik-redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:alpine
+          ports:
+            - name: redis
+              containerPort: 6379
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: authentik-redis
+  labels:
+    app: authentik-redis
+    app.kubernetes.io/part-of: authentik
+spec:
+  type: ClusterIP
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+  selector:
+    app: authentik-redis
+---
+# ── Authentik server (the web/API + OIDC issuer, port 9000) ───────────────────
+# Authentik is HEAVY: the Python/Go server wants ~512Mi steady and spikes higher
+# during migrations + blueprint apply on first boot. Requests/limits below are
+# deliberately generous for a dev box; trim if your k3d node is small. It also
+# boots SLOWLY (DB migrate → blueprint apply), hence the long probe delays.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authentik-server
+  labels:
+    app: authentik-server
+    app.kubernetes.io/part-of: authentik
+    app.kubernetes.io/component: server
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: authentik-server
+  template:
+    metadata:
+      labels:
+        app: authentik-server
+    spec:
+      containers:
+        - name: server
+          image: ghcr.io/goauthentik/server:2025.10
+          args: ["server"]
+          ports:
+            - name: http
+              containerPort: 9000
+          env:
+            - name: AUTHENTIK_POSTGRESQL__HOST
+              value: authentik-postgres
+            - name: AUTHENTIK_POSTGRESQL__NAME
+              value: authentik
+            - name: AUTHENTIK_POSTGRESQL__USER
+              value: authentik
+            - name: AUTHENTIK_POSTGRESQL__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: authentik-secrets
+                  key: AUTHENTIK_POSTGRESQL__PASSWORD
+            - name: AUTHENTIK_REDIS__HOST
+              value: authentik-redis
+            - name: AUTHENTIK_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: authentik-secrets
+                  key: AUTHENTIK_SECRET_KEY
+            - name: AUTHENTIK_BOOTSTRAP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: authentik-secrets
+                  key: AUTHENTIK_BOOTSTRAP_PASSWORD
+            - name: AUTHENTIK_BOOTSTRAP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: authentik-secrets
+                  key: AUTHENTIK_BOOTSTRAP_TOKEN
+          volumeMounts:
+            # Authentik auto-discovers + applies any blueprint YAML found under
+            # /blueprints/** on boot (and re-reconciles ~hourly). Mounting our
+            # ConfigMap here is what makes the boomtime app zero-click.
+            - name: blueprints
+              mountPath: /blueprints/custom
+              readOnly: true
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          livenessProbe:
+            httpGet:
+              path: /-/health/live/
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 6
+          readinessProbe:
+            httpGet:
+              path: /-/health/ready/
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 12
+      volumes:
+        - name: blueprints
+          configMap:
+            name: authentik-blueprints
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: authentik-server
+  labels:
+    app: authentik-server
+    app.kubernetes.io/part-of: authentik
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 9000
+      targetPort: http
+  selector:
+    app: authentik-server
+---
+# ── Authentik worker (runs migrations, blueprint apply, background tasks) ─────
+# Shares the same image + env as the server. The worker is what actually applies
+# blueprints and runs DB migrations, so it MUST have the same PG/Redis/secret
+# wiring. No HTTP health probe (it serves no HTTP); k8s liveness is process-up.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authentik-worker
+  labels:
+    app: authentik-worker
+    app.kubernetes.io/part-of: authentik
+    app.kubernetes.io/component: worker
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: authentik-worker
+  template:
+    metadata:
+      labels:
+        app: authentik-worker
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/goauthentik/server:2025.10
+          args: ["worker"]
+          env:
+            - name: AUTHENTIK_POSTGRESQL__HOST
+              value: authentik-postgres
+            - name: AUTHENTIK_POSTGRESQL__NAME
+              value: authentik
+            - name: AUTHENTIK_POSTGRESQL__USER
+              value: authentik
+            - name: AUTHENTIK_POSTGRESQL__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: authentik-secrets
+                  key: AUTHENTIK_POSTGRESQL__PASSWORD
+            - name: AUTHENTIK_REDIS__HOST
+              value: authentik-redis
+            - name: AUTHENTIK_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: authentik-secrets
+                  key: AUTHENTIK_SECRET_KEY
+            - name: AUTHENTIK_BOOTSTRAP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: authentik-secrets
+                  key: AUTHENTIK_BOOTSTRAP_PASSWORD
+            - name: AUTHENTIK_BOOTSTRAP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: authentik-secrets
+                  key: AUTHENTIK_BOOTSTRAP_TOKEN
+          volumeMounts:
+            - name: blueprints
+              mountPath: /blueprints/custom
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 384Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+      volumes:
+        - name: blueprints
+          configMap:
+            name: authentik-blueprints
+---
+# ─────────────────────────────────────────────────────────────────────────────
+# Blueprints — declarative boomtime OIDC config, auto-applied by Authentik.
+#
+# Each data key is a *.yaml blueprint mounted at /blueprints/custom/. Authentik
+# reads them on boot (and re-reconciles hourly), so the OAuth2 provider, the
+# application (which fixes the issuer at .../application/o/boomtime/), and the
+# three role groups exist with ZERO clicks.
+#
+# Blueprint tag reference:
+#   !Find [<model>, [<field>, <value>]]  — look up an existing object by field
+#   !KeyOf <id>                          — reference another entry in THIS bundle
+# Flows/certs/scope-mappings referenced via !Find are Authentik's built-in
+# defaults, created by its own system blueprints before ours apply.
+#
+# VERSION-SENSITIVE FIELDS the lead should sanity-check at bring-up against
+# 2025.10 (Authentik's blueprint schema drifts release to release):
+#   - oauth2provider.redirect_uris: object form {matching_mode, url} (post-2024.4)
+#   - oauth2provider.invalidation_flow: REQUIRED since ~2024.x
+#   - the "profile" default scope mapping carries the `groups` claim; if the
+#     groups claim is missing, add the groups scope mapping explicitly.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authentik-blueprints
+  labels:
+    app.kubernetes.io/part-of: authentik
+    app.kubernetes.io/component: blueprints
+data:
+  boomtime-groups.yaml: |
+    version: 1
+    metadata:
+      name: boomtime-groups
+    entries:
+      # Role tiers consumed by BOOM_AUTHENTIK_GROUP_TO_ROLE. Membership in one
+      # of these (emitted in the `groups` claim) maps to a boomtime role.
+      - identifiers:
+          name: boomtime-admin
+        model: authentik_core.group
+        attrs:
+          name: boomtime-admin
+      - identifiers:
+          name: boomtime-full
+        model: authentik_core.group
+        attrs:
+          name: boomtime-full
+      - identifiers:
+          name: boomtime-light
+        model: authentik_core.group
+        attrs:
+          name: boomtime-light
+
+  boomtime-oidc.yaml: |
+    version: 1
+    metadata:
+      name: boomtime-oidc
+    entries:
+      # OAuth2 / OIDC provider for boomtime. The dev client_id/client_secret
+      # below are committed stubs — they MUST match the boomtime-side
+      # BOOM_OIDC_CLIENT_ID / BOOM_OIDC_CLIENT_SECRET (see patch-configmap.yaml
+      # + secrets.yaml). NOT for prod.
+      - id: boomtime-provider
+        identifiers:
+          name: boomtime
+        model: authentik_providers_oauth2.oauth2provider
+        attrs:
+          name: boomtime
+          client_type: confidential
+          client_id: boomtime
+          client_secret: boomtime-dev-client-secret-not-for-prod-0123456789abcdef
+          authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+          invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+          redirect_uris:
+            - matching_mode: strict
+              url: http://localhost:8080/auth/callback/oidc
+          property_mappings:
+            - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
+            - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
+            - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
+      # The application ties the provider to a slug — this is what makes the
+      # issuer resolve to http://<host>:9000/application/o/boomtime/.
+      - identifiers:
+          slug: boomtime
+        model: authentik_core.application
+        attrs:
+          name: Boomtime
+          slug: boomtime
+          provider: !KeyOf boomtime-provider

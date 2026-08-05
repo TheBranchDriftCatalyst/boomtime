@@ -11,7 +11,7 @@ import (
 // DerivedStatus: GET /api/v1/users/current/derived/status — health of the
 // precomputed gap_seconds column and hb_rollup_daily rollup for the user.
 func (h *Handler) DerivedStatus(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -26,7 +26,7 @@ func (h *Handler) DerivedStatus(c *echo.Context) error {
 // DerivedResync: POST /api/v1/users/current/derived/resync — rebuild gap_seconds
 // + rollup from raw heartbeats, then return the refreshed status.
 func (h *Handler) DerivedResync(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}

@@ -24,6 +24,14 @@ func Register(e *echo.Echo, h *Handler) {
 	e.POST("/auth/register", h.Register)
 	e.POST("/auth/refresh_token", h.RefreshToken)
 	e.POST("/auth/logout", h.Logout)
+	// OIDC (Authentik) web login (gaka-0oe.11) + account linking (gaka-b5n.4).
+	// login/link 404 unless OIDC is configured; the OpenAPI auto-derive picks
+	// them up.
+	e.GET("/auth/login/oidc", h.LoginOIDC)
+	e.GET("/auth/link/oidc", h.LinkOIDC)
+	e.GET("/auth/callback/oidc", h.CallbackOIDC)
+	e.GET("/api/v1/users/current/identities", h.ListIdentities)
+	e.DELETE("/api/v1/users/current/identities/:provider", h.UnlinkIdentity)
 	e.POST("/auth/create_api_token", h.CreateAPIToken)
 	e.GET("/auth/tokens", h.ListAPITokens)
 	e.DELETE("/auth/token/:id", h.DeleteToken)

@@ -111,5 +111,7 @@ Examples:
 	}
 	cmd.Flags().StringVar(&id, "id", "", "Regenerate a single label by id (e.g. late-night-coder)")
 	cmd.Flags().BoolVar(&all, "all", false, "Wipe every label_images row and regenerate the whole catalog")
+	// Smart completion: TAB --id to pick a label from the DB catalog.
+	_ = cmd.RegisterFlagCompletionFunc("id", completeLabelIds)
 	return cmd
 }

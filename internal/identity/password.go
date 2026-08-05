@@ -33,10 +33,14 @@ type changePasswordRequest struct {
 //     so a process crash between them could leave the password rotated with
 //     stale sessions still valid.
 func (h *Handler) ChangePassword(c *echo.Context) error {
-	callerToken, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
+	// ChangePassword revokes every OTHER session but keeps the caller's live —
+	// so it still needs the raw bearer token. Identify already validated it;
+	// re-parse the header for the token value.
+	callerToken, _ := apihelpers.TokenFromHeader(c)
 	var req changePasswordRequest
 	// gaka-bi2: 4 KiB cap. The body is two short strings; anything larger is
 	// an attempt to amplify the argon2 verify below into a memory DoS.

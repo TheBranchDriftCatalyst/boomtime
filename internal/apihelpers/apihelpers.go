@@ -190,6 +190,67 @@ func ResolveUser(database *db.DB, c *echo.Context) (string, string, *apierr.Erro
 	return tkn, owner, nil
 }
 
+// Identify resolves the caller's *auth.Identity from the bearer token — the
+// user-model seam (gaka-0oe.1). With BOOM_FEATURE_USER_MODEL OFF it returns an
+// all-capability Identity, so no gate ever fires and behavior is identical to
+// the pre-substrate ResolveUser path. With the flag ON it loads the user's
+// role + capabilities and fails closed on a disabled account.
+//
+// This is the shape the 70-site handler refactor (gaka-0oe.4–.9) migrates onto;
+// it is intentionally additive — ResolveUser stays for callers not yet
+// converted. The user-model switch is read from the process-global
+// auth.UserModelEnabled() (set once at boot from cfg.FeatureUserModel) rather
+// than passed in, so this package stays config-free/cycle-free AND the ~103
+// call sites don't have to thread the flag through three different handler
+// config shapes.
+func Identify(database *db.DB, c *echo.Context) (*auth.Identity, *apierr.Error) {
+	// apihelpers owns header parsing (it has the echo context); the active
+	// auth provider (gaka-0oe.2) owns token→Identity. Today that's
+	// LocalPasswordResolver; a future OIDCResolver swaps in via SetResolver at
+	// boot with no handler change.
+	token, aerr := TokenFromHeader(c)
+	if aerr != nil {
+		return nil, aerr
+	}
+	return auth.CurrentResolver().ResolveBearer(c.Request().Context(), database, token)
+}
+
+// IdentifyFromCookie is the refresh-cookie counterpart of Identify (used by
+// the /auth/users/current + WebSocket paths that can't send an Authorization
+// header). Same flag semantics; missingErr is returned when the cookie is
+// absent. logger is retained for signature compatibility with the callers.
+func IdentifyFromCookie(database *db.DB, logger *slog.Logger, c *echo.Context, missingErr *apierr.Error) (*auth.Identity, *apierr.Error) {
+	_ = logger
+	refresh, ok := auth.ParseRefreshCookie(c.Request().Header.Get("Cookie"))
+	if !ok {
+		return nil, missingErr
+	}
+	return auth.CurrentResolver().ResolveCookie(c.Request().Context(), database, refresh)
+}
+
+// IdentifyOwner is the owner-only convenience over Identify (gaka-0oe.4–.9).
+// For the many account/settings/read handlers that need the caller's username
+// + the disabled-fail-closed guarantee but have NO tier-specific capability
+// gate (every non-disabled identity may use them), this is a one-line swap for
+// the old `_, owner, aerr := ResolveUser(...)`. Tier-gated handlers
+// (ingest/import/backup/curate) use the full Identify + ident.Can(cap) instead.
+func IdentifyOwner(database *db.DB, c *echo.Context) (string, *apierr.Error) {
+	ident, aerr := Identify(database, c)
+	if aerr != nil {
+		return "", aerr
+	}
+	return ident.Username, nil
+}
+
+// IdentifyOwnerFromCookie is the refresh-cookie counterpart of IdentifyOwner.
+func IdentifyOwnerFromCookie(database *db.DB, logger *slog.Logger, c *echo.Context, missingErr *apierr.Error) (string, *apierr.Error) {
+	ident, aerr := IdentifyFromCookie(database, logger, c, missingErr)
+	if aerr != nil {
+		return "", aerr
+	}
+	return ident.Username, nil
+}
+
 // InternalErr logs the underlying error with request context and renders the
 // generic 500 envelope. Use it wherever an internal failure would otherwise
 // be swallowed silently — the raw error never reaches the client.

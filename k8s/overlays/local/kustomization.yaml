@@ -9,6 +9,10 @@ resources:
   - ../../base
   - postgres.yaml
   - secrets.yaml
+  # Dev-only Authentik stack (server+worker+pg+redis) + boomtime OIDC
+  # blueprints. See authentik.yaml. boomtime still runs BOOM_AUTH_PROVIDER=local
+  # until the OIDC resolver lands (gaka-0oe.11).
+  - authentik.yaml
 
 patches:
   - path: patch-configmap.yaml

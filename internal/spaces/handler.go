@@ -59,7 +59,7 @@ type spaceRuleRequest struct {
 
 // ListSpaces: GET /api/v1/users/current/spaces → {spaces:[Space]}.
 func (h *Handler) ListSpaces(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -72,7 +72,7 @@ func (h *Handler) ListSpaces(c *echo.Context) error {
 
 // CreateSpace: POST /api/v1/users/current/spaces body {"name":...} → {space:Space}.
 func (h *Handler) CreateSpace(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -95,7 +95,7 @@ func (h *Handler) CreateSpace(c *echo.Context) error {
 
 // UpdateSpace: PATCH /api/v1/users/current/spaces/:id body {"name"?,"position"?}.
 func (h *Handler) UpdateSpace(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -121,7 +121,7 @@ func (h *Handler) UpdateSpace(c *echo.Context) error {
 
 // DeleteSpace: DELETE /api/v1/users/current/spaces/:id → 204.
 func (h *Handler) DeleteSpace(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -143,7 +143,7 @@ func (h *Handler) DeleteSpace(c *echo.Context) error {
 // GetSpace: GET /api/v1/users/current/spaces/:id →
 // {id,name,position,rules:[{id,axis,matchValue,matchType}]}.
 func (h *Handler) GetSpace(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -169,7 +169,7 @@ func (h *Handler) GetSpace(c *echo.Context) error {
 // AddSpaceRule: POST /api/v1/users/current/spaces/:id/rules
 // body {"axis","matchValue","matchType"} → {rule:SpaceRule}.
 func (h *Handler) AddSpaceRule(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -214,7 +214,7 @@ func (h *Handler) AddSpaceRule(c *echo.Context) error {
 
 // DeleteSpaceRule: DELETE /api/v1/users/current/spaces/:id/rules/:rid → 204.
 func (h *Handler) DeleteSpaceRule(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -241,7 +241,7 @@ func (h *Handler) DeleteSpaceRule(c *echo.Context) error {
 // → {"values":[{"value","count"}],"truncated":bool}. Live preview of the RAW values
 // (with heartbeat counts) an unsaved membership rule would match. Owner-scoped.
 func (h *Handler) SpacePreview(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}

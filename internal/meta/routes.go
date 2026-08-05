@@ -24,6 +24,10 @@ func Register(e *echo.Echo, h *Handler) {
 	e.GET("/api/v1/version", h.Version)
 	e.GET("/api/v1/changelog", h.Changelog)
 	e.GET("/healthz", h.Healthz)
+	// Public client-config advertisement (gaka-93f.1.1): auth provider,
+	// registration/billing/beta switches the FE needs at boot. Non-sensitive,
+	// same public audience as /version + /healthz.
+	e.GET("/api/v1/config/public", h.PublicConfig)
 	openapi.Register(e)
 
 	// Server-log stream cluster (gaka-awh.2): REST tail (Authorization-gated)

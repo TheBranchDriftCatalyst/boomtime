@@ -84,6 +84,19 @@ type StoredUser struct {
 	Timezone string
 }
 
+// StoredUserFull is StoredUser plus the user-model substrate columns added in
+// migration 00046 (gaka-0oe.1): role, the capabilities override blob (raw
+// JSONB bytes — parsed by auth.BuildIdentity), and disabled_at. Read via
+// GetUserFullByName ONLY on the Identity path when BOOM_FEATURE_USER_MODEL is
+// on; the today StoredUser + GetUserByName are left untouched so unmigrated
+// callers compile and behave identically.
+type StoredUserFull struct {
+	StoredUser
+	Role         string
+	Capabilities []byte     // raw users.capabilities JSONB ('{}' when unset)
+	DisabledAt   *time.Time // nil = active; non-nil = disabled (fail closed)
+}
+
 // TokenData is the access/refresh token pair created on login (Types.hs TokenData).
 type TokenData struct {
 	Owner        string

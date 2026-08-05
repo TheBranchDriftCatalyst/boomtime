@@ -12,7 +12,7 @@ import (
 // reporting" view. Read-only, owner-scoped, and cached like other reads. The
 // active/idle/stale/silent status is derived CLIENT-side from lastSeen.
 func (h *Handler) SourceHealth(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}

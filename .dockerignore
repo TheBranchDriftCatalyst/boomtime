@@ -37,7 +37,11 @@ web/.vite/
 web/coverage/
 
 # ── Embedded SPA output (rebuilt in the multi-stage image) ──────────────────
-internal/server/dist/
+# NOTE: the prod multi-stage Dockerfile rebuilds this, so it's ignored there.
+# But the Tilt dev image (Dockerfile.dev) has no web build stage and no bind
+# mount, so //go:embed dist needs *a* dist dir baked in. Keep the local one so
+# the dev binary compiles; the live UI is served by Vite (:5173), not this.
+!internal/server/dist/
 
 # ── Bloat / non-code (never needed at build time) ───────────────────────────
 .github/
@@ -47,7 +51,9 @@ docs/
 # CHANGELOG.md is embedded via //go:embed — keep it in the context.
 !CHANGELOG.md
 ov.md
-.air.toml
+# .air.toml is needed inside the dev image: Tilt bakes it in (no bind-mount,
+# and live_update does not sync it), so air -c .air.toml can find it. Keep it.
+!.air.toml
 docker-compose*.yml
 Dockerfile*
 Taskfile.yml

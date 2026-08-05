@@ -51,6 +51,29 @@ func (d *DB) GetUserByName(ctx context.Context, name string) (*StoredUser, error
 	return &u, nil
 }
 
+// GetUserFullByName returns the user WITH the user-model substrate columns
+// (role, capabilities, disabled_at — migration 00046) or (nil,nil) if absent.
+// Used only by the Identity path (apihelpers.Identify) when
+// BOOM_FEATURE_USER_MODEL is on. GetUserByName is deliberately left untouched
+// so the hot credential-verify path is unchanged with the flag off.
+func (d *DB) GetUserFullByName(ctx context.Context, name string) (*StoredUserFull, error) {
+	row := d.Pool.QueryRow(ctx,
+		`SELECT username, hashed_password, salt_used, argon_version, timezone,
+		        role, capabilities, disabled_at
+		 FROM users WHERE username = $1`, name)
+	var u StoredUserFull
+	if err := row.Scan(
+		&u.Username, &u.HashedPassword, &u.SaltUsed, &u.ArgonVersion, &u.Timezone,
+		&u.Role, &u.Capabilities, &u.DisabledAt,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &u, nil
+}
+
 // InsertUser inserts a new user; returns false if the username already exists.
 //
 // gaka-awh.6: argon_version is passed EXPLICITLY (from u.ArgonVersion) so a

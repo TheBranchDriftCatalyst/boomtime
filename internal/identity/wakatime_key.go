@@ -114,7 +114,7 @@ func (h *Handler) probeWakatimeKey(ctx context.Context, owner, plaintext string)
 // validity + check timestamp. Deliberately does NOT include the key or any
 // prefix of the plaintext.
 func (h *Handler) GetWakatimeKey(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -144,7 +144,7 @@ func (h *Handler) GetWakatimeKey(c *echo.Context) error {
 // clients don't accidentally clobber a saved key with an empty POST — use
 // DELETE for that.
 func (h *Handler) SaveWakatimeKey(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -184,7 +184,7 @@ func (h *Handler) SaveWakatimeKey(c *echo.Context) error {
 // saved encrypted key + its status metadata for the caller. Idempotent (204
 // whether or not one existed) so the FE doesn't need to first-check with GET.
 func (h *Handler) DeleteWakatimeKey(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}

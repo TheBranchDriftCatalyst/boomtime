@@ -9,6 +9,7 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/goals"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/wakatime"
@@ -39,10 +40,17 @@ func (h *Handler) HeartbeatBulk(c *echo.Context) error {
 }
 
 func (h *Handler) storeAndRespond(c *echo.Context, hbs []model.HeartbeatPayload) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	ident, aerr := apihelpers.Identify(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
+	// gaka-0oe.3: ingest is a tier-gated capability. Flag off => all-caps =>
+	// always allowed (byte-identical to today). Flag on => a viewer/light tier
+	// denied ingest is 403'd here rather than silently writing.
+	if !ident.Can(auth.CapIngestHeartbeats) {
+		return apihelpers.RespondErr(c, apierr.Forbidden("this account is not permitted to ingest heartbeats"))
+	}
+	owner := ident.Username
 	ctx := c.Request().Context()
 
 	machine := headerPtr(c, "X-Machine-Name")
@@ -71,7 +79,17 @@ func (h *Handler) storeAndRespond(c *echo.Context, hbs []model.HeartbeatPayload)
 		enriched[i] = hb
 	}
 
-	ids, err := h.DB.SaveHeartbeats(ctx, enriched)
+	// gaka-0oe.3: skip the expensive phase-3 rollup/gap maintenance for
+	// identities denied CapGenerateRollups when BOOM_FEATURE_ROLLUP_SKIP is on
+	// (e.g. an ingest-only service tier). Flag off => full caps => always the
+	// full path, so today's behavior is unchanged.
+	var ids []int64
+	var err error
+	if h.Cfg.FeatureRollupSkip && !ident.Can(auth.CapGenerateRollups) {
+		ids, err = h.DB.SaveHeartbeatsRaw(ctx, enriched)
+	} else {
+		ids, err = h.DB.SaveHeartbeats(ctx, enriched)
+	}
 	if err != nil {
 		h.Logger.Error("failed to store heartbeats", "err", err)
 		return apihelpers.RespondErr(c, apierr.Generic())

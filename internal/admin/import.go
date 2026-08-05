@@ -32,10 +32,16 @@ func (h *Handler) effectiveImportToken(bodyToken string) string {
 // If a job is already queued/running for this user, returns that job instead of
 // starting a second one (one active job per owner).
 func (h *Handler) ImportRequest(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	ident, aerr := apihelpers.Identify(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
+	// gaka-0oe.3: starting a Wakatime import is a tier-gated capability (the
+	// bulk historical pull is expensive). Flag off => all-caps => allowed.
+	if !ident.Can(auth.CapImport) {
+		return apihelpers.RespondErr(c, apierr.Forbidden("this account is not permitted to import"))
+	}
+	owner := ident.Username
 	var payload model.ImportRequestPayload
 	if err := c.Bind(&payload); err != nil {
 		return apihelpers.RespondErr(c, apierr.BadRequest("Invalid request body"))
@@ -108,7 +114,7 @@ func (h *Handler) ImportRequest(c *echo.Context) error {
 
 // ImportJobs: GET /import/jobs — list this user's jobs, newest first.
 func (h *Handler) ImportJobs(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -141,7 +147,7 @@ func (h *Handler) jobForOwner(c *echo.Context, owner string) (*db.Job, *apierr.E
 // returns the owner-checked job for :id. ImportJobWS cannot use this — it
 // authenticates via cookie — so it calls jobForOwner directly.
 func (h *Handler) ownedJob(c *echo.Context) (*db.Job, *apierr.Error) {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return nil, aerr
 	}
@@ -220,7 +226,7 @@ func (h *Handler) ImportConfig(c *echo.Context) error {
 // WakatimeRange: POST /import/wakatime-range — discover how far back the user's
 // wakatime.com data goes so the UI can auto-populate the import date range.
 func (h *Handler) WakatimeRange(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -254,7 +260,7 @@ func (h *Handler) WakatimeRange(c *echo.Context) error {
 func (h *Handler) ImportJobWS(c *echo.Context) error {
 	// An absent cookie is reported like an expired one here (the WS client
 	// can't distinguish them anyway).
-	owner, aerr := apihelpers.ResolveOwnerFromCookie(h.DB, h.Logger, c, apierr.ExpiredRefreshToken())
+	owner, aerr := apihelpers.IdentifyOwnerFromCookie(h.DB, h.Logger, c, apierr.ExpiredRefreshToken())
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}

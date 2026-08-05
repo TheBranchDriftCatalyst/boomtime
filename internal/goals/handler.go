@@ -1,6 +1,6 @@
 // handler.go — HTTP handlers for user-defined composite goals (gaka-wpb).
 //
-// All routes are owner-scoped via apihelpers.ResolveUser(h.DB, c). Cross-owner id
+// All routes are owner-scoped via apihelpers.IdentifyOwner(h.DB, c). Cross-owner id
 // access returns 404 — never 403 — so an attacker can't distinguish
 // "no such goal" from "not yours" (no oracle). Mirrors the same rule
 // as curation and dashboard_layout.
@@ -66,7 +66,7 @@ type toggleGoalRequest struct {
 
 // ListGoals: GET /api/v1/users/current/goals → {goals:[Goal]}.
 func (h *Handler) ListGoals(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -80,7 +80,7 @@ func (h *Handler) ListGoals(c *echo.Context) error {
 // GetGoal: GET /api/v1/users/current/goals/:id → {goal:Goal}.
 // Owner-scoped: cross-owner id returns 404 (no oracle).
 func (h *Handler) GetGoal(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -100,7 +100,7 @@ func (h *Handler) GetGoal(c *echo.Context) error {
 // spec is 400 with the error text so the author can fix it. Duplicate
 // (owner, name) is 409.
 func (h *Handler) CreateGoal(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -140,7 +140,7 @@ func (h *Handler) CreateGoal(c *echo.Context) error {
 // returns 404 (indistinguishable from "no such id"). Duplicate
 // (owner, name) on rename is 409.
 func (h *Handler) UpdateGoal(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -183,7 +183,7 @@ func (h *Handler) UpdateGoal(c *echo.Context) error {
 // Idempotent-in-effect for cross-owner or already-deleted ids: still
 // 404, no distinguisher, no oracle.
 func (h *Handler) DeleteGoal(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -202,7 +202,7 @@ func (h *Handler) DeleteGoal(c *echo.Context) error {
 // Body optional: omit to flip, {"enabled":bool} to set exactly.
 // Idempotent — an exact-set matching the current value returns 200.
 func (h *Handler) ToggleGoal(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -229,7 +229,7 @@ func (h *Handler) ToggleGoal(c *echo.Context) error {
 // PATCH, heartbeat ingest) sets last_evaluated_at NULL so the next
 // read always recomputes.
 func (h *Handler) GetGoalProgress(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -260,7 +260,7 @@ func (h *Handler) GetGoalProgress(c *echo.Context) error {
 // Disabled goals are skipped — the tile renderer treats a missing
 // entry as "unknown/no data".
 func (h *Handler) GetAllGoalProgress(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}

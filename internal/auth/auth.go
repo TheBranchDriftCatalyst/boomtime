@@ -192,6 +192,16 @@ func VerifyPassword(password string, storedHash, storedSalt []byte) bool {
 // with v1 params (and a v2 hash with v2 params). Cross-version verification
 // returns false — a v1 hash checked with v2 params does NOT authenticate.
 func VerifyPasswordWithVersion(password string, storedHash, storedSalt []byte, version int) bool {
+	// gaka-93f.19: explicit empty-hash reject. OIDC-provisioned users store an
+	// empty hashed_password (they authenticate via the IdP, never a local
+	// password). Such a row must never authenticate via /auth/login. This is
+	// belt-and-suspenders: the ConstantTimeCompare below already fails because
+	// argon2.IDKey always returns keyLen bytes vs a 0-byte stored hash, but an
+	// explicit guard hardens against any future keyLen/format change from
+	// silently making an empty hash verifiable.
+	if len(storedHash) == 0 {
+		return false
+	}
 	t, m, p := argonParamsFor(version)
 	computed := argon2.IDKey([]byte(password), storedSalt, t, m, p, keyLen)
 	return subtle.ConstantTimeCompare(computed, storedHash) == 1

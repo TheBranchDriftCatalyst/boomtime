@@ -248,7 +248,7 @@ func (h *Handler) AdminLabelImagesRegenerate(c *echo.Context) error {
 func (h *Handler) AdminLabelImagesWS(c *echo.Context) error {
 	// Cookie auth first — a bad cookie should never even trigger the
 	// upgrade handshake.
-	owner, aerr := apihelpers.ResolveOwnerFromCookie(h.DB, h.Logger, c, apierr.ExpiredRefreshToken())
+	owner, aerr := apihelpers.IdentifyOwnerFromCookie(h.DB, h.Logger, c, apierr.ExpiredRefreshToken())
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}

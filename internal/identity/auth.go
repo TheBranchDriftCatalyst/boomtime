@@ -105,6 +105,22 @@ func (h *Handler) Login(c *echo.Context) error {
 		return apihelpers.RespondErr(c, apierr.InvalidCredentials())
 	}
 
+	// gaka-93f.15: a disabled account fails closed on the password path
+	// UNCONDITIONALLY — the disable kill-switch must work regardless of
+	// BOOM_FEATURE_USER_MODEL (previously this was gated behind the flag, so a
+	// disabled user could still log in under the default flag-off posture).
+	// One extra read on the (infrequent) login path only; the hot request path
+	// stays query-free because disabling also revokes existing sessions
+	// (db.SetUserDisabled). Return the same InvalidCredentials so we don't leak
+	// that the account exists-but-disabled.
+	full, ferr := h.DB.GetUserFullByName(ctx, creds.Username)
+	if ferr != nil {
+		return apihelpers.InternalErr(h.Logger, c, "user lookup failed", ferr)
+	}
+	if full == nil || full.DisabledAt != nil {
+		return apihelpers.RespondErr(c, apierr.InvalidCredentials())
+	}
+
 	// gaka-awh.6 (Bravo MEDIUM): transparent rehash-on-login. If the row is
 	// still at a legacy argon generation (< current), we just verified the
 	// plaintext against the stored legacy hash — the ONLY moment we're
@@ -179,7 +195,7 @@ func (h *Handler) Register(c *echo.Context) error {
 
 // RefreshToken: POST /auth/refresh_token (reads refresh_token cookie).
 func (h *Handler) RefreshToken(c *echo.Context) error {
-	owner, aerr := apihelpers.ResolveOwnerFromCookie(h.DB, h.Logger, c, apierr.MissingRefreshTokenCookie())
+	owner, aerr := apihelpers.IdentifyOwnerFromCookie(h.DB, h.Logger, c, apierr.MissingRefreshTokenCookie())
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -194,6 +210,25 @@ func (h *Handler) RefreshToken(c *echo.Context) error {
 
 // Logout: POST /auth/logout.
 func (h *Handler) Logout(c *echo.Context) error {
+	// gaka-93f.13: OIDC-aware logout. Under provider=oidc the web session is a
+	// server-side oidc_sessions row keyed by the opaque `refresh_token` cookie
+	// (no local bearer exists), so the local DeleteTokens path below can never
+	// revoke it — Logout was a silent no-op. Delete the OIDC session so the
+	// cookie can't be replayed for the rest of the id_token window, and clear
+	// the client cookie. The local path stays byte-identical behind this branch
+	// (CurrentResolver() is "local" by default).
+	if auth.CurrentResolver().ProviderName() == "oidc" {
+		refresh, ok := auth.ParseRefreshCookie(c.Request().Header.Get("Cookie"))
+		if !ok {
+			return apihelpers.RespondErr(c, apierr.MissingRefreshTokenCookie())
+		}
+		if err := h.DB.DeleteOIDCSession(c.Request().Context(), refresh); err != nil {
+			return apihelpers.InternalErr(h.Logger, c, "oidc session deletion failed", err)
+		}
+		h.clearRefreshCookie(c)
+		return apihelpers.NoContent(c)
+	}
+
 	tkn, aerr := apihelpers.TokenFromHeader(c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
@@ -220,7 +255,7 @@ func (h *Handler) Logout(c *echo.Context) error {
 // human-readable label for the minted token. Empty/missing name is fine —
 // the tokens list will just show an em-dash until renamed.
 func (h *Handler) CreateAPIToken(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -243,7 +278,7 @@ func (h *Handler) CreateAPIToken(c *echo.Context) error {
 
 // ListAPITokens: GET /auth/tokens.
 func (h *Handler) ListAPITokens(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -258,7 +293,7 @@ func (h *Handler) ListAPITokens(c *echo.Context) error {
 // owner; the response is the same whether or not a row matched (no oracle for
 // probing other users' token values).
 func (h *Handler) DeleteToken(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -271,7 +306,7 @@ func (h *Handler) DeleteToken(c *echo.Context) error {
 
 // UpdateToken: POST /auth/token (rename).
 func (h *Handler) UpdateToken(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -293,7 +328,7 @@ func (h *Handler) UpdateToken(c *echo.Context) error {
 // (post-3-level-resolution). Wakatime editor plugins ignore unknown fields,
 // so this stays wire-safe with wakatime-compat callers.
 func (h *Handler) CurrentUser(c *echo.Context) error {
-	owner, aerr := apihelpers.ResolveOwnerFromCookie(h.DB, h.Logger, c, apierr.MissingRefreshTokenCookie())
+	owner, aerr := apihelpers.IdentifyOwnerFromCookie(h.DB, h.Logger, c, apierr.MissingRefreshTokenCookie())
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}

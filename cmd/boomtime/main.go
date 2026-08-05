@@ -57,7 +57,7 @@ func main() {
 		Short:   "Wakatime-compatible coding-time tracker",
 		Version: version,
 	}
-	root.AddCommand(runCmd(), runMigrationsCmd(), createUserCmd(), createTokenCmd(), rotateEncryptionKeyCmd(), labelImagesCmd(), backfillCmd())
+	root.AddCommand(runCmd(), runMigrationsCmd(), createUserCmd(), createTokenCmd(), userCmd(), rotateEncryptionKeyCmd(), labelImagesCmd(), backfillCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -79,9 +79,45 @@ func runCmd() *cobra.Command {
 			// stats.Grade() picks up the operator's calibration without threading
 			// cfg through every renderer.
 			stats.DefaultGradeConfig = cfg.Grade
+			// gaka-0oe: publish the user-model switch to the process-global the
+			// Identify seam reads (avoids threading the flag through every
+			// handler's config). Default-off preserves today's behavior.
+			auth.SetUserModelEnabled(cfg.FeatureUserModel)
 			logger, logHub := logging.Setup(cfg)
+
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()
+
+			// gaka-0oe.11: when BOOM_AUTH_PROVIDER=oidc, run OIDC discovery
+			// against the issuer and install the OIDCResolver as the active
+			// provider (apihelpers.Identify* delegates to it; the /auth/*/oidc
+			// handlers type-assert it). Default "local" skips this entirely —
+			// no boot-time network dependency, behavior byte-identical.
+			// Construct the OIDC resolver whenever OIDC is CONFIGURED (issuer
+			// set), so the account-LINK flow (gaka-b5n.4) works even under
+			// provider=local. Only make it the ACTIVE login provider when
+			// provider=oidc. Discovery failure is fatal only when oidc is
+			// active; under local it's a warn (linking just unavailable).
+			if cfg.OIDCIssuer != "" {
+				oidcResolver, oerr := auth.NewOIDCResolver(ctx, cfg.OIDCIssuer, cfg.OIDCAuthorizeURL, cfg.OIDCClientID, cfg.OIDCClientSecret,
+					cfg.OIDCRedirectURL, cfg.OIDCGroupToRole, cfg.OIDCAutoprovision)
+				if oerr != nil {
+					if cfg.OIDCEnabled() {
+						logger.Error("BOOM_AUTH_PROVIDER=oidc but OIDC discovery failed", "err", oerr, "issuer", cfg.OIDCIssuer)
+						return fmt.Errorf("oidc init: %w", oerr)
+					}
+					logger.Warn("OIDC configured but discovery failed; account-linking unavailable", "err", oerr, "issuer", cfg.OIDCIssuer)
+				} else {
+					auth.SetOIDCResolver(oidcResolver)
+					if cfg.OIDCEnabled() {
+						auth.SetResolver(oidcResolver)
+						logger.Info("OIDC auth provider active", "issuer", cfg.OIDCIssuer,
+							"autoprovision", cfg.OIDCAutoprovision)
+					} else {
+						logger.Info("OIDC configured for account-linking (provider=local)", "issuer", cfg.OIDCIssuer)
+					}
+				}
+			}
 
 			if err := db.MigrateURL(ctx, cfg.DatabaseURL()); err != nil {
 				return fmt.Errorf("migrations: %w", err)
@@ -326,6 +362,8 @@ func createTokenCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&username, "username", "u", "", "The user the token will be created for")
 	_ = cmd.MarkFlagRequired("username")
+	// Smart completion: TAB the -u flag to pick an existing user from the DB.
+	_ = cmd.RegisterFlagCompletionFunc("username", completeUsernames)
 	return cmd
 }
 

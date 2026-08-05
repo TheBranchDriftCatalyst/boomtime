@@ -7,6 +7,7 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 	"github.com/labstack/echo/v5"
 )
@@ -54,10 +55,15 @@ func (h *Handler) HealthSamplesBulk(c *echo.Context) error {
 }
 
 func (h *Handler) storeSamples(c *echo.Context, ss []model.HealthSamplePayload) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	ident, aerr := apihelpers.Identify(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
+	// gaka-0oe.3: health-sample ingest gated by the ingest capability.
+	if !ident.Can(auth.CapIngestHeartbeats) {
+		return apihelpers.RespondErr(c, apierr.Forbidden("this account is not permitted to ingest data"))
+	}
+	owner := ident.Username
 	ctx := c.Request().Context()
 
 	n, err := h.DB.SaveHealthSamples(ctx, owner, ss)

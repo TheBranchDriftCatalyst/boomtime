@@ -78,7 +78,7 @@ type awardLogReq struct {
 
 // AwardsLog: POST /api/v1/users/current/awards/log
 func (h *Handler) AwardsLog(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -128,7 +128,7 @@ func (h *Handler) AwardsLog(c *echo.Context) error {
 
 // AwardsStreaks: GET /api/v1/users/current/awards/streaks
 func (h *Handler) AwardsStreaks(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -153,7 +153,7 @@ func (h *Handler) PublicAwardsStreaks(c *echo.Context) error {
 // — inspector endpoint that returns the raw ledger rows (with label
 // name + kind joined in) for debug/admin viewing on the AdminTab.
 func (h *Handler) AwardsLedger(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}

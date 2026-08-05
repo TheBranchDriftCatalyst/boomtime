@@ -49,7 +49,7 @@ type awardsBackfillResp struct {
 // Body: {days: N}. Server walks N days back to today, computing each
 // day's payload snapshot + writing ledger rows at that day.
 func (h *Handler) AwardsBackfill(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}

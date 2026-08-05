@@ -58,6 +58,9 @@ import type {
   TimelinePayload,
   TimelineRange,
   VersionResponse,
+  PublicConfig,
+  AdminUsersPayload,
+  IdentitiesPayload,
   WidgetLinkPayload,
   WidgetLinksPayload,
   WidgetScope,
@@ -238,6 +241,12 @@ export const api = {
       body: creds,
       auth: false,
     }),
+
+  // gaka-93f.1.1: public client-config advertisement. Unauthenticated; read
+  // once at boot so the FE can branch the signup CTA (local vs Authentik),
+  // show/hide billing, and honor the beta-onboarding kill switch.
+  publicConfig: () =>
+    request<PublicConfig>("/api/v1/config/public", { auth: false }),
 
   refreshToken: () =>
     request<AuthResponse>("/auth/refresh_token", {
@@ -902,6 +911,16 @@ export const api = {
   // + seed.sql dump for the admin sheet editor.
   getLabelsCatalog: () =>
     request<LabelsCatalogPayload>("/api/v1/labels/catalog", { auth: false }),
+  // gaka-93f.6: admin caps dashboard — users + roles/tiers + effective caps.
+  getAdminUsers: () => request<AdminUsersPayload>("/api/v1/admin/users"),
+
+  // gaka-b5n.4: linked external identities (OIDC account linking).
+  getIdentities: () => request<IdentitiesPayload>("/api/v1/users/current/identities"),
+  unlinkIdentity: (provider: string) =>
+    request<void>(`/api/v1/users/current/identities/${encodeURIComponent(provider)}`, {
+      method: "DELETE",
+    }),
+
   adminCreateLabel: (body: Partial<LabelCatalogRow> & { id: string; kind: string; label: string; condition: unknown }) =>
     request<LabelCatalogRow>("/api/v1/admin/labels", { method: "POST", body }),
   adminUpdateLabel: (id: string, body: Partial<LabelCatalogRow> & { condition?: unknown }) =>

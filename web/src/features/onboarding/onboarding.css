@@ -1,0 +1,57 @@
+/* Floating demo-widget backdrop for the onboarding page (gaka-93f.1.2).
+ *
+ * Two-layer motion so the static skew/scale (outer, inline transform) is kept
+ * even when the bob animation is disabled: the inner .ob-bob only translates.
+ * Everything is decorative + pointer-events-none; reduced-motion kills the bob. */
+
+@keyframes ob-bob {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -12px, 0);
+  }
+}
+
+@keyframes ob-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, 10px, 0);
+  }
+}
+
+.ob-bob {
+  animation: ob-bob var(--ob-dur, 9s) ease-in-out var(--ob-delay, 0s) infinite;
+  will-change: transform;
+}
+.ob-bob--alt {
+  animation-name: ob-drift;
+}
+
+/* Slow reveal so the widgets fade/scale in on first paint rather than popping. */
+@keyframes ob-reveal {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: var(--ob-opacity, 0.6);
+  }
+}
+.ob-widget {
+  opacity: var(--ob-opacity, 0.6);
+  animation: ob-reveal 900ms ease-out both;
+  animation-delay: var(--ob-reveal-delay, 0s);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ob-bob {
+    animation: none;
+  }
+  .ob-widget {
+    animation: none;
+  }
+}

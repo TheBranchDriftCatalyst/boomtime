@@ -4,6 +4,7 @@ go 1.25.7
 
 require (
 	github.com/coder/websocket v1.8.15
+	github.com/coreos/go-oidc/v3 v3.20.0
 	github.com/getkin/kin-openapi v0.142.0
 	github.com/go-git/go-git/v5 v5.13.1
 	github.com/google/uuid v1.6.0
@@ -16,6 +17,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/swaggo/files/v2 v2.0.2
 	golang.org/x/crypto v0.54.0
+	golang.org/x/oauth2 v0.36.0
 	golang.org/x/term v0.45.0
 	golang.org/x/time v0.14.0
 )
@@ -30,6 +32,7 @@ require (
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.6.1 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-openapi/jsonpointer v0.22.5 // indirect
 	github.com/go-openapi/swag/jsonname v0.25.5 // indirect

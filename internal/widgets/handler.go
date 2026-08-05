@@ -59,7 +59,7 @@ const widgetTimeLimit int64 = 15
 // WidgetLink: GET /api/v1/users/current/widgets/link?scopeType=&scopeRef= (auth).
 // Upserts the (owner, scope) link after validating the requester owns the scope.
 func (h *Handler) WidgetLink(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -117,7 +117,7 @@ func (h *Handler) WidgetLink(c *echo.Context) error {
 
 // WidgetLinkList: GET /api/v1/users/current/widgets/links (auth) — Settings UI.
 func (h *Handler) WidgetLinkList(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -133,7 +133,7 @@ func (h *Handler) WidgetLinkList(c *echo.Context) error {
 // immediately 404s (existing embeds break; the point is exactly to break
 // them). Owner-scoped: cross-owner ids 404.
 func (h *Handler) WidgetLinkRoll(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}

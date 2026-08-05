@@ -36,7 +36,7 @@ import (
 
 // OwnAwards: GET /api/v1/users/current/awards
 func (h *Handler) OwnAwards(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}

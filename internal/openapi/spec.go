@@ -34,11 +34,14 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3gen"
+	"github.com/labstack/echo/v5"
 )
 
 // Version of the OpenAPI document itself (independent of the app version).
@@ -74,36 +77,74 @@ const (
 )
 
 var (
-	buildOnce sync.Once
-	buildErr  error
-	specJSON  []byte
+	specMu    sync.Mutex
 	specDoc   *openapi3.T
+	specJSON  []byte
+	specErr   error
+	specBuilt bool
+	// specFor records which router produced the cached doc. When it differs
+	// from routerEcho the cache is stale and Spec rebuilds. Nil is a valid
+	// value (build without the auto-derive pass).
+	specFor *echo.Echo
+	// routerEcho is the echo instance whose registered routes feed the
+	// auto-derive post-pass (see build). Set via setRouterEcho from Register;
+	// nil until a router registers, in which case Spec emits the hand-authored
+	// operations only.
+	routerEcho *echo.Echo
 )
 
-// Spec builds (once) and returns the OpenAPI document + its JSON encoding.
-// The document is fully self-contained: no external $refs, no CDN URLs. It is
-// safe to call Spec concurrently.
+// Spec builds and returns the OpenAPI document + its JSON encoding. The
+// document is fully self-contained: no external $refs, no CDN URLs. It is safe
+// to call Spec concurrently.
+//
+// The build is cached and single-flighted per registered router: in production
+// Register wires exactly one echo instance at startup, so Spec builds once and
+// every subsequent call returns the cached bytes. When the registered router
+// changes (only the tests do this — each drift/handler test stands up its own
+// echo) the next Spec call rebuilds so the emitted paths track the live route
+// table.
 func Spec() (*openapi3.T, []byte, error) {
-	buildOnce.Do(func() {
-		doc, err := build()
-		if err != nil {
-			buildErr = err
-			return
+	specMu.Lock()
+	defer specMu.Unlock()
+	if specBuilt && specFor == routerEcho {
+		return specDoc, specJSON, specErr
+	}
+	doc, err := build(routerEcho)
+	switch {
+	case err != nil:
+		specDoc, specJSON, specErr = nil, nil, err
+	default:
+		b, mErr := json.Marshal(doc)
+		if mErr != nil {
+			specDoc, specJSON, specErr = nil, nil, mErr
+		} else {
+			specDoc, specJSON, specErr = doc, b, nil
 		}
-		specDoc = doc
-		b, err := json.Marshal(doc)
-		if err != nil {
-			buildErr = err
-			return
-		}
-		specJSON = b
-	})
-	return specDoc, specJSON, buildErr
+	}
+	specBuilt, specFor = true, routerEcho
+	return specDoc, specJSON, specErr
+}
+
+// setRouterEcho records the echo instance whose registered routes feed the
+// auto-derive pass in build, and invalidates any cached spec so the next Spec
+// call reflects the new router. Called from Register.
+func setRouterEcho(e *echo.Echo) {
+	specMu.Lock()
+	routerEcho = e
+	specBuilt = false
+	specMu.Unlock()
 }
 
 // build assembles the openapi3.T. Everything is inline here (paths + tags +
 // components) so a single sweep captures the shape of the whole API.
-func build() (*openapi3.T, error) {
+//
+// After the hand-authored operations, an auto-derive post-pass (option A,
+// gaka-lfc) walks e's registered routes and stubs any (method, path) that
+// isn't explicitly documented — so a new route satisfies the drift guard
+// without a hand-written doc.AddOperation entry. When e is nil (Spec called
+// before any router registers, e.g. schema-only unit tests) the pass is
+// skipped and only the hand-authored operations are emitted.
+func build(e *echo.Echo) (*openapi3.T, error) {
 	doc := &openapi3.T{
 		OpenAPI: "3.0.3",
 		Info: &openapi3.Info{
@@ -1218,6 +1259,13 @@ func build() (*openapi3.T, error) {
 	// Git-history backfill CLI admin plane. Config CRUD + per-job lifecycle
 	// (jobs are the durable side of the git-history walk).
 
+	doc.AddOperation("/api/v1/admin/users", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagAdmin}, Summary: "List users with roles + effective capabilities",
+			Description: "Admin caps dashboard (gaka-93f.6): every user's role/tier + effective capabilities + disabled status, plus the role→capabilities legend. Admin-gated."}
+		setStatus(op, http.StatusOK, rInline("{capabilities, roles, users}.", mapObject()))
+		stdErrors(op, "401", "403", "500")
+		return op
+	}())
 	doc.AddOperation("/api/v1/admin/backfill/config", "GET", func() *openapi3.Operation {
 		op := &openapi3.Operation{Tags: []string{tagBackfill, tagAdmin}, Summary: "Get backfill config",
 			Description: "Returns the caller's backfill_config row (idle windows, per-commit heartbeat mint rate, etc.). Admin-gated."}
@@ -1887,6 +1935,14 @@ func build() (*openapi3.T, error) {
 		setStatus(op, http.StatusOK, rBlob("Changelog markdown.", "text/markdown"))
 		return op
 	}())
+	doc.AddOperation("/api/v1/config/public", "GET", func() *openapi3.Operation {
+		op := &openapi3.Operation{Tags: []string{tagMeta}, Summary: "Public client config",
+			Description: "Non-sensitive flags the FE reads at boot to pick the auth + onboarding flow: " +
+				"registration_enabled, auth_provider (local|oidc), oidc_enabled, billing_enabled, beta_flags.",
+			Security: &public}
+		setStatus(op, http.StatusOK, rInline("Client config advertisement.", mapObject()))
+		return op
+	}())
 	doc.AddOperation("/api/openapi.json", "GET", func() *openapi3.Operation {
 		op := &openapi3.Operation{Tags: []string{tagDocs}, Summary: "This OpenAPI 3 document",
 			Description: "Self-describing; no external $refs.",
@@ -1902,11 +1958,108 @@ func build() (*openapi3.T, error) {
 		return op
 	}())
 
+	// ==== AUTO-DERIVED STUBS (gaka-lfc, option A) ============================
+	//
+	// Every registered route above is hand-authored. This pass backfills a
+	// MINIMAL operation for any route the router registers that isn't already
+	// documented, so a brand-new handler passes the gaka-lfc drift guard with
+	// ZERO edits to this file. Explicit entries always win — we never overwrite
+	// an operation that already exists. Add an explicit doc.AddOperation entry
+	// only when you want documented request/response body schemas; the stub is
+	// intentionally schema-free (a generic 200 + the standard error set).
+	//
+	// The path scoping mirrors internal/server/openapi_drift_test.go EXACTLY:
+	// skip the SPA catch-all ("/*") and fold the Swagger UI static tree
+	// ("/api/docs/*") back onto its index path, so this pass covers precisely
+	// the (method, path) set the drift guard checks.
+	if e != nil {
+		for _, rt := range e.Router().Routes() {
+			p := echoPathToOpenAPI(rt.Path)
+			if p == "/*" {
+				continue
+			}
+			if p == "/api/docs/*" {
+				p = "/api/docs"
+			}
+			method := rt.Method
+			if item := doc.Paths.Value(p); item != nil && item.GetOperation(method) != nil {
+				continue // hand-authored entry wins
+			}
+			op := &openapi3.Operation{
+				Tags:    []string{inferAutoTag(p)},
+				Summary: strings.ToUpper(method[:1]) + strings.ToLower(method[1:]) + " " + p,
+				Description: "Auto-derived stub (gaka-lfc option A): this route is registered but " +
+					"has no hand-written spec entry, so request/response bodies are undocumented. " +
+					"Add an explicit doc.AddOperation entry in internal/openapi/spec.go to enrich it.",
+			}
+			for _, name := range openAPIPathParams(p) {
+				op.Parameters = append(op.Parameters, pathParamStr(name, "Path parameter."))
+			}
+			setStatus(op, http.StatusOK, rInline("OK.", mapObject()))
+			stdErrors(op, "400", "401", "403", "404", "500")
+			doc.AddOperation(p, method, op)
+		}
+	}
+
 	// Validate: catch any construction errors before we cache the JSON.
 	if err := doc.Validate(context.Background()); err != nil {
 		return nil, err
 	}
 	return doc, nil
+}
+
+// echoPathToOpenAPI converts an echo route path to the OpenAPI path template:
+// `:param` → `{param}`. Mirrors internal/server/openapi_drift_test.go's
+// echoPathToOpenAPI so the auto-derive pass and the drift guard agree on
+// exactly which paths they're comparing.
+var echoParamRe = regexp.MustCompile(`:([a-zA-Z_][a-zA-Z0-9_]*)`)
+
+func echoPathToOpenAPI(p string) string {
+	return echoParamRe.ReplaceAllStringFunc(p, func(s string) string {
+		return "{" + strings.TrimPrefix(s, ":") + "}"
+	})
+}
+
+// openAPIPathParams extracts the `{name}` templated segments from an OpenAPI
+// path so the auto-derive pass can emit a required path parameter per segment
+// (an operation with an undeclared path parameter fails doc.Validate).
+var bracketParamRe = regexp.MustCompile(`\{([^}]+)\}`)
+
+func openAPIPathParams(p string) []string {
+	matches := bracketParamRe.FindAllStringSubmatch(p, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(matches))
+	for _, m := range matches {
+		out = append(out, m[1])
+	}
+	return out
+}
+
+// inferAutoTag picks a tag for an auto-derived stub from its path: anything
+// under an /admin/ segment is grouped under the Admin tag (matching how the
+// hand-authored admin operations are tagged); otherwise the first non-template
+// path segment (after stripping the /api/v1|/api prefix) is Title-cased into a
+// generic tag. A path with no usable segment falls back to the Meta tag.
+func inferAutoTag(p string) string {
+	if strings.Contains(p, "/admin/") {
+		return tagAdmin
+	}
+	seg := p
+	for _, prefix := range []string{"/api/v1/", "/api/", "/"} {
+		if strings.HasPrefix(seg, prefix) {
+			seg = seg[len(prefix):]
+			break
+		}
+	}
+	if i := strings.IndexByte(seg, '/'); i >= 0 {
+		seg = seg[:i]
+	}
+	if seg == "" || strings.HasPrefix(seg, "{") {
+		return tagMeta
+	}
+	return strings.ToUpper(seg[:1]) + seg[1:]
 }
 
 // strPtr converts a literal string to a *string (required by openapi3 for

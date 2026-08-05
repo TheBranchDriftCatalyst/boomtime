@@ -19,6 +19,16 @@ patchesStrategicMerge:
   - label-images-config.yaml
   - llm-config.yaml
   - tz-config.yaml
+  # ── PROD OIDC (Authentik) wiring — INERT until the operator activates it ─────
+  # Uncomment the two entries below ONLY after the Authentik side is ready:
+  # provider/app/groups created, client_secret in 1Password field
+  # `oidc-client-secret`, and BOOM_OIDC_ISSUER / BOOM_OIDC_CLIENT_ID confirmed in
+  # oidc-config.yaml. Full procedure: OIDC-PROD-WIRING.md (step 4). Until then
+  # they stay commented so ArgoCD's next sync makes zero change.
+  #   - oidc-config.yaml          # non-secret BOOM_OIDC_* keys on boomtime-config
+  #   - oidc-external-secret.yaml # BOOM_OIDC_CLIENT_SECRET from 1Password
+  # NOTE: authentik-blueprint-boomtime.yaml is an Authentik blueprint, NOT a k8s
+  # manifest — it is intentionally never added here (applied to Authentik itself).
 
 # The Argo Application tracks the `main` branch. This kustomize `newTag`
 # is a starting hint — the live authority is the ImageUpdater CRD at

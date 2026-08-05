@@ -129,7 +129,7 @@ func (h *Handler) SetBackfillJobQueue(r *backfilljobs.Registry) {
 // The 403 path deliberately does NOT distinguish "unknown admin config"
 // from "not on the list" — both look like a plain 403 to the client.
 func (h *Handler) requireAdmin(c *echo.Context) (string, *apierr.Error) {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return "", aerr
 	}

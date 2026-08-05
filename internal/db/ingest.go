@@ -31,6 +31,25 @@ type execer interface {
 // Insert phases use pgx.Batch (pipelined) so N heartbeats cost one round trip
 // instead of N. Returns the assigned heartbeat ids in input order.
 func (d *DB) SaveHeartbeats(ctx context.Context, hbs []model.HeartbeatPayload) ([]int64, error) {
+	return d.saveHeartbeats(ctx, hbs, true /* maintain rollups */)
+}
+
+// SaveHeartbeatsRaw ingests heartbeats WITHOUT phase 3 (recomputeGaps +
+// refreshRollup) — the cheap path for identities denied CapGenerateRollups
+// (gaka-0oe.3). Phases 1+2 (project upsert + heartbeat insert) are identical to
+// SaveHeartbeats, so time-window queries still see the raw rows; they just fall
+// back to on-the-fly aggregation instead of hb_rollup_daily. Used by the ingest
+// handler when BOOM_FEATURE_ROLLUP_SKIP is on and the caller can't generate
+// rollups (e.g. a service/ingest-only tier). Gap/rollup can be backfilled later
+// via a rollup-refresh if the user is upgraded.
+func (d *DB) SaveHeartbeatsRaw(ctx context.Context, hbs []model.HeartbeatPayload) ([]int64, error) {
+	return d.saveHeartbeats(ctx, hbs, false /* skip rollups */)
+}
+
+// saveHeartbeats is the shared implementation. rollup=true runs phase 3;
+// rollup=false stops after the raw inserts. Keeping ONE body means the two
+// public variants can never drift on the phase-1/2 insert logic.
+func (d *DB) saveHeartbeats(ctx context.Context, hbs []model.HeartbeatPayload, rollup bool) ([]int64, error) {
 	if len(hbs) == 0 {
 		return []int64{}, nil
 	}
@@ -61,23 +80,26 @@ func (d *DB) SaveHeartbeats(ctx context.Context, hbs []model.HeartbeatPayload) (
 	// starting from the earliest inserted timestamp (so the next existing beat's
 	// gap is also corrected on out-of-order inserts). Runs inside the same tx —
 	// a failure here rolls back the raw inserts too, so derived data can never
-	// silently disagree with what was ingested.
-	minBySender := map[string]time.Time{}
-	for _, hb := range hbs {
-		if hb.Sender == nil {
-			continue
+	// silently disagree with what was ingested. SKIPPED for SaveHeartbeatsRaw
+	// (rollup=false) — the cheap ingest path for rollup-denied tiers.
+	if rollup {
+		minBySender := map[string]time.Time{}
+		for _, hb := range hbs {
+			if hb.Sender == nil {
+				continue
+			}
+			t := unixToTime(hb.TimeSent)
+			if cur, ok := minBySender[*hb.Sender]; !ok || t.Before(cur) {
+				minBySender[*hb.Sender] = t
+			}
 		}
-		t := unixToTime(hb.TimeSent)
-		if cur, ok := minBySender[*hb.Sender]; !ok || t.Before(cur) {
-			minBySender[*hb.Sender] = t
-		}
-	}
-	for sender, since := range minBySender {
-		if err := recomputeGaps(ctx, tx, sender, since); err != nil {
-			return nil, err
-		}
-		if err := refreshRollup(ctx, tx, sender, since); err != nil {
-			return nil, err
+		for sender, since := range minBySender {
+			if err := recomputeGaps(ctx, tx, sender, since); err != nil {
+				return nil, err
+			}
+			if err := refreshRollup(ctx, tx, sender, since); err != nil {
+				return nil, err
+			}
 		}
 	}
 

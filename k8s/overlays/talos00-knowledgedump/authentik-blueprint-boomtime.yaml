@@ -1,0 +1,37 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# MOVED — the Authentik-side blueprint is NOT deployed from this repo.
+#
+# Your Authentik lives in the talos-homelab repo (Flux HelmRelease, namespace
+# `authentik`) and delivers blueprints as ConfigMaps mounted into
+# /blueprints/custom/. The boomtime OIDC blueprint (groups + OAuth2 provider +
+# application, client_secret via !Env from 1Password) now lives THERE, modeled
+# on the existing litellm blueprint:
+#
+#   talos-homelab/infrastructure/base/authentik/boomtime-blueprint.yaml
+#   talos-homelab/infrastructure/base/authentik/externalsecret.yaml   (authentik-boomtime-oidc ES)
+#   talos-homelab/infrastructure/base/authentik/helmrelease.yaml      (volume + !Env wiring)
+#   talos-homelab/infrastructure/base/authentik/kustomization.yaml    (resource entry)
+#
+# CONFIRMED facts (live Authentik export, 2026-08-04):
+#   - Portal host:  auth.knowledgedump.space
+#   - Issuer:       https://auth.knowledgedump.space/application/o/boomtime/  (per_provider)
+#   - Authentik is gitops/blueprint-managed via Flux (not click-ops).
+#   - client_secret is NOT generated-then-copied; it's sourced from 1Password
+#     (item `boomtime`, field `oidc-client-secret`) on BOTH ends via the !Env
+#     tag — provision that 1P field BEFORE the blueprint reconciles.
+#
+# This file is intentionally NOT a Kubernetes manifest and is NOT referenced by
+# kustomization.yaml. It remains only as a breadcrumb. The boomtime-SIDE OIDC
+# config still lives in this overlay: oidc-config.yaml (non-secret env) +
+# oidc-external-secret.yaml (BOOM_OIDC_CLIENT_SECRET from the same 1Password
+# property). See OIDC-PROD-WIRING.md.
+#
+# PLANNED — bring the blueprint HERE (gaka-93f.21):
+# The blueprint currently lives in talos-homelab only because Authentik's
+# file-mount ingestion needs a helmrelease volumeMount. gaka-93f.21 tracks
+# relocating it into THIS repo, delivered by an ArgoCD-synced apply-Job that
+# POSTs it to Authentik's API (POST /api/v3/managed/blueprints/), so boomtime
+# owns its full Authentik wiring with zero infra-repo edits. When that lands,
+# this file becomes the real blueprint + Job (not just a pointer), and the
+# talos-homelab file-mount is reverted.
+# ─────────────────────────────────────────────────────────────────────────────

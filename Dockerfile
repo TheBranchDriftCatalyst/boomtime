@@ -46,8 +46,17 @@ LABEL org.opencontainers.image.title="boomtime" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.source="https://github.com/TheBranchDriftCatalyst/boomtime" \
       org.opencontainers.image.licenses="Unlicense"
-RUN apk add --no-cache ca-certificates tzdata && adduser -D -u 10001 boomtime
+RUN apk add --no-cache ca-certificates tzdata bash bash-completion && adduser -D -u 10001 boomtime
 COPY --from=server /out/boomtime /usr/local/bin/boomtime
+# Bake shell completions into the image at build time (gaka-0oe.10). Generation
+# is offline (no DB) and runs in THIS stage so the binary executes on the target
+# platform — generating in the builder would break cross-arch (buildx) images.
+# Static command/role completion works out of the box; dynamic entity
+# completion (usernames from the DB) connects at runtime when you TAB.
+RUN mkdir -p /usr/share/bash-completion/completions /usr/share/zsh/site-functions /usr/share/fish/vendor_completions.d \
+    && boomtime completion bash > /usr/share/bash-completion/completions/boomtime \
+    && boomtime completion zsh  > /usr/share/zsh/site-functions/_boomtime \
+    && boomtime completion fish > /usr/share/fish/vendor_completions.d/boomtime.fish
 USER boomtime
 ENV BOOM_PORT=8080
 EXPOSE 8080

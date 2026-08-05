@@ -12,3 +12,15 @@ spec:
         - name: boomtime
           image: boomtime:dev
           imagePullPolicy: Never
+          # Local dev runs `air`, which compiles the WHOLE app in-container on
+          # every change. The Go compiler is memory-hungry (~1–2 GB for a cold
+          # build); the base 512Mi limit OOM-kills the build (exit 137) →
+          # CrashLoopBackOff. Grant build-time headroom for the dev overlay
+          # only — prod runs a pre-built static binary and keeps the tight base.
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi

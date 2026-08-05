@@ -1,5 +1,12 @@
-import { lazy, Suspense } from "react";
-import { Navigate, Outlet, Route, Routes } from "react-router";
+import { lazy, Suspense, useEffect } from "react";
+import {
+  Navigate,
+  Outlet,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from "react-router";
 import { AppShell } from "@/layout/AppShell";
 import { ProtectedRoute } from "@/app/ProtectedRoute";
 import { AdminRoute } from "@/app/AdminRoute";
@@ -12,6 +19,8 @@ import { AuthProvider } from "@/features/auth/useAuth";
 // costs a network round-trip on the critical path.
 import { Login } from "@/features/auth/Login";
 import { Register } from "@/features/auth/Register";
+import { Onboarding } from "@/features/onboarding/Onboarding";
+import { useBetaRegistration } from "@/features/onboarding/betaRegistration";
 
 // gaka-4hv: split each authed feature into its own chunk so the initial JS
 // download is the shell + auth + shared vendor libs, not every dashboard viz
@@ -60,6 +69,9 @@ const BackfillTab = lazy(() =>
     default: m.BackfillTab,
   })),
 );
+const UsersTab = lazy(() =>
+  import("@/features/admin/UsersTab").then((m) => ({ default: m.UsersTab })),
+);
 const Logs = lazy(() =>
   import("@/features/logs/Logs").then((m) => ({ default: m.Logs })),
 );
@@ -105,10 +117,31 @@ function PageFallback() {
 // router context. `AppRoutes` is the leaf that renders the classic
 // nested <Routes> tree; lazy-loaded by the root config so future
 // per-route lazy-loading remains straightforward.
+// BetaOnboardingGate (gaka-93f.1.2): the single global inspector for the
+// ?enable_beta_user_registration=true switch. Mounted in RootLayout — the one
+// place that sees EVERY path, logged-in or not — it captures the URL flag
+// (via useBetaRegistration) and, while the preview is active, redirects to
+// /onboarding from anywhere so the new flow can be walked without logging out.
+// Renders nothing; it only drives navigation.
+function BetaOnboardingGate() {
+  const { active } = useBetaRegistration();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (active && !location.pathname.startsWith("/onboarding")) {
+      navigate("/onboarding", { replace: true });
+    }
+  }, [active, location.pathname, navigate]);
+
+  return null;
+}
+
 export function RootLayout() {
   return (
     <AuthProvider>
       <AnalyticsTracker />
+      <BetaOnboardingGate />
       <Outlet />
     </AuthProvider>
   );
@@ -120,6 +153,10 @@ export function AppRoutes() {
       <Route path="/" element={<RootRedirect />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      {/* Beta onboarding preview (gaka-93f.1.2). Reached via the
+          BetaOnboardingGate when ?enable_beta_user_registration=true is set;
+          renders the welcome -> demo -> signup flow. */}
+      <Route path="/onboarding" element={<Onboarding />} />
       {/* Public profile — anonymous for visitors, editable for owners
           (gaka-ie3). EditableProfilePage handles the owner-check + mode
           toggle; non-owners get the read-only PublicDashboard render. */}
@@ -211,6 +248,14 @@ export function AppRoutes() {
           }
         >
           <Route index element={<Navigate to="/app/admin/labels" replace />} />
+          <Route
+            path="users"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <UsersTab />
+              </Suspense>
+            }
+          />
           <Route
             path="labels"
             element={

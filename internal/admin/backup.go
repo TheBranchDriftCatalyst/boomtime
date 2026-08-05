@@ -45,7 +45,7 @@ func restoreMaxBytes() int64 {
 // as a ZIP attachment. Auth'd like every other route; the payload is
 // inherently whole-DB on this single-tenant server.
 func (h *Handler) DBExport(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -75,7 +75,7 @@ func (h *Handler) DBExport(c *echo.Context) error {
 // transaction. Afterwards the derived tables are rebuilt per sender and every
 // cached aggregate is dropped.
 func (h *Handler) DBImport(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}

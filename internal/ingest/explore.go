@@ -53,7 +53,7 @@ const (
 // Returns the owner's most recent heartbeat timestamp (RFC3339 UTC, or null) and
 // total count. Powers the import "backfill from last heartbeat" button.
 func (h *Handler) HeartbeatsLatest(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -77,7 +77,7 @@ func (h *Handler) HeartbeatsLatest(c *echo.Context) error {
 // Groups the user's heartbeats by one whitelisted axis with accumulated equality
 // filters. Read-only, owner-scoped.
 func (h *Handler) HeartbeatsGroup(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -115,7 +115,7 @@ func (h *Handler) HeartbeatsGroup(c *echo.Context) error {
 // Returns a page of raw heartbeat records for the given whitelist filters,
 // optional entity substring, and time range. Read-only, owner-scoped.
 func (h *Handler) HeartbeatsList(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}

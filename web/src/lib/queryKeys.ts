@@ -175,6 +175,10 @@ export const qk = {
   // re-fetch atomically.
   publicProfile: () => ["public-profile"] as const,
   publicDashboard: (slug: string) => ["public-dashboard", slug] as const,
+  // gaka-93f.1.1: public client-config (auth provider, registration/billing/
+  // beta switches). Fetched once at boot; long staleTime — it only changes on
+  // a server restart.
+  publicConfig: () => ["public-config"] as const,
   // gaka-keb: per-user, per-scope dashboard layout. Scope key held loose
   // (string) so future scopes ("overview", "space:12") land without a
   // signature widening.
@@ -183,6 +187,12 @@ export const qk = {
   // gaka-myv: admin label-images status (row count / feature flags).
   // Refetched after a regenerate to update the "N / M generated" tally.
   adminLabelImages: () => ["admin", "label-images"] as const,
+
+  // gaka-93f.6: admin caps dashboard (users + roles/tiers + effective caps).
+  adminUsers: () => ["admin", "users"] as const,
+
+  // gaka-b5n.4: the caller's linked external identities (OIDC linking).
+  identities: () => ["identities"] as const,
 
   // gaka-364.3: DB-backed labels catalog. Public (no owner scoping) —
   // one key shared by every consumer (evaluator, hero widget, admin

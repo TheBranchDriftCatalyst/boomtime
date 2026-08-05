@@ -45,7 +45,7 @@ var validEntityTypes = map[string]bool{
 
 // ListEntitiesByType: GET /api/v1/users/current/heartbeats/entities?type=file&limit=500.
 func (h *Handler) ListEntitiesByType(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -82,7 +82,7 @@ type redactEntitiesBody struct {
 // owner-scoped. The heartbeat still counts toward every other axis; only the
 // entity value is scrubbed. Rollup unaffected (entity isn't a rollup axis).
 func (h *Handler) RedactEntities(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}

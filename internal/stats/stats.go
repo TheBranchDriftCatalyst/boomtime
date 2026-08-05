@@ -95,7 +95,7 @@ func (h *Handler) Timeline(c *echo.Context) error {
 
 // StatusbarToday: GET /api/v1/users/current/statusbar/today.
 func (h *Handler) StatusbarToday(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}

@@ -119,7 +119,7 @@ type publicProfileResponse struct {
 // GetPublicProfile: GET /api/v1/users/current/profile (auth). Returns the
 // caller's public-profile toggle + slug.
 func (h *Handler) GetPublicProfile(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -136,7 +136,7 @@ func (h *Handler) GetPublicProfile(c *echo.Context) error {
 // reservation violation. On success, returns the persisted shape so the FE
 // can settle its local state without a follow-up GET.
 func (h *Handler) PutPublicProfile(c *echo.Context) error {
-	_, owner, aerr := apihelpers.ResolveUser(h.DB, c)
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}

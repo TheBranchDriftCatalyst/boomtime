@@ -13,6 +13,7 @@ import { PageToolbar } from "@thebranchdriftcatalyst/catalyst-ui/components/Page
 import { cn } from "@/lib/utils";
 
 const TABS = [
+  { id: "users", label: "Users", to: "/app/admin/users" },
   { id: "labels", label: "Labels", to: "/app/admin/labels" },
   { id: "backfill", label: "Backfill", to: "/app/admin/backfill" },
   { id: "logs", label: "Logs", to: "/app/admin/logs" },
