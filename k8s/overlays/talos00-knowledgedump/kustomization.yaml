@@ -19,14 +19,15 @@ patchesStrategicMerge:
   - label-images-config.yaml
   - llm-config.yaml
   - tz-config.yaml
-  # ── PROD OIDC (Authentik) wiring — INERT until the operator activates it ─────
-  # Uncomment the two entries below ONLY after the Authentik side is ready:
-  # provider/app/groups created, client_secret in 1Password field
-  # `oidc-client-secret`, and BOOM_OIDC_ISSUER / BOOM_OIDC_CLIENT_ID confirmed in
-  # oidc-config.yaml. Full procedure: OIDC-PROD-WIRING.md (step 4). Until then
-  # they stay commented so ArgoCD's next sync makes zero change.
-  #   - oidc-config.yaml          # non-secret BOOM_OIDC_* keys on boomtime-config
-  #   - oidc-external-secret.yaml # BOOM_OIDC_CLIENT_SECRET from 1Password
+  # ── PROD OIDC (Authentik) wiring — ACTIVATED 2026-08-05 ──────────────────────
+  # Authentik side is live (provider/app/groups + client_secret in 1Password
+  # `oidc-client-secret`), issuer confirmed. These add BOOM_OIDC_* config +
+  # deliver BOOM_OIDC_CLIENT_SECRET. BOOM_AUTH_PROVIDER stays "local" (see
+  # oidc-config.yaml) — this only makes OIDC *configured* so the account-LINK
+  # flow works; password login is unchanged. Flip to "oidc" is a later,
+  # separate change. Full procedure: OIDC-PROD-WIRING.md.
+  - oidc-config.yaml          # non-secret BOOM_OIDC_* keys on boomtime-config
+  - oidc-external-secret.yaml # BOOM_OIDC_CLIENT_SECRET from 1Password
   # NOTE: authentik-blueprint-boomtime.yaml is an Authentik blueprint, NOT a k8s
   # manifest — it is intentionally never added here (applied to Authentik itself).
 
