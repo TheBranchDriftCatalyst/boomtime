@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
 import { QueryGate } from "@/components/QueryGate";
-import { PageToolbar } from "@thebranchdriftcatalyst/catalyst-ui/components/PageToolbar";
+import { Page } from "@/layout/Page";
 import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
@@ -71,60 +71,69 @@ export function Leaderboards() {
   }, [langs, lang]);
 
   return (
-    <div>
-      <PageToolbar title="Leaderboards">
+    <Page>
+      <Page.Header title="Leaderboards">
         <DateRangePicker
           numDays={tr.numDays}
           onPreset={tr.setDaysFromToday}
           onRange={tr.setRange}
         />
-      </PageToolbar>
+      </Page.Header>
+      <Page.Body>
+        <Page.Content>
+          <QueryGate query={query} errorMessage="Failed to load leaderboards.">
+            {(data) => (
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm text-muted-foreground">
+                      Overall time
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <LeaderboardTable users={data.global} />
+                  </CardContent>
+                </Card>
 
-      <QueryGate query={query} errorMessage="Failed to load leaderboards.">
-        {(data) => (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm text-muted-foreground">
-                Overall time
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <LeaderboardTable users={data.global} />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-sm text-muted-foreground">
-                Language usage{lang ? ` (${lang})` : ""}
-              </CardTitle>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" disabled={langs.length === 0}>
-                    {lang ?? "Language"}
-                    <ChevronDown className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  align="end"
-                  className="max-h-72 overflow-y-auto"
-                >
-                  {langs.map((l) => (
-                    <DropdownMenuItem key={l} onSelect={() => setLang(l)}>
-                      {l}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </CardHeader>
-            <CardContent>
-              <LeaderboardTable users={lang ? data.languages[lang] ?? [] : []} />
-            </CardContent>
-          </Card>
-        </div>
-        )}
-      </QueryGate>
-    </div>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0">
+                    <CardTitle className="text-sm text-muted-foreground">
+                      Language usage{lang ? ` (${lang})` : ""}
+                    </CardTitle>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={langs.length === 0}
+                        >
+                          {lang ?? "Language"}
+                          <ChevronDown className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent
+                        align="end"
+                        className="max-h-72 overflow-y-auto"
+                      >
+                        {langs.map((l) => (
+                          <DropdownMenuItem key={l} onSelect={() => setLang(l)}>
+                            {l}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </CardHeader>
+                  <CardContent>
+                    <LeaderboardTable
+                      users={lang ? data.languages[lang] ?? [] : []}
+                    />
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+          </QueryGate>
+        </Page.Content>
+      </Page.Body>
+    </Page>
   );
 }

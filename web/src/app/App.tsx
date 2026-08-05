@@ -137,6 +137,21 @@ function BetaOnboardingGate() {
   return null;
 }
 
+// LegacyScrollLayout — compatibility scroller for pages not yet migrated onto
+// <Page> (fe-pom-shell Phase A). The no-scroll shell hands vertical scroll to
+// the page itself, so the shell's <main> is `overflow-hidden` with no padding.
+// Migrated pages (Leaderboards) own their scroll via <Page.Content>; every
+// other /app route still expects the old `<main className="overflow-y-auto
+// p-6">` behavior, so it renders inside this wrapper, which reproduces it
+// exactly. As each page moves onto <Page> (Phase B), lift it out of here.
+function LegacyScrollLayout() {
+  return (
+    <div className="h-full min-h-0 overflow-y-auto p-6">
+      <Outlet />
+    </div>
+  );
+}
+
 export function RootLayout() {
   return (
     <AuthProvider>
@@ -176,22 +191,9 @@ export function AppRoutes() {
           </ProtectedRoute>
         }
       >
-        <Route
-          index
-          element={
-            <Suspense fallback={<PageFallback />}>
-              <Overview />
-            </Suspense>
-          }
-        />
-        <Route
-          path="projects"
-          element={
-            <Suspense fallback={<PageFallback />}>
-              <Projects />
-            </Suspense>
-          }
-        />
+        {/* Pilot (fe-pom-shell Phase A): Leaderboards is migrated onto <Page>,
+            which owns its own scroll region, so it renders DIRECTLY into the
+            no-scroll shell main — NOT wrapped in LegacyScrollLayout. */}
         <Route
           path="leaderboards"
           element={
@@ -200,106 +202,133 @@ export function AppRoutes() {
             </Suspense>
           }
         />
-        <Route
-          path="heartbeats"
-          element={
-            <Suspense fallback={<PageFallback />}>
-              <Heartbeats />
-            </Suspense>
-          }
-        />
-        <Route
-          path="space/:id"
-          element={
-            <Suspense fallback={<PageFallback />}>
-              <SpaceView />
-            </Suspense>
-          }
-        />
-        <Route
-          path="import"
-          element={
-            <Suspense fallback={<PageFallback />}>
-              <Import />
-            </Suspense>
-          }
-        />
-        {/* gaka-ebq: Logs lives under /app/admin/logs now (admin-only).
-            Keep the old bookmarkable /app/logs URL working — the AdminRoute
-            below decides whether the user actually gets to see it. */}
-        <Route path="logs" element={<Navigate to="/app/admin/logs" replace />} />
-        {/* Changelog still ships as a Settings tab. */}
-        <Route
-          path="changelog"
-          element={<Navigate to="/app/settings?tab=changelog" replace />}
-        />
-        {/* /app/admin — admin-only section with three sub-tabs. Guarded
-            twice: (1) the sidebar hides the entry entirely for non-admins,
-            (2) AdminRoute redirects any direct URL hit. Each per-endpoint
-            fetch also 403s on the server; this is UX, not security. */}
-        <Route
-          path="admin"
-          element={
-            <AdminRoute>
-              <Suspense fallback={<PageFallback />}>
-                <AdminPage />
-              </Suspense>
-            </AdminRoute>
-          }
-        >
-          <Route index element={<Navigate to="/app/admin/labels" replace />} />
+        {/* Every route not yet on <Page> keeps the old scroll + padding via
+            LegacyScrollLayout (pathless layout route). Lift routes out as they
+            migrate in Phase B. */}
+        <Route element={<LegacyScrollLayout />}>
           <Route
-            path="users"
+            index
             element={
               <Suspense fallback={<PageFallback />}>
-                <UsersTab />
+                <Overview />
               </Suspense>
             }
           />
           <Route
-            path="labels"
+            path="projects"
             element={
               <Suspense fallback={<PageFallback />}>
-                <AdminTab />
+                <Projects />
               </Suspense>
             }
           />
           <Route
-            path="backfill"
+            path="heartbeats"
             element={
               <Suspense fallback={<PageFallback />}>
-                <BackfillTab />
+                <Heartbeats />
               </Suspense>
             }
           />
+          <Route
+            path="space/:id"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <SpaceView />
+              </Suspense>
+            }
+          />
+          <Route
+            path="import"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <Import />
+              </Suspense>
+            }
+          />
+          {/* gaka-ebq: Logs lives under /app/admin/logs now (admin-only).
+              Keep the old bookmarkable /app/logs URL working — the AdminRoute
+              below decides whether the user actually gets to see it. */}
           <Route
             path="logs"
+            element={<Navigate to="/app/admin/logs" replace />}
+          />
+          {/* Changelog still ships as a Settings tab. */}
+          <Route
+            path="changelog"
+            element={<Navigate to="/app/settings?tab=changelog" replace />}
+          />
+          {/* /app/admin — admin-only section with three sub-tabs. Guarded
+              twice: (1) the sidebar hides the entry entirely for non-admins,
+              (2) AdminRoute redirects any direct URL hit. Each per-endpoint
+              fetch also 403s on the server; this is UX, not security. */}
+          <Route
+            path="admin"
+            element={
+              <AdminRoute>
+                <Suspense fallback={<PageFallback />}>
+                  <AdminPage />
+                </Suspense>
+              </AdminRoute>
+            }
+          >
+            <Route
+              index
+              element={<Navigate to="/app/admin/labels" replace />}
+            />
+            <Route
+              path="users"
+              element={
+                <Suspense fallback={<PageFallback />}>
+                  <UsersTab />
+                </Suspense>
+              }
+            />
+            <Route
+              path="labels"
+              element={
+                <Suspense fallback={<PageFallback />}>
+                  <AdminTab />
+                </Suspense>
+              }
+            />
+            <Route
+              path="backfill"
+              element={
+                <Suspense fallback={<PageFallback />}>
+                  <BackfillTab />
+                </Suspense>
+              }
+            />
+            <Route
+              path="logs"
+              element={
+                <Suspense fallback={<PageFallback />}>
+                  {/* embedded so the AdminPage's toolbar/tab-strip stays the
+                      single page heading — Logs otherwise renders its own
+                      PageToolbar title, which would double-print "Admin". */}
+                  <Logs embedded />
+                </Suspense>
+              }
+            />
+          </Route>
+          <Route
+            path="settings"
             element={
               <Suspense fallback={<PageFallback />}>
-                {/* embedded so the AdminPage's toolbar/tab-strip stays the
-                    single page heading — Logs otherwise renders its own
-                    PageToolbar title, which would double-print "Admin". */}
-                <Logs embedded />
+                <Settings />
+              </Suspense>
+            }
+          />
+          <Route
+            path="wellness"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <Wellness />
               </Suspense>
             }
           />
         </Route>
-        <Route
-          path="settings"
-          element={
-            <Suspense fallback={<PageFallback />}>
-              <Settings />
-            </Suspense>
-          }
-        />
-        <Route
-          path="wellness"
-          element={
-            <Suspense fallback={<PageFallback />}>
-              <Wellness />
-            </Suspense>
-          }
-        />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
