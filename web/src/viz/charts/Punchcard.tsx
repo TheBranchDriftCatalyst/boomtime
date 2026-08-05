@@ -112,30 +112,20 @@ export function Punchcard({ data, height = 260 }: PunchcardProps) {
     [data],
   );
 
-  // Distinguish three states so the empty-state is actionable:
-  //   1. No payload / zero cells → generic "no data" placeholder.
-  //   2. Cells present but no non-zero seconds → range yielded no
-  //      punchcard-eligible activity (e.g. very narrow range on a quiet
-  //      week); hint the user to widen the range instead of squinting at an
-  //      empty grid where every dot has radius 0.
-  //   3. Otherwise render the chart.
-  if (!data || data.cells.length === 0) {
-    return (
-      <EmptyChart
-        height={height}
-        title="No punchcard data for this range"
-        hint="Widen the date range in the toolbar to see day-of-week × hour activity."
-      />
-    );
-  }
+  // A week of coding is the BASE CASE: a normal week maps dozens of the 168
+  // day×hour cells, so the grid renders the moment there's ANY activity. We
+  // deliberately do NOT gate on range width or a minimum cell/day count — the
+  // punchcard is meant to read at a 1-week window. The only empty state is a
+  // genuinely activity-free range, and its copy must NOT imply the window is
+  // "too short" (widening isn't the fix — logging coding time is).
   const hasActivity =
-    (data.totalSeconds ?? 0) > 0 || data.cells.some((c) => c.seconds > 0);
-  if (!hasActivity) {
+    (data?.totalSeconds ?? 0) > 0 || (data?.cells.some((c) => c.seconds > 0) ?? false);
+  if (!data || !hasActivity) {
     return (
       <EmptyChart
         height={height}
-        title="No punchcard-eligible activity in this range"
-        hint="Try a wider date range in the toolbar — the current range has no coding hours to plot."
+        title="No coding activity in this range"
+        hint="The punchcard maps your day-of-week × hour rhythm — a single week of coding is enough to fill it in."
       />
     );
   }

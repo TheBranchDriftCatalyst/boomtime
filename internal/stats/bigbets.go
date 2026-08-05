@@ -138,8 +138,16 @@ func ToMomentumPayload(t0, t1 time.Time, rows []db.MomentumRow, top int) model.M
 		top = 8
 	}
 
-	// Build the full ascending week-start index across the range (ISO Mondays).
-	weeks := weekStarts(t0, t1)
+	// Build the ascending week-start index (ISO Mondays) spanning the DATA's
+	// extent, not the full requested [t0,t1] range. The requested range can be
+	// far wider than the data — the "All time" preset asks for
+	// start=2000-01-01, whose ISO Monday is 1999-12-27 — so spanning it would
+	// gap-fill ~1300 empty leading weeks, crush every real bar against the
+	// right edge, and render a bogus "Dec '99 → Apr '23" axis. Min/max is taken
+	// across ALL projects (clamped to the requested range for defense), so
+	// interior quiet weeks still gap-fill and only fully-empty leading/trailing
+	// weeks are dropped.
+	weeks := momentumWeeks(t0, t1, rows)
 	weekIndex := make(map[string]int, len(weeks))
 	weekKeys := make([]string, len(weeks))
 	for i, w := range weeks {
@@ -194,13 +202,38 @@ func ToMomentumPayload(t0, t1 time.Time, rows []db.MomentumRow, top int) model.M
 	return model.MomentumPayload{Weeks: weekKeys, Projects: projects}
 }
 
-// weekStarts returns the ISO Monday week-start dates covering [t0, t1] inclusive,
-// ascending. Matches Postgres date_trunc('week', ...) which anchors on Monday.
-func weekStarts(t0, t1 time.Time) []time.Time {
-	start := isoWeekStart(t0)
-	end := isoWeekStart(t1)
+// momentumWeeks returns the ascending ISO Monday week-starts to plot: the span
+// of the actual data (min..max week_start across all rows), clamped to the
+// requested [t0,t1] range. Returns nil when there are no rows. Matches Postgres
+// date_trunc('week', ...) which anchors on Monday. Clamping to the data extent
+// (rather than the raw range) is what keeps an "All time" query — start as far
+// back as 2000-01-01 — from emitting ~1300 empty leading week columns.
+func momentumWeeks(t0, t1 time.Time, rows []db.MomentumRow) []time.Time {
+	if len(rows) == 0 {
+		return nil
+	}
+	lo, hi := isoWeekStart(t0), isoWeekStart(t1)
+	dlo := isoWeekStart(rows[0].WeekStart)
+	dhi := dlo
+	for _, r := range rows[1:] {
+		w := isoWeekStart(r.WeekStart)
+		if w.Before(dlo) {
+			dlo = w
+		}
+		if w.After(dhi) {
+			dhi = w
+		}
+	}
+	// Tighten each bound to the data (rows are already within [t0,t1], so this
+	// only ever narrows — the range clamp is belt-and-suspenders).
+	if dlo.After(lo) {
+		lo = dlo
+	}
+	if dhi.Before(hi) {
+		hi = dhi
+	}
 	var out []time.Time
-	for w := start; !w.After(end); w = w.AddDate(0, 0, 7) {
+	for w := lo; !w.After(hi); w = w.AddDate(0, 0, 7) {
 		out = append(out, w)
 	}
 	return out

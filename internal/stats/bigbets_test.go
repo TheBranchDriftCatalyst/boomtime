@@ -181,6 +181,36 @@ var _ = Describe("ToMomentumPayload", func() {
 		Expect(p.Projects[0].Weekly[2]).To(BeEquivalentTo(7200))
 		Expect(p.Projects[1].Name).To(Equal("beta"))
 	})
+
+	It("clamps the week axis to the data extent, not the requested range", func() {
+		// Regression for the "All time" bug: the picker asks for start as far
+		// back as 2000-01-01 (ISO Monday 1999-12-27), but data only exists in a
+		// handful of recent weeks. The payload must span only the data's weeks,
+		// not ~1300 empty leading columns back to 1999.
+		t0 := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC) // "All time" start
+		t1 := time.Date(2026, 8, 5, 0, 0, 0, 0, time.UTC)
+		w1 := time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC) // Mon
+		w3 := time.Date(2026, 8, 3, 0, 0, 0, 0, time.UTC)  // Mon (skips 07-27)
+
+		rows := []db.MomentumRow{
+			{Project: "alpha", WeekStart: w1, Seconds: 3600},
+			{Project: "alpha", WeekStart: w3, Seconds: 7200},
+		}
+		p := ToMomentumPayload(t0, t1, rows, 8)
+
+		// Only the 3 weeks spanning the data (interior 07-27 gap-filled), NOT a
+		// 1300+ column run back to 1999-12-27.
+		Expect(p.Weeks).To(Equal([]string{"2026-07-20", "2026-07-27", "2026-08-03"}))
+		Expect(p.Projects[0].Weekly).To(Equal([]int64{3600, 0, 7200}))
+	})
+
+	It("returns no weeks when there is no data in the range", func() {
+		t0 := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+		t1 := time.Date(2026, 8, 5, 0, 0, 0, 0, time.UTC)
+		p := ToMomentumPayload(t0, t1, nil, 8)
+		Expect(p.Weeks).To(BeEmpty())
+		Expect(p.Projects).To(BeEmpty())
+	})
 })
 
 var _ = Describe("isoWeekStart", func() {
