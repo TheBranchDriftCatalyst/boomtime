@@ -2,6 +2,12 @@
 
 All notable changes to boomtime are documented here. This file is generated
 by [git-cliff](https://git-cliff.org) from conventional-commit history.
+## [1.1.0] - 2026-08-05
+
+### Features
+
+- **fe:** Migrate all pages to Page POM; remove LegacyScrollLayout (gaka-8qu Phase B)
+
 ## [1.0.0] - 2026-08-05
 
 ### Bug Fixes
