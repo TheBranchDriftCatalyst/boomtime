@@ -54,6 +54,14 @@ const Settings = lazy(() =>
 const Wellness = lazy(() =>
   import("@/features/wellness/Wellness").then((m) => ({ default: m.Wellness })),
 );
+// gaka-4ng: the owner's profile mounted INSIDE the app skeleton (/app/profile).
+// Reuses the dossier view + editor but always-owner (no :slug param). The
+// standalone public /p/:slug (EditableProfilePage) stays for external visitors.
+const InAppProfile = lazy(() =>
+  import("@/features/publicprofile/InAppProfilePage").then((m) => ({
+    default: m.InAppProfilePage,
+  })),
+);
 // gaka-ebq: Admin section is its own chunk. Non-admins never trigger the
 // fetch because the sidebar link is hidden AND AdminRoute short-circuits
 // to /app before <Suspense> ever kicks. The three tab bodies also lazy —
@@ -192,6 +200,15 @@ export function AppRoutes() {
           element={
             <Suspense fallback={<PageFallback />}>
               <Projects />
+            </Suspense>
+          }
+        />
+        {/* gaka-4ng: owner's profile inside the app skeleton. */}
+        <Route
+          path="profile"
+          element={
+            <Suspense fallback={<PageFallback />}>
+              <InAppProfile />
             </Suspense>
           }
         />

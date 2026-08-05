@@ -42,8 +42,16 @@ import "./arasaka.css";
 // specificity `.theme-arasaka …` rules still win under that theme.
 import "./dossier.css";
 
-export function PublicDashboard() {
-  const { slug = "" } = useParams<{ slug: string }>();
+export interface PublicDashboardProps {
+  /** Explicit slug (gaka-4ng: the in-app owner view at /app/profile has no
+   * :slug route param, so it injects the owner's resolved slug). Falls back to
+   * the /p/:slug route param when omitted. */
+  slug?: string;
+}
+
+export function PublicDashboard({ slug: slugProp }: PublicDashboardProps = {}) {
+  const params = useParams<{ slug: string }>();
+  const slug = slugProp ?? params.slug ?? "";
 
   // gaka-174.7: the selected stats window drives the payload query. The
   // query key carries `rangeDays` so switching windows refetches; the base

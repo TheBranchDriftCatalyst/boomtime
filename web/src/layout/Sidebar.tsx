@@ -15,6 +15,7 @@ import {
   Plus,
   Settings2,
   ShieldCheck,
+  UserCircle,
 } from "lucide-react";
 import { useSpaces } from "@/features/spaces/useSpaces";
 import { useAuth } from "@/features/auth/useAuth";
@@ -29,6 +30,9 @@ const NAV = [
   { name: "Leaderboards", icon: Award, to: "/app/leaderboards", end: false },
   { name: "Heartbeats", icon: ListTree, to: "/app/heartbeats", end: false },
   { name: "Wellness", icon: HeartPulse, to: "/app/wellness", end: false },
+  // gaka-4ng: owner's profile inside the app skeleton (the public /p/:slug link
+  // below stays as the shareable external view).
+  { name: "Profile", icon: UserCircle, to: "/app/profile", end: false },
   { name: "Import", icon: Download, to: "/app/import", end: false },
   // Logs + Changelog live inside Settings tabs now.
   { name: "Settings", icon: Settings2, to: "/app/settings", end: false },
