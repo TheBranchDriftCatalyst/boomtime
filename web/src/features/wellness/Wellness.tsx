@@ -12,7 +12,7 @@ import {
   PersonStanding,
   Zap,
 } from "lucide-react";
-import { PageToolbar } from "@thebranchdriftcatalyst/catalyst-ui/components/PageToolbar";
+import { Page } from "@/layout/Page";
 import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
 import { ChartCard } from "@/components/ChartCard";
 import { QueryGate } from "@/components/QueryGate";
@@ -57,50 +57,53 @@ export function Wellness() {
   );
 
   return (
-    <div className="flex flex-col gap-6">
-      <PageToolbar title="Wellness">
+    <Page>
+      <Page.Header title="Wellness">
         <DateRangePicker
           numDays={tr.numDays}
           onPreset={tr.setDaysFromToday}
           onRange={tr.setRange}
         />
-      </PageToolbar>
+      </Page.Header>
+      <Page.Body>
+        <Page.Content className="flex flex-col gap-6">
+          <QueryGate
+            query={activityQ}
+            errorMessage="Failed to load health data."
+          >
+            {(data) => {
+              if (!data.hasData) return <EmptyState />;
 
-      <QueryGate
-        query={activityQ}
-        errorMessage="Failed to load health data."
-      >
-        {(data) => {
-          if (!data.hasData) return <EmptyState />;
+              const t = data.totals;
+              return (
+                <>
+                  <SummaryStrip totals={t} dayCount={data.days.length} />
 
-          const t = data.totals;
-          return (
-            <>
-              <SummaryStrip totals={t} dayCount={data.days.length} />
+                  <ChartCard title="Workout minutes per day">
+                    <ColumnChart
+                      dates={dates}
+                      values={workoutSeconds}
+                      seriesName="Workout"
+                      height={220}
+                    />
+                  </ChartCard>
 
-              <ChartCard title="Workout minutes per day">
-                <ColumnChart
-                  dates={dates}
-                  values={workoutSeconds}
-                  seriesName="Workout"
-                  height={220}
-                />
-              </ChartCard>
+                  {/* Event-level breakdown by user-annotated label. Two-tier:
+                      first a grid of per-label totals ("all Morning Runs"),
+                      then a flat list of individual workout events. */}
+                  <LabelBreakdown data={workoutsQ.data} />
+                  <EventsList data={workoutsQ.data} />
 
-              {/* Event-level breakdown by user-annotated label. Two-tier:
-                  first a grid of per-label totals ("all Morning Runs"),
-                  then a flat list of individual workout events. */}
-              <LabelBreakdown data={workoutsQ.data} />
-              <EventsList data={workoutsQ.data} />
-
-              <ChartCard title="Daily detail">
-                <DailyTable days={data.days} />
-              </ChartCard>
-            </>
-          );
-        }}
-      </QueryGate>
-    </div>
+                  <ChartCard title="Daily detail">
+                    <DailyTable days={data.days} />
+                  </ChartCard>
+                </>
+              );
+            }}
+          </QueryGate>
+        </Page.Content>
+      </Page.Body>
+    </Page>
   );
 }
 

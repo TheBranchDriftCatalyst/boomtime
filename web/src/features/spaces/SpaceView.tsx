@@ -4,6 +4,7 @@ import { Check, Pencil, Settings2, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { OverviewDashboard } from "@/features/overview/OverviewDashboard";
 import { SpaceRuleForm } from "@/features/spaces/SpaceRuleForm";
+import { Page } from "@/layout/Page";
 import { QueryGate } from "@/components/QueryGate";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
@@ -78,11 +79,13 @@ export function SpaceView() {
 
   return (
     <QueryGate query={spaceQuery} errorMessage="Failed to load space.">
-      {(space) => (
-    <div className="space-y-6">
-      {managing && (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+      {(space) => {
+        // The manage panel is injected into the dashboard's scroll region (via
+        // OverviewDashboard's `beforeContent`) so the toolbar stays pinned; the
+        // empty-Space branch renders it inside its own <Page.Content>.
+        const managePanel = managing ? (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-semibold text-muted-foreground">
               Manage space
             </CardTitle>
@@ -206,40 +209,49 @@ export function SpaceView() {
               {id && <SpaceRuleForm spaceId={id} />}
             </div>
           </CardContent>
-        </Card>
-      )}
-
-      {space.rules.length === 0 ? (
-        <div>
-          {/* Keep the toolbar (with Manage) available even before any rule. */}
-          <div className="mb-6 flex items-center justify-between">
-            <h1 className="text-2xl font-semibold">{space.name}</h1>
-            {manageButton}
-          </div>
-          <Card>
-            <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
-              <p className="text-lg font-medium">This Space is empty</p>
-              <p className="max-w-md text-sm text-muted-foreground">
-                Add a rule to define what's in this Space. Its dashboard will
-                populate once a rule matches your activity.
-              </p>
-              <Button onClick={() => setManaging(true)}>
-                <Settings2 className="h-4 w-4" />
-                Add a rule
-              </Button>
-            </CardContent>
           </Card>
-        </div>
-      ) : (
-        <OverviewDashboard
-          key={`space-${id}`}
-          space={id}
-          title={space.name}
-          toolbarActions={manageButton}
-        />
-      )}
-    </div>
-      )}
+        ) : null;
+
+        // Empty Space: no dashboard yet, so SpaceView owns the <Page> itself
+        // (title + Manage in the pinned header, empty-state card in content).
+        if (space.rules.length === 0) {
+          return (
+            <Page>
+              <Page.Header title={space.name}>{manageButton}</Page.Header>
+              <Page.Body>
+                <Page.Content>
+                  {managePanel && <div className="mb-6">{managePanel}</div>}
+                  <Card>
+                    <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
+                      <p className="text-lg font-medium">This Space is empty</p>
+                      <p className="max-w-md text-sm text-muted-foreground">
+                        Add a rule to define what's in this Space. Its dashboard
+                        will populate once a rule matches your activity.
+                      </p>
+                      <Button onClick={() => setManaging(true)}>
+                        <Settings2 className="h-4 w-4" />
+                        Add a rule
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </Page.Content>
+              </Page.Body>
+            </Page>
+          );
+        }
+
+        // Populated Space: the dashboard IS the <Page>; the manage panel rides
+        // in via beforeContent.
+        return (
+          <OverviewDashboard
+            key={`space-${id}`}
+            space={id}
+            title={space.name}
+            toolbarActions={manageButton}
+            beforeContent={managePanel}
+          />
+        );
+      }}
     </QueryGate>
   );
 }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { PageToolbar } from "@thebranchdriftcatalyst/catalyst-ui/components/PageToolbar";
+import { Page } from "@/layout/Page";
 import { Spinner } from "@thebranchdriftcatalyst/catalyst-ui/ui/spinner";
 import { CurrentRunPanel } from "@/features/import/CurrentRunPanel";
 import { HistoryList } from "@/features/import/HistoryList";
@@ -66,47 +66,50 @@ export function Import() {
   }
 
   return (
-    <div>
-      <PageToolbar title="Import" />
+    <Page>
+      <Page.Header title="Import" />
+      <Page.Body>
+        <Page.Content>
+          <div className="space-y-6">
+            <StartImportForm onStarted={onStarted} />
 
-      <div className="space-y-6">
-        <StartImportForm onStarted={onStarted} />
+            {activeJobId != null && stream.job && (
+              <CurrentRunPanel
+                job={stream.job}
+                logs={stream.logs}
+                status={stream.status}
+                onCancel={() => cancel.mutate(activeJobId)}
+                cancelling={cancel.isPending}
+              />
+            )}
 
-        {activeJobId != null && stream.job && (
-          <CurrentRunPanel
-            job={stream.job}
-            logs={stream.logs}
-            status={stream.status}
-            onCancel={() => cancel.mutate(activeJobId)}
-            cancelling={cancel.isPending}
-          />
-        )}
+            {activeJobId != null && !stream.job && <Spinner />}
 
-        {activeJobId != null && !stream.job && <Spinner />}
+            {inspectId != null && (
+              <RunDetail jobId={inspectId} onClose={() => setInspectId(null)} />
+            )}
 
-        {inspectId != null && (
-          <RunDetail jobId={inspectId} onClose={() => setInspectId(null)} />
-        )}
-
-        {jobsQuery.isLoading ? (
-          <Spinner />
-        ) : (
-          <HistoryList
-            jobs={jobs}
-            selectedId={inspectId}
-            onSelect={(id) => {
-              // Bind live if the clicked run is still active; else inspect.
-              const job = jobs.find((j) => j.id === id);
-              if (job && !isTerminalState(job.state)) {
-                setInspectId(null);
-                setActiveJobId(id);
-              } else {
-                setInspectId(id);
-              }
-            }}
-          />
-        )}
-      </div>
-    </div>
+            {jobsQuery.isLoading ? (
+              <Spinner />
+            ) : (
+              <HistoryList
+                jobs={jobs}
+                selectedId={inspectId}
+                onSelect={(id) => {
+                  // Bind live if the clicked run is still active; else inspect.
+                  const job = jobs.find((j) => j.id === id);
+                  if (job && !isTerminalState(job.state)) {
+                    setInspectId(null);
+                    setActiveJobId(id);
+                  } else {
+                    setInspectId(id);
+                  }
+                }}
+              />
+            )}
+          </div>
+        </Page.Content>
+      </Page.Body>
+    </Page>
   );
 }

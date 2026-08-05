@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Braces, Files, Search, Table2 } from "lucide-react";
-import { PageToolbar } from "@thebranchdriftcatalyst/catalyst-ui/components/PageToolbar";
+import { Page } from "@/layout/Page";
 import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
 import { TimeLimitDropdown } from "@/components/toolbar/TimeLimitDropdown";
 import { Spinner } from "@thebranchdriftcatalyst/catalyst-ui/ui/spinner";
@@ -43,8 +43,8 @@ export function Heartbeats() {
   });
 
   return (
-    <div>
-      <PageToolbar title="Heartbeats">
+    <Page>
+      <Page.Header title="Heartbeats">
         <div className="flex items-center rounded-md border p-0.5">
           <Button
             variant={tab === "explorer" ? "secondary" : "ghost"}
@@ -114,78 +114,81 @@ export function Heartbeats() {
             />
           </>
         )}
-      </PageToolbar>
+      </Page.Header>
+      <Page.Body>
+        <Page.Content>
+          <div className="mb-4">
+            <DerivedStatusPanel />
+          </div>
 
-      <div className="mb-4">
-        <DerivedStatusPanel />
-      </div>
+          <div className="mb-4">
+            <BackupPanel />
+          </div>
 
-      <div className="mb-4">
-        <BackupPanel />
-      </div>
+          <div className="mb-4">
+            <SourceHealthPanel />
+          </div>
 
-      <div className="mb-4">
-        <SourceHealthPanel />
-      </div>
+          {tab === "explorer" ? (
+            <>
+              <Card className="mb-4">
+                <CardContent className="py-4">
+                  <GroupByBar groupBy={groupBy} onChange={setGroupBy} />
+                </CardContent>
+              </Card>
 
-      {tab === "explorer" ? (
-        <>
-          <Card className="mb-4">
-            <CardContent className="py-4">
-              <GroupByBar groupBy={groupBy} onChange={setGroupBy} />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="py-3">
-              {groupBy.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">
-                  Add at least one group-by axis to explore heartbeats.
-                </p>
-              ) : ctrl.rootLoading ? (
-                <Spinner />
-              ) : ctrl.rootError ? (
-                <div className="space-y-2 py-6 text-center">
-                  <p className="text-sm text-destructive">
-                    Failed to load heartbeat groups.
-                  </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void ctrl.reloadRoot()}
-                  >
-                    Retry
-                  </Button>
-                </div>
-              ) : ctrl.tree.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">
-                  No heartbeats in this range.
-                </p>
-              ) : (
-                <>
-                  {ctrl.rootTruncated && (
-                    <p className="mb-2 text-xs text-amber-500">
-                      Showing the top groups only (results truncated).
+              <Card>
+                <CardContent className="py-3">
+                  {groupBy.length === 0 ? (
+                    <p className="py-6 text-center text-sm text-muted-foreground">
+                      Add at least one group-by axis to explore heartbeats.
                     </p>
+                  ) : ctrl.rootLoading ? (
+                    <Spinner />
+                  ) : ctrl.rootError ? (
+                    <div className="space-y-2 py-6 text-center">
+                      <p className="text-sm text-destructive">
+                        Failed to load heartbeat groups.
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void ctrl.reloadRoot()}
+                      >
+                        Retry
+                      </Button>
+                    </div>
+                  ) : ctrl.tree.length === 0 ? (
+                    <p className="py-6 text-center text-sm text-muted-foreground">
+                      No heartbeats in this range.
+                    </p>
+                  ) : (
+                    <>
+                      {ctrl.rootTruncated && (
+                        <p className="mb-2 text-xs text-amber-500">
+                          Showing the top groups only (results truncated).
+                        </p>
+                      )}
+                      <HeartbeatExplorerTable
+                        ctrl={ctrl}
+                        mode={mode}
+                        onRename={setRenameTarget}
+                      />
+                    </>
                   )}
-                  <HeartbeatExplorerTable
-                    ctrl={ctrl}
-                    mode={mode}
-                    onRename={setRenameTarget}
-                  />
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </>
-      ) : (
-        <EntityExplorer />
-      )}
+                </CardContent>
+              </Card>
+            </>
+          ) : (
+            <EntityExplorer />
+          )}
 
-      <RenameGroupDialog
-        node={renameTarget}
-        onClose={() => setRenameTarget(null)}
-      />
-    </div>
+          <RenameGroupDialog
+            node={renameTarget}
+            onClose={() => setRenameTarget(null)}
+          />
+        </Page.Content>
+      </Page.Body>
+    </Page>
   );
 }

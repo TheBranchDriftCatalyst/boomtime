@@ -20,7 +20,7 @@ import { CategoryStreamgraph } from "@/viz/charts/CategoryStreamgraph";
 import { Punchcard } from "@/viz/charts/Punchcard";
 import { DeepWorkSessions } from "@/viz/charts/DeepWorkSessions";
 import { MomentumGrid } from "@/viz/charts/MomentumGrid";
-import { PageToolbar } from "@thebranchdriftcatalyst/catalyst-ui/components/PageToolbar";
+import { Page } from "@/layout/Page";
 import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
 import { TimeLimitDropdown } from "@/components/toolbar/TimeLimitDropdown";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
@@ -52,6 +52,10 @@ interface OverviewDashboardProps {
   toolbarActions?: React.ReactNode;
   /** Toolbar title. */
   title?: string;
+  /** Optional content rendered inside the scroll region ABOVE the stats grid
+   * (e.g. SpaceView's manage panel). Kept in <Page.Content> so it scrolls with
+   * the charts and the toolbar stays pinned. */
+  beforeContent?: React.ReactNode;
 }
 
 /**
@@ -63,6 +67,7 @@ export function OverviewDashboard({
   space,
   toolbarActions,
   title = "Overview",
+  beforeContent,
 }: OverviewDashboardProps) {
   const tr = useTimeRange();
   const [timelineHours, setTimelineHours] = useState(12);
@@ -187,8 +192,8 @@ export function OverviewDashboard({
   const mostActiveLang = mostActive(stats?.languages ?? []);
 
   return (
-    <div>
-      <PageToolbar title={title}>
+    <Page>
+      <Page.Header title={title}>
         {toolbarActions}
         <WidgetsPanel
           scopeType={space ? "space" : "user"}
@@ -200,230 +205,238 @@ export function OverviewDashboard({
           onPreset={tr.setDaysFromToday}
           onRange={tr.setRange}
         />
-      </PageToolbar>
+      </Page.Header>
+      <Page.Body>
+        <Page.Content>
+          {beforeContent && <div className="mb-6">{beforeContent}</div>}
 
-      <QueryGate query={statsQuery} errorMessage="Failed to load overview stats.">
-        {(stats) => (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <StatCard
-              name="Total tracked time"
-              value={secondsToHms(stats.totalSeconds)}
-              icon={<Clock className="h-6 w-6" />}
-              accent="primary"
-            />
-            <StatCard
-              name="Total projects"
-              value={stats.projectsCount}
-              icon={<Calculator className="h-6 w-6" />}
-              accent="info"
-            />
-            <StatCard
-              name="Most active project"
-              value={mostActiveProject}
-              icon={<Crown className="h-6 w-6" />}
-              accent="success"
-            />
-            <StatCard
-              name="Most active language"
-              value={mostActiveLang}
-              icon={<Code className="h-6 w-6" />}
-              accent="warning"
-            />
-          </div>
-
-          {/* gaka-1l9: AI-assistance strip — self-hides when the range has no
-              AI-tagged heartbeats (user is on a non-AI plugin, or range is
-              pre-2026-07-03 when wakatime.com started emitting these). */}
-          <AIAssistanceCard data={aiActivityQuery.data} />
-
-          {/* Apple Watch / HealthKit overlay — self-hides when the companion
-              app hasn't been paired or the range has no health data. */}
-          <WellnessCard data={healthActivityQuery.data} />
-
-          {/* Category breakdown — first-class, near the top: "tracked time" is
-              more than coding (browsing/meetings/etc). */}
-          <ChartCard title="Category breakdown">
-            <CategoryBreakdown categories={stats.categories ?? []} />
-          </ChartCard>
-
-          {/* Streak & consistency (raw daily; current streak excludes today). */}
-          <StreakBanner dailyTotal={stats.dailyTotal} />
-
-          {/* Flagship: GitHub-style contribution calendar from RAW daily data. */}
-          <ChartCard
-            title="Contribution calendar"
-            embedAction={
-              <EmbedLinkButton
-                kind="activity-heatmap"
-                scopeType={space ? "space" : "user"}
-                scopeRef={space ?? ""}
-              />
-            }
+          <QueryGate
+            query={statsQuery}
+            errorMessage="Failed to load overview stats."
           >
-            <ContributionCalendar dates={dates} values={stats.dailyTotal} />
-          </ChartCard>
-
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-            <div className="lg:col-span-2">
-              <ChartCard
-                title="Total activity"
-                embedAction={
-                  <EmbedLinkButton
-                    kind="stats-card"
-                    scopeType={space ? "space" : "user"}
-                    scopeRef={space ?? ""}
+            {(stats) => (
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                  <StatCard
+                    name="Total tracked time"
+                    value={secondsToHms(stats.totalSeconds)}
+                    icon={<Clock className="h-6 w-6" />}
+                    accent="primary"
                   />
-                }
-              >
-                {categoryColumnSeries.length > 0 ? (
-                  <ColumnChart
-                    dates={chartDates}
-                    series={categoryColumnSeries}
+                  <StatCard
+                    name="Total projects"
+                    value={stats.projectsCount}
+                    icon={<Calculator className="h-6 w-6" />}
+                    accent="info"
                   />
-                ) : (
-                  <ColumnChart dates={chartDates} values={chartDailyTotal} />
-                )}
-              </ChartCard>
-            </div>
-            <ChartCard
-              title="Project breakdown"
-              embedAction={
-                <EmbedLinkButton
-                  kind="top-projects"
-                  scopeType={space ? "space" : "user"}
-                  scopeRef={space ?? ""}
-                />
-              }
-            >
-              <PieChart items={stats.projects} />
-            </ChartCard>
-          </div>
+                  <StatCard
+                    name="Most active project"
+                    value={mostActiveProject}
+                    icon={<Crown className="h-6 w-6" />}
+                    accent="success"
+                  />
+                  <StatCard
+                    name="Most active language"
+                    value={mostActiveLang}
+                    icon={<Code className="h-6 w-6" />}
+                    accent="warning"
+                  />
+                </div>
 
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <ChartCard
-              title="Cumulative coding time"
-              embedAction={
-                <EmbedLinkButton
-                  kind="cumulative-area"
-                  scopeType={space ? "space" : "user"}
-                  scopeRef={space ?? ""}
-                />
-              }
-            >
-              <CumulativeArea dates={chartDates} values={chartDailyTotal} />
-            </ChartCard>
-            <ChartCard title="Category streamgraph">
-              <CategoryStreamgraph
-                categories={chartCategories}
-                dates={chartDates}
-              />
-            </ChartCard>
-          </div>
+                {/* gaka-1l9: AI-assistance strip — self-hides when the range has no
+                    AI-tagged heartbeats (user is on a non-AI plugin, or range is
+                    pre-2026-07-03 when wakatime.com started emitting these). */}
+                <AIAssistanceCard data={aiActivityQuery.data} />
 
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <ChartCard
-              title="Activity per project"
-              embedAction={
-                <EmbedLinkButton
-                  kind="heatmap-projects"
-                  scopeType={space ? "space" : "user"}
-                  scopeRef={space ?? ""}
-                />
-              }
-            >
-              <HeatmapChart items={chartProjects} dates={chartDates} />
-            </ChartCard>
-            <ChartCard
-              title="Activity per language"
-              embedAction={
-                <EmbedLinkButton
-                  kind="heatmap-languages"
-                  scopeType={space ? "space" : "user"}
-                  scopeRef={space ?? ""}
-                />
-              }
-            >
-              <HeatmapChart items={chartLanguages} dates={chartDates} />
-            </ChartCard>
-          </div>
+                {/* Apple Watch / HealthKit overlay — self-hides when the companion
+                    app hasn't been paired or the range has no health data. */}
+                <WellnessCard data={healthActivityQuery.data} />
 
-          {/* Patterns: cross-project rhythm & momentum. */}
-          <div className="pt-2">
-            <h2 className="mb-1 text-lg font-semibold">Patterns</h2>
-            <p className="text-sm text-muted-foreground">
-              When you code, how deeply you focus, and which projects are heating
-              up.
-            </p>
-          </div>
+                {/* Category breakdown — first-class, near the top: "tracked time" is
+                    more than coding (browsing/meetings/etc). */}
+                <ChartCard title="Category breakdown">
+                  <CategoryBreakdown categories={stats.categories ?? []} />
+                </ChartCard>
 
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <ChartCard
-              title="Coding punchcard"
-              embedAction={
-                <EmbedLinkButton
-                  kind="punchcard"
-                  scopeType={space ? "space" : "user"}
-                  scopeRef={space ?? ""}
-                />
-              }
-            >
-              <Punchcard data={punchcardQuery.data} />
-            </ChartCard>
-            <ChartCard
-              title="Project momentum (by week)"
-              embedAction={
-                <EmbedLinkButton
-                  kind="momentum"
-                  scopeType={space ? "space" : "user"}
-                  scopeRef={space ?? ""}
-                />
-              }
-            >
-              <MomentumGrid data={momentumQuery.data} />
-            </ChartCard>
-          </div>
+                {/* Streak & consistency (raw daily; current streak excludes today). */}
+                <StreakBanner dailyTotal={stats.dailyTotal} />
 
-          <ChartCard
-            title="Deep-work sessions"
-            embedAction={
-              <EmbedLinkButton
-                kind="deep-work"
-                scopeType={space ? "space" : "user"}
-                scopeRef={space ?? ""}
-              />
-            }
-          >
-            <DeepWorkSessions data={sessionsQuery.data} />
-          </ChartCard>
+                {/* Flagship: GitHub-style contribution calendar from RAW daily data. */}
+                <ChartCard
+                  title="Contribution calendar"
+                  embedAction={
+                    <EmbedLinkButton
+                      kind="activity-heatmap"
+                      scopeType={space ? "space" : "user"}
+                      scopeRef={space ?? ""}
+                    />
+                  }
+                >
+                  <ContributionCalendar dates={dates} values={stats.dailyTotal} />
+                </ChartCard>
 
-          <ChartCard
-            title="Recent timeline"
-            action={
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm">
-                    Last {timelineHours} hours
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {TIMELINE_HOUR_OPTIONS.map((h) => (
-                    <DropdownMenuItem
-                      key={h}
-                      onSelect={() => setTimelineHours(h)}
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+                  <div className="lg:col-span-2">
+                    <ChartCard
+                      title="Total activity"
+                      embedAction={
+                        <EmbedLinkButton
+                          kind="stats-card"
+                          scopeType={space ? "space" : "user"}
+                          scopeRef={space ?? ""}
+                        />
+                      }
                     >
-                      Last {h} hours
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            }
-          >
-            <TimelineChart timeline={timelineQuery.data} />
-          </ChartCard>
-        </div>
-        )}
-      </QueryGate>
-    </div>
+                      {categoryColumnSeries.length > 0 ? (
+                        <ColumnChart
+                          dates={chartDates}
+                          series={categoryColumnSeries}
+                        />
+                      ) : (
+                        <ColumnChart dates={chartDates} values={chartDailyTotal} />
+                      )}
+                    </ChartCard>
+                  </div>
+                  <ChartCard
+                    title="Project breakdown"
+                    embedAction={
+                      <EmbedLinkButton
+                        kind="top-projects"
+                        scopeType={space ? "space" : "user"}
+                        scopeRef={space ?? ""}
+                      />
+                    }
+                  >
+                    <PieChart items={stats.projects} />
+                  </ChartCard>
+                </div>
+
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                  <ChartCard
+                    title="Cumulative coding time"
+                    embedAction={
+                      <EmbedLinkButton
+                        kind="cumulative-area"
+                        scopeType={space ? "space" : "user"}
+                        scopeRef={space ?? ""}
+                      />
+                    }
+                  >
+                    <CumulativeArea dates={chartDates} values={chartDailyTotal} />
+                  </ChartCard>
+                  <ChartCard title="Category streamgraph">
+                    <CategoryStreamgraph
+                      categories={chartCategories}
+                      dates={chartDates}
+                    />
+                  </ChartCard>
+                </div>
+
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                  <ChartCard
+                    title="Activity per project"
+                    embedAction={
+                      <EmbedLinkButton
+                        kind="heatmap-projects"
+                        scopeType={space ? "space" : "user"}
+                        scopeRef={space ?? ""}
+                      />
+                    }
+                  >
+                    <HeatmapChart items={chartProjects} dates={chartDates} />
+                  </ChartCard>
+                  <ChartCard
+                    title="Activity per language"
+                    embedAction={
+                      <EmbedLinkButton
+                        kind="heatmap-languages"
+                        scopeType={space ? "space" : "user"}
+                        scopeRef={space ?? ""}
+                      />
+                    }
+                  >
+                    <HeatmapChart items={chartLanguages} dates={chartDates} />
+                  </ChartCard>
+                </div>
+
+                {/* Patterns: cross-project rhythm & momentum. */}
+                <div className="pt-2">
+                  <h2 className="mb-1 text-lg font-semibold">Patterns</h2>
+                  <p className="text-sm text-muted-foreground">
+                    When you code, how deeply you focus, and which projects are heating
+                    up.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                  <ChartCard
+                    title="Coding punchcard"
+                    embedAction={
+                      <EmbedLinkButton
+                        kind="punchcard"
+                        scopeType={space ? "space" : "user"}
+                        scopeRef={space ?? ""}
+                      />
+                    }
+                  >
+                    <Punchcard data={punchcardQuery.data} />
+                  </ChartCard>
+                  <ChartCard
+                    title="Project momentum (by week)"
+                    embedAction={
+                      <EmbedLinkButton
+                        kind="momentum"
+                        scopeType={space ? "space" : "user"}
+                        scopeRef={space ?? ""}
+                      />
+                    }
+                  >
+                    <MomentumGrid data={momentumQuery.data} />
+                  </ChartCard>
+                </div>
+
+                <ChartCard
+                  title="Deep-work sessions"
+                  embedAction={
+                    <EmbedLinkButton
+                      kind="deep-work"
+                      scopeType={space ? "space" : "user"}
+                      scopeRef={space ?? ""}
+                    />
+                  }
+                >
+                  <DeepWorkSessions data={sessionsQuery.data} />
+                </ChartCard>
+
+                <ChartCard
+                  title="Recent timeline"
+                  action={
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm">
+                          Last {timelineHours} hours
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        {TIMELINE_HOUR_OPTIONS.map((h) => (
+                          <DropdownMenuItem
+                            key={h}
+                            onSelect={() => setTimelineHours(h)}
+                          >
+                            Last {h} hours
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  }
+                >
+                  <TimelineChart timeline={timelineQuery.data} />
+                </ChartCard>
+              </div>
+            )}
+          </QueryGate>
+        </Page.Content>
+      </Page.Body>
+    </Page>
   );
 }

@@ -1,6 +1,6 @@
 import { Navigate, useSearchParams } from "react-router";
-import { PageToolbar } from "@thebranchdriftcatalyst/catalyst-ui/components/PageToolbar";
-import { cn } from "@/lib/utils";
+import { Page } from "@/layout/Page";
+import { PageTabStrip, pageTabClass } from "@/layout/PageTabs";
 import { CurationTab } from "@/features/curation/CurationTab";
 import { RemappingsTab } from "@/features/curation/RemappingsTab";
 import { GoalsTab } from "@/features/goals/GoalsTab";
@@ -97,39 +97,33 @@ export function Settings() {
   const tab = TABS.find((t) => t.id === active)!;
 
   return (
-    <div>
-      <PageToolbar title="Settings" />
+    <Page>
+      <Page.Header title="Settings" />
+      <Page.Body>
+        <Page.Content>
+          <PageTabStrip ariaLabel="Settings sections">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                role="tab"
+                aria-selected={t.id === active}
+                onClick={() => setParams({ tab: t.id }, { replace: true })}
+                className={pageTabClass(t.id === active, "text-sm font-medium")}
+              >
+                {t.label}
+              </button>
+            ))}
+          </PageTabStrip>
 
-      <div
-        role="tablist"
-        aria-label="Settings sections"
-        className="mb-6 flex gap-1 border-b border-border"
-      >
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            role="tab"
-            aria-selected={t.id === active}
-            onClick={() => setParams({ tab: t.id }, { replace: true })}
-            className={cn(
-              "-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors",
-              t.id === active
-                ? "border-primary text-foreground"
-                : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
-            )}
+          <div
+            role="tabpanel"
+            className={active === "profile" ? "max-w-6xl" : "max-w-4xl"}
           >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      <div
-        role="tabpanel"
-        className={active === "profile" ? "max-w-6xl" : "max-w-4xl"}
-      >
-        {tab.render()}
-      </div>
-    </div>
+            {tab.render()}
+          </div>
+        </Page.Content>
+      </Page.Body>
+    </Page>
   );
 }
 

@@ -11,9 +11,9 @@ import { useCollapsedSidebar } from "@/layout/useCollapsedSidebar";
 // AppShell — the authed app frame. The layout is the no-scroll CSS-grid shell
 // (AppShellNoScroll): the shell owns exactly one viewport (h-dvh, overflow
 // hidden) so the sidebar and header stay pinned and never scroll away. All
-// vertical scrolling happens INSIDE the content cell — either a page's own
-// <Page.Content> (migrated pages) or the LegacyScrollLayout compat scroller
-// in App.tsx (un-migrated pages). See docs/design/fe-pom-shell-spike.md.
+// vertical scrolling happens INSIDE the content cell — every /app page composes
+// <Page>, whose <Page.Content> is the sole scroller. See
+// docs/design/fe-pom-shell-spike.md.
 export function AppShell() {
   const { username, logout } = useAuth();
   const navigate = useNavigate();

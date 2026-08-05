@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { PageToolbar } from "@thebranchdriftcatalyst/catalyst-ui/components/PageToolbar";
+import { Page } from "@/layout/Page";
 import { WidgetsPanel } from "@/features/widgets/WidgetsPanel";
 import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
 import { TimeLimitDropdown } from "@/components/toolbar/TimeLimitDropdown";
@@ -43,8 +43,8 @@ export function Projects() {
   }
 
   return (
-    <div>
-      <PageToolbar title="Projects">
+    <Page>
+      <Page.Header title="Projects">
         {selected && <WidgetsPanel scopeType="project" scopeRef={selected} />}
         <TimeLimitDropdown value={tr.timeLimit} onChange={tr.setTimeLimit} />
         <DateRangePicker
@@ -52,32 +52,35 @@ export function Projects() {
           onPreset={tr.setDaysFromToday}
           onRange={tr.setRange}
         />
-      </PageToolbar>
+      </Page.Header>
+      <Page.Body>
+        <Page.Content>
+          {/* Aggregate rail across all projects. */}
+          <AllProjectsRail
+            startISO={tr.startISO}
+            endISO={tr.endISO}
+            timeLimit={tr.timeLimit}
+            onSelectProject={selectProject}
+          />
 
-      {/* Aggregate rail across all projects. */}
-      <AllProjectsRail
-        startISO={tr.startISO}
-        endISO={tr.endISO}
-        timeLimit={tr.timeLimit}
-        onSelectProject={selectProject}
-      />
+          {/* Per-project detail (explicit selection). */}
+          <ProjectDetail
+            ref={detailRef}
+            project={selected}
+            projects={projects}
+            onSelect={selectProject}
+            onShowCommits={setCommitsFor}
+            startISO={tr.startISO}
+            endISO={tr.endISO}
+            timeLimit={tr.timeLimit}
+          />
 
-      {/* Per-project detail (explicit selection). */}
-      <ProjectDetail
-        ref={detailRef}
-        project={selected}
-        projects={projects}
-        onSelect={selectProject}
-        onShowCommits={setCommitsFor}
-        startISO={tr.startISO}
-        endISO={tr.endISO}
-        timeLimit={tr.timeLimit}
-      />
-
-      <CommitListModal
-        project={commitsFor}
-        onClose={() => setCommitsFor(null)}
-      />
-    </div>
+          <CommitListModal
+            project={commitsFor}
+            onClose={() => setCommitsFor(null)}
+          />
+        </Page.Content>
+      </Page.Body>
+    </Page>
   );
 }

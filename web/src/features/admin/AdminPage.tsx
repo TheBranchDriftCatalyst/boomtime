@@ -9,8 +9,8 @@
 // Children are lazy-loaded at the route boundary (see App.tsx). This
 // component itself only owns the shell + tab strip.
 import { NavLink, Outlet } from "react-router";
-import { PageToolbar } from "@thebranchdriftcatalyst/catalyst-ui/components/PageToolbar";
-import { cn } from "@/lib/utils";
+import { Page } from "@/layout/Page";
+import { PageTabStrip, pageTabClass } from "@/layout/PageTabs";
 
 const TABS = [
   { id: "users", label: "Users", to: "/app/admin/users" },
@@ -21,40 +21,37 @@ const TABS = [
 
 export function AdminPage() {
   return (
-    <div>
-      <PageToolbar title="Admin" />
+    <Page>
+      <Page.Header title="Admin" />
+      <Page.Body>
+        <Page.Content>
+          <PageTabStrip ariaLabel="Admin sections">
+            {TABS.map((t) => (
+              <NavLink
+                key={t.id}
+                to={t.to}
+                role="tab"
+                end
+                className={({ isActive }) =>
+                  pageTabClass(
+                    isActive,
+                    "font-mono text-xs font-semibold uppercase tracking-widest",
+                  )
+                }
+              >
+                {t.label}
+              </NavLink>
+            ))}
+          </PageTabStrip>
 
-      <div
-        role="tablist"
-        aria-label="Admin sections"
-        className="mb-6 flex gap-1 border-b border-border"
-      >
-        {TABS.map((t) => (
-          <NavLink
-            key={t.id}
-            to={t.to}
-            role="tab"
-            end
-            className={({ isActive }) =>
-              cn(
-                "-mb-px border-b-2 px-4 py-2 font-mono text-xs font-semibold uppercase tracking-widest transition-colors",
-                isActive
-                  ? "border-primary text-foreground"
-                  : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
-              )
-            }
-          >
-            {t.label}
-          </NavLink>
-        ))}
-      </div>
-
-      {/* Sub-route mount. Each child owns its own max-width — labels wants
-          the full 6xl for the wide catalog table, backfill fits in 4xl,
-          logs runs full-bleed. */}
-      <div>
-        <Outlet />
-      </div>
-    </div>
+          {/* Sub-route mount. Each child owns its own max-width — labels wants
+              the full 6xl for the wide catalog table, backfill fits in 4xl,
+              logs runs full-bleed. */}
+          <div>
+            <Outlet />
+          </div>
+        </Page.Content>
+      </Page.Body>
+    </Page>
   );
 }
