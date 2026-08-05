@@ -5,7 +5,6 @@ import {
   Award,
   BookOpen,
   Download,
-  Globe,
   HeartPulse,
   LayoutDashboard,
   ListTree,
@@ -18,7 +17,6 @@ import {
   UserCircle,
 } from "lucide-react";
 import { useSpaces } from "@/features/spaces/useSpaces";
-import { useAuth } from "@/features/auth/useAuth";
 import { useIsAdmin } from "@/features/auth/useIsAdmin";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
@@ -30,9 +28,6 @@ const NAV = [
   { name: "Leaderboards", icon: Award, to: "/app/leaderboards", end: false },
   { name: "Heartbeats", icon: ListTree, to: "/app/heartbeats", end: false },
   { name: "Wellness", icon: HeartPulse, to: "/app/wellness", end: false },
-  // gaka-4ng: owner's profile inside the app skeleton (the public /p/:slug link
-  // below stays as the shareable external view).
-  { name: "Profile", icon: UserCircle, to: "/app/profile", end: false },
   { name: "Import", icon: Download, to: "/app/import", end: false },
   // Logs + Changelog live inside Settings tabs now.
   { name: "Settings", icon: Settings2, to: "/app/settings", end: false },
@@ -121,43 +116,25 @@ function SpacesNavGroup({
   );
 }
 
-/** PublicProfileNavLink — conditional nav item that only appears when the
- * caller has enabled their public profile (gaka-6jm.1). Opens the public
- * URL in a new tab: the /p/:slug route is unauthenticated so keeping it
- * in-app would drop the sidebar/header chrome mid-navigation and confuse
- * the user (the shell auth-guards the whole /app tree). */
-function PublicProfileNavLink({ collapsed }: { collapsed: boolean }) {
-  const { isLoggedIn } = useAuth();
-  const { data } = useQuery({
-    queryKey: qk.publicProfile(),
-    // Only fetch when logged in; the public route needs no auth but the GET
-    // /api/v1/users/current/profile does.
-    queryFn: () => api.getPublicProfile(),
-    enabled: isLoggedIn,
-    // Small stale window so a toggle flip in Settings shows here quickly
-    // via invalidateQueries; the manual invalidate does the heavy lifting.
-    staleTime: 30_000,
-    retry: false,
-  });
-
-  if (!data?.enabled || !data.slug) return null;
-  const href = `/p/${data.slug}`;
-
-  // Plain <a> (not NavLink): the target is unauthed and opens in a new tab,
-  // so it should behave like any external link.
+/** ProfileNavLink — the single Profile entry (gaka-4ng), living in the Spaces
+ * group because a profile is semantically a "space" too: a scoped, publishable
+ * view of your data. Points at the IN-APP owner view (/app/profile), which
+ * hosts both the dossier preview and the editor; the shareable public /p/:slug
+ * URL is reachable from within that page. Always shown for the logged-in owner
+ * (unlike the old external link, which hid until a public profile was enabled)
+ * so they can always reach — and set up — their profile. */
+function ProfileNavLink({ collapsed }: { collapsed: boolean }) {
   return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      title={collapsed ? "Public profile" : undefined}
-      aria-label="Public profile"
-      className={sidebarItemClass(collapsed, false)}
+    <NavLink
+      to="/app/profile"
+      title={collapsed ? "Profile" : undefined}
+      aria-label="Profile"
+      className={({ isActive }) => sidebarItemClass(collapsed, isActive)}
       data-testid="sidebar-public-profile"
     >
-      <Globe className="h-4 w-4 shrink-0" />
-      {!collapsed && "Public profile"}
-    </a>
+      <UserCircle className="h-4 w-4 shrink-0" />
+      {!collapsed && "Profile"}
+    </NavLink>
   );
 }
 
@@ -237,13 +214,13 @@ export function Sidebar({
 
         <AdminNavLink collapsed={collapsed} />
 
-        {/* Public profile lives in the Spaces group — it's semantically a
-            "space" too (a scoped, publishable view of your data). Order:
-            Public profile first, then user-created Spaces, then New space. */}
+        {/* Profile lives in the Spaces group — it's semantically a "space" too
+            (a scoped, publishable view of your data). Order: Profile first,
+            then user-created Spaces, then New space. */}
         <SpacesNavGroup
           collapsed={collapsed}
           onCreateSpace={onCreateSpace}
-          publicProfileSlot={<PublicProfileNavLink collapsed={collapsed} />}
+          publicProfileSlot={<ProfileNavLink collapsed={collapsed} />}
         />
       </nav>
 
