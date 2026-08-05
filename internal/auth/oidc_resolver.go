@@ -34,12 +34,39 @@ type OIDCResolver struct {
 	oauth2        oauth2.Config
 	groupToRole   map[string]string
 	autoprovision bool
+	httpClient    *http.Client
+}
+
+// oidcUserAgent replaces the default "Go-http-client" User-Agent on every
+// server-side OIDC HTTP call (gaka-93f.23). A Cloudflare-proxied issuer
+// (auth.knowledgedump.space) has "Go-http-client" on its managed-bot blocklist
+// and 403s discovery/token/jwks; a benign UA passes (verified: default wget UA
+// succeeds, Go-http-client UA 403s). Not a browser-spoof — just off the bot list.
+const oidcUserAgent = "boomtime-oidc/1.0 (+https://boomtime.knowledgedump.space)"
+
+// uaRoundTripper sets User-Agent on outbound requests without mutating the
+// shared request (RoundTripper must not modify its argument).
+type uaRoundTripper struct {
+	ua   string
+	base http.RoundTripper
+}
+
+func (t *uaRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	r2 := req.Clone(req.Context())
+	r2.Header.Set("User-Agent", t.ua)
+	return t.base.RoundTrip(r2)
 }
 
 // NewOIDCResolver runs OIDC discovery against issuer and builds the verifier +
 // oauth2 config. Returns an error if the issuer is unreachable (boot fails
 // loudly rather than silently falling back).
 func NewOIDCResolver(ctx context.Context, issuer, authorizeURLOverride, clientID, clientSecret, redirectURL string, groupToRole map[string]string, autoprovision bool) (*OIDCResolver, error) {
+	// gaka-93f.23: route ALL server-side OIDC HTTP (discovery here, JWKS refresh
+	// via the keyset built below, and token exchange in exchangeAndVerify)
+	// through a client with a non-"Go-http-client" User-Agent so a Cloudflare-
+	// proxied issuer doesn't 403 it as a bot.
+	httpClient := &http.Client{Transport: &uaRoundTripper{ua: oidcUserAgent, base: http.DefaultTransport}}
+	ctx = oidc.ClientContext(ctx, httpClient)
 	provider, err := oidc.NewProvider(ctx, strings.TrimRight(issuer, "/")+"/")
 	if err != nil {
 		return nil, fmt.Errorf("oidc discovery (%s): %w", issuer, err)
@@ -64,6 +91,7 @@ func NewOIDCResolver(ctx context.Context, issuer, authorizeURLOverride, clientID
 		},
 		groupToRole:   groupToRole,
 		autoprovision: autoprovision,
+		httpClient:    httpClient,
 	}, nil
 }
 
@@ -119,6 +147,12 @@ type CallbackResult struct {
 // expiry, and the provider refresh_token.
 func (r *OIDCResolver) exchangeAndVerify(ctx context.Context, code, expectedNonce string) (oidcClaims, []byte, time.Time, string, *apierr.Error) {
 	var zero oidcClaims
+	// gaka-93f.23: route the token exchange (oauth2) + any lazy JWKS refresh
+	// (go-oidc) through the benign-UA client so Cloudflare doesn't 403 them.
+	if r.httpClient != nil {
+		ctx = oidc.ClientContext(ctx, r.httpClient)
+		ctx = context.WithValue(ctx, oauth2.HTTPClient, r.httpClient)
+	}
 	tok, err := r.oauth2.Exchange(ctx, code)
 	if err != nil {
 		return zero, nil, time.Time{}, "", apierr.New(http.StatusBadGateway, "OIDC token exchange failed", nil)
