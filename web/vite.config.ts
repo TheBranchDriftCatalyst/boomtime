@@ -60,15 +60,61 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
-    // gaka-4hv: split heavyweight vendor libs off the main entry. d3 is by
-    // far the biggest single dep (~120kB min); react + react-router + react-
-    // query are all long-lived and can share a chunk that browsers cache
-    // across dashboard reloads. Route-level pages are chunked separately
-    // via React.lazy in src/app/App.tsx.
+    // gaka-4hv / gaka-93f.23: split heavyweight vendor libs off the main entry
+    // AND coalesce the long tail of sub-2KB chunks. Before this, a page load
+    // fetched 50+ tiny files: one chunk per lucide icon, one per lazy theme,
+    // and one per catalyst-ui UI primitive. We group those into a handful of
+    // shared chunks while KEEPING the big long-lived vendors (react, radix,
+    // d3, react-three-fiber) and the per-route lazy pages split.
     rolldownOptions: {
       output: {
+        // Canonical catalyst-ui theme names (mirrors THEME_REGISTRY). Each is a
+        // lazily `import()`-ed CSS-in-JS chunk in dist/lib/chunks/<name>-<hash>.js.
+        // They only load on a theme switch (never in the initial modulepreload
+        // set), so collapsing all ten into one `themes` chunk leaves the initial
+        // payload untouched — it just trades ten on-demand fetches for one.
         manualChunks: (id) => {
           if (!id.includes("node_modules")) return undefined;
+
+          // ── lucide icons ────────────────────────────────────────────────
+          // ~30 icons, each its own <200B chunk today because they are shared
+          // across route chunks. Fold every lucide glyph into one `icons`
+          // chunk. Checked before the react rules so lucide-react never falls
+          // through to vendor-react.
+          if (/node_modules\/lucide-react\//.test(id)) {
+            return "icons";
+          }
+
+          // ── catalyst-ui: themes, icons, and small UI primitives ─────────
+          const cat = id.match(
+            /node_modules\/@thebranchdriftcatalyst\/catalyst-ui\/dist\/lib\/(.*)$/,
+          );
+          if (cat) {
+            const rel = cat[1];
+            // catalyst's own pre-split big vendors (vendor-radix ~215kB,
+            // vendor-react, vendor-forms, vendor-utils) stay SEPARATE.
+            if (/^chunks\/vendor-/.test(rel)) return undefined;
+            // Lazy theme chunks → one `themes` chunk.
+            if (
+              /^chunks\/(catalyst|dracula|gold|laracon|nature|netflix|nord|dungeon|boomtime|arasaka)-[A-Za-z0-9_]+\.js$/.test(
+                rel,
+              )
+            ) {
+              return "themes";
+            }
+            // catalyst re-exported lucide glyphs (createLucideIcon + single
+            // icon chunks that pull it in) → the same `icons` chunk.
+            if (/^chunks\/createLucideIcon-/.test(rel)) return "icons";
+            // Small shared UI primitives (button, card, dialog, badge, …) live
+            // in dist/lib/ui/* and each split to a sub-2KB chunk. `calendar` is
+            // the one heavyweight (react-day-picker, ~60kB) and stays its own
+            // lazy chunk. Everything else in ui/ folds into `vendor-catalyst`.
+            if (/^ui\//.test(rel) && !/^ui\/calendar\b/.test(rel)) {
+              return "vendor-catalyst";
+            }
+            return undefined;
+          }
+
           if (id.includes("d3-") || id.match(/node_modules\/d3\//)) {
             return "vendor-d3";
           }
