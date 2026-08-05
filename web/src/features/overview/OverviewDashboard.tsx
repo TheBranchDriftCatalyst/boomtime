@@ -21,6 +21,7 @@ import { Punchcard } from "@/viz/charts/Punchcard";
 import { DeepWorkSessions } from "@/viz/charts/DeepWorkSessions";
 import { MomentumGrid } from "@/viz/charts/MomentumGrid";
 import { Page } from "@/layout/Page";
+import { OverviewDataProvider } from "@/features/overview/OverviewDataContext";
 import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
 import { TimeLimitDropdown } from "@/components/toolbar/TimeLimitDropdown";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
@@ -192,6 +193,10 @@ export function OverviewDashboard({
   const mostActiveLang = mostActive(stats?.languages ?? []);
 
   return (
+    // gaka-38v: provide the shared Overview inputs so Phase-3 self-fetching
+    // widgets can read them via useOverviewData. The legacy render below is
+    // unchanged — the provider adds no DOM, so output stays byte-identical.
+    <OverviewDataProvider value={{ tr, timelineHours, setTimelineHours, space }}>
     <Page>
       <Page.Header title={title}>
         {toolbarActions}
@@ -438,5 +443,6 @@ export function OverviewDashboard({
         </Page.Content>
       </Page.Body>
     </Page>
+    </OverviewDataProvider>
   );
 }
