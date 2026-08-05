@@ -169,20 +169,46 @@ func (d *DB) ProvisionOIDCUser(ctx context.Context, preferredUsername, provider,
 	}
 	defer tx.Rollback(ctx)
 
-	username, err := uniqueUsername(ctx, tx, preferredUsername)
-	if err != nil {
-		return "", err
-	}
-
+	// gaka-93f.19: pick + claim the username in ONE atomic step. The old
+	// EXISTS-then-INSERT uniquify had a TOCTOU race — two first-logins picking
+	// the same free name would both pass the EXISTS check, then the second
+	// INSERT would 23505 and surface as a 500. Instead try preferred,
+	// preferred-2, preferred-3, … via INSERT … ON CONFLICT (username) DO NOTHING
+	// RETURNING: a name already taken (even by a not-yet-committed concurrent txn,
+	// which we block on until it resolves) yields no row so we advance the suffix,
+	// and DO NOTHING never raises 23505 — so it can't abort this transaction. For
+	// the common non-racing case this inserts `preferred` on the first iteration,
+	// identical to before.
+	//
 	// Empty password material = local login path is inert for this user
 	// (VerifyPassword fails on an empty hash). Role from the provider groups;
 	// capabilities '{}' means "use the role's defaults".
-	if _, err = tx.Exec(ctx,
-		`INSERT INTO users (username, hashed_password, salt_used, argon_version, role, capabilities)
-		 VALUES ($1, ''::bytea, ''::bytea, 2, $2, '{}'::jsonb)`,
-		username, role); err != nil {
-		return "", err
+	username := ""
+	for i := 1; i < 1000; i++ {
+		candidate := preferredUsername
+		if i > 1 {
+			candidate = fmt.Sprintf("%s-%d", preferredUsername, i)
+		}
+		var got string
+		err := tx.QueryRow(ctx,
+			`INSERT INTO users (username, hashed_password, salt_used, argon_version, role, capabilities)
+			 VALUES ($1, ''::bytea, ''::bytea, 2, $2, '{}'::jsonb)
+			 ON CONFLICT (username) DO NOTHING
+			 RETURNING username`,
+			candidate, role).Scan(&got)
+		if errors.Is(err, pgx.ErrNoRows) {
+			continue // taken (possibly by a concurrent txn) — advance the suffix
+		}
+		if err != nil {
+			return "", err
+		}
+		username = got
+		break
 	}
+	if username == "" {
+		return "", errors.New("could not find a free username after 1000 attempts")
+	}
+
 	if _, err = tx.Exec(ctx,
 		`INSERT INTO user_external_identities (username, provider, sub, email, claims)
 		 VALUES ($1, $2, $3, $4, $5)`,
@@ -193,20 +219,4 @@ func (d *DB) ProvisionOIDCUser(ctx context.Context, preferredUsername, provider,
 		return "", err
 	}
 	return username, nil
-}
-
-// uniqueUsername returns preferred, or preferred-2, preferred-3, … until free.
-func uniqueUsername(ctx context.Context, tx pgx.Tx, preferred string) (string, error) {
-	candidate := preferred
-	for i := 2; i < 1000; i++ {
-		var exists bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE username = $1)`, candidate).Scan(&exists); err != nil {
-			return "", err
-		}
-		if !exists {
-			return candidate, nil
-		}
-		candidate = fmt.Sprintf("%s-%d", preferred, i)
-	}
-	return "", errors.New("could not find a free username after 1000 attempts")
 }

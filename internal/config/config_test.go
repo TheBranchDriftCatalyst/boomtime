@@ -132,9 +132,30 @@ var _ = Describe("CookieSecure derivation (gaka-b5x.1)", func() {
 		Entry("production default → Secure", "production", "", true),
 		Entry("PROD (case-insensitive) default → Secure", "PROD", "", true),
 		Entry("dev default → not Secure", "dev", "", false),
-		Entry("prod + explicit false overrides", "prod", "false", false),
+		// gaka-93f.19: prod IGNORES an explicit false (forced Secure); dev honors
+		// an explicit override in either direction.
+		Entry("prod + explicit false → forced Secure (prod-force)", "prod", "false", true),
+		Entry("production + explicit false → forced Secure", "production", "false", true),
 		Entry("dev + explicit 1 overrides", "dev", "1", true),
+		Entry("dev + explicit false stays not Secure", "dev", "false", false),
 	)
+
+	// gaka-93f.19: the prod-force is a security floor — a prod deploy that copied
+	// BOOM_COOKIE_SECURE=false from a dev env must NOT ship a non-Secure refresh
+	// cookie over TLS. dev keeps its explicit-override freedom.
+	It("prod + BOOM_COOKIE_SECURE=false is forced back to Secure=true", func() {
+		clearEnv()
+		setenv("BOOM_ENV", "prod")
+		setenv("BOOM_COOKIE_SECURE", "false")
+		Expect(Load().CookieSecure).To(BeTrue())
+	})
+
+	It("dev + BOOM_COOKIE_SECURE=false is honored (no prod-force off prod)", func() {
+		clearEnv()
+		setenv("BOOM_ENV", "dev")
+		setenv("BOOM_COOKIE_SECURE", "false")
+		Expect(Load().CookieSecure).To(BeFalse())
+	})
 })
 
 var _ = Describe("getEnvBool", func() {

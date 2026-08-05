@@ -335,6 +335,18 @@ func Load() *Config {
 		CookieSecure: getEnvBool("BOOM_COOKIE_SECURE", isProdEnvName(env)),
 	}
 
+	// gaka-93f.19: in a production env the refresh cookie MUST carry Secure
+	// (it only travels over TLS). An explicit BOOM_COOKIE_SECURE=false there is
+	// almost certainly a copied-from-dev misconfig that would expose the cookie
+	// over plain HTTP — ignore it, force Secure=true, and WARN so the operator
+	// sees the override was overridden rather than silently taking effect. The
+	// dev default (false, for http://localhost) is untouched.
+	if isProdEnvName(env) && !c.CookieSecure {
+		slog.Warn("BOOM_COOKIE_SECURE=false ignored in a production environment — forcing Secure=true on the refresh cookie",
+			"env", env)
+		c.CookieSecure = true
+	}
+
 	rwURL := getEnv("BOOM_REMOTE_WRITE_URL", "")
 	rwToken := getEnv("BOOM_REMOTE_WRITE_TOKEN", "")
 	if rwURL != "" && rwToken != "" {

@@ -12,12 +12,15 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/oauth2"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
@@ -235,6 +238,15 @@ func (r *OIDCResolver) HandleLink(ctx context.Context, database *db.DB, code, cu
 		return apierr.New(http.StatusConflict, "this Authentik identity is already linked to another account", nil)
 	}
 	if err := database.LinkExternalIdentity(ctx, currentUsername, OIDCProviderName, claims.Sub, claims.Email, claimsJSON); err != nil {
+		// gaka-93f.19: a concurrent link of the SAME (provider, sub) can slip
+		// between the GetUserByExternalIdentity check above and this INSERT,
+		// racing the UNIQUE(provider, sub) constraint. That's the identity being
+		// taken, not a server fault — surface the SAME 409 the pre-check returns
+		// rather than a 500.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" { // unique_violation
+			return apierr.New(http.StatusConflict, "this Authentik identity is already linked to another account", nil)
+		}
 		return apierr.Generic()
 	}
 	return nil
@@ -246,7 +258,24 @@ func (r *OIDCResolver) resolveOrProvision(ctx context.Context, database *db.DB, 
 	if username, ok, err := database.GetUserByExternalIdentity(ctx, OIDCProviderName, claims.Sub); err != nil {
 		return "", apierr.Generic()
 	} else if ok {
-		_, _ = database.SetUserRole(ctx, username, role)
+		// gaka-93f.19: only rewrite users.role when the group-derived role
+		// actually DIFFERS from what's stored. An unconditional SetUserRole on
+		// EVERY login silently clobbered an operator's manual role change (and
+		// swallowed the write error). Read the current role, compare, log the
+		// old→new transition, and surface a write failure instead of dropping it.
+		full, ferr := database.GetUserFullByName(ctx, username)
+		if ferr != nil {
+			return "", apierr.Generic()
+		}
+		if full != nil && full.Role != role {
+			if _, serr := database.SetUserRole(ctx, username, role); serr != nil {
+				slog.Error("oidc: failed to update role from provider groups on login",
+					"username", username, "old_role", full.Role, "new_role", role, "err", serr)
+				return "", apierr.Generic()
+			}
+			slog.Info("oidc: role updated from provider groups on login",
+				"username", username, "old_role", full.Role, "new_role", role)
+		}
 		_ = database.TouchExternalIdentity(ctx, OIDCProviderName, claims.Sub, claims.Email, claimsJSON)
 		return username, nil
 	}

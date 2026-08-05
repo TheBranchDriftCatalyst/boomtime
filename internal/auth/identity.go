@@ -50,6 +50,17 @@ func (i *Identity) Capabilities() map[string]bool {
 // AllCapsIdentity builds the flag-off identity: role=full, every capability
 // granted, never disabled. Preserves today's behavior when the user-model
 // feature flag is off.
+//
+// SECURITY GUARDRAIL (gaka-93f.19): under BOOM_FEATURE_USER_MODEL=off this is
+// what resolveIdentity returns for EVERY caller, so IsAdmin()/Can(CapAdmin) is
+// true for EVERYONE. Capability gating is therefore inert with the flag off by
+// design (byte-identical to pre-substrate). Consequently NO handler may gate an
+// admin-only action on ident.IsAdmin() / ident.Can(CapAdmin) alone — with the
+// flag off that check passes for all users. Admin authorization must stay on
+// Cfg.IsAdmin / BOOM_ADMIN_USERS (the allowlist that is real regardless of the
+// flag). Only combine an ident.CapAdmin check with an explicit
+// UserModelEnabled() guard if you truly want admin gating that no-ops when the
+// substrate is off.
 func AllCapsIdentity(username string) *Identity {
 	caps := make(map[Capability]bool, len(AllCapabilities))
 	for _, c := range AllCapabilities {

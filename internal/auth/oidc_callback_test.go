@@ -173,6 +173,55 @@ var _ = Describe("OIDCResolver.HandleCallback (mock Authentik)", func() {
 		Expect(res2.Identity.Username).To(Equal(preferred))
 	})
 
+	It("updates a returning user's role when the provider groups now map to a different role (gaka-93f.19 write-on-change)", func() {
+		database := openServiceTestDB()
+		ctx := context.Background()
+
+		key, err := rsa.GenerateKey(rand.Reader, 2048)
+		Expect(err).NotTo(HaveOccurred())
+		sub := "sub-rolechg-" + time.Now().Format("150405.000000000")
+		preferred := uniqueUsername("oidcrole")
+
+		// The returned Identity.Role is NOT a useful probe here: with
+		// BOOM_FEATURE_USER_MODEL off (the test default) resolveIdentity returns
+		// AllCapsIdentity → Role=full for everyone. Assert on the stored
+		// users.role row instead, which is what the write-on-change touches.
+
+		// First login: groups → light. Row provisioned at role=light.
+		srv1, iss1 := mockAuthentik(key, clientID, sub, preferred, []string{"boomtime-light"})
+		DeferCleanup(srv1.Close)
+		r1, err := NewOIDCResolver(ctx, iss1, "", clientID, "secret", srv1.URL+"/cb", g2r, true)
+		Expect(err).NotTo(HaveOccurred())
+		res1, aerr := r1.HandleCallback(ctx, database, "code-1", mockNonce)
+		Expect(aerr).To(BeNil())
+		Expect(res1.Identity.Username).To(Equal(preferred))
+		full1, ferr1 := database.GetUserFullByName(ctx, preferred)
+		Expect(ferr1).NotTo(HaveOccurred())
+		Expect(full1.Role).To(Equal(string(RoleLight)))
+
+		// Second login, SAME sub, groups now → admin. The existing-link branch
+		// must see derived(admin) != stored(light) and rewrite the row's role.
+		srv2, iss2 := mockAuthentik(key, clientID, sub, preferred, []string{"boomtime-admin"})
+		DeferCleanup(srv2.Close)
+		r2, err := NewOIDCResolver(ctx, iss2, "", clientID, "secret", srv2.URL+"/cb", g2r, true)
+		Expect(err).NotTo(HaveOccurred())
+		res2, aerr2 := r2.HandleCallback(ctx, database, "code-2", mockNonce)
+		Expect(aerr2).To(BeNil())
+		Expect(res2.Identity.Username).To(Equal(preferred)) // same user, not suffixed
+		full2, ferr2 := database.GetUserFullByName(ctx, preferred)
+		Expect(ferr2).NotTo(HaveOccurred())
+		Expect(full2.Role).To(Equal(string(RoleAdmin)))
+
+		// Third login with the SAME (admin) groups exercises the equal-role
+		// branch: no clobber, no error, role stays admin.
+		res3, aerr3 := r2.HandleCallback(ctx, database, "code-3", mockNonce)
+		Expect(aerr3).To(BeNil())
+		Expect(res3.Identity.Username).To(Equal(preferred))
+		full3, ferr3 := database.GetUserFullByName(ctx, preferred)
+		Expect(ferr3).NotTo(HaveOccurred())
+		Expect(full3.Role).To(Equal(string(RoleAdmin)))
+	})
+
 	It("rejects an id_token whose nonce does not match the expected nonce (gaka-93f.16)", func() {
 		database := openServiceTestDB()
 		ctx := context.Background()
