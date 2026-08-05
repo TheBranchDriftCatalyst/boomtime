@@ -1,0 +1,36 @@
+---
+# gaka-93f.11.2 — route the boomtime POD's Authentik calls INTERNALLY, bypassing
+# Cloudflare.
+#
+# auth.knowledgedump.space is Cloudflare-proxied. Server-side OIDC HTTP from the
+# pod (discovery / token / JWKS) egresses via the home IP and hits Cloudflare;
+# Cloudflare's bot/threat protection 403'd it (and escalated to blocking the
+# whole source IP, taking out browser access too). Even with a benign UA
+# (gaka-93f.23) the pod still traverses Cloudflare, which is fragile.
+#
+# This hostAlias makes the pod resolve auth.knowledgedump.space to the in-cluster
+# Traefik service, so ALL server-side OIDC calls go straight to Authentik and
+# NEVER touch Cloudflare. The endpoints in the discovery doc are all
+# https://auth.knowledgedump.space/... so they inherit this alias too. TLS stays
+# valid — Traefik serves the *.knowledgedump.space wildcard cert (verified: a
+# throwaway pod with this alias fetched the discovery doc with a valid cert while
+# the public IP was CF-blocked). BROWSER access is unaffected — clients outside
+# the cluster resolve auth.knowledgedump.space via public DNS → Cloudflare.
+#
+# IP NOTE: 10.103.83.240 is the current `traefik/traefik` Service ClusterIP.
+# ClusterIPs are stable for a service's lifetime but are NOT guaranteed across a
+# service delete+recreate. gaka-93f.11.3 tracks the robust replacement (a
+# CoreDNS rewrite auth.knowledgedump.space -> traefik.traefik.svc.cluster.local,
+# which uses the stable service DNS name instead of a pinned IP). Re-verify this
+# IP with `kubectl get svc traefik -n traefik` after any Traefik service rebuild.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: boomtime
+spec:
+  template:
+    spec:
+      hostAliases:
+        - ip: "10.103.83.240"
+          hostnames:
+            - "auth.knowledgedump.space"
