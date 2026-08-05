@@ -4,6 +4,8 @@ import { createBrowserRouter, RouterProvider } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
 import { RootLayout } from "@/app/App";
+import { RouteErrorBoundary } from "@/app/RouteErrorBoundary";
+import { reloadOnceForStaleChunk } from "@/lib/chunkReload";
 import { CatalystProvider } from "@thebranchdriftcatalyst/catalyst-ui/contexts/CatalystProvider";
 import { TooltipProvider } from "@thebranchdriftcatalyst/catalyst-ui/ui/tooltip";
 import { authStore } from "@/features/auth/auth";
@@ -12,6 +14,16 @@ import "@/index.css";
 // Cross-tab logout: when another tab writes the "logout" key, clear this tab.
 window.addEventListener("storage", (event) => {
   if (event.key === "logout") authStore.clear();
+});
+
+// Stale-chunk recovery: after a deploy, a still-open tab imports chunk hashes
+// that no longer exist. Vite fires "vite:preloadError" at the fetch layer —
+// reload once to fetch the new build (guarded against loops in chunkReload).
+// This is the PRIMARY recovery; RouteErrorBoundary is the fallback if a failed
+// import surfaces through React/Router instead.
+window.addEventListener("vite:preloadError", (event) => {
+  event.preventDefault();
+  reloadOnceForStaleChunk();
 });
 
 const queryClient = new QueryClient({
@@ -32,12 +44,20 @@ const queryClient = new QueryClient({
 const router = createBrowserRouter([
   {
     element: <RootLayout />,
+    // Router-level error UI — replaces react-router's dev-only default page and
+    // auto-recovers from stale lazy chunks after a deploy (see
+    // RouteErrorBoundary + lib/chunkReload).
+    errorElement: <RouteErrorBoundary />,
     children: [
       // The single catchall — the app's Routes decide what to render.
       // A future refactor could push those definitions up into this
       // config table for loader-based data fetching; today's App.tsx
       // still uses nested <Routes> which just work as a leaf.
-      { path: "*", lazy: () => import("@/app/App").then((m) => ({ Component: m.AppRoutes })) },
+      {
+        path: "*",
+        lazy: () => import("@/app/App").then((m) => ({ Component: m.AppRoutes })),
+        errorElement: <RouteErrorBoundary />,
+      },
     ],
   },
 ]);
