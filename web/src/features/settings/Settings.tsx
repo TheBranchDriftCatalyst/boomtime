@@ -1,6 +1,8 @@
+import { useMemo } from "react";
 import { Navigate, useSearchParams } from "react-router";
 import { Page } from "@/layout/Page";
-import { PageTabStrip, pageTabClass } from "@/layout/PageTabs";
+import { TabNav, tabClass } from "@/layout/PageTabs";
+import { useHeaderSlot } from "@/layout/HeaderSlot";
 import { CurationTab } from "@/features/curation/CurationTab";
 import { RemappingsTab } from "@/features/curation/RemappingsTab";
 import { GoalsTab } from "@/features/goals/GoalsTab";
@@ -84,37 +86,49 @@ export function Settings() {
 
   const raw = params.get("tab") ?? "";
   const redirect = LEGACY_ADMIN_TAB_REDIRECTS[raw];
-  if (redirect) {
-    // Fire the navigation via <Navigate> so it goes through the router
-    // and preserves scroll/state behavior. Guard is a top-level early
-    // return so tab hunt below never runs on a stale legacy id.
-    return <Navigate to={redirect} replace />;
-  }
-
   const active: TabID = TABS.some((t) => t.id === raw)
     ? (raw as TabID)
     : "plugin";
+
+  // gaka-5jp: the tab strip is HOISTED into the app HeaderBar (reclaiming the
+  // whole Page.Header title row). Build it ONCE per active-tab change and
+  // memoize — useHeaderSlot's effect keys on this node's identity, so a stable
+  // reference keeps it from thrashing the header on unrelated re-renders. The
+  // "Settings" prefix keeps page context now that the title row is gone.
+  const headerTabs = useMemo(
+    () =>
+      redirect ? null : (
+        <TabNav ariaLabel="Settings sections" variant="header" label="Settings">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              role="tab"
+              aria-selected={t.id === active}
+              onClick={() => setParams({ tab: t.id }, { replace: true })}
+              className={tabClass(t.id === active)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </TabNav>
+      ),
+    [active, redirect, setParams],
+  );
+  useHeaderSlot(headerTabs);
+
+  if (redirect) {
+    // Fire the navigation via <Navigate> so it goes through the router and
+    // preserves scroll/state behavior. Hooks above run unconditionally
+    // (headerTabs is null on a redirect render) so this early return is legal.
+    return <Navigate to={redirect} replace />;
+  }
+
   const tab = TABS.find((t) => t.id === active)!;
 
   return (
     <Page>
-      <Page.Header title="Settings" />
       <Page.Body>
         <Page.Content>
-          <PageTabStrip ariaLabel="Settings sections">
-            {TABS.map((t) => (
-              <button
-                key={t.id}
-                role="tab"
-                aria-selected={t.id === active}
-                onClick={() => setParams({ tab: t.id }, { replace: true })}
-                className={pageTabClass(t.id === active, "text-sm font-medium")}
-              >
-                {t.label}
-              </button>
-            ))}
-          </PageTabStrip>
-
           <div
             role="tabpanel"
             className={active === "profile" ? "max-w-6xl" : "max-w-4xl"}

@@ -1,0 +1,193 @@
+/* TabNav.css — portable, CSS-var-driven tab-navigation primitive.
+ *
+ * DOMAIN-FREE, mirroring grid.css: it reads only standard design tokens the
+ * host theme already defines (--primary, --foreground, --muted-foreground,
+ * --border, --ring). No boomtime colors are hard-coded, so when this folder
+ * graduates to catalyst-ui the stylesheet travels unchanged.
+ *
+ * Optional consumer override:
+ *   --tabnav-font   label typeface (defaults to a mono/tech stack)
+ *
+ * Structure:
+ *   .catalyst-tabnav                outer wrapper (optional label + list)
+ *     .catalyst-tabnav__label       context prefix (e.g. "SETTINGS")
+ *     .catalyst-tabnav__list        role="tablist" — the scrollable tab row
+ *       .catalyst-tab               a single tab (button or <a>/NavLink)
+ *
+ * Variants:
+ *   .catalyst-tabnav--header        compact, full-height, flush in the app bar
+ *   .catalyst-tabnav--page          standalone strip with a baseline + margin
+ */
+
+.catalyst-tabnav {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  --tabnav-font: "JetBrains Mono", "Chakra Petch", ui-monospace,
+    "SFMono-Regular", monospace;
+}
+.catalyst-tabnav--header {
+  height: 100%;
+}
+.catalyst-tabnav--page {
+  margin-bottom: 1.5rem;
+}
+
+/* ── Context label ─────────────────────────────────────────────────────── */
+.catalyst-tabnav__label {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  font-family: var(--tabnav-font);
+  font-size: 0.6875rem; /* text-xs, tightened */
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--foreground);
+  white-space: nowrap;
+  padding-right: 0.85rem;
+  margin-right: 0.35rem;
+  border-right: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+  text-shadow: 0 0 12px color-mix(in oklab, var(--primary) 22%, transparent);
+}
+
+/* ── Tab list ──────────────────────────────────────────────────────────── */
+.catalyst-tabnav__list {
+  display: flex;
+  align-items: stretch;
+  gap: 0.25rem;
+  min-width: 0;
+}
+.catalyst-tabnav--header .catalyst-tabnav__list {
+  height: 100%;
+  /* Scroll, never wrap, on narrow widths — the header must stay one row. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none; /* Firefox */
+}
+.catalyst-tabnav--header .catalyst-tabnav__list::-webkit-scrollbar {
+  display: none; /* WebKit */
+}
+.catalyst-tabnav--page .catalyst-tabnav__list {
+  flex: 1;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── A single tab ──────────────────────────────────────────────────────── */
+.catalyst-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  white-space: nowrap;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-decoration: none;
+
+  /* Labels: UPPERCASE, wide-tracked, small — a terminal/tech treatment. */
+  font-family: var(--tabnav-font);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted-foreground);
+
+  /* GPU-friendly: only color + text-shadow animate here; the underline
+   * animates opacity/transform on ::after. */
+  transition: color 170ms ease, text-shadow 170ms ease;
+}
+.catalyst-tabnav--header .catalyst-tab {
+  height: 100%;
+  padding: 0 0.85rem;
+}
+.catalyst-tabnav--page .catalyst-tab {
+  padding: 0.5rem 1rem;
+}
+
+/* Faint primary-tinted backlight behind the ACTIVE label. */
+.catalyst-tab::before {
+  content: "";
+  position: absolute;
+  inset: 0.3rem 0.35rem;
+  border-radius: 3px;
+  background: color-mix(in oklab, var(--primary) 11%, transparent);
+  opacity: 0;
+  transition: opacity 170ms ease;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* The animated underline — pinned to the bottom edge so in the header variant
+ * it reads as part of the bar's own bottom border. */
+.catalyst-tab::after {
+  content: "";
+  position: absolute;
+  left: 0.6rem;
+  right: 0.6rem;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--border);
+  opacity: 0;
+  transform: scaleX(0.4);
+  transform-origin: center;
+  transition: opacity 180ms ease, transform 180ms ease, background 180ms ease,
+    box-shadow 180ms ease;
+  pointer-events: none;
+}
+
+/* Keep the label above the backlight pseudo. */
+.catalyst-tab > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Hover (inactive): lift to foreground + a faint border-colored underline. */
+.catalyst-tab:hover {
+  color: var(--foreground);
+}
+.catalyst-tab:hover::after {
+  opacity: 0.7;
+  transform: scaleX(0.85);
+}
+
+/* Active: neon primary text-glow, bright glowing underline, faint backlight.
+ * Driven by the helper's `.catalyst-tab--active`; aria-selected/[.active]
+ * (NavLink) kept as robustness fallbacks. */
+.catalyst-tab--active,
+.catalyst-tab[aria-selected="true"] {
+  color: var(--primary);
+  text-shadow: 0 0 16px color-mix(in oklab, var(--primary) 45%, transparent);
+}
+.catalyst-tab--active::before,
+.catalyst-tab[aria-selected="true"]::before {
+  opacity: 1;
+}
+.catalyst-tab--active::after,
+.catalyst-tab[aria-selected="true"]::after {
+  background: var(--primary);
+  opacity: 1;
+  transform: scaleX(1);
+  box-shadow: 0 0 10px 1px color-mix(in oklab, var(--primary) 70%, transparent);
+}
+
+/* Keyboard focus — a visible, glow-forward affordance without an offset ring
+ * that would clip inside the header's overflow. */
+.catalyst-tab:focus-visible {
+  outline: none;
+  color: var(--foreground);
+}
+.catalyst-tab:focus-visible::after {
+  background: var(--ring, var(--primary));
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .catalyst-tab,
+  .catalyst-tab::before,
+  .catalyst-tab::after {
+    transition: none;
+  }
+}

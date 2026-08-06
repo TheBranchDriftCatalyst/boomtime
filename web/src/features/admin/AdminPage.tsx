@@ -8,9 +8,11 @@
 //
 // Children are lazy-loaded at the route boundary (see App.tsx). This
 // component itself only owns the shell + tab strip.
+import { useMemo } from "react";
 import { NavLink, Outlet } from "react-router";
 import { Page } from "@/layout/Page";
-import { PageTabStrip, pageTabClass } from "@/layout/PageTabs";
+import { TabNav, tabClass } from "@/layout/PageTabs";
+import { useHeaderSlot } from "@/layout/HeaderSlot";
 
 const TABS = [
   { id: "users", label: "Users", to: "/app/admin/users" },
@@ -20,30 +22,35 @@ const TABS = [
 ] as const;
 
 export function AdminPage() {
+  // gaka-5jp: the tab strip is HOISTED into the app HeaderBar via useHeaderSlot,
+  // reclaiming the Page.Header title row. NavLink computes its own active state
+  // from the URL, so this node's identity never needs to change — memoize with
+  // an empty dep set so the header slot stays stable. The "Admin" prefix keeps
+  // context now that the title row is gone.
+  const headerTabs = useMemo(
+    () => (
+      <TabNav ariaLabel="Admin sections" variant="header" label="Admin">
+        {TABS.map((t) => (
+          <NavLink
+            key={t.id}
+            to={t.to}
+            role="tab"
+            end
+            className={({ isActive }) => tabClass(isActive)}
+          >
+            {t.label}
+          </NavLink>
+        ))}
+      </TabNav>
+    ),
+    [],
+  );
+  useHeaderSlot(headerTabs);
+
   return (
     <Page>
-      <Page.Header title="Admin" />
       <Page.Body>
         <Page.Content>
-          <PageTabStrip ariaLabel="Admin sections">
-            {TABS.map((t) => (
-              <NavLink
-                key={t.id}
-                to={t.to}
-                role="tab"
-                end
-                className={({ isActive }) =>
-                  pageTabClass(
-                    isActive,
-                    "font-mono text-xs font-semibold uppercase tracking-widest",
-                  )
-                }
-              >
-                {t.label}
-              </NavLink>
-            ))}
-          </PageTabStrip>
-
           {/* Sub-route mount. Each child owns its own max-width — labels wants
               the full 6xl for the wide catalog table, backfill fits in 4xl,
               logs runs full-bleed. */}

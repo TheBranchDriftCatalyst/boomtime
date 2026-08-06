@@ -30,6 +30,7 @@ import {
 import { UserAvatarImage } from "@/features/publicprofile/UserAvatarImage";
 import { useIsAdmin } from "@/features/auth/useIsAdmin";
 import { DevModeToggle } from "@/features/devtools";
+import { useHeaderSlotNode } from "@/layout/HeaderSlot";
 
 interface HeaderBarProps {
   username: string;
@@ -61,10 +62,21 @@ export function HeaderBar({ username, onLogout }: HeaderBarProps) {
   const isDark = variant === "dark";
   const greeting = greetingFor(new Date().getHours());
 
+  // gaka-5jp: a page (settings/admin) may hoist its tab strip up here via
+  // useHeaderSlot. When present it takes the header's left/center space in
+  // place of the greeting; the right-side controls are untouched.
+  const slot = useHeaderSlotNode();
+
+  // Subtle --primary ring + faint neon glow, cohesive with the dossier aesthetic.
   const avatar = (size: number) => (
     <span
-      className="inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full ring-1 ring-border"
-      style={{ width: size, height: size }}
+      className="inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full"
+      style={{
+        width: size,
+        height: size,
+        boxShadow:
+          "0 0 0 1px color-mix(in oklab, var(--primary) 55%, transparent), 0 0 12px color-mix(in oklab, var(--primary) 28%, transparent)",
+      }}
     >
       <UserAvatarImage
         username={username}
@@ -75,14 +87,38 @@ export function HeaderBar({ username, onLogout }: HeaderBarProps) {
   );
 
   return (
-    <header className="flex h-16 items-center justify-between gap-3 border-b bg-card px-6">
-      {/* Quick-look: a time-aware greeting. */}
-      <div className="hidden items-baseline gap-1.5 text-sm md:flex">
-        <span className="text-muted-foreground">{greeting},</span>
-        <span className="font-semibold text-foreground">{username}</span>
+    <header
+      className="flex h-16 items-center justify-between gap-3 border-b bg-card px-6"
+      style={{
+        // Sharpen the bottom edge with a hair of neon.
+        borderBottomColor:
+          "color-mix(in oklab, var(--primary) 25%, var(--border))",
+        boxShadow: "0 1px 0 0 color-mix(in oklab, var(--primary) 14%, transparent)",
+      }}
+    >
+      {/* Left/center: hoisted page chrome (tab strip) when a page set one,
+          else a time-aware greeting with a refined terminal treatment.
+          flex-1 min-w-0 gives the slot room; the strip scrolls-x on narrow
+          widths (TabNav.css) so the header never wraps. */}
+      <div className="flex h-full min-w-0 flex-1 items-center">
+        {slot ?? (
+          <div
+            className="hidden items-baseline gap-2 md:flex"
+            style={{
+              fontFamily: '"JetBrains Mono", "Chakra Petch", ui-monospace, monospace',
+            }}
+          >
+            <span className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+              {greeting},
+            </span>
+            <span className="text-sm font-semibold tracking-wide text-foreground">
+              {username}
+            </span>
+          </div>
+        )}
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex shrink-0 items-center gap-2">
         {/* Admin-only dev utilities — renders nothing for normal users. */}
         {isAdmin && <DevModeToggle variant="ghost" size="icon" />}
 

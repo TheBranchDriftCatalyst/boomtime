@@ -3,6 +3,7 @@ import { Outlet, useNavigate } from "react-router";
 import { HeaderBar } from "@/layout/HeaderBar";
 import { Sidebar } from "@/layout/Sidebar";
 import { AppShellNoScroll } from "@/layout/AppShellNoScroll";
+import { HeaderSlotProvider } from "@/layout/HeaderSlot";
 import { CreateSpaceDialog } from "@/features/spaces/CreateSpaceDialog";
 import { WelcomeModal } from "@/features/onboarding/WelcomeModal";
 import { useAuth } from "@/features/auth/useAuth";
@@ -27,19 +28,24 @@ export function AppShell() {
 
   return (
     <>
-      <AppShellNoScroll
-        sidebar={
-          <Sidebar
-            collapsed={collapsed}
-            onToggleCollapsed={toggleCollapsed}
-            onLogout={handleLogout}
-            onCreateSpace={() => setCreateSpaceOpen(true)}
-          />
-        }
-        header={<HeaderBar username={username} onLogout={handleLogout} />}
-      >
-        <Outlet />
-      </AppShellNoScroll>
+      {/* HeaderSlotProvider must wrap BOTH the header and the routed <Outlet/>
+          so a page (settings/admin) can hoist its tab strip up into HeaderBar
+          to reclaim the page's title+tab row. See @/layout/HeaderSlot. */}
+      <HeaderSlotProvider>
+        <AppShellNoScroll
+          sidebar={
+            <Sidebar
+              collapsed={collapsed}
+              onToggleCollapsed={toggleCollapsed}
+              onLogout={handleLogout}
+              onCreateSpace={() => setCreateSpaceOpen(true)}
+            />
+          }
+          header={<HeaderBar username={username} onLogout={handleLogout} />}
+        >
+          <Outlet />
+        </AppShellNoScroll>
+      </HeaderSlotProvider>
 
       <CreateSpaceDialog
         open={createSpaceOpen}
