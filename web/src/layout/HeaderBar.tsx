@@ -28,6 +28,8 @@ import {
   THEME_REGISTRY,
 } from "@thebranchdriftcatalyst/catalyst-ui/contexts/Theme";
 import { UserAvatarImage } from "@/features/publicprofile/UserAvatarImage";
+import { useIsAdmin } from "@/features/auth/useIsAdmin";
+import { DevModeToggle } from "@/features/devtools";
 
 interface HeaderBarProps {
   username: string;
@@ -52,6 +54,10 @@ export function HeaderBar({ username, onLogout }: HeaderBarProps) {
   const navigate = useNavigate();
   const { theme, setTheme, variant, setVariant, effects, updateEffect } =
     useTheme();
+  // gaka-1im: admin-only devtools (annotation subsystem + component inspector).
+  // Invisible to normal users — the toggle renders nothing unless the current
+  // user is an admin.
+  const { isAdmin } = useIsAdmin();
   const isDark = variant === "dark";
   const greeting = greetingFor(new Date().getHours());
 
@@ -76,7 +82,11 @@ export function HeaderBar({ username, onLogout }: HeaderBarProps) {
         <span className="font-semibold text-foreground">{username}</span>
       </div>
 
-      <DropdownMenu>
+      <div className="flex items-center gap-2">
+        {/* Admin-only dev utilities — renders nothing for normal users. */}
+        {isAdmin && <DevModeToggle variant="ghost" size="icon" />}
+
+        <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
@@ -194,7 +204,8 @@ export function HeaderBar({ username, onLogout }: HeaderBarProps) {
             Logout
           </DropdownMenuItem>
         </DropdownMenuContent>
-      </DropdownMenu>
+        </DropdownMenu>
+      </div>
     </header>
   );
 }

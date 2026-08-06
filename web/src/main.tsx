@@ -8,6 +8,7 @@ import { RouteErrorBoundary } from "@/app/RouteErrorBoundary";
 import { reloadOnceForStaleChunk } from "@/lib/chunkReload";
 import { CatalystProvider } from "@thebranchdriftcatalyst/catalyst-ui/contexts/CatalystProvider";
 import { TooltipProvider } from "@thebranchdriftcatalyst/catalyst-ui/ui/tooltip";
+import { DevProviders } from "@/features/devtools";
 import { authStore } from "@/features/auth/auth";
 import "@/index.css";
 
@@ -78,10 +79,17 @@ createRoot(document.getElementById("root")!).render(
         (labels are dense, want the explainer to appear quickly).
       */}
       <TooltipProvider delayDuration={200}>
-        <QueryClientProvider client={queryClient}>
-          <RouterProvider router={router} />
-          <Toaster position="top-right" richColors />
-        </QueryClientProvider>
+        {/*
+          gaka-1im: admin-only devtools annotation subsystem. DevProviders is a
+          cheap localStorage-backed AnnotationProvider — safe to mount for every
+          user; the actual UI (<DevModeToggle/>) is admin-gated in HeaderBar.
+        */}
+        <DevProviders>
+          <QueryClientProvider client={queryClient}>
+            <RouterProvider router={router} />
+            <Toaster position="top-right" richColors />
+          </QueryClientProvider>
+        </DevProviders>
       </TooltipProvider>
     </CatalystProvider>
   </StrictMode>,
