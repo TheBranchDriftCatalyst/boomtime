@@ -27,10 +27,17 @@ import (
 )
 
 // dashboardLayoutScopes is the allowlist of :scope values the endpoint will
-// accept. Extend when adding a new dashboard target (e.g. "overview"). The map
-// value is unused — set membership only.
+// accept. Extend when adding a new dashboard target. The map value is unused —
+// set membership only.
+//
+// gaka-lzr Phase 4: "overview" is admitted so a future PUT of the in-app
+// Overview dashboard layout to /api/v1/users/current/dashboard/overview is
+// accepted. FE persistence isn't wired yet (Phase 6) — accepting the scope now
+// is harmless: rows are owner-keyed (UNIQUE(owner, scope)), so a user can only
+// squat their OWN overview row.
 var dashboardLayoutScopes = map[string]struct{}{
 	"public_profile": {},
+	"overview":       {},
 }
 
 // GetDashboardLayout: GET /api/v1/users/current/dashboard/:scope (auth).

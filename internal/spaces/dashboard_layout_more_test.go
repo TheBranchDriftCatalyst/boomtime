@@ -79,8 +79,10 @@ var _ = Describe("dashboard layout extras (gaka-d6x.handler)", func() {
 			e := hz.Router()
 			_, token := hz.MintUser("dash_del_scope")
 
+			// gaka-lzr: "overview" is now an admitted scope, so exercise the
+			// reject branch with a scope that stays off the allowlist.
 			req := httptest.NewRequest(http.MethodDelete,
-				"/api/v1/users/current/dashboard/overview", nil)
+				"/api/v1/users/current/dashboard/not_a_real_scope", nil)
 			req.Header.Set("Authorization", "Basic "+token)
 			rec := httptest.NewRecorder()
 			e.ServeHTTP(rec, req)
@@ -138,8 +140,10 @@ var _ = Describe("dashboard layout extras (gaka-d6x.handler)", func() {
 			// typo) would slip through if we only exercise DELETE's branch.
 			// Also proves PUT does NOT touch the DB when the scope check fails
 			// — the body must NEVER get materialized.
+			// gaka-lzr: "overview" is now admitted; use an off-allowlist scope
+			// to pin the reject branch.
 			req := httptest.NewRequest(http.MethodPut,
-				"/api/v1/users/current/dashboard/overview",
+				"/api/v1/users/current/dashboard/not_a_real_scope",
 				bytes.NewReader([]byte(`{"layout":{"cols":12}}`)))
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("Authorization", "Basic "+token)
@@ -149,6 +153,47 @@ var _ = Describe("dashboard layout extras (gaka-d6x.handler)", func() {
 				"PUT unknown scope must be 400: got %d body=%s", rec.Code, rec.Body.String())
 			Expect(rec.Body.String()).To(ContainSubstring("scope"),
 				"expected scope-related error, got %s", rec.Body.String())
+		})
+
+		It("ADMITS the 'overview' scope (gaka-lzr Phase 4): PUT then GET round-trips, unknown still 400s", func() {
+			hz := testutil.NewHarness(GinkgoT())
+			e := hz.Router()
+			_, token := hz.MintUser("dash_put_overview")
+
+			// PUT an overview layout — must be accepted (200), not 400.
+			inner := `{"cols":12,"widgets":[{"i":"overview-stats","x":0,"y":0,"w":12,"h":2}]}`
+			req := httptest.NewRequest(http.MethodPut,
+				"/api/v1/users/current/dashboard/overview",
+				bytes.NewReader([]byte(`{"layout":`+inner+`}`)))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Basic "+token)
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+			Expect(rec).To(testutil.HaveStatus(http.StatusOK),
+				"PUT overview must be accepted now: got %d body=%s", rec.Code, rec.Body.String())
+
+			// GET reads it back verbatim.
+			req2 := httptest.NewRequest(http.MethodGet,
+				"/api/v1/users/current/dashboard/overview", nil)
+			req2.Header.Set("Authorization", "Basic "+token)
+			rec2 := httptest.NewRecorder()
+			e.ServeHTTP(rec2, req2)
+			Expect(rec2).To(testutil.HaveStatus(http.StatusOK),
+				"GET overview after PUT: body=%s", rec2.Body.String())
+			Expect(rec2.Body.String()).To(ContainSubstring("overview-stats"),
+				"overview layout content lost on round-trip: body=%s", rec2.Body.String())
+
+			// A still-unknown scope must remain a 400 — admitting overview did
+			// not open the allowlist to arbitrary scopes.
+			req3 := httptest.NewRequest(http.MethodPut,
+				"/api/v1/users/current/dashboard/not_a_real_scope",
+				bytes.NewReader([]byte(`{"layout":{"cols":12}}`)))
+			req3.Header.Set("Content-Type", "application/json")
+			req3.Header.Set("Authorization", "Basic "+token)
+			rec3 := httptest.NewRecorder()
+			e.ServeHTTP(rec3, req3)
+			Expect(rec3).To(testutil.HaveStatus(http.StatusBadRequest),
+				"an off-allowlist scope must still 400: got %d body=%s", rec3.Code, rec3.Body.String())
 		})
 
 		It("rejects a syntactically-broken JSON body with 400 (not 500)", func() {

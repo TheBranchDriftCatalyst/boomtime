@@ -22,6 +22,8 @@ import { DeepWorkSessions } from "@/viz/charts/DeepWorkSessions";
 import { MomentumGrid } from "@/viz/charts/MomentumGrid";
 import { Page } from "@/layout/Page";
 import { OverviewDataProvider } from "@/features/overview/OverviewDataContext";
+import { useFeatureFlag } from "@/lib/featureFlags";
+import { useDashboardEditor } from "@/features/dashboard-edit/DashboardEditor";
 import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
 import { TimeLimitDropdown } from "@/components/toolbar/TimeLimitDropdown";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
@@ -72,6 +74,14 @@ export function OverviewDashboard({
 }: OverviewDashboardProps) {
   const tr = useTimeRange();
   const [timelineHours, setTimelineHours] = useState(12);
+
+  // gaka-lzr Phase 4: the in-app dashboard editor, STRICTLY behind the
+  // default-off `overviewEditor` flag. The hook is called unconditionally (it
+  // owns a local store + builds the grid/chrome/sidebar nodes; no network) but
+  // its output is only RENDERED when the flag is on — so the flag-off path
+  // below is the untouched legacy JSX, byte-identical to what ships today.
+  const [editorOn] = useFeatureFlag("overviewEditor");
+  const editor = useDashboardEditor("overview");
 
   const statsQuery = useQuery({
     queryKey: qk.stats(tr.startISO, tr.endISO, tr.timeLimit, space),
@@ -191,6 +201,45 @@ export function OverviewDashboard({
   // (see @/lib/mostActive).
   const mostActiveProject = mostActive(stats?.projects ?? []);
   const mostActiveLang = mostActive(stats?.languages ?? []);
+
+  // gaka-lzr Phase 4: when the editor flag is ON, render the draggable
+  // widget-grid path (Edit/Preview toggle in the header, the add-widget rail in
+  // the aside during edit, the grid in the content region). The widgets
+  // self-fetch through the SAME OverviewDataProvider + qk.* keys the legacy
+  // path uses, so react-query dedupes — no extra network. Layout is LOCAL only
+  // this phase (seeded from OVERVIEW_DEFAULT_LAYOUT); DB persistence is Phase 6.
+  if (editorOn) {
+    return (
+      <OverviewDataProvider value={{ tr, timelineHours, setTimelineHours, space }}>
+        <Page>
+          <Page.Header title={title}>
+            {toolbarActions}
+            <WidgetsPanel
+              scopeType={space ? "space" : "user"}
+              scopeRef={space ?? ""}
+            />
+            <TimeLimitDropdown value={tr.timeLimit} onChange={tr.setTimeLimit} />
+            <DateRangePicker
+              numDays={tr.numDays}
+              onPreset={tr.setDaysFromToday}
+              onRange={tr.setRange}
+            />
+            {editor.chrome}
+          </Page.Header>
+          <Page.Body
+            aside={
+              editor.isEdit ? <Page.Aside>{editor.sidebar}</Page.Aside> : undefined
+            }
+          >
+            <Page.Content>
+              {beforeContent && <div className="mb-6">{beforeContent}</div>}
+              {editor.content}
+            </Page.Content>
+          </Page.Body>
+        </Page>
+      </OverviewDataProvider>
+    );
+  }
 
   return (
     // gaka-38v: provide the shared Overview inputs so Phase-3 self-fetching
