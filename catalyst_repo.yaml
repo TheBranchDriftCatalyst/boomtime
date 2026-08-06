@@ -1,18 +1,53 @@
 # Catalyst repo descriptor — drives the operator cockpit + profile generator.
 version: "0.1.1"
 name: "boomtime"
-description: ""
-repo_url: "git@github.com:TheBranchDriftCatalyst/hakatime.git"
+description: >-
+  Self-hosted, Wakatime-compatible coding-time analytics. A Go + React server
+  that ingests editor heartbeats and turns them into living dashboards —
+  contribution calendars, coding punchcards, project momentum, deep-work
+  sessions, and shareable public profiles. Built multi-tenant from the ground
+  up: Authentik OIDC SSO, role/capability RBAC, and per-user encryption at rest.
+repo_url: "https://github.com/TheBranchDriftCatalyst/boomtime"
 
 # Repository Status
-status: "active"  # Options: active, archived, wip, experimental
+status: "active" # Options: active, archived, wip, experimental
 
 # Grouping / Categories (for organizing on profile page)
 groups:
-  []
+  - "catalyst-core"
+  - "web-apps"
+  - "self-hosted"
+  - "developer-tools"
 
-# Tech stack (auto-detected from package.json / pyproject.toml; supplement here)
+# Tech stack (auto-detected from package.json / pyproject.toml; supplemented here)
 tech_stack:
-  languages: []
-  frameworks: []
-  tools: []
+  languages:
+    - "go"
+    - "typescript"
+  frameworks:
+    - "react"
+    - "echo"
+    - "tailwindcss"
+    - "vite"
+    - "d3"
+  tools:
+    - "postgresql"
+    - "docker"
+    - "kubernetes"
+    - "argocd"
+    - "authentik"
+
+# Badge configuration (auto-generated; links back to the repo)
+badges:
+  stars: true
+  issues: true
+  prs: true
+  license: true
+
+# Custom highlights — the headline reasons this project is interesting.
+highlights:
+  - "Drop-in Wakatime API replacement — point your existing editor plugin at it, zero client changes"
+  - "Rich D3 analytics: GitHub-style contribution calendar, coding punchcard, project momentum & deep-work sessions"
+  - "Multi-tenant SaaS foundation — Authentik OIDC SSO, role/capability RBAC, per-user AES-256-GCM secrets at rest"
+  - "Shareable public profiles + embeddable SVG widgets for your README or blog"
+  - "GitOps-native delivery: Kubernetes + ArgoCD on Talos, CloudNativePG Postgres, ExternalSecrets from 1Password"
