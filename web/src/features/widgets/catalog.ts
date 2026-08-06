@@ -95,7 +95,7 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
     description: "Your most active projects as bars",
     scopes: ["user", "space"],
     primitives: ["graph", "label"],
-    dashboardScopes: ["profile"],
+    dashboardScopes: ["profile", "overview"],
     defaultLayout: { w: 6, h: 4 },
     views: [
       { id: "pie", label: "Pie", icon: "PieChart" },
@@ -117,7 +117,7 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
     description: "Per-day coding activity, GitHub contributions style",
     scopes: ["user", "project", "space"],
     primitives: ["graph"],
-    dashboardScopes: ["profile"],
+    dashboardScopes: ["profile", "overview"],
     defaultLayout: { w: 12, h: 3 },
   },
   {
@@ -126,7 +126,7 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
     description: "Hour-of-day × day-of-week intensity grid",
     scopes: ["user", "project", "space"],
     primitives: ["graph"],
-    dashboardScopes: ["profile"],
+    dashboardScopes: ["profile", "overview"],
     defaultLayout: { w: 6, h: 4 },
     views: [
       { id: "heatmap", label: "Heatmap", icon: "Grid3x3" },
@@ -140,6 +140,8 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
     description: "Weekly per-project heatmap — who is heating up",
     scopes: ["user", "space"],
     primitives: ["graph", "label"],
+    dashboardScopes: ["overview"],
+    defaultLayout: { w: 6, h: 4 },
   },
   {
     kind: "profile-summary",
@@ -156,6 +158,8 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
     description: "Filled area of accumulating total time — the growth shape",
     scopes: ["user", "project", "space"],
     primitives: ["graph", "label"],
+    dashboardScopes: ["overview"],
+    defaultLayout: { w: 6, h: 4 },
   },
   {
     kind: "deep-work",
@@ -163,6 +167,8 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
     description: "Session count + median + longest + daily shape",
     scopes: ["user", "project", "space"],
     primitives: ["label", "graph"],
+    dashboardScopes: ["overview"],
+    defaultLayout: { w: 12, h: 3 },
   },
   {
     kind: "heatmap-projects",
@@ -170,6 +176,8 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
     description: "Day × top-6-projects intensity grid",
     scopes: ["user", "space"],
     primitives: ["graph"],
+    dashboardScopes: ["overview"],
+    defaultLayout: { w: 6, h: 3 },
   },
   {
     kind: "heatmap-languages",
@@ -177,6 +185,8 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
     description: "Day × top-6-languages intensity grid",
     scopes: ["user", "project", "space"],
     primitives: ["graph"],
+    dashboardScopes: ["overview"],
+    defaultLayout: { w: 6, h: 3 },
   },
   // gaka-keb — profile-only kinds. These render only in-page on the
   // composable dashboard grid (no SVG embed variants — they're either
@@ -324,6 +334,84 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
     primitives: ["label"],
     dashboardScopes: ["profile"],
     defaultLayout: { w: 6, h: 4 },
+  },
+  // gaka-7uc (Phase 3): Overview-only kinds. Like the goal-*/hero-identity/
+  // *-stat profile kinds, these render ONLY in-page (via
+  // OverviewWidgetRenderer, self-fetching from OverviewDataContext) — they have
+  // no backend SVG variant, so they are deliberately absent from
+  // internal/widget/render.go's Kinds() and the drift-guard test
+  // (TestKindsMatchFrontendCatalog only pins the SVG-renderable subset).
+  {
+    kind: "overview-stats",
+    title: "Overview Stats",
+    description: "Total time, project count, most-active project + language",
+    scopes: ["user", "space"],
+    primitives: ["label"],
+    dashboardScopes: ["overview"],
+    defaultLayout: { w: 12, h: 2 },
+  },
+  {
+    kind: "ai-assistance",
+    title: "AI Assistance",
+    description: "AI-vs-human line changes + token usage for the range",
+    scopes: ["user"],
+    primitives: ["graph", "label"],
+    dashboardScopes: ["overview"],
+    defaultLayout: { w: 12, h: 3 },
+  },
+  {
+    kind: "wellness",
+    title: "Wellness",
+    description: "Apple Watch / HealthKit overlay — workouts, HR, steps, sleep",
+    scopes: ["user"],
+    primitives: ["graph", "label"],
+    dashboardScopes: ["overview"],
+    defaultLayout: { w: 12, h: 3 },
+  },
+  {
+    kind: "category-breakdown",
+    title: "Category Breakdown",
+    description: "Categorized tracked time (coding/browsing/meetings/…)",
+    scopes: ["user", "space"],
+    primitives: ["graph", "chip"],
+    dashboardScopes: ["overview"],
+    defaultLayout: { w: 12, h: 3 },
+  },
+  {
+    kind: "streak-banner",
+    title: "Streak & Consistency",
+    description: "Current + longest streak with a 30-day activity sparkline",
+    scopes: ["user", "space"],
+    primitives: ["graph", "label"],
+    dashboardScopes: ["overview"],
+    defaultLayout: { w: 12, h: 2 },
+  },
+  {
+    kind: "overview-total-activity",
+    title: "Total Activity",
+    description: "Daily tracked time as a stacked-by-category column chart",
+    scopes: ["user", "space"],
+    primitives: ["graph"],
+    dashboardScopes: ["overview"],
+    defaultLayout: { w: 8, h: 4 },
+  },
+  {
+    kind: "category-streamgraph",
+    title: "Category Streamgraph",
+    description: "Category time over the range as a stacked streamgraph",
+    scopes: ["user", "space"],
+    primitives: ["graph"],
+    dashboardScopes: ["overview"],
+    defaultLayout: { w: 6, h: 4 },
+  },
+  {
+    kind: "overview-timeline",
+    title: "Recent Timeline",
+    description: "Last-N-hours activity timeline, laned by language",
+    scopes: ["user", "space"],
+    primitives: ["graph"],
+    dashboardScopes: ["overview"],
+    defaultLayout: { w: 12, h: 4 },
   },
 ];
 
