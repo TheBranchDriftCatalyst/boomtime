@@ -5,7 +5,6 @@ import { TabNav, tabClass } from "@/layout/PageTabs";
 import { useHeaderSlot } from "@/layout/HeaderSlot";
 import { CurationTab } from "@/features/curation/CurationTab";
 import { RemappingsTab } from "@/features/curation/RemappingsTab";
-import { GoalsTab } from "@/features/goals/GoalsTab";
 import { WidgetLinksCard } from "@/features/widgets/WidgetLinksCard";
 import { Changelog } from "@/features/changelog/Changelog";
 // gaka-ebq: Admin / Backfill / Logs tabs moved OUT of Settings into
@@ -56,10 +55,8 @@ const TABS = [
   { id: "tokens", label: "API tokens", render: () => <TokensTab /> },
   { id: "curation", label: "Hidden data", render: () => <CurationTab /> },
   { id: "remappings", label: "Remappings", render: () => <RemappingsTab /> },
-  // gaka-wpb: user-defined composite goals. Placed after remappings
-  // (data-shaping) and before widgets (embed-shaping) so the tab flow
-  // reads "what data / what to aim for / how to embed".
-  { id: "goals", label: "Goals", render: () => <GoalsTab /> },
+  // gaka-gud: Goals moved OUT to a top-level /app/goals page (a ?tab=goals
+  // redirect below keeps old links working).
   { id: "widgets", label: "Widgets", render: () => <WidgetLinksCard /> },
   { id: "changelog", label: "Changelog", render: () => <Changelog embedded /> },
 ] as const;
@@ -79,6 +76,8 @@ const LEGACY_ADMIN_TAB_REDIRECTS: Record<string, string> = {
   logs: "/app/admin/logs",
   admin: "/app/admin/labels",
   backfill: "/app/admin/backfill",
+  // gaka-gud: Goals moved out of Settings to its own top-level page.
+  goals: "/app/goals",
 };
 
 export function Settings() {

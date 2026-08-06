@@ -54,6 +54,10 @@ const Settings = lazy(() =>
 const Wellness = lazy(() =>
   import("@/features/wellness/Wellness").then((m) => ({ default: m.Wellness })),
 );
+// gaka-gud: Goals promoted from a Settings sub-tab to a top-level page.
+const Goals = lazy(() =>
+  import("@/features/goals/Goals").then((m) => ({ default: m.Goals })),
+);
 // gaka-4ng: the owner's profile mounted INSIDE the app skeleton (/app/profile).
 // Reuses the dossier view + editor but always-owner (no :slug param). The
 // standalone public /p/:slug (EditableProfilePage) stays for external visitors.
@@ -209,6 +213,15 @@ export function AppRoutes() {
           element={
             <Suspense fallback={<PageFallback />}>
               <InAppProfile />
+            </Suspense>
+          }
+        />
+        {/* gaka-gud: Goals as a top-level page (moved out of Settings). */}
+        <Route
+          path="goals"
+          element={
+            <Suspense fallback={<PageFallback />}>
+              <Goals />
             </Suspense>
           }
         />

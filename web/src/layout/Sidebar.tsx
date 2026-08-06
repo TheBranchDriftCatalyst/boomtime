@@ -14,6 +14,7 @@ import {
   Plus,
   Settings2,
   ShieldCheck,
+  Target,
   UserCircle,
 } from "lucide-react";
 import { useSpaces } from "@/features/spaces/useSpaces";
@@ -26,6 +27,8 @@ const NAV = [
   { name: "Overview", icon: LayoutDashboard, to: "/app", end: true },
   { name: "Projects", icon: BookOpen, to: "/app/projects", end: false },
   { name: "Leaderboards", icon: Award, to: "/app/leaderboards", end: false },
+  // gaka-gud: Goals promoted from a Settings sub-tab to a top-level page.
+  { name: "Goals", icon: Target, to: "/app/goals", end: false },
   { name: "Heartbeats", icon: ListTree, to: "/app/heartbeats", end: false },
   { name: "Wellness", icon: HeartPulse, to: "/app/wellness", end: false },
   { name: "Import", icon: Download, to: "/app/import", end: false },
