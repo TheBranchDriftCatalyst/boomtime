@@ -8,7 +8,6 @@ import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Card, CardContent } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
 import { GroupByBar } from "@/features/heartbeats/GroupByBar";
-import { DerivedStatusPanel } from "@/features/heartbeats/DerivedStatusPanel";
 import { BackupPanel } from "@/features/heartbeats/BackupPanel";
 import { SourceHealthPanel } from "@/features/heartbeats/SourceHealthPanel";
 import { HeartbeatExplorerTable } from "@/features/heartbeats/HeartbeatExplorerTable";
@@ -117,10 +116,6 @@ export function Heartbeats() {
       </Page.Header>
       <Page.Body>
         <Page.Content>
-          <div className="mb-4">
-            <DerivedStatusPanel />
-          </div>
-
           <div className="mb-4">
             <BackupPanel />
           </div>

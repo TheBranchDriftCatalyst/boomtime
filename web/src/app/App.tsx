@@ -84,6 +84,10 @@ const BackfillTab = lazy(() =>
 const UsersTab = lazy(() =>
   import("@/features/admin/UsersTab").then((m) => ({ default: m.UsersTab })),
 );
+// gaka-gud follow-up: derived-data / storage health moved off Heartbeats.
+const DataTab = lazy(() =>
+  import("@/features/admin/DataTab").then((m) => ({ default: m.DataTab })),
+);
 const Logs = lazy(() =>
   import("@/features/logs/Logs").then((m) => ({ default: m.Logs })),
 );
@@ -302,6 +306,14 @@ export function AppRoutes() {
             element={
               <Suspense fallback={<PageFallback />}>
                 <BackfillTab />
+              </Suspense>
+            }
+          />
+          <Route
+            path="data"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <DataTab />
               </Suspense>
             }
           />
