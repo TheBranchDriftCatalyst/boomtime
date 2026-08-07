@@ -40,7 +40,10 @@ spec:
       memory: 1Gi
 
   monitoring:
-    enablePodMonitor: true
+    # The global PodMonitor already scrapes CNPG pods; the dashboard dedups via
+    # `max by(namespace,pod)` so a per-cluster PM is harmless but redundant.
+    # Disabled so the global PodMonitor is the sole source (no double scrape).
+    enablePodMonitor: false
 
   postgresql:
     parameters:
