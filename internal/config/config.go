@@ -54,19 +54,37 @@ type Config struct {
 	// OIDC (Authentik) config (gaka-0oe.11). Consumed only when
 	// AuthProvider=="oidc"; staged otherwise. See docs/design/user-model-and-
 	// oidc.md §6.
-	OIDCIssuer       string          // discovery base, trailing slash required
+	OIDCIssuer string // discovery base, trailing slash required
 	// OIDCAuthorizeURL optionally overrides the BROWSER-facing authorization
 	// endpoint (BOOM_OIDC_AUTHORIZE_URL). Needed in split-horizon dev: the pod
 	// discovers + exchanges tokens via the cluster-internal issuer
 	// (authentik-server:9000), but the browser must be redirected to a
 	// host-reachable URL (localhost:9000). Empty = use the discovered endpoint.
-	OIDCAuthorizeURL string
-	OIDCClientID     string          // OAuth2 client_id (Authentik app)
-	OIDCClientSecret string          // OAuth2 client_secret (from a Secret)
-	OIDCRedirectURL  string          // {origin}/auth/callback/oidc
-	OIDCGroupToRole  map[string]string // Authentik group name → boomtime role
-	OIDCAutoprovision bool           // mint a boomtime user on first login
-	OIDCAutolinkEmail bool           // DEPRECATED no-op (gaka-93f.12): username-based autolink was removed as an account-takeover vector. Parsed for env compat only; nothing reads it. Use the authenticated link flow (HandleLink).
+	OIDCAuthorizeURL  string
+	OIDCClientID      string            // OAuth2 client_id (Authentik app)
+	OIDCClientSecret  string            // OAuth2 client_secret (from a Secret)
+	OIDCRedirectURL   string            // {origin}/auth/callback/oidc
+	OIDCGroupToRole   map[string]string // Authentik group name → boomtime role
+	OIDCAutoprovision bool              // mint a boomtime user on first login
+	OIDCAutolinkEmail bool              // DEPRECATED no-op (gaka-93f.12): username-based autolink was removed as an account-takeover vector. Parsed for env compat only; nothing reads it. Use the authenticated link flow (HandleLink).
+
+	// GitHub stats (gaka-2ip Phase 1): per-user GitHub OAuth-App connect +
+	// encrypted token storage. STRICTLY default-off and inert until BOTH the
+	// gate is flipped AND the OAuth-App credentials + state signing key are
+	// configured. See GithubConnectEnabled() for the exact predicate the
+	// routes + public-config flag key off.
+	//
+	//   FeatureGithubStats       — BOOM_FEATURE_GITHUB_STATS master gate (default false).
+	//   GithubOAuthClientID      — BOOM_GITHUB_OAUTH_CLIENT_ID (OAuth-App client_id).
+	//   GithubOAuthClientSecret  — BOOM_GITHUB_OAUTH_CLIENT_SECRET (from a Secret).
+	//   GithubOAuthRedirectURL   — BOOM_GITHUB_OAUTH_REDIRECT_URL ({origin}/auth/github/callback).
+	//   OAuthStateSigningKey     — BOOM_OAUTH_STATE_SIGNING_KEY, the HMAC key for
+	//                              the CSRF/owner-binding `state` (internal/oauth).
+	FeatureGithubStats      bool
+	GithubOAuthClientID     string
+	GithubOAuthClientSecret string
+	GithubOAuthRedirectURL  string
+	OAuthStateSigningKey    string
 
 	// FeatureBilling advertises whether the Stripe SaaS billing surface
 	// (checkout / webhooks / tier flips, gaka-93f Phase 4) is live. Default
@@ -171,8 +189,8 @@ type Config struct {
 	// WakatimeAPIKey is the server-configured key used to import history from
 	// wakatime.com when the request body omits apiToken. Sourced from
 	// WAKATIME_API_KEY, falling back to BOOM_REMOTE_WRITE_TOKEN. Never exposed.
-  // TODO: Change this so its gone entirely, this needs to come form the user, and
-  // probably be stored encrypted and secure per user
+	// TODO: Change this so its gone entirely, this needs to come form the user, and
+	// probably be stored encrypted and secure per user
 	WakatimeAPIKey string
 
 	// Grade holds the stats-card-with-grade calibration (medians + weights). Env
@@ -289,15 +307,25 @@ func Load() *Config {
 		// gaka-93f: user-model / OIDC / billing advertisement flags. All
 		// default to today's behavior (local auth, no billing) and are
 		// surfaced read-only via GET /api/v1/config/public.
-		AuthProvider:         getEnv("BOOM_AUTH_PROVIDER", "local"),
-		OIDCIssuer:           getEnv("BOOM_OIDC_ISSUER", ""),
-		OIDCAuthorizeURL:     getEnv("BOOM_OIDC_AUTHORIZE_URL", ""),
-		OIDCClientID:         getEnv("BOOM_OIDC_CLIENT_ID", ""),
-		OIDCClientSecret:     getEnv("BOOM_OIDC_CLIENT_SECRET", ""),
-		OIDCRedirectURL:      getEnv("BOOM_OIDC_REDIRECT_URL", ""),
-		OIDCGroupToRole:      parseGroupToRole(getEnv("BOOM_AUTHENTIK_GROUP_TO_ROLE", "")),
-		OIDCAutoprovision:    getEnvBool("BOOM_OIDC_AUTOPROVISION", false),
-		OIDCAutolinkEmail:    getEnvBool("BOOM_OIDC_AUTOLINK_EMAIL", false),
+		AuthProvider:      getEnv("BOOM_AUTH_PROVIDER", "local"),
+		OIDCIssuer:        getEnv("BOOM_OIDC_ISSUER", ""),
+		OIDCAuthorizeURL:  getEnv("BOOM_OIDC_AUTHORIZE_URL", ""),
+		OIDCClientID:      getEnv("BOOM_OIDC_CLIENT_ID", ""),
+		OIDCClientSecret:  getEnv("BOOM_OIDC_CLIENT_SECRET", ""),
+		OIDCRedirectURL:   getEnv("BOOM_OIDC_REDIRECT_URL", ""),
+		OIDCGroupToRole:   parseGroupToRole(getEnv("BOOM_AUTHENTIK_GROUP_TO_ROLE", "")),
+		OIDCAutoprovision: getEnvBool("BOOM_OIDC_AUTOPROVISION", false),
+		OIDCAutolinkEmail: getEnvBool("BOOM_OIDC_AUTOLINK_EMAIL", false),
+		// gaka-2ip Phase 1: per-user GitHub connect. Gate default OFF; the
+		// three OAuth values + the state signing key stay empty until an
+		// operator provisions them, and GithubConnectEnabled() stays false
+		// until ALL are present — so this is inert on a default boot.
+		FeatureGithubStats:      getEnvBool("BOOM_FEATURE_GITHUB_STATS", false),
+		GithubOAuthClientID:     getEnv("BOOM_GITHUB_OAUTH_CLIENT_ID", ""),
+		GithubOAuthClientSecret: getEnv("BOOM_GITHUB_OAUTH_CLIENT_SECRET", ""),
+		GithubOAuthRedirectURL:  getEnv("BOOM_GITHUB_OAUTH_REDIRECT_URL", ""),
+		OAuthStateSigningKey:    getEnv("BOOM_OAUTH_STATE_SIGNING_KEY", ""),
+
 		FeatureBilling:       getEnvBool("BOOM_FEATURE_BILLING", false),
 		BetaUserRegistration: getEnvBool("BOOM_BETA_USER_REGISTRATION", true),
 		FeatureUserModel:     getEnvBool("BOOM_FEATURE_USER_MODEL", false),
@@ -491,6 +519,20 @@ func (c *Config) LabelImagesEnabled() bool {
 // the key gates the feature.
 func (c *Config) LLMEnabled() bool {
 	return strings.TrimSpace(c.LLMAPIKey) != ""
+}
+
+// GithubConnectEnabled reports whether the per-user GitHub connect feature
+// (gaka-2ip Phase 1) is operationally live. INERT-SAFE by construction: it
+// requires the master gate AND a full OAuth-App credential set AND the state
+// signing key. Any one missing → false, so the /auth/github/* routes don't
+// register, the /api/v1/config/public flag stays false, and the FE card renders
+// nothing. The signing key is folded into the predicate on purpose — the CSRF
+// `state` cannot be minted safely without it, so "configured" must include it.
+func (c *Config) GithubConnectEnabled() bool {
+	return c.FeatureGithubStats &&
+		strings.TrimSpace(c.GithubOAuthClientID) != "" &&
+		strings.TrimSpace(c.GithubOAuthClientSecret) != "" &&
+		strings.TrimSpace(c.OAuthStateSigningKey) != ""
 }
 
 // OIDCEnabled reports whether the OIDC (Authentik) auth provider is selected

@@ -49,6 +49,11 @@ export const handlers = [
   http.get("/api/v1/users/current/wakatime_key", () =>
     HttpResponse.json({ hasSavedKey: false }),
   ),
+  // gaka-2ip Phase 1: GitHub connection status. Default = not connected. Tests
+  // override with server.use to flip `connected`/`login`.
+  http.get("/api/v1/users/current/github", () =>
+    HttpResponse.json({ connected: false }),
+  ),
 ];
 
 export { http, HttpResponse };

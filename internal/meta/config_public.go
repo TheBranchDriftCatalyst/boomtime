@@ -47,6 +47,13 @@ type PublicConfigResponse struct {
 	// flag, so an operator can disable a preview instance-wide. Currently:
 	//   user_registration — the beta onboarding preview flow (gaka-93f.1).
 	BetaFlags map[string]bool `json:"beta_flags"`
+
+	// GithubConnectEnabled advertises whether the per-user GitHub connect
+	// feature (gaka-2ip Phase 1) is live — true ONLY when the gate is on AND
+	// the OAuth-App credentials + state signing key are configured. The FE
+	// GitHubConnectCard renders nothing when this is false, so the whole
+	// surface stays inert until an operator provisions the secrets.
+	GithubConnectEnabled bool `json:"github_connect_enabled"`
 }
 
 // PublicConfig: GET /api/v1/config/public — unauthenticated, always JSON.
@@ -60,5 +67,6 @@ func (h *Handler) PublicConfig(c *echo.Context) error {
 		BetaFlags: map[string]bool{
 			"user_registration": h.Cfg.BetaUserRegistration,
 		},
+		GithubConnectEnabled: h.Cfg.GithubConnectEnabled(),
 	})
 }

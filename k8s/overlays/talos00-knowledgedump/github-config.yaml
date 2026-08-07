@@ -1,0 +1,41 @@
+---
+# ─────────────────────────────────────────────────────────────────────────────
+# PROD GitHub-connect wiring — NON-SECRET keys only (gaka-2ip Phase 1).
+#
+# Strategic-merge patch that ADDs the GitHub-connect env vars onto the base
+# `boomtime-config` ConfigMap without disturbing existing keys — same shape as
+# llm-config.yaml / oidc-config.yaml. The env var names below are the EXACT ones
+# internal/config/config.go parses.
+#
+# INERT-SAFE: flipping BOOM_FEATURE_GITHUB_STATS=true is safe on its own — the
+# /auth/github/* routes register (and the /api/v1/config/public
+# github_connect_enabled flag flips true) ONLY when config.GithubConnectEnabled()
+# is satisfied, which ALSO requires BOOM_GITHUB_OAUTH_CLIENT_ID,
+# BOOM_GITHUB_OAUTH_CLIENT_SECRET, and BOOM_OAUTH_STATE_SIGNING_KEY to be
+# non-empty. Those three arrive via the ExternalSecret (oidc-external-secret.yaml)
+# from 1Password. Until an operator provisions those 1P fields, the token exchange
+# has no credentials, GithubConnectEnabled() stays false, the routes don't
+# register, and the FE card renders nothing — i.e. this file alone is inert.
+#
+# The CLIENT_SECRET + CLIENT_ID + SIGNING_KEY are deliberately ABSENT here — they
+# are Secrets, delivered by oidc-external-secret.yaml from 1Password.
+#
+# OAuth-App setup (do this in github.com → Settings → Developer settings →
+# OAuth Apps, then copy client_id/secret into the 1P `boomtime` item):
+#   - Authorization callback URL MUST equal BOOM_GITHUB_OAUTH_REDIRECT_URL below.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: boomtime-config
+  labels:
+    app.kubernetes.io/name: boomtime
+data:
+  # Master gate. Inert until the OAuth-App creds + state signing key are also
+  # present (see header) — turning this on alone registers no routes.
+  BOOM_FEATURE_GITHUB_STATS: "true"
+
+  # Public OAuth callback — MUST exactly match the OAuth App's "Authorization
+  # callback URL" on github.com. Host = prod ingress. The /auth/github/callback
+  # route is registered by internal/identity/routes.go under the same gate.
+  BOOM_GITHUB_OAUTH_REDIRECT_URL: "https://boomtime.knowledgedump.space/auth/github/callback"

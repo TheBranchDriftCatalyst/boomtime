@@ -26,6 +26,7 @@ const ALLOW: PublicConfig = {
   oidc_enabled: false,
   billing_enabled: false,
   beta_flags: { user_registration: true },
+  github_connect_enabled: false,
 };
 
 function wrapper(initialEntries: string[] = ["/"]) {

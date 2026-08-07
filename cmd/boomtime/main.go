@@ -119,6 +119,17 @@ func runCmd() *cobra.Command {
 				}
 			}
 
+			// gaka-2ip Phase 1: per-user GitHub connect. Construct + install the
+			// OAuth resolver ONLY when the feature is fully configured (gate on +
+			// client id/secret + state signing key). Default-off = this whole
+			// block is skipped and the /auth/github/* routes never register —
+			// inert, no boot-time dependency, behavior byte-identical.
+			if cfg.GithubConnectEnabled() {
+				gh := auth.NewGithubOAuthResolver(cfg.GithubOAuthClientID, cfg.GithubOAuthClientSecret, cfg.GithubOAuthRedirectURL)
+				auth.SetGithubOAuthResolver(gh)
+				logger.Info("GitHub connect enabled (gaka-2ip)", "redirect_url", cfg.GithubOAuthRedirectURL)
+			}
+
 			if err := db.MigrateURL(ctx, cfg.DatabaseURL()); err != nil {
 				return fmt.Errorf("migrations: %w", err)
 			}

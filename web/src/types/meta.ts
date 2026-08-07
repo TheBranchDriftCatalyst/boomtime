@@ -14,6 +14,10 @@ export interface PublicConfig {
   oidc_enabled: boolean;
   billing_enabled: boolean;
   beta_flags: Record<string, boolean>; // e.g. { user_registration: true }
+  // gaka-2ip Phase 1: per-user GitHub connect. true ONLY when the server gate
+  // is on AND the OAuth-App creds + state signing key are configured. The
+  // GitHubConnectCard renders nothing when false, so the surface is inert.
+  github_connect_enabled: boolean;
 }
 
 // Admin caps dashboard — GET /api/v1/admin/users (gaka-93f.6). Mirrors
@@ -41,4 +45,14 @@ export interface IdentitiesPayload {
   identities: LinkedIdentity[];
   oidcAvailable: boolean; // is OIDC configured (link possible)?
   hasPassword: boolean; // does the caller still have a local password?
+}
+
+// GitHub connection status — GET /api/v1/users/current/github (gaka-2ip Phase 1).
+// Mirrors internal/identity/github_oauth.go githubConnectionResponse. NEVER
+// carries the access token — only presence + the (safe) login + last status.
+export interface GithubConnection {
+  connected: boolean;
+  login?: string | null;
+  status?: "valid" | "invalid" | "unknown" | null;
+  checkedAt?: string | null;
 }

@@ -61,6 +61,7 @@ import type {
   PublicConfig,
   AdminUsersPayload,
   IdentitiesPayload,
+  GithubConnection,
   WidgetLinkPayload,
   WidgetLinksPayload,
   WidgetScope,
@@ -920,6 +921,14 @@ export const api = {
     request<void>(`/api/v1/users/current/identities/${encodeURIComponent(provider)}`, {
       method: "DELETE",
     }),
+
+  // gaka-2ip Phase 1: per-user GitHub connect. GET reports {connected, login,
+  // status, checkedAt} — NEVER the token. The connect flow itself is a
+  // top-level browser redirect (window.location = "/auth/github/connect"), not
+  // an XHR, so there's no api.ts method for it. DELETE clears the stored token.
+  getGithubConnection: () => request<GithubConnection>("/api/v1/users/current/github"),
+  disconnectGithub: () =>
+    request<void>("/api/v1/users/current/github", { method: "DELETE" }),
 
   adminCreateLabel: (body: Partial<LabelCatalogRow> & { id: string; kind: string; label: string; condition: unknown }) =>
     request<LabelCatalogRow>("/api/v1/admin/labels", { method: "POST", body }),

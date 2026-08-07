@@ -58,6 +58,20 @@ func Register(e *echo.Echo, h *Handler) {
 	e.POST("/api/v1/users/current/wakatime_key", h.SaveWakatimeKey)
 	e.DELETE("/api/v1/users/current/wakatime_key", h.DeleteWakatimeKey)
 
+	// Per-user GitHub OAuth-App connection (gaka-2ip Phase 1). The
+	// status/disconnect API is ALWAYS registered — GET reports
+	// {connected:false} and DELETE is a no-op when nothing is stored, and
+	// the token is NEVER returned. The two /auth/github/* browser-redirect
+	// routes register ONLY when the feature is fully configured
+	// (Cfg.GithubConnectEnabled(): gate on + client id/secret + state signing
+	// key), so with the default-off gate they simply 404 — inert.
+	e.GET("/api/v1/users/current/github", h.GetGithubConnection)
+	e.DELETE("/api/v1/users/current/github", h.DisconnectGithub)
+	if h != nil && h.Cfg != nil && h.Cfg.GithubConnectEnabled() {
+		e.GET("/auth/github/connect", h.ConnectGithub)
+		e.GET("/auth/github/callback", h.CallbackGithub)
+	}
+
 	// User IANA timezone (gaka-dg7). GET reports the raw stored value
 	// (''=unset) alongside the server's 3-level-resolved effectiveTimezone
 	// so the FE can render "your choice" vs "server default" and only

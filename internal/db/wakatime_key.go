@@ -193,25 +193,9 @@ func (d *DB) RotateEncryptedWakatimeKeys(ctx context.Context, rows []EncryptedWa
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck // rollback after commit is a no-op
 
-	var updated int
-	for _, r := range rows {
-		if r.Username == "" {
-			return 0, errors.New("RotateEncryptedWakatimeKeys: empty username in input")
-		}
-		if len(r.Ciphertext) == 0 {
-			return 0, errors.New("RotateEncryptedWakatimeKeys: empty ciphertext in input")
-		}
-		tag, err := tx.Exec(ctx,
-			`UPDATE users
-			    SET encrypted_wakatime_key = $2
-			  WHERE username = $1
-			    AND encrypted_wakatime_key IS NOT NULL`,
-			r.Username, r.Ciphertext,
-		)
-		if err != nil {
-			return 0, err
-		}
-		updated += int(tag.RowsAffected())
+	updated, err := rotateWakatimeRowsTx(ctx, tx, rows)
+	if err != nil {
+		return 0, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {

@@ -95,6 +95,18 @@ func TestRotateSmoke(t *testing.T) {
 		}
 	}
 
+	// gaka-2ip: also seed a GitHub token (for the first user) under OLD so the
+	// smoke test proves BOTH encrypted columns rotate together in one command.
+	ghUser := users[0].name
+	const ghPlaintext = "gho_alice_github_token"
+	ghCT, err := auth.EncryptWith(oldAEAD, []byte(ghPlaintext))
+	if err != nil {
+		t.Fatalf("seed github encrypt: %v", err)
+	}
+	if err := database.SetEncryptedGithubToken(ctx, ghUser, ghCT, "alice-gh", db.GithubTokenStatusValid); err != nil {
+		t.Fatalf("seed SetEncryptedGithubToken: %v", err)
+	}
+
 	dsn := isolatedDBURL("rotate")
 
 	// Assert a wrong OLD aborts before ANY row is written. A random 32-byte
@@ -148,6 +160,22 @@ func TestRotateSmoke(t *testing.T) {
 		if string(got) != u.plaintext {
 			t.Fatalf("post-rotate plaintext mismatch for %s: got %q want %q", u.name, got, u.plaintext)
 		}
+	}
+
+	// The GitHub token column also rotated: decrypts under NEW, not OLD.
+	ghBlob, ok, err := database.GetEncryptedGithubToken(ctx, ghUser)
+	if err != nil || !ok {
+		t.Fatalf("post-rotate github read: ok=%v err=%v", ok, err)
+	}
+	if _, derr := auth.DecryptWith(oldAEAD, ghBlob); derr == nil {
+		t.Fatalf("post-rotate github token STILL decrypts under OLD — rotation didn't cover the github column")
+	}
+	ghGot, derr := auth.DecryptWith(newAEAD, ghBlob)
+	if derr != nil {
+		t.Fatalf("post-rotate github decrypt under NEW failed: %v", derr)
+	}
+	if string(ghGot) != ghPlaintext {
+		t.Fatalf("post-rotate github plaintext mismatch: got %q want %q", ghGot, ghPlaintext)
 	}
 }
 

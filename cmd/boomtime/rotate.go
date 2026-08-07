@@ -41,11 +41,11 @@ func rotateEncryptionKeyCmd() *cobra.Command {
 	var oldB64, newB64 string
 	cmd := &cobra.Command{
 		Use:   "rotate-encryption-key",
-		Short: "Re-encrypt every stored Wakatime key under a new BOOM_ENCRYPTION_KEY",
-		Long: `Re-encrypt every users.encrypted_wakatime_key blob from --old to --new
-in a single transaction. Aborts BEFORE any write if any row fails to
-decrypt under --old (reports the affected username). See internal/auth
-package docs for the threat model + payload layout.`,
+		Short: "Re-encrypt every stored user secret under a new BOOM_ENCRYPTION_KEY",
+		Long: `Re-encrypt every users.encrypted_wakatime_key AND users.encrypted_github_token
+blob from --old to --new in a SINGLE transaction across both columns. Aborts
+BEFORE any write if any row fails to decrypt under --old (reports the affected
+username). See internal/auth package docs for the threat model + payload layout.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if oldB64 == "" || newB64 == "" {
 				return errors.New("both --old and --new are required (base64-encoded 32-byte keys)")
@@ -86,40 +86,65 @@ func runRotate(ctx context.Context, databaseURL, oldB64, newB64 string, out inte
 	}
 	defer database.Close()
 
-	rows, err := database.ListEncryptedWakatimeKeys(ctx)
+	wakatimeRows, err := database.ListEncryptedWakatimeKeys(ctx)
 	if err != nil {
-		return fmt.Errorf("list encrypted keys: %w", err)
+		return fmt.Errorf("list encrypted wakatime keys: %w", err)
 	}
-	if len(rows) == 0 {
-		fmt.Fprintln(out, "No encrypted Wakatime keys found — nothing to rotate.")
+	// gaka-2ip Phase 1: the GitHub token column is ALSO encrypted under
+	// BOOM_ENCRYPTION_KEY, so it MUST be rotated in lockstep — a new encrypted
+	// column not wired here would strand every stored GitHub token on the next
+	// key rotation. List it alongside wakatime and re-encrypt both.
+	githubRows, err := database.ListEncryptedGithubTokens(ctx)
+	if err != nil {
+		return fmt.Errorf("list encrypted github tokens: %w", err)
+	}
+	if len(wakatimeRows) == 0 && len(githubRows) == 0 {
+		fmt.Fprintln(out, "No encrypted secrets found — nothing to rotate.")
 		return nil
 	}
 
-	// Decrypt + re-encrypt EVERY row before any write. If a single row fails
-	// to decrypt under --old we abort with the affected username; the DB
-	// state is untouched.
-	reencrypted := make([]db.EncryptedWakatimeKeyRow, 0, len(rows))
-	for _, r := range rows {
+	// Decrypt + re-encrypt EVERY row (across BOTH columns) before any write.
+	// If a single row fails to decrypt under --old we abort with the affected
+	// username; the DB state is untouched.
+	reencWakatime := make([]db.EncryptedWakatimeKeyRow, 0, len(wakatimeRows))
+	for _, r := range wakatimeRows {
 		pt, derr := auth.DecryptWith(oldAEAD, r.Ciphertext)
 		if derr != nil {
-			return fmt.Errorf("decrypt failed for user %q under --old: %w — aborting (no rows written)", r.Username, derr)
+			return fmt.Errorf("decrypt wakatime key failed for user %q under --old: %w — aborting (no rows written)", r.Username, derr)
 		}
 		ct, eerr := auth.EncryptWith(newAEAD, pt)
 		if eerr != nil {
-			return fmt.Errorf("re-encrypt failed for user %q under --new: %w — aborting (no rows written)", r.Username, eerr)
+			return fmt.Errorf("re-encrypt wakatime key failed for user %q under --new: %w — aborting (no rows written)", r.Username, eerr)
 		}
-		reencrypted = append(reencrypted, db.EncryptedWakatimeKeyRow{
+		reencWakatime = append(reencWakatime, db.EncryptedWakatimeKeyRow{
+			Username:   r.Username,
+			Ciphertext: ct,
+		})
+	}
+	reencGithub := make([]db.EncryptedGithubTokenRow, 0, len(githubRows))
+	for _, r := range githubRows {
+		pt, derr := auth.DecryptWith(oldAEAD, r.Ciphertext)
+		if derr != nil {
+			return fmt.Errorf("decrypt github token failed for user %q under --old: %w — aborting (no rows written)", r.Username, derr)
+		}
+		ct, eerr := auth.EncryptWith(newAEAD, pt)
+		if eerr != nil {
+			return fmt.Errorf("re-encrypt github token failed for user %q under --new: %w — aborting (no rows written)", r.Username, eerr)
+		}
+		reencGithub = append(reencGithub, db.EncryptedGithubTokenRow{
 			Username:   r.Username,
 			Ciphertext: ct,
 		})
 	}
 
-	updated, err := database.RotateEncryptedWakatimeKeys(ctx, reencrypted)
+	// Single transaction across BOTH columns — either every ciphertext is
+	// rewritten under --new or none is.
+	wkUpdated, ghUpdated, err := database.RotateEncryptedSecrets(ctx, reencWakatime, reencGithub)
 	if err != nil {
 		return fmt.Errorf("commit rotation: %w", err)
 	}
 
-	fmt.Fprintf(out, "Rotated %d encrypted Wakatime key(s).\n", updated)
+	fmt.Fprintf(out, "Rotated %d encrypted Wakatime key(s) and %d encrypted GitHub token(s).\n", wkUpdated, ghUpdated)
 	fmt.Fprintln(out, "Remember to set BOOM_ENCRYPTION_KEY to the new value before restarting boomtime.")
 	return nil
 }

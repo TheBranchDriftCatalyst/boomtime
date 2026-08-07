@@ -19,6 +19,12 @@ patchesStrategicMerge:
   - label-images-config.yaml
   - llm-config.yaml
   - tz-config.yaml
+  # gaka-2ip Phase 1: per-user GitHub connect. Non-secret BOOM_* keys
+  # (BOOM_FEATURE_GITHUB_STATS + redirect URL); the OAuth-App creds + state
+  # signing key ride the boomtime-secrets ExternalSecret. INERT until those 1P
+  # fields are provisioned (config.GithubConnectEnabled gates every route +
+  # the config/public flag). See github-config.yaml header.
+  - github-config.yaml
   # ── PROD OIDC (Authentik) wiring — ACTIVATED 2026-08-05 ──────────────────────
   # Authentik side is live (provider/app/groups + client_secret in 1Password
   # `oidc-client-secret`), issuer confirmed. These add BOOM_OIDC_* config +

@@ -11,6 +11,7 @@ import { Changelog } from "@/features/changelog/Changelog";
 // /app/admin. Keep this file lean and non-admin-only.
 import { AvatarTab } from "@/features/settings/avatar/AvatarTab";
 import { ChangePasswordCard } from "@/features/settings/ChangePasswordCard";
+import { GithubConnectCard } from "@/features/settings/GithubConnectCard";
 import { LinkedIdentitiesCard } from "@/features/settings/LinkedIdentitiesCard";
 import { PluginSetup } from "@/features/settings/PluginSetup";
 import { PublicProfileCard } from "@/features/settings/PublicProfileCard";
@@ -29,6 +30,7 @@ function ProfileTab() {
     <div className="space-y-6">
       <ChangePasswordCard />
       <LinkedIdentitiesCard />
+      <GithubConnectCard />
       <TimezoneCard />
       <PublicProfileCard />
     </div>

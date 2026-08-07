@@ -194,6 +194,11 @@ export const qk = {
   // gaka-b5n.4: the caller's linked external identities (OIDC linking).
   identities: () => ["identities"] as const,
 
+  // gaka-2ip Phase 1: the caller's GitHub connection status ({connected, login,
+  // status}). Invalidated after connect (redirect back) / disconnect so the
+  // Settings card re-renders.
+  githubConnection: () => ["github-connection"] as const,
+
   // gaka-364.3: DB-backed labels catalog. Public (no owner scoping) —
   // one key shared by every consumer (evaluator, hero widget, admin
   // table). Invalidated after PATCH/POST/DELETE on /admin/labels.
