@@ -1,7 +1,8 @@
 // GoalNearnessStrip tests (gaka-cl9) — pin the at-a-glance overview's core
-// behavior: one cell per ACTIVE goal, correct %, disabled goals excluded, and
-// the lastProgress fallback when the batch is missing a goal. Mocks the batched
-// progress hook so the render logic is exercised in isolation.
+// behavior: one cell per goal (INCLUDING paused/disabled goals, shown dimmed as
+// "—" when they have no evaluated progress), correct %, and the lastProgress
+// fallback when the batch is missing a goal. Mocks the batched progress hook so
+// the render logic is exercised in isolation.
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { GoalNearnessStrip } from "@/features/goals/GoalNearnessStrip";
@@ -32,7 +33,7 @@ const mkGoal = (id: string, name: string, enabled = true): Goal =>
   }) as unknown as Goal;
 
 describe("GoalNearnessStrip", () => {
-  it("renders one cell per ACTIVE goal with its progress %, excluding disabled", () => {
+  it("renders a cell per goal with its progress %, INCLUDING paused ones", () => {
     render(
       <GoalNearnessStrip
         goals={[mkGoal("g1", "weekly-go"), mkGoal("g2", "deep-work"), mkGoal("g3", "paused-goal", false)]}
@@ -41,11 +42,22 @@ describe("GoalNearnessStrip", () => {
     expect(screen.getByText("100%")).toBeInTheDocument();
     expect(screen.getByText("19%")).toBeInTheDocument();
     expect(screen.getByText("weekly-go")).toBeInTheDocument();
-    expect(screen.queryByText("paused-goal")).not.toBeInTheDocument();
+    // paused goal is now shown (dimmed), not filtered out; the batch has no
+    // entry for it and it has no lastProgress, so it renders "—".
+    expect(screen.getByText("paused-goal")).toBeInTheDocument();
+    expect(screen.getByText("—")).toBeInTheDocument();
+    // header reflects the paused count
+    expect(screen.getByText(/1 paused/)).toBeInTheDocument();
   });
 
-  it("renders nothing when there are no active goals", () => {
-    const { container } = render(<GoalNearnessStrip goals={[mkGoal("g3", "paused", false)]} />);
+  it("still renders a single paused goal (dimmed, no progress)", () => {
+    render(<GoalNearnessStrip goals={[mkGoal("g3", "paused", false)]} />);
+    expect(screen.getByText("paused")).toBeInTheDocument();
+    expect(screen.getByText("—")).toBeInTheDocument();
+  });
+
+  it("renders nothing when there are no goals at all", () => {
+    const { container } = render(<GoalNearnessStrip goals={[]} />);
     expect(container).toBeEmptyDOMElement();
   });
 

@@ -10,7 +10,7 @@ import {
   SheetTrigger,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/sheet";
 import type { WidgetScope } from "@/types/api";
-import { catalogFor } from "./catalog";
+import { embeddableCatalogFor } from "./catalog";
 import { useWidgetLink } from "./useWidgetLink";
 import { WidgetBuilder } from "./WidgetBuilder";
 import { WidgetCard } from "./WidgetCard";
@@ -66,7 +66,10 @@ export function WidgetsPanel({ scopeType, scopeRef = "" }: WidgetsPanelProps) {
   const link = useWidgetLink(scopeType, scopeRef, open);
   const draggingRef = useRef(false);
 
-  const entries = catalogFor(scopeType);
+  // Only backend-SVG-renderable kinds (embeddableCatalogFor filters out the
+  // FE-only / dashboard-only catalog entries that would 404 as an SVG embed
+  // and render as empty widget cards).
+  const entries = embeddableCatalogFor(scopeType);
 
   // Persist width whenever it settles (not on every drag frame).
   useEffect(() => {

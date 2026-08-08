@@ -5,9 +5,11 @@ import { http, HttpResponse } from "msw";
 import { server } from "@/test/msw/server";
 import { renderWithProviders } from "@/test/renderWithProviders";
 import {
+  SVG_RENDERABLE_KINDS,
   WIDGET_CATALOG,
   catalogFor,
   embedSnippets,
+  embeddableCatalogFor,
   widgetSvgUrl,
 } from "./catalog";
 import { WidgetCard } from "./WidgetCard";
@@ -30,6 +32,34 @@ describe("catalog", () => {
     expect(project).not.toContain("stats-card-with-grade");
     expect(project).not.toContain("top-projects");
     expect(project).toContain("top-langs");
+  });
+
+  it("embeddableCatalogFor excludes FE-only / dashboard-only kinds", () => {
+    // The Embeddable Widgets panel must only offer kinds the backend SVG
+    // endpoint can render — else the cards 404 and show empty (the bug this
+    // guards). FE-only stat/chip/goal kinds must NOT leak in.
+    const embeddable = embeddableCatalogFor("user").map((e) => e.kind);
+    expect(embeddable).toContain("stats-card");
+    expect(embeddable).toContain("punchcard");
+    for (const feOnly of [
+      "current-streak-stat",
+      "longest-streak-stat",
+      "active-days-stat",
+      "categories-chart",
+      "editors-chips",
+      "platforms-chips",
+      "goal-progress",
+      "goal-ring",
+    ]) {
+      expect(embeddable).not.toContain(feOnly);
+    }
+    // every kind the panel offers is on the backend whitelist
+    for (const k of embeddable) expect(SVG_RENDERABLE_KINDS.has(k)).toBe(true);
+  });
+
+  it("every SVG_RENDERABLE_KINDS kind exists as a catalog entry", () => {
+    const known = new Set(WIDGET_CATALOG.map((e) => e.kind));
+    for (const k of SVG_RENDERABLE_KINDS) expect(known.has(k)).toBe(true);
   });
 
   it("every entry carries primitives metadata for the v2 builder", () => {
@@ -137,10 +167,13 @@ describe("WidgetsPanel", () => {
     );
     await waitFor(() => expect(minted).toBe(1));
 
-    // user scope shows the full catalog incl. the grade card
-    for (const entry of catalogFor("user")) {
+    // user scope shows every backend-SVG-renderable widget incl. the grade card
+    for (const entry of embeddableCatalogFor("user")) {
       expect(await screen.findByText(entry.title)).toBeInTheDocument();
     }
+    // …but NOT the FE-only / dashboard-only kinds (they'd 404 as SVG embeds)
+    expect(screen.queryByText("Longest Streak")).not.toBeInTheDocument();
+    expect(screen.queryByText("Editors")).not.toBeInTheDocument();
   });
 
   it("project scope hides user-only widgets", async () => {

@@ -497,6 +497,36 @@ export function catalogForDashboard(scope: DashboardScope): WidgetCatalogEntry[]
   return WIDGET_CATALOG.filter((e) => (e.dashboardScopes ?? []).includes(scope));
 }
 
+/** Kinds the backend `/widget/svg/:uuid/:kind` endpoint can actually render
+ * (mirrors the `kinds` map in internal/widget/render.go, pinned by the Go test
+ * TestKindsMatchFrontendCatalog). The Embeddable Widgets panel filters to these
+ * — every OTHER catalog entry (stat labels, chip lists, goal tiles, …) is an
+ * in-page / composable-dashboard widget that has no SVG renderer and 404s as an
+ * embed, so surfacing it in the panel produces empty widget cards. Keep this in
+ * sync with render.go when adding a backend-renderable kind. */
+export const SVG_RENDERABLE_KINDS = new Set<string>([
+  "activity-heatmap",
+  "badge",
+  "cumulative-area",
+  "deep-work",
+  "heatmap-languages",
+  "heatmap-projects",
+  "momentum",
+  "profile-summary",
+  "punchcard",
+  "stats-card",
+  "stats-card-with-grade",
+  "top-langs",
+  "top-projects",
+]);
+
+/** Catalog entries for a scope that the backend can render as an SVG embed —
+ * the correct source for the Embeddable Widgets panel (excludes FE-only /
+ * dashboard-only kinds that would 404). */
+export function embeddableCatalogFor(scope: WidgetScope): WidgetCatalogEntry[] {
+  return catalogFor(scope).filter((e) => SVG_RENDERABLE_KINDS.has(e.kind));
+}
+
 /** gaka-keb: lookup a catalog entry by kind id. Returns undefined for
  * unknown kinds; the renderer silently drops missing kinds so a stale saved
  * layout doesn't break the page. */
