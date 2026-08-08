@@ -13,10 +13,20 @@ interface ContributionCalendarProps {
   // RAW daily series (NOT weekly-bucketed): parallel arrays.
   dates: string[];
   values: number[]; // seconds per day
+  // gaka-csx P3: OPTIONAL GitHub contribution-count overlay, aligned
+  // index-for-index to `dates`/`values`. When ABSENT the render is
+  // byte-identical to the coding-time-only calendar (the additive invariant):
+  // no extra DOM, no message. When PRESENT, each day with GitHub commits gets a
+  // small GitHub-green corner mark scaled by that day's commit count, layered
+  // over (not replacing) the coding-time intensity fill.
+  ghValues?: number[];
 }
 
 const CELL = 13;
 const GAP = 3;
+// GitHub-brand green for the commit overlay — deliberately distinct from
+// --primary (the coding-time intensity) so the two series never read as one.
+const GH_ACCENT = "#39d353";
 const WEEKDAY_LABELS = ["", "Mon", "", "Wed", "", "Fri", ""];
 const MARGIN = { top: 20, right: 0, bottom: 0, left: 30 };
 const GRID_H = 7 * (CELL + GAP); // 7 weekday rows
@@ -27,13 +37,22 @@ const GRID_H = 7 * (CELL + GAP); // 7 weekday rows
  * content (short ranges are a compact strip, not a stranded cluster in a huge
  * card). The SVG scrolls horizontally when the range is longer than the card.
  */
-export function ContributionCalendar({ dates, values }: ContributionCalendarProps) {
+export function ContributionCalendar({ dates, values, ghValues }: ContributionCalendarProps) {
   // Content height drives the wrapper so short ranges don't strand a tiny grid.
   const svgHeight = MARGIN.top + GRID_H + 4;
 
+  // The overlay is active ONLY when a ghValues array is supplied. Absent ⇒ the
+  // draw below never appends a single overlay element, so the DOM is
+  // byte-identical to the coding-time-only calendar (gaka-csx invariant A).
+  const ghActive = Array.isArray(ghValues);
   const days = useMemo(
-    () => dates.map((d, i) => ({ date: new Date(d), value: values[i] ?? 0 })),
-    [dates, values],
+    () =>
+      dates.map((d, i) => ({
+        date: new Date(d),
+        value: values[i] ?? 0,
+        gh: ghActive ? (ghValues![i] ?? 0) : 0,
+      })),
+    [dates, values, ghValues, ghActive],
   );
   // Content-sized: the draw owns the svg width and doesn't re-run on frame
   // width changes (the centering below is pure JSX off the measured frame).
@@ -135,6 +154,19 @@ export function ContributionCalendar({ dates, values }: ContributionCalendarProp
             rows0 = [{ label: "Activity", value: "No activity" }];
             footer = undefined;
           }
+          // gaka-csx P3: surface the day's GitHub commits alongside coding time
+          // when the overlay is active. Only appears when there were commits, so
+          // the tooltip stays quiet on GH-empty days (and identical when the
+          // overlay is absent entirely).
+          if (ghActive && d.gh > 0) {
+            rows0 = [
+              ...rows0,
+              {
+                label: "GitHub commits",
+                value: `${d.gh} commit${d.gh === 1 ? "" : "s"}`,
+              },
+            ];
+          }
           showTip(
             event,
             tooltipHtml({
@@ -146,6 +178,29 @@ export function ContributionCalendar({ dates, values }: ContributionCalendarProp
           );
         })
         .on("mouseleave", hideTip);
+
+      // gaka-csx P3: GitHub commit overlay. A GitHub-green corner triangle per
+      // day that had commits, its leg scaled by that day's share of the busiest
+      // GH day, layered over the coding-time fill. Rendered ONLY when the
+      // overlay is active AND there is at least one commit in the window — so an
+      // absent (or all-zero) overlay adds no DOM, preserving invariant (A).
+      const ghMax = ghActive ? (d3.max(days, (d) => d.gh) ?? 0) : 0;
+      if (ghActive && ghMax > 0) {
+        const MIN_LEG = 4; // a visible minimum even for a single commit
+        cellG
+          .filter((d) => d.gh > 0)
+          .append("path")
+          .attr("class", "gh-corner")
+          .attr("d", (d) => {
+            const t = ghMax > 0 ? d.gh / ghMax : 0;
+            const leg = MIN_LEG + Math.round(t * (CELL - MIN_LEG));
+            // Right-angle triangle tucked into the cell's top-right corner.
+            return `M${CELL - leg},0 L${CELL},0 L${CELL},${leg} Z`;
+          })
+          .attr("fill", GH_ACCENT)
+          .attr("fill-opacity", 0.95)
+          .style("pointer-events", "none");
+      }
 
       // Weekday row labels.
       g.selectAll("text.wd")
@@ -186,7 +241,7 @@ export function ContributionCalendar({ dates, values }: ContributionCalendarProp
         .style("font-size", "10px")
         .text((d) => d.label);
     },
-    [days],
+    [days, ghActive],
   );
 
   if (days.length === 0) return <EmptyChart height={svgHeight} />;

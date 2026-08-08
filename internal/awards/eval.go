@@ -159,7 +159,7 @@ func (h *Handler) buildAwardsPayloadAt(ctx echoContext, username string, at time
 	if err != nil {
 		return nil, err
 	}
-	payload := stats.ToStatsPayload(t0, t1, rows, categories)
+	payload := stats.ToStatsPayload(t0, t1, rows, categories, nil)
 	scrubbed := widget.Scrub(&payload, hidden)
 
 	pcCells, err := h.DB.GetPunchcard(ctx, username, t0, t1, publicProfileTimeLimit, tz, hidden, members, false)

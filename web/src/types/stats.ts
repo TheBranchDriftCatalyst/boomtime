@@ -109,6 +109,11 @@ export interface StatsPayload {
   totalSeconds: number;
   dailyAvg: number;
   dailyTotal: number[];
+  // gaka-csx P3: OPTIONAL per-day GitHub contribution-count series, aligned
+  // index-for-index to `dailyTotal`. Present ONLY when the owner has a cached
+  // GitHub grid (omitempty on the wire); absent for every non-GitHub payload,
+  // so consumers must treat it as optional and degrade to the base render.
+  githubDailyTotal?: number[];
   projects: ResourceStats[];
   languages: ResourceStats[];
   platforms: ResourceStats[];

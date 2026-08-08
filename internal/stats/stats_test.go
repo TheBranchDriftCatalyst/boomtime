@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -48,7 +49,7 @@ var _ = Describe("ToStatsPayload", func() {
 			{Day: day2, Project: "alpha", Language: "Rust", Editor: "code", Platform: "mac", Machine: "m2", Entity: "c.rs", TotalSeconds: 50, Pct: 0.25, DailyPct: 1.0},
 		}
 
-		p := ToStatsPayload(t0, t1, rows, nil)
+		p := ToStatsPayload(t0, t1, rows, nil, nil)
 
 		Expect(p.TotalSeconds).To(BeEquivalentTo(200))
 		Expect(p.DailyTotal).To(HaveLen(2))
@@ -72,6 +73,43 @@ var _ = Describe("ToStatsPayload", func() {
 
 		// Languages: Go (day1 only, len-2 daily) and Rust (day2).
 		Expect(p.Languages).To(HaveLen(2))
+	})
+
+	// gaka-csx P3: the optional GitHub contribution overlay aligns index-for-
+	// index to DailyTotal when a cache grid is present, and stays nil (omitted)
+	// when absent — the additive-invariant no-op.
+	It("aligns GithubDailyTotal to DailyTotal when a grid is present", func() {
+		t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		t1 := time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC) // 3 days inclusive
+		day1 := t0
+		day3 := t1
+		rows := []db.StatRow{
+			{Day: day1, Project: "alpha", Language: "Go", TotalSeconds: 100, Pct: 1, DailyPct: 1},
+			{Day: day3, Project: "alpha", Language: "Go", TotalSeconds: 50, Pct: 1, DailyPct: 1},
+		}
+		grid := []model.GithubContributionDay{
+			{Date: "2026-01-01", Count: 7},
+			{Date: "2026-01-02", Count: 3}, // a coding-empty day still carries GH commits
+			// 2026-01-03 intentionally absent → 0
+			{Date: "2025-12-31", Count: 99}, // outside the window → ignored
+		}
+
+		p := ToStatsPayload(t0, t1, rows, nil, grid)
+
+		Expect(p.DailyTotal).To(HaveLen(3))
+		Expect(p.GithubDailyTotal).To(HaveLen(len(p.DailyTotal)))
+		Expect(p.GithubDailyTotal).To(Equal([]int64{7, 3, 0}))
+	})
+
+	It("omits GithubDailyTotal (nil) when no grid is provided", func() {
+		t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		t1 := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+		rows := []db.StatRow{
+			{Day: t0, Project: "alpha", Language: "Go", TotalSeconds: 100, Pct: 1, DailyPct: 1},
+		}
+
+		Expect(ToStatsPayload(t0, t1, rows, nil, nil).GithubDailyTotal).To(BeNil())
+		Expect(ToStatsPayload(t0, t1, rows, nil, []model.GithubContributionDay{}).GithubDailyTotal).To(BeNil())
 	})
 })
 

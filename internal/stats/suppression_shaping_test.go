@@ -23,7 +23,7 @@ var _ = Describe("ToStatsPayload suppression shaping (gaka-tst-ginkgo)", func() 
 			{Day: d1, Category: "Coding", TotalSeconds: 300, Pct: 1, DailyPct: 1},
 		}
 
-		p := ToStatsPayload(d1, d1, rows, cats)
+		p := ToStatsPayload(d1, d1, rows, cats, nil)
 
 		// SUPPRESS must not appear in any breakdown.
 		for _, r := range p.Projects {

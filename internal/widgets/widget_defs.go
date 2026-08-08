@@ -232,7 +232,7 @@ func (h *Handler) WidgetDefSvg(c *echo.Context) error {
 			return nil, err
 		}
 
-		payload := stats.ToStatsPayload(t0, t1, rows, nil)
+		payload := stats.ToStatsPayload(t0, t1, rows, nil, nil)
 		// gaka-6jm.13: enforce the public-safe contract on the named-def path
 		// too. WidgetSvg (widgets.go) calls widget.Scrub on the identical
 		// StatsPayload before ANY renderer sees it; this handler shipped

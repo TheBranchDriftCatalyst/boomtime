@@ -7,6 +7,7 @@ import { ChartCard } from "@/components/ChartCard";
 import { WidgetsPanel } from "@/features/widgets/WidgetsPanel";
 import { EmbedLinkButton } from "@/features/widgets/EmbedActions";
 import { AIAssistanceCard } from "@/features/overview/AIAssistanceCard";
+import { GithubStatTiles } from "@/features/overview/GithubStatTiles";
 import { WellnessCard } from "@/features/overview/WellnessCard";
 import { ColumnChart } from "@/viz/charts/ColumnChart";
 import { HeatmapChart } from "@/viz/charts/HeatmapChart";
@@ -301,6 +302,13 @@ export function OverviewDashboard({
                   />
                 </div>
 
+                {/* gaka-csx P3: GitHub stat strip — a GH-ONLY surface. Renders
+                    nothing when the feature is off, a "Connect GitHub" CTA when
+                    unlinked/empty, and GH-branded tiles once connected + synced.
+                    Self-fetches via a separate optional query; never blocks the
+                    Overview. */}
+                <GithubStatTiles />
+
                 {/* gaka-1l9: AI-assistance strip — self-hides when the range has no
                     AI-tagged heartbeats (user is on a non-AI plugin, or range is
                     pre-2026-07-03 when wakatime.com started emitting these). */}
@@ -333,7 +341,11 @@ export function OverviewDashboard({
                       />
                     }
                   >
-                    <ContributionCalendar dates={dates} values={stats.dailyTotal} />
+                    <ContributionCalendar
+                      dates={dates}
+                      values={stats.dailyTotal}
+                      ghValues={stats.githubDailyTotal}
+                    />
                   </ChartCard>
                 </div>
 

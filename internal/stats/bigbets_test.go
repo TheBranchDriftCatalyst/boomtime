@@ -35,7 +35,7 @@ var _ = Describe("ToStatsPayload categories fold-in", func() {
 			{Day: d1, Category: "debugging", TotalSeconds: 20, Pct: 0.1, DailyPct: 0.2},
 			{Day: d2, Category: "coding", TotalSeconds: 50, Pct: 0.3, DailyPct: 1.0},
 		}
-		p := ToStatsPayload(d1, d2, xs, cats)
+		p := ToStatsPayload(d1, d2, xs, cats, nil)
 
 		Expect(p.CategoriesCount).To(Equal(2))
 		// Each category's TotalDaily aligns to the 2-day series.
@@ -59,7 +59,7 @@ var _ = Describe("ToStatsPayload categories fold-in", func() {
 		xs := []db.StatRow{
 			{Day: d1, Project: "p", Language: "Go", Editor: "vim", Platform: "linux", Machine: "m", Entity: "a.go", TotalSeconds: 100},
 		}
-		p := ToStatsPayload(d1, d1, xs, nil)
+		p := ToStatsPayload(d1, d1, xs, nil, nil)
 		Expect(p.Categories).NotTo(BeNil())
 		Expect(p.Categories).To(HaveLen(0))
 		Expect(p.CategoriesCount).To(Equal(0))

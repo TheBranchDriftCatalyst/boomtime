@@ -287,7 +287,7 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 			return nil, err
 		}
 
-		payload := stats.ToStatsPayload(t0, t1, rows, nil)
+		payload := stats.ToStatsPayload(t0, t1, rows, nil, nil)
 		// gaka-6jm.3: enforce the public-safe contract before ANY renderer sees
 		// the payload. The DB queries above already excluded hidden values
 		// from top-N segments; Scrub additionally strips hidden names from

@@ -273,7 +273,7 @@ func (h *Handler) PublicProfile(c *echo.Context) error {
 	if err != nil {
 		return apihelpers.InternalErr(h.Logger, c, "public profile category query failed", err)
 	}
-	payload := stats.ToStatsPayload(t0, t1, rows, categories)
+	payload := stats.ToStatsPayload(t0, t1, rows, categories, nil)
 
 	// gaka-6jm.1: enforce the public-safe contract before any field lands
 	// on the wire. Scrub strips hidden values from the OtherMembers tail

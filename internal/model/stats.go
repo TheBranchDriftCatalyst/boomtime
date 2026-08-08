@@ -228,17 +228,26 @@ type LanguageDaily struct {
 
 // StatsPayload is GET /api/v1/users/current/stats (StatsPayload, default options).
 type StatsPayload struct {
-	StartDate    time.Time       `json:"startDate"`
-	EndDate      time.Time       `json:"endDate"`
-	TotalSeconds int64           `json:"totalSeconds"`
-	DailyAvg     float64         `json:"dailyAvg"`
-	DailyTotal   []int64         `json:"dailyTotal"`
-	Projects     []ResourceStats `json:"projects"`
-	Languages    []ResourceStats `json:"languages"`
-	Platforms    []ResourceStats `json:"platforms"`
-	Machines     []ResourceStats `json:"machines"`
-	Editors      []ResourceStats `json:"editors"`
-	Categories   []ResourceStats `json:"categories"`
+	StartDate    time.Time `json:"startDate"`
+	EndDate      time.Time `json:"endDate"`
+	TotalSeconds int64     `json:"totalSeconds"`
+	DailyAvg     float64   `json:"dailyAvg"`
+	DailyTotal   []int64   `json:"dailyTotal"`
+	// GithubDailyTotal is an OPTIONAL per-day GitHub contribution-count series
+	// aligned index-for-index to DailyTotal (same day axis). It is populated
+	// ONLY when the owner has a github_stats_cache row (a cheap LOCAL read — no
+	// external GitHub call); otherwise it stays nil and omitempty drops the key
+	// entirely, so a payload with no GitHub data is byte-identical to today's.
+	// The contribution calendar renders this as an additive overlay; its
+	// absence must never change the base single-series render (gaka-csx P3
+	// invariant: GH data is additive + degrades gracefully).
+	GithubDailyTotal []int64         `json:"githubDailyTotal,omitempty"`
+	Projects         []ResourceStats `json:"projects"`
+	Languages        []ResourceStats `json:"languages"`
+	Platforms        []ResourceStats `json:"platforms"`
+	Machines         []ResourceStats `json:"machines"`
+	Editors          []ResourceStats `json:"editors"`
+	Categories       []ResourceStats `json:"categories"`
 	// True distinct counts before top-N capping (the *lists above are capped to
 	// the top resources + one aggregated "Other" bucket to stay small).
 	ProjectsCount   int `json:"projectsCount"`

@@ -69,7 +69,19 @@ func (h *Handler) Stats(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		return ToStatsPayload(s.t0, s.t1, rows, categories), nil
+		// gaka-csx P3: OPTIONAL GitHub contribution overlay. A CHEAP local read
+		// of the owner's cached grid (no external GitHub call) — when absent
+		// (never connected / feature off / never synced) the grid is nil and
+		// GithubDailyTotal is omitted, so the payload is byte-identical to today.
+		// A read error is non-fatal: log-and-continue with a nil grid rather than
+		// letting the GitHub overlay ever block the Overview.
+		var ghGrid []model.GithubContributionDay
+		if cache, ok, gerr := h.DB.GetGithubStatsCache(s.ctx, s.owner); gerr != nil {
+			h.Logger.Warn("github stats cache read failed; omitting overlay", "err", gerr)
+		} else if ok {
+			ghGrid = cache.ContributionGrid
+		}
+		return ToStatsPayload(s.t0, s.t1, rows, categories, ghGrid), nil
 	})
 }
 
