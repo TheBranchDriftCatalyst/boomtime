@@ -10,7 +10,12 @@
 // changing any of them is out of scope for phase 7.
 package admin
 
-import "github.com/labstack/echo/v5"
+import (
+	"github.com/labstack/echo/v5"
+
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
+)
 
 // Register wires the admin-domain endpoints onto e. Handler must be
 // non-nil. Registration order preserves the pre-refactor sequence:
@@ -108,7 +113,12 @@ func Register(e *echo.Echo, h *Handler) {
 	// bearer-token flow for the JSON endpoints; the WS uses the
 	// refresh_token cookie (WS handshakes can't carry Authorization).
 	// Registration order preserves pre-refactor registerImportRoutes.
-	e.POST("/import", h.ImportRequest)
+	// auth-dry Phase 2: starting a Wakatime import is gated by CapImport (the
+	// bulk historical pull is expensive). Declared as route middleware instead
+	// of an inline check in ImportRequest. Flag off ⇒ all-caps ⇒ allowed.
+	// importCap is nil-safe: the OpenAPI drift router registers routes with a
+	// nil handler to enumerate paths, so h.DB must not be dereferenced there.
+	e.POST("/import", h.ImportRequest, importCap(h)...)
 	e.GET("/import/config", h.ImportConfig)
 	e.POST("/import/wakatime-range", h.WakatimeRange)
 	e.GET("/import/jobs", h.ImportJobs)
@@ -116,4 +126,15 @@ func Register(e *echo.Echo, h *Handler) {
 	e.POST("/import/jobs/:id/cancel", h.ImportJobCancel)
 	e.GET("/import/jobs/:id/logs", h.ImportJobLogs)
 	e.GET("/import/jobs/:id/ws", h.ImportJobWS)
+}
+
+// importCap returns the CapImport route middleware, or nil when h is nil. The
+// nil case exists only for the OpenAPI drift router, which registers routes
+// with a nil handler to enumerate paths and never serves them — so h.DB must
+// not be dereferenced at registration time.
+func importCap(h *Handler) []echo.MiddlewareFunc {
+	if h == nil {
+		return nil
+	}
+	return []echo.MiddlewareFunc{apihelpers.RequireCap(h.DB, auth.CapImport, "import")}
 }

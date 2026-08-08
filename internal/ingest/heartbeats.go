@@ -40,15 +40,13 @@ func (h *Handler) HeartbeatBulk(c *echo.Context) error {
 }
 
 func (h *Handler) storeAndRespond(c *echo.Context, hbs []model.HeartbeatPayload) error {
+	// auth-dry Phase 2: CapIngestHeartbeats is enforced by RequireCap route
+	// middleware (see ingest/routes.go) before this handler runs. We still
+	// resolve the identity here for the owner + the CapGenerateRollups check
+	// below; it's a cheap cached read (Phase 1), not a second DB resolution.
 	ident, aerr := apihelpers.Identify(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
-	}
-	// gaka-0oe.3: ingest is a tier-gated capability. Flag off => all-caps =>
-	// always allowed (byte-identical to today). Flag on => a viewer/light tier
-	// denied ingest is 403'd here rather than silently writing.
-	if !ident.Can(auth.CapIngestHeartbeats) {
-		return apihelpers.RespondErr(c, apierr.Forbidden("this account is not permitted to ingest heartbeats"))
 	}
 	owner := ident.Username
 	ctx := c.Request().Context()

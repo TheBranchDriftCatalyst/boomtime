@@ -264,6 +264,37 @@ func IdentifyFromCookie(database *db.DB, logger *slog.Logger, c *echo.Context, m
 	return auth.CurrentResolver().ResolveCookie(c.Request().Context(), database, refresh)
 }
 
+// RequireCap is per-route authorization middleware (auth-dry Phase 2). Attach
+// it at route registration so a tier-gated capability is a DECLARATIVE
+// annotation on the route instead of hand-rolled Identify + `if !ident.Can(cap)`
+// boilerplate in every handler body:
+//
+//	ingest write routes:  h.Register(e) → e.POST(path, h.HeartbeatBulk,
+//	    apihelpers.RequireCap(h.DB, auth.CapIngestHeartbeats, "ingest data"))
+//
+// It reuses the middleware-cached Identity (Phase 1), so it costs no extra DB
+// round-trip on the happy path. Semantics are byte-identical to the old inline
+// gate: authentication failures surface as the usual MissingAuth (400) /
+// InvalidToken (401) from Identify; a resolved-but-unpermitted identity gets
+// apierr.Forbidden ("this account is not permitted to <action>"). Enforcing
+// here (before the handler binds the body) is a strict improvement — an
+// unauthorized caller's payload is never parsed. Flag off ⇒ all-caps ⇒ every
+// RequireCap passes, exactly as before.
+func RequireCap(database *db.DB, capability auth.Capability, action string) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			ident, aerr := Identify(database, c)
+			if aerr != nil {
+				return RespondErr(c, aerr)
+			}
+			if !ident.Can(capability) {
+				return RespondErr(c, apierr.Forbidden("this account is not permitted to "+action))
+			}
+			return next(c)
+		}
+	}
+}
+
 // IdentifyOwner is the owner-only convenience over Identify (gaka-0oe.4–.9).
 // For the many account/settings/read handlers that need the caller's username
 // + the disabled-fail-closed guarantee but have NO tier-specific capability

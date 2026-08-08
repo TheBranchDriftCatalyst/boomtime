@@ -8,7 +8,6 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 	"github.com/labstack/echo/v5"
 )
@@ -62,16 +61,13 @@ func (h *Handler) WorkoutsBulk(c *echo.Context) error {
 }
 
 func (h *Handler) storeWorkouts(c *echo.Context, ws []model.WorkoutPayload) error {
-	ident, aerr := apihelpers.Identify(h.DB, c)
+	// auth-dry Phase 2: CapIngestHeartbeats is enforced by RequireCap route
+	// middleware (ingest/routes.go) before this runs — the handler just needs
+	// the owner. IdentifyOwner is a cached read (Phase 1).
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
-	// gaka-0oe.3: workout ingest is gated by the same ingest capability as
-	// heartbeats. Flag off => all-caps => always allowed.
-	if !ident.Can(auth.CapIngestHeartbeats) {
-		return apihelpers.RespondErr(c, apierr.Forbidden("this account is not permitted to ingest data"))
-	}
-	owner := ident.Username
 	ctx := c.Request().Context()
 
 	ids, err := h.DB.SaveWorkouts(ctx, owner, ws)

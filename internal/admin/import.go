@@ -32,16 +32,12 @@ func (h *Handler) effectiveImportToken(bodyToken string) string {
 // If a job is already queued/running for this user, returns that job instead of
 // starting a second one (one active job per owner).
 func (h *Handler) ImportRequest(c *echo.Context) error {
-	ident, aerr := apihelpers.Identify(h.DB, c)
+	// auth-dry Phase 2: CapImport is enforced by RequireCap route middleware
+	// (see admin/routes.go) before this runs; the handler just needs the owner.
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
-	// gaka-0oe.3: starting a Wakatime import is a tier-gated capability (the
-	// bulk historical pull is expensive). Flag off => all-caps => allowed.
-	if !ident.Can(auth.CapImport) {
-		return apihelpers.RespondErr(c, apierr.Forbidden("this account is not permitted to import"))
-	}
-	owner := ident.Username
 	var payload model.ImportRequestPayload
 	if err := c.Bind(&payload); err != nil {
 		return apihelpers.RespondErr(c, apierr.BadRequest("Invalid request body"))

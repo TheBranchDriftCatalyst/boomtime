@@ -77,6 +77,54 @@ var _ = Describe("Identify — middleware identity cache", func() {
 	})
 })
 
+// -- RequireCap declarative capability gate (auth-dry Phase 2) -------------
+//
+// The cap-denial path had NO handler-level test before this refactor (ingest
+// tests all mint full-cap users). These specs pin the gate directly: a
+// full/all-caps identity passes to the handler; a light-tier identity that
+// lacks the capability is 403'd and the handler NEVER runs (nil DB proves the
+// cached identity is used — no re-resolution).
+var _ = Describe("RequireCap — route capability gate", func() {
+	newCtx := func() (*echo.Context, *httptest.ResponseRecorder) {
+		e := echo.New()
+		req := httptest.NewRequest(http.MethodPost, "/x", nil)
+		rec := httptest.NewRecorder()
+		return e.NewContext(req, rec), rec
+	}
+	sentinel := func(ran *bool) echo.HandlerFunc {
+		return func(c *echo.Context) error { *ran = true; return c.String(http.StatusOK, "ok") }
+	}
+
+	It("passes an identity that HOLDS the capability (handler runs, 200)", func() {
+		c, rec := newCtx()
+		apihelpers.SetIdentity(c, auth.AllCapsIdentity("fulluser"))
+		ran := false
+		err := apihelpers.RequireCap(nil, auth.CapIngestHeartbeats, "ingest data")(sentinel(&ran))(c)
+		Expect(err).To(BeNil())
+		Expect(ran).To(BeTrue())
+		Expect(rec.Code).To(Equal(http.StatusOK))
+	})
+
+	It("403s an identity that LACKS the capability — handler NEVER runs", func() {
+		c, rec := newCtx()
+		apihelpers.SetIdentity(c, auth.BuildIdentity("lite", "light", nil, false))
+		ran := false
+		err := apihelpers.RequireCap(nil, auth.CapIngestHeartbeats, "ingest data")(sentinel(&ran))(c)
+		Expect(err).To(BeNil()) // RespondErr writes the envelope + returns nil
+		Expect(ran).To(BeFalse(), "an unauthorized caller's handler body must not execute")
+		Expect(rec.Code).To(Equal(http.StatusForbidden))
+	})
+
+	It("surfaces the auth error (no credential → 400 MissingAuth, handler NEVER runs)", func() {
+		c, rec := newCtx() // nothing cached, no Authorization header
+		ran := false
+		err := apihelpers.RequireCap(nil, auth.CapIngestHeartbeats, "ingest data")(sentinel(&ran))(c)
+		Expect(err).To(BeNil())
+		Expect(ran).To(BeFalse())
+		Expect(rec.Code).To(Equal(http.StatusBadRequest))
+	})
+})
+
 func TestApiHelpersSuite(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "internal/apihelpers suite")
