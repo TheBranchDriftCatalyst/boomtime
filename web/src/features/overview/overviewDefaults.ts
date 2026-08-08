@@ -24,28 +24,35 @@ export const OVERVIEW_DEFAULT_LAYOUT: GridLayoutItem[] = [
   // Flagship contribution calendar (full width).
   { i: "activity-heatmap", x: 0, y: 13, w: 12, h: 3 },
 
+  // gaka-v1k: GitHub-only chart row — grouped right after the contribution
+  // calendar so all GitHub surfaces read together. Each self-fetches from the
+  // cached P2 payload and self-hides when the feature is off / user unlinked.
+  { i: "github-commits", x: 0, y: 16, w: 12, h: 3 },
+  { i: "github-repos", x: 0, y: 19, w: 6, h: 4 },
+  { i: "github-languages", x: 6, y: 19, w: 6, h: 4 },
+
   // Total activity (8) | Project breakdown pie (4).
-  { i: "overview-total-activity", x: 0, y: 16, w: 8, h: 4 },
-  { i: "top-projects", x: 8, y: 16, w: 4, h: 4, view: "pie" },
+  { i: "overview-total-activity", x: 0, y: 23, w: 8, h: 4 },
+  { i: "top-projects", x: 8, y: 23, w: 4, h: 4, view: "pie" },
 
   // Cumulative area (6) | Category streamgraph (6).
-  { i: "cumulative-area", x: 0, y: 20, w: 6, h: 4 },
-  { i: "category-streamgraph", x: 6, y: 20, w: 6, h: 4 },
+  { i: "cumulative-area", x: 0, y: 27, w: 6, h: 4 },
+  { i: "category-streamgraph", x: 6, y: 27, w: 6, h: 4 },
 
   // Lines of code (full width) — total + per-project + growth over time.
-  { i: "loc", x: 0, y: 24, w: 12, h: 4 },
+  { i: "loc", x: 0, y: 31, w: 12, h: 4 },
 
   // Activity-per-project (6) | Activity-per-language (6) heatmaps.
-  { i: "heatmap-projects", x: 0, y: 28, w: 6, h: 3 },
-  { i: "heatmap-languages", x: 6, y: 28, w: 6, h: 3 },
+  { i: "heatmap-projects", x: 0, y: 35, w: 6, h: 3 },
+  { i: "heatmap-languages", x: 6, y: 35, w: 6, h: 3 },
 
   // Patterns: punchcard (6) | momentum (6).
-  { i: "punchcard", x: 0, y: 31, w: 6, h: 4, view: "heatmap" },
-  { i: "momentum", x: 6, y: 31, w: 6, h: 4 },
+  { i: "punchcard", x: 0, y: 38, w: 6, h: 4, view: "heatmap" },
+  { i: "momentum", x: 6, y: 38, w: 6, h: 4 },
 
   // Deep-work sessions (full width).
-  { i: "deep-work", x: 0, y: 35, w: 12, h: 3 },
+  { i: "deep-work", x: 0, y: 42, w: 12, h: 3 },
 
   // Recent timeline (full width; carries its own Last-N-hours control).
-  { i: "overview-timeline", x: 0, y: 38, w: 12, h: 4 },
+  { i: "overview-timeline", x: 0, y: 45, w: 12, h: 4 },
 ];

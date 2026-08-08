@@ -426,6 +426,42 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
     dashboardScopes: ["overview"],
     defaultLayout: { w: 12, h: 4 },
   },
+  // gaka-v1k (Phase 4): GitHub-ONLY chart widgets. Like the other overview-only
+  // FE kinds (loc / ai-assistance / overview-stats) these render ONLY in-page
+  // via OverviewWidgetRenderer, SELF-FETCHING from the cached P2
+  // GithubStatsPayload (qk.githubStats) — NOT from OverviewDataContext. They
+  // have no backend SVG variant, so they are deliberately absent from
+  // internal/widget/render.go's Kinds() and the drift-guard test
+  // (TestKindsMatchFrontendCatalog only pins the SVG-renderable subset). Each
+  // self-hides when the GitHub feature is off and shows a Connect-GitHub CTA
+  // when unlinked/empty (the additive invariant).
+  {
+    kind: "github-commits",
+    title: "GitHub Commits",
+    description: "Your GitHub contributions over time as an area chart",
+    scopes: ["user"],
+    primitives: ["graph", "label"],
+    dashboardScopes: ["overview"],
+    defaultLayout: { w: 12, h: 3 },
+  },
+  {
+    kind: "github-repos",
+    title: "GitHub Repositories",
+    description: "Your top public repositories ranked by stars",
+    scopes: ["user"],
+    primitives: ["graph", "label"],
+    dashboardScopes: ["overview"],
+    defaultLayout: { w: 6, h: 4 },
+  },
+  {
+    kind: "github-languages",
+    title: "GitHub Languages",
+    description: "Language breakdown across your public repositories",
+    scopes: ["user"],
+    primitives: ["graph", "label"],
+    dashboardScopes: ["overview"],
+    defaultLayout: { w: 6, h: 4 },
+  },
 ];
 
 /** Catalog entries offered for a page scope. */

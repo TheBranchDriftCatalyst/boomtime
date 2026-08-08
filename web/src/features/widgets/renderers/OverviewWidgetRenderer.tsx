@@ -31,6 +31,11 @@ import {
 import { AIAssistanceCard } from "@/features/overview/AIAssistanceCard";
 import { WellnessCard } from "@/features/overview/WellnessCard";
 import { LinesOfCodeCard } from "@/features/overview/LinesOfCodeCard";
+import {
+  GithubCommitsCard,
+  GithubReposCard,
+  GithubLanguagesCard,
+} from "@/features/overview/GithubCharts";
 import { ColumnChart } from "@/viz/charts/ColumnChart";
 import { HeatmapChart } from "@/viz/charts/HeatmapChart";
 import { PieChart } from "@/viz/charts/PieChart";
@@ -99,6 +104,14 @@ export function OverviewWidgetRenderer({
       return <OverviewCumulativeArea />;
     case "loc":
       return <LinesOfCodeCard />;
+
+    // --- GitHub-only charts (self-fetch from the cached P2 payload) ------
+    case "github-commits":
+      return <GithubCommitsCard />;
+    case "github-repos":
+      return <GithubReposCard />;
+    case "github-languages":
+      return <GithubLanguagesCard />;
     case "category-streamgraph":
       return <OverviewCategoryStreamgraph />;
     case "heatmap-projects":

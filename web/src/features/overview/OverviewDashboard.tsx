@@ -8,6 +8,7 @@ import { WidgetsPanel } from "@/features/widgets/WidgetsPanel";
 import { EmbedLinkButton } from "@/features/widgets/EmbedActions";
 import { AIAssistanceCard } from "@/features/overview/AIAssistanceCard";
 import { GithubStatTiles } from "@/features/overview/GithubStatTiles";
+import { GithubChartsSection } from "@/features/overview/GithubCharts";
 import { WellnessCard } from "@/features/overview/WellnessCard";
 import { ColumnChart } from "@/viz/charts/ColumnChart";
 import { HeatmapChart } from "@/viz/charts/HeatmapChart";
@@ -349,6 +350,16 @@ export function OverviewDashboard({
                     />
                   </ChartCard>
                 </div>
+
+                {/* gaka-v1k P4: GitHub-only charts — commits-over-time, top
+                    repos by stars, and language breakdown, all from the cached
+                    P2 payload. Grouped here with the GH tiles + calendar so the
+                    GitHub surfaces read together. Self-hides when the feature is
+                    off / the user is unlinked (GithubStatTiles above owns the
+                    Connect-GitHub CTA), so it never blocks the Overview. Mounted
+                    bare (like GithubStatTiles) so a self-hidden section leaves no
+                    empty wrapper. */}
+                <GithubChartsSection />
 
                 <div className="snap-section grid grid-cols-1 gap-6 lg:grid-cols-3">
                   <div className="lg:col-span-2">
