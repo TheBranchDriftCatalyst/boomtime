@@ -44,6 +44,9 @@ import (
 //	POST   /import/jobs/:id/cancel                                  (h.ImportJobCancel)
 //	GET    /import/jobs/:id/logs                                    (h.ImportJobLogs)
 //	GET    /import/jobs/:id/ws                                      (h.ImportJobWS)
+//	GET    /api/v1/admin/cli/spec                                   (h.CLISpec)      only when FeatureAdminCLI
+//	POST   /api/v1/admin/cli/run                                    (h.CLIRun)       only when FeatureAdminCLI
+//	POST   /api/v1/admin/cli/complete                               (h.CLIComplete)  only when FeatureAdminCLI
 func Register(e *echo.Echo, h *Handler) {
 	// Source health (per plugin/editor/machine last check-in — ingestion
 	// health). Owner-scoped read, cached like other reads. Was previously
@@ -99,6 +102,21 @@ func Register(e *echo.Echo, h *Handler) {
 	e.POST("/import/jobs/:id/cancel", h.ImportJobCancel)
 	e.GET("/import/jobs/:id/logs", h.ImportJobLogs)
 	e.GET("/import/jobs/:id/ws", h.ImportJobWS)
+
+	// Admin CLI-runner (BOOM_FEATURE_ADMIN_CLI, default off): flag off ⇒
+	// the routes are NEVER registered, so the endpoints 404 like any
+	// unknown path — the feature is fully inert. Flag on ⇒ every route is
+	// double-gated: CapAdmin route middleware (defense-in-depth; inert
+	// until BOOM_FEATURE_USER_MODEL) + requireAdmin inside each handler
+	// (the BOOM_ADMIN_USERS hard gate, which runs before any body read).
+	// The nil-guard mirrors importCap: the OpenAPI drift router registers
+	// with a nil handler to enumerate paths and must not dereference h.
+	if h != nil && h.Cfg != nil && h.Cfg.FeatureAdminCLI {
+		cliCap := apihelpers.RequireCap(h.DB, auth.CapAdmin, "use the admin CLI runner")
+		e.GET("/api/v1/admin/cli/spec", h.CLISpec, cliCap)
+		e.POST("/api/v1/admin/cli/run", h.CLIRun, cliCap)
+		e.POST("/api/v1/admin/cli/complete", h.CLIComplete, cliCap)
+	}
 }
 
 // importCap returns the CapImport route middleware, or nil when h is nil. The

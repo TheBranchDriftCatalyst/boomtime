@@ -2,18 +2,22 @@ package main
 
 // `boomtime user ...` — offline user administration for the user-model
 // substrate (gaka-0oe.10): set-role, disable, enable, list, show. No HTTP
-// surface; these are operator tools run against the DB directly. Every
-// entity/role argument is TAB-completable via the completion layer
-// (completion.go).
+// surface for the state-changing commands; these are operator tools run
+// against the DB directly. Every entity/role argument is TAB-completable via
+// the completion layer (internal/climeta, aliased in completion.go).
+//
+// The READ-ONLY pair (list, show) is built by internal/climeta so the admin
+// CLI-runner (BOOM_FEATURE_ADMIN_CLI) can introspect + invoke the same
+// definitions in-process. set-role / disable / enable stay here: they are
+// deliberately NOT web-exposed (no annotation, no registry entry).
 import (
 	"context"
 	"fmt"
-	"os"
-	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/climeta"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 )
@@ -31,79 +35,8 @@ func userCmd() *cobra.Command {
 			"(gaka-0oe). Roles gate capabilities when BOOM_FEATURE_USER_MODEL=on; " +
 			"a disabled user fails closed on every auth path.",
 	}
-	cmd.AddCommand(userListCmd(), userShowCmd(), userSetRoleCmd(), userDisableCmd(), userEnableCmd())
+	cmd.AddCommand(climeta.NewUserListCmd(), climeta.NewUserShowCmd(), userSetRoleCmd(), userDisableCmd(), userEnableCmd())
 	return cmd
-}
-
-func userListCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "list",
-		Short: "List all users with role + status",
-		Args:  cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			ctx := context.Background()
-			database, err := openDB(ctx)
-			if err != nil {
-				return err
-			}
-			defer database.Close()
-			rows, err := database.ListUsersAdmin(ctx)
-			if err != nil {
-				return err
-			}
-			if len(rows) == 0 {
-				fmt.Println("no users")
-				return nil
-			}
-			w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
-			fmt.Fprintln(w, "USERNAME\tROLE\tSTATUS")
-			for _, r := range rows {
-				status := "active"
-				if r.DisabledAt != nil {
-					status = "disabled " + r.DisabledAt.UTC().Format("2006-01-02")
-				}
-				fmt.Fprintf(w, "%s\t%s\t%s\n", r.Username, r.Role, status)
-			}
-			return w.Flush()
-		},
-	}
-}
-
-func userShowCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:               "show <username>",
-		Short:             "Show a user's role, status, and capability overrides",
-		Args:              cobra.ExactArgs(1),
-		ValidArgsFunction: completeUsernames,
-		RunE: func(_ *cobra.Command, args []string) error {
-			ctx := context.Background()
-			database, err := openDB(ctx)
-			if err != nil {
-				return err
-			}
-			defer database.Close()
-			u, err := database.GetUserFullByName(ctx, args[0])
-			if err != nil {
-				return err
-			}
-			if u == nil {
-				return fmt.Errorf("no such user: %q", args[0])
-			}
-			status := "active"
-			if u.DisabledAt != nil {
-				status = "disabled at " + u.DisabledAt.UTC().Format("2006-01-02 15:04:05 MST")
-			}
-			caps := string(u.Capabilities)
-			if caps == "" || caps == "{}" {
-				caps = "{} (role defaults)"
-			}
-			fmt.Printf("username:     %s\n", u.Username)
-			fmt.Printf("role:         %s\n", u.Role)
-			fmt.Printf("status:       %s\n", status)
-			fmt.Printf("capabilities: %s\n", caps)
-			return nil
-		},
-	}
 }
 
 func userSetRoleCmd() *cobra.Command {

@@ -1,5 +1,7 @@
 // backfill_github_stats.go: `boomtime backfill github-stats [--user X]` —
 // server-side refresh of the per-user GitHub stats cache (gaka-anh Phase 2).
+// Relocated from cmd/boomtime so the admin CLI-runner can introspect the
+// command def and call the same body in-process.
 //
 // Iterates every user with a linked GitHub token (or just --user) and runs
 // github.Service.SyncUser, which upserts ONE row per user (replace-on-conflict).
@@ -13,12 +15,13 @@
 //
 // Gated on BOOM_FEATURE_GITHUB_STATS — the feature master switch. NEVER logs a
 // token; per-user output is success / skip / error only.
-package main
+package climeta
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 
@@ -30,11 +33,17 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/github"
 )
 
-func backfillGithubStatsCmd() *cobra.Command {
+// NewBackfillGithubStatsCmd builds the `backfill github-stats` command def —
+// shared by the CLI (cmd/boomtime) and the admin CLI-runner's introspection.
+func NewBackfillGithubStatsCmd() *cobra.Command {
 	var user string
 	cmd := &cobra.Command{
 		Use:   "github-stats",
 		Short: "Refresh the per-user GitHub stats cache (idempotent upsert per user)",
+		// Web allowlist (admin CLI-runner): mutating without --dry-run, so
+		// every web run requires the confirm sentinel. Availability is
+		// additionally gated on cfg.FeatureGithubStats in the registry.
+		Annotations: map[string]string{WebAnnotation: ClassMutating},
 		Long: `Sync each linked user's GitHub stats into github_stats_cache. One row per
 user is upserted (replace-on-conflict), so re-running never accrues duplicates —
 the command is safely re-runnable.
@@ -66,19 +75,22 @@ stored token). Never logs tokens.
 
 			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 			svc := github.NewService(database, logger)
-			return runBackfillGithubStats(ctx, database, svc, user, cmd.OutOrStdout())
+			return RunBackfillGithubStats(ctx, database, svc, user, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().StringVar(&user, "user", "", "only sync this user (default: all users with a linked GitHub token)")
 	cmd.ValidArgsFunction = func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
+	// Smart completion: TAB --user to pick an existing user from the DB.
+	_ = cmd.RegisterFlagCompletionFunc("user", CompleteUsernames)
 	return cmd
 }
 
-// runBackfillGithubStats is the extracted body so a test can drive the loop
-// against an in-process DB + mock-GitHub service without cobra + config.Load.
-func runBackfillGithubStats(ctx context.Context, database *db.DB, svc *github.Service, user string, out interface{ Write([]byte) (int, error) }) error {
+// RunBackfillGithubStats is the extracted body so a test — and the admin
+// CLI-runner — can drive the loop against an in-process DB + mock-GitHub
+// service without cobra + config.Load.
+func RunBackfillGithubStats(ctx context.Context, database *db.DB, svc *github.Service, user string, out io.Writer) error {
 	var users []string
 	if user != "" {
 		users = []string{user}

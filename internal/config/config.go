@@ -112,6 +112,14 @@ type Config struct {
 	// unless FeatureUserModel is also on. Surfaced by /healthz for ops.
 	FeatureRollupSkip bool
 
+	// FeatureAdminCLI gates the admin CLI-runner HTTP surface
+	// (/api/v1/admin/cli/{spec,run,complete} — internal/admin +
+	// internal/climeta). Default OFF and fully inert: when off the routes
+	// are never registered, so the endpoints 404 like any unknown path.
+	// When on, they remain double-gated (BOOM_ADMIN_USERS allowlist via
+	// requireAdmin + CapAdmin route middleware).
+	FeatureAdminCLI bool
+
 	// CookieSecure controls the Secure attribute on the refresh_token cookie
 	// (gaka-b5x part 1). Defaults to true when BOOM_ENV names a production
 	// environment ("prod" / "production") so a prod deploy behind TLS never
@@ -330,6 +338,7 @@ func Load() *Config {
 		BetaUserRegistration: getEnvBool("BOOM_BETA_USER_REGISTRATION", true),
 		FeatureUserModel:     getEnvBool("BOOM_FEATURE_USER_MODEL", false),
 		FeatureRollupSkip:    getEnvBool("BOOM_FEATURE_ROLLUP_SKIP", false),
+		FeatureAdminCLI:      getEnvBool("BOOM_FEATURE_ADMIN_CLI", false),
 
 		DBHost: getEnv("BOOM_DB_HOST", "localhost"),
 		DBPort: getEnvInt("BOOM_DB_PORT", 5432),
