@@ -58,16 +58,33 @@ func (h *Handler) CLIComplete(c *echo.Context) error {
 		return apihelpers.RespondErr(c, aerr)
 	}
 
-	// Pick the completer: named flag's, else the positional ArgCompleter.
-	// A param with no completer yields an empty suggestion list (the spec's
+	// Pick the completion source: named flag's, else the positional one.
+	// A param with neither yields an empty suggestion list (the spec's
 	// Completable=false already told the FE not to ask).
+	//
+	// POOL REUSE (QA fix): prefer the registry's DBLister form, run against
+	// the server's existing pool via climeta.CompleteWithDB — the cobra
+	// completer funcs self-open a fresh bounded connection per call (right
+	// for shell <TAB>, wasteful per HTTP request). The InvokeCompleter
+	// fallback remains for future pure/contextual completers that have no
+	// lister form (e.g. enum completers), which open no connection at all
+	// or accept the self-open cost explicitly.
+	var lister climeta.DBLister
 	var fn cobra.CompletionFunc
 	if req.Flag != "" {
+		lister = entry.FlagListers[req.Flag]
 		fn = entry.FlagCompleters[req.Flag]
 	} else {
+		lister = entry.ArgLister
 		fn = entry.ArgCompleter
 	}
 
-	suggestions, directive := climeta.InvokeCompleter(fn, req.Args, req.ToComplete)
+	var suggestions []climeta.Suggestion
+	var directive climeta.Directive
+	if lister != nil {
+		suggestions, directive = climeta.CompleteWithDB(c.Request().Context(), h.DB, lister, req.ToComplete)
+	} else {
+		suggestions, directive = climeta.InvokeCompleter(fn, req.Args, req.ToComplete)
+	}
 	return c.JSON(http.StatusOK, cliCompleteResponse{Suggestions: suggestions, Directive: directive})
 }

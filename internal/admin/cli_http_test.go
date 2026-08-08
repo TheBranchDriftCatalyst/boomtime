@@ -14,17 +14,22 @@
 package admin_test
 
 import (
+	"context"
 	"encoding/json"
+	"io"
 	"net/http"
-	"net/url"
 	"os"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/labstack/echo/v5"
+	"github.com/spf13/cobra"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/admin"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/climeta"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
 )
 
@@ -36,33 +41,6 @@ func cliRouter(hz *testutil.Harness) *echo.Echo {
 	e := echo.New()
 	admin.Register(e, hz.H.Admin)
 	return e
-}
-
-// cliEnvToHarnessDB points the BOOM_DB_* env vars (which config.Load reads —
-// the completion funcs self-connect via config.Load().DatabaseURL()) at the
-// SAME database the harness runs on, restoring prior values on cleanup.
-func cliEnvToHarnessDB() {
-	u, err := url.Parse(testutil.DatabaseURL())
-	Expect(err).NotTo(HaveOccurred())
-	pass, _ := u.User.Password()
-	set := map[string]string{
-		"BOOM_DB_HOST": u.Hostname(),
-		"BOOM_DB_PORT": u.Port(),
-		"BOOM_DB_NAME": u.Path[1:], // strip leading "/"
-		"BOOM_DB_USER": u.User.Username(),
-		"BOOM_DB_PASS": pass,
-	}
-	for k, v := range set {
-		prev, had := os.LookupEnv(k)
-		Expect(os.Setenv(k, v)).To(Succeed())
-		DeferCleanup(func() {
-			if had {
-				_ = os.Setenv(k, prev)
-			} else {
-				_ = os.Unsetenv(k)
-			}
-		})
-	}
 }
 
 var _ = Describe("Admin CLI-runner: feature flag gate (BOOM_FEATURE_ADMIN_CLI)", func() {
@@ -299,6 +277,99 @@ var _ = Describe("Admin CLI-runner: POST /api/v1/admin/cli/run", func() {
 		Expect(resp.Output).To(ContainSubstring("rebuilt rollups"))
 	})
 
+	It("runs backfill github-stats end-to-end through the apply path (key fail-fast, then real result)", func() {
+		hz.Cfg.FeatureGithubStats = true // availability gate
+
+		body := map[string]any{
+			"command": "backfill github-stats",
+			"flags":   map[string]any{},
+			"confirm": "backfill github-stats",
+		}
+		var resp struct {
+			OK        bool   `json:"ok"`
+			Output    string `json:"output"`
+			ExitError string `json:"exitError"`
+			DryRun    bool   `json:"dryRun"`
+		}
+
+		// (0) mutating WITHOUT dry-run support ⇒ every run is an apply ⇒
+		// confirm sentinel is mandatory even with empty flags.
+		rec := doJSONReqG(e, http.MethodPost, "/api/v1/admin/cli/run", token,
+			map[string]any{"command": "backfill github-stats", "flags": map[string]any{}})
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest))
+		Expect(rec.Body.String()).To(ContainSubstring("confirm"))
+
+		// (a) no BOOM_ENCRYPTION_KEY ⇒ the web Invoke fail-fasts with ONE
+		// clear top-level error BEFORE the per-user loop (QA fix 3), not a
+		// per-user error cascade.
+		prev, had := os.LookupEnv(auth.EncryptionKeyEnv)
+		Expect(os.Unsetenv(auth.EncryptionKeyEnv)).To(Succeed())
+		auth.ResetForTest()
+		rec = doJSONReqG(e, http.MethodPost, "/api/v1/admin/cli/run", token, body)
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
+		Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+		Expect(resp.OK).To(BeFalse())
+		Expect(resp.ExitError).To(ContainSubstring("cannot decrypt stored tokens"))
+		if had {
+			Expect(os.Setenv(auth.EncryptionKeyEnv, prev)).To(Succeed())
+		}
+
+		// (b) valid key installed ⇒ RunBackfillGithubStats really executes.
+		// The isolated DB has no users with a linked GitHub token, so the
+		// deterministic, network-free result is the "nothing to do" path.
+		installEncryptionKeyForTest()
+		rec = doJSONReqG(e, http.MethodPost, "/api/v1/admin/cli/run", token, body)
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
+		Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+		Expect(resp.OK).To(BeTrue())
+		Expect(resp.DryRun).To(BeFalse())
+		Expect(resp.Output).To(ContainSubstring("no users with a linked GitHub token"))
+	})
+
+	It("rejects dry-run against a command that has no dry-run flag (github-stats)", func() {
+		hz.Cfg.FeatureGithubStats = true
+		rec := doJSONReqG(e, http.MethodPost, "/api/v1/admin/cli/run", token, map[string]any{
+			"command": "backfill github-stats",
+			"flags":   map[string]any{"dry-run": true},
+			"confirm": "backfill github-stats",
+		})
+		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest))
+		Expect(rec.Body.String()).To(ContainSubstring("unknown parameter"))
+	})
+
+	It("refuses a destructive-classified registry entry outright, never invoking it", func() {
+		// The shipping registry contains nothing destructive, so this
+		// defense-in-depth branch is unreachable with real commands —
+		// inject a synthetic entry to prove the refusal actually fires and
+		// that no confirm value can get past it.
+		invoked := false
+		climeta.Registry()["danger wipe"] = climeta.RegistryEntry{
+			Classification: climeta.ClassDestructive,
+			RequiredCap:    auth.CapAdmin,
+			NewCommand: func() *cobra.Command {
+				return &cobra.Command{
+					Use:         "wipe",
+					Short:       "synthetic destructive test entry",
+					Annotations: map[string]string{climeta.WebAnnotation: climeta.ClassDestructive},
+				}
+			},
+			Invoke: func(_ context.Context, _ *db.DB, _ climeta.RunArgs, _ io.Writer) error {
+				invoked = true
+				return nil
+			},
+		}
+		DeferCleanup(func() { delete(climeta.Registry(), "danger wipe") })
+
+		rec := doJSONReqG(e, http.MethodPost, "/api/v1/admin/cli/run", token, map[string]any{
+			"command": "danger wipe",
+			"flags":   map[string]any{},
+			"confirm": "danger wipe", // even the correct sentinel must not help
+		})
+		Expect(rec).To(testutil.HaveStatus(http.StatusForbidden))
+		Expect(rec.Body.String()).To(ContainSubstring("destructive"))
+		Expect(invoked).To(BeFalse(), "a destructive entry must NEVER be invoked")
+	})
+
 	It("surfaces a failing command as ok=false with exitError, still HTTP 200", func() {
 		rec := doJSONReqG(e, http.MethodPost, "/api/v1/admin/cli/run", token,
 			map[string]any{"command": "user show", "flags": map[string]any{"username": "no_such_user_xyz"}})
@@ -327,9 +398,12 @@ var _ = Describe("Admin CLI-runner: POST /api/v1/admin/cli/complete", func() {
 		hz.Cfg.AdminUsers = map[string]struct{}{user: {}}
 		seeded, _ := hz.MintUser("cli_comp_target")
 
-		// The completion funcs self-connect via config.Load() (verbatim CLI
-		// behavior) — point the BOOM_DB_* env at the harness DB.
-		cliEnvToHarnessDB()
+		// NOTE (pool reuse, QA fix 1): no BOOM_DB_* env is pointed at the
+		// harness DB here, ON PURPOSE. The web path must serve suggestions
+		// from the handler's own pool (h.DB) via the registry DBLister — if
+		// it ever regresses to the cobra completer's config.Load()
+		// self-connect, it would look at the wrong database and the seeded
+		// username below would not come back.
 
 		// (1) positional completion for `user show`, prefix-filtered by
 		// toComplete — proves the DB round-trip AND the prefix threading.
@@ -379,7 +453,7 @@ var _ = Describe("Admin CLI-runner: POST /api/v1/admin/cli/complete", func() {
 		e := cliRouter(hz)
 		user, token := hz.MintUser("cli_comp_flag_admin")
 		hz.Cfg.AdminUsers = map[string]struct{}{user: {}}
-		cliEnvToHarnessDB()
+		// As above: no env redirection — FlagListers must serve from h.DB.
 
 		rec := doJSONReqG(e, http.MethodPost, "/api/v1/admin/cli/complete", token,
 			map[string]any{"command": "backfill github-stats", "flag": "user", "toComplete": "cli_comp_flag_admin"})

@@ -44,12 +44,21 @@ func FilterPrefix(items []string, prefix string) []string {
 	return out
 }
 
+// DBLister lists candidate completion strings from an ALREADY-OPEN pool.
+// It is the shared query lambda both completion transports run:
+//   - shell <TAB>: DBEntityCompleter wraps it in a cobra func that opens its
+//     own bounded connection (no pool exists in a shell process);
+//   - web (admin CLI-runner): registry ArgLister/FlagListers hand the SAME
+//     lambda to CompleteWithDB, which runs it against the server's existing
+//     pool (h.DB) — the HTTP endpoint never opens a new pool per request.
+type DBLister func(ctx context.Context, database *db.DB) ([]string, error)
+
 // DBEntityCompleter is the reusable completion generator. Give it a function
 // that lists candidate strings from an open *db.DB; it returns a cobra
 // completion func that connects (bounded 2s so a <TAB> never hangs the
 // shell), lists, prefix-filters, and disables file completion. Errors resolve
 // to "no completions" rather than shell noise.
-func DBEntityCompleter(list func(ctx context.Context, database *db.DB) ([]string, error)) cobra.CompletionFunc {
+func DBEntityCompleter(list DBLister) cobra.CompletionFunc {
 	return func(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
@@ -66,8 +75,9 @@ func DBEntityCompleter(list func(ctx context.Context, database *db.DB) ([]string
 	}
 }
 
-// CompleteUsernames dynamically completes a username argument from the DB.
-var CompleteUsernames = DBEntityCompleter(func(ctx context.Context, database *db.DB) ([]string, error) {
+// ListUsernames is the username query lambda shared by both completion
+// transports (see DBLister).
+var ListUsernames DBLister = func(ctx context.Context, database *db.DB) ([]string, error) {
 	rows, err := database.ListUsersAdmin(ctx)
 	if err != nil {
 		return nil, err
@@ -77,7 +87,10 @@ var CompleteUsernames = DBEntityCompleter(func(ctx context.Context, database *db
 		names[i] = r.Username
 	}
 	return names, nil
-})
+}
+
+// CompleteUsernames dynamically completes a username argument from the DB.
+var CompleteUsernames = DBEntityCompleter(ListUsernames)
 
 // CompleteLabelIDs dynamically completes a label-id argument (e.g. the
 // `label-images regenerate --id` flag) from the DB catalog. Each candidate

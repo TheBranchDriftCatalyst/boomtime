@@ -23,8 +23,8 @@
 package climeta
 
 import (
-	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 
@@ -102,12 +102,22 @@ type RegistryEntry struct {
 	// github-stats requires cfg.FeatureGithubStats). nil = always available.
 	Available func(cfg *config.Config) bool
 	// Invoke runs the command in-process with typed args, writing all
-	// human-readable output to out.
-	Invoke func(ctx context.Context, database *db.DB, args RunArgs, out *bytes.Buffer) error
+	// human-readable output to out (the run endpoint passes a BOUNDED
+	// writer, so a runaway command cannot buffer unboundedly).
+	Invoke func(ctx context.Context, database *db.DB, args RunArgs, out io.Writer) error
 	// ArgCompleter completes positional arguments (nil = no completion).
+	// Used by the CLI shell (<TAB>) and as the web fallback for completers
+	// with no DBLister form; it self-opens a bounded connection.
 	ArgCompleter cobra.CompletionFunc
-	// FlagCompleters completes flag values, keyed by flag name.
+	// FlagCompleters completes flag values, keyed by flag name. Same
+	// transport split as ArgCompleter.
 	FlagCompleters map[string]cobra.CompletionFunc
+	// ArgLister / FlagListers are the pool-reusing web counterparts of
+	// ArgCompleter / FlagCompleters: the SAME underlying list query, run by
+	// the complete endpoint against the server's existing pool (h.DB) via
+	// CompleteWithDB — the web path never opens a fresh pool per request.
+	ArgLister   DBLister
+	FlagListers map[string]DBLister
 	// Enums optionally closes a param (flag or positional, keyed by name)
 	// over a fixed value set: the spec reports Type "enum" and the binder
 	// enforces membership. (e.g. a future role param → auth.RoleStrings()).
@@ -128,7 +138,7 @@ var registry = map[string]RegistryEntry{
 		DryRunSupported: true,
 		RequiredCap:     auth.CapAdmin,
 		NewCommand:      NewBackfillLastContextCmd,
-		Invoke: func(ctx context.Context, database *db.DB, args RunArgs, out *bytes.Buffer) error {
+		Invoke: func(ctx context.Context, database *db.DB, args RunArgs, out io.Writer) error {
 			return RunBackfillLastContext(ctx, database, args.Bool("dry-run"), out)
 		},
 	},
@@ -142,7 +152,16 @@ var registry = map[string]RegistryEntry{
 		FlagCompleters: map[string]cobra.CompletionFunc{
 			"user": CompleteUsernames,
 		},
-		Invoke: func(ctx context.Context, database *db.DB, args RunArgs, out *bytes.Buffer) error {
+		FlagListers: map[string]DBLister{
+			"user": ListUsernames,
+		},
+		Invoke: func(ctx context.Context, database *db.DB, args RunArgs, out io.Writer) error {
+			// Fail fast with ONE clear error when the encryption key is
+			// missing — mirrors the CLI RunE precheck. Without it every
+			// user would fail individually at Decrypt inside the loop.
+			if err := auth.LoadKeyFromEnv(); err != nil {
+				return fmt.Errorf("cannot decrypt stored tokens: %w", err)
+			}
 			// The github.Service logger is discarded here: per-user outcomes
 			// already land in out, and the admin endpoint owns audit logging.
 			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -154,7 +173,7 @@ var registry = map[string]RegistryEntry{
 		Classification: ClassReadonly,
 		RequiredCap:    auth.CapAdmin,
 		NewCommand:     NewUserListCmd,
-		Invoke: func(ctx context.Context, database *db.DB, _ RunArgs, out *bytes.Buffer) error {
+		Invoke: func(ctx context.Context, database *db.DB, _ RunArgs, out io.Writer) error {
 			return RunUserList(ctx, database, out)
 		},
 	},
@@ -163,7 +182,8 @@ var registry = map[string]RegistryEntry{
 		RequiredCap:    auth.CapAdmin,
 		NewCommand:     NewUserShowCmd,
 		ArgCompleter:   CompleteUsernames,
-		Invoke: func(ctx context.Context, database *db.DB, args RunArgs, out *bytes.Buffer) error {
+		ArgLister:      ListUsernames,
+		Invoke: func(ctx context.Context, database *db.DB, args RunArgs, out io.Writer) error {
 			return RunUserShow(ctx, database, args.Pos(0), out)
 		},
 	},

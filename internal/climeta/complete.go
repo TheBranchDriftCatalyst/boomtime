@@ -8,9 +8,13 @@ package climeta
 // CompleteUsernameThenRole) behave exactly as they do under a shell <TAB>.
 
 import (
+	"context"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 )
 
 // Suggestion is one completion candidate. Description carries the optional
@@ -58,6 +62,31 @@ func InvokeCompleter(fn cobra.CompletionFunc, priorArgs []string, toComplete str
 		suggestions = append(suggestions, Suggestion{Value: value, Description: desc})
 	}
 	return suggestions, decodeDirective(d)
+}
+
+// CompleteWithDB is the pool-reusing web counterpart of DBEntityCompleter:
+// it runs the registry's DBLister against the caller's ALREADY-OPEN pool
+// (the admin handler's h.DB) instead of letting a cobra completer open a
+// fresh bounded connection per request. Semantics mirror the shell path
+// exactly — bounded 2s, prefix filter, "\t"-description split, fail-quiet
+// to no-suggestions on a query error, NoFileComp always set.
+func CompleteWithDB(ctx context.Context, database *db.DB, list DBLister, toComplete string) ([]Suggestion, Directive) {
+	suggestions := []Suggestion{}
+	directive := Directive{NoFileComp: true}
+	if list == nil || database == nil {
+		return suggestions, directive
+	}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	items, err := list(ctx, database)
+	if err != nil {
+		return suggestions, directive
+	}
+	for _, cand := range FilterPrefix(items, toComplete) {
+		value, desc, _ := strings.Cut(cand, "\t")
+		suggestions = append(suggestions, Suggestion{Value: value, Description: desc})
+	}
+	return suggestions, directive
 }
 
 // decodeDirective expands the cobra bitmask into the named booleans.

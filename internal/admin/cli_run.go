@@ -52,10 +52,38 @@ const (
 	// single-transaction DB work that completes well inside this on any
 	// realistic dataset; a hung run must not pin the request forever.
 	cliRunTimeout = 5 * time.Minute
-	// cliMaxOutputBytes caps the returned output so a pathological run can't
+	// cliMaxOutputBytes caps the captured output so a pathological run can't
 	// balloon the response; truncation is marked inline in the output.
 	cliMaxOutputBytes = 64 << 10
 )
+
+// cappedWriter is the bounded sink Invoke writes into: it accepts at most
+// max bytes and DISCARDS the rest, so memory is bounded DURING the run — a
+// future unbounded-output command cannot buffer without limit before a
+// post-hoc truncation. Write always reports the full length consumed so
+// fmt.Fprintf inside command bodies never sees a short-write error (the
+// command keeps running; only its output is capped).
+type cappedWriter struct {
+	buf       bytes.Buffer
+	max       int
+	truncated bool
+}
+
+func (w *cappedWriter) Write(p []byte) (int, error) {
+	room := w.max - w.buf.Len()
+	if room <= 0 {
+		if len(p) > 0 {
+			w.truncated = true
+		}
+		return len(p), nil
+	}
+	if len(p) > room {
+		w.buf.Write(p[:room])
+		w.truncated = true
+		return len(p), nil
+	}
+	return w.buf.Write(p)
+}
 
 // cliRunRequest is the POST /api/v1/admin/cli/run body. Flags carries EVERY
 // param keyed by name — positional params (e.g. user show's username) are
@@ -123,7 +151,7 @@ func (h *Handler) CLIRun(c *echo.Context) error {
 	ctx, cancel := context.WithTimeout(c.Request().Context(), cliRunTimeout)
 	defer cancel()
 
-	var buf bytes.Buffer
+	out := &cappedWriter{max: cliMaxOutputBytes}
 	start := time.Now()
 	runErr := func() (err error) {
 		// A panicking invoker must not crash the request.
@@ -132,13 +160,13 @@ func (h *Handler) CLIRun(c *echo.Context) error {
 				err = fmt.Errorf("command panicked: %v", r)
 			}
 		}()
-		return entry.Invoke(ctx, h.DB, args, &buf)
+		return entry.Invoke(ctx, h.DB, args, out)
 	}()
 	duration := time.Since(start)
 
-	output := buf.String()
-	if len(output) > cliMaxOutputBytes {
-		output = output[:cliMaxOutputBytes] + "\n… [output truncated]"
+	output := out.buf.String()
+	if out.truncated {
+		output += "\n… [output truncated]"
 	}
 
 	exitError := ""

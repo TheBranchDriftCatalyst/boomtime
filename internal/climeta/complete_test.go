@@ -5,12 +5,15 @@ package climeta_test
 // decoding, nil-completer handling, and panic containment.
 
 import (
+	"context"
+	"errors"
 	"reflect"
 	"testing"
 
 	"github.com/spf13/cobra"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/climeta"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 )
 
 func TestInvokeCompleterThreadsPriorArgsAndToComplete(t *testing.T) {
@@ -74,6 +77,55 @@ func TestInvokeCompleterRecoversPanic(t *testing.T) {
 	}
 	if !directive.Error {
 		t.Errorf("panicking completer must set the error directive: %+v", directive)
+	}
+}
+
+func TestCompleteWithDBReusesCallerPoolAndFilters(t *testing.T) {
+	// CompleteWithDB must hand the CALLER's pool to the lister (pool reuse
+	// is its whole reason to exist — the web endpoint never opens a fresh
+	// connection) and then apply the same prefix-filter + "\t"-description
+	// split as the shell path. A sentinel *db.DB proves the threading
+	// without any real connection: the fake lister only compares pointers.
+	sentinel := &db.DB{}
+	var gotDB *db.DB
+	lister := climeta.DBLister(func(_ context.Context, database *db.DB) ([]string, error) {
+		gotDB = database
+		return []string{"alice\tadmin user", "albert", "bob"}, nil
+	})
+
+	suggestions, directive := climeta.CompleteWithDB(context.Background(), sentinel, lister, "al")
+
+	if gotDB != sentinel {
+		t.Error("lister must receive the caller's pool, not a fresh connection")
+	}
+	if len(suggestions) != 2 {
+		t.Fatalf("prefix filter wrong: %+v", suggestions)
+	}
+	if suggestions[0].Value != "alice" || suggestions[0].Description != "admin user" {
+		t.Errorf("tab-description not split: %+v", suggestions[0])
+	}
+	if !directive.NoFileComp || directive.Error {
+		t.Errorf("directive wrong: %+v", directive)
+	}
+}
+
+func TestCompleteWithDBFailQuietPaths(t *testing.T) {
+	// Query error → no suggestions, no error surfaced (mirrors the shell's
+	// fail-quiet posture; the FE just shows nothing).
+	failing := climeta.DBLister(func(_ context.Context, _ *db.DB) ([]string, error) {
+		return nil, errors.New("boom")
+	})
+	suggestions, directive := climeta.CompleteWithDB(context.Background(), &db.DB{}, failing, "")
+	if len(suggestions) != 0 || !directive.NoFileComp {
+		t.Errorf("query error must fail quiet: %+v %+v", suggestions, directive)
+	}
+
+	// nil lister / nil pool → empty non-nil suggestions, never a panic.
+	if s, _ := climeta.CompleteWithDB(context.Background(), &db.DB{}, nil, ""); s == nil || len(s) != 0 {
+		t.Errorf("nil lister must yield empty non-nil suggestions: %#v", s)
+	}
+	if s, _ := climeta.CompleteWithDB(context.Background(), nil, failing, ""); s == nil || len(s) != 0 {
+		t.Errorf("nil pool must yield empty non-nil suggestions: %#v", s)
 	}
 }
 
