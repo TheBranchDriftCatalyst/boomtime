@@ -15,7 +15,7 @@ spec:
       middlewares:
         - name: lan-only
           namespace: traefik
-        - name: analytics # central Plausible injection (infrastructure/base/analytics, talos-homelab)
+        - name: analytics-boomtime # per-subdomain Plausible injection (data-domain=boomtime.knowledgedump.space)
           namespace: traefik
       services:
         - name: boomtime
@@ -42,7 +42,7 @@ spec:
     - kind: Rule
       match: Host(`boomtime.knowledgedump.space`)
       middlewares:
-        - name: analytics # central Plausible injection (infrastructure/base/analytics, talos-homelab)
+        - name: analytics-boomtime # per-subdomain Plausible injection (data-domain=boomtime.knowledgedump.space)
           namespace: traefik
       services:
         - name: boomtime
