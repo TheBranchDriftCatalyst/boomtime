@@ -96,15 +96,17 @@ var _ = Describe("dashboard layout (gaka-keb)", func() {
 		e := hz.Router()
 		_, token := hz.MintUser("dash_scope_g")
 
+		// NOTE: "overview" is now an ALLOWED scope (gaka-lzr Phase 4 admitted it),
+		// so use a genuinely-unknown scope to exercise the reject path.
 		body := []byte(`{"layout":{"widgets":[]}}`)
-		req := httptest.NewRequest(http.MethodPut, "/api/v1/users/current/dashboard/overview", bytes.NewReader(body))
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/users/current/dashboard/no-such-scope", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Basic "+token)
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
 		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest), "PUT unknown scope: got %d", rec.Code)
 
-		req2 := httptest.NewRequest(http.MethodGet, "/api/v1/users/current/dashboard/overview", nil)
+		req2 := httptest.NewRequest(http.MethodGet, "/api/v1/users/current/dashboard/no-such-scope", nil)
 		req2.Header.Set("Authorization", "Basic "+token)
 		rec2 := httptest.NewRecorder()
 		e.ServeHTTP(rec2, req2)
