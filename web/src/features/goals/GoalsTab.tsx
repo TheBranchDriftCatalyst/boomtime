@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Spinner } from "@thebranchdriftcatalyst/catalyst-ui/ui/spinner";
 import { GoalForm } from "@/features/goals/GoalForm";
+import { GoalNearnessStrip } from "@/features/goals/GoalNearnessStrip";
 import { GoalsList } from "@/features/goals/GoalsList";
 import { useGoalMutations, useGoalsQuery } from "@/features/goals/useGoals";
 import type { Goal } from "@/types/api";
@@ -64,6 +65,8 @@ export function GoalsTab() {
           New goal
         </Button>
       </div>
+
+      <GoalNearnessStrip goals={goals ?? []} />
 
       <GoalsList
         goals={goals ?? []}
