@@ -45,6 +45,16 @@ var locIgnorePatterns = []string{
 	"%_pb2.py",
 	"%.generated.%",
 	"%.snap",
+	// Data files (gaka-yfg follow-up, user call): JSON/CSV/etc. are DATA, not
+	// hand-written code — generated caches, fixtures, dumps, exports. These
+	// dominate LOC for data-heavy projects (e.g. catalyst-data's 137k-line
+	// ner_pass.json / pipeline-cache). YAML is deliberately KEPT (talos-homelab
+	// et al. are infra-as-code); flip that here if that ever changes.
+	"%.json",
+	"%.jsonl",
+	"%.ndjson",
+	"%.csv",
+	"%.tsv",
 }
 
 // locMaxOverTimePoints bounds the over-time series: the daily cumulative curve
