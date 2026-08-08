@@ -694,10 +694,14 @@ export const api = {
   getCurationRules: () =>
     unwrap<CurationRule[]>("/api/v1/users/current/curation", "rules", []),
 
+  // Both the create and edit paths (edit calls this after an optional delete)
+  // go through here, so normalize `applyAtIngest` to an explicit boolean once —
+  // absent means false ("query-time view rule only"), matching the backend
+  // default.
   addCurationRule: (body: AddCurationRuleBody) =>
     request<AddCurationRulePayload>("/api/v1/users/current/curation", {
       method: "POST",
-      body,
+      body: { ...body, applyAtIngest: body.applyAtIngest ?? false },
     }),
 
   deleteCurationRule: (id: number) =>

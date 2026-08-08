@@ -38,8 +38,16 @@ export function NameRemappingsCard({
           >
             Heartbeats
           </Link>{" "}
-          explorer. Remappings apply to your dashboards at query-time and are
-          reversible — raw records are never changed.
+          explorer. By default a remapping is a reversible{" "}
+          <span className="font-medium text-foreground">view</span> rule —
+          applied to your dashboards at query-time, raw records untouched. Turn
+          on{" "}
+          <span className="font-medium text-foreground">Apply at ingest</span>{" "}
+          to also scrub new heartbeats as they're stored; those rows carry an{" "}
+          <span className="rounded border border-sky-500/40 px-1 text-[10px] uppercase text-sky-400">
+            ingest
+          </span>{" "}
+          badge and the rewrite is irreversible for new data.
         </p>
 
         <RemappingForm layout="inline" />

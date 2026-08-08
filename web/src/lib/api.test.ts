@@ -237,13 +237,34 @@ describe("api mutation call shapes (P1)", () => {
       newValue: "b",
       matchType: "regex",
     });
+    // gaka: api normalizes an absent `applyAtIngest` to an explicit false.
     expect(body).toEqual({
       axis: "project",
       action: "rename",
       matchValue: "a",
       newValue: "b",
       matchType: "regex",
+      applyAtIngest: false,
     });
+  });
+
+  it("addCurationRule threads applyAtIngest through when set", async () => {
+    let body: unknown;
+    server.use(
+      http.post("/api/v1/users/current/curation", async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({ rule: { id: 1 } });
+      }),
+    );
+    await api.addCurationRule({
+      axis: "entity",
+      action: "rename",
+      matchValue: "a",
+      newValue: "b",
+      matchType: "exact",
+      applyAtIngest: true,
+    });
+    expect(body).toMatchObject({ applyAtIngest: true });
   });
 
   it("deleteToken encodeURIComponent's the path param", async () => {

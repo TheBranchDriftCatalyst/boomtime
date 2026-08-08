@@ -68,7 +68,12 @@ type CurationRule struct {
 	MatchValue string    `json:"matchValue"`
 	NewValue   *string   `json:"newValue"`
 	Enabled    bool      `json:"enabled"`
-	CreatedAt  time.Time `json:"createdAt"`
+	// ApplyAtIngest (gaka-scrub) marks a RENAME rule that also rewrites newly-
+	// ingested heartbeats (the "scrubber"). Such rules are EXCLUDED from the
+	// query-time remap (LoadRenameSets) — the row is baked at ingest, so a
+	// second read-time transform would double-apply. Always false for hide rules.
+	ApplyAtIngest bool      `json:"applyAtIngest"`
+	CreatedAt     time.Time `json:"createdAt"`
 }
 
 // ListCurationRules returns a user's rules, newest first.
@@ -78,7 +83,7 @@ type CurationRule struct {
 // LoadRenameSets) do their own enabled=true filtering.
 func (d *DB) ListCurationRules(ctx context.Context, sender string) ([]CurationRule, error) {
 	rows, err := d.Pool.Query(ctx, `
-		SELECT id, axis, action, match_type, match_value, new_value, enabled, created_at
+		SELECT id, axis, action, match_type, match_value, new_value, enabled, apply_at_ingest, created_at
 		FROM curation_rules WHERE sender = $1 ORDER BY id DESC`, sender)
 	if err != nil {
 		return nil, err
@@ -87,7 +92,7 @@ func (d *DB) ListCurationRules(ctx context.Context, sender string) ([]CurationRu
 	out := []CurationRule{}
 	for rows.Next() {
 		var r CurationRule
-		if err := rows.Scan(&r.ID, &r.Axis, &r.Action, &r.MatchType, &r.MatchValue, &r.NewValue, &r.Enabled, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.Axis, &r.Action, &r.MatchType, &r.MatchValue, &r.NewValue, &r.Enabled, &r.ApplyAtIngest, &r.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -101,18 +106,28 @@ func (d *DB) ListCurationRules(ctx context.Context, sender string) ([]CurationRu
 // clearly expresses "I want this on again"; the alternative (silent
 // no-toggle) is confusing.
 func (d *DB) CreateCurationRule(ctx context.Context, sender, axis, action, matchType, matchValue string, newValue *string) (*CurationRule, error) {
+	return d.CreateCurationRuleWithIngest(ctx, sender, axis, action, matchType, matchValue, newValue, false)
+}
+
+// CreateCurationRuleWithIngest is CreateCurationRule plus the apply_at_ingest
+// flag (gaka-scrub). Only the CreateCuration handler needs it (rename rules that
+// also scrub at ingest); every other caller uses the false-defaulting wrapper.
+func (d *DB) CreateCurationRuleWithIngest(ctx context.Context, sender, axis, action, matchType, matchValue string, newValue *string, applyAtIngest bool) (*CurationRule, error) {
 	if matchType == "" {
 		matchType = MatchExact
 	}
+	// apply_at_ingest is propagated on the upsert path too (the FE edit flow
+	// upserts on the identity key when only the target/flag changed) — else
+	// toggling apply-at-ingest via re-create would silently no-op.
 	row := d.Pool.QueryRow(ctx, `
-		INSERT INTO curation_rules (sender, axis, action, match_type, match_value, new_value)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO curation_rules (sender, axis, action, match_type, match_value, new_value, apply_at_ingest)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT (sender, axis, action, match_type, match_value)
-		DO UPDATE SET new_value = EXCLUDED.new_value, enabled = true
-		RETURNING id, axis, action, match_type, match_value, new_value, enabled, created_at`,
-		sender, axis, action, matchType, matchValue, newValue)
+		DO UPDATE SET new_value = EXCLUDED.new_value, enabled = true, apply_at_ingest = EXCLUDED.apply_at_ingest
+		RETURNING id, axis, action, match_type, match_value, new_value, enabled, apply_at_ingest, created_at`,
+		sender, axis, action, matchType, matchValue, newValue, applyAtIngest)
 	var r CurationRule
-	if err := row.Scan(&r.ID, &r.Axis, &r.Action, &r.MatchType, &r.MatchValue, &r.NewValue, &r.Enabled, &r.CreatedAt); err != nil {
+	if err := row.Scan(&r.ID, &r.Axis, &r.Action, &r.MatchType, &r.MatchValue, &r.NewValue, &r.Enabled, &r.ApplyAtIngest, &r.CreatedAt); err != nil {
 		return nil, err
 	}
 	return &r, nil
@@ -123,9 +138,9 @@ func (d *DB) GetCurationRule(ctx context.Context, id int) (*CurationRule, string
 	var r CurationRule
 	var sender string
 	err := d.Pool.QueryRow(ctx, `
-		SELECT id, axis, action, match_type, match_value, new_value, enabled, created_at, sender
+		SELECT id, axis, action, match_type, match_value, new_value, enabled, apply_at_ingest, created_at, sender
 		FROM curation_rules WHERE id = $1`, id).
-		Scan(&r.ID, &r.Axis, &r.Action, &r.MatchType, &r.MatchValue, &r.NewValue, &r.Enabled, &r.CreatedAt, &sender)
+		Scan(&r.ID, &r.Axis, &r.Action, &r.MatchType, &r.MatchValue, &r.NewValue, &r.Enabled, &r.ApplyAtIngest, &r.CreatedAt, &sender)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, "", nil
 	}

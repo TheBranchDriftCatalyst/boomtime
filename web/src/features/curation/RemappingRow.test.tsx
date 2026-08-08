@@ -22,6 +22,7 @@ function makeRule(overrides: Partial<CurationRule> = {}): CurationRule {
     newValue: "new-name",
     matchType: "exact",
     enabled: true,
+    applyAtIngest: false,
     createdAt: "2025-01-01T00:00:00Z",
     ...overrides,
   };
@@ -124,6 +125,43 @@ describe("RemappingRow — toggle (gaka-dfd)", () => {
     expect(
       screen.getByRole("button", { name: /pause curation rule/i }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("RemappingRow — ingest badge (gaka)", () => {
+  it("shows the ingest badge when applyAtIngest is true", () => {
+    renderWithProviders(
+      <RemappingRow
+        rule={makeRule({ applyAtIngest: true })}
+        onRemove={() => undefined}
+      />,
+      RENDER_OPTS,
+    );
+    expect(screen.getByText("ingest")).toBeInTheDocument();
+  });
+
+  it("omits the ingest badge for a plain query-time view rule", () => {
+    renderWithProviders(
+      <RemappingRow
+        rule={makeRule({ applyAtIngest: false })}
+        onRemove={() => undefined}
+      />,
+      RENDER_OPTS,
+    );
+    expect(screen.queryByText("ingest")).not.toBeInTheDocument();
+  });
+
+  it("treats missing applyAtIngest as false (no badge)", () => {
+    const { applyAtIngest: _drop, ...withoutIngest } = makeRule();
+    void _drop;
+    renderWithProviders(
+      <RemappingRow
+        rule={withoutIngest as CurationRule}
+        onRemove={() => undefined}
+      />,
+      RENDER_OPTS,
+    );
+    expect(screen.queryByText("ingest")).not.toBeInTheDocument();
   });
 });
 

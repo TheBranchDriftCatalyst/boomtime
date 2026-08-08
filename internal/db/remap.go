@@ -93,9 +93,14 @@ func (d *DB) LoadRenameSets(ctx context.Context, sender string) (RenameSets, err
 	rs := RenameSets{byAxis: map[string]axisRenames{}}
 	// gaka-dfd: disabled rules are skipped — a paused rename rule stops
 	// remapping. The rule row survives; only its query-time effect pauses.
+	// gaka-scrub: apply_at_ingest rules are EXCLUDED from query-time remap. Those
+	// rules already rewrote the stored row at ingest, so re-applying at read would
+	// double-transform (a template rule `(\d+)`→`X\1X` would fire twice). They
+	// affect only newly-ingested rows; old rows stay raw (or use on-demand Apply).
 	rows, err := d.Pool.Query(ctx,
 		`SELECT axis, match_type, match_value, new_value FROM curation_rules
 		 WHERE sender = $1 AND action = 'rename' AND enabled = true AND new_value IS NOT NULL
+		   AND apply_at_ingest = false
 		 ORDER BY id ASC`, sender)
 	if err != nil {
 		return rs, err

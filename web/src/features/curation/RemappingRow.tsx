@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
+  ArrowDownToLine,
   ArrowRight,
   ChevronDown,
   ChevronRight,
@@ -49,6 +50,9 @@ export function RemappingRow({
   // is wired in this view at all.
   const isRename = rule.action === "rename";
   const isHide = rule.action === "hide";
+  // gaka: rules flagged "Apply at ingest" also scrub newly-ingested heartbeats
+  // (not just the reversible query-time view). Missing (pre-migration) = false.
+  const isIngest = rule.applyAtIngest === true;
   // gaka-dfd: an older backend may omit `enabled`; treat missing as `true`
   // (the pre-feature default) so pre-migration installs still render sane.
   const isEnabled = rule.enabled !== false;
@@ -93,6 +97,7 @@ export function RemappingRow({
         presetValue={rule.matchValue}
         presetMatchType={matchType}
         presetTarget={presetTarget}
+        presetApplyAtIngest={isIngest}
         submitLabel="Save"
         onDone={() => setEditing(false)}
         onCancel={() => setEditing(false)}
@@ -142,6 +147,19 @@ export function RemappingRow({
             >
               <EyeOff className="mr-1 inline h-3 w-3" />
               hidden
+            </Badge>
+          )}
+          {isIngest && (
+            // gaka: this rule ALSO scrubs new heartbeats at ingest, not just the
+            // reversible query-time view. Sky badge so it reads distinctly from
+            // the violet mode / amber hidden tags.
+            <Badge
+              variant="outline"
+              className="shrink-0 border-sky-500/40 text-[10px] uppercase text-sky-400"
+              title="Also rewrites new heartbeats at ingest (irreversible for new rows)"
+            >
+              <ArrowDownToLine className="mr-1 inline h-3 w-3" />
+              ingest
             </Badge>
           )}
           {isRename && (

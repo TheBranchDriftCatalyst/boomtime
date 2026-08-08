@@ -14,6 +14,7 @@ function rule(over: Partial<CurationRule>): CurationRule {
     matchValue: "",
     newValue: null,
     matchType: "exact",
+    applyAtIngest: false,
     createdAt: "2026-07-01T00:00:00Z",
     ...over,
   };

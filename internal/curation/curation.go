@@ -15,9 +15,13 @@ import (
 type curationRequest struct {
 	Axis       string  `json:"axis"`
 	Action     string  `json:"action"`
-	MatchType  string  `json:"matchType"` // "exact" (default) | "regex"
+	MatchType  string  `json:"matchType"` // "exact" (default) | "regex" | "template"
 	MatchValue string  `json:"matchValue"`
 	NewValue   *string `json:"newValue"`
+	// ApplyAtIngest (gaka-scrub) marks a rename rule that also rewrites newly-
+	// ingested heartbeats (the "scrubber"). Rename-only; validated to compile
+	// under Go RE2 (the ingest apply engine) below.
+	ApplyAtIngest bool `json:"applyAtIngest"`
 }
 
 // ListCuration: GET /api/v1/users/current/curation → {rules:[CurationRule]}.
@@ -102,10 +106,25 @@ func (h *Handler) CreateCuration(c *echo.Context) error {
 		}
 	}
 
-	// Both hide and rename are stored as rules and applied at QUERY TIME — creating
-	// the rule mutates no raw data. Rename is a non-destructive, reversible remap:
-	// heartbeats keep their original values and dashboards show the merged value.
-	rule, err := h.DB.CreateCurationRule(ctx, owner, req.Axis, req.Action, matchType, req.MatchValue, newValue)
+	// gaka-scrub: apply_at_ingest is a rename-only flag (a hide rule has nothing
+	// to rewrite). Because the ingest applier uses Go RE2 — stricter than the
+	// Postgres regex the checks above use (no pattern backrefs / lookaround) —
+	// validate the pattern compiles under Go too, else the rule would save but
+	// silently no-op at ingest.
+	if req.ApplyAtIngest {
+		if req.Action != db.CurationRename {
+			return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "apply at ingest is only valid for a rename rule", nil))
+		}
+		if err := db.ValidateIngestRenamePattern(matchType, req.MatchValue); err != nil {
+			return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "pattern does not compile for ingest apply: "+err.Error(), nil))
+		}
+	}
+
+	// Both hide and rename are stored as rules. A plain rule is applied at QUERY
+	// TIME (non-destructive, reversible remap). A rename flagged apply_at_ingest
+	// ALSO rewrites newly-ingested rows (and is excluded from query-time remap so
+	// it doesn't double-apply — see remap.go / rename_apply.go).
+	rule, err := h.DB.CreateCurationRuleWithIngest(ctx, owner, req.Axis, req.Action, matchType, req.MatchValue, newValue, req.ApplyAtIngest)
 	if err != nil {
 		h.Logger.Error("create curation rule failed", "err", err)
 		return apihelpers.RespondErr(c, apierr.Generic())

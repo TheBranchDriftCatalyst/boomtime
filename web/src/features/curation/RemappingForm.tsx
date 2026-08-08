@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { ArrowRight, Check, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
+import { Checkbox } from "@thebranchdriftcatalyst/catalyst-ui/ui/checkbox";
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
 import { Label } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
 import { AxisSelect } from "@/features/rules/AxisSelect";
@@ -23,6 +24,19 @@ type Mode = CurationMatchType; // "exact" | "regex" | "template"
 
 const MODES: readonly Mode[] = ["exact", "regex", "template"];
 
+// Axes with NO query-time remap in the dashboards. A rename rule on one of
+// these does nothing until "Apply at ingest" is on (the ingest scrubber
+// rewrites the raw row at store time). Hardcoded locally per gaka: `entity`
+// plus the source-metadata axes. Keep in sync with the backend's notion of
+// which axes the query-time view remap actually rewrites.
+const INGEST_ONLY_AXES: ReadonlySet<HeartbeatAxis> = new Set([
+  "entity",
+  "editor",
+  "plugin",
+  "platform",
+  "machine",
+]);
+
 const MODE_LABEL: Record<Mode, string> = {
   exact: "Exact",
   regex: "Regex",
@@ -41,6 +55,11 @@ interface RemappingFormProps {
    * callers convert the backend `\N` via `templateToDisplay`.
    */
   presetTarget?: string;
+  /**
+   * Edit mode: seed the "Apply at ingest" checkbox from the existing rule.
+   * Defaults to false (a plain query-time view rule).
+   */
+  presetApplyAtIngest?: boolean;
   /**
    * Edit mode: the id of the rule being edited. When set, the form saves via
    * the `edit` mutation (delete-old + create-new when identity changes; upsert
@@ -77,6 +96,7 @@ export function RemappingForm({
   presetValue,
   presetMatchType,
   presetTarget,
+  presetApplyAtIngest,
   editRuleId,
   onDone,
   onCancel,
@@ -86,6 +106,7 @@ export function RemappingForm({
   const { add, edit } = useCurationMutations();
   const axisLocked = presetAxis !== undefined;
   const editing = editRuleId !== undefined;
+  const ingestCheckboxId = useId();
 
   const [axis, setAxis] = useState<HeartbeatAxis>(
     presetAxis ?? CURATABLE_AXES[0],
@@ -93,6 +114,9 @@ export function RemappingForm({
   const [pattern, setPattern] = useState(presetValue ?? "");
   const [target, setTarget] = useState(presetTarget ?? "");
   const [mode, setMode] = useState<Mode>(presetMatchType ?? "exact");
+  const [applyAtIngest, setApplyAtIngest] = useState(
+    presetApplyAtIngest ?? false,
+  );
 
   // Re-seed when the preset changes (e.g. the dialog opens for a new group, or
   // a different rule enters edit mode).
@@ -101,7 +125,19 @@ export function RemappingForm({
     setPattern(presetValue ?? "");
     setTarget(presetTarget ?? "");
     setMode(presetMatchType ?? "exact");
-  }, [presetAxis, presetValue, presetTarget, presetMatchType, editRuleId]);
+    setApplyAtIngest(presetApplyAtIngest ?? false);
+  }, [
+    presetAxis,
+    presetValue,
+    presetTarget,
+    presetMatchType,
+    presetApplyAtIngest,
+    editRuleId,
+  ]);
+
+  // `entity` + source-metadata axes have no query-time remap, so a rule there
+  // is inert unless the ingest scrubber is on.
+  const isIngestOnlyAxis = INGEST_ONLY_AXES.has(axis);
 
   const isRegexLike = mode === "regex" || mode === "template";
   const isTemplate = mode === "template";
@@ -180,7 +216,14 @@ export function RemappingForm({
     }
     // Capture templates: accept `$N` in the UI, send backend `\N` form.
     const newValue = isTemplate ? templateToBackend(rawTarget) : rawTarget;
-    const body = { axis, action: "rename" as const, matchValue, newValue, matchType: mode };
+    const body = {
+      axis,
+      action: "rename" as const,
+      matchValue,
+      newValue,
+      matchType: mode,
+      applyAtIngest,
+    };
 
     if (editing) {
       // Rule identity is (axis, action, matchType, matchValue). If any of those
@@ -210,6 +253,7 @@ export function RemappingForm({
         setPattern(presetValue ?? "");
         setTarget("");
         setMode("exact");
+        setApplyAtIngest(presetApplyAtIngest ?? false);
         onDone?.();
       },
       onError: () => toast.error("Failed to add remapping"),
@@ -265,6 +309,34 @@ export function RemappingForm({
         className="h-8 font-mono"
       />
     </div>
+  );
+
+  const applyAtIngestField = (
+    <div className="space-y-1">
+      <div className="flex items-center gap-2">
+        <Checkbox
+          id={ingestCheckboxId}
+          checked={applyAtIngest}
+          onCheckedChange={(c) => setApplyAtIngest(c === true)}
+        />
+        <Label htmlFor={ingestCheckboxId} className="text-xs font-medium">
+          Apply at ingest
+        </Label>
+      </div>
+      <p className="pl-6 text-xs text-muted-foreground">
+        Also rewrite new heartbeats as they're stored (irreversible for new
+        rows). The query-time view remap still applies either way.
+      </p>
+    </div>
+  );
+
+  // `entity` + metadata axes have no query-time remap, so warn that the rule is
+  // inert unless the ingest scrubber is on.
+  const ingestOnlyHint = isIngestOnlyAxis && !applyAtIngest && (
+    <p className="text-xs text-amber-500">
+      {axisLabel(axis)} has no query-time remap — this rule only takes effect
+      with Apply at ingest on.
+    </p>
   );
 
   const hint = isRegexLike && (
@@ -363,6 +435,8 @@ export function RemappingForm({
           <ArrowRight className="h-4 w-4" />
         </div>
         {targetField}
+        {applyAtIngestField}
+        {ingestOnlyHint}
         {hint}
         {preview}
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -409,6 +483,8 @@ export function RemappingForm({
           </Button>
         )}
       </div>
+      {applyAtIngestField}
+      {ingestOnlyHint}
       {hint}
       {preview}
     </form>

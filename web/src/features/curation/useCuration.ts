@@ -24,6 +24,10 @@ export function useCurationMutations() {
     }
   }
 
+  // The full AddCurationRuleBody (incl. gaka's optional `applyAtIngest`) is
+  // forwarded verbatim; api.addCurationRule normalizes the ingest flag to an
+  // explicit boolean. The edit mutation below routes through the same call, so
+  // ingest-scrub rules survive an edit round-trip too.
   const add = useMutation({
     mutationFn: (body: AddCurationRuleBody) => api.addCurationRule(body),
     onSuccess: invalidateDependents,

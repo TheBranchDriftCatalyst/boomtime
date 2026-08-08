@@ -76,6 +76,7 @@ export function curationRule(over: Partial<{
   matchValue: string;
   newValue: string | null;
   matchType: "exact" | "regex";
+  applyAtIngest: boolean;
   createdAt: string;
 }> = {}) {
   return {
@@ -85,6 +86,8 @@ export function curationRule(over: Partial<{
     matchValue: "gaka",
     newValue: "boomtime",
     matchType: "exact" as const,
+    // gaka: default = a plain query-time view rule (no ingest scrubbing).
+    applyAtIngest: false,
     createdAt: "2026-07-01T00:00:00.000Z",
     ...over,
   };

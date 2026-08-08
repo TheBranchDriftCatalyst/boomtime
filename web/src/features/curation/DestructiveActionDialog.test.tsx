@@ -27,6 +27,7 @@ function renameRule(overrides: Partial<CurationRule> = {}): CurationRule {
     matchType: "exact",
     matchValue: "old-project",
     newValue: "new-project",
+    applyAtIngest: false,
     createdAt: "2025-06-01T00:00:00Z",
     ...overrides,
   };
@@ -39,6 +40,7 @@ function hideRule(overrides: Partial<CurationRule> = {}): CurationRule {
     matchType: "exact",
     matchValue: "secret",
     newValue: null,
+    applyAtIngest: false,
     createdAt: "2025-06-01T00:00:00Z",
     ...overrides,
   };

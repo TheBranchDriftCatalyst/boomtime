@@ -93,6 +93,22 @@ func (h *Handler) storeAndRespond(c *echo.Context, hbs []model.HeartbeatPayload)
 		substituteLastContext(enriched, seedProject, seedLanguage, seedBranch)
 	}
 
+	// gaka-scrub: apply-at-ingest rename rules run LAST — after enrichment AND
+	// placeholder substitution, right before Save — so every field is final
+	// (nothing downstream clobbers the rewrite) and no axis needs an allowlist.
+	// A scrubber is just a rename rule flagged apply_at_ingest (e.g. strip a
+	// '/Users/x/' entity prefix). Loaded once per batch; a load error logs and
+	// continues (a filter problem must NEVER fail ingestion). NOTE: the earlier
+	// best-effort remoteWrite (line 57) forwards pre-scrub values — documented,
+	// rarely configured; scrub its payload too if remote-side scrubbing is needed.
+	if renames, rerr := h.DB.LoadIngestRenameRules(ctx, owner); rerr != nil {
+		h.Logger.Warn("failed to load ingest rename rules; skipping ingest scrub", "owner", owner, "err", rerr)
+	} else if !renames.Empty() {
+		for i := range enriched {
+			renames.Apply(&enriched[i])
+		}
+	}
+
 	// gaka-0oe.3: skip the expensive phase-3 rollup/gap maintenance for
 	// identities denied CapGenerateRollups when BOOM_FEATURE_ROLLUP_SKIP is on
 	// (e.g. an ingest-only service tier). Flag off => full caps => always the

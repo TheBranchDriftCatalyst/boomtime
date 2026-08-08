@@ -56,17 +56,22 @@ export function RemappingsTab() {
   return (
     <div className="space-y-6">
       <p className="text-sm text-muted-foreground">
-        Renames and hides are reversible, query-time rules by default. To
-        create or merge values, use the{" "}
+        Renames and hides are reversible, query-time{" "}
+        <span className="font-medium text-foreground">view</span> rules by
+        default. To create or merge values, use the{" "}
         <Link
           to="/app/heartbeats"
           className="font-medium text-primary hover:underline"
         >
           Heartbeats
         </Link>{" "}
-        explorer. To permanently collapse a rule into the raw data — rewrite
-        matching heartbeats (lightning-bolt on renames) or delete them
-        (trashcan on hides) — click the destructive icon on the row.
+        explorer. A rule flagged{" "}
+        <span className="font-medium text-foreground">Apply at ingest</span>{" "}
+        (sky <span className="uppercase">ingest</span> badge) additionally
+        scrubs newly-stored heartbeats — going forward, not retroactively. To
+        permanently collapse a rule into existing raw data — rewrite matching
+        heartbeats (lightning-bolt on renames) or delete them (trashcan on
+        hides) — click the destructive icon on the row.
       </p>
       <NameRemappingsCard
         rules={rules}

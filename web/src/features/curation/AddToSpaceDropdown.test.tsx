@@ -33,6 +33,7 @@ function makeRule(overrides: Partial<CurationRule> = {}): CurationRule {
     newValue: "boom-web",
     matchType: "exact",
     enabled: true,
+    applyAtIngest: false,
     createdAt: "2025-01-01T00:00:00Z",
     ...overrides,
   };

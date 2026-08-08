@@ -546,7 +546,7 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 	}())
 	doc.AddOperation("/api/v1/users/current/curation", "POST", func() *openapi3.Operation {
 		op := &openapi3.Operation{Tags: []string{tagCuration}, Summary: "Create a hide or rename rule",
-			Description: "Body: {axis, action:'hide'|'rename', matchType:'exact'|'regex'|'template' (default 'exact'), matchValue, newValue?}. Both hide and rename are query-time and reversible: no raw data is mutated."}
+			Description: "Body: {axis, action:'hide'|'rename', matchType:'exact'|'regex'|'template' (default 'exact'), matchValue, newValue?, applyAtIngest?}. Query-time rules are reversible (no raw data mutated); a rename with applyAtIngest also rewrites newly-ingested rows (irreversible for those rows) and is excluded from the query-time remap."}
 		body := openapi3.NewObjectSchema()
 		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{
 			Required: true, Description: "Rule payload.",

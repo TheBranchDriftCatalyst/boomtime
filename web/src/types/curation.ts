@@ -23,6 +23,12 @@ export interface CurationRule {
   // in the type so responses from a pre-migration backend still parse; the
   // FE treats missing as `true` (the pre-feature default).
   enabled?: boolean;
+  // gaka: "Apply at ingest" flag. When true the rename rule ALSO runs as a
+  // scrubber over newly-ingested heartbeats (rewriting the raw row at store
+  // time), in addition to the reversible query-time view remap. Irreversible
+  // for new rows. Defaults to false; missing (pre-migration) is treated as
+  // false everywhere in the FE.
+  applyAtIngest: boolean;
   createdAt: string;
 }
 
@@ -32,6 +38,8 @@ export interface AddCurationRuleBody {
   matchValue: string;
   newValue?: string;
   matchType?: CurationMatchType;
+  // Optional on create/edit; the backend defaults it to false when absent.
+  applyAtIngest?: boolean;
 }
 
 export interface AddCurationRulePayload {

@@ -52,6 +52,8 @@ describe("RemappingForm (P0/P1)", () => {
       matchValue: "gaka",
       newValue: "boomtime",
       matchType: "exact",
+      // gaka: unchecked by default → api normalizes to explicit false.
+      applyAtIngest: false,
     });
   });
 
@@ -95,6 +97,49 @@ describe("RemappingForm (P0/P1)", () => {
       newValue: "\\1", // `$1` -> backend `\1`
       matchType: "template",
     });
+  });
+
+  it("flows the Apply-at-ingest checkbox into the create body", async () => {
+    const body = capturePost();
+    const user = userEvent.setup();
+    // Regex mode → pattern is a plain Input (no combobox interaction needed).
+    renderWithProviders(<RemappingForm presetAxis="category" submitLabel="Add" />);
+
+    await user.click(screen.getByRole("button", { name: "Regex" }));
+    await user.type(screen.getByPlaceholderText("^Meet"), "^Meet");
+    await user.type(screen.getByPlaceholderText("Meeting"), "Meeting");
+    // Checkbox defaults to off; check it before submitting.
+    const ingest = screen.getByRole("checkbox", { name: /apply at ingest/i });
+    expect(ingest).toHaveAttribute("aria-checked", "false");
+    await user.click(ingest);
+    await user.click(screen.getByRole("button", { name: /^add$/i }));
+
+    await waitFor(() =>
+      expect(
+        (body.current as { applyAtIngest?: boolean })?.applyAtIngest,
+      ).toBe(true),
+    );
+    expect(body.current).toMatchObject({
+      matchValue: "^Meet",
+      newValue: "Meeting",
+      applyAtIngest: true,
+    });
+  });
+
+  it("shows the ingest-only caveat for an axis with no query-time remap", async () => {
+    const user = userEvent.setup();
+    // `entity` has no query-time remap → the caveat shows until the box is on.
+    renderWithProviders(<RemappingForm presetAxis="entity" submitLabel="Add" />);
+
+    expect(
+      screen.getByText(/only takes effect with Apply at ingest on/i),
+    ).toBeInTheDocument();
+
+    // Turning the flag on resolves the caveat (the rule now bites at ingest).
+    await user.click(screen.getByRole("checkbox", { name: /apply at ingest/i }));
+    expect(
+      screen.queryByText(/only takes effect with Apply at ingest on/i),
+    ).not.toBeInTheDocument();
   });
 
   it("rejects an invalid regex with an error toast and no request", async () => {
@@ -167,6 +212,7 @@ describe("RemappingForm edit mode (gaka-cn1)", () => {
       matchValue: "Meet",
       newValue: "Standup",
       matchType: "exact",
+      applyAtIngest: false,
     });
     expect(deleted).toBe(false);
   });
