@@ -129,8 +129,10 @@ func (c *Client) FetchRepos(ctx context.Context) ([]Repo, error) {
 	q := url.Values{}
 	q.Set("per_page", fmt.Sprintf("%d", reposPerPage))
 	q.Set("sort", "pushed")
+	// gaka-anh fix: GitHub /user/repos returns 422 when `type` is combined with
+	// `affiliation` (or `visibility`). Use `affiliation=owner` ALONE to fetch
+	// the user's own repos — don't also set `type`.
 	q.Set("affiliation", "owner")
-	q.Set("type", "owner")
 	var repos []Repo
 	if err := c.doREST(ctx, "/user/repos?"+q.Encode(), &repos); err != nil {
 		return nil, err
