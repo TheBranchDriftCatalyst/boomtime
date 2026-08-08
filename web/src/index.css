@@ -32,3 +32,56 @@
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
+
+/* ── Scroll-snap utilities (gaka-k0q) ──────────────────────────────────────
+ *
+ * Portable, opt-in magnetic-scroll helpers. Plain classes (not Tailwind
+ * utilities) so they can be dropped onto a scroll container + its children
+ * from anywhere without a JS dependency.
+ *
+ *   .snap-sections   long-form VERTICAL scroller (a dashboard of stacked
+ *                    sections). `proximity`, never `mandatory` — it only
+ *                    magnetizes when you're already near a boundary, so it
+ *                    never fights a user scrolling THROUGH content.
+ *   .snap-section    a snap target (the top of a major section). Pair with
+ *                    `.snap-sections` on the ancestor scroller.
+ *
+ *   .snap-carousel-x discrete HORIZONTAL rail/gallery (image/coin carousel).
+ *                    `mandatory` — every rest state lands on an item, which is
+ *                    the point of a carousel. Do NOT use on a data table or a
+ *                    nav strip (see TabNav.css for the gentler `proximity` a
+ *                    tab row wants).
+ *   .snap-start / .snap-center   per-item alignment inside a carousel.
+ *
+ * scroll-padding-top on `.snap-sections`: the POM shell (AppShellNoScroll)
+ * puts the HeaderBar in grid row 1 and the scroller (Page.Content) in row 2,
+ * and Page.Header is a `shrink-0` sibling ABOVE Page.Content — so NO pinned
+ * chrome overlaps the scrollport. The padding is therefore just breathing
+ * room (1rem, matching Page.Content's own `pt-4`), not a chrome offset.
+ */
+.snap-sections {
+  scroll-snap-type: y proximity;
+  scroll-padding-top: 1rem;
+}
+.snap-section {
+  scroll-snap-align: start;
+}
+
+.snap-carousel-x {
+  scroll-snap-type: x mandatory;
+}
+.snap-start {
+  scroll-snap-align: start;
+}
+.snap-center {
+  scroll-snap-align: center;
+}
+
+/* Smooth glide only when the user hasn't asked to reduce motion; the snap
+ * itself stays (an instant jump), just without the animated travel. */
+@media (prefers-reduced-motion: no-preference) {
+  .snap-sections,
+  .snap-carousel-x {
+    scroll-behavior: smooth;
+  }
+}

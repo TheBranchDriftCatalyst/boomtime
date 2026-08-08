@@ -261,7 +261,11 @@ export function OverviewDashboard({
         />
       </Page.Header>
       <Page.Body>
-        <Page.Content>
+        {/* gaka-k0q: opt-in magnetic vertical scroll. `proximity` (see
+            .snap-sections) only tugs near a section boundary, so scrolling
+            through a chart is never fought; the curated `.snap-section`
+            landmarks below give the page a handful of natural rest points. */}
+        <Page.Content className="snap-sections">
           {beforeContent && <div className="mb-6">{beforeContent}</div>}
 
           <QueryGate
@@ -270,7 +274,7 @@ export function OverviewDashboard({
           >
             {(stats) => (
               <div className="space-y-6">
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="snap-section grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                   <StatCard
                     name="Total tracked time"
                     value={secondsToHms(stats.totalSeconds)}
@@ -308,28 +312,32 @@ export function OverviewDashboard({
 
                 {/* Category breakdown — first-class, near the top: "tracked time" is
                     more than coding (browsing/meetings/etc). */}
-                <ChartCard title="Category breakdown">
-                  <CategoryBreakdown categories={stats.categories ?? []} />
-                </ChartCard>
+                <div className="snap-section">
+                  <ChartCard title="Category breakdown">
+                    <CategoryBreakdown categories={stats.categories ?? []} />
+                  </ChartCard>
+                </div>
 
                 {/* Streak & consistency (raw daily; current streak excludes today). */}
                 <StreakBanner dailyTotal={stats.dailyTotal} />
 
                 {/* Flagship: GitHub-style contribution calendar from RAW daily data. */}
-                <ChartCard
-                  title="Contribution calendar"
-                  embedAction={
-                    <EmbedLinkButton
-                      kind="activity-heatmap"
-                      scopeType={space ? "space" : "user"}
-                      scopeRef={space ?? ""}
-                    />
-                  }
-                >
-                  <ContributionCalendar dates={dates} values={stats.dailyTotal} />
-                </ChartCard>
+                <div className="snap-section">
+                  <ChartCard
+                    title="Contribution calendar"
+                    embedAction={
+                      <EmbedLinkButton
+                        kind="activity-heatmap"
+                        scopeType={space ? "space" : "user"}
+                        scopeRef={space ?? ""}
+                      />
+                    }
+                  >
+                    <ContributionCalendar dates={dates} values={stats.dailyTotal} />
+                  </ChartCard>
+                </div>
 
-                <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+                <div className="snap-section grid grid-cols-1 gap-6 lg:grid-cols-3">
                   <div className="lg:col-span-2">
                     <ChartCard
                       title="Total activity"
@@ -414,7 +422,7 @@ export function OverviewDashboard({
                 </div>
 
                 {/* Patterns: cross-project rhythm & momentum. */}
-                <div className="pt-2">
+                <div className="snap-section pt-2">
                   <h2 className="mb-1 text-lg font-semibold">Patterns</h2>
                   <p className="text-sm text-muted-foreground">
                     When you code, how deeply you focus, and which projects are heating
