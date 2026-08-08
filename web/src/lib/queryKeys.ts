@@ -81,6 +81,10 @@ export const qk = {
 
   // --- GitHub stats (gaka-anh Phase 2) ---------------------------------------
   githubStats: () => ["github-stats"] as const,
+  // gaka-2ud Phase 5: the PUBLIC mirror, keyed by slug. Distinct from the authed
+  // `githubStats()` key so the /p/:slug page's unauth cache never collides with
+  // an owner's authed self-view cache.
+  publicGithubStats: (slug: string) => ["public-github-stats", slug] as const,
 
   // --- Stats / dashboards ----------------------------------------------------
   // The canonical 5-element stats key ALWAYS includes the space slot (undefined

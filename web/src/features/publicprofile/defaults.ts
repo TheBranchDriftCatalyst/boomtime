@@ -33,6 +33,11 @@ export const PUBLIC_PROFILE_DEFAULT_LAYOUT: GridLayoutItem[] = [
   // Row 6
   { i: "editors-chips",       x: 0,  y: 16, w: 6,  h: 2, view: null },
   { i: "platforms-chips",     x: 6,  y: 16, w: 6,  h: 2, view: null },
+  // Row 7 (gaka-2ud P5): combined GitHub stats card. Self-hides when the owner
+  // hasn't connected GitHub / has no public GitHub data, so it's safe to ship
+  // in the default layout for everyone — a GitHub-less profile just doesn't
+  // render this tile (no gap, no CTA).
+  { i: "github-stats",        x: 0,  y: 18, w: 12, h: 8, view: null },
 ];
 
 /** Count of widgets in the shipped default. Handy for tests + reports. */

@@ -128,10 +128,12 @@ function DashboardBody({ data, slug }: { data: PublicDashboardPayload; slug: str
           defaultLayout: e.defaultLayout,
           views: e.views,
           defaultView: e.defaultView,
-          render: ({ view }) => <WidgetRenderer kind={e.kind} view={view} data={data} />,
+          render: ({ view }) => (
+            <WidgetRenderer kind={e.kind} view={view} data={data} slug={slug} />
+          ),
         }),
       ),
-    [data],
+    [data, slug],
   );
 
   // In-memory storage: the public page is read-only. View toggles + drag

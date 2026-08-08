@@ -109,8 +109,6 @@ export function GithubStatTiles() {
   }
 
   const data = q.data!;
-  const t = data.totals;
-  const streak = currentGithubStreak(data.contributionGrid ?? []);
 
   return (
     <section className="space-y-3">
@@ -125,36 +123,52 @@ export function GithubStatTiles() {
           ) : null}
         </h2>
       </div>
-      {/* GH-green glow rail marks the whole strip as the GitHub series. */}
-      <div
-        className="grid grid-cols-1 gap-4 rounded-lg sm:grid-cols-2 xl:grid-cols-4"
-        style={{ boxShadow: `inset 3px 0 0 0 ${GH_ACCENT}` }}
-      >
-        <StatCard
-          name="Total commits"
-          value={t.commits.toLocaleString()}
-          icon={<GitCommitHorizontal className="h-6 w-6" />}
-          accent="success"
-        />
-        <StatCard
-          name="PR reviews"
-          value={t.pullRequestReviews.toLocaleString()}
-          icon={<GitPullRequest className="h-6 w-6" />}
-          accent="info"
-        />
-        <StatCard
-          name="Current GitHub streak"
-          value={streak === 1 ? "1 day" : `${streak} days`}
-          icon={<Flame className="h-6 w-6" />}
-          accent="warning"
-        />
-        <StatCard
-          name="Total contributions"
-          value={t.totalContributions.toLocaleString()}
-          icon={<Award className="h-6 w-6" />}
-          accent="success"
-        />
-      </div>
+      <GithubTilesBody data={data} />
     </section>
+  );
+}
+
+/**
+ * GithubTilesBody (gaka-2ud P5) — the PURE, presentational 4-tile strip built
+ * from an already-fetched GithubStatsPayload. Extracted from GithubStatTiles so
+ * the SAME tiles render on the authed Overview (self-fetch wrapper above) and on
+ * the PUBLIC profile (publicprofile/GithubCard, which fetches the public mirror
+ * by slug). One implementation → the two surfaces can never drift. Takes no
+ * accent: the StatCards use semantic `accent` variants that read on any theme.
+ */
+export function GithubTilesBody({ data }: { data: GithubStatsPayload }) {
+  const t = data.totals;
+  const streak = currentGithubStreak(data.contributionGrid ?? []);
+  return (
+    // GH-green glow rail marks the whole strip as the GitHub series.
+    <div
+      className="grid grid-cols-1 gap-4 rounded-lg sm:grid-cols-2 xl:grid-cols-4"
+      style={{ boxShadow: `inset 3px 0 0 0 ${GH_ACCENT}` }}
+    >
+      <StatCard
+        name="Total commits"
+        value={t.commits.toLocaleString()}
+        icon={<GitCommitHorizontal className="h-6 w-6" />}
+        accent="success"
+      />
+      <StatCard
+        name="PR reviews"
+        value={t.pullRequestReviews.toLocaleString()}
+        icon={<GitPullRequest className="h-6 w-6" />}
+        accent="info"
+      />
+      <StatCard
+        name="Current GitHub streak"
+        value={streak === 1 ? "1 day" : `${streak} days`}
+        icon={<Flame className="h-6 w-6" />}
+        accent="warning"
+      />
+      <StatCard
+        name="Total contributions"
+        value={t.totalContributions.toLocaleString()}
+        icon={<Award className="h-6 w-6" />}
+        accent="success"
+      />
+    </div>
   );
 }

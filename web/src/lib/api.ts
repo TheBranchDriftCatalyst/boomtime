@@ -946,6 +946,18 @@ export const api = {
   getGithubStats: () =>
     request<GithubStatsPayload>("/api/v1/users/current/github/stats"),
 
+  // gaka-2ud Phase 5: the PUBLIC, UNAUTH mirror served by the public-profile
+  // feature (GET /api/public/profile/:slug/github/stats). Cache-only server-side
+  // (never syncs), respects `public_profile_enabled`, and 404s when there's no
+  // cache / the profile isn't public. Returns the SAME GithubStatsPayload as the
+  // authed self view — NEVER carries the token. Consumed by the public
+  // GithubCard, which silently hides on any 404 / empty payload.
+  getPublicGithubStats: (slug: string) =>
+    request<GithubStatsPayload>(
+      `/api/public/profile/${encodeURIComponent(slug)}/github/stats`,
+      { auth: false },
+    ),
+
   adminCreateLabel: (body: Partial<LabelCatalogRow> & { id: string; kind: string; label: string; condition: unknown }) =>
     request<LabelCatalogRow>("/api/v1/admin/labels", { method: "POST", body }),
   adminUpdateLabel: (id: string, body: Partial<LabelCatalogRow> & { condition?: unknown }) =>

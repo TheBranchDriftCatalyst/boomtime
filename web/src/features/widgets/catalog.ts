@@ -462,6 +462,26 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
     dashboardScopes: ["overview"],
     defaultLayout: { w: 6, h: 4 },
   },
+  // gaka-2ud (Phase 5): the COMBINED GitHub stats card for the PUBLIC profile.
+  // One `profile`-scoped kind (rather than three separate profile kinds) so the
+  // page shows a single cohesive GitHub tile: key stat tiles + a commits area +
+  // top repos + language breakdown, all from the ONE public mirror fetch
+  // (getPublicGithubStats(slug)). Rendered by WidgetRenderer → GithubCard, which
+  // self-hides on 404 / empty (NO CTA on the public page — external viewers
+  // can't connect the owner's GitHub). FE-only: no SVG variant, so it is
+  // deliberately absent from internal/widget/render.go's Kinds() and the
+  // drift-guard test (like grade-badge / hero-identity / labels-showcase and the
+  // overview-only github-* kinds).
+  {
+    kind: "github-stats",
+    title: "GitHub",
+    description:
+      "GitHub activity — commits, top repos & languages from a connected GitHub",
+    scopes: ["user"],
+    primitives: ["graph", "label"],
+    dashboardScopes: ["profile"],
+    defaultLayout: { w: 12, h: 8 },
+  },
 ];
 
 /** Catalog entries offered for a page scope. */

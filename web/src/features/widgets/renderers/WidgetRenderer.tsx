@@ -38,6 +38,10 @@ import { LabelsShowcase } from "@/features/widgets/renderers/LabelsShowcase";
 // back to initials when the user hasn't rendered one yet — the profile
 // still reads cleanly for the "new operator" case.
 import { UserAvatarImage } from "@/features/publicprofile/UserAvatarImage";
+// gaka-2ud P5: the public GitHub stats tile. Self-fetches the UNAUTH public
+// mirror by slug and self-hides on 404 / empty — no CTA, no error on the
+// public page. FE-only (no SVG variant, not in internal/widget/render.go).
+import { GithubCard } from "@/features/publicprofile/GithubCard";
 
 interface Ctx {
   view?: string;
@@ -49,10 +53,14 @@ export interface WidgetRendererProps {
   kind: string;
   view?: string;
   data: PublicDashboardPayload;
+  /** gaka-2ud P5: the public profile slug. Threaded from PublicDashboard /
+   * ProfileEditor so slug-scoped kinds (github-stats) can fetch the public
+   * mirror. Falls back to `data.username` for callers that don't pass it. */
+  slug?: string;
   ctx?: Ctx;
 }
 
-export function WidgetRenderer({ kind, view, data, ctx }: WidgetRendererProps) {
+export function WidgetRenderer({ kind, view, data, slug, ctx }: WidgetRendererProps) {
   const height = ctx?.height ?? 220;
   switch (kind) {
     case "hero-identity":
@@ -145,6 +153,12 @@ export function WidgetRenderer({ kind, view, data, ctx }: WidgetRendererProps) {
     // gaka-364: labels showcase — all awarded labels grouped by kind
     case "labels-showcase":
       return <LabelsShowcase data={data} />;
+
+    // gaka-2ud P5: public GitHub stats. Needs the SLUG to fetch the unauth
+    // public mirror; falls back to the payload's username. Renders nothing
+    // when there's no public GitHub data (no CTA on the public page).
+    case "github-stats":
+      return <GithubCard slug={slug ?? data.username} />;
 
     default:
       return <Empty note={`No renderer for "${kind}"`} />;

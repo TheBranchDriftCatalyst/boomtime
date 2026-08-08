@@ -113,10 +113,10 @@ export function ProfileEditor({ slug }: ProfileEditorProps) {
         defaultView: e.defaultView,
         render: ({ view }) =>
           payload ? (
-            <WidgetRenderer kind={e.kind} view={view} data={payload} />
+            <WidgetRenderer kind={e.kind} view={view} data={payload} slug={slug} />
           ) : null,
       })),
-    [allProfileEntries, payload],
+    [allProfileEntries, payload, slug],
   );
 
   // Memory-backed storage adapter — the primitive fires save() on every

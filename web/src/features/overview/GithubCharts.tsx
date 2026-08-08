@@ -130,12 +130,25 @@ export function GithubChartsSection() {
 // ===========================================================================
 // Pure chart bodies — take an already-fetched payload, render bare content (no
 // outer Card) so the grid tile / ChartCard supplies the frame. Reused by BOTH
-// the standalone widget cards and the legacy section.
+// the standalone widget cards and the legacy section AND (gaka-2ud P5) the
+// PUBLIC-profile GithubCard.
+//
+// Each body accepts an optional `accent` color so the SAME implementation
+// renders in the in-app GitHub-green series (default GH_ACCENT) and in the
+// public dossier's amber theme (the public card passes `var(--primary)`).
+// Threading a prop keeps ONE implementation of every chart — the public and
+// in-app surfaces can never drift.
 // ===========================================================================
 
 // --- 1. Commits over time --------------------------------------------------
 
-function GithubCommitsChart({ data }: { data: GithubStatsPayload }) {
+export function GithubCommitsChart({
+  data,
+  accent = GH_ACCENT,
+}: {
+  data: GithubStatsPayload;
+  accent?: string;
+}) {
   const weeks = useMemo(
     () => toWeeklyCommits(data.contributionGrid),
     [data.contributionGrid],
@@ -147,9 +160,10 @@ function GithubCommitsChart({ data }: { data: GithubStatsPayload }) {
         label="Commits"
         value={data.totals.commits}
         note="trailing year"
+        accent={accent}
       />
       <div className="min-h-0 flex-1">
-        <CommitsArea weeks={weeks} />
+        <CommitsArea weeks={weeks} accent={accent} />
       </div>
     </div>
   );
@@ -161,9 +175,11 @@ function GithubCommitsChart({ data }: { data: GithubStatsPayload }) {
 function CommitsArea({
   weeks,
   height = 200,
+  accent = GH_ACCENT,
 }: {
   weeks: CommitsWeekPoint[];
   height?: number;
+  accent?: string;
 }) {
   const data = useMemo(
     () =>
@@ -218,8 +234,8 @@ function CommitsArea({
         .attr("y1", "0")
         .attr("x2", "0")
         .attr("y2", "1");
-      grad.append("stop").attr("offset", "0%").attr("stop-color", GH_ACCENT).attr("stop-opacity", 0.35);
-      grad.append("stop").attr("offset", "100%").attr("stop-color", GH_ACCENT).attr("stop-opacity", 0.02);
+      grad.append("stop").attr("offset", "0%").attr("stop-color", accent).attr("stop-opacity", 0.35);
+      grad.append("stop").attr("offset", "100%").attr("stop-color", accent).attr("stop-opacity", 0.02);
 
       const area = d3
         .area<{ date: Date; count: number }>()
@@ -238,7 +254,7 @@ function CommitsArea({
         .datum(data)
         .attr("d", line)
         .attr("fill", "none")
-        .attr("stroke", GH_ACCENT)
+        .attr("stroke", accent)
         .attr("stroke-width", 2);
 
       g.selectAll("circle.pt")
@@ -254,7 +270,7 @@ function CommitsArea({
             event,
             tooltipHtml({
               title: `Week of ${d3.timeFormat("%d %b %Y")(d.date)}`,
-              titleSwatch: GH_ACCENT,
+              titleSwatch: accent,
               rows: [
                 {
                   label: "Contributions",
@@ -266,7 +282,7 @@ function CommitsArea({
         })
         .on("mouseleave", hideTip);
     },
-    [data],
+    [data, accent],
   );
 
   if (data.length === 0) {
@@ -283,7 +299,13 @@ function CommitsArea({
 
 // --- 2. Top repositories by stars ------------------------------------------
 
-function GithubReposChart({ data }: { data: GithubStatsPayload }) {
+export function GithubReposChart({
+  data,
+  accent = GH_ACCENT,
+}: {
+  data: GithubStatsPayload;
+  accent?: string;
+}) {
   const repos = useMemo(
     () => [...(data.topRepos ?? [])].sort((a, b) => b.stars - a.stars).slice(0, 8),
     [data.topRepos],
@@ -295,9 +317,10 @@ function GithubReposChart({ data }: { data: GithubStatsPayload }) {
         label="Stars"
         value={data.totals.stars}
         note={`${repos.length} top ${repos.length === 1 ? "repo" : "repos"}`}
+        accent={accent}
       />
       <div className="min-h-0 flex-1">
-        <ReposBars repos={repos} />
+        <ReposBars repos={repos} accent={accent} />
       </div>
     </div>
   );
@@ -305,7 +328,13 @@ function GithubReposChart({ data }: { data: GithubStatsPayload }) {
 
 /** Horizontal bar list of the top repos by stars; each bar width proportional
  * to the most-starred repo. Names link out to the repo. */
-function ReposBars({ repos }: { repos: GithubTopRepo[] }) {
+function ReposBars({
+  repos,
+  accent = GH_ACCENT,
+}: {
+  repos: GithubTopRepo[];
+  accent?: string;
+}) {
   if (repos.length === 0) {
     return <EmptyChart height={200} title="No starred repositories yet" />;
   }
@@ -330,7 +359,7 @@ function ReposBars({ repos }: { repos: GithubTopRepo[] }) {
                 {r.language ? (
                   <span className="mr-1 opacity-60">{r.language}</span>
                 ) : null}
-                <Star className="h-3 w-3" style={{ color: GH_ACCENT }} aria-hidden />
+                <Star className="h-3 w-3" style={{ color: accent }} aria-hidden />
                 {formatCompactNumber(r.stars)}
               </span>
             </div>
@@ -342,7 +371,7 @@ function ReposBars({ repos }: { repos: GithubTopRepo[] }) {
                 className="h-full rounded-sm"
                 style={{
                   width: `${pct}%`,
-                  background: `linear-gradient(90deg, ${GH_ACCENT}88, ${GH_ACCENT})`,
+                  background: `linear-gradient(90deg, color-mix(in oklab, ${accent} 53%, transparent), ${accent})`,
                   opacity: 0.95 - i * 0.05,
                 }}
                 aria-hidden
@@ -364,7 +393,13 @@ interface LangRow {
   color: string;
 }
 
-function GithubLanguagesChart({ data }: { data: GithubStatsPayload }) {
+export function GithubLanguagesChart({
+  data,
+  accent = GH_ACCENT,
+}: {
+  data: GithubStatsPayload;
+  accent?: string;
+}) {
   const { rows, total } = useMemo(() => {
     const langs = [...(data.languages ?? [])].sort((a, b) => b.bytes - a.bytes);
     const sum = langs.reduce((s, l) => s + l.bytes, 0);
@@ -396,6 +431,7 @@ function GithubLanguagesChart({ data }: { data: GithubStatsPayload }) {
         label="Code bytes"
         value={total}
         note={`${rows.length} ${rows.length === 1 ? "language" : "languages"}`}
+        accent={accent}
       />
       {rows.length === 0 ? (
         <EmptyChart height={160} title="No language data yet" />
@@ -453,21 +489,28 @@ function GhHeadline({
   label,
   value,
   note,
+  accent = GH_ACCENT,
 }: {
   icon: React.ReactNode;
   label: string;
   value: number;
   note?: string;
+  accent?: string;
 }) {
+  // color-mix (not hex-alpha concatenation) so `accent` can be ANY CSS color —
+  // the in-app green hex OR the public dossier's resolved `--primary`. Appending
+  // "1f"/"55"/"66" only works for #rrggbb; color-mix works for every color
+  // space (oklch, hex, rgb) with a visually equivalent translucent tint.
+  const tint = (pct: number) => `color-mix(in oklab, ${accent} ${pct}%, transparent)`;
   return (
     <div className="flex items-end justify-between gap-4">
       <div className="flex items-center gap-3">
         <span
           className="grid h-10 w-10 place-items-center rounded-md"
           style={{
-            background: `${GH_ACCENT}1f`,
-            boxShadow: `0 0 18px ${GH_ACCENT}55`,
-            color: GH_ACCENT,
+            background: tint(12),
+            boxShadow: `0 0 18px ${tint(33)}`,
+            color: accent,
           }}
           aria-hidden
         >
@@ -479,7 +522,7 @@ function GhHeadline({
           </span>
           <span
             className="font-mono text-3xl font-bold leading-none tabular-nums"
-            style={{ color: GH_ACCENT, textShadow: `0 0 22px ${GH_ACCENT}66` }}
+            style={{ color: accent, textShadow: `0 0 22px ${tint(40)}` }}
             title={value.toLocaleString()}
           >
             {formatCompactNumber(value)}
