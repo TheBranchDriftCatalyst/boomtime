@@ -287,6 +287,14 @@ func (hz *Harness) Router() *echo.Echo {
 	e.GET("/api/v1/users/current/profile", h.Identity.GetPublicProfile)               // gaka-8tn phase 4a: h.Identity
 	e.PUT("/api/v1/users/current/profile", h.Identity.PutPublicProfile)               // gaka-8tn phase 4a: h.Identity
 	e.GET("/api/public/profile/:slug", h.Identity.PublicProfile)                      // gaka-8tn phase 4a: h.Identity
+	// gaka-anh Phase 2: GitHub stats endpoints (authed cache-or-sync + public
+	// cache-only). Registered unconditionally in the test router so the suites
+	// can drive them; production gates them behind Cfg.GithubConnectEnabled().
+	// (The /github connection + disconnect routes are registered by the
+	// github_oauth_test suite itself, so they are NOT registered here to avoid
+	// Echo's duplicate-route panic.)
+	e.GET("/api/v1/users/current/github/stats", h.Identity.GetGithubStats)
+	e.GET("/api/public/profile/:slug/github/stats", h.Identity.PublicGithubStats)
 	e.GET("/api/v1/users/current/dashboard/:scope", h.Spaces.GetDashboardLayout)      // gaka-8tn phase 2a: moved to h.Spaces
 	e.PUT("/api/v1/users/current/dashboard/:scope", h.Spaces.PutDashboardLayout)      // gaka-8tn phase 2a
 	e.DELETE("/api/v1/users/current/dashboard/:scope", h.Spaces.DeleteDashboardLayout) // gaka-8tn phase 2a
@@ -377,6 +385,8 @@ func (hz *Harness) Cleanup(sender string) {
 			`DELETE FROM spaces WHERE owner=$1`,
 			`DELETE FROM badges WHERE username=$1`,
 			`DELETE FROM widget_links WHERE username=$1`,
+			// gaka-anh Phase 2: per-user GitHub stats cache.
+			`DELETE FROM github_stats_cache WHERE username=$1`,
 			// gaka-wpb: goals cascade on users delete via FK, but we
 			// still clean explicitly so the between-run window with
 			// FK checks doesn't leak.

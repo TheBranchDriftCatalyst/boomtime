@@ -32,6 +32,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/cache"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/github"
 	"github.com/labstack/echo/v5"
 )
 
@@ -50,6 +51,13 @@ type Handler struct {
 	Cfg    *config.Config
 	Logger *slog.Logger
 	Cache  *cache.TTL
+	// GithubStats is the GitHub stats refresh service (gaka-anh Phase 2). Used
+	// by the authed /github/stats endpoint's on-demand-if-stale path. Always
+	// non-nil in production (constructed in New with the real GitHub
+	// endpoints); it is inert until a GET hits a stale/absent cache. Handler-
+	// level tests overwrite this field with github.NewServiceForTest pointed at
+	// a mock-GitHub httptest server.
+	GithubStats *github.Service
 }
 
 // New constructs an identity.Handler with the passed-in shared deps.
@@ -57,10 +65,11 @@ type Handler struct {
 // responsibility (the god-type's New wires all four unconditionally).
 func New(database *db.DB, cfg *config.Config, logger *slog.Logger, cch *cache.TTL) *Handler {
 	return &Handler{
-		DB:     database,
-		Cfg:    cfg,
-		Logger: logger,
-		Cache:  cch,
+		DB:          database,
+		Cfg:         cfg,
+		Logger:      logger,
+		Cache:       cch,
+		GithubStats: github.NewService(database, logger),
 	}
 }
 

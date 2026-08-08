@@ -62,6 +62,7 @@ import type {
   AdminUsersPayload,
   IdentitiesPayload,
   GithubConnection,
+  GithubStatsPayload,
   WidgetLinkPayload,
   WidgetLinksPayload,
   WidgetScope,
@@ -929,6 +930,14 @@ export const api = {
   getGithubConnection: () => request<GithubConnection>("/api/v1/users/current/github"),
   disconnectGithub: () =>
     request<void>("/api/v1/users/current/github", { method: "DELETE" }),
+
+  // gaka-anh Phase 2: per-user GitHub stats. Authed cache-or-sync — the server
+  // serves a fresh cache or refreshes on demand, and on a GitHub rate-limit
+  // returns the last-good cache with `stale: true`. NEVER carries the token.
+  // The public mirror (GET /api/public/profile/:slug/github/stats) is served by
+  // the public-profile feature; this method is the authed self view.
+  getGithubStats: () =>
+    request<GithubStatsPayload>("/api/v1/users/current/github/stats"),
 
   adminCreateLabel: (body: Partial<LabelCatalogRow> & { id: string; kind: string; label: string; condition: unknown }) =>
     request<LabelCatalogRow>("/api/v1/admin/labels", { method: "POST", body }),

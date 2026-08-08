@@ -177,6 +177,11 @@ func (h *Handler) DisconnectGithub(c *echo.Context) error {
 	if err := h.DB.ClearEncryptedGithubToken(c.Request().Context(), owner); err != nil {
 		return apihelpers.InternalErr(h.Logger, c, "github disconnect failed", err)
 	}
+	// gaka-anh Phase 2: also drop the stats cache so a stale row can't outlive
+	// the token that produced it (and so a re-connect starts clean).
+	if err := h.DB.ClearGithubStatsCache(c.Request().Context(), owner); err != nil {
+		return apihelpers.InternalErr(h.Logger, c, "github stats cache clear failed", err)
+	}
 	h.Logger.Info("github disconnected", "user", owner)
 	return apihelpers.NoContent(c)
 }

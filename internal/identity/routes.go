@@ -70,6 +70,10 @@ func Register(e *echo.Echo, h *Handler) {
 	if h != nil && h.Cfg != nil && h.Cfg.GithubConnectEnabled() {
 		e.GET("/auth/github/connect", h.ConnectGithub)
 		e.GET("/auth/github/callback", h.CallbackGithub)
+		// gaka-anh Phase 2: GitHub stats (authed cache-or-sync + public
+		// cache-only). Gated with the connect routes — inert on a default boot.
+		e.GET("/api/v1/users/current/github/stats", h.GetGithubStats)
+		e.GET("/api/public/profile/:slug/github/stats", h.PublicGithubStats)
 	}
 
 	// User IANA timezone (gaka-dg7). GET reports the raw stored value

@@ -54,6 +54,33 @@ export const handlers = [
   http.get("/api/v1/users/current/github", () =>
     HttpResponse.json({ connected: false }),
   ),
+  // gaka-anh Phase 2: GitHub stats. Default = an empty-but-shaped payload so
+  // components render without a 404; tests override with server.use to supply
+  // a populated grid/totals or to exercise the 404 (not-connected) branch.
+  http.get("/api/v1/users/current/github/stats", () =>
+    HttpResponse.json({
+      login: "octocat",
+      totals: {
+        commits: 0,
+        pullRequests: 0,
+        pullRequestReviews: 0,
+        issues: 0,
+        repositories: 0,
+        restrictedPrivate: 0,
+        totalContributions: 0,
+        followers: 0,
+        following: 0,
+        stars: 0,
+        publicRepos: 0,
+        publicGists: 0,
+        accountAgeDays: 0,
+      },
+      contributionGrid: [],
+      topRepos: [],
+      languages: [],
+      fetchedAt: "2026-01-01T00:00:00Z",
+    }),
+  ),
 ];
 
 export { http, HttpResponse };

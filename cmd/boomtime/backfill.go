@@ -51,6 +51,7 @@ func backfillCmd() *cobra.Command {
 	}
 	cmd.AddCommand(backfillGitCmd())
 	cmd.AddCommand(backfillLastContextCmd())
+	cmd.AddCommand(backfillGithubStatsCmd())
 	return cmd
 }
 

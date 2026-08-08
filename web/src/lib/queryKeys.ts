@@ -77,6 +77,9 @@ export const qk = {
   // --- Auth / tokens ---------------------------------------------------------
   tokens: () => ["tokens"] as const,
 
+  // --- GitHub stats (gaka-anh Phase 2) ---------------------------------------
+  githubStats: () => ["github-stats"] as const,
+
   // --- Stats / dashboards ----------------------------------------------------
   // The canonical 5-element stats key ALWAYS includes the space slot (undefined
   // when unscoped) so Overview, SpaceView, and Projects share one cache entry
