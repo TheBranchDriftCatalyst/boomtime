@@ -141,6 +141,18 @@ export function useOverviewMomentum() {
   });
 }
 
+// gaka-yfg: lines-of-code (total + per-project + over-time). Same range/space
+// scoping as the other Overview widgets so a scoped/renamed dashboard's LOC
+// tile refetches with the rest.
+export function useOverviewLoc() {
+  const { tr, space } = useOverviewData();
+  return useQuery({
+    queryKey: qk.loc(tr.startISO, tr.endISO, space),
+    queryFn: () =>
+      api.getLoc({ start: tr.startISO, end: tr.endISO, space }),
+  });
+}
+
 export function useOverviewAIActivity() {
   const { tr } = useOverviewData();
   return useQuery({

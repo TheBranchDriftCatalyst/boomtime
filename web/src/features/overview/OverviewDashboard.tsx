@@ -16,6 +16,7 @@ import { TimelineChart } from "@/viz/charts/TimelineChart";
 import { CategoryBreakdown } from "@/viz/charts/CategoryBreakdown";
 import { ContributionCalendar } from "@/viz/charts/ContributionCalendar";
 import { CumulativeArea } from "@/viz/charts/CumulativeArea";
+import { LinesOfCodeCard } from "@/features/overview/LinesOfCodeCard";
 import { StreakBanner } from "@/viz/charts/StreakBanner";
 import { CategoryStreamgraph } from "@/viz/charts/CategoryStreamgraph";
 import { Punchcard } from "@/viz/charts/Punchcard";
@@ -405,6 +406,14 @@ export function OverviewDashboard({
                     />
                   </ChartCard>
                 </div>
+
+                {/* gaka-yfg: lines of code — total + per-project + growth over
+                    time, derived from file_lines (no GitHub). Self-fetches via
+                    the shared OverviewDataProvider, so it degrades to a gentle
+                    empty state when the range has no line-count data. */}
+                <ChartCard title="Lines of code">
+                  <LinesOfCodeCard />
+                </ChartCard>
 
                 <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                   <ChartCard

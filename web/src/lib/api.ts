@@ -36,6 +36,7 @@ import type {
   LeaderboardEntry,
   LeaderboardsPayload,
   AIActivityPayload,
+  LocPayload,
   HealthActivityPayload,
   WorkoutListPayload,
   MomentumPayload,
@@ -443,6 +444,12 @@ export const api = {
   // tokens, AI vs human line changes, distinct sessions, latest plan).
   getAIActivity: (params: RangeParams) =>
     request<AIActivityPayload>("/api/v1/users/current/stats/ai", { params }),
+
+  // gaka-yfg: total + per-project lines of code (current snapshot) plus a
+  // bounded total-LOC-over-time growth curve, derived from file_lines with the
+  // generated/vendored ignore filter applied server-side. No GitHub dependency.
+  getLoc: (params: StatsParams) =>
+    request<LocPayload>("/api/v1/users/current/stats/loc", { params }),
 
   // Apple Watch / HealthKit per-day workout + sample aggregates. Powers the
   // Wellness card on Overview and the /wellness route. hasData=false when the

@@ -30,6 +30,7 @@ import {
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/dropdown-menu";
 import { AIAssistanceCard } from "@/features/overview/AIAssistanceCard";
 import { WellnessCard } from "@/features/overview/WellnessCard";
+import { LinesOfCodeCard } from "@/features/overview/LinesOfCodeCard";
 import { ColumnChart } from "@/viz/charts/ColumnChart";
 import { HeatmapChart } from "@/viz/charts/HeatmapChart";
 import { PieChart } from "@/viz/charts/PieChart";
@@ -96,6 +97,8 @@ export function OverviewWidgetRenderer({
       return <OverviewTopProjects view={view} config={config} />;
     case "cumulative-area":
       return <OverviewCumulativeArea />;
+    case "loc":
+      return <LinesOfCodeCard />;
     case "category-streamgraph":
       return <OverviewCategoryStreamgraph />;
     case "heatmap-projects":

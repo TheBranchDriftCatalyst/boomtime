@@ -161,6 +161,19 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
     dashboardScopes: ["overview"],
     defaultLayout: { w: 6, h: 4 },
   },
+  // gaka-yfg — lines of code. Overview-only, in-page + self-fetching (like the
+  // overview-stats / ai-assistance kinds); NO backend SVG variant, so it is
+  // intentionally absent from internal/widget/render.go's Kinds() and the
+  // drift-guard test (which only pins the SVG-renderable subset).
+  {
+    kind: "loc",
+    title: "Lines of Code",
+    description: "Total + per-project lines of code and its growth over time",
+    scopes: ["user", "space"],
+    primitives: ["graph", "label"],
+    dashboardScopes: ["overview"],
+    defaultLayout: { w: 12, h: 4 },
+  },
   {
     kind: "deep-work",
     title: "Deep-Work Sessions",

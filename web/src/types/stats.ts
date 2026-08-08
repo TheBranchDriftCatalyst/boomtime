@@ -305,3 +305,27 @@ export type RangeParams = {
   // When set, scopes the results to a Space's members.
   space?: string | number;
 };
+
+// --- Lines of code (gaka-yfg) ------------------------------------------------
+// Derived from heartbeats.file_lines (NO GitHub dependency); the backend applies
+// a mandatory generated/vendored ignore filter so the numbers reflect
+// hand-written code, not node_modules / build output.
+
+/** One project's current lines of code (sum of each file's latest file_lines). */
+export interface LocProject {
+  project: string;
+  loc: number;
+}
+
+/** One point on the total-LOC-over-time curve (cumulative snapshot, not a delta). */
+export interface LocPoint {
+  date: string; // "YYYY-MM-DD"
+  loc: number;
+}
+
+/** GET /api/v1/users/current/stats/loc. */
+export interface LocPayload {
+  totalLoc: number;
+  perProject: LocProject[];
+  overTime: LocPoint[];
+}

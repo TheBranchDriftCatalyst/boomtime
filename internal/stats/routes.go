@@ -38,6 +38,7 @@ import "github.com/labstack/echo/v5"
 //	GET    /api/v1/users/current/stats/sessions         (h.Sessions)
 //	GET    /api/v1/users/current/stats/momentum         (h.Momentum)
 //	GET    /api/v1/users/current/stats/ai               (h.AIActivity)
+//	GET    /api/v1/users/current/stats/loc              (h.Loc)
 //	GET    /api/v1/users/current/stats/health           (h.HealthActivity)
 //	GET    /api/v1/users/current/workouts               (h.WorkoutList)
 //	GET    /api/v1/users/current/files                  (h.ActiveFiles)
@@ -62,6 +63,9 @@ func Register(e *echo.Echo, h *Handler) {
 
 	// gaka-1l9: wakatime.com AI-assistance metrics (heartbeats.ai_*).
 	e.GET("/api/v1/users/current/stats/ai", h.AIActivity)
+
+	// gaka-yfg: lines-of-code (total + per-project + over-time) from file_lines.
+	e.GET("/api/v1/users/current/stats/loc", h.Loc)
 
 	// HealthKit metrics feed (Wellness card + Wellness page).
 	e.GET("/api/v1/users/current/stats/health", h.HealthActivity)

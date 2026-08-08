@@ -17,6 +17,7 @@ const EXPECTED_KEYS = [
   ["punchcard"],
   ["sessions"],
   ["momentum"],
+  ["loc"],
   ["cross-project-files"],
   ["hb-explore-group"],
   ["hb-explore-list"],

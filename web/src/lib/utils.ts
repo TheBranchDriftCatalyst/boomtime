@@ -24,6 +24,21 @@ export function secondsToCompact(input: number | null | undefined): string {
 }
 
 /**
+ * Compact human count, e.g. 1_240_000 -> "1.2M", 12_400 -> "12.4K", 900 ->
+ * "900". Used for big-numeral tiles (lines of code) where a raw 6-7 digit
+ * number would blow out the tile width. Uses Intl compact notation so it
+ * localizes correctly. Non-finite / <=0 renders "0".
+ */
+export function formatCompactNumber(input: number | null | undefined): string {
+  const n = Number(input ?? 0);
+  if (!Number.isFinite(n) || n <= 0) return "0";
+  return new Intl.NumberFormat("en", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(n);
+}
+
+/**
  * Format a number of seconds like the original dashboard, e.g. "14 hrs 32 min".
  * Ported from hakatime's utils.secondsToHms.
  */

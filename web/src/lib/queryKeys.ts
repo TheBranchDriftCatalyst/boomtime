@@ -24,6 +24,7 @@ const prefix = {
   punchcard: ["punchcard"] as const,
   sessions: ["sessions"] as const,
   momentum: ["momentum"] as const,
+  loc: ["loc"] as const,
   aiActivity: ["ai-activity"] as const,
   healthActivity: ["health-activity"] as const,
   workoutList: ["workout-list"] as const,
@@ -56,6 +57,7 @@ const dashboardDependents = [
   prefix.punchcard,
   prefix.sessions,
   prefix.momentum,
+  prefix.loc,
   prefix.crossProjectFiles,
 ] as const;
 
@@ -102,6 +104,8 @@ export const qk = {
   ) => ["sessions", start, end, timeLimit, space] as const,
   momentum: (start: string, end: string, space?: SpaceScope) =>
     ["momentum", start, end, space] as const,
+  loc: (start: string, end: string, space?: SpaceScope) =>
+    ["loc", start, end, space] as const,
   aiActivity: (start: string, end: string) =>
     ["ai-activity", start, end] as const,
   healthActivity: (start: string, end: string) =>
