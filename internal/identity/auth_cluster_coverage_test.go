@@ -776,7 +776,7 @@ var _ = Describe("RefreshToken (POST /auth/refresh_token) — no cookie", func()
 			"refresh error must not emit a refresh_token cookie")
 	})
 
-	It("stale/unknown cookie → 403 ExpiredRefreshToken, no session minted", func() {
+	It("stale/unknown cookie → 401 ExpiredRefreshToken, no session minted", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
 
@@ -784,8 +784,8 @@ var _ = Describe("RefreshToken (POST /auth/refresh_token) — no cookie", func()
 		req.AddCookie(&http.Cookie{Name: "refresh_token", Value: "never-created-in-db"})
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
-		Expect(rec).To(testutil.HaveStatus(http.StatusForbidden),
-			"unknown refresh token must 403 ExpiredRefreshToken; body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusUnauthorized),
+			"unknown refresh token must 401 ExpiredRefreshToken; body=%s", rec.Body.String())
 	})
 })
 
@@ -805,15 +805,15 @@ var _ = Describe("ChangePassword — auth guard", func() {
 			"unauth ChangePassword must 400 MissingAuth, not run the verify branch; body=%s", rec.Body.String())
 	})
 
-	It("403 InvalidToken with an unknown Bearer token", func() {
+	It("401 InvalidToken with an unknown Bearer token", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
 
 		rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/password",
 			"unknown-token-doesnt-hash-to-anyone",
 			map[string]string{"currentPassword": "x", "newPassword": "y"})
-		Expect(rec).To(testutil.HaveStatus(http.StatusForbidden),
-			"unknown token must 403 InvalidToken; body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusUnauthorized),
+			"unknown token must 401 InvalidToken; body=%s", rec.Body.String())
 	})
 })
 
@@ -1399,7 +1399,7 @@ var _ = Describe("Wakatime key endpoints — auth guard", func() {
 		}
 	})
 
-	It("GET/POST/DELETE all 403 InvalidToken with an unknown Bearer token", func() {
+	It("GET/POST/DELETE all 401 InvalidToken with an unknown Bearer token", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := routerWithAuthClusterAC(hz)
 
@@ -1410,8 +1410,8 @@ var _ = Describe("Wakatime key endpoints — auth guard", func() {
 			{http.MethodDelete, "/api/v1/users/current/wakatime_key"},
 		} {
 			rec := doJSONReqG(e, m.method, m.path, bogusToken, map[string]string{"key": "x"})
-			Expect(rec).To(testutil.HaveStatus(http.StatusForbidden),
-				"%s %s: unknown token must 403 InvalidToken; body=%s",
+			Expect(rec).To(testutil.HaveStatus(http.StatusUnauthorized),
+				"%s %s: unknown token must 401 InvalidToken; body=%s",
 				m.method, m.path, rec.Body.String())
 		}
 	})
@@ -1643,7 +1643,7 @@ var _ = Describe("Auth cluster — internal-error branches (pool closed)", func(
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
 		Expect(rec).To(testutil.HaveStatus(http.StatusInternalServerError),
-			"dead pool on refresh must 500 generic, not 403 (403 would fingerprint DB errors as expired refresh); body=%s", rec.Body.String())
+			"dead pool on refresh must 500 generic, not 401 (a 401 would fingerprint DB errors as an expired/unknown refresh token); body=%s", rec.Body.String())
 	})
 
 	It("ListAPITokens with a dead pool → 500 (query fails after resolveUser)", func() {

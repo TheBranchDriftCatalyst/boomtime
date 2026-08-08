@@ -149,17 +149,17 @@ var _ = Describe("Heartbeat ingest (gaka-d6x.handler)", func() {
 				"missing auth header MUST NOT create rows anywhere (auth fires before any DB write)")
 		})
 
-		It("returns 403 (InvalidToken) for a valid-shape token that has no owner", func() {
+		It("returns 401 (InvalidToken) for a valid-shape token that has no owner", func() {
 			hz := testutil.NewHarness(GinkgoT())
 			e := hz.Router()
 			// Base64(unknown-uuid) is a valid Authorization token FORMAT, but
-			// GetUserByToken returns not-found → InvalidToken (403). This
+			// GetUserByToken returns not-found → InvalidToken (401). This
 			// pins the no-oracle rule: server never reveals whether the
 			// token was well-formed vs unknown vs stolen.
 			bogus := base64.StdEncoding.EncodeToString([]byte("00000000-0000-0000-0000-000000000000"))
 			body := map[string]any{"time": float64(time.Now().Unix()), "entity": "x.go", "type": "file", "user_agent": "wakatime/1 (Linux) go/1 vscode"}
 			rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/heartbeats", bogus, body)
-			Expect(rec).To(testutil.HaveStatus(http.StatusForbidden))
+			Expect(rec).To(testutil.HaveStatus(http.StatusUnauthorized))
 		})
 
 		It("stores a single heartbeat AND enriches sender+editor+plugin+platform+machine from headers/UA", func() {
@@ -506,12 +506,12 @@ var _ = Describe("HeartbeatsLatest (GET /api/v1/users/current/heartbeats/latest)
 			"bob's lastHeartbeat drifted: got %v, want %v", bobParsed, bobMax.UTC())
 	})
 
-	It("returns 403 for a token that has no owner (no oracle: bogus vs missing look identical)", func() {
+	It("returns 401 for a token that has no owner (no oracle: bogus vs missing look identical)", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
 		bogus := base64.StdEncoding.EncodeToString([]byte("00000000-0000-0000-0000-000000000000"))
 		rec := doJSONReqG(e, http.MethodGet, "/api/v1/users/current/heartbeats/latest", bogus, nil)
-		Expect(rec).To(testutil.HaveStatus(http.StatusForbidden))
+		Expect(rec).To(testutil.HaveStatus(http.StatusUnauthorized))
 	})
 })
 
@@ -904,22 +904,22 @@ var _ = Describe("HealthSamples ingest (gaka-d6x.handler)", func() {
 			"MissingAuth must fire before the DB is touched")
 	})
 
-	It("POST /health_samples: 403 (InvalidToken) for a well-formed but unknown token — no oracle", func() {
+	It("POST /health_samples: 401 (InvalidToken) for a well-formed but unknown token — no oracle", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
 		bogus := base64.StdEncoding.EncodeToString([]byte("00000000-0000-0000-0000-000000000000"))
 		body := map[string]any{"kind": "steps", "unit": "count", "qty": 1.0, "ts_start": float64(time.Now().Unix())}
 		rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/health_samples", bogus, body)
-		Expect(rec).To(testutil.HaveStatus(http.StatusForbidden))
+		Expect(rec).To(testutil.HaveStatus(http.StatusUnauthorized))
 	})
 
-	It("POST /health_samples.bulk: 403 for a well-formed but unknown token — cross-user oracle safe", func() {
+	It("POST /health_samples.bulk: 401 for a well-formed but unknown token — cross-user oracle safe", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
 		bogus := base64.StdEncoding.EncodeToString([]byte("00000000-0000-0000-0000-000000000000"))
 		body := map[string]any{"data": []map[string]any{{"kind": "steps", "unit": "count", "qty": 1.0, "ts_start": float64(time.Now().Unix())}}}
 		rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/health_samples.bulk", bogus, body)
-		Expect(rec).To(testutil.HaveStatus(http.StatusForbidden))
+		Expect(rec).To(testutil.HaveStatus(http.StatusUnauthorized))
 	})
 
 	It("POST /health_samples: single sample persists as 202 accepted", func() {

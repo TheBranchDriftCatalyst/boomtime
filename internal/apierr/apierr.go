@@ -45,7 +45,14 @@ func MissingRefreshTokenCookie() *Error {
 }
 
 func InvalidToken() *Error {
-	return New(http.StatusForbidden, "The given api token doesn't belong to a user", nil)
+	// 401, not 403: an unknown/expired bearer token is an AUTHENTICATION
+	// failure (re-auth may succeed), not an authorization denial. 403 here was
+	// a debugging trap (it masqueraded as a capability denial) AND made clients
+	// misbehave — the web FE only runs its single-flight refresh-retry on 401,
+	// and Wakatime editor plugins treat 401 as retryable but 403 as
+	// permanently-forbidden (silent ingest death on token expiry — that was a
+	// real multi-day heartbeat outage: expired tokens 403'd, and clients gave up).
+	return New(http.StatusUnauthorized, "The given api token doesn't belong to a user", nil)
 }
 
 func InvalidRelation(user, project string) *Error {
@@ -54,7 +61,11 @@ func InvalidRelation(user, project string) *Error {
 }
 
 func ExpiredRefreshToken() *Error {
-	return New(http.StatusForbidden, "The given api token has expired", nil)
+	// 401 (see InvalidToken): an expired/unknown refresh cookie is an
+	// authentication failure. The FE's refresh helper does a DIRECT fetch (not
+	// through the interceptor), so a 401 here can't recurse — it resolves the
+	// single-flight refresh as failed and the app falls through to login.
+	return New(http.StatusUnauthorized, "The given api token has expired", nil)
 }
 
 func DisabledRegistration() *Error {

@@ -223,7 +223,7 @@ var _ = Describe("WidgetSvg extras (gaka-d6x.handler)", func() {
 	})
 
 	Describe("WidgetLinkList auth + isolation", func() {
-		It("requires auth: NO header → 400 MissingAuth (pinned per apierr.MissingAuth); INVALID token → 403 InvalidToken", func() {
+		It("requires auth: NO header → 400 MissingAuth (pinned per apierr.MissingAuth); INVALID token → 401 InvalidToken", func() {
 			hz := testutil.NewHarness(GinkgoTB())
 			e := hz.Router()
 
@@ -244,12 +244,12 @@ var _ = Describe("WidgetSvg extras (gaka-d6x.handler)", func() {
 				"expected MissingAuth message referencing 'Authorization'; got %s", rec.Body.String())
 
 			// Case 2: syntactically-present but garbage token → InvalidToken
-			// (403 per apierr.InvalidToken and handler.go:214). Different code
+			// (401 per apierr.InvalidToken and handler.go:214). Different code
 			// path (GetUserByToken returns ok=false) — pinning it catches a
 			// broken auth pipeline that would 500 or silently 200.
 			rec = doG(e, http.MethodGet, "/api/v1/users/current/widgets/links", "garbage-token", nil)
-			Expect(rec).To(testutil.HaveStatus(http.StatusForbidden),
-				"InvalidToken must return exactly 403 (per apierr.InvalidToken); got %d body=%s",
+			Expect(rec).To(testutil.HaveStatus(http.StatusUnauthorized),
+				"InvalidToken must return exactly 401 (per apierr.InvalidToken); got %d body=%s",
 				rec.Code, rec.Body.String())
 			Expect(rec.Body.String()).NotTo(ContainSubstring("linkId"),
 				"AUTH LEAK: invalid-token response contained link data: body=%s", rec.Body.String())

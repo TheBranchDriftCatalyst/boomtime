@@ -377,17 +377,17 @@ var _ = Describe("ImportJobs (list)", func() {
 			"cross-user leak: user B's list contained user A's job id")
 	})
 
-	It("403 on a bogus token AND missing auth is 400 — never leaks another owner's list", func() {
-		// PIN exact status per apierr: MissingAuth=400, InvalidToken=403.
+	It("401 on a bogus token AND missing auth is 400 — never leaks another owner's list", func() {
+		// PIN exact status per apierr: MissingAuth=400, InvalidToken=401.
 		// A regression (500 panic with a stack containing user emails, or a
 		// 302 that redirects to another owner's list) would pass a `>= 400`
 		// check silently — anti-oracle: body must never contain "jobs".
 		deps := newImportDeps("")
 
-		// Bogus token → 403 InvalidToken (no such row in api_tokens).
+		// Bogus token → 401 InvalidToken (no such row in api_tokens).
 		recBogus := jsonReq(deps.Router, http.MethodGet, "/api/v1/users/current/import/jobs", "not-a-real-token", nil)
-		Expect(recBogus).To(testutil.HaveStatus(http.StatusForbidden),
-			"bogus token MUST be 403 (InvalidToken); got %d body=%s", recBogus.Code, recBogus.Body.String())
+		Expect(recBogus).To(testutil.HaveStatus(http.StatusUnauthorized),
+			"bogus token MUST be 401 (InvalidToken); got %d body=%s", recBogus.Code, recBogus.Body.String())
 		Expect(recBogus.Body.String()).NotTo(ContainSubstring(`"jobs"`),
 			"leak: unauth response contained a jobs list; body=%s", recBogus.Body.String())
 

@@ -10,7 +10,7 @@
 // check and returns 500 would slip through a `>=400` assertion:
 //
 //   - Missing Authorization header → apierr.MissingAuth() → 400.
-//   - Present-but-unknown token   → apierr.InvalidToken() → 403.
+//   - Present-but-unknown token   → apierr.InvalidToken() → 401.
 //
 // Also covers unauth on spaces + labels admin endpoints.
 package curation_test
@@ -58,7 +58,7 @@ var _ = Describe("Curation endpoints reject unauthenticated requests", func() {
 		}
 	})
 
-	It("returns exactly 403 (InvalidToken) with an unknown-but-well-formed Authorization header", func() {
+	It("returns exactly 401 (InvalidToken) with an unknown-but-well-formed Authorization header", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
 		paths := []struct {
@@ -70,12 +70,12 @@ var _ = Describe("Curation endpoints reject unauthenticated requests", func() {
 			{http.MethodPost, "/api/v1/users/current/curation/1/purge"},
 		}
 		// A syntactically valid but unknown token — MissingAuth fires only
-		// when the header is absent; a lookup miss returns InvalidToken (403).
+		// when the header is absent; a lookup miss returns InvalidToken (401).
 		bogus := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 		for _, p := range paths {
 			rec := doJSONReqG(e, p.method, p.path, bogus, nil)
-			Expect(rec).To(testutil.HaveStatus(http.StatusForbidden),
-				"%s %s: unknown token must be exactly 403, never 500", p.method, p.path)
+			Expect(rec).To(testutil.HaveStatus(http.StatusUnauthorized),
+				"%s %s: unknown token must be exactly 401, never 500", p.method, p.path)
 		}
 	})
 })
@@ -105,7 +105,7 @@ var _ = Describe("Space endpoints reject unauthenticated requests", func() {
 		}
 	})
 
-	It("returns exactly 403 (InvalidToken) with a bogus token", func() {
+	It("returns exactly 401 (InvalidToken) with a bogus token", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
 		bogus := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -117,8 +117,8 @@ var _ = Describe("Space endpoints reject unauthenticated requests", func() {
 		}
 		for _, p := range paths {
 			rec := doJSONReqG(e, p.method, p.path, bogus, nil)
-			Expect(rec).To(testutil.HaveStatus(http.StatusForbidden),
-				"%s %s: unknown token must be exactly 403", p.method, p.path)
+			Expect(rec).To(testutil.HaveStatus(http.StatusUnauthorized),
+				"%s %s: unknown token must be exactly 401", p.method, p.path)
 		}
 	})
 })
@@ -143,7 +143,7 @@ var _ = Describe("Admin label endpoints reject unauthenticated requests", func()
 		}
 	})
 
-	It("returns exactly 403 (InvalidToken) on admin endpoints with a bogus token", func() {
+	It("returns exactly 401 (InvalidToken) on admin endpoints with a bogus token", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
 		bogus := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -155,8 +155,8 @@ var _ = Describe("Admin label endpoints reject unauthenticated requests", func()
 		}
 		for _, p := range paths {
 			rec := doJSONReqG(e, p.method, p.path, bogus, nil)
-			Expect(rec).To(testutil.HaveStatus(http.StatusForbidden),
-				"%s %s: unknown token must be exactly 403", p.method, p.path)
+			Expect(rec).To(testutil.HaveStatus(http.StatusUnauthorized),
+				"%s %s: unknown token must be exactly 401", p.method, p.path)
 		}
 	})
 })

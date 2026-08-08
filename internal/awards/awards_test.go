@@ -282,7 +282,7 @@ var _ = Describe("AwardsLog (gaka-mwp-streaks)", func() {
 	// That would silently pass on a 404 (route missing) or a 405
 	// (misconfigured method) while auth is bypassed elsewhere. Pin the exact
 	// contract: apierr.MissingAuth() → 400 for absent header, apierr.
-	// InvalidToken() → 403 for a token that doesn't map to a user.
+	// InvalidToken() → 401 for a token that doesn't map to a user.
 	It("requires auth — unauthenticated POST returns exactly 400 (MissingAuth)", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "awardsloggen"))
 		e := awardsAuxRouter(hz)
@@ -295,18 +295,18 @@ var _ = Describe("AwardsLog (gaka-mwp-streaks)", func() {
 			rec.Code, rec.Body.String())
 	})
 
-	// gaka-d6x.handler critique: cover the InvalidToken (403) branch that
+	// gaka-d6x.handler critique: cover the InvalidToken (401) branch that
 	// no test in the suite exercises. A made-up token reaches
-	// GetUserByToken → ok=false → apierr.InvalidToken() → 403.
-	It("rejects a syntactically-valid but unknown token with exactly 403 (InvalidToken)", func() {
+	// GetUserByToken → ok=false → apierr.InvalidToken() → 401.
+	It("rejects a syntactically-valid but unknown token with exactly 401 (InvalidToken)", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "awardsloggen"))
 		e := awardsAuxRouter(hz)
 
 		rec := doPostJSONG(e, "/api/v1/users/current/awards/log", "not-a-real-token-abc123", map[string]any{
 			"items": []map[string]any{{"labelId": "x", "periodType": "daily"}},
 		})
-		Expect(rec).To(testutil.HaveStatus(http.StatusForbidden),
-			"unknown token must yield exactly 403 (apierr.InvalidToken); got %d body=%s",
+		Expect(rec).To(testutil.HaveStatus(http.StatusUnauthorized),
+			"unknown token must yield exactly 401 (apierr.InvalidToken); got %d body=%s",
 			rec.Code, rec.Body.String())
 	})
 
@@ -314,7 +314,7 @@ var _ = Describe("AwardsLog (gaka-mwp-streaks)", func() {
 	// was covered. ParseAuthHeader requires the "Basic" prefix — a "Bearer"
 	// header (or any non-Basic scheme) fails the prefix strip and yields
 	// MissingAuth → 400. A garbled "Basic" body reaches GetUserByToken
-	// and returns InvalidToken → 403.
+	// and returns InvalidToken → 401.
 	It("rejects malformed Authorization headers with the correct status per branch", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "awardsloggen"))
 		e := awardsAuxRouter(hz)
@@ -326,7 +326,7 @@ var _ = Describe("AwardsLog (gaka-mwp-streaks)", func() {
 		}{
 			{"Bearer scheme → MissingAuth (no Basic prefix)", "Bearer sometoken", http.StatusBadRequest},
 			{"garbage no-scheme → MissingAuth", "garbage", http.StatusBadRequest},
-			{"Basic <garbage> → InvalidToken", "Basic YWJjZGVmZ2hpams=", http.StatusForbidden},
+			{"Basic <garbage> → InvalidToken", "Basic YWJjZGVmZ2hpams=", http.StatusUnauthorized},
 			{"Basic with empty value → MissingAuth (post-trim empty)", "Basic ", http.StatusBadRequest},
 		}
 		for _, tc := range cases {
@@ -458,14 +458,14 @@ var _ = Describe("AwardsStreaks (gaka-mwp-streaks)", func() {
 
 	// gaka-d6x.handler critique: cover the InvalidToken branch on
 	// /awards/streaks specifically. Every previous spec used a valid or
-	// empty token; a made-up token exercises the resolveUser → 403 path.
-	It("rejects unknown-token GET /awards/streaks with exactly 403 (InvalidToken)", func() {
+	// empty token; a made-up token exercises the resolveUser → 401 path.
+	It("rejects unknown-token GET /awards/streaks with exactly 401 (InvalidToken)", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "awardsstreaks"))
 		e := hz.Router()
 
 		rec := getJSONG(e, "/api/v1/users/current/awards/streaks", "made-up-token-xyz")
-		Expect(rec).To(testutil.HaveStatus(http.StatusForbidden),
-			"unknown token must yield exactly 403 (InvalidToken); got %d body=%s",
+		Expect(rec).To(testutil.HaveStatus(http.StatusUnauthorized),
+			"unknown token must yield exactly 401 (InvalidToken); got %d body=%s",
 			rec.Code, rec.Body.String())
 	})
 })
@@ -666,16 +666,16 @@ var _ = Describe("AwardsLedger (gaka-mwp-streaks)", func() {
 			rec.Code, rec.Body.String())
 	})
 
-	// gaka-d6x.handler critique: cover the InvalidToken (403) branch on
+	// gaka-d6x.handler critique: cover the InvalidToken (401) branch on
 	// this endpoint too — no test in the suite exercised /ledger with a
 	// made-up token.
-	It("rejects unknown-token GET /awards/ledger with exactly 403 (InvalidToken)", func() {
+	It("rejects unknown-token GET /awards/ledger with exactly 401 (InvalidToken)", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "awardsledger"))
 		e := hz.Router()
 
 		rec := getJSONG(e, "/api/v1/users/current/awards/ledger", "made-up-token-xyz")
-		Expect(rec).To(testutil.HaveStatus(http.StatusForbidden),
-			"unknown token must yield exactly 403 (InvalidToken); got %d body=%s",
+		Expect(rec).To(testutil.HaveStatus(http.StatusUnauthorized),
+			"unknown token must yield exactly 401 (InvalidToken); got %d body=%s",
 			rec.Code, rec.Body.String())
 	})
 
@@ -823,14 +823,14 @@ var _ = Describe("OwnAwards auth gate (gaka-hc6.3)", func() {
 			rec.Code, rec.Body.String())
 	})
 
-	// Companion InvalidToken spec — pin the 403 branch too.
-	It("unknown-token GET /awards returns exactly 403 (InvalidToken)", func() {
+	// Companion InvalidToken spec — pin the 401 branch too.
+	It("unknown-token GET /awards returns exactly 401 (InvalidToken)", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "ownawardsauth"))
 		e := hz.Router()
 
 		rec := getJSONG(e, "/api/v1/users/current/awards", "made-up-token-xyz")
-		Expect(rec).To(testutil.HaveStatus(http.StatusForbidden),
-			"unknown token must yield exactly 403 (InvalidToken); got %d body=%s",
+		Expect(rec).To(testutil.HaveStatus(http.StatusUnauthorized),
+			"unknown token must yield exactly 401 (InvalidToken); got %d body=%s",
 			rec.Code, rec.Body.String())
 	})
 })

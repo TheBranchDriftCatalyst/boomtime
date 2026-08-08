@@ -174,7 +174,7 @@ func ResolveOwnerFromCookie(database *db.DB, logger *slog.Logger, c *echo.Contex
 }
 
 // ResolveUser maps a token to its owning username (Db.getUserByToken).
-// Returns InvalidToken (403) if the token has no owner (UnknownApiToken).
+// Returns InvalidToken (401) if the token has no owner (UnknownApiToken).
 func ResolveUser(database *db.DB, c *echo.Context) (string, string, *apierr.Error) {
 	tkn, aerr := TokenFromHeader(c)
 	if aerr != nil {

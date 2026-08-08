@@ -36,9 +36,9 @@ var _ = Describe("DBImport guards", func() {
 		rec := doRawG(e, http.MethodPost, "/api/v1/users/current/db/import?confirm=replace-all-data", "", nil)
 		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest), "no auth: got %d", rec.Code)
 
-		// Bogus token → 403.
+		// Bogus token → 401.
 		rec = doRawG(e, http.MethodGet, "/api/v1/users/current/db/export", "bogus", nil)
-		Expect(rec).To(testutil.HaveStatus(http.StatusForbidden), "bad token export: got %d", rec.Code)
+		Expect(rec).To(testutil.HaveStatus(http.StatusUnauthorized), "bad token export: got %d", rec.Code)
 
 		// Auth'd but missing the confirm param → 400, and nothing is truncated.
 		user2, _ := hz.MintUser("backupguard2_g")
