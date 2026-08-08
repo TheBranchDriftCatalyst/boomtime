@@ -1,10 +1,11 @@
-// ContributionCalendar.test.tsx (gaka-csx P3) — the additive-invariant guard
-// for the GitHub commit overlay.
+// ContributionCalendar.test.tsx (gaka-csx P3 / gaka-nmk) — the additive-invariant
+// guard for the GitHub commit overlay.
 //
 // Invariant (A): when NO `ghValues` prop is supplied, the calendar renders
 // BYTE-IDENTICAL to the coding-time-only calendar — no overlay DOM, no message.
-// When `ghValues` IS supplied, a GitHub-green corner mark (`path.gh-corner`)
-// appears on each day with commits, layered over the unchanged base cells.
+// When `ghValues` IS supplied, the commit COUNT is drawn as a text label
+// (`text.gh-count`) on each day with commits, layered over the unchanged base
+// cells. (gaka-nmk replaced the old low-contrast `path.gh-corner` triangle.)
 //
 // jsdom has no layout; ContributionCalendar draws with sizeToFrame:false so the
 // D3 draw runs on mount regardless of a measured width — the cells + overlay are
@@ -20,7 +21,7 @@ const gh = [10, 0, 20, 5]; // GitHub commits/day (3 non-zero days)
 /** Serialize the svg with every overlay mark removed — the "base" structure. */
 function baseStructure(svg: SVGSVGElement): string {
   const clone = svg.cloneNode(true) as SVGSVGElement;
-  clone.querySelectorAll("path.gh-corner").forEach((n) => n.remove());
+  clone.querySelectorAll("text.gh-count").forEach((n) => n.remove());
   return clone.innerHTML;
 }
 
@@ -33,14 +34,14 @@ describe("ContributionCalendar GitHub overlay (gaka-csx P3)", () => {
       expect(container.querySelectorAll("g.day").length).toBe(dates.length),
     );
     // The invariant: zero overlay DOM when the prop is absent.
-    expect(container.querySelectorAll("path.gh-corner").length).toBe(0);
+    expect(container.querySelectorAll("text.gh-count").length).toBe(0);
     // Base cells: a floor rect + a primary rect per day.
     expect(container.querySelectorAll("g.day rect").length).toBe(
       dates.length * 2,
     );
   });
 
-  it("adds a gh-corner per commit-day WITHOUT changing the base cell structure", async () => {
+  it("adds a gh-count label per commit-day WITHOUT changing the base cell structure", async () => {
     const withoutGh = render(
       <ContributionCalendar dates={dates} values={values} />,
     );
@@ -58,17 +59,16 @@ describe("ContributionCalendar GitHub overlay (gaka-csx P3)", () => {
     );
     await waitFor(() =>
       expect(
-        withGh.container.querySelectorAll("path.gh-corner").length,
+        withGh.container.querySelectorAll("text.gh-count").length,
       ).toBeGreaterThan(0),
     );
     const overlaySvg = withGh.container.querySelector("svg")!;
 
-    // One overlay mark per day that had commits (3 of 4).
-    expect(overlaySvg.querySelectorAll("path.gh-corner").length).toBe(3);
-    // Every overlay mark uses the GitHub-green brand color, distinct from --primary.
-    overlaySvg.querySelectorAll("path.gh-corner").forEach((p) => {
-      expect(p.getAttribute("fill")).toBe("#39d353");
-    });
+    // One label per day that had commits (3 of 4).
+    const labels = overlaySvg.querySelectorAll("text.gh-count");
+    expect(labels.length).toBe(3);
+    // Each label renders the actual commit COUNT for that day, in order.
+    expect([...labels].map((n) => n.textContent)).toEqual(["10", "20", "5"]);
     // Byte-identical base: stripping the overlay yields the exact same DOM as
     // the no-overlay render (the overlay is purely additive).
     expect(baseStructure(overlaySvg)).toBe(baseHtml);

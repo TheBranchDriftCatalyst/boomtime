@@ -13,20 +13,27 @@ interface ContributionCalendarProps {
   // RAW daily series (NOT weekly-bucketed): parallel arrays.
   dates: string[];
   values: number[]; // seconds per day
-  // gaka-csx P3: OPTIONAL GitHub contribution-count overlay, aligned
+  // gaka-csx P3 / gaka-nmk: OPTIONAL GitHub contribution-count overlay, aligned
   // index-for-index to `dates`/`values`. When ABSENT the render is
   // byte-identical to the coding-time-only calendar (the additive invariant):
-  // no extra DOM, no message. When PRESENT, each day with GitHub commits gets a
-  // small GitHub-green corner mark scaled by that day's commit count, layered
-  // over (not replacing) the coding-time intensity fill.
+  // no extra DOM, no message. When PRESENT, each day with ≥1 commit gets the
+  // commit COUNT drawn as a small, crisp text label centered in the cell —
+  // near-white with a dark halo so it reads over both the empty floor and the
+  // teal coding-time fill (the old green-on-teal corner triangle camouflaged).
   ghValues?: number[];
 }
 
-const CELL = 13;
+// gaka-nmk: bumped 13 → 15 so a 1–2 digit commit count fits legibly in-cell.
+const CELL = 15;
 const GAP = 3;
-// GitHub-brand green for the commit overlay — deliberately distinct from
-// --primary (the coding-time intensity) so the two series never read as one.
-const GH_ACCENT = "#39d353";
+// gaka-nmk: below this cell size the in-cell count would be cramped/illegible,
+// so we fall back to the tooltip only (which still carries the commits row).
+const MIN_CELL_FOR_GH_LABEL = 12;
+// Near-white label + dark halo for the GH commit count. Chosen over the
+// GitHub-green (#39d353) corner mark it replaces: green-on-teal camouflaged,
+// whereas a light glyph with a dark stroke reads on every fill in the ramp.
+const GH_LABEL_FILL = "#f4fff7";
+const GH_LABEL_HALO = "rgba(0, 0, 0, 0.82)";
 const WEEKDAY_LABELS = ["", "Mon", "", "Wed", "", "Fri", ""];
 const MARGIN = { top: 20, right: 0, bottom: 0, left: 30 };
 const GRID_H = 7 * (CELL + GAP); // 7 weekday rows
@@ -179,27 +186,36 @@ export function ContributionCalendar({ dates, values, ghValues }: ContributionCa
         })
         .on("mouseleave", hideTip);
 
-      // gaka-csx P3: GitHub commit overlay. A GitHub-green corner triangle per
-      // day that had commits, its leg scaled by that day's share of the busiest
-      // GH day, layered over the coding-time fill. Rendered ONLY when the
-      // overlay is active AND there is at least one commit in the window — so an
-      // absent (or all-zero) overlay adds no DOM, preserving invariant (A).
+      // gaka-nmk: GitHub commit overlay, now the COUNT as a text label instead
+      // of the old green corner triangle (which was invisible green-on-teal).
+      // One label per day that had commits, centered in the cell, drawn over
+      // the coding-time fill. Rendered ONLY when the overlay is active, there is
+      // at least one commit in the window, AND the cell is large enough for the
+      // number to read — so an absent (or all-zero) overlay adds no DOM,
+      // preserving invariant (A). Below the size threshold we skip the label and
+      // let the tooltip's "GitHub commits" row carry it.
       const ghMax = ghActive ? (d3.max(days, (d) => d.gh) ?? 0) : 0;
-      if (ghActive && ghMax > 0) {
-        const MIN_LEG = 4; // a visible minimum even for a single commit
+      if (ghActive && ghMax > 0 && CELL >= MIN_CELL_FOR_GH_LABEL) {
         cellG
           .filter((d) => d.gh > 0)
-          .append("path")
-          .attr("class", "gh-corner")
-          .attr("d", (d) => {
-            const t = ghMax > 0 ? d.gh / ghMax : 0;
-            const leg = MIN_LEG + Math.round(t * (CELL - MIN_LEG));
-            // Right-angle triangle tucked into the cell's top-right corner.
-            return `M${CELL - leg},0 L${CELL},0 L${CELL},${leg} Z`;
-          })
-          .attr("fill", GH_ACCENT)
-          .attr("fill-opacity", 0.95)
-          .style("pointer-events", "none");
+          .append("text")
+          .attr("class", "gh-count")
+          .attr("x", CELL / 2)
+          .attr("y", CELL / 2)
+          .attr("text-anchor", "middle")
+          .attr("dominant-baseline", "central")
+          .style("font-size", "9px")
+          .style("font-weight", "700")
+          .style("font-family", "var(--font-mono, ui-monospace, monospace)")
+          // paint-order:stroke draws the dark halo UNDER the fill, so the light
+          // glyph stays crisp over both the empty floor and the neon teal fill.
+          .style("paint-order", "stroke")
+          .style("stroke", GH_LABEL_HALO)
+          .style("stroke-width", "2.5px")
+          .style("stroke-linejoin", "round")
+          .attr("fill", GH_LABEL_FILL)
+          .style("pointer-events", "none")
+          .text((d) => d.gh);
       }
 
       // Weekday row labels.

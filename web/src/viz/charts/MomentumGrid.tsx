@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import * as d3 from "d3";
-import { secondsToHms, truncate } from "@/lib/utils";
+import { secondsToCompact, secondsToHms, truncate } from "@/lib/utils";
 import { cssVar } from "@/viz/d3/useChartFrame";
 import { useD3Surface } from "@/viz/d3/useD3Surface";
 import { ChartSurface } from "@/viz/d3/ChartSurface";
@@ -14,16 +14,27 @@ import type { MomentumPayload } from "@/types/api";
 interface MomentumGridProps {
   data: MomentumPayload | undefined;
   rowHeight?: number;
+  // gaka-nmk: render each active cell's value (compact hrs/min) centered in the
+  // rect. Self-suppressing — a cell only gets a label when it's big enough for
+  // the number to read (see MIN_CELL_W/H), so narrow week columns stay clean.
+  // Defaults on; pass false to force the plain heatmap.
+  showValues?: boolean;
 }
 
 const MARGIN = { top: 6, right: 8, bottom: 26, left: 110 };
+
+// gaka-nmk: min cell footprint for an in-cell value label. Below either bound
+// the compact duration ("2h 5m") would clip or crowd, so we skip it and leave
+// the tooltip to carry the exact value.
+const MIN_CELL_W = 40;
+const MIN_CELL_H = 16;
 
 /**
  * Project x week momentum heatmap: rows = top projects, cols = weeks, cell
  * intensity ∝ seconds (per-row scale so each project's ramp shows). Reveals
  * which projects are heating up / cooling down. Row label + hover.
  */
-export function MomentumGrid({ data, rowHeight = 26 }: MomentumGridProps) {
+export function MomentumGrid({ data, rowHeight = 26, showValues = true }: MomentumGridProps) {
   const rows = useMemo(() => data?.projects ?? [], [data]);
   const weeks = useMemo(() => data?.weeks ?? [], [data]);
   const height = Math.max(120, rows.length * rowHeight + 40);
@@ -155,8 +166,36 @@ export function MomentumGrid({ data, rowHeight = 26 }: MomentumGridProps) {
           );
         })
         .on("mouseleave", hideTip);
+
+      // gaka-nmk: in-cell value labels. Only when opted in AND the cell is large
+      // enough for the compact duration to read — narrow week columns get no
+      // label (the tooltip still carries the exact value). Light glyph + dark
+      // halo so it reads over the full primary-opacity ramp underneath.
+      if (
+        showValues &&
+        x.bandwidth() >= MIN_CELL_W &&
+        y.bandwidth() >= MIN_CELL_H
+      ) {
+        g.selectAll("text.cell-value")
+          .data(cells.filter((c) => c.seconds > 0))
+          .join("text")
+          .attr("class", "cell-value")
+          .attr("x", (c) => (x(c.wi) ?? 0) + x.bandwidth() / 2)
+          .attr("y", (c) => (y(c.project) ?? 0) + y.bandwidth() / 2)
+          .attr("text-anchor", "middle")
+          .attr("dominant-baseline", "central")
+          .style("font-size", "9px")
+          .style("font-family", "var(--font-mono, ui-monospace, monospace)")
+          .style("paint-order", "stroke")
+          .style("stroke", "rgba(0, 0, 0, 0.7)")
+          .style("stroke-width", "2px")
+          .style("stroke-linejoin", "round")
+          .attr("fill", "rgba(255, 255, 255, 0.92)")
+          .style("pointer-events", "none")
+          .text((c) => secondsToCompact(c.seconds));
+      }
     },
-    [rows, weeks],
+    [rows, weeks, showValues],
   );
 
   // Momentum buckets by ISO week, so ranges shorter than ~2 weeks collapse to
