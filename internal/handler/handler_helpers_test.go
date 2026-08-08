@@ -1,7 +1,7 @@
 // handler_helpers_test.go — internal-package (package handler) coverage
 // for the small helpers that remain on the composition facade after
-// gaka-8tn phase 8: statsCacheTTL env parsing + the three setter
-// methods (SetLabelImagesWorker / SetImageJobQueue / SetBackfillJobQueue).
+// gaka-8tn phase 8: statsCacheTTL env parsing + the setter methods
+// (SetLabelImagesWorker / SetImageJobQueue).
 //
 // The former resolveOwnerFromCookie / loadSpace / resolveUser / cachedJSON
 // / cachedBlob coverage moved to internal/apihelpers/apihelpers_test.go
@@ -17,7 +17,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	backfilljobs "github.com/TheBranchDriftCatalyst/boomtime/internal/queue/backfilljobs"
 	imagejobs "github.com/TheBranchDriftCatalyst/boomtime/internal/queue/imagejobs"
 	labelimages "github.com/TheBranchDriftCatalyst/boomtime/internal/worker/labelimages"
 )
@@ -56,7 +55,7 @@ var _ = Describe("statsCacheTTL (BOOM_STATS_CACHE_TTL)", func() {
 	})
 })
 
-var _ = Describe("Handler post-construction setters (SetLabelImagesWorker / SetImageJobQueue / SetBackfillJobQueue)", func() {
+var _ = Describe("Handler post-construction setters (SetLabelImagesWorker / SetImageJobQueue)", func() {
 	// The setters are 2-line assignments; the invariant here is that they
 	// leave the field on the SAME Handler pointer (not a copy) — which is
 	// load-bearing because cmd/boomtime constructs the handler before the
@@ -76,13 +75,5 @@ var _ = Describe("Handler post-construction setters (SetLabelImagesWorker / SetI
 		r := &imagejobs.Registry{}
 		h.SetImageJobQueue(r)
 		Expect(h.ImageJobQueue).To(BeIdenticalTo(r))
-	})
-
-	It("SetBackfillJobQueue mutates the receiver's field", func() {
-		h := &Handler{}
-		Expect(h.BackfillJobQueue).To(BeNil())
-		r := &backfilljobs.Registry{}
-		h.SetBackfillJobQueue(r)
-		Expect(h.BackfillJobQueue).To(BeIdenticalTo(r))
 	})
 })

@@ -1,15 +1,14 @@
 // Package admin owns the HTTP surface for operator/observability
-// endpoints: label-image regeneration (gaka-myv / gaka-8bz), git-history
-// backfill (gaka-vh8), whole-DB backup + destructive restore, the
-// wakatime.com import cluster, source-health observability, and the
-// public label-image GET (the read-only face of the same subsystem).
+// endpoints: label-image regeneration (gaka-myv / gaka-8bz), whole-DB
+// backup + destructive restore, the wakatime.com import cluster,
+// source-health observability, and the public label-image GET (the
+// read-only face of the same subsystem).
 //
 // Extracted from internal/handler/ as part of gaka-8tn phase 7. Domain
 // scope covers the operator/admin/observability surface plus the small
 // public read that pairs with the label-images admin flow. Anything
-// that WRITES heartbeats via SaveHeartbeats (importer, backfill worker)
-// stays a leaf under internal/importer or internal/backfill/git — the
-// admin domain USES those, it does not OWN them.
+// that WRITES heartbeats via SaveHeartbeats (the importer) stays a leaf
+// under internal/importer — the admin domain USES it, it does not OWN it.
 //
 // SECURITY POSTURE: every admin-gated endpoint runs requireAdmin BEFORE
 // reading the body so a non-admin request never costs a body allocation.
@@ -35,7 +34,6 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/backfilljobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/imagejobs"
 	labelimages "github.com/TheBranchDriftCatalyst/boomtime/internal/worker/labelimages"
 )
@@ -44,15 +42,14 @@ import (
 // dependencies that the admin domain actually reads. Everything else
 // stays out of this package.
 //
-//   - DB     — every admin/backfill/import/backup read + write, plus the
+//   - DB     — every admin/import/backup read + write, plus the
 //     public label-image GET and source-health list
 //   - Cfg    — admin allowlist (IsAdmin), label-images feature flags,
 //     ComfyUI shim config, and the server-side Wakatime API key fallback
 //     used by the import cluster
 //   - Logger — export/restore success + failure logging, warn lines from
 //     the wakatime range/token lookups, import job progress + WS blips
-//   - Cache  — busted on backfill writes (heartbeat inserts + backfill
-//     row deletions) and on the RestoreAll path so dashboards + widgets
+//   - Cache  — busted on the RestoreAll path so dashboards + widgets
 //     pick up the new state on the next fetch
 //   - Worker + Hub — the durable import-job worker + fan-out hub for the
 //     wakatime.com import cluster. Both non-nil in production; the god
@@ -61,10 +58,6 @@ import (
 //     cmd/boomtime once the label-images feature initializes (nil is a
 //     supported production configuration = feature disabled; the
 //     handlers detect nil and return 503)
-//   - BackfillJobQueue — the in-memory registry backing the git-history
-//     backfill CLI flow (gaka-vh8). Always non-nil in prod; kept as an
-//     injected pointer for symmetry with the label-images queue and so
-//     tests can wire a per-test registry with tight retention
 type Handler struct {
 	DB                *db.DB
 	Cfg               *config.Config
@@ -74,11 +67,10 @@ type Handler struct {
 	Hub               *importer.Hub
 	LabelImagesWorker *labelimages.Worker
 	ImageJobQueue     *imagejobs.Registry
-	BackfillJobQueue  *backfilljobs.Registry
 }
 
 // New constructs an admin.Handler with the passed-in shared deps.
-// LabelImagesWorker / ImageJobQueue / BackfillJobQueue are wired
+// LabelImagesWorker / ImageJobQueue are wired
 // AFTER construction via the corresponding Set* methods (called from
 // cmd/boomtime once the workers/queues initialize). Every other field
 // is required in production; nil-checks are the caller's responsibility
@@ -110,18 +102,10 @@ func (h *Handler) SetImageJobQueue(r *imagejobs.Registry) {
 	h.ImageJobQueue = r
 }
 
-// SetBackfillJobQueue wires the backfilljobs.Registry (gaka-vh8).
-// Always non-nil in prod; kept as a setter for symmetry with
-// SetImageJobQueue and so tests can inject a per-test registry with
-// tight retention.
-func (h *Handler) SetBackfillJobQueue(r *backfilljobs.Registry) {
-	h.BackfillJobQueue = r
-}
-
 // requireAdmin: 401 without a token, 403 when not on the admin allowlist.
 // Returns the resolved owner on success. Mirror of the same method on
-// *identity.Handler / *curation.Handler — the admin label-images +
-// backfill endpoints gate on it. Three byte-identical copies survive
+// *identity.Handler / *curation.Handler — the admin label-images
+// endpoints gate on it. Three byte-identical copies survive
 // because each domain guards a distinct endpoint and a shared helper
 // would need dependency-injection scaffolding bigger than the 8-line
 // body itself.

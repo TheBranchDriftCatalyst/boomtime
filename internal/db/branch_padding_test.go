@@ -239,20 +239,6 @@ var _ = ginkgo.Describe("more branch padding (gaka-d6x)", func() {
 		Expect(isReadQuery("")).To(BeFalse())
 	})
 
-	// ---- backfill.DeleteBackfilledHeartbeats ----
-
-	ginkgo.It("DeleteBackfilledHeartbeats: sender with no backfilled rows returns (0, nil) — idempotent nuke", func() {
-		d := openTestDBG()
-		ctx := context.Background()
-		u := mkSender("bf_del")
-		Expect(insertFreshUser(d, ctx, u)).To(Succeed())
-		ginkgo.DeferCleanup(func() { _, _ = d.Pool.Exec(ctx, `DELETE FROM users WHERE username=$1`, u) })
-
-		n, err := d.DeleteBackfilledHeartbeats(ctx, u, "backfill:git")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(n).To(BeEquivalentTo(0))
-	})
-
 	// ---- entities.ListEntitiesByType ----
 
 	ginkgo.It("ListEntitiesByType: sender with no heartbeats returns empty slice, no error", func() {

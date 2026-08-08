@@ -7,7 +7,7 @@ import { CurationTab } from "@/features/curation/CurationTab";
 import { RemappingsTab } from "@/features/curation/RemappingsTab";
 import { WidgetLinksCard } from "@/features/widgets/WidgetLinksCard";
 import { Changelog } from "@/features/changelog/Changelog";
-// gaka-ebq: Admin / Backfill / Logs tabs moved OUT of Settings into
+// gaka-ebq: Admin / Logs tabs moved OUT of Settings into
 // /app/admin. Keep this file lean and non-admin-only.
 import { AvatarTab } from "@/features/settings/avatar/AvatarTab";
 import { ChangePasswordCard } from "@/features/settings/ChangePasswordCard";
@@ -42,7 +42,7 @@ function ProfileTab() {
 // value first-run info. API tokens sits adjacent because Plugin Setup
 // explains "how to send data" and Tokens explains "which credential to use".
 //
-// gaka-ebq: Admin / Backfill / Logs tabs have moved out of this file into
+// gaka-ebq: Admin / Logs tabs have moved out of this file into
 // the top-level /app/admin section. Settings is now non-admin-only and the
 // tab list is stable across users.
 const TABS = [
@@ -71,13 +71,12 @@ type TabID = (typeof TABS)[number]["id"];
 // still sees the ingest URL immediately (Profile is opt-in via
 // ?tab=profile / avatar-menu link, not a first-run destination).
 //
-// gaka-ebq: the legacy ?tab=logs / ?tab=admin / ?tab=backfill values now
-// redirect to /app/admin/{logs,labels,backfill}. The remap lives in the
-// active-tab resolver below so bookmarks + old links keep working.
+// gaka-ebq: the legacy ?tab=logs / ?tab=admin values now redirect to
+// /app/admin/{logs,labels}. The remap lives in the active-tab resolver
+// below so bookmarks + old links keep working.
 const LEGACY_ADMIN_TAB_REDIRECTS: Record<string, string> = {
   logs: "/app/admin/logs",
   admin: "/app/admin/labels",
-  backfill: "/app/admin/backfill",
   // gaka-gud: Goals moved out of Settings to its own top-level page.
   goals: "/app/goals",
 };

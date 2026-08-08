@@ -17,7 +17,6 @@ import { useHeaderSlot } from "@/layout/HeaderSlot";
 const TABS = [
   { id: "users", label: "Users", to: "/app/admin/users" },
   { id: "labels", label: "Labels", to: "/app/admin/labels" },
-  { id: "backfill", label: "Backfill", to: "/app/admin/backfill" },
   { id: "data", label: "Data", to: "/app/admin/data" },
   { id: "logs", label: "Logs", to: "/app/admin/logs" },
 ] as const;
@@ -53,8 +52,7 @@ export function AdminPage() {
       <Page.Body>
         <Page.Content>
           {/* Sub-route mount. Each child owns its own max-width — labels wants
-              the full 6xl for the wide catalog table, backfill fits in 4xl,
-              logs runs full-bleed. */}
+              the full 6xl for the wide catalog table, logs runs full-bleed. */}
           <div>
             <Outlet />
           </div>

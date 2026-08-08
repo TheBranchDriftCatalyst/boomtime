@@ -21,7 +21,6 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/backfilljobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/imagejobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/server"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
@@ -234,13 +233,6 @@ func runCmd() *cobra.Command {
 			// regen endpoints. Passing nil is fine when the feature is off
 			// — the admin handler detects the nil worker and returns 503.
 			h.SetLabelImagesWorker(liWorker)
-
-			// gaka-vh8: in-memory backfill job registry. Always non-nil in
-			// prod; the CLI is the executor so we don't need a Pool here,
-			// just a registry the HTTP + WS handlers can mutate.
-			backfillRegistry := backfilljobs.NewRegistry(logger)
-			h.SetBackfillJobQueue(backfillRegistry)
-			logger.Info("backfilljobs registry wired")
 
 			// gaka-8bz: in-memory job queue + worker pool for label-image
 			// regens. Only wire when the feature is enabled — a nil pool

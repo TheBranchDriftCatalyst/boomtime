@@ -12,9 +12,20 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	. "github.com/onsi/gomega"
 )
+
+// testutilTokenData builds a db.TokenData with a throwaway (unused) access
+// token and the caller-supplied refresh token. Used by WS tests to stand up a
+// valid refresh_token cookie without going through the public Login flow
+// (Login requires a plaintext password the prefix-hashed MintUser users don't
+// track). Relocated here from the removed admin_backfill_http_test.go.
+func testutilTokenData(user, refresh string) db.TokenData {
+	return db.TokenData{Owner: user, Token: strings.Repeat("a", 32), RefreshToken: refresh}
+}
 
 // doJSONReqG issues a JSON request against the harness router. Ginkgo variant:
 // panics via Fail rather than *testing.T.Fatalf so failures inside helpers

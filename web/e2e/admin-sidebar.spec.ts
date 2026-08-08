@@ -15,12 +15,10 @@ import {
 //   - Non-admins: no "Admin" entry in the sidebar; direct /app/admin/*
 //     URLs bounce back to /app (AdminRoute guard).
 //   - Admins: "Admin" entry visible; clicking lands on /app/admin/labels
-//     (index redirect); the three sub-tabs (Labels/Backfill/Logs) each
-//     drive their own URL.
+//     (index redirect); the sub-tabs (Labels/Logs) each drive their own URL.
 //   - Legacy bookmark redirects: /app/logs, /app/settings?tab=logs,
-//     /app/settings?tab=admin, /app/settings?tab=backfill each land on
-//     the equivalent /app/admin/* URL.
-//   - Settings page no longer surfaces the Admin/Backfill/Logs tabs.
+//     /app/settings?tab=admin each land on the equivalent /app/admin/* URL.
+//   - Settings page no longer surfaces the Admin/Logs tabs.
 
 test.describe("gaka-ebq — Admin sidebar section", () => {
   test.skip(!stackReachableFromEnv(), NO_STACK_REASON);
@@ -83,16 +81,9 @@ test.describe("gaka-ebq — Admin sidebar section", () => {
       const tablist = page.getByRole("tablist", { name: "Admin sections" });
       await expect(tablist).toBeVisible({ timeout: 10_000 });
 
-      for (const label of ["Labels", "Backfill", "Logs"]) {
+      for (const label of ["Labels", "Logs"]) {
         await expect(tablist.getByRole("tab", { name: label })).toBeVisible();
       }
-
-      // Backfill: URL update + the BackfillTab-specific heading renders.
-      await tablist.getByRole("tab", { name: "Backfill" }).click();
-      await expect(page).toHaveURL(/\/app\/admin\/backfill/);
-      await expect(
-        page.getByRole("heading", { name: /git-history backfill/i }),
-      ).toBeVisible({ timeout: 10_000 });
 
       // Logs: URL update + Logs body rendered (embedded — no duplicate
       // "Logs" toolbar title, just the AdminPage toolbar). We assert
@@ -112,7 +103,6 @@ test.describe("gaka-ebq — Admin sidebar section", () => {
         ["/app/logs", /\/app\/admin\/logs/],
         ["/app/settings?tab=logs", /\/app\/admin\/logs/],
         ["/app/settings?tab=admin", /\/app\/admin\/labels/],
-        ["/app/settings?tab=backfill", /\/app\/admin\/backfill/],
       ];
       for (const [from, expected] of cases) {
         await page.goto(from);
@@ -120,17 +110,17 @@ test.describe("gaka-ebq — Admin sidebar section", () => {
       }
     });
 
-    test("Settings no longer surfaces Admin / Backfill / Logs tabs", async ({
+    test("Settings no longer surfaces Admin / Logs tabs", async ({
       page,
     }) => {
       await page.goto("/app/settings");
       const tablist = page.getByRole("tablist", { name: "Settings sections" });
       await expect(tablist).toBeVisible({ timeout: 10_000 });
 
-      // These three tabs moved to /app/admin. They must NOT appear here
-      // any more — a regression that reintroduces them would double-list
+      // These tabs moved to /app/admin. They must NOT appear here any
+      // more — a regression that reintroduces them would double-list
       // Logs for admins.
-      for (const gone of ["Admin", "Backfill", "Logs"]) {
+      for (const gone of ["Admin", "Logs"]) {
         await expect(
           tablist.getByRole("tab", { name: gone, exact: true }),
         ).toHaveCount(0);

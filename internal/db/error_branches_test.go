@@ -94,35 +94,6 @@ var _ = ginkgo.Describe("input-validation error branches (gaka-d6x)", func() {
 		Expect(sr).To(Equal(""))
 	})
 
-	// ---- backfill.SetBackfillConfig branches ----
-
-	ginkgo.It("SetBackfillConfig clamps out-of-range values to safe defaults (input-validation invariant)", func() {
-		d := openTestDBG()
-		ctx := context.Background()
-		u := mkSender("bf_conf")
-		Expect(insertFreshUser(d, ctx, u)).To(Succeed())
-		ginkgo.DeferCleanup(func() {
-			_, _ = d.Pool.Exec(ctx, `DELETE FROM backfill_config WHERE username=$1`, u)
-			_, _ = d.Pool.Exec(ctx, `DELETE FROM users WHERE username=$1`, u)
-		})
-		// Absurd values should clamp.
-		cfg := BackfillConfig{
-			Username:          u,
-			ClusterGapSec:     -1,
-			PreCommitLeadSec:  -1,
-			PostCommitTailSec: -1,
-			HeartbeatRateSec:  0, // 0 would emit forever
-			SourceTag:         "backfill:test",
-			LangMap:           map[string]string{},
-			AuthorEmails:      []string{},
-		}
-		Expect(d.SetBackfillConfig(ctx, cfg)).To(Succeed())
-		got, err := d.GetBackfillConfig(ctx, u)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(got.HeartbeatRateSec).To(BeNumerically(">=", 1), "HeartbeatRateSec MUST clamp > 0")
-		Expect(got.ClusterGapSec).To(BeNumerically(">=", 0))
-	})
-
 	// ---- observability.mapLevel: cover ALL branches ----
 
 	ginkgo.It("mapLevel: Error/Warn/Info/Debug branches (Info -> Debug is the load-bearing quirk)", func() {

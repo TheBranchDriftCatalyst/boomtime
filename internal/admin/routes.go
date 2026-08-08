@@ -24,8 +24,6 @@ import (
 //   - whole-DB backup export + destructive restore (from registerStatsRoutes)
 //   - public label-image GET (from registerMiscRoutes)
 //   - label-images admin cluster (info / regenerate / WS)
-//   - git-history backfill cluster (config GET/PATCH + stats + job
-//     enqueue/PATCH + heartbeats push + preview + delete + WS)
 //   - wakatime.com import cluster (create + config + range + jobs list +
 //     one-job / cancel / logs / WS)
 //
@@ -38,15 +36,6 @@ import (
 //	GET    /api/v1/admin/label-images                               (h.AdminLabelImagesInfo)
 //	POST   /api/v1/admin/label-images/regenerate                    (h.AdminLabelImagesRegenerate)
 //	GET    /api/v1/admin/label-images/ws                            (h.AdminLabelImagesWS)
-//	GET    /api/v1/admin/backfill/config                            (h.AdminBackfillConfig)
-//	PATCH  /api/v1/admin/backfill/config                            (h.AdminBackfillConfigUpdate)
-//	GET    /api/v1/admin/backfill/stats                             (h.AdminBackfillStats)
-//	POST   /api/v1/admin/backfill/jobs                              (h.AdminBackfillEnqueueJob)
-//	PATCH  /api/v1/admin/backfill/jobs/:id                          (h.AdminBackfillJobPatch)
-//	POST   /api/v1/admin/backfill/jobs/:id/heartbeats               (h.AdminBackfillJobHeartbeats)
-//	POST   /api/v1/admin/backfill/jobs/:id/preview                  (h.AdminBackfillJobPreview)
-//	DELETE /api/v1/admin/backfill/heartbeats                        (h.AdminBackfillDeleteHeartbeats)
-//	GET    /api/v1/admin/backfill/ws                                (h.AdminBackfillWS)
 //	POST   /import                                                  (h.ImportRequest)
 //	GET    /import/config                                           (h.ImportConfig)
 //	POST   /import/wakatime-range                                   (h.WakatimeRange)
@@ -92,22 +81,6 @@ func Register(e *echo.Echo, h *Handler) {
 	// Auth uses the refresh_token cookie inside the handler (see
 	// AdminLabelImagesWS) — WS handshakes can't carry Authorization.
 	e.GET("/api/v1/admin/label-images/ws", h.AdminLabelImagesWS)
-
-	// gaka-vh8: git-history backfill admin endpoints. Config
-	// GET/PATCH, per-user stats, in-memory job registry (enqueue +
-	// PATCH + per-session heartbeat push / preview + delete), and a
-	// durable WS stream mirroring the label-images shape. All
-	// admin-gated (see requireAdmin) — the WS uses the refresh_token
-	// cookie because WS handshakes can't carry Authorization.
-	e.GET("/api/v1/admin/backfill/config", h.AdminBackfillConfig)
-	e.PATCH("/api/v1/admin/backfill/config", h.AdminBackfillConfigUpdate)
-	e.GET("/api/v1/admin/backfill/stats", h.AdminBackfillStats)
-	e.POST("/api/v1/admin/backfill/jobs", h.AdminBackfillEnqueueJob)
-	e.PATCH("/api/v1/admin/backfill/jobs/:id", h.AdminBackfillJobPatch)
-	e.POST("/api/v1/admin/backfill/jobs/:id/heartbeats", h.AdminBackfillJobHeartbeats)
-	e.POST("/api/v1/admin/backfill/jobs/:id/preview", h.AdminBackfillJobPreview)
-	e.DELETE("/api/v1/admin/backfill/heartbeats", h.AdminBackfillDeleteHeartbeats)
-	e.GET("/api/v1/admin/backfill/ws", h.AdminBackfillWS)
 
 	// Durable, resumable wakatime.com import jobs. Auth is the shared
 	// bearer-token flow for the JSON endpoints; the WS uses the

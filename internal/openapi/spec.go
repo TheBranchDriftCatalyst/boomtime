@@ -73,7 +73,6 @@ const (
 	tagWorkouts    = "Workouts + Health"
 	tagAvatar      = "Avatar"
 	tagAdmin       = "Admin"
-	tagBackfill    = "Backfill"
 )
 
 var (
@@ -1254,96 +1253,12 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 		return op
 	}())
 
-	// ==== ADMIN BACKFILL (gaka-vh8 — gaka-dam) ==============================
-	//
-	// Git-history backfill CLI admin plane. Config CRUD + per-job lifecycle
-	// (jobs are the durable side of the git-history walk).
+	// ==== ADMIN ============================================================
 
 	doc.AddOperation("/api/v1/admin/users", "GET", func() *openapi3.Operation {
 		op := &openapi3.Operation{Tags: []string{tagAdmin}, Summary: "List users with roles + effective capabilities",
 			Description: "Admin caps dashboard (gaka-93f.6): every user's role/tier + effective capabilities + disabled status, plus the role→capabilities legend. Admin-gated."}
 		setStatus(op, http.StatusOK, rInline("{capabilities, roles, users}.", mapObject()))
-		stdErrors(op, "401", "403", "500")
-		return op
-	}())
-	doc.AddOperation("/api/v1/admin/backfill/config", "GET", func() *openapi3.Operation {
-		op := &openapi3.Operation{Tags: []string{tagBackfill, tagAdmin}, Summary: "Get backfill config",
-			Description: "Returns the caller's backfill_config row (idle windows, per-commit heartbeat mint rate, etc.). Admin-gated."}
-		setStatus(op, http.StatusOK, rInline("Config row.", mapObject()))
-		stdErrors(op, "401", "403", "500")
-		return op
-	}())
-	doc.AddOperation("/api/v1/admin/backfill/config", "PATCH", func() *openapi3.Operation {
-		op := &openapi3.Operation{Tags: []string{tagBackfill, tagAdmin}, Summary: "Update backfill config",
-			Description: "Partial update of the caller's backfill_config. Admin-gated. Body cap: 64 KiB."}
-		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{Required: true,
-			Content: openapi3.NewContentWithJSONSchema(openapi3.NewObjectSchema())}}
-		setStatus(op, http.StatusOK, rInline("Persisted config row.", mapObject()))
-		stdErrors(op, "400", "401", "403", "500")
-		return op
-	}())
-	doc.AddOperation("/api/v1/admin/backfill/stats", "GET", func() *openapi3.Operation {
-		op := &openapi3.Operation{Tags: []string{tagBackfill, tagAdmin}, Summary: "Backfill stats",
-			Description: "Aggregated backfill queue / DB row counts for the admin dashboard."}
-		setStatus(op, http.StatusOK, rInline("{jobsActive, heartbeatsInserted, ...}.", mapObject()))
-		stdErrors(op, "401", "403", "500")
-		return op
-	}())
-	doc.AddOperation("/api/v1/admin/backfill/jobs", "POST", func() *openapi3.Operation {
-		op := &openapi3.Operation{Tags: []string{tagBackfill, tagAdmin}, Summary: "Enqueue a backfill job",
-			Description: "Creates a new backfill job (git repo + branch + date range). Returns the job row with jobId."}
-		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{Required: true,
-			Description: "{repoPath, branch, since, until, ...}",
-			Content:     openapi3.NewContentWithJSONSchema(openapi3.NewObjectSchema())}}
-		setStatus(op, http.StatusAccepted, rInline("{jobId, ...}.", mapObject()))
-		stdErrors(op, "400", "401", "403", "500")
-		return op
-	}())
-	doc.AddOperation("/api/v1/admin/backfill/jobs/{id}", "PATCH", func() *openapi3.Operation {
-		op := &openapi3.Operation{Tags: []string{tagBackfill, tagAdmin}, Summary: "Update backfill job (cancel etc.)",
-			Description: "Partial update: usually {status:'cancelled'} to stop an in-flight walk. Body cap: 64 KiB.",
-			Parameters:  openapi3.Parameters{pathParamStr("id", "Backfill job id.")}}
-		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{Required: true,
-			Content: openapi3.NewContentWithJSONSchema(openapi3.NewObjectSchema())}}
-		setStatus(op, http.StatusOK, rInline("Updated job row.", mapObject()))
-		stdErrors(op, "400", "401", "403", "404", "500")
-		return op
-	}())
-	doc.AddOperation("/api/v1/admin/backfill/jobs/{id}/heartbeats", "POST", func() *openapi3.Operation {
-		op := &openapi3.Operation{Tags: []string{tagBackfill, tagAdmin}, Summary: "Feed CLI-walked heartbeats to a job",
-			Description: "CLI streams parsed git-log heartbeats into the job's staging area. Idempotent on (owner, commitSha, filePath). Body cap: 8 MiB.",
-			Parameters:  openapi3.Parameters{pathParamStr("id", "Backfill job id.")}}
-		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{Required: true,
-			Content: openapi3.NewContentWithJSONSchema(func() *openapi3.Schema { s := openapi3.NewArraySchema(); s.Items = &openapi3.SchemaRef{Value: openapi3.NewObjectSchema()}; return s }())}}
-		setStatus(op, http.StatusAccepted, rInline("{staged:int}.", mapObject()))
-		stdErrors(op, "400", "401", "403", "404", "413", "500")
-		return op
-	}())
-	doc.AddOperation("/api/v1/admin/backfill/jobs/{id}/preview", "POST", func() *openapi3.Operation {
-		op := &openapi3.Operation{Tags: []string{tagBackfill, tagAdmin}, Summary: "Preview a backfill's DB impact",
-			Description: "Dry-run: returns the row counts that would be inserted (per language / project / date bucket) without touching the live heartbeats table.",
-			Parameters:  openapi3.Parameters{pathParamStr("id", "Backfill job id.")}}
-		setStatus(op, http.StatusOK, rInline("Preview envelope with per-bucket counts.", mapObject()))
-		stdErrors(op, "400", "401", "403", "404", "500")
-		return op
-	}())
-	doc.AddOperation("/api/v1/admin/backfill/heartbeats", "DELETE", func() *openapi3.Operation {
-		op := &openapi3.Operation{Tags: []string{tagBackfill, tagAdmin}, Summary: "Purge backfill-sourced heartbeats",
-			Description: "Deletes heartbeats attributed to a backfill source (WHERE user_agent LIKE 'boomtime-backfill%'). Owner-scoped destructive op — requires ?confirm.",
-			Parameters: openapi3.Parameters{
-				{Value: &openapi3.Parameter{Name: "confirm", In: "query", Required: true, Description: "Must be a truthy value.",
-					Schema: &openapi3.SchemaRef{Value: openapi3.NewStringSchema()}}},
-			}}
-		setStatus(op, http.StatusOK, rInline("{rowsDeleted:int}.", mapObject()))
-		stdErrors(op, "400", "401", "403", "500")
-		return op
-	}())
-	doc.AddOperation("/api/v1/admin/backfill/ws", "GET", func() *openapi3.Operation {
-		op := &openapi3.Operation{Tags: []string{tagBackfill, tagAdmin}, Summary: "Live backfill job stream (WebSocket)",
-			Description: "WebSocket. Streams job lifecycle events (queued -> running -> done|error) for the admin dashboard. Auths via the HttpOnly refresh_token cookie because WS handshakes cannot carry an Authorization header.",
-			Security:    &openapi3.SecurityRequirements{{"refreshCookie": []string{}}}}
-		setStatus(op, http.StatusSwitchingProtocols, &openapi3.ResponseRef{Value: &openapi3.Response{
-			Description: func() *string { s := "WebSocket upgrade."; return &s }()}})
 		stdErrors(op, "401", "403", "500")
 		return op
 	}())

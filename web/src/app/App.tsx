@@ -76,11 +76,6 @@ const AdminPage = lazy(() =>
 const AdminTab = lazy(() =>
   import("@/features/admin/AdminTab").then((m) => ({ default: m.AdminTab })),
 );
-const BackfillTab = lazy(() =>
-  import("@/features/admin/BackfillTab").then((m) => ({
-    default: m.BackfillTab,
-  })),
-);
 const UsersTab = lazy(() =>
   import("@/features/admin/UsersTab").then((m) => ({ default: m.UsersTab })),
 );
@@ -298,14 +293,6 @@ export function AppRoutes() {
             element={
               <Suspense fallback={<PageFallback />}>
                 <AdminTab />
-              </Suspense>
-            }
-          />
-          <Route
-            path="backfill"
-            element={
-              <Suspense fallback={<PageFallback />}>
-                <BackfillTab />
               </Suspense>
             }
           />

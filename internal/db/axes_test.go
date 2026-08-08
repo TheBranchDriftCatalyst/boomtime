@@ -62,10 +62,6 @@ var _ = ginkgo.Describe("axis registry derivations", func() {
 			"entity":    "entity",
 			"isWrite":   "is_write",
 			"userAgent": "user_agent",
-			// gaka-vh8: `source` is a provenance marker (NULL = real Wakatime,
-			// "backfill:git" = synthetic) exposed for FE explorer filter/group
-			// but NOT a curation axis (no rename/hide/rollup semantics).
-			"source": "source",
 		}
 		Expect(reflect.DeepEqual(exploreColumns, wantExploreColumns)).To(BeTrue(), "exploreColumns = %v, want %v", exploreColumns, wantExploreColumns)
 	})

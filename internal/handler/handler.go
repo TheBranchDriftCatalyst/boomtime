@@ -31,7 +31,6 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/meta"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/backfilljobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/imagejobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/spaces"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
@@ -63,11 +62,6 @@ type Handler struct {
 	// The registry itself owns the pool feed channel; the pool is
 	// constructed and started at server startup in cmd/boomtime.
 	ImageJobQueue *imagejobs.Registry
-	// BackfillJobQueue is the in-memory registry backing the git-history
-	// backfill CLI flow (gaka-vh8). Non-nil in every configuration —
-	// unlike ImageJobQueue there is no feature flag, the registry is
-	// cheap and only holds rows when a CLI is actively streaming.
-	BackfillJobQueue *backfilljobs.Registry
 
 	// Extracted per-domain handler bags (gaka-8tn). Each field points at
 	// deps the domain actually reads (a subset of the god-type).
@@ -147,16 +141,6 @@ func (h *Handler) SetImageJobQueue(r *imagejobs.Registry) {
 	h.ImageJobQueue = r
 	if h.Admin != nil {
 		h.Admin.SetImageJobQueue(r)
-	}
-}
-
-// SetBackfillJobQueue wires the backfilljobs.Registry (gaka-vh8). Always
-// non-nil in prod; kept as a setter for symmetry with SetImageJobQueue
-// and so tests can inject a per-test registry with tight retention.
-func (h *Handler) SetBackfillJobQueue(r *backfilljobs.Registry) {
-	h.BackfillJobQueue = r
-	if h.Admin != nil {
-		h.Admin.SetBackfillJobQueue(r)
 	}
 }
 

@@ -299,22 +299,13 @@ func (hz *Harness) Router() *echo.Echo {
 	e.PUT("/api/v1/users/current/dashboard/:scope", h.Spaces.PutDashboardLayout)      // gaka-8tn phase 2a
 	e.DELETE("/api/v1/users/current/dashboard/:scope", h.Spaces.DeleteDashboardLayout) // gaka-8tn phase 2a
 	e.POST("/api/v1/users/current/wakatime_key", h.Identity.SaveWakatimeKey)          // gaka-8tn phase 4a: h.Identity
-	// gaka-d6x.handler: admin cluster (label-images regeneration + git-history
-	// backfill CLI). Wired here so per-file test suites don't have to re-register
-	// (Echo panics on duplicate route registration).
+	// gaka-d6x.handler: admin cluster (label-images regeneration). Wired here so
+	// per-file test suites don't have to re-register (Echo panics on duplicate
+	// route registration).
 	// gaka-8tn phase 7: receivers moved to h.Admin (internal/admin).
 	e.GET("/api/v1/admin/label-images", h.Admin.AdminLabelImagesInfo)
 	e.POST("/api/v1/admin/label-images/regenerate", h.Admin.AdminLabelImagesRegenerate)
 	e.GET("/api/v1/admin/label-images/ws", h.Admin.AdminLabelImagesWS)
-	e.GET("/api/v1/admin/backfill/config", h.Admin.AdminBackfillConfig)
-	e.PATCH("/api/v1/admin/backfill/config", h.Admin.AdminBackfillConfigUpdate)
-	e.GET("/api/v1/admin/backfill/stats", h.Admin.AdminBackfillStats)
-	e.POST("/api/v1/admin/backfill/jobs", h.Admin.AdminBackfillEnqueueJob)
-	e.PATCH("/api/v1/admin/backfill/jobs/:id", h.Admin.AdminBackfillJobPatch)
-	e.POST("/api/v1/admin/backfill/jobs/:id/heartbeats", h.Admin.AdminBackfillJobHeartbeats)
-	e.POST("/api/v1/admin/backfill/jobs/:id/preview", h.Admin.AdminBackfillJobPreview)
-	e.DELETE("/api/v1/admin/backfill/heartbeats", h.Admin.AdminBackfillDeleteHeartbeats)
-	e.GET("/api/v1/admin/backfill/ws", h.Admin.AdminBackfillWS)
 	// gaka-d6x.handler misc cluster: routes previously only in the production
 	// router (internal/server), now mirrored here so tests don't hand-register
 	// and hit the duplicate-route panic.
@@ -379,7 +370,6 @@ func (hz *Harness) Cleanup(sender string) {
 			`DELETE FROM health_samples WHERE owner=$1`,
 			`DELETE FROM health_rollup_daily WHERE owner=$1`,
 			`DELETE FROM heartbeats WHERE sender=$1`,
-			`DELETE FROM backfill_config WHERE username=$1`,
 			`DELETE FROM curation_rules WHERE sender=$1`,
 			`DELETE FROM hb_rollup_daily WHERE sender=$1`,
 			`DELETE FROM spaces WHERE owner=$1`,

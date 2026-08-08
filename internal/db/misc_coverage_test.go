@@ -10,7 +10,6 @@
 //   - widgets.go           (CreateWidgetLink + Get/List/Roll/RecordHit + ProjectExists + ProjectMemberSet)
 //   - projects.go          (GetBadgeLinkInfo)
 //   - importjobs.go        (GetJobByID + GetJobsByOwner + CancelJob + SetJobDrift + MarkRunningJobsFailed)
-//   - backfill.go          (PreviewBackfillBatch)
 //   - dump.go              (Senders + HasActiveImportJobs + Restore*Error.Error)
 //   - ingest.go            (ResyncDerived)
 //   - activity.go          (GetTotalActivityTime)
@@ -23,7 +22,6 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/onsi/ginkgo/v2"
@@ -571,89 +569,6 @@ var _ = ginkgo.Describe("import_jobs extra (gaka-d6x)", func() {
 		for _, j := range list {
 			Expect(j.State).To(Equal(JobStateFailed))
 		}
-	})
-})
-
-// ---- backfill.PreviewBackfillBatch ----
-
-var _ = ginkgo.Describe("backfill preview (gaka-d6x)", func() {
-	ginkgo.It("PreviewBackfillBatch: reports Accepted count WITHOUT inserting any heartbeat", func() {
-		d := openTestDBG()
-		ctx := context.Background()
-		u := mkSender("bf_prev")
-		Expect(insertFreshUser(d, ctx, u)).To(Succeed())
-		ginkgo.DeferCleanup(func() {
-			_, _ = d.Pool.Exec(ctx, `DELETE FROM heartbeats WHERE sender=$1`, u)
-			_, _ = d.Pool.Exec(ctx, `DELETE FROM projects WHERE owner=$1`, u)
-			_, _ = d.Pool.Exec(ctx, `DELETE FROM users WHERE username=$1`, u)
-		})
-
-		start := time.Now().UTC().Add(-2 * time.Hour)
-		end := start.Add(30 * time.Minute)
-		proj := "P"
-		lang := "Go"
-		batch := BackfillBatch{
-			Username:  u,
-			SourceTag: "unit-test-backfill",
-			Sessions: []BackfillSession{
-				{
-					Start: start,
-					End:   end,
-					Heartbeats: []model.HeartbeatPayload{
-						{Entity: "a.go", Type: "file", TimeSent: float64(start.Unix()), Project: &proj, Language: &lang},
-						{Entity: "a.go", Type: "file", TimeSent: float64(start.Add(1 * time.Minute).Unix()), Project: &proj, Language: &lang},
-					},
-				},
-			},
-		}
-		res, err := d.PreviewBackfillBatch(ctx, batch)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(res.AcceptedHeartbeats).To(Equal(2), "preview reports Accepted count")
-
-		// Prove NOTHING was inserted.
-		var rows int
-		Expect(d.Pool.QueryRow(ctx, `SELECT count(*) FROM heartbeats WHERE sender=$1`, u).Scan(&rows)).To(Succeed())
-		Expect(rows).To(Equal(0), "PreviewBackfillBatch MUST NOT insert (contract vs. InsertBackfillBatch)")
-	})
-
-	ginkgo.It("InsertBackfillBatch: overlap with an existing real (source IS NULL) heartbeat marks the session Skipped/reason=overlap", func() {
-		d := openTestDBG()
-		ctx := context.Background()
-		u := mkSender("bf_overlap")
-		Expect(insertFreshUser(d, ctx, u)).To(Succeed())
-		ginkgo.DeferCleanup(func() {
-			_, _ = d.Pool.Exec(ctx, `DELETE FROM heartbeats WHERE sender=$1`, u)
-			_, _ = d.Pool.Exec(ctx, `DELETE FROM projects WHERE owner=$1`, u)
-			_, _ = d.Pool.Exec(ctx, `DELETE FROM users WHERE username=$1`, u)
-		})
-
-		// Plant a REAL heartbeat inside the window.
-		windowMid := time.Now().UTC().Add(-3 * time.Hour)
-		_, err := d.Pool.Exec(ctx, `INSERT INTO projects (owner, name) VALUES ($1,'P')`, u)
-		Expect(err).NotTo(HaveOccurred())
-		_, err = d.Pool.Exec(ctx,
-			`INSERT INTO heartbeats (sender, project, entity, ty, time_sent, user_agent, source) VALUES ($1,'P','a.go','file',$2,'ua',NULL)`, u, windowMid)
-		Expect(err).NotTo(HaveOccurred())
-
-		proj := "P"
-		batch := BackfillBatch{
-			Username:  u,
-			SourceTag: "backfill:test",
-			Sessions: []BackfillSession{
-				{
-					Start: windowMid.Add(-1 * time.Hour),
-					End:   windowMid.Add(1 * time.Hour),
-					Heartbeats: []model.HeartbeatPayload{
-						{Entity: "b.go", Type: "file", TimeSent: float64(windowMid.Add(30 * time.Minute).Unix()), Project: &proj},
-					},
-				},
-			},
-		}
-		res, err := d.InsertBackfillBatch(ctx, batch)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(res.SkippedHeartbeats).To(Equal(1))
-		Expect(res.AcceptedHeartbeats).To(Equal(0))
-		Expect(res.Sessions[0].Reason).To(Equal("overlap"))
 	})
 })
 
