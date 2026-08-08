@@ -202,6 +202,11 @@ export const qk = {
   // gaka-93f.6: admin caps dashboard (users + roles/tiers + effective caps).
   adminUsers: () => ["admin", "users"] as const,
 
+  // Admin CLI-runner command catalog (BOOM_FEATURE_ADMIN_CLI). Refetched
+  // rarely — the spec only changes on a server restart/redeploy. Run and
+  // complete are mutations/imperative calls, so no keys for them.
+  adminCliSpec: () => ["admin", "cli", "spec"] as const,
+
   // gaka-b5n.4: the caller's linked external identities (OIDC linking).
   identities: () => ["identities"] as const,
 

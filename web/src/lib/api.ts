@@ -199,6 +199,59 @@ async function doRequest<T>(
   return data as T;
 }
 
+// --- Admin CLI-runner (BOOM_FEATURE_ADMIN_CLI) -------------------------------
+// Wire types mirror internal/climeta/spec.go + internal/admin/cli_*.go
+// verbatim. The three endpoints are admin-gated AND only registered when the
+// backend feature flag is on — when off they 404, which the Commands tab
+// renders as a "feature disabled" state (not an error).
+
+export type CliClassification = "readonly" | "mutating" | "destructive";
+
+export interface CliParam {
+  name: string;
+  shorthand?: string;
+  usage?: string;
+  type: "bool" | "string" | "int" | "stringSlice" | "enum";
+  default?: string;
+  enum?: string[];
+  positional: boolean;
+  required: boolean;
+  secret: boolean;
+  completable: boolean;
+}
+
+export interface CliCommandSpec {
+  command: string;
+  short: string;
+  long?: string;
+  classification: CliClassification;
+  dryRunSupported: boolean;
+  params: CliParam[];
+}
+
+export interface CliRunResponse {
+  ok: boolean;
+  // Captured output, capped at 64 KiB server-side. When capped, the string
+  // itself ends with an inline "… [output truncated]" marker — there is no
+  // separate truncation field. NOT scrubbed/redacted (deliberate: admin-only
+  // console); render verbatim.
+  output: string;
+  exitError: string; // "" on success
+  dryRun: boolean;
+  durationMs: number;
+}
+
+export interface CliCompleteResponse {
+  suggestions: { value: string; description?: string }[];
+  directive: {
+    noFileComp: boolean;
+    noSpace: boolean;
+    noSort: boolean;
+    keepOrder: boolean;
+    error: boolean;
+  };
+}
+
 // Several backend GETs wrap their result in a single-key envelope
 // ({ rules: [...] }, { jobs: [...] }, { spaces: [...] }, …). `unwrap` fetches
 // and returns the bare value (Style A: unwrap at the client boundary) so
@@ -919,6 +972,48 @@ export const api = {
     request<LabelsCatalogPayload>("/api/v1/labels/catalog", { auth: false }),
   // gaka-93f.6: admin caps dashboard — users + roles/tiers + effective caps.
   getAdminUsers: () => request<AdminUsersPayload>("/api/v1/admin/users"),
+
+  // --- Admin CLI-runner (BOOM_FEATURE_ADMIN_CLI) -----------------------------
+  // All three 404 when the backend feature flag is off (routes not
+  // registered) — the Commands tab maps that to a friendly disabled state.
+
+  // Introspected catalog of every web-runnable command (registry ∩
+  // annotation ∩ availability, enforced server-side).
+  getCliSpec: () =>
+    request<{ commands: CliCommandSpec[] }>("/api/v1/admin/cli/spec"),
+
+  // Run ONE allowlisted command in-process. Positional params travel INSIDE
+  // `flags` keyed by param name (the binder routes them by the spec's
+  // positional marker). Mutating semantics: omitting the "dry-run" key runs
+  // a dry-run when the command supports it; applying requires
+  // flags["dry-run"]=false AND confirm === command. Mutating commands
+  // WITHOUT dry-run support require confirm === command on every run.
+  // HTTP 200 even when ok:false — a failing command is a valid run outcome.
+  runCliCommand: (body: {
+    command: string;
+    flags: Record<string, unknown>;
+    confirm?: string;
+  }) =>
+    request<CliRunResponse>("/api/v1/admin/cli/run", {
+      method: "POST",
+      body,
+    }),
+
+  // Cobra-powered autocomplete for one completable param. `args` carries the
+  // values of prior POSITIONAL params (in order) so contextual completers
+  // behave exactly as under a shell <TAB>; `flag` names the flag being
+  // completed (omit for a positional). enum params complete client-side from
+  // the spec — the FE never calls this for them.
+  completeCli: (body: {
+    command: string;
+    args?: string[];
+    flag?: string;
+    toComplete: string;
+  }) =>
+    request<CliCompleteResponse>("/api/v1/admin/cli/complete", {
+      method: "POST",
+      body,
+    }),
 
   // gaka-b5n.4: linked external identities (OIDC account linking).
   getIdentities: () => request<IdentitiesPayload>("/api/v1/users/current/identities"),

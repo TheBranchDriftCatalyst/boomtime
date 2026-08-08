@@ -279,3 +279,74 @@ describe("api mutation call shapes (P1)", () => {
     expect(path).toBe("a/b c"); // msw decodes; the point is it didn't error
   });
 });
+
+// --- Admin CLI-runner (BOOM_FEATURE_ADMIN_CLI) -------------------------------
+
+describe("admin CLI-runner api methods", () => {
+  it("runCliCommand POSTs {command, flags, confirm?} and returns the run payload", async () => {
+    let body: unknown;
+    server.use(
+      http.post("/api/v1/admin/cli/run", async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({
+          ok: false,
+          output: "partial",
+          exitError: "boom",
+          dryRun: true,
+          durationMs: 7,
+        });
+      }),
+    );
+    const res = await api.runCliCommand({
+      command: "backfill last-context",
+      flags: { "dry-run": false, username: "panda" },
+      confirm: "backfill last-context",
+    });
+    expect(body).toEqual({
+      command: "backfill last-context",
+      flags: { "dry-run": false, username: "panda" },
+      confirm: "backfill last-context",
+    });
+    // HTTP 200 with ok:false is a valid run outcome, not a thrown ApiError.
+    expect(res.ok).toBe(false);
+    expect(res.exitError).toBe("boom");
+    expect(res.dryRun).toBe(true);
+  });
+
+  it("completeCli POSTs the completion context verbatim", async () => {
+    let body: unknown;
+    server.use(
+      http.post("/api/v1/admin/cli/complete", async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({
+          suggestions: [{ value: "panda" }],
+          directive: {
+            noFileComp: true,
+            noSpace: false,
+            noSort: false,
+            keepOrder: false,
+            error: false,
+          },
+        });
+      }),
+    );
+    const res = await api.completeCli({
+      command: "user show",
+      args: [],
+      toComplete: "pa",
+    });
+    expect(body).toEqual({ command: "user show", args: [], toComplete: "pa" });
+    expect(res.suggestions).toEqual([{ value: "panda" }]);
+    expect(res.directive.noFileComp).toBe(true);
+  });
+
+  it("getCliSpec surfaces a 404 as an ApiError (feature-disabled signal)", async () => {
+    server.use(
+      http.get("/api/v1/admin/cli/spec", () =>
+        HttpResponse.json({ message: "not found" }, { status: 404 }),
+      ),
+    );
+    await expect(api.getCliSpec()).rejects.toMatchObject({ status: 404 });
+    await expect(api.getCliSpec()).rejects.toBeInstanceOf(ApiError);
+  });
+});

@@ -17,6 +17,7 @@ import { useHeaderSlot } from "@/layout/HeaderSlot";
 const TABS = [
   { id: "users", label: "Users", to: "/app/admin/users" },
   { id: "labels", label: "Labels", to: "/app/admin/labels" },
+  { id: "cli", label: "Commands", to: "/app/admin/cli" },
   { id: "data", label: "Data", to: "/app/admin/data" },
   { id: "logs", label: "Logs", to: "/app/admin/logs" },
 ] as const;

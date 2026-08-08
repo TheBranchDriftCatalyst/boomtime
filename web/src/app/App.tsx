@@ -83,6 +83,11 @@ const UsersTab = lazy(() =>
 const DataTab = lazy(() =>
   import("@/features/admin/DataTab").then((m) => ({ default: m.DataTab })),
 );
+// Admin CLI-runner Commands tab (BOOM_FEATURE_ADMIN_CLI). Renders its own
+// disabled-state card when the backend feature flag is off (spec 404s).
+const CliTab = lazy(() =>
+  import("@/features/admin/CliTab").then((m) => ({ default: m.CliTab })),
+);
 const Logs = lazy(() =>
   import("@/features/logs/Logs").then((m) => ({ default: m.Logs })),
 );
@@ -293,6 +298,14 @@ export function AppRoutes() {
             element={
               <Suspense fallback={<PageFallback />}>
                 <AdminTab />
+              </Suspense>
+            }
+          />
+          <Route
+            path="cli"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <CliTab />
               </Suspense>
             }
           />
