@@ -204,15 +204,51 @@ func ResolveUser(database *db.DB, c *echo.Context) (string, string, *apierr.Erro
 // call sites don't have to thread the flag through three different handler
 // config shapes.
 func Identify(database *db.DB, c *echo.Context) (*auth.Identity, *apierr.Error) {
-	// apihelpers owns header parsing (it has the echo context); the active
-	// auth provider (gaka-0oe.2) owns token→Identity. Today that's
-	// LocalPasswordResolver; a future OIDCResolver swaps in via SetResolver at
-	// boot with no handler change.
+	// auth-dry Phase 1: the auth middleware (internal/server) resolves the
+	// bearer token → Identity ONCE per request and stashes it via SetIdentity.
+	// Return that instead of resolving again — it eliminates the second
+	// GetUserByToken (+ GetUserFullByName when user-model is on) round-trip that
+	// this call used to make on top of the middleware's own resolution.
+	if ident, ok := cachedIdentity(c); ok {
+		return ident, nil
+	}
+	// Fallback (no cache): the middleware didn't run (bare-context unit tests),
+	// or the credential was absent/invalid — the middleware only stashes a
+	// SUCCESSFUL resolution, so the MissingAuth / InvalidToken envelope is
+	// (re)produced here. apihelpers owns header parsing (it has the echo
+	// context); the active auth provider (gaka-0oe.2) owns token→Identity.
 	token, aerr := TokenFromHeader(c)
 	if aerr != nil {
 		return nil, aerr
 	}
 	return auth.CurrentResolver().ResolveBearer(c.Request().Context(), database, token)
+}
+
+// identityCtxKey is the echo per-request store key under which the auth
+// middleware stashes the resolved Identity. Namespaced to avoid collisions with
+// other c.Set users.
+const identityCtxKey = "boomtime.auth.identity"
+
+// SetIdentity stashes a request's resolved Identity so Identify() can return it
+// without a second token→DB resolution. Called once per request by the auth
+// middleware in internal/server. Passing a nil identity is a no-op.
+func SetIdentity(c *echo.Context, ident *auth.Identity) {
+	if ident == nil {
+		return
+	}
+	c.Set(identityCtxKey, ident)
+}
+
+// cachedIdentity returns the middleware-stashed Identity for this request, if
+// one was set. The bool is false when no middleware ran or the request was
+// unauthenticated (Identify then falls back to a live resolve).
+func cachedIdentity(c *echo.Context) (*auth.Identity, bool) {
+	if v := c.Get(identityCtxKey); v != nil {
+		if ident, ok := v.(*auth.Identity); ok && ident != nil {
+			return ident, true
+		}
+	}
+	return nil, false
 }
 
 // IdentifyFromCookie is the refresh-cookie counterpart of Identify (used by

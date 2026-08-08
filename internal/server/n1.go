@@ -3,6 +3,7 @@ package server
 import (
 	"log/slog"
 
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/labstack/echo/v5"
@@ -75,13 +76,27 @@ func userCtxMiddleware(database *db.DB) echo.MiddlewareFunc {
 			req := c.Request()
 			tkn, ok := auth.ParseAuthHeader(req.Header.Get(echo.HeaderAuthorization))
 			if !ok || tkn == "" {
+				return next(c) // unauthenticated / non-bearer request: nothing to stash
+			}
+			// auth-dry Phase 1: resolve the token → FULL Identity (role + caps +
+			// disabled-fail-closed) ONCE per request and stash it for
+			// apihelpers.Identify to reuse — the ~100 authed handlers used to
+			// re-resolve the same token themselves, so this collapses two
+			// token→DB resolutions per request into one.
+			//
+			// Deliberately NON-ENFORCING: a bad/expired token is NOT rejected
+			// here because this middleware is global and public routes
+			// (/auth/*, /api/public/*, /healthz) share it. The middleware only
+			// stashes a SUCCESSFUL resolution; on failure the handler's own
+			// Identify re-derives the exact InvalidToken/MissingAuth envelope.
+			ident, aerr := auth.CurrentResolver().ResolveBearer(req.Context(), database, tkn)
+			if aerr != nil || ident == nil || ident.Username == "" {
 				return next(c)
 			}
-			owner, ok, err := database.GetUserByToken(req.Context(), tkn)
-			if err != nil || !ok || owner == "" {
-				return next(c)
-			}
-			c.SetRequest(req.WithContext(db.WithUser(req.Context(), owner)))
+			apihelpers.SetIdentity(c, ident)
+			// Keep the pgx-tracer owner attribution (db.WithUser) that this
+			// middleware has always provided for observability.
+			c.SetRequest(req.WithContext(db.WithUser(req.Context(), ident.Username)))
 			return next(c)
 		}
 	}

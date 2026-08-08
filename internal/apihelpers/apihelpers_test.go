@@ -26,9 +26,56 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/cache"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 )
+
+// -- Identify identity cache (auth-dry Phase 1) ---------------------------
+//
+// The auth middleware resolves the bearer token → Identity once per request
+// and stashes it via SetIdentity; Identify must return THAT rather than
+// re-resolving. These specs pin both halves of the seam with a nil *db.DB —
+// a real re-resolution would deref the nil pool and panic, so "no panic +
+// right identity" is proof the cache short-circuits the DB entirely.
+var _ = Describe("Identify — middleware identity cache", func() {
+	It("returns the stashed identity WITHOUT re-resolving (nil DB proves no DB hit)", func() {
+		e := echo.New()
+		req := httptest.NewRequest(http.MethodGet, "/x", nil)
+		c := e.NewContext(req, httptest.NewRecorder())
+
+		want := auth.AllCapsIdentity("cacheduser")
+		apihelpers.SetIdentity(c, want)
+
+		got, aerr := apihelpers.Identify(nil, c) // nil DB: would panic if it resolved
+		Expect(aerr).To(BeNil())
+		Expect(got).To(BeIdenticalTo(want))
+		Expect(got.Username).To(Equal("cacheduser"))
+	})
+
+	It("falls back to header parsing when nothing was stashed (no header → MissingAuth 400)", func() {
+		e := echo.New()
+		req := httptest.NewRequest(http.MethodGet, "/x", nil) // no Authorization header
+		c := e.NewContext(req, httptest.NewRecorder())
+
+		got, aerr := apihelpers.Identify(nil, c)
+		Expect(got).To(BeNil())
+		Expect(aerr).NotTo(BeNil())
+		Expect(aerr.Status).To(Equal(http.StatusBadRequest),
+			"absent credential with no cached identity must surface MissingAuth (400), not resolve")
+	})
+
+	It("SetIdentity with a nil identity is a no-op (Identify still falls back)", func() {
+		e := echo.New()
+		req := httptest.NewRequest(http.MethodGet, "/x", nil)
+		c := e.NewContext(req, httptest.NewRecorder())
+
+		apihelpers.SetIdentity(c, nil) // must not poison the cache with a nil
+		_, aerr := apihelpers.Identify(nil, c)
+		Expect(aerr).NotTo(BeNil())
+		Expect(aerr.Status).To(Equal(http.StatusBadRequest))
+	})
+})
 
 func TestApiHelpersSuite(t *testing.T) {
 	RegisterFailHandler(Fail)
