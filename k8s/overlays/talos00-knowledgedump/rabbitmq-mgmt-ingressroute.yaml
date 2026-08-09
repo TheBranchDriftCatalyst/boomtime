@@ -1,0 +1,28 @@
+---
+# LAN-gated access to the RabbitMQ management UI (worker-topology
+# decoupling, gaka-8bz follow-up). The RabbitMQ Cluster Operator enables
+# the management plugin by default and exposes it on the auto-created
+# `boomtime-rabbit` Service, port 15672 — this just fronts it with the
+# same lan-only pattern the app itself uses (see ingressroute.yaml's
+# `boomtime-lan` route). No TLS, no external-dns — LAN only, matching the
+# operational posture of an ops tool that shows queue contents + can purge
+# messages (not something to expose publicly).
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: boomtime-rabbit-mgmt
+  labels:
+    app.kubernetes.io/name: boomtime-rabbit
+    app.kubernetes.io/part-of: boomtime
+spec:
+  entryPoints:
+    - web
+  routes:
+    - kind: Rule
+      match: Host(`boomtime-rabbit.talos00`)
+      middlewares:
+        - name: lan-only
+          namespace: traefik
+      services:
+        - name: boomtime-rabbit
+          port: 15672

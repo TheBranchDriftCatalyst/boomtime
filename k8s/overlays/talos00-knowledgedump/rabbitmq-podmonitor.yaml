@@ -1,0 +1,37 @@
+---
+# Scrapes boomtime-rabbit's Prometheus metrics (worker-topology decoupling,
+# gaka-8bz follow-up) — feeds the Grafana dashboard in
+# grafana-dashboard-worker-queue.yaml. The RabbitMQ Cluster Operator
+# enables the `rabbitmq_prometheus` plugin and exposes a `prometheus` port
+# (15692) by default; the operator also labels every pod it creates with
+# `app.kubernetes.io/name: <RabbitmqCluster name>` (here: boomtime-rabbit).
+#
+# Lives in the `boomtime` namespace, co-located with the pods it selects,
+# so `namespaceSelector: {}` (own-namespace) is correct — the cluster's
+# Alloy/Prometheus stack already discovers PodMonitors across ALL
+# namespaces (see talos-homelab's grafana-operator HelmRelease,
+# `namespaceScope: false`), so nothing outside this repo needs to change
+# for this to start scraping.
+#
+# NOTE (best-effort, verify against the live cluster): the exact port NAME
+# "prometheus" matches RabbitMQ's own Prometheus integration docs and the
+# operator's documented default, but wasn't confirmed against this specific
+# operator version — if metrics don't show up, check
+# `kubectl -n boomtime get pod <boomtime-rabbit-server-0> -o jsonpath='{.spec.containers[0].ports}'`
+# and adjust `port:` below to match.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: boomtime-rabbit
+  namespace: boomtime
+  labels:
+    app.kubernetes.io/name: boomtime-rabbit
+    app.kubernetes.io/part-of: boomtime
+spec:
+  namespaceSelector: {}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: boomtime-rabbit
+  podMetricsEndpoints:
+    - port: prometheus
+      interval: 30s

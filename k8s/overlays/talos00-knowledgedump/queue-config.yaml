@@ -21,3 +21,6 @@ data:
   BOOM_QUEUE_BROKER: "rabbitmq"
   BOOM_RABBITMQ_QUEUE: "boomtime.image-jobs"
   BOOM_REDIS_ADDR: "boomtime-cache.boomtime.svc.cluster.local:6379"
+  # LAN-gated mgmt UI (rabbitmq-mgmt-ingressroute.yaml) — surfaced by
+  # AdminLabelImagesInfo so the Admin tab can link to it directly.
+  BOOM_RABBITMQ_MGMT_URL: "http://boomtime-rabbit.talos00"

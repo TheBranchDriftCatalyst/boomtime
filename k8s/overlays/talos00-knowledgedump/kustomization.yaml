@@ -13,18 +13,25 @@ resources:
   - comfyui-shim-external.yaml
   - ollama-shim-external.yaml
   # ── Worker-topology decoupling (gaka-8bz) — PROD CUTOVER DEFERRED ─────────
-  # These + the queue-config / patch-server-rabbit / secretGenerator blocks
-  # below ARE the prod cutover for the image-job worker queue. They reached
-  # main before the local `tilt up` demo was verified, so they are UN-WIRED
-  # here to keep prod on the safe in-process image worker (BOOM_QUEUE_BROKER
-  # unset = inprocess default; server behavior byte-identical to today).
-  # RE-ENABLE all four blocks TOGETHER as the deliberate cutover once the
-  # local demo passes. See docs/design/worker-topology-decoupling.md §8.
+  # These + the queue-config / patch-server-rabbit / secretGenerator /
+  # configMapGenerator blocks below ARE the prod cutover for the image-job
+  # worker queue (+ its RabbitMQ mgmt UI, metrics scrape, and Grafana
+  # dashboard). They reached main before the local `tilt up` demo was
+  # verified, so they are UN-WIRED here to keep prod on the safe in-process
+  # image worker (BOOM_QUEUE_BROKER unset = inprocess default; server
+  # behavior byte-identical to today). RE-ENABLE all blocks TOGETHER as the
+  # deliberate cutover once the local demo passes — the ops-visibility
+  # additions (mgmt UI route, PodMonitor, dashboard) are only meaningful
+  # once boomtime-rabbit actually exists. See docs/design/worker-topology-
+  # decoupling.md §8.
   # - rabbitmq.yaml
   # - dragonfly.yaml
   # - ../../base/worker
   # - keda-scaledobject.yaml
   # - keda-triggerauth.yaml
+  # - rabbitmq-mgmt-ingressroute.yaml
+  # - rabbitmq-podmonitor.yaml
+  # - grafana-dashboard-worker-queue.yaml
 
 # Strategic-merge patches: each adds a feature-specific set of env vars
 # to the base boomtime-config ConfigMap without disturbing existing keys.
@@ -56,12 +63,17 @@ patchesStrategicMerge:
   # NOTE: authentik-blueprint-boomtime.yaml is an Authentik blueprint, NOT a k8s
   # manifest — it is intentionally never added here (applied to Authentik itself).
 
-# KEDA amqp-scaler host secret — DEFERRED with the rest of the worker-topology
-# cutover (re-enable together with the blocks above).
+# KEDA amqp-scaler host secret + the Grafana dashboard JSON ConfigMap —
+# DEFERRED with the rest of the worker-topology cutover (re-enable
+# together with the blocks above).
 # secretGenerator:
 #   - name: boomtime-rabbit-keda-host
 #     literals:
 #       - host=amqp://boomtime-rabbit.boomtime.svc.cluster.local:5672/
+# configMapGenerator:
+#   - name: dashboard-boomtime-worker-queue
+#     files:
+#       - grafana/worker-queue-dashboard.json
 # generatorOptions:
 #   disableNameSuffixHash: true
 
