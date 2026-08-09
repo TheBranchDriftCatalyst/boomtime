@@ -217,6 +217,28 @@ type Config struct {
 	// resolver". Users who explicitly pick a zone via the Settings picker
 	// always win over this default.
 	DefaultTimezone string
+
+	// Role selects which loops this process runs: "server" (HTTP API +
+	// cross-pod progress relay, no image Pool/AMQP consumer), "worker"
+	// (image-job execution — AMQP consumer or, historically, the in-process
+	// Pool — no HTTP API), or "all" (today's single-process behavior).
+	// Default "all". BOOM_ROLE, overridable via `boomtime run --role`.
+	// See IsServerRole / IsWorkerRole.
+	Role string
+
+	// QueueBroker selects the image-job transport (worker-topology
+	// decoupling, gaka-8bz follow-up): "inprocess" (today's in-memory
+	// Registry+Pool, welded enqueue->execute in one process) or "rabbitmq"
+	// (AMQP producer/consumer + Dragonfly/Redis cross-pod progress bus).
+	// Default "inprocess" so nothing changes until a deliberate cutover —
+	// see BrokerRabbit and docs/design/worker-topology-decoupling.md.
+	QueueBroker string
+
+	// RabbitMQ + Dragonfly wiring — only read when QueueBroker=="rabbitmq".
+	RabbitURL     string // assembled amqp:// URL (see overlay $(VAR) interpolation)
+	RabbitQueue   string // default "boomtime.image-jobs"
+	RedisAddr     string // Dragonfly/Redis host:port, e.g. boomtime-cache:6379
+	RedisPassword string // usually empty in-cluster
 }
 
 func getEnv(key, def string) string {
@@ -398,6 +420,16 @@ func Load() *Config {
 
 	c.Grade = loadGradeConfig()
 
+	// gaka-worker-topology: role/broker gate for the image-job pipeline.
+	// Both default to today's single-process, in-memory behavior — see the
+	// Role / QueueBroker doc comments above.
+	c.Role = getEnv("BOOM_ROLE", "all")
+	c.QueueBroker = getEnv("BOOM_QUEUE_BROKER", "inprocess")
+	c.RabbitURL = getEnv("BOOM_RABBITMQ_URL", "")
+	c.RabbitQueue = getEnv("BOOM_RABBITMQ_QUEUE", "boomtime.image-jobs")
+	c.RedisAddr = getEnv("BOOM_REDIS_ADDR", "")
+	c.RedisPassword = getEnv("BOOM_REDIS_PASSWORD", "")
+
 	// gaka-dg7: operator-wide default TZ for users with no explicit pick.
 	// Validate here so an invalid IANA name never lands into the resolver —
 	// a bogus value from the env would cause every subsequent AT TIME ZONE
@@ -519,6 +551,28 @@ func (c *Config) IsAdmin(username string) bool {
 // generated images keep serving after a flag flip.
 func (c *Config) LabelImagesEnabled() bool {
 	return c.FeatureLabelImages && strings.TrimSpace(c.ComfyUIShimURL) != ""
+}
+
+// IsServerRole reports whether this process should run the HTTP API +
+// cross-pod progress relay. True for both "server" and "all" (the
+// default) — only an explicit "worker" role turns this off.
+func (c *Config) IsServerRole() bool {
+	return c.Role == "server" || c.Role == "all"
+}
+
+// IsWorkerRole reports whether this process should run image-job execution
+// (the AMQP consumer under broker=rabbitmq, or start the label-images
+// reconcile loop). True for both "worker" and "all" (the default) — only
+// an explicit "server" role turns this off.
+func (c *Config) IsWorkerRole() bool {
+	return c.Role == "worker" || c.Role == "all"
+}
+
+// BrokerRabbit reports whether the image-job transport is RabbitMQ+Dragonfly
+// rather than the default in-process Registry+Pool. Case-insensitive so a
+// stray BOOM_QUEUE_BROKER=RabbitMQ doesn't silently fall through to inprocess.
+func (c *Config) BrokerRabbit() bool {
+	return strings.EqualFold(c.QueueBroker, "rabbitmq")
 }
 
 // LLMEnabled reports whether an LLM API key is configured for the avatar
