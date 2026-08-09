@@ -8,19 +8,30 @@
  * ruler overlay for using the catalog as a visual QA checker.
  */
 
-/* Responsive card grid — auto-fill so cards keep a comfortable min width and
- * wrap; expressed here (not Tailwind arbitrary values) so the minmax stays
- * legible + tweakable. */
+/* Size-aware card grid. A fine auto-fill track (150px) is the unit; each card
+ * spans N tracks + gets a stage height derived from the widget's own declared
+ * footprint (catalog defaultLayout {w,h}) — so a stat tile is small and a
+ * heatmap is wide, instead of everything forced into one uniform box.
+ * `dense` packs gaps; `align-items:start` stops short cards stretching tall. */
 .catalog-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-auto-flow: row dense;
+  align-items: start;
   gap: 1rem;
 }
+.catalog-card {
+  grid-column: span var(--catalog-cols, 3);
+}
 
-/* Consistent comparison viewport for a widget's live render. */
+/* The widget's live render, sized to its OWN aspect ratio (from the spec's
+ * size w×h — the single source of truth), so a wide banner is short and a
+ * poster is square. Clamped so nothing is absurdly tall/short. */
 .catalog-stage {
   position: relative;
-  height: var(--catalog-stage-h, 200px);
+  aspect-ratio: var(--catalog-aspect, 3 / 2);
+  min-height: 84px;
+  max-height: 440px;
   overflow: hidden;
   display: flex;
   align-items: stretch;

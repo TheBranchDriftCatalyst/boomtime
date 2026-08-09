@@ -19,6 +19,7 @@ import {
   useCatalogSource,
   type CatalogSource,
 } from "./CatalogDataSource";
+import { specForKind } from "@/features/widgets/specs";
 import { CATALOG_WIDGETS, CATALOG_CATEGORIES } from "./catalogEntries";
 import { CatalogWidgetRenderer } from "./CatalogWidgetRenderer";
 import { WidgetCatalogCard } from "./WidgetCatalogCard";
@@ -30,6 +31,18 @@ interface CatalogPageProps {
 
 function countIn(category: string): number {
   return CATALOG_WIDGETS.filter((w) => w.category === category).length;
+}
+
+// Card sizing is driven ENTIRELY by the widget spec's `size` (specs.json — the
+// single source of truth), so a card matches the widget's true footprint.
+// `badge` is the only kind without a spec size (its SVG width is dynamic).
+const BADGE_SIZE = { w: 240, h: 60 };
+function specSize(kind: string): { w: number; h: number } {
+  return specForKind(kind)?.size ?? BADGE_SIZE;
+}
+/** Column span (in 150px catalog tracks) from the spec width. */
+function colsFor(w: number): number {
+  return Math.min(6, Math.max(2, Math.round(w / 170)));
 }
 
 function CatalogInner({ variant = "app" }: CatalogPageProps) {
@@ -115,11 +128,19 @@ function CatalogInner({ variant = "app" }: CatalogPageProps) {
             <span className="ml-1 h-px flex-1 bg-border/60" aria-hidden />
           </h2>
           <div className="catalog-grid">
-            {g.items.map((w) => (
-              <WidgetCatalogCard key={w.kind} entry={w}>
-                <CatalogWidgetRenderer kind={w.kind} source={effectiveSource} />
-              </WidgetCatalogCard>
-            ))}
+            {g.items.map((entry) => {
+              const sz = specSize(entry.kind);
+              return (
+                <WidgetCatalogCard
+                  key={entry.kind}
+                  entry={entry}
+                  cols={colsFor(sz.w)}
+                  aspect={sz.w / sz.h}
+                >
+                  <CatalogWidgetRenderer kind={entry.kind} source={effectiveSource} />
+                </WidgetCatalogCard>
+              );
+            })}
           </div>
         </section>
       ))}

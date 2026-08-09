@@ -27,11 +27,15 @@ export interface WidgetCatalogCardProps {
   entry: CatalogCardEntry;
   /** Live embeddable SVG URL for the copy actions (embeddable kinds only). */
   embedUrl?: string;
+  /** Grid column span (in catalog track units) — derived from the spec size. */
+  cols?: number;
+  /** Live-preview aspect ratio (w/h) — from the spec size. */
+  aspect?: number;
   /** The live, inline-rendered widget. */
   children: ReactNode;
 }
 
-export function WidgetCatalogCard({ entry, embedUrl, children }: WidgetCatalogCardProps) {
+export function WidgetCatalogCard({ entry, embedUrl, cols, aspect, children }: WidgetCatalogCardProps) {
   const [copied, setCopied] = useState<null | "md" | "html">(null);
 
   const copy = async (which: "md" | "html") => {
@@ -49,7 +53,15 @@ export function WidgetCatalogCard({ entry, embedUrl, children }: WidgetCatalogCa
   };
 
   return (
-    <Card className="catalog-card group relative flex h-full flex-col" data-kind={entry.kind} data-target={entry.target}>
+    <Card
+      className="catalog-card group relative flex flex-col"
+      data-kind={entry.kind}
+      data-target={entry.target}
+      style={{
+        ...(cols ? { ["--catalog-cols" as string]: cols } : {}),
+        ...(aspect ? { ["--catalog-aspect" as string]: aspect } : {}),
+      }}
+    >
       <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
         <div className="flex min-w-0 flex-col gap-0.5">
           <CardTitle className="text-sm font-semibold text-foreground">{entry.title}</CardTitle>

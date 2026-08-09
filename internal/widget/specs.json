@@ -167,16 +167,19 @@
   {
     "kind": "loc",
     "target": "fe-only",
+    "size": { "w": 720, "h": 240 },
     "reason": "Overview-only, in-page + self-fetching lines-of-code chart; no backend SVG variant (gaka-yfg)."
   },
   {
     "kind": "grade-badge",
     "target": "fe-only",
+    "size": { "w": 300, "h": 300 },
     "reason": "In-page-only interactive/identity chrome (letter-grade poster); the backend SVG endpoint 404s for it."
   },
   {
     "kind": "hero-identity",
     "target": "fe-only",
+    "size": { "w": 600, "h": 180 },
     "reason": "In-page-only identity chrome (username + tagline + last-updated); no backend SVG variant."
   },
   {
@@ -203,66 +206,79 @@
   {
     "kind": "labels-showcase",
     "target": "fe-only",
+    "size": { "w": 600, "h": 320 },
     "reason": "FE-only labels/memeification showcase; not registered as an SVG kind (gaka-364)."
   },
   {
     "kind": "overview-stats",
     "target": "fe-only",
+    "size": { "w": 900, "h": 150 },
     "reason": "Overview-only, self-fetching from OverviewDataContext; no backend SVG variant (gaka-7uc)."
   },
   {
     "kind": "ai-assistance",
     "target": "fe-only",
+    "size": { "w": 900, "h": 220 },
     "reason": "Overview-only, self-fetching from OverviewDataContext; no backend SVG variant (gaka-7uc)."
   },
   {
     "kind": "wellness",
     "target": "fe-only",
+    "size": { "w": 900, "h": 220 },
     "reason": "Overview-only, self-fetching from OverviewDataContext; no backend SVG variant (gaka-7uc)."
   },
   {
     "kind": "category-breakdown",
     "target": "fe-only",
+    "size": { "w": 900, "h": 220 },
     "reason": "Overview-only, self-fetching from OverviewDataContext; no backend SVG variant (gaka-7uc)."
   },
   {
     "kind": "streak-banner",
     "target": "fe-only",
+    "size": { "w": 900, "h": 150 },
     "reason": "Overview-only, self-fetching from OverviewDataContext; no backend SVG variant (gaka-7uc)."
   },
   {
     "kind": "overview-total-activity",
     "target": "fe-only",
+    "size": { "w": 600, "h": 320 },
     "reason": "Overview-only, self-fetching from OverviewDataContext; no backend SVG variant (gaka-7uc)."
   },
   {
     "kind": "category-streamgraph",
     "target": "fe-only",
+    "size": { "w": 450, "h": 300 },
     "reason": "Overview-only, self-fetching from OverviewDataContext; no backend SVG variant (gaka-7uc)."
   },
   {
     "kind": "overview-timeline",
     "target": "fe-only",
+    "size": { "w": 900, "h": 260 },
     "reason": "Overview-only, self-fetching from OverviewDataContext; no backend SVG variant (gaka-7uc)."
   },
   {
     "kind": "github-commits",
     "target": "fe-only",
+    "size": { "w": 900, "h": 220 },
     "reason": "GitHub-only, self-fetching from the cached GithubStatsPayload; no backend SVG variant (gaka-v1k)."
   },
   {
     "kind": "github-repos",
     "target": "fe-only",
+    "size": { "w": 450, "h": 320 },
     "reason": "GitHub-only, self-fetching from the cached GithubStatsPayload; no backend SVG variant (gaka-v1k)."
   },
   {
     "kind": "github-languages",
     "target": "fe-only",
+    "size": { "w": 450, "h": 320 },
     "reason": "GitHub-only, self-fetching from the cached GithubStatsPayload; no backend SVG variant (gaka-v1k)."
   },
   {
     "kind": "github-stats",
     "target": "fe-only",
+    "size": { "w": 900, "h": 560 },
     "reason": "Combined public-profile GitHub card, self-fetching from the public mirror; no backend SVG variant (gaka-2ud)."
   }
 ]

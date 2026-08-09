@@ -58,9 +58,13 @@ type Spec struct {
 	// goals, …). Pure documentation — read by the guard tests and reviewers,
 	// not by renderSpec.
 	Reason string `json:"reason,omitempty"`
-	// Size is the canvas renderSpec opens the Frame at. Unused for target
-	// "fe-only" and for the "badge" primitive (badge is not a Frame/card at
-	// all — see renderSpec below).
+	// Size is the widget's canonical footprint (w×h px) — the SINGLE source of
+	// truth for every widget's dimensions/aspect. For target "both" it's the
+	// canvas renderSpec opens the Frame at; for target "fe-only" the Go renderer
+	// never draws these (they 404 as SVG), so Size there is a pure LAYOUT HINT
+	// consumed by the FE (catalog card sizing, dashboard footprints) via the
+	// specs.json → @widget-specs mirror. Only the "badge" primitive has no Size
+	// (its SVG width is dynamic — not a Frame/card at all; see renderSpec).
 	Size *SpecSize `json:"size,omitempty"`
 	// DefaultView mirrors WidgetCatalogEntry.defaultView (catalog.ts) —
 	// carried here so a future FE reader doesn't need a second lookup for a
