@@ -9,6 +9,14 @@ COPY web/package.json web/yarn.lock ./
 # bump the base image (or the dep drops the requirement).
 RUN yarn install --frozen-lockfile --ignore-engines
 COPY web/ ./
+# Part B Stage 2: the widget catalog spec is ONE committed file,
+# internal/widget/specs.json, consumed by BOTH the Go SVG renderer (//go:embed)
+# and the FE (imported via the "@widget-specs" alias → ../internal/widget/specs.json,
+# see web/vite.config.ts + web/tsconfig.app.json). This web stage only copies
+# web/, so the alias would fail to resolve here (it works locally because the
+# whole repo is present). Copy the single source into the aliased path so tsc +
+# vite resolve it — no duplicate file, still one source of truth.
+COPY internal/widget/specs.json /internal/widget/specs.json
 RUN yarn build
 
 # ── Stage 2: build the Go binary with the SPA embedded ───────────────────────
