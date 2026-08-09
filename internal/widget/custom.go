@@ -147,8 +147,17 @@ func NeedsForDef(d Def) Requirements {
 	return r
 }
 
-// panelRect is one panel's origin + size within the card body.
-type panelRect struct{ X, Y, W, H int }
+// panelRect is one panel's origin + size within the card body. JSON tags
+// exist for spec.go (Part B Stage 2): renderCustom never serializes a
+// panelRect (panelRects() computes it, def.Panels only carries Kind/Title),
+// but SpecPanel.Rect (the generic engine's per-panel geometry) reuses this
+// exact type so both engines share one rect vocabulary.
+type panelRect struct {
+	X int `json:"x"`
+	Y int `json:"y"`
+	W int `json:"w"`
+	H int `json:"h"`
+}
 
 // panelRects computes each panel's rectangle for a layout, sized to (w × h)
 // body area starting at bodyTop inside a `total` height frame.

@@ -49,6 +49,11 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      // Part B Stage 2 (gaka-174.x): the canonical widget spec registry is
+      // ONE committed file — Go embeds it (internal/widget/spec.go), the FE
+      // reads the exact same bytes through this alias (see
+      // src/features/widgets/specs.ts) instead of a generated copy.
+      "@widget-specs": path.resolve(__dirname, "../internal/widget/specs.json"),
     },
     dedupe: ["react", "react-dom", "react/jsx-runtime"],
   },

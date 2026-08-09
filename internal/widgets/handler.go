@@ -287,7 +287,19 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 			return nil, err
 		}
 
+		// Part B Stage 2: BOOM_WIDGET_SPEC_ENGINE swaps the legacy hand-written
+		// Needs/Render (render.go) for the generic spec-driven NeedsForSpec/
+		// RenderSpec (spec.go) for every "both"-target kind. Default off — see
+		// Config.FeatureWidgetSpecEngine. The "custom" (Def-based builder)
+		// path is untouched either way; it isn't part of the spec registry.
 		needs := widget.Needs(kind)
+		useSpecEngine := false
+		if h.Cfg.FeatureWidgetSpecEngine {
+			if spec, ok := widget.SpecFor(kind); ok && spec.Target == widget.TargetBoth {
+				needs = widget.NeedsForSpec(spec)
+				useSpecEngine = true
+			}
+		}
 		if customDef != nil {
 			needs = widget.NeedsForDef(*customDef)
 		}
@@ -357,6 +369,9 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 		}
 		if customDef != nil {
 			return widget.RenderCustom(data, *customDef, opts)
+		}
+		if useSpecEngine {
+			return widget.RenderSpec(kind, data, opts)
 		}
 		return widget.Render(kind, data, opts)
 	})

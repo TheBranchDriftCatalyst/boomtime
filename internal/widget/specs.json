@@ -1,0 +1,242 @@
+[
+  {
+    "kind": "stats-card",
+    "target": "both",
+    "size": { "w": 495, "h": 195 },
+    "panels": [
+      { "primitive": "metric", "binding": "total-seconds", "title": "Total", "rect": { "x": 25, "y": 60, "w": 110, "h": 40 } },
+      { "primitive": "metric", "binding": "daily-avg", "title": "Daily avg", "rect": { "x": 25, "y": 110, "w": 110, "h": 40 } },
+      { "primitive": "bars", "binding": "languages", "title": "Top languages", "rect": { "x": 150, "y": 55, "w": 325, "h": 120 } }
+    ]
+  },
+  {
+    "kind": "stats-card-with-grade",
+    "target": "both",
+    "size": { "w": 495, "h": 195 },
+    "panels": [
+      { "primitive": "metric", "binding": "total-seconds", "title": "Total", "rect": { "x": 25, "y": 60, "w": 110, "h": 40 } },
+      { "primitive": "metric", "binding": "daily-avg", "title": "Daily avg", "rect": { "x": 25, "y": 110, "w": 110, "h": 40 } },
+      { "primitive": "bars", "binding": "languages", "title": "Top languages", "rect": { "x": 150, "y": 95, "w": 260, "h": 85 } },
+      { "primitive": "grade-ring", "binding": "grade", "rect": { "x": 410, "y": 15, "w": 70, "h": 70 } }
+    ]
+  },
+  {
+    "kind": "top-langs",
+    "target": "both",
+    "size": { "w": 300, "h": 200 },
+    "panels": [{ "primitive": "bars", "binding": "languages" }]
+  },
+  {
+    "kind": "top-projects",
+    "target": "both",
+    "size": { "w": 300, "h": 200 },
+    "panels": [{ "primitive": "bars", "binding": "projects" }]
+  },
+  {
+    "kind": "badge",
+    "target": "both",
+    "panels": [{ "primitive": "badge", "binding": "total-seconds" }]
+  },
+  {
+    "kind": "activity-heatmap",
+    "target": "both",
+    "size": { "w": 720, "h": 170 },
+    "panels": [{ "primitive": "calendar", "binding": "daily-total" }]
+  },
+  {
+    "kind": "punchcard",
+    "target": "both",
+    "size": { "w": 560, "h": 220 },
+    "panels": [{ "primitive": "punchcard", "binding": "punchcard" }]
+  },
+  {
+    "kind": "momentum",
+    "target": "both",
+    "size": { "w": 560, "h": 220 },
+    "panels": [{ "primitive": "momentum", "binding": "momentum" }]
+  },
+  {
+    "kind": "profile-summary",
+    "target": "both",
+    "size": { "w": 820, "h": 240 },
+    "panels": [
+      { "primitive": "calendar", "binding": "daily-total", "rect": { "x": 20, "y": 55, "w": 360, "h": 165 } },
+      { "primitive": "bars", "binding": "languages", "title": "Top languages", "rect": { "x": 400, "y": 60, "w": 270, "h": 150 } },
+      { "primitive": "grade-ring", "binding": "grade", "rect": { "x": 700, "y": 15, "w": 90, "h": 90 } },
+      { "primitive": "metric", "binding": "total-seconds", "title": "Total", "rect": { "x": 690, "y": 160, "w": 110, "h": 35 } },
+      { "primitive": "metric", "binding": "daily-avg", "title": "Daily avg", "rect": { "x": 690, "y": 195, "w": 110, "h": 35 } }
+    ]
+  },
+  {
+    "kind": "cumulative-area",
+    "target": "both",
+    "size": { "w": 560, "h": 200 },
+    "panels": [{ "primitive": "area", "binding": "daily-total" }]
+  },
+  {
+    "kind": "deep-work",
+    "target": "both",
+    "size": { "w": 495, "h": 195 },
+    "panels": [
+      { "primitive": "metric", "binding": "sessions", "field": "count", "title": "Sessions", "rect": { "x": 25, "y": 60, "w": 150, "h": 35 } },
+      { "primitive": "metric", "binding": "sessions", "field": "median", "title": "Median length", "rect": { "x": 25, "y": 100, "w": 150, "h": 35 } },
+      { "primitive": "metric", "binding": "sessions", "field": "longest", "title": "Longest", "rect": { "x": 25, "y": 140, "w": 150, "h": 35 } },
+      { "primitive": "area", "binding": "sessions", "rect": { "x": 190, "y": 55, "w": 285, "h": 130 } }
+    ]
+  },
+  {
+    "kind": "heatmap-projects",
+    "target": "both",
+    "size": { "w": 720, "h": 240 },
+    "panels": [{ "primitive": "day-heatmap", "binding": "projects" }]
+  },
+  {
+    "kind": "heatmap-languages",
+    "target": "both",
+    "size": { "w": 720, "h": 240 },
+    "panels": [{ "primitive": "day-heatmap", "binding": "languages" }]
+  },
+  {
+    "kind": "total-time-stat",
+    "target": "both",
+    "size": { "w": 240, "h": 140 },
+    "panels": [{ "primitive": "stat-numeral", "binding": "total-seconds", "title": "TOTAL TIME" }]
+  },
+  {
+    "kind": "daily-avg-stat",
+    "target": "both",
+    "size": { "w": 240, "h": 140 },
+    "panels": [{ "primitive": "stat-numeral", "binding": "daily-avg", "title": "DAILY AVG" }]
+  },
+  {
+    "kind": "current-streak-stat",
+    "target": "both",
+    "size": { "w": 240, "h": 140 },
+    "panels": [{ "primitive": "stat-numeral", "binding": "streak-current", "title": "CURRENT STREAK" }]
+  },
+  {
+    "kind": "longest-streak-stat",
+    "target": "both",
+    "size": { "w": 240, "h": 140 },
+    "panels": [{ "primitive": "stat-numeral", "binding": "streak-longest", "title": "LONGEST STREAK" }]
+  },
+  {
+    "kind": "active-days-stat",
+    "target": "both",
+    "size": { "w": 240, "h": 160 },
+    "panels": [{ "primitive": "ratio", "binding": "active-days" }]
+  },
+  {
+    "kind": "categories-chart",
+    "target": "both",
+    "size": { "w": 495, "h": 150 },
+    "panels": [{ "primitive": "chips", "binding": "categories" }]
+  },
+  {
+    "kind": "editors-chips",
+    "target": "both",
+    "size": { "w": 495, "h": 150 },
+    "panels": [{ "primitive": "chips", "binding": "editors" }]
+  },
+  {
+    "kind": "platforms-chips",
+    "target": "both",
+    "size": { "w": 495, "h": 150 },
+    "panels": [{ "primitive": "chips", "binding": "platforms" }]
+  },
+  {
+    "kind": "loc",
+    "target": "fe-only",
+    "reason": "Overview-only, in-page + self-fetching lines-of-code chart; no backend SVG variant (gaka-yfg)."
+  },
+  {
+    "kind": "grade-badge",
+    "target": "fe-only",
+    "reason": "In-page-only interactive/identity chrome (letter-grade poster); the backend SVG endpoint 404s for it."
+  },
+  {
+    "kind": "hero-identity",
+    "target": "fe-only",
+    "reason": "In-page-only identity chrome (username + tagline + last-updated); no backend SVG variant."
+  },
+  {
+    "kind": "goal-progress",
+    "target": "fe-only",
+    "reason": "Goals are private-by-default; renders in-page only from the user's own goal data (gaka-wpb)."
+  },
+  {
+    "kind": "goal-ring",
+    "target": "fe-only",
+    "reason": "Goals are private-by-default; renders in-page only from the user's own goal data (gaka-wpb)."
+  },
+  {
+    "kind": "goal-list",
+    "target": "fe-only",
+    "reason": "Goals are private-by-default; renders in-page only from the user's own goal data (gaka-wpb)."
+  },
+  {
+    "kind": "labels-showcase",
+    "target": "fe-only",
+    "reason": "FE-only labels/memeification showcase; not registered as an SVG kind (gaka-364)."
+  },
+  {
+    "kind": "overview-stats",
+    "target": "fe-only",
+    "reason": "Overview-only, self-fetching from OverviewDataContext; no backend SVG variant (gaka-7uc)."
+  },
+  {
+    "kind": "ai-assistance",
+    "target": "fe-only",
+    "reason": "Overview-only, self-fetching from OverviewDataContext; no backend SVG variant (gaka-7uc)."
+  },
+  {
+    "kind": "wellness",
+    "target": "fe-only",
+    "reason": "Overview-only, self-fetching from OverviewDataContext; no backend SVG variant (gaka-7uc)."
+  },
+  {
+    "kind": "category-breakdown",
+    "target": "fe-only",
+    "reason": "Overview-only, self-fetching from OverviewDataContext; no backend SVG variant (gaka-7uc)."
+  },
+  {
+    "kind": "streak-banner",
+    "target": "fe-only",
+    "reason": "Overview-only, self-fetching from OverviewDataContext; no backend SVG variant (gaka-7uc)."
+  },
+  {
+    "kind": "overview-total-activity",
+    "target": "fe-only",
+    "reason": "Overview-only, self-fetching from OverviewDataContext; no backend SVG variant (gaka-7uc)."
+  },
+  {
+    "kind": "category-streamgraph",
+    "target": "fe-only",
+    "reason": "Overview-only, self-fetching from OverviewDataContext; no backend SVG variant (gaka-7uc)."
+  },
+  {
+    "kind": "overview-timeline",
+    "target": "fe-only",
+    "reason": "Overview-only, self-fetching from OverviewDataContext; no backend SVG variant (gaka-7uc)."
+  },
+  {
+    "kind": "github-commits",
+    "target": "fe-only",
+    "reason": "GitHub-only, self-fetching from the cached GithubStatsPayload; no backend SVG variant (gaka-v1k)."
+  },
+  {
+    "kind": "github-repos",
+    "target": "fe-only",
+    "reason": "GitHub-only, self-fetching from the cached GithubStatsPayload; no backend SVG variant (gaka-v1k)."
+  },
+  {
+    "kind": "github-languages",
+    "target": "fe-only",
+    "reason": "GitHub-only, self-fetching from the cached GithubStatsPayload; no backend SVG variant (gaka-v1k)."
+  },
+  {
+    "kind": "github-stats",
+    "target": "fe-only",
+    "reason": "Combined public-profile GitHub card, self-fetching from the public mirror; no backend SVG variant (gaka-2ud)."
+  }
+]
