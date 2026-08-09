@@ -77,7 +77,7 @@ type Job struct {
 // SINGLE place the Job -> Entry mapping happens: cmd/boomtime's Executor
 // closure (shared verbatim by both the in-process Pool and the AMQP
 // consumer — see main.go) calls this instead of duplicating the struct
-// literal per transport.
+// literal per transport. (gaka-8bz — shared DRY core.)
 func (j Job) ToLabelEntry() labelcatalog.Entry {
 	return labelcatalog.Entry{
 		ID:          j.LabelID,

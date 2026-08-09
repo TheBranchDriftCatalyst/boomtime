@@ -21,6 +21,18 @@ spec:
           image: boomtime:dev
           imagePullPolicy: Never
           args: null
+          # Dev-only startupProbe: air compiles the whole app in-container on
+          # first start, which can exceed the base liveness/readiness probe
+          # window → cosmetic restarts (yellow in Tilt). Hold both probes off
+          # (up to 5s×60=300s) until the binary is actually listening on
+          # :8081. Prod bakes the binary (starts instantly) so it doesn't need
+          # this. Once startup succeeds, base liveness/readiness take over.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            periodSeconds: 5
+            failureThreshold: 60
           # Same rationale as patch-deployment.yaml: air compiles the WHOLE
           # app in-container on every change, so grant build-time headroom
           # beyond the base's server-sized 512Mi/2Gi split.
