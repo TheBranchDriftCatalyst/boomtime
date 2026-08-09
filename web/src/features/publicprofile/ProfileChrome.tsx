@@ -16,7 +16,6 @@ import {
 } from "@thebranchdriftcatalyst/catalyst-ui/contexts/Theme";
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
@@ -24,7 +23,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/dropdown-menu";
-import { FEATURE_FLAGS, useFeatureFlag } from "@/lib/featureFlags";
+import { LabsFlags } from "@/features/settings/LabsFlags";
 import { RANGE_PRESETS, useProfileRange } from "./profileRange";
 
 function RangeControl() {
@@ -93,33 +92,11 @@ function ThemeControl() {
   );
 }
 
-function FlagItem({
-  flagKey,
-  label,
-  description,
-}: {
-  flagKey: string;
-  label: string;
-  description?: string;
-}) {
-  const [on, set] = useFeatureFlag(flagKey);
-  return (
-    <DropdownMenuCheckboxItem
-      checked={on}
-      onCheckedChange={(v) => set(Boolean(v))}
-      data-testid={`flag-${flagKey}`}
-    >
-      <span className="flex flex-col">
-        <span>{label}</span>
-        {description ? (
-          <span className="text-[10px] text-muted-foreground">{description}</span>
-        ) : null}
-      </span>
-    </DropdownMenuCheckboxItem>
-  );
-}
-
 // The "flipper" — toggles experimental viewer-preference feature flags.
+// Renders the SAME <LabsFlags/> list Settings > Labs uses (gaka-lzr) — one
+// component owns the flag-row rendering; this is just a compact popover
+// wrapper around it. "menu" variant keeps the rows compact enough for the
+// w-72 dropdown.
 function FlagsFlipper() {
   return (
     <DropdownMenu>
@@ -138,14 +115,7 @@ function FlagsFlipper() {
       <DropdownMenuContent align="end" className="w-72">
         <DropdownMenuLabel>Experimental</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {FEATURE_FLAGS.map((f) => (
-          <FlagItem
-            key={f.key}
-            flagKey={f.key}
-            label={f.label}
-            description={f.description}
-          />
-        ))}
+        <LabsFlags variant="menu" />
       </DropdownMenuContent>
     </DropdownMenu>
   );

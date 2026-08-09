@@ -12,6 +12,7 @@ import { Changelog } from "@/features/changelog/Changelog";
 import { AvatarTab } from "@/features/settings/avatar/AvatarTab";
 import { ChangePasswordCard } from "@/features/settings/ChangePasswordCard";
 import { GithubConnectCard } from "@/features/settings/GithubConnectCard";
+import { LabsTab } from "@/features/settings/LabsTab";
 import { LinkedIdentitiesCard } from "@/features/settings/LinkedIdentitiesCard";
 import { PluginSetup } from "@/features/settings/PluginSetup";
 import { PublicProfileCard } from "@/features/settings/PublicProfileCard";
@@ -60,6 +61,11 @@ const TABS = [
   // gaka-gud: Goals moved OUT to a top-level /app/goals page (a ?tab=goals
   // redirect below keeps old links working).
   { id: "widgets", label: "Widgets", render: () => <WidgetLinksCard /> },
+  // gaka-lzr: reachability home for the experimental FEATURE_FLAGS registry
+  // (overviewEditor, labels3D, ...) — previously only discoverable from the
+  // public-profile dossier's flags-flipper menu. Last tab: it's opt-in
+  // tinkering, not a first-run destination.
+  { id: "labs", label: "Labs", render: () => <LabsTab /> },
   { id: "changelog", label: "Changelog", render: () => <Changelog embedded /> },
 ] as const;
 
