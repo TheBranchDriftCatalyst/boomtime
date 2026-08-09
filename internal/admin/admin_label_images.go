@@ -42,6 +42,7 @@ package admin
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
@@ -78,14 +79,37 @@ func (h *Handler) AdminLabelImagesInfo(c *echo.Context) error {
 		}
 		baseline = ids
 	}
-	return c.JSON(http.StatusOK, map[string]any{
+	// gaka-8bz worker-topology follow-up: surface which transport is
+	// actually running regens so the Admin tab can distinguish "the local
+	// in-process pool" from "the decoupled boomtime-worker pod via
+	// RabbitMQ" — and, when it's the latter, how deep the broker queue
+	// currently is + a link to its management UI. Both extra fields are
+	// best-effort: a depth-check failure is logged and simply omitted
+	// rather than failing the whole info request.
+	broker := "inprocess"
+	resp := map[string]any{
 		"enabled":  h.Cfg.LabelImagesEnabled(),
 		"model":    h.Cfg.ComfyUIModel,
 		"shimUrl":  h.Cfg.ComfyUIShimURL,
 		"count":    len(items),
 		"items":    items,
 		"baseline": baseline,
-	})
+	}
+	if h.Cfg.BrokerRabbit() {
+		broker = "rabbitmq"
+		if mgmtURL := strings.TrimSpace(h.Cfg.RabbitMgmtURL); mgmtURL != "" {
+			resp["mgmtUrl"] = mgmtURL
+		}
+		if qi, ok := h.ImageJobQueue.(imagejobs.QueueInspector); ok {
+			if n, derr := qi.QueueDepth(); derr != nil {
+				h.Logger.Warn("admin label-images: queue depth check failed", "err", derr)
+			} else {
+				resp["queueDepth"] = n
+			}
+		}
+	}
+	resp["broker"] = broker
+	return c.JSON(http.StatusOK, resp)
 }
 
 // regenReq is the POST body shape. The FE sends BOTH `entries` (the full

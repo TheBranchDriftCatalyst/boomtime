@@ -28,9 +28,20 @@ type EventSource interface {
 	Snapshot() []Job
 }
 
+// QueueInspector is an OPTIONAL capability an Enqueuer may satisfy to
+// report live broker depth for ops/admin visibility. AdminLabelImagesInfo
+// type-asserts h.ImageJobQueue against this and includes the result only
+// when present. *AMQPProducer satisfies it; *Registry (broker=inprocess)
+// does not — there IS no separate broker to inspect there, and the
+// in-process "queued" count is already visible via Snapshot().
+type QueueInspector interface {
+	QueueDepth() (int, error)
+}
+
 // Compile-time assertions: *Registry must keep satisfying both seams no
 // matter how its internals evolve.
 var (
-	_ Enqueuer    = (*Registry)(nil)
-	_ EventSource = (*Registry)(nil)
+	_ Enqueuer       = (*Registry)(nil)
+	_ EventSource    = (*Registry)(nil)
+	_ QueueInspector = (*AMQPProducer)(nil)
 )

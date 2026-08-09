@@ -45,8 +45,10 @@ type jobMessage struct {
 // AMQPProducer implements Enqueuer over a RabbitMQ queue. ch must already
 // be open on a live *amqp.Connection; rdb backs both the cross-pod dedup
 // lock and (via bus) the "queued" event every server pod's mirror Registry
-// needs to show the job immediately.
+// needs to show the job immediately. conn is retained ONLY for QueueDepth,
+// which needs a channel of its own — see that method's doc comment.
 type AMQPProducer struct {
+	conn  *amqp.Connection
 	ch    *amqp.Channel
 	queue string
 	rdb   *redis.Client
@@ -54,20 +56,44 @@ type AMQPProducer struct {
 	log   *slog.Logger
 }
 
-var _ Enqueuer = (*AMQPProducer)(nil)
+var (
+	_ Enqueuer       = (*AMQPProducer)(nil)
+	_ QueueInspector = (*AMQPProducer)(nil)
+)
 
 // NewAMQPProducer declares the target queue (durable, idempotent — safe to
 // call whether or not a Messaging Topology `Queue` CR already declared it,
 // see k8s/overlays/talos00-knowledgedump/rabbitmq.yaml) and returns a
 // ready-to-use producer.
-func NewAMQPProducer(ch *amqp.Channel, queue string, rdb *redis.Client, bus *RedisEventBus, logger *slog.Logger) (*AMQPProducer, error) {
+func NewAMQPProducer(conn *amqp.Connection, ch *amqp.Channel, queue string, rdb *redis.Client, bus *RedisEventBus, logger *slog.Logger) (*AMQPProducer, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	if _, err := ch.QueueDeclare(queue, true, false, false, false, nil); err != nil {
 		return nil, fmt.Errorf("imagejobs: queue declare: %w", err)
 	}
-	return &AMQPProducer{ch: ch, queue: queue, rdb: rdb, bus: bus, log: logger}, nil
+	return &AMQPProducer{conn: conn, ch: ch, queue: queue, rdb: rdb, bus: bus, log: logger}, nil
+}
+
+// QueueDepth reports the current number of ready (unconsumed) messages on
+// the target queue — ops/admin visibility for AdminLabelImagesInfo (the
+// Admin tab shows it next to the WS "live" indicator). Opens a SEPARATE
+// short-lived channel for the passive declare rather than reusing p.ch:
+// a passive declare against a queue that doesn't exist closes the channel
+// it ran on (AMQP 0.9.1 channel-exception semantics) — p.ch must stay
+// alive for Enqueue's publishes, so a depth-check hiccup can never take
+// down enqueueing.
+func (p *AMQPProducer) QueueDepth() (int, error) {
+	ch, err := p.conn.Channel()
+	if err != nil {
+		return 0, fmt.Errorf("imagejobs: queue depth channel: %w", err)
+	}
+	defer ch.Close()
+	q, err := ch.QueueDeclarePassive(p.queue, true, false, false, false, nil)
+	if err != nil {
+		return 0, fmt.Errorf("imagejobs: queue depth inspect: %w", err)
+	}
+	return q.Messages, nil
 }
 
 // Enqueue mirrors Registry.Enqueue's contract (idempotent per LabelID,

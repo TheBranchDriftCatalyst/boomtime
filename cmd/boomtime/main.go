@@ -301,7 +301,7 @@ func runCmd() *cobra.Command {
 							return fmt.Errorf("rabbitmq producer channel: %w", cherr)
 						}
 						defer producerCh.Close()
-						producer, perr := imagejobs.NewAMQPProducer(producerCh, cfg.RabbitQueue, rdb, bus, logger)
+						producer, perr := imagejobs.NewAMQPProducer(amqpConn, producerCh, cfg.RabbitQueue, rdb, bus, logger)
 						if perr != nil {
 							return fmt.Errorf("rabbitmq producer: %w", perr)
 						}

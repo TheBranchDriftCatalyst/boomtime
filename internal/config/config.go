@@ -239,6 +239,15 @@ type Config struct {
 	RabbitQueue   string // default "boomtime.image-jobs"
 	RedisAddr     string // Dragonfly/Redis host:port, e.g. boomtime-cache:6379
 	RedisPassword string // usually empty in-cluster
+
+	// RabbitMgmtURL is the operator/human-facing RabbitMQ management UI
+	// base URL (BOOM_RABBITMQ_MGMT_URL) — surfaced by AdminLabelImagesInfo
+	// so the Admin tab can link straight to it. Purely informational: the
+	// server never calls it. Empty = no link shown (default; also the
+	// correct value under broker=inprocess, where there's no broker to
+	// link to). Set per-overlay: local -> http://localhost:15672 (Tilt
+	// port-forward), prod -> the LAN-gated IngressRoute host.
+	RabbitMgmtURL string
 }
 
 func getEnv(key, def string) string {
@@ -429,6 +438,7 @@ func Load() *Config {
 	c.RabbitQueue = getEnv("BOOM_RABBITMQ_QUEUE", "boomtime.image-jobs")
 	c.RedisAddr = getEnv("BOOM_REDIS_ADDR", "")
 	c.RedisPassword = getEnv("BOOM_REDIS_PASSWORD", "")
+	c.RabbitMgmtURL = getEnv("BOOM_RABBITMQ_MGMT_URL", "")
 
 	// gaka-dg7: operator-wide default TZ for users with no explicit pick.
 	// Validate here so an invalid IANA name never lands into the resolver —
