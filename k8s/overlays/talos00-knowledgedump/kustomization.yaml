@@ -12,6 +12,16 @@ resources:
   - ingressroute.yaml
   - comfyui-shim-external.yaml
   - ollama-shim-external.yaml
+  # ── Worker-topology decoupling (gaka-8bz follow-up) ──────────────────────
+  # RabbitMQ + Dragonfly (operator-provisioned) + the boomtime-worker
+  # Deployment + KEDA autoscaling. Additive — the existing server Deployment
+  # is untouched except for patch-server-rabbit.yaml's inert-until-cutover
+  # env. See docs/design/worker-topology-decoupling.md §8.
+  - rabbitmq.yaml
+  - dragonfly.yaml
+  - ../../base/worker
+  - keda-scaledobject.yaml
+  - keda-triggerauth.yaml
 
 # Strategic-merge patches: each adds a feature-specific set of env vars
 # to the base boomtime-config ConfigMap without disturbing existing keys.
@@ -37,8 +47,21 @@ patchesStrategicMerge:
   - oidc-hostaliases.yaml     # pod->Authentik goes internal (bypass Cloudflare, gaka-93f.11.2)
   - usermodel-config.yaml     # BOOM_FEATURE_USER_MODEL=true — RBAC enforcement ON
   - admin-cli-config.yaml     # BOOM_FEATURE_ADMIN_CLI=true — admin CLI-runner ON (admin-gated)
+  # ── Worker-topology decoupling (gaka-8bz follow-up) ──────────────────────
+  - queue-config.yaml         # BOOM_QUEUE_BROKER=rabbitmq + queue/redis addr — THE cutover switch
+  - patch-server-rabbit.yaml  # server: --role=server + amqp URL (inert until the switch above flips)
   # NOTE: authentik-blueprint-boomtime.yaml is an Authentik blueprint, NOT a k8s
   # manifest — it is intentionally never added here (applied to Authentik itself).
+
+# KEDA's amqp scaler (keda-triggerauth.yaml) wants a creds-less host URI as
+# a separate authParam from username/password — not sensitive, so a plain
+# secretGenerator is fine (no ExternalSecret/1Password round-trip needed).
+secretGenerator:
+  - name: boomtime-rabbit-keda-host
+    literals:
+      - host=amqp://boomtime-rabbit.boomtime.svc.cluster.local:5672/
+generatorOptions:
+  disableNameSuffixHash: true
 
 # The Argo Application tracks the `main` branch. This kustomize `newTag`
 # is a starting hint — the live authority is the ImageUpdater CRD at

@@ -1,0 +1,27 @@
+---
+# KEDA ≥2.16 split-cred TriggerAuthentication for the rabbitmq scaler
+# (worker-topology decoupling, gaka-8bz follow-up): a creds-less `host` URI
+# (from the boomtime-rabbit-keda-host Secret — see the secretGenerator in
+# kustomization.yaml) plus separate username/password params sourced
+# straight from the operator's default-user Secret. No controller needs to
+# assemble a full amqp://user:pass@host URL into a Secret.
+#
+# If the installed KEDA is <2.16, fall back to a single `host` secret
+# carrying the full amqp://user:pass@… URL (see docs/design/worker-
+# topology-decoupling.md §8.6 / §10 open question 4).
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: boomtime-rabbit-auth
+  namespace: boomtime
+spec:
+  secretTargetRef:
+    - parameter: host # creds-less amqp URI
+      name: boomtime-rabbit-keda-host
+      key: host
+    - parameter: username # from the operator's default-user Secret
+      name: boomtime-rabbit-default-user
+      key: username
+    - parameter: password
+      name: boomtime-rabbit-default-user
+      key: password

@@ -1,0 +1,32 @@
+---
+# The server role PUBLISHES enqueues (worker-topology decoupling, gaka-8bz
+# follow-up), so it needs the same amqp URL the worker gets. This is the
+# ONLY change to the server Deployment — purely additive: a --role flag
+# (prod's Dockerfile has a real ENTRYPOINT ["boomtime"], so args cleanly
+# becomes `boomtime run --role=server`) plus three env vars, all inert
+# until BOOM_QUEUE_BROKER=rabbitmq (queue-config.yaml). The existing
+# resources/probes/DB-env wiring on this Deployment (base/deployment.yaml)
+# is untouched.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: boomtime
+spec:
+  template:
+    spec:
+      containers:
+        - name: boomtime
+          args: ["run", "--role=server"]
+          env:
+            - name: RABBIT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: boomtime-rabbit-default-user
+                  key: username
+            - name: RABBIT_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: boomtime-rabbit-default-user
+                  key: password
+            - name: BOOM_RABBITMQ_URL
+              value: "amqp://$(RABBIT_USER):$(RABBIT_PASS)@boomtime-rabbit.boomtime.svc.cluster.local:5672/"
