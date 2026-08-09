@@ -66,7 +66,11 @@ type Handler struct {
 	Worker            *importer.Worker
 	Hub               *importer.Hub
 	LabelImagesWorker *labelimages.Worker
-	ImageJobQueue     *imagejobs.Registry
+	// ImageJobQueue / ImageJobEvents — see the doc comments on the
+	// matching fields in handler.Handler (this package's fields exist so
+	// the admin domain doesn't need to import the god-type).
+	ImageJobQueue  imagejobs.Enqueuer
+	ImageJobEvents imagejobs.EventSource
 }
 
 // New constructs an admin.Handler with the passed-in shared deps.
@@ -94,12 +98,23 @@ func (h *Handler) SetLabelImagesWorker(w *labelimages.Worker) {
 	h.LabelImagesWorker = w
 }
 
-// SetImageJobQueue wires the imagejobs.Registry after construction.
-// Called by cmd/boomtime when the label-images feature is on so the
-// admin regen endpoint + WS stream have somewhere to enqueue jobs.
-// Nil = feature off.
-func (h *Handler) SetImageJobQueue(r *imagejobs.Registry) {
-	h.ImageJobQueue = r
+// SetImageJobQueue wires the image-job Enqueuer after construction. Called
+// by cmd/boomtime when the label-images feature is on so the admin regen
+// endpoint has somewhere to enqueue jobs. Nil = feature off. Also wires
+// ImageJobEvents when e satisfies EventSource too — see the matching
+// handler.Handler.SetImageJobQueue doc comment for the full rationale.
+func (h *Handler) SetImageJobQueue(e imagejobs.Enqueuer) {
+	h.ImageJobQueue = e
+	if es, ok := e.(imagejobs.EventSource); ok {
+		h.ImageJobEvents = es
+	}
+}
+
+// SetImageJobEvents wires the image-job EventSource after construction.
+// Only needed when it differs from ImageJobQueue (broker=rabbitmq's
+// producer+mirror split).
+func (h *Handler) SetImageJobEvents(ev imagejobs.EventSource) {
+	h.ImageJobEvents = ev
 }
 
 // requireAdmin: 401 without a token, 403 when not on the admin allowlist.

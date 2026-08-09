@@ -255,7 +255,7 @@ func (h *Handler) AdminLabelImagesWS(c *echo.Context) error {
 	if !h.Cfg.IsAdmin(owner) {
 		return apihelpers.RespondErr(c, apierr.New(http.StatusForbidden, "admin only", nil))
 	}
-	if h.ImageJobQueue == nil {
+	if h.ImageJobEvents == nil {
 		return apihelpers.RespondErr(c, apierr.New(http.StatusServiceUnavailable,
 			"label-images feature is disabled", nil))
 	}
@@ -275,12 +275,12 @@ func (h *Handler) AdminLabelImagesWS(c *echo.Context) error {
 	// Subscribe BEFORE the snapshot: an event fired between snapshot and
 	// subscribe would otherwise be missed. Duplicates are cheap (the FE
 	// map keyed by jobId absorbs them).
-	sub, unsub := h.ImageJobQueue.Subscribe()
+	sub, unsub := h.ImageJobEvents.Subscribe()
 	defer unsub()
 
 	if err := wsjson.Write(ctx, conn, map[string]any{
 		"kind": "snapshot",
-		"jobs": h.ImageJobQueue.Snapshot(),
+		"jobs": h.ImageJobEvents.Snapshot(),
 	}); err != nil {
 		return nil
 	}

@@ -56,12 +56,18 @@ type Handler struct {
 	// admin endpoints (gaka-myv). nil = feature disabled; handlers
 	// respond with 503 in that case.
 	LabelImagesWorker *labelimages.Worker
-	// ImageJobQueue is the in-memory registry backing the durable
-	// per-label regen queue (gaka-8bz). nil = feature disabled; the
-	// admin handler + WS endpoint check for nil and 503 accordingly.
-	// The registry itself owns the pool feed channel; the pool is
-	// constructed and started at server startup in cmd/boomtime.
-	ImageJobQueue *imagejobs.Registry
+	// ImageJobQueue accepts admin regen enqueues (gaka-8bz, transport-
+	// generalized by the worker-topology decoupling). *imagejobs.Registry
+	// under broker=inprocess (the registry owns the pool feed channel; the
+	// pool is constructed and started at server startup in cmd/boomtime) or
+	// *imagejobs.AMQPProducer under broker=rabbitmq. nil = feature
+	// disabled; the admin handler checks for nil and 503s accordingly.
+	ImageJobQueue imagejobs.Enqueuer
+	// ImageJobEvents backs AdminLabelImagesWS's live stream + reconnect
+	// snapshot. Usually the SAME underlying *imagejobs.Registry as
+	// ImageJobQueue (broker=inprocess), or the broker=rabbitmq "mirror"
+	// Registry fed by imagejobs.PumpBusIntoRegistry. nil = feature disabled.
+	ImageJobEvents imagejobs.EventSource
 
 	// Extracted per-domain handler bags (gaka-8tn). Each field points at
 	// deps the domain actually reads (a subset of the god-type).
@@ -134,13 +140,35 @@ func (h *Handler) SetLabelImagesWorker(w *labelimages.Worker) {
 	}
 }
 
-// SetImageJobQueue wires the imagejobs.Registry after construction. Called
+// SetImageJobQueue wires the image-job Enqueuer after construction. Called
 // by cmd/boomtime when the label-images feature is on so the admin regen
-// endpoint + WS stream have somewhere to enqueue jobs. Nil = feature off.
-func (h *Handler) SetImageJobQueue(r *imagejobs.Registry) {
-	h.ImageJobQueue = r
+// endpoint has somewhere to enqueue jobs. Nil = feature off.
+//
+// Convenience: when e also satisfies imagejobs.EventSource (true for
+// *imagejobs.Registry — the broker=inprocess case, and every existing
+// test), ImageJobEvents is wired to the same value so callers that only
+// know about one queue object don't have to call both setters. The
+// broker=rabbitmq split (an *imagejobs.AMQPProducer paired with a separate
+// mirror Registry) calls SetImageJobEvents explicitly afterward — see
+// cmd/boomtime/main.go.
+func (h *Handler) SetImageJobQueue(e imagejobs.Enqueuer) {
+	h.ImageJobQueue = e
+	if es, ok := e.(imagejobs.EventSource); ok {
+		h.ImageJobEvents = es
+	}
 	if h.Admin != nil {
-		h.Admin.SetImageJobQueue(r)
+		h.Admin.SetImageJobQueue(e)
+	}
+}
+
+// SetImageJobEvents wires the image-job EventSource after construction.
+// Only needed when it differs from ImageJobQueue (broker=rabbitmq's
+// producer+mirror split) — SetImageJobQueue already wires it for the
+// common case where one object satisfies both interfaces.
+func (h *Handler) SetImageJobEvents(ev imagejobs.EventSource) {
+	h.ImageJobEvents = ev
+	if h.Admin != nil {
+		h.Admin.SetImageJobEvents(ev)
 	}
 }
 
