@@ -50,6 +50,8 @@ export type EditAction =
   | { type: "remove"; key: string }
   | { type: "select"; key: string | null }
   | { type: "setView"; key: string; view: string }
+  | { type: "setConfig"; key: string; config: Record<string, unknown> | undefined }
+  | { type: "setHidden"; key: string; hidden: boolean }
   | { type: "markSaved" };
 
 interface EditHistoryState {
@@ -89,6 +91,22 @@ export const setView = (key: string, view: string): EditAction => ({
   type: "setView",
   key,
   view,
+});
+/** Replace a tile's opaque config blob wholesale (gaka-lzr Phase 5 — the
+ * CONFIGURE form). Callers pass the FULLY merged object (e.g.
+ * `{ ...existing, title: "..." }`) rather than a partial patch, mirroring
+ * setView's "caller computes the next value" shape. `undefined` clears it. */
+export const setConfig = (
+  key: string,
+  config: Record<string, unknown> | undefined,
+): EditAction => ({ type: "setConfig", key, config });
+/** Toggle a tile's "hide but keep placement" flag (gaka-lzr Phase 5). Hidden
+ * tiles stay in the layout (and keep their geometry) but are dropped from
+ * the PREVIEW render — see DraggableGridLayout's edit-vs-preview filter. */
+export const setHidden = (key: string, hidden: boolean): EditAction => ({
+  type: "setHidden",
+  key,
+  hidden,
 });
 export const markSaved = (): EditAction => ({ type: "markSaved" });
 
@@ -217,6 +235,26 @@ export function editReducer(
       return {
         ...commit(state, { layout, selectedKey: state.present.selectedKey }),
         lastType: "setView",
+      };
+    }
+
+    case "setConfig": {
+      const layout = state.present.layout.map((w) =>
+        w.i === action.key ? { ...w, config: action.config } : w,
+      );
+      return {
+        ...commit(state, { layout, selectedKey: state.present.selectedKey }),
+        lastType: "setConfig",
+      };
+    }
+
+    case "setHidden": {
+      const layout = state.present.layout.map((w) =>
+        w.i === action.key ? { ...w, hidden: action.hidden } : w,
+      );
+      return {
+        ...commit(state, { layout, selectedKey: state.present.selectedKey }),
+        lastType: "setHidden",
       };
     }
 

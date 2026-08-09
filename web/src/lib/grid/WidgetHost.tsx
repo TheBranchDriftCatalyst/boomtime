@@ -21,11 +21,19 @@ export interface WidgetHostProps {
   tileIndex: number;
   instance: WidgetInstance;
   view?: string;
-  /** Opaque per-widget config blob (gaka-lzr), forwarded to instance.render. */
+  /** Opaque per-widget config blob (gaka-lzr), forwarded to instance.render.
+   * The primitive reads exactly ONE key out of it generically — `title`, a
+   * string override for the header label — everything else stays opaque and
+   * is only round-tripped to instance.render. */
   config?: Record<string, unknown>;
   editable: boolean;
   /** Edit-mode selection state — drives `data-selected` styling. */
   selected?: boolean;
+  /** "Hide but keep placement" (gaka-lzr Phase 5). Only ever true in EDIT
+   * mode — DraggableGridLayout drops hidden tiles from the render entirely
+   * in preview, so this prop exists purely to dim + label the tile while
+   * editing so the operator can find it again to un-hide. */
+  hidden?: boolean;
   /** Fired when the tile header is clicked in edit mode (select this tile). */
   onSelect?: () => void;
   onViewChange: (v: string) => void;
@@ -47,6 +55,7 @@ export const WidgetHost = forwardRef<HTMLDivElement, WidgetHostProps>(function W
     config,
     editable,
     selected,
+    hidden,
     onSelect,
     onViewChange,
     onRemove,
@@ -66,6 +75,13 @@ export const WidgetHost = forwardRef<HTMLDivElement, WidgetHostProps>(function W
 
   const hasViews = (instance.views?.length ?? 0) > 1;
   const currentView = view ?? instance.defaultView ?? instance.views?.[0]?.id;
+  // gaka-lzr Phase 5: a per-tile title override lives at `config.title` — the
+  // ONE key this generic primitive reads out of the otherwise-opaque config
+  // blob (see the CONFIGURE form in boomtime's DashboardEditSidebar).
+  const titleOverride =
+    typeof config?.title === "string" && config.title.trim().length > 0
+      ? config.title
+      : undefined;
 
   return (
     <div
@@ -79,6 +95,7 @@ export const WidgetHost = forwardRef<HTMLDivElement, WidgetHostProps>(function W
       }}
       data-widget-key={instance.key}
       data-selected={selected || undefined}
+      data-hidden={hidden || undefined}
     >
       <span className="catalyst-grid-tile__corner catalyst-grid-tile__corner--tl" aria-hidden>┌</span>
       <span className="catalyst-grid-tile__corner catalyst-grid-tile__corner--tr" aria-hidden>┐</span>
@@ -93,7 +110,7 @@ export const WidgetHost = forwardRef<HTMLDivElement, WidgetHostProps>(function W
       >
         <span className="catalyst-grid-tile__prompt" aria-hidden>▎</span>
         <span className="catalyst-grid-tile__title">
-          {(instance.displayName ?? instance.key).toUpperCase()}
+          {(titleOverride ?? instance.displayName ?? instance.key).toUpperCase()}
         </span>
         {/* Kind slug is developer-relevant in edit mode (helps operators
             identify which tile is which when the display name isn't unique).
@@ -101,6 +118,11 @@ export const WidgetHost = forwardRef<HTMLDivElement, WidgetHostProps>(function W
             noise duplicating the title, so hide it. */}
         {editable && (
           <span className="catalyst-grid-tile__kind" aria-hidden>· {instance.key}</span>
+        )}
+        {editable && hidden && (
+          <span className="catalyst-grid-tile__hidden-badge" data-testid="tile-hidden-badge">
+            hidden
+          </span>
         )}
         <span className="catalyst-grid-tile__spacer" />
         {editable ? (

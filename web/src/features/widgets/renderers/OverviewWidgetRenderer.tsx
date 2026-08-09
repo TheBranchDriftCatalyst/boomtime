@@ -43,7 +43,8 @@ import { StreakBanner } from "@/viz/charts/StreakBanner";
 import { CategoryStreamgraph } from "@/viz/charts/CategoryStreamgraph";
 import { secondsToHms } from "@/lib/utils";
 import { TIMELINE_HOUR_OPTIONS } from "@/lib/config";
-import { useOverviewData } from "@/features/overview/OverviewDataContext";
+import { OverviewDataProvider, useOverviewData } from "@/features/overview/OverviewDataContext";
+import { buildRangeOverrideTr } from "@/features/overview/rangeOverride";
 import {
   useOverviewStats,
   useOverviewTimeline,
@@ -68,12 +69,41 @@ import {
 export interface OverviewWidgetRendererProps {
   kind: string;
   view?: string;
-  /** Opaque per-widget config (gaka-lzr). Thin for now: may carry a `topN`
-   * for list widgets. Threaded but otherwise ignored safely. */
+  /** Opaque per-widget config (gaka-lzr Phase 5's CONFIGURE form). This
+   * component honors exactly one key generically — `rangeDays` — by
+   * re-scoping the stats window for this tile's subtree (see
+   * rangeOverride.ts); `title` is honored by WidgetHost (the tile chrome),
+   * not here. Anything else is forwarded to per-kind renderers unused. */
   config?: Record<string, unknown>;
 }
 
-export function OverviewWidgetRenderer({ kind, view }: OverviewWidgetRendererProps) {
+export function OverviewWidgetRenderer({ kind, view, config }: OverviewWidgetRendererProps) {
+  const outer = useOverviewData();
+  const rangeDays =
+    typeof config?.rangeDays === "number" && config.rangeDays > 0
+      ? config.rangeDays
+      : undefined;
+
+  const body = <OverviewWidgetBody kind={kind} view={view} />;
+
+  // A per-tile range override nests a SECOND provider with `tr` swapped for
+  // a derived "last N days" window — every existing self-fetch hook
+  // (overviewWidgets.ts) picks it up transparently via context, no
+  // per-widget plumbing required. See rangeOverride.ts's file doc.
+  if (rangeDays === undefined) return body;
+  return (
+    <OverviewDataProvider
+      value={{ ...outer, tr: buildRangeOverrideTr(rangeDays, outer.tr) }}
+    >
+      {body}
+    </OverviewDataProvider>
+  );
+}
+
+/** The kind → renderer dispatch, split out from OverviewWidgetRenderer so the
+ * range-override provider above can wrap it without itself needing to call
+ * any OTHER hooks conditionally. */
+function OverviewWidgetBody({ kind, view }: { kind: string; view?: string }) {
   // Part B Stage 5 cutover: every target:"both" kind routes through the
   // generic SpecRenderer (via OverviewSpecKind's self-fetching leaves)
   // unconditionally — no more flag check. OverviewSpecKind is itself

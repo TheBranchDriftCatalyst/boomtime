@@ -13,6 +13,8 @@ import {
   moveResize,
   remove,
   select,
+  setConfig,
+  setHidden,
   setView,
   useDashboardEditStore,
 } from "./useDashboardEditStore";
@@ -150,5 +152,45 @@ describe("useDashboardEditStore (hook)", () => {
     expect(result.current.canUndo).toBe(true);
     act(() => result.current.undo());
     expect(result.current.state.layout.find((w) => w.i === "a")?.view).toBeUndefined();
+  });
+
+  it("setConfig replaces the tile's config blob, records history, and dirties", () => {
+    const { result } = renderHook(() => useDashboardEditStore(seed));
+    act(() => result.current.dispatch(setConfig("a", { title: "Custom" })));
+    expect(result.current.state.layout.find((w) => w.i === "a")?.config).toEqual({
+      title: "Custom",
+    });
+    expect(result.current.canUndo).toBe(true);
+    expect(result.current.isDirty).toBe(true);
+
+    // A second setConfig REPLACES wholesale — merging is the caller's job.
+    act(() =>
+      result.current.dispatch(setConfig("a", { title: "Custom", rangeDays: 7 })),
+    );
+    expect(result.current.state.layout.find((w) => w.i === "a")?.config).toEqual({
+      title: "Custom",
+      rangeDays: 7,
+    });
+
+    // undefined clears the config back out.
+    act(() => result.current.dispatch(setConfig("a", undefined)));
+    expect(result.current.state.layout.find((w) => w.i === "a")?.config).toBeUndefined();
+
+    act(() => result.current.undo());
+    expect(result.current.state.layout.find((w) => w.i === "a")?.config).toEqual({
+      title: "Custom",
+      rangeDays: 7,
+    });
+  });
+
+  it("setHidden toggles the tile's hidden flag, records history, and dirties", () => {
+    const { result } = renderHook(() => useDashboardEditStore(seed));
+    act(() => result.current.dispatch(setHidden("b", true)));
+    expect(result.current.state.layout.find((w) => w.i === "b")?.hidden).toBe(true);
+    expect(result.current.isDirty).toBe(true);
+    expect(result.current.canUndo).toBe(true);
+
+    act(() => result.current.undo());
+    expect(result.current.state.layout.find((w) => w.i === "b")?.hidden).toBeUndefined();
   });
 });

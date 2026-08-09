@@ -108,6 +108,24 @@
   font-weight: 400;
 }
 
+/* "Hide but keep placement" (gaka-lzr Phase 5). Only ever rendered in EDIT
+ * mode — preview drops hidden tiles from the DOM entirely — so this is just
+ * an in-editor affordance: dim the tile + label it so the operator can find
+ * it again to un-hide via the CONFIGURE panel. */
+.catalyst-grid-tile[data-hidden="true"] {
+  opacity: 0.5;
+}
+.catalyst-grid-tile__hidden-badge {
+  border: 1px solid var(--grid-tile-border, currentColor);
+  border-radius: 2px;
+  padding: 0 4px;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--grid-tile-header-kind-fg, inherit);
+  opacity: 0.8;
+}
+
 .catalyst-grid-tile__spacer {
   flex: 1;
 }

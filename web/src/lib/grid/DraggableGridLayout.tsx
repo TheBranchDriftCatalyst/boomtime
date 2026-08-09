@@ -114,21 +114,33 @@ export function DraggableGridLayout({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storage]);
 
+  // "Hide but keep placement" (gaka-lzr Phase 5): a hidden tile stays in
+  // `layout` (geometry intact, still round-trips through save/persistence)
+  // but is dropped from the RENDER entirely in preview/view mode — that's
+  // the whole point of a visibility toggle. In edit mode it stays visible
+  // (dimmed — see WidgetHost's `hidden` prop) so the operator can find it
+  // again to un-hide it via the CONFIGURE panel.
+  const renderableLayout = useMemo(
+    () =>
+      layout.filter(
+        (w) => instances.some((i) => i.key === w.i) && (editable || !w.hidden),
+      ),
+    [layout, instances, editable],
+  );
+
   const rglLayout = useMemo<Layout[]>(
     () =>
-      layout
-        .filter((w) => instances.some((i) => i.key === w.i))
-        .map((w) => ({
-          i: w.i,
-          x: w.x,
-          y: w.y,
-          w: w.w,
-          h: w.h,
-          isDraggable: editable,
-          isResizable: editable,
-          static: !editable,
-        })),
-    [layout, instances, editable],
+      renderableLayout.map((w) => ({
+        i: w.i,
+        x: w.x,
+        y: w.y,
+        w: w.w,
+        h: w.h,
+        isDraggable: editable,
+        isResizable: editable,
+        static: !editable,
+      })),
+    [renderableLayout, editable],
   );
 
   const handleLayoutChange = (next: readonly Layout[]) => {
@@ -193,9 +205,7 @@ export function DraggableGridLayout({
           compactType={editable ? "vertical" : null}
           isDroppable={false}
         >
-          {layout
-            .filter((w) => instances.some((i) => i.key === w.i))
-            .map((w, idx) => {
+          {renderableLayout.map((w, idx) => {
               const inst = instances.find((i) => i.key === w.i)!;
               return (
                 <WidgetHost
@@ -206,6 +216,7 @@ export function DraggableGridLayout({
                   config={w.config}
                   editable={editable}
                   selected={selectedKey === w.i}
+                  hidden={w.hidden}
                   onSelect={onSelectTile ? () => onSelectTile(w.i) : undefined}
                   onViewChange={(v) => handleViewChange(w.i, v)}
                   onRemove={() => handleRemove(w.i)}
