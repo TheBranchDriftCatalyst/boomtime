@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -19,6 +20,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/imagejobs"
@@ -27,6 +29,9 @@ import (
 	labelcatalog "github.com/TheBranchDriftCatalyst/boomtime/internal/labelcatalog"
 	labelimages "github.com/TheBranchDriftCatalyst/boomtime/internal/worker/labelimages"
 	"github.com/joho/godotenv"
+	"github.com/labstack/echo/v5"
+	amqp "github.com/rabbitmq/amqp091-go"
+	"github.com/redis/go-redis/v9"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -65,7 +70,8 @@ func main() {
 }
 
 func runCmd() *cobra.Command {
-	return &cobra.Command{
+	var role string
+	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Start the server (runs migrations, serves, starts the import worker)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -74,6 +80,13 @@ func runCmd() *cobra.Command {
 			cfg.Branch = branch
 			cfg.Commit = commit
 			cfg.BuildTime = buildTime
+			// gaka-worker-topology: --role overrides BOOM_ROLE when passed;
+			// empty (the default) leaves cfg.Role exactly as Load() read it
+			// from the env, which itself defaults to "all" — today's
+			// single-process behavior, unchanged.
+			if role != "" {
+				cfg.Role = role
+			}
 			// Apply BOOM_GRADE_* overrides once at boot so every downstream
 			// stats.Grade() picks up the operator's calibration without threading
 			// cfg through every renderer.
@@ -222,26 +235,44 @@ func runCmd() *cobra.Command {
 			if liWorker != nil {
 				logger.Info("labelimages worker enabled",
 					"shim_url", cfg.ComfyUIShimURL, "model", cfg.ComfyUIModel)
-				go liWorker.Run(ctx)
+				// gaka-worker-topology: the startup reconcile (fill in any
+				// missing images) is generation work, so it belongs to the
+				// worker role only — the server role shouldn't be
+				// generating images itself. Under the default role=all
+				// this is unconditional, same as before.
+				if cfg.IsWorkerRole() {
+					go liWorker.Run(ctx)
+				}
 			}
 			if len(cfg.AdminUsers) > 0 {
 				logger.Info("admin users configured", "count", len(cfg.AdminUsers))
 			}
 
-			e, h := server.NewWithHandler(database, cfg, logger, worker, hub, logHub)
-			// Wire the labelimages worker into the handler for the admin
-			// regen endpoints. Passing nil is fine when the feature is off
-			// — the admin handler detects the nil worker and returns 503.
-			h.SetLabelImagesWorker(liWorker)
+			// gaka-worker-topology: role/broker-aware wiring. Default
+			// (role=all, broker=inprocess) reproduces today's single-
+			// process behavior exactly — see the `default:` arm below,
+			// byte-identical to the pre-decoupling pool wiring. See
+			// docs/design/worker-topology-decoupling.md.
+			var (
+				e       *echo.Echo
+				h       *handler.Handler
+				imgPool *imagejobs.Pool
+			)
+			if cfg.IsServerRole() {
+				e, h = server.NewWithHandler(database, cfg, logger, worker, hub, logHub)
+				// Wire the labelimages worker into the handler for the
+				// admin regen endpoints. Passing nil is fine when the
+				// feature is off — the admin handler detects the nil
+				// worker and returns 503.
+				h.SetLabelImagesWorker(liWorker)
+			}
 
-			// gaka-8bz: in-memory job queue + worker pool for label-image
-			// regens. Only wire when the feature is enabled — a nil pool
-			// keeps the admin handler + WS returning 503, which is the
-			// same behavior as a nil labelimages worker (they gate on both).
-			var imgPool *imagejobs.Pool
+			// gaka-8bz / worker-topology: image-job queue wiring. Only
+			// wire when the feature is enabled — a nil pool/producer keeps
+			// the admin handler + WS returning 503, the same behavior as a
+			// nil labelimages worker (they gate on both).
 			if liWorker != nil {
 				concurrency := labelImageConcurrency()
-				registry := imagejobs.NewRegistry(logger)
 				exec := imagejobs.ExecutorFunc(func(execCtx context.Context, j imagejobs.Job) error {
 					return liWorker.RegenerateEntry(execCtx, labelcatalog.Entry{
 						ID:          j.LabelID,
@@ -252,18 +283,77 @@ func runCmd() *cobra.Command {
 						Seed:        j.Seed,
 					})
 				})
-				imgPool = imagejobs.NewPool(imagejobs.PoolConfig{
-					Concurrency: concurrency,
-					Registry:    registry,
-					Executor:    exec,
-					Logger:      logger,
-				})
-				imgPool.Start(ctx)
-				h.SetImageJobQueue(registry)
-				logger.Info("imagejobs pool wired", "concurrency", concurrency)
+
+				switch {
+				case cfg.BrokerRabbit():
+					amqpConn, aerr := amqp.Dial(cfg.RabbitURL)
+					if aerr != nil {
+						return fmt.Errorf("rabbitmq connect: %w", aerr)
+					}
+					defer amqpConn.Close()
+					rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPassword})
+					defer rdb.Close()
+					bus := imagejobs.NewRedisEventBus(rdb)
+
+					if cfg.IsServerRole() {
+						producerCh, cherr := amqpConn.Channel()
+						if cherr != nil {
+							return fmt.Errorf("rabbitmq producer channel: %w", cherr)
+						}
+						defer producerCh.Close()
+						producer, perr := imagejobs.NewAMQPProducer(producerCh, cfg.RabbitQueue, rdb, bus, logger)
+						if perr != nil {
+							return fmt.Errorf("rabbitmq producer: %w", perr)
+						}
+						// The mirror has no Pool — it exists purely to keep
+						// AdminLabelImagesWS truthful by relaying the
+						// worker pod's events (see Registry.Apply).
+						mirror := imagejobs.NewRegistry(logger)
+						go imagejobs.PumpBusIntoRegistry(ctx, bus, mirror)
+						h.SetImageJobQueue(producer)
+						h.SetImageJobEvents(mirror)
+						logger.Info("imagejobs: amqp producer wired", "queue", cfg.RabbitQueue)
+					}
+					if cfg.IsWorkerRole() {
+						consumerCh, cherr := amqpConn.Channel()
+						if cherr != nil {
+							return fmt.Errorf("rabbitmq consumer channel: %w", cherr)
+						}
+						defer consumerCh.Close()
+						consumer := imagejobs.NewAMQPConsumer(consumerCh, cfg.RabbitQueue, exec, bus, rdb, concurrency, logger)
+						go func() {
+							if rerr := consumer.Run(ctx); rerr != nil {
+								logger.Error("imagejobs: amqp consumer stopped", "err", rerr)
+							}
+						}()
+					}
+				default: // "inprocess" — TODAY'S CODE, unchanged. server role only.
+					if cfg.IsServerRole() {
+						registry := imagejobs.NewRegistry(logger)
+						imgPool = imagejobs.NewPool(imagejobs.PoolConfig{
+							Concurrency: concurrency,
+							Registry:    registry,
+							Executor:    exec,
+							Logger:      logger,
+						})
+						imgPool.Start(ctx)
+						h.SetImageJobQueue(registry)
+						h.SetImageJobEvents(registry)
+						logger.Info("imagejobs pool wired", "concurrency", concurrency)
+					}
+				}
 			}
+
+			if !cfg.IsServerRole() {
+				// --role=worker: no HTTP API. Bind a minimal /healthz for
+				// k8s liveness/readiness probes (see
+				// k8s/base/worker-deployment.yaml) and block until
+				// SIGTERM/SIGINT.
+				return runWorkerHealthz(ctx, logger)
+			}
+
 			addr := fmt.Sprintf(":%d", cfg.Port)
-			logger.Info("starting server", "addr", addr, "env", cfg.Env)
+			logger.Info("starting server", "addr", addr, "env", cfg.Env, "role", cfg.Role)
 
 			// echo v5's Start installs its own SIGINT/SIGTERM graceful shutdown and
 			// returns http.ErrServerClosed on a clean stop.
@@ -282,6 +372,41 @@ func runCmd() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&role, "role", "",
+		`Override BOOM_ROLE ("server", "worker", or "all"); empty keeps BOOM_ROLE (default "all")`)
+	return cmd
+}
+
+// runWorkerHealthz binds a minimal /healthz on :8081 for a --role=worker
+// process (which serves no HTTP API — see k8s/base/worker-deployment.yaml's
+// liveness/readiness probes) and blocks until ctx is cancelled, then drains
+// the listener. Returns nil on a clean shutdown.
+func runWorkerHealthz(ctx context.Context, logger *slog.Logger) error {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+	srv := &http.Server{Addr: ":8081", Handler: mux}
+	errCh := make(chan error, 1)
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- err
+			return
+		}
+		errCh <- nil
+	}()
+	logger.Info("worker role started (no HTTP API)", "healthz_addr", srv.Addr)
+
+	select {
+	case err := <-errCh:
+		return err
+	case <-ctx.Done():
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return srv.Shutdown(shutdownCtx)
 }
 
 func runMigrationsCmd() *cobra.Command {
