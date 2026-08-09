@@ -39,6 +39,8 @@ import {
   AlertTriangle,
   Wifi,
   WifiOff,
+  Network,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
@@ -550,6 +552,46 @@ export function AdminTab() {
             {queue.connected ? <Wifi size={10} /> : <WifiOff size={10} />}
             <span>{queue.connected ? "live" : "reconnecting"}</span>
           </span>
+          {/* worker-topology decoupling (gaka-8bz follow-up): which
+              transport is actually running regens — the server's own
+              in-process pool, or a separate boomtime-worker pod pulling
+              off RabbitMQ. When it's the latter, also show the live
+              broker queue depth (best-effort — omitted if the depth
+              check failed) and a link out to the broker's mgmt UI when
+              the operator configured one (BOOM_RABBITMQ_MGMT_URL). */}
+          {status.data?.broker === "rabbitmq" ? (
+            <span
+              className="inline-flex items-center gap-1 rounded-sm border border-sky-500/40 px-1.5 py-0.5 font-mono text-[10px] text-sky-500"
+              title="Regens run in a separate boomtime-worker pod via RabbitMQ (worker-topology decoupling)"
+            >
+              <Network size={10} />
+              <span>
+                queue: rabbitmq
+                {typeof status.data.queueDepth === "number"
+                  ? ` (${status.data.queueDepth} queued)`
+                  : ""}
+              </span>
+              {status.data.mgmtUrl ? (
+                <a
+                  href={status.data.mgmtUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-0.5 underline decoration-dotted underline-offset-2 hover:text-sky-400"
+                  title="Open the RabbitMQ management UI"
+                >
+                  mgmt <ExternalLink size={9} />
+                </a>
+              ) : null}
+            </span>
+          ) : (
+            <span
+              className="inline-flex items-center gap-1 rounded-sm border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
+              title="Regens run in-process on this server pod — the default, undecoupled path"
+            >
+              <Network size={10} />
+              <span>queue: in-process</span>
+            </span>
+          )}
           <Button
             size="sm"
             variant="outline"

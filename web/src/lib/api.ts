@@ -943,6 +943,16 @@ export const api = {
         generatedAt: string;
       }>;
       baseline: string[];
+      // worker-topology decoupling (gaka-8bz follow-up): which transport is
+      // actually executing regens. "inprocess" = the server's own pool;
+      // "rabbitmq" = a separate boomtime-worker pod via the AMQP queue.
+      broker: "inprocess" | "rabbitmq";
+      // Only present when broker === "rabbitmq" AND the depth check
+      // succeeded (best-effort — see AdminLabelImagesInfo).
+      queueDepth?: number;
+      // Only present when broker === "rabbitmq" AND BOOM_RABBITMQ_MGMT_URL
+      // is configured.
+      mgmtUrl?: string;
     }>("/api/v1/admin/label-images"),
   // gaka-8bz: server-side queue + WS. The response now returns per-entry
   // jobIds; the FE watches the WS for the actual lifecycle rather than
