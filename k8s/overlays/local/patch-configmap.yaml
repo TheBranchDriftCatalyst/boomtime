@@ -42,12 +42,20 @@ data:
   BOOM_ADMIN_USERS: "admin,dev"
   # ── Worker-topology decoupling (gaka-8bz follow-up) — local demo ────────
   # Cuts image-job enqueue/execute over to the RabbitMQ+Redis path so
-  # `boomtime-worker` (a SEPARATE pod, see ../../base/worker-deployment.yaml)
+  # `boomtime-worker` (a SEPARATE pod, see ../../base/worker/deployment.yaml)
   # does the regen instead of the server's in-process pool. See
   # docs/design/worker-topology-decoupling.md §9.3.
   BOOM_QUEUE_BROKER: "rabbitmq"
+  # The SERVER is the producer under broker=rabbitmq — it needs the AMQP URL to
+  # publish jobs (the worker gets its own via $(VAR) from the stub secret). A
+  # literal is fine locally (fixed creds from broker.yaml boomtime/boomtime);
+  # without this the server dials an empty URL → "AMQP scheme must be amqp://".
+  BOOM_RABBITMQ_URL: "amqp://boomtime:boomtime@boomtime-rabbit.boomtime.svc.cluster.local:5672/"
   BOOM_RABBITMQ_QUEUE: "boomtime.image-jobs"
   BOOM_REDIS_ADDR: "boomtime-cache:6379"
   BOOM_FEATURE_LABEL_IMAGES: "on"
   BOOM_COMFYUI_SHIM_URL: "http://comfyui-shim:8012"
   BOOM_COMFYUI_MODEL: "stub"
+  # Tiltfile forwards the local rabbitmq:3.13-management UI to :15672 —
+  # surfaced by AdminLabelImagesInfo so the Admin tab can link to it.
+  BOOM_RABBITMQ_MGMT_URL: "http://localhost:15672"
