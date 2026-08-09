@@ -49,4 +49,15 @@ describe("specs.json mirrors the FE catalog", () => {
       expect(s.panels?.length ?? 0, `${s.kind}: both spec has no panels`).toBeGreaterThan(0);
     }
   });
+
+  // Pre-cutover fix (Go side: internal/widget/spec.go's renderSpec): a
+  // "both" spec with no title falls back to the raw kind slug as the SVG
+  // card headline. This is the FE-side twin of that guard — same list, same
+  // badge exception (badge has no Frame/title at all).
+  it("every both spec (except badge) carries a title", () => {
+    for (const s of specs) {
+      if (s.target !== "both" || s.kind === "badge") continue;
+      expect(s.title, `${s.kind}: both spec is missing a title`).toBeTruthy();
+    }
+  });
 });

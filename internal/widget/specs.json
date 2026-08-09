@@ -2,6 +2,7 @@
   {
     "kind": "stats-card",
     "target": "both",
+    "title": "Coding Stats",
     "size": { "w": 495, "h": 195 },
     "panels": [
       { "primitive": "metric", "binding": "total-seconds", "title": "Total", "rect": { "x": 25, "y": 60, "w": 110, "h": 40 } },
@@ -12,6 +13,7 @@
   {
     "kind": "stats-card-with-grade",
     "target": "both",
+    "title": "Coding Stats",
     "size": { "w": 495, "h": 195 },
     "panels": [
       { "primitive": "metric", "binding": "total-seconds", "title": "Total", "rect": { "x": 25, "y": 60, "w": 110, "h": 40 } },
@@ -23,12 +25,14 @@
   {
     "kind": "top-langs",
     "target": "both",
+    "title": "Top Languages",
     "size": { "w": 300, "h": 200 },
     "panels": [{ "primitive": "bars", "binding": "languages" }]
   },
   {
     "kind": "top-projects",
     "target": "both",
+    "title": "Top Projects",
     "size": { "w": 300, "h": 200 },
     "panels": [{ "primitive": "bars", "binding": "projects" }]
   },
@@ -40,24 +44,28 @@
   {
     "kind": "activity-heatmap",
     "target": "both",
+    "title": "Coding activity",
     "size": { "w": 720, "h": 170 },
     "panels": [{ "primitive": "calendar", "binding": "daily-total" }]
   },
   {
     "kind": "punchcard",
     "target": "both",
+    "title": "Coding punchcard",
     "size": { "w": 560, "h": 220 },
     "panels": [{ "primitive": "punchcard", "binding": "punchcard" }]
   },
   {
     "kind": "momentum",
     "target": "both",
+    "title": "Project momentum",
     "size": { "w": 560, "h": 220 },
     "panels": [{ "primitive": "momentum", "binding": "momentum" }]
   },
   {
     "kind": "profile-summary",
     "target": "both",
+    "title": "Coding profile",
     "size": { "w": 820, "h": 240 },
     "panels": [
       { "primitive": "calendar", "binding": "daily-total", "rect": { "x": 20, "y": 55, "w": 360, "h": 165 } },
@@ -70,12 +78,14 @@
   {
     "kind": "cumulative-area",
     "target": "both",
+    "title": "Cumulative coding time",
     "size": { "w": 560, "h": 200 },
     "panels": [{ "primitive": "area", "binding": "daily-total" }]
   },
   {
     "kind": "deep-work",
     "target": "both",
+    "title": "Deep-work sessions",
     "size": { "w": 495, "h": 195 },
     "panels": [
       { "primitive": "metric", "binding": "sessions", "field": "count", "title": "Sessions", "rect": { "x": 25, "y": 60, "w": 150, "h": 35 } },
@@ -87,60 +97,70 @@
   {
     "kind": "heatmap-projects",
     "target": "both",
+    "title": "Activity per project",
     "size": { "w": 720, "h": 240 },
     "panels": [{ "primitive": "day-heatmap", "binding": "projects" }]
   },
   {
     "kind": "heatmap-languages",
     "target": "both",
+    "title": "Activity per language",
     "size": { "w": 720, "h": 240 },
     "panels": [{ "primitive": "day-heatmap", "binding": "languages" }]
   },
   {
     "kind": "total-time-stat",
     "target": "both",
+    "title": "Total Time",
     "size": { "w": 240, "h": 140 },
     "panels": [{ "primitive": "stat-numeral", "binding": "total-seconds", "title": "TOTAL TIME" }]
   },
   {
     "kind": "daily-avg-stat",
     "target": "both",
+    "title": "Daily Average",
     "size": { "w": 240, "h": 140 },
     "panels": [{ "primitive": "stat-numeral", "binding": "daily-avg", "title": "DAILY AVG" }]
   },
   {
     "kind": "current-streak-stat",
     "target": "both",
+    "title": "Current Streak",
     "size": { "w": 240, "h": 140 },
     "panels": [{ "primitive": "stat-numeral", "binding": "streak-current", "title": "CURRENT STREAK" }]
   },
   {
     "kind": "longest-streak-stat",
     "target": "both",
+    "title": "Longest Streak",
     "size": { "w": 240, "h": 140 },
     "panels": [{ "primitive": "stat-numeral", "binding": "streak-longest", "title": "LONGEST STREAK" }]
   },
   {
     "kind": "active-days-stat",
     "target": "both",
+    "title": "Active Days",
     "size": { "w": 240, "h": 160 },
     "panels": [{ "primitive": "ratio", "binding": "active-days" }]
   },
   {
     "kind": "categories-chart",
     "target": "both",
+    "title": "Categories",
     "size": { "w": 495, "h": 150 },
     "panels": [{ "primitive": "chips", "binding": "categories" }]
   },
   {
     "kind": "editors-chips",
     "target": "both",
+    "title": "Editors",
     "size": { "w": 495, "h": 150 },
     "panels": [{ "primitive": "chips", "binding": "editors" }]
   },
   {
     "kind": "platforms-chips",
     "target": "both",
+    "title": "Platforms",
     "size": { "w": 495, "h": 150 },
     "panels": [{ "primitive": "chips", "binding": "platforms" }]
   },
@@ -162,18 +182,21 @@
   {
     "kind": "goal-progress",
     "target": "both",
+    "title": "Goal Progress",
     "size": { "w": 420, "h": 130 },
     "panels": [{ "primitive": "goal-bar", "binding": "goals" }]
   },
   {
     "kind": "goal-ring",
     "target": "both",
+    "title": "Goal Ring",
     "size": { "w": 320, "h": 280 },
     "panels": [{ "primitive": "goal-ring", "binding": "goals" }]
   },
   {
     "kind": "goal-list",
     "target": "both",
+    "title": "Goals",
     "size": { "w": 440, "h": 260 },
     "panels": [{ "primitive": "goal-list", "binding": "goals" }]
   },

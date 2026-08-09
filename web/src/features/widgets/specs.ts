@@ -40,6 +40,12 @@ export interface SpecSize {
 export interface WidgetSpec {
   kind: string;
   target: SpecTarget;
+  // Card headline the Go renderSpec engine falls back to when a request
+  // omits ?title= (pre-cutover fix, see spec.go's Title doc comment). Not
+  // consumed by SpecRenderer.tsx today — the in-page composable dashboard
+  // gets its card title from WidgetCatalogEntry.title (catalog.ts) via the
+  // surrounding WidgetCard chrome, not from the spec itself.
+  title?: string;
   reason?: string;
   size?: SpecSize;
   defaultView?: string;

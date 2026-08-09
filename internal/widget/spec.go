@@ -44,6 +44,15 @@ const (
 type Spec struct {
 	Kind   string     `json:"kind"`
 	Target SpecTarget `json:"target"`
+	// Title is the card headline renderSpec opens the Frame with when the
+	// request didn't pass ?title= — the spec-engine's counterpart to each
+	// legacy renderer's `defaultString(opts.Title, "...")` literal. Every
+	// target:"both" spec except "badge" (which has no Frame/title at all —
+	// see renderSpec's doc comment) MUST set this, or a cutover to the spec
+	// engine would show the raw kind slug ("stats-card") instead of a real
+	// headline ("Coding Stats") on every prod embed that doesn't pass an
+	// explicit title.
+	Title string `json:"title,omitempty"`
 	// Reason documents WHY an fe-only kind has no backend renderer (in-page
 	// identity chrome, self-fetching overview/GitHub data, private-by-default
 	// goals, …). Pure documentation — read by the guard tests and reviewers,
@@ -186,7 +195,15 @@ func renderSpec(spec Spec, d *Data, th Theme, opts Options) ([]byte, error) {
 	if spec.Size != nil {
 		w, h = spec.Size.W, spec.Size.H
 	}
+	// ?title= always wins (mirrors every legacy renderer's
+	// defaultString(opts.Title, "...")); spec.Title is the card's real
+	// headline; the kind slug is only a last-resort fallback for a spec that
+	// somehow shipped without one (the "every both spec has a title" guard
+	// in spec_test.go should make that unreachable in practice).
 	title := opts.Title
+	if title == "" {
+		title = spec.Title
+	}
 	if title == "" {
 		title = spec.Kind
 	}

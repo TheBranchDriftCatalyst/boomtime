@@ -112,7 +112,7 @@ var _ = Describe("Spec registry mirrors the FE catalog (web/src/features/widgets
 		}
 	})
 
-	It("every both spec carries at least one panel, and a size unless it's the badge special-case", func() {
+	It("every both spec carries at least one panel, and a size + title unless it's the badge special-case", func() {
 		for _, s := range Specs() {
 			if s.Target != TargetBoth {
 				continue
@@ -120,9 +120,15 @@ var _ = Describe("Spec registry mirrors the FE catalog (web/src/features/widgets
 			Expect(s.Panels).NotTo(BeEmpty(), "%q: both spec has no panels", s.Kind)
 			isBadge := len(s.Panels) == 1 && s.Panels[0].Primitive == "badge"
 			if !isBadge {
-				// badge bypasses OpenFrame/Size entirely — see renderSpec's doc
-				// comment on why it's the one primitive that isn't a panel/rect.
+				// badge bypasses OpenFrame/Size/Title entirely — see renderSpec's
+				// doc comment on why it's the one primitive that isn't a
+				// panel/rect/card at all.
 				Expect(s.Size).NotTo(BeNil(), "%q: non-badge both spec is missing a size", s.Kind)
+				// Pre-cutover regression guard: a "both" spec with no Title falls
+				// back to the raw kind slug ("stats-card") as the card headline —
+				// every spec MUST carry a real one so prod embeds (which never
+				// pass ?title=) show "Coding Stats", not the slug.
+				Expect(s.Title).NotTo(BeEmpty(), "%q: non-badge both spec is missing a title", s.Kind)
 			}
 		}
 	})
@@ -192,6 +198,42 @@ var _ = Describe("RenderSpec", func() {
 
 		_, err = RenderSpec("grade-badge", d, Options{})
 		Expect(err).To(HaveOccurred(), "fe-only kind has no backend renderer and should error")
+	})
+
+	// Pre-cutover fix: renderSpec used to fall back to the raw kind slug
+	// ("stats-card") as the card title whenever the request omitted
+	// ?title=, which is EVERY prod embed URL (widgetSvgUrl never sets it).
+	// spec.Title now sits between opts.Title and the slug in the fallback
+	// chain — this pins that every non-badge "both" kind renders its real
+	// headline (not the slug) with Title unset, and that ?title= still wins
+	// when the caller does pass one.
+	It("uses spec.Title (not the kind slug) as the card headline when opts.Title is empty", func() {
+		d := dataFixture()
+		for _, kind := range append(append([]string{}, Kinds()...), alwaysSpecKinds...) {
+			if kind == "badge" {
+				continue // no Frame/title at all — see renderSpec's doc comment
+			}
+			spec, ok := SpecFor(kind)
+			Expect(ok).To(BeTrue(), "kind %q has no spec entry", kind)
+			Expect(spec.Title).NotTo(BeEmpty(), "kind %q: spec has no title", kind)
+
+			b, err := RenderSpec(kind, d, Options{Theme: "dark"})
+			Expect(err).NotTo(HaveOccurred(), "RenderSpec(%s)", kind)
+			s := string(b)
+			Expect(s).To(ContainSubstring(xmlEscape(spec.Title)),
+				"kind %q: expected spec.Title %q in the rendered SVG", kind, spec.Title)
+			Expect(strings.Contains(s, ">"+kind+"<")).To(BeFalse(),
+				"kind %q: raw kind slug leaked into the SVG as the title", kind)
+		}
+	})
+
+	It("?title= (opts.Title) still overrides spec.Title", func() {
+		d := dataFixture()
+		b, err := RenderSpec("top-langs", d, Options{Title: "My Custom Title"})
+		Expect(err).NotTo(HaveOccurred())
+		s := string(b)
+		Expect(s).To(ContainSubstring("My Custom Title"))
+		Expect(s).NotTo(ContainSubstring("Top Languages"))
 	})
 })
 
