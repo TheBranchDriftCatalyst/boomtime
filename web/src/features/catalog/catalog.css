@@ -1,0 +1,64 @@
+/* catalog.css — minimal, functional helpers for the widget catalog.
+ *
+ * NOT a new aesthetic. The catalog reuses the app's standard chrome
+ * (catalyst-ui <Card>, same as ChartCard) so it looks like every other page.
+ * This file only carries the two things Tailwind utilities can't cleanly
+ * express: a consistent fixed-height render viewport (so every widget is
+ * compared in the same box — misalignment pops) and an optional alignment
+ * ruler overlay for using the catalog as a visual QA checker.
+ */
+
+/* Consistent comparison viewport for a widget's live render. */
+.catalog-stage {
+  position: relative;
+  height: var(--catalog-stage-h, 200px);
+  overflow: hidden;
+  display: flex;
+  align-items: stretch;
+}
+.catalog-stage > * {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* QA: center crosshair + thirds guides. Toggled by .catalog--rulers on the
+ * page root so crooked / off-center widgets jump out against the guides. */
+.catalog--rulers .catalog-stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+  --ln: color-mix(in oklab, var(--primary, #ff4d9d) 30%, transparent);
+  background-image:
+    linear-gradient(to right, transparent calc(50% - 0.5px), var(--ln) calc(50% - 0.5px), var(--ln) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
+    linear-gradient(to bottom, transparent calc(50% - 0.5px), var(--ln) calc(50% - 0.5px), var(--ln) calc(50% + 0.5px), transparent calc(50% + 0.5px));
+}
+
+/* Loading / empty state inside a stage. */
+.catalog-stage__msg {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.catalog-stage__spin {
+  width: 18px;
+  height: 18px;
+  border: 2px solid color-mix(in oklab, var(--border) 80%, transparent);
+  border-top-color: var(--primary, currentColor);
+  border-radius: 50%;
+  animation: catalog-spin 0.7s linear infinite;
+}
+@keyframes catalog-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .catalog-stage__spin { animation: none; } }
+
+/* Print / snapshot export: keep cards whole. */
+@media print {
+  .catalog-card { break-inside: avoid; }
+}
