@@ -24,8 +24,13 @@ resources:
   # additions (mgmt UI route, PodMonitor, dashboard) are only meaningful
   # once boomtime-rabbit actually exists. See docs/design/worker-topology-
   # decoupling.md §8.
-  # - rabbitmq.yaml
-  # - dragonfly.yaml
+  # CUTOVER PHASE 1 (2026-08-09): provision the broker infra via the operators
+  # FIRST and let it reach Ready before flipping BOOM_QUEUE_BROKER (phase 2) —
+  # so the server connects on first boot instead of crash-looping while
+  # RabbitMQ provisions. rabbitmq-cluster + messaging-topology + dragonfly ops.
+  - rabbitmq.yaml   # RabbitmqCluster boomtime-rabbit + Queue boomtime.image-jobs
+  - dragonfly.yaml  # Dragonfly boomtime-cache (redis-compatible)
+  # ── Phase 2 (flip switch + workers + autoscaling + ops) — enabled next ──
   # - ../../base/worker
   # - keda-scaledobject.yaml
   # - keda-triggerauth.yaml
