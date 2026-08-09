@@ -172,10 +172,9 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 	}
 	kind := c.Param("kind")
 	// gaka-567: "custom" is the builder-composed kind — spec is inline in the
-	// URL as ?spec=<base64>. Every other kind is on the fixed legacy
-	// whitelist (IsKind) OR is an always-spec-engine kind (Part B Stage 4:
-	// the goal-* kinds have no legacy renderer at all — see
-	// widget.IsAlwaysSpecKind's doc comment).
+	// URL as ?spec=<base64>. Every other kind must be a target:"both" spec
+	// (widget.IsKind — Part B Stage 5: this now covers every renderable
+	// kind, including the goal-* kinds, since renderSpec is the only path).
 	var customDef *widget.Def
 	if widget.IsCustomKind(kind) {
 		def, err := widget.DecodeDef(c.QueryParam("spec"))
@@ -183,7 +182,7 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 			return apihelpers.RespondErr(c, apierr.BadRequest("Invalid widget spec: "+err.Error()))
 		}
 		customDef = &def
-	} else if !widget.IsKind(kind) && !widget.IsAlwaysSpecKind(kind) {
+	} else if !widget.IsKind(kind) {
 		return apihelpers.RespondErr(c, apierr.NotFound("Unknown widget kind"))
 	}
 	ctx := c.Request().Context()
@@ -220,11 +219,11 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 	// (minted for one project's README) must not be allowed to render a
 	// goal-* kind — that would expose the owner's account-wide public goals
 	// under a URL an outsider would reasonably assume is project-scoped.
-	// widget.IsAlwaysSpecKind(kind) is exactly the goal-* set today; if a
-	// future always-spec-engine kind is legitimately non-user-scoped, this
-	// gate needs to narrow to a goal-specific predicate instead. 404, not a
-	// partial render — mirrors the project-hidden gate above, no oracle.
-	if widget.IsAlwaysSpecKind(kind) && scopeType != db.WidgetScopeUser {
+	// widget.IsGoalKind(kind) is exactly the goal-* set today; if a future
+	// "both" kind is legitimately non-user-scoped for an unrelated reason,
+	// this gate needs to narrow to a goal-specific predicate instead. 404,
+	// not a partial render — mirrors the project-hidden gate above, no oracle.
+	if widget.IsGoalKind(kind) && scopeType != db.WidgetScopeUser {
 		return apihelpers.RespondErr(c, apierr.NotFound("Widget link not found"))
 	}
 
@@ -306,26 +305,20 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 			return nil, err
 		}
 
-		// Part B Stage 2: BOOM_WIDGET_SPEC_ENGINE swaps the legacy hand-written
-		// Needs/Render (render.go) for the generic spec-driven NeedsForSpec/
-		// RenderSpec (spec.go) for every "both"-target kind. Default off — see
-		// Config.FeatureWidgetSpecEngine. The "custom" (Def-based builder)
-		// path is untouched either way; it isn't part of the spec registry.
-		//
-		// Part B Stage 4: a kind with NO legacy renderer at all (the goal-*
-		// kinds — widget.IsAlwaysSpecKind) uses the spec engine UNCONDITIONALLY,
-		// flag or no flag, since there is no legacy Needs/Render fallback to
-		// gate behind the flag in the first place.
-		needs := widget.Needs(kind)
-		useSpecEngine := false
-		if spec, ok := widget.SpecFor(kind); ok && spec.Target == widget.TargetBoth {
-			if h.Cfg.FeatureWidgetSpecEngine || widget.IsAlwaysSpecKind(kind) {
-				needs = widget.NeedsForSpec(spec)
-				useSpecEngine = true
-			}
-		}
+		// Part B Stage 5 cutover: renderSpec/NeedsForSpec (spec.go) is the
+		// ONLY render path for every "both"-target kind — the flagged
+		// legacy/spec-engine split (BOOM_WIDGET_SPEC_ENGINE) is gone. The
+		// "custom" (Def-based builder) path is untouched; it isn't part of
+		// the spec registry, so it derives its Needs separately.
+		var needs widget.Requirements
 		if customDef != nil {
 			needs = widget.NeedsForDef(*customDef)
+		} else {
+			kindSpec, ok := widget.SpecFor(kind)
+			if !ok || kindSpec.Target != widget.TargetBoth {
+				return nil, fmt.Errorf("widget: %q is not a renderable spec kind", kind)
+			}
+			needs = widget.NeedsForSpec(kindSpec)
 		}
 
 		// Part B Stage 1: the Categories segment isn't derivable from the
@@ -401,10 +394,7 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 		if customDef != nil {
 			return widget.RenderCustom(data, *customDef, opts)
 		}
-		if useSpecEngine {
-			return widget.RenderSpec(kind, data, opts)
-		}
-		return widget.Render(kind, data, opts)
+		return widget.RenderSpec(kind, data, opts)
 	})
 }
 

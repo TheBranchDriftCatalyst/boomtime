@@ -13,8 +13,13 @@
 //	TestRenderAnimationsAndTooltips     → DescribeTable "each kind ships @keyframes + <title> tooltips"
 //	TestRenderProfileSummaryPanels      → It "profile-summary renders every panel + metric labels"
 //	TestNeedsMatchesRendererUsage       → DescribeTable "Needs() declares what each renderer consumes"
-//	TestRenderUnknownKind               → It "Render + IsKind reject unknown kinds"
+//	TestRenderUnknownKind               → It "RenderSpec + IsKind reject unknown kinds"
 //	TestKindsMatchFrontendCatalog       → It "Kinds() matches the FE catalog verbatim"
+//
+// Part B Stage 5 cutover: every RenderSpec/Render(...) call in this file was
+// repointed from the deleted legacy Render() to RenderSpec() — renderSpec is
+// now the only render path. Kinds() also grew the 3 goal-* kinds (they used
+// to render outside Kinds() via the now-deleted IsAlwaysSpecKind).
 package widget
 
 import (
@@ -43,8 +48,8 @@ var _ = Describe("Render", func() {
 		d := dataFixture()
 		for _, kind := range Kinds() {
 			By("rendering " + kind)
-			b, err := Render(kind, d, Options{Theme: "dark", Subtitle: "last 30 days"})
-			Expect(err).NotTo(HaveOccurred(), "Render(%s)", kind)
+			b, err := RenderSpec(kind, d, Options{Theme: "dark", Subtitle: "last 30 days"})
+			Expect(err).NotTo(HaveOccurred(), "RenderSpec(%s)", kind)
 			assertValidXMLG(b)
 			s := string(b)
 			Expect(strings.HasPrefix(strings.TrimSpace(s), "<svg")).To(BeTrue(), "%s: output does not start with <svg", kind)
@@ -68,7 +73,7 @@ var _ = Describe("Render", func() {
 			d.Payload.Projects = []model.ResourceStats{
 				{Name: `evil<img onerror=alert(1)>`, TotalSeconds: 3600, TotalPct: 100},
 			}
-			b, err := Render(kind, d, Options{Theme: "dark", Title: `T<i>tle & "stuff"`})
+			b, err := RenderSpec(kind, d, Options{Theme: "dark", Title: `T<i>tle & "stuff"`})
 			Expect(err).NotTo(HaveOccurred())
 			assertValidXMLG(b)
 			s := string(b)
@@ -86,7 +91,7 @@ var _ = Describe("Render", func() {
 		long := strings.Repeat("verylongname", 10)
 		d := dataFixture()
 		d.Payload.Languages = []model.ResourceStats{{Name: long, TotalSeconds: 3600, TotalPct: 100}}
-		b, err := Render("top-langs", d, Options{})
+		b, err := RenderSpec("top-langs", d, Options{})
 		Expect(err).NotTo(HaveOccurred())
 		s := string(b)
 		// The label is truncated → ellipsis present. The FULL name is kept
@@ -99,24 +104,24 @@ var _ = Describe("Render", func() {
 	It("every kind survives an empty payload + emits the no-data message where expected", func() {
 		empty := &Data{Payload: &model.StatsPayload{}}
 		for _, kind := range Kinds() {
-			b, err := Render(kind, empty, Options{})
-			Expect(err).NotTo(HaveOccurred(), "Render(%s) on empty payload", kind)
+			b, err := RenderSpec(kind, empty, Options{})
+			Expect(err).NotTo(HaveOccurred(), "RenderSpec(%s) on empty payload", kind)
 			assertValidXMLG(b)
 		}
-		b, _ := Render("stats-card", empty, Options{})
+		b, _ := RenderSpec("stats-card", empty, Options{})
 		Expect(strings.Contains(string(b), "No coding activity")).To(BeTrue(),
 			"empty stats-card should render the no-data message")
 		// The composite is defensive about missing Grade — nil Grade must not panic.
-		b, _ = Render("profile-summary", empty, Options{})
+		b, _ = RenderSpec("profile-summary", empty, Options{})
 		Expect(strings.Contains(string(b), "No coding activity")).To(BeTrue(),
 			"empty profile-summary should render the no-data message")
 	})
 
 	It("theme selection picks known themes and falls back to dark for unknown ones", func() {
 		d := dataFixture()
-		dark, _ := Render("stats-card", d, Options{Theme: "dark"})
-		light, _ := Render("stats-card", d, Options{Theme: "light"})
-		unknown, _ := Render("stats-card", d, Options{Theme: "hotdog-stand"})
+		dark, _ := RenderSpec("stats-card", d, Options{Theme: "dark"})
+		light, _ := RenderSpec("stats-card", d, Options{Theme: "light"})
+		unknown, _ := RenderSpec("stats-card", d, Options{Theme: "hotdog-stand"})
 		Expect(strings.Contains(string(dark), themes["dark"].Background)).To(BeTrue(), "dark theme background missing")
 		Expect(strings.Contains(string(light), themes["light"].Background)).To(BeTrue(), "light theme background missing")
 		Expect(string(unknown)).To(Equal(string(dark)), "unknown theme should fall back to dark")
@@ -124,14 +129,14 @@ var _ = Describe("Render", func() {
 
 	It("stats-card-with-grade emits the grade level + ring; nil Grade self-computes without panic", func() {
 		d := dataFixture()
-		b, err := Render("stats-card-with-grade", d, Options{})
+		b, err := RenderSpec("stats-card-with-grade", d, Options{})
 		Expect(err).NotTo(HaveOccurred())
 		s := string(b)
 		Expect(strings.Contains(s, ">"+d.Grade.Level+"<")).To(BeTrue(), "grade level %q not rendered", d.Grade.Level)
 		Expect(strings.Contains(s, "stroke-dasharray")).To(BeTrue(), "grade ring missing")
 		// nil Grade must self-compute (renderer falls back to stats.Grade), not panic.
 		d2 := &Data{Payload: d.Payload}
-		b2, err := Render("stats-card-with-grade", d2, Options{})
+		b2, err := RenderSpec("stats-card-with-grade", d2, Options{})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(strings.Contains(string(b2), "stroke-dasharray")).To(BeTrue(), "nil-grade render failed")
 	})
@@ -141,7 +146,7 @@ var _ = Describe("Render", func() {
 		d.Payload.Languages = append(d.Payload.Languages, model.ResourceStats{
 			Name: "Other (5 more)", TotalSeconds: 999999, TotalPct: 90, OtherCount: 5,
 		})
-		b, err := Render("top-langs", d, Options{})
+		b, err := RenderSpec("top-langs", d, Options{})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(strings.Contains(string(b), "Other (5 more)")).To(BeFalse(),
 			"synthesized Other row should be excluded from top lists")
@@ -157,7 +162,7 @@ var _ = Describe("Render", func() {
 			{Name: "Go", TotalSeconds: 9000, TotalPct: 45},
 			{Name: "TypeScript", TotalSeconds: 3000, TotalPct: 15},
 		}
-		b, err := Render("top-langs", d, Options{})
+		b, err := RenderSpec("top-langs", d, Options{})
 		Expect(err).NotTo(HaveOccurred())
 		s := string(b)
 		Expect(strings.Contains(s, "75.0%")).To(BeTrue(), "expected renormalized 75.0%%")
@@ -170,7 +175,7 @@ var _ = Describe("Render", func() {
 	DescribeTable("each kind ships @keyframes + <title> tooltips",
 		func(kind string) {
 			d := dataFixture()
-			b, err := Render(kind, d, Options{})
+			b, err := RenderSpec(kind, d, Options{})
 			Expect(err).NotTo(HaveOccurred())
 			s := string(b)
 			Expect(strings.Contains(s, "@keyframes")).To(BeTrue(), "%s: missing entrance animations", kind)
@@ -189,7 +194,7 @@ var _ = Describe("Render", func() {
 	// grade ring. If any one disappears the layout has silently regressed.
 	It("profile-summary renders every panel + metric labels", func() {
 		d := dataFixture()
-		b, err := Render("profile-summary", d, Options{Subtitle: "last 30 days"})
+		b, err := RenderSpec("profile-summary", d, Options{Subtitle: "last 30 days"})
 		Expect(err).NotTo(HaveOccurred())
 		s := string(b)
 		// Panel 1: calendar cells carry per-day <title> tooltips with date labels.
@@ -234,12 +239,17 @@ var _ = Describe("Needs", func() {
 		Entry("categories-chart", "categories-chart", Requirements{Categories: true}),
 		Entry("editors-chips", "editors-chips", Requirements{}),
 		Entry("platforms-chips", "platforms-chips", Requirements{}),
+		// Part B Stage 5 — goal-* kinds moved into Kinds()/Needs() proper
+		// (they used to render outside the legacy `kinds` map entirely).
+		Entry("goal-progress", "goal-progress", Requirements{Goals: true}),
+		Entry("goal-ring", "goal-ring", Requirements{Goals: true}),
+		Entry("goal-list", "goal-list", Requirements{Goals: true}),
 	)
 })
 
-var _ = Describe("Render + IsKind reject unknown kinds", func() {
-	It("unknown kind → Render errors and IsKind returns false", func() {
-		_, err := Render("nope", dataFixture(), Options{})
+var _ = Describe("RenderSpec + IsKind reject unknown kinds", func() {
+	It("unknown kind → RenderSpec errors and IsKind returns false", func() {
+		_, err := RenderSpec("nope", dataFixture(), Options{})
 		Expect(err).To(HaveOccurred(), "unknown kind should error")
 		Expect(IsKind("nope")).To(BeFalse(), "IsKind(nope) should be false")
 	})
@@ -247,25 +257,34 @@ var _ = Describe("Render + IsKind reject unknown kinds", func() {
 
 // Byte-identical render invariant (gaka-hsj). The public /widget/svg endpoint
 // serves these bytes through GitHub camo and other aggressive HTTP caches; any
-// non-determinism inside Render (e.g. someone reaches for time.Now, a map-range
-// leak, or a rand.Float call in a primitive) silently invalidates every camo
-// snapshot and burns cache entries. Pinning the SHA256 of the output for a
-// fixed payload catches that class of regression on the first run.
+// non-determinism inside RenderSpec (e.g. someone reaches for time.Now, a
+// map-range leak, or a rand.Float call in a primitive) silently invalidates
+// every camo snapshot and burns cache entries. Pinning the SHA256 of the
+// output for a fixed payload catches that class of regression on the first
+// run.
 //
-// The hashes below were captured on 2026-07-31; if you INTENTIONALLY change the
-// SVG output for stats-card / top-langs / badge, update BOTH the hash AND the
-// timestamp above so the next reviewer knows this is a deliberate re-baseline.
-var _ = Describe("Render bytes are stable for a fixed payload (gaka-hsj)", func() {
+// stats-card and top-langs were re-baselined at Part B cutover (Stage 5,
+// 2026-08-09) — renderSpec is now the only path; output visually verified
+// equivalent to legacy (composite/panel geometry differs from the deleted
+// hand-written renderStatsCard/renderTopList, so the bytes changed even
+// though the picture didn't). badge is UNCHANGED: renderSpec special-cases
+// "badge" to call renderBadge directly (see spec.go), so its bytes are
+// byte-for-byte identical to the pre-cutover pin.
+//
+// If you INTENTIONALLY change the SVG output for any of the three below,
+// update BOTH the hash AND this comment's date so the next reviewer knows
+// it's a deliberate re-baseline, not drift.
+var _ = Describe("RenderSpec bytes are stable for a fixed payload (gaka-hsj)", func() {
 	// payloadFixture (defined at the bottom of this file) is intentionally
 	// small + deterministic — no time.Now, no random data. Adding TotalDaily
 	// series (as dataFixture does for the heatmap twins) would change the
 	// hash; the pinned kinds below all render from the plain payload only.
 	It("stats-card renders byte-identically across runs (fixed payload)", func() {
 		d := &Data{Payload: payloadFixture()}
-		want := "506119adee7341d4cc5656adb190e8f08206bc562d486ec2e75b5997088dd57a"
-		a, err := Render("stats-card", d, Options{Theme: "dark", Subtitle: "last 30 days"})
+		want := "e619cd76d559c62764449f5cce8d675afd41f4523698e0a8bdd94ecfe5595aef"
+		a, err := RenderSpec("stats-card", d, Options{Theme: "dark", Subtitle: "last 30 days"})
 		Expect(err).NotTo(HaveOccurred())
-		b, err := Render("stats-card", d, Options{Theme: "dark", Subtitle: "last 30 days"})
+		b, err := RenderSpec("stats-card", d, Options{Theme: "dark", Subtitle: "last 30 days"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(a).To(Equal(b), "stats-card render is non-deterministic between calls")
 		Expect(hashHex(a)).To(Equal(want),
@@ -274,10 +293,10 @@ var _ = Describe("Render bytes are stable for a fixed payload (gaka-hsj)", func(
 
 	It("top-langs renders byte-identically across runs (fixed payload)", func() {
 		d := &Data{Payload: payloadFixture()}
-		want := "75f22747f9d335ad284f63bf8b68f6b0e7bd223c87ead5f4260a49a3c6c720b4"
-		a, err := Render("top-langs", d, Options{Theme: "dark", Subtitle: "last 30 days"})
+		want := "940e3787b885177522c6e78135b1b3c4be5e427375a57ee41011c41676b6a7d0"
+		a, err := RenderSpec("top-langs", d, Options{Theme: "dark", Subtitle: "last 30 days"})
 		Expect(err).NotTo(HaveOccurred())
-		b, err := Render("top-langs", d, Options{Theme: "dark", Subtitle: "last 30 days"})
+		b, err := RenderSpec("top-langs", d, Options{Theme: "dark", Subtitle: "last 30 days"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(a).To(Equal(b), "top-langs render is non-deterministic between calls")
 		Expect(hashHex(a)).To(Equal(want),
@@ -287,9 +306,9 @@ var _ = Describe("Render bytes are stable for a fixed payload (gaka-hsj)", func(
 	It("badge renders byte-identically across runs (fixed payload)", func() {
 		d := &Data{Payload: payloadFixture()}
 		want := "71768648b56b832b72c72a633b982a17a543413cdfba0a869a5fd156ccae2438"
-		a, err := Render("badge", d, Options{Theme: "dark", Subtitle: "last 30 days"})
+		a, err := RenderSpec("badge", d, Options{Theme: "dark", Subtitle: "last 30 days"})
 		Expect(err).NotTo(HaveOccurred())
-		b, err := Render("badge", d, Options{Theme: "dark", Subtitle: "last 30 days"})
+		b, err := RenderSpec("badge", d, Options{Theme: "dark", Subtitle: "last 30 days"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(a).To(Equal(b), "badge render is non-deterministic between calls")
 		Expect(hashHex(a)).To(Equal(want),
@@ -306,30 +325,30 @@ var _ = Describe("Stat-tile + chip twins (Part B Stage 1)", func() {
 		// compound() drops the last unit (hakatime parity), so an exact-hours
 		// total renders "" — use 3h02m so the tile shows "3 hrs".
 		d.Payload.TotalSeconds = 3*3600 + 120
-		b, _ := Render("total-time-stat", d, Options{})
+		b, _ := RenderSpec("total-time-stat", d, Options{})
 		Expect(string(b)).To(ContainSubstring("TOTAL TIME"))
 		Expect(string(b)).To(ContainSubstring("3 hrs"))
-		b, _ = Render("daily-avg-stat", d, Options{})
+		b, _ = RenderSpec("daily-avg-stat", d, Options{})
 		Expect(string(b)).To(ContainSubstring("DAILY AVG"))
 		Expect(string(b)).To(ContainSubstring("25 min")) // compound(1543)
-		b, _ = Render("current-streak-stat", d, Options{})
+		b, _ = RenderSpec("current-streak-stat", d, Options{})
 		Expect(string(b)).To(ContainSubstring(">0D<"), "trailing zeros → current streak 0")
-		b, _ = Render("longest-streak-stat", d, Options{})
+		b, _ = RenderSpec("longest-streak-stat", d, Options{})
 		Expect(string(b)).To(ContainSubstring(">2D<"), "longest run is days 3-4")
-		b, _ = Render("active-days-stat", d, Options{})
+		b, _ = RenderSpec("active-days-stat", d, Options{})
 		Expect(string(b)).To(ContainSubstring(">3/7<"))
 		Expect(string(b)).To(ContainSubstring("43% of days active"))
 	})
 
 	It("chip clouds render each segment entry with a duration tooltip", func() {
 		d := dataFixture()
-		b, _ := Render("editors-chips", d, Options{})
+		b, _ := RenderSpec("editors-chips", d, Options{})
 		Expect(string(b)).To(ContainSubstring("vscode"))
 		Expect(string(b)).To(ContainSubstring("neovim"))
 		Expect(string(b)).To(ContainSubstring("<title>"))
-		b, _ = Render("platforms-chips", d, Options{})
+		b, _ = RenderSpec("platforms-chips", d, Options{})
 		Expect(string(b)).To(ContainSubstring("darwin"))
-		b, _ = Render("categories-chart", d, Options{})
+		b, _ = RenderSpec("categories-chart", d, Options{})
 		Expect(string(b)).To(ContainSubstring("coding"))
 		Expect(string(b)).To(ContainSubstring("debugging"))
 	})
@@ -346,8 +365,8 @@ var _ = Describe("Stat-tile + chip twins (Part B Stage 1)", func() {
 			"editors-chips":       "No editor data yet",
 			"platforms-chips":     "No platform data yet",
 		} {
-			b, err := Render(kind, empty, Options{})
-			Expect(err).NotTo(HaveOccurred(), "Render(%s) on empty payload", kind)
+			b, err := RenderSpec(kind, empty, Options{})
+			Expect(err).NotTo(HaveOccurred(), "RenderSpec(%s) on empty payload", kind)
 			Expect(string(b)).To(ContainSubstring(msg), "%s: empty-state message missing", kind)
 		}
 	})
@@ -367,6 +386,9 @@ var _ = Describe("Kinds() matches the FE catalog verbatim", func() {
 			"daily-avg-stat",
 			"deep-work",
 			"editors-chips",
+			"goal-list",
+			"goal-progress",
+			"goal-ring",
 			"heatmap-languages",
 			"heatmap-projects",
 			"longest-streak-stat",

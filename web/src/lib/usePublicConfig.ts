@@ -18,7 +18,6 @@ const FALLBACK: PublicConfig = {
   billing_enabled: false,
   beta_flags: {},
   github_connect_enabled: false,
-  widget_spec_engine: false,
 };
 
 export function usePublicConfig(): { config: PublicConfig; isLoading: boolean } {

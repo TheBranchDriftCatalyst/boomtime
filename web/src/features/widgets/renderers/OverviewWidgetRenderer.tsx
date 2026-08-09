@@ -37,18 +37,10 @@ import {
   GithubLanguagesCard,
 } from "@/features/overview/GithubCharts";
 import { ColumnChart } from "@/viz/charts/ColumnChart";
-import { HeatmapChart } from "@/viz/charts/HeatmapChart";
-import { PieChart } from "@/viz/charts/PieChart";
 import { TimelineChart } from "@/viz/charts/TimelineChart";
 import { CategoryBreakdown } from "@/viz/charts/CategoryBreakdown";
-import { ContributionCalendar } from "@/viz/charts/ContributionCalendar";
-import { CumulativeArea } from "@/viz/charts/CumulativeArea";
 import { StreakBanner } from "@/viz/charts/StreakBanner";
 import { CategoryStreamgraph } from "@/viz/charts/CategoryStreamgraph";
-import { Punchcard } from "@/viz/charts/Punchcard";
-import { HourBarChart } from "@/viz/charts/HourBarChart";
-import { DeepWorkSessions } from "@/viz/charts/DeepWorkSessions";
-import { MomentumGrid } from "@/viz/charts/MomentumGrid";
 import { secondsToHms } from "@/lib/utils";
 import { TIMELINE_HOUR_OPTIONS } from "@/lib/config";
 import { useOverviewData } from "@/features/overview/OverviewDataContext";
@@ -61,12 +53,12 @@ import {
   useOverviewAIActivity,
   useOverviewHealthActivity,
 } from "@/features/overview/overviewWidgets";
-import type { ResourceStats, PunchcardPayload, StatsPayload } from "@/types/stats";
-// Part B Stage 3 (gaka-174.x): the data-driven alternative to this file's
-// switch cases below, for target:"both" kinds only. Gated behind the
-// widgetSpecEngine FE flag — see the matching wiring in WidgetRenderer.tsx's
-// file doc for why both engines coexist.
-import { usePublicConfig } from "@/lib/usePublicConfig";
+import type { PunchcardPayload, StatsPayload } from "@/types/stats";
+// Part B Stage 3 (gaka-174.x) built the data-driven alternative to this
+// file's switch cases, for target:"both" kinds only, gated behind the
+// widgetSpecEngine FE flag. Part B Stage 5 cutover: the flag is gone — every
+// target:"both" kind routes through SpecRenderer unconditionally now (see
+// the matching change in WidgetRenderer.tsx's file doc).
 import { specForKind } from "@/features/widgets/specs";
 import {
   SpecRenderer,
@@ -81,21 +73,13 @@ export interface OverviewWidgetRendererProps {
   config?: Record<string, unknown>;
 }
 
-export function OverviewWidgetRenderer({
-  kind,
-  view,
-  config,
-}: OverviewWidgetRendererProps) {
-  // Part B Stage 3: target:"both" kinds route through the generic
-  // SpecRenderer when the flag is on. fe-only kinds (and everything when the
-  // flag is off) fall through to the switch below unchanged. OverviewSpecKind
-  // is itself hook-free (see its doc) so this early return stays legal.
-  const { config: publicConfig } = usePublicConfig();
-  if (publicConfig.widget_spec_engine) {
-    const spec = specForKind(kind);
-    if (spec?.target === "both") {
-      return <OverviewSpecKind kind={kind} view={view} />;
-    }
+export function OverviewWidgetRenderer({ kind, view }: OverviewWidgetRendererProps) {
+  // Part B Stage 5 cutover: every target:"both" kind routes through the
+  // generic SpecRenderer (via OverviewSpecKind's self-fetching leaves)
+  // unconditionally — no more flag check. OverviewSpecKind is itself
+  // hook-free (see its doc) so this early return stays legal.
+  if (specForKind(kind)?.target === "both") {
+    return <OverviewSpecKind kind={kind} view={view} />;
   }
 
   switch (kind) {
@@ -116,14 +100,8 @@ export function OverviewWidgetRenderer({
       return <OverviewStreakBanner />;
 
     // --- Time-series / heatmaps -----------------------------------------
-    case "activity-heatmap":
-      return <OverviewActivityHeatmap />;
     case "overview-total-activity":
       return <OverviewTotalActivity />;
-    case "top-projects":
-      return <OverviewTopProjects view={view} config={config} />;
-    case "cumulative-area":
-      return <OverviewCumulativeArea />;
     case "loc":
       return <LinesOfCodeCard />;
 
@@ -136,18 +114,6 @@ export function OverviewWidgetRenderer({
       return <GithubLanguagesCard />;
     case "category-streamgraph":
       return <OverviewCategoryStreamgraph />;
-    case "heatmap-projects":
-      return <OverviewHeatmapProjects />;
-    case "heatmap-languages":
-      return <OverviewHeatmapLanguages />;
-
-    // --- Patterns -------------------------------------------------------
-    case "punchcard":
-      return <OverviewPunchcard view={view} />;
-    case "momentum":
-      return <OverviewMomentum />;
-    case "deep-work":
-      return <OverviewDeepWork />;
 
     // --- Recent timeline (carries its own Last-N-hours control) ---------
     case "overview-timeline":
@@ -212,9 +178,8 @@ function OverviewSpecKind({ kind, view }: { kind: string; view?: string }) {
       return <OverviewSpecDeepWork />;
     // activity-heatmap, top-projects, cumulative-area, heatmap-projects and
     // heatmap-languages all bind solely to the RAW stats payload — one
-    // shared leaf component, same as OverviewActivityHeatmap /
-    // OverviewTopProjects / etc. below all independently call
-    // useOverviewStats() and share its react-query cache.
+    // shared leaf component that calls useOverviewStats() and shares its
+    // react-query cache with every other stats-backed widget on the grid.
     case "activity-heatmap":
     case "top-projects":
     case "cumulative-area":
@@ -317,12 +282,6 @@ function OverviewStreakBanner() {
   return <StreakBanner dailyTotal={stats?.dailyTotal ?? []} />;
 }
 
-// GitHub-style contribution calendar from RAW daily data (parallel to `dates`).
-function OverviewActivityHeatmap() {
-  const { stats, dates } = useOverviewStats();
-  return <ContributionCalendar dates={dates} values={stats?.dailyTotal ?? []} />;
-}
-
 // "Total activity" stacked ColumnChart by category, falling back to the single
 // daily-total series when there are no categories.
 function OverviewTotalActivity() {
@@ -334,68 +293,10 @@ function OverviewTotalActivity() {
   return <ColumnChart dates={chartDates} values={chartDailyTotal} />;
 }
 
-// Project breakdown. Legacy renders a pie of stats.projects; the catalog kind
-// also offers a bar view, honored here. `config.topN` optionally caps the set.
-function OverviewTopProjects({
-  view,
-  config,
-}: {
-  view?: string;
-  config?: Record<string, unknown>;
-}) {
-  const { stats } = useOverviewStats();
-  const topN = typeof config?.topN === "number" ? config.topN : undefined;
-  const items = stats?.projects ?? [];
-  const shown = topN ? items.slice(0, topN) : items;
-  if (!shown.length) return <Empty note="No data" />;
-  if (view === "bar") return <BarList items={shown.slice(0, 8)} />;
-  return <PieChart items={shown} />;
-}
-
-// Cumulative coding time from bucketed dates + daily total.
-function OverviewCumulativeArea() {
-  const { chartDates, chartDailyTotal } = useOverviewStats();
-  return <CumulativeArea dates={chartDates} values={chartDailyTotal} />;
-}
-
 // Category streamgraph from bucketed categories.
 function OverviewCategoryStreamgraph() {
   const { chartCategories, chartDates } = useOverviewStats();
   return <CategoryStreamgraph categories={chartCategories} dates={chartDates} />;
-}
-
-// Activity-per-project heatmap (bucketed).
-function OverviewHeatmapProjects() {
-  const { chartProjects, chartDates } = useOverviewStats();
-  return <HeatmapChart items={chartProjects} dates={chartDates} />;
-}
-
-// Activity-per-language heatmap (bucketed).
-function OverviewHeatmapLanguages() {
-  const { chartLanguages, chartDates } = useOverviewStats();
-  return <HeatmapChart items={chartLanguages} dates={chartDates} />;
-}
-
-// Coding punchcard. Legacy renders the 7×24 heatmap; the catalog kind also
-// offers an hour-bars view, honored here (collapse day-of-week → 24 hour bins).
-function OverviewPunchcard({ view }: { view?: string }) {
-  const query = useOverviewPunchcard();
-  if (view === "hour-bars") {
-    return <HourBarChart hour={sumPunchcardByHour(query.data)} />;
-  }
-  return <Punchcard data={query.data} />;
-}
-
-// Project momentum (weekly per-project heatmap).
-function OverviewMomentum() {
-  const query = useOverviewMomentum();
-  return <MomentumGrid data={query.data} />;
-}
-
-// Deep-work sessions (count + median + longest + daily shape).
-function OverviewDeepWork() {
-  const query = useOverviewSessions();
-  return <DeepWorkSessions data={query.data} />;
 }
 
 // Recent timeline. Carries its OWN Last-N-hours control, driven by the shared
@@ -429,56 +330,10 @@ function OverviewTimeline() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Small local helpers (mirrors of the profile WidgetRenderer's private bits).
-// ---------------------------------------------------------------------------
-
-function BarList({ items }: { items: ResourceStats[] }) {
-  const max = Math.max(...items.map((i) => i.totalSeconds), 1);
-  return (
-    <ol className="flex h-full w-full flex-col gap-1 overflow-y-auto px-2 py-1">
-      {items.map((it) => {
-        const pct = (it.totalSeconds / max) * 100;
-        return (
-          <li key={it.name} className="flex flex-col gap-0.5">
-            <div className="flex justify-between font-mono text-[10px] uppercase tracking-[0.1em] text-[color:var(--muted-foreground)]">
-              <span className="truncate">{it.name}</span>
-              <span>{secondsToHms(it.totalSeconds)}</span>
-            </div>
-            <div
-              className="h-[6px] rounded-sm"
-              style={{ background: "var(--primary)", width: `${pct}%`, opacity: 0.85 }}
-              aria-hidden
-            />
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
-
 function Empty({ note }: { note: string }) {
   return (
     <div className="flex h-full w-full items-center justify-center font-mono text-[11px] uppercase tracking-[0.15em] text-[color:var(--muted-foreground)]">
       {note}
     </div>
   );
-}
-
-// Sum a punchcard's 7×24 grid down to a single hour-of-day 24-bin series,
-// collapsing day-of-week. Emits ResourceStats-shaped rows so HourBarChart
-// (which expects `{name, totalSeconds}` per hour) renders without a variant.
-function sumPunchcardByHour(pc: PunchcardPayload | undefined): ResourceStats[] {
-  const totals = new Array<number>(24).fill(0);
-  for (const c of pc?.cells ?? []) {
-    if (c.hour >= 0 && c.hour < 24) totals[c.hour] += c.seconds;
-  }
-  const grand = totals.reduce((s, v) => s + v, 0) || 1;
-  return totals.map((total, h) => ({
-    name: String(h),
-    totalSeconds: total,
-    totalPct: (total / grand) * 100,
-    totalDaily: [],
-    pctDaily: [],
-  }));
 }

@@ -498,13 +498,13 @@ export function catalogForDashboard(scope: DashboardScope): WidgetCatalogEntry[]
 }
 
 /** Kinds the backend `/widget/svg/:uuid/:kind` endpoint can actually render
- * (mirrors the `kinds` map in internal/widget/render.go, pinned by the Go test
- * TestKindsMatchFrontendCatalog). The Embeddable Widgets panel filters to these
- * — every OTHER catalog entry (goal tiles, grade-badge, hero-identity, the
- * overview-* kinds, …) is an in-page / composable-dashboard widget that has no
- * SVG renderer and 404s as an embed, so surfacing it in the panel produces
- * empty widget cards. Keep this in sync with render.go when adding a
- * backend-renderable kind. */
+ * (mirrors `Kinds()` in internal/widget/render.go — every target:"both" spec
+ * in specs.json — pinned by the Go test TestKindsMatchFrontendCatalog). The
+ * Embeddable Widgets panel filters to these — every OTHER catalog entry
+ * (grade-badge, hero-identity, the overview-* kinds, …) is an in-page /
+ * composable-dashboard-only widget that has no SVG renderer and 404s as an
+ * embed, so surfacing it in the panel produces empty widget cards. Keep this
+ * in sync with specs.json when adding a backend-renderable kind. */
 export const SVG_RENDERABLE_KINDS = new Set<string>([
   "activity-heatmap",
   "badge",
@@ -531,7 +531,7 @@ export const SVG_RENDERABLE_KINDS = new Set<string>([
   "platforms-chips",
   // Part B Stage 4 — the goal-* kinds are now privacy-gated embeddable
   // SVGs too (internal/widget/specs.json target:"both", rendered via
-  // renderSpec unconditionally — see widget.IsAlwaysSpecKind). A goal
+  // renderSpec — the only render path as of Part B Stage 5). A goal
   // only appears on the embed when the OWNER has flipped it `public`;
   // see internal/widgets.publicGoalsFor for the privacy gate.
   "goal-progress",

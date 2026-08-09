@@ -1,16 +1,16 @@
 // spec.go: the canonical WidgetSpec model + generic render engine (Part B
-// Stage 2). ONE committed specs.json describes every catalog kind — Go
-// embeds it via go:embed; the FE imports the SAME file (see
-// web/src/features/widgets/specs.ts) so there is exactly one source of
+// Stage 2; the ONLY render path as of the Part B Stage 5 cutover). ONE
+// committed specs.json describes every catalog kind — Go embeds it via the
+// directive below (see the var block), and the FE imports the SAME file
+// (see web/src/features/widgets/specs.ts) so there is exactly one source of
 // truth, no codegen, no drift. renderSpec is renderCustom/renderPanel's
 // generalization: same OpenFrame + panelRect + Emit* vocabulary, but driven
 // by data (a Spec) instead of a hand-written renderer per kind.
 //
-// This engine is fully additive and stays behind BOOM_WIDGET_SPEC_ENGINE
-// (config.Config.FeatureWidgetSpecEngine) — the widgets handler picks
-// Render/Needs (legacy, default) or RenderSpec/NeedsForSpec (this file)
-// per-request. Nothing in render.go changes: the legacy `kinds` map and its
-// SHA-pinned bytes are untouched.
+// Pre-cutover this engine sat behind BOOM_WIDGET_SPEC_ENGINE
+// (config.Config.FeatureWidgetSpecEngine), coexisting with a hand-written
+// per-kind renderer in render.go. That flag and the legacy renderers are
+// gone: the widgets handler always calls RenderSpec/NeedsForSpec now.
 package widget
 
 import (
@@ -120,17 +120,21 @@ func SpecFor(kind string) (Spec, bool) {
 	return s, ok
 }
 
-// IsAlwaysSpecKind reports whether kind is a target:"both" spec with NO
-// legacy renderer (absent from render.go's `kinds` map) — e.g. the goal-*
-// kinds (Part B Stage 4). Goals have no hand-written render.go twin to fall
-// back to, so such kinds render via renderSpec/NeedsForSpec UNCONDITIONALLY,
-// regardless of Config.FeatureWidgetSpecEngine. The widgets handler uses
-// this twice: to admit the kind past the public :kind whitelist (which
-// otherwise only recognizes IsKind's legacy set) and to decide
-// useSpecEngine for the render itself.
-func IsAlwaysSpecKind(kind string) bool {
+// IsGoalKind reports whether kind's spec reads the account-wide Goals data
+// (any panel bound to "goals" — see NeedsForSpec). This used to be exactly
+// IsAlwaysSpecKind's set pre-cutover (goal-* kinds had no legacy renderer to
+// fall back to, so they always rendered via the spec engine); now that
+// renderSpec is the only path for every kind, that distinction is gone and
+// this predicate is purely about the PRIVACY property goals have that no
+// other "both" kind does: goals are account-wide, never project/space-
+// scoped. The widgets handler uses this to 404 a goal-* embed minted under a
+// non-user-scoped widget link (see WidgetSvg's scope gate) — if a future
+// kind legitimately needs the same account-wide-only treatment for a
+// different reason, narrow this to a dedicated predicate instead of
+// overloading it.
+func IsGoalKind(kind string) bool {
 	spec, ok := SpecFor(kind)
-	return ok && spec.Target == TargetBoth && !IsKind(kind)
+	return ok && spec.Target == TargetBoth && NeedsForSpec(spec).Goals
 }
 
 // NeedsForSpec derives Requirements from the union of every panel's
@@ -161,11 +165,9 @@ func NeedsForSpec(spec Spec) Requirements {
 }
 
 // RenderSpec renders a "both"-target kind through the generic spec engine —
-// the flagged alternative to Render(kind, ...) (render.go). Callers
-// (currently only the widgets handler, gated on Config.FeatureWidgetSpecEngine)
-// look up SpecFor(kind) themselves when they also need NeedsForSpec, but
-// RenderSpec re-resolves it so it stays a self-sufficient one-call API for
-// tests and any other future caller.
+// the ONLY render path (Part B Stage 5). Callers (the widgets handler, plus
+// tests) look up SpecFor(kind) themselves when they also need NeedsForSpec,
+// but RenderSpec re-resolves it so it stays a self-sufficient one-call API.
 func RenderSpec(kind string, d *Data, opts Options) ([]byte, error) {
 	spec, ok := SpecFor(kind)
 	if !ok || spec.Target != TargetBoth {
@@ -208,12 +210,58 @@ func renderSpec(spec Spec, d *Data, th Theme, opts Options) ([]byte, error) {
 		title = spec.Kind
 	}
 	f := OpenFrame(w, h, th, title, opts.Subtitle)
+	// Part B Stage 5 cutover fix: the deleted legacy renderers each ran a
+	// kind-specific isEmpty check BEFORE drawing anything, short-circuiting
+	// to a single whole-card placeholder (f.Empty(msg)) instead of a card
+	// full of zero-value panels (a bars panel with nothing to show, a
+	// compound(0)-formatted "no data" METRIC VALUE sitting under a "Total"
+	// label, etc.). The generic per-panel dispatch below has no way to
+	// derive "is there anything meaningful to show" purely from a spec's
+	// panel bindings — see emptyStateOverride's doc comment for why this
+	// stays a small kind-keyed table rather than a binding-derived rule.
+	if empty, msg := emptyStateOverride(spec.Kind, d); empty {
+		f.Empty(msg)
+		return f.Close(), nil
+	}
 	for _, p := range spec.Panels {
 		if err := renderSpecPanel(f, d, w, h, len(spec.Panels), p); err != nil {
 			return nil, err
 		}
 	}
 	return f.Close(), nil
+}
+
+// emptyStateOverride reports whether kind should short-circuit to a
+// whole-card "nothing to show" placeholder instead of drawing its panels for
+// the given Data, and if so, the message to show — restoring the exact
+// per-kind isEmpty short-circuits the deleted legacy renderers ran (see
+// render.go's history: renderStatsCard/renderProfileSummary checked
+// TotalSeconds==0; renderTotalTime/renderDailyAvg the same; renderCurrentStreak/
+// renderLongestStreak/renderActiveDays checked len(DailyTotal)==0;
+// renderCategories/renderEditors/renderPlatforms checked their own segment's
+// length). Each kind's emptiness hinges on a DIFFERENT field — deep-work's
+// on Sessions.Summary.Count, the stat tiles on TotalSeconds vs DailyTotal —
+// so this can't be derived generically from a spec's panel bindings; it's a
+// deliberately small, explicit table. Kinds not listed here rely on their
+// primitives' own empty-state fallbacks (EmitBars/EmitCalendar/EmitChips/
+// etc. each already draw a reasonable "no data" placeholder) — those weren't
+// pinned to exact legacy wording by any test and are left alone.
+func emptyStateOverride(kind string, d *Data) (empty bool, msg string) {
+	switch kind {
+	case "stats-card", "stats-card-with-grade", "profile-summary":
+		return d.Payload.TotalSeconds == 0, "No coding activity in this range yet"
+	case "total-time-stat", "daily-avg-stat":
+		return d.Payload.TotalSeconds == 0, "No activity yet"
+	case "current-streak-stat", "longest-streak-stat", "active-days-stat":
+		return len(d.Payload.DailyTotal) == 0, "No days in range yet"
+	case "categories-chart":
+		return len(d.Payload.Categories) == 0, "No category data yet"
+	case "editors-chips":
+		return len(d.Payload.Editors) == 0, "No editor data yet"
+	case "platforms-chips":
+		return len(d.Payload.Platforms) == 0, "No platform data yet"
+	}
+	return false, ""
 }
 
 // renderSpecPanel dispatches one panel to its primitive. rect defaults to

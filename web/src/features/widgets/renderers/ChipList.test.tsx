@@ -13,17 +13,21 @@
 // The fix recomputes share from totalSeconds over the rendered set,
 // mirroring PieChart's approach. Both invariants are pinned here so a
 // future refactor that reintroduces the totalPct read gets caught.
+//
+// Part B Stage 5 cutover: categories-chart/editors-chips/platforms-chips are
+// target:"both" kinds, so WidgetRenderer now routes them unconditionally
+// through SpecRenderer (its own Chips component, data-testid="spec-chip") —
+// the bespoke ChipList component this file used to exercise directly
+// (data-testid="dossier-chip") is deleted. SpecRenderer's Chips carries the
+// exact same recompute-from-totalSeconds fix (see SpecRenderer.tsx), so
+// these regression pins still guard the same invariant, just through the
+// new path.
 import { describe, expect, it } from "vitest";
 import { screen, within } from "@testing-library/react";
 import { WidgetRenderer } from "./WidgetRenderer";
 import type { PublicDashboardPayload, ResourceStats } from "@/types/stats";
 import { renderWithProviders } from "@/test/renderWithProviders";
 
-// WidgetRenderer now reads usePublicConfig() unconditionally (Part B Stage 3
-// spec-engine gate), which needs a QueryClientProvider ancestor — switch
-// from a bare RTL render to renderWithProviders. The default MSW handler
-// for /config/public (handlers.ts) advertises widget_spec_engine: false, so
-// these tests keep exercising the BESPOKE switch as before.
 function render(ui: Parameters<typeof renderWithProviders>[0]) {
   return renderWithProviders(ui);
 }
@@ -69,7 +73,7 @@ describe("ChipList percent rendering (categories/editors/platforms)", () => {
     });
     render(<WidgetRenderer kind="categories-chart" view="chips" data={payload} />);
 
-    const chips = screen.getAllByTestId("dossier-chip");
+    const chips = screen.getAllByTestId("spec-chip");
     expect(chips).toHaveLength(2);
     // Order preserved from input; chip text is "<NAME> <PCT>%".
     expect(chips[0].textContent).toMatch(/AI Coding/);
@@ -94,7 +98,7 @@ describe("ChipList percent rendering (categories/editors/platforms)", () => {
     });
     render(<WidgetRenderer kind="categories-chart" view="chips" data={payload} />);
 
-    const chips = screen.getAllByTestId("dossier-chip");
+    const chips = screen.getAllByTestId("spec-chip");
     const pcts = chips
       .map((c) => c.textContent?.match(/(\d+)%/)?.[1])
       .map((s) => Number(s));
@@ -117,7 +121,7 @@ describe("ChipList percent rendering (categories/editors/platforms)", () => {
       ],
     });
     render(<WidgetRenderer kind="editors-chips" data={payload} />);
-    const chips = screen.getAllByTestId("dossier-chip");
+    const chips = screen.getAllByTestId("spec-chip");
     expect(chips[0].textContent).toMatch(/60%/);
     expect(chips[1].textContent).toMatch(/40%/);
   });
@@ -127,7 +131,7 @@ describe("ChipList percent rendering (categories/editors/platforms)", () => {
       platforms: [stat("MACINTOSH", 100, 1.0)],
     });
     render(<WidgetRenderer kind="platforms-chips" data={payload} />);
-    const chips = screen.getAllByTestId("dossier-chip");
+    const chips = screen.getAllByTestId("spec-chip");
     expect(chips[0].textContent).toMatch(/100%/);
   });
 
@@ -139,7 +143,7 @@ describe("ChipList percent rendering (categories/editors/platforms)", () => {
     render(<WidgetRenderer kind="categories-chart" view="chips" data={payload} />);
     // The categories-chart branch guards categories.length upstream of
     // ChipList; either way we should NOT see any chips.
-    expect(screen.queryAllByTestId("dossier-chip")).toHaveLength(0);
+    expect(screen.queryAllByTestId("spec-chip")).toHaveLength(0);
   });
 
   it("ignores stale totalPct entirely — a fixture with wrong totalPct still renders the right share", () => {
@@ -153,7 +157,7 @@ describe("ChipList percent rendering (categories/editors/platforms)", () => {
       ],
     });
     render(<WidgetRenderer kind="categories-chart" view="chips" data={payload} />);
-    const chips = screen.getAllByTestId("dossier-chip");
+    const chips = screen.getAllByTestId("spec-chip");
     const texts = chips.map((c) => c.textContent ?? "");
     expect(texts[0]).toMatch(/A/);
     expect(texts[0]).toMatch(/25%/);

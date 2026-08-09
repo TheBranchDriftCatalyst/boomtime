@@ -54,17 +54,6 @@ type PublicConfigResponse struct {
 	// GitHubConnectCard renders nothing when this is false, so the whole
 	// surface stays inert until an operator provisions the secrets.
 	GithubConnectEnabled bool `json:"github_connect_enabled"`
-
-	// WidgetSpecEngine mirrors BOOM_WIDGET_SPEC_ENGINE / Config.FeatureWidgetSpecEngine
-	// (Part B Stage 2 — internal/widget/spec.go). Backend-side it picks
-	// Render/Needs vs RenderSpec/NeedsForSpec for the /widget/svg endpoint;
-	// FE-side (Part B Stage 3) it gates WidgetRenderer.tsx /
-	// OverviewWidgetRenderer.tsx delegating target:"both" kinds to the
-	// generic SpecRenderer instead of their hand-written switch cases. One
-	// flag drives both engines so a deployment can't run the backend on the
-	// spec engine while the FE still renders the legacy bespoke path (or
-	// vice versa).
-	WidgetSpecEngine bool `json:"widget_spec_engine"`
 }
 
 // PublicConfig: GET /api/v1/config/public — unauthenticated, always JSON.
@@ -79,6 +68,5 @@ func (h *Handler) PublicConfig(c *echo.Context) error {
 			"user_registration": h.Cfg.BetaUserRegistration,
 		},
 		GithubConnectEnabled: h.Cfg.GithubConnectEnabled(),
-		WidgetSpecEngine:     h.Cfg.FeatureWidgetSpecEngine,
 	})
 }

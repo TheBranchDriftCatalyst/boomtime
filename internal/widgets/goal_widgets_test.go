@@ -17,9 +17,10 @@
 //     "filter (SQL) then cap (Go slice)" order must be observed — a
 //     "cap-then-filter" regression would silently drop legitimate public
 //     goals whenever a private/disabled one lands in the naive top-N window.
-//   - THE DECOUPLING TEST: goal-* kinds have no legacy render.go renderer,
-//     so they must render via the spec engine regardless of
-//     Config.FeatureWidgetSpecEngine (see widget.IsAlwaysSpecKind).
+//   - THE DECOUPLING TEST: goal-* kinds have no legacy render.go renderer at
+//     all (Part B Stage 5: renderSpec is now the only render path for every
+//     kind, so this is really just a sanity check that goal-* kinds render
+//     fine like everything else — see widget.IsGoalKind).
 package widgets_test
 
 import (
@@ -267,23 +268,20 @@ var _ = Describe("Embeddable goal widgets (Part B Stage 4)", func() {
 		}
 	})
 
-	It("DECOUPLING: goal-* kinds render via the spec engine regardless of Config.FeatureWidgetSpecEngine (no legacy fallback exists)", func() {
-		for _, flag := range []bool{false, true} {
-			hz := testutil.NewHarness(GinkgoTB())
-			hz.Cfg.FeatureWidgetSpecEngine = flag
-			e := hz.Router()
-			_, token := hz.MintUser("goalw_decouple")
-			createGoalG(e, token, "Flagless Goal", true)
-			link := mintWidgetLinkSE(e, token)
+	It("DECOUPLING: goal-* kinds render via the spec engine (no legacy fallback exists)", func() {
+		hz := testutil.NewHarness(GinkgoTB())
+		e := hz.Router()
+		_, token := hz.MintUser("goalw_decouple")
+		createGoalG(e, token, "Flagless Goal", true)
+		link := mintWidgetLinkSE(e, token)
 
-			for _, kind := range []string{"goal-list", "goal-progress", "goal-ring"} {
-				rec := getSVG(e, "/widget/svg/"+link+"/"+kind+"?days=30")
-				Expect(rec).To(testutil.HaveStatus(http.StatusOK),
-					"kind=%s specEngine=%v: body=%s", kind, flag, rec.Body.String())
-				Expect(rec.Header().Get("Content-Type")).To(HavePrefix("image/svg+xml"))
-				Expect(rec.Body.String()).To(ContainSubstring("Flagless Goal"),
-					"kind=%s specEngine=%v: goal should render regardless of the flag", kind, flag)
-			}
+		for _, kind := range []string{"goal-list", "goal-progress", "goal-ring"} {
+			rec := getSVG(e, "/widget/svg/"+link+"/"+kind+"?days=30")
+			Expect(rec).To(testutil.HaveStatus(http.StatusOK),
+				"kind=%s: body=%s", kind, rec.Body.String())
+			Expect(rec.Header().Get("Content-Type")).To(HavePrefix("image/svg+xml"))
+			Expect(rec.Body.String()).To(ContainSubstring("Flagless Goal"),
+				"kind=%s: goal should render", kind)
 		}
 	})
 })

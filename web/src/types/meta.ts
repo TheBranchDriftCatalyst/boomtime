@@ -18,10 +18,6 @@ export interface PublicConfig {
   // is on AND the OAuth-App creds + state signing key are configured. The
   // GitHubConnectCard renders nothing when false, so the surface is inert.
   github_connect_enabled: boolean;
-  // Part B Stage 3 (gaka-174.x): mirrors BOOM_WIDGET_SPEC_ENGINE. When true,
-  // WidgetRenderer.tsx / OverviewWidgetRenderer.tsx delegate target:"both"
-  // kinds to the generic SpecRenderer instead of their bespoke switch cases.
-  widget_spec_engine: boolean;
 }
 
 // Admin caps dashboard — GET /api/v1/admin/users (gaka-93f.6). Mirrors

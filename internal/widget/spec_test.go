@@ -1,19 +1,20 @@
 // spec_test.go — Part B Stage 2: the canonical WidgetSpec registry + the
-// generic renderSpec engine (spec.go). Three invariant classes:
+// generic renderSpec engine (spec.go); Part B Stage 5 cutover made renderSpec
+// the ONLY render path (the legacy hand-written Render() this file used to
+// sanity-check against is gone). Three invariant classes:
 //
 //   - Cross-language guard: every WIDGET_CATALOG kind (web/src/features/
 //     widgets/catalog.ts) has a spec entry, classified "both" or "fe-only",
 //     with the "both" set matching Kinds() exactly. The TS-side twin
 //     (web/src/features/widgets/specs.test.ts) pins the same list from the
 //     FE's own catalog.ts import.
-//   - NeedsForSpec(spec) == Needs(kind) EXACTLY for every "both" kind — the
-//     spec-engine's derived requirements must not fetch more or less than
-//     the hand-written legacy map, or the handler either fetches
-//     unnecessarily or leaves a renderer looking at a nil blob.
+//   - NeedsForSpec(spec) == Needs(kind) for every "both" kind — trivially
+//     true post-cutover since Needs(kind) is now DEFINED as
+//     NeedsForSpec(SpecFor(kind)) (render.go), but kept as an explicit
+//     regression guard: a future refactor that reintroduces a kind-specific
+//     Needs override would trip it.
 //   - RenderSpec produces well-formed, camo-safe SVG for every "both" kind on
-//     both a populated fixture AND an empty payload — including a
-//     side-by-side render against the legacy Render() (NOT byte-identical;
-//     re-baseline is allowed for this stage, see spec.go's package doc).
+//     both a populated fixture AND an empty payload.
 package widget
 
 import (
@@ -26,21 +27,13 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 )
 
-// alwaysSpecKinds are target:"both" spec kinds with NO legacy renderer at
-// all (Part B Stage 4: the goal-* kinds) — see IsAlwaysSpecKind's doc
-// comment. They render via renderSpec/NeedsForSpec unconditionally, so they
-// are "both" in specs.json without being part of Kinds() (the legacy
-// whitelist render.go's `kinds` map derives).
-var alwaysSpecKinds = []string{"goal-list", "goal-progress", "goal-ring"}
-
-// catalogKinds mirrors every kind declared in
-// web/src/features/widgets/catalog.ts (WIDGET_CATALOG), split the same way
-// the FE file documents it: the 21 legacy-renderable kinds (== Kinds()) plus
-// the 3 always-spec-engine goal-* kinds, and the 16 FE-only kinds. Keep BOTH
-// this list and specs.json in sync with catalog.ts by hand — same
-// discipline TestKindsMatchFrontendCatalog (render_test.go) already asks of
-// Kinds().
-var catalogBothKinds = append(append([]string{}, Kinds()...), alwaysSpecKinds...)
+// goalKinds are the target:"both" spec kinds that read the account-wide
+// Goals data (see widget.IsGoalKind) — used below for dedicated goal-*
+// coverage (privacy no-oracle, xmlEscape on a hostile name). Pre-cutover
+// these were also the exact set IsAlwaysSpecKind identified (kinds with no
+// legacy renderer); that distinction is gone now that renderSpec is the only
+// path for every kind, so this list exists purely for test organization.
+var goalKinds = []string{"goal-list", "goal-progress", "goal-ring"}
 
 var catalogFEOnlyKinds = []string{
 	"ai-assistance",
@@ -63,7 +56,7 @@ var catalogFEOnlyKinds = []string{
 
 var _ = Describe("Spec registry mirrors the FE catalog (web/src/features/widgets/catalog.ts)", func() {
 	It("every catalog kind has a spec entry classified both|fe-only", func() {
-		for _, kind := range catalogBothKinds {
+		for _, kind := range Kinds() {
 			spec, ok := SpecFor(kind)
 			Expect(ok).To(BeTrue(), "missing spec entry for %q (declared both-renderable via Kinds())", kind)
 			Expect(spec.Target).To(Equal(TargetBoth), "%q should be classified both", kind)
@@ -75,11 +68,11 @@ var _ = Describe("Spec registry mirrors the FE catalog (web/src/features/widgets
 		}
 		// No unclassified stragglers, no unexpected extras: the registry's
 		// total size is EXACTLY the catalog's.
-		Expect(Specs()).To(HaveLen(len(catalogBothKinds)+len(catalogFEOnlyKinds)),
+		Expect(Specs()).To(HaveLen(len(Kinds())+len(catalogFEOnlyKinds)),
 			"specs.json entry count drifted from the catalog kind count")
 	})
 
-	It("the 'both' spec kinds equal Kinds() plus alwaysSpecKinds exactly (no drift either direction)", func() {
+	It("the 'both' spec kinds equal Kinds() exactly (no drift either direction)", func() {
 		var got []string
 		for _, s := range Specs() {
 			if s.Target == TargetBoth {
@@ -87,18 +80,25 @@ var _ = Describe("Spec registry mirrors the FE catalog (web/src/features/widgets
 			}
 		}
 		sort.Strings(got)
-		want := append(append([]string{}, Kinds()...), alwaysSpecKinds...)
+		want := append([]string{}, Kinds()...)
 		sort.Strings(want)
 		Expect(got).To(Equal(want))
 	})
 
-	It("alwaysSpecKinds are 'both' but absent from Kinds() (the Part B Stage 4 decoupling)", func() {
-		for _, kind := range alwaysSpecKinds {
-			Expect(IsKind(kind)).To(BeFalse(), "%s must stay OUT of the legacy kinds map", kind)
-			Expect(IsAlwaysSpecKind(kind)).To(BeTrue(), "%s should be classified always-spec-engine", kind)
+	It("goal-* kinds are 'both', part of Kinds(), and the only kinds IsGoalKind reports true for", func() {
+		for _, kind := range goalKinds {
+			Expect(IsKind(kind)).To(BeTrue(), "%s must be a renderable (target:\"both\") kind", kind)
+			Expect(IsGoalKind(kind)).To(BeTrue(), "%s should be classified a goal kind", kind)
 			spec, ok := SpecFor(kind)
 			Expect(ok).To(BeTrue())
 			Expect(spec.Target).To(Equal(TargetBoth))
+		}
+		goalSet := map[string]bool{"goal-list": true, "goal-progress": true, "goal-ring": true}
+		for _, kind := range Kinds() {
+			if goalSet[kind] {
+				continue
+			}
+			Expect(IsGoalKind(kind)).To(BeFalse(), "%s should NOT be classified a goal kind", kind)
 		}
 	})
 
@@ -134,12 +134,11 @@ var _ = Describe("Spec registry mirrors the FE catalog (web/src/features/widgets
 	})
 })
 
-// NeedsForSpec is the spec-engine's counterpart to the hand-written Needs
-// map in render.go. The handler swaps one for the other under
-// BOOM_WIDGET_SPEC_ENGINE — if these ever disagree, flipping the flag either
-// starves a renderer of data it needs or burns an extra DB round-trip it
-// doesn't.
-var _ = Describe("NeedsForSpec matches the legacy Needs(kind) exactly", func() {
+// NeedsForSpec is the spec-engine's requirements deriver; Needs(kind)
+// (render.go) is now literally defined as NeedsForSpec(SpecFor(kind)), so
+// this is a regression guard against a future kind-specific override
+// silently diverging from the spec-derived truth.
+var _ = Describe("NeedsForSpec matches Needs(kind) exactly", func() {
 	It("agrees with Needs() for every both-target kind", func() {
 		for _, kind := range Kinds() {
 			spec, ok := SpecFor(kind)
@@ -162,14 +161,6 @@ var _ = Describe("RenderSpec", func() {
 			for _, banned := range []string{"<script", "https://", "url(http", "@import"} {
 				Expect(strings.Contains(s, banned)).To(BeFalse(), "%s: output contains banned token %q", kind, banned)
 			}
-
-			// Parity-ish: the legacy path must ALSO render well-formed SVG for
-			// the same fixture — a side-by-side sanity check, NOT a
-			// byte-identity assertion (re-baseline is allowed for Stage 2; see
-			// spec.go's package doc).
-			legacy, err := Render(kind, d, Options{Theme: "dark", Subtitle: "last 30 days"})
-			Expect(err).NotTo(HaveOccurred(), "legacy Render(%s)", kind)
-			assertValidXMLG(legacy)
 		}
 	})
 
@@ -182,13 +173,20 @@ var _ = Describe("RenderSpec", func() {
 		}
 	})
 
-	It("badge is byte-identical between Render and RenderSpec (both call renderBadge directly)", func() {
+	// badge is the one primitive renderSpec special-cases: it bypasses the
+	// generic OpenFrame/panel/rect dispatch entirely and calls renderBadge
+	// directly (see spec.go's renderSpec doc comment + render.go's
+	// renderBadge). Pinned here against a direct renderBadge call rather than
+	// against the (now-deleted) legacy Render() — the invariant under test
+	// hasn't changed, just what it's compared to.
+	It("badge bypasses the generic panel/rect engine — calls renderBadge directly", func() {
 		d := dataFixture()
-		legacy, err := Render("badge", d, Options{Theme: "dark", Title: "boomtime"})
+		opts := Options{Theme: "dark", Title: "boomtime"}
+		want, err := renderBadge(d, themeFor(opts.Theme), opts)
 		Expect(err).NotTo(HaveOccurred())
-		spec, err := RenderSpec("badge", d, Options{Theme: "dark", Title: "boomtime"})
+		got, err := RenderSpec("badge", d, opts)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(spec).To(Equal(legacy), "badge should bypass panel/rect dispatch entirely and match legacy byte-for-byte")
+		Expect(got).To(Equal(want), "badge should call renderBadge directly, not the panel/rect dispatch")
 	})
 
 	It("errors on an unknown kind and on a fe-only kind (no spec-engine renderer exists)", func() {
@@ -209,7 +207,7 @@ var _ = Describe("RenderSpec", func() {
 	// when the caller does pass one.
 	It("uses spec.Title (not the kind slug) as the card headline when opts.Title is empty", func() {
 		d := dataFixture()
-		for _, kind := range append(append([]string{}, Kinds()...), alwaysSpecKinds...) {
+		for _, kind := range Kinds() {
 			if kind == "badge" {
 				continue // no Frame/title at all — see renderSpec's doc comment
 			}
@@ -237,13 +235,14 @@ var _ = Describe("RenderSpec", func() {
 	})
 })
 
-// goal-* kinds (Part B Stage 4) aren't in Kinds(), so they're absent from
-// the loops above — dedicated coverage here for EmitGoalBar/EmitGoalRing
-// well-formedness, xmlEscape on a hostile goal name, and the privacy
-// no-oracle empty state (an empty/nil Data.Goals — which is what the
-// handler sends both for "zero goals at all" and "zero PUBLIC goals" —
-// must render the exact same placeholder).
-var _ = Describe("goal-* kinds (always-spec-engine, Part B Stage 4)", func() {
+// goal-* kinds (Part B Stage 4 privacy gate) are covered generically by the
+// loops above (they're part of Kinds() since Part B Stage 5), but get
+// dedicated coverage here for EmitGoalBar/EmitGoalRing well-formedness,
+// xmlEscape on a hostile goal name, and the privacy no-oracle empty state
+// (an empty/nil Data.Goals — which is what the handler sends both for "zero
+// goals at all" and "zero PUBLIC goals" — must render the exact same
+// placeholder).
+var _ = Describe("goal-* kinds (Part B Stage 4 privacy gate)", func() {
 	It("render well-formed, camo-safe SVG with populated goals", func() {
 		d := dataFixture()
 		d.Goals = []GoalProgressLite{
@@ -251,7 +250,7 @@ var _ = Describe("goal-* kinds (always-spec-engine, Part B Stage 4)", func() {
 			{Name: "Daily streak", Progress: 1, Hit: true},
 			{Name: "Cap browsing", Progress: 0.2, Hit: false},
 		}
-		for _, kind := range alwaysSpecKinds {
+		for _, kind := range goalKinds {
 			b, err := RenderSpec(kind, d, Options{Theme: "dark", Subtitle: "last 30 days"})
 			Expect(err).NotTo(HaveOccurred(), "RenderSpec(%s)", kind)
 			assertValidXMLG(b)
@@ -266,7 +265,7 @@ var _ = Describe("goal-* kinds (always-spec-engine, Part B Stage 4)", func() {
 
 	It("render the SAME empty-state placeholder for a nil/empty Goals slice (privacy no-oracle)", func() {
 		empty := &Data{Payload: &model.StatsPayload{}}
-		for _, kind := range alwaysSpecKinds {
+		for _, kind := range goalKinds {
 			b, err := RenderSpec(kind, empty, Options{})
 			Expect(err).NotTo(HaveOccurred(), "RenderSpec(%s) on empty goals", kind)
 			assertValidXMLG(b)
@@ -279,7 +278,7 @@ var _ = Describe("goal-* kinds (always-spec-engine, Part B Stage 4)", func() {
 		d.Goals = []GoalProgressLite{
 			{Name: `<script>alert(1)</script> & "friends"`, Progress: 0.5, Hit: false},
 		}
-		for _, kind := range alwaysSpecKinds {
+		for _, kind := range goalKinds {
 			b, err := RenderSpec(kind, d, Options{})
 			Expect(err).NotTo(HaveOccurred(), "RenderSpec(%s)", kind)
 			assertValidXMLG(b)

@@ -83,10 +83,9 @@ export const handlers = [
   ),
   // gaka-93f.1.1: boot-time client config. Default mirrors
   // usePublicConfig.ts's FALLBACK (every flag off) so any component that
-  // reads usePublicConfig() — WidgetRenderer/OverviewWidgetRenderer as of
-  // Part B Stage 3 — can mount under renderWithProviders without every test
-  // needing its own mock. Tests exercising a specific flag override with
-  // server.use, same as every other route here.
+  // reads usePublicConfig() can mount under renderWithProviders without
+  // every test needing its own mock. Tests exercising a specific flag
+  // override with server.use, same as every other route here.
   http.get("/api/v1/config/public", () =>
     HttpResponse.json({
       registration_enabled: true,
@@ -95,7 +94,6 @@ export const handlers = [
       billing_enabled: false,
       beta_flags: {},
       github_connect_enabled: false,
-      widget_spec_engine: false,
     }),
   ),
 ];

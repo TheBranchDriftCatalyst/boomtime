@@ -21,10 +21,9 @@ import type { LabelAward } from "@/features/publicprofile/labels/types";
 import { qk } from "@/lib/queryKeys";
 import { MemoryRouter } from "react-router";
 
-// WidgetRenderer now reads usePublicConfig() unconditionally (Part B Stage 3
-// spec-engine gate); the default MSW handler for /config/public
-// (handlers.ts) advertises widget_spec_engine: false so this suite keeps
-// exercising the bespoke hero-identity render unaffected.
+// hero-identity is an fe-only kind (no spec panels) — WidgetRenderer routes
+// it straight to the bespoke HeroIdentity render below regardless of the
+// spec engine, which is unconditional as of the Part B Stage 5 cutover.
 function renderHero(payload: PublicDashboardPayload, awards: LabelAward[] = []) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },

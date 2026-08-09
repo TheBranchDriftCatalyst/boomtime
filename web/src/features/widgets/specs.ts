@@ -4,10 +4,9 @@
 // this module imports the EXACT same bytes through the "@widget-specs"
 // alias (vite.config.ts resolve.alias + tsconfig.app.json paths) — no
 // codegen, no copy to drift out of sync. This file is a thin typed
-// re-export; it does not (yet) drive any FE rendering — see
-// internal/widget/spec.go's package doc for the current scope (the Go
-// renderSpec engine only, gated behind BOOM_WIDGET_SPEC_ENGINE). A future
-// stage can point WidgetRenderer.tsx at this same registry.
+// re-export; specForKind drives WidgetRenderer.tsx/OverviewWidgetRenderer.tsx's
+// routing to SpecRenderer.tsx for every target:"both" kind (unconditional as
+// of the Part B Stage 5 cutover — see spec.go's package doc for the Go side).
 import specsRaw from "@widget-specs";
 
 /** Mirrors internal/widget/spec.go's SpecTarget. */

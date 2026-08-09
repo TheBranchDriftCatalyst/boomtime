@@ -10,10 +10,10 @@
 //
 // This is the data-driven alternative to WidgetRenderer.tsx's/
 // OverviewWidgetRenderer.tsx's hand-written `switch(kind)` cases for
-// target:"both" kinds. It is wired in behind the widgetSpecEngine FE flag
-// (sourced from BOOM_WIDGET_SPEC_ENGINE via /api/v1/config/public) — see
-// those two files for the delegation. fe-only kinds never reach here; both
-// dispatchers keep their bespoke case for those regardless of the flag.
+// target:"both" kinds. Both dispatchers route every target:"both" kind here
+// UNCONDITIONALLY (Part B Stage 5 cutover — the earlier widgetSpecEngine FE
+// flag is gone) and keep their bespoke `switch` only for fe-only kinds,
+// which never reach here.
 //
 // Multi-panel ("composite") specs (stats-card, stats-card-with-grade,
 // profile-summary, deep-work) render every panel in a small flex layout —
@@ -354,10 +354,10 @@ function BadgePrimitive({ data }: PrimitiveProps) {
 // self-fetching component regardless of `data` — GoalProgress.tsx /
 // GoalRing.tsx / GoalList.tsx each call useGoalsQuery()/useAllGoalProgress()
 // themselves (the SpecRenderData binding "goals" has no FE resolver because
-// nothing here ever reads it). This mirrors the bespoke WidgetRenderer.tsx
-// switch's goal-progress/goal-ring/goal-list cases exactly, so the in-page
-// dashboard render is byte-for-byte the same component whether the
-// widgetSpecEngine flag is on or off.
+// nothing here ever reads it). Part B Stage 5 cutover: WidgetRenderer.tsx's
+// old bespoke goal-progress/goal-ring/goal-list switch cases (which rendered
+// these same three components directly) are gone — this is now the ONLY
+// in-page path for the goal-* kinds.
 function GoalBarPrimitive(_props: PrimitiveProps) {
   return <GoalProgress />;
 }

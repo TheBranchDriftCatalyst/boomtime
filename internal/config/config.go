@@ -120,17 +120,6 @@ type Config struct {
 	// requireAdmin + CapAdmin route middleware).
 	FeatureAdminCLI bool
 
-	// FeatureWidgetSpecEngine gates the generic widget.RenderSpec /
-	// widget.NeedsForSpec engine (Part B Stage 2 — internal/widget/spec.go +
-	// the committed internal/widget/specs.json). Default OFF: the public
-	// /widget/svg endpoint keeps dispatching through the legacy hand-written
-	// widget.Render / widget.Needs (render.go) so today's SHA-pinned output
-	// is untouched. When on, the widgets handler renders every "both"-target
-	// spec kind through the data-driven engine instead — both paths coexist
-	// in internal/widget indefinitely; this flag just picks which one a
-	// given deployment serves.
-	FeatureWidgetSpecEngine bool
-
 	// CookieSecure controls the Secure attribute on the refresh_token cookie
 	// (gaka-b5x part 1). Defaults to true when BOOM_ENV names a production
 	// environment ("prod" / "production") so a prod deploy behind TLS never
@@ -350,10 +339,6 @@ func Load() *Config {
 		FeatureUserModel:     getEnvBool("BOOM_FEATURE_USER_MODEL", false),
 		FeatureRollupSkip:    getEnvBool("BOOM_FEATURE_ROLLUP_SKIP", false),
 		FeatureAdminCLI:      getEnvBool("BOOM_FEATURE_ADMIN_CLI", false),
-
-		// Part B Stage 2: the generic spec-driven widget renderer. Default
-		// off — see the FeatureWidgetSpecEngine doc comment above.
-		FeatureWidgetSpecEngine: getEnvBool("BOOM_WIDGET_SPEC_ENGINE", false),
 
 		DBHost: getEnv("BOOM_DB_HOST", "localhost"),
 		DBPort: getEnvInt("BOOM_DB_PORT", 5432),
