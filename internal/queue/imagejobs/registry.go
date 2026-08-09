@@ -31,6 +31,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/labelcatalog"
 )
 
 // JobStatus tracks the lifecycle of a single label-image regeneration job.
@@ -67,6 +69,24 @@ type Job struct {
 	EnqueuedAt  time.Time  `json:"enqueuedAt"`
 	StartedAt   *time.Time `json:"startedAt,omitempty"`
 	FinishedAt  *time.Time `json:"finishedAt,omitempty"`
+}
+
+// ToLabelEntry converts a Job's execute-relevant fields into the
+// labelcatalog.Entry shape every regeneration entrypoint
+// (labelimages.Worker.RegenerateEntry) actually consumes. This is the
+// SINGLE place the Job -> Entry mapping happens: cmd/boomtime's Executor
+// closure (shared verbatim by both the in-process Pool and the AMQP
+// consumer — see main.go) calls this instead of duplicating the struct
+// literal per transport.
+func (j Job) ToLabelEntry() labelcatalog.Entry {
+	return labelcatalog.Entry{
+		ID:          j.LabelID,
+		Description: j.Description,
+		Prompt:      j.Prompt,
+		Model:       j.Model,
+		Size:        j.Size,
+		Seed:        j.Seed,
+	}
 }
 
 // EventKind names one of the three lifecycle events subscribers can observe.

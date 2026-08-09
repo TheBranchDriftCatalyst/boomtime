@@ -26,7 +26,6 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/imagejobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/server"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
-	labelcatalog "github.com/TheBranchDriftCatalyst/boomtime/internal/labelcatalog"
 	labelimages "github.com/TheBranchDriftCatalyst/boomtime/internal/worker/labelimages"
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v5"
@@ -273,15 +272,16 @@ func runCmd() *cobra.Command {
 			// nil labelimages worker (they gate on both).
 			if liWorker != nil {
 				concurrency := labelImageConcurrency()
+				// The ONE shared regeneration core: this same ExecutorFunc
+				// value is handed to BOTH the in-process Pool (inprocess
+				// broker) and the AMQPConsumer (rabbitmq broker) below — no
+				// per-transport copy. j.ToLabelEntry() is the single named
+				// Job->Entry mapping (imagejobs.Job.ToLabelEntry), and
+				// RegenerateEntry is the same entrypoint the CLI's
+				// RegenerateOne/RegenerateAll ultimately funnel into via
+				// Worker.generateAndSave — see internal/worker/labelimages.
 				exec := imagejobs.ExecutorFunc(func(execCtx context.Context, j imagejobs.Job) error {
-					return liWorker.RegenerateEntry(execCtx, labelcatalog.Entry{
-						ID:          j.LabelID,
-						Description: j.Description,
-						Prompt:      j.Prompt,
-						Model:       j.Model,
-						Size:        j.Size,
-						Seed:        j.Seed,
-					})
+					return liWorker.RegenerateEntry(execCtx, j.ToLabelEntry())
 				})
 
 				switch {
