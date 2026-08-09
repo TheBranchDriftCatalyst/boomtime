@@ -30,13 +30,13 @@ resources:
   # RabbitMQ provisions. rabbitmq-cluster + messaging-topology + dragonfly ops.
   - rabbitmq.yaml   # RabbitmqCluster boomtime-rabbit + Queue boomtime.image-jobs
   - dragonfly.yaml  # Dragonfly boomtime-cache (redis-compatible)
-  # ── Phase 2 (flip switch + workers + autoscaling + ops) — enabled next ──
-  # - ../../base/worker
-  # - keda-scaledobject.yaml
-  # - keda-triggerauth.yaml
-  # - rabbitmq-mgmt-ingressroute.yaml
-  # - rabbitmq-podmonitor.yaml
-  # - grafana-dashboard-worker-queue.yaml
+  # ── CUTOVER PHASE 2 (2026-08-09): RabbitMQ+Dragonfly Ready → flip the switch ──
+  - ../../base/worker              # boomtime-worker Deployment (--role=worker, consumes AMQP)
+  - keda-scaledobject.yaml         # KEDA queue-length autoscaling + scale-to-zero
+  - keda-triggerauth.yaml          # scaler auth from boomtime-rabbit-default-user secret
+  - rabbitmq-mgmt-ingressroute.yaml # LAN-only mgmt UI (boomtime-rabbit.talos00)
+  - rabbitmq-podmonitor.yaml       # Prometheus scrape of the operator metrics
+  - grafana-dashboard-worker-queue.yaml # GrafanaDashboard CR (Ops > App folder)
 
 # Strategic-merge patches: each adds a feature-specific set of env vars
 # to the base boomtime-config ConfigMap without disturbing existing keys.
@@ -62,25 +62,24 @@ patchesStrategicMerge:
   - oidc-hostaliases.yaml     # pod->Authentik goes internal (bypass Cloudflare, gaka-93f.11.2)
   - usermodel-config.yaml     # BOOM_FEATURE_USER_MODEL=true — RBAC enforcement ON
   - admin-cli-config.yaml     # BOOM_FEATURE_ADMIN_CLI=true — admin CLI-runner ON (admin-gated)
-  # ── Worker-topology cutover — DEFERRED (re-enable with the resources above) ──
-  # - queue-config.yaml         # BOOM_QUEUE_BROKER=rabbitmq — THE cutover switch (crash-loops the server if RabbitMQ isn't up first)
-  # - patch-server-rabbit.yaml  # server: --role=server + amqp URL
+  # ── Worker-topology cutover — ACTIVE (2026-08-09; RabbitMQ provisioned Ready in phase 1) ──
+  - queue-config.yaml         # BOOM_QUEUE_BROKER=rabbitmq — THE cutover switch
+  - patch-server-rabbit.yaml  # server: --role=server + amqp URL
   # NOTE: authentik-blueprint-boomtime.yaml is an Authentik blueprint, NOT a k8s
   # manifest — it is intentionally never added here (applied to Authentik itself).
 
 # KEDA amqp-scaler host secret + the Grafana dashboard JSON ConfigMap —
-# DEFERRED with the rest of the worker-topology cutover (re-enable
-# together with the blocks above).
-# secretGenerator:
-#   - name: boomtime-rabbit-keda-host
-#     literals:
-#       - host=amqp://boomtime-rabbit.boomtime.svc.cluster.local:5672/
-# configMapGenerator:
-#   - name: dashboard-boomtime-worker-queue
-#     files:
-#       - grafana/worker-queue-dashboard.json
-# generatorOptions:
-#   disableNameSuffixHash: true
+# ACTIVE with the phase-2 cutover above.
+secretGenerator:
+  - name: boomtime-rabbit-keda-host
+    literals:
+      - host=amqp://boomtime-rabbit.boomtime.svc.cluster.local:5672/
+configMapGenerator:
+  - name: dashboard-boomtime-worker-queue
+    files:
+      - grafana/worker-queue-dashboard.json
+generatorOptions:
+  disableNameSuffixHash: true
 
 # The Argo Application tracks the `main` branch. This kustomize `newTag`
 # is a starting hint — the live authority is the ImageUpdater CRD at
