@@ -1,0 +1,32 @@
+---
+# ─────────────────────────────────────────────────────────────────────────────
+# PROD admin CLI-runner enablement (gaka Part C).
+#
+# Strategic-merge patch that ADDs BOOM_FEATURE_ADMIN_CLI onto the base
+# `boomtime-config` ConfigMap without disturbing existing keys — same shape as
+# github-config.yaml / usermodel-config.yaml. The env var name is the EXACT one
+# internal/config/config.go parses (getEnvBool, accepts true/1/yes/on).
+#
+# What flipping this on does: registers the three admin-gated routes
+#   GET  /api/v1/admin/cli/spec
+#   POST /api/v1/admin/cli/run
+#   POST /api/v1/admin/cli/complete
+# (internal/admin/routes.go registers them ONLY when cfg.FeatureAdminCLI).
+# When off, those routes are absent (plain 404) and the FE "Commands" tab shows
+# a disabled card.
+#
+# SAFETY: every route is double-gated — requireAdmin (BOOM_ADMIN_USERS allowlist)
+# AND RequireCap(CapAdmin) — so enabling this exposes the CLI-runner ONLY to
+# users on BOOM_ADMIN_USERS. The runnable command set is a hand-vetted allowlist
+# (annotation ∩ registry): user list, user show, backfill last-context, backfill
+# github-stats. NO os/exec; secret-emitting commands (rotate-encryption-key,
+# create-token, create-user) are deliberately excluded from the registry.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: boomtime-config
+  labels:
+    app.kubernetes.io/name: boomtime
+data:
+  BOOM_FEATURE_ADMIN_CLI: "true"

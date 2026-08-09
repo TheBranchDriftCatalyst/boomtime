@@ -36,6 +36,7 @@ patchesStrategicMerge:
   - oidc-external-secret.yaml # BOOM_OIDC_CLIENT_SECRET from 1Password
   - oidc-hostaliases.yaml     # pod->Authentik goes internal (bypass Cloudflare, gaka-93f.11.2)
   - usermodel-config.yaml     # BOOM_FEATURE_USER_MODEL=true — RBAC enforcement ON
+  - admin-cli-config.yaml     # BOOM_FEATURE_ADMIN_CLI=true — admin CLI-runner ON (admin-gated)
   # NOTE: authentik-blueprint-boomtime.yaml is an Authentik blueprint, NOT a k8s
   # manifest — it is intentionally never added here (applied to Authentik itself).
 
