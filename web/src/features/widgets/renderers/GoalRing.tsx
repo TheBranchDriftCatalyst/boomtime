@@ -1,19 +1,23 @@
-// GoalRing — Apple-Watch-style concentric rings for up to 3 goals
-// (gaka-wpb). Reuses catalyst-ui's CircularGauge — one gauge per
-// goal at a different radius to stack visually.
+// GoalRing — Apple-Watch-style concentric rings for up to 3 goals (gaka-wpb).
 //
-// Fewer than 3 goals renders the ones we have (a single goal
-// becomes one big ring). More than 3 truncates — the tile is
-// intentionally small and 4+ concentric rings become illegible.
-import { CircularGauge } from "@thebranchdriftcatalyst/catalyst-ui/ui/circular-gauge";
+// Drawn as ONE SVG of concentric progress arcs (not stacked CircularGauges —
+// those each render a centered value, which overlapped into garbage at the
+// shared center). No center text; the legend below carries the numbers.
+//
+// Fewer than 3 goals renders the ones we have; more than 3 truncates — the
+// tile is intentionally small and 4+ rings become illegible.
 import { useAllGoalProgress, useGoalsQuery } from "@/features/goals/useGoals";
 import type { Goal, GoalProgress } from "@/types/api";
 
-// Ring sizes: outer, middle, inner. Chosen so each ring's stroke
-// leaves clear separation for the next. All at strokeWidth=8 for
-// visual consistency.
-const RING_SIZES = [128, 96, 64] as const;
-const RING_VARIANTS = ["default", "success", "info"] as const;
+const BOX = 132;
+const SW = 10;
+// Outer → inner. Radii leave a clear gap (SW + ~4px) between rings. Colors are
+// shared verbatim with the legend dots so ring ↔ label association is obvious.
+const RINGS = [
+  { r: 56, color: "var(--primary)" },
+  { r: 42, color: "#22c55e" },
+  { r: 28, color: "#3b82f6" },
+] as const;
 
 export function GoalRing() {
   const { data: goals } = useGoalsQuery();
@@ -29,47 +33,68 @@ export function GoalRing() {
   }
 
   return (
-    <div className="flex h-full w-full flex-col items-center justify-center gap-2">
-      <div className="relative" style={{ width: 128, height: 128 }}>
-        {enabled.map((g, i) => {
-          const size = RING_SIZES[i];
-          const pctVal = pctFor(g, batch?.progress?.[g.id]);
-          return (
-            <div
-              key={g.id}
-              className="absolute"
-              style={{
-                left: (128 - size) / 2,
-                top: (128 - size) / 2,
-              }}
-            >
-              <CircularGauge
-                value={pctVal}
-                size={size}
-                strokeWidth={8}
-                variant={RING_VARIANTS[i]}
-                showPercent={false}
-              />
-            </div>
-          );
-        })}
-      </div>
-      {/* Legend so the reader knows which ring is which */}
-      <ol className="w-full max-w-xs space-y-0.5 px-2">
+    <div className="flex h-full w-full flex-col items-center justify-center gap-2 overflow-hidden">
+      <svg
+        viewBox={`0 0 ${BOX} ${BOX}`}
+        className="min-h-0 w-auto shrink"
+        style={{ height: "62%", maxWidth: "100%", aspectRatio: "1" }}
+        role="img"
+        aria-label="Goal progress rings"
+      >
+        {/* -90° so each arc starts at 12 o'clock and fills clockwise. */}
+        <g transform={`rotate(-90 ${BOX / 2} ${BOX / 2})`}>
+          {enabled.map((g, i) => {
+            const { r, color } = RINGS[i];
+            const pct = Math.min(100, pctFor(g, batch?.progress?.[g.id]));
+            const circ = 2 * Math.PI * r;
+            const offset = circ * (1 - pct / 100);
+            return (
+              <g key={g.id}>
+                {/* track */}
+                <circle
+                  cx={BOX / 2}
+                  cy={BOX / 2}
+                  r={r}
+                  fill="none"
+                  stroke="var(--muted-foreground)"
+                  strokeWidth={SW}
+                  opacity={0.14}
+                />
+                {/* progress */}
+                <circle
+                  cx={BOX / 2}
+                  cy={BOX / 2}
+                  r={r}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={SW}
+                  strokeLinecap="round"
+                  strokeDasharray={circ}
+                  strokeDashoffset={offset}
+                  style={{ transition: "stroke-dashoffset 0.6s ease" }}
+                />
+              </g>
+            );
+          })}
+        </g>
+      </svg>
+
+      {/* Legend so the reader knows which ring is which. */}
+      <ol className="w-full max-w-xs shrink-0 space-y-0.5 px-2">
         {enabled.map((g, i) => (
           <li
             key={g.id}
-            className="flex items-center justify-between font-mono text-[10px] uppercase tracking-wider"
+            className="flex items-center justify-between gap-2 font-mono text-[10px] uppercase tracking-wider"
           >
-            <span className="flex items-center gap-1.5 truncate">
+            <span className="flex min-w-0 items-center gap-1.5">
               <span
-                className="inline-block h-2 w-2 rounded-full"
-                style={{ background: ringLegendColor(i) }}
+                className="inline-block h-2 w-2 shrink-0 rounded-full"
+                style={{ background: RINGS[i].color }}
                 aria-hidden
               />
               <span className="truncate">{g.name}</span>
             </span>
-            <span className="tabular-nums text-muted-foreground">
+            <span className="shrink-0 tabular-nums text-muted-foreground">
               {Math.round(pctFor(g, batch?.progress?.[g.id]))}%
             </span>
           </li>
@@ -82,12 +107,4 @@ export function GoalRing() {
 function pctFor(goal: Goal, progress: GoalProgress | undefined): number {
   const p = progress?.progress ?? goal.lastProgress?.progress ?? 0;
   return Math.round(p * 100);
-}
-
-// Cheap solid-color swatches matching the ring stroke colors above.
-// Kept literal rather than pulling Tailwind classes because the
-// legend is small enough that a manual palette keeps the visual
-// association obvious.
-function ringLegendColor(i: number): string {
-  return ["hsl(var(--primary))", "rgb(34 197 94)", "rgb(59 130 246)"][i] ?? "gray";
 }

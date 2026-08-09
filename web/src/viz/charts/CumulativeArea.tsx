@@ -80,7 +80,14 @@ export function CumulativeArea({
           .call(
             d3
               .axisBottom(x)
-              .tickValues(thinnedDateTicks(data.map((d) => d.date)))
+              // Width-aware: ~one date label per 64px so narrow cards (e.g. the
+              // deep-work half-card) don't collide labels into garbage.
+              .tickValues(
+                thinnedDateTicks(
+                  data.map((d) => d.date),
+                  Math.max(2, Math.floor(innerW / 64)),
+                ),
+              )
               .tickFormat((d) => formatDay(d as Date)),
           ),
         { fg, border },
