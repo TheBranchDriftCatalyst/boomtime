@@ -60,13 +60,46 @@ k8s_resource(
     'boomtime',
     port_forwards=['8080:8080'],
     labels=['app'],
-    resource_deps=['boomtime-postgres'],
+    # broker/cache deps added alongside the worker-topology decoupling
+    # (gaka-8bz follow-up): under BOOM_QUEUE_BROKER=rabbitmq the server
+    # dials RabbitMQ at boot and treats a failed connect as fatal (fail
+    # fast, matching k8s' restart-and-retry pattern) — sequencing it after
+    # the broker avoids an avoidable crash-loop on first `tilt up`.
+    resource_deps=['boomtime-postgres', 'boomtime-rabbit', 'boomtime-cache'],
 )
 
 k8s_resource(
     'boomtime-postgres',
     port_forwards=['5432:5432'],
     labels=['db'],
+)
+
+# ── Image-job worker tier (worker-topology decoupling, gaka-8bz follow-up) ───
+# Same image as boomtime (docker_build above), run with --role=worker.
+# Consumes the RabbitMQ queue; DOES NOT serve the API. resource_deps ensures
+# broker+cache are up first so the consumer connects on boot.
+k8s_resource(
+    'boomtime-worker',
+    labels=['worker'],
+    resource_deps=['boomtime-postgres', 'boomtime-rabbit', 'boomtime-cache'],
+)
+
+# ── Local broker: plain RabbitMQ (mgmt UI) + Redis (Dragonfly stand-in) ──────
+k8s_resource(
+    'boomtime-rabbit',
+    port_forwards=['15672:15672', '5672:5672'],  # mgmt UI at http://localhost:15672 (boomtime/boomtime)
+    labels=['broker'],
+)
+k8s_resource(
+    'boomtime-cache',
+    port_forwards=['6379:6379'],  # redis-cli -p 6379 for MONITOR
+    labels=['broker'],
+)
+
+# ── Mock image backend (no GPU/ComfyUI) ──────────────────────────────────────
+k8s_resource(
+    'comfyui-shim',
+    labels=['broker'],
 )
 
 # ── Authentik dev stack (gaka-93f.8) ─────────────────────────────────────────

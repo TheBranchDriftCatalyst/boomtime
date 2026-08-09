@@ -1,0 +1,49 @@
+---
+# Mock ComfyUI shim for local `tilt up` — no GPU required (worker-topology
+# decoupling, gaka-8bz follow-up, §9.2).
+#
+# The worker calls comfyui.Client.Generate -> POST /v1/images/generations
+# and expects {"created":N,"data":[{"b64_json":"…"}]}; the boot/CLI health
+# path hits GET /healthz expecting 200 (internal/comfyui/client.go).
+# comfyui.Client decodes the JSON body regardless of Content-Type and
+# sniffMime falls back to image/png, so a single static JSON response
+# satisfies BOTH endpoints. hashicorp/http-echo returns that body (200) on
+# every path/method — zero code needed.
+#
+# Named `comfyui-shim` — the SAME Service name the talos overlay's
+# external-endpoint Service uses (comfyui-shim-external.yaml) — so
+# BOOM_COMFYUI_SHIM_URL=http://comfyui-shim:8012 is the identical string
+# locally and in prod; only the backing pod differs.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: comfyui-shim
+  namespace: boomtime
+  labels: { app: comfyui-shim }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: comfyui-shim }
+  template:
+    metadata:
+      labels: { app: comfyui-shim }
+    spec:
+      containers:
+        - name: mock
+          image: hashicorp/http-echo:1.0
+          args:
+            - "-listen=:8012"
+            # 1x1 transparent PNG (valid base64 → sniffMime → image/png).
+            # Same body answers GET /healthz (200) and POST
+            # /v1/images/generations (data[0].b64_json).
+            - '-text={"created":0,"data":[{"b64_json":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="}]}'
+          ports: [{ containerPort: 8012, name: http }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: comfyui-shim
+  namespace: boomtime
+spec:
+  selector: { app: comfyui-shim }
+  ports: [{ name: http, port: 8012, targetPort: http }]

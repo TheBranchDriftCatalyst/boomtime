@@ -12,6 +12,19 @@ spec:
         - name: boomtime
           image: boomtime:dev
           imagePullPolicy: Never
+          # gaka-8bz follow-up (worker-topology decoupling): flips the
+          # server off the in-process image-job pool now that
+          # BOOM_QUEUE_BROKER=rabbitmq (patch-configmap.yaml) routes regens
+          # to the separate boomtime-worker Deployment instead. BOOM_ROLE
+          # is set as an explicit env var (not a --role flag) because the
+          # local dev image runs via `air` (Dockerfile.dev has no
+          # ENTRYPOINT — CMD is `air -c .air.toml`, which always execs
+          # `./tmp/boomtime run` with no room for extra flags); env vars
+          # reach the binary either way. Merges into the base env list
+          # (patchMergeKey: name) alongside BOOM_DB_USER/BOOM_DB_PASS.
+          env:
+            - name: BOOM_ROLE
+              value: "server"
           # Local dev runs `air`, which compiles the WHOLE app in-container on
           # every change. The Go compiler is memory-hungry (~1–2 GB for a cold
           # build); the base 512Mi limit OOM-kills the build (exit 137) →

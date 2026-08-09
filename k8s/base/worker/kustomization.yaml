@@ -1,0 +1,15 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Mini-kustomization so overlays can reference `../../base/worker` as a
+# cross-root kustomization (like `../../base` itself) instead of a bare
+# file — see the header comment on deployment.yaml for why. Sets its own
+# namespace defensively (mirrors ../kustomization.yaml) in case this is
+# ever built standalone; overlays that pull this in also set `namespace:
+# boomtime` at their own top level, so the effective namespace is the same
+# either way.
+namespace: boomtime
+
+resources:
+  - deployment.yaml
