@@ -304,6 +304,56 @@ func (r *Registry) remove(jobID, labelID string) {
 	r.mu.Unlock()
 }
 
+// Apply applies an externally-sourced Event — relayed from the cross-pod
+// Redis event bus by PumpBusIntoRegistry — to this registry's local state
+// and rebroadcasts it to local subscribers, WITHOUT pushing anything onto
+// jobsCh. This is how the broker=rabbitmq "mirror" Registry stays truthful
+// for AdminLabelImagesWS even though the jobs it describes are executing in
+// a separate worker pod: the mirror has no Pool and no workers ever claim()
+// from it, so Apply is its only write path (see docs/design/worker-
+// topology-decoupling.md §6.5).
+//
+// A Done/Error event also schedules the same retention-window removal a
+// source-owned registry's finalize() would — the rabbitmq path has no
+// separate wire "removed" event, so each mirror ages its own terminal jobs
+// out independently rather than holding them forever.
+func (r *Registry) Apply(ev Event) {
+	r.mu.Lock()
+	switch ev.Kind {
+	case EventRemoved:
+		if t, has := r.timers[ev.Job.ID]; has {
+			t.Stop()
+			delete(r.timers, ev.Job.ID)
+		}
+		delete(r.jobs, ev.Job.ID)
+		if cur, ok := r.byLabel[ev.Job.LabelID]; ok && cur == ev.Job.ID {
+			delete(r.byLabel, ev.Job.LabelID)
+		}
+	default: // EventAdded, EventUpdated
+		job := ev.Job
+		r.jobs[job.ID] = &job
+		switch job.Status {
+		case StatusQueued, StatusRunning:
+			r.byLabel[job.LabelID] = job.ID
+		case StatusDone, StatusError:
+			if cur, ok := r.byLabel[job.LabelID]; ok && cur == job.ID {
+				delete(r.byLabel, job.LabelID)
+			}
+			retention := r.retentionDone
+			if job.Status == StatusError {
+				retention = r.retentionError
+			}
+			jobID, labelID := job.ID, job.LabelID
+			if t, has := r.timers[jobID]; has {
+				t.Stop()
+			}
+			r.timers[jobID] = time.AfterFunc(retention, func() { r.remove(jobID, labelID) })
+		}
+	}
+	r.broadcastLocked(ev)
+	r.mu.Unlock()
+}
+
 // Subscribe returns a channel that receives every future event + an
 // unsubscribe function. The channel is buffered (16); if a subscriber can't
 // keep up, the OLDEST event in its buffer is discarded so the emitter
