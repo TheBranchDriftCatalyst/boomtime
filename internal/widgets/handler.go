@@ -5,6 +5,7 @@
 package widgets
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/goals"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/widget"
@@ -170,7 +172,10 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 	}
 	kind := c.Param("kind")
 	// gaka-567: "custom" is the builder-composed kind — spec is inline in the
-	// URL as ?spec=<base64>. Every other kind is on the fixed whitelist.
+	// URL as ?spec=<base64>. Every other kind is on the fixed legacy
+	// whitelist (IsKind) OR is an always-spec-engine kind (Part B Stage 4:
+	// the goal-* kinds have no legacy renderer at all — see
+	// widget.IsAlwaysSpecKind's doc comment).
 	var customDef *widget.Def
 	if widget.IsCustomKind(kind) {
 		def, err := widget.DecodeDef(c.QueryParam("spec"))
@@ -178,7 +183,7 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 			return apihelpers.RespondErr(c, apierr.BadRequest("Invalid widget spec: "+err.Error()))
 		}
 		customDef = &def
-	} else if !widget.IsKind(kind) {
+	} else if !widget.IsKind(kind) && !widget.IsAlwaysSpecKind(kind) {
 		return apihelpers.RespondErr(c, apierr.NotFound("Unknown widget kind"))
 	}
 	ctx := c.Request().Context()
@@ -207,6 +212,20 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 		if isWidgetScopeProjectHidden(hidden, scopeRef) {
 			return apihelpers.RespondErr(c, apierr.NotFound("Widget link not found"))
 		}
+	}
+
+	// Part B Stage 4 privacy fix: goals are account-wide, not scoped to a
+	// project or space. publicGoalsFor always returns the OWNER's public
+	// goals regardless of the link's scope, so a project/space-scoped link
+	// (minted for one project's README) must not be allowed to render a
+	// goal-* kind — that would expose the owner's account-wide public goals
+	// under a URL an outsider would reasonably assume is project-scoped.
+	// widget.IsAlwaysSpecKind(kind) is exactly the goal-* set today; if a
+	// future always-spec-engine kind is legitimately non-user-scoped, this
+	// gate needs to narrow to a goal-specific predicate instead. 404, not a
+	// partial render — mirrors the project-hidden gate above, no oracle.
+	if widget.IsAlwaysSpecKind(kind) && scopeType != db.WidgetScopeUser {
+		return apihelpers.RespondErr(c, apierr.NotFound("Widget link not found"))
 	}
 
 	// Track the request so the Settings badge can show "last requested Nm ago"
@@ -292,10 +311,15 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 		// RenderSpec (spec.go) for every "both"-target kind. Default off — see
 		// Config.FeatureWidgetSpecEngine. The "custom" (Def-based builder)
 		// path is untouched either way; it isn't part of the spec registry.
+		//
+		// Part B Stage 4: a kind with NO legacy renderer at all (the goal-*
+		// kinds — widget.IsAlwaysSpecKind) uses the spec engine UNCONDITIONALLY,
+		// flag or no flag, since there is no legacy Needs/Render fallback to
+		// gate behind the flag in the first place.
 		needs := widget.Needs(kind)
 		useSpecEngine := false
-		if h.Cfg.FeatureWidgetSpecEngine {
-			if spec, ok := widget.SpecFor(kind); ok && spec.Target == widget.TargetBoth {
+		if spec, ok := widget.SpecFor(kind); ok && spec.Target == widget.TargetBoth {
+			if h.Cfg.FeatureWidgetSpecEngine || widget.IsAlwaysSpecKind(kind) {
 				needs = widget.NeedsForSpec(spec)
 				useSpecEngine = true
 			}
@@ -362,6 +386,13 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 			sp := stats.ToSessionsPayload(t0, t1, srows)
 			data.Sessions = &sp
 		}
+		if needs.Goals {
+			gl, err := publicGoalsFor(ctx, h.DB, owner)
+			if err != nil {
+				return nil, err
+			}
+			data.Goals = gl
+		}
 		opts := widget.Options{
 			Theme:    theme,
 			Title:    title,
@@ -375,4 +406,65 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 		}
 		return widget.Render(kind, data, opts)
 	})
+}
+
+// publicGoalsFor resolves the link owner's PUBLIC, ENABLED goals + their
+// progress for a goal-* embed (Part B Stage 4). PRIVACY: this is the ONLY
+// place the widget endpoint touches goal data. The PRIMARY gate is SQL —
+// goals.ListPublicGoals filters `enabled = true AND public = true` in the
+// query itself, so a private goal's row (spec JSONB included) never leaves
+// Postgres on this public, unauthenticated path. The Enabled/Public re-check
+// below is belt-and-braces defense-in-depth (should never actually trip
+// given the WHERE clause) — never rely on it alone. Progress prefers the
+// cached last_progress column (the same cache the authenticated dashboard
+// reads) to keep the public endpoint cheap; a goal that has never been
+// evaluated (nil cache — e.g. freshly created, never opened on the
+// dashboard) is evaluated once here so the first embed view isn't a
+// permanent blank. A goal whose spec fails to validate or evaluate is
+// skipped (best-effort, mirrors the batched /goals/progress handler) rather
+// than failing the whole widget render.
+func publicGoalsFor(ctx context.Context, d *db.DB, owner string) ([]widget.GoalProgressLite, error) {
+	all, err := goals.ListPublicGoals(d, ctx, owner)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]widget.GoalProgressLite, 0, len(all))
+	for i := range all {
+		g := &all[i]
+		if !g.Enabled || !g.Public {
+			// Defense-in-depth only — ListPublicGoals' WHERE clause should
+			// already guarantee this never fires. See doc comment above.
+			continue
+		}
+		var prog *goals.Progress
+		if len(g.LastProgress) > 0 {
+			if cached, cErr := goals.UnmarshalProgress(g.LastProgress); cErr == nil {
+				prog = cached
+			}
+			// A corrupted cache falls through to recompute below.
+		}
+		if prog == nil {
+			p, vErr := goals.ValidateSpec(g.Spec)
+			if vErr != nil {
+				continue
+			}
+			evaluated, eErr := goals.Evaluate(ctx, d.Pool, owner, p, time.Now().UTC())
+			if eErr != nil {
+				continue
+			}
+			prog = evaluated
+			// Best-effort cache warm so the NEXT embed view (and the owner's
+			// own dashboard) benefits — a write failure here doesn't sink
+			// this render.
+			if raw, mErr := goals.MarshalProgress(prog); mErr == nil {
+				_ = goals.UpdateGoalProgress(d, ctx, owner, g.ID, raw)
+			}
+		}
+		out = append(out, widget.GoalProgressLite{
+			Name:     g.Name,
+			Progress: prog.Progress,
+			Hit:      prog.Hit,
+		})
+	}
+	return out, nil
 }

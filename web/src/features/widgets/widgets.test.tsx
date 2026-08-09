@@ -38,7 +38,8 @@ describe("catalog", () => {
     // The Embeddable Widgets panel must only offer kinds the backend SVG
     // endpoint can render — else the cards 404 and show empty (the bug this
     // guards). Part B Stage 1 gave the stat tiles + chip lists backend SVG
-    // twins, so they are now offered; goal tiles, grade-badge, hero-identity,
+    // twins, and Part B Stage 4 gave the goal-* tiles a privacy-gated SVG
+    // twin too, so they are all now offered; grade-badge, hero-identity,
     // labels-showcase and the overview-* kinds remain FE-only.
     const embeddable = embeddableCatalogFor("user").map((e) => e.kind);
     expect(embeddable).toContain("stats-card");
@@ -52,6 +53,9 @@ describe("catalog", () => {
       "categories-chart",
       "editors-chips",
       "platforms-chips",
+      "goal-progress",
+      "goal-ring",
+      "goal-list",
     ]) {
       expect(embeddable).toContain(nowRenderable);
     }
@@ -59,9 +63,6 @@ describe("catalog", () => {
       "grade-badge",
       "hero-identity",
       "labels-showcase",
-      "goal-progress",
-      "goal-ring",
-      "goal-list",
       "loc",
       "overview-stats",
     ]) {

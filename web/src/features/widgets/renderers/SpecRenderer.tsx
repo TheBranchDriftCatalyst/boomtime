@@ -41,6 +41,14 @@ import type {
   SessionsPayload,
 } from "@/types/stats";
 import { specForKind, type SpecPanel } from "@/features/widgets/specs";
+// Part B Stage 4: the goal-* primitives dispatch to the SAME self-fetching
+// components WidgetRenderer.tsx's bespoke switch uses (they ignore the
+// `data` prop entirely and fetch their own goal data via useGoalsQuery /
+// useAllGoalProgress) — so in-page goal rendering is IDENTICAL whether the
+// widgetSpecEngine flag is on or off. See GoalProgress.tsx's doc comment.
+import { GoalProgress } from "@/features/widgets/renderers/GoalProgress";
+import { GoalRing } from "@/features/widgets/renderers/GoalRing";
+import { GoalList } from "@/features/widgets/renderers/GoalList";
 
 // The subset of PublicDashboardPayload (+ the Overview-only punchcard/
 // momentum/sessions payloads, which live outside PublicDashboardPayload)
@@ -135,6 +143,10 @@ const PRIMITIVE_REGISTRY: Record<string, (props: PrimitiveProps) => React.ReactE
   "stat-numeral": StatNumeralPrimitive,
   ratio: RatioPrimitive,
   badge: BadgePrimitive,
+  // Part B Stage 4 — goal-* primitives: self-fetching, ignore `data`.
+  "goal-bar": GoalBarPrimitive,
+  "goal-ring": GoalRingPrimitive,
+  "goal-list": GoalListPrimitive,
 };
 
 /** The primitive vocabulary this file supports — exported so
@@ -336,6 +348,24 @@ function BadgePrimitive({ data }: PrimitiveProps) {
       </span>
     </div>
   );
+}
+
+// Part B Stage 4: goal-bar / goal-ring / goal-list all render the same
+// self-fetching component regardless of `data` — GoalProgress.tsx /
+// GoalRing.tsx / GoalList.tsx each call useGoalsQuery()/useAllGoalProgress()
+// themselves (the SpecRenderData binding "goals" has no FE resolver because
+// nothing here ever reads it). This mirrors the bespoke WidgetRenderer.tsx
+// switch's goal-progress/goal-ring/goal-list cases exactly, so the in-page
+// dashboard render is byte-for-byte the same component whether the
+// widgetSpecEngine flag is on or off.
+function GoalBarPrimitive(_props: PrimitiveProps) {
+  return <GoalProgress />;
+}
+function GoalRingPrimitive(_props: PrimitiveProps) {
+  return <GoalRing />;
+}
+function GoalListPrimitive(_props: PrimitiveProps) {
+  return <GoalList />;
 }
 
 // ---------------------------------------------------------------------------

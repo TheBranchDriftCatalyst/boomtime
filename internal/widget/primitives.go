@@ -496,6 +496,80 @@ func EmitChips(f *Frame, x, y, w, h int, entries []model.ResourceStats) {
 	f.WriteString(`</g>`)
 }
 
+// ---- goal bar / goal ring (Part B Stage 4 — SVG twins of the FE
+// GoalProgress/GoalList/GoalRing self-fetching components) ----
+
+// goalHitColor tints a hit goal's fill/text — mirrors the FE's
+// text-emerald-400 convention (GoalProgress.tsx / GoalList.tsx) rather than
+// the theme's accent color, so a hit goal reads the same "done" green in
+// both the in-page tile and the SVG embed.
+const goalHitColor = "#34d399"
+
+// EmitGoalBar draws one goal row: name (left) + pct% (right) on a single
+// line, with a horizontal progress track+fill beneath — the SVG twin of the
+// FE GoalProgress/GoalList row. `hit` tints the pct text and bar fill
+// goalHitColor instead of the theme accent/muted colors (mirrors the FE's
+// emerald-on-hit convention). name is user-controlled (the goal's own
+// name) and is xmlEscape'd here, not by the caller.
+func EmitGoalBar(f *Frame, x, y, w int, name string, pct int, hit bool) {
+	th := f.Theme
+	if pct < 0 {
+		pct = 0
+	}
+	if pct > 100 {
+		pct = 100
+	}
+	fillColor, pctColor := th.Accent, th.TextMuted
+	if hit {
+		fillColor, pctColor = goalHitColor, goalHitColor
+	}
+	f.Printf(`<g class="row"><title>%s</title>`,
+		xmlEscape(fmt.Sprintf("%s — %d%%", name, pct)))
+	f.Printf(`<text x="%d" y="%d" font-size="12" fill="%s">%s</text>`,
+		x, y, th.Text, xmlEscape(truncate(name, 28)))
+	f.Printf(`<text x="%d" y="%d" font-size="12" fill="%s" text-anchor="end">%d%%</text>`,
+		x+w, y, pctColor, pct)
+	trackY := y + 8
+	f.Printf(`<rect x="%d" y="%d" width="%d" height="8" rx="4" fill="%s"/>`,
+		x, trackY, w, th.TrackBg)
+	fillW := int(float64(w) * float64(pct) / 100)
+	if fillW < 2 && pct > 0 {
+		fillW = 2
+	}
+	f.Printf(`<rect class="bar-fill" x="%d" y="%d" width="%d" height="8" rx="4" fill="%s"/>`,
+		x, trackY, fillW, fillColor)
+	f.WriteString(`</g>`)
+}
+
+// EmitGoalRing draws one progress ring centered at (cx, cy) with radius r —
+// the SVG twin of one CircularGauge in the FE GoalRing's concentric stack.
+// colorIdx selects a palette color for the ring stroke (ignored when hit,
+// which always tints goalHitColor — same convention as EmitGoalBar).
+// Callers stack multiple calls at decreasing radii around a shared center
+// for the concentric look (see emitGoalRingPanel in spec.go). name feeds
+// the hover <title> only; it is xmlEscape'd here.
+func EmitGoalRing(f *Frame, cx, cy, r, pct int, hit bool, colorIdx int, name string) {
+	th := f.Theme
+	if pct < 0 {
+		pct = 0
+	}
+	if pct > 100 {
+		pct = 100
+	}
+	circ := 2 * math.Pi * float64(r)
+	fillLen := circ * float64(pct) / 100
+	color := th.colorAt(colorIdx)
+	if hit {
+		color = goalHitColor
+	}
+	f.Printf(`<g><title>%s</title>`, xmlEscape(fmt.Sprintf("%s — %d%%", name, pct)))
+	f.Printf(`<circle cx="%d" cy="%d" r="%d" stroke="%s" stroke-width="8" fill="none"/>`,
+		cx, cy, r, th.TrackBg)
+	f.Printf(`<circle class="ring" cx="%d" cy="%d" r="%d" stroke="%s" stroke-width="8" fill="none" stroke-linecap="round" stroke-dasharray="%.2f %.2f" transform="rotate(-90 %d %d)"/>`,
+		cx, cy, r, color, fillLen, circ, cx, cy)
+	f.WriteString(`</g>`)
+}
+
 // ---- helpers ----
 
 // mixHex linearly interpolates between two "#rrggbb" strings by q in [0, 1].

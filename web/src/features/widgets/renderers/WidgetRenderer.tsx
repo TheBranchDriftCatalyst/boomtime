@@ -18,9 +18,15 @@ import {
 } from "@/features/publicprofile/grade";
 // Part B Stage 3 (gaka-174.x): the data-driven alternative to this file's
 // switch cases below, for target:"both" kinds only (fe-only kinds — hero
-// tile, goals, labels, github-stats — always stay on this bespoke switch).
-// Gated behind the widgetSpecEngine FE flag so the two engines coexist:
-// bespoke is the default, SpecRenderer is opt-in until Stage 5 flips it.
+// tile, labels, github-stats — always stay on this bespoke switch). Gated
+// behind the widgetSpecEngine FE flag so the two engines coexist: bespoke is
+// the default, SpecRenderer is opt-in until Stage 5 flips it.
+//
+// Part B Stage 4: the goal-* kinds moved fe-only → both (they're now
+// privacy-gated embeddable SVGs too), but SpecRenderer dispatches them to
+// the SAME self-fetching GoalProgress/GoalRing/GoalList components this
+// switch's goal-* cases below use — so this switch's goal-* branches below
+// stay byte-for-byte the in-page render whether the flag is on or off.
 import { usePublicConfig } from "@/lib/usePublicConfig";
 import { specForKind } from "@/features/widgets/specs";
 import { SpecRenderer } from "@/features/widgets/renderers/SpecRenderer";

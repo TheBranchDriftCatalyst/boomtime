@@ -58,7 +58,11 @@ export function GoalsTab() {
           <span className="font-medium text-foreground">Goal Ring</span>,{" "}
           <span className="font-medium text-foreground">Goal Progress</span>,
           or <span className="font-medium text-foreground">Goal List</span>{" "}
-          widget to your public dashboard to render progress publicly.
+          widget to your public dashboard, or embed one on your README/site
+          via Settings &gt; Widgets. Goals are private by default — flip a
+          goal's <span className="font-medium text-foreground">Public</span>{" "}
+          toggle (in the New/Edit goal form) to let its name + progress
+          appear on those widgets.
         </p>
         <Button onClick={openCreate} size="sm">
           <Plus className="mr-1 h-4 w-4" />

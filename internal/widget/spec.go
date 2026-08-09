@@ -17,6 +17,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"math"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
@@ -110,6 +111,19 @@ func SpecFor(kind string) (Spec, bool) {
 	return s, ok
 }
 
+// IsAlwaysSpecKind reports whether kind is a target:"both" spec with NO
+// legacy renderer (absent from render.go's `kinds` map) — e.g. the goal-*
+// kinds (Part B Stage 4). Goals have no hand-written render.go twin to fall
+// back to, so such kinds render via renderSpec/NeedsForSpec UNCONDITIONALLY,
+// regardless of Config.FeatureWidgetSpecEngine. The widgets handler uses
+// this twice: to admit the kind past the public :kind whitelist (which
+// otherwise only recognizes IsKind's legacy set) and to decide
+// useSpecEngine for the render itself.
+func IsAlwaysSpecKind(kind string) bool {
+	spec, ok := SpecFor(kind)
+	return ok && spec.Target == TargetBoth && !IsKind(kind)
+}
+
 // NeedsForSpec derives Requirements from the union of every panel's
 // binding — the spec-engine's counterpart to the hand-written `Needs` map in
 // render.go. spec_test.go pins NeedsForSpec(spec) == Needs(kind) for every
@@ -130,6 +144,8 @@ func NeedsForSpec(spec Spec) Requirements {
 			r.Sessions = true
 		case "categories":
 			r.Categories = true
+		case "goals":
+			r.Goals = true
 		}
 	}
 	return r
@@ -261,6 +277,24 @@ func renderSpecPanel(f *Frame, d *Data, w, h, panelCount int, p SpecPanel) error
 	case "ratio":
 		active, total := stats.ActiveDays(d.Payload.DailyTotal)
 		EmitRatio(f, r.X, r.Y, active, total)
+	case "goal-bar":
+		goals, err := resolveGoals(d, p.Binding)
+		if err != nil {
+			return err
+		}
+		emitGoalBarPanel(f, r, goals, 1)
+	case "goal-list":
+		goals, err := resolveGoals(d, p.Binding)
+		if err != nil {
+			return err
+		}
+		emitGoalBarPanel(f, r, goals, 6)
+	case "goal-ring":
+		goals, err := resolveGoals(d, p.Binding)
+		if err != nil {
+			return err
+		}
+		emitGoalRingPanel(f, r, goals)
 	default:
 		return fmt.Errorf("widget: unknown spec primitive %q", p.Primitive)
 	}
@@ -308,6 +342,101 @@ func resolveSeries(d *Data, binding string) ([]int64, error) {
 		return daily, nil
 	}
 	return nil, fmt.Errorf("widget: binding %q is not a series", binding)
+}
+
+// resolveGoals is the binding resolver for the "goal-bar"/"goal-ring"/
+// "goal-list" primitives. The only binding is "goals" — the handler has
+// ALREADY privacy-filtered d.Goals down to the link owner's enabled &&
+// public set (see internal/widgets.publicGoalsFor) before this package ever
+// sees it, so there is no further filtering here.
+func resolveGoals(d *Data, binding string) ([]GoalProgressLite, error) {
+	if binding != "goals" {
+		return nil, fmt.Errorf("widget: binding %q is not a goals list", binding)
+	}
+	return d.Goals, nil
+}
+
+// emitGoalBarPanel draws up to maxN goal rows (one EmitGoalBar call per
+// row) stacked vertically within r. Shared by goal-progress (maxN=1, the
+// FE's "first enabled goal" convention) and goal-list (maxN=6, capped like
+// every other top-N list primitive). An empty goals slice draws the SAME
+// placeholder every other empty panel uses — this is the privacy
+// no-oracle: the handler already collapsed "owner has zero public goals"
+// and "owner has zero goals at all" into the identical empty/nil slice, so
+// this function structurally cannot (and must not) tell them apart.
+func emitGoalBarPanel(f *Frame, r panelRect, goals []GoalProgressLite, maxN int) {
+	if len(goals) == 0 {
+		panelPlaceholder(f, r, "No goals yet")
+		return
+	}
+	n := len(goals)
+	if n > maxN {
+		n = maxN
+	}
+	yStep := 34
+	if avail := r.H / n; avail < yStep {
+		yStep = avail
+	}
+	if yStep < 20 {
+		yStep = 20
+	}
+	for i := 0; i < n; i++ {
+		g := goals[i]
+		pct := int(math.Round(g.Progress * 100))
+		EmitGoalBar(f, r.X, r.Y+18+i*yStep, r.W, g.Name, pct, g.Hit)
+	}
+}
+
+// emitGoalRingPanel draws up to 3 concentric EmitGoalRing rings (outer =
+// first goal) centered in the top portion of r, with a small color-dot +
+// name + pct legend row per goal underneath — the SVG twin of the FE
+// GoalRing's stacked CircularGauges + legend list. Same empty/no-oracle
+// contract as emitGoalBarPanel.
+func emitGoalRingPanel(f *Frame, r panelRect, goals []GoalProgressLite) {
+	if len(goals) == 0 {
+		panelPlaceholder(f, r, "No goals yet")
+		return
+	}
+	th := f.Theme
+	n := len(goals)
+	if n > 3 {
+		n = 3
+	}
+	legendH := 18 * n
+	ringAreaH := r.H - legendH - 10
+	if ringAreaH < 60 {
+		ringAreaH = 60
+	}
+	cx := r.X + r.W/2
+	cy := r.Y + ringAreaH/2
+	outer := ringAreaH / 2
+	if maxW := r.W/2 - 4; outer > maxW {
+		outer = maxW
+	}
+	if outer > 56 {
+		outer = 56
+	}
+	radii := [3]int{outer, outer * 72 / 100, outer * 46 / 100}
+	for i := 0; i < n; i++ {
+		g := goals[i]
+		pct := int(math.Round(g.Progress * 100))
+		EmitGoalRing(f, cx, cy, radii[i], pct, g.Hit, i, g.Name)
+	}
+	legendTop := r.Y + ringAreaH + 16
+	for i := 0; i < n; i++ {
+		g := goals[i]
+		pct := int(math.Round(g.Progress * 100))
+		color := th.colorAt(i)
+		if g.Hit {
+			color = goalHitColor
+		}
+		y := legendTop + i*18
+		f.Printf(`<circle cx="%d" cy="%d" r="4" fill="%s"/>`, r.X+8, y-4, color)
+		f.Printf(`<text x="%d" y="%d" font-size="11" fill="%s">%s</text>`,
+			r.X+20, y, th.Text, xmlEscape(truncate(g.Name, 22)))
+		f.Printf(`<text x="%d" y="%d" font-size="11" fill="%s" text-anchor="end">%d%%</text>`,
+			r.X+r.W, y, th.TextMuted, pct)
+	}
 }
 
 // specLabel picks the panel's own title when set, else a fallback.

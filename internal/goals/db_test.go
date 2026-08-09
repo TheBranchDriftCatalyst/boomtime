@@ -42,7 +42,7 @@ var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
 		cleanupGoalsG(d, ctx, fx.Sender())
 
 		desc := "one hour weekly on Go"
-		g, err := goals.CreateGoal(d, ctx, fx.Sender(), "weekly-go", &desc, json.RawMessage(plantedSpec))
+		g, err := goals.CreateGoal(d, ctx, fx.Sender(), "weekly-go", &desc, json.RawMessage(plantedSpec), false)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(g).NotTo(BeNil())
 		Expect(g.Owner).To(Equal(fx.Sender()))
@@ -84,7 +84,7 @@ var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
 		fx := newSenderG(d, "goals_specclear")
 		cleanupGoalsG(d, ctx, fx.Sender())
 
-		g, err := goals.CreateGoal(d, ctx, fx.Sender(), "clear-me", nil, json.RawMessage(plantedSpec))
+		g, err := goals.CreateGoal(d, ctx, fx.Sender(), "clear-me", nil, json.RawMessage(plantedSpec), false)
 		Expect(err).NotTo(HaveOccurred())
 		planted := json.RawMessage(`{"hit":true,"progress":1,"sub_conditions":[]}`)
 		Expect(goals.UpdateGoalProgress(d, ctx, fx.Sender(), g.ID, planted)).To(Succeed())
@@ -106,8 +106,8 @@ var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
 		fx := newSenderG(d, "goals_invalidate")
 		cleanupGoalsG(d, ctx, fx.Sender())
 
-		g1, _ := goals.CreateGoal(d, ctx, fx.Sender(), "g1", nil, json.RawMessage(plantedSpec))
-		g2, _ := goals.CreateGoal(d, ctx, fx.Sender(), "g2", nil, json.RawMessage(plantedSpec))
+		g1, _ := goals.CreateGoal(d, ctx, fx.Sender(), "g1", nil, json.RawMessage(plantedSpec), false)
+		g2, _ := goals.CreateGoal(d, ctx, fx.Sender(), "g2", nil, json.RawMessage(plantedSpec), false)
 		Expect(g1).NotTo(BeNil())
 		Expect(g2).NotTo(BeNil())
 		planted := json.RawMessage(`{"hit":false,"progress":0.5,"sub_conditions":[]}`)
@@ -116,7 +116,7 @@ var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
 
 		other := newSenderG(d, "goals_invalidate_other")
 		cleanupGoalsG(d, ctx, other.Sender())
-		og, err := goals.CreateGoal(d, ctx, other.Sender(), "og", nil, json.RawMessage(plantedSpec))
+		og, err := goals.CreateGoal(d, ctx, other.Sender(), "og", nil, json.RawMessage(plantedSpec), false)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(goals.UpdateGoalProgress(d, ctx, other.Sender(), og.ID, planted)).To(Succeed())
 
@@ -141,7 +141,7 @@ var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
 		cleanupGoalsG(d, ctx, alice.Sender())
 		cleanupGoalsG(d, ctx, bob.Sender())
 
-		bg, err := goals.CreateGoal(d, ctx, bob.Sender(), "bob-goal", nil, json.RawMessage(plantedSpec))
+		bg, err := goals.CreateGoal(d, ctx, bob.Sender(), "bob-goal", nil, json.RawMessage(plantedSpec), false)
 		Expect(err).NotTo(HaveOccurred())
 
 		got, err := goals.GetGoal(d, ctx, alice.Sender(), bg.ID)
@@ -173,7 +173,7 @@ var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
 		fx := newSenderG(d, "goals_toggle")
 		cleanupGoalsG(d, ctx, fx.Sender())
 
-		g, err := goals.CreateGoal(d, ctx, fx.Sender(), "toggle-me", nil, json.RawMessage(plantedSpec))
+		g, err := goals.CreateGoal(d, ctx, fx.Sender(), "toggle-me", nil, json.RawMessage(plantedSpec), false)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(g.Enabled).To(BeTrue())
 
@@ -201,11 +201,11 @@ var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
 		cleanupGoalsG(d, ctx, alice.Sender())
 		cleanupGoalsG(d, ctx, bob.Sender())
 
-		_, err := goals.CreateGoal(d, ctx, alice.Sender(), "shared-name", nil, json.RawMessage(plantedSpec))
+		_, err := goals.CreateGoal(d, ctx, alice.Sender(), "shared-name", nil, json.RawMessage(plantedSpec), false)
 		Expect(err).NotTo(HaveOccurred())
-		_, err = goals.CreateGoal(d, ctx, alice.Sender(), "shared-name", nil, json.RawMessage(plantedSpec))
+		_, err = goals.CreateGoal(d, ctx, alice.Sender(), "shared-name", nil, json.RawMessage(plantedSpec), false)
 		Expect(err).To(HaveOccurred(), "second create with same (owner,name) must fail")
-		_, err = goals.CreateGoal(d, ctx, bob.Sender(), "shared-name", nil, json.RawMessage(plantedSpec))
+		_, err = goals.CreateGoal(d, ctx, bob.Sender(), "shared-name", nil, json.RawMessage(plantedSpec), false)
 		Expect(err).NotTo(HaveOccurred())
 	})
 
@@ -216,7 +216,7 @@ var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
 		cleanupGoalsG(d, ctx, fx.Sender())
 
 		desc0 := "initial"
-		g, err := goals.CreateGoal(d, ctx, fx.Sender(), "orig-name", &desc0, json.RawMessage(plantedSpec))
+		g, err := goals.CreateGoal(d, ctx, fx.Sender(), "orig-name", &desc0, json.RawMessage(plantedSpec), false)
 		Expect(err).NotTo(HaveOccurred())
 		origUpdatedAt := g.UpdatedAt
 
@@ -259,7 +259,7 @@ var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
 		cleanupGoalsG(d, ctx, fx.Sender())
 
 		desc := "keep me"
-		g, err := goals.CreateGoal(d, ctx, fx.Sender(), "noop", &desc, json.RawMessage(plantedSpec))
+		g, err := goals.CreateGoal(d, ctx, fx.Sender(), "noop", &desc, json.RawMessage(plantedSpec), false)
 		Expect(err).NotTo(HaveOccurred())
 		origUpdatedAt := g.UpdatedAt
 
@@ -309,11 +309,11 @@ var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
 		cleanupGoalsG(d, ctx, alice.Sender())
 		cleanupGoalsG(d, ctx, bob.Sender())
 
-		a1, _ := goals.CreateGoal(d, ctx, alice.Sender(), "a1", nil, json.RawMessage(plantedSpec))
-		a2, _ := goals.CreateGoal(d, ctx, alice.Sender(), "a2", nil, json.RawMessage(plantedSpec))
-		b1, _ := goals.CreateGoal(d, ctx, bob.Sender(), "b1", nil, json.RawMessage(plantedSpec))
-		b2, _ := goals.CreateGoal(d, ctx, bob.Sender(), "b2", nil, json.RawMessage(plantedSpec))
-		b3, _ := goals.CreateGoal(d, ctx, bob.Sender(), "b3", nil, json.RawMessage(plantedSpec))
+		a1, _ := goals.CreateGoal(d, ctx, alice.Sender(), "a1", nil, json.RawMessage(plantedSpec), false)
+		a2, _ := goals.CreateGoal(d, ctx, alice.Sender(), "a2", nil, json.RawMessage(plantedSpec), false)
+		b1, _ := goals.CreateGoal(d, ctx, bob.Sender(), "b1", nil, json.RawMessage(plantedSpec), false)
+		b2, _ := goals.CreateGoal(d, ctx, bob.Sender(), "b2", nil, json.RawMessage(plantedSpec), false)
+		b3, _ := goals.CreateGoal(d, ctx, bob.Sender(), "b3", nil, json.RawMessage(plantedSpec), false)
 		Expect(a1).NotTo(BeNil())
 		Expect(a2).NotTo(BeNil())
 		Expect(b1).NotTo(BeNil())
@@ -339,13 +339,59 @@ var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
 		}
 	})
 
+	ginkgo.It("ListPublicGoals returns ONLY enabled&&public goals (Part B Stage 4 SQL privacy gate)", func() {
+		d := openTestDBG()
+		ctx := context.Background()
+		fx := newSenderG(d, "goals_list_public")
+		cleanupGoalsG(d, ctx, fx.Sender())
+
+		pub, err := goals.CreateGoal(d, ctx, fx.Sender(), "public-enabled", nil, json.RawMessage(plantedSpec), true)
+		Expect(err).NotTo(HaveOccurred())
+		_, err = goals.CreateGoal(d, ctx, fx.Sender(), "private-enabled", nil, json.RawMessage(plantedSpec), false)
+		Expect(err).NotTo(HaveOccurred())
+		pubDisabled, err := goals.CreateGoal(d, ctx, fx.Sender(), "public-disabled", nil, json.RawMessage(plantedSpec), true)
+		Expect(err).NotTo(HaveOccurred())
+		disabled := false
+		_, err = goals.UpdateGoal(d, ctx, fx.Sender(), pubDisabled.ID, goals.GoalPatch{Enabled: &disabled})
+		Expect(err).NotTo(HaveOccurred())
+
+		got, err := goals.ListPublicGoals(d, ctx, fx.Sender())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(got).To(HaveLen(1), "only the enabled&&public goal should be returned")
+		Expect(got[0].ID).To(Equal(pub.ID))
+		Expect(got[0].Enabled).To(BeTrue())
+		Expect(got[0].Public).To(BeTrue())
+	})
+
+	ginkgo.It("ListPublicGoals is owner-scoped and empty-owner rejects like ListGoals", func() {
+		d := openTestDBG()
+		ctx := context.Background()
+		alice := newSenderG(d, "goals_pub_a")
+		bob := newSenderG(d, "goals_pub_b")
+		cleanupGoalsG(d, ctx, alice.Sender())
+		cleanupGoalsG(d, ctx, bob.Sender())
+
+		_, err := goals.CreateGoal(d, ctx, alice.Sender(), "alice-pub", nil, json.RawMessage(plantedSpec), true)
+		Expect(err).NotTo(HaveOccurred())
+		_, err = goals.CreateGoal(d, ctx, bob.Sender(), "bob-pub", nil, json.RawMessage(plantedSpec), true)
+		Expect(err).NotTo(HaveOccurred())
+
+		aList, err := goals.ListPublicGoals(d, ctx, alice.Sender())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(aList).To(HaveLen(1))
+		Expect(aList[0].Name).To(Equal("alice-pub"))
+
+		_, err = goals.ListPublicGoals(d, ctx, "")
+		Expect(err).To(HaveOccurred())
+	})
+
 	ginkgo.It("exact-set toggle with opposite value performs a REAL flip (not just an idempotent set)", func() {
 		d := openTestDBG()
 		ctx := context.Background()
 		fx := newSenderG(d, "goals_exactset")
 		cleanupGoalsG(d, ctx, fx.Sender())
 
-		g, err := goals.CreateGoal(d, ctx, fx.Sender(), "flipme", nil, json.RawMessage(plantedSpec))
+		g, err := goals.CreateGoal(d, ctx, fx.Sender(), "flipme", nil, json.RawMessage(plantedSpec), false)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(g.Enabled).To(BeTrue())
 
@@ -374,7 +420,7 @@ var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
 		cleanupGoalsG(d, ctx, empty.Sender())
 		cleanupGoalsG(d, ctx, other.Sender())
 
-		og, _ := goals.CreateGoal(d, ctx, other.Sender(), "og", nil, json.RawMessage(plantedSpec))
+		og, _ := goals.CreateGoal(d, ctx, other.Sender(), "og", nil, json.RawMessage(plantedSpec), false)
 		Expect(og).NotTo(BeNil())
 		planted := json.RawMessage(`{"hit":true,"progress":1,"sub_conditions":[]}`)
 		Expect(goals.UpdateGoalProgress(d, ctx, other.Sender(), og.ID, planted)).To(Succeed())
@@ -391,7 +437,7 @@ var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
 		fx := newSenderG(d, "goals_progclear")
 		cleanupGoalsG(d, ctx, fx.Sender())
 
-		g, err := goals.CreateGoal(d, ctx, fx.Sender(), "clr", nil, json.RawMessage(plantedSpec))
+		g, err := goals.CreateGoal(d, ctx, fx.Sender(), "clr", nil, json.RawMessage(plantedSpec), false)
 		Expect(err).NotTo(HaveOccurred())
 		planted := json.RawMessage(`{"hit":false,"progress":0.1,"sub_conditions":[]}`)
 		Expect(goals.UpdateGoalProgress(d, ctx, fx.Sender(), g.ID, planted)).To(Succeed())

@@ -26,12 +26,20 @@ import (
 // blobs to this package — the evaluator/handler own their shape. Kept as
 // json.RawMessage (not any) so the exact bytes survive DB roundtrips.
 type Goal struct {
-	ID              string          `json:"id"`
-	Owner           string          `json:"owner"`
-	Name            string          `json:"name"`
-	Description     *string         `json:"description"`
-	Spec            json.RawMessage `json:"spec"`
-	Enabled         bool            `json:"enabled"`
+	ID          string          `json:"id"`
+	Owner       string          `json:"owner"`
+	Name        string          `json:"name"`
+	Description *string         `json:"description"`
+	Spec        json.RawMessage `json:"spec"`
+	Enabled     bool            `json:"enabled"`
+	// Public gates the goal-progress/goal-ring/goal-list embeddable widgets
+	// (Part B Stage 4, internal/widgets.WidgetSvg): a goal is included in
+	// the owner's public embed iff Enabled && Public. Defaults false
+	// (migration 00052) — a goal is never exposed until its owner opts it
+	// in explicitly. Unrelated to Enabled: a disabled goal stays hidden
+	// from the embed regardless of Public, and a private goal stays hidden
+	// regardless of Enabled.
+	Public          bool            `json:"public"`
 	CreatedAt       time.Time       `json:"createdAt"`
 	UpdatedAt       time.Time       `json:"updatedAt"`
 	LastEvaluatedAt *time.Time      `json:"lastEvaluatedAt"`
@@ -40,12 +48,12 @@ type Goal struct {
 
 // scanGoal centralizes the column ordering used by every SELECT so a schema
 // tweak only touches this one line.
-const goalCols = `id, owner, name, description, spec, enabled, created_at, updated_at, last_evaluated_at, last_progress`
+const goalCols = `id, owner, name, description, spec, enabled, public, created_at, updated_at, last_evaluated_at, last_progress`
 
 func scanGoal(row pgx.Row) (*Goal, error) {
 	var g Goal
 	err := row.Scan(
-		&g.ID, &g.Owner, &g.Name, &g.Description, &g.Spec, &g.Enabled,
+		&g.ID, &g.Owner, &g.Name, &g.Description, &g.Spec, &g.Enabled, &g.Public,
 		&g.CreatedAt, &g.UpdatedAt, &g.LastEvaluatedAt, &g.LastProgress,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -62,10 +70,32 @@ func ListGoals(d *db.DB, ctx context.Context, owner string) ([]Goal, error) {
 	if owner == "" {
 		return nil, errors.New("ListGoals: empty owner")
 	}
-	rows, err := d.Pool.Query(ctx,
-		`SELECT `+goalCols+` FROM goals WHERE owner = $1 ORDER BY created_at DESC, id`,
-		owner,
-	)
+	return queryGoals(d, ctx, `SELECT `+goalCols+` FROM goals WHERE owner = $1 ORDER BY created_at DESC, id`, owner)
+}
+
+// ListPublicGoals returns owner's enabled&&public goals, newest first — the
+// exact set the goal-progress/goal-ring/goal-list embeddable widgets are
+// allowed to render (Part B Stage 4). This is the PRIMARY privacy boundary:
+// filtering in SQL means a private goal's row (including its full spec
+// JSONB) never leaves Postgres on the public widget path at all, rather
+// than being fetched and discarded in Go. Callers (internal/widgets.
+// publicGoalsFor) additionally re-check Enabled/Public per row as
+// belt-and-braces, but that check should never actually trip given this
+// WHERE clause.
+func ListPublicGoals(d *db.DB, ctx context.Context, owner string) ([]Goal, error) {
+	if owner == "" {
+		return nil, errors.New("ListPublicGoals: empty owner")
+	}
+	return queryGoals(d, ctx,
+		`SELECT `+goalCols+` FROM goals WHERE owner = $1 AND enabled = true AND public = true ORDER BY created_at DESC, id`,
+		owner)
+}
+
+// queryGoals runs a goalCols-shaped SELECT and scans every row. Shared by
+// ListGoals and ListPublicGoals so the two queries' scan order can never
+// silently drift apart.
+func queryGoals(d *db.DB, ctx context.Context, query string, args ...any) ([]Goal, error) {
+	rows, err := d.Pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +104,7 @@ func ListGoals(d *db.DB, ctx context.Context, owner string) ([]Goal, error) {
 	for rows.Next() {
 		var g Goal
 		if err := rows.Scan(
-			&g.ID, &g.Owner, &g.Name, &g.Description, &g.Spec, &g.Enabled,
+			&g.ID, &g.Owner, &g.Name, &g.Description, &g.Spec, &g.Enabled, &g.Public,
 			&g.CreatedAt, &g.UpdatedAt, &g.LastEvaluatedAt, &g.LastProgress,
 		); err != nil {
 			return nil, err
@@ -99,11 +129,14 @@ func GetGoal(d *db.DB, ctx context.Context, owner, id string) (*Goal, error) {
 }
 
 // CreateGoal inserts a new goal. Spec is stored verbatim as JSONB; the
-// caller must have validated it. Returns the created row (with server-side
-// id, timestamps, and default enabled=true). A duplicate (owner, name)
-// pair returns a wrapped pgx unique-violation error the handler surfaces
-// as 409.
-func CreateGoal(d *db.DB, ctx context.Context, owner, name string, description *string, spec json.RawMessage) (*Goal, error) {
+// caller must have validated it. `public` seeds the widget-embed opt-in at
+// creation time (mirrors passing enabled=true implicitly — the column
+// default handles the common case, but the FE's "Public" toggle in the
+// create form needs to be settable in the same round trip). Returns the
+// created row (with server-side id, timestamps, and default enabled=true).
+// A duplicate (owner, name) pair returns a wrapped pgx unique-violation
+// error the handler surfaces as 409.
+func CreateGoal(d *db.DB, ctx context.Context, owner, name string, description *string, spec json.RawMessage, public bool) (*Goal, error) {
 	if owner == "" || name == "" {
 		return nil, errors.New("CreateGoal: empty owner/name")
 	}
@@ -111,10 +144,10 @@ func CreateGoal(d *db.DB, ctx context.Context, owner, name string, description *
 		return nil, errors.New("CreateGoal: empty spec")
 	}
 	row := d.Pool.QueryRow(ctx,
-		`INSERT INTO goals (owner, name, description, spec)
-		 VALUES ($1, $2, $3, $4::jsonb)
+		`INSERT INTO goals (owner, name, description, spec, public)
+		 VALUES ($1, $2, $3, $4::jsonb, $5)
 		 RETURNING `+goalCols,
-		owner, name, description, string(spec),
+		owner, name, description, string(spec), public,
 	)
 	return scanGoal(row)
 }
@@ -129,6 +162,9 @@ type GoalPatch struct {
 	Description *string
 	Spec        *json.RawMessage
 	Enabled     *bool
+	// Public toggles the widget-embed opt-in (Part B Stage 4). Independent
+	// of Enabled — see the Goal.Public doc comment for the exact gate.
+	Public *bool
 }
 
 // UpdateGoal writes the patch fields owner-scoped. Returns (nil, nil) when
@@ -173,6 +209,11 @@ func UpdateGoal(d *db.DB, ctx context.Context, owner, id string, patch GoalPatch
 	if patch.Enabled != nil {
 		sets = append(sets, "enabled = $"+itoaFast(nextArg))
 		args = append(args, *patch.Enabled)
+		nextArg++
+	}
+	if patch.Public != nil {
+		sets = append(sets, "public = $"+itoaFast(nextArg))
+		args = append(args, *patch.Public)
 		nextArg++
 	}
 	if len(sets) == 0 {

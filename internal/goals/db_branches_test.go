@@ -71,12 +71,12 @@ var _ = ginkgo.Describe("branch coverage padding (gaka-d6x)", func() {
 		})
 		spec := json.RawMessage(plantedSpec)
 
-		g1, err := goals.CreateGoal(d, ctx, u, "nil-desc", nil, spec)
+		g1, err := goals.CreateGoal(d, ctx, u, "nil-desc", nil, spec, false)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(g1.Description).To(BeNil())
 
 		desc := "some description"
-		g2, err := goals.CreateGoal(d, ctx, u, "with-desc", &desc, spec)
+		g2, err := goals.CreateGoal(d, ctx, u, "with-desc", &desc, spec, false)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(g2.Description).NotTo(BeNil())
 		Expect(*g2.Description).To(Equal(desc))
@@ -91,13 +91,13 @@ var _ = ginkgo.Describe("input-validation error branches (gaka-d6x)", func() {
 		d := openTestDBG()
 		ctx := context.Background()
 
-		_, err := goals.CreateGoal(d, ctx, "", "n", nil, json.RawMessage(`{}`))
+		_, err := goals.CreateGoal(d, ctx, "", "n", nil, json.RawMessage(`{}`), false)
 		Expect(err).To(HaveOccurred())
-		_, err = goals.CreateGoal(d, ctx, "o", "", nil, json.RawMessage(`{}`))
+		_, err = goals.CreateGoal(d, ctx, "o", "", nil, json.RawMessage(`{}`), false)
 		Expect(err).To(HaveOccurred())
-		_, err = goals.CreateGoal(d, ctx, "o", "n", nil, nil)
+		_, err = goals.CreateGoal(d, ctx, "o", "n", nil, nil, false)
 		Expect(err).To(HaveOccurred())
-		_, err = goals.CreateGoal(d, ctx, "o", "n", nil, json.RawMessage(``))
+		_, err = goals.CreateGoal(d, ctx, "o", "n", nil, json.RawMessage(``), false)
 		Expect(err).To(HaveOccurred())
 	})
 

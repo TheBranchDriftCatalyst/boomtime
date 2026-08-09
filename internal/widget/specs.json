@@ -161,18 +161,21 @@
   },
   {
     "kind": "goal-progress",
-    "target": "fe-only",
-    "reason": "Goals are private-by-default; renders in-page only from the user's own goal data (gaka-wpb)."
+    "target": "both",
+    "size": { "w": 420, "h": 130 },
+    "panels": [{ "primitive": "goal-bar", "binding": "goals" }]
   },
   {
     "kind": "goal-ring",
-    "target": "fe-only",
-    "reason": "Goals are private-by-default; renders in-page only from the user's own goal data (gaka-wpb)."
+    "target": "both",
+    "size": { "w": 320, "h": 280 },
+    "panels": [{ "primitive": "goal-ring", "binding": "goals" }]
   },
   {
     "kind": "goal-list",
-    "target": "fe-only",
-    "reason": "Goals are private-by-default; renders in-page only from the user's own goal data (gaka-wpb)."
+    "target": "both",
+    "size": { "w": 440, "h": 260 },
+    "panels": [{ "primitive": "goal-list", "binding": "goals" }]
   },
   {
     "kind": "labels-showcase",

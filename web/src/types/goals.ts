@@ -64,6 +64,12 @@ export interface Goal {
   description: string | null;
   spec: Predicate;
   enabled: boolean;
+  // Public gates the goal-progress/goal-ring/goal-list embeddable widgets
+  // (Part B Stage 4, internal/widgets.WidgetSvg): a goal is included in
+  // the owner's public embed iff enabled && public. Defaults false —
+  // goals stay private until the owner opts a specific goal in via the
+  // "Public" toggle. Independent of `enabled`.
+  public: boolean;
   createdAt: string;
   updatedAt: string;
   lastEvaluatedAt: string | null;
@@ -102,6 +108,8 @@ export interface CreateGoalBody {
   name: string;
   description?: string;
   spec: Predicate;
+  // Omitted/false = private, matching the server-side column default.
+  public?: boolean;
 }
 
 // PATCH /api/v1/users/current/goals/:id — any subset of fields.
@@ -110,6 +118,7 @@ export interface UpdateGoalBody {
   description?: string;
   spec?: Predicate;
   enabled?: boolean;
+  public?: boolean;
 }
 
 // GET /api/v1/users/current/goals/progress -> {progress: {id: Progress}}.

@@ -32,14 +32,32 @@ type Data struct {
 	Punchcard *model.PunchcardPayload
 	Momentum  *model.MomentumPayload
 	Sessions  *model.SessionsPayload
+	// Goals is the PRIVACY-FILTERED set the widgets handler builds for the
+	// goal-progress/goal-ring/goal-list kinds (Part B Stage 4): only the
+	// link owner's enabled && public goals ever land here — see
+	// internal/widgets.publicGoalsFor. This package never sees a goal's
+	// spec tree, sub-conditions, or private/disabled siblings, only the
+	// name + progress fraction + hit flag the primitives draw.
+	Goals []GoalProgressLite
+}
+
+// GoalProgressLite is the thin, already-privacy-filtered projection of a
+// goal + its cached progress that EmitGoalBar/EmitGoalRing draw. Deliberately
+// minimal — see the Data.Goals doc comment for why this package never sees
+// more than name/progress/hit.
+type GoalProgressLite struct {
+	Name     string
+	Progress float64 // 0..1, already clamped by the evaluator
+	Hit      bool
 }
 
 // Requirements declares which optional data blobs a kind consumes. The handler
 // gates its DB queries on these so a badge render never fetches punchcard.
 // Categories gates the category-rows fetch that folds the Categories segment
 // into the StatsPayload (Part B Stage 1: only categories-chart wants it).
+// Goals gates the owner's public-goal fetch (Part B Stage 4).
 type Requirements struct {
-	Grade, Punchcard, Momentum, Sessions, Categories bool
+	Grade, Punchcard, Momentum, Sessions, Categories, Goals bool
 }
 
 type renderFunc func(*Data, Theme, Options) ([]byte, error)

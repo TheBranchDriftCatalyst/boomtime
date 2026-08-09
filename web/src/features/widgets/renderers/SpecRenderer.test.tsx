@@ -26,8 +26,11 @@
 // plain-DOM BarList/Chips, not a D3 surface — carry the binding-correctness
 // weight instead, same as ChipList.test.tsx does for the bespoke switch.
 import { describe, expect, it } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { SpecRenderer, SUPPORTED_PRIMITIVES, type SpecRenderData } from "./SpecRenderer";
+import { renderWithProviders } from "@/test/renderWithProviders";
+import { server } from "@/test/msw/server";
+import { http, HttpResponse } from "@/test/msw/handlers";
 import { specs } from "@/features/widgets/specs";
 import { secondsToCompact } from "@/lib/utils";
 import { computeGrade, currentStreak, longestStreakInRange } from "@/features/publicprofile/grade";
@@ -68,6 +71,10 @@ function specData(over: Partial<SpecRenderData> = {}): SpecRenderData {
 }
 
 const BOTH_KINDS = specs.filter((s) => s.target === "both");
+// Part B Stage 4: the goal-* kinds are "both" but self-fetching (their
+// primitives ignore SpecRenderData entirely) — see the dedicated describe
+// block near the bottom of this file for their coverage.
+const GOAL_KINDS = new Set(["goal-progress", "goal-ring", "goal-list"]);
 
 describe("SpecRenderer guard: every both-kind's primitives resolve", () => {
   it("every primitive named in a both-target spec has a registry entry", () => {
@@ -83,7 +90,11 @@ describe("SpecRenderer guard: every both-kind's primitives resolve", () => {
   });
 
   it("no both-kind ever renders the unsupported-primitive / unknown-spec fallback", () => {
-    for (const spec of BOTH_KINDS) {
+    // goal-* kinds are self-fetching (useGoalsQuery/useAllGoalProgress) and
+    // need a QueryClientProvider + MSW-stubbed endpoints to render without
+    // throwing — see the dedicated "goal-* primitives" describe block below,
+    // which covers this exact invariant for them with the right harness.
+    for (const spec of BOTH_KINDS.filter((s) => !GOAL_KINDS.has(s.kind))) {
       const { container, unmount } = render(
         <SpecRenderer kind={spec.kind} view="bar" data={specData()} />,
       );
@@ -270,5 +281,70 @@ describe("SpecRenderer smoke coverage (width-tracked D3 primitives — see file 
     const data = specData({ dailyTotal: [100, 200, 300, 400, 500] });
     const { container } = render(<SpecRenderer kind="activity-heatmap" data={data} />);
     expect(container.querySelectorAll("g.day").length).toBe(5);
+  });
+});
+
+describe("SpecRenderer goal-* primitives (Part B Stage 4 — self-fetching, ignore `data`)", () => {
+  // These three kinds are classified "both" in specs.json (embeddable SVG +
+  // in-page), but their primitives dispatch to the SAME self-fetching
+  // components WidgetRenderer.tsx's bespoke switch uses (GoalProgress /
+  // GoalRing / GoalList — see goalRenderers.test.tsx for their own
+  // behavioral coverage). The invariant here is narrower: SpecRenderer must
+  // route "goal-bar"/"goal-ring"/"goal-list" to the RIGHT component, not
+  // fall through to the unsupported-primitive/no-spec placeholder, and it
+  // must do so while completely ignoring the `data` prop (proven by a
+  // fixture whose goal name doesn't appear anywhere in `specData()`).
+  function stubGoals(name: string) {
+    server.use(
+      http.get("/api/v1/users/current/goals", () =>
+        HttpResponse.json({
+          goals: [
+            {
+              id: "g-spec-1",
+              owner: "alice",
+              name,
+              description: null,
+              spec: { kind: "time", axis: "language", value: null, op: ">=", target_seconds: 0, window: "day" },
+              enabled: true,
+              public: true,
+              createdAt: "2026-07-01T00:00:00Z",
+              updatedAt: "2026-07-01T00:00:00Z",
+              lastEvaluatedAt: null,
+              lastProgress: null,
+            },
+          ],
+        }),
+      ),
+      http.get("/api/v1/users/current/goals/progress", () =>
+        HttpResponse.json({ progress: { "g-spec-1": { hit: true, progress: 1, sub_conditions: [] } } }),
+      ),
+    );
+  }
+
+  it("goal-progress (goal-bar) renders GoalProgress, not the unsupported/no-spec fallback", async () => {
+    stubGoals("Spec Goal Bar");
+    const { container } = renderWithProviders(
+      <SpecRenderer kind="goal-progress" data={specData()} />,
+    );
+    await waitFor(() => expect(screen.getByText("Spec Goal Bar")).toBeInTheDocument());
+    expect(container.textContent).not.toMatch(/Unsupported primitive|No spec for/);
+  });
+
+  it("goal-ring (goal-ring) renders GoalRing, not the unsupported/no-spec fallback", async () => {
+    stubGoals("Spec Goal Ring");
+    const { container } = renderWithProviders(
+      <SpecRenderer kind="goal-ring" data={specData()} />,
+    );
+    await waitFor(() => expect(screen.getByText("Spec Goal Ring")).toBeInTheDocument());
+    expect(container.textContent).not.toMatch(/Unsupported primitive|No spec for/);
+  });
+
+  it("goal-list (goal-list) renders GoalList, not the unsupported/no-spec fallback", async () => {
+    stubGoals("Spec Goal List");
+    const { container } = renderWithProviders(
+      <SpecRenderer kind="goal-list" data={specData()} />,
+    );
+    await waitFor(() => expect(screen.getByText("Spec Goal List")).toBeInTheDocument());
+    expect(container.textContent).not.toMatch(/Unsupported primitive|No spec for/);
   });
 });

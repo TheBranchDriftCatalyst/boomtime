@@ -46,6 +46,11 @@ type createGoalRequest struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
 	Spec        json.RawMessage `json:"spec"`
+	// Public opts the goal into the owner's embeddable goal widgets
+	// (Part B Stage 4). Omitted/false means private, matching the
+	// column default — a plain bool (not *bool) is fine here since
+	// creation has no "leave untouched" case to distinguish.
+	Public bool `json:"public"`
 }
 
 // updateGoalRequest is the PATCH body. Every field is a pointer so we
@@ -56,6 +61,7 @@ type updateGoalRequest struct {
 	Description *string          `json:"description"`
 	Spec        *json.RawMessage `json:"spec"`
 	Enabled     *bool            `json:"enabled"`
+	Public      *bool            `json:"public"`
 }
 
 // toggleGoalRequest matches the curation toggle shape — a plain flip
@@ -124,7 +130,7 @@ func (h *Handler) CreateGoal(c *echo.Context) error {
 	if req.Description != "" {
 		descPtr = &req.Description
 	}
-	g, err := CreateGoal(h.DB, c.Request().Context(), owner, req.Name, descPtr, req.Spec)
+	g, err := CreateGoal(h.DB, c.Request().Context(), owner, req.Name, descPtr, req.Spec, req.Public)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return apihelpers.RespondErr(c, apierr.New(http.StatusConflict, "a goal named "+req.Name+" already exists", nil))
@@ -165,6 +171,7 @@ func (h *Handler) UpdateGoal(c *echo.Context) error {
 		Description: req.Description,
 		Spec:        req.Spec,
 		Enabled:     req.Enabled,
+		Public:      req.Public,
 	}
 	g, err := UpdateGoal(h.DB, c.Request().Context(), owner, id, patch)
 	if err != nil {
@@ -249,6 +256,7 @@ func (h *Handler) GetGoalProgress(c *echo.Context) error {
 }
 
 // GetAllGoalProgress: GET /api/v1/users/current/goals/progress
+//
 //	→ {progress: {id -> Progress}}.
 //
 // One HTTP round trip serves every dashboard tile — the FE calls this

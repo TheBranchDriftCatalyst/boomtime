@@ -26,13 +26,21 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 )
 
+// alwaysSpecKinds are target:"both" spec kinds with NO legacy renderer at
+// all (Part B Stage 4: the goal-* kinds) — see IsAlwaysSpecKind's doc
+// comment. They render via renderSpec/NeedsForSpec unconditionally, so they
+// are "both" in specs.json without being part of Kinds() (the legacy
+// whitelist render.go's `kinds` map derives).
+var alwaysSpecKinds = []string{"goal-list", "goal-progress", "goal-ring"}
+
 // catalogKinds mirrors every kind declared in
 // web/src/features/widgets/catalog.ts (WIDGET_CATALOG), split the same way
-// the FE file documents it: the 21 backend-renderable kinds (== Kinds()) and
-// the 19 FE-only kinds. Keep BOTH this list and specs.json in sync with
-// catalog.ts by hand — same discipline TestKindsMatchFrontendCatalog
-// (render_test.go) already asks of Kinds().
-var catalogBothKinds = Kinds() // the 21 "both" kinds, straight from the legacy whitelist
+// the FE file documents it: the 21 legacy-renderable kinds (== Kinds()) plus
+// the 3 always-spec-engine goal-* kinds, and the 16 FE-only kinds. Keep BOTH
+// this list and specs.json in sync with catalog.ts by hand — same
+// discipline TestKindsMatchFrontendCatalog (render_test.go) already asks of
+// Kinds().
+var catalogBothKinds = append(append([]string{}, Kinds()...), alwaysSpecKinds...)
 
 var catalogFEOnlyKinds = []string{
 	"ai-assistance",
@@ -42,9 +50,6 @@ var catalogFEOnlyKinds = []string{
 	"github-languages",
 	"github-repos",
 	"github-stats",
-	"goal-list",
-	"goal-progress",
-	"goal-ring",
 	"grade-badge",
 	"hero-identity",
 	"labels-showcase",
@@ -74,7 +79,7 @@ var _ = Describe("Spec registry mirrors the FE catalog (web/src/features/widgets
 			"specs.json entry count drifted from the catalog kind count")
 	})
 
-	It("the 'both' spec kinds equal Kinds() exactly (no drift either direction)", func() {
+	It("the 'both' spec kinds equal Kinds() plus alwaysSpecKinds exactly (no drift either direction)", func() {
 		var got []string
 		for _, s := range Specs() {
 			if s.Target == TargetBoth {
@@ -82,7 +87,19 @@ var _ = Describe("Spec registry mirrors the FE catalog (web/src/features/widgets
 			}
 		}
 		sort.Strings(got)
-		Expect(got).To(Equal(Kinds()))
+		want := append(append([]string{}, Kinds()...), alwaysSpecKinds...)
+		sort.Strings(want)
+		Expect(got).To(Equal(want))
+	})
+
+	It("alwaysSpecKinds are 'both' but absent from Kinds() (the Part B Stage 4 decoupling)", func() {
+		for _, kind := range alwaysSpecKinds {
+			Expect(IsKind(kind)).To(BeFalse(), "%s must stay OUT of the legacy kinds map", kind)
+			Expect(IsAlwaysSpecKind(kind)).To(BeTrue(), "%s should be classified always-spec-engine", kind)
+			spec, ok := SpecFor(kind)
+			Expect(ok).To(BeTrue())
+			Expect(spec.Target).To(Equal(TargetBoth))
+		}
 	})
 
 	It("every fe-only spec carries a reason and NO panels (it's a leaf, not a renderer)", func() {
@@ -175,5 +192,56 @@ var _ = Describe("RenderSpec", func() {
 
 		_, err = RenderSpec("grade-badge", d, Options{})
 		Expect(err).To(HaveOccurred(), "fe-only kind has no backend renderer and should error")
+	})
+})
+
+// goal-* kinds (Part B Stage 4) aren't in Kinds(), so they're absent from
+// the loops above — dedicated coverage here for EmitGoalBar/EmitGoalRing
+// well-formedness, xmlEscape on a hostile goal name, and the privacy
+// no-oracle empty state (an empty/nil Data.Goals — which is what the
+// handler sends both for "zero goals at all" and "zero PUBLIC goals" —
+// must render the exact same placeholder).
+var _ = Describe("goal-* kinds (always-spec-engine, Part B Stage 4)", func() {
+	It("render well-formed, camo-safe SVG with populated goals", func() {
+		d := dataFixture()
+		d.Goals = []GoalProgressLite{
+			{Name: "Weekly Go", Progress: 0.6, Hit: false},
+			{Name: "Daily streak", Progress: 1, Hit: true},
+			{Name: "Cap browsing", Progress: 0.2, Hit: false},
+		}
+		for _, kind := range alwaysSpecKinds {
+			b, err := RenderSpec(kind, d, Options{Theme: "dark", Subtitle: "last 30 days"})
+			Expect(err).NotTo(HaveOccurred(), "RenderSpec(%s)", kind)
+			assertValidXMLG(b)
+			s := string(b)
+			Expect(strings.HasPrefix(strings.TrimSpace(s), "<svg")).To(BeTrue(), "%s: output does not start with <svg", kind)
+			for _, banned := range []string{"<script", "https://", "url(http", "@import"} {
+				Expect(strings.Contains(s, banned)).To(BeFalse(), "%s: output contains banned token %q", kind, banned)
+			}
+			Expect(s).To(ContainSubstring("Weekly Go"), "%s: expected the first goal's name to render", kind)
+		}
+	})
+
+	It("render the SAME empty-state placeholder for a nil/empty Goals slice (privacy no-oracle)", func() {
+		empty := &Data{Payload: &model.StatsPayload{}}
+		for _, kind := range alwaysSpecKinds {
+			b, err := RenderSpec(kind, empty, Options{})
+			Expect(err).NotTo(HaveOccurred(), "RenderSpec(%s) on empty goals", kind)
+			assertValidXMLG(b)
+			Expect(string(b)).To(ContainSubstring("No goals yet"), "%s: expected the empty-goals placeholder", kind)
+		}
+	})
+
+	It("xmlEscape's a hostile goal name (script tag + ampersand) so the SVG stays well-formed", func() {
+		d := dataFixture()
+		d.Goals = []GoalProgressLite{
+			{Name: `<script>alert(1)</script> & "friends"`, Progress: 0.5, Hit: false},
+		}
+		for _, kind := range alwaysSpecKinds {
+			b, err := RenderSpec(kind, d, Options{})
+			Expect(err).NotTo(HaveOccurred(), "RenderSpec(%s)", kind)
+			assertValidXMLG(b)
+			Expect(string(b)).NotTo(ContainSubstring("<script>"), "%s: raw <script> leaked into SVG", kind)
+		}
 	})
 })

@@ -25,6 +25,7 @@ import {
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/dialog";
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
 import { Label } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
+import { Switch } from "@thebranchdriftcatalyst/catalyst-ui/ui/switch";
 import {
   PredicateBuilder,
   defaultLeaf,
@@ -45,6 +46,7 @@ export function GoalForm({ open, onOpenChange, editing }: GoalFormProps) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [spec, setSpec] = useState<Predicate>(defaultLeaf());
+  const [isPublic, setIsPublic] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Reset state whenever the modal (re-)opens. Prefill from `editing`
@@ -57,10 +59,12 @@ export function GoalForm({ open, onOpenChange, editing }: GoalFormProps) {
       setName(editing.name);
       setDescription(editing.description ?? "");
       setSpec(structuredClone(editing.spec));
+      setIsPublic(editing.public);
     } else {
       setName("");
       setDescription("");
       setSpec(defaultLeaf());
+      setIsPublic(false);
     }
     setError(null);
   }, [open, editing]);
@@ -76,6 +80,7 @@ export function GoalForm({ open, onOpenChange, editing }: GoalFormProps) {
       name: trimmed,
       description: description.trim() || undefined,
       spec,
+      public: isPublic,
     };
     const onError = (err: unknown) => {
       // Server-side validation errors come back as ApiError with the
@@ -145,6 +150,24 @@ export function GoalForm({ open, onOpenChange, editing }: GoalFormProps) {
             <div className="mt-1">
               <PredicateBuilder node={spec} onChange={setSpec} />
             </div>
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border border-border p-3">
+            <div className="space-y-0.5">
+              <Label htmlFor="goal-public" className="text-sm font-medium">
+                Public
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Public goals can be embedded as a widget on your README/site;
+                others will see the goal name + progress.
+              </p>
+            </div>
+            <Switch
+              id="goal-public"
+              data-testid="goal-public-switch"
+              checked={isPublic}
+              onCheckedChange={setIsPublic}
+            />
           </div>
 
           {error && (

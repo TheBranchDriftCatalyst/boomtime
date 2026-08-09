@@ -529,6 +529,14 @@ export const SVG_RENDERABLE_KINDS = new Set<string>([
   "categories-chart",
   "editors-chips",
   "platforms-chips",
+  // Part B Stage 4 — the goal-* kinds are now privacy-gated embeddable
+  // SVGs too (internal/widget/specs.json target:"both", rendered via
+  // renderSpec unconditionally — see widget.IsAlwaysSpecKind). A goal
+  // only appears on the embed when the OWNER has flipped it `public`;
+  // see internal/widgets.publicGoalsFor for the privacy gate.
+  "goal-progress",
+  "goal-ring",
+  "goal-list",
 ]);
 
 /** Catalog entries for a scope that the backend can render as an SVG embed —

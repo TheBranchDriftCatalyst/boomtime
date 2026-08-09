@@ -83,6 +83,15 @@ function GoalRow({
     >
       <div className="mb-2 flex items-center gap-2">
         <span className="flex-1 font-medium">{goal.name}</span>
+        {goal.public && (
+          <Badge
+            variant="outline"
+            className="shrink-0 border-sky-500/40 text-[10px] uppercase text-sky-400"
+            data-testid="goal-public-badge"
+          >
+            public
+          </Badge>
+        )}
         {hit && (
           <Badge
             variant="outline"
