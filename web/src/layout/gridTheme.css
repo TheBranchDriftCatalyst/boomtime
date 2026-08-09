@@ -1,0 +1,43 @@
+/* gridTheme.css — app-wide CSS-var contract for the isolated grid primitive
+ * (web/src/lib/grid/grid.css), gaka-lzr.
+ *
+ * The composable Overview dashboard grid (web/src/features/overview/
+ * OverviewDashboard.tsx, editorOn path) never set the primitive's
+ * `--grid-tile-*` custom properties, so its tiles rendered with transparent
+ * backgrounds and no border/header styling — everything fell back to
+ * grid.css's `currentColor`/`transparent` defaults. This file supplies
+ * those values, sourced from catalyst-ui theme tokens (--card, --border,
+ * --foreground, --primary, --muted-foreground, --radius, --font-mono-stack,
+ * ...) so the tiles look designed and ADAPT across every catalyst-ui theme
+ * (catalyst / arasaka / nord / ...) — unlike the public-profile dossier's
+ * hacker.css, which intentionally hardcodes a bespoke terminal palette +
+ * fonts for that one surface (see `.public-dashboard` there).
+ *
+ * Scoped to `body` (element selector — specificity 0,0,1) rather than
+ * `:root` (0,1,0) so hacker.css's `.public-dashboard` block (a class
+ * selector, 0,1,0) always wins on the public profile page regardless of
+ * CSS import/bundle order — this file only supplies the fallback for
+ * everywhere else in the app (Overview, and any future in-app grid).
+ */
+body {
+  --grid-tile-bg: var(--card);
+  --grid-tile-fg: var(--card-foreground);
+  --grid-tile-border: var(--border);
+  --grid-tile-header-fg: var(--foreground);
+  --grid-tile-header-kind-fg: var(--muted-foreground);
+  --grid-tile-radius: var(--radius, 6px);
+  --grid-tile-header-h: 28px;
+  --grid-tile-font: var(--font-body, inherit);
+  --grid-tile-font-mono: var(--font-mono-stack, ui-monospace, "SF Mono", Menlo, monospace);
+  --grid-toggle-active-bg: var(--primary);
+  --grid-toggle-active-fg: var(--primary-foreground);
+  --grid-toggle-idle-fg: var(--muted-foreground);
+  /* Alpha is baked into the color itself (grid.css consumes the color
+   * verbatim in a radial-gradient; it has no separate alpha channel input).
+   * --grid-editing-dot-alpha is kept as a plain value too so a future
+   * grid.css revision that DOES read it directly has something sane to
+   * pick up without a consumer-side change. */
+  --grid-editing-dot-color: color-mix(in oklab, var(--foreground) 12%, transparent);
+  --grid-editing-dot-alpha: 0.12;
+  --grid-remove-fg: var(--muted-foreground);
+}
