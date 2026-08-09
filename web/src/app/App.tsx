@@ -58,6 +58,14 @@ const Wellness = lazy(() =>
 const Goals = lazy(() =>
   import("@/features/goals/Goals").then((m) => ({ default: m.Goals })),
 );
+// Widget catalog gallery — live previews of every widget on real or sample
+// data. One lazy component, two routes: authed /app/catalog (variant="app")
+// and public /catalog (variant="public", sample-only).
+const CatalogPage = lazy(() =>
+  import("@/features/catalog/CatalogPage").then((m) => ({
+    default: m.CatalogPage,
+  })),
+);
 // gaka-4ng: the owner's profile mounted INSIDE the app skeleton (/app/profile).
 // Reuses the dossier view + editor but always-owner (no :slug param). The
 // standalone public /p/:slug (EditableProfilePage) stays for external visitors.
@@ -181,6 +189,17 @@ export function AppRoutes() {
         element={
           <Suspense fallback={<PageFallback />}>
             <EditableProfilePage />
+          </Suspense>
+        }
+      />
+      {/* Public widget catalog — unauthed, sample data only, own minimal
+          shell (like /p/:slug). The authed /app/catalog counterpart lives
+          in the /app tree below with the my-data toggle. */}
+      <Route
+        path="/catalog"
+        element={
+          <Suspense fallback={<PageFallback />}>
+            <CatalogPage variant="public" />
           </Suspense>
         }
       />
@@ -342,6 +361,14 @@ export function AppRoutes() {
           element={
             <Suspense fallback={<PageFallback />}>
               <Wellness />
+            </Suspense>
+          }
+        />
+        <Route
+          path="catalog"
+          element={
+            <Suspense fallback={<PageFallback />}>
+              <CatalogPage variant="app" />
             </Suspense>
           }
         />

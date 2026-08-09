@@ -13,6 +13,7 @@ import {
   PanelLeftOpen,
   Plus,
   Settings2,
+  Shapes,
   ShieldCheck,
   Target,
   UserCircle,
@@ -31,6 +32,7 @@ const NAV = [
   { name: "Goals", icon: Target, to: "/app/goals", end: false },
   { name: "Heartbeats", icon: ListTree, to: "/app/heartbeats", end: false },
   { name: "Wellness", icon: HeartPulse, to: "/app/wellness", end: false },
+  { name: "Catalog", icon: Shapes, to: "/app/catalog", end: false },
   { name: "Import", icon: Download, to: "/app/import", end: false },
   // Logs + Changelog live inside Settings tabs now.
   { name: "Settings", icon: Settings2, to: "/app/settings", end: false },

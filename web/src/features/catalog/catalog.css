@@ -8,6 +8,15 @@
  * ruler overlay for using the catalog as a visual QA checker.
  */
 
+/* Responsive card grid — auto-fill so cards keep a comfortable min width and
+ * wrap; expressed here (not Tailwind arbitrary values) so the minmax stays
+ * legible + tweakable. */
+.catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1rem;
+}
+
 /* Consistent comparison viewport for a widget's live render. */
 .catalog-stage {
   position: relative;
