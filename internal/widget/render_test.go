@@ -224,6 +224,16 @@ var _ = Describe("Needs", func() {
 		Entry("deep-work", "deep-work", Requirements{Sessions: true}),
 		Entry("heatmap-projects", "heatmap-projects", Requirements{}),
 		Entry("heatmap-languages", "heatmap-languages", Requirements{}),
+		// Part B Stage 1 — StatsPayload-derived, except categories-chart which
+		// gates the extra category-rows fetch:
+		Entry("total-time-stat", "total-time-stat", Requirements{}),
+		Entry("daily-avg-stat", "daily-avg-stat", Requirements{}),
+		Entry("current-streak-stat", "current-streak-stat", Requirements{}),
+		Entry("longest-streak-stat", "longest-streak-stat", Requirements{}),
+		Entry("active-days-stat", "active-days-stat", Requirements{}),
+		Entry("categories-chart", "categories-chart", Requirements{Categories: true}),
+		Entry("editors-chips", "editors-chips", Requirements{}),
+		Entry("platforms-chips", "platforms-chips", Requirements{}),
 	)
 })
 
@@ -287,24 +297,88 @@ var _ = Describe("Render bytes are stable for a fixed payload (gaka-hsj)", func(
 	})
 })
 
+// Part B Stage 1 — the stat-tile + chip twins render the same numbers the FE
+// tiles compute (streaks/active-days pinned in internal/stats/streaks_test.go
+// against grade.ts) and the chip clouds carry the segment entries.
+var _ = Describe("Stat-tile + chip twins (Part B Stage 1)", func() {
+	It("stat tiles render the payload-derived values", func() {
+		d := dataFixture() // DailyTotal {3600,0,3600,3600,0,0,0}
+		// compound() drops the last unit (hakatime parity), so an exact-hours
+		// total renders "" — use 3h02m so the tile shows "3 hrs".
+		d.Payload.TotalSeconds = 3*3600 + 120
+		b, _ := Render("total-time-stat", d, Options{})
+		Expect(string(b)).To(ContainSubstring("TOTAL TIME"))
+		Expect(string(b)).To(ContainSubstring("3 hrs"))
+		b, _ = Render("daily-avg-stat", d, Options{})
+		Expect(string(b)).To(ContainSubstring("DAILY AVG"))
+		Expect(string(b)).To(ContainSubstring("25 min")) // compound(1543)
+		b, _ = Render("current-streak-stat", d, Options{})
+		Expect(string(b)).To(ContainSubstring(">0D<"), "trailing zeros → current streak 0")
+		b, _ = Render("longest-streak-stat", d, Options{})
+		Expect(string(b)).To(ContainSubstring(">2D<"), "longest run is days 3-4")
+		b, _ = Render("active-days-stat", d, Options{})
+		Expect(string(b)).To(ContainSubstring(">3/7<"))
+		Expect(string(b)).To(ContainSubstring("43% of days active"))
+	})
+
+	It("chip clouds render each segment entry with a duration tooltip", func() {
+		d := dataFixture()
+		b, _ := Render("editors-chips", d, Options{})
+		Expect(string(b)).To(ContainSubstring("vscode"))
+		Expect(string(b)).To(ContainSubstring("neovim"))
+		Expect(string(b)).To(ContainSubstring("<title>"))
+		b, _ = Render("platforms-chips", d, Options{})
+		Expect(string(b)).To(ContainSubstring("darwin"))
+		b, _ = Render("categories-chart", d, Options{})
+		Expect(string(b)).To(ContainSubstring("coding"))
+		Expect(string(b)).To(ContainSubstring("debugging"))
+	})
+
+	It("every Stage-1 kind renders the clean empty state on an empty payload", func() {
+		empty := &Data{Payload: &model.StatsPayload{}}
+		for kind, msg := range map[string]string{
+			"total-time-stat":     "No activity yet",
+			"daily-avg-stat":      "No activity yet",
+			"current-streak-stat": "No days in range yet",
+			"longest-streak-stat": "No days in range yet",
+			"active-days-stat":    "No days in range yet",
+			"categories-chart":    "No category data yet",
+			"editors-chips":       "No editor data yet",
+			"platforms-chips":     "No platform data yet",
+		} {
+			b, err := Render(kind, empty, Options{})
+			Expect(err).NotTo(HaveOccurred(), "Render(%s) on empty payload", kind)
+			Expect(string(b)).To(ContainSubstring(msg), "%s: empty-state message missing", kind)
+		}
+	})
+})
+
 // Drift guard: the BE whitelist must match the FE catalog
 // (web/src/features/widgets/catalog.ts) — update BOTH when adding a kind.
 var _ = Describe("Kinds() matches the FE catalog verbatim", func() {
 	It("returns the same ordered list as web/src/features/widgets/catalog.ts", func() {
 		want := []string{
+			"active-days-stat",
 			"activity-heatmap",
 			"badge",
+			"categories-chart",
 			"cumulative-area",
+			"current-streak-stat",
+			"daily-avg-stat",
 			"deep-work",
+			"editors-chips",
 			"heatmap-languages",
 			"heatmap-projects",
+			"longest-streak-stat",
 			"momentum",
+			"platforms-chips",
 			"profile-summary",
 			"punchcard",
 			"stats-card",
 			"stats-card-with-grade",
 			"top-langs",
 			"top-projects",
+			"total-time-stat",
 		}
 		Expect(Kinds()).To(Equal(want))
 	})
@@ -364,5 +438,19 @@ func dataFixture() *Data {
 	p.Languages[0].TotalDaily = []int64{3600, 1800, 5400, 0, 3600, 2400, 0}
 	p.Languages[1].TotalDaily = []int64{0, 1800, 3600, 1800, 0, 0, 3600}
 	p.Projects[0].TotalDaily = []int64{3600, 3600, 3600, 1800, 3600, 2400, 3600}
+	// Part B Stage 1: segments for the chip-cloud twins. Added here (NOT in
+	// payloadFixture) so the SHA-pinned kinds keep rendering from the exact
+	// pre-Stage-1 payload bytes.
+	p.Editors = []model.ResourceStats{
+		{Name: "vscode", TotalSeconds: 7200, TotalPct: 66.7},
+		{Name: "neovim", TotalSeconds: 3600, TotalPct: 33.3},
+	}
+	p.Platforms = []model.ResourceStats{
+		{Name: "darwin", TotalSeconds: 10800, TotalPct: 100},
+	}
+	p.Categories = []model.ResourceStats{
+		{Name: "coding", TotalSeconds: 9000, TotalPct: 83.3},
+		{Name: "debugging", TotalSeconds: 1800, TotalPct: 16.7},
+	}
 	return &Data{Payload: p, Grade: &g, Punchcard: &pc, Momentum: &m, Sessions: &s}
 }

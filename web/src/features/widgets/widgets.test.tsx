@@ -34,22 +34,36 @@ describe("catalog", () => {
     expect(project).toContain("top-langs");
   });
 
-  it("embeddableCatalogFor excludes FE-only / dashboard-only kinds", () => {
+  it("embeddableCatalogFor offers backend-renderable kinds and excludes FE-only ones", () => {
     // The Embeddable Widgets panel must only offer kinds the backend SVG
     // endpoint can render — else the cards 404 and show empty (the bug this
-    // guards). FE-only stat/chip/goal kinds must NOT leak in.
+    // guards). Part B Stage 1 gave the stat tiles + chip lists backend SVG
+    // twins, so they are now offered; goal tiles, grade-badge, hero-identity,
+    // labels-showcase and the overview-* kinds remain FE-only.
     const embeddable = embeddableCatalogFor("user").map((e) => e.kind);
     expect(embeddable).toContain("stats-card");
     expect(embeddable).toContain("punchcard");
-    for (const feOnly of [
+    for (const nowRenderable of [
+      "total-time-stat",
+      "daily-avg-stat",
       "current-streak-stat",
       "longest-streak-stat",
       "active-days-stat",
       "categories-chart",
       "editors-chips",
       "platforms-chips",
+    ]) {
+      expect(embeddable).toContain(nowRenderable);
+    }
+    for (const feOnly of [
+      "grade-badge",
+      "hero-identity",
+      "labels-showcase",
       "goal-progress",
       "goal-ring",
+      "goal-list",
+      "loc",
+      "overview-stats",
     ]) {
       expect(embeddable).not.toContain(feOnly);
     }
@@ -172,8 +186,8 @@ describe("WidgetsPanel", () => {
       expect(await screen.findByText(entry.title)).toBeInTheDocument();
     }
     // …but NOT the FE-only / dashboard-only kinds (they'd 404 as SVG embeds)
-    expect(screen.queryByText("Longest Streak")).not.toBeInTheDocument();
-    expect(screen.queryByText("Editors")).not.toBeInTheDocument();
+    expect(screen.queryByText("Grade Badge")).not.toBeInTheDocument();
+    expect(screen.queryByText("Labels Showcase")).not.toBeInTheDocument();
   });
 
   it("project scope hides user-only widgets", async () => {

@@ -36,8 +36,10 @@ type Data struct {
 
 // Requirements declares which optional data blobs a kind consumes. The handler
 // gates its DB queries on these so a badge render never fetches punchcard.
+// Categories gates the category-rows fetch that folds the Categories segment
+// into the StatsPayload (Part B Stage 1: only categories-chart wants it).
 type Requirements struct {
-	Grade, Punchcard, Momentum, Sessions bool
+	Grade, Punchcard, Momentum, Sessions, Categories bool
 }
 
 type renderFunc func(*Data, Theme, Options) ([]byte, error)
@@ -65,6 +67,19 @@ var kinds = map[string]struct {
 	"deep-work":         {Render: renderDeepWork, Needs: Requirements{Sessions: true}},
 	"heatmap-projects":  {Render: renderHeatmapProjects},
 	"heatmap-languages": {Render: renderHeatmapLanguages},
+	// Part B Stage 1 — SVG twins for the (previously FE-only) stat tiles +
+	// chip lists, so the Embeddable Widgets panel can offer them without the
+	// cards rendering empty. All derive from the plain StatsPayload the
+	// handler always builds; only categories-chart needs the extra
+	// category-rows fetch (the Categories segment isn't on the StatRow set).
+	"total-time-stat":     {Render: renderTotalTime},
+	"daily-avg-stat":      {Render: renderDailyAvg},
+	"current-streak-stat": {Render: renderCurrentStreak},
+	"longest-streak-stat": {Render: renderLongestStreak},
+	"active-days-stat":    {Render: renderActiveDays},
+	"categories-chart":    {Render: renderCategories, Needs: Requirements{Categories: true}},
+	"editors-chips":       {Render: renderEditors},
+	"platforms-chips":     {Render: renderPlatforms},
 }
 
 // Kinds returns the sorted whitelist of renderable widget kinds.
@@ -342,6 +357,85 @@ func renderDayHeatmap(d *Data, th Theme, opts Options, list []model.ResourceStat
 	}
 	EmitDayHeatmap(f, 20, 55, 680, 170, d.Payload.StartDate, rows)
 	return f.Close(), nil
+}
+
+// ---- Part B Stage 1 — stat-tile + chip twins (FE: WidgetRenderer.tsx) ----
+
+// renderStatTile is the shared big-numeral card: a compact frame + one
+// EmitStatNumeral (the BigStat twin). isEmpty routes to the clean empty state
+// instead of a misleading zero numeral.
+func renderStatTile(th Theme, opts Options, defTitle, label, value, emptyMsg string, isEmpty bool) ([]byte, error) {
+	f := OpenFrame(240, 140, th, defaultString(opts.Title, defTitle), opts.Subtitle)
+	if isEmpty {
+		f.Empty(emptyMsg)
+		return f.Close(), nil
+	}
+	EmitStatNumeral(f, 20, 72, label, value)
+	return f.Close(), nil
+}
+
+func renderTotalTime(d *Data, th Theme, opts Options) ([]byte, error) {
+	return renderStatTile(th, opts, "Total Time", "TOTAL TIME",
+		compound(d.Payload.TotalSeconds), "No activity yet",
+		d.Payload.TotalSeconds == 0)
+}
+
+func renderDailyAvg(d *Data, th Theme, opts Options) ([]byte, error) {
+	return renderStatTile(th, opts, "Daily Average", "DAILY AVG",
+		compound(int64(d.Payload.DailyAvg)), "No activity yet",
+		d.Payload.TotalSeconds == 0)
+}
+
+func renderCurrentStreak(d *Data, th Theme, opts Options) ([]byte, error) {
+	return renderStatTile(th, opts, "Current Streak", "CURRENT STREAK",
+		fmt.Sprintf("%dD", stats.CurrentStreak(d.Payload.DailyTotal)), "No days in range yet",
+		len(d.Payload.DailyTotal) == 0)
+}
+
+func renderLongestStreak(d *Data, th Theme, opts Options) ([]byte, error) {
+	return renderStatTile(th, opts, "Longest Streak", "LONGEST STREAK",
+		fmt.Sprintf("%dD", stats.LongestStreak(d.Payload.DailyTotal)), "No days in range yet",
+		len(d.Payload.DailyTotal) == 0)
+}
+
+func renderActiveDays(d *Data, th Theme, opts Options) ([]byte, error) {
+	f := OpenFrame(240, 160, th, defaultString(opts.Title, "Active Days"), opts.Subtitle)
+	if len(d.Payload.DailyTotal) == 0 {
+		f.Empty("No days in range yet")
+		return f.Close(), nil
+	}
+	active, total := stats.ActiveDays(d.Payload.DailyTotal)
+	EmitRatio(f, 20, 72, active, total)
+	return f.Close(), nil
+}
+
+// renderChipList is the shared chip-cloud card (ChipList twin) — categories /
+// editors / platforms only differ in which segment + title they pass. The SVG
+// base view for categories-chart is chips; the FE pie `view` stays FE-only.
+func renderChipList(list []model.ResourceStats, title, emptyMsg string, th Theme, opts Options) ([]byte, error) {
+	f := OpenFrame(495, 150, th, title, opts.Subtitle)
+	entries := topEntries(list, 8)
+	if len(entries) == 0 {
+		f.Empty(emptyMsg)
+		return f.Close(), nil
+	}
+	EmitChips(f, 20, 62, 455, 74, entries)
+	return f.Close(), nil
+}
+
+func renderCategories(d *Data, th Theme, opts Options) ([]byte, error) {
+	return renderChipList(d.Payload.Categories,
+		defaultString(opts.Title, "Categories"), "No category data yet", th, opts)
+}
+
+func renderEditors(d *Data, th Theme, opts Options) ([]byte, error) {
+	return renderChipList(d.Payload.Editors,
+		defaultString(opts.Title, "Editors"), "No editor data yet", th, opts)
+}
+
+func renderPlatforms(d *Data, th Theme, opts Options) ([]byte, error) {
+	return renderChipList(d.Payload.Platforms,
+		defaultString(opts.Title, "Platforms"), "No platform data yet", th, opts)
 }
 
 // ---- badge (native flat pill; the shields.io proxy at /badge/svg stays) ----

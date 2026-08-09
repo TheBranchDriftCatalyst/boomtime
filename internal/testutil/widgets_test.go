@@ -219,7 +219,51 @@ var _ = Describe("Widget SVG", func() {
 		Entry("top-langs", "top-langs"),
 		Entry("top-projects", "top-projects"),
 		Entry("badge", "badge"),
+		// Part B Stage 1 — stat-tile + chip twins. None of these (except
+		// categories-chart) declares needs.Categories, so they exercise the
+		// no-category-fetch handler path end-to-end.
+		Entry("total-time-stat", "total-time-stat"),
+		Entry("daily-avg-stat", "daily-avg-stat"),
+		Entry("current-streak-stat", "current-streak-stat"),
+		Entry("longest-streak-stat", "longest-streak-stat"),
+		Entry("active-days-stat", "active-days-stat"),
+		Entry("categories-chart", "categories-chart"),
+		Entry("editors-chips", "editors-chips"),
+		Entry("platforms-chips", "platforms-chips"),
 	)
+
+	// Part B Stage 1: categories-chart is the only kind whose data isn't on
+	// the StatRow set — the handler must run the gated category fetch (via
+	// needs.Categories) and fold it into the payload, or the card renders the
+	// empty state for every owner forever (the bug this test pins).
+	It("categories-chart renders the seeded categories (not the empty state)", func() {
+		hz := testutil.NewHarness(GinkgoTB())
+		e := hz.Router()
+		user, token := hz.MintUser("widget_render_cats")
+
+		start := time.Now().UTC().Add(-48 * time.Hour).Truncate(time.Hour)
+		sdr := hz.Seeder(user)
+		sdr.Block(testutil.HB{Project: "proj-x", Language: "Go", Editor: "vim",
+			Category: "coding"}, start, 10, 60)
+		sdr.Block(testutil.HB{Project: "proj-x", Language: "Go", Editor: "vim",
+			Category: "debugging"}, start.Add(time.Hour), 10, 60)
+		sdr.RefreshRollup(start.Add(-time.Hour))
+
+		link := mintWidgetLinkG(e, token, "user", "")
+		rec := doG(e, "GET", "/widget/svg/"+link.LinkID+"/categories-chart?days=30", "", nil)
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
+		body := rec.Body.String()
+		Expect(body).NotTo(ContainSubstring("No category data yet"),
+			"categories-chart rendered the empty state despite seeded category heartbeats")
+		Expect(body).To(ContainSubstring("coding"), "seeded category chip missing")
+		Expect(body).To(ContainSubstring("debugging"), "seeded category chip missing")
+
+		// The chip kinds that DON'T need the category fetch still render their
+		// own segments from the same seed (vim editor chip).
+		rec = doG(e, "GET", "/widget/svg/"+link.LinkID+"/editors-chips?days=30", "", nil)
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
+		Expect(rec.Body.String()).To(ContainSubstring("vim"), "seeded editor chip missing")
+	})
 
 	It("top-langs shows the seeded language (>Go<)", func() {
 		hz := testutil.NewHarness(GinkgoTB())

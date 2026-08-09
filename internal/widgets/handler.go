@@ -287,7 +287,28 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 			return nil, err
 		}
 
-		payload := stats.ToStatsPayload(t0, t1, rows, nil, nil)
+		needs := widget.Needs(kind)
+		if customDef != nil {
+			needs = widget.NeedsForDef(*customDef)
+		}
+
+		// Part B Stage 1: the Categories segment isn't derivable from the
+		// StatRow set (the activity queries don't project a category column),
+		// so it needs its own fetch — gated on Needs so only categories-chart
+		// pays for it. Same rollup-vs-raw gate as the activity fetch above.
+		var catRows []db.CategoryDailyRow
+		if needs.Categories {
+			if !hidden.HasHiddenOutside(db.RollupAxes) && (!scoped || !members.HasMemberOutside(db.RollupAxes)) {
+				catRows, err = h.DB.GetCategoryDailyRollup(ctx, owner, t0, t1, hidden, renames, members, scoped)
+			} else {
+				catRows, err = h.DB.GetCategoryDaily(ctx, owner, t0, t1, widgetTimeLimit, tz, hidden, renames, members, scoped)
+			}
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		payload := stats.ToStatsPayload(t0, t1, rows, catRows, nil)
 		// gaka-6jm.3: enforce the public-safe contract before ANY renderer sees
 		// the payload. The DB queries above already excluded hidden values
 		// from top-N segments; Scrub additionally strips hidden names from
@@ -296,10 +317,6 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 		// "Other (N more)" bucket the FE tooltip breakdown would expose.
 		scrubbed := widget.Scrub(&payload, hidden)
 		data := &widget.Data{Payload: scrubbed}
-		needs := widget.Needs(kind)
-		if customDef != nil {
-			needs = widget.NeedsForDef(*customDef)
-		}
 		if needs.Grade {
 			g := stats.Grade(&payload)
 			data.Grade = &g

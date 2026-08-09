@@ -401,6 +401,101 @@ func EmitDayHeatmap(f *Frame, x, y, w, h int, startDate time.Time, rows []DayRow
 	f.WriteString(`</g>`)
 }
 
+// ---- stat numeral (Part B Stage 1 — SVG twin of the FE BigStat tile) ----
+
+// EmitStatNumeral draws a small uppercase tracking label over a large bold
+// value — the big-numeral style of the FE dossier stat tiles
+// (WidgetRenderer.tsx BigStat). x/y anchor the label baseline; the value
+// baseline sits 40px below. A <title> tooltip carries "label — value".
+func EmitStatNumeral(f *Frame, x, y int, label, value string) {
+	th := f.Theme
+	f.Printf(`<g class="fade"><title>%s</title>`,
+		xmlEscape(fmt.Sprintf("%s — %s", label, value)))
+	f.Printf(`<text x="%d" y="%d" font-size="10" letter-spacing="2" fill="%s">%s</text>`,
+		x, y, th.TextMuted, xmlEscape(strings.ToUpper(label)))
+	f.Printf(`<text class="fade" x="%d" y="%d" font-size="34" font-weight="700" fill="%s" style="animation-delay: 0.1s">%s</text>`,
+		x, y+40, th.Title, xmlEscape(value))
+	f.WriteString(`</g>`)
+}
+
+// ---- ratio (active-days-stat: "N/M" + pct) ----
+
+// EmitRatio draws a big "active/total" numeral with a muted percentage line
+// under it — the SVG twin of the FE active-days-stat tile (value `N/M`,
+// sub `NN%`). Percentage rounds like the FE (Math.round(active/total*100)).
+func EmitRatio(f *Frame, x, y int, active, total int) {
+	th := f.Theme
+	denom := total
+	if denom < 1 {
+		denom = 1 // FE mirrors: `data.dailyTotal.length || 1`
+	}
+	pct := int(math.Round(float64(active) / float64(denom) * 100))
+	f.Printf(`<g class="fade"><title>%s</title>`,
+		xmlEscape(fmt.Sprintf("%d of %d days active (%d%%)", active, total, pct)))
+	f.Printf(`<text x="%d" y="%d" font-size="34" font-weight="700" fill="%s">%d/%d</text>`,
+		x, y+40, th.Title, active, total)
+	f.Printf(`<text class="fade" x="%d" y="%d" font-size="12" fill="%s" style="animation-delay: 0.1s">%d%% of days active</text>`,
+		x, y+62, th.TextMuted, pct)
+	f.WriteString(`</g>`)
+}
+
+// ---- proportional chip cloud (categories / editors / platforms) ----
+
+// EmitChips draws a wrapping cloud of label+pct chips within (x, y, w, h) —
+// the SVG twin of the FE ChipList. Chip font size scales with the entry's
+// share of the SHOWN set (10..14px, +1px per 10pct, like the FE), percentages
+// are recomputed over the shown entries (never the payload-global TotalPct —
+// same rationale as EmitBars), and chips that would overflow the box are
+// dropped rather than clipped mid-glyph. Each chip carries a native <title>
+// tooltip with the exact duration.
+func EmitChips(f *Frame, x, y, w, h int, entries []model.ResourceStats) {
+	th := f.Theme
+	if len(entries) == 0 {
+		f.Printf(`<text x="%d" y="%d" font-size="11" fill="%s">No data</text>`,
+			x, y+h/2, th.TextMuted)
+		return
+	}
+	var grand int64
+	for _, e := range entries {
+		grand += e.TotalSeconds
+	}
+	if grand < 1 {
+		grand = 1
+	}
+	const gap = 8
+	const rowStep = 30 // fixed row height so mixed font sizes still align
+	cx, cy := x, y
+	f.WriteString(`<g class="fade" style="animation-delay: 0.1s">`)
+	for i, e := range entries {
+		pct := float64(e.TotalSeconds) / float64(grand) * 100
+		fs := 10 + pct/10 // FE: max(10, min(14, 10 + pct/10))
+		if fs > 14 {
+			fs = 14
+		}
+		label := truncate(e.Name, 16)
+		text := fmt.Sprintf("%s %d%%", label, int(math.Round(pct)))
+		// Approximate monospace-ish advance; +20 pads 10px each side.
+		chipW := int(fs*0.62*float64(len([]rune(text)))) + 20
+		chipH := int(fs) + 12
+		if cx+chipW > x+w && cx > x { // wrap
+			cx = x
+			cy += rowStep
+		}
+		if cy+chipH > y+h {
+			break // out of vertical room — drop the tail rather than clip
+		}
+		f.Printf(`<g class="row" style="animation-delay: %.2fs"><title>%s</title>`,
+			0.1*float64(i), xmlEscape(fmt.Sprintf("%s — %s (%.1f%%)", e.Name, compound(e.TotalSeconds), pct)))
+		f.Printf(`<rect x="%d" y="%d" width="%d" height="%d" rx="3" fill="%s" stroke="%s"/>`,
+			cx, cy, chipW, chipH, th.TrackBg, th.colorAt(i))
+		f.Printf(`<text x="%d" y="%d" font-size="%.0f" fill="%s" dominant-baseline="middle">%s</text>`,
+			cx+10, cy+chipH/2+1, fs, th.Text, xmlEscape(text))
+		f.WriteString(`</g>`)
+		cx += chipW + gap
+	}
+	f.WriteString(`</g>`)
+}
+
 // ---- helpers ----
 
 // mixHex linearly interpolates between two "#rrggbb" strings by q in [0, 1].

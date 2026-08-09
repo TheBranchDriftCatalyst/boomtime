@@ -201,11 +201,11 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
     dashboardScopes: ["overview"],
     defaultLayout: { w: 6, h: 3 },
   },
-  // gaka-keb — profile-only kinds. These render only in-page on the
-  // composable dashboard grid (no SVG embed variants — they're either
-  // interactive-only or trivial enough that a card in SVG would be
-  // redundant with existing kinds). `svgOnly: false` is implicit; the
-  // backend SVG endpoint returns 404 for kinds it doesn't know.
+  // gaka-keb — profile-scoped kinds for the composable dashboard grid.
+  // grade-badge + hero-identity stay in-page-only (interactive/identity
+  // chrome; the backend SVG endpoint 404s for them). The stat tiles + chip
+  // lists below ALSO have backend SVG twins since Part B Stage 1 (see
+  // SVG_RENDERABLE_KINDS), so they render both in-page AND as embeds.
   {
     kind: "grade-badge",
     title: "Grade Badge",
@@ -337,7 +337,7 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
   // labels grouped by category (tier / archetype / tribe). FE-only
   // widget, not registered in internal/widget/render.go's SVG kinds
   // (like the other profile-only tiles: grade-badge, hero-identity,
-  // stats/chips, goal-*). Adding a new label = one object literal in
+  // goal-*). Adding a new label = one object literal in
   // web/src/features/publicprofile/labels/catalog.ts.
   {
     kind: "labels-showcase",
@@ -500,10 +500,11 @@ export function catalogForDashboard(scope: DashboardScope): WidgetCatalogEntry[]
 /** Kinds the backend `/widget/svg/:uuid/:kind` endpoint can actually render
  * (mirrors the `kinds` map in internal/widget/render.go, pinned by the Go test
  * TestKindsMatchFrontendCatalog). The Embeddable Widgets panel filters to these
- * — every OTHER catalog entry (stat labels, chip lists, goal tiles, …) is an
- * in-page / composable-dashboard widget that has no SVG renderer and 404s as an
- * embed, so surfacing it in the panel produces empty widget cards. Keep this in
- * sync with render.go when adding a backend-renderable kind. */
+ * — every OTHER catalog entry (goal tiles, grade-badge, hero-identity, the
+ * overview-* kinds, …) is an in-page / composable-dashboard widget that has no
+ * SVG renderer and 404s as an embed, so surfacing it in the panel produces
+ * empty widget cards. Keep this in sync with render.go when adding a
+ * backend-renderable kind. */
 export const SVG_RENDERABLE_KINDS = new Set<string>([
   "activity-heatmap",
   "badge",
@@ -518,6 +519,16 @@ export const SVG_RENDERABLE_KINDS = new Set<string>([
   "stats-card-with-grade",
   "top-langs",
   "top-projects",
+  // Part B Stage 1 — stat-tile + chip kinds gained backend SVG twins
+  // (internal/widget/render.go renderStatTile / renderChipList):
+  "total-time-stat",
+  "daily-avg-stat",
+  "current-streak-stat",
+  "longest-streak-stat",
+  "active-days-stat",
+  "categories-chart",
+  "editors-chips",
+  "platforms-chips",
 ]);
 
 /** Catalog entries for a scope that the backend can render as an SVG embed —
