@@ -444,7 +444,7 @@ function ParamField({
       control = (
         <Select
           value={typeof value === "string" ? value : ""}
-          onValueChange={(v) => onChange(v)}
+          onValueChange={(v: string) => onChange(v)}
           disabled={disabled}
         >
           <SelectTrigger id={id} className="h-8 text-xs">
