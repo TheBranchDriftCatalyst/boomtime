@@ -16,6 +16,14 @@ import {
   currentStreak,
   longestStreakInRange,
 } from "@/features/publicprofile/grade";
+// Part B Stage 3 (gaka-174.x): the data-driven alternative to this file's
+// switch cases below, for target:"both" kinds only (fe-only kinds — hero
+// tile, goals, labels, github-stats — always stay on this bespoke switch).
+// Gated behind the widgetSpecEngine FE flag so the two engines coexist:
+// bespoke is the default, SpecRenderer is opt-in until Stage 5 flips it.
+import { usePublicConfig } from "@/lib/usePublicConfig";
+import { specForKind } from "@/features/widgets/specs";
+import { SpecRenderer } from "@/features/widgets/renderers/SpecRenderer";
 // gaka-wpb: goal tile renderers. Data-fetched internally (batched
 // /goals/progress); the outer `data` prop isn't used by these
 // kinds. Public dashboard renders (unauth) will 401 silently and
@@ -62,6 +70,18 @@ export interface WidgetRendererProps {
 
 export function WidgetRenderer({ kind, view, data, slug, ctx }: WidgetRendererProps) {
   const height = ctx?.height ?? 220;
+
+  // Part B Stage 3: target:"both" kinds route through the generic
+  // SpecRenderer when the flag is on. fe-only kinds (and everything when the
+  // flag is off) fall through to the switch below unchanged.
+  const { config: publicConfig } = usePublicConfig();
+  if (publicConfig.widget_spec_engine) {
+    const spec = specForKind(kind);
+    if (spec?.target === "both") {
+      return <SpecRenderer kind={kind} view={view} data={data} height={height} />;
+    }
+  }
+
   switch (kind) {
     case "hero-identity":
       return <HeroIdentity data={data} />;

@@ -61,7 +61,17 @@ import {
   useOverviewAIActivity,
   useOverviewHealthActivity,
 } from "@/features/overview/overviewWidgets";
-import type { ResourceStats, PunchcardPayload } from "@/types/stats";
+import type { ResourceStats, PunchcardPayload, StatsPayload } from "@/types/stats";
+// Part B Stage 3 (gaka-174.x): the data-driven alternative to this file's
+// switch cases below, for target:"both" kinds only. Gated behind the
+// widgetSpecEngine FE flag — see the matching wiring in WidgetRenderer.tsx's
+// file doc for why both engines coexist.
+import { usePublicConfig } from "@/lib/usePublicConfig";
+import { specForKind } from "@/features/widgets/specs";
+import {
+  SpecRenderer,
+  type SpecRenderData,
+} from "@/features/widgets/renderers/SpecRenderer";
 
 export interface OverviewWidgetRendererProps {
   kind: string;
@@ -76,6 +86,18 @@ export function OverviewWidgetRenderer({
   view,
   config,
 }: OverviewWidgetRendererProps) {
+  // Part B Stage 3: target:"both" kinds route through the generic
+  // SpecRenderer when the flag is on. fe-only kinds (and everything when the
+  // flag is off) fall through to the switch below unchanged. OverviewSpecKind
+  // is itself hook-free (see its doc) so this early return stays legal.
+  const { config: publicConfig } = usePublicConfig();
+  if (publicConfig.widget_spec_engine) {
+    const spec = specForKind(kind);
+    if (spec?.target === "both") {
+      return <OverviewSpecKind kind={kind} view={view} />;
+    }
+  }
+
   switch (kind) {
     // --- Stat strip -----------------------------------------------------
     case "overview-stats":
@@ -134,6 +156,100 @@ export function OverviewWidgetRenderer({
     default:
       return <Empty note={`No renderer for "${kind}"`} />;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Part B Stage 3: SpecRenderer self-fetch wiring for Overview's target:"both"
+// kinds. OverviewSpecKind itself calls NO hooks — same HOOKS RULE as the
+// top-level switch above — it only dispatches to a leaf component that owns
+// exactly the hook(s) its kind's spec needs, so a dashboard with (say) only
+// a Total Activity widget doesn't newly fire /punchcard or /sessions
+// requests it never needed.
+// ---------------------------------------------------------------------------
+
+const EMPTY_PUNCHCARD: PunchcardPayload = { cells: [], maxSeconds: 0, totalSeconds: 0 };
+
+// Zero-value SpecRenderData base. Kinds below only ever read the field(s)
+// their own spec panels bind to (see SpecRenderer.tsx's per-primitive
+// resolvers) — the rest of the shape is required by the type but unused, so
+// a placeholder is safe (mirrors spec.go's resolveSeries returning nil for
+// an absent Sessions/Momentum payload rather than erroring).
+const EMPTY_SPEC_BASE: SpecRenderData = {
+  totalSeconds: 0,
+  dailyAvg: 0,
+  dailyTotal: [],
+  startDate: new Date(0).toISOString(),
+  projects: [],
+  languages: [],
+  editors: [],
+  platforms: [],
+  categories: [],
+  punchcard: EMPTY_PUNCHCARD,
+};
+
+function specDataFromStats(stats: StatsPayload | undefined): SpecRenderData {
+  return {
+    ...EMPTY_SPEC_BASE,
+    totalSeconds: stats?.totalSeconds ?? 0,
+    dailyAvg: stats?.dailyAvg ?? 0,
+    dailyTotal: stats?.dailyTotal ?? [],
+    startDate: stats?.startDate ?? EMPTY_SPEC_BASE.startDate,
+    projects: stats?.projects ?? [],
+    languages: stats?.languages ?? [],
+    editors: stats?.editors ?? [],
+    platforms: stats?.platforms ?? [],
+    categories: stats?.categories ?? [],
+  };
+}
+
+function OverviewSpecKind({ kind, view }: { kind: string; view?: string }) {
+  switch (kind) {
+    case "punchcard":
+      return <OverviewSpecPunchcard view={view} />;
+    case "momentum":
+      return <OverviewSpecMomentum />;
+    case "deep-work":
+      return <OverviewSpecDeepWork />;
+    // activity-heatmap, top-projects, cumulative-area, heatmap-projects and
+    // heatmap-languages all bind solely to the RAW stats payload — one
+    // shared leaf component, same as OverviewActivityHeatmap /
+    // OverviewTopProjects / etc. below all independently call
+    // useOverviewStats() and share its react-query cache.
+    case "activity-heatmap":
+    case "top-projects":
+    case "cumulative-area":
+    case "heatmap-projects":
+    case "heatmap-languages":
+      return <OverviewSpecFromStats kind={kind} view={view} />;
+    default:
+      return <Empty note={`No spec renderer for "${kind}"`} />;
+  }
+}
+
+function OverviewSpecFromStats({ kind, view }: { kind: string; view?: string }) {
+  const { stats } = useOverviewStats();
+  return <SpecRenderer kind={kind} view={view} data={specDataFromStats(stats)} />;
+}
+
+function OverviewSpecPunchcard({ view }: { view?: string }) {
+  const query = useOverviewPunchcard();
+  return (
+    <SpecRenderer
+      kind="punchcard"
+      view={view}
+      data={{ ...EMPTY_SPEC_BASE, punchcard: query.data ?? EMPTY_PUNCHCARD }}
+    />
+  );
+}
+
+function OverviewSpecMomentum() {
+  const query = useOverviewMomentum();
+  return <SpecRenderer kind="momentum" data={{ ...EMPTY_SPEC_BASE, momentum: query.data }} />;
+}
+
+function OverviewSpecDeepWork() {
+  const query = useOverviewSessions();
+  return <SpecRenderer kind="deep-work" data={{ ...EMPTY_SPEC_BASE, sessions: query.data }} />;
 }
 
 // ---------------------------------------------------------------------------

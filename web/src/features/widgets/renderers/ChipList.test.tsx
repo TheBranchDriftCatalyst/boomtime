@@ -14,9 +14,19 @@
 // mirroring PieChart's approach. Both invariants are pinned here so a
 // future refactor that reintroduces the totalPct read gets caught.
 import { describe, expect, it } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { WidgetRenderer } from "./WidgetRenderer";
 import type { PublicDashboardPayload, ResourceStats } from "@/types/stats";
+import { renderWithProviders } from "@/test/renderWithProviders";
+
+// WidgetRenderer now reads usePublicConfig() unconditionally (Part B Stage 3
+// spec-engine gate), which needs a QueryClientProvider ancestor — switch
+// from a bare RTL render to renderWithProviders. The default MSW handler
+// for /config/public (handlers.ts) advertises widget_spec_engine: false, so
+// these tests keep exercising the BESPOKE switch as before.
+function render(ui: Parameters<typeof renderWithProviders>[0]) {
+  return renderWithProviders(ui);
+}
 
 const emptyPayload = (
   over: Partial<PublicDashboardPayload> = {},
