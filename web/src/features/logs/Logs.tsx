@@ -10,6 +10,12 @@ import { cn } from "@/lib/utils";
 const LEVELS = ["all", "debug", "info", "warn", "error"] as const;
 type LevelFilter = (typeof LEVELS)[number];
 
+// Source filter: server's own logs vs. records relayed from a
+// boomtime-worker pod over the cross-pod log relay (Redis pub/sub -> the
+// server's LogHub). "all" shows both — see internal/logging/redis_relay.go.
+const SOURCES = ["all", "server", "worker"] as const;
+type SourceFilter = (typeof SOURCES)[number];
+
 function normalizeLevel(level: string): LevelFilter | "other" {
   const l = level.toLowerCase();
   if (l === "warning") return "warn";
@@ -26,28 +32,37 @@ const statusStyles: Record<SocketStatus, { label: string; dot: string }> = {
 };
 
 /**
- * Logs — a live viewer of the running server process's own slog output,
- * streamed over WebSocket and durable across reloads (the server backfills its
- * ring buffer on (re)connect). Auto-scrolls to the newest line unless the user
- * scrolls up; supports a level filter and clearing the local buffer.
+ * Logs — a live viewer of the server process's slog output, streamed over
+ * WebSocket and durable across reloads (the server backfills its ring
+ * buffer on (re)connect). Since the worker-topology cutover this also
+ * includes the separate boomtime-worker pod's logs, relayed into the
+ * server's hub over Redis pub/sub (see internal/logging/redis_relay.go) and
+ * tagged with a "source" (server|worker) — the source filter below lets you
+ * isolate either. Auto-scrolls to the newest line unless the user scrolls
+ * up; supports level + source filters and clearing the local buffer.
  */
 export function Logs({ embedded = false }: { embedded?: boolean }) {
   const { logs, status, clear } = useLogsSocket();
   const [filter, setFilter] = useState<LevelFilter>("all");
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
 
   const visible = useMemo<LogViewerLine[]>(() => {
-    const matching =
-      filter === "all"
-        ? logs
-        : logs.filter((l) => normalizeLevel(l.level) === filter);
+    const matching = logs.filter(
+      (l) =>
+        (filter === "all" || normalizeLevel(l.level) === filter) &&
+        (sourceFilter === "all" || l.source === sourceFilter),
+    );
     return matching.map((l) => ({
       id: l.id,
       ts: l.time,
       level: l.level,
       message: l.msg,
-      attrs: l.attrs,
+      // Fold source (+ host, when present) into the attrs LogViewer already
+      // renders dim after the message — same treatment the "user" owner tag
+      // gets elsewhere, no LogViewer changes needed to surface it per line.
+      attrs: { ...(l.attrs ?? {}), source: l.source, ...(l.host ? { host: l.host } : {}) },
     }));
-  }, [logs, filter]);
+  }, [logs, filter, sourceFilter]);
 
   const st = statusStyles[status];
 
@@ -71,6 +86,23 @@ export function Logs({ embedded = false }: { embedded?: boolean }) {
             )}
           >
             {lvl}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-1 rounded-md border p-0.5">
+        {SOURCES.map((src) => (
+          <button
+            key={src}
+            onClick={() => setSourceFilter(src)}
+            className={cn(
+              "rounded px-2 py-1 text-xs font-medium capitalize transition-colors",
+              sourceFilter === src
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+            )}
+          >
+            {src}
           </button>
         ))}
       </div>

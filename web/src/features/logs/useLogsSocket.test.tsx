@@ -17,6 +17,7 @@ function logEntry(over: Partial<ServerLogEntry> = {}): ServerLogEntry {
     time: "2026-07-10T00:00:00Z",
     level: "INFO",
     msg: "hello",
+    source: "server",
     ...over,
   };
 }

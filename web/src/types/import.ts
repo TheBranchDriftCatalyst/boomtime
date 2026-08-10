@@ -102,14 +102,19 @@ export function isTerminalState(state: ImportJobState): boolean {
 
 // --- Server process logs (the "Logs" tab) ------------------------------------
 
-// One captured slog record from the running server process. `id` is a
-// process-monotonic cursor used for backfill/resume (afterId).
+// One captured slog record. `id` is a process-monotonic cursor used for
+// backfill/resume (afterId). `source` distinguishes the server's own
+// records from those relayed from a boomtime-worker pod over the cross-pod
+// log relay (Redis pub/sub -> LogHub, see internal/logging/redis_relay.go);
+// `host` is the worker pod's hostname, present only on source: "worker".
 export interface ServerLogEntry {
   id: number;
   time: string;
   level: string;
   msg: string;
   attrs?: Record<string, string> | null;
+  source: "server" | "worker";
+  host?: string;
 }
 
 // WebSocket messages the server pushes on /api/v1/logs/ws.
