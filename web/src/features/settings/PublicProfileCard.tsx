@@ -146,9 +146,16 @@ export function PublicProfileCard() {
       <CardContent className="p-4">
         <form
           onSubmit={handleSubmit(onSubmit)}
-          className="max-w-lg space-y-4"
+          className="space-y-6"
           aria-label="Public profile form"
         >
+          {/* Controls (left) and the live social-card preview (right) sit
+              side-by-side on lg+ and stack into a single column on small
+              screens. items-start so the tall card doesn't stretch the
+              controls column. */}
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+          {/* Left column: the enable/slug/URL controls */}
+          <div className="flex-1 space-y-4 lg:max-w-lg">
           {/* Enable / disable toggle */}
           <div className="flex items-center justify-between rounded-lg border border-border p-3">
             <div className="space-y-0.5">
@@ -231,14 +238,16 @@ export function PublicProfileCard() {
               </div>
             </div>
           )}
-
-          {/* Social-card preview — the exact 1200×630 og.png that unfurls when
-              the public URL is dropped in Discord / Twitter / Slack. Same gate
-              as the Public URL block (enabled + server-confirmed slug) so we
-              never render a card for a slug that 404s. Clicking opens the live
-              public page. previewNonce busts the 10-min og.png cache per load. */}
+          </div>
+          {/* Right column: the live social-card preview — the exact 1200×630
+              og.png that unfurls when the public URL is dropped in Discord /
+              Twitter / Slack. Same gate as the Public URL block (enabled +
+              server-confirmed slug) so we never render a card for a slug that
+              404s. Clicking opens the live public page. previewNonce busts the
+              10-min og.png cache per load. On small screens it drops below the
+              controls (parent flex-col). */}
           {currentSlug && enabled && data?.enabled && data?.slug === currentSlug && (
-            <div className="space-y-1.5">
+            <div className="flex-1 space-y-1.5 lg:max-w-xl">
               <Label className="text-xs uppercase tracking-wide text-muted-foreground">
                 Social card
               </Label>
@@ -264,6 +273,7 @@ export function PublicProfileCard() {
               </a>
             </div>
           )}
+          </div>
 
           <div className="flex items-center gap-3">
             <Button
