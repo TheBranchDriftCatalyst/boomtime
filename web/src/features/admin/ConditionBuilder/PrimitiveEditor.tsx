@@ -492,7 +492,7 @@ function HourOfDayPicker({
   return (
     <div>
       <Label className="text-xs">Hours of day (multi-select)</Label>
-      <div className="mt-1 grid grid-cols-12 gap-1">
+      <div className="mt-1 grid grid-cols-8 gap-1 sm:grid-cols-12">
         {Array.from({ length: 24 }, (_, h) => (
           <Button
             key={h}

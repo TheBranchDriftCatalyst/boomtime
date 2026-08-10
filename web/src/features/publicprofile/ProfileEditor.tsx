@@ -406,7 +406,7 @@ export function ProfileEditor({ slug }: ProfileEditorProps) {
           while the operator scrolls the tile grid. Disabled buttons when
           the draft matches the server (nothing to save/revert). */}
       <div
-        className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-lg border border-border bg-background/95 p-2 shadow-xl backdrop-blur"
+        className="fixed bottom-4 right-4 z-40 flex max-w-[calc(100vw-2rem)] flex-wrap items-center justify-end gap-2 rounded-lg border border-border bg-background/95 p-2 shadow-xl backdrop-blur"
         data-testid="profile-editor-save-chrome"
       >
         <span

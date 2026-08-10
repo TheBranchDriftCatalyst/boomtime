@@ -64,7 +64,7 @@ export function TopProjectsBar({
             }
           >
             <span
-              className="w-40 shrink-0 truncate font-medium"
+              className="w-24 shrink-0 truncate font-medium sm:w-40"
               title={r.name}
             >
               {r.name}
@@ -78,7 +78,7 @@ export function TopProjectsBar({
                 }}
               />
             </div>
-            <span className="w-28 shrink-0 text-right font-mono text-xs text-muted-foreground">
+            <span className="w-16 shrink-0 text-right font-mono text-xs text-muted-foreground sm:w-28">
               {secondsToHms(r.seconds)}
             </span>
           </Row>

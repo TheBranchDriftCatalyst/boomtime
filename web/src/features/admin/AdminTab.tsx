@@ -1093,7 +1093,7 @@ function LabelEditSheet({ row, onClose, onSaved, onRegen, canRegen, generatedAt 
             </div>
 
             <div className="mt-6 space-y-4">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <UILabel htmlFor="ed-label">Label (display)</UILabel>
                   <Input
@@ -1142,7 +1142,7 @@ function LabelEditSheet({ row, onClose, onSaved, onRegen, canRegen, generatedAt 
                 />
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div>
                   <UILabel htmlFor="ed-rank">Rank</UILabel>
                   <Input
@@ -1234,7 +1234,7 @@ function LabelEditSheet({ row, onClose, onSaved, onRegen, canRegen, generatedAt 
                 <p className="mb-2 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
                   Per-request generation overrides (not persisted)
                 </p>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <div>
                     <UILabel htmlFor="ed-model">Model</UILabel>
                     <Input

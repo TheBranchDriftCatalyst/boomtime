@@ -117,7 +117,7 @@ export function Logs({ embedded = false }: { embedded?: boolean }) {
   return (
     <div>
       {embedded ? (
-        <div className="mb-4 flex items-center justify-end gap-3">{controls}</div>
+        <div className="mb-4 flex flex-wrap items-center justify-end gap-3">{controls}</div>
       ) : (
         <PageToolbar title="Logs">{controls}</PageToolbar>
       )}
