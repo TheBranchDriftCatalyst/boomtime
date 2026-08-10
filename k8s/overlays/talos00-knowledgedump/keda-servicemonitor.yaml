@@ -1,0 +1,27 @@
+---
+# Scrape KEDA's operator Prometheus metrics (:8080, port name `metrics`) so the
+# KEDA dashboard has data (keda_scaler_active / keda_scaler_metrics_value /
+# keda_scaled_object_paused / *_errors_total, KEDA v2.20). Lives in the boomtime
+# namespace but targets the `keda` namespace via namespaceSelector — Prometheus
+# watches ServiceMonitors cluster-wide, same as the rabbitmq PodMonitor here.
+# Best-effort/verify-on-live: if metrics don't show, confirm the operator svc
+# label + port name with `kubectl -n keda get svc keda-operator --show-labels`.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: keda-operator
+  namespace: boomtime
+  labels:
+    app.kubernetes.io/part-of: boomtime
+spec:
+  namespaceSelector:
+    matchNames:
+      - keda
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: keda-operator
+      app.kubernetes.io/instance: keda
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s

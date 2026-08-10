@@ -37,6 +37,8 @@ resources:
   - rabbitmq-mgmt-ingressroute.yaml # LAN-only mgmt UI (boomtime-rabbit.talos00)
   - rabbitmq-podmonitor.yaml       # Prometheus scrape of the operator metrics
   - grafana-dashboard-worker-queue.yaml # GrafanaDashboard CR (Ops > App folder)
+  - keda-servicemonitor.yaml       # scrape KEDA operator metrics (keda ns) for the dashboard
+  - grafana-dashboard-keda.yaml    # GrafanaDashboard CR — KEDA autoscaling (Ops > App)
 
 # Strategic-merge patches: each adds a feature-specific set of env vars
 # to the base boomtime-config ConfigMap without disturbing existing keys.
@@ -78,6 +80,9 @@ configMapGenerator:
   - name: dashboard-boomtime-worker-queue
     files:
       - grafana/worker-queue-dashboard.json
+  - name: dashboard-boomtime-keda
+    files:
+      - grafana/keda-dashboard.json
 generatorOptions:
   disableNameSuffixHash: true
 
