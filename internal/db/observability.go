@@ -222,6 +222,17 @@ type reqStats struct {
 
 func (s *reqStats) record(sql string) {
 	norm := normalizeSQL(sql)
+	// Transaction-control (begin/commit/rollback/savepoint/release) and session
+	// GUC statements (SET / SET LOCAL) are pgx + aggQuery bookkeeping, not data
+	// queries — every aggQuery read wraps its scan in Begin → SET LOCAL work_mem
+	// → query → Rollback. Counting them made the N+1 heuristic cry wolf: a
+	// request running 3 aggQuery reads got flagged "N+1 suspected
+	// duplicate_sql=rollback" (3 identical rollbacks) with no per-row query loop.
+	// Excluding them keeps both the total count and the duplicate detector on
+	// actual data queries.
+	if isTxNoise(norm) {
+		return
+	}
 	s.mu.Lock()
 	s.count++
 	if s.byNorm == nil {
@@ -229,6 +240,22 @@ func (s *reqStats) record(sql string) {
 	}
 	s.byNorm[norm]++
 	s.mu.Unlock()
+}
+
+// isTxNoise reports whether a normalized statement is transaction-control or a
+// session GUC set (SET / SET LOCAL) rather than a data query. A real query never
+// starts with these tokens (UPDATE ... SET normalizes to "update ...").
+func isTxNoise(norm string) bool {
+	switch {
+	case strings.HasPrefix(norm, "begin"),
+		strings.HasPrefix(norm, "commit"),
+		strings.HasPrefix(norm, "rollback"),
+		strings.HasPrefix(norm, "savepoint"),
+		strings.HasPrefix(norm, "release"),
+		strings.HasPrefix(norm, "set "):
+		return true
+	}
+	return false
 }
 
 // WithReqStats returns a context carrying a fresh per-request query counter.

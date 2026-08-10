@@ -80,6 +80,25 @@ var _ = ginkgo.Describe("observability", func() {
 		Expect(dupSQL).NotTo(BeEmpty())
 	})
 
+	ginkgo.It("record() excludes transaction-control + SET statements so aggQuery's per-read begin/set-local/rollback don't read as N+1", func() {
+		ctx := WithReqStats(context.Background())
+		tr := n1Tracer{}
+		// Three aggQuery reads, each: Begin → SET LOCAL work_mem → query → Rollback.
+		for i := 0; i < 3; i++ {
+			tr.TraceQueryStart(ctx, nil, traceStart("begin"))
+			tr.TraceQueryStart(ctx, nil, traceStart("SET LOCAL work_mem = '256MB'"))
+			tr.TraceQueryStart(ctx, nil, traceStart("SELECT * FROM heartbeats WHERE sender=$1"))
+			tr.TraceQueryStart(ctx, nil, traceStart("rollback"))
+		}
+		total, maxDup, dupSQL, ok := ReqStatsSummary(ctx)
+		Expect(ok).To(BeTrue())
+		// Only the 3 real SELECTs count — not the 9 begin/set/rollback bookkeeping
+		// statements that previously produced a false "duplicate_sql=rollback".
+		Expect(total).To(Equal(3))
+		Expect(maxDup).To(Equal(3))
+		Expect(dupSQL).To(ContainSubstring("heartbeats"))
+	})
+
 	ginkgo.It("normalizeSQL collapses literals/params/whitespace/IN-list variants to the same bucket", func() {
 		a := normalizeSQL("SELECT * FROM t WHERE id = $1 AND name = 'bob'")
 		b := normalizeSQL("select  *  from t where id = $2 and name = 'alice'")
