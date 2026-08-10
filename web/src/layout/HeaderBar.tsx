@@ -5,6 +5,7 @@ import {
   LogOut,
   Moon,
   Palette,
+  Search,
   Settings2,
   Sun,
   User,
@@ -32,6 +33,7 @@ import { useIsAdmin } from "@/features/auth/useIsAdmin";
 import { DevModeToggle } from "@/features/devtools";
 import { useHeaderSlotNode } from "@/layout/HeaderSlot";
 import { MobileNav } from "@/layout/MobileNav";
+import { openCommandPalette } from "@/components/CommandPalette";
 
 interface HeaderBarProps {
   username: string;
@@ -124,6 +126,21 @@ export function HeaderBar({ username, onLogout, onCreateSpace }: HeaderBarProps)
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
+        {/* Command palette (⌘K) trigger — an icon on mobile, a search-field
+            affordance with the shortcut hint on wide screens. */}
+        <button
+          type="button"
+          onClick={() => openCommandPalette()}
+          aria-label="Open command palette"
+          className="inline-flex h-9 items-center gap-2 rounded-lg border border-border/60 bg-muted/40 px-2.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Search className="h-4 w-4" />
+          <span className="hidden lg:inline">Search</span>
+          <kbd className="hidden rounded border border-border bg-background px-1.5 font-mono text-[10px] leading-5 lg:inline">
+            ⌘K
+          </kbd>
+        </button>
+
         {/* Admin-only dev utilities — renders nothing for normal users. */}
         {isAdmin && <DevModeToggle variant="ghost" size="icon" />}
 

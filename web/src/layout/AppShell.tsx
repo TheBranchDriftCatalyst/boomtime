@@ -6,6 +6,7 @@ import { AppShellNoScroll } from "@/layout/AppShellNoScroll";
 import { HeaderSlotProvider } from "@/layout/HeaderSlot";
 import { CreateSpaceDialog } from "@/features/spaces/CreateSpaceDialog";
 import { WelcomeModal } from "@/features/onboarding/WelcomeModal";
+import { CommandPalette } from "@/components/CommandPalette";
 import { useAuth } from "@/features/auth/useAuth";
 import { useCollapsedSidebar } from "@/layout/useCollapsedSidebar";
 
@@ -56,6 +57,10 @@ export function AppShell() {
       <CreateSpaceDialog
         open={createSpaceOpen}
         onOpenChange={setCreateSpaceOpen}
+      />
+      <CommandPalette
+        onCreateSpace={() => setCreateSpaceOpen(true)}
+        onLogout={handleLogout}
       />
       <WelcomeModal />
     </>
