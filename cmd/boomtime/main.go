@@ -295,6 +295,31 @@ func runCmd() *cobra.Command {
 					defer rdb.Close()
 					bus := imagejobs.NewRedisEventBus(rdb)
 
+					// Cross-pod Admin Logs relay ("worker logs in Admin Logs
+					// viewer"): a boomtime-worker pod's own LogHub collects
+					// its slog records but nothing reads it (role=worker
+					// binds no HTTP API). Relay them over Dragonfly/Redis so
+					// the server pod can inject them into ITS hub and the
+					// existing /api/v1/logs/ws stream picks them up.
+					//
+					// Strict role equality (== "worker" / == "server"), NOT
+					// IsWorkerRole()/IsServerRole() — those also match
+					// role="all", where server and worker are the SAME
+					// process sharing ONE hub already; relaying on top of
+					// that would inject every record a second time.
+					if cfg.Role == "server" {
+						go logging.SubscribeRedisIntoHub(ctx, logHub, rdb)
+						logger.Info("logging: subscribed to worker log relay", "channel", logging.LogsChannel)
+					}
+					if cfg.Role == "worker" {
+						hostID, herr := os.Hostname()
+						if herr != nil || hostID == "" {
+							hostID = "unknown-worker-host"
+						}
+						go logging.RelayHubToRedis(ctx, logHub, rdb, hostID)
+						logger.Info("logging: relaying logs to server via redis", "channel", logging.LogsChannel, "host", hostID)
+					}
+
 					if cfg.IsServerRole() {
 						producerCh, cherr := amqpConn.Channel()
 						if cherr != nil {

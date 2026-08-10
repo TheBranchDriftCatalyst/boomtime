@@ -128,6 +128,20 @@ var _ = Describe("LogHub", func() {
 		Expect(func() { h.Publish(LogEntry{Msg: "x"}) }).NotTo(Panic())
 		Expect(h.Backfill(0)).To(BeNil())
 	})
+
+	It("defaults an unset Source to server (backward-compat for every pre-existing Publish call)", func() {
+		h := NewLogHub(10)
+		h.Publish(LogEntry{Msg: "x"})
+		Expect(h.Backfill(0)[0].Source).To(Equal("server"))
+	})
+
+	It("preserves an explicitly-set Source (the worker relay's injection path)", func() {
+		h := NewLogHub(10)
+		h.Publish(LogEntry{Msg: "x", Source: "worker", Host: "boomtime-worker-1"})
+		got := h.Backfill(0)[0]
+		Expect(got.Source).To(Equal("worker"))
+		Expect(got.Host).To(Equal("boomtime-worker-1"))
+	})
 })
 
 var _ = Describe("FilterForUser (gaka-awh.2 owner scoping)", func() {

@@ -15,6 +15,18 @@ type LogEntry struct {
 	Msg   string    `json:"msg"`
 	// Attrs holds any structured slog attributes (flattened key->string).
 	Attrs map[string]string `json:"attrs,omitempty"`
+	// Source identifies which process emitted this record: "server" or
+	// "worker". Publish backfills the zero value to "server" so every
+	// pre-existing caller (the server's own teeHandler) keeps working
+	// unchanged — only the worker-pod log relay tags "worker" explicitly.
+	// See redis_relay.go (RelayHubToRedis / SubscribeRedisIntoHub), wired
+	// under the split worker-topology (role=worker/server + broker=rabbitmq).
+	Source string `json:"source"`
+	// Host is the emitting worker pod's os.Hostname(), set only on
+	// Source=="worker" records so an operator running multiple worker
+	// replicas (KEDA autoscale) can tell which pod a line came from. Empty
+	// for server-scope records.
+	Host string `json:"host,omitempty"`
 }
 
 // LogHub is an in-process ring buffer + fan-out for the server's own log
@@ -56,6 +68,9 @@ func NewLogHub(capacity int) *LogHub {
 func (h *LogHub) Publish(e LogEntry) {
 	if h == nil {
 		return
+	}
+	if e.Source == "" {
+		e.Source = "server"
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
