@@ -452,7 +452,7 @@ export function GithubLanguagesChart({
             ))}
           </div>
           {/* Legend: dot + name + share. */}
-          <ul className="grid min-h-0 flex-1 grid-cols-2 gap-x-4 gap-y-1 overflow-y-auto pr-1 font-mono text-[11px]">
+          <ul className="grid min-h-0 flex-1 grid-cols-1 gap-x-4 gap-y-1 overflow-y-auto pr-1 font-mono text-[11px] sm:grid-cols-2">
             {rows.map((r) => (
               <li key={r.name} className="flex items-baseline justify-between gap-2">
                 <span className="flex min-w-0 items-center gap-1.5">

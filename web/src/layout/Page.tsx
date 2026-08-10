@@ -65,7 +65,7 @@ function PageHeader({ title, subtitle, children, className }: PageHeaderProps) {
       data-testid="page-header"
       title={title}
       subtitle={subtitle}
-      className={cn("mb-0 shrink-0 px-6 pt-6", className)}
+      className={cn("mb-0 shrink-0 px-4 pt-4 sm:px-6 sm:pt-6", className)}
     >
       {children}
     </PageToolbar>
@@ -109,7 +109,7 @@ function PageContent({ children, className }: PageContentProps) {
   return (
     <div
       data-testid="page-content"
-      className={cn("min-h-0 flex-1 overflow-y-auto p-6 pt-4", className)}
+      className={cn("min-h-0 flex-1 overflow-y-auto p-4 pt-3 sm:p-6 sm:pt-4", className)}
     >
       {children}
     </div>

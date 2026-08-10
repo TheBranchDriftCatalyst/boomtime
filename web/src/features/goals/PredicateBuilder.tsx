@@ -333,7 +333,7 @@ function KindSwitcher({
 }) {
   return (
     <Select value={current} onValueChange={(v: string) => onChange(v as Predicate["kind"])}>
-      <SelectTrigger className="w-[180px] h-8 text-xs">
+      <SelectTrigger className="h-8 w-full text-xs sm:w-[180px]">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
@@ -538,7 +538,7 @@ function ActiveDaysLeafEditor({
           </button>
         )}
       </div>
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         <div>
           <Label htmlFor={id.op} className="text-xs">Op</Label>
           <Select

@@ -35,8 +35,8 @@ export function HistoryList({ jobs, selectedId, onSelect }: HistoryListProps) {
                 <TableHead>#</TableHead>
                 <TableHead>State</TableHead>
                 <TableHead>Range</TableHead>
-                <TableHead className="text-right">Imported</TableHead>
-                <TableHead className="text-right">Duration</TableHead>
+                <TableHead className="hidden text-right sm:table-cell">Imported</TableHead>
+                <TableHead className="hidden text-right sm:table-cell">Duration</TableHead>
                 <TableHead>Error</TableHead>
               </TableRow>
             </TableHeader>
@@ -57,10 +57,10 @@ export function HistoryList({ jobs, selectedId, onSelect }: HistoryListProps) {
                   <TableCell className="whitespace-nowrap text-muted-foreground">
                     {job.startDate.slice(0, 10)} → {job.endDate.slice(0, 10)}
                   </TableCell>
-                  <TableCell className="text-right font-mono">
+                  <TableCell className="hidden text-right font-mono sm:table-cell">
                     {job.importedCount.toLocaleString()}
                   </TableCell>
-                  <TableCell className="text-right font-mono text-muted-foreground">
+                  <TableCell className="hidden text-right font-mono text-muted-foreground sm:table-cell">
                     {formatElapsed(
                       job.startedAt ?? job.createdAt,
                       job.finishedAt,

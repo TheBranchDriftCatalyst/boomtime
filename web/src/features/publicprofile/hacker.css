@@ -44,7 +44,8 @@
 .public-dashboard__hero-title {
   font-family: var(--grid-tile-font-mono);
   font-weight: 700;
-  font-size: clamp(48px, 8vw, 96px);
+  font-size: clamp(32px, 9vw, 96px);
+  overflow-wrap: anywhere;
   text-transform: uppercase;
   letter-spacing: 0.02em;
   line-height: 0.95;
