@@ -284,6 +284,12 @@ func renderSpecPanel(f *Frame, d *Data, w, h, panelCount int, p SpecPanel) error
 	}
 
 	switch p.Primitive {
+	case "hero":
+		var username, tagline string
+		if d.Identity != nil {
+			username, tagline = d.Identity.Username, d.Identity.Tagline
+		}
+		EmitHero(f, r.X, r.Y, r.W, username, tagline)
 	case "bars":
 		res, err := resolveResources(d, p.Binding)
 		if err != nil {
@@ -333,8 +339,11 @@ func renderSpecPanel(f *Frame, d *Data, w, h, panelCount int, p SpecPanel) error
 		if r.H/2 < radius {
 			radius = r.H / 2
 		}
-		if radius > 42 {
-			radius = 42
+		// Cap keeps the ring from ballooning on a big panel (e.g. the
+		// social-card's 150×150 rect) while still letting the profile-summary
+		// / social-card rings read larger than the old 42px lid.
+		if radius > 60 {
+			radius = 60
 		}
 		EmitGradeRing(f, cx, cy, radius, d.Grade)
 	case "metric":

@@ -76,6 +76,22 @@
     ]
   },
   {
+    "kind": "social-card",
+    "target": "both",
+    "title": "boomtime",
+    "size": { "w": 1200, "h": 630 },
+    "panels": [
+      { "primitive": "hero", "binding": "identity", "rect": { "x": 48, "y": 70, "w": 660, "h": 150 } },
+      { "primitive": "stat-numeral", "binding": "total-seconds", "title": "TOTAL TRACKED", "rect": { "x": 748, "y": 96, "w": 200, "h": 90 } },
+      { "primitive": "stat-numeral", "binding": "daily-avg", "title": "DAILY AVG", "rect": { "x": 970, "y": 96, "w": 200, "h": 90 } },
+      { "primitive": "bars", "binding": "languages", "title": "Top languages", "rect": { "x": 48, "y": 250, "w": 1104, "h": 175 } },
+      { "primitive": "stat-numeral", "binding": "streak-current", "title": "CURRENT STREAK", "rect": { "x": 48, "y": 478, "w": 230, "h": 110 } },
+      { "primitive": "stat-numeral", "binding": "streak-longest", "title": "LONGEST STREAK", "rect": { "x": 320, "y": 478, "w": 230, "h": 110 } },
+      { "primitive": "ratio", "binding": "active-days", "rect": { "x": 600, "y": 478, "w": 250, "h": 110 } },
+      { "primitive": "grade-ring", "binding": "grade", "rect": { "x": 980, "y": 455, "w": 150, "h": 150 } }
+    ]
+  },
+  {
     "kind": "cumulative-area",
     "target": "both",
     "title": "Cumulative coding time",

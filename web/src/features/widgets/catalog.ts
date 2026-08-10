@@ -333,6 +333,21 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
     dashboardScopes: ["profile"],
     defaultLayout: { w: 6, h: 4 },
   },
+  // gaka social-card: the OpenGraph "social card" — a 3-row hero (username +
+  // total + daily avg / top-languages / streaks + grade ring) rendered at the
+  // 1200×630 OG size. target:"both" so it renders in-page (profile editor
+  // preview via SpecRenderer) AND as the backend SVG→PNG og:image. Big
+  // footprint on the composable grid (roughly the card's 2:1 aspect).
+  {
+    kind: "social-card",
+    title: "Social Card",
+    description:
+      "Your shareable OpenGraph card — hero, top languages, streaks & grade",
+    scopes: ["user"],
+    primitives: ["label", "graph", "grade"],
+    dashboardScopes: ["profile"],
+    defaultLayout: { w: 12, h: 6 },
+  },
   // gaka-364: labels/memeification showcase — renders all evaluated
   // labels grouped by category (tier / archetype / tribe). FE-only
   // widget, not registered in internal/widget/render.go's SVG kinds
@@ -515,6 +530,7 @@ export const SVG_RENDERABLE_KINDS = new Set<string>([
   "momentum",
   "profile-summary",
   "punchcard",
+  "social-card",
   "stats-card",
   "stats-card-with-grade",
   "top-langs",

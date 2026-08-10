@@ -166,6 +166,9 @@ export interface PublicDashboardPayload {
   platforms: ResourceStats[];
   categories: ResourceStats[];
   punchcard: PunchcardPayload;
+  // gaka social-card: the owner's optional social-card tagline. Feeds the
+  // "hero" primitive's second line + the og:description. Absent when unset.
+  tagline?: string;
   // gaka-keb: optional persisted dashboard layout. Absent when the owner
   // never saved one — FE falls back to the default layout for the scope.
   layout?: DashboardLayout;

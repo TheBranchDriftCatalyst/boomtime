@@ -47,10 +47,12 @@ const OTHER_CATEGORY = "Other";
 // section comments (catalog.ts's gaka-* banners) — see that file for what
 // each kind actually renders.
 const CATEGORY_BY_KIND: Record<string, string> = {
-  // Identity chrome — hero tile, grade poster, awarded-labels showcase.
+  // Identity chrome — hero tile, grade poster, awarded-labels showcase,
+  // shareable OpenGraph social card.
   "grade-badge": "Identity",
   "hero-identity": "Identity",
   "labels-showcase": "Identity",
+  "social-card": "Identity",
 
   // Headline stat cards + composite.
   "stats-card": "Stats",

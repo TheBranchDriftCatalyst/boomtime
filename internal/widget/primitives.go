@@ -94,6 +94,32 @@ func EmitGradeRing(f *Frame, cx, cy, r int, g *stats.GradeResult) {
 	f.WriteString(`</g>`)
 }
 
+// ---- hero (social-card identity banner) ----
+
+// EmitHero draws the big identity banner at the top of the social-card OG
+// image: a "@username" headline in the title accent + an optional tagline
+// line beneath it in muted text. x/y is the top-left of the block; the
+// username baseline sits at y+52, the tagline at y+86. Both strings are
+// xmlEscape'd here. Empty username falls back to "boomtime" so a stray render
+// without Identity still produces a branded card rather than a blank hero.
+func EmitHero(f *Frame, x, y, w int, username, tagline string) {
+	th := f.Theme
+	name := strings.TrimSpace(username)
+	if name == "" {
+		name = "boomtime"
+	}
+	f.Printf(`<g class="fade">`)
+	f.Printf(`<text x="%d" y="%d" font-size="52" font-weight="700" fill="%s">%s</text>`,
+		x, y+52, th.Title, xmlEscape("@"+truncate(name, 22)))
+	line := strings.TrimSpace(tagline)
+	if line == "" {
+		line = "coding activity"
+	}
+	f.Printf(`<text x="%d" y="%d" font-size="20" fill="%s">%s</text>`,
+		x, y+88, th.TextMuted, xmlEscape(truncate(line, 52)))
+	f.WriteString(`</g>`)
+}
+
 // ---- metric row (two-line label + value) ----
 
 // EmitMetric writes a small "LABEL: value" pair — used as summary stats on

@@ -72,6 +72,12 @@ export interface SpecRenderData {
   // to an empty state rather than throwing when unset.
   momentum?: MomentumPayload;
   sessions?: SessionsPayload;
+  // gaka social-card: identity fields the "hero" primitive draws. Present on
+  // PublicDashboardPayload (username always; tagline when the owner set one);
+  // other data sources leave them undefined and the hero falls back to the
+  // boomtime wordmark.
+  username?: string;
+  tagline?: string;
 }
 
 export interface SpecRendererProps {
@@ -131,6 +137,7 @@ function Panel(props: PrimitiveProps) {
 // ---------------------------------------------------------------------------
 
 const PRIMITIVE_REGISTRY: Record<string, (props: PrimitiveProps) => React.ReactElement> = {
+  hero: HeroPrimitive,
   bars: BarsPrimitive,
   chips: ChipsPrimitive,
   calendar: CalendarPrimitive,
@@ -179,6 +186,27 @@ function resolveResources(data: SpecRenderData, binding: string): ResourceStats[
     default:
       return [];
   }
+}
+
+// "hero" is the social-card identity banner — big "@username" + optional
+// tagline. Mirrors internal/widget/primitives.go's EmitHero (username falls
+// back to "boomtime", tagline to "coding activity").
+function HeroPrimitive({ data }: PrimitiveProps) {
+  const name = (data.username ?? "").trim() || "boomtime";
+  const line = (data.tagline ?? "").trim() || "coding activity";
+  return (
+    <div
+      className="flex h-full w-full flex-col justify-center gap-1 px-2"
+      data-testid="spec-hero"
+    >
+      <div className="truncate font-mono text-2xl font-bold leading-none text-[color:var(--primary)] sm:text-3xl">
+        @{name}
+      </div>
+      <div className="truncate text-sm text-[color:var(--muted-foreground)]">
+        {line}
+      </div>
+    </div>
+  );
 }
 
 function BarsPrimitive({ panel, data, view, height }: PrimitiveProps) {

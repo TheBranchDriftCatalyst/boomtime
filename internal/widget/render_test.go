@@ -396,6 +396,7 @@ var _ = Describe("Kinds() matches the FE catalog verbatim", func() {
 			"platforms-chips",
 			"profile-summary",
 			"punchcard",
+			"social-card",
 			"stats-card",
 			"stats-card-with-grade",
 			"top-langs",

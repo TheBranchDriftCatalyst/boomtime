@@ -48,6 +48,20 @@ type Data struct {
 	// spec tree, sub-conditions, or private/disabled siblings, only the
 	// name + progress fraction + hit flag the primitives draw.
 	Goals []GoalProgressLite
+	// Identity carries the owner's public display info for the "hero"
+	// primitive on the social-card kind (the OpenGraph card). nil for every
+	// other kind — the hero primitive degrades to a "boomtime" wordmark when
+	// unset, so a stray social-card render without it never panics.
+	Identity *Identity
+}
+
+// Identity is the public, non-sensitive display info the social-card "hero"
+// primitive draws: the profile username and an optional owner-set tagline.
+// Deliberately minimal — nothing here is scrubbed or encrypted because it
+// only ever renders on an already-public profile card.
+type Identity struct {
+	Username string
+	Tagline  string
 }
 
 // GoalProgressLite is the thin, already-privacy-filtered projection of a
@@ -151,6 +165,19 @@ func topEntries(list []model.ResourceStats, n int) []model.ResourceStats {
 		sorted = sorted[:n]
 	}
 	return sorted
+}
+
+// RenderBrandCard draws a generic 1200×630 boomtime-branded card (the
+// social-card canvas) with NO user data — served as the OG image for a
+// non-public / unknown profile slug so an unfurl shows a clean brand card
+// rather than a broken image, without leaking whether the slug exists. Same
+// Frame chrome + hero primitive the social-card spec uses, so it reads as a
+// deliberately-blank sibling of the real card.
+func RenderBrandCard(theme string) ([]byte, error) {
+	th := themeFor(theme)
+	f := OpenFrame(1200, 630, th, "boomtime", "self-hosted coding stats")
+	EmitHero(f, 48, 230, 1000, "boomtime", "Share your coding activity as a card")
+	return f.Close(), nil
 }
 
 // ---- badge (native flat pill; the shields.io proxy at /badge/svg stays) ----
