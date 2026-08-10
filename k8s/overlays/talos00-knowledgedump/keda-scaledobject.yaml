@@ -17,7 +17,13 @@ spec:
     name: boomtime-worker
   minReplicaCount: 0 # scale-to-zero when the queue is empty
   maxReplicaCount: 4
-  cooldownPeriod: 120 # keep a worker warm 2 min after the queue drains
+  # MUST exceed the max ComfyUI generation time (~230s observed). The amqp
+  # scaler counts READY messages, which drop to 0 the instant a worker consumes
+  # (the delivery goes unacked). A short cooldown then scales the worker down
+  # mid-generation → SIGKILL before the job acks → RabbitMQ redelivers → the
+  # next worker re-fires ComfyUI → amplification loop (one press → N images).
+  # 600s keeps the worker alive well past any single generation.
+  cooldownPeriod: 600
   pollingInterval: 20
   triggers:
     - type: rabbitmq

@@ -42,7 +42,10 @@ spec:
         app: boomtime-worker
         app.kubernetes.io/name: boomtime-worker
     spec:
-      terminationGracePeriodSeconds: 120 # let an in-flight ComfyUI regen drain
+      # Must exceed the max ComfyUI generation (~230s) so an in-flight regen
+      # fully drains on SIGTERM before SIGKILL — otherwise the delivery stays
+      # unacked and redelivers, re-firing ComfyUI (see keda-scaledobject.yaml).
+      terminationGracePeriodSeconds: 600
       containers:
         - name: boomtime-worker
           image: ghcr.io/thebranchdriftcatalyst/boomtime:latest
