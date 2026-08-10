@@ -1,0 +1,33 @@
+---
+# Deliver the scoped MinIO credentials to the SERVER for the durable
+# social-card cache (gaka-fym5). Only the server renders og.png, so only it
+# needs S3 — the worker (image-label jobs) is untouched.
+#
+# The secret `boomtime-cards-s3-scoped` is reflected into this namespace by the
+# talos-homelab scoped-users ESO pattern (keys AWS_ACCESS_KEY_ID /
+# AWS_SECRET_ACCESS_KEY). Until it exists these refs are `optional: true`, so
+# the pod boots and the cache stays disabled (S3Enabled() needs all four
+# BOOM_S3_* present — see s3-config.yaml). Purely additive env; strategic-merge
+# coexists with patch-server-rabbit.yaml's env on the same container.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: boomtime
+spec:
+  template:
+    spec:
+      containers:
+        - name: boomtime
+          env:
+            - name: BOOM_S3_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: boomtime-cards-s3-scoped
+                  key: AWS_ACCESS_KEY_ID
+                  optional: true
+            - name: BOOM_S3_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: boomtime-cards-s3-scoped
+                  key: AWS_SECRET_ACCESS_KEY
+                  optional: true
