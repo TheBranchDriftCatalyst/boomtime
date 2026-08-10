@@ -242,6 +242,16 @@ func (h *Handler) PutPublicProfile(c *echo.Context) error {
 	if err != nil {
 		return apihelpers.InternalErr(h.Logger, c, "public profile card readback failed", err)
 	}
+	// The card image may have changed (theme/tagline/enable/slug) — drop the
+	// cached PNG so the next unfurl re-renders instead of waiting out the S3
+	// TTL (gaka-fym5). Best-effort: a stale/missing object next request is
+	// harmless, so a Delete failure never fails the save.
+	if h.Cards != nil {
+		if derr := h.Cards.Delete(c.Request().Context(), owner); derr != nil {
+			h.Logger.Warn("social-card cache invalidation failed", "user", owner, "err", derr)
+		}
+	}
+
 	h.Logger.Info("public profile updated", "user", owner, "enabled", enabled)
 	return c.JSON(http.StatusOK, getProfileResponse{
 		Enabled: enabled, Slug: slug, CardTheme: theme, CardTagline: tagline,
@@ -497,19 +507,54 @@ func (h *Handler) buildSocialCardData(ctx context.Context, username string) (*wi
 // a broken image — and reveals nothing (no oracle).
 func (h *Handler) PublicProfileOGImage(c *echo.Context) error {
 	ctx := c.Request().Context()
+	username, isUser := h.resolvePublicSlug(ctx, c.Param("slug"))
+
+	// Real public users pass through the durable S3 cache (gaka-fym5): one
+	// object per user, refreshed ~daily off its LastModified. MinIO stays
+	// private — the app is the only S3 client (passthrough, not a redirect) —
+	// and the ETag/Cache-Control below still lets repeat crawler/browser hits
+	// 304 without touching S3 or the renderer. The generic brand card (unknown
+	// slug) is cheap + identical for everyone, so it's always rendered live.
+	if isUser && h.Cards != nil {
+		if cached, hit, gerr := h.Cards.Get(ctx, username); gerr == nil && hit && cached.Fresh {
+			c.Response().Header().Set("X-Card-Cache", "hit")
+			return serveCardPNG(c, cached.PNG)
+		} else if gerr != nil {
+			// A cache read error must not fail the unfurl — fall through to a
+			// live render (and a fresh Put) below.
+			h.Logger.Warn("social-card cache read failed; rendering live", "user", username, "err", gerr)
+		}
+		png, rerr := h.renderCardPNG(ctx, username, true)
+		if rerr != nil {
+			return apihelpers.InternalErr(h.Logger, c, "og social card render failed", rerr)
+		}
+		if perr := h.Cards.Put(ctx, username, png); perr != nil {
+			h.Logger.Warn("social-card cache write failed", "user", username, "err", perr)
+		}
+		c.Response().Header().Set("X-Card-Cache", "miss")
+		return serveCardPNG(c, png)
+	}
+
+	png, err := h.renderCardPNG(ctx, username, isUser)
+	if err != nil {
+		return apihelpers.InternalErr(h.Logger, c, "og social card render failed", err)
+	}
+	return serveCardPNG(c, png)
+}
+
+// renderCardPNG builds the 1200×630 card PNG for a real public user (isUser) or
+// the generic boomtime brand card (!isUser). Extracted so the cache-fill path
+// and the live-render path share one implementation (gaka-fym5).
+func (h *Handler) renderCardPNG(ctx context.Context, username string, isUser bool) ([]byte, error) {
 	theme := "dark"
 	var svg []byte
 	var err error
-
-	username, ok := h.resolvePublicSlug(ctx, c.Param("slug"))
-	if !ok {
+	if !isUser {
 		svg, err = widget.RenderBrandCard(theme)
 	} else {
-		var data *widget.Data
-		var cardTheme string
-		data, cardTheme, err = h.buildSocialCardData(ctx, username)
-		if err != nil {
-			return apihelpers.InternalErr(h.Logger, c, "og social card data build failed", err)
+		data, cardTheme, derr := h.buildSocialCardData(ctx, username)
+		if derr != nil {
+			return nil, derr
 		}
 		if cardTheme != "" {
 			theme = cardTheme
@@ -520,19 +565,21 @@ func (h *Handler) PublicProfileOGImage(c *echo.Context) error {
 		})
 	}
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "og social card render failed", err)
+		return nil, err
 	}
+	return widget.RenderPNG(ctx, svg, socialCardW, socialCardH)
+}
 
-	png, err := widget.RenderPNG(ctx, svg, socialCardW, socialCardH)
-	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "og social card rasterize failed", err)
-	}
-
+// serveCardPNG writes the PNG with a content-hash ETag + a browser/CDN cache
+// window, answering If-None-Match with 304. Shared by the cache-hit,
+// cache-miss, and live-render paths so every response is byte-for-byte
+// consistent (gaka-fym5).
+func serveCardPNG(c *echo.Context, png []byte) error {
 	sum := sha256.Sum256(png)
 	etag := `"` + hex.EncodeToString(sum[:8]) + `"`
 	// A shareable image doesn't change often; cache 10m at the browser/CDN and
-	// let the ETag answer revalidation cheaply. Owner curation / stats changes
-	// propagate on the next cache window — acceptable for an unfurl thumbnail.
+	// let the ETag answer revalidation cheaply. S3 holds the durable copy, and
+	// owner curation invalidates it (Delete) so edits don't wait out the window.
 	c.Response().Header().Set("Cache-Control", "public, max-age=600")
 	c.Response().Header().Set("ETag", etag)
 	if match := c.Request().Header.Get("If-None-Match"); match != "" && match == etag {

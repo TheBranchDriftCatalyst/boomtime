@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/cardstore"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/cache"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
@@ -58,18 +59,31 @@ type Handler struct {
 	// level tests overwrite this field with github.NewServiceForTest pointed at
 	// a mock-GitHub httptest server.
 	GithubStats *github.Service
+	// Cards is the durable S3/MinIO social-card cache (gaka-fym5). nil when
+	// BOOM_S3_* is unset (or the client failed to init) — the og.png handler
+	// then renders live on every request rather than erroring.
+	Cards *cardstore.Store
 }
 
 // New constructs an identity.Handler with the passed-in shared deps.
 // Every field is required in production; nil-checks are the caller's
 // responsibility (the god-type's New wires all four unconditionally).
 func New(database *db.DB, cfg *config.Config, logger *slog.Logger, cch *cache.TTL) *Handler {
+	// Durable social-card cache (gaka-fym5). Unset config → (nil, nil); a
+	// client-init failure → logged + nil. Either way Cards stays nil and the
+	// og.png handler renders live, so the feature degrades gracefully.
+	cards, err := cardstore.New(cfg.S3Endpoint, cfg.S3Bucket, cfg.S3AccessKey, cfg.S3SecretKey, cfg.S3UseSSL)
+	if err != nil {
+		logger.Warn("social-card S3 cache disabled: client init failed", "err", err)
+		cards = nil
+	}
 	return &Handler{
 		DB:          database,
 		Cfg:         cfg,
 		Logger:      logger,
 		Cache:       cch,
 		GithubStats: github.NewService(database, logger),
+		Cards:       cards,
 	}
 }
 

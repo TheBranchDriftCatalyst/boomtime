@@ -258,6 +258,17 @@ type Config struct {
 	// link to). Set per-overlay: local -> http://localhost:15672 (Tilt
 	// port-forward), prod -> the LAN-gated IngressRoute host.
 	RabbitMgmtURL string
+
+	// S3 / MinIO object storage for the durable social-card cache (gaka-fym5).
+	// When endpoint + bucket + both credentials are set, the og.png handler
+	// serves each user's rendered card from S3 (one object per user, refreshed
+	// daily) instead of rasterizing on every request. Unset = disabled: the
+	// handler falls back to live rendering (the local-dev default).
+	S3Endpoint  string // host:port, no scheme, e.g. minio-hl.minio.svc:9000
+	S3Bucket    string // e.g. boomtime-cards
+	S3AccessKey string
+	S3SecretKey string
+	S3UseSSL    bool // TLS to the S3 endpoint (in-cluster MinIO: false)
 }
 
 func getEnv(key, def string) string {
@@ -451,6 +462,14 @@ func Load() *Config {
 	c.RedisPassword = getEnv("BOOM_REDIS_PASSWORD", "")
 	c.RabbitMgmtURL = getEnv("BOOM_RABBITMQ_MGMT_URL", "")
 
+	// S3 / MinIO durable social-card cache (gaka-fym5). All-or-nothing:
+	// S3Enabled() gates the handler on all four being present.
+	c.S3Endpoint = getEnv("BOOM_S3_ENDPOINT", "")
+	c.S3Bucket = getEnv("BOOM_S3_BUCKET", "")
+	c.S3AccessKey = getEnv("BOOM_S3_ACCESS_KEY", "")
+	c.S3SecretKey = getEnv("BOOM_S3_SECRET_KEY", "")
+	c.S3UseSSL = strings.EqualFold(getEnv("BOOM_S3_USE_SSL", "false"), "true")
+
 	// gaka-dg7: operator-wide default TZ for users with no explicit pick.
 	// Validate here so an invalid IANA name never lands into the resolver —
 	// a bogus value from the env would cause every subsequent AT TIME ZONE
@@ -594,6 +613,15 @@ func (c *Config) IsWorkerRole() bool {
 // stray BOOM_QUEUE_BROKER=RabbitMQ doesn't silently fall through to inprocess.
 func (c *Config) BrokerRabbit() bool {
 	return strings.EqualFold(c.QueueBroker, "rabbitmq")
+}
+
+// S3Enabled reports whether the durable social-card cache is configured — all
+// of endpoint + bucket + both credentials must be present. When false the
+// og.png handler renders live on every request (the unconfigured / local-dev
+// default), so the feature degrades gracefully rather than erroring.
+func (c *Config) S3Enabled() bool {
+	return c.S3Endpoint != "" && c.S3Bucket != "" &&
+		c.S3AccessKey != "" && c.S3SecretKey != ""
 }
 
 // LabelImagesReconcileEnabled reports whether the startup "fill missing images"
