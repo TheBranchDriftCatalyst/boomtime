@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ComponentType, ReactNode } from "react";
 import { NavLink } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -18,6 +18,12 @@ import {
   Target,
   UserCircle,
 } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@thebranchdriftcatalyst/catalyst-ui/ui/tooltip";
 import { useSpaces } from "@/features/spaces/useSpaces";
 import { useIsAdmin } from "@/features/auth/useIsAdmin";
 import { api } from "@/lib/api";
@@ -50,11 +56,67 @@ function sidebarItemClass(collapsed: boolean, isActive: boolean): string {
   );
 }
 
-interface SidebarProps {
+/** RailTip — when the rail is collapsed, wrap an item in a styled tooltip that
+ * flies out to the right showing its label (the icon-only rail is a mystery
+ * without it). When expanded (or in the mobile drawer, where collapsed is
+ * always false) it renders the child untouched — no tooltip, no wrapper. This
+ * replaces the old native `title=` attributes, which were slow, unstyled, and
+ * inconsistently positioned. */
+function RailTip({
+  collapsed,
+  label,
+  children,
+}: {
   collapsed: boolean;
-  onToggleCollapsed: () => void;
-  onLogout: () => void;
-  onCreateSpace: () => void;
+  label: string;
+  children: ReactNode;
+}) {
+  if (!collapsed) return <>{children}</>;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="right" sideOffset={8}>
+        {label}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** NavItem — a single top-level nav destination. Owns the RailTip wrap, the
+ * active styling, and calls onNavigate on click (the mobile drawer passes a
+ * close-the-sheet callback here; the rail passes nothing). */
+function NavItem({
+  to,
+  end,
+  icon: Icon,
+  name,
+  collapsed,
+  onNavigate,
+  testId,
+}: {
+  to: string;
+  end?: boolean;
+  icon: ComponentType<{ className?: string }>;
+  name: string;
+  collapsed: boolean;
+  onNavigate?: () => void;
+  testId?: string;
+}) {
+  return (
+    <RailTip collapsed={collapsed} label={name}>
+      <NavLink
+        to={to}
+        end={end}
+        aria-label={name}
+        onClick={onNavigate}
+        data-testid={testId}
+        className={({ isActive }) => sidebarItemClass(collapsed, isActive)}
+      >
+        <Icon className="h-4 w-4 shrink-0" />
+        {!collapsed && <span className="truncate">{name}</span>}
+      </NavLink>
+    </RailTip>
+  );
 }
 
 /** Spaces — dynamic, user-created scoped dashboards. Also hosts the
@@ -67,10 +129,12 @@ interface SidebarProps {
 function SpacesNavGroup({
   collapsed,
   onCreateSpace,
+  onNavigate,
   publicProfileSlot,
 }: {
   collapsed: boolean;
   onCreateSpace: () => void;
+  onNavigate?: () => void;
   publicProfileSlot?: ReactNode;
 }) {
   const { data: spaces } = useSpaces();
@@ -93,30 +157,35 @@ function SpacesNavGroup({
       {(spaces ?? []).map((space) => {
         const initial = space.name.trim().charAt(0).toUpperCase() || "S";
         return (
-          <NavLink
-            key={space.id}
-            to={`/app/space/${space.id}`}
-            title={collapsed ? space.name : undefined}
-            aria-label={space.name}
-            className={({ isActive }) => sidebarItemClass(collapsed, isActive)}
-          >
-            <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm bg-secondary text-[10px] font-semibold text-secondary-foreground">
-              {initial}
-            </span>
-            {!collapsed && <span className="truncate">{space.name}</span>}
-          </NavLink>
+          <RailTip key={space.id} collapsed={collapsed} label={space.name}>
+            <NavLink
+              to={`/app/space/${space.id}`}
+              aria-label={space.name}
+              onClick={onNavigate}
+              className={({ isActive }) => sidebarItemClass(collapsed, isActive)}
+            >
+              <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm bg-secondary text-[10px] font-semibold text-secondary-foreground">
+                {initial}
+              </span>
+              {!collapsed && <span className="truncate">{space.name}</span>}
+            </NavLink>
+          </RailTip>
         );
       })}
 
-      <button
-        onClick={onCreateSpace}
-        title={collapsed ? "New space" : undefined}
-        aria-label="New space"
-        className={cn("w-full", sidebarItemClass(collapsed, false))}
-      >
-        <Plus className="h-4 w-4 shrink-0" />
-        {!collapsed && "New space"}
-      </button>
+      <RailTip collapsed={collapsed} label="New space">
+        <button
+          onClick={() => {
+            onNavigate?.();
+            onCreateSpace();
+          }}
+          aria-label="New space"
+          className={cn("w-full", sidebarItemClass(collapsed, false))}
+        >
+          <Plus className="h-4 w-4 shrink-0" />
+          {!collapsed && "New space"}
+        </button>
+      </RailTip>
     </div>
   );
 }
@@ -128,18 +197,22 @@ function SpacesNavGroup({
  * URL is reachable from within that page. Always shown for the logged-in owner
  * (unlike the old external link, which hid until a public profile was enabled)
  * so they can always reach — and set up — their profile. */
-function ProfileNavLink({ collapsed }: { collapsed: boolean }) {
+function ProfileNavLink({
+  collapsed,
+  onNavigate,
+}: {
+  collapsed: boolean;
+  onNavigate?: () => void;
+}) {
   return (
-    <NavLink
+    <NavItem
       to="/app/profile"
-      title={collapsed ? "Profile" : undefined}
-      aria-label="Profile"
-      className={({ isActive }) => sidebarItemClass(collapsed, isActive)}
-      data-testid="sidebar-public-profile"
-    >
-      <UserCircle className="h-4 w-4 shrink-0" />
-      {!collapsed && "Profile"}
-    </NavLink>
+      icon={UserCircle}
+      name="Profile"
+      collapsed={collapsed}
+      onNavigate={onNavigate}
+      testId="sidebar-public-profile"
+    />
   );
 }
 
@@ -149,7 +222,13 @@ function ProfileNavLink({ collapsed }: { collapsed: boolean }) {
  * up the parent link. Hidden entirely (not disabled, not "unauthorized")
  * for non-admins — same visual model as PublicProfileNavLink: if it isn't
  * yours, it isn't in the sidebar. */
-function AdminNavLink({ collapsed }: { collapsed: boolean }) {
+function AdminNavLink({
+  collapsed,
+  onNavigate,
+}: {
+  collapsed: boolean;
+  onNavigate?: () => void;
+}) {
   const { isAdmin, isLoading } = useIsAdmin();
   // Render nothing during the first-paint auth check so we don't flash a
   // link in for admins-of-record who reload. The Overview page is happy
@@ -157,37 +236,47 @@ function AdminNavLink({ collapsed }: { collapsed: boolean }) {
   if (isLoading || !isAdmin) return null;
 
   return (
-    <NavLink
+    <NavItem
       to="/app/admin"
-      title={collapsed ? "Admin" : undefined}
-      aria-label="Admin"
-      className={({ isActive }) => sidebarItemClass(collapsed, isActive)}
-      data-testid="sidebar-admin"
-    >
-      <ShieldCheck className="h-4 w-4 shrink-0" />
-      {!collapsed && "Admin"}
-    </NavLink>
+      icon={ShieldCheck}
+      name="Admin"
+      collapsed={collapsed}
+      onNavigate={onNavigate}
+      testId="sidebar-admin"
+    />
   );
 }
 
-/** App sidebar: brand, nav items, the Spaces group, and the footer actions. */
-export function Sidebar({
+interface SidebarBodyProps {
+  collapsed: boolean;
+  onLogout: () => void;
+  onCreateSpace: () => void;
+  /** Called after any nav destination is clicked — the mobile drawer passes a
+   * close-the-sheet callback so tapping a link dismisses the drawer. */
+  onNavigate?: () => void;
+  /** The collapse/expand toggle only makes sense on the desktop rail; the
+   * mobile drawer hides it (there's no rail to collapse to). */
+  onToggleCollapsed?: () => void;
+  showCollapseToggle?: boolean;
+}
+
+/** SidebarBody — the brand + nav + footer, shared verbatim by the desktop rail
+ * (`Sidebar`) and the mobile drawer (`MobileNav`) so the two never drift. The
+ * outer container (the <aside> or the <SheetContent>) owns width + background
+ * and lays this out as a flex column. */
+export function SidebarBody({
   collapsed,
-  onToggleCollapsed,
   onLogout,
   onCreateSpace,
-}: SidebarProps) {
+  onNavigate,
+  onToggleCollapsed,
+  showCollapseToggle = true,
+}: SidebarBodyProps) {
   return (
-    /* Sidebar — collapsible to an icon-only rail. */
-    <aside
-      className={cn(
-        "hidden shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground transition-[width] duration-200 ease-in-out md:flex",
-        collapsed ? "w-16" : "w-60",
-      )}
-    >
+    <>
       <div
         className={cn(
-          "flex h-16 items-center border-b",
+          "flex h-16 shrink-0 items-center border-b",
           collapsed ? "justify-center px-0" : "gap-2 px-6",
         )}
       >
@@ -197,27 +286,23 @@ export function Sidebar({
           aria-hidden="true"
           className="h-8 w-8 shrink-0 rounded-lg"
         />
-        {!collapsed && (
-          <span className="text-lg font-semibold">Boomtime</span>
-        )}
+        {!collapsed && <span className="text-lg font-semibold">Boomtime</span>}
       </div>
 
-      <nav className="flex-1 space-y-1 p-3">
+      <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3">
         {NAV.map((item) => (
-          <NavLink
+          <NavItem
             key={item.to}
             to={item.to}
             end={item.end}
-            title={collapsed ? item.name : undefined}
-            aria-label={item.name}
-            className={({ isActive }) => sidebarItemClass(collapsed, isActive)}
-          >
-            <item.icon className="h-4 w-4 shrink-0" />
-            {!collapsed && item.name}
-          </NavLink>
+            icon={item.icon}
+            name={item.name}
+            collapsed={collapsed}
+            onNavigate={onNavigate}
+          />
         ))}
 
-        <AdminNavLink collapsed={collapsed} />
+        <AdminNavLink collapsed={collapsed} onNavigate={onNavigate} />
 
         {/* Profile lives in the Spaces group — it's semantically a "space" too
             (a scoped, publishable view of your data). Order: Profile first,
@@ -225,35 +310,45 @@ export function Sidebar({
         <SpacesNavGroup
           collapsed={collapsed}
           onCreateSpace={onCreateSpace}
-          publicProfileSlot={<ProfileNavLink collapsed={collapsed} />}
+          onNavigate={onNavigate}
+          publicProfileSlot={
+            <ProfileNavLink collapsed={collapsed} onNavigate={onNavigate} />
+          }
         />
       </nav>
 
-      <div className="space-y-1 border-t p-3">
-        <button
-          onClick={onLogout}
-          title={collapsed ? "Logout" : undefined}
-          aria-label="Logout"
-          className={cn("w-full", sidebarItemClass(collapsed, false))}
-        >
-          <LogOut className="h-4 w-4 shrink-0" />
-          {!collapsed && "Logout"}
-        </button>
+      <div className="shrink-0 space-y-1 border-t p-3">
+        <RailTip collapsed={collapsed} label="Logout">
+          <button
+            onClick={onLogout}
+            aria-label="Logout"
+            className={cn("w-full", sidebarItemClass(collapsed, false))}
+          >
+            <LogOut className="h-4 w-4 shrink-0" />
+            {!collapsed && "Logout"}
+          </button>
+        </RailTip>
 
-        <button
-          onClick={onToggleCollapsed}
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          aria-expanded={!collapsed}
-          className={cn("w-full", sidebarItemClass(collapsed, false))}
-        >
-          {collapsed ? (
-            <PanelLeftOpen className="h-4 w-4 shrink-0" />
-          ) : (
-            <PanelLeftClose className="h-4 w-4 shrink-0" />
-          )}
-          {!collapsed && "Collapse"}
-        </button>
+        {showCollapseToggle && onToggleCollapsed && (
+          <RailTip
+            collapsed={collapsed}
+            label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            <button
+              onClick={onToggleCollapsed}
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-expanded={!collapsed}
+              className={cn("w-full", sidebarItemClass(collapsed, false))}
+            >
+              {collapsed ? (
+                <PanelLeftOpen className="h-4 w-4 shrink-0" />
+              ) : (
+                <PanelLeftClose className="h-4 w-4 shrink-0" />
+              )}
+              {!collapsed && "Collapse"}
+            </button>
+          </RailTip>
+        )}
 
         {!collapsed && (
           <>
@@ -262,7 +357,42 @@ export function Sidebar({
           </>
         )}
       </div>
-    </aside>
+    </>
+  );
+}
+
+interface SidebarProps {
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+  onLogout: () => void;
+  onCreateSpace: () => void;
+}
+
+/** App sidebar: the desktop icon-collapsible rail. Wraps the shared SidebarBody
+ * in a TooltipProvider so the collapsed rail's fly-out labels work. Hidden
+ * below md — the mobile nav is the Sheet drawer in HeaderBar (MobileNav). */
+export function Sidebar({
+  collapsed,
+  onToggleCollapsed,
+  onLogout,
+  onCreateSpace,
+}: SidebarProps) {
+  return (
+    <TooltipProvider delayDuration={0}>
+      <aside
+        className={cn(
+          "hidden shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground transition-[width] duration-200 ease-in-out md:flex",
+          collapsed ? "w-16" : "w-60",
+        )}
+      >
+        <SidebarBody
+          collapsed={collapsed}
+          onToggleCollapsed={onToggleCollapsed}
+          onLogout={onLogout}
+          onCreateSpace={onCreateSpace}
+        />
+      </aside>
+    </TooltipProvider>
   );
 }
 

@@ -31,10 +31,12 @@ import { UserAvatarImage } from "@/features/publicprofile/UserAvatarImage";
 import { useIsAdmin } from "@/features/auth/useIsAdmin";
 import { DevModeToggle } from "@/features/devtools";
 import { useHeaderSlotNode } from "@/layout/HeaderSlot";
+import { MobileNav } from "@/layout/MobileNav";
 
 interface HeaderBarProps {
   username: string;
   onLogout: () => void;
+  onCreateSpace: () => void;
 }
 
 function greetingFor(hour: number): string {
@@ -51,7 +53,7 @@ function greetingFor(hour: number): string {
  * account nav, a Theme submenu (theme / variant / effects), a quick dark-mode
  * toggle, and logout. The left side carries a light quick-look greeting.
  */
-export function HeaderBar({ username, onLogout }: HeaderBarProps) {
+export function HeaderBar({ username, onLogout, onCreateSpace }: HeaderBarProps) {
   const navigate = useNavigate();
   const { theme, setTheme, variant, setVariant, effects, updateEffect } =
     useTheme();
@@ -96,6 +98,9 @@ export function HeaderBar({ username, onLogout }: HeaderBarProps) {
         boxShadow: "0 1px 0 0 color-mix(in oklab, var(--primary) 14%, transparent)",
       }}
     >
+      {/* Mobile-only hamburger → nav drawer (the desktop rail is hidden < md). */}
+      <MobileNav onLogout={onLogout} onCreateSpace={onCreateSpace} />
+
       {/* Left/center: hoisted page chrome (tab strip) when a page set one,
           else a time-aware greeting with a refined terminal treatment.
           flex-1 min-w-0 gives the slot room; the strip scrolls-x on narrow

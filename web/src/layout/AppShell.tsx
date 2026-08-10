@@ -41,7 +41,13 @@ export function AppShell() {
               onCreateSpace={() => setCreateSpaceOpen(true)}
             />
           }
-          header={<HeaderBar username={username} onLogout={handleLogout} />}
+          header={
+            <HeaderBar
+              username={username}
+              onLogout={handleLogout}
+              onCreateSpace={() => setCreateSpaceOpen(true)}
+            />
+          }
         >
           <Outlet />
         </AppShellNoScroll>
