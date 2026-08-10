@@ -69,8 +69,14 @@ type Spec struct {
 	// DefaultView mirrors WidgetCatalogEntry.defaultView (catalog.ts) —
 	// carried here so a future FE reader doesn't need a second lookup for a
 	// kind's default chart-toggle view. Not consumed by the Go renderer.
-	DefaultView string      `json:"defaultView,omitempty"`
-	Panels      []SpecPanel `json:"panels,omitempty"`
+	DefaultView string `json:"defaultView,omitempty"`
+	// Background opts a "both" spec into a richer OpenFrame backdrop instead of
+	// the flat card fill. Only "synthwave" is defined today (the social-card OG
+	// image: gradient wash + cyan glow + perspective grid). Empty = the flat
+	// th.Background rect every other card uses — this is deliberately scoped so
+	// no other kind's chrome changes.
+	Background string      `json:"background,omitempty"`
+	Panels     []SpecPanel `json:"panels,omitempty"`
 }
 
 // SpecSize is a spec's canvas dimensions.
@@ -213,7 +219,7 @@ func renderSpec(spec Spec, d *Data, th Theme, opts Options) ([]byte, error) {
 	if title == "" {
 		title = spec.Kind
 	}
-	f := OpenFrame(w, h, th, title, opts.Subtitle)
+	f := OpenFrameWith(w, h, th, title, opts.Subtitle, spec.Background)
 	// Part B Stage 5 cutover fix: the deleted legacy renderers each ran a
 	// kind-specific isEmpty check BEFORE drawing anything, short-circuiting
 	// to a single whole-card placeholder (f.Empty(msg)) instead of a card
@@ -551,11 +557,30 @@ func metricLabelValue(d *Data, p SpecPanel) (label, value string) {
 	return specLabel(p, p.Binding), "—"
 }
 
+// formatHoursFlex renders a total as big whole hours — the coding-flex format
+// for the social card. Under 1000h it's "357h"; at/above 1000h it compacts to
+// "1.2k h" so the numeral stays short at unfurl size. Zero renders "0h".
+func formatHoursFlex(seconds int64) string {
+	hours := seconds / 3600
+	if hours >= 1000 {
+		return fmt.Sprintf("%.1fk h", float64(hours)/1000)
+	}
+	return fmt.Sprintf("%dh", hours)
+}
+
 // statNumeralLabelValue resolves a "stat-numeral" panel's (label, value)
 // pair — the big-numeral tiles (total/daily-avg/streaks).
 func statNumeralLabelValue(d *Data, p SpecPanel) (label, value string) {
 	switch p.Binding {
 	case "total-seconds":
+		// field:"hours" renders a punchy big-hours flex ("357h", "1.2k h")
+		// instead of the humanized compound ("2 wk"). Scoped to whichever panel
+		// opts in via the field hint — the social-card's TOTAL TRACKED tile —
+		// so stats-card / total-time-stat / every other total-seconds consumer
+		// keeps the compound format.
+		if p.Field == "hours" {
+			return specLabel(p, "TOTAL TIME"), formatHoursFlex(d.Payload.TotalSeconds)
+		}
 		return specLabel(p, "TOTAL TIME"), compound(d.Payload.TotalSeconds)
 	case "daily-avg":
 		return specLabel(p, "DAILY AVG"), compound(int64(d.Payload.DailyAvg))

@@ -109,14 +109,14 @@ func EmitHero(f *Frame, x, y, w int, username, tagline string) {
 		name = "boomtime"
 	}
 	f.Printf(`<g class="fade">`)
-	f.Printf(`<text x="%d" y="%d" font-size="52" font-weight="700" fill="%s">%s</text>`,
-		x, y+52, th.Title, xmlEscape("@"+truncate(name, 22)))
+	f.Printf(`<text x="%d" y="%d" font-size="60" font-weight="700" fill="%s">%s</text>`,
+		x, y+58, th.Title, xmlEscape("@"+truncate(name, 22)))
 	line := strings.TrimSpace(tagline)
 	if line == "" {
 		line = "coding activity"
 	}
-	f.Printf(`<text x="%d" y="%d" font-size="20" fill="%s">%s</text>`,
-		x, y+88, th.TextMuted, xmlEscape(truncate(line, 52)))
+	f.Printf(`<text x="%d" y="%d" font-size="21" fill="%s">%s</text>`,
+		x, y+94, th.TextMuted, xmlEscape(truncate(line, 52)))
 	f.WriteString(`</g>`)
 }
 

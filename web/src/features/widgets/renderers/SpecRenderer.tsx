@@ -334,9 +334,20 @@ function MetricPrimitive({ panel, data }: PrimitiveProps) {
 
 // binding -> (label, value) for the "stat-numeral" primitive (the
 // standalone big-numeral tiles). Mirrors spec.go's statNumeralLabelValue.
+// formatHoursFlex mirrors spec.go's — big whole hours ("357h" / "1.2k h").
+function formatHoursFlex(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  if (hours >= 1000) return `${(hours / 1000).toFixed(1)}k h`;
+  return `${hours}h`;
+}
+
 function statNumeralLabelValue(data: SpecRenderData, panel: SpecPanel): [string, string] {
   switch (panel.binding) {
     case "total-seconds":
+      // field:"hours" → punchy big-hours flex (social-card TOTAL TRACKED).
+      if (panel.field === "hours") {
+        return [panel.title ?? "TOTAL TIME", formatHoursFlex(data.totalSeconds)];
+      }
       return [panel.title ?? "TOTAL TIME", secondsToCompact(data.totalSeconds)];
     case "daily-avg":
       return [panel.title ?? "DAILY AVG", secondsToCompact(Math.round(data.dailyAvg))];

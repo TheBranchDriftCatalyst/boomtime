@@ -11,6 +11,7 @@ import (
 // 1200×630 PNG via the CGO-free resvg-go pipeline (gaka social-card).
 func TestSocialCardRendersAndRasterizes(t *testing.T) {
 	d := dataFixture()
+	d.Payload.TotalSeconds = 1285200 // 357h — the big-hours flex
 	d.Identity = &Identity{Username: "djdaniels", Tagline: "shipping <boomtime> & friends"}
 
 	svg, err := RenderSpec("social-card", d, Options{Theme: "dark", Subtitle: "last 60 days"})
@@ -27,6 +28,14 @@ func TestSocialCardRendersAndRasterizes(t *testing.T) {
 	}
 	if strings.Contains(s, "<boomtime>") {
 		t.Errorf("social-card leaked an unescaped tagline: %q", s)
+	}
+	// TOTAL TRACKED uses the big-hours flex ("357h"), not the compound humanize.
+	if !strings.Contains(s, ">357h<") {
+		t.Errorf("social-card total should render big hours '357h'")
+	}
+	// Synthwave backdrop is present (scoped to this kind via spec.Background).
+	if !strings.Contains(s, "url(#scclip)") {
+		t.Errorf("social-card missing the synthwave backdrop")
 	}
 	for _, banned := range []string{"<script", "https://", "@import"} {
 		if strings.Contains(s, banned) {
@@ -57,6 +66,22 @@ func TestStripAnimationStyle(t *testing.T) {
 	}
 	if !bytes.Contains(got, []byte(`<text class="fade">hi</text>`)) {
 		t.Fatalf("content unexpectedly removed: %s", got)
+	}
+}
+
+// formatHoursFlex: big whole hours, k-compacted past 1000h. Social-card only.
+func TestFormatHoursFlex(t *testing.T) {
+	cases := map[int64]string{
+		0:         "0h",
+		1285200:   "357h", // the flex fixture
+		3600:      "1h",
+		3_600_000: "1.0k h", // 1000h
+		4_320_000: "1.2k h", // 1200h
+	}
+	for sec, want := range cases {
+		if got := formatHoursFlex(sec); got != want {
+			t.Errorf("formatHoursFlex(%d) = %q, want %q", sec, got, want)
+		}
 	}
 }
 
