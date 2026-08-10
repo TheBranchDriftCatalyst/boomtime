@@ -73,6 +73,7 @@ export function Projects() {
             startISO={tr.startISO}
             endISO={tr.endISO}
             timeLimit={tr.timeLimit}
+            projectsLoading={projectsQuery.isLoading}
           />
 
           <CommitListModal

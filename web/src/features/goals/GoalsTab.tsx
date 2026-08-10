@@ -15,7 +15,7 @@ import { useState } from "react";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
-import { Spinner } from "@thebranchdriftcatalyst/catalyst-ui/ui/spinner";
+import { GoalsListSkeleton } from "@/components/Skeletons";
 import { GoalForm } from "@/features/goals/GoalForm";
 import { GoalNearnessStrip } from "@/features/goals/GoalNearnessStrip";
 import { GoalsList } from "@/features/goals/GoalsList";
@@ -44,7 +44,7 @@ export function GoalsTab() {
     });
   }
 
-  if (isLoading) return <Spinner />;
+  if (isLoading) return <GoalsListSkeleton rows={4} />;
 
   return (
     <div className="space-y-6">
@@ -76,6 +76,7 @@ export function GoalsTab() {
         goals={goals ?? []}
         onEdit={openEdit}
         onRemove={onDelete}
+        onCreate={openCreate}
       />
 
       <GoalForm

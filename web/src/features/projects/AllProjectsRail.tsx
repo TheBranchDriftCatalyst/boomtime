@@ -3,8 +3,11 @@ import { Calculator, Clock, Code, Crown } from "lucide-react";
 import { StatCard } from "@thebranchdriftcatalyst/catalyst-ui/components/StatCard";
 import { TopProjectsBar } from "@/features/projects/TopProjectsBar";
 import { CrossProjectFilesTable } from "@/features/projects/CrossProjectFilesTable";
-import { Spinner } from "@thebranchdriftcatalyst/catalyst-ui/ui/spinner";
 import { QueryGate } from "@/components/QueryGate";
+import {
+  ProjectDetailSkeleton,
+  TableRowsSkeleton,
+} from "@/components/Skeletons";
 import { ChartCard } from "@/components/ChartCard";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
@@ -58,7 +61,11 @@ export function AllProjectsRail({
         </p>
       </div>
 
-      <QueryGate query={aggQuery} errorMessage="Failed to load project stats.">
+      <QueryGate
+        query={aggQuery}
+        errorMessage="Failed to load project stats."
+        skeleton={<ProjectDetailSkeleton />}
+      >
         {(agg) => (
         <div className="space-y-6">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -94,7 +101,7 @@ export function AllProjectsRail({
 
           <ChartCard title="Active files across all projects">
             {filesQuery.isLoading ? (
-              <Spinner />
+              <TableRowsSkeleton rows={5} />
             ) : (
               <CrossProjectFilesTable
                 files={filesQuery.data?.files ?? []}

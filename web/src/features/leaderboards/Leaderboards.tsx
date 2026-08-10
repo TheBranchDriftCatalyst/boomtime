@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Trophy } from "lucide-react";
+import { Link } from "react-router";
 import { QueryGate } from "@/components/QueryGate";
+import { LeaderboardsSkeleton } from "@/components/Skeletons";
+import { EmptyState } from "@/components/EmptyState";
 import { Page } from "@/layout/Page";
 import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
@@ -27,9 +30,16 @@ import type { LeaderboardEntry } from "@/types/api";
 function LeaderboardTable({ users }: { users: LeaderboardEntry[] }) {
   if (users.length === 0) {
     return (
-      <p className="py-8 text-center text-sm text-muted-foreground">
-        No data available
-      </p>
+      <EmptyState
+        icon={Trophy}
+        title="No ranked activity yet"
+        description="Leaderboards fill in as tracked time lands for this range. Import your history or set up a plugin to claim a spot."
+        action={
+          <Button asChild size="sm" variant="outline">
+            <Link to="/app/import">Start tracking</Link>
+          </Button>
+        }
+      />
     );
   }
   return (
@@ -81,7 +91,11 @@ export function Leaderboards() {
       </Page.Header>
       <Page.Body>
         <Page.Content>
-          <QueryGate query={query} errorMessage="Failed to load leaderboards.">
+          <QueryGate
+            query={query}
+            errorMessage="Failed to load leaderboards."
+            skeleton={<LeaderboardsSkeleton />}
+          >
             {(data) => (
               <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                 <Card>

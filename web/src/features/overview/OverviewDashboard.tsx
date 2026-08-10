@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Calculator, Clock, Code, Crown } from "lucide-react";
 import { StatCard } from "@thebranchdriftcatalyst/catalyst-ui/components/StatCard";
 import { QueryGate } from "@/components/QueryGate";
+import { OverviewSkeleton } from "@/components/Skeletons";
 import { ChartCard } from "@/components/ChartCard";
 import { WidgetsPanel } from "@/features/widgets/WidgetsPanel";
 import { EmbedLinkButton } from "@/features/widgets/EmbedActions";
@@ -274,6 +275,7 @@ export function OverviewDashboard({
           <QueryGate
             query={statsQuery}
             errorMessage="Failed to load overview stats."
+            skeleton={<OverviewSkeleton />}
           >
             {(stats) => (
               <div className="space-y-6">
