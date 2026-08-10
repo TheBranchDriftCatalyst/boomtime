@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { Braces, Files, Search, Table2 } from "lucide-react";
+import { Activity, Braces, Files, Search, Table2 } from "lucide-react";
+import { Link } from "react-router";
 import { Page } from "@/layout/Page";
 import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
 import { TimeLimitDropdown } from "@/components/toolbar/TimeLimitDropdown";
-import { Spinner } from "@thebranchdriftcatalyst/catalyst-ui/ui/spinner";
+import { EmptyState } from "@/components/EmptyState";
+import { TableRowsSkeleton } from "@/components/Skeletons";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Card, CardContent } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
@@ -139,7 +141,7 @@ export function Heartbeats() {
                       Add at least one group-by axis to explore heartbeats.
                     </p>
                   ) : ctrl.rootLoading ? (
-                    <Spinner />
+                    <TableRowsSkeleton rows={6} className="py-2" />
                   ) : ctrl.rootError ? (
                     <div className="space-y-2 py-6 text-center">
                       <p className="text-sm text-destructive">
@@ -154,9 +156,16 @@ export function Heartbeats() {
                       </Button>
                     </div>
                   ) : ctrl.tree.length === 0 ? (
-                    <p className="py-6 text-center text-sm text-muted-foreground">
-                      No heartbeats in this range.
-                    </p>
+                    <EmptyState
+                      icon={Activity}
+                      title="No heartbeats in this range"
+                      description="Widen the date range, or import your history / set up a plugin to start streaming coding activity into the explorer."
+                      action={
+                        <Button asChild size="sm" variant="outline">
+                          <Link to="/app/import">Set up tracking</Link>
+                        </Button>
+                      }
+                    />
                   ) : (
                     <>
                       {ctrl.rootTruncated && (

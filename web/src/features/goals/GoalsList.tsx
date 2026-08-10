@@ -6,9 +6,11 @@
 // Progress numbers come from the BATCHED /goals/progress call — one
 // round trip populates every row. A row with no batched entry shows
 // "computing…" (goal disabled or cache being repopulated).
-import { Eye, EyeOff, Loader2, Pencil, Trash2 } from "lucide-react";
+import { Eye, EyeOff, Loader2, Pencil, Plus, Target, Trash2 } from "lucide-react";
 import { Progress } from "@thebranchdriftcatalyst/catalyst-ui/ui/progress";
 import { Badge } from "@thebranchdriftcatalyst/catalyst-ui/ui/badge";
+import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
+import { EmptyState } from "@/components/EmptyState";
 import { useAllGoalProgress, useGoalMutations } from "@/features/goals/useGoals";
 import type { Goal, GoalProgress } from "@/types/api";
 
@@ -16,21 +18,40 @@ export function GoalsList({
   goals,
   onEdit,
   onRemove,
+  onCreate,
 }: {
   goals: Goal[];
   onEdit: (goal: Goal) => void;
   onRemove: (goal: Goal) => void;
+  /** Opens the create-goal form from the empty-state CTA. */
+  onCreate?: () => void;
 }) {
   const { data: batch } = useAllGoalProgress();
   const { toggle } = useGoalMutations();
 
   if (goals.length === 0) {
     return (
-      <p className="rounded-md border bg-secondary/40 p-3 text-sm text-muted-foreground">
-        No goals yet. Click <span className="font-medium">New goal</span> to
-        author your first target — e.g. "at least 1 hour a week on Go" or
-        "avoid distraction: less than 30 minutes/day on personal projects".
-      </p>
+      <div className="rounded-md border bg-secondary/40">
+        <EmptyState
+          icon={Target}
+          title="No goals yet"
+          description={
+            <>
+              Author your first target — e.g. "at least 1 hour a week on Go" or
+              "avoid distraction: less than 30 minutes/day on personal
+              projects".
+            </>
+          }
+          action={
+            onCreate && (
+              <Button onClick={onCreate} size="sm">
+                <Plus className="mr-1 h-4 w-4" />
+                New goal
+              </Button>
+            )
+          }
+        />
+      </div>
     );
   }
 

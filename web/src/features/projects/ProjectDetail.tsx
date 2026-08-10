@@ -1,9 +1,19 @@
 import type { Ref } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Clock, Code, FileText, GitBranch, Link as LinkIcon } from "lucide-react";
+import {
+  Clock,
+  Code,
+  FileText,
+  FolderGit2,
+  GitBranch,
+  Link as LinkIcon,
+} from "lucide-react";
+import { Link } from "react-router";
 import { toast } from "sonner";
 import { StatCard } from "@thebranchdriftcatalyst/catalyst-ui/components/StatCard";
 import { QueryGate } from "@/components/QueryGate";
+import { ProjectDetailSkeleton } from "@/components/Skeletons";
+import { EmptyState } from "@/components/EmptyState";
 import { ChartCard } from "@/components/ChartCard";
 import { untaggedShareSubtitle } from "@/lib/untaggedShare";
 import { EmbedLinkButton } from "@/features/widgets/EmbedActions";
@@ -34,6 +44,10 @@ interface ProjectDetailProps {
   startISO: string;
   endISO: string;
   timeLimit: number;
+  /** Whether the parent project list is still loading — distinguishes the
+   *  "no project selected yet" skeleton from the genuine "no projects" empty
+   *  state (gaka-gbbl.2). */
+  projectsLoading?: boolean;
   /** Scroll anchor so the page can scroll the detail into view on select. */
   ref?: Ref<HTMLDivElement>;
 }
@@ -50,6 +64,7 @@ export function ProjectDetail({
   startISO,
   endISO,
   timeLimit,
+  projectsLoading,
   ref,
 }: ProjectDetailProps) {
   const statsQuery = useQuery({
@@ -129,11 +144,33 @@ export function ProjectDetail({
         </div>
       </div>
 
-      <QueryGate
-        query={statsQuery}
-        errorMessage={`Failed to load project detail for ${detailHeading}.`}
-      >
-        {(stats) => (
+      {!project ? (
+        // No project selected. While the list is still loading (or has entries
+        // but auto-select hasn't fired yet), preview the layout; only once the
+        // list has resolved empty do we surface the "no projects" CTA — the
+        // per-project query is `enabled: Boolean(project)`, so without this the
+        // gate below would spin forever.
+        projectsLoading || projects.length > 0 ? (
+          <ProjectDetailSkeleton />
+        ) : (
+          <EmptyState
+            icon={FolderGit2}
+            title="No projects yet"
+            description="Once you import your history or connect a plugin, your projects and their per-project charts show up here."
+            action={
+              <Button asChild size="sm">
+                <Link to="/app/import">Import your history</Link>
+              </Button>
+            }
+          />
+        )
+      ) : (
+        <QueryGate
+          query={statsQuery}
+          errorMessage={`Failed to load project detail for ${detailHeading}.`}
+          skeleton={<ProjectDetailSkeleton />}
+        >
+          {(stats) => (
         <div className="space-y-6">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard
@@ -251,8 +288,9 @@ export function ProjectDetail({
             <FileBarChart files={stats.files} />
           </ChartCard>
         </div>
-        )}
-      </QueryGate>
+          )}
+        </QueryGate>
+      )}
     </section>
   );
 }
