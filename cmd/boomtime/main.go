@@ -236,10 +236,14 @@ func runCmd() *cobra.Command {
 					"shim_url", cfg.ComfyUIShimURL, "model", cfg.ComfyUIModel)
 				// gaka-worker-topology: the startup reconcile (fill in any
 				// missing images) is generation work, so it belongs to the
-				// worker role only — the server role shouldn't be
-				// generating images itself. Under the default role=all
-				// this is unconditional, same as before.
-				if cfg.IsWorkerRole() {
+				// worker role only. It ALSO must not run alongside the AMQP
+				// consumer (broker=rabbitmq) — the consumer already generates,
+				// so both firing double-generates every regen (one via the
+				// job, one via the reconcile). LabelImagesReconcileEnabled()
+				// gates it: "auto" (default) = only under the in-process broker;
+				// "on"/"off" force it. Default role=all + inprocess keeps the
+				// old unconditional behavior.
+				if cfg.IsWorkerRole() && cfg.LabelImagesReconcileEnabled() {
 					go liWorker.Run(ctx)
 				}
 			}

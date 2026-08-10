@@ -169,6 +169,16 @@ type Config struct {
 	// `boomtime label-images regenerate --all` to swap the whole set.
 	ComfyUIModel string
 
+	// LabelImagesReconcile controls the startup "fill any missing label images"
+	// reconcile pass (labelimages.Worker.Run). Values: "auto" (default), "on",
+	// "off". Under the queue broker (BOOM_QUEUE_BROKER=rabbitmq) the worker pod
+	// ALSO runs the AMQP consumer, so running the direct reconcile there
+	// double-generates every regen (one image via the job, one via the
+	// reconcile). "auto" therefore runs the reconcile ONLY under the in-process
+	// broker; "on" forces it (e.g. a dedicated fill-in run), "off" disables it.
+	// From BOOM_LABEL_IMAGES_RECONCILE. See LabelImagesReconcileEnabled.
+	LabelImagesReconcile string
+
 	// AdminUsers is the set of usernames allowed to hit admin-only routes
 	// (currently: /api/v1/admin/label-images/*, which drives the Admin tab
 	// in the FE). Populated from BOOM_ADMIN_USERS as a comma-separated
@@ -391,6 +401,7 @@ func Load() *Config {
 		FeatureLabelImages: getEnvBool("BOOM_FEATURE_LABEL_IMAGES", false),
 		ComfyUIShimURL:     getEnv("BOOM_COMFYUI_SHIM_URL", ""),
 		ComfyUIModel:       getEnv("BOOM_COMFYUI_MODEL", "sdxl-illustrious-xl"),
+		LabelImagesReconcile: getEnv("BOOM_LABEL_IMAGES_RECONCILE", "auto"),
 		AdminUsers:         parseAdminUsers(getEnv("BOOM_ADMIN_USERS", "")),
 
 		// gaka-9v4: LLM (OpenAI-compat) for avatar prompt synthesis SSE.
@@ -583,6 +594,21 @@ func (c *Config) IsWorkerRole() bool {
 // stray BOOM_QUEUE_BROKER=RabbitMQ doesn't silently fall through to inprocess.
 func (c *Config) BrokerRabbit() bool {
 	return strings.EqualFold(c.QueueBroker, "rabbitmq")
+}
+
+// LabelImagesReconcileEnabled reports whether the startup "fill missing images"
+// reconcile pass should run. "on"/"off" force it; "auto" (the default) runs it
+// ONLY under the in-process broker — under rabbitmq the worker's AMQP consumer
+// already generates, so running the reconcile too double-generates every job.
+func (c *Config) LabelImagesReconcileEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(c.LabelImagesReconcile)) {
+	case "on", "true", "1", "yes":
+		return true
+	case "off", "false", "0", "no":
+		return false
+	default: // "auto" / "" — reconcile only when there is no separate queue worker
+		return !c.BrokerRabbit()
+	}
 }
 
 // LLMEnabled reports whether an LLM API key is configured for the avatar
