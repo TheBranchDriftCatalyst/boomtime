@@ -60,6 +60,9 @@ export function PublicProfileCard() {
   const [enabled, setEnabled] = useState(false);
   const [copied, setCopied] = useState(false);
   const [serverError, setServerError] = useState<string>("");
+  // Fresh per page-load so the social-card preview isn't served from a stale
+  // browser cache (og.png sets a 10-min Cache-Control).
+  const [previewNonce] = useState(() => Date.now());
 
   const {
     register,
@@ -226,6 +229,39 @@ export function PublicProfileCard() {
                   Preview <ExternalLink className="h-3.5 w-3.5" />
                 </a>
               </div>
+            </div>
+          )}
+
+          {/* Social-card preview — the exact 1200×630 og.png that unfurls when
+              the public URL is dropped in Discord / Twitter / Slack. Same gate
+              as the Public URL block (enabled + server-confirmed slug) so we
+              never render a card for a slug that 404s. Clicking opens the live
+              public page. previewNonce busts the 10-min og.png cache per load. */}
+          {currentSlug && enabled && data?.enabled && data?.slug === currentSlug && (
+            <div className="space-y-1.5">
+              <Label className="text-xs uppercase tracking-wide text-muted-foreground">
+                Social card
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                What people see when your link unfurls in Discord, Slack, or on
+                social — this is your live OpenGraph image.
+              </p>
+              <a
+                href={`/p/${data.slug}`}
+                target="_blank"
+                rel="noreferrer"
+                title="Open your public profile"
+                className="block overflow-hidden rounded-xl border border-border shadow-sm transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <img
+                  src={`${window.location.origin}/api/public/profile/${data.slug}/og.png?v=${previewNonce}`}
+                  alt="Your boomtime social card"
+                  width={1200}
+                  height={630}
+                  loading="lazy"
+                  className="block aspect-[1200/630] w-full bg-muted object-cover"
+                />
+              </a>
             </div>
           )}
 
