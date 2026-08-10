@@ -152,7 +152,10 @@ function ResizableSheetContent({
       // Drop padding on the outer container so the drag handle sits flush
       // at the left edge. The inner scroll div re-adds it.
       className={cn("p-0", className)}
-      style={{ width, maxWidth: "none", ...style }}
+      // Cap to the viewport so the resizable sheet never exceeds a phone's
+      // width (gaka-k26n.4) — the clamped `width` has a 400px floor that would
+      // otherwise overflow. min() keeps the user's chosen width on desktop.
+      style={{ width: `min(${width}px, 100vw)`, maxWidth: "none", ...style }}
     >
       {/* Drag handle — 6px vertical strip. Transparent by default, tints
           on hover so it's discoverable without shouting. */}
@@ -166,7 +169,7 @@ function ResizableSheetContent({
           document.body.style.userSelect = "none";
           document.body.style.cursor = "col-resize";
         }}
-        className="absolute left-0 top-0 z-10 h-full w-1.5 cursor-col-resize bg-transparent transition-colors hover:bg-[color:var(--primary)]/40"
+        className="absolute left-0 top-0 z-10 hidden h-full w-1.5 cursor-col-resize bg-transparent transition-colors hover:bg-[color:var(--primary)]/40 sm:block"
         data-testid="sheet-resize-handle"
       />
       {/* Inner scroll container so the handle stays static as the form

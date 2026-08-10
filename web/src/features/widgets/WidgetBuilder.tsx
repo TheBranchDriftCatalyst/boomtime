@@ -95,7 +95,7 @@ export function WidgetBuilder({ scopeType, scopeRef = "" }: WidgetBuilderProps) 
           Build
         </Button>
       </SheetTrigger>
-      <SheetContent className="w-[52vw] min-w-[560px]">
+      <SheetContent className="w-full sm:w-[52vw] sm:min-w-[560px]">
         <SheetHeader>
           <SheetTitle>Widget builder</SheetTitle>
           <SheetDescription>

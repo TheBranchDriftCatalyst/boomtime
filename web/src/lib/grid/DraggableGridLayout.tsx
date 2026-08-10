@@ -47,6 +47,21 @@ type Layout = {
   static?: boolean;
 };
 
+// Collapse a multi-column layout into a single-column vertical stack for phone
+// breakpoints (gaka-k26n.2). A 12-col magazine layout is illegible at 375px (a
+// w=3 tile is ~28px), so we preserve reading order (row-major), give every tile
+// the full mobile width, and re-flow y so nothing overlaps. Pure + module-level
+// so it's trivially testable. Applied READ-ONLY only — see the wiring below.
+export function stackForMobile(base: Layout[], mobileCols: number): Layout[] {
+  const ordered = [...base].sort((a, b) => a.y - b.y || a.x - b.x);
+  let y = 0;
+  return ordered.map((w) => {
+    const item = { ...w, x: 0, y, w: mobileCols };
+    y += w.h;
+    return item;
+  });
+}
+
 export interface DraggableGridLayoutProps {
   /** Widget instances available for this dashboard (the full catalog for the
    * scope). The rendered set is the intersection of a saved layout with this
@@ -156,13 +171,20 @@ export function DraggableGridLayout({
     void storage.save(merged);
   };
 
-  const layoutsByBreakpoint = {
-    lg: rglLayout,
-    md: rglLayout,
-    sm: rglLayout,
-    xs: rglLayout,
-    xxs: rglLayout,
-  };
+  // Phone-breakpoint collapse (gaka-k26n.2). In READ mode we swap in a
+  // single-column stacked layout (and 1 col) at xs/xxs so the public /p/:slug
+  // dashboard is legible on a phone. EDIT mode is deliberately left on the
+  // full grid at every breakpoint: the editor is desktop-only, and swapping
+  // the layout under RGL there would let a mobile-breakpoint onLayoutChange
+  // persist the stacked positions over the user's real desktop layout
+  // (handleLayoutChange only early-returns in read mode).
+  const mobileStack = useMemo(() => stackForMobile(rglLayout, 1), [rglLayout]);
+  const layoutsByBreakpoint = editable
+    ? { lg: rglLayout, md: rglLayout, sm: rglLayout, xs: rglLayout, xxs: rglLayout }
+    : { lg: rglLayout, md: rglLayout, sm: rglLayout, xs: mobileStack, xxs: mobileStack };
+  const colsByBreakpoint = editable
+    ? { lg: cols, md: cols, sm: cols, xs: cols, xxs: cols }
+    : { lg: cols, md: cols, sm: cols, xs: 1, xxs: 1 };
 
   return (
     <div
@@ -189,7 +211,7 @@ export function DraggableGridLayout({
           rowHeight={rowHeight}
           layouts={layoutsByBreakpoint}
           breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
-          cols={{ lg: cols, md: cols, sm: cols, xs: cols, xxs: cols }}
+          cols={colsByBreakpoint}
           compactType={editable ? "vertical" : null}
           isDroppable={false}
         >

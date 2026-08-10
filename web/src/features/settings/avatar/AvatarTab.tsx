@@ -222,10 +222,9 @@ export function AvatarTab() {
         </div>
       </CardHeader>
       <CardContent>
-        <div
-          className="grid gap-4"
-          style={{ gridTemplateColumns: "minmax(200px,1fr) minmax(280px,2fr) 340px" }}
-        >
+        {/* Stacks to one column on mobile (gaka-k26n.3); the fixed 3-track
+            dossier layout (with the 340px preview column) only kicks in at lg. */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(200px,1fr)_minmax(280px,2fr)_340px]">
           {/* LEFT — INPUT CONTEXT */}
           <PanelSection title="INPUT CONTEXT">
             <div className="flex flex-wrap gap-1.5">
@@ -319,10 +318,8 @@ export function AvatarTab() {
           {/* RIGHT — OUTPUT / BIOMETRIC */}
           <PanelSection title="OUTPUT / BIOMETRIC">
             <div
-              className="relative"
+              className="relative aspect-square w-full max-w-[320px]"
               style={{
-                width: 320,
-                height: 320,
                 background: "color-mix(in oklab, var(--background) 92%, black)",
                 border:
                   "1px solid color-mix(in oklab, var(--primary) 35%, transparent)",
@@ -358,7 +355,7 @@ export function AvatarTab() {
         </div>
 
         {/* Bottom action bar */}
-        <div className="mt-4 flex items-center justify-end gap-3">
+        <div className="mt-4 flex flex-wrap items-center justify-end gap-3">
           <div className="text-xs text-muted-foreground">
             Renders can take 15s to 25min depending on the pipeline.
           </div>
