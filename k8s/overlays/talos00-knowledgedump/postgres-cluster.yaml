@@ -45,6 +45,30 @@ spec:
     # Disabled so the global PodMonitor is the sole source (no double scrape).
     enablePodMonitor: false
 
+  # Object-store backups → MinIO (talos-homelab TALOS-xgrl). CNPG in-tree
+  # barman API — same stanza as the talos-homelab fleet (forgejo/authentik/...).
+  # WAL archiving + daily base backups (scheduledbackup.yaml) land in the shared
+  # `cnpg-backups` bucket under this cluster's prefix. Creds: the
+  # cnpg-minio-backup Secret, reflected into the boomtime namespace from
+  # minio/cnpg-backup in talos-homelab (its reflector allow-list must include
+  # `boomtime` — see talos-homelab infrastructure/base/minio/cnpg-backup/).
+  backup:
+    retentionPolicy: "30d" # prune backups + WALs older than 30 days
+    barmanObjectStore:
+      destinationPath: s3://cnpg-backups/boomtime-postgres
+      endpointURL: http://minio-hl.minio.svc:9000
+      s3Credentials:
+        accessKeyId:
+          name: cnpg-minio-backup
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: cnpg-minio-backup
+          key: ACCESS_SECRET_KEY
+      wal:
+        compression: gzip
+      data:
+        compression: gzip
+
   postgresql:
     parameters:
       shared_buffers: "256MB"

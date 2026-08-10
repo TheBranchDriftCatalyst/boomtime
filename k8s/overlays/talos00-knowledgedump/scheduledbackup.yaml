@@ -1,0 +1,24 @@
+---
+# Daily base backup for boomtime-postgres → cnpg-backups (talos-homelab
+# TALOS-xgrl). Continuous WAL archiving is handled by the Cluster's
+# barmanObjectStore; this ScheduledBackup drives the periodic base backups WAL
+# replays sit on top of. 30-day retention is enforced by the Cluster's
+# backup.retentionPolicy. (No metadata.namespace — the overlay kustomization
+# stamps `boomtime`, like the Cluster in postgres-cluster.yaml.)
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: boomtime-postgres-daily
+  labels:
+    app.kubernetes.io/name: boomtime-postgres
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: boomtime
+spec:
+  # 03:45 daily — staggered against the talos-homelab CNPG fleet (forgejo 02:00,
+  # authentik 02:15, crowdsec 02:30, linkwarden 02:45, homeassistant 03:00,
+  # plausible 03:15, zipline 03:30). CNPG cron is 6-field: sec min hour dom mon dow.
+  schedule: "0 45 3 * * *"
+  immediate: true # take one right away so backups exist before the first tick
+  backupOwnerReference: self
+  cluster:
+    name: boomtime-postgres

@@ -8,6 +8,9 @@ namespace: boomtime
 resources:
   - ../../base
   - postgres-cluster.yaml
+  # cnpg-minio-backup secret arrives via reflector from talos-homelab's
+  # minio/cnpg-backup ExternalSecret (its allow-list includes `boomtime`).
+  - scheduledbackup.yaml # daily base backup → cnpg-backups bucket (03:45)
   - external-secret.yaml
   - ingressroute.yaml
   - comfyui-shim-external.yaml
