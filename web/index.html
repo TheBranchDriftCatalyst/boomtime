@@ -8,6 +8,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0a0a0a" />
     <meta name="description" content="Self-hosted WakaTime-compatible coding activity dashboard with Apple Watch health overlay." />
+    <!--OG_META
+      OpenGraph / Twitter card block. The Go server REPLACES this whole
+      comment with per-user og:* tags when serving /p/:slug for a PUBLIC
+      profile (see internal/server/server.go's registerStatic). For every
+      other route (and dev/SPA) the sane generic block below stands in so an
+      unfurl of the app root still shows a boomtime card. gaka social-card.
+    -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="boomtime" />
+    <meta property="og:title" content="boomtime" />
+    <meta property="og:description" content="Self-hosted coding activity dashboard." />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="boomtime" />
+    <meta name="twitter:description" content="Self-hosted coding activity dashboard." />
+    <!--/OG_META-->
     <!--
       Chakra Petch for the Arasaka dossier section headers (gaka-k2p).
       Compressed geometric that reads cyberpunk-native without the

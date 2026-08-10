@@ -32,6 +32,7 @@ import {
 import { WIDGET_CATALOG } from "@/features/widgets/catalog";
 import { WidgetRenderer } from "@/features/widgets/renderers/WidgetRenderer";
 import { DossierControls, ReclassifyOverlay } from "./ProfileChrome";
+import { SocialCardSection } from "./SocialCardSection";
 import { useProfileRange } from "./profileRange";
 import { PUBLIC_PROFILE_DEFAULT_LAYOUT } from "./defaults";
 import "./hacker.css";
@@ -301,6 +302,10 @@ export function ProfileEditor({ slug }: ProfileEditorProps) {
           </p>
         </div>
       </header>
+
+      {/* gaka social-card: the shareable OG card preview + light customization
+          (theme + tagline). A clean lil section above the grid editor. */}
+      <SocialCardSection slug={slug} />
 
       <div
         className={

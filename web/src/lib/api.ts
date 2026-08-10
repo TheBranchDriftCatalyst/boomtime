@@ -375,14 +375,27 @@ export const api = {
   // on slug conflict — surfaced as an ApiError with status=409 that the
   // form maps to an inline "already taken" message.
   getPublicProfile: () =>
-    request<{ enabled: boolean; slug: string | null }>(
-      "/api/v1/users/current/profile",
-    ),
-  savePublicProfile: (body: { enabled: boolean; slug: string }) =>
-    request<{ enabled: boolean; slug: string | null }>(
-      "/api/v1/users/current/profile",
-      { method: "PUT", body },
-    ),
+    request<{
+      enabled: boolean;
+      slug: string | null;
+      cardTheme: string;
+      cardTagline: string;
+    }>("/api/v1/users/current/profile"),
+  // gaka social-card: cardTheme / cardTagline are optional — omitting them
+  // leaves the stored values untouched (a toggle-only save won't clobber the
+  // tagline, and vice versa).
+  savePublicProfile: (body: {
+    enabled: boolean;
+    slug: string;
+    cardTheme?: string;
+    cardTagline?: string;
+  }) =>
+    request<{
+      enabled: boolean;
+      slug: string | null;
+      cardTheme: string;
+      cardTagline: string;
+    }>("/api/v1/users/current/profile", { method: "PUT", body }),
   // Public payload — no auth. Used by the /p/:slug dashboard route.
   // gaka-174.7: optional `days` re-scopes the STATS window (server clamps to
   // 1..365, default 60). Labels/awards come from a separate endpoint that

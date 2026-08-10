@@ -287,6 +287,7 @@ func (hz *Harness) Router() *echo.Echo {
 	e.GET("/api/v1/users/current/profile", h.Identity.GetPublicProfile)               // gaka-8tn phase 4a: h.Identity
 	e.PUT("/api/v1/users/current/profile", h.Identity.PutPublicProfile)               // gaka-8tn phase 4a: h.Identity
 	e.GET("/api/public/profile/:slug", h.Identity.PublicProfile)                      // gaka-8tn phase 4a: h.Identity
+	e.GET("/api/public/profile/:slug/og.png", h.Identity.PublicProfileOGImage)        // gaka social-card: OG image
 	// gaka-anh Phase 2: GitHub stats endpoints (authed cache-or-sync + public
 	// cache-only). Registered unconditionally in the test router so the suites
 	// can drive them; production gates them behind Cfg.GithubConnectEnabled().

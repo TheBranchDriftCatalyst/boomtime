@@ -24,10 +24,12 @@
 package identity
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -72,21 +74,38 @@ var reservedSlugs = map[string]struct{}{
 // this file reads as it did pre-collapse (60 / 15). Awards imports the
 // exported form (identity.PublicProfilePayloadDays).
 const (
-	publicProfilePayloadDays        = PublicProfilePayloadDays
-	publicProfileTimeLimit    int64 = PublicProfileTimeLimit
+	publicProfilePayloadDays       = PublicProfilePayloadDays
+	publicProfileTimeLimit   int64 = PublicProfileTimeLimit
 )
 
-// getProfileResponse is GET /api/v1/users/current/profile.
+// getProfileResponse is GET /api/v1/users/current/profile. CardTheme /
+// CardTagline carry the owner's social-card customization (gaka social-card)
+// so the profile editor's Social Card section round-trips them.
 type getProfileResponse struct {
-	Enabled bool    `json:"enabled"`
-	Slug    *string `json:"slug"`
+	Enabled     bool    `json:"enabled"`
+	Slug        *string `json:"slug"`
+	CardTheme   string  `json:"cardTheme"`
+	CardTagline string  `json:"cardTagline"`
 }
 
-// putProfileRequest is PUT /api/v1/users/current/profile body.
+// putProfileRequest is PUT /api/v1/users/current/profile body. CardTheme /
+// CardTagline are the optional social-card knobs; omitted (nil) leaves the
+// stored value untouched so a toggle-only PUT doesn't clobber the tagline.
 type putProfileRequest struct {
-	Enabled bool   `json:"enabled"`
-	Slug    string `json:"slug"`
+	Enabled     bool    `json:"enabled"`
+	Slug        string  `json:"slug"`
+	CardTheme   *string `json:"cardTheme,omitempty"`
+	CardTagline *string `json:"cardTagline,omitempty"`
 }
+
+// cardTaglineMaxLen bounds the persisted tagline — it feeds og:description
+// (Discord/Twitter truncate ~200 chars anyway) and the card hero line.
+const cardTaglineMaxLen = 120
+
+// validCardThemes is the allow-list for the social-card theme knob. Mirrors
+// internal/widget/themes.go's registered theme names; "" means "renderer
+// default" (dark/synthwave).
+var validCardThemes = map[string]struct{}{"": {}, "dark": {}, "light": {}}
 
 // publicProfileResponse is the shape returned by GET /api/public/profile/:slug.
 // Deliberately a fresh struct (not model.StatsPayload) so we control exactly
@@ -113,7 +132,10 @@ type publicProfileResponse struct {
 	Platforms    []model.ResourceStats  `json:"platforms"`
 	Categories   []model.ResourceStats  `json:"categories"`
 	Punchcard    model.PunchcardPayload `json:"punchcard"`
-	Layout       json.RawMessage        `json:"layout,omitempty"`
+	// gaka social-card: the owner's optional card tagline (feeds the FE
+	// social-card hero preview + the OG description). Empty when unset.
+	Tagline string          `json:"tagline,omitempty"`
+	Layout  json.RawMessage `json:"layout,omitempty"`
 }
 
 // GetPublicProfile: GET /api/v1/users/current/profile (auth). Returns the
@@ -127,7 +149,13 @@ func (h *Handler) GetPublicProfile(c *echo.Context) error {
 	if err != nil {
 		return apihelpers.InternalErr(h.Logger, c, "public profile lookup failed", err)
 	}
-	return c.JSON(http.StatusOK, getProfileResponse{Enabled: enabled, Slug: slug})
+	theme, tagline, err := h.DB.GetPublicProfileCard(c.Request().Context(), owner)
+	if err != nil {
+		return apihelpers.InternalErr(h.Logger, c, "public profile card lookup failed", err)
+	}
+	return c.JSON(http.StatusOK, getProfileResponse{
+		Enabled: enabled, Slug: slug, CardTheme: theme, CardTagline: tagline,
+	})
 }
 
 // PutPublicProfile: PUT /api/v1/users/current/profile (auth). Saves the
@@ -164,6 +192,17 @@ func (h *Handler) PutPublicProfile(c *echo.Context) error {
 		}
 	}
 
+	// Social-card knobs (gaka social-card) — validated before any DB write so a
+	// bad theme/tagline is a clean 400, not a partial save.
+	if req.CardTheme != nil {
+		if _, ok := validCardThemes[strings.TrimSpace(*req.CardTheme)]; !ok {
+			return apihelpers.RespondErr(c, apierr.BadRequest("cardTheme must be 'dark', 'light', or empty"))
+		}
+	}
+	if req.CardTagline != nil && len([]rune(*req.CardTagline)) > cardTaglineMaxLen {
+		return apihelpers.RespondErr(c, apierr.BadRequest(fmt.Sprintf("cardTagline must be at most %d characters", cardTaglineMaxLen)))
+	}
+
 	if err := h.DB.SetPublicProfile(c.Request().Context(), owner, req.Enabled, req.Slug); err != nil {
 		// Translate a unique-violation on public_slug into 409 Conflict —
 		// the FE surfaces this as an inline field error.
@@ -173,14 +212,40 @@ func (h *Handler) PutPublicProfile(c *echo.Context) error {
 		}
 		return apihelpers.InternalErr(h.Logger, c, "public profile save failed", err)
 	}
+
+	// Persist the card knobs only when the request carried them (nil = leave
+	// as-is), reading current values first so a partial PUT preserves the
+	// other field.
+	if req.CardTheme != nil || req.CardTagline != nil {
+		curTheme, curTagline, err := h.DB.GetPublicProfileCard(c.Request().Context(), owner)
+		if err != nil {
+			return apihelpers.InternalErr(h.Logger, c, "public profile card readback failed", err)
+		}
+		if req.CardTheme != nil {
+			curTheme = strings.TrimSpace(*req.CardTheme)
+		}
+		if req.CardTagline != nil {
+			curTagline = strings.TrimSpace(*req.CardTagline)
+		}
+		if err := h.DB.SetPublicProfileCard(c.Request().Context(), owner, curTheme, curTagline); err != nil {
+			return apihelpers.InternalErr(h.Logger, c, "public profile card save failed", err)
+		}
+	}
+
 	// Read back the persisted shape (SetPublicProfile may have left slug
 	// alone on the off-with-no-slug path, so read is the source of truth).
 	enabled, slug, err := h.DB.GetPublicProfile(c.Request().Context(), owner)
 	if err != nil {
 		return apihelpers.InternalErr(h.Logger, c, "public profile readback failed", err)
 	}
+	theme, tagline, err := h.DB.GetPublicProfileCard(c.Request().Context(), owner)
+	if err != nil {
+		return apihelpers.InternalErr(h.Logger, c, "public profile card readback failed", err)
+	}
 	h.Logger.Info("public profile updated", "user", owner, "enabled", enabled)
-	return c.JSON(http.StatusOK, getProfileResponse{Enabled: enabled, Slug: slug})
+	return c.JSON(http.StatusOK, getProfileResponse{
+		Enabled: enabled, Slug: slug, CardTheme: theme, CardTagline: tagline,
+	})
 }
 
 // PublicProfile: GET /api/public/profile/:slug (NO auth). Resolves slug ->
@@ -241,45 +306,10 @@ func (h *Handler) PublicProfile(c *echo.Context) error {
 	t1 := time.Now().UTC()
 	t0 := apihelpers.RemoveDays(t1, days)
 
-	hidden, err := h.DB.LoadHiddenSets(ctx, username)
+	scrubbed, hidden, tz, members, err := h.loadPublicActivity(ctx, username, t0, t1)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "public profile hidden load failed", err)
+		return apihelpers.InternalErr(h.Logger, c, "public profile activity load failed", err)
 	}
-	renames, err := h.DB.LoadRenameSets(ctx, username)
-	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "public profile rename load failed", err)
-	}
-
-	// gaka-dg7: public profile shows the profile OWNER's data in the OWNER's
-	// timeframe — an East-coast viewer of a Pacific dev's public profile
-	// should see Pacific dow/hour buckets, not shifted-to-viewer buckets.
-	tz := apihelpers.ResolveUserTZ(h.DB, h.Logger, ctx, username, h.Cfg.DefaultTimezone)
-
-	// No Space scoping for public profile — it's an account-level view.
-	// members/spaceRequested are the zero value.
-	var members db.MemberSets
-	var rows []db.StatRow
-	// Same rollup gate as widgets/dashboard: fast path when every hide
-	// falls on rollup axes.
-	if !hidden.HasHiddenOutside(db.RollupAxes) {
-		rows, err = h.DB.GetUserActivityRollup(ctx, username, t0, t1, hidden, renames, members, false)
-	} else {
-		rows, err = h.DB.GetUserActivity(ctx, username, t0, t1, publicProfileTimeLimit, tz, hidden, renames, members, false)
-	}
-	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "public profile activity query failed", err)
-	}
-	categories, err := h.DB.GetCategoryDaily(ctx, username, t0, t1, publicProfileTimeLimit, tz, hidden, renames, members, false)
-	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "public profile category query failed", err)
-	}
-	payload := stats.ToStatsPayload(t0, t1, rows, categories, nil)
-
-	// gaka-6jm.1: enforce the public-safe contract before any field lands
-	// on the wire. Scrub strips hidden values from the OtherMembers tail
-	// that capWithOther collapses in application code (top-N is already
-	// hide-excluded by the SQL predicates above).
-	scrubbed := widget.Scrub(&payload, hidden)
 
 	// Punchcard also uses hidden — even though its cells are (dow, hour)
 	// buckets with no name, the DB query filters heartbeats by the hidden
@@ -298,6 +328,14 @@ func (h *Handler) PublicProfile(c *echo.Context) error {
 		h.Logger.Warn("public profile layout lookup failed", "user", username, "err", err)
 	}
 
+	// gaka social-card: the owner's card tagline feeds the FE social-card hero
+	// preview. Public data (only ever shown on the already-public card); a
+	// lookup hiccup just omits it — never 500s an otherwise-good read.
+	_, tagline, err := h.DB.GetPublicProfileCard(ctx, username)
+	if err != nil {
+		h.Logger.Warn("public profile card lookup failed", "user", username, "err", err)
+	}
+
 	// Deliberate copy — omits Machines entirely, no *Count fields (those
 	// would leak a distinct-count for hidden values on axes whose top-N
 	// list happens to be short).
@@ -314,6 +352,7 @@ func (h *Handler) PublicProfile(c *echo.Context) error {
 		Platforms:    scrubbed.Platforms,
 		Categories:   scrubbed.Categories,
 		Punchcard:    stats.ToPunchcardPayload(pcCells),
+		Tagline:      tagline,
 	}
 	if hasLayout {
 		resp.Layout = layoutRaw
@@ -351,4 +390,232 @@ func (h *Handler) PublicProfile(c *echo.Context) error {
 	c.Response().WriteHeader(http.StatusOK)
 	_, werr := c.Response().Write(body)
 	return werr
+}
+
+// ---- social card / OpenGraph (gaka social-card) -----------------------------
+
+// socialCardW / socialCardH are the OpenGraph image dimensions — the canonical
+// 1200×630 that Discord/Twitter/Slack/Facebook unfurl at. Matches the
+// "social-card" widget spec's size in internal/widget/specs.json.
+const (
+	socialCardW = 1200
+	socialCardH = 630
+)
+
+// loadPublicActivity builds the SCRUBBED public StatsPayload for username over
+// [t0,t1], applying the owner's hide/rename curation exactly like the public
+// dashboard does. It is the shared load path behind both PublicProfile (JSON)
+// and the OG social card (PNG) — the public-safe contract (widget.Scrub) lives
+// in ONE place. Returns the hidden set + resolved tz + (always-empty) member
+// set so callers that need follow-on queries (punchcard) reuse the same
+// curation without re-loading it.
+func (h *Handler) loadPublicActivity(ctx context.Context, username string, t0, t1 time.Time) (*model.StatsPayload, db.HiddenSets, string, db.MemberSets, error) {
+	var members db.MemberSets
+	hidden, err := h.DB.LoadHiddenSets(ctx, username)
+	if err != nil {
+		return nil, hidden, "", members, err
+	}
+	renames, err := h.DB.LoadRenameSets(ctx, username)
+	if err != nil {
+		return nil, hidden, "", members, err
+	}
+	// gaka-dg7: public profile shows the OWNER's data in the OWNER's timeframe.
+	tz := apihelpers.ResolveUserTZ(h.DB, h.Logger, ctx, username, h.Cfg.DefaultTimezone)
+
+	// No Space scoping for public profile — it's an account-level view.
+	var rows []db.StatRow
+	if !hidden.HasHiddenOutside(db.RollupAxes) {
+		rows, err = h.DB.GetUserActivityRollup(ctx, username, t0, t1, hidden, renames, members, false)
+	} else {
+		rows, err = h.DB.GetUserActivity(ctx, username, t0, t1, publicProfileTimeLimit, tz, hidden, renames, members, false)
+	}
+	if err != nil {
+		return nil, hidden, "", members, err
+	}
+	categories, err := h.DB.GetCategoryDaily(ctx, username, t0, t1, publicProfileTimeLimit, tz, hidden, renames, members, false)
+	if err != nil {
+		return nil, hidden, "", members, err
+	}
+	payload := stats.ToStatsPayload(t0, t1, rows, categories, nil)
+	// gaka-6jm.1: enforce the public-safe contract before any field leaves.
+	scrubbed := widget.Scrub(&payload, hidden)
+	return scrubbed, hidden, tz, members, nil
+}
+
+// resolvePublicSlug maps a URL slug to its owner username IFF the slug is
+// well-formed AND its owner has the public profile ENABLED. Returns ("", false)
+// for every negative case (bad slug, unknown slug, disabled profile, DB error)
+// with no distinction between them — the same no-oracle policy the JSON
+// endpoint uses ("This profile isn't public" for all).
+func (h *Handler) resolvePublicSlug(ctx context.Context, slug string) (string, bool) {
+	slug = strings.ToLower(strings.TrimSpace(slug))
+	if slug == "" || !publicProfileSlugRe.MatchString(slug) {
+		return "", false
+	}
+	username, err := h.DB.LookupUsernameBySlug(ctx, slug)
+	if err != nil {
+		return "", false
+	}
+	enabled, _, err := h.DB.GetPublicProfile(ctx, username)
+	if err != nil || !enabled {
+		return "", false
+	}
+	return username, true
+}
+
+// buildSocialCardData assembles the widget.Data for the "social-card" spec: the
+// scrubbed public payload over the canonical window + a computed grade + the
+// owner's public identity (username + tagline). Also returns the owner's chosen
+// card theme ("" = renderer default). Uses publicProfilePayloadDays (NOT a
+// visitor ?days=) so the shared OG image is stable and cacheable.
+func (h *Handler) buildSocialCardData(ctx context.Context, username string) (*widget.Data, string, error) {
+	t1 := time.Now().UTC()
+	t0 := apihelpers.RemoveDays(t1, publicProfilePayloadDays)
+	scrubbed, _, _, _, err := h.loadPublicActivity(ctx, username, t0, t1)
+	if err != nil {
+		return nil, "", err
+	}
+	g := stats.Grade(scrubbed)
+	theme, tagline, err := h.DB.GetPublicProfileCard(ctx, username)
+	if err != nil {
+		return nil, "", err
+	}
+	data := &widget.Data{
+		Payload:  scrubbed,
+		Grade:    &g,
+		Identity: &widget.Identity{Username: username, Tagline: tagline},
+	}
+	return data, theme, nil
+}
+
+// PublicProfileOGImage: GET /api/public/profile/:slug/og.png (NO auth). Renders
+// the owner's "social-card" widget → SVG → 1200×630 PNG (via widget.RenderPNG,
+// resvg-go, CGO-free) as the og:image for unfurls. PUBLIC DATA ONLY: the same
+// scrubbed payload path the public dashboard uses. A non-public / unknown slug
+// gets a GENERIC boomtime-branded card (200, no user data) rather than a 404,
+// so an unfurl of a private/removed profile shows a clean brand card instead of
+// a broken image — and reveals nothing (no oracle).
+func (h *Handler) PublicProfileOGImage(c *echo.Context) error {
+	ctx := c.Request().Context()
+	theme := "dark"
+	var svg []byte
+	var err error
+
+	username, ok := h.resolvePublicSlug(ctx, c.Param("slug"))
+	if !ok {
+		svg, err = widget.RenderBrandCard(theme)
+	} else {
+		var data *widget.Data
+		var cardTheme string
+		data, cardTheme, err = h.buildSocialCardData(ctx, username)
+		if err != nil {
+			return apihelpers.InternalErr(h.Logger, c, "og social card data build failed", err)
+		}
+		if cardTheme != "" {
+			theme = cardTheme
+		}
+		svg, err = widget.RenderSpec("social-card", data, widget.Options{
+			Theme:    theme,
+			Subtitle: fmt.Sprintf("last %d days", publicProfilePayloadDays),
+		})
+	}
+	if err != nil {
+		return apihelpers.InternalErr(h.Logger, c, "og social card render failed", err)
+	}
+
+	png, err := widget.RenderPNG(ctx, svg, socialCardW, socialCardH)
+	if err != nil {
+		return apihelpers.InternalErr(h.Logger, c, "og social card rasterize failed", err)
+	}
+
+	sum := sha256.Sum256(png)
+	etag := `"` + hex.EncodeToString(sum[:8]) + `"`
+	// A shareable image doesn't change often; cache 10m at the browser/CDN and
+	// let the ETag answer revalidation cheaply. Owner curation / stats changes
+	// propagate on the next cache window — acceptable for an unfurl thumbnail.
+	c.Response().Header().Set("Cache-Control", "public, max-age=600")
+	c.Response().Header().Set("ETag", etag)
+	if match := c.Request().Header.Get("If-None-Match"); match != "" && match == etag {
+		return c.NoContent(http.StatusNotModified)
+	}
+	return c.Blob(http.StatusOK, "image/png", png)
+}
+
+// OGMeta is the OpenGraph/Twitter metadata the server injects into the SPA
+// shell's <head> for a /p/:slug request (see server.registerStatic). Every
+// field is already HTML/attribute-safe when built by BuildOGMeta — the caller
+// still escapes on injection as defense-in-depth.
+type OGMeta struct {
+	Title       string // og:title / twitter:title
+	Description string // og:description / twitter:description
+	ImageURL    string // absolute og:image / twitter:image
+	ProfileURL  string // canonical og:url
+}
+
+// BuildOGMeta resolves a slug to its public OG metadata for server-side <head>
+// injection. Returns (nil, false) for a non-public / unknown slug so the caller
+// serves the generic default block. baseURL is the ABSOLUTE public origin
+// (scheme://host, no trailing slash) the caller resolved (cfg.BadgeURL or the
+// request). The description is a stats headline ("357h coded · TypeScript 42% ·
+// 30-day streak · grade A"), optionally led by the owner's tagline.
+func (h *Handler) BuildOGMeta(ctx context.Context, slug, baseURL string) (*OGMeta, bool) {
+	username, ok := h.resolvePublicSlug(ctx, slug)
+	if !ok {
+		return nil, false
+	}
+	slug = strings.ToLower(strings.TrimSpace(slug))
+	t1 := time.Now().UTC()
+	t0 := apihelpers.RemoveDays(t1, publicProfilePayloadDays)
+	scrubbed, _, _, _, err := h.loadPublicActivity(ctx, username, t0, t1)
+	if err != nil {
+		// A DB hiccup shouldn't strip the unfurl entirely — fall back to a
+		// minimal headline so og:image (which self-renders) still carries.
+		h.Logger.Warn("og meta stats load failed", "user", username, "err", err)
+		scrubbed = &model.StatsPayload{}
+	}
+	_, tagline, err := h.DB.GetPublicProfileCard(ctx, username)
+	if err != nil {
+		h.Logger.Warn("og meta card load failed", "user", username, "err", err)
+	}
+
+	baseURL = strings.TrimRight(baseURL, "/")
+	return &OGMeta{
+		Title:       "@" + username + " · boomtime",
+		Description: buildStatsHeadline(scrubbed, tagline),
+		ImageURL:    baseURL + "/api/public/profile/" + slug + "/og.png",
+		ProfileURL:  baseURL + "/p/" + slug,
+	}, true
+}
+
+// buildStatsHeadline composes the og:description one-liner from a scrubbed
+// public payload, optionally led by the owner's tagline. Parts are joined with
+// " · " and empty parts dropped so a fresh/empty profile still yields a clean
+// sentence.
+func buildStatsHeadline(p *model.StatsPayload, tagline string) string {
+	var parts []string
+	if t := strings.TrimSpace(tagline); t != "" {
+		parts = append(parts, t)
+	}
+	if p.TotalSeconds > 0 {
+		if d := stats.CompoundDuration(&p.TotalSeconds); d != "" {
+			parts = append(parts, d+" coded")
+		}
+	}
+	if len(p.Languages) > 0 {
+		top := p.Languages[0]
+		if top.OtherCount == 0 && top.Name != "" {
+			parts = append(parts, fmt.Sprintf("%s %d%%", top.Name, int(top.TotalPct+0.5)))
+		}
+	}
+	if s := stats.CurrentStreak(p.DailyTotal); s > 0 {
+		parts = append(parts, fmt.Sprintf("%d-day streak", s))
+	}
+	if p.TotalSeconds > 0 {
+		g := stats.Grade(p)
+		parts = append(parts, "grade "+g.Level)
+	}
+	if len(parts) == 0 {
+		return "Self-hosted coding activity on boomtime."
+	}
+	return strings.Join(parts, " · ")
 }

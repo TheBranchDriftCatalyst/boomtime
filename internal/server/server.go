@@ -4,11 +4,13 @@ package server
 
 import (
 	"embed"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
 	"path"
+	"regexp"
 	"strings"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/admin"
@@ -105,7 +107,7 @@ func NewWithHandler(database *db.DB, cfg *config.Config, logger *slog.Logger, wo
 
 	h := handler.New(database, cfg, logger, worker, hub, logHub)
 	registerRoutes(e, h)
-	registerStatic(e, cfg, logger)
+	registerStatic(e, h, cfg, logger)
 	return e, h
 }
 
@@ -241,7 +243,7 @@ func registerImportRoutes(_ *echo.Echo, _ *handler.Handler) {}
 
 // registerStatic serves the SPA: from BOOM_DASHBOARD_PATH on disk if set, else
 // from the embedded dist FS. Non-API routes fall back to index.html.
-func registerStatic(e *echo.Echo, cfg *config.Config, logger *slog.Logger) {
+func registerStatic(e *echo.Echo, h *handler.Handler, cfg *config.Config, logger *slog.Logger) {
 	var fsys fs.FS
 	if cfg.DashboardPath != "" {
 		logger.Info("serving dashboard from disk", "path", cfg.DashboardPath)
@@ -254,6 +256,32 @@ func registerStatic(e *echo.Echo, cfg *config.Config, logger *slog.Logger) {
 		}
 		fsys = sub
 	}
+
+	// gaka social-card: server-side OpenGraph injection for /p/:slug. Registered
+	// BEFORE the SPA catch-all so Echo's param route wins over "/*". For a
+	// PUBLIC profile we replace the index.html <!--OG_META--> block with
+	// per-user og:*/twitter:* tags (title/description from public stats, an
+	// ABSOLUTE og:image → the og.png endpoint) so Discord/Slack/Twitter unfurl
+	// a rich card; the SPA then hydrates over the same shell for real browsers.
+	// Non-public/unknown slug → the shell's generic default block is served
+	// unchanged (no oracle).
+	e.GET("/p/:slug", func(c *echo.Context) error {
+		shell, err := fs.ReadFile(fsys, "index.html")
+		if err != nil {
+			// No shell to serve (dist not built) — fall through to the file
+			// server which will 404/redirect as usual.
+			c.Request().URL.Path = "/"
+			http.FileServer(http.FS(fsys)).ServeHTTP(c.Response(), c.Request())
+			return nil
+		}
+		if meta, ok := h.Identity.BuildOGMeta(c.Request().Context(), c.Param("slug"), publicBaseURL(c, cfg)); ok {
+			shell = injectOGMeta(shell, meta)
+		}
+		// Same shell cache policy as the catch-all: revalidate every load so
+		// hashed-chunk imports never go stale.
+		c.Response().Header().Set("Cache-Control", "no-cache, must-revalidate")
+		return c.HTMLBlob(http.StatusOK, shell)
+	})
 
 	fileServer := http.FileServer(http.FS(fsys))
 	e.GET("/*", func(c *echo.Context) error {
@@ -292,4 +320,62 @@ func registerStatic(e *echo.Echo, cfg *config.Config, logger *slog.Logger) {
 		fileServer.ServeHTTP(c.Response(), c.Request())
 		return nil
 	})
+}
+
+// ogMetaBlockRe matches the injectable OG block in the SPA shell — from the
+// opening "<!--OG_META" comment through the closing "<!--/OG_META-->". The Go
+// server replaces the whole span with per-user tags for a public /p/:slug.
+var ogMetaBlockRe = regexp.MustCompile(`(?s)<!--OG_META.*?<!--/OG_META-->`)
+
+// injectOGMeta swaps the shell's <!--OG_META…/OG_META--> block for per-user
+// og:*/twitter:* tags. All dynamic values are HTML-attribute-escaped. If the
+// marker is absent (older shell) the shell is returned unchanged rather than
+// risking a malformed <head>.
+func injectOGMeta(shell []byte, meta *identity.OGMeta) []byte {
+	if !ogMetaBlockRe.Match(shell) {
+		return shell
+	}
+	esc := htmlAttr
+	var b strings.Builder
+	b.WriteString(`<meta property="og:type" content="profile" />`)
+	b.WriteString(`<meta property="og:site_name" content="boomtime" />`)
+	fmt.Fprintf(&b, `<meta property="og:title" content="%s" />`, esc(meta.Title))
+	fmt.Fprintf(&b, `<meta property="og:description" content="%s" />`, esc(meta.Description))
+	fmt.Fprintf(&b, `<meta property="og:image" content="%s" />`, esc(meta.ImageURL))
+	fmt.Fprintf(&b, `<meta property="og:image:width" content="1200" />`)
+	fmt.Fprintf(&b, `<meta property="og:image:height" content="630" />`)
+	fmt.Fprintf(&b, `<meta property="og:url" content="%s" />`, esc(meta.ProfileURL))
+	b.WriteString(`<meta name="twitter:card" content="summary_large_image" />`)
+	fmt.Fprintf(&b, `<meta name="twitter:title" content="%s" />`, esc(meta.Title))
+	fmt.Fprintf(&b, `<meta name="twitter:description" content="%s" />`, esc(meta.Description))
+	fmt.Fprintf(&b, `<meta name="twitter:image" content="%s" />`, esc(meta.ImageURL))
+	return ogMetaBlockRe.ReplaceAll(shell, []byte(b.String()))
+}
+
+// htmlAttr escapes a string for safe inclusion inside a double-quoted HTML
+// attribute value (og:* content). Covers the five significant characters.
+func htmlAttr(s string) string {
+	return htmlAttrReplacer.Replace(s)
+}
+
+var htmlAttrReplacer = strings.NewReplacer(
+	"&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&#39;",
+)
+
+// publicBaseURL resolves the absolute public origin (scheme://host, no trailing
+// slash) for building absolute og:image/og:url values. Prefers the configured
+// BadgeURL (the same public origin widget embed URLs use); otherwise derives it
+// from the request (honouring X-Forwarded-Proto behind a proxy).
+func publicBaseURL(c *echo.Context, cfg *config.Config) string {
+	if cfg.BadgeURL != "" {
+		return strings.TrimRight(cfg.BadgeURL, "/")
+	}
+	req := c.Request()
+	scheme := "http"
+	if proto := req.Header.Get("X-Forwarded-Proto"); proto != "" {
+		scheme = proto
+	} else if req.TLS != nil {
+		scheme = "https"
+	}
+	return scheme + "://" + req.Host
 }

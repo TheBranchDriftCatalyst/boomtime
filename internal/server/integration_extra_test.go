@@ -575,7 +575,9 @@ func TestRegisterStatic_ServesFromDashboardPathWhenConfigured(t *testing.T) {
 	e := echo.New()
 	cfg := &config.Config{DashboardPath: tmp}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	registerStatic(e, cfg, logger)
+	// nil handler is fine here: this test never requests /p/:slug, and the
+	// route registration does not dereference h (only its request closure does).
+	registerStatic(e, nil, cfg, logger)
 
 	srv := httptest.NewServer(e)
 	defer srv.Close()

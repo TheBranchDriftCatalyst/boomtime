@@ -90,6 +90,11 @@ func Register(e *echo.Echo, h *Handler) {
 	// dashboard-shaped payload. UNAUTHENTICATED; the payload MUST go
 	// through widget.Scrub before serialization. See profile.go.
 	e.GET("/api/public/profile/:slug", h.PublicProfile)
+	// gaka social-card: UNAUTHENTICATED OpenGraph image. Renders the owner's
+	// "social-card" widget → SVG → 1200×630 PNG (resvg-go, CGO-free) as the
+	// og:image an unfurl fetches. Non-public/unknown slug → a generic
+	// boomtime-branded card (no oracle). Public data only (widget.Scrub path).
+	e.GET("/api/public/profile/:slug/og.png", h.PublicProfileOGImage)
 
 	// gaka-9v4: per-user CHIBI avatar. Prompt-synthesis SSE is authed
 	// (currently admin-gated; see user_avatar.go for the rationale).
