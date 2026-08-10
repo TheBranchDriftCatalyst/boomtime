@@ -48,8 +48,11 @@ const NAV = [
 // action buttons all share it; buttons pass isActive=false and add w-full).
 function sidebarItemClass(collapsed: boolean, isActive: boolean): string {
   return cn(
-    "flex items-center rounded-lg py-2 text-sm font-medium transition-colors",
-    collapsed ? "justify-center px-0" : "gap-3 px-3",
+    "flex items-center rounded-lg text-sm font-medium transition-colors",
+    // Collapsed: a centered 40px square — a clean, intentional icon rail with a
+    // proper ≥40px tap target (was a full-width stretched row with a tiny
+    // icon). Expanded: full-width row with the label.
+    collapsed ? "mx-auto h-10 w-10 justify-center" : "gap-3 px-3 py-2",
     isActive
       ? "bg-sidebar-primary text-sidebar-primary-foreground"
       : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
@@ -112,7 +115,7 @@ function NavItem({
         data-testid={testId}
         className={({ isActive }) => sidebarItemClass(collapsed, isActive)}
       >
-        <Icon className="h-4 w-4 shrink-0" />
+        <Icon className="h-5 w-5 shrink-0" />
         {!collapsed && <span className="truncate">{name}</span>}
       </NavLink>
     </RailTip>
@@ -164,7 +167,7 @@ function SpacesNavGroup({
               onClick={onNavigate}
               className={({ isActive }) => sidebarItemClass(collapsed, isActive)}
             >
-              <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm bg-secondary text-[10px] font-semibold text-secondary-foreground">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm bg-secondary text-[11px] font-semibold text-secondary-foreground">
                 {initial}
               </span>
               {!collapsed && <span className="truncate">{space.name}</span>}
@@ -180,9 +183,9 @@ function SpacesNavGroup({
             onCreateSpace();
           }}
           aria-label="New space"
-          className={cn("w-full", sidebarItemClass(collapsed, false))}
+          className={cn(!collapsed && "w-full", sidebarItemClass(collapsed, false))}
         >
-          <Plus className="h-4 w-4 shrink-0" />
+          <Plus className="h-5 w-5 shrink-0" />
           {!collapsed && "New space"}
         </button>
       </RailTip>
@@ -322,9 +325,9 @@ export function SidebarBody({
           <button
             onClick={onLogout}
             aria-label="Logout"
-            className={cn("w-full", sidebarItemClass(collapsed, false))}
+            className={cn(!collapsed && "w-full", sidebarItemClass(collapsed, false))}
           >
-            <LogOut className="h-4 w-4 shrink-0" />
+            <LogOut className="h-5 w-5 shrink-0" />
             {!collapsed && "Logout"}
           </button>
         </RailTip>
@@ -338,12 +341,12 @@ export function SidebarBody({
               onClick={onToggleCollapsed}
               aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
               aria-expanded={!collapsed}
-              className={cn("w-full", sidebarItemClass(collapsed, false))}
+              className={cn(!collapsed && "w-full", sidebarItemClass(collapsed, false))}
             >
               {collapsed ? (
-                <PanelLeftOpen className="h-4 w-4 shrink-0" />
+                <PanelLeftOpen className="h-5 w-5 shrink-0" />
               ) : (
-                <PanelLeftClose className="h-4 w-4 shrink-0" />
+                <PanelLeftClose className="h-5 w-5 shrink-0" />
               )}
               {!collapsed && "Collapse"}
             </button>
