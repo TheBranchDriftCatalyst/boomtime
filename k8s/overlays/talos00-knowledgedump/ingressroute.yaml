@@ -6,6 +6,14 @@ metadata:
   name: boomtime-lan
   labels:
     app: boomtime
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: "Boomtime"
+    gethomepage.dev/description: "Coding-time tracker (WakaTime-compatible)"
+    gethomepage.dev/group: "Apps"
+    gethomepage.dev/icon: "wakatime.png"
+    gethomepage.dev/href: "http://boomtime.talos00"
+    gethomepage.dev/siteMonitor: "http://boomtime.boomtime.svc.cluster.local:8080"
 spec:
   entryPoints:
     - web
