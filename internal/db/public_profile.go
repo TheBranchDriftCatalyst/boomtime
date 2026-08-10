@@ -87,6 +87,48 @@ func (d *DB) SetPublicProfile(ctx context.Context, username string, enabled bool
 	return nil
 }
 
+// GetPublicProfileCard returns the owner's social-card customization
+// (gaka social-card): the card theme name and the optional tagline. Both
+// default to "" (the renderer falls back to the dark/synthwave theme and an
+// auto-built headline respectively). Returns ("","",nil) when the user row
+// does not exist — the same forgiving contract as GetPublicProfile.
+func (d *DB) GetPublicProfileCard(ctx context.Context, username string) (theme, tagline string, err error) {
+	row := d.Pool.QueryRow(ctx,
+		`SELECT public_card_theme, public_card_tagline FROM users WHERE username = $1`,
+		username,
+	)
+	if err := row.Scan(&theme, &tagline); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", "", nil
+		}
+		return "", "", err
+	}
+	return theme, tagline, nil
+}
+
+// SetPublicProfileCard upserts the owner's social-card customization. Both
+// values are stored verbatim (the handler bounds/validates them first). A
+// missing user row surfaces as pgx.ErrNoRows so the handler can 404.
+func (d *DB) SetPublicProfileCard(ctx context.Context, username, theme, tagline string) error {
+	if username == "" {
+		return errors.New("SetPublicProfileCard: empty username")
+	}
+	tag, err := d.Pool.Exec(ctx,
+		`UPDATE users
+		    SET public_card_theme   = $2,
+		        public_card_tagline = $3
+		  WHERE username = $1`,
+		username, theme, tagline,
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
 // LookupUsernameBySlug returns the username currently owning slug. Returns
 // pgx.ErrNoRows when no row has this slug (the public handler translates
 // that into 404). Does NOT check public_profile_enabled — that check lives

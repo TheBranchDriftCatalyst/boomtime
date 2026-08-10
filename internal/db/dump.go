@@ -66,6 +66,7 @@ var dumpTables = []dumpTable{
 		"username", "hashed_password", "salt_used",
 		"encrypted_wakatime_key", "wakatime_key_status", "wakatime_key_checked_at",
 		"public_profile_enabled", "public_slug",
+		"public_card_theme", "public_card_tagline",
 	}},
 	{"projects", []string{"name", "description", "owner", "dependencies", "repository"}},
 	// gaka-b5x.2: hashed_token / hashed_refresh_token columns are dumped so
