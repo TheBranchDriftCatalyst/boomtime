@@ -7,6 +7,7 @@ import { HeaderSlotProvider } from "@/layout/HeaderSlot";
 import { CreateSpaceDialog } from "@/features/spaces/CreateSpaceDialog";
 import { WelcomeModal } from "@/features/onboarding/WelcomeModal";
 import { CommandPalette } from "@/components/CommandPalette";
+import { KeyboardShortcuts } from "@/components/KeyboardShortcuts";
 import { useAuth } from "@/features/auth/useAuth";
 import { useCollapsedSidebar } from "@/layout/useCollapsedSidebar";
 
@@ -62,6 +63,7 @@ export function AppShell() {
         onCreateSpace={() => setCreateSpaceOpen(true)}
         onLogout={handleLogout}
       />
+      <KeyboardShortcuts />
       <WelcomeModal />
     </>
   );

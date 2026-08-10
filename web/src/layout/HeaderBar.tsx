@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import {
   Download,
   KeyRound,
@@ -48,6 +48,30 @@ function greetingFor(hour: number): string {
   return "Good evening";
 }
 
+// Route → header title, keyed by the first path segment under /app, so the
+// header always says where you are (gaka-gbbl.3). Pages that hoist a tab strip
+// (settings/admin) render the slot instead and never fall back to this.
+const PAGE_TITLES: Record<string, string> = {
+  "": "Overview",
+  projects: "Projects",
+  leaderboards: "Leaderboards",
+  goals: "Goals",
+  heartbeats: "Heartbeats",
+  wellness: "Wellness",
+  catalog: "Catalog",
+  import: "Import",
+  settings: "Settings",
+  admin: "Admin",
+  profile: "Profile",
+  space: "Space",
+  changelog: "Changelog",
+};
+
+function pageTitleFromPath(pathname: string): string {
+  const seg = pathname.replace(/^\/app\/?/, "").split("/")[0] ?? "";
+  return PAGE_TITLES[seg] ?? "Boomtime";
+}
+
 /**
  * Top header — a single consolidated user menu (gaka-lzr). The previous bar had
  * TWO overlapping theme controls (a full ThemeSwitcher + a redundant sun/moon
@@ -57,6 +81,8 @@ function greetingFor(hour: number): string {
  */
 export function HeaderBar({ username, onLogout, onCreateSpace }: HeaderBarProps) {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const pageTitle = pageTitleFromPath(pathname);
   const { theme, setTheme, variant, setVariant, effects, updateEffect } =
     useTheme();
   // gaka-1im: admin-only devtools (annotation subsystem + component inspector).
@@ -110,16 +136,16 @@ export function HeaderBar({ username, onLogout, onCreateSpace }: HeaderBarProps)
       <div className="flex h-full min-w-0 flex-1 items-center">
         {slot ?? (
           <div
-            className="hidden items-baseline gap-2 md:flex"
+            className="flex items-baseline gap-2"
             style={{
               fontFamily: '"JetBrains Mono", "Chakra Petch", ui-monospace, monospace',
             }}
           >
-            <span className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-              {greeting},
+            <span className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+              {"//"}
             </span>
-            <span className="text-sm font-semibold tracking-wide text-foreground">
-              {username}
+            <span className="truncate text-sm font-semibold tracking-wide text-foreground">
+              {pageTitle}
             </span>
           </div>
         )}

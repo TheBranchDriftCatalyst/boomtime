@@ -1,4 +1,4 @@
-import type { ComponentType, ReactNode } from "react";
+import { useState, type ComponentType, type ReactNode } from "react";
 import { NavLink } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -380,22 +380,39 @@ export function Sidebar({
   onLogout,
   onCreateSpace,
 }: SidebarProps) {
+  // Hover-to-peek (gaka-k26n.11): when collapsed, hovering the rail expands it
+  // to full labels. The OUTER wrapper keeps the collapsed column width, and the
+  // <aside> overlays (absolute + z-50) so page content never shifts during the
+  // peek — it slides back the moment the pointer leaves.
+  const [peeking, setPeeking] = useState(false);
+  const expanded = !collapsed || peeking;
+
   return (
-    <TooltipProvider delayDuration={0}>
-      <aside
-        className={cn(
-          "hidden shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground transition-[width] duration-200 ease-in-out md:flex",
-          collapsed ? "w-16" : "w-60",
-        )}
-      >
-        <SidebarBody
-          collapsed={collapsed}
-          onToggleCollapsed={onToggleCollapsed}
-          onLogout={onLogout}
-          onCreateSpace={onCreateSpace}
-        />
-      </aside>
-    </TooltipProvider>
+    <div
+      className={cn(
+        "relative hidden shrink-0 md:block",
+        collapsed ? "w-16" : "w-60",
+      )}
+    >
+      <TooltipProvider delayDuration={0}>
+        <aside
+          onMouseEnter={() => collapsed && setPeeking(true)}
+          onMouseLeave={() => setPeeking(false)}
+          className={cn(
+            "absolute inset-y-0 left-0 flex flex-col overflow-hidden border-r bg-sidebar text-sidebar-foreground transition-[width] duration-200 ease-in-out",
+            expanded ? "w-60" : "w-16",
+            peeking && "z-50 shadow-2xl shadow-black/40",
+          )}
+        >
+          <SidebarBody
+            collapsed={!expanded}
+            onToggleCollapsed={onToggleCollapsed}
+            onLogout={onLogout}
+            onCreateSpace={onCreateSpace}
+          />
+        </aside>
+      </TooltipProvider>
+    </div>
   );
 }
 
