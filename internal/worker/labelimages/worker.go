@@ -55,9 +55,9 @@ type Worker struct {
 	// generateAndSave don't racy-read. When the DB read fails the worker
 	// falls back to "" (no prefix) rather than aborting the whole
 	// generation.
-	sysMu       sync.Mutex
-	sysPrompt   string
-	sysFetched  time.Time
+	sysMu      sync.Mutex
+	sysPrompt  string
+	sysFetched time.Time
 }
 
 // NewWorker constructs a worker when the feature is on (both flag AND URL).
