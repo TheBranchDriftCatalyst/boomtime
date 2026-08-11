@@ -34,6 +34,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/imagejobs"
 	labelimages "github.com/TheBranchDriftCatalyst/boomtime/internal/worker/labelimages"
 )
@@ -71,6 +72,11 @@ type Handler struct {
 	// the admin domain doesn't need to import the god-type).
 	ImageJobQueue  imagejobs.Enqueuer
 	ImageJobEvents imagejobs.EventSource
+	// JobStore / JobEnqueuer — catalyst-go-jobs (gaka-hney.2). Set after
+	// construction; the admin Jobs tab lists from JobStore and triggers/retries
+	// via JobEnqueuer. Nil = jobs subsystem not wired (handlers 503).
+	JobStore    *jobs.Store
+	JobEnqueuer jobs.Enqueuer
 }
 
 // New constructs an admin.Handler with the passed-in shared deps.
@@ -115,6 +121,14 @@ func (h *Handler) SetImageJobQueue(e imagejobs.Enqueuer) {
 // producer+mirror split).
 func (h *Handler) SetImageJobEvents(ev imagejobs.EventSource) {
 	h.ImageJobEvents = ev
+}
+
+// SetJobs wires the catalyst-go-jobs Store + Enqueuer after construction
+// (gaka-hney.2) so the admin Jobs tab can list history + trigger/retry. Nil =
+// jobs not wired; the handlers return 503.
+func (h *Handler) SetJobs(store *jobs.Store, enq jobs.Enqueuer) {
+	h.JobStore = store
+	h.JobEnqueuer = enq
 }
 
 // requireAdmin: 401 without a token, 403 when not on the admin allowlist.

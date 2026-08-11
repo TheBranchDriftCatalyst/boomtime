@@ -187,6 +187,41 @@ func (s *Store) List(ctx context.Context, status, kind string, limit int) ([]Job
 	return out, rows.Err()
 }
 
+// Get loads one job by id (admin detail view).
+func (s *Store) Get(ctx context.Context, id int64) (*Job, bool, error) {
+	row := s.pool.QueryRow(ctx, `SELECT `+jobCols+` FROM jobs WHERE id = $1`, id)
+	j, err := scanJob(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	return j, true, nil
+}
+
+// ListSchedules returns every registered periodic schedule (admin view).
+func (s *Store) ListSchedules(ctx context.Context) ([]Schedule, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT kind, interval_seconds, next_run_at, last_run_at
+		   FROM job_schedules ORDER BY kind`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Schedule
+	for rows.Next() {
+		var sc Schedule
+		var secs int
+		if err := rows.Scan(&sc.Kind, &secs, &sc.NextRun, &sc.LastRun); err != nil {
+			return nil, err
+		}
+		sc.Interval = time.Duration(secs) * time.Second
+		out = append(out, sc)
+	}
+	return out, rows.Err()
+}
+
 // scanRow is the shared shape of pgx.Row / a rows cursor position.
 type scanRow interface {
 	Scan(dest ...any) error

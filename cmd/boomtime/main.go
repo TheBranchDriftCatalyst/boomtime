@@ -375,13 +375,14 @@ func runCmd() *cobra.Command {
 				}
 			}
 
-			// catalyst-go-jobs (gaka-hney.1): the periodic github-stats refresh.
-			// Additive + independent of the image-job path above — its own
-			// DB-backed queue by default (BOOM_JOBS_PROVIDER=local) or the
-			// RabbitMQ provider when opted in. Scheduler is a leader-singleton
-			// (server role, atomic ClaimDueSchedules); workers process (worker
-			// role); role=all runs both.
-			if cfg.GithubStatsRefreshEnabled() {
+			// catalyst-go-jobs (gaka-hney): ALWAYS wired — the jobs table exists
+			// (migration 00054), so the admin Jobs tab + trigger/retry work
+			// regardless of the schedule. Additive + independent of the image-job
+			// path above; DB-backed queue by default (BOOM_JOBS_PROVIDER=local) or
+			// the RabbitMQ provider when opted in. The worker always runs (so
+			// triggered jobs process); only the github-refresh SCHEDULE is gated
+			// on its interval + FeatureGithubStats.
+			{
 				jobStore := jobs.NewStore(database.Pool)
 				jobReg := jobs.NewRegistry()
 
@@ -430,10 +431,16 @@ func runCmd() *cobra.Command {
 					}
 					provider = amqpProv
 				}
+				// Expose to the admin Jobs tab (list/schedules/trigger/retry).
+				h.SetJobs(jobStore, provider)
+
 				logger.Info("jobs: wired", "provider", provider.Name(),
+					"githubRefreshEnabled", cfg.GithubStatsRefreshEnabled(),
 					"githubRefreshInterval", cfg.GithubStatsRefreshInterval.String())
 
-				if cfg.IsServerRole() {
+				// The github-refresh schedule is the only piece gated on config;
+				// leader-singleton via the DB, so running it on every server is safe.
+				if cfg.IsServerRole() && cfg.GithubStatsRefreshEnabled() {
 					sched := jobs.NewScheduler(jobStore, provider, logger)
 					if serr := sched.Register(ctx, github.GithubStatsRefreshKind, cfg.GithubStatsRefreshInterval); serr != nil {
 						logger.Warn("jobs: schedule register failed", "err", serr)

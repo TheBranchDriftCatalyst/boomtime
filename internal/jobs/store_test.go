@@ -3,21 +3,38 @@ package jobs
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"testing"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 )
 
+// newTestStore opens the pool directly (via db.MigrateURL) rather than through
+// testutil — testutil imports internal/admin, which imports this package, so
+// pulling it into a jobs test would be an import cycle. db is low-level and
+// imports neither, so this stays acyclic.
 func newTestStore(t *testing.T) (*Store, context.Context) {
 	t.Helper()
-	d := testutil.OpenDB(t)
+	url := os.Getenv("BOOM_TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("BOOM_TEST_DATABASE_URL not set")
+	}
 	ctx := context.Background()
-	// Isolate: the package's DB may carry rows from a prior test.
-	if _, err := d.Pool.Exec(ctx, `TRUNCATE jobs, job_schedules`); err != nil {
+	if err := db.MigrateURL(ctx, url); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	pool, err := pgxpool.New(ctx, url)
+	if err != nil {
+		t.Fatalf("pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	if _, err := pool.Exec(ctx, `TRUNCATE jobs, job_schedules`); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
-	return NewStore(d.Pool), ctx
+	return NewStore(pool), ctx
 }
 
 func TestStoreEnqueueClaimComplete(t *testing.T) {

@@ -86,6 +86,17 @@ func Register(e *echo.Echo, h *Handler) {
 	// AdminLabelImagesWS) — WS handshakes can't carry Authorization.
 	e.GET("/api/v1/admin/label-images/ws", h.AdminLabelImagesWS)
 
+	// catalyst-go-jobs admin (gaka-hney.2): list history, schedules, trigger,
+	// retry. CapAdmin route middleware + requireAdmin in-handler; 503 when the
+	// jobs subsystem isn't wired.
+	if h != nil && h.DB != nil {
+		jobsCap := apihelpers.RequireCap(h.DB, auth.CapAdmin, "view admin jobs")
+		e.GET("/api/v1/admin/jobs", h.AdminJobsList, jobsCap)
+		e.GET("/api/v1/admin/jobs/schedules", h.AdminJobSchedules, jobsCap)
+		e.POST("/api/v1/admin/jobs/trigger", h.AdminJobTrigger, jobsCap)
+		e.POST("/api/v1/admin/jobs/:id/retry", h.AdminJobRetry, jobsCap)
+	}
+
 	// Durable, resumable wakatime.com import jobs. Auth is the shared
 	// bearer-token flow for the JSON endpoints; the WS uses the
 	// refresh_token cookie (WS handshakes can't carry Authorization).

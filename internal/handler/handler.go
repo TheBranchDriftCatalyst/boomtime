@@ -31,6 +31,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/meta"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/imagejobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/spaces"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
@@ -169,6 +170,14 @@ func (h *Handler) SetImageJobEvents(ev imagejobs.EventSource) {
 	h.ImageJobEvents = ev
 	if h.Admin != nil {
 		h.Admin.SetImageJobEvents(ev)
+	}
+}
+
+// SetJobs propagates the catalyst-go-jobs Store + Enqueuer to h.Admin
+// (gaka-hney.2) so the admin Jobs tab can list + trigger/retry.
+func (h *Handler) SetJobs(store *jobs.Store, enq jobs.Enqueuer) {
+	if h.Admin != nil {
+		h.Admin.SetJobs(store, enq)
 	}
 }
 
