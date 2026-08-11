@@ -36,6 +36,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -44,6 +45,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/comfyui"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/labstack/echo/v5"
 )
 
@@ -244,10 +246,47 @@ type avatarRegenReq struct {
 // leaking the goroutine.
 const avatarRegenTimeout = 50 * time.Minute
 
-// RegenerateAvatar: POST /api/v1/users/current/avatar/regenerate. Enqueues
-// an image generation goroutine and returns 202 with the current status
-// row. The FE watches /avatar/status for the terminal ready/error
-// transition — no queue registry (one avatar per user, no batching win).
+// AvatarRenderKind is the catalyst-go-jobs kind for a user's avatar render
+// (gaka-hney.7). Owner-scoped, so completion toasts that user.
+const AvatarRenderKind = "avatar-render"
+
+// AvatarRenderPayload is the avatar-render job payload (the owner rides the
+// job's Owner field, not here).
+type AvatarRenderPayload struct {
+	Prompt string `json:"prompt"`
+	Model  string `json:"model"`
+	Size   string `json:"size"`
+	Seed   *int64 `json:"seed,omitempty"`
+}
+
+// RunAvatarRender generates + saves one avatar via the shim and flips the
+// terminal avatar status (SaveUserAvatar → ready; failures → error). Called by
+// the avatar-render job handler (wired in cmd/boomtime) and by the inline
+// fallback in RegenerateAvatar. Returns any error for the job's outcome +
+// completion notification.
+func RunAvatarRender(ctx context.Context, database *db.DB, shim *comfyui.Client, logger *slog.Logger, owner, prompt, model, size string, seed *int64) error {
+	imgBytes, mime, gerr := shim.Generate(ctx, prompt, model, size, seed)
+	if gerr != nil {
+		logger.Warn("avatar render: shim call failed", "user", owner, "err", gerr)
+		if serr := database.SetAvatarStatus(ctx, owner, db.UserAvatarStatusError, gerr.Error()); serr != nil {
+			logger.Error("avatar render: status flip to error failed", "user", owner, "err", serr)
+		}
+		return gerr
+	}
+	if serr := database.SaveUserAvatar(ctx, owner, imgBytes, mime, model, prompt, seed); serr != nil {
+		logger.Error("avatar render: save failed", "user", owner, "err", serr)
+		_ = database.SetAvatarStatus(ctx, owner, db.UserAvatarStatusError, fmt.Sprintf("save failed: %v", serr))
+		return serr
+	}
+	logger.Info("avatar render: saved", "user", owner, "bytes", len(imgBytes), "mime", mime)
+	return nil
+}
+
+// RegenerateAvatar: POST /api/v1/users/current/avatar/regenerate. Reserves the
+// status row 'running' and enqueues an owner-scoped avatar-render job (gaka-
+// hney.7) — the worker renders it and toasts the user on completion (falling
+// back to an inline goroutine when the jobs subsystem isn't wired). Returns 202;
+// the FE also watches /avatar/status for the terminal ready/error transition.
 func (h *Handler) RegenerateAvatar(c *echo.Context) error {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
@@ -306,28 +345,25 @@ func (h *Handler) RegenerateAvatar(c *echo.Context) error {
 		return apihelpers.InternalErr(h.Logger, c, "avatar shim init failed", cerr)
 	}
 
-	go func() {
-		bgCtx, cancel := context.WithTimeout(context.Background(), avatarRegenTimeout)
-		defer cancel()
-		// Named `imgBytes` to avoid shadowing the top-level "bytes" package
-		// import used for the SSE proxy request builder.
-		imgBytes, mime, gerr := shimClient.Generate(bgCtx, prompt, model, size, seed)
-		if gerr != nil {
-			h.Logger.Warn("avatar regen: shim call failed", "user", owner, "err", gerr)
-			if serr := h.DB.SetAvatarStatus(bgCtx, owner, db.UserAvatarStatusError, gerr.Error()); serr != nil {
-				h.Logger.Error("avatar regen: status flip to error failed",
-					"user", owner, "err", serr)
-			}
-			return
+	// gaka-hney.7: enqueue an owner-scoped avatar-render job (single attempt —
+	// a shim failure is terminal, matching the old goroutine's behavior) so it
+	// runs on the worker + toasts on completion. When jobs aren't wired (tests
+	// / disabled), fall back to the inline goroutine so behavior is unchanged.
+	if h.JobEnqueuer != nil {
+		payload, _ := json.Marshal(AvatarRenderPayload{Prompt: prompt, Model: model, Size: size, Seed: seed})
+		if _, eerr := h.JobEnqueuer.Enqueue(ctx, AvatarRenderKind, payload,
+			jobs.Owner(owner), jobs.MaxAttempts(1)); eerr != nil {
+			_ = h.DB.SetAvatarStatus(ctx, owner, db.UserAvatarStatusError,
+				fmt.Sprintf("enqueue failed: %v", eerr))
+			return apihelpers.InternalErr(h.Logger, c, "avatar render enqueue failed", eerr)
 		}
-		if serr := h.DB.SaveUserAvatar(bgCtx, owner, imgBytes, mime, model, prompt, seed); serr != nil {
-			h.Logger.Error("avatar regen: save failed", "user", owner, "err", serr)
-			_ = h.DB.SetAvatarStatus(bgCtx, owner, db.UserAvatarStatusError,
-				fmt.Sprintf("save failed: %v", serr))
-			return
-		}
-		h.Logger.Info("avatar regen: saved", "user", owner, "bytes", len(imgBytes), "mime", mime)
-	}()
+	} else {
+		go func() {
+			bgCtx, cancel := context.WithTimeout(context.Background(), avatarRegenTimeout)
+			defer cancel()
+			_ = RunAvatarRender(bgCtx, h.DB, shimClient, h.Logger, owner, prompt, model, size, seed)
+		}()
+	}
 
 	return c.JSON(http.StatusAccepted, map[string]any{
 		"status": string(db.UserAvatarStatusRunning),

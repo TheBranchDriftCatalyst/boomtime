@@ -5,6 +5,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -18,10 +19,13 @@ import (
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/comfyui"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/github"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/identity"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobsevents"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
@@ -408,6 +412,24 @@ func runCmd() *cobra.Command {
 					return nil
 				}))
 
+				// avatar-render kind (gaka-hney.7): render a user's avatar on the
+				// worker + toast them on completion. Registered when the shim is
+				// configured (same gate as the synchronous path).
+				if cfg.LabelImagesEnabled() {
+					if shim, serr := comfyui.NewClient(cfg.ComfyUIShimURL); serr == nil && shim != nil {
+						jobReg.Register(identity.AvatarRenderKind, jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
+							var p identity.AvatarRenderPayload
+							if uerr := json.Unmarshal(job.Payload, &p); uerr != nil {
+								return uerr
+							}
+							rctx, cancel := context.WithTimeout(jctx, 25*time.Minute)
+							defer cancel()
+							return identity.RunAvatarRender(rctx, database, shim, logger, job.Owner, p.Prompt, p.Model, p.Size, p.Seed)
+						}))
+						logger.Info("jobs: avatar-render handler registered")
+					}
+				}
+
 				hostID, _ := os.Hostname()
 				if hostID == "" {
 					hostID = "boomtime-jobs"
@@ -433,6 +455,13 @@ func runCmd() *cobra.Command {
 				}
 				// Expose to the admin Jobs tab (list/schedules/trigger/retry).
 				h.SetJobs(jobStore, provider)
+
+				// Push hub for job-completion toasts (gaka-hney.6): the provider
+				// notifies it on terminal events; /api/v1/jobs/ws fans them to the
+				// owning user's browser.
+				jobHub := jobsevents.NewHub()
+				provider.SetNotifier(jobHub)
+				h.SetJobEvents(jobHub)
 
 				logger.Info("jobs: wired", "provider", provider.Name(),
 					"githubRefreshEnabled", cfg.GithubStatsRefreshEnabled(),

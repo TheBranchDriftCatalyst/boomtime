@@ -10,6 +10,7 @@ import { CommandPalette } from "@/components/CommandPalette";
 import { KeyboardShortcuts } from "@/components/KeyboardShortcuts";
 import { useAuth } from "@/features/auth/useAuth";
 import { useCollapsedSidebar } from "@/layout/useCollapsedSidebar";
+import { useJobNotifications } from "@/features/jobs/useJobNotifications";
 
 // AppShell — the authed app frame. The layout is the no-scroll CSS-grid shell
 // (AppShellNoScroll): the shell owns exactly one viewport (h-dvh, overflow
@@ -22,6 +23,8 @@ export function AppShell() {
   const navigate = useNavigate();
   const [createSpaceOpen, setCreateSpaceOpen] = useState(false);
   const { collapsed, toggleCollapsed } = useCollapsedSidebar();
+  // Push toasts when one of the caller's jobs completes/fails (gaka-hney.6).
+  useJobNotifications();
 
   async function handleLogout() {
     await logout();

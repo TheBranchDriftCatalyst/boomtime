@@ -32,6 +32,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/meta"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobsevents"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/imagejobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/spaces"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
@@ -178,6 +179,17 @@ func (h *Handler) SetImageJobEvents(ev imagejobs.EventSource) {
 func (h *Handler) SetJobs(store *jobs.Store, enq jobs.Enqueuer) {
 	if h.Admin != nil {
 		h.Admin.SetJobs(store, enq)
+	}
+	if h.Identity != nil {
+		h.Identity.SetJobEnqueuer(enq) // gaka-hney.7: avatar-render enqueue
+	}
+}
+
+// SetJobEvents propagates the job-events push hub to h.Identity so the
+// /api/v1/jobs/ws stream can subscribe (gaka-hney.6).
+func (h *Handler) SetJobEvents(hub *jobsevents.Hub) {
+	if h.Identity != nil {
+		h.Identity.SetJobEvents(hub)
 	}
 }
 

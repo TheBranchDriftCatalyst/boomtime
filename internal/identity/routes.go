@@ -104,4 +104,8 @@ func Register(e *echo.Echo, h *Handler) {
 	e.POST("/api/v1/users/current/avatar/regenerate", h.RegenerateAvatar)
 	e.GET("/api/v1/users/current/avatar/status", h.GetAvatarStatus)
 	e.GET("/api/v1/users/:username/avatar", h.UserAvatar)
+
+	// Per-user catalyst-go-jobs push stream (gaka-hney.6): terminal job events
+	// (e.g. avatar-render complete) for toasts. Cookie-authed in-handler.
+	e.GET("/api/v1/jobs/ws", h.JobEventsWS)
 }

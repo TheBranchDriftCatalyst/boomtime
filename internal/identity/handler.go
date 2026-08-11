@@ -29,6 +29,8 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/cardstore"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobsevents"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/cache"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
@@ -63,7 +65,20 @@ type Handler struct {
 	// BOOM_S3_* is unset (or the client failed to init) — the og.png handler
 	// then renders live on every request rather than erroring.
 	Cards *cardstore.Store
+	// JobEvents is the catalyst-go-jobs push hub (gaka-hney.6). Set after
+	// construction; the /api/v1/jobs/ws stream subscribes to it. nil = no push.
+	JobEvents *jobsevents.Hub
+	// JobEnqueuer enqueues catalyst-go-jobs (gaka-hney.7) — RegenerateAvatar
+	// puts an owner-scoped avatar-render job on it. nil = fall back to the
+	// inline goroutine render.
+	JobEnqueuer jobs.Enqueuer
 }
+
+// SetJobEvents wires the job-events hub after construction (gaka-hney.6).
+func (h *Handler) SetJobEvents(hub *jobsevents.Hub) { h.JobEvents = hub }
+
+// SetJobEnqueuer wires the jobs enqueuer after construction (gaka-hney.7).
+func (h *Handler) SetJobEnqueuer(e jobs.Enqueuer) { h.JobEnqueuer = e }
 
 // New constructs an identity.Handler with the passed-in shared deps.
 // Every field is required in production; nil-checks are the caller's
