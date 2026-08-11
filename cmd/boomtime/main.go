@@ -499,7 +499,14 @@ func runCmd() *cobra.Command {
 					}
 					go sched.Run(ctx)
 				}
-				if cfg.IsWorkerRole() {
+				// Run the jobs worker on the always-on SERVER (not just the worker
+				// role): the LOCAL provider polls the shared jobs table, and prod's
+				// dedicated image worker (boomtime-worker, --role=worker) is
+				// KEDA-scaled to ZERO when idle, so it can't be relied on to drain
+				// DB jobs — they'd sit queued forever. Also run on a dedicated
+				// worker role (AMQP topologies). SKIP LOCKED keeps concurrent
+				// workers safe.
+				if cfg.IsServerRole() || cfg.IsWorkerRole() {
 					go func() {
 						if rerr := provider.Run(ctx, jobReg); rerr != nil && !errors.Is(rerr, context.Canceled) {
 							logger.Error("jobs: provider stopped", "err", rerr)
