@@ -18,6 +18,7 @@ const TABS = [
   { id: "users", label: "Users", to: "/app/admin/users" },
   { id: "labels", label: "Labels", to: "/app/admin/labels" },
   { id: "cli", label: "Commands", to: "/app/admin/cli" },
+  { id: "jobs", label: "Jobs", to: "/app/admin/jobs" },
   { id: "data", label: "Data", to: "/app/admin/data" },
   { id: "logs", label: "Logs", to: "/app/admin/logs" },
 ] as const;

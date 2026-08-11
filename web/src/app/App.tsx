@@ -96,6 +96,10 @@ const DataTab = lazy(() =>
 const CliTab = lazy(() =>
   import("@/features/admin/CliTab").then((m) => ({ default: m.CliTab })),
 );
+// gaka-hney: admin background-jobs tab (queue + recurring schedules).
+const JobsTab = lazy(() =>
+  import("@/features/admin/JobsTab").then((m) => ({ default: m.JobsTab })),
+);
 const Logs = lazy(() =>
   import("@/features/logs/Logs").then((m) => ({ default: m.Logs })),
 );
@@ -325,6 +329,14 @@ export function AppRoutes() {
             element={
               <Suspense fallback={<PageFallback />}>
                 <CliTab />
+              </Suspense>
+            }
+          />
+          <Route
+            path="jobs"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <JobsTab />
               </Suspense>
             }
           />
