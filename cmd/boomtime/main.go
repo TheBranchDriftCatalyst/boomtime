@@ -20,6 +20,8 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/github"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
@@ -370,6 +372,80 @@ func runCmd() *cobra.Command {
 						h.SetImageJobEvents(registry)
 						logger.Info("imagejobs pool wired", "concurrency", concurrency)
 					}
+				}
+			}
+
+			// catalyst-go-jobs (gaka-hney.1): the periodic github-stats refresh.
+			// Additive + independent of the image-job path above — its own
+			// DB-backed queue by default (BOOM_JOBS_PROVIDER=local) or the
+			// RabbitMQ provider when opted in. Scheduler is a leader-singleton
+			// (server role, atomic ClaimDueSchedules); workers process (worker
+			// role); role=all runs both.
+			if cfg.GithubStatsRefreshEnabled() {
+				jobStore := jobs.NewStore(database.Pool)
+				jobReg := jobs.NewRegistry()
+
+				// The github handler is wired HERE (Service + DB in scope) so the
+				// jobs package stays domain-free: fan over connected users, refresh
+				// each. A rate-limit fails the batch so it retries later; a per-user
+				// error (incl. a token SyncUser marks invalid) is logged + skipped.
+				githubSvc := github.NewService(database, logger)
+				jobReg.Register(github.GithubStatsRefreshKind, jobs.HandlerFunc(func(jctx context.Context, _ jobs.Job) error {
+					users, uerr := database.ListUsersWithGithubToken(jctx)
+					if uerr != nil {
+						return uerr
+					}
+					for _, u := range users {
+						if _, serr := githubSvc.SyncUser(jctx, u); serr != nil {
+							if errors.Is(serr, github.ErrRateLimited) {
+								return fmt.Errorf("github rate limited at user %q: %w", u, serr)
+							}
+							logger.Warn("github refresh: user sync failed", "user", u, "err", serr)
+						}
+					}
+					logger.Info("github refresh: batch complete", "users", len(users))
+					return nil
+				}))
+
+				hostID, _ := os.Hostname()
+				if hostID == "" {
+					hostID = "boomtime-jobs"
+				}
+
+				var provider jobs.Provider = jobs.NewLocalProvider(jobStore, logger, hostID)
+				if cfg.JobsBrokerRabbit() {
+					jconn, jerr := amqp.Dial(cfg.RabbitURL)
+					if jerr != nil {
+						return fmt.Errorf("jobs rabbitmq connect: %w", jerr)
+					}
+					defer jconn.Close()
+					jch, jcherr := jconn.Channel()
+					if jcherr != nil {
+						return fmt.Errorf("jobs rabbitmq channel: %w", jcherr)
+					}
+					defer jch.Close()
+					amqpProv, aperr := jobs.NewAMQPProvider(jch, cfg.RabbitQueue+".jobs", jobStore, logger, hostID, 4)
+					if aperr != nil {
+						return fmt.Errorf("jobs rabbitmq provider: %w", aperr)
+					}
+					provider = amqpProv
+				}
+				logger.Info("jobs: wired", "provider", provider.Name(),
+					"githubRefreshInterval", cfg.GithubStatsRefreshInterval.String())
+
+				if cfg.IsServerRole() {
+					sched := jobs.NewScheduler(jobStore, provider, logger)
+					if serr := sched.Register(ctx, github.GithubStatsRefreshKind, cfg.GithubStatsRefreshInterval); serr != nil {
+						logger.Warn("jobs: schedule register failed", "err", serr)
+					}
+					go sched.Run(ctx)
+				}
+				if cfg.IsWorkerRole() {
+					go func() {
+						if rerr := provider.Run(ctx, jobReg); rerr != nil && !errors.Is(rerr, context.Canceled) {
+							logger.Error("jobs: provider stopped", "err", rerr)
+						}
+					}()
 				}
 			}
 

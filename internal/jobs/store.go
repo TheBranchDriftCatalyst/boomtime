@@ -1,0 +1,204 @@
+package jobs
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// Store is the Postgres-backed queue. It owns the `jobs` + `job_schedules`
+// tables (migration 00054) and nothing else.
+type Store struct {
+	pool *pgxpool.Pool
+}
+
+// NewStore wraps a pgx pool.
+func NewStore(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
+
+const jobCols = `id, kind, payload, status, attempts, max_attempts, error,
+	run_at, created_at, started_at, finished_at`
+
+// Enqueue inserts a queued job. maxAttempts < 1 is clamped to 1; a zero runAt
+// means "now". Returns the new job id.
+func (s *Store) Enqueue(ctx context.Context, kind string, payload []byte, maxAttempts int, runAt time.Time) (int64, error) {
+	if maxAttempts < 1 {
+		maxAttempts = 1
+	}
+	if runAt.IsZero() {
+		runAt = time.Now()
+	}
+	if len(payload) == 0 {
+		payload = []byte("{}")
+	}
+	var id int64
+	err := s.pool.QueryRow(ctx,
+		`INSERT INTO jobs (kind, payload, max_attempts, run_at)
+		 VALUES ($1, $2, $3, $4) RETURNING id`,
+		kind, payload, maxAttempts, runAt,
+	).Scan(&id)
+	return id, err
+}
+
+// ClaimNext atomically grabs the oldest due queued job, marks it running, bumps
+// attempts, and returns it. ok=false when nothing is due. FOR UPDATE SKIP
+// LOCKED makes it safe for many concurrent workers — each gets a distinct row.
+func (s *Store) ClaimNext(ctx context.Context, workerID string) (*Job, bool, error) {
+	row := s.pool.QueryRow(ctx,
+		`UPDATE jobs
+		    SET status = 'running', attempts = attempts + 1,
+		        started_at = now(), locked_by = $1, locked_at = now()
+		  WHERE id = (
+		        SELECT id FROM jobs
+		         WHERE status = 'queued' AND run_at <= now()
+		         ORDER BY run_at
+		         FOR UPDATE SKIP LOCKED
+		         LIMIT 1
+		  )
+		  RETURNING `+jobCols,
+		workerID,
+	)
+	j, err := scanJob(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	return j, true, nil
+}
+
+// ClaimByID atomically claims a specific queued job by id (the AMQP path: the
+// delivery carries the id). ok=false if it's already claimed, done, or gone.
+func (s *Store) ClaimByID(ctx context.Context, id int64, workerID string) (*Job, bool, error) {
+	row := s.pool.QueryRow(ctx,
+		`UPDATE jobs
+		    SET status = 'running', attempts = attempts + 1,
+		        started_at = now(), locked_by = $2, locked_at = now()
+		  WHERE id = $1 AND status = 'queued'
+		  RETURNING `+jobCols,
+		id, workerID)
+	j, err := scanJob(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	return j, true, nil
+}
+
+// Complete marks a running job done.
+func (s *Store) Complete(ctx context.Context, id int64) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE jobs SET status = 'done', finished_at = now(), error = '' WHERE id = $1`, id)
+	return err
+}
+
+// Fail records a failure. With a non-nil retryAt the job is re-queued to run
+// then (the incremented attempt stands); with nil it becomes terminal.
+func (s *Store) Fail(ctx context.Context, id int64, errMsg string, retryAt *time.Time) error {
+	if retryAt != nil {
+		_, err := s.pool.Exec(ctx,
+			`UPDATE jobs SET status = 'queued', run_at = $2, error = $3,
+			        locked_by = '', locked_at = NULL WHERE id = $1`,
+			id, *retryAt, errMsg)
+		return err
+	}
+	_, err := s.pool.Exec(ctx,
+		`UPDATE jobs SET status = 'failed', finished_at = now(), error = $2 WHERE id = $1`,
+		id, errMsg)
+	return err
+}
+
+// UpsertSchedule registers/updates a periodic schedule. On first insert the
+// next run is one interval out, so a restart doesn't fire the job immediately.
+func (s *Store) UpsertSchedule(ctx context.Context, kind string, interval time.Duration) error {
+	secs := int(interval.Seconds())
+	if secs < 1 {
+		secs = 1
+	}
+	// next_run_at is computed in Go and passed as its own param so $2 isn't
+	// reused in two type contexts (int column + make_interval's double).
+	next := time.Now().Add(time.Duration(secs) * time.Second)
+	_, err := s.pool.Exec(ctx,
+		`INSERT INTO job_schedules (kind, interval_seconds, next_run_at)
+		 VALUES ($1, $2, $3)
+		 ON CONFLICT (kind) DO UPDATE SET interval_seconds = EXCLUDED.interval_seconds`,
+		kind, secs, next)
+	return err
+}
+
+// ClaimDueSchedules atomically advances every due schedule and returns the kinds
+// that just came due. The UPDATE ... RETURNING is the leader-singleton: even if
+// every replica runs the scheduler, each due row is claimed by exactly one.
+func (s *Store) ClaimDueSchedules(ctx context.Context) ([]string, error) {
+	rows, err := s.pool.Query(ctx,
+		`UPDATE job_schedules
+		    SET last_run_at = now(),
+		        next_run_at = now() + make_interval(secs => interval_seconds)
+		  WHERE next_run_at <= now()
+		  RETURNING kind`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var kinds []string
+	for rows.Next() {
+		var k string
+		if err := rows.Scan(&k); err != nil {
+			return nil, err
+		}
+		kinds = append(kinds, k)
+	}
+	return kinds, rows.Err()
+}
+
+// List returns recent jobs, newest first, optionally filtered by status/kind
+// (empty = any). limit is clamped to [1, 500]. Used by the admin Jobs UI (S2).
+func (s *Store) List(ctx context.Context, status, kind string, limit int) ([]Job, error) {
+	if limit < 1 {
+		limit = 50
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	rows, err := s.pool.Query(ctx,
+		`SELECT `+jobCols+` FROM jobs
+		  WHERE ($1 = '' OR status = $1)
+		    AND ($2 = '' OR kind = $2)
+		  ORDER BY created_at DESC
+		  LIMIT $3`,
+		status, kind, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Job
+	for rows.Next() {
+		j, err := scanJob(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *j)
+	}
+	return out, rows.Err()
+}
+
+// scanRow is the shared shape of pgx.Row / a rows cursor position.
+type scanRow interface {
+	Scan(dest ...any) error
+}
+
+func scanJob(row scanRow) (*Job, error) {
+	var j Job
+	if err := row.Scan(
+		&j.ID, &j.Kind, &j.Payload, &j.Status, &j.Attempts, &j.MaxAttempts,
+		&j.Error, &j.RunAt, &j.CreatedAt, &j.StartedAt, &j.FinishedAt,
+	); err != nil {
+		return nil, err
+	}
+	return &j, nil
+}

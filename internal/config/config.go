@@ -269,6 +269,17 @@ type Config struct {
 	S3AccessKey string
 	S3SecretKey string
 	S3UseSSL    bool // TLS to the S3 endpoint (in-cluster MinIO: false)
+
+	// catalyst-go-jobs (gaka-hney): the job provider + the periodic github-stats
+	// refresh cadence.
+	//   JobsProvider — "local" (Postgres broker, default) or "rabbitmq"/"celery"
+	//                  (reuses the image-queue's RabbitMQ connection). See
+	//                  internal/jobs' Provider boundary.
+	//   GithubStatsRefreshInterval — how often to refresh every connected user's
+	//                  GitHub stats; 0 = off. Additionally gated behind
+	//                  FeatureGithubStats (GithubStatsRefreshEnabled()).
+	JobsProvider               string
+	GithubStatsRefreshInterval time.Duration
 }
 
 func getEnv(key, def string) string {
@@ -470,6 +481,10 @@ func Load() *Config {
 	c.S3SecretKey = getEnv("BOOM_S3_SECRET_KEY", "")
 	c.S3UseSSL = strings.EqualFold(getEnv("BOOM_S3_USE_SSL", "false"), "true")
 
+	// catalyst-go-jobs (gaka-hney).
+	c.JobsProvider = getEnv("BOOM_JOBS_PROVIDER", "local")
+	c.GithubStatsRefreshInterval = parseJobInterval(getEnv("BOOM_GITHUB_STATS_REFRESH_INTERVAL", "8h"))
+
 	// gaka-dg7: operator-wide default TZ for users with no explicit pick.
 	// Validate here so an invalid IANA name never lands into the resolver —
 	// a bogus value from the env would cause every subsequent AT TIME ZONE
@@ -622,6 +637,33 @@ func (c *Config) BrokerRabbit() bool {
 func (c *Config) S3Enabled() bool {
 	return c.S3Endpoint != "" && c.S3Bucket != "" &&
 		c.S3AccessKey != "" && c.S3SecretKey != ""
+}
+
+// JobsBrokerRabbit reports whether the jobs subsystem uses the RabbitMQ provider
+// (vs the default local Postgres broker). Reuses the image-queue's connection.
+func (c *Config) JobsBrokerRabbit() bool {
+	return strings.EqualFold(c.JobsProvider, "rabbitmq") || strings.EqualFold(c.JobsProvider, "celery")
+}
+
+// GithubStatsRefreshEnabled reports whether the periodic github-stats refresh
+// job should be scheduled: the master GitHub feature must be on AND a positive
+// interval configured.
+func (c *Config) GithubStatsRefreshEnabled() bool {
+	return c.FeatureGithubStats && c.GithubStatsRefreshInterval > 0
+}
+
+// parseJobInterval reads a Go duration ("8h", "30m"); "off"/"0"/"" disable it
+// (0). An unparseable/negative value also disables — fail safe, not loud.
+func parseJobInterval(s string) time.Duration {
+	s = strings.TrimSpace(s)
+	if s == "" || s == "0" || strings.EqualFold(s, "off") {
+		return 0
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil || d < 0 {
+		return 0
+	}
+	return d
 }
 
 // LabelImagesReconcileEnabled reports whether the startup "fill missing images"

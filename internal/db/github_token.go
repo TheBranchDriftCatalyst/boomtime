@@ -151,6 +151,32 @@ func (d *DB) GetEncryptedGithubToken(ctx context.Context, username string) ([]by
 	return blob, true, nil
 }
 
+// ListUsersWithGithubToken returns the usernames of every user with a stored
+// GitHub token that isn't known-invalid — the working set for the periodic
+// github-stats refresh job (gaka-hney.1). Known-invalid tokens are skipped so
+// the scheduler doesn't hammer GitHub with credentials it already knows are
+// dead; a user re-connecting flips the status back and re-enters the set.
+func (d *DB) ListUsersWithGithubToken(ctx context.Context) ([]string, error) {
+	rows, err := d.Pool.Query(ctx,
+		`SELECT username FROM users
+		  WHERE encrypted_github_token IS NOT NULL
+		    AND github_token_status <> 'invalid'
+		  ORDER BY username`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var u string
+		if err := rows.Scan(&u); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
 // ClearEncryptedGithubToken nulls the ciphertext AND the login/status/checked_at
 // columns so a subsequent presence probe cannot mistake stale metadata for
 // current truth. Idempotent: clearing an already-null row is a no-op.
