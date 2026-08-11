@@ -34,6 +34,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -120,32 +121,9 @@ func (h *Handler) CLIRun(c *echo.Context) error {
 		return apihelpers.RespondErr(c, aerr)
 	}
 
-	spec, entry, aerr := h.cliLookup(req.Command)
+	spec, entry, args, dryRun, aerr := h.cliResolve(owner, req)
 	if aerr != nil {
-		h.cliAuditDenial(owner, req.Command, "unknown or unavailable command")
 		return apihelpers.RespondErr(c, aerr)
-	}
-	// Defense-in-depth: nothing destructive is ever registered, but if an
-	// entry drifted in, refuse it outright rather than trusting confirm.
-	if entry.Classification == climeta.ClassDestructive {
-		h.cliAuditDenial(owner, req.Command, "destructive class refused")
-		return apihelpers.RespondErr(c, apierr.Forbidden("destructive commands cannot be run from the web"))
-	}
-
-	args, err := climeta.BindRunArgs(spec, req.Flags)
-	if err != nil {
-		h.cliAuditDenial(owner, req.Command, "bind: "+err.Error())
-		return apihelpers.RespondErr(c, apierr.BadRequest(err.Error()))
-	}
-
-	// dry-run semantics: supported ⇒ the binder defaulted it TRUE when
-	// absent; not supported ⇒ every run of a mutating command is an apply.
-	dryRun := entry.DryRunSupported && args.Bool(climeta.DryRunFlag)
-	applying := entry.Classification == climeta.ClassMutating && !dryRun
-	if applying && req.Confirm != req.Command {
-		h.cliAuditDenial(owner, req.Command, "missing confirm sentinel for mutating apply")
-		return apihelpers.RespondErr(c, apierr.BadRequest(
-			fmt.Sprintf("applying %q requires confirm=%q (omit dry-run:false to preview instead)", req.Command, req.Command)))
 	}
 
 	ctx, cancel := context.WithTimeout(c.Request().Context(), cliRunTimeout)
@@ -153,15 +131,7 @@ func (h *Handler) CLIRun(c *echo.Context) error {
 
 	out := &cappedWriter{max: cliMaxOutputBytes}
 	start := time.Now()
-	runErr := func() (err error) {
-		// A panicking invoker must not crash the request.
-		defer func() {
-			if r := recover(); r != nil {
-				err = fmt.Errorf("command panicked: %v", r)
-			}
-		}()
-		return entry.Invoke(ctx, h.DB, args, out)
-	}()
+	runErr := h.invokeCLI(ctx, entry, args, out)
 	duration := time.Since(start)
 
 	output := out.buf.String()
@@ -193,6 +163,57 @@ func (h *Handler) CLIRun(c *echo.Context) error {
 		DryRun:     dryRun,
 		DurationMs: duration.Milliseconds(),
 	})
+}
+
+// cliResolve runs the full allowlist → bind → dry-run/confirm gate shared by
+// the sync (CLIRun) and streaming (CLIRunWS) paths. On any refusal it audits
+// the denial and returns the *apierr.Error to surface. `applying` is folded in:
+// a mutating command with dry-run off and a mismatched confirm is rejected here.
+func (h *Handler) cliResolve(owner string, req cliRunRequest) (climeta.CommandSpec, climeta.RegistryEntry, climeta.RunArgs, bool, *apierr.Error) {
+	spec, entry, aerr := h.cliLookup(req.Command)
+	if aerr != nil {
+		h.cliAuditDenial(owner, req.Command, "unknown or unavailable command")
+		return climeta.CommandSpec{}, climeta.RegistryEntry{}, climeta.RunArgs{}, false, aerr
+	}
+	// Defense-in-depth: nothing destructive is ever registered, but if an entry
+	// drifted in, refuse it outright rather than trusting confirm.
+	if entry.Classification == climeta.ClassDestructive {
+		h.cliAuditDenial(owner, req.Command, "destructive class refused")
+		return climeta.CommandSpec{}, climeta.RegistryEntry{}, climeta.RunArgs{}, false,
+			apierr.Forbidden("destructive commands cannot be run from the web")
+	}
+
+	args, err := climeta.BindRunArgs(spec, req.Flags)
+	if err != nil {
+		h.cliAuditDenial(owner, req.Command, "bind: "+err.Error())
+		return climeta.CommandSpec{}, climeta.RegistryEntry{}, climeta.RunArgs{}, false,
+			apierr.BadRequest(err.Error())
+	}
+
+	// dry-run semantics: supported ⇒ the binder defaulted it TRUE when absent;
+	// not supported ⇒ every run of a mutating command is an apply.
+	dryRun := entry.DryRunSupported && args.Bool(climeta.DryRunFlag)
+	applying := entry.Classification == climeta.ClassMutating && !dryRun
+	if applying && req.Confirm != req.Command {
+		h.cliAuditDenial(owner, req.Command, "missing confirm sentinel for mutating apply")
+		return climeta.CommandSpec{}, climeta.RegistryEntry{}, climeta.RunArgs{}, false,
+			apierr.BadRequest(fmt.Sprintf(
+				"applying %q requires confirm=%q (omit dry-run:false to preview instead)",
+				req.Command, req.Command))
+	}
+	return spec, entry, args, dryRun, nil
+}
+
+// invokeCLI calls the registered in-process command body with a recover guard
+// so a panicking invoker surfaces as a run error instead of crashing the
+// request/stream. Shared by the sync + WS paths.
+func (h *Handler) invokeCLI(ctx context.Context, entry climeta.RegistryEntry, args climeta.RunArgs, out io.Writer) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("command panicked: %v", r)
+		}
+	}()
+	return entry.Invoke(ctx, h.DB, args, out)
 }
 
 // cliLookup resolves a command path through the full allowlist chain:

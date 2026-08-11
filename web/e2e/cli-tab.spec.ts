@@ -78,10 +78,12 @@ test.describe("admin CLI runner — Commands tab", () => {
     await page.getByRole("button", { name: /^user list/ }).click();
     await page.getByRole("button", { name: /^Run$/ }).click();
 
-    const panel = page.getByTestId("cli-output-panel");
+    // The run now streams into a live terminal viewer (gaka-hney.5); the
+    // output tails in over the WS, and toContainText retries until it lands.
+    const panel = page.getByTestId("terminal-log-viewer");
     await expect(panel).toBeVisible({ timeout: 15_000 });
     // The admin fixture user must be in the listing.
-    await expect(panel).toContainText(ADMIN_USERNAME);
+    await expect(panel).toContainText(ADMIN_USERNAME, { timeout: 15_000 });
   });
 
   test("user show offers cobra-powered username autocomplete", async ({

@@ -46,6 +46,7 @@ import (
 //	GET    /import/jobs/:id/ws                                      (h.ImportJobWS)
 //	GET    /api/v1/admin/cli/spec                                   (h.CLISpec)      only when FeatureAdminCLI
 //	POST   /api/v1/admin/cli/run                                    (h.CLIRun)       only when FeatureAdminCLI
+//	GET    /api/v1/admin/cli/run/ws                                 (h.CLIRunWS)     only when FeatureAdminCLI
 //	POST   /api/v1/admin/cli/complete                               (h.CLIComplete)  only when FeatureAdminCLI
 func Register(e *echo.Echo, h *Handler) {
 	// Source health (per plugin/editor/machine last check-in — ingestion
@@ -116,6 +117,10 @@ func Register(e *echo.Echo, h *Handler) {
 		e.GET("/api/v1/admin/cli/spec", h.CLISpec, cliCap)
 		e.POST("/api/v1/admin/cli/run", h.CLIRun, cliCap)
 		e.POST("/api/v1/admin/cli/complete", h.CLIComplete, cliCap)
+		// Streaming twin of /cli/run (gaka-hney.5). Cookie-authed + admin-gated
+		// in-handler like the other WS routes (a WS handshake can't carry the
+		// cap middleware's header), so no cliCap here.
+		e.GET("/api/v1/admin/cli/run/ws", h.CLIRunWS)
 	}
 }
 

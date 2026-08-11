@@ -24,7 +24,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Loader2, Play, TerminalSquare, TriangleAlert, X } from "lucide-react";
 import { Badge } from "@thebranchdriftcatalyst/catalyst-ui/ui/badge";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
@@ -53,8 +53,9 @@ import type {
   CliClassification,
   CliCommandSpec,
   CliParam,
-  CliRunResponse,
 } from "@/lib/api";
+import { TerminalLogViewer } from "@/components/TerminalLogViewer";
+import { useCliRunStream } from "@/features/admin/useCliRunStream";
 import { qk } from "@/lib/queryKeys";
 import { cn } from "@/lib/utils";
 
@@ -539,52 +540,6 @@ function ParamField({
   );
 }
 
-// --- output panel ------------------------------------------------------------
-
-function OutputPanel({ result }: { result: CliRunResponse }) {
-  return (
-    <div className="space-y-2" data-testid="cli-output-panel">
-      <div className="flex flex-wrap items-center gap-2 text-xs">
-        <Badge
-          variant="outline"
-          className={cn(
-            "px-1.5 py-0 text-[10px] font-semibold uppercase tracking-wider",
-            result.ok
-              ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-400"
-              : "border-destructive/40 bg-destructive/15 text-destructive",
-          )}
-        >
-          {result.ok ? "ok" : "failed"}
-        </Badge>
-        <Badge
-          variant="outline"
-          className={cn(
-            "px-1.5 py-0 text-[10px] font-semibold uppercase tracking-wider",
-            result.dryRun
-              ? "border-sky-500/40 bg-sky-500/15 text-sky-400"
-              : "border-amber-500/40 bg-amber-500/15 text-amber-400",
-          )}
-        >
-          {result.dryRun ? "dry-run" : "applied"}
-        </Badge>
-        <span className="text-muted-foreground">{result.durationMs} ms</span>
-      </div>
-      {result.output !== "" && (
-        <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded border border-border bg-secondary/60 p-3 font-mono text-[11px] leading-relaxed">
-          {result.output}
-        </pre>
-      )}
-      {result.exitError !== "" && (
-        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded border border-destructive/40 bg-destructive/5 p-3 font-mono text-[11px] leading-relaxed text-destructive">
-          {result.exitError}
-        </pre>
-      )}
-      {result.output === "" && result.exitError === "" && (
-        <p className="text-xs text-muted-foreground">(no output)</p>
-      )}
-    </div>
-  );
-}
 
 // --- per-command run panel ---------------------------------------------------
 
@@ -603,13 +558,11 @@ function CommandPanel({ spec }: { spec: CliCommandSpec }) {
 
   // No reset-on-command-change effect needed: CliTab renders this panel with
   // key={spec.command}, so switching commands remounts with fresh state.
-  const run = useMutation({
-    mutationFn: (body: {
-      command: string;
-      flags: Record<string, unknown>;
-      confirm?: string;
-    }) => api.runCliCommand(body),
-  });
+  // Live-streaming run (gaka-hney.5): output tails into a TerminalLogViewer as
+  // the command executes, over /cli/run/ws — no more waiting on a synchronous
+  // captured buffer.
+  const stream = useCliRunStream();
+  const running = stream.status === "running";
 
   const showDryRunToggle =
     spec.classification !== "readonly" && spec.dryRunSupported;
@@ -636,17 +589,15 @@ function CommandPanel({ spec }: { spec: CliCommandSpec }) {
     }
     // Dry-run / readonly path: no dry-run key sent — the backend binder
     // defaults it true for dry-run-supporting commands.
-    run.mutate({ command: spec.command, flags });
+    stream.start({ command: spec.command, flags });
   };
 
   const confirmApply = () => {
     const flags = validate();
     if (!flags) return;
     if (spec.dryRunSupported) flags[DRY_RUN_FLAG] = false;
-    run.mutate(
-      { command: spec.command, flags, confirm: spec.command },
-      { onSettled: () => setConfirmOpen(false) },
-    );
+    stream.start({ command: spec.command, flags, confirm: spec.command });
+    setConfirmOpen(false);
   };
 
   const params = formParams(spec);
@@ -679,7 +630,7 @@ function CommandPanel({ spec }: { spec: CliCommandSpec }) {
               onChange={(v) =>
                 setValues((prev) => ({ ...prev, [p.name]: v }))
               }
-              disabled={run.isPending}
+              disabled={running}
             />
           ))}
         </div>
@@ -692,7 +643,7 @@ function CommandPanel({ spec }: { spec: CliCommandSpec }) {
               id={dryRunToggleId}
               checked={dryRun}
               onCheckedChange={setDryRun}
-              disabled={run.isPending}
+              disabled={running}
             />
             <Label htmlFor={dryRunToggleId} className="text-xs">
               Dry run
@@ -702,10 +653,10 @@ function CommandPanel({ spec }: { spec: CliCommandSpec }) {
         <Button
           size="sm"
           variant={applying ? "destructive" : "default"}
-          disabled={run.isPending}
+          disabled={running}
           onClick={submit}
         >
-          {run.isPending ? (
+          {running ? (
             <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
           ) : (
             <Play className="mr-1.5 h-3.5 w-3.5" />
@@ -714,22 +665,30 @@ function CommandPanel({ spec }: { spec: CliCommandSpec }) {
         </Button>
       </div>
 
-      {run.isError && (
-        <p className="text-sm text-destructive">
-          Run failed:{" "}
-          {run.error instanceof ApiError
-            ? run.error.message
-            : "request error"}
-        </p>
+      {stream.active && (
+        <TerminalLogViewer
+          output={stream.output}
+          status={stream.status}
+          title={spec.command}
+          statusLabel={
+            spec.classification === "readonly"
+              ? undefined
+              : stream.dryRun
+                ? "dry-run"
+                : "applied"
+          }
+          exitError={stream.exitError}
+          durationMs={stream.durationMs}
+          truncated={stream.truncated}
+        />
       )}
-      {run.data && <OutputPanel result={run.data} />}
 
       {/* Typed-confirm apply gate. The backend independently enforces
           confirm === command; this dialog is the human-side mirror. */}
       <Dialog
         open={confirmOpen}
         onOpenChange={(o) => {
-          if (!o && !run.isPending) setConfirmOpen(false);
+          if (!o && !running) setConfirmOpen(false);
         }}
       >
         <DialogContent className="max-w-lg">
@@ -756,23 +715,23 @@ function CommandPanel({ spec }: { spec: CliCommandSpec }) {
               onChange={(e) => setTypedConfirm(e.target.value)}
               placeholder={spec.command}
               autoComplete="off"
-              disabled={run.isPending}
+              disabled={running}
             />
           </div>
           <DialogFooter>
             <Button
               variant="outline"
               onClick={() => setConfirmOpen(false)}
-              disabled={run.isPending}
+              disabled={running}
             >
               Cancel
             </Button>
             <Button
               variant="destructive"
-              disabled={typedConfirm !== spec.command || run.isPending}
+              disabled={typedConfirm !== spec.command || running}
               onClick={confirmApply}
             >
-              {run.isPending ? "Applying…" : "Apply"}
+              {running ? "Applying…" : "Apply"}
             </Button>
           </DialogFooter>
         </DialogContent>

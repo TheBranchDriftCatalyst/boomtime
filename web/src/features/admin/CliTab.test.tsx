@@ -9,6 +9,7 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { server } from "@/test/msw/server";
+import { mockCliRunWs } from "@/test/ws";
 import { renderWithProviders } from "@/test/renderWithProviders";
 import type { CliCommandSpec, CliParam, CliRunResponse } from "@/lib/api";
 import { CliTab } from "./CliTab";
@@ -183,48 +184,47 @@ describe("CliTab — typed form fields", () => {
 
   it("submits every param INSIDE flags keyed by name, with typed coercions", async () => {
     stubSpec(KITCHEN_SINK);
-    let body: unknown = null;
-    server.use(
-      http.post("/api/v1/admin/cli/run", async ({ request }) => {
-        body = await request.json();
-        return HttpResponse.json(runResult());
-      }),
-    );
-    await renderAndSelect("kitchen sink");
+    const ws = mockCliRunWs();
+    try {
+      await renderAndSelect("kitchen sink");
 
-    await userEvent.click(screen.getByRole("checkbox", { name: /--verbose/ }));
-    await userEvent.type(
-      screen.getByRole("spinbutton", { name: /--count/ }),
-      "5",
-    );
-    await userEvent.type(screen.getByLabelText(/--note/), "hi");
-    // tags: two chips via Enter
-    const tags = screen.getByLabelText(/--tags/);
-    await userEvent.type(tags, "a{Enter}b{Enter}");
-    expect(screen.getByText("a")).toBeInTheDocument();
-    expect(screen.getByText("b")).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("checkbox", { name: /--verbose/ }));
+      await userEvent.type(
+        screen.getByRole("spinbutton", { name: /--count/ }),
+        "5",
+      );
+      await userEvent.type(screen.getByLabelText(/--note/), "hi");
+      // tags: two chips via Enter
+      const tags = screen.getByLabelText(/--tags/);
+      await userEvent.type(tags, "a{Enter}b{Enter}");
+      expect(screen.getByText("a")).toBeInTheDocument();
+      expect(screen.getByText("b")).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: /^Run$/ }));
-    await waitFor(() => expect(body).not.toBeNull());
-    expect(body).toEqual({
-      command: "kitchen sink",
-      // int coerced to number, slice to array, empty optionals omitted,
-      // bools explicit.
-      flags: { verbose: true, count: 5, note: "hi", tags: ["a", "b"] },
-    });
-    // readonly run → no confirm key at all
-    expect(body).not.toHaveProperty("confirm");
+      await userEvent.click(screen.getByRole("button", { name: /^Run$/ }));
+      const req = await ws.requestReceived();
+      expect(req).toEqual({
+        command: "kitchen sink",
+        // int coerced to number, slice to array, empty optionals omitted,
+        // bools explicit.
+        flags: { verbose: true, count: 5, note: "hi", tags: ["a", "b"] },
+      });
+      // readonly run → no confirm key at all
+      expect(req).not.toHaveProperty("confirm");
 
-    // Output panel renders the captured output + duration.
-    expect(await screen.findByText("done")).toBeInTheDocument();
-    expect(screen.getByText(/12 ms/)).toBeInTheDocument();
+      // Streamed output tails into the terminal viewer.
+      ws.send({ type: "output", data: "listing users…" });
+      ws.send({ type: "done", durationMs: 12 });
+      expect(await screen.findByText(/done/)).toBeInTheDocument();
+    } finally {
+      ws.stop();
+    }
   });
 
   it("submits a positional param inside flags keyed by its name", async () => {
     stubSpec(USER_SHOW);
-    let body: unknown = null;
+    const ws = mockCliRunWs();
+    // Typing into the completable field fires debounced completes.
     server.use(
-      // Typing into the completable field fires debounced completes.
       http.post("/api/v1/admin/cli/complete", () =>
         HttpResponse.json({
           suggestions: [],
@@ -237,23 +237,23 @@ describe("CliTab — typed form fields", () => {
           },
         }),
       ),
-      http.post("/api/v1/admin/cli/run", async ({ request }) => {
-        body = await request.json();
-        return HttpResponse.json(runResult({ output: "user: panda" }));
-      }),
     );
-    await renderAndSelect("user show");
+    try {
+      await renderAndSelect("user show");
 
-    await userEvent.type(
-      screen.getByRole("combobox", { name: /username/ }),
-      "panda",
-    );
-    await userEvent.click(screen.getByRole("button", { name: /^Run$/ }));
-    await waitFor(() => expect(body).not.toBeNull());
-    expect(body).toEqual({
-      command: "user show",
-      flags: { username: "panda" },
-    });
+      await userEvent.type(
+        screen.getByRole("combobox", { name: /username/ }),
+        "panda",
+      );
+      await userEvent.click(screen.getByRole("button", { name: /^Run$/ }));
+      const req = await ws.requestReceived();
+      expect(req).toEqual({
+        command: "user show",
+        flags: { username: "panda" },
+      });
+    } finally {
+      ws.stop();
+    }
   });
 
   it("blocks submit when a required positional is empty", async () => {
@@ -275,74 +275,69 @@ describe("CliTab — typed form fields", () => {
 describe("CliTab — mutating dry-run + confirm gate", () => {
   it("defaults dry-run ON and omits the dry-run key on a preview run", async () => {
     stubSpec(BACKFILL_LAST_CONTEXT);
-    let body: Record<string, unknown> | null = null;
-    server.use(
-      http.post("/api/v1/admin/cli/run", async ({ request }) => {
-        body = (await request.json()) as Record<string, unknown>;
-        return HttpResponse.json(
-          runResult({ dryRun: true, output: "would write 3 rows" }),
-        );
-      }),
-    );
-    await renderAndSelect("backfill last-context");
+    const ws = mockCliRunWs();
+    try {
+      await renderAndSelect("backfill last-context");
 
-    const toggle = screen.getByRole("switch", { name: /dry run/i });
-    expect(toggle).toBeChecked();
+      const toggle = screen.getByRole("switch", { name: /dry run/i });
+      expect(toggle).toBeChecked();
 
-    await userEvent.click(
-      screen.getByRole("button", { name: /run \(dry-run\)/i }),
-    );
-    await waitFor(() => expect(body).not.toBeNull());
-    // No dry-run key sent — the backend defaults it true — and no confirm.
-    expect(body!.flags).toEqual({});
-    expect(body).not.toHaveProperty("confirm");
-    // Result badge reflects the dry-run.
-    expect(await screen.findByText("dry-run")).toBeInTheDocument();
-    expect(screen.getByText("would write 3 rows")).toBeInTheDocument();
+      await userEvent.click(
+        screen.getByRole("button", { name: /run \(dry-run\)/i }),
+      );
+      const req = await ws.requestReceived();
+      // No dry-run key sent — the backend defaults it true — and no confirm.
+      expect(req.flags).toEqual({});
+      expect(req).not.toHaveProperty("confirm");
+
+      // The start frame's dryRun flows to the viewer's badge.
+      ws.send({ type: "start", dryRun: true });
+      ws.send({ type: "output", data: "would write 3 rows" });
+      ws.send({ type: "done", durationMs: 5 });
+      expect(await screen.findByText("dry-run")).toBeInTheDocument();
+    } finally {
+      ws.stop();
+    }
   });
 
   it("applying requires typing the exact command, then sends dry-run:false + confirm", async () => {
     stubSpec(BACKFILL_LAST_CONTEXT);
-    let body: Record<string, unknown> | null = null;
-    server.use(
-      http.post("/api/v1/admin/cli/run", async ({ request }) => {
-        body = (await request.json()) as Record<string, unknown>;
-        return HttpResponse.json(runResult({ dryRun: false, output: "wrote 3 rows" }));
-      }),
-    );
-    await renderAndSelect("backfill last-context");
+    const ws = mockCliRunWs();
+    try {
+      await renderAndSelect("backfill last-context");
 
-    // Flip dry-run OFF → the action becomes Apply… and opens the gate.
-    await userEvent.click(screen.getByRole("switch", { name: /dry run/i }));
-    await userEvent.click(screen.getByRole("button", { name: /apply…/i }));
+      // Flip dry-run OFF → the action becomes Apply… and opens the gate.
+      await userEvent.click(screen.getByRole("switch", { name: /dry run/i }));
+      await userEvent.click(screen.getByRole("button", { name: /apply…/i }));
 
-    await screen.findByRole("dialog");
-    const applyBtn = screen.getByRole("button", { name: /^Apply$/ });
-    expect(applyBtn).toBeDisabled();
+      await screen.findByRole("dialog");
+      const applyBtn = screen.getByRole("button", { name: /^Apply$/ });
+      expect(applyBtn).toBeDisabled();
 
-    // A wrong sentinel keeps the gate shut.
-    const input = screen.getByPlaceholderText("backfill last-context");
-    await userEvent.type(input, "nope");
-    expect(applyBtn).toBeDisabled();
+      // A wrong sentinel keeps the gate shut.
+      const input = screen.getByPlaceholderText("backfill last-context");
+      await userEvent.type(input, "nope");
+      expect(applyBtn).toBeDisabled();
 
-    await userEvent.clear(input);
-    await userEvent.type(input, "backfill last-context");
-    expect(applyBtn).toBeEnabled();
-    await userEvent.click(applyBtn);
+      await userEvent.clear(input);
+      await userEvent.type(input, "backfill last-context");
+      expect(applyBtn).toBeEnabled();
+      await userEvent.click(applyBtn);
 
-    await waitFor(() => expect(body).not.toBeNull());
-    expect(body).toEqual({
-      command: "backfill last-context",
-      flags: { "dry-run": false },
-      confirm: "backfill last-context",
-    });
-    // Dialog closes on settle; the output panel shows the applied run.
-    expect(await screen.findByText("wrote 3 rows")).toBeInTheDocument();
+      const req = await ws.requestReceived();
+      expect(req).toEqual({
+        command: "backfill last-context",
+        flags: { "dry-run": false },
+        confirm: "backfill last-context",
+      });
+    } finally {
+      ws.stop();
+    }
   });
 
   it("a mutating command WITHOUT dry-run support gates every run behind confirm", async () => {
     stubSpec(GITHUB_STATS);
-    let body: Record<string, unknown> | null = null;
+    const ws = mockCliRunWs();
     server.use(
       http.post("/api/v1/admin/cli/complete", () =>
         HttpResponse.json({
@@ -356,28 +351,28 @@ describe("CliTab — mutating dry-run + confirm gate", () => {
           },
         }),
       ),
-      http.post("/api/v1/admin/cli/run", async ({ request }) => {
-        body = (await request.json()) as Record<string, unknown>;
-        return HttpResponse.json(runResult({ output: "synced" }));
-      }),
     );
-    await renderAndSelect("backfill github-stats");
+    try {
+      await renderAndSelect("backfill github-stats");
 
-    // No dry-run toggle: the command doesn't support it.
-    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+      // No dry-run toggle: the command doesn't support it.
+      expect(screen.queryByRole("switch")).not.toBeInTheDocument();
 
-    // The Run button IS the apply → confirm dialog.
-    await userEvent.click(screen.getByRole("button", { name: /apply…/i }));
-    const input = await screen.findByPlaceholderText("backfill github-stats");
-    await userEvent.type(input, "backfill github-stats");
-    await userEvent.click(screen.getByRole("button", { name: /^Apply$/ }));
+      // The Run button IS the apply → confirm dialog.
+      await userEvent.click(screen.getByRole("button", { name: /apply…/i }));
+      const input = await screen.findByPlaceholderText("backfill github-stats");
+      await userEvent.type(input, "backfill github-stats");
+      await userEvent.click(screen.getByRole("button", { name: /^Apply$/ }));
 
-    await waitFor(() => expect(body).not.toBeNull());
-    expect(body).toEqual({
-      command: "backfill github-stats",
-      flags: {},
-      confirm: "backfill github-stats",
-    });
+      const req = await ws.requestReceived();
+      expect(req).toEqual({
+        command: "backfill github-stats",
+        flags: {},
+        confirm: "backfill github-stats",
+      });
+    } finally {
+      ws.stop();
+    }
   });
 });
 

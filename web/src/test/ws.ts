@@ -84,6 +84,77 @@ export function mockImportWs(jobId: number): MockImportWs {
   };
 }
 
+// --- CLI runner stream (gaka-hney.5) ----------------------------------------
+
+export function cliRunWsUrl(): string {
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${window.location.host}/api/v1/admin/cli/run/ws`;
+}
+
+export interface MockCliRunWs {
+  server: Server;
+  /** Resolves with the parsed run-request payload once the client sends it. */
+  requestReceived: () => Promise<Record<string, unknown>>;
+  /** Stream a frame (start/output/done/error) back to the client. */
+  send: (frame: Record<string, unknown>) => void;
+  stop: () => void;
+}
+
+/**
+ * Installs a mock-socket server for the CLI run stream and swaps the global
+ * WebSocket. Captures the single run-request frame the client sends (for
+ * payload assertions) and lets the test stream output/done frames back.
+ */
+export function mockCliRunWs(): MockCliRunWs {
+  const url = cliRunWsUrl();
+  const realWebSocket = globalThis.WebSocket;
+  Object.defineProperty(globalThis, "WebSocket", {
+    value: realWebSocket,
+    writable: true,
+    configurable: true,
+  });
+
+  const server = new Server(url);
+  let socket: import("mock-socket").Client | null = null;
+  let req: Record<string, unknown> | undefined;
+  let reqResolve: ((v: Record<string, unknown>) => void) | null = null;
+
+  server.on("connection", (s) => {
+    socket = s;
+    s.on("message", (data) => {
+      try {
+        req = JSON.parse(String(data)) as Record<string, unknown>;
+      } catch {
+        req = {};
+      }
+      reqResolve?.(req);
+      reqResolve = null;
+    });
+  });
+
+  return {
+    server,
+    requestReceived() {
+      return req !== undefined
+        ? Promise.resolve(req)
+        : new Promise((resolve) => {
+            reqResolve = resolve;
+          });
+    },
+    send(frame) {
+      socket?.send(JSON.stringify(frame));
+    },
+    stop() {
+      server.stop();
+      Object.defineProperty(globalThis, "WebSocket", {
+        value: realWebSocket,
+        writable: true,
+        configurable: true,
+      });
+    },
+  };
+}
+
 // The base URL useLogsSocket builds (without query params — mock-socket matches
 // on the path, and the hook may append ?afterId=).
 export function serverLogsWsUrl(): string {
