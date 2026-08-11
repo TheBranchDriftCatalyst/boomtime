@@ -31,7 +31,7 @@ export function GoalsList({
 
   if (goals.length === 0) {
     return (
-      <div className="rounded-md border bg-secondary/40">
+      <div className="rounded-xl border border-dashed border-border/70 bg-card/40">
         <EmptyState
           icon={Target}
           title="No goals yet"
@@ -56,7 +56,7 @@ export function GoalsList({
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2.5">
       {goals.map((goal) => {
         const prog = batch?.progress?.[goal.id];
         return (
@@ -98,12 +98,12 @@ function GoalRow({
   return (
     <div
       className={
-        "rounded-md border bg-secondary/40 p-3 text-sm transition-opacity " +
+        "group rounded-lg border border-border/60 bg-secondary/40 p-3.5 text-sm transition-colors hover:border-border hover:bg-secondary/60 " +
         (goal.enabled ? "" : "opacity-60")
       }
     >
-      <div className="mb-2 flex items-center gap-2">
-        <span className="flex-1 font-medium">{goal.name}</span>
+      <div className="mb-2.5 flex items-center gap-2">
+        <span className="flex-1 truncate font-medium">{goal.name}</span>
         {goal.public && (
           <Badge
             variant="outline"
@@ -152,9 +152,14 @@ function GoalRow({
       {goal.description && (
         <p className="mb-2 text-xs text-muted-foreground">{goal.description}</p>
       )}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2.5">
         <Progress value={pct} className="h-2 flex-1" />
-        <span className="w-10 shrink-0 text-right font-mono text-xs tabular-nums">
+        <span
+          className={
+            "w-10 shrink-0 text-right font-mono text-xs font-semibold tabular-nums " +
+            (hit ? "text-emerald-400" : "text-foreground/80")
+          }
+        >
           {progress || goal.lastProgress ? `${pct}%` : (
             <Loader2 className="ml-auto h-3 w-3 animate-spin text-muted-foreground" />
           )}

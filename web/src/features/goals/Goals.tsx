@@ -13,7 +13,7 @@ export function Goals() {
       <Page.Header title="Goals" />
       <Page.Body>
         <Page.Content>
-          <div className="max-w-4xl">
+          <div className="max-w-3xl">
             <GoalsTab />
           </div>
         </Page.Content>

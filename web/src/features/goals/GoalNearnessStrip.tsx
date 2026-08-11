@@ -13,6 +13,7 @@
 // a `bg-primary` layer at a dynamic opacity (theme-safe: it resolves the
 // primary color regardless of its HSL/oklch format, and the opacity lives on a
 // separate layer so the % label stays fully legible).
+import { Radar } from "lucide-react";
 import { useAllGoalProgress } from "@/features/goals/useGoals";
 import { cn } from "@/lib/utils";
 import type { Goal } from "@/types/api";
@@ -23,15 +24,18 @@ export function GoalNearnessStrip({ goals }: { goals: Goal[] }) {
   const pausedCount = goals.filter((g) => !g.enabled).length;
 
   return (
-    <div className="rounded-xl border bg-card/50 p-4">
-      <div className="mb-3 flex items-baseline justify-between gap-2">
-        <h3 className="text-sm font-semibold">Nearness</h3>
+    <div className="rounded-xl border bg-card/50 p-4 shadow-sm">
+      <div className="mb-3.5 flex items-baseline justify-between gap-2">
+        <h3 className="flex items-center gap-1.5 text-sm font-semibold">
+          <Radar className="h-4 w-4 text-primary" />
+          Nearness
+        </h3>
         <span className="text-xs text-muted-foreground">
           {goals.length} goal{goals.length === 1 ? "" : "s"}
           {pausedCount > 0 ? ` · ${pausedCount} paused` : ""} · hover for detail
         </span>
       </div>
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap gap-x-4 gap-y-3">
         {goals.map((g) => {
           const prog = batch?.progress?.[g.id];
           const raw = prog?.progress ?? g.lastProgress?.progress;
@@ -43,17 +47,17 @@ export function GoalNearnessStrip({ goals }: { goals: Goal[] }) {
           return (
             <div
               key={g.id}
-              className={cn("flex w-16 flex-col items-center gap-1", paused && "opacity-50")}
+              className={cn("flex w-16 flex-col items-center gap-1.5", paused && "opacity-50")}
             >
               <div
                 title={`${g.name} — ${hasData ? `${pct}%` : "no progress yet"}${
                   hit ? " · hit!" : ""
                 }${paused ? " · paused" : ""}`}
                 className={cn(
-                  "relative flex h-14 w-14 items-center justify-center overflow-hidden rounded-lg border transition-colors",
+                  "relative flex h-16 w-16 items-center justify-center overflow-hidden rounded-xl border transition-colors",
                   hit && !paused
                     ? "border-emerald-500/50 ring-1 ring-emerald-500/40"
-                    : "border-border/60",
+                    : "border-border/60 hover:border-primary/40",
                 )}
               >
                 {/* nearness fill — separate layer so the % label stays legible */}

@@ -12,9 +12,14 @@
 // exists only to catch accidental clicks. If we want a nicer UX later
 // we can promote to a shadcn Dialog without breaking the surface.
 import { useState } from "react";
-import { Plus } from "lucide-react";
+import { HelpCircle, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@thebranchdriftcatalyst/catalyst-ui/ui/popover";
 import { GoalsListSkeleton } from "@/components/Skeletons";
 import { GoalForm } from "@/features/goals/GoalForm";
 import { GoalNearnessStrip } from "@/features/goals/GoalNearnessStrip";
@@ -47,24 +52,64 @@ export function GoalsTab() {
   if (isLoading) return <GoalsListSkeleton rows={4} />;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div className="flex items-start justify-between gap-4">
-        <p className="max-w-2xl text-sm text-muted-foreground">
-          Goals let you declare what you WANT to do — a target the app
-          measures your progress against. Author a simple time target
-          ("1 hour a week on Go") or compose an expression tree with
-          AND / OR / NOT over time-on-axis, streak, and active-days
-          predicates. Add a{" "}
-          <span className="font-medium text-foreground">Goal Ring</span>,{" "}
-          <span className="font-medium text-foreground">Goal Progress</span>,
-          or <span className="font-medium text-foreground">Goal List</span>{" "}
-          widget to your public dashboard, or embed one on your README/site
-          via Settings &gt; Widgets. Goals are private by default — flip a
-          goal's <span className="font-medium text-foreground">Public</span>{" "}
-          toggle (in the New/Edit goal form) to let its name + progress
-          appear on those widgets.
+        <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+          <span>
+            Declare what you want to do — the app tracks your progress.{" "}
+            <span className="text-foreground/70">Private by default.</span>
+          </span>
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                aria-label="How goals work"
+                className="shrink-0 rounded-full p-0.5 text-muted-foreground/70 transition-colors hover:bg-secondary hover:text-foreground"
+              >
+                <HelpCircle className="h-3.5 w-3.5" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-[21rem] space-y-3 p-4">
+              <div className="space-y-1">
+                <p className="text-xs font-semibold uppercase tracking-wide text-foreground">
+                  Authoring
+                </p>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  Set a simple time target ("1 hour a week on Go") or compose an
+                  expression tree with{" "}
+                  <span className="font-medium text-foreground">AND / OR / NOT</span>{" "}
+                  over time-on-axis, streak, and active-days predicates.
+                </p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs font-semibold uppercase tracking-wide text-foreground">
+                  On your dashboard
+                </p>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  Add a{" "}
+                  <span className="font-medium text-foreground">Goal Ring</span>,{" "}
+                  <span className="font-medium text-foreground">Goal Progress</span>,
+                  or{" "}
+                  <span className="font-medium text-foreground">Goal List</span>{" "}
+                  widget — or embed one on your README / site — via{" "}
+                  <span className="font-medium text-foreground">Settings › Widgets</span>.
+                </p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs font-semibold uppercase tracking-wide text-foreground">
+                  Visibility
+                </p>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  Goals stay private until you flip a goal's{" "}
+                  <span className="font-medium text-foreground">Public</span>{" "}
+                  toggle in the New / Edit form — then its name + progress can
+                  appear on those widgets.
+                </p>
+              </div>
+            </PopoverContent>
+          </Popover>
         </p>
-        <Button onClick={openCreate} size="sm">
+        <Button onClick={openCreate} size="sm" className="shrink-0">
           <Plus className="mr-1 h-4 w-4" />
           New goal
         </Button>
