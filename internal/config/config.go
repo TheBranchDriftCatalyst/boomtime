@@ -280,6 +280,12 @@ type Config struct {
 	//                  FeatureGithubStats (GithubStatsRefreshEnabled()).
 	JobsProvider               string
 	GithubStatsRefreshInterval time.Duration
+	// JobsUnified (BOOM_JOBS_UNIFIED, default false) registers the label-image
+	// kind on catalyst-go-jobs (gaka-hney.3) — proving the fold. Prod stays on
+	// the imagejobs pipeline + its dedicated admin UI; the live cutover (reroute
+	// enqueue + migrate the label-images WS/UI, then delete imagejobs) is a
+	// deliberate future flip, not this flag.
+	JobsUnified bool
 }
 
 func getEnv(key, def string) string {
@@ -484,6 +490,7 @@ func Load() *Config {
 	// catalyst-go-jobs (gaka-hney).
 	c.JobsProvider = getEnv("BOOM_JOBS_PROVIDER", "local")
 	c.GithubStatsRefreshInterval = parseJobInterval(getEnv("BOOM_GITHUB_STATS_REFRESH_INTERVAL", "8h"))
+	c.JobsUnified = getEnvBool("BOOM_JOBS_UNIFIED", false)
 
 	// gaka-dg7: operator-wide default TZ for users with no explicit pick.
 	// Validate here so an invalid IANA name never lands into the resolver —

@@ -430,6 +430,29 @@ func runCmd() *cobra.Command {
 					}
 				}
 
+				// label-image kind (gaka-hney.3): proves catalyst-go-jobs can run
+				// the image-regen path (liWorker.RegenerateOne — the same
+				// entrypoint the imagejobs executor funnels into). Behind
+				// BOOM_JOBS_UNIFIED (default off) so prod stays on the imagejobs
+				// pipeline + its dedicated admin UI; the live cutover (reroute
+				// enqueue + migrate that UI, then delete imagejobs) is a deliberate
+				// future flip.
+				if cfg.JobsUnified && liWorker != nil {
+					jobReg.Register("label-image", jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
+						var p struct {
+							LabelID string `json:"labelId"`
+						}
+						if uerr := json.Unmarshal(job.Payload, &p); uerr != nil {
+							return uerr
+						}
+						if p.LabelID == "" {
+							return fmt.Errorf("label-image job missing labelId")
+						}
+						return liWorker.RegenerateOne(jctx, p.LabelID)
+					}))
+					logger.Info("jobs: label-image handler registered (BOOM_JOBS_UNIFIED)")
+				}
+
 				hostID, _ := os.Hostname()
 				if hostID == "" {
 					hostID = "boomtime-jobs"
