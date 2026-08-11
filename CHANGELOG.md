@@ -2,6 +2,118 @@
 
 All notable changes to boomtime are documented here. This file is generated
 by [git-cliff](https://git-cliff.org) from conventional-commit history.
+## [1.2.0] - 2026-08-11
+
+### Bug Fixes
+
+- **mobile:** P2 polish bundle (gaka-k26n.10)
+- **mobile:** P1 sweep — overflow/wrap fixes (gaka-k26n.6-.9)
+- **nav:** Polish the collapsed sidebar rail
+- **mobile:** 4 P0s — grid collapse, AvatarTab, label Sheet, WidgetBuilder (gaka-k26n)
+- **worker:** Gate the label-images startup reconcile off under the queue broker
+- **db:** N+1 detector ignores txn-control + SET (aggQuery bookkeeping, not queries)
+- **k8s:** KEDA cooldown + worker grace must exceed ComfyUI gen time (gaka-8bz)
+- **k8s/local:** Worker startupProbe for air build headroom + design doc
+- **k8s/local:** Wire BOOM_RABBITMQ_URL for the server producer + add BOOM_RABBITMQ_MGMT_URL
+- **k8s:** Defer worker-topology PROD cutover — keep prod on in-process path
+- **widgets:** Goal Ring rings + area-chart x-axis (frontend-design pass)
+- **widget:** Preserve card titles in renderSpec (specs.json title field) — pre-cutover
+- **docker:** COPY internal/widget/specs.json into the web build stage
+- **admin:** Annotate Select onValueChange param in CliTab (TS7006)
+- **admin:** CLI-runner QA follow-ups — reuse pool for completion, bounded output writer, github-stats key fail-fast, + destructive/apply/unknown-flag test coverage
+- **widgets,goals:** Hide non-embeddable widget kinds; show paused goals in Nearness strip
+- **auth:** InvalidToken/ExpiredRefreshToken are 401, not 403
+- **github:** /user/repos 422 — drop 'type' param, keep 'affiliation=owner' (gaka-anh)
+- **nav:** Collapse Profile + Public profile into one in-app entry in Spaces (gaka-4ng)
+- **viz:** Bind chart ResizeObserver via callback ref so late-mounting charts draw (gaka-3nw)
+
+### Chores
+
+- **k8s:** Enable BOOM_FEATURE_ADMIN_CLI in prod overlay — admin CLI-runner ON
+- **monitoring:** Disable CNPG per-cluster PodMonitor; global PM is sole source
+
+### Documentation
+
+- **meta:** Flesh out catalyst_repo.yaml — fix repo_url, add stack/groups/highlights
+
+### Features
+
+- **admin:** Live terminal/log viewer for the CLI runner (gaka-hney.5)
+- **qol:** Loading skeletons + empty states (gaka-gbbl.2)
+- **qol:** Header page title + keyboard shortcuts + sidebar hover-to-peek
+- **cnpg:** Backup boomtime-postgres to MinIO (talos-homelab TALOS-i06y)
+- **qol:** ⌘K command palette (gaka-gbbl.1)
+- **k8s:** Wire S3 social-card cache env on talos00 (gaka-fym5)
+- **profile:** Durable S3 social-card cache w/ app passthrough (gaka-fym5)
+- **k8s:** Annotate IngressRoute for gethomepage homepage board discovery
+- **nav:** Mobile drawer + styled collapsed-rail tooltips (gaka-k26n.1)
+- **profile:** Social-card preview side-by-side with controls (stacks on mobile)
+- **profile:** Live social-card preview in the Public profile settings card
+- **widgets:** Social-card polish — big-hours total + synthwave backdrop
+- **profile:** OG social card endpoint, /p/:slug meta injection, editor section
+- **db:** Public_card_theme + public_card_tagline on users
+- **widgets:** Social-card widget + resvg SVG->PNG rasterizer
+- **logs:** Source filter (server/worker) in the Admin Logs viewer
+- **logging,worker:** Relay boomtime-worker pod logs into the server's LogHub
+- **k8s:** KEDA autoscaling Grafana dashboard + scrape; rabbit mgmt UI → rabbit.boomtime.talos00
+- **k8s:** Cutover PHASE 2 — flip BOOM_QUEUE_BROKER=rabbitmq + worker + KEDA + ops (talos00)
+- **k8s:** Cutover PHASE 1 — provision RabbitMQ + Dragonfly via operators (talos00)
+- **k8s:** RabbitMQ mgmt UI + PodMonitor + Grafana dashboard (prod, deferred with the cutover)
+- **admin-fe:** Show broker mode / queue depth / mgmt UI link in the Admin tab
+- **admin:** Surface broker mode + live queue depth + mgmt UI link (gaka-8bz follow-up)
+- **k8s:** Prod worker topology — RabbitmqCluster/Queue, Dragonfly, KEDA autoscaling (talos00-knowledgedump)
+- **k8s:** Boomtime-worker Deployment + local RabbitMQ/Redis/ComfyUI-mock demo stack
+- **worker:** --role flag + role/broker-aware image-job wiring in cmd/boomtime
+- **handler,admin:** Split ImageJobQueue into Enqueuer + EventSource
+- **config:** BOOM_ROLE / BOOM_QUEUE_BROKER for the worker-topology decoupling
+- **queue:** Image-job broker abstraction — Enqueuer/EventSource, AMQP producer/consumer, Redis event bus
+- **catalog:** Spec-driven card sizing — size is the single source of truth
+- **catalog:** Widget gallery page + routes — /app/catalog (my-data↔sample) + public /catalog
+- **catalog:** Data + renderer foundation for the widget catalog gallery
+- **catalog:** Standard card chrome + QA render-stage css
+- **widget,goals:** Privacy-gated embeddable goal widgets + goals.public opt-in (Part B Stage 4)
+- **widget:** FE SpecRenderer + primitive registry behind widgetSpecEngine flag (Part B Stage 3)
+- **widget:** Canonical specs.json + renderSpec engine behind BOOM_WIDGET_SPEC_ENGINE (Part B Stage 2)
+- **widget:** Render categories/editors/platforms/stat-numeral kinds as SVG — un-empty the embeddable widgets panel (Part B Stage 1)
+- **admin:** CLI-runner frontend — Commands tab with typed inputs + cobra-powered autocomplete (BOOM_FEATURE_ADMIN_CLI)
+- **admin:** CLI-runner backend — /admin/cli spec+run+complete behind BOOM_FEATURE_ADMIN_CLI (annotation allowlist, in-process registry, typed args, cobra-powered completion)
+- **postgres:** CNPG instances:3 for HA (streaming replication across nodes)
+- **goals:** Aggregate nearness punchcard at top of the Goals page (gaka-cl9)
+- **curation:** Apply-at-ingest rename rules (unify the scrubber into curation)
+- **github:** P5 GitHub card on the public profile (gaka-2ud)
+- **github:** P4 dedicated GH charts — commits/repos/languages (gaka-v1k)
+- **loc:** Exclude data files (json/jsonl/csv/…) from LOC (gaka-yfg)
+- **loc:** Lines-of-code — total + per-project + over-time, from file_lines (gaka-yfg)
+- **viz:** Count-in-cell — legible commit-count labels + momentum values (gaka-nmk)
+- **github:** P3 contribution-calendar overlay + GH stat tiles (gaka-csx)
+- **ui:** Magnetic scroll-snap on Overview sections + header tab strip (gaka-k0q)
+- **github:** P2 all-stats fetcher + idempotent cache + stats endpoints (gaka-anh)
+- **ingress:** Track boomtime as its own Plausible site (analytics-boomtime)
+- **ingress:** Opt boomtime into central Plausible analytics injection
+- **github:** P1 GitHub OAuth connect + encrypted token + Connect card (gaka-2ip)
+- **goals:** Promote Goals to a top-level nav page (gaka-gud)
+- **header:** Hoist page sub-tabs into the header + sharp neon tab-nav redesign (gaka-5jp)
+- **devtools:** Port catalyst-ui annotation subsystem, admin-gated (gaka-1im)
+- **overview:** P4 dashboard editor — edit store + undo/redo + shell + catalog sidebar (gaka-txl)
+- **header:** Consolidate the top bar into one avatar user menu (gaka-lzr)
+- **overview:** P3 OverviewWidgetRenderer + overview catalog kinds + default layout (gaka-7uc)
+- **overview:** P2 OverviewDataContext + per-widget self-fetch hooks (gaka-38v)
+- **profile:** Mount owner profile inside the app skeleton at /app/profile (gaka-4ng)
+- **grid:** P1 infra for dashboard edit mode — config slot + tile selection + flag (gaka-0o9)
+
+### Refactoring
+
+- **queue:** Name the Job->Entry mapping as imagejobs.Job.ToLabelEntry
+- **widget:** Cutover to renderSpec — delete legacy renderers + BOOM_WIDGET_SPEC_ENGINE flag, re-baseline SHA-pins (Part B Stage 5)
+- **admin:** Remove the dead git-history backfill experiment (gaka-vh8)
+- **auth:** Declarative RequireCap route middleware for tier gates
+- **auth:** Resolve identity once in middleware, Identify reads from ctx
+- **admin:** Move derived-data/storage health panel to Admin > Data (gaka-gud)
+
+### Tests
+
+- **dashboard:** Fix stale unknown-scope assertion — 'overview' is now allowed
+
 ## [1.1.0] - 2026-08-05
 
 ### Features
