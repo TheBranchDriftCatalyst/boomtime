@@ -48,14 +48,25 @@ const NAV = [
 // action buttons all share it; buttons pass isActive=false and add w-full).
 function sidebarItemClass(collapsed: boolean, isActive: boolean): string {
   return cn(
-    "flex items-center rounded-lg text-sm font-medium transition-colors",
-    // Collapsed: a centered 40px square — a clean, intentional icon rail with a
-    // proper ≥40px tap target (was a full-width stretched row with a tiny
-    // icon). Expanded: full-width row with the label.
-    collapsed ? "mx-auto h-10 w-10 justify-center" : "gap-3 px-3 py-2",
+    "flex items-center text-sm font-medium transition-colors",
+    // Collapsed: a centered 40px rounded-xl tile — a clean, premium icon rail
+    // (Linear/Vercel-style) with a proper ≥40px tap target. Expanded: full-width
+    // row with the label.
+    collapsed ? "mx-auto h-10 w-10 justify-center rounded-xl" : "gap-3 rounded-lg px-3 py-2",
     isActive
-      ? "bg-sidebar-primary text-sidebar-primary-foreground"
-      : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+      ? collapsed
+        ? // Collapsed active: a restrained magenta-tinted fill + magenta glyph.
+          // The crisp neon hairline + outer glow is layered on for free by the
+          // shipped global rule `.theme-boomtime.dark a[aria-current="page"]`
+          // (catalyst-ui boomtime.css) — no loud solid neon block.
+          "bg-sidebar-primary/15 text-sidebar-primary"
+        : // Expanded active: unchanged — solid primary fill + halo.
+          "bg-sidebar-primary text-sidebar-primary-foreground"
+      : collapsed
+        ? // Collapsed inactive: a subtle white lift on hover (the old full-cyan
+          // sidebar-accent fill was far too loud for a dense icon rail).
+          "text-muted-foreground hover:bg-foreground/[0.07] hover:text-sidebar-foreground"
+        : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
   );
 }
 
@@ -152,7 +163,7 @@ function SpacesNavGroup({
         </div>
       )}
       {collapsed && (
-        <div className="mx-3 mb-1 border-t border-sidebar-border" />
+        <div className="mx-1.5 my-2 border-t border-sidebar-border" />
       )}
 
       {publicProfileSlot}
@@ -167,9 +178,20 @@ function SpacesNavGroup({
               onClick={onNavigate}
               className={({ isActive }) => sidebarItemClass(collapsed, isActive)}
             >
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm bg-secondary text-[11px] font-semibold text-secondary-foreground">
-                {initial}
-              </span>
+              {collapsed ? (
+                // Collapsed: render the initial as a plain glyph so its visual
+                // weight matches the lucide nav icons (the old filled mini-tile
+                // clashed with the outline icons on the rail). It inherits the
+                // item's text color — muted normally, magenta when active.
+                <span className="text-[15px] font-bold leading-none tracking-tight">
+                  {initial}
+                </span>
+              ) : (
+                // Expanded: keep the filled secondary badge beside the label.
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm bg-secondary text-[11px] font-semibold text-secondary-foreground">
+                  {initial}
+                </span>
+              )}
               {!collapsed && <span className="truncate">{space.name}</span>}
             </NavLink>
           </RailTip>
