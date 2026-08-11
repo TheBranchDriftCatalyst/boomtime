@@ -45,7 +45,18 @@ func (s *Store) Enqueue(ctx context.Context, kind, owner string, payload []byte,
 // ClaimNext atomically grabs the oldest due queued job, marks it running, bumps
 // attempts, and returns it. ok=false when nothing is due. FOR UPDATE SKIP
 // LOCKED makes it safe for many concurrent workers — each gets a distinct row.
-func (s *Store) ClaimNext(ctx context.Context, workerID string) (*Job, bool, error) {
+//
+// Kind-routing (gaka-hney): `include` restricts to those kinds (empty = any);
+// `exclude` skips those kinds. So the always-on server can drain light kinds
+// (exclude the heavy ones) while a ScaledJob drains only the heavy kinds
+// (include them) — all on the same queue, no double-claim.
+func (s *Store) ClaimNext(ctx context.Context, workerID string, include, exclude []string) (*Job, bool, error) {
+	if len(include) == 0 {
+		include = nil
+	}
+	if len(exclude) == 0 {
+		exclude = nil
+	}
 	row := s.pool.QueryRow(ctx,
 		`UPDATE jobs
 		    SET status = 'running', attempts = attempts + 1,
@@ -53,12 +64,14 @@ func (s *Store) ClaimNext(ctx context.Context, workerID string) (*Job, bool, err
 		  WHERE id = (
 		        SELECT id FROM jobs
 		         WHERE status = 'queued' AND run_at <= now()
+		           AND ($2::text[] IS NULL OR kind = ANY($2::text[]))
+		           AND ($3::text[] IS NULL OR kind <> ALL($3::text[]))
 		         ORDER BY run_at
 		         FOR UPDATE SKIP LOCKED
 		         LIMIT 1
 		  )
 		  RETURNING `+jobCols,
-		workerID,
+		workerID, include, exclude,
 	)
 	j, err := scanJob(row)
 	if err != nil {

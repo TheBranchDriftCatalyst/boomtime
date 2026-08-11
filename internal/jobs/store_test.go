@@ -48,7 +48,7 @@ func TestStoreEnqueueClaimComplete(t *testing.T) {
 		t.Fatal("Enqueue returned id 0")
 	}
 
-	job, ok, err := s.ClaimNext(ctx, "w1")
+	job, ok, err := s.ClaimNext(ctx, "w1", nil, nil)
 	if err != nil || !ok {
 		t.Fatalf("ClaimNext: ok=%v err=%v", ok, err)
 	}
@@ -60,7 +60,7 @@ func TestStoreEnqueueClaimComplete(t *testing.T) {
 	}
 
 	// The only job is now running → a second claim finds nothing.
-	if _, ok, _ := s.ClaimNext(ctx, "w2"); ok {
+	if _, ok, _ := s.ClaimNext(ctx, "w2", nil, nil); ok {
 		t.Fatal("second ClaimNext should find nothing")
 	}
 	if err := s.Complete(ctx, id); err != nil {
@@ -72,13 +72,13 @@ func TestStoreRetryThenTerminal(t *testing.T) {
 	s, ctx := newTestStore(t)
 	id, _ := s.Enqueue(ctx, "demo", "", nil, 3, time.Time{})
 
-	job, _, _ := s.ClaimNext(ctx, "w1")
+	job, _, _ := s.ClaimNext(ctx, "w1", nil, nil)
 	// Fail with a past retryAt → immediately re-claimable, attempt preserved.
 	past := time.Now().Add(-time.Minute)
 	if err := s.Fail(ctx, job.ID, "boom", &past); err != nil {
 		t.Fatalf("Fail (retry): %v", err)
 	}
-	job2, ok, _ := s.ClaimNext(ctx, "w1")
+	job2, ok, _ := s.ClaimNext(ctx, "w1", nil, nil)
 	if !ok || job2.ID != id || job2.Attempts != 2 {
 		t.Fatalf("retry not re-claimed: ok=%v %+v", ok, job2)
 	}
@@ -87,7 +87,7 @@ func TestStoreRetryThenTerminal(t *testing.T) {
 	if err := s.Fail(ctx, job2.ID, "boom again", nil); err != nil {
 		t.Fatalf("Fail (terminal): %v", err)
 	}
-	if _, ok, _ := s.ClaimNext(ctx, "w1"); ok {
+	if _, ok, _ := s.ClaimNext(ctx, "w1", nil, nil); ok {
 		t.Fatal("terminal-failed job should not be claimable")
 	}
 }
@@ -97,7 +97,7 @@ func TestStoreRunAtGatesClaim(t *testing.T) {
 	if _, err := s.Enqueue(ctx, "later", "", nil, 1, time.Now().Add(time.Hour)); err != nil {
 		t.Fatalf("Enqueue: %v", err)
 	}
-	if _, ok, _ := s.ClaimNext(ctx, "w1"); ok {
+	if _, ok, _ := s.ClaimNext(ctx, "w1", nil, nil); ok {
 		t.Fatal("a job with a future run_at must not be claimed yet")
 	}
 }
@@ -113,6 +113,31 @@ func TestStoreClaimByID(t *testing.T) {
 	// A running job can't be re-claimed by id.
 	if _, ok, _ := s.ClaimByID(ctx, id, "w2"); ok {
 		t.Fatal("re-claim of a running job by id should fail")
+	}
+}
+
+func TestClaimNextKindRouting(t *testing.T) {
+	s, ctx := newTestStore(t)
+	if _, err := s.Enqueue(ctx, "light", "", nil, 1, time.Time{}); err != nil {
+		t.Fatalf("enqueue light: %v", err)
+	}
+	if _, err := s.Enqueue(ctx, "heavy", "", nil, 1, time.Time{}); err != nil {
+		t.Fatalf("enqueue heavy: %v", err)
+	}
+
+	// Server excludes "heavy" → it claims only "light", never "heavy".
+	j, ok, err := s.ClaimNext(ctx, "server", nil, []string{"heavy"})
+	if err != nil || !ok || j.Kind != "light" {
+		t.Fatalf("exclude=[heavy] claimed %+v (ok=%v err=%v), want light", j, ok, err)
+	}
+	if _, ok, _ := s.ClaimNext(ctx, "server", nil, []string{"heavy"}); ok {
+		t.Fatal("server (exclude heavy) must not claim the heavy job")
+	}
+
+	// ScaledJob includes "heavy" → it claims it.
+	j2, ok, err := s.ClaimNext(ctx, "scaledjob", []string{"heavy"}, nil)
+	if err != nil || !ok || j2.Kind != "heavy" {
+		t.Fatalf("include=[heavy] claimed %+v (ok=%v err=%v), want heavy", j2, ok, err)
 	}
 }
 

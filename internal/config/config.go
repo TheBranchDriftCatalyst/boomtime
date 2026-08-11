@@ -286,6 +286,17 @@ type Config struct {
 	// enqueue + migrate the label-images WS/UI, then delete imagejobs) is a
 	// deliberate future flip, not this flag.
 	JobsUnified bool
+	// JobsDrain (BOOM_JOBS_DRAIN, default false): run as a one-shot ScaledJob
+	// worker — build the registry, drain all due jobs to completion, then exit
+	// (gaka-hney). The always-on server keeps it false (scheduler + API); KEDA
+	// ScaledJob pods set it true.
+	JobsDrain bool
+	// Kind-routing (gaka-hney): JobsKinds (BOOM_JOBS_KINDS) = claim ONLY these
+	// kinds (empty = any) — set on ScaledJob heavy workers. JobsExcludeKinds
+	// (BOOM_JOBS_EXCLUDE_KINDS) = skip these kinds — set on the always-on server
+	// so heavy kinds fall through to the ScaledJob.
+	JobsKinds        []string
+	JobsExcludeKinds []string
 }
 
 func getEnv(key, def string) string {
@@ -491,6 +502,9 @@ func Load() *Config {
 	c.JobsProvider = getEnv("BOOM_JOBS_PROVIDER", "local")
 	c.GithubStatsRefreshInterval = parseJobInterval(getEnv("BOOM_GITHUB_STATS_REFRESH_INTERVAL", "8h"))
 	c.JobsUnified = getEnvBool("BOOM_JOBS_UNIFIED", false)
+	c.JobsDrain = getEnvBool("BOOM_JOBS_DRAIN", false)
+	c.JobsKinds = splitCSV(getEnv("BOOM_JOBS_KINDS", ""))
+	c.JobsExcludeKinds = splitCSV(getEnv("BOOM_JOBS_EXCLUDE_KINDS", ""))
 
 	// gaka-dg7: operator-wide default TZ for users with no explicit pick.
 	// Validate here so an invalid IANA name never lands into the resolver —
@@ -657,6 +671,18 @@ func (c *Config) JobsBrokerRabbit() bool {
 // interval configured.
 func (c *Config) GithubStatsRefreshEnabled() bool {
 	return c.FeatureGithubStats && c.GithubStatsRefreshInterval > 0
+}
+
+// splitCSV splits a comma-separated env value into a trimmed, empty-dropped
+// slice ("" → nil). Used for the jobs kind-routing filters.
+func splitCSV(s string) []string {
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		if v := strings.TrimSpace(p); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // parseJobInterval reads a Go duration ("8h", "30m"); "off"/"0"/"" disable it

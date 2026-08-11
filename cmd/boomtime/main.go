@@ -476,6 +476,12 @@ func runCmd() *cobra.Command {
 					}
 					provider = amqpProv
 				}
+				// Kind-routing (gaka-hney): the always-on server excludes heavy
+				// kinds; a ScaledJob includes them. Only the local provider filters.
+				if lp, ok := provider.(*jobs.LocalProvider); ok {
+					lp.SetKindFilter(cfg.JobsKinds, cfg.JobsExcludeKinds)
+				}
+
 				// Expose to the admin Jobs tab (list/schedules/trigger/retry).
 				h.SetJobs(jobStore, provider)
 
@@ -489,6 +495,24 @@ func runCmd() *cobra.Command {
 				logger.Info("jobs: wired", "provider", provider.Name(),
 					"githubRefreshEnabled", cfg.GithubStatsRefreshEnabled(),
 					"githubRefreshInterval", cfg.GithubStatsRefreshInterval.String())
+
+				// ScaledJob one-shot mode (gaka-hney): a KEDA ScaledJob pod sets
+				// BOOM_JOBS_DRAIN=true — build the registry (done above), drain
+				// every due job to completion, then EXIT. Long jobs run fully (a
+				// ScaledJob Job is never killed on scale-down), so no mid-job kill
+				// and no ComfyUI redelivery amplification. No scheduler, no HTTP
+				// server on these pods.
+				if cfg.JobsDrain {
+					lp, ok := provider.(*jobs.LocalProvider)
+					if !ok {
+						return fmt.Errorf("BOOM_JOBS_DRAIN requires the local provider, got %q", provider.Name())
+					}
+					logger.Info("jobs: drain mode — processing due jobs then exiting")
+					if derr := lp.Drain(ctx, jobReg); derr != nil {
+						return fmt.Errorf("jobs drain: %w", derr)
+					}
+					return nil
+				}
 
 				// The github-refresh schedule is the only piece gated on config;
 				// leader-singleton via the DB, so running it on every server is safe.
