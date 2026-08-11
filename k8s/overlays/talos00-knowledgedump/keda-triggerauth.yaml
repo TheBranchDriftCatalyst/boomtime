@@ -25,3 +25,20 @@ spec:
     - parameter: password
       name: boomtime-rabbit-default-user
       key: password
+---
+# Postgres scaler auth for the catalyst-go-jobs ScaledJob (gaka-hney): split
+# params sourced from the CNPG-generated boomtime-postgres-app secret. boomtime
+# itself connects sslmode=disable in-cluster; the scaler matches (sslmode is a
+# trigger-metadata field, set in keda-scaledjob-jobs.yaml).
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: boomtime-jobs-pg-auth
+  namespace: boomtime
+spec:
+  secretTargetRef:
+    - {parameter: host, name: boomtime-postgres-app, key: host}
+    - {parameter: port, name: boomtime-postgres-app, key: port}
+    - {parameter: userName, name: boomtime-postgres-app, key: username}
+    - {parameter: password, name: boomtime-postgres-app, key: password}
+    - {parameter: dbName, name: boomtime-postgres-app, key: dbname}

@@ -1,0 +1,93 @@
+---
+# KEDA ScaledJob for the catalyst-go-jobs HEAVY DB kinds (gaka-hney) — the
+# PROPER primitive for long-running work. Unlike the image ScaledObject (which
+# scales a Deployment and lets HPA SIGKILL a pod mid-render → RabbitMQ redelivery
+# amplification), a ScaledJob schedules ONE Kubernetes Job per pending job: the
+# pod claims work, runs it to completion, and exits. A running Job is NEVER
+# terminated by scale-down, so there is no mid-job kill and no amplification.
+#
+# The pod runs boomtime with BOOM_JOBS_DRAIN=true + BOOM_JOBS_KINDS=avatar-render:
+# it builds the registry, drains due avatar-render jobs to completion, and exits.
+# The always-on server excludes avatar-render (BOOM_JOBS_EXCLUDE_KINDS) so those
+# jobs fall through to here; the server still drains the light kinds itself.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledJob
+metadata:
+  name: boomtime-jobs
+  namespace: boomtime
+spec:
+  # KEDA polls the DB queue; when avatar-render jobs are pending it creates Jobs.
+  pollingInterval: 20
+  maxReplicaCount: 3
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  # `default` accounts for already-running Jobs when deciding how many to add.
+  scalingStrategy:
+    strategy: default
+  jobTargetRef:
+    # One attempt per Job — the catalyst-go-jobs Store owns retry/backoff (a
+    # retried job re-appears in the queue with a future run_at → a later Job).
+    backoffLimit: 0
+    template:
+      metadata:
+        labels:
+          app.kubernetes.io/name: boomtime-jobs
+      spec:
+        restartPolicy: Never
+        # Avatar renders can take up to ~25 min; give an in-flight render room
+        # to finish on SIGTERM. (ScaledJob won't scale a running Job down, but
+        # this covers node drains / rollouts.)
+        terminationGracePeriodSeconds: 1800
+        containers:
+          - name: boomtime-jobs
+            image: ghcr.io/thebranchdriftcatalyst/boomtime:latest
+            imagePullPolicy: IfNotPresent
+            args: ["run", "--role=worker"]
+            envFrom:
+              - configMapRef:
+                  name: boomtime-config
+              - secretRef:
+                  name: boomtime-secrets
+                  optional: true
+              - secretRef:
+                  name: boomtime-encryption-key
+                  optional: true
+            env:
+              - name: BOOM_ROLE
+                value: "worker"
+              # One-shot drain + exit; claim ONLY the heavy kind(s).
+              - name: BOOM_JOBS_DRAIN
+                value: "true"
+              - name: BOOM_JOBS_KINDS
+                value: "avatar-render"
+              # boomtime-config (envFrom) sets BOOM_JOBS_EXCLUDE_KINDS=avatar-render
+              # for the server; clear it here (env overrides envFrom) or this pod
+              # would both include AND exclude avatar-render and claim nothing.
+              - name: BOOM_JOBS_EXCLUDE_KINDS
+                value: ""
+              - name: BOOM_DB_USER
+                valueFrom:
+                  secretKeyRef:
+                    name: boomtime-postgres-app
+                    key: username
+              - name: BOOM_DB_PASS
+                valueFrom:
+                  secretKeyRef:
+                    name: boomtime-postgres-app
+                    key: password
+            resources:
+              requests:
+                cpu: 250m
+                memory: 512Mi
+              limits:
+                cpu: "2"
+                memory: 2Gi
+  triggers:
+    - type: postgresql
+      metadata:
+        # Pending, DUE avatar-render jobs. count>0 ⇒ schedule a Job to drain them.
+        query: "SELECT count(*) FROM jobs WHERE status = 'queued' AND run_at <= now() AND kind = 'avatar-render'"
+        targetQueryValue: "1"
+        sslmode: disable
+      authenticationRef:
+        name: boomtime-jobs-pg-auth

@@ -1,0 +1,13 @@
+---
+# Kind-routing (gaka-hney): the always-on server + image worker EXCLUDE the
+# heavy avatar-render kind, so those jobs fall through to the KEDA ScaledJob
+# (keda-scaledjob-jobs.yaml). Light kinds (github-stats-refresh) still drain on
+# the server. The ScaledJob pods clear this in their own env.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: boomtime-config
+  labels:
+    app.kubernetes.io/name: boomtime
+data:
+  BOOM_JOBS_EXCLUDE_KINDS: "avatar-render"
