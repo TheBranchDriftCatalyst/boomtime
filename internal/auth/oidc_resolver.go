@@ -207,7 +207,18 @@ func (r *OIDCResolver) HandleCallback(ctx context.Context, database *db.DB, code
 	if err != nil {
 		return nil, apierr.Generic()
 	}
-	if err := database.CreateOIDCSession(ctx, sessionID, username, expiry, refresh); err != nil {
+	// gaka-93f.11.6: persist the provider refresh ENCRYPTED (recoverable) so
+	// /auth/refresh_token can silently rotate the session. Best-effort: if
+	// there's no refresh or BOOM_ENCRYPTION_KEY is unset, store nil — the
+	// session still works, only silent refresh is unavailable (no re-login
+	// beyond the id_token window).
+	var encRefresh []byte
+	if refresh != "" {
+		if ct, encErr := Encrypt([]byte(refresh)); encErr == nil {
+			encRefresh = ct
+		}
+	}
+	if err := database.CreateOIDCSession(ctx, sessionID, username, expiry, encRefresh); err != nil {
 		return nil, apierr.Generic()
 	}
 	ident, aerr := resolveIdentity(ctx, database, username)
@@ -215,6 +226,43 @@ func (r *OIDCResolver) HandleCallback(ctx context.Context, database *db.DB, code
 		return nil, aerr
 	}
 	return &CallbackResult{Identity: ident, SessionID: sessionID, Expiry: expiry}, nil
+}
+
+// RefreshSession exchanges a stored provider refresh_token for a fresh id_token
+// (OAuth2 refresh-grant) and returns the new session expiry + the possibly
+// rotated refresh_token (gaka-93f.11.6). It re-verifies the refreshed id_token's
+// signature/issuer/audience/expiry via the same JWKS verifier as login — but
+// does NOT check a nonce (a refresh-grant id_token carries none; nonce binds the
+// original authorization request only). Any failure (IdP rejects the refresh,
+// missing/invalid id_token) returns an error so the caller can fall back to the
+// still-valid session instead of extending it.
+func (r *OIDCResolver) RefreshSession(ctx context.Context, rawRefresh string) (time.Time, string, *apierr.Error) {
+	if r.httpClient != nil {
+		ctx = oidc.ClientContext(ctx, r.httpClient)
+		ctx = context.WithValue(ctx, oauth2.HTTPClient, r.httpClient)
+	}
+	tok, err := r.oauth2.TokenSource(ctx, &oauth2.Token{RefreshToken: rawRefresh}).Token()
+	if err != nil {
+		return time.Time{}, "", apierr.New(http.StatusUnauthorized, "OIDC session refresh failed", nil)
+	}
+	rawIDToken, ok := tok.Extra("id_token").(string)
+	if !ok {
+		return time.Time{}, "", apierr.New(http.StatusBadGateway, "OIDC refresh response missing id_token", nil)
+	}
+	idToken, err := r.verifier.Verify(ctx, rawIDToken)
+	if err != nil {
+		return time.Time{}, "", apierr.New(http.StatusUnauthorized, "OIDC refreshed id_token verification failed", nil)
+	}
+	// Providers MAY rotate the refresh_token; keep the old one if they don't.
+	newRefresh := tok.RefreshToken
+	if newRefresh == "" {
+		newRefresh = rawRefresh
+	}
+	expiry := idToken.Expiry
+	if expiry.IsZero() {
+		expiry = time.Now().Add(8 * time.Hour)
+	}
+	return expiry, newRefresh, nil
 }
 
 // HandleLink (link mode, gaka-b5n.4): exchange + verify, then bind the resolved

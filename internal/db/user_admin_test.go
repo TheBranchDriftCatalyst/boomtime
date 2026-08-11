@@ -41,7 +41,7 @@ func TestUserAdmin_DisableRevokesLiveSessions(t *testing.T) {
 		t.Fatalf("CreateAccessTokens: %v", err)
 	}
 	const sid = "killswitch-oidc-session-id"
-	if err := d.CreateOIDCSession(ctx, sid, name, time.Now().Add(time.Hour), "killswitch-oidc-ref"); err != nil {
+	if err := d.CreateOIDCSession(ctx, sid, name, time.Now().Add(time.Hour), []byte("killswitch-oidc-ref")); err != nil {
 		t.Fatalf("CreateOIDCSession: %v", err)
 	}
 	// Sanity: all three resolve BEFORE disable.

@@ -15,17 +15,44 @@ import (
 // ---- OIDC browser sessions ----
 
 // CreateOIDCSession stores an OIDC session: hashed opaque cookie → (username,
-// id_token expiry, hashed provider refresh). rawSessionID/rawRefresh are
-// plaintext; only their SHA-256 is persisted.
-func (d *DB) CreateOIDCSession(ctx context.Context, rawSessionID, username string, expiry time.Time, rawRefresh string) error {
-	var hashedRefresh []byte
-	if rawRefresh != "" {
-		hashedRefresh = hashSessionToken(rawRefresh)
-	}
+// id_token expiry, encrypted provider refresh). rawSessionID is plaintext (only
+// its SHA-256 is persisted). encryptedRefresh is the AES-256-GCM ciphertext of
+// the provider refresh_token (gaka-93f.11.6) — stored recoverably so
+// /auth/refresh_token can do a refresh-grant; pass nil when there is none or
+// when BOOM_ENCRYPTION_KEY is unset (session still works, silent refresh off).
+func (d *DB) CreateOIDCSession(ctx context.Context, rawSessionID, username string, expiry time.Time, encryptedRefresh []byte) error {
 	_, err := d.Pool.Exec(ctx,
-		`INSERT INTO oidc_sessions (hashed_session_id, username, id_token_expiry, hashed_refresh)
+		`INSERT INTO oidc_sessions (hashed_session_id, username, id_token_expiry, encrypted_refresh)
 		 VALUES ($1, $2, $3, $4)`,
-		hashSessionToken(rawSessionID), username, expiry, hashedRefresh)
+		hashSessionToken(rawSessionID), username, expiry, encryptedRefresh)
+	return err
+}
+
+// GetOIDCSessionRefresh returns the encrypted provider refresh + id_token expiry
+// for a NON-expired OIDC session cookie (gaka-93f.11.6). ok=false when the
+// session is absent/expired; encryptedRefresh is nil when none was stored.
+func (d *DB) GetOIDCSessionRefresh(ctx context.Context, rawSessionID string) (encryptedRefresh []byte, expiry time.Time, ok bool, err error) {
+	row := d.Pool.QueryRow(ctx,
+		`SELECT encrypted_refresh, id_token_expiry FROM oidc_sessions
+		 WHERE hashed_session_id = $1 AND id_token_expiry > $2`,
+		hashSessionToken(rawSessionID), time.Now().UTC())
+	if serr := row.Scan(&encryptedRefresh, &expiry); serr != nil {
+		if errors.Is(serr, pgx.ErrNoRows) {
+			return nil, time.Time{}, false, nil
+		}
+		return nil, time.Time{}, false, serr
+	}
+	return encryptedRefresh, expiry, true, nil
+}
+
+// RotateOIDCSession extends a session in place: new id_token expiry + the
+// (possibly rotated) encrypted provider refresh, keyed by the SAME cookie
+// (gaka-93f.11.6). Silent session extension — no new cookie is minted.
+func (d *DB) RotateOIDCSession(ctx context.Context, rawSessionID string, newExpiry time.Time, encryptedRefresh []byte) error {
+	_, err := d.Pool.Exec(ctx,
+		`UPDATE oidc_sessions SET id_token_expiry = $2, encrypted_refresh = $3
+		 WHERE hashed_session_id = $1`,
+		hashSessionToken(rawSessionID), newExpiry, encryptedRefresh)
 	return err
 }
 

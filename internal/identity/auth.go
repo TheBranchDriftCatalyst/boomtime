@@ -226,6 +226,16 @@ func (h *Handler) RefreshToken(c *echo.Context) error {
 	// server-side revocation. The FE must re-present the (expiring, revocable)
 	// OIDC session cookie to obtain each subsequent bearer.
 	if auth.CurrentResolver().ProviderName() == "oidc" {
+		// gaka-93f.11.6: silently ROTATE the OIDC session so a short-lived
+		// id_token can back a long-lived, revocable web session. Decrypt the
+		// stored provider refresh, refresh-grant against the IdP, and extend
+		// this session's id_token_expiry in place (same cookie). Best-effort:
+		// on any miss (no stored refresh, no BOOM_ENCRYPTION_KEY, IdP rejects)
+		// we fall through and just mint a bearer against the still-valid
+		// session — the pre-11.6 behavior — so a refresh hiccup never logs the
+		// user out early.
+		h.tryRotateOIDCSession(c)
+
 		td := mkTokenData(owner)
 		if err := h.DB.CreateOIDCAccessToken(ctx, owner, td.Token); err != nil {
 			return apihelpers.InternalErr(h.Logger, c, "access token creation failed", err)
@@ -239,6 +249,44 @@ func (h *Handler) RefreshToken(c *echo.Context) error {
 	}
 	h.setRefreshCookie(c, td)
 	return c.JSON(http.StatusOK, loginResponse(td, time.Now().UTC()))
+}
+
+// tryRotateOIDCSession best-effort extends the caller's OIDC web session
+// (gaka-93f.11.6): decrypt the stored provider refresh, refresh-grant against
+// the IdP, then rotate id_token_expiry + the (possibly new) refresh in place —
+// same cookie, no re-login. Every failure is swallowed (the session stays valid
+// until its current expiry), so a transient IdP hiccup never logs the user out.
+func (h *Handler) tryRotateOIDCSession(c *echo.Context) {
+	ctx := c.Request().Context()
+	refresh, ok := auth.ParseRefreshCookie(c.Request().Header.Get("Cookie"))
+	if !ok {
+		return
+	}
+	oidcR, ok := auth.CurrentResolver().(*auth.OIDCResolver)
+	if !ok {
+		return
+	}
+	enc, _, found, err := h.DB.GetOIDCSessionRefresh(ctx, refresh)
+	if err != nil || !found || len(enc) == 0 {
+		return // no stored refresh (e.g. no BOOM_ENCRYPTION_KEY at login) → skip
+	}
+	raw, err := auth.Decrypt(enc)
+	if err != nil {
+		h.Logger.Warn("oidc refresh decrypt failed (key rotated?)", "err", err)
+		return
+	}
+	newExpiry, newRefresh, aerr := oidcR.RefreshSession(ctx, string(raw))
+	if aerr != nil {
+		h.Logger.Debug("oidc session refresh skipped", "status", aerr.Status)
+		return
+	}
+	var newEnc []byte
+	if ct, e := auth.Encrypt([]byte(newRefresh)); e == nil {
+		newEnc = ct
+	}
+	if err := h.DB.RotateOIDCSession(ctx, refresh, newExpiry, newEnc); err != nil {
+		h.Logger.Warn("oidc session rotate failed", "err", err)
+	}
 }
 
 // Logout: POST /auth/logout.
