@@ -55,6 +55,12 @@ spec:
             env:
               - name: BOOM_ROLE
                 value: "worker"
+              # boomtime-config sets BOOM_QUEUE_BROKER=rabbitmq for the image
+              # worker; the drain pod must NOT connect RabbitMQ (it has no AMQP
+              # URL and only drains the DB queue) — force inprocess so startup
+              # skips the AMQP consumer and reaches the drain block.
+              - name: BOOM_QUEUE_BROKER
+                value: "inprocess"
               # One-shot drain + exit; claim ONLY the heavy kind(s).
               - name: BOOM_JOBS_DRAIN
                 value: "true"
