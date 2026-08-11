@@ -77,6 +77,9 @@ func Register(e *echo.Echo, h *Handler) {
 	// catalog stays the source of truth.
 	e.GET("/api/v1/admin/label-images", h.AdminLabelImagesInfo)
 	e.POST("/api/v1/admin/label-images/regenerate", h.AdminLabelImagesRegenerate)
+	// Per-label regen status from the DB queue (gaka-hney Stage 3) — the FE
+	// polls this under BOOM_JOBS_UNIFIED instead of the imagejobs WS.
+	e.GET("/api/v1/admin/label-images/status", h.AdminLabelImagesStatus)
 
 	// gaka-93f.6: admin caps dashboard — users + roles/tiers + effective
 	// capabilities. Admin-gated in the handler (requireAdmin).

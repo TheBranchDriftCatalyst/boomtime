@@ -990,6 +990,21 @@ export const api = {
       jobs: Array<{ jobId: string; labelId: string; existing: boolean }>;
     }>("/api/v1/admin/label-images/regenerate", { method: "POST", body }),
 
+  // Per-label regen status from the DB job queue (gaka-hney Stage 3). Under
+  // BOOM_JOBS_UNIFIED the admin tab polls this instead of the imagejobs WS.
+  // Returns the latest job per label (queued/running always; done/error within
+  // their retention window). `jobs: []` when the jobs subsystem is off.
+  getLabelImageStatus: () =>
+    request<{
+      jobs: Array<{
+        labelId: string;
+        status: "queued" | "running" | "done" | "error";
+        error?: string;
+        startedAt?: string;
+        finishedAt?: string;
+      }>;
+    }>("/api/v1/admin/label-images/status"),
+
   // --- Labels catalog (gaka-364.3) -----------------------------------------
   // Public GET for evaluator + admin table; admin-gated CRUD + gen-config
   // + seed.sql dump for the admin sheet editor.

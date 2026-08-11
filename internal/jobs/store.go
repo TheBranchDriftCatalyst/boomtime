@@ -235,6 +235,46 @@ func (s *Store) ListSchedules(ctx context.Context) ([]Schedule, error) {
 	return out, rows.Err()
 }
 
+// ListLatestPerOwner returns the most recent job per distinct owner for a kind
+// (gaka-hney Stage 3): the label-images admin tab reads the latest label-image
+// job per label (owner == labelID) from the DB queue instead of the old
+// in-memory imagejobs registry. Both terminal and in-flight jobs are included;
+// owner=="" rows (kinds that don't scope by owner) are excluded.
+func (s *Store) ListLatestPerOwner(ctx context.Context, kind string) ([]Job, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT DISTINCT ON (owner) `+jobCols+`
+		    FROM jobs
+		   WHERE kind = $1 AND owner <> ''
+		   ORDER BY owner, created_at DESC`,
+		kind)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Job
+	for rows.Next() {
+		j, err := scanJob(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *j)
+	}
+	return out, rows.Err()
+}
+
+// HasPending reports whether a queued or running job already exists for
+// (kind, owner). Used to dedupe label-image regens (owner == labelID),
+// mirroring the imagejobs registry's per-label idempotency so a double-click
+// or overlapping "regen all" doesn't double-fire ComfyUI for one label.
+func (s *Store) HasPending(ctx context.Context, kind, owner string) (bool, error) {
+	var n int
+	err := s.pool.QueryRow(ctx,
+		`SELECT count(*) FROM jobs
+		  WHERE kind = $1 AND owner = $2 AND status IN ('queued','running')`,
+		kind, owner).Scan(&n)
+	return n > 0, err
+}
+
 // scanRow is the shared shape of pgx.Row / a rows cursor position.
 type scanRow interface {
 	Scan(dest ...any) error

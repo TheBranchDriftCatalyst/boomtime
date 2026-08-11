@@ -65,7 +65,7 @@ spec:
               - name: BOOM_JOBS_DRAIN
                 value: "true"
               - name: BOOM_JOBS_KINDS
-                value: "avatar-render"
+                value: "avatar-render,label-image"
               # boomtime-config (envFrom) sets BOOM_JOBS_EXCLUDE_KINDS=avatar-render
               # for the server; clear it here (env overrides envFrom) or this pod
               # would both include AND exclude avatar-render and claim nothing.
@@ -98,8 +98,8 @@ spec:
         port: "5432"
         dbName: boomtime
         sslmode: disable
-        # Pending, DUE avatar-render jobs. count>0 ⇒ schedule a Job to drain them.
-        query: "SELECT count(*) FROM jobs WHERE status = 'queued' AND run_at <= now() AND kind = 'avatar-render'"
+        # Pending, DUE heavy jobs. count>0 ⇒ schedule a Job to drain them.
+        query: "SELECT count(*) FROM jobs WHERE status = 'queued' AND run_at <= now() AND kind IN ('avatar-render','label-image')"
         targetQueryValue: "1"
       authenticationRef:
         name: boomtime-jobs-pg-auth

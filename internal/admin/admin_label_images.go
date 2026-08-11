@@ -42,12 +42,16 @@ package admin
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/labelcatalog"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/imagejobs"
+	labelimages "github.com/TheBranchDriftCatalyst/boomtime/internal/worker/labelimages"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 	"github.com/labstack/echo/v5"
@@ -150,7 +154,11 @@ func (h *Handler) AdminLabelImagesRegenerate(c *echo.Context) error {
 	if _, aerr := h.requireAdmin(c); aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
-	if h.LabelImagesWorker == nil || h.ImageJobQueue == nil {
+	// Unified (gaka-hney Stage 3): route regen through catalyst-go-jobs (the DB
+	// queue + KEDA ScaledJob) instead of the in-memory imagejobs registry. Needs
+	// the worker + the DB-jobs enqueuer/store; falls back to imagejobs when off.
+	unified := h.Cfg != nil && h.Cfg.JobsUnified && h.JobEnqueuer != nil && h.JobStore != nil
+	if h.LabelImagesWorker == nil || (!unified && h.ImageJobQueue == nil) {
 		return apihelpers.RespondErr(c, apierr.New(http.StatusServiceUnavailable,
 			"label-images feature is disabled — set BOOM_FEATURE_LABEL_IMAGES=on and BOOM_COMFYUI_SHIM_URL, then restart", nil))
 	}
@@ -232,6 +240,29 @@ func (h *Handler) AdminLabelImagesRegenerate(c *echo.Context) error {
 		} else if row != nil {
 			desc = row.Description
 		}
+		if unified {
+			// Dedup per label (owner==labelID) so a double "regen all" doesn't
+			// double-fire ComfyUI — mirrors the imagejobs registry idempotency.
+			if pending, derr := h.JobStore.HasPending(reqCtx, labelimages.RegenJobKind, e.ID); derr == nil && pending {
+				out = append(out, regenResponseJob{JobID: e.ID, LabelID: e.ID, Existing: true})
+				continue
+			}
+			payload, merr := labelimages.RegenJobPayload{
+				LabelID: e.ID, Description: desc, Prompt: e.Prompt,
+				Model: e.Model, Size: e.Size, Seed: e.Seed,
+			}.JSON()
+			if merr != nil {
+				return apihelpers.InternalErr(h.Logger, c, "label-image payload marshal failed", merr)
+			}
+			id, eerr := h.JobEnqueuer.Enqueue(reqCtx, labelimages.RegenJobKind, payload,
+				jobs.Owner(e.ID), jobs.MaxAttempts(1))
+			if eerr != nil {
+				return apihelpers.InternalErr(h.Logger, c, "label-image enqueue failed", eerr)
+			}
+			out = append(out, regenResponseJob{JobID: strconv.FormatInt(id, 10), LabelID: e.ID, Existing: false})
+			continue
+		}
+
 		job, existing := h.ImageJobQueue.Enqueue(imagejobs.EnqueueInput{
 			LabelID:     e.ID,
 			Description: desc,
@@ -251,6 +282,67 @@ func (h *Handler) AdminLabelImagesRegenerate(c *echo.Context) error {
 		"queued": len(out),
 		"jobs":   out,
 	})
+}
+
+// labelJobStatus is one label's latest regen job, mapped to the imagejobs
+// status vocab the FE already renders (done/error — not the jobs 'failed').
+type labelJobStatus struct {
+	LabelID    string  `json:"labelId"`
+	Status     string  `json:"status"` // queued|running|done|error
+	Error      string  `json:"error,omitempty"`
+	StartedAt  *string `json:"startedAt,omitempty"`
+	FinishedAt *string `json:"finishedAt,omitempty"`
+}
+
+// AdminLabelImagesStatus: GET /api/v1/admin/label-images/status — the latest
+// label-image job per label from the DB queue (gaka-hney Stage 3). Under
+// BOOM_JOBS_UNIFIED this replaces the imagejobs WS as the FE's per-label status
+// source; the admin tab polls it. Returns [] when the jobs subsystem isn't
+// wired (feature off) so the FE degrades to "no in-flight jobs" rather than
+// erroring.
+func (h *Handler) AdminLabelImagesStatus(c *echo.Context) error {
+	if _, aerr := h.requireAdmin(c); aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
+	}
+	out := []labelJobStatus{}
+	if h.JobStore != nil {
+		rows, err := h.JobStore.ListLatestPerOwner(c.Request().Context(), labelimages.RegenJobKind)
+		if err != nil {
+			return apihelpers.InternalErr(h.Logger, c, "label-image status query failed", err)
+		}
+		for _, j := range rows {
+			// Match the imagejobs registry's retention so a done/error badge
+			// shows briefly then clears, instead of a permanent green check on
+			// every label ever regenerated (DB jobs persist forever). Done=5m,
+			// error=15m; in-flight always shown.
+			if j.FinishedAt != nil {
+				age := time.Since(*j.FinishedAt)
+				if j.Status == jobs.StatusDone && age > 5*time.Minute {
+					continue
+				}
+				if j.Status == jobs.StatusFailed && age > 15*time.Minute {
+					continue
+				}
+			}
+			out = append(out, labelJobStatus{
+				LabelID:    j.Owner,
+				Status:     mapJobStatus(j.Status),
+				Error:      j.Error,
+				StartedAt:  rfcPtr(j.StartedAt),
+				FinishedAt: rfcPtr(j.FinishedAt),
+			})
+		}
+	}
+	return c.JSON(http.StatusOK, map[string]any{"jobs": out})
+}
+
+// mapJobStatus maps a catalyst-go-jobs status to the imagejobs vocab the FE
+// renders: 'failed' → 'error'; queued/running/done pass through.
+func mapJobStatus(s jobs.Status) string {
+	if s == jobs.StatusFailed {
+		return "error"
+	}
+	return string(s)
 }
 
 // AdminLabelImagesWS: GET /api/v1/admin/label-images/ws — durable stream of

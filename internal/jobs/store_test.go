@@ -141,6 +141,49 @@ func TestClaimNextKindRouting(t *testing.T) {
 	}
 }
 
+func TestListLatestPerOwnerAndHasPending(t *testing.T) {
+	s, ctx := newTestStore(t)
+	// Label "a": an older done job + a newer queued one. Label "b": one queued.
+	older, err := s.Enqueue(ctx, "label-image", "a", nil, 1, time.Time{})
+	if err != nil {
+		t.Fatalf("enqueue older: %v", err)
+	}
+	if _, err := s.pool.Exec(ctx,
+		`UPDATE jobs SET status='done', created_at = now() - interval '1 hour' WHERE id=$1`, older); err != nil {
+		t.Fatalf("age older: %v", err)
+	}
+	newer, err := s.Enqueue(ctx, "label-image", "a", nil, 1, time.Time{})
+	if err != nil {
+		t.Fatalf("enqueue newer: %v", err)
+	}
+	if _, err := s.Enqueue(ctx, "label-image", "b", nil, 1, time.Time{}); err != nil {
+		t.Fatalf("enqueue b: %v", err)
+	}
+
+	rows, err := s.ListLatestPerOwner(ctx, "label-image")
+	if err != nil {
+		t.Fatalf("ListLatestPerOwner: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("want 2 distinct owners, got %d: %+v", len(rows), rows)
+	}
+	byOwner := map[string]Job{}
+	for _, j := range rows {
+		byOwner[j.Owner] = j
+	}
+	if byOwner["a"].ID != newer {
+		t.Fatalf("owner a latest = %d, want the newer %d", byOwner["a"].ID, newer)
+	}
+
+	// HasPending: "a" has the queued newer, "b" is queued, "c" has nothing.
+	if ok, _ := s.HasPending(ctx, "label-image", "a"); !ok {
+		t.Fatal("owner a should have a pending job")
+	}
+	if ok, _ := s.HasPending(ctx, "label-image", "c"); ok {
+		t.Fatal("owner c should have no pending job")
+	}
+}
+
 func TestSchedulerClaimIsSingleton(t *testing.T) {
 	s, ctx := newTestStore(t)
 	if err := s.UpsertSchedule(ctx, "cron", time.Hour); err != nil {

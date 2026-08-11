@@ -249,7 +249,10 @@ func runCmd() *cobra.Command {
 				// gates it: "auto" (default) = only under the in-process broker;
 				// "on"/"off" force it. Default role=all + inprocess keeps the
 				// old unconditional behavior.
-				if cfg.IsWorkerRole() && cfg.LabelImagesReconcileEnabled() {
+				// Drain pods (BOOM_JOBS_DRAIN) claim+run then exit, so skip the
+					// reconcile scan there — it would race shutdown (closed-pool) and
+					// re-scan every label on each short-lived pod.
+					if cfg.IsWorkerRole() && !cfg.JobsDrain && cfg.LabelImagesReconcileEnabled() {
 					go liWorker.Run(ctx)
 				}
 			}
@@ -438,17 +441,18 @@ func runCmd() *cobra.Command {
 				// enqueue + migrate that UI, then delete imagejobs) is a deliberate
 				// future flip.
 				if cfg.JobsUnified && liWorker != nil {
-					jobReg.Register("label-image", jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
-						var p struct {
-							LabelID string `json:"labelId"`
-						}
+					jobReg.Register(labelimages.RegenJobKind, jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
+						var p labelimages.RegenJobPayload
 						if uerr := json.Unmarshal(job.Payload, &p); uerr != nil {
 							return uerr
 						}
 						if p.LabelID == "" {
 							return fmt.Errorf("label-image job missing labelId")
 						}
-						return liWorker.RegenerateOne(jctx, p.LabelID)
+						// RegenerateEntry (not RegenerateOne) so per-entry
+						// model/size/seed overrides survive the fold — same
+						// fidelity the imagejobs executor had.
+						return liWorker.RegenerateEntry(jctx, p.Entry())
 					}))
 					logger.Info("jobs: label-image handler registered (BOOM_JOBS_UNIFIED)")
 				}
