@@ -202,6 +202,16 @@ export const qk = {
   // gaka-93f.6: admin caps dashboard (users + roles/tiers + effective caps).
   adminUsers: () => ["admin", "users"] as const,
 
+  // gaka-hney: admin background-jobs tab. The jobs list is keyed by its
+  // filters (status/kind/limit) so each filter combination caches
+  // independently; schedules are filter-less. Both sit under the shared
+  // ["admin", "jobs"] prefix so a trigger/retry can invalidate every jobs
+  // query AND the schedules panel in one prefix match.
+  adminJobsPrefix: () => ["admin", "jobs"] as const,
+  adminJobs: (status?: string, kind?: string, limit?: number) =>
+    ["admin", "jobs", "list", status ?? "", kind ?? "", limit ?? 0] as const,
+  adminJobSchedules: () => ["admin", "jobs", "schedules"] as const,
+
   // Admin CLI-runner command catalog (BOOM_FEATURE_ADMIN_CLI). Refetched
   // rarely — the spec only changes on a server restart/redeploy. Run and
   // complete are mutations/imperative calls, so no keys for them.

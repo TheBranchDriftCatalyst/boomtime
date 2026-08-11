@@ -61,6 +61,8 @@ import type {
   VersionResponse,
   PublicConfig,
   AdminUsersPayload,
+  AdminJob,
+  AdminJobSchedule,
   IdentitiesPayload,
   GithubConnection,
   GithubStatsPayload,
@@ -995,6 +997,29 @@ export const api = {
     request<LabelsCatalogPayload>("/api/v1/labels/catalog", { auth: false }),
   // gaka-93f.6: admin caps dashboard — users + roles/tiers + effective caps.
   getAdminUsers: () => request<AdminUsersPayload>("/api/v1/admin/users"),
+
+  // --- Admin: background jobs (gaka-hney) ------------------------------------
+  // Admin-gated (403 for non-admins). The list + schedules endpoints wrap
+  // their result in a single-key envelope ({ jobs }, { schedules }); unwrap to
+  // the bare array so the Jobs tab consumes a flat list. trigger/retry both
+  // return the affected job id.
+  getAdminJobs: (params?: { status?: string; kind?: string; limit?: number }) =>
+    unwrap<AdminJob[]>(buildUrl("/api/v1/admin/jobs", params), "jobs", []),
+  getAdminJobSchedules: () =>
+    unwrap<AdminJobSchedule[]>(
+      "/api/v1/admin/jobs/schedules",
+      "schedules",
+      [],
+    ),
+  triggerAdminJob: (kind: string) =>
+    request<{ id: number }>("/api/v1/admin/jobs/trigger", {
+      method: "POST",
+      body: { kind },
+    }),
+  retryAdminJob: (id: number) =>
+    request<{ id: number }>(`/api/v1/admin/jobs/${id}/retry`, {
+      method: "POST",
+    }),
 
   // --- Admin CLI-runner (BOOM_FEATURE_ADMIN_CLI) -----------------------------
   // All three 404 when the backend feature flag is off (routes not

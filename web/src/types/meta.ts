@@ -34,6 +34,38 @@ export interface AdminUsersPayload {
   users: AdminUserRow[];
 }
 
+// Admin jobs tab — GET /api/v1/admin/jobs + /schedules (gaka-hney). Mirrors
+// internal/admin/jobs.go. Admin-gated (403 for non-admins); the tab is hidden
+// from the sidebar for non-admins just like the other admin sections.
+export type AdminJobStatus = "queued" | "running" | "done" | "failed";
+
+export interface AdminJob {
+  id: number;
+  kind: string;
+  status: AdminJobStatus;
+  attempts: number;
+  maxAttempts: number;
+  error: string; // "" unless a run failed
+  runAt: string; // RFC3339 — when the job becomes eligible to run
+  createdAt: string;
+  startedAt: string | null; // null until a worker picks it up
+  finishedAt: string | null; // null until it terminates (done/failed)
+}
+export interface AdminJobsPayload {
+  jobs: AdminJob[];
+}
+// One recurring, self-scheduling job kind. `nextRun` is the next fire time;
+// `lastRun` is null until the kind has fired at least once this process.
+export interface AdminJobSchedule {
+  kind: string;
+  intervalSeconds: number;
+  nextRun: string; // RFC3339
+  lastRun: string | null;
+}
+export interface AdminJobSchedulesPayload {
+  schedules: AdminJobSchedule[];
+}
+
 // Linked external identities — GET /api/v1/users/current/identities (gaka-b5n.4).
 export interface LinkedIdentity {
   provider: string;
