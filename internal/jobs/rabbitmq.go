@@ -23,7 +23,11 @@ type AMQPProvider struct {
 	log      *slog.Logger
 	id       string
 	prefetch int
+	notifier Notifier
 }
+
+// SetNotifier implements Provider.
+func (p *AMQPProvider) SetNotifier(n Notifier) { p.notifier = n }
 
 // NewAMQPProvider declares the durable jobs queue on ch and returns the provider.
 func NewAMQPProvider(ch *amqp.Channel, queue string, store *Store, log *slog.Logger, workerID string, prefetch int) (*AMQPProvider, error) {
@@ -42,7 +46,7 @@ func (p *AMQPProvider) Name() string { return "rabbitmq" }
 // Enqueue records the job then publishes its id to the queue.
 func (p *AMQPProvider) Enqueue(ctx context.Context, kind string, payload []byte, opts ...EnqueueOption) (int64, error) {
 	c := resolveEnqueue(opts)
-	id, err := p.store.Enqueue(ctx, kind, payload, c.maxAttempts, c.runAt)
+	id, err := p.store.Enqueue(ctx, kind, c.owner, payload, c.maxAttempts, c.runAt)
 	if err != nil {
 		return 0, err
 	}
@@ -99,7 +103,7 @@ func (p *AMQPProvider) handle(ctx context.Context, reg *Registry, d amqp.Deliver
 		return
 	}
 
-	oc := execute(ctx, reg, p.store, *job, p.log)
+	oc := execute(ctx, reg, p.store, *job, p.log, p.notifier)
 	_ = d.Ack(false)
 
 	// AMQP has no native delayed retry here, so a retry is re-published for an

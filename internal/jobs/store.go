@@ -18,12 +18,12 @@ type Store struct {
 // NewStore wraps a pgx pool.
 func NewStore(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
 
-const jobCols = `id, kind, payload, status, attempts, max_attempts, error,
+const jobCols = `id, kind, owner, payload, status, attempts, max_attempts, error,
 	run_at, created_at, started_at, finished_at`
 
 // Enqueue inserts a queued job. maxAttempts < 1 is clamped to 1; a zero runAt
-// means "now". Returns the new job id.
-func (s *Store) Enqueue(ctx context.Context, kind string, payload []byte, maxAttempts int, runAt time.Time) (int64, error) {
+// means "now"; owner "" = a system job. Returns the new job id.
+func (s *Store) Enqueue(ctx context.Context, kind, owner string, payload []byte, maxAttempts int, runAt time.Time) (int64, error) {
 	if maxAttempts < 1 {
 		maxAttempts = 1
 	}
@@ -35,9 +35,9 @@ func (s *Store) Enqueue(ctx context.Context, kind string, payload []byte, maxAtt
 	}
 	var id int64
 	err := s.pool.QueryRow(ctx,
-		`INSERT INTO jobs (kind, payload, max_attempts, run_at)
-		 VALUES ($1, $2, $3, $4) RETURNING id`,
-		kind, payload, maxAttempts, runAt,
+		`INSERT INTO jobs (kind, owner, payload, max_attempts, run_at)
+		 VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+		kind, owner, payload, maxAttempts, runAt,
 	).Scan(&id)
 	return id, err
 }
@@ -230,7 +230,7 @@ type scanRow interface {
 func scanJob(row scanRow) (*Job, error) {
 	var j Job
 	if err := row.Scan(
-		&j.ID, &j.Kind, &j.Payload, &j.Status, &j.Attempts, &j.MaxAttempts,
+		&j.ID, &j.Kind, &j.Owner, &j.Payload, &j.Status, &j.Attempts, &j.MaxAttempts,
 		&j.Error, &j.RunAt, &j.CreatedAt, &j.StartedAt, &j.FinishedAt,
 	); err != nil {
 		return nil, err

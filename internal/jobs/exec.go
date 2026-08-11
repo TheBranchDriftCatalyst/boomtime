@@ -30,12 +30,20 @@ func retryDelay(attempt int) time.Duration {
 // result in the store — Complete on success, or Fail with a backoff-retry until
 // MaxAttempts is exhausted. Shared by every provider's Run loop so the retry +
 // terminal semantics are identical regardless of transport. The returned
-// outcome lets a push-based provider (AMQP) re-deliver a retry.
-func execute(ctx context.Context, reg *Registry, store *Store, job Job, log *slog.Logger) outcome {
+// outcome lets a push-based provider (AMQP) re-deliver a retry. On a TERMINAL
+// outcome (done/failed) it fires n.Notify (gaka-hney.6) so the FE can toast.
+func execute(ctx context.Context, reg *Registry, store *Store, job Job, log *slog.Logger, n Notifier) outcome {
+	notify := func(status Status, errMsg string) {
+		if n != nil {
+			n.Notify(JobEvent{ID: job.ID, Kind: job.Kind, Owner: job.Owner, Status: status, Error: errMsg})
+		}
+	}
+
 	h, ok := reg.Handler(job.Kind)
 	if !ok {
 		_ = store.Fail(ctx, job.ID, "no handler registered for kind "+job.Kind, nil)
 		log.Warn("jobs: no handler for kind", "kind", job.Kind, "id", job.ID)
+		notify(StatusFailed, "no handler for kind "+job.Kind)
 		return outcomeFailed
 	}
 
@@ -53,6 +61,7 @@ func execute(ctx context.Context, reg *Registry, store *Store, job Job, log *slo
 			log.Warn("jobs: complete failed", "id", job.ID, "err", cerr)
 		}
 		log.Info("jobs: done", "kind", job.Kind, "id", job.ID, "attempt", job.Attempts)
+		notify(StatusDone, "")
 		return outcomeDone
 	}
 
@@ -61,10 +70,11 @@ func execute(ctx context.Context, reg *Registry, store *Store, job Job, log *slo
 		_ = store.Fail(ctx, job.ID, err.Error(), &retryAt)
 		log.Warn("jobs: retry scheduled", "kind", job.Kind, "id", job.ID,
 			"attempt", job.Attempts, "of", job.MaxAttempts, "err", err)
-		return outcomeRetry
+		return outcomeRetry // not terminal — no notify
 	}
 	_ = store.Fail(ctx, job.ID, err.Error(), nil)
 	log.Error("jobs: failed (attempts exhausted)", "kind", job.Kind, "id", job.ID,
 		"attempts", job.Attempts, "err", err)
+	notify(StatusFailed, err.Error())
 	return outcomeFailed
 }

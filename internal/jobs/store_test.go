@@ -40,7 +40,7 @@ func newTestStore(t *testing.T) (*Store, context.Context) {
 func TestStoreEnqueueClaimComplete(t *testing.T) {
 	s, ctx := newTestStore(t)
 
-	id, err := s.Enqueue(ctx, "demo", json.RawMessage(`{"a":1}`), 2, time.Time{})
+	id, err := s.Enqueue(ctx, "demo", "", json.RawMessage(`{"a":1}`), 2, time.Time{})
 	if err != nil {
 		t.Fatalf("Enqueue: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestStoreEnqueueClaimComplete(t *testing.T) {
 
 func TestStoreRetryThenTerminal(t *testing.T) {
 	s, ctx := newTestStore(t)
-	id, _ := s.Enqueue(ctx, "demo", nil, 3, time.Time{})
+	id, _ := s.Enqueue(ctx, "demo", "", nil, 3, time.Time{})
 
 	job, _, _ := s.ClaimNext(ctx, "w1")
 	// Fail with a past retryAt → immediately re-claimable, attempt preserved.
@@ -94,7 +94,7 @@ func TestStoreRetryThenTerminal(t *testing.T) {
 
 func TestStoreRunAtGatesClaim(t *testing.T) {
 	s, ctx := newTestStore(t)
-	if _, err := s.Enqueue(ctx, "later", nil, 1, time.Now().Add(time.Hour)); err != nil {
+	if _, err := s.Enqueue(ctx, "later", "", nil, 1, time.Now().Add(time.Hour)); err != nil {
 		t.Fatalf("Enqueue: %v", err)
 	}
 	if _, ok, _ := s.ClaimNext(ctx, "w1"); ok {
@@ -104,7 +104,7 @@ func TestStoreRunAtGatesClaim(t *testing.T) {
 
 func TestStoreClaimByID(t *testing.T) {
 	s, ctx := newTestStore(t)
-	id, _ := s.Enqueue(ctx, "demo", nil, 1, time.Time{})
+	id, _ := s.Enqueue(ctx, "demo", "", nil, 1, time.Time{})
 
 	job, ok, err := s.ClaimByID(ctx, id, "w1")
 	if err != nil || !ok || job.ID != id || job.Attempts != 1 {

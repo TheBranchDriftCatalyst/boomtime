@@ -32,6 +32,9 @@ const (
 type Job struct {
 	ID          int64
 	Kind        string
+	// Owner is the user a job belongs to ("" = a system job). Terminal events
+	// for owned jobs route to that user's push notifications (gaka-hney.6).
+	Owner       string
 	Payload     json.RawMessage
 	Status      Status
 	Attempts    int
@@ -41,6 +44,22 @@ type Job struct {
 	CreatedAt   time.Time
 	StartedAt   *time.Time
 	FinishedAt  *time.Time
+}
+
+// JobEvent is a terminal status transition (done/failed) delivered to a
+// Notifier for push notifications (gaka-hney.6).
+type JobEvent struct {
+	ID     int64  `json:"id"`
+	Kind   string `json:"kind"`
+	Owner  string `json:"owner"`
+	Status Status `json:"status"`
+	Error  string `json:"error,omitempty"`
+}
+
+// Notifier receives terminal job events. boomtime's impl fans them to a WS so
+// the FE can toast on completion. Optional — a nil notifier just means no push.
+type Notifier interface {
+	Notify(ev JobEvent)
 }
 
 // Schedule is a periodic enqueue registration.

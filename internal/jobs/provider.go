@@ -33,6 +33,8 @@ type Provider interface {
 	Runner
 	// Name identifies the backend ("local", "rabbitmq") for logs + admin.
 	Name() string
+	// SetNotifier wires an optional terminal-event sink (gaka-hney.6). nil-safe.
+	SetNotifier(Notifier)
 }
 
 // EnqueueOption tunes a single enqueue.
@@ -41,6 +43,7 @@ type EnqueueOption func(*enqueueConfig)
 type enqueueConfig struct {
 	maxAttempts int
 	runAt       time.Time
+	owner       string
 }
 
 func resolveEnqueue(opts []EnqueueOption) enqueueConfig {
@@ -49,6 +52,12 @@ func resolveEnqueue(opts []EnqueueOption) enqueueConfig {
 		o(&cfg)
 	}
 	return cfg
+}
+
+// Owner scopes a job to a user, so its terminal event routes to that user's
+// push notifications. Empty = a system job.
+func Owner(username string) EnqueueOption {
+	return func(c *enqueueConfig) { c.owner = username }
 }
 
 // MaxAttempts sets how many times a job is tried before it's terminal (>=1).
