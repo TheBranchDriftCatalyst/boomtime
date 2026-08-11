@@ -482,15 +482,21 @@ func runCmd() *cobra.Command {
 					lp.SetKindFilter(cfg.JobsKinds, cfg.JobsExcludeKinds)
 				}
 
-				// Expose to the admin Jobs tab (list/schedules/trigger/retry).
-				h.SetJobs(jobStore, provider)
-
 				// Push hub for job-completion toasts (gaka-hney.6): the provider
 				// notifies it on terminal events; /api/v1/jobs/ws fans them to the
 				// owning user's browser.
 				jobHub := jobsevents.NewHub()
 				provider.SetNotifier(jobHub)
-				h.SetJobEvents(jobHub)
+
+				// The HTTP Handler only exists on server roles (line ~271). Worker
+				// / ScaledJob-drain pods have h == nil — they need the provider +
+				// registry, not the admin/ws wiring — so guard these. (Without the
+				// guard, --role=worker nil-panics in SetJobs the moment the jobs
+				// block runs, incl. the KEDA drain pod and the image worker.)
+				if h != nil {
+					h.SetJobs(jobStore, provider) // admin Jobs tab (list/trigger/retry)
+					h.SetJobEvents(jobHub)        // /api/v1/jobs/ws push stream
+				}
 
 				logger.Info("jobs: wired", "provider", provider.Name(),
 					"githubRefreshEnabled", cfg.GithubStatsRefreshEnabled(),
