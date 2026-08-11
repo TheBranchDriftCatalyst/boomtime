@@ -36,9 +36,9 @@ metadata:
   name: boomtime-jobs-pg-auth
   namespace: boomtime
 spec:
+  # Only the sensitive user/password come from the secret; host/port/dbName are
+  # non-sensitive metadata in the ScaledJob trigger (the secret's host is a bare
+  # service name that won't resolve from the keda namespace).
   secretTargetRef:
-    - {parameter: host, name: boomtime-postgres-app, key: host}
-    - {parameter: port, name: boomtime-postgres-app, key: port}
     - {parameter: userName, name: boomtime-postgres-app, key: username}
     - {parameter: password, name: boomtime-postgres-app, key: password}
-    - {parameter: dbName, name: boomtime-postgres-app, key: dbname}

@@ -85,9 +85,15 @@ spec:
   triggers:
     - type: postgresql
       metadata:
+        # Host/port/dbName in metadata (non-sensitive) — the CNPG secret's `host`
+        # is a BARE service name that doesn't resolve from the keda namespace, so
+        # we use the FQDN here. Only userName/password come from the TriggerAuth.
+        host: boomtime-postgres-rw.boomtime.svc.cluster.local
+        port: "5432"
+        dbName: boomtime
+        sslmode: disable
         # Pending, DUE avatar-render jobs. count>0 ⇒ schedule a Job to drain them.
         query: "SELECT count(*) FROM jobs WHERE status = 'queued' AND run_at <= now() AND kind = 'avatar-render'"
         targetQueryValue: "1"
-        sslmode: disable
       authenticationRef:
         name: boomtime-jobs-pg-auth
