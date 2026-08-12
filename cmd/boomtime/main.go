@@ -434,8 +434,12 @@ func runCmd() *cobra.Command {
 				// the jobs package stays domain-free, gated on BooksEnabled so
 				// main ships dark. The Service publishes finished-book events
 				// through the shared notifyHub and mirrors finishes to Hardcover.
+				// Hoisted out of the BooksEnabled block so the enqueuer can be
+				// wired onto it AFTER `provider` is constructed below (finished
+				// detection then routes Hardcover pushes onto the capped queue).
+				var audioSvc *audiobooks.Service
 				if cfg.BooksEnabled() {
-					audioSvc := audiobooks.New(database, amazon.NewStore(database), logger)
+					audioSvc = audiobooks.New(database, amazon.NewStore(database), logger)
 					audioSvc.SetNotify(notifyHub)
 					audioSvc.SetHardcover(hardcover.NewStore(database))
 
@@ -464,6 +468,24 @@ func runCmd() *cobra.Command {
 							return fmt.Errorf("audible backfill: missing owner")
 						}
 						return audioSvc.BackfillUser(jctx, job.Owner)
+					}))
+
+					// hardcover-push kind: mirror ONE finished book to Hardcover.
+					// Split out of the audible-sync handler so all users' Hardcover
+					// pushes share the single concurrency-capped queue (cap=1 below)
+					// — Hardcover's rate limit is a global resource. The payload is
+					// self-contained; owner falls back to the job's owner field.
+					jobReg.Register(audiobooks.HardcoverPushKind, jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
+						var p audiobooks.HardcoverPushPayload
+						if len(job.Payload) > 0 {
+							if err := json.Unmarshal(job.Payload, &p); err != nil {
+								return fmt.Errorf("hardcover-push: bad payload: %w", err)
+							}
+						}
+						if p.Owner == "" {
+							p.Owner = job.Owner
+						}
+						return audioSvc.RunHardcoverPush(jctx, p)
 					}))
 					logger.Info("jobs: audiobooks handlers registered", "audibleSyncEnabled", cfg.AudibleSyncEnabled())
 				}
@@ -525,14 +547,18 @@ func runCmd() *cobra.Command {
 				//     ("audiobooks-audible-backfill"), NOT the spec's literal
 				//     "books-audible-backfill" — which is not a registered kind, so
 				//     the cap is set on the real constant.
-				//   - "hardcover-push" is NOT a registered jobs kind (Hardcover is a
-				//     mirror inside the audible sync handler, not its own job), so it
-				//     is intentionally skipped — no cap to set.
+				//   - "hardcover-push" is now its OWN registered jobs kind (split out
+				//     of the audible-sync handler, above) so all users' Hardcover
+				//     pushes share one cap=1 queue — Hardcover's rate limit is global.
+				//     Registered + capped only inside the BooksEnabled block.
 				jobReg.SetConcurrency(github.GithubStatsRefreshKind, 2)  // github-stats-refresh
 				jobReg.SetConcurrency(identity.AvatarRenderKind, 1)      // avatar-render
 				jobReg.SetConcurrency(labelimages.RegenJobKind, 1)       // label-image
 				jobReg.SetConcurrency(audiobooks.AudibleSyncKind, 1)     // audiobooks-audible-sync
 				jobReg.SetConcurrency(audiobooks.AudibleBackfillKind, 1) // audiobooks-audible-backfill (spec's "books-audible-backfill")
+				if cfg.BooksEnabled() {
+					jobReg.SetConcurrency(audiobooks.HardcoverPushKind, 1) // hardcover-push (global Hardcover rate limit)
+				}
 
 				hostID, _ := os.Hostname()
 				if hostID == "" {
@@ -580,6 +606,14 @@ func runCmd() *cobra.Command {
 				// owning user's browser.
 				jobHub := jobsevents.NewHub()
 				provider.SetNotifier(jobHub)
+
+				// Wire the enqueuer onto the audiobooks service NOW that `provider`
+				// exists (it implements jobs.Enqueuer): finished-book detection then
+				// enqueues Hardcover pushes onto the capped HardcoverPushKind queue
+				// instead of pushing inline. Only set when Books is enabled.
+				if audioSvc != nil {
+					audioSvc.SetEnqueuer(provider)
+				}
 
 				// The HTTP Handler only exists on server roles (line ~271). Worker
 				// / ScaledJob-drain pods have h == nil — they need the provider +

@@ -32,6 +32,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/amazon"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/hardcover"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/notify"
 )
 
@@ -41,6 +42,9 @@ const (
 	// AudibleBackfillKind is the one-shot all-time backfill kind (enqueued on
 	// demand from the connect flow / admin, never scheduled).
 	AudibleBackfillKind = "audiobooks-audible-backfill"
+
+	// HardcoverPushKind mirrors ONE finished book to Hardcover. Its own job kind (not inline in sync) so all Hardcover pushes across users share one concurrency-capped queue — Hardcover's rate limit is a global resource.
+	HardcoverPushKind = "hardcover-push"
 
 	source = "audible"
 
@@ -67,6 +71,22 @@ type Service struct {
 	// Hardcover (nil-safe) is the push connector; on a newly-finished book we
 	// match + mirror the finish out when the user has connected Hardcover.
 	Hardcover *hardcover.Store
+	// Enqueuer (nil-safe) routes finished-book Hardcover pushes onto the
+	// concurrency-capped HardcoverPushKind queue. nil => push inline.
+	Enqueuer jobs.Enqueuer
+}
+
+// HardcoverPushPayload is the self-contained job payload for HardcoverPushKind:
+// everything RunHardcoverPush needs to match + mirror one finished book, so the
+// job carries no reference back into sweep state.
+type HardcoverPushPayload struct {
+	Owner      string    `json:"owner"`
+	ASIN       string    `json:"asin"`
+	AmazonASIN string    `json:"amazonAsin"`
+	ISBN       string    `json:"isbn"`
+	Title      string    `json:"title"`
+	Author     string    `json:"author"`
+	FinishedAt time.Time `json:"finishedAt"`
 }
 
 // New constructs the audiobooks (Audible) domain service. Notify/Hardcover are
@@ -81,6 +101,10 @@ func (s *Service) SetNotify(hub *notify.Hub) *Service { s.Notify = hub; return s
 
 // SetHardcover wires the Hardcover push store (nil-safe).
 func (s *Service) SetHardcover(store *hardcover.Store) *Service { s.Hardcover = store; return s }
+
+// SetEnqueuer wires the jobs enqueuer (nil-safe). nil => finished-book Hardcover
+// pushes run inline; set => they enqueue onto the capped HardcoverPushKind queue.
+func (s *Service) SetEnqueuer(e jobs.Enqueuer) *Service { s.Enqueuer = e; return s }
 
 // ---------------------------------------------------------------------------
 // Library item parsing
@@ -632,53 +656,98 @@ func (s *Service) announceFinished(ctx context.Context, owner string, ev finishe
 			},
 		})
 	}
-	s.pushFinishedToHardcover(ctx, owner, ev)
+	s.mirrorFinishedToHardcover(ctx, owner, ev)
 }
 
-// pushFinishedToHardcover matches the finished book and mirrors status='read' +
-// the finish date out via the Hardcover connector. Best-effort: a miss / rate
-// limit / transport error is logged, never propagated. A bad token flips the
-// stored status so the UI can prompt a re-paste.
-func (s *Service) pushFinishedToHardcover(ctx context.Context, owner string, ev finishedEvent) {
-	if s.Hardcover == nil {
+// mirrorFinishedToHardcover routes the finished-book push. With an Enqueuer wired
+// it marshals a HardcoverPushPayload and enqueues onto the capped
+// HardcoverPushKind queue so all users' pushes share Hardcover's rate limit; an
+// enqueue failure falls back to the inline push. Without one it pushes inline.
+func (s *Service) mirrorFinishedToHardcover(ctx context.Context, owner string, ev finishedEvent) {
+	if s.Enqueuer == nil {
+		s.pushFinishedToHardcover(ctx, owner, ev)
 		return
 	}
-	client, ok, err := s.Hardcover.ClientForUser(ctx, owner)
+	p := payloadFromEvent(owner, ev)
+	body, err := json.Marshal(p)
+	if err != nil {
+		s.logWarn("hardcover-push: marshal payload failed — pushing inline", "user", owner, "err", err)
+		s.pushFinishedToHardcover(ctx, owner, ev)
+		return
+	}
+	if _, err := s.Enqueuer.Enqueue(ctx, HardcoverPushKind, body, jobs.Owner(owner), jobs.MaxAttempts(3)); err != nil {
+		s.logWarn("hardcover-push: enqueue failed — pushing inline", "user", owner, "err", err)
+		s.pushFinishedToHardcover(ctx, owner, ev)
+	}
+}
+
+// payloadFromEvent builds a HardcoverPushPayload from a finishedEvent.
+func payloadFromEvent(owner string, ev finishedEvent) HardcoverPushPayload {
+	return HardcoverPushPayload{
+		Owner:      owner,
+		ASIN:       ev.Meta.ExternalID,
+		AmazonASIN: ev.Meta.AmazonASIN,
+		ISBN:       ev.Meta.ISBN,
+		Title:      ev.Meta.Title,
+		Author:     ev.Meta.Authors,
+		FinishedAt: ev.FinishedAt,
+	}
+}
+
+// pushFinishedToHardcover is the best-effort inline path: it builds the payload
+// from ev and runs the push, discarding the error (unchanged behavior — a miss /
+// rate limit / transport error is logged inside, never propagated).
+func (s *Service) pushFinishedToHardcover(ctx context.Context, owner string, ev finishedEvent) {
+	_ = s.RunHardcoverPush(ctx, payloadFromEvent(owner, ev))
+}
+
+// RunHardcoverPush matches the finished book and mirrors status='read' + the
+// finish date out via the Hardcover connector. Returns nil when there is nothing
+// to do (no Hardcover configured, the user hasn't connected, or no confident
+// match) and the underlying error on a Match / UpsertUserBook / UpsertRead
+// failure (after routing it through hardcoverError so a bad token still flips the
+// stored status). This is the job-handler body for HardcoverPushKind.
+func (s *Service) RunHardcoverPush(ctx context.Context, p HardcoverPushPayload) error {
+	if s.Hardcover == nil {
+		return nil
+	}
+	client, ok, err := s.Hardcover.ClientForUser(ctx, p.Owner)
 	if err != nil || !ok {
 		if err != nil {
-			s.logWarn("hardcover: client load failed", "user", owner, "err", err)
+			s.logWarn("hardcover: client load failed", "user", p.Owner, "err", err)
 		}
-		return
+		return nil
 	}
 	match, err := client.Match(ctx, hardcover.MatchInput{
-		ASIN:   firstNonEmpty(ev.Meta.ExternalID, ev.Meta.AmazonASIN),
-		ISBN13: ev.Meta.ISBN,
-		Title:  ev.Meta.Title,
-		Author: ev.Meta.Authors,
+		ASIN:   firstNonEmpty(p.ASIN, p.AmazonASIN),
+		ISBN13: p.ISBN,
+		Title:  p.Title,
+		Author: p.Author,
 	})
 	if err != nil {
-		s.hardcoverError(ctx, owner, "match", err)
-		return
+		s.hardcoverError(ctx, p.Owner, "match", err)
+		return err
 	}
 	if match.BookID <= 0 {
-		s.logInfo("hardcover: no confident match — left for review", "user", owner, "asin", ev.Meta.ExternalID)
-		return
+		s.logInfo("hardcover: no confident match — left for review", "user", p.Owner, "asin", p.ASIN)
+		return nil
 	}
 	userBookID, err := client.UpsertUserBook(ctx, match.BookID, match.EditionID, hardcover.StatusRead, hardcover.FormatAudio)
 	if err != nil {
-		s.hardcoverError(ctx, owner, "upsert user_book", err)
-		return
+		s.hardcoverError(ctx, p.Owner, "upsert user_book", err)
+		return err
 	}
-	finishedAt := ev.FinishedAt
+	finishedAt := p.FinishedAt
 	if _, err := client.UpsertRead(ctx, userBookID, hardcover.ReadInput{
 		FinishedAt:      &finishedAt,
 		EditionID:       match.EditionID,
 		ReadingFormatID: hardcover.FormatAudio,
 	}); err != nil {
-		s.hardcoverError(ctx, owner, "upsert user_book_read", err)
-		return
+		s.hardcoverError(ctx, p.Owner, "upsert user_book_read", err)
+		return err
 	}
-	s.logInfo("hardcover: pushed finished book", "user", owner, "asin", ev.Meta.ExternalID, "bookId", match.BookID)
+	s.logInfo("hardcover: pushed finished book", "user", p.Owner, "asin", p.ASIN, "bookId", match.BookID)
+	return nil
 }
 
 // hardcoverError logs a Hardcover failure and, on a bad token, flips the stored
