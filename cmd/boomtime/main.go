@@ -510,6 +510,30 @@ func runCmd() *cobra.Command {
 					logger.Info("jobs: label-image handler registered (BOOM_JOBS_UNIFIED)")
 				}
 
+				// Per-kind fleet-wide concurrency caps (job-layer throughput
+				// control, NOT per-HTTP-request): each external-API kind shares ONE
+				// throttled queue across pods+users. A kind at its cap is excluded
+				// from ClaimNext so its backlog stays durably status=queued and
+				// drains as slots free; every other kind keeps flowing. Enforced by
+				// the KindLimiter wired below (Dragonfly-backed fleet-wide, or an
+				// in-process fallback when there's no redis). Unset kinds stay
+				// unlimited. Only kinds that actually exist as registered handler
+				// kinds are set here.
+				//
+				// NOTE (kind-name reconciliation vs. the spec):
+				//   - the backfill kind is audiobooks.AudibleBackfillKind
+				//     ("audiobooks-audible-backfill"), NOT the spec's literal
+				//     "books-audible-backfill" — which is not a registered kind, so
+				//     the cap is set on the real constant.
+				//   - "hardcover-push" is NOT a registered jobs kind (Hardcover is a
+				//     mirror inside the audible sync handler, not its own job), so it
+				//     is intentionally skipped — no cap to set.
+				jobReg.SetConcurrency(github.GithubStatsRefreshKind, 2)  // github-stats-refresh
+				jobReg.SetConcurrency(identity.AvatarRenderKind, 1)      // avatar-render
+				jobReg.SetConcurrency(labelimages.RegenJobKind, 1)       // label-image
+				jobReg.SetConcurrency(audiobooks.AudibleSyncKind, 1)     // audiobooks-audible-sync
+				jobReg.SetConcurrency(audiobooks.AudibleBackfillKind, 1) // audiobooks-audible-backfill (spec's "books-audible-backfill")
+
 				hostID, _ := os.Hostname()
 				if hostID == "" {
 					hostID = "boomtime-jobs"
@@ -538,6 +562,18 @@ func runCmd() *cobra.Command {
 				if lp, ok := provider.(*jobs.LocalProvider); ok {
 					lp.SetKindFilter(cfg.JobsKinds, cfg.JobsExcludeKinds)
 				}
+
+				// Job-layer concurrency throttle (fleet-wide per-kind caps set on
+				// jobReg above). A Dragonfly/Redis client makes the semaphore
+				// shared across pods+users; with no BOOM_REDIS_ADDR the limiter
+				// falls back to an in-process counter (correct for a single pod —
+				// local dev / broker=local). Wired on BOTH provider paths.
+				var jobsRedis *redis.Client
+				if cfg.RedisAddr != "" {
+					jobsRedis = redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPassword})
+					defer jobsRedis.Close()
+				}
+				provider.SetLimiter(jobs.NewKindLimiter(jobsRedis))
 
 				// Push hub for job-completion toasts (gaka-hney.6): the provider
 				// notifies it on terminal events; /api/v1/jobs/ws fans them to the

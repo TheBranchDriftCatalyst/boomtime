@@ -35,6 +35,9 @@ type Provider interface {
 	Name() string
 	// SetNotifier wires an optional terminal-event sink (gaka-hney.6). nil-safe.
 	SetNotifier(Notifier)
+	// SetLimiter wires the job-layer concurrency throttle (fleet-wide per-kind
+	// caps). nil disables throttling — every kind runs unbounded.
+	SetLimiter(KindLimiter)
 }
 
 // EnqueueOption tunes a single enqueue.

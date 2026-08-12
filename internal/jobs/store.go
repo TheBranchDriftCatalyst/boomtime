@@ -103,6 +103,18 @@ func (s *Store) ClaimByID(ctx context.Context, id int64, workerID string) (*Job,
 	return j, true, nil
 }
 
+// Requeue puts a just-claimed job back to 'queued' WITHOUT bumping attempts, so
+// a lost concurrency-slot race (Acquire returned ok=false after the row was
+// already claimed) costs nothing — the row simply becomes claimable again for a
+// later slot. Distinct from Fail's retry path, which advances run_at/error; here
+// the job is immediately eligible again with a cleared started_at/locked_by.
+func (s *Store) Requeue(ctx context.Context, id int64) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE jobs SET status = 'queued', started_at = NULL,
+		        locked_by = '', locked_at = NULL WHERE id = $1`, id)
+	return err
+}
+
 // Complete marks a running job done.
 func (s *Store) Complete(ctx context.Context, id int64) error {
 	_, err := s.pool.Exec(ctx,

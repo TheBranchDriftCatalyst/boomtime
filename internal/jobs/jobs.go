@@ -30,8 +30,8 @@ const (
 
 // Job is one unit of work.
 type Job struct {
-	ID          int64
-	Kind        string
+	ID   int64
+	Kind string
 	// Owner is the user a job belongs to ("" = a system job). Terminal events
 	// for owned jobs route to that user's push notifications (gaka-hney.6).
 	Owner       string
@@ -86,10 +86,16 @@ func (f HandlerFunc) Handle(ctx context.Context, job Job) error { return f(ctx, 
 type Registry struct {
 	mu       sync.RWMutex
 	handlers map[string]Handler
+	// concurrency is the per-kind fleet-wide cap consulted by the KindLimiter.
+	// A kind absent from the map (or set to 0) is unlimited. Register does NOT
+	// touch this — limits are policy set separately via SetConcurrency.
+	concurrency map[string]int
 }
 
 // NewRegistry returns an empty registry.
-func NewRegistry() *Registry { return &Registry{handlers: map[string]Handler{}} }
+func NewRegistry() *Registry {
+	return &Registry{handlers: map[string]Handler{}, concurrency: map[string]int{}}
+}
 
 // Register binds a handler to a kind (last write wins).
 func (r *Registry) Register(kind string, h Handler) {
@@ -104,6 +110,28 @@ func (r *Registry) Handler(kind string) (Handler, bool) {
 	defer r.mu.RUnlock()
 	h, ok := r.handlers[kind]
 	return h, ok
+}
+
+// SetConcurrency sets the fleet-wide max number of jobs of kind that may run at
+// once (across all pods + users), enforced by the KindLimiter in front of the
+// queue. max <= 0 (or a kind never set) means unlimited. Policy, not wiring —
+// call it near where handlers are registered.
+func (r *Registry) SetConcurrency(kind string, max int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.concurrency[kind] = max
+}
+
+// Concurrency returns a copy of the per-kind limits, for the KindLimiter to
+// consult without holding the registry lock. Kinds absent here are unlimited.
+func (r *Registry) Concurrency() map[string]int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make(map[string]int, len(r.concurrency))
+	for k, v := range r.concurrency {
+		out[k] = v
+	}
+	return out
 }
 
 // Kinds returns the registered kinds, sorted.

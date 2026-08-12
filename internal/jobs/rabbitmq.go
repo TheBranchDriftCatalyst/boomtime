@@ -24,10 +24,16 @@ type AMQPProvider struct {
 	id       string
 	prefetch int
 	notifier Notifier
+	// limiter is the job-layer concurrency throttle (fleet-wide per-kind caps).
+	// nil = unbounded. See handle() for the acquire/release + NACK-requeue path.
+	limiter KindLimiter
 }
 
 // SetNotifier implements Provider.
 func (p *AMQPProvider) SetNotifier(n Notifier) { p.notifier = n }
+
+// SetLimiter implements Provider. nil = unbounded.
+func (p *AMQPProvider) SetLimiter(l KindLimiter) { p.limiter = l }
 
 // NewAMQPProvider declares the durable jobs queue on ch and returns the provider.
 func NewAMQPProvider(ch *amqp.Channel, queue string, store *Store, log *slog.Logger, workerID string, prefetch int) (*AMQPProvider, error) {
@@ -103,7 +109,38 @@ func (p *AMQPProvider) handle(ctx context.Context, reg *Registry, d amqp.Deliver
 		return
 	}
 
+	// Job-layer concurrency throttle: if this kind is capped, reserve a slot
+	// before running. On a lost slot-race (kind already at fleet limit) put the
+	// row back to 'queued' (attempt-free) and NACK+requeue the delivery so a
+	// later redelivery re-attempts once a slot frees — instead of running over
+	// the cap or head-of-line-blocking every other kind. Excluded-before-claim
+	// isn't feasible on the push-delivery loop, so the atomic Acquire is the
+	// sole guard here; the rare requeue is the only cost. (A tight redeliver
+	// spin while saturated is possible; a delay-queue is a scale follow-up.)
+	var release func()
+	if p.limiter != nil {
+		if max := reg.Concurrency()[job.Kind]; max > 0 {
+			rel, okAcq, aerr := p.limiter.Acquire(ctx, job.Kind,
+				p.id+":"+strconv.FormatInt(id, 10), max)
+			switch {
+			case aerr != nil:
+				p.log.Warn("jobs: limiter Acquire failed; running unthrottled", "kind", job.Kind, "id", id, "err", aerr)
+			case !okAcq:
+				if rerr := p.store.Requeue(ctx, id); rerr != nil {
+					p.log.Warn("jobs: requeue after slot-race failed", "id", id, "err", rerr)
+				}
+				_ = d.Nack(false, true) // at limit — redeliver later
+				return
+			default:
+				release = rel
+			}
+		}
+	}
+
 	oc := execute(ctx, reg, p.store, *job, p.log, p.notifier)
+	if release != nil {
+		release()
+	}
 	_ = d.Ack(false)
 
 	// AMQP has no native delayed retry here, so a retry is re-published for an
