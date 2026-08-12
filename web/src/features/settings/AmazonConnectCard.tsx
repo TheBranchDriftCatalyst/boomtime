@@ -1,6 +1,7 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookOpen, ExternalLink, Link2Off, Upload } from "lucide-react";
+import { useSearchParams } from "react-router";
+import { BookOpen, Bookmark, ExternalLink, Link2Off, Upload } from "lucide-react";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Card, CardContent } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { api } from "@/lib/api";
@@ -32,10 +33,16 @@ const MARKETPLACES: Array<{ id: string; label: string }> = [
 
 const AMAZON_CONNECTION_KEY = ["amazon-connection"] as const;
 
+// Survives the full-page navigation the bookmarklet performs from amazon.com
+// back to /app/settings?amazonCaptured=... — React state is gone by then, so the
+// connect session token is stashed here and read back on return.
+const AMAZON_SESSION_STORAGE_KEY = "boomtime.amazon.session";
+
 export function AmazonConnectCard() {
   const qc = useQueryClient();
   const { config } = usePublicConfig();
   const enabled = config.books_enabled;
+  const [params, setParams] = useSearchParams();
 
   const [marketplace, setMarketplace] = useState("us");
   const [session, setSession] = useState<string | null>(null);
@@ -43,6 +50,9 @@ export function AmazonConnectCard() {
   const [redirectUrl, setRedirectUrl] = useState("");
   const [importOpen, setImportOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Last ?amazonCaptured value we acted on, so the auto-complete effect fires
+  // at most once per captured URL even as the query invalidates and re-renders.
+  const handledCaptureRef = useRef<string | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: AMAZON_CONNECTION_KEY,
@@ -55,12 +65,17 @@ export function AmazonConnectCard() {
   const errMsg = (e: unknown) =>
     e instanceof ApiError ? e.message : "Something went wrong — please try again.";
 
+  const clearStoredSession = () => localStorage.removeItem(AMAZON_SESSION_STORAGE_KEY);
+
   const start = useMutation({
     mutationFn: () => api.amazonConnectStart({ marketplace }),
     onSuccess: (res) => {
       setSession(res.session);
       setAuthorizeUrl(res.authorizeUrl);
       setRedirectUrl("");
+      // Persist so the bookmarklet round-trip (which navigates the tab away and
+      // back) can still find the session on return.
+      localStorage.setItem(AMAZON_SESSION_STORAGE_KEY, res.session);
       window.open(res.authorizeUrl, "_blank", "noopener");
     },
   });
@@ -72,6 +87,25 @@ export function AmazonConnectCard() {
       setSession(null);
       setAuthorizeUrl(null);
       setRedirectUrl("");
+      clearStoredSession();
+      invalidate();
+    },
+  });
+
+  // Auto-complete when the bookmarklet returns us to /app/settings?amazonCaptured=…
+  // The captured URL carries the Amazon authorization_code; we pair it with the
+  // session token stashed in localStorage at start and exchange it server-side.
+  const captureComplete = useMutation({
+    mutationFn: (args: { session: string; redirectUrl: string }) =>
+      api.amazonConnectComplete(args),
+    onSuccess: () => {
+      setSession(null);
+      setAuthorizeUrl(null);
+      setRedirectUrl("");
+      clearStoredSession();
+      const next = new URLSearchParams(params);
+      next.delete("amazonCaptured");
+      setParams(next, { replace: true });
       invalidate();
     },
   });
@@ -89,10 +123,47 @@ export function AmazonConnectCard() {
     onSuccess: invalidate,
   });
 
+  const captured = params.get("amazonCaptured");
+  useEffect(() => {
+    if (!captured) return;
+    // Fire once per distinct captured URL — the mutation + invalidate would
+    // otherwise re-trigger us until the param is finally removed.
+    if (handledCaptureRef.current === captured) return;
+    handledCaptureRef.current = captured;
+
+    const stored = localStorage.getItem(AMAZON_SESSION_STORAGE_KEY);
+    if (!stored) {
+      // No session to pair with (e.g. a stale bookmarklet click) — just drop
+      // the param so we fall back to the normal connect UI.
+      const next = new URLSearchParams(params);
+      next.delete("amazonCaptured");
+      setParams(next, { replace: true });
+      return;
+    }
+    captureComplete.mutate({ session: stored, redirectUrl: decodeURIComponent(captured) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [captured]);
+
   if (!enabled) return null;
 
   const connected = data?.connected ?? false;
   const connecting = session !== null;
+  // Returning from the bookmarklet: the param is present (or we're mid-exchange).
+  const returning = captured != null || captureComplete.isPending;
+
+  // One-click capture bookmarklet. Runs IN the amazon.com page context (where we
+  // can read window.location.href) and navigates the tab back to boomtime with
+  // the maplanding URL. The app origin is baked in at render time — this card
+  // always runs on boomtime, so window.location.origin is the right target. Built
+  // as a string (never a literal javascript: in JSX) so lint/React don't strip it.
+  const captureReturn = JSON.stringify(
+    `${window.location.origin}/app/settings?tab=connections&amazonCaptured=`,
+  );
+  const bookmarkletHref =
+    "javascript:(function(){var u=window.location.href;" +
+    "if(u.indexOf('openid.oa2.authorization_code')<0){" +
+    "alert('Not an Amazon sign-in redirect \\u2014 complete the Amazon login first, then click this on the maplanding page.');return;}" +
+    `window.location.href=${captureReturn}+encodeURIComponent(u);})();`;
 
   const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -147,13 +218,42 @@ export function AmazonConnectCard() {
               Disconnect
             </Button>
           </div>
+        ) : returning ? (
+          <div className="space-y-2 rounded-md border border-border p-3">
+            <div className="text-sm font-medium">Connecting…</div>
+            <p className="text-sm text-muted-foreground">
+              Finishing the Amazon link from the captured sign-in page.
+            </p>
+            {captureComplete.isError && (
+              <p className="text-xs text-destructive">{errMsg(captureComplete.error)}</p>
+            )}
+          </div>
         ) : connecting ? (
           <div className="space-y-3 rounded-md border border-border p-3">
             <p className="text-sm">
               <span className="font-medium">Step 2 —</span> a new tab opened to Amazon. Sign in
               there, and once you land on a blank <code className="text-xs">amazon…/ap/maplanding</code>{" "}
-              page, copy that page&apos;s full URL from the address bar and paste it below.
+              page, use the one-click bookmarklet below (or copy the URL and paste it as a fallback).
             </p>
+
+            <div className="rounded-md border border-dashed border-border p-3">
+              <div className="mb-2 text-xs font-medium">One-click capture (recommended)</div>
+              <a
+                href={bookmarkletHref}
+                draggable
+                onClick={(e) => e.preventDefault()}
+                className="inline-flex cursor-grab items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-primary hover:underline"
+              >
+                <Bookmark className="h-3.5 w-3.5" />
+                Capture Amazon URL
+              </a>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Drag this to your bookmarks bar, then click it on the Amazon page after you log in —
+                no copy-paste needed.
+              </p>
+            </div>
+
+            <div className="text-xs text-muted-foreground">Or paste the URL manually:</div>
             {authorizeUrl && (
               <a
                 href={authorizeUrl}
@@ -187,6 +287,7 @@ export function AmazonConnectCard() {
                   setSession(null);
                   setAuthorizeUrl(null);
                   setRedirectUrl("");
+                  clearStoredSession();
                 }}
               >
                 Cancel

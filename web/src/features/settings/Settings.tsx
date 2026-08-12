@@ -1,5 +1,6 @@
-import { useMemo } from "react";
+import { useMemo, type ComponentType } from "react";
 import { Navigate, useSearchParams } from "react-router";
+import { BookOpen, Github, Plug, ShieldCheck } from "lucide-react";
 import { Page } from "@/layout/Page";
 import { TabNav, tabClass } from "@/layout/PageTabs";
 import { useHeaderSlot } from "@/layout/HeaderSlot";
@@ -30,11 +31,82 @@ function ProfileTab() {
   return (
     <div className="space-y-6">
       <ChangePasswordCard />
-      <LinkedIdentitiesCard />
-      <GithubConnectCard />
-      <AmazonConnectCard />
+      <AvatarTab />
       <TimezoneCard />
       <PublicProfileCard />
+    </div>
+  );
+}
+
+// PluginAndTokensTab: "how to send data" (plugin setup) + "which credential to
+// use" (API tokens) belong together — merged into one tab.
+function PluginAndTokensTab() {
+  return (
+    <div className="space-y-6">
+      <PluginSetup />
+      <TokensTab />
+    </div>
+  );
+}
+
+// ConnectionsTab: every external-account link in one place. Grew out of Profile
+// once there were three (Authentik sign-in, GitHub, Amazon for Kindle/Audible);
+// each card self-gates (renders nothing when its feature is off), so the tab
+// stays tidy per deployment. The header frames the "data fusion" story —
+// boomtime pulls each linked account's signal into one dashboard.
+function ProviderChip({
+  icon: Icon,
+  label,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/5 px-2.5 py-1 text-xs text-foreground/80">
+      <Icon className="h-3.5 w-3.5 text-primary" />
+      {label}
+    </span>
+  );
+}
+
+function ConnectionsTab() {
+  return (
+    <div className="space-y-6">
+      <div className="relative overflow-hidden rounded-xl border border-primary/20 bg-gradient-to-br from-primary/10 via-background to-background p-6">
+        {/* neon bloom + faint grid — synthwave chrome, purely decorative */}
+        <div className="pointer-events-none absolute -right-20 -top-24 h-56 w-56 rounded-full bg-primary/20 blur-3xl" />
+        <div
+          className="pointer-events-none absolute inset-0 opacity-[0.06]"
+          style={{
+            backgroundImage:
+              "linear-gradient(hsl(var(--primary)) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--primary)) 1px, transparent 1px)",
+            backgroundSize: "28px 28px",
+          }}
+        />
+        <div className="relative">
+          <div className="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.2em] text-primary/80">
+            <Plug className="h-3.5 w-3.5" />
+            Data fusion
+          </div>
+          <h2 className="mt-2 text-2xl font-semibold tracking-tight">Connections</h2>
+          <p className="mt-1.5 max-w-xl text-sm text-muted-foreground">
+            Link an external account and boomtime fuses its signal into your dashboard — your
+            sign-in identity, your GitHub activity, and your Kindle&nbsp;+&nbsp;Audible reading, all
+            in one place.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <ProviderChip icon={ShieldCheck} label="Authentik" />
+            <ProviderChip icon={Github} label="GitHub" />
+            <ProviderChip icon={BookOpen} label="Kindle + Audible" />
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-6">
+        <LinkedIdentitiesCard />
+        <GithubConnectCard />
+        <AmazonConnectCard />
+      </div>
     </div>
   );
 }
@@ -49,14 +121,12 @@ function ProfileTab() {
 // tab list is stable across users.
 const TABS = [
   { id: "profile", label: "Profile", render: () => <ProfileTab /> },
-  // gaka-9v4: AI-generated chibi avatar. Sits next to Profile because
-  // the avatar surfaces on the public profile hero — semantically an
-  // account-level identity concern, not a "settings you tweak weekly"
-  // tab. Kept out of TABS's default landing so first-run doesn't
-  // fire an LLM stream at random.
-  { id: "avatar", label: "Avatar", render: () => <AvatarTab /> },
-  { id: "plugin", label: "Plugin setup", render: () => <PluginSetup /> },
-  { id: "tokens", label: "API tokens", render: () => <TokensTab /> },
+  // gaka-books: all external-account links (Authentik / GitHub / Amazon) live
+  // here now that there are three. Cards self-gate on their feature flags.
+  { id: "connections", label: "Connections", render: () => <ConnectionsTab /> },
+  // gaka-9v4 avatar moved into Profile; plugin + API tokens merged (old ?tab=
+  // avatar/tokens alias to profile/plugin below so bookmarks keep working).
+  { id: "plugin", label: "Plugin & tokens", render: () => <PluginAndTokensTab /> },
   { id: "curation", label: "Hidden data", render: () => <CurationTab /> },
   { id: "remappings", label: "Remappings", render: () => <RemappingsTab /> },
   // gaka-gud: Goals moved OUT to a top-level /app/goals page (a ?tab=goals
@@ -83,13 +153,21 @@ const LEGACY_ADMIN_TAB_REDIRECTS: Record<string, string> = {
   goals: "/app/goals",
 };
 
+// Tabs that were merged/moved keep their old ?tab= value working (gaka-books):
+// avatar now lives in Profile; API tokens merged into the Plugin tab.
+const SETTINGS_TAB_ALIASES: Record<string, string> = {
+  avatar: "profile",
+  tokens: "plugin",
+};
+
 export function Settings() {
   const [params, setParams] = useSearchParams();
 
   const raw = params.get("tab") ?? "";
   const redirect = LEGACY_ADMIN_TAB_REDIRECTS[raw];
-  const active: TabID = TABS.some((t) => t.id === raw)
-    ? (raw as TabID)
+  const aliased = SETTINGS_TAB_ALIASES[raw] ?? raw;
+  const active: TabID = TABS.some((t) => t.id === aliased)
+    ? (aliased as TabID)
     : "plugin";
 
   // gaka-5jp: the tab strip is HOISTED into the app HeaderBar (reclaiming the
