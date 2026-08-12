@@ -9,6 +9,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/domains"
 )
 
 // encryptionKeyEnvName mirrors internal/auth.EncryptionKeyEnv without importing
@@ -62,12 +64,16 @@ var dumpTables = []dumpTable{
 	// path additionally REFUSES to load a dump containing ciphertext when
 	// BOOM_ENCRYPTION_KEY is unset in the current env, because the restored
 	// rows would be undecryptable.
-	{"users", []string{
+	{"users", append([]string{
 		"username", "hashed_password", "salt_used",
 		"encrypted_wakatime_key", "wakatime_key_status", "wakatime_key_checked_at",
 		"public_profile_enabled", "public_slug",
 		"public_card_theme", "public_card_tagline",
-	}},
+		// gaka-2ip: encrypted_github_token is intentionally NOT dumped here (see
+		// the domains registry follow-up). New DOMAIN-owned user columns append
+		// from internal/domains so a fresh domain (amazon → books/audiobooks) is
+		// never silently dropped from backups.
+	}, domains.UserBackupColumns()...)},
 	{"projects", []string{"name", "description", "owner", "dependencies", "repository"}},
 	// gaka-b5x.2: hashed_token / hashed_refresh_token columns are dumped so
 	// hashed-only rows (new sessions minted after migration 00026) survive an

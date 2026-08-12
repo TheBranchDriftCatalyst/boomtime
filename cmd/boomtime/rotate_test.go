@@ -107,6 +107,18 @@ func TestRotateSmoke(t *testing.T) {
 		t.Fatalf("seed SetEncryptedGithubToken: %v", err)
 	}
 
+	// Sleeper-win proof: seed an Amazon device credential (a NEW domain secret,
+	// registered only in internal/domains — rotate.go never names it) and
+	// confirm below that it rotates via the list-driven path all the same.
+	const azPlaintext = "amazon_device_auth_blob_alice"
+	azCT, err := auth.EncryptWith(oldAEAD, []byte(azPlaintext))
+	if err != nil {
+		t.Fatalf("seed amazon encrypt: %v", err)
+	}
+	if err := database.SetEncryptedAmazonDevice(ctx, ghUser, azCT, db.AmazonDeviceStatusValid); err != nil {
+		t.Fatalf("seed SetEncryptedAmazonDevice: %v", err)
+	}
+
 	dsn := isolatedDBURL("rotate")
 
 	// Assert a wrong OLD aborts before ANY row is written. A random 32-byte
@@ -176,6 +188,24 @@ func TestRotateSmoke(t *testing.T) {
 	}
 	if string(ghGot) != ghPlaintext {
 		t.Fatalf("post-rotate github plaintext mismatch: got %q want %q", ghGot, ghPlaintext)
+	}
+
+	// The Amazon device column ALSO rotated — proving a domain that rotate.go
+	// never names by hand is covered purely by its internal/domains registry
+	// entry (the sleeper win: no more stranded-on-rotation secrets).
+	azBlob, err := database.GetEncryptedAmazonDevice(ctx, ghUser)
+	if err != nil || azBlob == nil {
+		t.Fatalf("post-rotate amazon read: err=%v nil=%v", err, azBlob == nil)
+	}
+	if _, derr := auth.DecryptWith(oldAEAD, azBlob); derr == nil {
+		t.Fatalf("post-rotate amazon credential STILL decrypts under OLD — the registry column didn't rotate")
+	}
+	azGot, derr := auth.DecryptWith(newAEAD, azBlob)
+	if derr != nil {
+		t.Fatalf("post-rotate amazon decrypt under NEW failed: %v", derr)
+	}
+	if string(azGot) != azPlaintext {
+		t.Fatalf("post-rotate amazon plaintext mismatch: got %q want %q", azGot, azPlaintext)
 	}
 }
 
