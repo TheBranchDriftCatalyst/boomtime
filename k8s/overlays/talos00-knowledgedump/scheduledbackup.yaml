@@ -20,5 +20,9 @@ spec:
   schedule: "0 45 3 * * *"
   immediate: true # take one right away so backups exist before the first tick
   backupOwnerReference: self
+  # barman-cloud CNPG-I plugin (see objectstore.yaml) — in-tree method removed in CNPG 1.30
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
   cluster:
     name: boomtime-postgres

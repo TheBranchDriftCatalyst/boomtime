@@ -8,6 +8,7 @@ namespace: boomtime
 resources:
   - ../../base
   - postgres-cluster.yaml
+  - objectstore.yaml # barman-cloud plugin backup config (was Cluster.spec.backup)
   # cnpg-minio-backup secret arrives via reflector from talos-homelab's
   # minio/cnpg-backup ExternalSecret (its allow-list includes `boomtime`).
   - scheduledbackup.yaml # daily base backup → cnpg-backups bucket (03:45)

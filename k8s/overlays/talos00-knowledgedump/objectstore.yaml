@@ -1,0 +1,30 @@
+---
+# Barman Cloud plugin ObjectStore for boomtime-postgres — the former
+# Cluster.spec.backup.barmanObjectStore stanza moved verbatim (same bucket/
+# prefix/creds — WAL history and base backups carry over). retentionPolicy
+# moves here too (was Cluster.spec.backup.retentionPolicy).
+# (No metadata.namespace — the overlay kustomization stamps `boomtime`.)
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: boomtime-postgres
+  labels:
+    app.kubernetes.io/name: boomtime-postgres
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: boomtime
+spec:
+  retentionPolicy: "30d" # prune backups + WALs older than 30 days
+  configuration:
+    destinationPath: s3://cnpg-backups/boomtime-postgres
+    endpointURL: http://minio-hl.minio.svc:9000
+    s3Credentials:
+      accessKeyId:
+        name: cnpg-minio-backup
+        key: ACCESS_KEY_ID
+      secretAccessKey:
+        name: cnpg-minio-backup
+        key: ACCESS_SECRET_KEY
+    wal:
+      compression: gzip
+    data:
+      compression: gzip
