@@ -84,6 +84,8 @@ func Register(e *echo.Echo, h *Handler) {
 	// gaka-93f.6: admin caps dashboard — users + roles/tiers + effective
 	// capabilities. Admin-gated in the handler (requireAdmin).
 	e.GET("/api/v1/admin/users", h.ListUsers)
+	// gaka-books: admin diagnostic — dump raw Audible/Kindle source data.
+	e.GET("/api/v1/admin/books/diagnostics", h.AdminBooksDiagnostics)
 	// gaka-8bz: durable WS stream of the image-job queue lifecycle.
 	// Auth uses the refresh_token cookie inside the handler (see
 	// AdminLabelImagesWS) — WS handshakes can't carry Authorization.

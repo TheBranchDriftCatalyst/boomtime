@@ -100,6 +100,9 @@ const CliTab = lazy(() =>
 const JobsTab = lazy(() =>
   import("@/features/admin/JobsTab").then((m) => ({ default: m.JobsTab })),
 );
+const BooksTab = lazy(() =>
+  import("@/features/admin/BooksTab").then((m) => ({ default: m.BooksTab })),
+);
 const Logs = lazy(() =>
   import("@/features/logs/Logs").then((m) => ({ default: m.Logs })),
 );
@@ -345,6 +348,14 @@ export function AppRoutes() {
             element={
               <Suspense fallback={<PageFallback />}>
                 <DataTab />
+              </Suspense>
+            }
+          />
+          <Route
+            path="books"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <BooksTab />
               </Suspense>
             }
           />

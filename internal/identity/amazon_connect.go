@@ -10,6 +10,8 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/domains/audiobooks"
 	"github.com/labstack/echo/v5"
 )
 
@@ -148,6 +150,90 @@ func (h *Handler) DisconnectAmazon(c *echo.Context) error {
 	}
 	h.Logger.Info("amazon disconnected", "user", owner)
 	return apihelpers.NoContent(c)
+}
+
+// SyncAudible triggers an Audible library sync into the siloed reading_items
+// table and returns how many items were synced. This is where the ADP request
+// signing gets verified against real Audible.
+func (h *Handler) SyncAudible(c *echo.Context) error {
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
+	if aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
+	}
+	svc := audiobooks.New(h.DB, amazon.NewStore(h.DB), h.Logger)
+	n, err := svc.SyncUser(c.Request().Context(), owner)
+	if err != nil {
+		// Surface the Amazon-side error (status + snippet) so a signing/format
+		// mismatch is debuggable from the UI, exactly like the connect flow.
+		return apihelpers.RespondErr(c, apierr.BadRequest(err.Error()))
+	}
+	h.Logger.Info("audible synced", "user", owner, "items", n)
+	return c.JSON(http.StatusOK, map[string]any{"synced": n, "source": "audible"})
+}
+
+// readingItemDTO is the view payload (never the raw source blob).
+type readingItemDTO struct {
+	Source          string   `json:"source"`
+	ExternalID      string   `json:"externalId"`
+	Title           string   `json:"title"`
+	Authors         string   `json:"authors"`
+	Status          string   `json:"status"`
+	ProgressPercent int      `json:"progressPercent"`
+	Finished        bool     `json:"finished"`
+	StartedAt       *string  `json:"startedAt,omitempty"`
+	FinishedAt      *string  `json:"finishedAt,omitempty"`
+	Rating          *float64 `json:"rating,omitempty"`
+	SyncedAt        string   `json:"syncedAt"`
+}
+
+func toReadingItemDTO(it db.ReadingItem) readingItemDTO {
+	d := readingItemDTO{
+		Source: it.Source, ExternalID: it.ExternalID, Title: it.Title, Authors: it.Authors,
+		Status: it.Status, ProgressPercent: it.ProgressPercent, Finished: it.Finished,
+		Rating: it.Rating, SyncedAt: it.SyncedAt.UTC().Format(time.RFC3339),
+	}
+	if it.StartedAt != nil {
+		s := it.StartedAt.UTC().Format(time.RFC3339)
+		d.StartedAt = &s
+	}
+	if it.FinishedAt != nil {
+		s := it.FinishedAt.UTC().Format(time.RFC3339)
+		d.FinishedAt = &s
+	}
+	return d
+}
+
+// GetReadingItems lets the user SEE exactly what book/audiobook data is synced
+// (siloed — one table, never the core models). ?source= filters to audible/kindle.
+func (h *Handler) GetReadingItems(c *echo.Context) error {
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
+	if aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
+	}
+	items, err := h.DB.ListReadingItems(c.Request().Context(), owner, c.QueryParam("source"))
+	if err != nil {
+		return apihelpers.InternalErr(h.Logger, c, "reading items list failed", err)
+	}
+	out := make([]readingItemDTO, 0, len(items))
+	for _, it := range items {
+		out = append(out, toReadingItemDTO(it))
+	}
+	return c.JSON(http.StatusOK, map[string]any{"items": out})
+}
+
+// DeleteReadingItemsHandler wipes the user's synced book data on request
+// (delete-on-request; ?source= scopes to one source, else all). Idempotent.
+func (h *Handler) DeleteReadingItemsHandler(c *echo.Context) error {
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
+	if aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
+	}
+	n, err := h.DB.DeleteReadingItems(c.Request().Context(), owner, c.QueryParam("source"))
+	if err != nil {
+		return apihelpers.InternalErr(h.Logger, c, "reading items delete failed", err)
+	}
+	h.Logger.Info("reading items deleted", "user", owner, "source", c.QueryParam("source"), "rows", n)
+	return c.JSON(http.StatusOK, map[string]any{"deleted": n})
 }
 
 // sealAmazonSession encrypts the RegistrationSession into an opaque token so the

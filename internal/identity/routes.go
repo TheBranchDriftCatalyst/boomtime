@@ -87,6 +87,10 @@ func Register(e *echo.Echo, h *Handler) {
 		e.POST("/api/v1/amazon/connect/start", h.ConnectAmazonStart)
 		e.POST("/api/v1/amazon/connect/complete", h.ConnectAmazonComplete)
 		e.POST("/api/v1/amazon/connect/import", h.ImportAmazonAuth)
+		// Ingest + the siloed view/delete surface (data-deletion on request).
+		e.POST("/api/v1/amazon/audible/sync", h.SyncAudible)
+		e.GET("/api/v1/books/items", h.GetReadingItems)
+		e.DELETE("/api/v1/books/items", h.DeleteReadingItemsHandler)
 	}
 
 	// User IANA timezone (gaka-dg7). GET reports the raw stored value

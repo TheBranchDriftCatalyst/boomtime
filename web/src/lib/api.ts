@@ -1032,6 +1032,22 @@ export const api = {
   // their result in a single-key envelope ({ jobs }, { schedules }); unwrap to
   // the bare array so the Jobs tab consumes a flat list. trigger/retry both
   // return the affected job id.
+  // Admin › Books diagnostics (gaka-books): raw source dump for Audible/Kindle.
+  getBooksDiagnostics: (params: { source: string }) =>
+    request<{
+      source: string;
+      marketplace: string;
+      probes: Array<{
+        name: string;
+        endpoint: string;
+        status: number;
+        ok: boolean;
+        error?: string;
+        body?: unknown;
+        bodyText?: string;
+      }>;
+    }>(buildUrl("/api/v1/admin/books/diagnostics", params)),
+
   getAdminJobs: (params?: { status?: string; kind?: string; limit?: number }) =>
     unwrap<AdminJob[]>(buildUrl("/api/v1/admin/jobs", params), "jobs", []),
   getAdminJobSchedules: () =>
