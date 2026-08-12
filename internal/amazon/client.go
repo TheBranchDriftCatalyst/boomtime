@@ -43,6 +43,9 @@ func SignedGet(ctx context.Context, cred *DeviceCredential, apiHost, pathAndQuer
 		return nil, 0, err
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	// 64 MiB: a full Audible /1.0/library page (up to 1000 items × the wide
+	// response_groups incl. product_extended_attrs) is tens of MB — the old 8 MiB
+	// cap truncated it mid-JSON ("unexpected end of JSON input").
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 	return body, resp.StatusCode, nil
 }

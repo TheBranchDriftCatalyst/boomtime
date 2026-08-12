@@ -49,7 +49,10 @@ const (
 	libraryResponseGroups = "product_desc,contributors,product_attrs,product_extended_attrs," +
 		"series,category_ladders,media,is_finished,percent_complete,listening_status"
 
-	libraryPageSize = 1000 // Audible max per page; a short page ends the sweep.
+	// 300 (Audible allows up to 1000) keeps each page's JSON to a few MB with the
+	// wide response_groups; a short page still ends the sweep. Smaller pages =
+	// safer parse + gentler on the API at the cost of a few more requests.
+	libraryPageSize = 300
 )
 
 // Service is the catalyst-audiobooks domain entrypoint.
