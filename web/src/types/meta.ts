@@ -18,6 +18,17 @@ export interface PublicConfig {
   // is on AND the OAuth-App creds + state signing key are configured. The
   // GitHubConnectCard renders nothing when false, so the surface is inert.
   github_connect_enabled: boolean;
+  // BOOM_FEATURE_BOOKS: catalyst-books/audiobooks + the shared Amazon connect
+  // flow. The AmazonConnectCard renders nothing when false.
+  books_enabled: boolean;
+}
+
+// GET /api/v1/amazon — the shared Amazon device-connect status (catalyst-books
+// + catalyst-audiobooks). Never carries the credential.
+export interface AmazonConnection {
+  connected: boolean;
+  status?: string;
+  checkedAt?: string;
 }
 
 // Admin caps dashboard — GET /api/v1/admin/users (gaka-93f.6). Mirrors

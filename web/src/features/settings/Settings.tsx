@@ -12,6 +12,7 @@ import { Changelog } from "@/features/changelog/Changelog";
 import { AvatarTab } from "@/features/settings/avatar/AvatarTab";
 import { ChangePasswordCard } from "@/features/settings/ChangePasswordCard";
 import { GithubConnectCard } from "@/features/settings/GithubConnectCard";
+import { AmazonConnectCard } from "@/features/settings/AmazonConnectCard";
 import { LinkedIdentitiesCard } from "@/features/settings/LinkedIdentitiesCard";
 import { PluginSetup } from "@/features/settings/PluginSetup";
 import { PublicProfileCard } from "@/features/settings/PublicProfileCard";
@@ -31,6 +32,7 @@ function ProfileTab() {
       <ChangePasswordCard />
       <LinkedIdentitiesCard />
       <GithubConnectCard />
+      <AmazonConnectCard />
       <TimezoneCard />
       <PublicProfileCard />
     </div>

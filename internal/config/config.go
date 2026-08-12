@@ -81,6 +81,11 @@ type Config struct {
 	//   OAuthStateSigningKey     — BOOM_OAUTH_STATE_SIGNING_KEY, the HMAC key for
 	//                              the CSRF/owner-binding `state` (internal/oauth).
 	FeatureGithubStats      bool
+	// FeatureBooks (BOOM_FEATURE_BOOKS, default false) is the master gate for
+	// the catalyst-books + catalyst-audiobooks domains and the shared Amazon
+	// connect flow (internal/amazon). Off = every /api/v1/amazon/* route and
+	// the domains are dark. See docs/design/catalyst-domains-spike.md.
+	FeatureBooks            bool
 	GithubOAuthClientID     string
 	GithubOAuthClientSecret string
 	GithubOAuthRedirectURL  string
@@ -409,6 +414,7 @@ func Load() *Config {
 		// operator provisions them, and GithubConnectEnabled() stays false
 		// until ALL are present — so this is inert on a default boot.
 		FeatureGithubStats:      getEnvBool("BOOM_FEATURE_GITHUB_STATS", false),
+		FeatureBooks:            getEnvBool("BOOM_FEATURE_BOOKS", false),
 		GithubOAuthClientID:     getEnv("BOOM_GITHUB_OAUTH_CLIENT_ID", ""),
 		GithubOAuthClientSecret: getEnv("BOOM_GITHUB_OAUTH_CLIENT_SECRET", ""),
 		GithubOAuthRedirectURL:  getEnv("BOOM_GITHUB_OAUTH_REDIRECT_URL", ""),
@@ -736,6 +742,12 @@ func (c *Config) GithubConnectEnabled() bool {
 		strings.TrimSpace(c.GithubOAuthClientSecret) != "" &&
 		strings.TrimSpace(c.OAuthStateSigningKey) != ""
 }
+
+// BooksEnabled reports whether the catalyst-books/audiobooks domains + the
+// shared Amazon connect flow are on (BOOM_FEATURE_BOOKS). The Amazon device
+// credential itself needs no extra config — the OAuth is reverse-engineered
+// against Amazon, not an app we register — so the flag alone gates it.
+func (c *Config) BooksEnabled() bool { return c.FeatureBooks }
 
 // OIDCEnabled reports whether the OIDC (Authentik) auth provider is selected
 // (gaka-93f / gaka-0oe.11). Derived from BOOM_AUTH_PROVIDER. The FE reads this

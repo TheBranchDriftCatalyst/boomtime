@@ -708,6 +708,7 @@ export const SAMPLE_PUBLIC_CONFIG: PublicConfig = {
   billing_enabled: false,
   beta_flags: {},
   github_connect_enabled: true,
+    books_enabled: false,
 };
 
 // ---------------------------------------------------------------------------

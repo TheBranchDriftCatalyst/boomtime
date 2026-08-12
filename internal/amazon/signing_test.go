@@ -39,18 +39,20 @@ func TestSignProducesVerifiableDigest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
-	if h.AdpToken != "adp-tok" {
-		t.Fatalf("adp token = %q", h.AdpToken)
+	if h.AdpToken != "adp-tok" || h.AdpAlg != "SHA256withRSA:1.0" {
+		t.Fatalf("headers wrong: token=%q alg=%q", h.AdpToken, h.AdpAlg)
 	}
-	parts := strings.SplitN(h.RequestDigest, ":", 3)
-	if len(parts) != 3 || parts[0] != "SIG1" {
-		t.Fatalf("digest shape: %q", h.RequestDigest)
+	// x-adp-signature = base64(sig) + ":" + date. base64-std never contains ':'
+	// so the FIRST ':' splits sig from the (colon-bearing) ISO date.
+	sd := strings.SplitN(h.Signature, ":", 2)
+	if len(sd) != 2 {
+		t.Fatalf("signature shape: %q", h.Signature)
 	}
-	sig, err := base64.StdEncoding.DecodeString(parts[1])
+	sig, err := base64.StdEncoding.DecodeString(sd[0])
 	if err != nil {
 		t.Fatalf("sig b64: %v", err)
 	}
-	canonical := strings.Join([]string{"GET", "/1.0/library", parts[2], "", "adp-tok"}, "\n")
+	canonical := strings.Join([]string{"GET", "/1.0/library", sd[1], "", "adp-tok"}, "\n")
 	sum := sha256.Sum256([]byte(canonical))
 	if err := rsa.VerifyPKCS1v15(&key.PublicKey, crypto.SHA256, sum[:], sig); err != nil {
 		t.Fatalf("signature does not verify against the public key: %v", err)

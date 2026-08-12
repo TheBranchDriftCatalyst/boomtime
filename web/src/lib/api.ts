@@ -65,6 +65,7 @@ import type {
   AdminJobSchedule,
   IdentitiesPayload,
   GithubConnection,
+  AmazonConnection,
   GithubStatsPayload,
   WidgetLinkPayload,
   WidgetLinksPayload,
@@ -1105,6 +1106,21 @@ export const api = {
   getGithubConnection: () => request<GithubConnection>("/api/v1/users/current/github"),
   disconnectGithub: () =>
     request<void>("/api/v1/users/current/github", { method: "DELETE" }),
+
+  // Amazon device connect (catalyst-books + catalyst-audiobooks share ONE link).
+  // Paste-the-maplanding-URL flow: start → open authorizeUrl → paste redirect →
+  // complete. Or import a .audible auth file. The credential never leaves the server.
+  getAmazonConnection: () => request<AmazonConnection>("/api/v1/amazon"),
+  amazonConnectStart: (body: { marketplace?: string }) =>
+    request<{ authorizeUrl: string; session: string }>("/api/v1/amazon/connect/start", {
+      method: "POST",
+      body,
+    }),
+  amazonConnectComplete: (body: { session: string; redirectUrl: string }) =>
+    request<void>("/api/v1/amazon/connect/complete", { method: "POST", body }),
+  amazonImportAuth: (authFile: unknown) =>
+    request<void>("/api/v1/amazon/connect/import", { method: "POST", body: { authFile } }),
+  disconnectAmazon: () => request<void>("/api/v1/amazon", { method: "DELETE" }),
 
   // gaka-anh Phase 2: per-user GitHub stats. Authed cache-or-sync — the server
   // serves a fresh cache or refreshes on demand, and on a GitHub rate-limit

@@ -54,6 +54,11 @@ type PublicConfigResponse struct {
 	// GitHubConnectCard renders nothing when this is false, so the whole
 	// surface stays inert until an operator provisions the secrets.
 	GithubConnectEnabled bool `json:"github_connect_enabled"`
+
+	// BooksEnabled advertises whether the catalyst-books/audiobooks domains +
+	// the shared Amazon connect flow are live (BOOM_FEATURE_BOOKS). The FE hides
+	// the Connect-Amazon settings surface when false.
+	BooksEnabled bool `json:"books_enabled"`
 }
 
 // PublicConfig: GET /api/v1/config/public — unauthenticated, always JSON.
@@ -68,5 +73,6 @@ func (h *Handler) PublicConfig(c *echo.Context) error {
 			"user_registration": h.Cfg.BetaUserRegistration,
 		},
 		GithubConnectEnabled: h.Cfg.GithubConnectEnabled(),
+		BooksEnabled:         h.Cfg.BooksEnabled(),
 	})
 }

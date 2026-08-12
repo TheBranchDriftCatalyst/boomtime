@@ -76,6 +76,19 @@ func Register(e *echo.Echo, h *Handler) {
 		e.GET("/api/public/profile/:slug/github/stats", h.PublicGithubStats)
 	}
 
+	// Amazon device connect (catalyst-books + catalyst-audiobooks share ONE
+	// Amazon link). GET/DELETE status are ALWAYS registered (GET reports
+	// {connected:false}, DELETE is a no-op when nothing is stored, and the
+	// credential is NEVER returned). The connect + import MUTATION routes gate on
+	// Cfg.BooksEnabled() — inert (404) on a default boot.
+	e.GET("/api/v1/amazon", h.GetAmazonConnection)
+	e.DELETE("/api/v1/amazon", h.DisconnectAmazon)
+	if h != nil && h.Cfg != nil && h.Cfg.BooksEnabled() {
+		e.POST("/api/v1/amazon/connect/start", h.ConnectAmazonStart)
+		e.POST("/api/v1/amazon/connect/complete", h.ConnectAmazonComplete)
+		e.POST("/api/v1/amazon/connect/import", h.ImportAmazonAuth)
+	}
+
 	// User IANA timezone (gaka-dg7). GET reports the raw stored value
 	// (''=unset) alongside the server's 3-level-resolved effectiveTimezone
 	// so the FE can render "your choice" vs "server default" and only
