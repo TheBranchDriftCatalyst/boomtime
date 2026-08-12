@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { ApiError, api, buildUrl } from "@/lib/api";
 import { authStore } from "@/features/auth/auth";
 import { server } from "@/test/msw/server";
@@ -218,6 +218,65 @@ describe("request() error envelope + auth header (P0)", () => {
     authStore.update(authResponse({ token: "TOK123" }));
     await api.getStats({ start: "a", end: "b" });
     expect(seen).toBe("Basic TOK123");
+  });
+});
+
+describe("session-expiry bounce (silent refresh on 401)", () => {
+  afterEach(() => authStore.clear());
+
+  it("clears the session when the refresh ITSELF 401s → ProtectedRoute bounces to /login", async () => {
+    authStore.update(authResponse({ token: "DEADTOK" }));
+    expect(authStore.isLoggedIn()).toBe(true);
+    server.use(
+      http.get(
+        "/api/v1/users/current/stats",
+        () => new HttpResponse(null, { status: 401 }),
+      ),
+      http.post(
+        "/auth/refresh_token",
+        () => new HttpResponse(null, { status: 401 }),
+      ),
+    );
+    await expect(api.getStats({ start: "a", end: "b" })).rejects.toThrow();
+    // Cleared → isLoggedIn is now false, so ProtectedRoute renders <Navigate to="/login">.
+    expect(authStore.isLoggedIn()).toBe(false);
+  });
+
+  it("does NOT clear the session when the refresh fails transiently (5xx)", async () => {
+    authStore.update(authResponse({ token: "TOK" }));
+    server.use(
+      http.get(
+        "/api/v1/users/current/stats",
+        () => new HttpResponse(null, { status: 401 }),
+      ),
+      http.post(
+        "/auth/refresh_token",
+        () => new HttpResponse(null, { status: 503 }),
+      ),
+    );
+    await expect(api.getStats({ start: "a", end: "b" })).rejects.toThrow();
+    // A transient refresh failure must NOT nuke a session that may still be valid.
+    expect(authStore.isLoggedIn()).toBe(true);
+  });
+
+  it("retries transparently when the refresh SUCCEEDS (no bounce, no error)", async () => {
+    authStore.update(authResponse({ token: "STALE" }));
+    let calls = 0;
+    server.use(
+      http.get("/api/v1/users/current/stats", () => {
+        calls += 1;
+        // First hit 401s (stale access token); after refresh, succeed.
+        return calls === 1
+          ? new HttpResponse(null, { status: 401 })
+          : HttpResponse.json({ ok: true });
+      }),
+      http.post("/auth/refresh_token", () =>
+        HttpResponse.json(authResponse({ token: "FRESH" })),
+      ),
+    );
+    await expect(api.getStats({ start: "a", end: "b" })).resolves.toBeDefined();
+    expect(authStore.isLoggedIn()).toBe(true);
+    expect(calls).toBe(2); // 401 → refresh → retried once
   });
 });
 

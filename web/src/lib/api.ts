@@ -1,6 +1,6 @@
 // Typed fetch client for every backend endpoint. All key/URL/shape tweaks live
 // here or in src/types/api.ts so backend key changes are one-line edits.
-import { authStore } from "@/features/auth/auth";
+import { authStore, broadcastLogout } from "@/features/auth/auth";
 import type {
   AuthResponse,
   BadgeLinkPayload,
@@ -123,7 +123,20 @@ async function sharedRefresh(): Promise<boolean> {
           method: "POST",
           credentials: "include",
         });
-        if (!res.ok) return false;
+        if (!res.ok) {
+          // A 401/403 from the refresh ITSELF means the session is truly dead
+          // (refresh token expired/revoked) — not a just-expired access token.
+          // Clear + broadcast so ProtectedRoute bounces the user to /login
+          // instead of leaving them on a page that silently 401s. Mirrors the
+          // proactive tick in useAuth. A 5xx/network error is transient and
+          // must NOT nuke the session (handled by the catch below → return
+          // false), so the next request or tick can retry.
+          if (res.status === 401 || res.status === 403) {
+            authStore.clear();
+            broadcastLogout();
+          }
+          return false;
+        }
         const text = await res.text();
         try {
           const data = text ? (JSON.parse(text) as AuthResponse) : null;
