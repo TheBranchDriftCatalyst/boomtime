@@ -102,9 +102,13 @@ type LibraryItem struct {
 		Title    string `json:"title"`
 		Sequence string `json:"sequence"`
 	} `json:"series"`
-	IsFinished       bool            `json:"is_finished"`
-	PercentComplete  float64         `json:"percent_complete"`
-	ListeningStatus  string          `json:"listening_status"`
+	IsFinished      bool    `json:"is_finished"`
+	PercentComplete float64 `json:"percent_complete"`
+	// NOTE: listening_status is intentionally NOT mapped — Audible returns it as
+	// an OBJECT ({finished_at_timestamp,is_finished,percent_complete,...}), and a
+	// prior `string` typing made json.Unmarshal fail the ENTIRE library page.
+	// The top-level is_finished + percent_complete carry what we need. Verified
+	// live against the real library (all 300 page-1 items) 2026-08-12.
 	RuntimeLengthMin int             `json:"runtime_length_min"`
 	PurchaseDate     string          `json:"purchase_date"`
 	ISBN             string          `json:"isbn"`
@@ -118,6 +122,11 @@ type LibraryItem struct {
 	GoodreadsRatings *struct {
 		Rating json.Number `json:"rating"`
 	} `json:"goodreads_ratings"`
+
+	// raw is the original, unmodified item JSON — captured during per-item parse
+	// so raw_meta preserves ALL source fields (not just the mapped subset).
+	// Unexported + untagged: json ignores it on both marshal and unmarshal.
+	raw json.RawMessage
 }
 
 func namesCSV[T any](items []T, get func(T) string) string {
@@ -224,7 +233,12 @@ func (li LibraryItem) runtimeMin() *int {
 
 // toReadingItem maps a parsed library item into a reading_items row.
 func (li LibraryItem) toReadingItem(owner string) db.ReadingItem {
-	raw, _ := json.Marshal(li)
+	// Prefer the original source JSON (captured at parse) so raw_meta is complete;
+	// fall back to re-marshaling the mapped subset (e.g. FetchLibrary's diag path).
+	raw := li.raw
+	if len(raw) == 0 {
+		raw, _ = json.Marshal(li)
+	}
 	status := "reading"
 	switch {
 	case li.IsFinished:
@@ -275,13 +289,27 @@ func (s *Service) fetchLibraryPage(ctx context.Context, cred *amazon.DeviceCrede
 	if status < 200 || status >= 300 {
 		return nil, fmt.Errorf("audible /1.0/library returned HTTP %d: %s", status, snippet(body))
 	}
+	// Parse per-item, not the whole page at once: a single item with an
+	// unexpected field shape (Audible's schema is wide + occasionally surprising)
+	// must NOT fail the entire sweep — skip + warn it and keep going. Each item's
+	// original JSON is retained for a truthful raw_meta.
 	var lr struct {
-		Items []LibraryItem `json:"items"`
+		Items []json.RawMessage `json:"items"`
 	}
 	if err := json.Unmarshal(body, &lr); err != nil {
 		return nil, fmt.Errorf("audible library parse failed: %w (body: %s)", err, snippet(body))
 	}
-	return lr.Items, nil
+	items := make([]LibraryItem, 0, len(lr.Items))
+	for _, raw := range lr.Items {
+		var li LibraryItem
+		if err := json.Unmarshal(raw, &li); err != nil {
+			s.logWarn("audible library: skipping unparseable item", "err", err, "snippet", snippet(raw))
+			continue
+		}
+		li.raw = raw
+		items = append(items, li)
+	}
+	return items, nil
 }
 
 // FetchLibrary fetches page 1 of the library (back-compat: the diagnostics probe
