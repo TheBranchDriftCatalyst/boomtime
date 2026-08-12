@@ -18,17 +18,21 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/amazon"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/comfyui"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/domains/audiobooks"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/github"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/hardcover"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/identity"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobsevents"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/notify"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/imagejobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/server"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
@@ -250,9 +254,9 @@ func runCmd() *cobra.Command {
 				// "on"/"off" force it. Default role=all + inprocess keeps the
 				// old unconditional behavior.
 				// Drain pods (BOOM_JOBS_DRAIN) claim+run then exit, so skip the
-					// reconcile scan there — it would race shutdown (closed-pool) and
-					// re-scan every label on each short-lived pod.
-					if cfg.IsWorkerRole() && !cfg.JobsDrain && cfg.LabelImagesReconcileEnabled() {
+				// reconcile scan there — it would race shutdown (closed-pool) and
+				// re-scan every label on each short-lived pod.
+				if cfg.IsWorkerRole() && !cfg.JobsDrain && cfg.LabelImagesReconcileEnabled() {
 					go liWorker.Run(ctx)
 				}
 			}
@@ -270,6 +274,14 @@ func runCmd() *cobra.Command {
 				h       *handler.Handler
 				imgPool *imagejobs.Pool
 			)
+			// Domain-agnostic per-user notification hub. Constructed once per
+			// process (before the role split) so BOTH the server WS handler and
+			// the jobs block's audiobooks finished-detection publish through the
+			// SAME hub. Additive alongside the jobsevents hub — the jobs toasts
+			// keep their own hub + stream. On a worker-only role (h==nil) it has
+			// no WS readers, matching the in-process posture documented on
+			// internal/notify (a cross-pod relay is the split-topology follow-up).
+			notifyHub := notify.NewHub()
 			if cfg.IsServerRole() {
 				e, h = server.NewWithHandler(database, cfg, logger, worker, hub, logHub)
 				// Wire the labelimages worker into the handler for the
@@ -277,6 +289,8 @@ func runCmd() *cobra.Command {
 				// feature is off — the admin handler detects the nil
 				// worker and returns 503.
 				h.SetLabelImagesWorker(liWorker)
+				// /api/v1/notify/ws fans events to the owning user's browser.
+				h.SetNotify(notifyHub)
 			}
 
 			// gaka-8bz / worker-topology: image-job queue wiring. Only
@@ -415,6 +429,45 @@ func runCmd() *cobra.Command {
 					return nil
 				}))
 
+				// catalyst-audiobooks (gaka-books): the Audible forward-sync +
+				// one-shot backfill kinds. Wired HERE (Service + DB in scope) so
+				// the jobs package stays domain-free, gated on BooksEnabled so
+				// main ships dark. The Service publishes finished-book events
+				// through the shared notifyHub and mirrors finishes to Hardcover.
+				if cfg.BooksEnabled() {
+					audioSvc := audiobooks.New(database, amazon.NewStore(database), logger)
+					audioSvc.SetNotify(notifyHub)
+					audioSvc.SetHardcover(hardcover.NewStore(database))
+
+					// Forward: fan over every connected user, delta-sync each. A
+					// per-user error is logged + skipped so one bad credential
+					// doesn't fail the batch.
+					jobReg.Register(audiobooks.AudibleSyncKind, jobs.HandlerFunc(func(jctx context.Context, _ jobs.Job) error {
+						users, uerr := database.ListUsersWithAmazonDevice(jctx)
+						if uerr != nil {
+							return uerr
+						}
+						for _, u := range users {
+							if _, serr := audioSvc.SyncUser(jctx, u); serr != nil {
+								logger.Warn("audible forward: user sync failed", "user", u, "err", serr)
+							}
+						}
+						logger.Info("audible forward: batch complete", "users", len(users))
+						return nil
+					}))
+
+					// Backfill: one-shot per user (owner-scoped payload), enqueued
+					// on demand from the connect flow / admin. Single attempt — an
+					// all-time sweep is heavy and re-runnable by hand.
+					jobReg.Register(audiobooks.AudibleBackfillKind, jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
+						if job.Owner == "" {
+							return fmt.Errorf("audible backfill: missing owner")
+						}
+						return audioSvc.BackfillUser(jctx, job.Owner)
+					}))
+					logger.Info("jobs: audiobooks handlers registered", "audibleSyncEnabled", cfg.AudibleSyncEnabled())
+				}
+
 				// avatar-render kind (gaka-hney.7): render a user's avatar on the
 				// worker + toast them on completion. Registered when the shim is
 				// configured (same gate as the synchronous path).
@@ -526,10 +579,20 @@ func runCmd() *cobra.Command {
 
 				// The github-refresh schedule is the only piece gated on config;
 				// leader-singleton via the DB, so running it on every server is safe.
-				if cfg.IsServerRole() && cfg.GithubStatsRefreshEnabled() {
+				if cfg.IsServerRole() && (cfg.GithubStatsRefreshEnabled() || cfg.AudibleSyncEnabled()) {
 					sched := jobs.NewScheduler(jobStore, provider, logger)
-					if serr := sched.Register(ctx, github.GithubStatsRefreshKind, cfg.GithubStatsRefreshInterval); serr != nil {
-						logger.Warn("jobs: schedule register failed", "err", serr)
+					if cfg.GithubStatsRefreshEnabled() {
+						if serr := sched.Register(ctx, github.GithubStatsRefreshKind, cfg.GithubStatsRefreshInterval); serr != nil {
+							logger.Warn("jobs: schedule register failed", "err", serr)
+						}
+					}
+					// Audible forward sync (gaka-books): leader-singleton via the DB,
+					// so running the schedule on every server is safe. The backfill
+					// kind is NOT scheduled — it's enqueued on demand.
+					if cfg.AudibleSyncEnabled() {
+						if serr := sched.Register(ctx, audiobooks.AudibleSyncKind, cfg.AudibleSyncInterval); serr != nil {
+							logger.Warn("jobs: audible schedule register failed", "err", serr)
+						}
 					}
 					go sched.Run(ctx)
 				}

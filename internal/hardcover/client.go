@@ -1,0 +1,167 @@
+package hardcover
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+
+	"golang.org/x/time/rate"
+)
+
+// Endpoint is the Hardcover GraphQL API (Hasura). Every response is HTTP 200
+// even on error, so callers MUST inspect the body-level errors[] — see graphql.
+const Endpoint = "https://api.hardcover.app/v1/graphql"
+
+// Sentinel errors the JOB layer keys off of (same contract as internal/github).
+var (
+	// ErrBadToken means Hardcover rejected the bearer token (HTTP 401 or an
+	// auth-message in errors[]). The caller flips hardcover_key_status=invalid
+	// and prompts a re-paste (the Jan-1 reset makes this routine).
+	ErrBadToken = errors.New("hardcover: bad or expired token")
+	// ErrRateLimited means Hardcover throttled us (HTTP 429 or a rate-limit
+	// message in errors[]). The caller returns it so the job retries with
+	// backoff.
+	ErrRateLimited = errors.New("hardcover: rate limited")
+)
+
+// GraphQLError is one entry of a GraphQL response's errors[] array.
+type GraphQLError struct {
+	Message    string          `json:"message"`
+	Extensions json.RawMessage `json:"extensions,omitempty"`
+}
+
+func (e GraphQLError) Error() string { return e.Message }
+
+// Client is a thin, throttled GraphQL client bound to one user's bearer token.
+// Throttle: < 60 req/min (Hardcover's documented ceiling) via a 1-req/second
+// token bucket — the match ladder is the expensive part, which is why matched
+// rows are cached and never re-fuzzed.
+type Client struct {
+	token   string
+	http    *http.Client
+	limiter *rate.Limiter
+}
+
+// NewClient builds a client for a bearer token. The token is used only in the
+// Authorization header and is never logged.
+func NewClient(token string) *Client {
+	return &Client{
+		token:   strings.TrimSpace(token),
+		http:    &http.Client{Timeout: 30 * time.Second},
+		limiter: rate.NewLimiter(rate.Every(time.Second), 1),
+	}
+}
+
+// graphql POSTs a query + variables and unmarshals the response `data` into out
+// (a pointer). It classifies auth/rate-limit failures into ErrBadToken /
+// ErrRateLimited and otherwise returns the first body-level GraphQL error. The
+// throttle is applied BEFORE the request so bursts can never exceed the budget.
+func (c *Client) graphql(ctx context.Context, query string, vars map[string]any, out any) error {
+	if c.token == "" {
+		return ErrBadToken
+	}
+	if err := c.limiter.Wait(ctx); err != nil {
+		return err
+	}
+
+	payload, err := json.Marshal(map[string]any{"query": query, "variables": vars})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, Endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.token)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+
+	// Transport-level status wins before we even parse: 401 = dead token,
+	// 429 = throttled. Hardcover mostly answers 200, but a gateway/CDN may not.
+	switch resp.StatusCode {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return ErrBadToken
+	case http.StatusTooManyRequests:
+		return ErrRateLimited
+	}
+
+	var envelope struct {
+		Data   json.RawMessage `json:"data"`
+		Errors []GraphQLError  `json:"errors"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return fmt.Errorf("hardcover: parse response (status %d): %w", resp.StatusCode, err)
+	}
+	if len(envelope.Errors) > 0 {
+		return classifyGraphQLErrors(envelope.Errors)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("hardcover: unexpected status %d", resp.StatusCode)
+	}
+	if out == nil {
+		return nil
+	}
+	if len(envelope.Data) == 0 {
+		return errors.New("hardcover: empty data in response")
+	}
+	if err := json.Unmarshal(envelope.Data, out); err != nil {
+		return fmt.Errorf("hardcover: decode data: %w", err)
+	}
+	return nil
+}
+
+// classifyGraphQLErrors maps a body-level errors[] to a sentinel where possible
+// (auth → ErrBadToken, rate-limit → ErrRateLimited) so the job layer reacts
+// correctly; otherwise it returns the first error verbatim.
+func classifyGraphQLErrors(errs []GraphQLError) error {
+	for _, e := range errs {
+		m := strings.ToLower(e.Message)
+		switch {
+		case strings.Contains(m, "unauthor") ||
+			strings.Contains(m, "jwt") ||
+			strings.Contains(m, "invalid token") ||
+			strings.Contains(m, "not logged in") ||
+			strings.Contains(m, "authentication"):
+			return ErrBadToken
+		case strings.Contains(m, "rate limit") || strings.Contains(m, "too many requests"):
+			return ErrRateLimited
+		}
+	}
+	return errs[0]
+}
+
+// Validate runs the `me{}` query to confirm the token is live and returns the
+// Hardcover username (may be empty if the account exposes none). ErrBadToken on
+// a rejected token. Used by the connect endpoint (validate-then-persist).
+func (c *Client) Validate(ctx context.Context) (string, error) {
+	// Hardcover's `me` resolves to a list of the authed user's records.
+	const q = `query { me { id username } }`
+	var data struct {
+		Me []struct {
+			ID       int64  `json:"id"`
+			Username string `json:"username"`
+		} `json:"me"`
+	}
+	if err := c.graphql(ctx, q, nil, &data); err != nil {
+		return "", err
+	}
+	if len(data.Me) == 0 {
+		// A 200 with no auth error but an empty me{} still means the token is
+		// authenticating SOMETHING; treat as valid with no username.
+		return "", nil
+	}
+	return data.Me[0].Username, nil
+}

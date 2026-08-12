@@ -48,6 +48,7 @@ var encryptedColumns = []EncryptedColumn{
 	{Domain: "waka", Table: "users", Column: "encrypted_wakatime_key", KeyColumn: "username"},
 	{Domain: "github", Table: "users", Column: "encrypted_github_token", KeyColumn: "username"},
 	{Domain: "amazon", Table: "users", Column: "encrypted_amazon_device", KeyColumn: "username"},
+	{Domain: "hardcover", Table: "users", Column: "encrypted_hardcover_key", KeyColumn: "username"},
 }
 
 // backupColumns are NEW-domain columns appended to the whole-DB export. The
@@ -57,6 +58,9 @@ var encryptedColumns = []EncryptedColumn{
 var backupColumns = []BackupColumns{
 	{Domain: "amazon", Table: "users", Columns: []string{
 		"encrypted_amazon_device", "amazon_device_status", "amazon_device_checked_at",
+	}},
+	{Domain: "hardcover", Table: "users", Columns: []string{
+		"encrypted_hardcover_key", "hardcover_key_status", "hardcover_key_checked_at",
 	}},
 }
 

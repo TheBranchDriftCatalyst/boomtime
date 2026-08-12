@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router";
-import { BookOpen, Bookmark, ExternalLink, Link2Off, Upload } from "lucide-react";
+import { BookOpen, Bookmark, ExternalLink, Link2Off, RefreshCw, Library, Upload } from "lucide-react";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Card, CardContent } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { api } from "@/lib/api";
@@ -32,6 +32,7 @@ const MARKETPLACES: Array<{ id: string; label: string }> = [
 ];
 
 const AMAZON_CONNECTION_KEY = ["amazon-connection"] as const;
+const BOOKS_ITEMS_KEY = ["books-items", "audible"] as const;
 
 // Survives the full-page navigation the bookmarklet performs from amazon.com
 // back to /app/settings?amazonCaptured=... — React state is gone by then, so the
@@ -123,6 +124,28 @@ export function AmazonConnectCard() {
     onSuccess: invalidate,
   });
 
+  // Synced-item count for the connected state (only queried once Amazon is
+  // linked). Refreshed after a sync/backfill so the number reflects the run.
+  const connectedNow = data?.connected ?? false;
+  const { data: itemsData } = useQuery({
+    queryKey: BOOKS_ITEMS_KEY,
+    queryFn: () => api.getBooksItems("audible"),
+    enabled: enabled && connectedNow,
+    staleTime: 30_000,
+  });
+  const syncedCount = itemsData?.items.length ?? 0;
+  const invalidateItems = () => qc.invalidateQueries({ queryKey: BOOKS_ITEMS_KEY });
+
+  const syncNow = useMutation({
+    mutationFn: () => api.syncAudible(),
+    onSuccess: invalidateItems,
+  });
+  const backfill = useMutation({
+    mutationFn: () => api.backfillAudible(),
+    // The backfill runs on the worker; give it a beat, then refresh the count.
+    onSuccess: () => setTimeout(invalidateItems, 2000),
+  });
+
   const captured = params.get("amazonCaptured");
   useEffect(() => {
     if (!captured) return;
@@ -198,25 +221,72 @@ export function AmazonConnectCard() {
         {isLoading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : connected ? (
-          <div className="flex items-center justify-between rounded-md border border-border px-3 py-2.5">
-            <div className="min-w-0">
-              <div className="text-sm font-medium">Amazon connected</div>
-              {data?.status && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between rounded-md border border-border px-3 py-2.5">
+              <div className="min-w-0">
+                <div className="text-sm font-medium">Amazon connected</div>
                 <div className="truncate text-xs text-muted-foreground">
-                  Device status: {data.status}
+                  {syncedCount > 0 ? (
+                    <>
+                      <Library className="mr-1 inline h-3 w-3" />
+                      {syncedCount} Audible {syncedCount === 1 ? "title" : "titles"} synced
+                    </>
+                  ) : (
+                    "No Audible titles synced yet — run a backfill to import your library."
+                  )}
+                  {data?.status && <> · device: {data.status}</>}
                 </div>
-              )}
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={disconnect.isPending}
+                onClick={() => disconnect.mutate()}
+                className="text-destructive hover:text-destructive"
+              >
+                <Link2Off className="mr-1.5 h-3.5 w-3.5" />
+                Disconnect
+              </Button>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={disconnect.isPending}
-              onClick={() => disconnect.mutate()}
-              className="text-destructive hover:text-destructive"
-            >
-              <Link2Off className="mr-1.5 h-3.5 w-3.5" />
-              Disconnect
-            </Button>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={backfill.isPending}
+                onClick={() => backfill.mutate()}
+              >
+                <Library className="mr-1.5 h-3.5 w-3.5" />
+                {backfill.isPending ? "Starting…" : "Backfill all-time"}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={syncNow.isPending}
+                onClick={() => syncNow.mutate()}
+              >
+                <RefreshCw
+                  className={`mr-1.5 h-3.5 w-3.5${syncNow.isPending ? " animate-spin" : ""}`}
+                />
+                {syncNow.isPending ? "Syncing…" : "Sync now"}
+              </Button>
+            </div>
+            {backfill.isSuccess && (
+              <p className="text-xs text-muted-foreground">
+                All-time backfill queued — your full Audible library, finish dates, and listening
+                history will import in the background.
+              </p>
+            )}
+            {syncNow.isSuccess && (
+              <p className="text-xs text-muted-foreground">
+                Synced {syncNow.data?.synced ?? 0} Audible {(syncNow.data?.synced ?? 0) === 1 ? "title" : "titles"}.
+              </p>
+            )}
+            {(backfill.isError || syncNow.isError) && (
+              <p className="text-xs text-destructive">
+                {errMsg(backfill.error ?? syncNow.error)}
+              </p>
+            )}
           </div>
         ) : returning ? (
           <div className="space-y-2 rounded-md border border-border p-3">

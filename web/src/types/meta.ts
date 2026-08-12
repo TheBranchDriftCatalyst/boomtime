@@ -31,6 +31,34 @@ export interface AmazonConnection {
   checkedAt?: string;
 }
 
+// GET /api/v1/books/items — one siloed reading_items row (catalyst-books /
+// catalyst-audiobooks). Mirrors internal/identity readingItemDTO; NEVER carries
+// the raw source blob.
+export interface ReadingItemDTO {
+  source: string;
+  externalId: string;
+  title: string;
+  authors: string;
+  status: string;
+  progressPercent: number;
+  finished: boolean;
+  startedAt?: string;
+  finishedAt?: string;
+  rating?: number;
+  syncedAt: string;
+}
+
+// GET /api/v1/hardcover — the Hardcover push-target connection status
+// (catalyst-books). Mirrors internal/identity/hardcover_connect.go. NEVER
+// carries the bearer token — only presence + last-known status + check time.
+// status: 'valid' | 'invalid' | 'unknown'. The Jan-1 token reset makes
+// 'invalid' a routine "please re-paste" signal.
+export interface HardcoverConnection {
+  connected: boolean;
+  status?: string;
+  checkedAt?: string;
+}
+
 // Admin caps dashboard — GET /api/v1/admin/users (gaka-93f.6). Mirrors
 // internal/admin/users.go adminUsersResponse.
 export interface AdminUserRow {

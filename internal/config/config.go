@@ -80,7 +80,7 @@ type Config struct {
 	//   GithubOAuthRedirectURL   — BOOM_GITHUB_OAUTH_REDIRECT_URL ({origin}/auth/github/callback).
 	//   OAuthStateSigningKey     — BOOM_OAUTH_STATE_SIGNING_KEY, the HMAC key for
 	//                              the CSRF/owner-binding `state` (internal/oauth).
-	FeatureGithubStats      bool
+	FeatureGithubStats bool
 	// FeatureBooks (BOOM_FEATURE_BOOKS, default false) is the master gate for
 	// the catalyst-books + catalyst-audiobooks domains and the shared Amazon
 	// connect flow (internal/amazon). Off = every /api/v1/amazon/* route and
@@ -285,6 +285,11 @@ type Config struct {
 	//                  FeatureGithubStats (GithubStatsRefreshEnabled()).
 	JobsProvider               string
 	GithubStatsRefreshInterval time.Duration
+	// AudibleSyncInterval — how often the periodic catalyst-audiobooks forward
+	// sync runs; 0 = off. Additionally gated behind FeatureBooks
+	// (AudibleSyncEnabled()). Audible data changes slowly, so a several-hour
+	// cadence is plenty.
+	AudibleSyncInterval time.Duration
 	// JobsUnified (BOOM_JOBS_UNIFIED, default false) registers the label-image
 	// kind on catalyst-go-jobs (gaka-hney.3) — proving the fold. Prod stays on
 	// the imagejobs pipeline + its dedicated admin UI; the live cutover (reroute
@@ -443,11 +448,11 @@ func Load() *Config {
 		// gaka-myv: ComfyUI-generated label archetype images. Feature gate
 		// requires BOTH flag-on AND a non-empty shim URL. See docs on the
 		// FeatureLabelImages / ComfyUIShimURL / ComfyUIModel fields above.
-		FeatureLabelImages: getEnvBool("BOOM_FEATURE_LABEL_IMAGES", false),
-		ComfyUIShimURL:     getEnv("BOOM_COMFYUI_SHIM_URL", ""),
-		ComfyUIModel:       getEnv("BOOM_COMFYUI_MODEL", "sdxl-illustrious-xl"),
+		FeatureLabelImages:   getEnvBool("BOOM_FEATURE_LABEL_IMAGES", false),
+		ComfyUIShimURL:       getEnv("BOOM_COMFYUI_SHIM_URL", ""),
+		ComfyUIModel:         getEnv("BOOM_COMFYUI_MODEL", "sdxl-illustrious-xl"),
 		LabelImagesReconcile: getEnv("BOOM_LABEL_IMAGES_RECONCILE", "auto"),
-		AdminUsers:         parseAdminUsers(getEnv("BOOM_ADMIN_USERS", "")),
+		AdminUsers:           parseAdminUsers(getEnv("BOOM_ADMIN_USERS", "")),
 
 		// gaka-9v4: LLM (OpenAI-compat) for avatar prompt synthesis SSE.
 		LLMAPIKey:  getEnv("BOOM_LLM_API_KEY", ""),
@@ -507,6 +512,7 @@ func Load() *Config {
 	// catalyst-go-jobs (gaka-hney).
 	c.JobsProvider = getEnv("BOOM_JOBS_PROVIDER", "local")
 	c.GithubStatsRefreshInterval = parseJobInterval(getEnv("BOOM_GITHUB_STATS_REFRESH_INTERVAL", "8h"))
+	c.AudibleSyncInterval = parseJobInterval(getEnv("BOOM_AUDIBLE_SYNC_INTERVAL", "6h"))
 	c.JobsUnified = getEnvBool("BOOM_JOBS_UNIFIED", false)
 	c.JobsDrain = getEnvBool("BOOM_JOBS_DRAIN", false)
 	c.JobsKinds = splitCSV(getEnv("BOOM_JOBS_KINDS", ""))
@@ -748,6 +754,13 @@ func (c *Config) GithubConnectEnabled() bool {
 // credential itself needs no extra config — the OAuth is reverse-engineered
 // against Amazon, not an app we register — so the flag alone gates it.
 func (c *Config) BooksEnabled() bool { return c.FeatureBooks }
+
+// AudibleSyncEnabled reports whether the periodic catalyst-audiobooks forward
+// sync schedule should run: the books feature is on AND a positive interval is
+// configured. Mirrors GithubStatsRefreshEnabled().
+func (c *Config) AudibleSyncEnabled() bool {
+	return c.FeatureBooks && c.AudibleSyncInterval > 0
+}
 
 // OIDCEnabled reports whether the OIDC (Authentik) auth provider is selected
 // (gaka-93f / gaka-0oe.11). Derived from BOOM_AUTH_PROVIDER. The FE reads this

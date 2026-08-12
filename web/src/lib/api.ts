@@ -66,6 +66,8 @@ import type {
   IdentitiesPayload,
   GithubConnection,
   AmazonConnection,
+  ReadingItemDTO,
+  HardcoverConnection,
   GithubStatsPayload,
   WidgetLinkPayload,
   WidgetLinksPayload,
@@ -1137,6 +1139,29 @@ export const api = {
   amazonImportAuth: (authFile: unknown) =>
     request<void>("/api/v1/amazon/connect/import", { method: "POST", body: { authFile } }),
   disconnectAmazon: () => request<void>("/api/v1/amazon", { method: "DELETE" }),
+
+  // Audible ingest (catalyst-audiobooks). syncAudible runs a forward delta
+  // synchronously and returns the item count; backfillAudible enqueues the
+  // one-shot all-time sweep on the jobs worker (returns the job id). getBooksItems
+  // lists the siloed reading_items so the card can show a synced count.
+  syncAudible: () =>
+    request<{ synced: number; source: string }>("/api/v1/amazon/audible/sync", { method: "POST" }),
+  backfillAudible: () =>
+    request<{ enqueued: boolean; jobId: number }>("/api/v1/amazon/audible/backfill", {
+      method: "POST",
+    }),
+  getBooksItems: (source?: string) =>
+    request<{ items: ReadingItemDTO[] }>(
+      `/api/v1/books/items${source ? `?source=${encodeURIComponent(source)}` : ""}`,
+    ),
+
+  // Hardcover connect (catalyst-books PUSH target). Paste-a-bearer-token flow:
+  // the server validates the token with a me{} query before storing it, and it
+  // NEVER leaves the server after. GET reports presence/status only.
+  getHardcoverConnection: () => request<HardcoverConnection>("/api/v1/hardcover"),
+  connectHardcover: (body: { token: string }) =>
+    request<void>("/api/v1/hardcover/connect", { method: "POST", body }),
+  disconnectHardcover: () => request<void>("/api/v1/hardcover", { method: "DELETE" }),
 
   // gaka-anh Phase 2: per-user GitHub stats. Authed cache-or-sync — the server
   // serves a fresh cache or refreshes on demand, and on a GitHub rate-limit

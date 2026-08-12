@@ -27,12 +27,13 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/goals"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/identity"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/ingest"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/meta"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/ingest"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobsevents"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/meta"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/notify"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/imagejobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/spaces"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
@@ -190,6 +191,14 @@ func (h *Handler) SetJobs(store *jobs.Store, enq jobs.Enqueuer) {
 func (h *Handler) SetJobEvents(hub *jobsevents.Hub) {
 	if h.Identity != nil {
 		h.Identity.SetJobEvents(hub)
+	}
+}
+
+// SetNotify propagates the domain-agnostic notification hub to h.Identity so the
+// /api/v1/notify/ws stream can subscribe.
+func (h *Handler) SetNotify(hub *notify.Hub) {
+	if h.Identity != nil {
+		h.Identity.SetNotify(hub)
 	}
 }
 

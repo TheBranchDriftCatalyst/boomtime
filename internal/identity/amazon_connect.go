@@ -12,6 +12,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/domains/audiobooks"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/labstack/echo/v5"
 )
 
@@ -169,6 +170,33 @@ func (h *Handler) SyncAudible(c *echo.Context) error {
 	}
 	h.Logger.Info("audible synced", "user", owner, "items", n)
 	return c.JSON(http.StatusOK, map[string]any{"synced": n, "source": "audible"})
+}
+
+// BackfillAudible enqueues the one-shot, all-time Audible backfill for the
+// caller (full library sweep + finished sweep + monthly listening aggregates).
+// It runs on the jobs worker — the endpoint returns the enqueued job id
+// immediately rather than blocking on a multi-page sweep. Idempotent to enqueue:
+// the backfill itself upserts, so a duplicate run is harmless.
+func (h *Handler) BackfillAudible(c *echo.Context) error {
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
+	if aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
+	}
+	if h.JobEnqueuer == nil {
+		return apihelpers.RespondErr(c, apierr.BadRequest("background jobs are not available on this server"))
+	}
+	// Confirm the user actually has an Amazon credential before enqueueing, so
+	// the UI gets an immediate, clear error instead of a job that fails later.
+	if _, lerr := amazon.NewStore(h.DB).Load(c.Request().Context(), owner); lerr != nil {
+		return apihelpers.RespondErr(c, apierr.BadRequest("connect Amazon before running a backfill"))
+	}
+	id, eerr := h.JobEnqueuer.Enqueue(c.Request().Context(), audiobooks.AudibleBackfillKind, nil,
+		jobs.Owner(owner), jobs.MaxAttempts(1))
+	if eerr != nil {
+		return apihelpers.InternalErr(h.Logger, c, "audible backfill enqueue failed", eerr)
+	}
+	h.Logger.Info("audible backfill enqueued", "user", owner, "jobId", id)
+	return c.JSON(http.StatusAccepted, map[string]any{"enqueued": true, "jobId": id})
 }
 
 // readingItemDTO is the view payload (never the raw source blob).

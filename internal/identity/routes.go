@@ -89,8 +89,20 @@ func Register(e *echo.Echo, h *Handler) {
 		e.POST("/api/v1/amazon/connect/import", h.ImportAmazonAuth)
 		// Ingest + the siloed view/delete surface (data-deletion on request).
 		e.POST("/api/v1/amazon/audible/sync", h.SyncAudible)
+		e.POST("/api/v1/amazon/audible/backfill", h.BackfillAudible)
 		e.GET("/api/v1/books/items", h.GetReadingItems)
 		e.DELETE("/api/v1/books/items", h.DeleteReadingItemsHandler)
+	}
+
+	// Hardcover connect (catalyst-books PUSH target). GET/DELETE status are
+	// ALWAYS registered (GET reports {connected:false}, DELETE is a no-op when
+	// nothing is stored, and the token is NEVER returned). The connect MUTATION
+	// route (validate + store a pasted bearer token) gates on Cfg.BooksEnabled()
+	// — inert (404) on a default boot.
+	e.GET("/api/v1/hardcover", h.GetHardcoverConnection)
+	e.DELETE("/api/v1/hardcover", h.DisconnectHardcover)
+	if h != nil && h.Cfg != nil && h.Cfg.BooksEnabled() {
+		e.POST("/api/v1/hardcover/connect", h.ConnectHardcover)
 	}
 
 	// User IANA timezone (gaka-dg7). GET reports the raw stored value
@@ -125,4 +137,8 @@ func Register(e *echo.Echo, h *Handler) {
 	// Per-user catalyst-go-jobs push stream (gaka-hney.6): terminal job events
 	// (e.g. avatar-render complete) for toasts. Cookie-authed in-handler.
 	e.GET("/api/v1/jobs/ws", h.JobEventsWS)
+
+	// Per-user domain-agnostic notification push stream: self-describing Events
+	// (Type/Title/Body) for toasts. Cookie-authed in-handler.
+	e.GET("/api/v1/notify/ws", h.NotifyWS)
 }

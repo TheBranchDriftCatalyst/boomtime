@@ -28,14 +28,15 @@ import (
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/cardstore"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobsevents"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/cache"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/cardstore"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/github"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobsevents"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/notify"
 	"github.com/labstack/echo/v5"
 )
 
@@ -68,6 +69,9 @@ type Handler struct {
 	// JobEvents is the catalyst-go-jobs push hub (gaka-hney.6). Set after
 	// construction; the /api/v1/jobs/ws stream subscribes to it. nil = no push.
 	JobEvents *jobsevents.Hub
+	// Notify is the domain-agnostic per-user notification hub. Set after
+	// construction; the /api/v1/notify/ws stream subscribes to it. nil = no push.
+	Notify *notify.Hub
 	// JobEnqueuer enqueues catalyst-go-jobs (gaka-hney.7) — RegenerateAvatar
 	// puts an owner-scoped avatar-render job on it. nil = fall back to the
 	// inline goroutine render.
@@ -76,6 +80,9 @@ type Handler struct {
 
 // SetJobEvents wires the job-events hub after construction (gaka-hney.6).
 func (h *Handler) SetJobEvents(hub *jobsevents.Hub) { h.JobEvents = hub }
+
+// SetNotify wires the domain-agnostic notification hub after construction.
+func (h *Handler) SetNotify(hub *notify.Hub) { h.Notify = hub }
 
 // SetJobEnqueuer wires the jobs enqueuer after construction (gaka-hney.7).
 func (h *Handler) SetJobEnqueuer(e jobs.Enqueuer) { h.JobEnqueuer = e }

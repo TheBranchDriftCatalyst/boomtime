@@ -1,6 +1,6 @@
 import { useMemo, type ComponentType } from "react";
 import { Navigate, useSearchParams } from "react-router";
-import { BookOpen, Github, Plug, ShieldCheck } from "lucide-react";
+import { BookOpen, Github, Library, Plug, ShieldCheck } from "lucide-react";
 import { Page } from "@/layout/Page";
 import { TabNav, tabClass } from "@/layout/PageTabs";
 import { useHeaderSlot } from "@/layout/HeaderSlot";
@@ -14,6 +14,7 @@ import { AvatarTab } from "@/features/settings/avatar/AvatarTab";
 import { ChangePasswordCard } from "@/features/settings/ChangePasswordCard";
 import { GithubConnectCard } from "@/features/settings/GithubConnectCard";
 import { AmazonConnectCard } from "@/features/settings/AmazonConnectCard";
+import { HardcoverConnectCard } from "@/features/settings/HardcoverConnectCard";
 import { LinkedIdentitiesCard } from "@/features/settings/LinkedIdentitiesCard";
 import { PluginSetup } from "@/features/settings/PluginSetup";
 import { PublicProfileCard } from "@/features/settings/PublicProfileCard";
@@ -98,6 +99,7 @@ function ConnectionsTab() {
             <ProviderChip icon={ShieldCheck} label="Authentik" />
             <ProviderChip icon={Github} label="GitHub" />
             <ProviderChip icon={BookOpen} label="Kindle + Audible" />
+            <ProviderChip icon={Library} label="Hardcover" />
           </div>
         </div>
       </div>
@@ -106,6 +108,7 @@ function ConnectionsTab() {
         <LinkedIdentitiesCard />
         <GithubConnectCard />
         <AmazonConnectCard />
+        <HardcoverConnectCard />
       </div>
     </div>
   );
