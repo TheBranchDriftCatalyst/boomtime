@@ -58,6 +58,12 @@ const Wellness = lazy(() =>
 const Goals = lazy(() =>
   import("@/features/goals/Goals").then((m) => ({ default: m.Goals })),
 );
+// gaka-books: read-only library view of the siloed reading_items (Audible now,
+// Kindle later). Gated in the sidebar on books_enabled; the route itself is
+// always mounted (the page renders a disabled-state card when the flag is off).
+const Books = lazy(() =>
+  import("@/features/books/BooksPage").then((m) => ({ default: m.BooksPage })),
+);
 // Widget catalog gallery — live previews of every widget on real or sample
 // data. One lazy component, two routes: authed /app/catalog (variant="app")
 // and public /catalog (variant="public", sample-only).
@@ -252,6 +258,16 @@ export function AppRoutes() {
           element={
             <Suspense fallback={<PageFallback />}>
               <Goals />
+            </Suspense>
+          }
+        />
+        {/* gaka-books: read-only Books library. Sidebar hides the nav entry
+            when books_enabled is off; the page self-gates too. */}
+        <Route
+          path="books"
+          element={
+            <Suspense fallback={<PageFallback />}>
+              <Books />
             </Suspense>
           }
         />

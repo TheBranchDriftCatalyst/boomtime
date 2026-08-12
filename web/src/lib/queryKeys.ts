@@ -225,6 +225,13 @@ export const qk = {
   // Settings card re-renders.
   githubConnection: () => ["github-connection"] as const,
 
+  // gaka-books: the Books page's siloed reading_items list. `source` is held in
+  // the key so an all-sources view and a per-source view cache independently
+  // (the Books page fetches all; the Amazon card fetches "audible" under its own
+  // ad-hoc key). Invalidated after a sync/backfill so the count/table refresh.
+  readingItems: (source?: string) =>
+    ["reading-items", source ?? ""] as const,
+
   // gaka-364.3: DB-backed labels catalog. Public (no owner scoping) —
   // one key shared by every consumer (evaluator, hero widget, admin
   // table). Invalidated after PATCH/POST/DELETE on /admin/labels.

@@ -7,6 +7,7 @@ import {
   Download,
   HeartPulse,
   LayoutDashboard,
+  Library,
   ListTree,
   LogOut,
   PanelLeftClose,
@@ -28,14 +29,28 @@ import { useSpaces } from "@/features/spaces/useSpaces";
 import { useIsAdmin } from "@/features/auth/useIsAdmin";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
+import { usePublicConfig } from "@/lib/usePublicConfig";
 import { cn } from "@/lib/utils";
 
-const NAV = [
+interface NavEntry {
+  name: string;
+  icon: ComponentType<{ className?: string }>;
+  to: string;
+  end: boolean;
+  // gaka-books: when set, the entry only shows if this public-config flag is on.
+  // Keeps the feature's nav inert on deployments where it's disabled.
+  flag?: "books_enabled";
+}
+
+const NAV: NavEntry[] = [
   { name: "Overview", icon: LayoutDashboard, to: "/app", end: true },
   { name: "Projects", icon: BookOpen, to: "/app/projects", end: false },
   { name: "Leaderboards", icon: Award, to: "/app/leaderboards", end: false },
   // gaka-gud: Goals promoted from a Settings sub-tab to a top-level page.
   { name: "Goals", icon: Target, to: "/app/goals", end: false },
+  // gaka-books: read-only library view. Distinct icon (Library) from Projects'
+  // BookOpen. Gated on books_enabled — filtered out when the feature is off.
+  { name: "Books", icon: Library, to: "/app/books", end: false, flag: "books_enabled" },
   { name: "Heartbeats", icon: ListTree, to: "/app/heartbeats", end: false },
   { name: "Wellness", icon: HeartPulse, to: "/app/wellness", end: false },
   { name: "Catalog", icon: Shapes, to: "/app/catalog", end: false },
@@ -297,6 +312,12 @@ export function SidebarBody({
   onToggleCollapsed,
   showCollapseToggle = true,
 }: SidebarBodyProps) {
+  // gaka-books: hide feature-flagged nav entries (currently just Books) when
+  // their public-config flag is off, so the tab is fully inert on deployments
+  // that don't run the feature. The flag defaults false while config loads.
+  const { config } = usePublicConfig();
+  const navItems = NAV.filter((item) => !item.flag || config[item.flag]);
+
   return (
     <>
       <div
@@ -315,7 +336,7 @@ export function SidebarBody({
       </div>
 
       <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3">
-        {NAV.map((item) => (
+        {navItems.map((item) => (
           <NavItem
             key={item.to}
             to={item.to}

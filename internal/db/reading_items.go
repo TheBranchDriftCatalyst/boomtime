@@ -135,7 +135,8 @@ func (d *DB) MarkReadingItemFinished(ctx context.Context, owner, source, asin st
 func (d *DB) ListReadingItems(ctx context.Context, owner, source string) ([]ReadingItem, error) {
 	rows, err := d.Pool.Query(ctx,
 		`SELECT owner, source, external_id, title, authors, cover_url, status,
-		        progress_percent, finished, started_at, finished_at, rating, synced_at
+		        progress_percent, finished, started_at, finished_at, rating,
+		        subtitle, narrators, series, runtime_min, goodreads_rating, synced_at
 		   FROM reading_items
 		  WHERE owner = $1 AND ($2 = '' OR source = $2)
 		  ORDER BY finished, title`,
@@ -149,7 +150,8 @@ func (d *DB) ListReadingItems(ctx context.Context, owner, source string) ([]Read
 		var it ReadingItem
 		if err := rows.Scan(&it.Owner, &it.Source, &it.ExternalID, &it.Title, &it.Authors,
 			&it.CoverURL, &it.Status, &it.ProgressPercent, &it.Finished, &it.StartedAt,
-			&it.FinishedAt, &it.Rating, &it.SyncedAt); err != nil {
+			&it.FinishedAt, &it.Rating, &it.Subtitle, &it.Narrators, &it.Series,
+			&it.RuntimeMin, &it.GoodreadsRating, &it.SyncedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, it)

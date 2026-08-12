@@ -199,7 +199,9 @@ func (h *Handler) BackfillAudible(c *echo.Context) error {
 	return c.JSON(http.StatusAccepted, map[string]any{"enqueued": true, "jobId": id})
 }
 
-// readingItemDTO is the view payload (never the raw source blob).
+// readingItemDTO is the view payload (never the raw source blob). The richer
+// metadata fields (cover/subtitle/series/narrators/runtime/goodreads rating)
+// let the Books page render covers + fuller rows; pointers stay optional.
 type readingItemDTO struct {
 	Source          string   `json:"source"`
 	ExternalID      string   `json:"externalId"`
@@ -212,6 +214,12 @@ type readingItemDTO struct {
 	FinishedAt      *string  `json:"finishedAt,omitempty"`
 	Rating          *float64 `json:"rating,omitempty"`
 	SyncedAt        string   `json:"syncedAt"`
+	CoverURL        string   `json:"coverUrl,omitempty"`
+	Subtitle        string   `json:"subtitle,omitempty"`
+	Series          string   `json:"series,omitempty"`
+	Narrators       string   `json:"narrators,omitempty"`
+	RuntimeMin      *int     `json:"runtimeMin,omitempty"`
+	GoodreadsRating *float64 `json:"goodreadsRating,omitempty"`
 }
 
 func toReadingItemDTO(it db.ReadingItem) readingItemDTO {
@@ -219,6 +227,8 @@ func toReadingItemDTO(it db.ReadingItem) readingItemDTO {
 		Source: it.Source, ExternalID: it.ExternalID, Title: it.Title, Authors: it.Authors,
 		Status: it.Status, ProgressPercent: it.ProgressPercent, Finished: it.Finished,
 		Rating: it.Rating, SyncedAt: it.SyncedAt.UTC().Format(time.RFC3339),
+		CoverURL: it.CoverURL, Subtitle: it.Subtitle, Series: it.Series,
+		Narrators: it.Narrators, RuntimeMin: it.RuntimeMin, GoodreadsRating: it.GoodreadsRating,
 	}
 	if it.StartedAt != nil {
 		s := it.StartedAt.UTC().Format(time.RFC3339)

@@ -46,6 +46,14 @@ export interface ReadingItemDTO {
   finishedAt?: string;
   rating?: number;
   syncedAt: string;
+  // Richer metadata (gaka-books) — optional; a low-fidelity source omits them.
+  // Powers the Books page covers + fuller rows.
+  coverUrl?: string;
+  subtitle?: string;
+  series?: string;
+  narrators?: string;
+  runtimeMin?: number;
+  goodreadsRating?: number;
 }
 
 // GET /api/v1/hardcover — the Hardcover push-target connection status
