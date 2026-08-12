@@ -79,6 +79,7 @@ patchesStrategicMerge:
   - s3-config.yaml            # BOOM_S3_ENDPOINT/BUCKET/USE_SSL (non-secret)
   - patch-server-s3.yaml      # BOOM_S3_ACCESS_KEY/SECRET_KEY (optional secretKeyRef)
   - jobs-config.yaml          # BOOM_JOBS_EXCLUDE_KINDS=avatar-render (route heavy → ScaledJob)
+  - books-config.yaml         # BOOM_FEATURE_BOOKS=true — Connect-Amazon flow live (gaka-books)
   # NOTE: authentik-blueprint-boomtime.yaml is an Authentik blueprint, NOT a k8s
   # manifest — it is intentionally never added here (applied to Authentik itself).
 
