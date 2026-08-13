@@ -28,6 +28,13 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import { QueryClient } from "@tanstack/react-query";
 import { qk } from "@/lib/queryKeys";
+import type { QueryResult, QuerySpec } from "@/lib/queryApi";
+import { READING_SPECS } from "@/features/overview/reading/ReadingTiles";
+import {
+  DEFAULT_RANGE_KEY,
+  READING_RANGE_PRESETS,
+  readingSpecsForRange,
+} from "@/features/overview/reading/readingRange";
 import { loadStored, saveStored } from "@/lib/persist";
 import { DEFAULT_TIME_LIMIT, TIMELINE_HOUR_OPTIONS } from "@/lib/config";
 import type { OverviewDataContextValue } from "@/features/overview/OverviewDataContext";
@@ -300,4 +307,87 @@ function seedSampleQueryClient(qc: QueryClient): void {
   qc.setQueryData(qk.publicConfig(), SAMPLE_PUBLIC_CONFIG);
   qc.setQueryData(qk.githubStats(), SAMPLE_GITHUB_STATS);
   qc.setQueryData(qk.publicGithubStats(SAMPLE_USERNAME), SAMPLE_GITHUB_STATS);
+
+  // Reading domain (gaka-qcxg) — the reading-* catalog kinds self-fetch via
+  // useReadingQuery (key ["reading-query", spec], see useReadingQuery.ts).
+  // Seed the exact specs each tile issues so sample mode is zero-network like
+  // every other kind. The two grouped tiles use the module-level READING_SPECS
+  // verbatim; the three windowed tiles derive their spec from the DEFAULT range
+  // preset (12w) — the same one useReadingRange() reports on a clean load — so
+  // the seeded and rendered specs are structurally identical (react-query
+  // hashes them by value).
+  seedReadingSample(qc);
+}
+
+/** ["reading-query", spec] is the useReadingQuery cache key; seeding it makes a
+ * reading tile render populated without a runQuery network call. */
+function seedReading(qc: QueryClient, spec: QuerySpec, result: QueryResult): void {
+  qc.setQueryData(["reading-query", spec], result);
+}
+
+function seedReadingSample(qc: QueryClient): void {
+  const preset =
+    READING_RANGE_PRESETS.find((p) => p.key === DEFAULT_RANGE_KEY) ??
+    READING_RANGE_PRESETS[0];
+  const windowed = readingSpecsForRange(preset);
+
+  // Scalar KPI — total listening seconds in range (~42h 30m).
+  seedReading(qc, windowed.listeningInRange, {
+    kind: "scalar",
+    scalar: 42 * 3600 + 30 * 60,
+  });
+
+  // Listening + coding trend lines (weekly buckets over the 12w window).
+  const weeks = Array.from({ length: 12 }, (_, i) => {
+    const d = new Date(Date.UTC(2026, 4, 4)); // a Monday
+    d.setUTCDate(d.getUTCDate() + i * 7);
+    return d.toISOString();
+  });
+  const listenSecs = [5400, 7200, 3600, 9000, 6300, 8100, 4500, 10800, 7200, 5400, 9900, 6300];
+  const codeSecs = [12000, 9000, 15000, 8000, 11000, 13000, 7000, 16000, 10000, 12000, 9000, 14000];
+  seedReading(qc, windowed.listeningTrend, {
+    kind: "series",
+    series: weeks.map((bucket, i) => ({ bucket, value: listenSecs[i] })),
+  });
+  seedReading(qc, windowed.codingTrend, {
+    kind: "series",
+    series: weeks.map((bucket, i) => ({ bucket, value: codeSecs[i] })),
+  });
+
+  // Finished-per-month bars (monthly buckets over the finished window).
+  const finished = [3, 2, 4, 1, 5, 2];
+  seedReading(qc, windowed.finishedPerMonth, {
+    kind: "series",
+    series: finished.map((value, i) => ({
+      bucket: new Date(Date.UTC(2026, 1 + i, 1)).toISOString(),
+      value,
+    })),
+  });
+
+  // Books-by-genre donut (top 6 + other).
+  seedReading(qc, READING_SPECS.booksByGenre, {
+    kind: "groups",
+    groups: [
+      { key: "Science Fiction", value: 14 },
+      { key: "Fantasy", value: 11 },
+      { key: "History", value: 7 },
+      { key: "Biography", value: 5 },
+      { key: "Mystery", value: 4 },
+      { key: "Science", value: 3 },
+      { key: "Other", value: 9 },
+    ],
+  });
+
+  // Top-series-by-runtime bars (runtime minutes).
+  seedReading(qc, READING_SPECS.topSeriesByRuntime, {
+    kind: "groups",
+    groups: [
+      { key: "The Expanse", value: 3120 },
+      { key: "Stormlight Archive", value: 2760 },
+      { key: "Dune", value: 1980 },
+      { key: "The Wheel of Time", value: 1740 },
+      { key: "Foundation", value: 1260 },
+      { key: "Culture", value: 900 },
+    ],
+  });
 }

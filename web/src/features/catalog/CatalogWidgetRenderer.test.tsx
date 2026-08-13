@@ -21,13 +21,14 @@
 //   - fe-only OVERVIEW kinds routed via OverviewWidgetRenderer, self-
 //     fetching from the seeded OverviewDataContext (overview-stats, loc,
 //     github-commits, ai-assistance, wellness, overview-timeline).
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import { renderWithProviders } from "@/test/renderWithProviders";
 import { server } from "@/test/msw/server";
 import { http, HttpResponse } from "@/test/msw/handlers";
 import { CatalogWidgetRenderer } from "./CatalogWidgetRenderer";
 import { SAMPLE_GOALS, SAMPLE_USERNAME } from "./sampleData";
+import { __resetReadingRange } from "@/features/overview/reading/readingRange";
 
 // >=2 "both", >=2 fe-only (incl. one overview self-fetcher), >=1 goal, plus
 // extra coverage across every category so a regression in any one dispatch
@@ -138,6 +139,68 @@ describe('CatalogWidgetRenderer(source="sample") — targeted content assertions
   it("overview-timeline shows the hour-picker with the seeded default window", async () => {
     renderSample("overview-timeline");
     await waitFor(() => expect(screen.getByText(/Last \d+ hours/)).toBeInTheDocument());
+  });
+});
+
+// ---------------------------------------------------------------------------
+// gaka-qcxg — reading-domain kinds. These are dispatched (by CatalogWidget
+// Renderer's READING_KINDS map) to the existing Reading dashboard tiles, which
+// SELF-FETCH via useReadingQuery. In sample mode the seeded sample QueryClient
+// (CatalogDataSource.seedReadingSample) satisfies every ["reading-query", spec]
+// key, so each tile renders POPULATED with ZERO network — the same no-network
+// invariant the rest of this file guards. The windowed tiles derive their spec
+// from the DEFAULT reading range (12w), so reset the module store first.
+// ---------------------------------------------------------------------------
+describe('CatalogWidgetRenderer(source="sample") — reading-domain kinds render from the seed', () => {
+  beforeEach(() => __resetReadingRange());
+
+  it("reading-listening-in-range shows the seeded scalar KPI", async () => {
+    renderSample("reading-listening-in-range");
+    await waitFor(() => expect(screen.getByText("42h 30m")).toBeInTheDocument());
+    expect(screen.getByText("Listening in range")).toBeInTheDocument();
+  });
+
+  it("reading-books-by-genre renders the seeded genre legend (donut)", async () => {
+    renderSample("reading-books-by-genre");
+    await waitFor(() => expect(screen.getByText("Science Fiction")).toBeInTheDocument());
+    expect(screen.getByText("Fantasy")).toBeInTheDocument();
+  });
+
+  it("reading-top-series renders the seeded series bars", async () => {
+    renderSample("reading-top-series");
+    await waitFor(() => expect(screen.getByText("The Expanse")).toBeInTheDocument());
+    expect(screen.getAllByTestId("reading-bar").length).toBeGreaterThan(0);
+  });
+
+  it("reading-finished-per-month renders month buckets", async () => {
+    renderSample("reading-finished-per-month");
+    await waitFor(() => expect(screen.getByText("Feb 2026")).toBeInTheDocument());
+  });
+
+  it("reading-listening-trend renders both the listening + coding series legend", async () => {
+    renderSample("reading-listening-trend");
+    await waitFor(() => {
+      const legend = screen.getByTestId("reading-trend-legend");
+      expect(legend).toHaveTextContent("Listening");
+      expect(legend).toHaveTextContent("Coding");
+    });
+  });
+
+  it("no reading kind falls through to a 'not wired' placeholder", async () => {
+    for (const kind of [
+      "reading-listening-in-range",
+      "reading-books-by-genre",
+      "reading-top-series",
+      "reading-finished-per-month",
+      "reading-listening-trend",
+    ]) {
+      const { container, unmount } = renderSample(kind);
+      await waitFor(() => expect(container.innerHTML.trim().length).toBeGreaterThan(0));
+      expect(container.textContent, kind).not.toMatch(
+        /No spec for|Unsupported primitive|No renderer for|No spec renderer for/,
+      );
+      unmount();
+    }
   });
 });
 

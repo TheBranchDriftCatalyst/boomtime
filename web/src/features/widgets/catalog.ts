@@ -497,6 +497,56 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
     dashboardScopes: ["profile"],
     defaultLayout: { w: 12, h: 8 },
   },
+  // gaka-qcxg — READING-DOMAIN widgets. These surface the existing Reading
+  // dashboard tiles (web/src/features/overview/reading/ReadingTiles.tsx) as
+  // first-class catalog kinds so the /catalog gallery showcases the reading
+  // vizes alongside the coding ones. Like the overview-*/github-* fe-only
+  // kinds they render ONLY in-page — each tile SELF-FETCHES via the
+  // cross-domain query DSL (useReadingQuery → runQuery, POST /api/v1/query),
+  // NOT from a PublicDashboardPayload or OverviewDataContext — so they have
+  // NO backend SVG variant and are declared fe-only in
+  // internal/widget/specs.json (target:"fe-only", deliberately absent from
+  // render.go's Kinds() and its drift-guard test). `scopes: []` keeps them
+  // out of the scope-based widget/embeddable panels (they're gallery-only);
+  // no dashboardScopes keeps them off the composable dashboards. The catalog
+  // gallery gates them on books_enabled (see catalogEntries.ts FLAG_BY_KIND +
+  // CatalogPage's usePublicConfig filter) so they vanish when the reading
+  // feature is off — same gate as the Reading overview tab.
+  {
+    kind: "reading-listening-trend",
+    title: "Listening Trend",
+    description: "Listening time over the range, with a coding overlay",
+    scopes: [],
+    primitives: ["graph", "label"],
+  },
+  {
+    kind: "reading-books-by-genre",
+    title: "Books by Genre",
+    description: "Your library split by genre as a donut (top 6 + other)",
+    scopes: [],
+    primitives: ["graph"],
+  },
+  {
+    kind: "reading-top-series",
+    title: "Top Series by Runtime",
+    description: "Your longest series ranked by total listening runtime",
+    scopes: [],
+    primitives: ["graph", "label"],
+  },
+  {
+    kind: "reading-finished-per-month",
+    title: "Finished per Month",
+    description: "Books finished per month over the selected range",
+    scopes: [],
+    primitives: ["graph"],
+  },
+  {
+    kind: "reading-listening-in-range",
+    title: "Listening in Range",
+    description: "Total listening time in the selected range as a stat tile",
+    scopes: [],
+    primitives: ["label"],
+  },
 ];
 
 /** Catalog entries offered for a page scope. */

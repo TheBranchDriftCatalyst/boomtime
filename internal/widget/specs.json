@@ -297,5 +297,35 @@
     "target": "fe-only",
     "size": { "w": 900, "h": 560 },
     "reason": "Combined public-profile GitHub card, self-fetching from the public mirror; no backend SVG variant (gaka-2ud)."
+  },
+  {
+    "kind": "reading-listening-trend",
+    "target": "fe-only",
+    "size": { "w": 560, "h": 320 },
+    "reason": "Reading-domain tile, self-fetching via the cross-domain query DSL (runQuery); no backend SVG variant (gaka-qcxg)."
+  },
+  {
+    "kind": "reading-books-by-genre",
+    "target": "fe-only",
+    "size": { "w": 380, "h": 340 },
+    "reason": "Reading-domain tile, self-fetching via the cross-domain query DSL (runQuery); no backend SVG variant (gaka-qcxg)."
+  },
+  {
+    "kind": "reading-top-series",
+    "target": "fe-only",
+    "size": { "w": 380, "h": 340 },
+    "reason": "Reading-domain tile, self-fetching via the cross-domain query DSL (runQuery); no backend SVG variant (gaka-qcxg)."
+  },
+  {
+    "kind": "reading-finished-per-month",
+    "target": "fe-only",
+    "size": { "w": 420, "h": 300 },
+    "reason": "Reading-domain tile, self-fetching via the cross-domain query DSL (runQuery); no backend SVG variant (gaka-qcxg)."
+  },
+  {
+    "kind": "reading-listening-in-range",
+    "target": "fe-only",
+    "size": { "w": 260, "h": 150 },
+    "reason": "Reading-domain stat tile, self-fetching via the cross-domain query DSL (runQuery); no backend SVG variant (gaka-qcxg)."
   }
 ]

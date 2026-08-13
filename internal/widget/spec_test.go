@@ -50,6 +50,11 @@ var catalogFEOnlyKinds = []string{
 	"overview-stats",
 	"overview-timeline",
 	"overview-total-activity",
+	"reading-books-by-genre",
+	"reading-finished-per-month",
+	"reading-listening-in-range",
+	"reading-listening-trend",
+	"reading-top-series",
 	"streak-banner",
 	"wellness",
 }

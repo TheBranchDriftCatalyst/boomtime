@@ -20,17 +20,14 @@ import {
   type CatalogSource,
 } from "./CatalogDataSource";
 import { specForKind } from "@/features/widgets/specs";
-import { CATALOG_WIDGETS, CATALOG_CATEGORIES } from "./catalogEntries";
+import { usePublicConfig } from "@/lib/usePublicConfig";
+import { CATALOG_CATEGORIES, visibleCatalogWidgets } from "./catalogEntries";
 import { CatalogWidgetRenderer } from "./CatalogWidgetRenderer";
 import { WidgetCatalogCard } from "./WidgetCatalogCard";
 import "./catalog.css";
 
 interface CatalogPageProps {
   variant?: "app" | "public";
-}
-
-function countIn(category: string): number {
-  return CATALOG_WIDGETS.filter((w) => w.category === category).length;
 }
 
 // Card sizing is driven ENTIRELY by the widget spec's `size` (specs.json — the
@@ -50,6 +47,16 @@ function CatalogInner({ variant = "app" }: CatalogPageProps) {
   const [rulers, setRulers] = useState(false);
   const [activeCat, setActiveCat] = useState<string | null>(null);
 
+  // gaka-qcxg: the visible widget slice honors boot-config feature flags — the
+  // reading-domain kinds only appear when books_enabled is on (same gate as the
+  // Reading overview tab). On the public /catalog page this reads the real
+  // server config too (GET /config/public is unauthed), so the gallery matches
+  // the deployment's live feature set.
+  const { config } = usePublicConfig();
+  const widgets = useMemo(() => visibleCatalogWidgets(config), [config]);
+  const countIn = (category: string) =>
+    widgets.filter((w) => w.category === category).length;
+
   // The public page has no auth → real data can't load; force sample.
   const effectiveSource: CatalogSource = variant === "public" ? "sample" : source;
 
@@ -57,14 +64,14 @@ function CatalogInner({ variant = "app" }: CatalogPageProps) {
     () =>
       CATALOG_CATEGORIES.map((category) => ({
         category,
-        items: CATALOG_WIDGETS.filter((w) => w.category === category),
+        items: widgets.filter((w) => w.category === category),
       }))
         .filter((g) => g.items.length > 0)
         .filter((g) => !activeCat || g.category === activeCat),
-    [activeCat],
+    [activeCat, widgets],
   );
 
-  const total = CATALOG_WIDGETS.length;
+  const total = widgets.length;
 
   const segBtn = (active: boolean) =>
     cn(

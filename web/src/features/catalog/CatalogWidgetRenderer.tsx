@@ -29,7 +29,7 @@
 // fixtures is a re-generation problem disproportionate to a foundation
 // layer; the fixture is generated once at a realistic 90-day width (see
 // sampleData.ts's SAMPLE_RANGE_DAYS) and stays that width.
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ComponentType } from "react";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
@@ -43,6 +43,13 @@ import {
 } from "@/features/overview/overviewWidgets";
 import { WidgetRenderer } from "@/features/widgets/renderers/WidgetRenderer";
 import { OverviewWidgetRenderer } from "@/features/widgets/renderers/OverviewWidgetRenderer";
+import {
+  BooksByGenreTile,
+  FinishedPerMonthTile,
+  ListeningThisWeekTile,
+  ListeningTrendTile,
+  TopSeriesByRuntimeTile,
+} from "@/features/overview/reading/ReadingTiles";
 import {
   SAMPLE_CATALOG_PAYLOAD,
   buildRealCatalogPayload,
@@ -76,6 +83,21 @@ const OVERVIEW_ONLY_FE_KINDS = new Set<string>([
   "github-repos",
   "github-languages",
 ]);
+
+// gaka-qcxg: reading-domain fe-only kinds → their existing Reading dashboard
+// tile. Each tile SELF-FETCHES via useReadingQuery (runQuery, POST
+// /api/v1/query) under whichever QueryClient wraps it — the seeded sample
+// client in sample mode, the app's ambient client in mine mode — so one
+// component serves BOTH sources (no separate sample/mine branch needed, unlike
+// the overview kinds that read an injected OverviewDataContext). Kept as a map
+// so a card renders the tile directly; the tile owns its own ChartCard chrome.
+const READING_KINDS: Record<string, ComponentType> = {
+  "reading-listening-trend": ListeningTrendTile,
+  "reading-books-by-genre": BooksByGenreTile,
+  "reading-top-series": TopSeriesByRuntimeTile,
+  "reading-finished-per-month": FinishedPerMonthTile,
+  "reading-listening-in-range": ListeningThisWeekTile,
+};
 
 export interface CatalogWidgetRendererProps {
   kind: string;
@@ -112,6 +134,8 @@ function CatalogKindDispatch({
   payload: CatalogPayload;
   slug: string | undefined;
 }) {
+  const Reading = READING_KINDS[kind];
+  if (Reading) return <Reading />;
   if (OVERVIEW_ONLY_FE_KINDS.has(kind)) {
     return <OverviewWidgetRenderer kind={kind} />;
   }
@@ -161,6 +185,8 @@ function MineCatalogWidget({ kind, rangeDays }: { kind: string; rangeDays: numbe
 // OverviewWidgetRenderer.tsx's own file-doc convention): each branch is a
 // leaf component that owns exactly the hooks its path needs.
 function MineCatalogKindDispatch({ kind }: { kind: string }) {
+  const Reading = READING_KINDS[kind];
+  if (Reading) return <Reading />;
   if (OVERVIEW_ONLY_FE_KINDS.has(kind)) {
     return <OverviewWidgetRenderer kind={kind} />;
   }
