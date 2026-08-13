@@ -1,28 +1,28 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/api";
-import { qk } from "@/lib/queryKeys";
 import type {
-  HeartbeatAxis,
-  HeartbeatFilters,
-  HeartbeatGroupPayload,
-  HeartbeatListPayload,
-} from "@/types/api";
-import { LEAF_PAGE_SIZE } from "@/features/heartbeats/axes";
+  DomainConfig,
+  DrillPath,
+  GroupPage,
+  LeafResult,
+} from "@/features/explorer/types";
 import {
   groupNodeId,
   type ExplorerNode,
   type GroupNode,
   type LeafGroupNode,
   type LeafRowNode,
-} from "@/features/heartbeats/explorerModel";
+} from "@/features/explorer/explorerModel";
 
-interface Params {
-  axes: HeartbeatAxis[];
-  start: string;
-  end: string;
-  timeLimit: number;
-  entity: string;
+interface Params<Row> {
+  config: DomainConfig<Row>;
+  // Ordered group-by axis ids. Empty => flat leaf rows (when flatWhenEmpty).
+  axes: string[];
+  // Opaque token; when it (or `axes`) changes every cache is dropped and the
+  // root reloads. The domain folds its query inputs (range/entity/…) into it.
+  resetKey: string;
+  // With zero axes: eager-load leaf rows directly (the flat "Table" view) when
+  // true; do nothing (the consumer shows an "add an axis" hint) when false.
+  flatWhenEmpty: boolean;
 }
 
 export interface ChildState {
@@ -40,18 +40,28 @@ export interface LeafPageState {
 }
 
 /**
- * Server-driven lazy tree for the heartbeats explorer. Owns:
+ * Server-driven lazy tree for the groupable explorer. Owns:
  *  - the root group query (first axis),
  *  - a per-node children cache (fetched on first expand),
  *  - leaf pagination per fully-drilled path.
  *
  * It assembles a plain ExplorerNode[] tree (with populated `subRows` only for
  * expanded+loaded nodes) that feeds one TanStack Table via getSubRows +
- * getExpandedRowModel. React Query provides caching/dedup keyed by filter path.
+ * getExpandedRowModel. The DomainConfig's TreeSource provides caching/dedup.
+ * With zero axes the root is a single flat leaf-group (the flat "Table" view).
  */
-export function useExplorerTree({ axes, start, end, timeLimit, entity }: Params) {
-  const qc = useQueryClient();
+export function useExplorerTree<Row>({
+  config,
+  axes,
+  resetKey,
+  flatWhenEmpty,
+}: Params<Row>) {
+  const { source, rowKey, leafPageSize } = config;
   const rootAxis = axes[0];
+  const rollupIds = useMemo(
+    () => config.rollups.map((r) => r.id),
+    [config.rollups],
+  );
 
   const [rootState, setRootState] = useState<ChildState>({
     loading: false,
@@ -62,8 +72,8 @@ export function useExplorerTree({ axes, start, end, timeLimit, entity }: Params)
   // leaf-group id -> pagination.
   const [leafPages, setLeafPages] = useState<Record<string, LeafPageState>>({});
 
-  // Reset caches whenever the query inputs change (axes/range/entity/timeLimit).
-  const inputKey = `${axes.join(">")}|${start}|${end}|${timeLimit}|${entity}`;
+  // Reset caches whenever the query inputs change (axes/resetKey).
+  const inputKey = `${axes.join(">")}|${resetKey}`;
   useEffect(() => {
     setChildCache({});
     setLeafPages({});
@@ -71,71 +81,44 @@ export function useExplorerTree({ axes, start, end, timeLimit, entity }: Params)
   }, [inputKey]);
 
   const fetchGroup = useCallback(
-    (axis: HeartbeatAxis, filters: HeartbeatFilters) =>
-      qc.fetchQuery({
-        queryKey: qk.hbExploreGroup(axis, filters, start, end, timeLimit, entity),
-        queryFn: () =>
-          api.groupHeartbeats({
-            groupBy: axis,
-            start,
-            end,
-            timeLimit,
-            filters,
-            entity,
-          }),
-        staleTime: 30_000,
-      }),
-    [qc, start, end, timeLimit, entity],
+    (axis: string, path: DrillPath): Promise<GroupPage> =>
+      source.fetchGroup(path, axis, rollupIds),
+    [source, rollupIds],
   );
 
   const fetchLeaf = useCallback(
-    (filters: HeartbeatFilters, page: number) =>
-      qc.fetchQuery({
-        queryKey: qk.hbExploreList(filters, entity, start, end, page),
-        queryFn: () =>
-          api.listHeartbeats({
-            start,
-            end,
-            filters,
-            entity,
-            page,
-            limit: LEAF_PAGE_SIZE,
-          }),
-        staleTime: 30_000,
-      }),
-    [qc, start, end, entity],
+    (path: DrillPath, page: number): Promise<LeafResult<Row>> =>
+      source.fetchLeaf(path, page, leafPageSize),
+    [source, leafPageSize],
   );
 
-  // Build group child nodes from a payload for a given depth/axis path.
+  // Build group child nodes from a page for a given depth/axis level.
   const buildGroupChildren = useCallback(
     (
-      payload: HeartbeatGroupPayload,
+      page: GroupPage,
       depth: number,
       axisIndex: number,
-      parentFilters: HeartbeatFilters,
+      parentPath: DrillPath,
     ): ExplorerNode[] => {
       const axis = axes[axisIndex];
       const nextAxis = axes[axisIndex + 1];
       const isLastAxis = axisIndex === axes.length - 1;
-      return payload.groups.map((g): GroupNode => {
+      return page.groups.map((g): GroupNode => {
         const isNull = g.value == null;
-        // Skip adding a null filter (ambiguous vs the backend's absent = no
+        // Skip adding a null step (ambiguous vs the backend's absent = no
         // filter convention). Null non-leaf groups can't be drilled.
-        const childFilters: HeartbeatFilters = isNull
-          ? parentFilters
-          : { ...parentFilters, [axis]: g.value as string };
+        const childPath: DrillPath = isNull
+          ? parentPath
+          : [...parentPath, { dim: axis, value: g.value as string }];
         const drillable = isLastAxis || !isNull;
         return {
           kind: "group",
-          id: groupNodeId(parentFilters, axis, g.value),
+          id: groupNodeId(parentPath, axis, g.value),
           axis,
           value: g.value,
-          count: g.count,
-          seconds: g.seconds,
-          firstSeen: g.firstSeen,
-          lastSeen: g.lastSeen,
+          stats: g.stats,
           depth,
-          childFilters,
+          path: childPath,
           nextAxis: isLastAxis ? undefined : nextAxis,
           drillable,
         };
@@ -144,23 +127,54 @@ export function useExplorerTree({ axes, start, end, timeLimit, entity }: Params)
     [axes],
   );
 
-  // Load root groups.
+  // Load root groups. With zero axes there is no grouping: eagerly load the
+  // first page of leaf rows as top-level nodes (the flat "Table" view — rows
+  // render directly, no drill-down).
   const loadRoot = useCallback(async () => {
+    if (axes.length === 0) {
+      // No axes and the consumer shows an "add an axis" hint: fetch nothing.
+      if (!flatWhenEmpty) {
+        setRootState({ loading: false, error: false, children: [] });
+        return;
+      }
+      setRootState((s) => ({ ...s, loading: true, error: false }));
+      try {
+        const payload = await fetchLeaf([], 1);
+        const rows: LeafRowNode<Row>[] = payload.rows.map((r) => ({
+          kind: "leafRow",
+          id: `row:root:${rowKey(r)}`,
+          depth: 0,
+          row: r,
+        }));
+        setRootState({ loading: false, error: false, children: rows });
+      } catch {
+        setRootState({ loading: false, error: true });
+      }
+      return;
+    }
     if (!rootAxis) return;
     setRootState((s) => ({ ...s, loading: true, error: false }));
     try {
-      const payload = await fetchGroup(rootAxis, {});
-      const children = buildGroupChildren(payload, 0, 0, {});
+      const page = await fetchGroup(rootAxis, []);
+      const children = buildGroupChildren(page, 0, 0, []);
       setRootState({
         loading: false,
         error: false,
         children,
-        truncated: payload.truncated,
+        truncated: page.truncated,
       });
     } catch {
       setRootState({ loading: false, error: true });
     }
-  }, [rootAxis, fetchGroup, buildGroupChildren]);
+  }, [
+    axes.length,
+    flatWhenEmpty,
+    rootAxis,
+    fetchGroup,
+    fetchLeaf,
+    buildGroupChildren,
+    rowKey,
+  ]);
 
   useEffect(() => {
     void loadRoot();
@@ -183,7 +197,7 @@ export function useExplorerTree({ axes, start, end, timeLimit, entity }: Params)
           const leafGroup: LeafGroupNode = {
             kind: "leafGroup",
             id: leafId,
-            filters: node.childFilters,
+            path: node.path,
             depth: node.depth + 1,
           };
           setChildCache((c) => ({
@@ -196,12 +210,12 @@ export function useExplorerTree({ axes, start, end, timeLimit, entity }: Params)
         setChildCache((c) => ({ ...c, [node.id]: { loading: true, error: false } }));
         try {
           const axisIndex = axes.indexOf(node.nextAxis);
-          const payload = await fetchGroup(node.nextAxis, node.childFilters);
+          const page = await fetchGroup(node.nextAxis, node.path);
           const children = buildGroupChildren(
-            payload,
+            page,
             node.depth + 1,
             axisIndex,
-            node.childFilters,
+            node.path,
           );
           setChildCache((c) => ({
             ...c,
@@ -209,7 +223,7 @@ export function useExplorerTree({ axes, start, end, timeLimit, entity }: Params)
               loading: false,
               error: false,
               children,
-              truncated: payload.truncated,
+              truncated: page.truncated,
             },
           }));
         } catch {
@@ -218,16 +232,16 @@ export function useExplorerTree({ axes, start, end, timeLimit, entity }: Params)
         return;
       }
 
-      // leafGroup: load the current page of heartbeat rows.
+      // leafGroup: load the current page of leaf rows.
       if (node.kind === "leafGroup") {
         if (childCache[node.id]?.loading) return;
         const page = leafPages[node.id]?.page ?? 1;
         setChildCache((c) => ({ ...c, [node.id]: { loading: true, error: false } }));
         try {
-          const payload: HeartbeatListPayload = await fetchLeaf(node.filters, page);
-          const rows: LeafRowNode[] = payload.items.map((r) => ({
+          const payload = await fetchLeaf(node.path, page);
+          const rows: LeafRowNode<Row>[] = payload.rows.map((r) => ({
             kind: "leafRow",
-            id: `row:${node.id}:${r.id}`,
+            id: `row:${node.id}:${rowKey(r)}`,
             depth: node.depth + 1,
             row: r,
           }));
@@ -244,7 +258,7 @@ export function useExplorerTree({ axes, start, end, timeLimit, entity }: Params)
         }
       }
     },
-    [axes, childCache, leafPages, fetchGroup, fetchLeaf, buildGroupChildren],
+    [axes, childCache, leafPages, fetchGroup, fetchLeaf, buildGroupChildren, rowKey],
   );
 
   // Change the page for a leaf-group and refetch.
@@ -252,10 +266,10 @@ export function useExplorerTree({ axes, start, end, timeLimit, entity }: Params)
     async (leafGroup: LeafGroupNode, page: number) => {
       setChildCache((c) => ({ ...c, [leafGroup.id]: { loading: true, error: false } }));
       try {
-        const payload = await fetchLeaf(leafGroup.filters, page);
-        const rows: LeafRowNode[] = payload.items.map((r) => ({
+        const payload = await fetchLeaf(leafGroup.path, page);
+        const rows: LeafRowNode<Row>[] = payload.rows.map((r) => ({
           kind: "leafRow",
-          id: `row:${leafGroup.id}:${r.id}`,
+          id: `row:${leafGroup.id}:${rowKey(r)}`,
           depth: leafGroup.depth + 1,
           row: r,
         }));
@@ -271,7 +285,7 @@ export function useExplorerTree({ axes, start, end, timeLimit, entity }: Params)
         setChildCache((c) => ({ ...c, [leafGroup.id]: { loading: false, error: true } }));
       }
     },
-    [fetchLeaf],
+    [fetchLeaf, rowKey],
   );
 
   // Recursively attach loaded children to build the tree TanStack consumes.

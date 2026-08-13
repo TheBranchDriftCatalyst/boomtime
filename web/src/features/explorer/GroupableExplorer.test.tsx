@@ -1,0 +1,191 @@
+import { useState } from "react";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
+import { GroupableExplorer } from "@/features/explorer/GroupableExplorer";
+import type { DomainConfig, GroupPage, LeafResult } from "@/features/explorer/types";
+
+interface Row {
+  id: string;
+  name: string;
+}
+
+const ALL_ROWS: Row[] = [
+  { id: "r1", name: "row-1" },
+  { id: "r2", name: "row-2" },
+  { id: "r3", name: "row-3" },
+];
+
+// A fake TreeSource: axis "a" yields two root groups, axis "b" one; the leaf
+// pages a fixed 3-row set at pageSize 2 so pagination exercises two pages.
+function makeSource() {
+  const fetchGroup = vi.fn(
+    async (
+      _path: unknown,
+      axis: string,
+    ): Promise<GroupPage> => {
+      if (axis === "b") {
+        return {
+          groups: [{ value: "b1", stats: { count: 5, sum: 50 } }],
+          truncated: false,
+        };
+      }
+      return {
+        groups: [
+          { value: "a1", stats: { count: 3, sum: 30 } },
+          { value: "a2", stats: { count: 1, sum: 10 } },
+        ],
+        truncated: false,
+      };
+    },
+  );
+  const fetchLeaf = vi.fn(
+    async (
+      _path: unknown,
+      page: number,
+      pageSize: number,
+    ): Promise<LeafResult<Row>> => {
+      const start = (page - 1) * pageSize;
+      return {
+        rows: ALL_ROWS.slice(start, start + pageSize),
+        total: ALL_ROWS.length,
+        page,
+        limit: pageSize,
+      };
+    },
+  );
+  return { fetchGroup, fetchLeaf };
+}
+
+function makeConfig(
+  source: ReturnType<typeof makeSource>,
+  overrides: Partial<DomainConfig<Row>> = {},
+): DomainConfig<Row> {
+  return {
+    axes: [
+      { id: "a", label: "A" },
+      { id: "b", label: "B" },
+    ],
+    defaultGroupBy: ["a"],
+    columns: [
+      {
+        id: "name",
+        header: "Name",
+        get: (r) => r.name,
+        render: (r) => r.name,
+        defaultVisible: true,
+      },
+    ],
+    rollups: [{ id: "sum", label: "Sum", format: (n) => `${n}s` }],
+    source,
+    rowKey: (r) => r.id,
+    leafPageSize: 2,
+    labels: { leafGroup: "Rows" },
+    ...overrides,
+  };
+}
+
+// Controlled host so groupBy changes flow through like the real page.
+function Harness({
+  config,
+  initialGroupBy,
+}: {
+  config: DomainConfig<Row>;
+  initialGroupBy: string[];
+}) {
+  const [groupBy, setGroupBy] = useState(initialGroupBy);
+  return (
+    <div>
+      <button onClick={() => setGroupBy(["b"])}>set-b</button>
+      <GroupableExplorer
+        config={config}
+        groupBy={groupBy}
+        onGroupByChange={setGroupBy}
+        resetKey="k"
+      />
+    </div>
+  );
+}
+
+describe("GroupableExplorer", () => {
+  it("expands a group to load children and paginates the leaf rows", async () => {
+    const user = userEvent.setup();
+    const source = makeSource();
+    render(<Harness config={makeConfig(source)} initialGroupBy={["a"]} />);
+
+    // Root groups + count badge + formatted rollup.
+    await screen.findByText("a1");
+    expect(screen.getByText("a2")).toBeInTheDocument();
+    expect(screen.getByText("3")).toBeInTheDocument(); // count badge
+    expect(screen.getByText("30s")).toBeInTheDocument(); // rollup format
+
+    // Expand a1 -> a single leaf-group ("Rows") child appears.
+    await user.click(screen.getByText("a1"));
+    await screen.findByText("Rows");
+
+    // Expand the leaf group -> first page (2 of 3 rows) + pagination.
+    await user.click(screen.getByText("Rows"));
+    await screen.findByText("row-1");
+    expect(screen.getByText("row-2")).toBeInTheDocument();
+    expect(screen.queryByText("row-3")).not.toBeInTheDocument();
+    expect(screen.getByText("Page 1 / 2")).toBeInTheDocument();
+
+    // Next page -> the third row.
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByText("row-3");
+    expect(screen.getByText("Page 2 / 2")).toBeInTheDocument();
+  });
+
+  it("resets and reloads the root when groupBy changes", async () => {
+    const user = userEvent.setup();
+    const source = makeSource();
+    render(<Harness config={makeConfig(source)} initialGroupBy={["a"]} />);
+
+    await screen.findByText("a1");
+
+    // Switch the group-by axis to "b": the root reloads with b-axis groups.
+    await user.click(screen.getByRole("button", { name: "set-b" }));
+    await screen.findByText("b1");
+    expect(screen.queryByText("a1")).not.toBeInTheDocument();
+    expect(source.fetchGroup).toHaveBeenCalledWith([], "b", ["sum"]);
+  });
+
+  it("renders a domain group decoration on each node", async () => {
+    const source = makeSource();
+    const config = makeConfig(source, {
+      useGroupDecorator: () => (node) => ({
+        badges: <span data-testid={`badge-${node.value}`}>★</span>,
+      }),
+    });
+    render(<Harness config={config} initialGroupBy={["a"]} />);
+
+    expect(await screen.findByTestId("badge-a1")).toBeInTheDocument();
+    expect(screen.getByTestId("badge-a2")).toBeInTheDocument();
+  });
+
+  it("renders leaf rows directly when there are zero group axes", async () => {
+    const source = makeSource();
+    // No addAxisHint => the flat "Table" view: rows show without drilling.
+    render(<Harness config={makeConfig(source)} initialGroupBy={[]} />);
+
+    await screen.findByText("row-1");
+    expect(screen.getByText("row-2")).toBeInTheDocument();
+    // page 1 of the fixed set (limit 2) — the third row is not on this page.
+    expect(screen.queryByText("row-3")).not.toBeInTheDocument();
+    // No grouping happened.
+    expect(source.fetchGroup).not.toHaveBeenCalled();
+    expect(source.fetchLeaf).toHaveBeenCalledWith([], 1, 2);
+  });
+
+  it("does not render the flat view when an addAxisHint is configured", async () => {
+    const source = makeSource();
+    const config = makeConfig(source, {
+      labels: { leafGroup: "Rows", addAxisHint: "Add an axis to explore." },
+    });
+    render(<Harness config={config} initialGroupBy={[]} />);
+
+    await screen.findByText("Add an axis to explore.");
+    expect(source.fetchLeaf).not.toHaveBeenCalled();
+    expect(screen.queryByText("row-1")).not.toBeInTheDocument();
+  });
+});

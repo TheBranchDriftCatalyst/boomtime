@@ -9,55 +9,65 @@ import {
   type VisibilityState,
 } from "@tanstack/react-table";
 import { ArrowUpDown } from "lucide-react";
-import { ColumnPicker } from "@/features/heartbeats/ColumnPicker";
-import { LEAF_COLUMNS } from "@/features/heartbeats/leafColumns";
-import { GroupRow } from "@/features/heartbeats/rows/GroupRow";
-import { LeafGroupRow } from "@/features/heartbeats/rows/LeafGroupRow";
-import { LeafRow } from "@/features/heartbeats/rows/LeafRow";
+import { ColumnPicker } from "@/features/explorer/ColumnPicker";
+import { GroupRow } from "@/features/explorer/rows/GroupRow";
+import { LeafGroupRow } from "@/features/explorer/rows/LeafGroupRow";
+import { LeafRow } from "@/features/explorer/rows/LeafRow";
 import {
   ExplorerRowContext,
+  defaultRenderJson,
   type ExplorerRowContextValue,
-} from "@/features/heartbeats/rows/explorerRowContext";
-import { useLeafSort } from "@/features/heartbeats/useLeafSort";
-import { useSuppression } from "@/features/heartbeats/useSuppression";
-import { useSpaceMembership } from "@/features/heartbeats/useSpaceMembership";
+} from "@/features/explorer/rows/explorerRowContext";
+import { useLeafSort } from "@/features/explorer/useLeafSort";
 import { cn } from "@/lib/utils";
+import type { DomainConfig, GroupAction } from "@/features/explorer/types";
 import type {
   ExplorerNode,
   GroupNode,
   LeafGroupNode,
-} from "@/features/heartbeats/explorerModel";
-import type { useExplorerTree } from "@/features/heartbeats/useExplorerTree";
+} from "@/features/explorer/explorerModel";
+import type { useExplorerTree } from "@/features/explorer/useExplorerTree";
 
 type Tree = ReturnType<typeof useExplorerTree>;
 
-interface Props {
-  ctrl: Tree;
-  mode: "table" | "json";
-  onRename: (node: GroupNode) => void;
+// Stable no-op decorator for domains without a group decorator (keeps the hook
+// call unconditional so React's hook order stays put across renders).
+const NO_DECORATION = {};
+const NOOP_DECORATE: GroupAction = () => NO_DECORATION;
+function useNoopDecorator(): GroupAction {
+  return NOOP_DECORATE;
 }
 
-export function HeartbeatExplorerTable({ ctrl, mode, onRename }: Props) {
+interface Props<TRow> {
+  ctrl: Tree;
+  config: DomainConfig<TRow>;
+  leafMode: "table" | "json";
+}
+
+export function ExplorerTable<TRow>({ ctrl, config, leafMode }: Props<TRow>) {
   const [expanded, setExpanded] = useState<ExpandedState>({});
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(
     () =>
       Object.fromEntries(
-        LEAF_COLUMNS.map((c) => [c.id, c.defaultVisible]),
+        config.columns.map((c) => [c.id, c.defaultVisible ?? true]),
       ) as VisibilityState,
   );
 
   // Sort each loaded leaf page client-side (server has no sort param).
-  const { sorting, toggleSort, sortedTree } = useLeafSort(ctrl.tree);
+  const { sorting, toggleSort, sortedTree } = useLeafSort(
+    ctrl.tree,
+    config.columns,
+  );
 
   const columns = useMemo<ColumnDef<ExplorerNode>[]>(
     () => [
       // One synthetic column; cells render per node kind in the body below.
       { id: "tree", header: "" },
-      ...LEAF_COLUMNS.map(
+      ...config.columns.map(
         (c): ColumnDef<ExplorerNode> => ({ id: c.id, header: c.header }),
       ),
     ],
-    [],
+    [config.columns],
   );
 
   const getSubRows = useCallback((n: ExplorerNode) => {
@@ -95,54 +105,53 @@ export function HeartbeatExplorerTable({ ctrl, mode, onRename }: Props) {
     [ctrl],
   );
 
-  // Suppress/rename actions shared by every group row (reversible curation
-  // rules — the same set Settings manages).
-  const { getSuppressInfo, getRenamedTo, toggleSuppress, suppressBusy } =
-    useSuppression();
+  // Domain-injected per-node decoration (badges/actions/dimming).
+  const useDecorator = config.useGroupDecorator ?? useNoopDecorator;
+  const decorate = useDecorator();
 
-  // Space membership: badges for the Spaces a value already belongs to + an
-  // "add to Space" action (both driven by exact Space membership rules).
-  const { spaceOptions, getSpacesFor, canAddToSpace, addToSpace, spaceBusy } =
-    useSpaceMembership();
-
-  const visibleLeafCols = useMemo(
-    () => LEAF_COLUMNS.filter((c) => columnVisibility[c.id] !== false),
-    [columnVisibility],
+  const visibleCols = useMemo(
+    () => config.columns.filter((c) => columnVisibility[c.id] !== false),
+    [config.columns, columnVisibility],
   );
+
+  const labelForAxis = useCallback(
+    (id: string) => config.axes.find((a) => a.id === id)?.label ?? id,
+    [config.axes],
+  );
+
+  const supportsJson = config.supportsJsonMode ?? false;
+  const jsonMode = supportsJson && leafMode === "json";
 
   const rowContext = useMemo<ExplorerRowContextValue>(
     () => ({
-      getSuppressInfo,
-      toggleSuppress,
-      suppressBusy,
-      getRenamedTo,
-      onRename,
-      getSpacesFor,
-      canAddToSpace,
-      spaceOptions,
-      addToSpace,
-      spaceBusy,
-      visibleLeafColIds: visibleLeafCols.map((c) => c.id),
+      columns: visibleCols as unknown as ExplorerRowContextValue["columns"],
+      rollups: config.rollups,
+      leafGroupLabel: config.labels.leafGroup,
+      supportsJson,
+      jsonMode,
+      renderJson: config.renderJson ?? defaultRenderJson,
+      rowActions: config.rowActions as ExplorerRowContextValue["rowActions"],
+      labelForAxis,
     }),
     [
-      getSuppressInfo,
-      toggleSuppress,
-      suppressBusy,
-      getRenamedTo,
-      onRename,
-      getSpacesFor,
-      canAddToSpace,
-      spaceOptions,
-      addToSpace,
-      spaceBusy,
-      visibleLeafCols,
+      visibleCols,
+      config.rollups,
+      config.labels.leafGroup,
+      config.renderJson,
+      config.rowActions,
+      supportsJson,
+      jsonMode,
+      labelForAxis,
     ],
   );
+
+  const treeHeader = config.labels.treeHeader ?? "Group / entity";
 
   return (
     <div>
       <div className="mb-2 flex items-center justify-end">
         <ColumnPicker
+          columns={config.columns as unknown as ExplorerRowContextValue["columns"]}
           visibility={columnVisibility}
           onToggle={(id, v) =>
             setColumnVisibility((s) => ({ ...s, [id]: v }))
@@ -154,8 +163,8 @@ export function HeartbeatExplorerTable({ ctrl, mode, onRename }: Props) {
         <table className="w-full text-sm">
           <thead className="bg-muted/50 text-xs text-muted-foreground">
             <tr>
-              <th className="px-2 py-2 text-left font-medium">Group / entity</th>
-              {visibleLeafCols.map((c) => (
+              <th className="px-2 py-2 text-left font-medium">{treeHeader}</th>
+              {visibleCols.map((c) => (
                 <th
                   key={c.id}
                   className="cursor-pointer select-none px-2 py-2 text-left font-medium hover:text-foreground"
@@ -186,6 +195,7 @@ export function HeartbeatExplorerTable({ ctrl, mode, onRename }: Props) {
                       state={ctrl.childCache[n.id]}
                       expanded={row.getIsExpanded()}
                       onToggle={() => void toggleRow(row)}
+                      decoration={decorate(n, n.path)}
                     />
                   );
                 }
@@ -197,7 +207,6 @@ export function HeartbeatExplorerTable({ ctrl, mode, onRename }: Props) {
                       state={ctrl.childCache[n.id]}
                       page={ctrl.leafPages[n.id]}
                       expanded={row.getIsExpanded()}
-                      mode={mode}
                       onToggle={() => void toggleRow(row)}
                       onSetPage={(page) => void ctrl.setLeafPage(n, page)}
                     />
@@ -205,7 +214,7 @@ export function HeartbeatExplorerTable({ ctrl, mode, onRename }: Props) {
                 }
                 // leafRow — only render as columns in table mode (JSON mode
                 // shows the array via the leafGroup above).
-                if (mode === "json") return null;
+                if (jsonMode) return null;
                 return (
                   <LeafRow
                     key={row.id}

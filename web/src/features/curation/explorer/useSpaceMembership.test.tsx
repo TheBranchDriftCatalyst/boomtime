@@ -2,10 +2,10 @@ import type { ReactNode } from "react";
 import { renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useSpaceMembership } from "@/features/heartbeats/useSpaceMembership";
+import { useSpaceMembership } from "@/features/curation/explorer/useSpaceMembership";
 import { server } from "@/test/msw/server";
 import { http, HttpResponse } from "@/test/msw/handlers";
-import type { GroupNode } from "@/features/heartbeats/explorerModel";
+import type { GroupNode } from "@/features/explorer/explorerModel";
 import type { HeartbeatAxis } from "@/types/api";
 
 function wrapper(qc: QueryClient) {
@@ -30,12 +30,9 @@ function node(axis: HeartbeatAxis, value: string | null): GroupNode {
     id: `g:${axis}=${value}`,
     axis,
     value,
-    count: 1,
-    seconds: 0,
-    firstSeen: "",
-    lastSeen: "",
+    stats: { count: 1 },
     depth: 0,
-    childFilters: {},
+    path: [],
     drillable: false,
   };
 }

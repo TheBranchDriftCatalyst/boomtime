@@ -9,13 +9,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/dropdown-menu";
-import { LEAF_COLUMNS } from "@/features/heartbeats/leafColumns";
+import type { Column } from "@/features/explorer/types";
 
 /** "Columns" dropdown toggling leaf-column visibility in the explorer table. */
 export function ColumnPicker({
+  columns,
   visibility,
   onToggle,
 }: {
+  columns: Column<unknown>[];
   visibility: VisibilityState;
   onToggle: (id: string, visible: boolean) => void;
 }) {
@@ -30,7 +32,7 @@ export function ColumnPicker({
       <DropdownMenuContent align="end">
         <DropdownMenuLabel>Leaf columns</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {LEAF_COLUMNS.map((c) => (
+        {columns.map((c) => (
           <DropdownMenuCheckboxItem
             key={c.id}
             checked={visibility[c.id] !== false}

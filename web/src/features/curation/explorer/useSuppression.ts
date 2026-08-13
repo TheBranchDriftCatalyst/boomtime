@@ -1,9 +1,9 @@
 import { useCallback, useMemo } from "react";
 import { toast } from "sonner";
-import { isSuppressibleAxis } from "@/features/heartbeats/axes";
+import { isSuppressibleAxis } from "@/features/curation/explorer/curationAxes";
 import { useCurationMutations, useCurationRules } from "@/features/curation/useCuration";
 import { remapDisplay } from "@/features/curation/remapDisplay";
-import type { GroupNode } from "@/features/heartbeats/explorerModel";
+import type { GroupNode } from "@/features/explorer/explorerModel";
 
 // Result of looking up a group's suppression state.
 export interface SuppressInfo {

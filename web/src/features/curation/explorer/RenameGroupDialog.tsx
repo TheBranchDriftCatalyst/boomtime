@@ -7,7 +7,8 @@ import {
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/dialog";
 import { RemappingForm } from "@/features/curation/RemappingForm";
 import { axisLabel } from "@/lib/axes";
-import type { GroupNode } from "@/features/heartbeats/explorerModel";
+import type { GroupNode } from "@/features/explorer/explorerModel";
+import type { HeartbeatAxis } from "@/types/api";
 
 interface RenameGroupDialogProps {
   /** The group being renamed; null = dialog closed. */
@@ -33,7 +34,7 @@ export function RenameGroupDialog({ node, onClose }: RenameGroupDialogProps) {
                 pre-filled with the clicked value (user can still switch to
                 regex + edit). */}
             <RemappingForm
-              presetAxis={node.axis}
+              presetAxis={node.axis as HeartbeatAxis}
               presetValue={node.value ?? ""}
               onDone={onClose}
               onCancel={onClose}

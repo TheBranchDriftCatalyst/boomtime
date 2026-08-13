@@ -1,25 +1,17 @@
 import { useState } from "react";
-import { Activity, Braces, Files, Search, Table2 } from "lucide-react";
-import { Link } from "react-router";
+import { Braces, Files, Search, Table2 } from "lucide-react";
 import { Page } from "@/layout/Page";
 import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
 import { TimeLimitDropdown } from "@/components/toolbar/TimeLimitDropdown";
-import { EmptyState } from "@/components/EmptyState";
-import { TableRowsSkeleton } from "@/components/Skeletons";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
-import { Card, CardContent } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
-import { GroupByBar } from "@/features/heartbeats/GroupByBar";
 import { BackupPanel } from "@/features/heartbeats/BackupPanel";
 import { SourceHealthPanel } from "@/features/heartbeats/SourceHealthPanel";
-import { HeartbeatExplorerTable } from "@/features/heartbeats/HeartbeatExplorerTable";
-import { RenameGroupDialog } from "@/features/heartbeats/RenameGroupDialog";
 import { EntityExplorer } from "@/features/heartbeats/EntityExplorer";
-import { useExplorerTree } from "@/features/heartbeats/useExplorerTree";
+import { GroupableExplorer } from "@/features/explorer/GroupableExplorer";
+import { useHeartbeatsExplorerConfig } from "@/features/heartbeats/explorerConfig";
 import { DEFAULT_GROUP_BY } from "@/features/heartbeats/axes";
 import { useTimeRange } from "@/hooks/useTimeRange";
-import type { HeartbeatAxis } from "@/types/api";
-import type { GroupNode } from "@/features/heartbeats/explorerModel";
 
 type LeafMode = "table" | "json";
 type Tab = "explorer" | "entities";
@@ -27,16 +19,14 @@ type Tab = "explorer" | "entities";
 export function Heartbeats() {
   const tr = useTimeRange();
   const [tab, setTab] = useState<Tab>("explorer");
-  const [groupBy, setGroupBy] = useState<HeartbeatAxis[]>(DEFAULT_GROUP_BY);
+  const [groupBy, setGroupBy] = useState<string[]>(DEFAULT_GROUP_BY);
   const [entity, setEntity] = useState("");
   const [entityInput, setEntityInput] = useState("");
   const [mode, setMode] = useState<LeafMode>("table");
-  const [renameTarget, setRenameTarget] = useState<GroupNode | null>(null);
 
-  // The explorer requires at least one group-by axis; the empty case renders a
-  // hint below. The tree hook owns all server-driven expansion + pagination.
-  const ctrl = useExplorerTree({
-    axes: groupBy,
+  // The heartbeats DomainConfig wraps the existing group/list endpoints; the
+  // shared <GroupableExplorer> owns all server-driven expansion + pagination.
+  const config = useHeartbeatsExplorerConfig({
     start: tr.startISO,
     end: tr.endISO,
     timeLimit: tr.timeLimit,
@@ -127,70 +117,16 @@ export function Heartbeats() {
           </div>
 
           {tab === "explorer" ? (
-            <>
-              <Card className="mb-4">
-                <CardContent className="py-4">
-                  <GroupByBar groupBy={groupBy} onChange={setGroupBy} />
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardContent className="py-3">
-                  {groupBy.length === 0 ? (
-                    <p className="py-6 text-center text-sm text-muted-foreground">
-                      Add at least one group-by axis to explore heartbeats.
-                    </p>
-                  ) : ctrl.rootLoading ? (
-                    <TableRowsSkeleton rows={6} className="py-2" />
-                  ) : ctrl.rootError ? (
-                    <div className="space-y-2 py-6 text-center">
-                      <p className="text-sm text-destructive">
-                        Failed to load heartbeat groups.
-                      </p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => void ctrl.reloadRoot()}
-                      >
-                        Retry
-                      </Button>
-                    </div>
-                  ) : ctrl.tree.length === 0 ? (
-                    <EmptyState
-                      icon={Activity}
-                      title="No heartbeats in this range"
-                      description="Widen the date range, or import your history / set up a plugin to start streaming coding activity into the explorer."
-                      action={
-                        <Button asChild size="sm" variant="outline">
-                          <Link to="/app/import">Set up tracking</Link>
-                        </Button>
-                      }
-                    />
-                  ) : (
-                    <>
-                      {ctrl.rootTruncated && (
-                        <p className="mb-2 text-xs text-amber-500">
-                          Showing the top groups only (results truncated).
-                        </p>
-                      )}
-                      <HeartbeatExplorerTable
-                        ctrl={ctrl}
-                        mode={mode}
-                        onRename={setRenameTarget}
-                      />
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-            </>
+            <GroupableExplorer
+              config={config}
+              groupBy={groupBy}
+              onGroupByChange={setGroupBy}
+              resetKey={`${tr.startISO}|${tr.endISO}|${tr.timeLimit}|${entity}`}
+              leafMode={mode}
+            />
           ) : (
             <EntityExplorer />
           )}
-
-          <RenameGroupDialog
-            node={renameTarget}
-            onClose={() => setRenameTarget(null)}
-          />
         </Page.Content>
       </Page.Body>
     </Page>

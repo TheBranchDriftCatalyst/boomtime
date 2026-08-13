@@ -1,15 +1,14 @@
 import { ChevronDown, ChevronRight, Loader2 } from "lucide-react";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
-import { JsonBlock } from "@/features/heartbeats/JsonBlock";
 import {
   INDENT,
   useExplorerRowContext,
-} from "@/features/heartbeats/rows/explorerRowContext";
-import type { LeafGroupNode } from "@/features/heartbeats/explorerModel";
+} from "@/features/explorer/rows/explorerRowContext";
+import type { LeafGroupNode, LeafRowNode } from "@/features/explorer/explorerModel";
 import type {
   ChildState,
   LeafPageState,
-} from "@/features/heartbeats/useExplorerTree";
+} from "@/features/explorer/useExplorerTree";
 
 interface LeafGroupRowProps {
   node: LeafGroupNode;
@@ -18,23 +17,22 @@ interface LeafGroupRowProps {
   /** Pagination state for this leaf group. */
   page: LeafPageState | undefined;
   expanded: boolean;
-  mode: "table" | "json";
   onToggle: () => void;
   onSetPage: (page: number) => void;
 }
 
-/** The "Heartbeats" leaf-page row: expand toggle, pagination, JSON view. */
+/** The leaf-page row: expand toggle, pagination, optional JSON view. */
 export function LeafGroupRow({
   node: n,
   state,
   page: pageState,
   expanded,
-  mode,
   onToggle,
   onSetPage,
 }: LeafGroupRowProps) {
-  const { visibleLeafColIds } = useExplorerRowContext();
-  const colSpan = 1 + visibleLeafColIds.length;
+  const { columns, leafGroupLabel, jsonMode, renderJson } =
+    useExplorerRowContext();
+  const colSpan = 1 + columns.length;
 
   const total = pageState?.total ?? 0;
   const limit = pageState?.limit ?? 50;
@@ -58,7 +56,7 @@ export function LeafGroupRow({
                 <ChevronRight className="h-4 w-4" />
               )}
             </span>
-            <span className="font-medium">Heartbeats</span>
+            <span className="font-medium">{leafGroupLabel}</span>
             {total > 0 && (
               <span className="text-xs text-muted-foreground">
                 {total.toLocaleString()} rows
@@ -91,13 +89,13 @@ export function LeafGroupRow({
             </div>
           )}
         </div>
-        {expanded && mode === "json" && (
+        {expanded && jsonMode && (
           <div className="mt-2" style={{ paddingLeft: n.depth * INDENT }}>
-            <JsonBlock
-              value={(n.subRows ?? []).map((r) =>
+            {renderJson(
+              (n.subRows ?? []).map((r: LeafRowNode) =>
                 r.kind === "leafRow" ? r.row : r,
-              )}
-            />
+              ),
+            )}
           </div>
         )}
       </td>

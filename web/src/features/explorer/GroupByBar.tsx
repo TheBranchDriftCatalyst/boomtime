@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import {
@@ -5,17 +6,35 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/popover";
-import { AXES, axisLabel } from "@/lib/axes";
-import type { HeartbeatAxis } from "@/types/api";
+import type { Axis } from "@/features/explorer/types";
 
 interface GroupByBarProps {
-  groupBy: HeartbeatAxis[];
-  onChange: (next: HeartbeatAxis[]) => void;
+  axes: Axis[];
+  groupBy: string[];
+  onChange: (next: string[]) => void;
 }
 
 /** Ordered add/remove/reorder chip bar for the nesting axes. */
-export function GroupByBar({ groupBy, onChange }: GroupByBarProps) {
-  const available = AXES.filter((a) => !groupBy.includes(a.axis));
+export function GroupByBar({ axes, groupBy, onChange }: GroupByBarProps) {
+  const labelById = useMemo(
+    () => new Map(axes.map((a) => [a.id, a.label])),
+    [axes],
+  );
+  const available = axes.filter((a) => !groupBy.includes(a.id));
+
+  // Distinct axis sections in encounter order (axes without one bucket first).
+  const sections = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const a of available) {
+      const s = a.section ?? "";
+      if (!seen.has(s)) {
+        seen.add(s);
+        out.push(s);
+      }
+    }
+    return out;
+  }, [available]);
 
   function move(index: number, dir: -1 | 1) {
     const target = index + dir;
@@ -25,11 +44,11 @@ export function GroupByBar({ groupBy, onChange }: GroupByBarProps) {
     onChange(next);
   }
 
-  function remove(axis: HeartbeatAxis) {
+  function remove(axis: string) {
     onChange(groupBy.filter((a) => a !== axis));
   }
 
-  function add(axis: HeartbeatAxis) {
+  function add(axis: string) {
     onChange([...groupBy, axis]);
   }
 
@@ -47,7 +66,7 @@ export function GroupByBar({ groupBy, onChange }: GroupByBarProps) {
           <span className="mr-1 font-mono text-xs text-muted-foreground">
             {i + 1}
           </span>
-          <span className="font-medium">{axisLabel(axis)}</span>
+          <span className="font-medium">{labelById.get(axis) ?? axis}</span>
           <button
             className="ml-1 rounded p-0.5 hover:bg-background disabled:opacity-30"
             onClick={() => move(i, -1)}
@@ -83,19 +102,21 @@ export function GroupByBar({ groupBy, onChange }: GroupByBarProps) {
             </Button>
           </PopoverTrigger>
           <PopoverContent align="start" className="w-56 p-2">
-            {(["General", "Source"] as const).map((section) => {
-              const items = available.filter((a) => a.section === section);
+            {sections.map((section) => {
+              const items = available.filter((a) => (a.section ?? "") === section);
               if (items.length === 0) return null;
               return (
                 <div key={section} className="mb-1 last:mb-0">
-                  <p className="px-2 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    {section}
-                  </p>
+                  {section && (
+                    <p className="px-2 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      {section}
+                    </p>
+                  )}
                   {items.map((a) => (
                     <button
-                      key={a.axis}
+                      key={a.id}
                       className="w-full rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent"
-                      onClick={() => add(a.axis)}
+                      onClick={() => add(a.id)}
                     >
                       {a.label}
                     </button>

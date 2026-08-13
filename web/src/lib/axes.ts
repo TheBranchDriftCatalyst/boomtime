@@ -27,6 +27,6 @@ export const AXES: AxisMeta[] = [
 
 const LABEL_BY_AXIS = new Map(AXES.map((a) => [a.axis, a.label]));
 
-export function axisLabel(axis: HeartbeatAxis): string {
-  return LABEL_BY_AXIS.get(axis) ?? axis;
+export function axisLabel(axis: string): string {
+  return LABEL_BY_AXIS.get(axis as HeartbeatAxis) ?? axis;
 }

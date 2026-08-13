@@ -1,10 +1,11 @@
 import { useCallback, useMemo, useState } from "react";
-import { LEAF_COLUMNS } from "@/features/heartbeats/leafColumns";
+import type { Column } from "@/features/explorer/types";
 import type {
   ExplorerNode,
   GroupNode,
   LeafGroupNode,
-} from "@/features/heartbeats/explorerModel";
+  LeafRowNode,
+} from "@/features/explorer/explorerModel";
 
 export interface LeafSort {
   id: string;
@@ -14,20 +15,23 @@ export interface LeafSort {
 /**
  * Client-side sorting of loaded leaf pages (the server has no sort param).
  * Returns the sorted tree plus a toggleSort(columnId) handler that cycles
- * asc → desc per column.
+ * asc → desc per column, comparing via the column's `get` accessor.
  */
-export function useLeafSort(tree: ExplorerNode[]) {
+export function useLeafSort<Row>(
+  tree: ExplorerNode[],
+  columns: Column<Row>[],
+) {
   const [sorting, setSorting] = useState<LeafSort | null>(null);
 
-  // Sort each loaded leaf page client-side (server has no sort param).
   const sortedTree = useMemo(() => {
     if (!sorting) return tree;
-    const col = LEAF_COLUMNS.find((c) => c.id === sorting.id);
-    if (!col) return tree;
+    const col = columns.find((c) => c.id === sorting.id);
+    if (!col?.get) return tree;
+    const get = col.get;
     const cmp = (a: ExplorerNode, b: ExplorerNode) => {
       if (a.kind !== "leafRow" || b.kind !== "leafRow") return 0;
-      const va = col.get(a.row);
-      const vb = col.get(b.row);
+      const va = get((a as LeafRowNode<Row>).row);
+      const vb = get((b as LeafRowNode<Row>).row);
       const sa = va == null ? "" : String(va);
       const sb = vb == null ? "" : String(vb);
       const r = sa.localeCompare(sb, undefined, { numeric: true });
@@ -43,7 +47,7 @@ export function useLeafSort(tree: ExplorerNode[]) {
         return { ...n, subRows: nextSub } as ExplorerNode;
       });
     return walk(tree);
-  }, [tree, sorting]);
+  }, [tree, sorting, columns]);
 
   const toggleSort = useCallback(
     (id: string) =>
