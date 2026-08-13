@@ -177,6 +177,34 @@ describe("GroupableExplorer", () => {
     expect(source.fetchLeaf).toHaveBeenCalledWith([], 1, 2);
   });
 
+  it("paginates the flat root leaf view across pages when there are zero axes", async () => {
+    const user = userEvent.setup();
+    const source = makeSource();
+    render(<Harness config={makeConfig(source)} initialGroupBy={[]} />);
+
+    // The flat root auto-expands its synthetic leaf group: page 1 (2 of 3
+    // rows) shows immediately, driven by the same fetchLeaf([], 1, 2) call the
+    // drilled leaves use — the third row is on page 2.
+    await screen.findByText("row-1");
+    expect(screen.getByText("row-2")).toBeInTheDocument();
+    expect(screen.queryByText("row-3")).not.toBeInTheDocument();
+    expect(source.fetchLeaf).toHaveBeenCalledWith([], 1, 2);
+    expect(source.fetchGroup).not.toHaveBeenCalled();
+
+    // total (3) drives the page count via the same leaf pager the drilled
+    // leaves render, and the Next affordance is available at the flat root.
+    expect(screen.getByText("Page 1 / 2")).toBeInTheDocument();
+    const next = screen.getByRole("button", { name: "Next" });
+    expect(next).toBeInTheDocument();
+
+    // Next advances the flat root to page 2 (the third row) — no drilling.
+    await user.click(next);
+    await screen.findByText("row-3");
+    expect(screen.getByText("Page 2 / 2")).toBeInTheDocument();
+    expect(source.fetchLeaf).toHaveBeenCalledWith([], 2, 2);
+    expect(source.fetchGroup).not.toHaveBeenCalled();
+  });
+
   it("does not render the flat view when an addAxisHint is configured", async () => {
     const source = makeSource();
     const config = makeConfig(source, {

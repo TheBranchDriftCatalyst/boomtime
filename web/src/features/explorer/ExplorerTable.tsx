@@ -19,6 +19,7 @@ import {
   type ExplorerRowContextValue,
 } from "@/features/explorer/rows/explorerRowContext";
 import { useLeafSort } from "@/features/explorer/useLeafSort";
+import { ROOT_LEAF_ID } from "@/features/explorer/useExplorerTree";
 import { cn } from "@/lib/utils";
 import type { DomainConfig, GroupAction } from "@/features/explorer/types";
 import type {
@@ -45,7 +46,12 @@ interface Props<TRow> {
 }
 
 export function ExplorerTable<TRow>({ ctrl, config, leafMode }: Props<TRow>) {
-  const [expanded, setExpanded] = useState<ExpandedState>({});
+  // Seed the flat-root leaf group expanded so the zero-axis "Table" view shows
+  // its rows (and the shared leaf pager) immediately. Inert when grouped — no
+  // rendered row carries this id.
+  const [expanded, setExpanded] = useState<ExpandedState>({
+    [ROOT_LEAF_ID]: true,
+  });
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(
     () =>
       Object.fromEntries(

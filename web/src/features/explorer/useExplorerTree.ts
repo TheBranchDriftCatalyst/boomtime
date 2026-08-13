@@ -32,6 +32,12 @@ export interface ChildState {
   truncated?: boolean;
 }
 
+// Stable id of the synthetic leaf-group that owns the flat (zero-axis) root
+// table. Sharing a real LeafGroupNode id routes the flat root through the exact
+// same leaf pagination path as a fully-drilled leaf (setLeafPage/leafPages/
+// LeafGroupRow) instead of hard-capping the flat table at one leafPageSize page.
+export const ROOT_LEAF_ID = "leaf:__root__";
+
 // Leaf pagination is tracked per leaf-group id.
 export interface LeafPageState {
   page: number; // 1-based (matches backend)
@@ -140,13 +146,43 @@ export function useExplorerTree<Row>({
       setRootState((s) => ({ ...s, loading: true, error: false }));
       try {
         const payload = await fetchLeaf([], 1);
+        // Empty range: no leaf group, so the consumer's empty state renders
+        // instead of a stray "0 rows" header.
+        if (payload.total === 0 && payload.rows.length === 0) {
+          setLeafPages((p) => ({
+            ...p,
+            [ROOT_LEAF_ID]: { page: 1, total: 0, limit: payload.limit },
+          }));
+          setRootState({ loading: false, error: false, children: [] });
+          return;
+        }
+        // A single synthetic root leaf-group owns the paginated flat table —
+        // the same LeafGroupNode the drilled leaves use, so setLeafPage /
+        // leafPages / LeafGroupRow drive its Prev/Next pager unchanged. Its
+        // page-1 rows live in childCache under ROOT_LEAF_ID; `attach` hangs
+        // them off the leaf group as subRows. ExplorerTable seeds this row's
+        // expanded state so the flat table shows rows immediately.
         const rows: LeafRowNode<Row>[] = payload.rows.map((r) => ({
           kind: "leafRow",
-          id: `row:root:${rowKey(r)}`,
-          depth: 0,
+          id: `row:${ROOT_LEAF_ID}:${rowKey(r)}`,
+          depth: 1,
           row: r,
         }));
-        setRootState({ loading: false, error: false, children: rows });
+        const leafGroup: LeafGroupNode = {
+          kind: "leafGroup",
+          id: ROOT_LEAF_ID,
+          path: [],
+          depth: 0,
+        };
+        setLeafPages((p) => ({
+          ...p,
+          [ROOT_LEAF_ID]: { page: 1, total: payload.total, limit: payload.limit },
+        }));
+        setChildCache((c) => ({
+          ...c,
+          [ROOT_LEAF_ID]: { loading: false, error: false, children: rows },
+        }));
+        setRootState({ loading: false, error: false, children: [leafGroup] });
       } catch {
         setRootState({ loading: false, error: true });
       }
