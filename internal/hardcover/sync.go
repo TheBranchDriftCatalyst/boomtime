@@ -4,9 +4,15 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 )
+
+// hardcoverActivitySource tags reading_activity buckets fed by the Hardcover
+// pull (its own source string so the reading-domain "seconds" measure can group
+// Hardcover reading time apart from audible/kindle).
+const hardcoverActivitySource = "hardcover"
 
 // sync.go — the INBOUND sync service that drives the pull end-to-end: load the
 // user's client, resolve their Hardcover id (Me), sweep the shelf (UserBooks),
@@ -100,9 +106,68 @@ func (s *SyncService) SyncHardcoverPull(ctx context.Context, owner string) (Pull
 			"user", owner, "bookId", b.BookID, "title", b.Title, "status", StatusString(b.StatusID))
 	}
 
+	// Feed real Hardcover reading TIME + read dates into the activity series. Each
+	// bucket is (owner, source='hardcover', day) with the summed progress_seconds
+	// of every read that finished / progressed that day. Best-effort: a bucket
+	// upsert failure must not fail the whole pull (the linkage reconcile above is
+	// the primary job).
+	s.upsertReadActivity(ctx, owner, books)
+
 	s.logInfo("hardcover pull: complete",
 		"user", owner, "fetched", res.Fetched, "linked", res.Linked, "unlinked", res.Unlinked)
 	return res, nil
+}
+
+// upsertReadActivity writes one reading_activity bucket per (day → summed
+// listening seconds) derived from the shelf's user_book_reads. Idempotent: a
+// re-pull recomputes each day's total from the full shelf and overwrites the
+// bucket (never doubles). Best-effort per bucket.
+func (s *SyncService) upsertReadActivity(ctx context.Context, owner string, books []UserBook) {
+	if s.DB == nil {
+		return
+	}
+	for day, secs := range aggregateReadActivity(books) {
+		if err := s.DB.UpsertReadingActivity(ctx, db.ReadingActivity{
+			Owner:            owner,
+			Source:           hardcoverActivitySource,
+			Granularity:      "day",
+			BucketDate:       day,
+			ListeningSeconds: secs,
+		}); err != nil {
+			s.logWarn("hardcover pull: reading_activity upsert failed",
+				"user", owner, "day", day.Format("2006-01-02"), "err", err)
+		}
+	}
+}
+
+// aggregateReadActivity buckets the shelf's reads by UTC day, summing
+// progress_seconds. A read is bucketed when it carries progress_seconds>0 OR a
+// finished_at (per gaka-books B); its day is finished_at when present, else
+// started_at. Reads with neither a date nor time are skipped. Pure + deterministic
+// so it is unit-testable against a fixture without a live client or DB.
+func aggregateReadActivity(books []UserBook) map[time.Time]int64 {
+	buckets := map[time.Time]int64{}
+	for _, b := range books {
+		for _, rd := range b.Reads {
+			var secs int64
+			if rd.ProgressSeconds != nil && *rd.ProgressSeconds > 0 {
+				secs = int64(*rd.ProgressSeconds)
+			}
+			if secs == 0 && rd.FinishedAt == nil {
+				continue // no reading time and not a finish → nothing to record
+			}
+			day := rd.FinishedAt
+			if day == nil {
+				day = rd.StartedAt
+			}
+			if day == nil {
+				continue // can't place a bucket without a date
+			}
+			d := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, time.UTC)
+			buckets[d] += secs
+		}
+	}
+	return buckets
 }
 
 // onError logs a pull failure and, on a bad token, flips the stored key status so

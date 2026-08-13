@@ -93,6 +93,36 @@ func (d *DB) UpsertReadingItem(ctx context.Context, it ReadingItem) error {
 	return err
 }
 
+// SetReadingItemHardcoverLink caches a resolved Hardcover match onto a
+// reading_item (keyed by owner+source+external_id): hardcover_book_id /
+// _edition_id (the resolved ids), hardcover_match_confidence (e.g. "asin"), and
+// hardcover_matched_at = now(). This is the "resolve-once, cache-forever"
+// linkage the catalyst-books Kindle ingest writes so a bare ASIN is pre-linked
+// to Hardcover without a later re-fuzz. No-op when bookID <= 0 (no match). It
+// touches ONLY the linkage columns — never the row's own source metadata.
+func (d *DB) SetReadingItemHardcoverLink(ctx context.Context, owner, source, externalID string, bookID, editionID int64, confidence string) error {
+	if bookID <= 0 {
+		return nil
+	}
+	var edition *int64
+	if editionID > 0 {
+		edition = &editionID
+	}
+	var conf *string
+	if confidence != "" {
+		conf = &confidence
+	}
+	_, err := d.Pool.Exec(ctx,
+		`UPDATE reading_items SET
+		    hardcover_book_id          = $4,
+		    hardcover_edition_id       = COALESCE($5, hardcover_edition_id),
+		    hardcover_match_confidence = COALESCE($6, hardcover_match_confidence),
+		    hardcover_matched_at       = now()
+		  WHERE owner = $1 AND source = $2 AND external_id = $3`,
+		owner, source, externalID, bookID, edition, conf)
+	return err
+}
+
 // FinishedReadingItem is the metadata a finished-sweep needs to publish an event
 // and push the finish out to Hardcover.
 type FinishedReadingItem struct {

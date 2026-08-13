@@ -12,10 +12,10 @@ import (
 func TestIsMutation(t *testing.T) {
 	cases := map[string]bool{
 		"mutation UpsertUserBook($o: X!) { insert_user_book }": true,
-		"  mutation X { y }":                                   true,
-		"query { me { id } }":                                  false,
-		"{ me { id } }":                                        false,
-		"query Editions($a: String!) { editions }":            false,
+		"  mutation X { y }":                       true,
+		"query { me { id } }":                      false,
+		"{ me { id } }":                            false,
+		"query Editions($a: String!) { editions }": false,
 	}
 	for doc, want := range cases {
 		if got := isMutation(doc); got != want {

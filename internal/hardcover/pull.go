@@ -32,10 +32,11 @@ const userBooksPageSize = 100
 // page progress. All three are nullable on Hardcover (a shelved-but-unread book
 // has an empty reads array; a want/reading row may have dates but no pages).
 type UserBookRead struct {
-	ID            int
-	StartedAt     *time.Time
-	FinishedAt    *time.Time
-	ProgressPages *int
+	ID              int
+	StartedAt       *time.Time
+	FinishedAt      *time.Time
+	ProgressPages   *int
+	ProgressSeconds *int // audio listening position in seconds (nil for print/ebook)
 }
 
 // UserBook is one user_books row (the user's shelf entry for a book) plus its
@@ -107,7 +108,7 @@ const userBooksQuery = `query UserBooks($u: Int!, $o: Int!, $l: Int!) {
     rating
     updated_at
     book { title slug }
-    user_book_reads { id started_at finished_at progress_pages }
+    user_book_reads { id started_at finished_at progress_pages progress_seconds }
   }
 }`
 
@@ -153,10 +154,11 @@ type rawUserBook struct {
 		Slug  string `json:"slug"`
 	} `json:"book"`
 	Reads []struct {
-		ID            int     `json:"id"`
-		StartedAt     *string `json:"started_at"`
-		FinishedAt    *string `json:"finished_at"`
-		ProgressPages *int    `json:"progress_pages"`
+		ID              int     `json:"id"`
+		StartedAt       *string `json:"started_at"`
+		FinishedAt      *string `json:"finished_at"`
+		ProgressPages   *int    `json:"progress_pages"`
+		ProgressSeconds *int    `json:"progress_seconds"`
 	} `json:"user_book_reads"`
 }
 
@@ -176,10 +178,11 @@ func (r rawUserBook) toUserBook() UserBook {
 	ub.Reads = make([]UserBookRead, 0, len(r.Reads))
 	for _, rd := range r.Reads {
 		ub.Reads = append(ub.Reads, UserBookRead{
-			ID:            rd.ID,
-			StartedAt:     parseHardcoverTimePtr(rd.StartedAt),
-			FinishedAt:    parseHardcoverTimePtr(rd.FinishedAt),
-			ProgressPages: rd.ProgressPages,
+			ID:              rd.ID,
+			StartedAt:       parseHardcoverTimePtr(rd.StartedAt),
+			FinishedAt:      parseHardcoverTimePtr(rd.FinishedAt),
+			ProgressPages:   rd.ProgressPages,
+			ProgressSeconds: rd.ProgressSeconds,
 		})
 	}
 	return ub

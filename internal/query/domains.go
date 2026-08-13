@@ -96,7 +96,7 @@ func registerReading() {
 				Expr:     "sum(runtime_min)",
 				DateCol:  "finished_at",
 				OwnerCol: "owner",
-				Dims:     []string{"source", "status", "series", "genre"},
+				Dims:     []string{"source", "status", "series", "author", "genre"},
 			},
 		},
 		Dimensions: dims,

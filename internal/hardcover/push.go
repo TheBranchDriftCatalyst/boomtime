@@ -3,6 +3,7 @@ package hardcover
 import (
 	"context"
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -75,7 +76,14 @@ func (c *Client) UpsertUserBook(ctx context.Context, bookID, editionID, statusID
 // existing Hardcover data. Dates are pushed as YYYY-MM-DD (Hardcover's date
 // granularity for reads).
 type ReadInput struct {
+	// Progress is the read percent (0-100). It maps onto user_book_reads.progress
+	// (float8) — the canonical "how far through" signal for an in-progress book.
+	Progress *float64
+	// ProgressPages / ProgressSeconds are the derived absolute positions (Int).
+	// The continuous-progress push fills whichever the matched edition's length
+	// supports (pages for print/ebook, seconds for audio); either may be nil.
 	ProgressPages   *int
+	ProgressSeconds *int
 	StartedAt       *time.Time
 	FinishedAt      *time.Time
 	EditionID       int64 // optional: pin the read to a specific edition
@@ -87,8 +95,14 @@ type ReadInput struct {
 
 func (r ReadInput) object() map[string]any {
 	obj := map[string]any{}
+	if r.Progress != nil {
+		obj["progress"] = *r.Progress
+	}
 	if r.ProgressPages != nil {
 		obj["progress_pages"] = *r.ProgressPages
+	}
+	if r.ProgressSeconds != nil {
+		obj["progress_seconds"] = *r.ProgressSeconds
 	}
 	if r.StartedAt != nil {
 		obj["started_at"] = r.StartedAt.UTC().Format("2006-01-02")
@@ -173,4 +187,81 @@ func (c *Client) updateRead(ctx context.Context, in ReadInput) (int64, error) {
 		return id, nil
 	}
 	return in.UserBookReadID, nil
+}
+
+// PushProgress is the reusable continuous-progress push: it matches an
+// in-progress reading item to a Hardcover book+edition, marks it
+// currently-reading, and upserts the read with progress=percent — plus
+// progress_pages / progress_seconds derived from the edition length when known.
+// Shared by the Audible forward sync and (via the parent's wiring) the Kindle
+// sync so an in-progress % on either source mirrors to Hardcover.
+//
+// It never guess-pushes: a no-confident-match returns (MatchResult{Method:
+// MatchNone}, nil) with no mutation. Every write flows through the client's
+// dry-run gate — when dry-run is on, UpsertUserBook is blocked and returns id 0,
+// so the read upsert is skipped and the whole call is a logged no-op (kept that
+// way deliberately). editionLenPages / editionLenSeconds <= 0 mean "unknown",
+// in which case only the percent is pushed. format is the Hardcover
+// reading_format_id (FormatAudio / FormatEbook / FormatPhysical); <= 0 is left
+// off the user_book so Hardcover keeps whatever it has.
+func PushProgress(ctx context.Context, client *Client, in MatchInput, percent float64, editionLenPages, editionLenSeconds int, format int64) (MatchResult, error) {
+	if client == nil {
+		return MatchResult{Method: MatchNone}, fmt.Errorf("hardcover: PushProgress needs a client")
+	}
+	match, err := client.Match(ctx, in)
+	if err != nil {
+		return MatchResult{}, err
+	}
+	if match.BookID <= 0 {
+		return match, nil // no confident match — leave it for review, never guess-push
+	}
+
+	userBookID, err := client.UpsertUserBook(ctx, match.BookID, match.EditionID, StatusReading, format)
+	if err != nil {
+		return match, err
+	}
+	if userBookID <= 0 {
+		// Dry-run gate blocked the write (or Hardcover returned no id) — there is
+		// no user_book to attach a read to. The intent was already logged by the
+		// gate; treat as a successful no-op.
+		return match, nil
+	}
+	if _, err := client.UpsertRead(ctx, userBookID, progressReadInput(percent, editionLenPages, editionLenSeconds, match.EditionID, format)); err != nil {
+		return match, err
+	}
+	return match, nil
+}
+
+// progressReadInput builds the ReadInput for a continuous-progress push: the
+// clamped percent, plus the absolute page/second positions when the edition
+// length is known (round(percent/100 * length)).
+func progressReadInput(percent float64, lenPages, lenSeconds int, editionID, format int64) ReadInput {
+	p := clampPercent(percent)
+	in := ReadInput{
+		Progress:        &p,
+		EditionID:       editionID,
+		ReadingFormatID: format,
+	}
+	if lenPages > 0 {
+		pages := int(math.Round(p / 100 * float64(lenPages)))
+		in.ProgressPages = &pages
+	}
+	if lenSeconds > 0 {
+		secs := int(math.Round(p / 100 * float64(lenSeconds)))
+		in.ProgressSeconds = &secs
+	}
+	return in
+}
+
+// clampPercent bounds a read percent to [0, 100] so a slightly-over source value
+// never pushes an out-of-range progress.
+func clampPercent(p float64) float64 {
+	switch {
+	case p < 0:
+		return 0
+	case p > 100:
+		return 100
+	default:
+		return p
+	}
 }

@@ -15,38 +15,42 @@
 package books
 
 import (
-	"context"
 	"log/slog"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/amazon"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/hardcover"
 )
 
 // KindleSyncKind is the catalyst-go-jobs kind for the periodic Kindle sync.
 const KindleSyncKind = "books-kindle-sync"
 
+// source is the reading_items.source tag for every row this domain writes.
+const source = "kindle"
+
 // Service is the catalyst-books domain entrypoint. Thin: it leans on the shared
-// Amazon credential (auth + signing) and the DB for storage.
+// Amazon credential (auth + signing), the shared Hardcover connector (ASIN →
+// metadata + linkage), and the DB for storage.
 type Service struct {
 	DB     *db.DB
 	Amazon *amazon.Store
 	Logger *slog.Logger
+
+	// Hardcover (nil-safe) resolves an ASIN to title/author/cover + the
+	// hardcover_book_id/edition_id linkage. nil (or user-not-connected) => rows
+	// ingest with ASIN only and title left blank.
+	Hardcover *hardcover.Store
+
+	// kindle is the whispersync/sidecar client; swappable in tests via a narrow
+	// interface so SyncUser exercises without a network.
+	kindle kindleSource
 }
 
-// New constructs the books (Kindle) domain service.
+// New constructs the books (Kindle) domain service. Hardcover is wired after
+// construction (SetHardcover) so callers without it keep working.
 func New(database *db.DB, az *amazon.Store, logger *slog.Logger) *Service {
-	return &Service{DB: database, Amazon: az, Logger: logger}
+	return &Service{DB: database, Amazon: az, Logger: logger, kindle: amazon.NewKindleClient()}
 }
 
-// SyncUser pulls the user's Kindle library + reading positions (via the shared
-// Amazon device credential) and upserts them into reading state. Idempotent —
-// same shape as internal/github.Service.SyncUser.
-//
-// TODO(catalyst-books, next chunk): load the amazon cred → sign Fiona/whispersync
-// requests (internal/amazon.Sign, verified live) → derive progress % from
-// position → upsert reading_state. See book-tracking-research.md §3.2.
-func (s *Service) SyncUser(ctx context.Context, username string) error {
-	_ = ctx
-	_ = username
-	return nil
-}
+// SetHardcover wires the Hardcover connector (nil-safe).
+func (s *Service) SetHardcover(store *hardcover.Store) *Service { s.Hardcover = store; return s }

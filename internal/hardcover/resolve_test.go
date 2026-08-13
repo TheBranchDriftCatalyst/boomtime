@@ -64,11 +64,11 @@ func TestParseBookMeta_Empty(t *testing.T) {
 
 func TestExtractCoverURL_Variants(t *testing.T) {
 	cases := map[string]string{
-		`"https://x/y.jpg"`:            "https://x/y.jpg", // bare string
-		`{"url":"https://a/b.png"}`:    "https://a/b.png", // object with url
-		`{"width":10}`:                 "",                // object without url
-		`null`:                         "",
-		``:                             "",
+		`"https://x/y.jpg"`:         "https://x/y.jpg", // bare string
+		`{"url":"https://a/b.png"}`: "https://a/b.png", // object with url
+		`{"width":10}`:              "",                // object without url
+		`null`:                      "",
+		``:                          "",
 	}
 	for raw, want := range cases {
 		if got := extractCoverURL(json.RawMessage(raw)); got != want {

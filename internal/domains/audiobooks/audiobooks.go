@@ -624,6 +624,11 @@ func (s *Service) SyncUser(ctx context.Context, owner string) (int, error) {
 		s.announceFinished(ctx, owner, ev)
 	}
 
+	// Mirror each currently-reading title's listening % to Hardcover so an
+	// in-progress book's progress tracks there too (complements the finished-edge
+	// push above). Best-effort + nil-safe on s.Hardcover.
+	s.syncInProgressToHardcover(ctx, owner)
+
 	now := time.Now().UTC()
 	st.Owner, st.Source = owner, source
 	if newestPurchase != nil {
@@ -783,6 +788,64 @@ func (s *Service) RunHardcoverPush(ctx context.Context, p HardcoverPushPayload) 
 	}
 	s.logInfo("hardcover: pushed finished book", "user", p.Owner, "asin", p.ASIN, "bookId", match.BookID)
 	return nil
+}
+
+// syncInProgressToHardcover mirrors every currently-reading Audible title's
+// listening % to Hardcover (status=reading + progress). Best-effort + nil-safe:
+// no Hardcover connection, no confident match, or a per-book error never fails
+// the sync. Dry-run is honored by the client's mutation gate (PushProgress
+// no-ops under it). It reads the freshly-swept reading_items so the pushed
+// percent reflects this run.
+func (s *Service) syncInProgressToHardcover(ctx context.Context, owner string) {
+	if s.Hardcover == nil {
+		return
+	}
+	client, ok, err := s.Hardcover.ClientForUser(ctx, owner)
+	if err != nil || !ok {
+		if err != nil {
+			s.logWarn("hardcover: client load failed (in-progress push)", "user", owner, "err", err)
+		}
+		return
+	}
+	items, err := s.DB.ListReadingItems(ctx, owner, source)
+	if err != nil {
+		s.logWarn("hardcover: list reading items failed (in-progress push)", "user", owner, "err", err)
+		return
+	}
+	for _, it := range items {
+		in, pct, lenSeconds, ok := inProgressPush(it)
+		if !ok {
+			continue
+		}
+		if _, err := hardcover.PushProgress(ctx, client, in, pct, 0, lenSeconds, hardcover.FormatAudio); err != nil {
+			s.hardcoverError(ctx, owner, "push in-progress", err)
+		}
+	}
+}
+
+// inProgressPush decides whether a reading_item is an in-progress book worth
+// mirroring and, if so, builds its Hardcover MatchInput + the percent + the
+// audio length in seconds. ok is false for anything not actively in progress
+// (want, finished/read, 0% or >=95%). Pure — unit-testable without a client.
+func inProgressPush(it db.ReadingItem) (hardcover.MatchInput, float64, int, bool) {
+	if it.Status != "reading" {
+		return hardcover.MatchInput{}, 0, 0, false
+	}
+	pct := float64(it.ProgressPercent)
+	if pct <= 0 || pct >= readingFinishedPct {
+		return hardcover.MatchInput{}, 0, 0, false
+	}
+	lenSeconds := 0
+	if it.RuntimeMin != nil && *it.RuntimeMin > 0 {
+		lenSeconds = *it.RuntimeMin * 60
+	}
+	in := hardcover.MatchInput{
+		ASIN:   firstNonEmpty(it.ExternalID, it.AmazonASIN),
+		ISBN13: it.ISBN,
+		Title:  it.Title,
+		Author: it.Authors,
+	}
+	return in, pct, lenSeconds, true
 }
 
 // hardcoverError logs a Hardcover failure and, on a bad token, flips the stored
