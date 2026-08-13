@@ -38,6 +38,76 @@ func TestInProgressPush_Selection(t *testing.T) {
 	}
 }
 
+// TestInProgressPushMatched_Dedup pins the anti-flood skip/push predicate: only
+// a MATCHED row whose percent MOVED since the last real push gets pushed (with
+// its stored book/edition ids); a matched+unchanged row and an unmatched row are
+// both skipped — the latter so the push loop never re-runs the match ladder.
+func TestInProgressPushMatched_Dedup(t *testing.T) {
+	book := func(id int64) *int64 { return &id }
+	pct := func(p int) *int { return &p }
+
+	cases := []struct {
+		name        string
+		item        db.ReadingItem
+		wantDo      bool
+		wantBookID  int64
+		wantEdition int64
+		wantPct     int
+	}{
+		{
+			name:        "matched + never pushed → push",
+			item:        db.ReadingItem{Status: "reading", ProgressPercent: 50, HardcoverBookID: book(556), HardcoverEditionID: book(8802)},
+			wantDo:      true,
+			wantBookID:  556,
+			wantEdition: 8802,
+			wantPct:     50,
+		},
+		{
+			name:        "matched + progress moved → push",
+			item:        db.ReadingItem{Status: "reading", ProgressPercent: 50, HardcoverBookID: book(556), HardcoverEditionID: book(8802), HardcoverPushedProgress: pct(40)},
+			wantDo:      true,
+			wantBookID:  556,
+			wantEdition: 8802,
+			wantPct:     50,
+		},
+		{
+			name:   "matched + unchanged (pushed==pct) → skip",
+			item:   db.ReadingItem{Status: "reading", ProgressPercent: 50, HardcoverBookID: book(556), HardcoverPushedProgress: pct(50)},
+			wantDo: false,
+		},
+		{
+			name:   "unmatched (no book id) → skip, never re-match",
+			item:   db.ReadingItem{Status: "reading", ProgressPercent: 50},
+			wantDo: false,
+		},
+		{
+			name:   "matched but finished → skip",
+			item:   db.ReadingItem{Status: "read", ProgressPercent: 100, HardcoverBookID: book(556)},
+			wantDo: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			bookID, editionID, p, _, do := inProgressPushMatched(tc.item)
+			if do != tc.wantDo {
+				t.Fatalf("do = %v, want %v", do, tc.wantDo)
+			}
+			if !do {
+				return
+			}
+			if bookID != tc.wantBookID {
+				t.Errorf("bookID = %d, want %d", bookID, tc.wantBookID)
+			}
+			if editionID != tc.wantEdition {
+				t.Errorf("editionID = %d, want %d", editionID, tc.wantEdition)
+			}
+			if p != tc.wantPct {
+				t.Errorf("pct = %d, want %d", p, tc.wantPct)
+			}
+		})
+	}
+}
+
 func TestInProgressPush_BuildsMatchAndLength(t *testing.T) {
 	it := db.ReadingItem{
 		Status:          "reading",

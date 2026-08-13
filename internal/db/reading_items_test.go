@@ -80,7 +80,56 @@ func TestListReadingItems_ScansAllFields(t *testing.T) {
 		t.Fatalf("unmatched row should have nil hardcover_* pointers, got %v/%v/%v",
 			u.HardcoverBookID, u.HardcoverStatus, u.HardcoverMatchedAt)
 	}
+	// A never-pushed row reads back with nil edition + nil pushed-progress.
+	if u.HardcoverEditionID != nil || u.HardcoverPushedProgress != nil {
+		t.Fatalf("unpushed row should have nil edition/pushed_progress, got %v/%v",
+			u.HardcoverEditionID, u.HardcoverPushedProgress)
+	}
 	if u.AmazonASIN != "B0AUDIO789" {
 		t.Fatalf("unmatched amazon_asin = %q", u.AmazonASIN)
+	}
+}
+
+// TestSetReadingItemPushedProgress pins the continuous-progress dedup cursor
+// (migration 00065): the setter writes hardcover_pushed_progress for exactly the
+// keyed row and ListReadingItems scans it back; an unrelated row stays NULL.
+func TestSetReadingItemPushedProgress(t *testing.T) {
+	d := openTestDB(t)
+	ctx := context.Background()
+	owner := mkSender("pushprog")
+	cleanupSender(t, d, ctx, owner)
+	ensureUser(t, d, ctx, owner)
+
+	if err := d.UpsertReadingItem(ctx, ReadingItem{
+		Owner: owner, Source: "audible", ExternalID: "B0PUSH01",
+		Title: "In Progress", Authors: "Author", Status: "reading", ProgressPercent: 42,
+	}); err != nil {
+		t.Fatalf("upsert target: %v", err)
+	}
+	if err := d.UpsertReadingItem(ctx, ReadingItem{
+		Owner: owner, Source: "audible", ExternalID: "B0PUSH02",
+		Title: "Other", Authors: "Author", Status: "reading", ProgressPercent: 10,
+	}); err != nil {
+		t.Fatalf("upsert other: %v", err)
+	}
+
+	if err := d.SetReadingItemPushedProgress(ctx, owner, "audible", "B0PUSH01", 42); err != nil {
+		t.Fatalf("SetReadingItemPushedProgress: %v", err)
+	}
+
+	items, err := d.ListReadingItems(ctx, owner, "audible")
+	if err != nil {
+		t.Fatalf("ListReadingItems: %v", err)
+	}
+	byID := map[string]ReadingItem{}
+	for _, it := range items {
+		byID[it.ExternalID] = it
+	}
+	target := byID["B0PUSH01"]
+	if target.HardcoverPushedProgress == nil || *target.HardcoverPushedProgress != 42 {
+		t.Fatalf("target pushed_progress = %v, want 42", target.HardcoverPushedProgress)
+	}
+	if other := byID["B0PUSH02"]; other.HardcoverPushedProgress != nil {
+		t.Fatalf("unrelated row pushed_progress = %v, want nil", other.HardcoverPushedProgress)
 	}
 }

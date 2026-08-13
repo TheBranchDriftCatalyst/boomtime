@@ -63,6 +63,9 @@ func TestReadInput_ObjectOmitsNilProgressFields(t *testing.T) {
 type fakeRoundTripper struct {
 	editionByASIN *hcEdition // nil => asin miss
 	mutations     []recordedMutation
+	// matchQueries counts every match-ladder read (edition lookups + Typesense
+	// search) so a test can assert the MATCHED push issues none of them.
+	matchQueries int
 }
 
 type recordedMutation struct {
@@ -88,6 +91,7 @@ func (f *fakeRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 
 	switch {
 	case strings.Contains(env.Query, "EditionByField"):
+		f.matchQueries++
 		if f.editionByASIN == nil {
 			return respond(`{"editions":[]}`), nil
 		}
@@ -100,6 +104,7 @@ func (f *fakeRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 		f.mutations = append(f.mutations, recordedMutation{op: "insert_user_book_read", vars: env.Variables})
 		return respond(`{"insert_user_book_read":{"id":7001,"error":"","user_book_read":{"id":7001}}}`), nil
 	case strings.Contains(env.Query, "search("):
+		f.matchQueries++
 		return respond(`{"search":{"results":{"hits":[]}}}`), nil
 	default:
 		return respond(`{}`), nil
@@ -188,6 +193,99 @@ func TestPushProgress_DryRunNoOps(t *testing.T) {
 	// reach the transport — and the id=0 short-circuit avoids a spurious error.
 	if len(rt.mutations) != 0 {
 		t.Errorf("dry-run must block all mutations, got %+v", rt.mutations)
+	}
+}
+
+// TestPushProgressMatched_SkipsMatch pins the anti-flood fix: given already-
+// resolved ids, PushProgressMatched pushes straight to UpsertUserBook +
+// UpsertRead and issues ZERO match-ladder queries (no edition lookup, no search).
+func TestPushProgressMatched_SkipsMatch(t *testing.T) {
+	// A live editionByASIN is available — but the matched path must NOT consult it.
+	rt := &fakeRoundTripper{editionByASIN: &hcEdition{ID: 8802, BookID: 556, ReadingFormatID: FormatAudio}}
+	client := newFakeClient(rt)
+
+	applied, err := PushProgressMatched(context.Background(), client, 556, 8802, 50, 0, 36000, FormatAudio)
+	if err != nil {
+		t.Fatalf("PushProgressMatched: %v", err)
+	}
+	if !applied {
+		t.Fatalf("applied = false, want true (a real write happened)")
+	}
+	if rt.matchQueries != 0 {
+		t.Errorf("matched push must issue ZERO match/search queries, got %d", rt.matchQueries)
+	}
+
+	var ub, read *recordedMutation
+	for i := range rt.mutations {
+		switch rt.mutations[i].op {
+		case "insert_user_book":
+			ub = &rt.mutations[i]
+		case "insert_user_book_read":
+			read = &rt.mutations[i]
+		}
+	}
+	if ub == nil || read == nil {
+		t.Fatalf("expected both a user_book and a read mutation, got %+v", rt.mutations)
+	}
+	// user_book uses the SUPPLIED book_id/edition_id + status reading.
+	ubObj, _ := ub.vars["object"].(map[string]any)
+	if got := jsonNum(ubObj["book_id"]); got != 556 {
+		t.Errorf("user_book book_id = %v, want 556 (the stored id)", ubObj["book_id"])
+	}
+	if got := jsonNum(ubObj["edition_id"]); got != 8802 {
+		t.Errorf("user_book edition_id = %v, want 8802 (the stored id)", ubObj["edition_id"])
+	}
+	if got := jsonNum(ubObj["status_id"]); got != float64(StatusReading) {
+		t.Errorf("user_book status_id = %v, want %d (reading)", ubObj["status_id"], StatusReading)
+	}
+	// read carries progress=50 + derived progress_seconds=18000.
+	readObj, _ := read.vars["object"].(map[string]any)
+	if got := jsonNum(readObj["progress"]); got != 50 {
+		t.Errorf("read progress = %v, want 50", readObj["progress"])
+	}
+	if got := jsonNum(readObj["progress_seconds"]); got != 18000 {
+		t.Errorf("read progress_seconds = %v, want 18000", readObj["progress_seconds"])
+	}
+}
+
+// TestPushProgressMatched_DryRunNoOp pins that under the dry-run gate the matched
+// push reports applied=false and issues NO UpsertRead (nothing reaches the
+// transport) — so the caller never records a pushed_progress it didn't push.
+func TestPushProgressMatched_DryRunNoOp(t *testing.T) {
+	rt := &fakeRoundTripper{editionByASIN: &hcEdition{ID: 8802, BookID: 556, ReadingFormatID: FormatAudio}}
+	c := NewClient("tok") // dry-run ON (fail-safe default)
+	c.http = &http.Client{Transport: rt}
+
+	applied, err := PushProgressMatched(context.Background(), c, 556, 8802, 50, 0, 36000, FormatAudio)
+	if err != nil {
+		t.Fatalf("PushProgressMatched (dry-run): %v", err)
+	}
+	if applied {
+		t.Errorf("dry-run must report applied=false")
+	}
+	if rt.matchQueries != 0 {
+		t.Errorf("matched push must never match, got %d match queries", rt.matchQueries)
+	}
+	if len(rt.mutations) != 0 {
+		t.Errorf("dry-run must block all mutations (no UpsertRead), got %+v", rt.mutations)
+	}
+}
+
+// TestPushProgressMatched_NoBookIDNoOp guards the bookID<=0 path (a caller that
+// forgot to skip an unmatched row): no write, no error, no match query.
+func TestPushProgressMatched_NoBookIDNoOp(t *testing.T) {
+	rt := &fakeRoundTripper{editionByASIN: &hcEdition{ID: 8802, BookID: 556}}
+	client := newFakeClient(rt)
+
+	applied, err := PushProgressMatched(context.Background(), client, 0, 0, 50, 0, 36000, FormatAudio)
+	if err != nil {
+		t.Fatalf("PushProgressMatched(bookID=0): %v", err)
+	}
+	if applied {
+		t.Errorf("bookID<=0 must report applied=false")
+	}
+	if rt.matchQueries != 0 || len(rt.mutations) != 0 {
+		t.Errorf("bookID<=0 must be a pure no-op, got %d match queries + %+v", rt.matchQueries, rt.mutations)
 	}
 }
 

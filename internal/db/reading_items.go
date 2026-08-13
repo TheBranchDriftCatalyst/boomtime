@@ -50,6 +50,16 @@ type ReadingItem struct {
 	HardcoverBookID    *int64
 	HardcoverStatus    *string
 	HardcoverMatchedAt *time.Time
+
+	// HardcoverEditionID is the resolved edition cached alongside the book id
+	// (migration 00063). NULL until matched. The continuous-progress push uses it
+	// to pin the read to a specific edition WITHOUT re-running the match ladder.
+	HardcoverEditionID *int64
+	// HardcoverPushedProgress is the percent WE last actually pushed to Hardcover
+	// for this in-progress row (migration 00065). NULL = never pushed. The forward
+	// sync skips a re-push when the current percent equals this value, so a book's
+	// progress mirrors at most once per real change instead of every sync.
+	HardcoverPushedProgress *int
 }
 
 // UpsertReadingItem inserts or updates one item (keyed by owner+source+ASIN).
@@ -123,6 +133,19 @@ func (d *DB) SetReadingItemHardcoverLink(ctx context.Context, owner, source, ext
 	return err
 }
 
+// SetReadingItemPushedProgress records the percent WE last actually pushed to
+// Hardcover for an in-progress reading_item (keyed by owner+source+external_id),
+// so the next forward sync skips a re-push when the local percent is unchanged.
+// Called ONLY after a real (non-dry-run) push succeeded — a dry-run no-op must
+// leave this NULL/unchanged so flipping dry-run off still flushes the backlog.
+func (d *DB) SetReadingItemPushedProgress(ctx context.Context, owner, source, externalID string, pct int) error {
+	_, err := d.Pool.Exec(ctx,
+		`UPDATE reading_items SET hardcover_pushed_progress = $4
+		  WHERE owner = $1 AND source = $2 AND external_id = $3`,
+		owner, source, externalID, pct)
+	return err
+}
+
 // FinishedReadingItem is the metadata a finished-sweep needs to publish an event
 // and push the finish out to Hardcover.
 type FinishedReadingItem struct {
@@ -176,8 +199,9 @@ func (d *DB) ListReadingItems(ctx context.Context, owner, source string) ([]Read
 		`SELECT owner, source, external_id, title, authors, cover_url, status,
 		        progress_percent, finished, started_at, finished_at, rating,
 		        subtitle, narrators, series, runtime_min, goodreads_rating,
-		        isbn, amazon_asin, hardcover_book_id, hardcover_status,
-		        hardcover_matched_at, synced_at
+		        isbn, amazon_asin, hardcover_book_id, hardcover_edition_id,
+		        hardcover_status, hardcover_matched_at, hardcover_pushed_progress,
+		        synced_at
 		   FROM reading_items
 		  WHERE owner = $1 AND ($2 = '' OR source = $2)
 		  ORDER BY finished, title`,
@@ -193,7 +217,8 @@ func (d *DB) ListReadingItems(ctx context.Context, owner, source string) ([]Read
 			&it.CoverURL, &it.Status, &it.ProgressPercent, &it.Finished, &it.StartedAt,
 			&it.FinishedAt, &it.Rating, &it.Subtitle, &it.Narrators, &it.Series,
 			&it.RuntimeMin, &it.GoodreadsRating, &it.ISBN, &it.AmazonASIN,
-			&it.HardcoverBookID, &it.HardcoverStatus, &it.HardcoverMatchedAt,
+			&it.HardcoverBookID, &it.HardcoverEditionID, &it.HardcoverStatus,
+			&it.HardcoverMatchedAt, &it.HardcoverPushedProgress,
 			&it.SyncedAt); err != nil {
 			return nil, err
 		}

@@ -805,10 +805,16 @@ func (s *Service) RunHardcoverPush(ctx context.Context, p HardcoverPushPayload) 
 
 // syncInProgressToHardcover mirrors every currently-reading Audible title's
 // listening % to Hardcover (status=reading + progress). Best-effort + nil-safe:
-// no Hardcover connection, no confident match, or a per-book error never fails
-// the sync. Dry-run is honored by the client's mutation gate (PushProgress
-// no-ops under it). It reads the freshly-swept reading_items so the pushed
-// percent reflects this run.
+// no Hardcover connection or a per-book error never fails the sync. Dry-run is
+// honored by the client's mutation gate (PushProgressMatched reports applied=false
+// under it). It reads the freshly-swept reading_items so the pushed percent
+// reflects this run.
+//
+// Anti-flood (gaka): it pushes ONLY matched rows and ONLY when the percent moved
+// since the last real push — it never re-runs the rate-limited match ladder in
+// this loop (that per-book, per-sync re-match was the flood). Unmatched rows are
+// left for the hardcover-match step; unchanged rows are skipped with no client
+// call at all. See inProgressPushMatched.
 func (s *Service) syncInProgressToHardcover(ctx context.Context, owner string) {
 	if s.Hardcover == nil {
 		return
@@ -831,14 +837,61 @@ func (s *Service) syncInProgressToHardcover(ctx context.Context, owner string) {
 		if ctx.Err() != nil {
 			return
 		}
-		in, pct, lenSeconds, ok := inProgressPush(it)
-		if !ok {
+		bookID, editionID, pct, lenSeconds, do := inProgressPushMatched(it)
+		if !do {
 			continue
 		}
-		if _, err := hardcover.PushProgress(ctx, client, in, pct, 0, lenSeconds, hardcover.FormatAudio); err != nil {
+		// Push against the STORED match — never re-run the match ladder here (that
+		// per-book, per-sync re-match was the flood). On a first-ever run nothing
+		// is matched yet so this loop no-ops for that row; the match step resolves
+		// its link and the NEXT cycle pushes. That's the intended handoff.
+		applied, err := hardcover.PushProgressMatched(ctx, client, bookID, editionID, float64(pct), 0, lenSeconds, hardcover.FormatAudio)
+		if err != nil {
 			s.hardcoverError(ctx, owner, "push in-progress", err)
+			continue
+		}
+		// Record the pushed percent ONLY after a real write (applied) so an
+		// unchanged next run skips it. A dry-run no-op leaves it unrecorded on
+		// purpose: dry-run keeps showing full intent each run, and flipping dry-run
+		// off then flushes the backlog once.
+		if applied {
+			if err := s.DB.SetReadingItemPushedProgress(ctx, owner, it.Source, it.ExternalID, pct); err != nil {
+				s.logWarn("hardcover: record pushed progress failed", "user", owner, "asin", it.ExternalID, "err", err)
+			}
 		}
 	}
+}
+
+// inProgressPushMatched is the pure skip/push predicate for one reading_item in
+// the continuous-progress loop. It returns the STORED Hardcover book/edition ids
+// + the percent (int) + audio length to push, and do=true ONLY when the row is
+// worth pushing THIS run. do is false when:
+//   - the row is not actively in progress (delegated to inProgressPush:
+//     status!="reading", pct<=0, or pct>=95), OR
+//   - the row is not yet matched (HardcoverBookID == nil) — resolving a match is
+//     the hardcover-match step's job; re-matching in the push loop is exactly the
+//     flood this change removes, OR
+//   - the percent is unchanged since the last REAL push
+//     (HardcoverPushedProgress != nil && == pct) — nothing moved, so skip.
+//
+// Pure — unit-testable without a client or DB.
+func inProgressPushMatched(it db.ReadingItem) (bookID, editionID int64, pct, lenSeconds int, do bool) {
+	_, pctF, secs, ok := inProgressPush(it)
+	if !ok {
+		return 0, 0, 0, 0, false
+	}
+	if it.HardcoverBookID == nil {
+		return 0, 0, 0, 0, false // unmatched — leave it for the match step, don't re-fuzz here
+	}
+	p := int(pctF)
+	if it.HardcoverPushedProgress != nil && *it.HardcoverPushedProgress == p {
+		return 0, 0, 0, 0, false // unchanged since the last real push
+	}
+	edition := int64(0)
+	if it.HardcoverEditionID != nil {
+		edition = *it.HardcoverEditionID
+	}
+	return *it.HardcoverBookID, edition, p, secs, true
 }
 
 // inProgressPush decides whether a reading_item is an in-progress book worth

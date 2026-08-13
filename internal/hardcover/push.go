@@ -232,6 +232,42 @@ func PushProgress(ctx context.Context, client *Client, in MatchInput, percent fl
 	return match, nil
 }
 
+// PushProgressMatched is the continuous-progress push for an ALREADY-MATCHED
+// reading item: it skips the rate-limited match ladder entirely and pushes
+// straight against the caller-supplied bookID / editionID (the ids the match
+// step already resolved + cached on the row). This is the fix for the
+// in-progress push FLOOD — re-running client.Match for every in-progress book on
+// every sync was the flood; the stored link makes it unnecessary.
+//
+// It marks the book currently-reading (UpsertUserBook) and, when that produced a
+// real user_book, upserts the read with progress=percent (+ derived
+// pages/seconds). applied is true ONLY when a real write happened: under the
+// dry-run gate UpsertUserBook returns id 0, so this returns (false, nil) — a
+// logged no-op, exactly like PushProgress. bookID <= 0 is a no-op (the caller
+// should skip unmatched rows; this guards it) returning (false, nil).
+func PushProgressMatched(ctx context.Context, client *Client, bookID, editionID int64, percent float64, editionLenPages, editionLenSeconds int, format int64) (bool, error) {
+	if client == nil {
+		return false, fmt.Errorf("hardcover: PushProgressMatched needs a client")
+	}
+	if bookID <= 0 {
+		return false, nil // unmatched — nothing to push (matching is the match step's job)
+	}
+	userBookID, err := client.UpsertUserBook(ctx, bookID, editionID, StatusReading, format)
+	if err != nil {
+		return false, err
+	}
+	if userBookID <= 0 {
+		// Dry-run gate blocked the write (or Hardcover returned no id) — no
+		// user_book to attach a read to, and no real write happened. The intent was
+		// already logged by the gate; treat as a no-op that did NOT apply.
+		return false, nil
+	}
+	if _, err := client.UpsertRead(ctx, userBookID, progressReadInput(percent, editionLenPages, editionLenSeconds, editionID, format)); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // progressReadInput builds the ReadInput for a continuous-progress push: the
 // clamped percent, plus the absolute page/second positions when the edition
 // length is known (round(percent/100 * length)).
