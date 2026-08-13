@@ -732,6 +732,33 @@ func (s *Service) RunHardcoverPush(ctx context.Context, p HardcoverPushPayload) 
 		s.logInfo("hardcover: no confident match — left for review", "user", p.Owner, "asin", p.ASIN)
 		return nil
 	}
+	// Dry-run: surface WHAT WOULD be written (toast + log) and stop before any
+	// mutation. The client's graphql() gate would block the writes anyway; doing
+	// it here gives the user a clear, per-book preview of the intended push.
+	if client.DryRun() {
+		title := firstNonEmpty(p.Title, p.ASIN)
+		s.logInfo("hardcover DRYRUN: would push finished book",
+			"user", p.Owner, "title", title, "bookId", match.BookID, "editionId", match.EditionID)
+		if s.Notify != nil {
+			s.Notify.Publish(notify.Event{
+				Type:  "hardcover.dryrun",
+				Owner: p.Owner,
+				Title: "Hardcover (dry-run) — would push",
+				Body:  fmt.Sprintf("Would mark %q as read", title),
+				Data: map[string]any{
+					"dryRun":     true,
+					"title":      p.Title,
+					"asin":       firstNonEmpty(p.ASIN, p.AmazonASIN),
+					"bookId":     match.BookID,
+					"editionId":  match.EditionID,
+					"status":     "read",
+					"format":     "audio",
+					"finishedAt": p.FinishedAt.UTC().Format(time.RFC3339),
+				},
+			})
+		}
+		return nil
+	}
 	userBookID, err := client.UpsertUserBook(ctx, match.BookID, match.EditionID, hardcover.StatusRead, hardcover.FormatAudio)
 	if err != nil {
 		s.hardcoverError(ctx, p.Owner, "upsert user_book", err)
