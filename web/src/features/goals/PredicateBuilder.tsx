@@ -62,9 +62,12 @@ import type {
   GoalActiveDaysWindow,
   GoalHeartbeatAxis,
   GoalOp,
+  GoalReadingAxis,
   GoalTimeWindow,
   Predicate,
 } from "@/types/api";
+
+type TimeLeaf = Extract<Predicate, { kind: "time" }>;
 
 // ---- axis-value autocomplete ---------------------------------------------
 //
@@ -216,6 +219,19 @@ const AXES: GoalHeartbeatAxis[] = [
   "machine",
   "platform",
 ];
+// Reading dimensions a reading leaf may filter by (gaka-dvy9). The sentinel
+// "" is the default TOTAL-listening mode (no dimension); the others map to the
+// runtime-of-finished-books path. Mirrors validReadingAxes in
+// internal/goals/eval.go. Radix Select forbids an empty-string item value, so
+// the "none" option carries a NONE sentinel and is mapped to/from "" at the
+// boundary.
+const READING_NONE = "__total__";
+const READING_AXES: { value: GoalReadingAxis; label: string }[] = [
+  { value: "genre", label: "Genre" },
+  { value: "series", label: "Series" },
+  { value: "status", label: "Status" },
+];
+
 const TIME_WINDOWS: GoalTimeWindow[] = ["day", "week", "month", "year", "lifetime"];
 const ACTIVE_DAYS_WINDOWS: GoalActiveDaysWindow[] = ["week", "month", "year"];
 const OPS: GoalOp[] = [">=", "<=", "=="];
@@ -373,6 +389,22 @@ function KindSwitcher({
   );
 }
 
+// readingLeafOf recovers a reading-source time leaf from `from` if one is
+// reachable: `from` itself, or the FIRST child of a group / not / streak. Used
+// so a kind round-trip on a reading leaf (e.g. Listening → All-of → back to
+// Time, or wrap-in-group then unwrap) KEEPS its reading source/axis/value
+// instead of silently reverting to the coding default (gaka-bs5l). A reading
+// leaf must stay reading through every edit.
+function readingLeafOf(from: Predicate): TimeLeaf | null {
+  if (from.kind === "time") return from.source === "reading" ? from : null;
+  if (from.kind === "all" || from.kind === "any") {
+    return from.of.length > 0 ? readingLeafOf(from.of[0]) : null;
+  }
+  if (from.kind === "not") return readingLeafOf(from.of[0]);
+  if (from.kind === "streak") return readingLeafOf(from.condition);
+  return null;
+}
+
 // convertKind produces a fresh Predicate of `nextKind` seeded by any
 // re-usable fields on `from`. Used by every kind switch so the
 // conversion logic sits in ONE place.
@@ -380,20 +412,30 @@ function convertKind(from: Predicate, nextKind: Predicate["kind"]): Predicate {
   if (from.kind === nextKind) return from;
   switch (nextKind) {
     case "time":
-      return defaultLeaf();
+      // Preserve a reading leaf across the round-trip if one is recoverable;
+      // otherwise fall back to the coding default (gaka-bs5l).
+      return readingLeafOf(from) ?? defaultLeaf();
     case "active_days":
       return { kind: "active_days", op: ">=", n: 5, window: "week" };
     case "streak":
-      return { kind: "streak", min_days: 7, condition: defaultLeaf() };
+      return { kind: "streak", min_days: 7, condition: seedLeaf(from) };
     case "all":
-      return { kind: "all", of: [from.kind === "time" ? from : defaultLeaf()] };
+      return { kind: "all", of: [seedLeaf(from)] };
     case "any":
-      return { kind: "any", of: [from.kind === "time" ? from : defaultLeaf()] };
+      return { kind: "any", of: [seedLeaf(from)] };
     case "not":
-      return { kind: "not", of: [from.kind === "time" ? from : defaultLeaf()] };
+      return { kind: "not", of: [seedLeaf(from)] };
     default:
       return from;
   }
+}
+
+// seedLeaf picks the leaf to carry into a new group/streak wrapper: a
+// recoverable reading leaf first (so reading survives, gaka-bs5l), then a
+// same-shape coding time leaf, else a fresh coding default. For a coding leaf
+// readingLeafOf returns null, so the coding path is byte-for-byte unchanged.
+function seedLeaf(from: Predicate): Predicate {
+  return readingLeafOf(from) ?? (from.kind === "time" ? from : defaultLeaf());
 }
 
 // --- Leaf: time-on-axis ------------------------------------------------
@@ -420,11 +462,15 @@ function TimeLeafEditor({
     target: `${idBase}-target`,
     window: `${idBase}-window`,
   };
-  // A reading-source leaf measures TOTAL listening time — it has no axis/value
-  // (the backend rejects an axis on a reading leaf). Render the source as a
-  // fixed label instead of the axis+value selectors, but share the op/target/
-  // window controls with the coding path so the two shapes stay consistent.
+  // A reading-source leaf has two shapes (gaka-dvy9): with NO dimension it
+  // measures TOTAL listening time (reading_activity); with a reading dimension
+  // (genre/series/status) it measures the RUNTIME of FINISHED books on that
+  // dimension (reading_items). Either way it shares the op/target/window
+  // controls with the coding path so the two shapes stay consistent.
   const isReading = node.source === "reading";
+  const readingAxis = isReading
+    ? (node.axis as GoalReadingAxis | undefined)
+    : undefined;
   return (
     <div className="rounded-md border bg-secondary/20 p-3">
       <div className="mb-2 flex items-center gap-2">
@@ -435,7 +481,9 @@ function TimeLeafEditor({
         />
         <span className="flex-1 text-xs text-muted-foreground">
           {isReading
-            ? "Total listening time (Audible) over a window"
+            ? readingAxis
+              ? `Runtime of finished books by ${readingAxis}, over a window`
+              : "Total listening time (Audible) over a window"
             : "Sum time on an axis over a window"}
         </span>
         {onRemove && (
@@ -450,15 +498,73 @@ function TimeLeafEditor({
       </div>
       <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
         {isReading ? (
-          <div className="col-span-2">
-            <Label className="text-xs">Metric</Label>
-            <div
-              data-testid="reading-metric-label"
-              className="flex h-8 items-center rounded-md border border-input bg-background px-3 text-sm text-muted-foreground"
-            >
-              Listening time (Audible)
+          <>
+            <div>
+              <Label htmlFor={id.axis} className="text-xs">Filter</Label>
+              <Select
+                value={readingAxis ?? READING_NONE}
+                onValueChange={(v: string) =>
+                  onChange(
+                    v === READING_NONE
+                      ? // Back to total listening: drop the dimension AND its
+                        // value (the backend rejects a value with no axis).
+                        { ...node, axis: undefined, value: undefined }
+                      : // Switch to a reading dimension; seed an empty value the
+                        // user then fills in (validator requires a concrete one).
+                        {
+                          ...node,
+                          axis: v as GoalReadingAxis,
+                          value: node.value ?? "",
+                        },
+                  )
+                }
+              >
+                <SelectTrigger id={id.axis} className="h-8">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={READING_NONE}>Total listening</SelectItem>
+                  {READING_AXES.map((a) => (
+                    <SelectItem key={a.value} value={a.value}>
+                      {a.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          </div>
+            {readingAxis ? (
+              <div>
+                <Label htmlFor={id.value} className="text-xs">Value</Label>
+                <Input
+                  id={id.value}
+                  className="h-8"
+                  data-testid="reading-dimension-value"
+                  value={node.value ?? ""}
+                  placeholder={
+                    readingAxis === "genre"
+                      ? "e.g. Fiction"
+                      : readingAxis === "series"
+                        ? "e.g. Foundation"
+                        : "e.g. finished"
+                  }
+                  onChange={(e) => onChange({ ...node, value: e.target.value })}
+                />
+                <span className="text-[10px] text-muted-foreground">
+                  Counts runtime of FINISHED books, not live listening.
+                </span>
+              </div>
+            ) : (
+              <div>
+                <Label className="text-xs">Metric</Label>
+                <div
+                  data-testid="reading-metric-label"
+                  className="flex h-8 items-center rounded-md border border-input bg-background px-3 text-sm text-muted-foreground"
+                >
+                  Listening time (Audible)
+                </div>
+              </div>
+            )}
+          </>
         ) : (
           <>
             <div>
@@ -483,7 +589,7 @@ function TimeLeafEditor({
               <Label htmlFor={id.value} className="text-xs">Value (blank = any)</Label>
               <AxisValueInput
                 id={id.value}
-                axis={node.axis ?? "language"}
+                axis={(node.axis as GoalHeartbeatAxis) ?? "language"}
                 value={node.value ?? ""}
                 onChange={(v) => onChange({ ...node, value: v === "" ? null : v })}
               />

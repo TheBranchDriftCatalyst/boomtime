@@ -110,6 +110,17 @@ export function GoalForm({ open, onOpenChange, editing }: GoalFormProps) {
 
   const pending = create.isPending || update.isPending;
 
+  // Which "Start from a metric" template the current spec matches, so the
+  // active one reads as selected (gaka-bs5l). A reading-source top-level time
+  // leaf → "reading"; any other top-level time leaf → "coding"; a composite
+  // (group/streak/…) matches neither and leaves both un-highlighted.
+  const activeMetric: "coding" | "reading" | null =
+    spec.kind === "time"
+      ? spec.source === "reading"
+        ? "reading"
+        : "coding"
+      : null;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
@@ -160,7 +171,8 @@ export function GoalForm({ open, onOpenChange, editing }: GoalFormProps) {
                 <Button
                   type="button"
                   size="sm"
-                  variant="outline"
+                  variant={activeMetric === "coding" ? "default" : "outline"}
+                  aria-pressed={activeMetric === "coding"}
                   data-testid="metric-coding"
                   onClick={() => setSpec(defaultLeaf())}
                 >
@@ -169,7 +181,8 @@ export function GoalForm({ open, onOpenChange, editing }: GoalFormProps) {
                 <Button
                   type="button"
                   size="sm"
-                  variant="outline"
+                  variant={activeMetric === "reading" ? "default" : "outline"}
+                  aria-pressed={activeMetric === "reading"}
                   data-testid="metric-listening"
                   onClick={() => setSpec(readingLeaf())}
                 >

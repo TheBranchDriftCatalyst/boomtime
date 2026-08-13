@@ -28,8 +28,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   PredicateBuilder,
   defaultLeaf,
+  readingLeaf,
 } from "@/features/goals/PredicateBuilder";
 import type { Predicate } from "@/types/api";
+
+type TimeLeaf = Extract<Predicate, { kind: "time" }>;
 
 // Controlled harness that holds spec state and re-renders on every
 // change — mirrors the real GoalForm consumer.
@@ -143,6 +146,77 @@ describe("PredicateBuilder", () => {
     // with target=999 (proves convertKind's `from.kind === "time"`
     // branch preserved it).
     expect(group.of[0]).toMatchObject({ kind: "time", target_seconds: 999 });
+  });
+
+  // gaka-bs5l (P0): a reading leaf MUST stay reading through every edit. The
+  // original bug: convertKind(from, "time") returned the coding defaultLeaf(),
+  // so a kind round-trip on a reading leaf silently reverted it to the coding
+  // axis. This test edits the op AND round-trips the kind (reading-time →
+  // All-of → back to Time) and asserts source stays "reading" the whole way.
+  // Before the fix, the final assertion fails (source is dropped → coding).
+  it("reading leaf stays 'reading' through an op edit + kind round-trip (gaka-bs5l)", async () => {
+    const user = userEvent.setup();
+    render(<Harness initial={readingLeaf()} />);
+    expect((readSpec() as TimeLeaf).source).toBe("reading");
+
+    // Edit the Op — a spread-based onChange path, must preserve source.
+    const opTrigger = screen.getByLabelText("Op");
+    await user.click(opTrigger);
+    await user.click(await screen.findByRole("option", { name: "<=" }));
+    expect(readSpec()).toMatchObject({
+      kind: "time",
+      source: "reading",
+      op: "<=",
+    });
+
+    // Round-trip the KIND via the KindSwitcher: Time → All-of → Time.
+    // (Use role=option to disambiguate from the trigger, which mirrors the
+    // selected label as text.)
+    await user.click(screen.getAllByRole("combobox")[0]);
+    await user.click(await screen.findByRole("option", { name: "All of (AND)" }));
+    expect(readSpec().kind).toBe("all");
+
+    // The group's KindSwitcher is now the first combobox. Switch back to Time.
+    await user.click(screen.getAllByRole("combobox")[0]);
+    await user.click(await screen.findByRole("option", { name: "Time on axis" }));
+
+    const after = readSpec() as TimeLeaf;
+    expect(after.kind).toBe("time");
+    // THE REGRESSION GUARD: reading survives the round-trip (was coding before).
+    expect(after.source).toBe("reading");
+  });
+
+  // gaka-dvy9: a genre'd reading goal — pick the Genre dimension and type a
+  // value; the built spec carries source="reading", axis="genre", value.
+  it("builds a genre-filtered reading spec (dimension picker + value)", async () => {
+    const user = userEvent.setup();
+    render(<Harness initial={readingLeaf()} />);
+    // Default reading leaf has no dimension → the fixed metric label shows.
+    expect(screen.getByTestId("reading-metric-label")).toBeInTheDocument();
+
+    // Select the Genre dimension via the Filter select.
+    await user.click(screen.getByLabelText("Filter"));
+    await user.click(await screen.findByRole("option", { name: "Genre" }));
+
+    // The value input replaces the fixed metric label; type a genre.
+    const value = screen.getByTestId("reading-dimension-value");
+    await user.type(value, "Fiction");
+
+    expect(readSpec()).toMatchObject({
+      kind: "time",
+      source: "reading",
+      axis: "genre",
+      value: "Fiction",
+      window: "week",
+    });
+
+    // Switching back to Total listening drops both axis and value.
+    await user.click(screen.getByLabelText("Filter"));
+    await user.click(await screen.findByRole("option", { name: "Total listening" }));
+    const back = readSpec() as TimeLeaf;
+    expect(back.source).toBe("reading");
+    expect(back.axis).toBeUndefined();
+    expect(back.value).toBeUndefined();
   });
 
   it("+ Add condition appends a new leaf to an `all` group", async () => {

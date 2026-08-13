@@ -101,6 +101,21 @@ describe("GoalForm Public toggle (Part B Stage 4)", () => {
     expect(spec.axis).toBeUndefined();
   });
 
+  it("create: the metric picker highlights the active source (gaka-bs5l)", async () => {
+    renderWithProviders(<GoalForm open onOpenChange={() => {}} editing={null} />);
+    const coding = screen.getByTestId("metric-coding");
+    const listening = screen.getByTestId("metric-listening");
+
+    // Default spec is a coding time leaf → Coding is the active metric.
+    expect(coding).toHaveAttribute("aria-pressed", "true");
+    expect(listening).toHaveAttribute("aria-pressed", "false");
+
+    // Switch to the listening template → highlight follows the spec source.
+    await userEvent.click(listening);
+    expect(listening).toHaveAttribute("aria-pressed", "true");
+    expect(coding).toHaveAttribute("aria-pressed", "false");
+  });
+
   it("edit: the switch is pre-filled from editing.public — flipping it off sends public:false on save", async () => {
     let captured: Record<string, unknown> | undefined;
     server.use(

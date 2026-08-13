@@ -19,14 +19,25 @@ export type GoalHeartbeatAxis =
   | "machine"
   | "platform";
 
+// Reading dimensions a reading-source `time` leaf may filter by (gaka-dvy9).
+// Mirrors validReadingAxes in internal/goals/eval.go, which mirrors the reading
+// domain's `runtime` measure Dims (internal/query/domains.go). A genre'd reading
+// goal measures the RUNTIME of books on this dimension = value FINISHED in the
+// window (reading_items.finished_at) — NOT live listening time, which is not
+// attributable per-book. "author" is intentionally absent: the runtime measure
+// does not attribute it, so the backend rejects an author-filtered reading goal.
+export type GoalReadingAxis = "genre" | "series" | "status";
+
 export type GoalTimeWindow = "day" | "week" | "month" | "year" | "lifetime";
 export type GoalActiveDaysWindow = "week" | "month" | "year";
 export type GoalOp = ">=" | "<=" | "==";
 
 // Which domain a `time` leaf measures. Mirrors validTimeSources in
 // internal/goals/eval.go. Undefined/"coding" → attributed coding seconds from
-// hb_rollup_daily (the legacy path, axis-filtered). "reading" → total
-// listening-seconds from reading_activity over the window (no axis in v1).
+// hb_rollup_daily (the legacy path, axis-filtered). "reading" → either total
+// listening-seconds from reading_activity (no axis) OR, when a GoalReadingAxis
+// is set, the runtime of books on that dimension finished in the window
+// (reading_items).
 export type GoalTimeSource = "coding" | "reading";
 
 // One node of the predicate tree. Discriminated by `kind`. Each
@@ -39,11 +50,13 @@ export type Predicate =
   | {
       kind: "time";
       // Domain the leaf measures. Omitted = "coding" (the legacy default).
-      // A "reading" leaf carries NO axis/value — it sums total listening time.
+      // A "reading" leaf with no axis sums total listening time; with a
+      // GoalReadingAxis it sums finished-book runtime on that dimension.
       source?: GoalTimeSource;
-      // axis/value are the coding-path attribution filter. Optional so a
-      // reading leaf (which has neither) is representable in the same variant.
-      axis?: GoalHeartbeatAxis;
+      // axis/value are the attribution filter. For a coding leaf, axis is a
+      // GoalHeartbeatAxis; for a reading leaf it is a GoalReadingAxis. Optional
+      // so a total-listening reading leaf (which has neither) is representable.
+      axis?: GoalHeartbeatAxis | GoalReadingAxis;
       value?: string | null;
       op: GoalOp;
       target_seconds: number;
@@ -101,7 +114,7 @@ export interface GoalSubCondition {
   // Present on reading-source time sub-conditions ("reading"); omitted on the
   // coding path. Mirrors SubCondition.Source in internal/goals/eval.go.
   source?: GoalTimeSource;
-  axis?: GoalHeartbeatAxis;
+  axis?: GoalHeartbeatAxis | GoalReadingAxis;
   value?: string | null;
   op?: GoalOp;
   window?: string;

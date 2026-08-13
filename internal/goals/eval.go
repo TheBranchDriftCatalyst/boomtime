@@ -124,6 +124,33 @@ var validTimeSources = map[string]bool{
 	"reading": true,
 }
 
+// validReadingAxes whitelists the optional reading DIMENSION a reading time
+// leaf may filter by (gaka-dvy9). It mirrors the reading domain's `runtime`
+// measure Dims (internal/query/domains.go) — the only measure that carries
+// per-book attribution — restricted to the dimensions that make sense as a goal
+// filter:
+//
+//   - genre / series / status  — supported by the runtime measure's Dims.
+//   - "source" is intentionally omitted: it selects Audible vs Kindle, not a
+//     within-reading dimension, and the coding/reading split already lives on
+//     the leaf's Source field.
+//   - "author" is intentionally omitted: reading_items.authors is NOT in the
+//     runtime measure's Dims whitelist (the query compiler would reject an
+//     author-filtered runtime query), so we reject it here at validate time
+//     rather than let it fail deep in the evaluator.
+//
+// DATA REALITY (gaka-dvy9): listening TIME (reading_activity) is not
+// attributable to a genre — reading_activity has no per-book columns. The
+// answerable metric is the RUNTIME of books in a genre FINISHED in the window
+// (reading_items.runtime_min, dated by finished_at). So an axis'd reading goal
+// measures "sum(runtime) of books with axis=value finished in the window",
+// NOT live listening time. The UI labels this honestly.
+var validReadingAxes = map[string]bool{
+	"genre":  true,
+	"series": true,
+	"status": true,
+}
+
 // Predicate is the discriminated union representing one node of the
 // goal spec tree. The Kind field is the tag; only the fields relevant
 // to the kind are populated (others left zero). Marshals back out to
@@ -204,11 +231,24 @@ func validateNode(p *Predicate, depth int) error {
 				return fmt.Errorf("unknown axis %q on time predicate", p.Axis)
 			}
 		case "reading":
-			// v1 measures TOTAL listening time — there is no per-book axis on
-			// reading_activity, so an axis filter is not supported. Reject a
-			// stray axis rather than silently ignoring it.
-			if p.Axis != "" {
-				return fmt.Errorf("reading time predicate does not support an axis filter in v1 (got axis %q)", p.Axis)
+			// A reading leaf has two shapes (gaka-dvy9):
+			//   - NO axis  → total listening time over the window
+			//     (reading_activity.listening_seconds). A stray value with no
+			//     axis is meaningless — reject it.
+			//   - an axis  → runtime of books on that reading dimension = value,
+			//     FINISHED in the window (reading_items). The axis must be a
+			//     supported reading dimension and carry a concrete value.
+			if p.Axis == "" {
+				if p.Value != nil {
+					return errors.New("reading time predicate has a value but no axis")
+				}
+			} else {
+				if !validReadingAxes[p.Axis] {
+					return fmt.Errorf("unknown reading axis %q on time predicate", p.Axis)
+				}
+				if p.Value == nil || strings.TrimSpace(*p.Value) == "" {
+					return fmt.Errorf("reading time predicate with axis %q requires a value", p.Axis)
+				}
 			}
 		}
 		if !validTimeWindows[p.Window] {
@@ -417,33 +457,65 @@ func (e *evaluator) evalTime(ctx context.Context, p *Predicate) (bool, float64, 
 	return hit, prog, nil
 }
 
-// evalTimeReading is the source=="reading" arm of a time leaf. It sums the
-// owner's listening_seconds over the SAME window the coding path uses (so a
-// "week" reading goal and a "week" coding goal cover the identical date span),
-// delegating the SQL to the internal/query reading domain. No axis filter in
-// v1 — the leaf measures total listening time. The summed seconds are compared
-// to the target exactly like the coding path, and one SubCondition (tagged
-// source="reading") is emitted so the FE can render the detail row.
+// evalTimeReading is the source=="reading" arm of a time leaf. It has two modes,
+// selected by whether the leaf carries a reading axis (gaka-dvy9):
+//
+//   - NO axis  → total listening time: sum(listening_seconds) from
+//     reading_activity over the window (the v1 path, unchanged). Result is
+//     already in SECONDS.
+//   - an axis  → genre'd reading goal: sum(runtime_min) from reading_items for
+//     books on that reading dimension = value FINISHED in the window (the
+//     runtime measure's DateCol is finished_at). runtime_min is in MINUTES, so
+//     it is converted to seconds before comparing against target_seconds.
+//
+// Both modes reuse windowRange so the reading window is byte-for-byte the coding
+// window's date span; Between resolves to a half-open [start, end+1day) range in
+// the query compiler, i.e. inclusive of the end day. One SubCondition (tagged
+// source="reading", plus axis/value when set) is emitted so the FE can render
+// the detail row.
 func (e *evaluator) evalTimeReading(ctx context.Context, p *Predicate) (bool, float64, error) {
-	// Reuse windowRange so the reading window is byte-for-byte the coding
-	// window's date span; Between resolves to a half-open [start, end+1day)
-	// range in the query compiler, i.e. inclusive of the end day.
 	start, end := windowRange(e.now, p.Window)
-	q := query.Q("reading").
-		Measure("seconds").
-		Over(query.GranNone, query.Between(start, end)).
-		At(e.now)
-	res, err := query.Run(ctx, e.pool, e.owner, q)
-	if err != nil {
-		return false, 0, fmt.Errorf("evalTime reading query: %w", err)
+
+	var current int64
+	if p.Axis == "" {
+		// Total listening time. The reading "seconds" measure is an ungrouped
+		// sum → a scalar result, already in seconds.
+		q := query.Q("reading").
+			Measure("seconds").
+			Over(query.GranNone, query.Between(start, end)).
+			At(e.now)
+		res, err := query.Run(ctx, e.pool, e.owner, q)
+		if err != nil {
+			return false, 0, fmt.Errorf("evalTime reading query: %w", err)
+		}
+		current = int64(res.Scalar)
+	} else {
+		// Genre'd reading goal: runtime (minutes) of books on axis=value finished
+		// in the window. The axis + value were whitelisted at validate time, so an
+		// unknown/unsupported dimension never reaches the query compiler here.
+		q := query.Q("reading").
+			Measure("runtime").
+			Where(query.Leaf(p.Axis, query.OpEq, *p.Value)).
+			Over(query.GranNone, query.Between(start, end)).
+			At(e.now)
+		res, err := query.Run(ctx, e.pool, e.owner, q)
+		if err != nil {
+			return false, 0, fmt.Errorf("evalTime reading runtime query: %w", err)
+		}
+		// runtime_min is MINUTES; the goal target is in seconds.
+		current = int64(res.Scalar) * 60
 	}
-	// The reading "seconds" measure is an ungrouped sum → a scalar result.
-	current := int64(res.Scalar)
+
 	hit, prog := compareOp(p.Op, current, p.TargetSeconds)
-	e.subs = append(e.subs, SubCondition{
+	sub := SubCondition{
 		Kind: "time", Source: "reading", Op: p.Op, Window: p.Window,
 		Current: current, Target: p.TargetSeconds, Progress: prog, Hit: hit,
-	})
+	}
+	if p.Axis != "" {
+		sub.Axis = p.Axis
+		sub.Value = p.Value
+	}
+	e.subs = append(e.subs, sub)
 	return hit, prog, nil
 }
 

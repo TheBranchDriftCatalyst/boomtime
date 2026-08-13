@@ -27,6 +27,24 @@ var _ = Describe("ValidateSpec (reading-source time leaf)", func() {
 		Expect(err).NotTo(HaveOccurred())
 	})
 
+	It("accepts a genre'd reading goal (axis=genre + value, gaka-dvy9)", func() {
+		spec := `{"kind":"time","source":"reading","axis":"genre","value":"Fiction","op":">=","target_seconds":10800,"window":"week"}`
+		p, err := ValidateSpec(json.RawMessage(spec))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(p.Source).To(Equal("reading"))
+		Expect(p.Axis).To(Equal("genre"))
+		Expect(p.Value).NotTo(BeNil())
+		Expect(*p.Value).To(Equal("Fiction"))
+	})
+
+	It("accepts series/status reading dimensions too", func() {
+		for _, axis := range []string{"series", "status"} {
+			spec := `{"kind":"time","source":"reading","axis":"` + axis + `","value":"X","op":">=","target_seconds":60,"window":"month"}`
+			_, err := ValidateSpec(json.RawMessage(spec))
+			Expect(err).NotTo(HaveOccurred(), "axis %q should be a valid reading dimension", axis)
+		}
+	})
+
 	DescribeTable("rejects invalid reading/source shapes before persistence",
 		func(spec, want string) {
 			_, err := ValidateSpec(json.RawMessage(spec))
@@ -37,10 +55,27 @@ var _ = Describe("ValidateSpec (reading-source time leaf)", func() {
 		Entry("unknown source",
 			`{"kind":"time","source":"chicken","op":">=","target_seconds":1,"window":"week"}`,
 			"unknown source"),
-		// v1 total-listening: a reading leaf must NOT carry an axis filter.
-		Entry("reading source with an axis filter",
+		// A coding axis ("language") is NOT a reading dimension — the runtime
+		// measure only attributes genre/series/status (gaka-dvy9).
+		Entry("reading source with a non-reading axis",
 			`{"kind":"time","source":"reading","axis":"language","op":">=","target_seconds":1,"window":"week"}`,
-			"does not support an axis filter"),
+			"unknown reading axis"),
+		// "author" exists on reading_items but is not attributable by the runtime
+		// measure — rejected at validate time rather than failing in the query.
+		Entry("reading source with the unsupported author axis",
+			`{"kind":"time","source":"reading","axis":"author","value":"X","op":">=","target_seconds":1,"window":"week"}`,
+			"unknown reading axis"),
+		// A reading axis MUST carry a concrete value to filter on.
+		Entry("reading axis with no value",
+			`{"kind":"time","source":"reading","axis":"genre","op":">=","target_seconds":1,"window":"week"}`,
+			"requires a value"),
+		Entry("reading axis with a blank value",
+			`{"kind":"time","source":"reading","axis":"genre","value":"  ","op":">=","target_seconds":1,"window":"week"}`,
+			"requires a value"),
+		// A value with NO axis is meaningless on the total-listening path.
+		Entry("reading value with no axis",
+			`{"kind":"time","source":"reading","value":"Fiction","op":">=","target_seconds":1,"window":"week"}`,
+			"value but no axis"),
 		// The generic invariants still apply on the reading arm.
 		Entry("reading source, negative target",
 			`{"kind":"time","source":"reading","op":">=","target_seconds":-1,"window":"week"}`,
