@@ -75,3 +75,17 @@ func TestParseAggregates_FloatMillisecondsSum(t *testing.T) {
 		}
 	}
 }
+
+// gaka-vvij: a near-100% title with is_finished=false must classify as completed.
+func TestToReadingItem_NearComplete_CountsAsFinished(t *testing.T) {
+	li := LibraryItem{ASIN: "B0N95", Title: "Almost Done", IsFinished: false, PercentComplete: 99}
+	ri := li.toReadingItem("tester")
+	if !ri.Finished || ri.Status != "read" {
+		t.Fatalf("99%% unfinished-flagged should be finished/read, got finished=%v status=%q", ri.Finished, ri.Status)
+	}
+	// A genuinely in-progress title stays reading.
+	mid := LibraryItem{ASIN: "B0M50", Title: "Halfway", IsFinished: false, PercentComplete: 50}
+	if r := mid.toReadingItem("tester"); r.Finished || r.Status != "reading" {
+		t.Fatalf("50%% should stay reading, got finished=%v status=%q", r.Finished, r.Status)
+	}
+}

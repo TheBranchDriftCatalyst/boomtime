@@ -57,6 +57,10 @@ const (
 	// wide response_groups; a short page still ends the sweep. Smaller pages =
 	// safer parse + gentler on the API at the cost of a few more requests.
 	libraryPageSize = 300
+
+	// readingFinishedPct: at/above this percent_complete a title counts as finished
+	// even without Audible's is_finished flag (gaka-vvij).
+	readingFinishedPct = 95.0
 )
 
 // Service is the catalyst-audiobooks domain entrypoint.
@@ -263,9 +267,13 @@ func (li LibraryItem) toReadingItem(owner string) db.ReadingItem {
 	if len(raw) == 0 {
 		raw, _ = json.Marshal(li)
 	}
+	// Treat >=95% listened as completed even when Audible's is_finished flag never
+	// flipped — users routinely stop at 99% and never mark a title "finished", so
+	// near-done books were wrongly showing as in-progress. gaka-vvij.
+	finished := li.IsFinished || li.PercentComplete >= readingFinishedPct
 	status := "reading"
 	switch {
-	case li.IsFinished:
+	case finished:
 		status = "read"
 	case li.PercentComplete <= 0:
 		status = "want"
@@ -279,7 +287,7 @@ func (li LibraryItem) toReadingItem(owner string) db.ReadingItem {
 		CoverURL:        li.coverURL(),
 		Status:          status,
 		ProgressPercent: int(li.PercentComplete),
-		Finished:        li.IsFinished,
+		Finished:        finished,
 		RawMeta:         raw,
 		Subtitle:        li.Subtitle,
 		Narrators:       li.narratorsCSV(),
