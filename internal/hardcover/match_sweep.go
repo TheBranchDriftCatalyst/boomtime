@@ -41,11 +41,12 @@ const kindleReadingSource = "kindle"
 // MatchSweepResult reports what one MatchUnmatched sweep did. (Named distinctly
 // from match.go's per-row MatchResult, which this file's counters aggregate.)
 type MatchSweepResult struct {
-	Scanned  int // unmatched rows considered
-	Matched  int // rows resolved to a Hardcover book + linkage cached
-	NoMatch  int // ladder returned no confident hit (left for manual review)
-	Skipped  int // a per-row error (match call or link write) — best-effort, sweep continues
-	Enriched int // kindle bare-ASIN rows whose title/author/cover were backfilled via LookupByASIN
+	Scanned   int // unmatched rows considered
+	Matched   int // rows resolved to a Hardcover book + linkage cached
+	NoMatch   int // ladder returned no confident hit (left for manual review)
+	Skipped   int // a per-row error (match call or link write) — best-effort, sweep continues
+	Enriched  int // kindle bare-ASIN rows whose title/author/cover were backfilled via LookupByASIN
+	CacheHits int // rows resolved from the GLOBAL match cache (gaka-wzgr) — zero Hardcover API calls
 }
 
 // matcher is the narrow, read-only Hardcover client surface the sweep needs.
@@ -96,26 +97,75 @@ func (s *SyncService) matchWith(ctx context.Context, owner string, client matche
 		res.Scanned++
 		asin := firstNonEmpty(it.ExternalID, it.AmazonASIN)
 
-		m, merr := client.Match(ctx, MatchInput{
-			ASIN:   asin,
-			ISBN13: it.ISBN,
-			Title:  it.Title,
-			Author: it.Authors,
-		})
-		if merr != nil {
-			// A bad token / rate-limit is worth reacting to (and aborting on), the
-			// same way the pull does — retrying every row would only burn the budget.
-			if merr == ErrBadToken || merr == ErrRateLimited {
-				s.onError(ctx, owner, "match", merr)
-				return res, merr
+		// gaka-wzgr — cache-first. A match (ASIN/ISBN13 → book/edition) is an
+		// objective fact about a BOOK, so once ANY user has resolved it we can serve
+		// it from our own DB with zero Hardcover API calls. Try the global cache
+		// under each exact-id key BEFORE spending a live Match. A lookup error never
+		// fails the row — we just fall through to the API.
+		asinKey := strings.TrimSpace(asin)
+		isbnKey := normalizeISBN(it.ISBN)
+
+		var (
+			m         MatchResult
+			fromCache bool
+		)
+		if asinKey != "" {
+			if cached, ok, lerr := s.DB.LookupHardcoverMatch(ctx, "asin", asinKey); lerr != nil {
+				s.logWarn("hardcover match: cache lookup failed — falling through to API", "user", owner, "idtype", "asin", "external", asinKey, "err", lerr)
+			} else if ok && cached.BookID > 0 {
+				m = MatchResult{BookID: cached.BookID, EditionID: cached.EditionID, Method: MatchMethod(cached.Method)}
+				fromCache = true
 			}
-			s.logWarn("hardcover match: match failed — leaving unmatched", "user", owner, "source", it.Source, "external", it.ExternalID, "err", merr)
-			res.Skipped++
-			continue
 		}
-		if m.Method == MatchNone || m.BookID <= 0 {
-			res.NoMatch++
-			continue
+		if !fromCache && isbnKey != "" {
+			if cached, ok, lerr := s.DB.LookupHardcoverMatch(ctx, "isbn13", isbnKey); lerr != nil {
+				s.logWarn("hardcover match: cache lookup failed — falling through to API", "user", owner, "idtype", "isbn13", "external", isbnKey, "err", lerr)
+			} else if ok && cached.BookID > 0 {
+				m = MatchResult{BookID: cached.BookID, EditionID: cached.EditionID, Method: MatchMethod(cached.Method)}
+				fromCache = true
+			}
+		}
+
+		if fromCache {
+			res.CacheHits++
+		} else {
+			var merr error
+			m, merr = client.Match(ctx, MatchInput{
+				ASIN:   asin,
+				ISBN13: it.ISBN,
+				Title:  it.Title,
+				Author: it.Authors,
+			})
+			if merr != nil {
+				// A bad token / rate-limit is worth reacting to (and aborting on), the
+				// same way the pull does — retrying every row would only burn the budget.
+				if merr == ErrBadToken || merr == ErrRateLimited {
+					s.onError(ctx, owner, "match", merr)
+					return res, merr
+				}
+				s.logWarn("hardcover match: match failed — leaving unmatched", "user", owner, "source", it.Source, "external", it.ExternalID, "err", merr)
+				res.Skipped++
+				continue
+			}
+			if m.Method == MatchNone || m.BookID <= 0 {
+				res.NoMatch++
+				continue
+			}
+
+			// Populate the GLOBAL cache from a confident EXACT-ID hit only. The fuzzy
+			// Typesense rung (MatchBySearch) is NEVER cached — a wrong edition would
+			// then poison the match for every user (gaka-wzgr caveat). A Put error is
+			// best-effort: log it and keep going so the per-user link still gets written.
+			switch {
+			case m.Method == MatchByASIN && asinKey != "":
+				if perr := s.DB.PutHardcoverMatch(ctx, "asin", asinKey, m.BookID, m.EditionID, string(m.Method)); perr != nil {
+					s.logWarn("hardcover match: cache put failed", "user", owner, "idtype", "asin", "external", asinKey, "err", perr)
+				}
+			case m.Method == MatchByISBN13 && isbnKey != "":
+				if perr := s.DB.PutHardcoverMatch(ctx, "isbn13", isbnKey, m.BookID, m.EditionID, string(m.Method)); perr != nil {
+					s.logWarn("hardcover match: cache put failed", "user", owner, "idtype", "isbn13", "external", isbnKey, "err", perr)
+				}
+			}
 		}
 
 		if lerr := s.DB.SetReadingItemHardcoverLink(ctx, owner, it.Source, it.ExternalID, m.BookID, m.EditionID, string(m.Method)); lerr != nil {
@@ -153,7 +203,8 @@ func (s *SyncService) matchWith(ctx context.Context, owner string, client matche
 
 	s.logInfo("hardcover match: complete",
 		"user", owner, "scanned", res.Scanned, "matched", res.Matched,
-		"nomatch", res.NoMatch, "skipped", res.Skipped, "enriched", res.Enriched)
+		"nomatch", res.NoMatch, "skipped", res.Skipped, "enriched", res.Enriched,
+		"cachehits", res.CacheHits)
 	return res, nil
 }
 

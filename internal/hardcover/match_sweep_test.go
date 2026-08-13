@@ -167,6 +167,151 @@ func TestMatchWith_LinksEnrichesAndStampsCursor(t *testing.T) {
 	}
 }
 
+// TestMatchWith_CacheHitSkipsAPI (gaka-wzgr) — a row whose ASIN is already in the
+// GLOBAL cache is linked WITHOUT a single client.Match call. The fake's Match
+// counter must stay 0 and res.CacheHits must count the row.
+func TestMatchWith_CacheHitSkipsAPI(t *testing.T) {
+	d := openSweepDB(t)
+	ctx := context.Background()
+	owner := fmt.Sprintf("sweep_hit_%d", time.Now().UnixNano())
+	asin := fmt.Sprintf("B0CACHEHIT%d", time.Now().UnixNano())
+	seedUser(t, d, ctx, owner)
+	t.Cleanup(func() {
+		cleanupOwner(d, ctx, owner)
+		_, _ = d.Pool.Exec(ctx, `DELETE FROM hardcover_match_cache WHERE external_id=$1`, asin)
+	})
+
+	mustUpsert(t, d, ctx, db.ReadingItem{Owner: owner, Source: "audible", ExternalID: asin, AmazonASIN: asin, Title: "Some Title"})
+
+	// Pre-seed the global cache so the sweep resolves without touching the API.
+	if err := d.PutHardcoverMatch(ctx, "asin", asin, 777, 7707, "asin"); err != nil {
+		t.Fatalf("pre-seed cache: %v", err)
+	}
+
+	// Fake with NO scripted hits — if the sweep called Match it would return
+	// MatchNone and the row would NOT link, so a link proves the cache path.
+	fake := &fakeMatcher{hits: map[string]MatchResult{}}
+
+	svc := NewSyncService(d, NewStore(d), nil)
+	res, err := svc.matchWith(ctx, owner, fake)
+	if err != nil {
+		t.Fatalf("matchWith: %v", err)
+	}
+	if res.CacheHits != 1 {
+		t.Fatalf("CacheHits = %d, want 1", res.CacheHits)
+	}
+	if res.Matched != 1 {
+		t.Fatalf("Matched = %d, want 1", res.Matched)
+	}
+	if fake.matchCall != 0 {
+		t.Fatalf("client.Match was called %d times, want 0 (cache should have served it)", fake.matchCall)
+	}
+
+	// The row must actually be linked (cache hit still writes the per-user link).
+	remaining, err := d.ListUnmatchedReadingItems(ctx, owner)
+	if err != nil {
+		t.Fatalf("list unmatched: %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("row not linked from cache: %d still unmatched", len(remaining))
+	}
+}
+
+// TestMatchWith_CacheMissPopulates (gaka-wzgr) — an exact-id (asin) miss calls the
+// API AND writes the resolved identity into the global cache for the next user.
+func TestMatchWith_CacheMissPopulates(t *testing.T) {
+	d := openSweepDB(t)
+	ctx := context.Background()
+	owner := fmt.Sprintf("sweep_miss_%d", time.Now().UnixNano())
+	asin := fmt.Sprintf("B0CACHEMISS%d", time.Now().UnixNano())
+	seedUser(t, d, ctx, owner)
+	t.Cleanup(func() {
+		cleanupOwner(d, ctx, owner)
+		_, _ = d.Pool.Exec(ctx, `DELETE FROM hardcover_match_cache WHERE external_id=$1`, asin)
+	})
+
+	mustUpsert(t, d, ctx, db.ReadingItem{Owner: owner, Source: "audible", ExternalID: asin, AmazonASIN: asin, Title: "Fresh Book"})
+
+	fake := &fakeMatcher{
+		hits: map[string]MatchResult{
+			asin: {BookID: 555, EditionID: 5505, Method: MatchByASIN, Confidence: 1},
+		},
+	}
+
+	svc := NewSyncService(d, NewStore(d), nil)
+	res, err := svc.matchWith(ctx, owner, fake)
+	if err != nil {
+		t.Fatalf("matchWith: %v", err)
+	}
+	if res.Matched != 1 || res.CacheHits != 0 {
+		t.Fatalf("Matched=%d CacheHits=%d, want Matched=1 CacheHits=0", res.Matched, res.CacheHits)
+	}
+	if fake.matchCall != 1 {
+		t.Fatalf("client.Match called %d times, want 1 (cache miss must hit the API)", fake.matchCall)
+	}
+
+	// The global cache must now carry the resolved identity for the next user.
+	cached, ok, err := d.LookupHardcoverMatch(ctx, "asin", asin)
+	if err != nil || !ok {
+		t.Fatalf("cache not populated after exact-id miss: ok=%v err=%v", ok, err)
+	}
+	if cached.BookID != 555 || cached.EditionID != 5505 || cached.Method != "asin" {
+		t.Fatalf("cached = %+v, want {555 5505 asin}", cached)
+	}
+}
+
+// TestMatchWith_FuzzyNotCached (gaka-wzgr) — a fuzzy (MatchBySearch) resolution
+// links the per-user row but must NEVER poison the global cache: a wrong edition
+// picked by fuzzy would then be served to every user.
+func TestMatchWith_FuzzyNotCached(t *testing.T) {
+	d := openSweepDB(t)
+	ctx := context.Background()
+	owner := fmt.Sprintf("sweep_fuzzy_%d", time.Now().UnixNano())
+	asin := fmt.Sprintf("B0FUZZY%d", time.Now().UnixNano())
+	isbn := fmt.Sprintf("978%013d", time.Now().UnixNano()%1e13)
+	seedUser(t, d, ctx, owner)
+	t.Cleanup(func() {
+		cleanupOwner(d, ctx, owner)
+		_, _ = d.Pool.Exec(ctx, `DELETE FROM hardcover_match_cache WHERE external_id IN ($1,$2)`, asin, isbn)
+	})
+
+	// Row carries both an asin and an isbn so we can prove NEITHER key gets cached.
+	mustUpsert(t, d, ctx, db.ReadingItem{Owner: owner, Source: "kindle", ExternalID: asin, AmazonASIN: asin, ISBN: isbn, Title: "Fuzzy Matched Book", Authors: "Some Author"})
+
+	fake := &fakeMatcher{
+		hits: map[string]MatchResult{
+			// Keyed on title so it resolves via the search rung shape.
+			"Fuzzy Matched Book": {BookID: 888, EditionID: 8808, Method: MatchBySearch, Confidence: 0.9},
+		},
+	}
+
+	svc := NewSyncService(d, NewStore(d), nil)
+	res, err := svc.matchWith(ctx, owner, fake)
+	if err != nil {
+		t.Fatalf("matchWith: %v", err)
+	}
+	if res.Matched != 1 {
+		t.Fatalf("Matched = %d, want 1 (fuzzy still links the row)", res.Matched)
+	}
+
+	// The row IS linked...
+	remaining, err := d.ListUnmatchedReadingItems(ctx, owner)
+	if err != nil {
+		t.Fatalf("list unmatched: %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("fuzzy match did not link the row: %d still unmatched", len(remaining))
+	}
+
+	// ...but the global cache must have NO row under either key.
+	if _, ok, err := d.LookupHardcoverMatch(ctx, "asin", asin); err != nil || ok {
+		t.Fatalf("fuzzy poisoned the cache under asin: ok=%v err=%v", ok, err)
+	}
+	if _, ok, err := d.LookupHardcoverMatch(ctx, "isbn13", isbn); err != nil || ok {
+		t.Fatalf("fuzzy poisoned the cache under isbn13: ok=%v err=%v", ok, err)
+	}
+}
+
 // --- tiny DB helpers (this package has no shared harness) --------------------
 
 func seedUser(t *testing.T, d *db.DB, ctx context.Context, owner string) {
