@@ -25,6 +25,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/ingest"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/meta"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/queryapi"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/spaces"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/widgets"
@@ -168,6 +169,11 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	// AFTER identity so /awards/* auth checks resolve against the
 	// identity-owned session middleware in the same order as pre-refactor.
 	awards.Register(e, h.Awards)
+	// gaka-174.q: the cross-domain query DSL HTTP surface (POST /api/v1/query).
+	// Auth-required + owner-scoped; the reading domain is gated behind
+	// Cfg.BooksEnabled() inside the handler (runtime, since the domain is a
+	// body field). coding is always available.
+	queryapi.Register(e, h.Query)
 }
 
 // registerGoalRoutes: user-defined composite goals (gaka-wpb). CRUD +

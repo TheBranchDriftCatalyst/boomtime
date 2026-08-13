@@ -273,21 +273,21 @@ func (hz *Harness) Router() *echo.Echo {
 	// existed in stdlib + ginkgo pairs (byte-identical), and were the
 	// biggest single source of test-code duplication before this fold.
 	// Every one is now a single route line here.
-	e.POST("/api/v1/users/current/password", h.Identity.ChangePassword)               // gaka-8tn phase 4a: h.Identity
-	e.GET("/api/v1/labels/:id/image", h.Admin.LabelImage)                             // gaka-8tn phase 7: h.Admin
+	e.POST("/api/v1/users/current/password", h.Identity.ChangePassword) // gaka-8tn phase 4a: h.Identity
+	e.GET("/api/v1/labels/:id/image", h.Admin.LabelImage)               // gaka-8tn phase 7: h.Admin
 	// gaka-8tn phase 3: widget-def CRUD extracted to internal/widgets.
 	e.GET("/api/v1/users/current/widget-defs", h.Widgets.ListWidgetDefs)
 	e.POST("/api/v1/users/current/widget-defs", h.Widgets.CreateWidgetDef)
 	e.PATCH("/api/v1/users/current/widget-defs/:name", h.Widgets.UpdateWidgetDef)
 	e.DELETE("/api/v1/users/current/widget-defs/:name", h.Widgets.DeleteWidgetDef)
 	e.GET("/widget/svg/:uuid/named", h.Widgets.WidgetDefSvg)
-	e.GET("/api/v1/logs", h.Meta.ServerLogs)                                          // gaka-8tn phase 1: meta domain
-	e.GET("/api/v1/users/current/timezone", h.Identity.GetTimezone)                   // gaka-8tn phase 4a: h.Identity
-	e.PATCH("/api/v1/users/current/timezone", h.Identity.UpdateTimezone)              // gaka-8tn phase 4a: h.Identity
-	e.GET("/api/v1/users/current/profile", h.Identity.GetPublicProfile)               // gaka-8tn phase 4a: h.Identity
-	e.PUT("/api/v1/users/current/profile", h.Identity.PutPublicProfile)               // gaka-8tn phase 4a: h.Identity
-	e.GET("/api/public/profile/:slug", h.Identity.PublicProfile)                      // gaka-8tn phase 4a: h.Identity
-	e.GET("/api/public/profile/:slug/og.png", h.Identity.PublicProfileOGImage)        // gaka social-card: OG image
+	e.GET("/api/v1/logs", h.Meta.ServerLogs)                                   // gaka-8tn phase 1: meta domain
+	e.GET("/api/v1/users/current/timezone", h.Identity.GetTimezone)            // gaka-8tn phase 4a: h.Identity
+	e.PATCH("/api/v1/users/current/timezone", h.Identity.UpdateTimezone)       // gaka-8tn phase 4a: h.Identity
+	e.GET("/api/v1/users/current/profile", h.Identity.GetPublicProfile)        // gaka-8tn phase 4a: h.Identity
+	e.PUT("/api/v1/users/current/profile", h.Identity.PutPublicProfile)        // gaka-8tn phase 4a: h.Identity
+	e.GET("/api/public/profile/:slug", h.Identity.PublicProfile)               // gaka-8tn phase 4a: h.Identity
+	e.GET("/api/public/profile/:slug/og.png", h.Identity.PublicProfileOGImage) // gaka social-card: OG image
 	// gaka-anh Phase 2: GitHub stats endpoints (authed cache-or-sync + public
 	// cache-only). Registered unconditionally in the test router so the suites
 	// can drive them; production gates them behind Cfg.GithubConnectEnabled().
@@ -296,10 +296,10 @@ func (hz *Harness) Router() *echo.Echo {
 	// Echo's duplicate-route panic.)
 	e.GET("/api/v1/users/current/github/stats", h.Identity.GetGithubStats)
 	e.GET("/api/public/profile/:slug/github/stats", h.Identity.PublicGithubStats)
-	e.GET("/api/v1/users/current/dashboard/:scope", h.Spaces.GetDashboardLayout)      // gaka-8tn phase 2a: moved to h.Spaces
-	e.PUT("/api/v1/users/current/dashboard/:scope", h.Spaces.PutDashboardLayout)      // gaka-8tn phase 2a
+	e.GET("/api/v1/users/current/dashboard/:scope", h.Spaces.GetDashboardLayout)       // gaka-8tn phase 2a: moved to h.Spaces
+	e.PUT("/api/v1/users/current/dashboard/:scope", h.Spaces.PutDashboardLayout)       // gaka-8tn phase 2a
 	e.DELETE("/api/v1/users/current/dashboard/:scope", h.Spaces.DeleteDashboardLayout) // gaka-8tn phase 2a
-	e.POST("/api/v1/users/current/wakatime_key", h.Identity.SaveWakatimeKey)          // gaka-8tn phase 4a: h.Identity
+	e.POST("/api/v1/users/current/wakatime_key", h.Identity.SaveWakatimeKey)           // gaka-8tn phase 4a: h.Identity
 	// gaka-d6x.handler: admin cluster (label-images regeneration). Wired here so
 	// per-file test suites don't have to re-register (Echo panics on duplicate
 	// route registration).
@@ -330,6 +330,9 @@ func (hz *Harness) Router() *echo.Echo {
 	// gaka-8tn phase 6: leaderboards + commits moved to h.Stats.
 	e.GET("/api/v1/leaderboards", h.Stats.Leaderboards)
 	e.GET("/api/v1/commits/:project/report", h.Stats.Commits)
+	// gaka-174.q: cross-domain query DSL endpoint. Mirrors the production
+	// registration (queryapi.Register) so the HTTP suites can drive it.
+	e.POST("/api/v1/query", h.Query.RunQuery)
 	// Cleanup: also clean up the goals table for the test's sender.
 	// The parent Cleanup registered per MintUser catches every table
 	// but goals — we extend the cleanup list separately here so
