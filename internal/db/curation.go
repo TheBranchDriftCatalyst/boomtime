@@ -14,6 +14,15 @@ import (
 const (
 	CurationHide   = "hide"
 	CurationRename = "rename"
+	// CurationPin (canonical entities) marks a value the user has pinned on a
+	// dimension: it is ALWAYS its own slice/bar in a grouped chart and is NEVER
+	// swept into the "Other" bucket, regardless of its share. A pin is stored as
+	// a curation_rule with action="pin", axis=<dimension>, match_value=<value>,
+	// match_type="exact", new_value NULL. It does not hide or rewrite any data —
+	// it only feeds the query DSL's BucketPolicy.Pin at query time (see
+	// LoadPinnedSet + internal/queryapi auto-apply). No migration: `action` is a
+	// text column, so a new action value is additive.
+	CurationPin = "pin"
 
 	MatchExact = "exact"
 	MatchRegex = "regex"
@@ -61,13 +70,13 @@ func NormalizeTemplate(tmpl string) string {
 // its effect is paused. The apply and purge destructive paths reject
 // disabled rules (400) — pausing then applying is a confusing UX.
 type CurationRule struct {
-	ID         int       `json:"id"`
-	Axis       string    `json:"axis"`
-	Action     string    `json:"action"`
-	MatchType  string    `json:"matchType"`
-	MatchValue string    `json:"matchValue"`
-	NewValue   *string   `json:"newValue"`
-	Enabled    bool      `json:"enabled"`
+	ID         int     `json:"id"`
+	Axis       string  `json:"axis"`
+	Action     string  `json:"action"`
+	MatchType  string  `json:"matchType"`
+	MatchValue string  `json:"matchValue"`
+	NewValue   *string `json:"newValue"`
+	Enabled    bool    `json:"enabled"`
 	// ApplyAtIngest (gaka-scrub) marks a RENAME rule that also rewrites newly-
 	// ingested heartbeats (the "scrubber"). Such rules are EXCLUDED from the
 	// query-time remap (LoadRenameSets) — the row is baked at ingest, so a
@@ -96,6 +105,39 @@ func (d *DB) ListCurationRules(ctx context.Context, sender string) ([]CurationRu
 			return nil, err
 		}
 		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// LoadPinnedSet returns the enabled canonical-pin match_values for one
+// owner+axis (canonical entities). A pin is a curation_rule with
+// action="pin": the value is ALWAYS kept as its own group in a grouped query
+// and NEVER rolled into "Other", regardless of its share. This mirrors the
+// read pattern of LoadHiddenSets (owner-scoped, enabled=true filtered) but is
+// per-axis because the queryapi auto-apply loads exactly the group dimension
+// it is about to run.
+//
+// gaka-dfd parity: a disabled pin is excluded — a paused pin stops taking
+// effect, its rule row survives so the UI can flip it back on. Values are
+// returned as stored (case preserved); the DSL's BucketPolicy matches them
+// case-insensitively, so case never has to be normalized here.
+func (d *DB) LoadPinnedSet(ctx context.Context, owner, axis string) ([]string, error) {
+	rows, err := d.Pool.Query(ctx,
+		`SELECT match_value FROM curation_rules
+		 WHERE sender = $1 AND action = $2 AND axis = $3 AND enabled = true
+		 ORDER BY match_value`,
+		owner, CurationPin, axis)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
 	}
 	return out, rows.Err()
 }
@@ -317,7 +359,7 @@ type AffectedRowDiff struct {
 //   - exact:    lower(col) = lower($2)   (case-insensitive; mirrors query-time)
 //   - regex:    col ~* $2                (case-insensitive regex)
 //   - template: col ~* $2                (template rules only apply to renames;
-//                                         the WHERE gate is identical to regex)
+//     the WHERE gate is identical to regex)
 func rulePredicateSQL(col string, matchType string) string {
 	if matchType == MatchRegex || matchType == MatchTemplate {
 		return fmt.Sprintf("%s ~* $2", col)

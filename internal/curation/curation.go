@@ -57,8 +57,13 @@ func (h *Handler) CreateCuration(c *echo.Context) error {
 	if _, ok := db.ExploreColumn(req.Axis); !ok {
 		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "Unknown axis: "+req.Axis, nil))
 	}
-	if req.Action != db.CurationHide && req.Action != db.CurationRename {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "action must be 'hide' or 'rename'", nil))
+	// A pin (canonical entities) is an additive third action: it stores a value
+	// that a grouped query always keeps as its own slice (never "Other"). It
+	// carries no target (like hide) and only feeds the query-time bucket policy
+	// — the rename-only guards below (newValue, template, apply_at_ingest) skip
+	// it, and it stores as match_type "exact" with a null new_value.
+	if req.Action != db.CurationHide && req.Action != db.CurationRename && req.Action != db.CurationPin {
+		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "action must be 'hide', 'rename', or 'pin'", nil))
 	}
 	if req.MatchValue == "" {
 		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "matchValue is required", nil))

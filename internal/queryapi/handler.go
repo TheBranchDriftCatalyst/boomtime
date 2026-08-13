@@ -10,7 +10,9 @@
 package queryapi
 
 import (
+	"context"
 	"net/http"
+	"strings"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
@@ -80,6 +82,15 @@ func (h *Handler) RunQuery(c *echo.Context) error {
 		return apihelpers.RespondErr(c, apierr.NotFound("unknown domain"))
 	}
 
+	// Canonical entities: transparently merge the caller's persisted pins for
+	// the grouped axis into the spec's bucket policy so their canonical values
+	// always survive as their own group (never rolled into "Other"). No-op when
+	// the spec is ungrouped or the caller has no pins — behavior is identical to
+	// before for anyone who never pinned anything.
+	if err := h.applyCanonicalPins(c.Request().Context(), owner, &spec); err != nil {
+		return apihelpers.InternalErr(h.Logger, c, "load canonical pins failed", err)
+	}
+
 	q, err := spec.toQuery()
 	if err != nil {
 		return apihelpers.RespondErr(c, apierr.BadRequest(err.Error()))
@@ -99,6 +110,55 @@ func (h *Handler) RunQuery(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, shape(res))
+}
+
+// applyCanonicalPins merges the caller's persisted canonical pins (curation
+// rules with action="pin") for the grouped axis into the spec's bucket policy,
+// so a grouped query ALWAYS keeps those values as their own group and never
+// rolls them into "Other" regardless of share (canonical entities).
+//
+// It is a no-op unless the spec groups by a dimension AND the caller has at
+// least one enabled pin on that axis — so the result is byte-identical to the
+// pre-feature behavior for anyone who never pinned anything. When pins exist
+// but the spec carries no bucket policy, one is synthesized (TopN 0 = keep all
+// non-pinned rows, no Other), which changes nothing on its own but lets the
+// pins ride through query.Run's applyBucketPolicy. Explicit spec pins are
+// preserved and unioned with the persisted ones (case-insensitive dedupe).
+func (h *Handler) applyCanonicalPins(ctx context.Context, owner string, spec *Spec) error {
+	if spec.Group == "" {
+		return nil
+	}
+	pins, err := h.DB.LoadPinnedSet(ctx, owner, spec.Group)
+	if err != nil {
+		return err
+	}
+	if len(pins) == 0 {
+		return nil
+	}
+	if spec.Bucket == nil {
+		spec.Bucket = &BucketSpec{Pin: pins}
+		return nil
+	}
+	spec.Bucket.Pin = unionCI(spec.Bucket.Pin, pins)
+	return nil
+}
+
+// unionCI returns the union of base and add, de-duplicated case-insensitively
+// (the bucket policy matches pins case-insensitively, so a case-variant
+// duplicate would be redundant). base order is preserved; new values from add
+// are appended in order. The stored casing of the first occurrence wins.
+func unionCI(base, add []string) []string {
+	seen := make(map[string]bool, len(base)+len(add))
+	out := make([]string, 0, len(base)+len(add))
+	for _, v := range append(append([]string{}, base...), add...) {
+		lk := strings.ToLower(v)
+		if seen[lk] {
+			continue
+		}
+		seen[lk] = true
+		out = append(out, v)
+	}
+	return out
 }
 
 // shape maps a query.Result onto the JSON response envelope.
