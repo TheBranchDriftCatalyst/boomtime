@@ -9,12 +9,14 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
+  BarChart3,
   BookMarked,
   BookOpen,
   Headphones,
   Library,
   Search,
   Star,
+  Table2,
 } from "lucide-react";
 import { Card, CardContent } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
@@ -25,6 +27,7 @@ import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
 import { usePublicConfig } from "@/lib/usePublicConfig";
 import { cn } from "@/lib/utils";
+import { BooksExplorer } from "@/features/books/BooksExplorer";
 import type { ReadingItemDTO } from "@/types/meta";
 
 // ── small helpers ────────────────────────────────────────────────────────────
@@ -32,6 +35,9 @@ import type { ReadingItemDTO } from "@/types/meta";
 type SourceFilter = "all" | "audible" | "kindle";
 type StatusFilter = "all" | "reading" | "finished" | "want";
 type SortKey = "synced" | "title" | "finished";
+// Table = the flat reading_items list; Explore = group-by-dimension breakdowns
+// via the query DSL (see BooksExplorer).
+type ViewMode = "table" | "explore";
 
 const fmtDate = (iso?: string): string => {
   if (!iso) return "—";
@@ -396,6 +402,7 @@ export function BooksPage() {
   const { config } = usePublicConfig();
   const booksEnabled = config.books_enabled;
 
+  const [mode, setMode] = useState<ViewMode>("table");
   const [search, setSearch] = useState("");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -443,7 +450,32 @@ export function BooksPage() {
 
   return (
     <Page>
-      <Page.Header title="Books" />
+      <Page.Header title="Books">
+        {booksEnabled && (
+          <div className="flex items-center rounded-md border p-0.5">
+            <Button
+              variant={mode === "table" ? "secondary" : "ghost"}
+              size="sm"
+              className="h-7"
+              aria-pressed={mode === "table"}
+              onClick={() => setMode("table")}
+            >
+              <Table2 className="h-4 w-4" />
+              Table
+            </Button>
+            <Button
+              variant={mode === "explore" ? "secondary" : "ghost"}
+              size="sm"
+              className="h-7"
+              aria-pressed={mode === "explore"}
+              onClick={() => setMode("explore")}
+            >
+              <BarChart3 className="h-4 w-4" />
+              Explore
+            </Button>
+          </div>
+        )}
+      </Page.Header>
       <Page.Body>
         <Page.Content>
           <div className="space-y-6">
@@ -459,6 +491,8 @@ export function BooksPage() {
                   />
                 </CardContent>
               </Card>
+            ) : mode === "explore" ? (
+              <BooksExplorer />
             ) : query.isError ? (
               <Card>
                 <CardContent className="pt-6">
