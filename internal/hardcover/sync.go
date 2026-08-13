@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/logctx"
 )
 
 // hardcoverActivitySource tags reading_activity buckets fed by the Hardcover
@@ -63,7 +64,7 @@ func (s *SyncService) SyncHardcoverPull(ctx context.Context, owner string) (Pull
 	}
 	client, ok, err := s.Store.ClientForUser(ctx, owner)
 	if err != nil {
-		s.logWarn("hardcover pull: client load failed", "user", owner, "err", err)
+		s.logWarn(ctx, "hardcover pull: client load failed", "user", owner, "err", err)
 		return res, err
 	}
 	if !ok {
@@ -96,7 +97,7 @@ func (s *SyncService) SyncHardcoverPull(ctx context.Context, owner string) (Pull
 		})
 		if uerr != nil {
 			// A single reconcile failure shouldn't abort the whole sweep.
-			s.logWarn("hardcover pull: reconcile failed", "user", owner, "bookId", b.BookID, "err", uerr)
+			s.logWarn(ctx, "hardcover pull: reconcile failed", "user", owner, "bookId", b.BookID, "err", uerr)
 			continue
 		}
 		if n > 0 {
@@ -106,7 +107,7 @@ func (s *SyncService) SyncHardcoverPull(ctx context.Context, owner string) (Pull
 		res.Unlinked++
 		// Inbound-origin: on the shelf but not tracked locally. Logged only —
 		// creating a reading_item from a pull is a documented follow-up.
-		s.logInfo("hardcover pull: shelf book has no local reading_item (follow-up: inbound-origin create)",
+		s.logInfo(ctx, "hardcover pull: shelf book has no local reading_item (follow-up: inbound-origin create)",
 			"user", owner, "bookId", b.BookID, "title", b.Title, "status", StatusString(b.StatusID))
 	}
 
@@ -117,7 +118,7 @@ func (s *SyncService) SyncHardcoverPull(ctx context.Context, owner string) (Pull
 	// the primary job).
 	s.upsertReadActivity(ctx, owner, books)
 
-	s.logInfo("hardcover pull: complete",
+	s.logInfo(ctx, "hardcover pull: complete",
 		"user", owner, "fetched", res.Fetched, "linked", res.Linked, "unlinked", res.Unlinked)
 	return res, nil
 }
@@ -138,7 +139,7 @@ func (s *SyncService) upsertReadActivity(ctx context.Context, owner string, book
 			BucketDate:       day,
 			ListeningSeconds: secs,
 		}); err != nil {
-			s.logWarn("hardcover pull: reading_activity upsert failed",
+			s.logWarn(ctx, "hardcover pull: reading_activity upsert failed",
 				"user", owner, "day", day.Format("2006-01-02"), "err", err)
 		}
 	}
@@ -177,22 +178,26 @@ func aggregateReadActivity(books []UserBook) map[time.Time]int64 {
 // onError logs a pull failure and, on a bad token, flips the stored key status so
 // the settings UI prompts a re-paste (the Jan-1 reset makes this routine).
 func (s *SyncService) onError(ctx context.Context, owner, stage string, err error) {
-	s.logWarn("hardcover pull failed", "user", owner, "stage", stage, "err", err)
+	s.logWarn(ctx, "hardcover pull failed", "user", owner, "stage", stage, "err", err)
 	if errors.Is(err, ErrBadToken) && s.Store != nil {
 		if merr := s.Store.MarkInvalid(ctx, owner); merr != nil {
-			s.logWarn("hardcover pull: mark-invalid failed", "user", owner, "err", merr)
+			s.logWarn(ctx, "hardcover pull: mark-invalid failed", "user", owner, "err", merr)
 		}
 	}
 }
 
-func (s *SyncService) logInfo(msg string, args ...any) {
-	if s.Logger != nil {
-		s.Logger.Info(msg, args...)
+// logInfo/logWarn resolve the job-scoped logger from ctx (logctx.FromContext),
+// falling back to s.Logger off a job. Threading ctx means every handler line
+// inherits the running job's job_id/kind/owner so the Admin viewer can filter to
+// one job's run (gaka-f0is).
+func (s *SyncService) logInfo(ctx context.Context, msg string, args ...any) {
+	if l := logctx.FromContext(ctx, s.Logger); l != nil {
+		l.Info(msg, args...)
 	}
 }
 
-func (s *SyncService) logWarn(msg string, args ...any) {
-	if s.Logger != nil {
-		s.Logger.Warn(msg, args...)
+func (s *SyncService) logWarn(ctx context.Context, msg string, args ...any) {
+	if l := logctx.FromContext(ctx, s.Logger); l != nil {
+		l.Warn(msg, args...)
 	}
 }

@@ -69,7 +69,7 @@ func (s *SyncService) MatchUnmatched(ctx context.Context, owner string) (MatchSw
 	}
 	client, ok, err := s.Store.ClientForUser(ctx, owner)
 	if err != nil {
-		s.logWarn("hardcover match: client load failed", "user", owner, "err", err)
+		s.logWarn(ctx, "hardcover match: client load failed", "user", owner, "err", err)
 		return res, err
 	}
 	if !ok {
@@ -95,6 +95,13 @@ func (s *SyncService) matchWith(ctx context.Context, owner string, client matche
 			return res, err
 		}
 		res.Scanned++
+		// Periodic progress: a large backlog resolves one rate-limited row at a
+		// time, so emit a heartbeat every ~100 rows to show the sweep is advancing
+		// (final summary logged after the loop).
+		if res.Scanned%100 == 0 {
+			s.logInfo(ctx, "hardcover match: scanned", "user", owner,
+				"scanned", res.Scanned, "of", len(items), "matched", res.Matched, "cachehits", res.CacheHits)
+		}
 		asin := firstNonEmpty(it.ExternalID, it.AmazonASIN)
 
 		// gaka-wzgr — cache-first. A match (ASIN/ISBN13 → book/edition) is an
@@ -111,7 +118,7 @@ func (s *SyncService) matchWith(ctx context.Context, owner string, client matche
 		)
 		if asinKey != "" {
 			if cached, ok, lerr := s.DB.LookupHardcoverMatch(ctx, "asin", asinKey); lerr != nil {
-				s.logWarn("hardcover match: cache lookup failed — falling through to API", "user", owner, "idtype", "asin", "external", asinKey, "err", lerr)
+				s.logWarn(ctx, "hardcover match: cache lookup failed — falling through to API", "user", owner, "idtype", "asin", "external", asinKey, "err", lerr)
 			} else if ok && cached.BookID > 0 {
 				m = MatchResult{BookID: cached.BookID, EditionID: cached.EditionID, Method: MatchMethod(cached.Method)}
 				fromCache = true
@@ -119,7 +126,7 @@ func (s *SyncService) matchWith(ctx context.Context, owner string, client matche
 		}
 		if !fromCache && isbnKey != "" {
 			if cached, ok, lerr := s.DB.LookupHardcoverMatch(ctx, "isbn13", isbnKey); lerr != nil {
-				s.logWarn("hardcover match: cache lookup failed — falling through to API", "user", owner, "idtype", "isbn13", "external", isbnKey, "err", lerr)
+				s.logWarn(ctx, "hardcover match: cache lookup failed — falling through to API", "user", owner, "idtype", "isbn13", "external", isbnKey, "err", lerr)
 			} else if ok && cached.BookID > 0 {
 				m = MatchResult{BookID: cached.BookID, EditionID: cached.EditionID, Method: MatchMethod(cached.Method)}
 				fromCache = true
@@ -143,7 +150,7 @@ func (s *SyncService) matchWith(ctx context.Context, owner string, client matche
 					s.onError(ctx, owner, "match", merr)
 					return res, merr
 				}
-				s.logWarn("hardcover match: match failed — leaving unmatched", "user", owner, "source", it.Source, "external", it.ExternalID, "err", merr)
+				s.logWarn(ctx, "hardcover match: match failed — leaving unmatched", "user", owner, "source", it.Source, "external", it.ExternalID, "err", merr)
 				res.Skipped++
 				continue
 			}
@@ -159,17 +166,17 @@ func (s *SyncService) matchWith(ctx context.Context, owner string, client matche
 			switch {
 			case m.Method == MatchByASIN && asinKey != "":
 				if perr := s.DB.PutHardcoverMatch(ctx, "asin", asinKey, m.BookID, m.EditionID, string(m.Method)); perr != nil {
-					s.logWarn("hardcover match: cache put failed", "user", owner, "idtype", "asin", "external", asinKey, "err", perr)
+					s.logWarn(ctx, "hardcover match: cache put failed", "user", owner, "idtype", "asin", "external", asinKey, "err", perr)
 				}
 			case m.Method == MatchByISBN13 && isbnKey != "":
 				if perr := s.DB.PutHardcoverMatch(ctx, "isbn13", isbnKey, m.BookID, m.EditionID, string(m.Method)); perr != nil {
-					s.logWarn("hardcover match: cache put failed", "user", owner, "idtype", "isbn13", "external", isbnKey, "err", perr)
+					s.logWarn(ctx, "hardcover match: cache put failed", "user", owner, "idtype", "isbn13", "external", isbnKey, "err", perr)
 				}
 			}
 		}
 
 		if lerr := s.DB.SetReadingItemHardcoverLink(ctx, owner, it.Source, it.ExternalID, m.BookID, m.EditionID, string(m.Method)); lerr != nil {
-			s.logWarn("hardcover match: link write failed", "user", owner, "source", it.Source, "external", it.ExternalID, "err", lerr)
+			s.logWarn(ctx, "hardcover match: link write failed", "user", owner, "source", it.Source, "external", it.ExternalID, "err", lerr)
 			res.Skipped++
 			continue
 		}
@@ -180,10 +187,10 @@ func (s *SyncService) matchWith(ctx context.Context, owner string, client matche
 		// render a real row. Best-effort — a lookup/enrich miss never fails the row.
 		if it.Source == kindleReadingSource && strings.TrimSpace(it.Title) == "" && asin != "" {
 			if meta, lerr := client.LookupByASIN(ctx, asin); lerr != nil {
-				s.logWarn("hardcover match: lookup for enrich failed", "user", owner, "asin", asin, "err", lerr)
+				s.logWarn(ctx, "hardcover match: lookup for enrich failed", "user", owner, "asin", asin, "err", lerr)
 			} else if meta != nil {
 				if n, uerr := s.DB.UpdateReadingItemDisplayMeta(ctx, owner, it.Source, it.ExternalID, meta.Title, meta.Authors, meta.CoverURL); uerr != nil {
-					s.logWarn("hardcover match: display-meta backfill failed", "user", owner, "asin", asin, "err", uerr)
+					s.logWarn(ctx, "hardcover match: display-meta backfill failed", "user", owner, "asin", asin, "err", uerr)
 				} else if n > 0 {
 					res.Enriched++
 				}
@@ -198,10 +205,10 @@ func (s *SyncService) matchWith(ctx context.Context, owner string, client matche
 	if serr := s.DB.SetBookSyncState(ctx, db.BookSyncState{
 		Owner: owner, Source: matchStateSource, LastMatchAt: &now,
 	}); serr != nil {
-		s.logWarn("hardcover match: last_match_at cursor write failed", "user", owner, "err", serr)
+		s.logWarn(ctx, "hardcover match: last_match_at cursor write failed", "user", owner, "err", serr)
 	}
 
-	s.logInfo("hardcover match: complete",
+	s.logInfo(ctx, "hardcover match: complete",
 		"user", owner, "scanned", res.Scanned, "matched", res.Matched,
 		"nomatch", res.NoMatch, "skipped", res.Skipped, "enriched", res.Enriched,
 		"cachehits", res.CacheHits)

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/logctx"
 )
 
 // outcome is what execute did with a job — providers use it to decide any
@@ -58,13 +60,18 @@ func execute(ctx context.Context, reg *Registry, store *Store, job Job, log *slo
 	// silent in the viewer, and the side panel has an opening marker.
 	jl.Info("jobs: started", "attempt", job.Attempts, "of", job.MaxAttempts)
 
+	// Carry the job-scoped logger on ctx so handlers (and the domain log helpers
+	// they call) resolve it via logctx.FromContext — EVERY handler line then
+	// inherits job_id/kind/owner and the Admin viewer can filter to one job's run.
+	hctx := logctx.NewContext(ctx, jl)
+
 	err := func() (e error) {
 		defer func() {
 			if r := recover(); r != nil {
 				e = fmt.Errorf("panic: %v", r)
 			}
 		}()
-		return h.Handle(ctx, job)
+		return h.Handle(hctx, job)
 	}()
 
 	// Cancelled mid-run (admin cancel via LocalProvider.Cancel, or shutdown): do

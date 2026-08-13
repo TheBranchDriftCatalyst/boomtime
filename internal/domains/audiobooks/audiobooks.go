@@ -33,6 +33,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/hardcover"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/logctx"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/notify"
 )
 
@@ -335,7 +336,7 @@ func (s *Service) fetchLibraryPage(ctx context.Context, cred *amazon.DeviceCrede
 	for _, raw := range lr.Items {
 		var li LibraryItem
 		if err := json.Unmarshal(raw, &li); err != nil {
-			s.logWarn("audible library: skipping unparseable item", "err", err, "snippet", snippet(raw))
+			s.logWarn(ctx, "audible library: skipping unparseable item", "err", err, "snippet", snippet(raw))
 			continue
 		}
 		li.raw = raw
@@ -357,6 +358,7 @@ func (s *Service) FetchLibrary(ctx context.Context, cred *amazon.DeviceCredentia
 func (s *Service) sweepLibrary(ctx context.Context, cred *amazon.DeviceCredential, owner string, purchasedAfter *time.Time) (int, *time.Time, error) {
 	var (
 		count  int
+		pages  int
 		newest *time.Time
 	)
 	for page := 1; ; page++ {
@@ -369,6 +371,7 @@ func (s *Service) sweepLibrary(ctx context.Context, cred *amazon.DeviceCredentia
 		if err != nil {
 			return count, newest, err
 		}
+		pages++
 		for _, it := range items {
 			if it.ASIN == "" {
 				continue
@@ -382,10 +385,14 @@ func (s *Service) sweepLibrary(ctx context.Context, cred *amazon.DeviceCredentia
 				newest = pd
 			}
 		}
+		// Progress: one line per fetched page so a running multi-page sweep shows
+		// live activity in the Admin log viewer instead of a single line at the end.
+		s.logInfo(ctx, "audible: library page swept", "user", owner, "page", page, "pageItems", len(items), "upsertedSoFar", count)
 		if len(items) < libraryPageSize {
 			break
 		}
 	}
+	s.logInfo(ctx, "audible: library sweep complete", "user", owner, "pages", pages, "upserted", count)
 	return count, newest, nil
 }
 
@@ -419,9 +426,10 @@ func (s *Service) sweepFinished(ctx context.Context, cred *amazon.DeviceCredenti
 		start = *since
 	}
 	var (
-		events []finishedEvent
-		newest *time.Time
-		token  string
+		events  []finishedEvent
+		newest  *time.Time
+		token   string
+		applied int // entries marked finished in reading_items this sweep
 	)
 	for {
 		// Honor cancellation between continuation pages of the finished sweep.
@@ -461,6 +469,7 @@ func (s *Service) sweepFinished(ctx context.Context, cred *amazon.DeviceCredenti
 			if err != nil {
 				return events, newest, fmt.Errorf("mark finished %q: %w", e.ASIN, err)
 			}
+			applied++
 			if emitEvents && transitioned && found {
 				events = append(events, finishedEvent{Meta: meta, FinishedAt: *ts})
 			}
@@ -470,6 +479,9 @@ func (s *Service) sweepFinished(ctx context.Context, cred *amazon.DeviceCredenti
 		}
 		token = fr.ContinuationToken
 	}
+	// Phase summary: how many finished entries were applied and how many were the
+	// newly-finished false→true edges (events) this run.
+	s.logInfo(ctx, "audible: finished sweep complete", "user", owner, "applied", applied, "newlyFinished", len(events))
 	return events, newest, nil
 }
 
@@ -529,6 +541,7 @@ func (s *Service) backfillAggregates(ctx context.Context, cred *amazon.DeviceCre
 	cur = time.Date(cur.Year(), cur.Month(), 1, 0, 0, 0, 0, time.UTC)
 	// Safety ceiling so a persistently-non-empty (or misparsed) response can't
 	// loop forever: Audible launched in 1995; 40 years of windows is ample.
+	var totalBuckets, windows int
 	for i := 0; i < 40; i++ {
 		// Honor cancellation between aggregate windows.
 		if err := ctx.Err(); err != nil {
@@ -539,15 +552,20 @@ func (s *Service) backfillAggregates(ctx context.Context, cred *amazon.DeviceCre
 		if err != nil {
 			// Aggregates are best-effort — a shape/endpoint hiccup must not fail
 			// the whole backfill (library + finished are the valuable parts).
-			s.logWarn("audible backfill: aggregates window failed", "user", owner,
+			s.logWarn(ctx, "audible backfill: aggregates window failed", "user", owner,
 				"window", windowStart.Format("2006-01"), "err", err)
 			return nil
 		}
 		if written == 0 {
 			break // no activity in this (older) window → account start reached.
 		}
+		windows++
+		totalBuckets += written
 		cur = windowStart.AddDate(0, -1, 0)
 	}
+	// Phase summary: how many monthly windows were walked and how many non-empty
+	// listening buckets they wrote into reading_activity.
+	s.logInfo(ctx, "audible: aggregates backfill complete", "user", owner, "windows", windows, "buckets", totalBuckets)
 	return nil
 }
 
@@ -596,7 +614,7 @@ func (s *Service) BackfillUser(ctx context.Context, owner string) error {
 	if err := s.DB.SetBookSyncState(ctx, st); err != nil {
 		return err
 	}
-	s.logInfo("audible backfill complete", "user", owner, "libraryItems", libCount)
+	s.logInfo(ctx, "audible backfill complete", "user", owner, "libraryItems", libCount)
 	return nil
 }
 
@@ -629,7 +647,7 @@ func (s *Service) SyncUser(ctx context.Context, owner string) (int, error) {
 
 	// Current daily window (last 30 days) → granularity='day'. Best-effort.
 	if _, aerr := s.sweepAggregates(ctx, cred, owner, time.Now().UTC().AddDate(0, 0, -29), 30, true); aerr != nil {
-		s.logWarn("audible forward: daily aggregates failed", "user", owner, "err", aerr)
+		s.logWarn(ctx, "audible forward: daily aggregates failed", "user", owner, "err", aerr)
 	}
 
 	// Publish + push the newly-finished books AFTER the sweep committed.
@@ -657,7 +675,7 @@ func (s *Service) SyncUser(ctx context.Context, owner string) (int, error) {
 		return libCount, err
 	}
 	if len(events) > 0 {
-		s.logInfo("audible forward: newly finished", "user", owner, "count", len(events))
+		s.logInfo(ctx, "audible forward: newly finished", "user", owner, "count", len(events))
 	}
 	return libCount, nil
 }
@@ -697,12 +715,12 @@ func (s *Service) mirrorFinishedToHardcover(ctx context.Context, owner string, e
 	p := payloadFromEvent(owner, ev)
 	body, err := json.Marshal(p)
 	if err != nil {
-		s.logWarn("hardcover-push: marshal payload failed — pushing inline", "user", owner, "err", err)
+		s.logWarn(ctx, "hardcover-push: marshal payload failed — pushing inline", "user", owner, "err", err)
 		s.pushFinishedToHardcover(ctx, owner, ev)
 		return
 	}
 	if _, err := s.Enqueuer.Enqueue(ctx, HardcoverPushKind, body, jobs.Owner(owner), jobs.MaxAttempts(3)); err != nil {
-		s.logWarn("hardcover-push: enqueue failed — pushing inline", "user", owner, "err", err)
+		s.logWarn(ctx, "hardcover-push: enqueue failed — pushing inline", "user", owner, "err", err)
 		s.pushFinishedToHardcover(ctx, owner, ev)
 	}
 }
@@ -740,7 +758,7 @@ func (s *Service) RunHardcoverPush(ctx context.Context, p HardcoverPushPayload) 
 	client, ok, err := s.Hardcover.ClientForUser(ctx, p.Owner)
 	if err != nil || !ok {
 		if err != nil {
-			s.logWarn("hardcover: client load failed", "user", p.Owner, "err", err)
+			s.logWarn(ctx, "hardcover: client load failed", "user", p.Owner, "err", err)
 		}
 		return nil
 	}
@@ -755,7 +773,7 @@ func (s *Service) RunHardcoverPush(ctx context.Context, p HardcoverPushPayload) 
 		return err
 	}
 	if match.BookID <= 0 {
-		s.logInfo("hardcover: no confident match — left for review", "user", p.Owner, "asin", p.ASIN)
+		s.logInfo(ctx, "hardcover: no confident match — left for review", "user", p.Owner, "asin", p.ASIN)
 		return nil
 	}
 	// Dry-run: surface WHAT WOULD be written (toast + log) and stop before any
@@ -763,7 +781,7 @@ func (s *Service) RunHardcoverPush(ctx context.Context, p HardcoverPushPayload) 
 	// it here gives the user a clear, per-book preview of the intended push.
 	if client.DryRun() {
 		title := firstNonEmpty(p.Title, p.ASIN)
-		s.logInfo("hardcover DRYRUN: would push finished book",
+		s.logInfo(ctx, "hardcover DRYRUN: would push finished book",
 			"user", p.Owner, "title", title, "bookId", match.BookID, "editionId", match.EditionID)
 		if s.Notify != nil {
 			s.Notify.Publish(notify.Event{
@@ -799,7 +817,7 @@ func (s *Service) RunHardcoverPush(ctx context.Context, p HardcoverPushPayload) 
 		s.hardcoverError(ctx, p.Owner, "upsert user_book_read", err)
 		return err
 	}
-	s.logInfo("hardcover: pushed finished book", "user", p.Owner, "asin", p.ASIN, "bookId", match.BookID)
+	s.logInfo(ctx, "hardcover: pushed finished book", "user", p.Owner, "asin", p.ASIN, "bookId", match.BookID)
 	return nil
 }
 
@@ -822,15 +840,16 @@ func (s *Service) syncInProgressToHardcover(ctx context.Context, owner string) {
 	client, ok, err := s.Hardcover.ClientForUser(ctx, owner)
 	if err != nil || !ok {
 		if err != nil {
-			s.logWarn("hardcover: client load failed (in-progress push)", "user", owner, "err", err)
+			s.logWarn(ctx, "hardcover: client load failed (in-progress push)", "user", owner, "err", err)
 		}
 		return
 	}
 	items, err := s.DB.ListReadingItems(ctx, owner, source)
 	if err != nil {
-		s.logWarn("hardcover: list reading items failed (in-progress push)", "user", owner, "err", err)
+		s.logWarn(ctx, "hardcover: list reading items failed (in-progress push)", "user", owner, "err", err)
 		return
 	}
+	var pushed, skipped int
 	for _, it := range items {
 		// Stop before each per-book Hardcover call on cancellation (this loop can
 		// make one rate-limited push per in-progress title).
@@ -839,6 +858,7 @@ func (s *Service) syncInProgressToHardcover(ctx context.Context, owner string) {
 		}
 		bookID, editionID, pct, lenSeconds, do := inProgressPushMatched(it)
 		if !do {
+			skipped++ // not in-progress, unmatched, or unchanged since last push
 			continue
 		}
 		// Push against the STORED match — never re-run the match ladder here (that
@@ -855,11 +875,15 @@ func (s *Service) syncInProgressToHardcover(ctx context.Context, owner string) {
 		// purpose: dry-run keeps showing full intent each run, and flipping dry-run
 		// off then flushes the backlog once.
 		if applied {
+			pushed++
 			if err := s.DB.SetReadingItemPushedProgress(ctx, owner, it.Source, it.ExternalID, pct); err != nil {
-				s.logWarn("hardcover: record pushed progress failed", "user", owner, "asin", it.ExternalID, "err", err)
+				s.logWarn(ctx, "hardcover: record pushed progress failed", "user", owner, "asin", it.ExternalID, "err", err)
 			}
 		}
 	}
+	// Phase summary: progress pushes actually applied vs rows skipped (not
+	// in-progress, unmatched, or unchanged since the last push).
+	s.logInfo(ctx, "audible: in-progress hardcover push complete", "user", owner, "pushed", pushed, "skipped", skipped)
 }
 
 // inProgressPushMatched is the pure skip/push predicate for one reading_item in
@@ -925,22 +949,26 @@ func (s *Service) hardcoverError(ctx context.Context, owner, op string, err erro
 	if s.Hardcover != nil && err == hardcover.ErrBadToken {
 		_ = s.Hardcover.MarkInvalid(ctx, owner)
 	}
-	s.logWarn("hardcover: "+op+" failed", "user", owner, "err", err)
+	s.logWarn(ctx, "hardcover: "+op+" failed", "user", owner, "err", err)
 }
 
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
 
-func (s *Service) logInfo(msg string, args ...any) {
-	if s.Logger != nil {
-		s.Logger.Info(msg, args...)
+// logInfo/logWarn resolve the job-scoped logger from ctx (logctx.FromContext),
+// falling back to s.Logger off a job. Threading ctx means every handler line
+// inherits the running job's job_id/kind/owner so the Admin viewer can filter to
+// one job's run (gaka-f0is).
+func (s *Service) logInfo(ctx context.Context, msg string, args ...any) {
+	if l := logctx.FromContext(ctx, s.Logger); l != nil {
+		l.Info(msg, args...)
 	}
 }
 
-func (s *Service) logWarn(msg string, args ...any) {
-	if s.Logger != nil {
-		s.Logger.Warn(msg, args...)
+func (s *Service) logWarn(ctx context.Context, msg string, args ...any) {
+	if l := logctx.FromContext(ctx, s.Logger); l != nil {
+		l.Warn(msg, args...)
 	}
 }
 

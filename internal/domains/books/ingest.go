@@ -24,6 +24,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/amazon"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/hardcover"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/logctx"
 )
 
 // kindleSource is the narrow Cloud Reader wire surface SyncUser depends on. The
@@ -82,6 +83,9 @@ func (s *Service) sweep(ctx context.Context, cred *amazon.DeviceCredential, owne
 	if err != nil {
 		return nil, res != nil, err
 	}
+	// Progress: the Cloud Reader fetch is the first slow phase — log the raw
+	// library size so a running sync shows activity before the mapping loop.
+	s.logInfo(ctx, "kindle: fetched library", "user", owner, "items", len(library))
 
 	items := make([]kindleItem, 0, len(library))
 	for _, lib := range library {
@@ -139,12 +143,18 @@ func (s *Service) SyncUser(ctx context.Context, owner string) (int, error) {
 			}
 		}
 		count++
+		// Mid-loop progress every ~500 rows so a very large library (thousands of
+		// books) shows steady advancement rather than one line at the very end.
+		if count%500 == 0 {
+			s.logInfo(ctx, "kindle: upserting library", "user", owner, "upsertedSoFar", count, "of", len(items))
+		}
 	}
+	s.logInfo(ctx, "kindle: upserted", "user", owner, "items", count)
 
 	if !hcConnected {
-		s.logInfo("kindle sync: Hardcover not connected — titles from Amazon, no linkage", "user", owner, "items", count)
+		s.logInfo(ctx, "kindle sync: Hardcover not connected — titles from Amazon, no linkage", "user", owner, "items", count)
 	} else {
-		s.logInfo("kindle sync complete", "user", owner, "items", count)
+		s.logInfo(ctx, "kindle sync complete", "user", owner, "items", count)
 	}
 	return count, nil
 }
@@ -167,7 +177,7 @@ func (s *Service) resolverFor(ctx context.Context, owner string) metaResolver {
 	}
 	client, ok, err := s.Hardcover.ClientForUser(ctx, owner)
 	if err != nil {
-		s.logWarn("kindle: hardcover client load failed — ingesting without linkage", "user", owner, "err", err)
+		s.logWarn(ctx, "kindle: hardcover client load failed — ingesting without linkage", "user", owner, "err", err)
 		return nil
 	}
 	if !ok {
@@ -259,14 +269,18 @@ func rawMeta(lib amazon.CloudLibraryItem) []byte {
 // logging helpers (nil-safe)
 // ---------------------------------------------------------------------------
 
-func (s *Service) logInfo(msg string, args ...any) {
-	if s.Logger != nil {
-		s.Logger.Info(msg, args...)
+// logInfo/logWarn resolve the job-scoped logger from ctx (logctx.FromContext),
+// falling back to s.Logger off a job. Threading ctx means every handler line
+// inherits the running job's job_id/kind/owner so the Admin viewer can filter to
+// one job's run (gaka-f0is).
+func (s *Service) logInfo(ctx context.Context, msg string, args ...any) {
+	if l := logctx.FromContext(ctx, s.Logger); l != nil {
+		l.Info(msg, args...)
 	}
 }
 
-func (s *Service) logWarn(msg string, args ...any) {
-	if s.Logger != nil {
-		s.Logger.Warn(msg, args...)
+func (s *Service) logWarn(ctx context.Context, msg string, args ...any) {
+	if l := logctx.FromContext(ctx, s.Logger); l != nil {
+		l.Warn(msg, args...)
 	}
 }

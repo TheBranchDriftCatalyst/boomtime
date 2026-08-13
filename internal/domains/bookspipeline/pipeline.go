@@ -27,6 +27,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/logctx"
 )
 
 // BooksSyncAllKind is the jobs registry kind for the consolidated reading-sync
@@ -96,24 +98,37 @@ func (p *Pipeline) RunPipeline(ctx context.Context, owner string) (Summary, erro
 		{"hardcover-pull", p.steps.Pull, &sum.Pulled},
 	}
 
+	// Resolve the job-scoped logger from ctx (job_id/kind/owner attrs) so every
+	// pipeline line carries the running job's id in the Admin viewer; fall back to
+	// the injected logger off a job (nil-tolerant for tests).
+	log := logctx.FromContext(ctx, p.logger)
+
 	for _, st := range stages {
 		if st.fn == nil {
 			continue // unwired stage — skip, keep ordering
+		}
+		// Per-step start: a running pipeline shows which stage is live, not one
+		// line at the very end.
+		if log != nil {
+			log.Info("books-sync-all: step start", "step", st.name, "user", owner)
 		}
 		n, err := st.fn(ctx, owner)
 		if err != nil {
 			msg := fmt.Sprintf("%s: %v", st.name, err)
 			sum.Errors = append(sum.Errors, msg)
-			if p.logger != nil {
-				p.logger.Warn("books-sync-all: step failed", "step", st.name, "user", owner, "err", err)
+			if log != nil {
+				log.Warn("books-sync-all: step failed", "step", st.name, "user", owner, "err", err)
 			}
 			// best-effort: record the count we did get (usually 0) and continue.
+		} else if log != nil {
+			// Per-step summary on success: the stage's processed count.
+			log.Info("books-sync-all: step done", "step", st.name, "user", owner, "count", n)
 		}
 		*st.into = n
 	}
 
-	if p.logger != nil {
-		p.logger.Info("books-sync-all: pipeline complete",
+	if log != nil {
+		log.Info("books-sync-all: pipeline complete",
 			"user", owner,
 			"audibleSynced", sum.AudibleSynced,
 			"kindleSynced", sum.KindleSynced,
