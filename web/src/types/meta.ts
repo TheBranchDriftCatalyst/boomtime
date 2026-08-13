@@ -54,6 +54,16 @@ export interface ReadingItemDTO {
   narrators?: string;
   runtimeMin?: number;
   goodreadsRating?: number;
+  // Identifiers for precise external linking (gaka-qic0). external_id is the
+  // ASIN; amazonAsin is the print/kindle sibling; isbn is NULL for audiobooks.
+  isbn?: string;
+  amazonAsin?: string;
+  // Hardcover match state (migration 00063). Omitted while unmatched — a nil
+  // hardcoverBookId is the honest "not matched yet" signal. Populated once the
+  // Hardcover match sync resolves the row (then the link goes direct).
+  hardcoverBookId?: number | null;
+  hardcoverStatus?: string | null;
+  hardcoverMatchedAt?: string;
 }
 
 // GET /api/v1/hardcover — the Hardcover push-target connection status

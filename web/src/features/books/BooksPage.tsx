@@ -123,6 +123,42 @@ function StatusPill({ status, finished }: { status: string; finished: boolean })
   );
 }
 
+// Hardcover match-state badge. Honest about the (current) unmatched reality:
+// the link/match columns are NULL until the Hardcover match sync runs, so we
+// render a muted "Not matched" today and auto-upgrade to "Synced"/status or a
+// generic "Matched" the moment the DTO carries a hardcoverBookId.
+function HardcoverBadge({ item }: { item: ReadingItemDTO }) {
+  const matched = item.hardcoverBookId != null;
+  if (!matched) {
+    return (
+      <span
+        className="inline-flex items-center rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] font-medium text-muted-foreground/70"
+        title="Not yet matched to a Hardcover book"
+      >
+        Not matched
+      </span>
+    );
+  }
+  const status = (item.hardcoverStatus ?? "").trim();
+  // A known shelf status → show it (capitalized); otherwise a generic "Matched".
+  const label = status
+    ? status.charAt(0).toUpperCase() + status.slice(1)
+    : "Matched";
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-full border border-fuchsia-500/40 bg-fuchsia-500/10 px-2 py-0.5 text-[11px] font-medium text-fuchsia-600 dark:text-fuchsia-400"
+      title={
+        status
+          ? `Matched on Hardcover · ${label}`
+          : "Matched to a Hardcover book"
+      }
+    >
+      <BookMarked className="h-3 w-3" />
+      {status ? label : "Matched"}
+    </span>
+  );
+}
+
 // Slim progress bar — a neon fill over a track. Clamped 0..100.
 function ProgressBar({ pct }: { pct: number }) {
   const v = Math.max(0, Math.min(100, Math.round(pct)));
@@ -293,7 +329,7 @@ function FilterSelect<T extends string>({
 function BooksTable({ items }: { items: ReadingItemDTO[] }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
-      <table className="w-full min-w-[880px] border-collapse text-sm">
+      <table className="w-full min-w-[1000px] border-collapse text-sm">
         <thead>
           <tr className="border-b border-border bg-muted/30 text-left">
             <th className="px-3 py-2.5 font-medium" colSpan={2}>
@@ -302,6 +338,7 @@ function BooksTable({ items }: { items: ReadingItemDTO[] }) {
             <th className="px-3 py-2.5 font-medium">Author</th>
             <th className="px-3 py-2.5 font-medium">Source</th>
             <th className="px-3 py-2.5 font-medium">Status</th>
+            <th className="px-3 py-2.5 font-medium">Hardcover</th>
             <th className="px-3 py-2.5 font-medium">Progress</th>
             <th className="px-3 py-2.5 font-medium">Finished</th>
             <th className="px-3 py-2.5 text-right font-medium">Rating</th>
@@ -365,6 +402,9 @@ function BooksTable({ items }: { items: ReadingItemDTO[] }) {
                 </td>
                 <td className="px-3 py-2.5 align-middle">
                   <StatusPill status={item.status} finished={item.finished} />
+                </td>
+                <td className="px-3 py-2.5 align-middle">
+                  <HardcoverBadge item={item} />
                 </td>
                 <td className="px-3 py-2.5 align-middle">
                   <ProgressBar pct={item.progressPercent} />

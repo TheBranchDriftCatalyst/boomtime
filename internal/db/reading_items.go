@@ -41,6 +41,15 @@ type ReadingItem struct {
 	AmazonASIN      string
 	Genres          []byte   // JSON array of genre strings, or nil
 	GoodreadsRating *float64 // community average, NOT the user's rating
+
+	// Hardcover linkage (migration 00063). All nullable — NULL until the
+	// Hardcover match sync resolves this row. HardcoverBookID != nil means the
+	// row is matched to a Hardcover book; HardcoverStatus is the last shelf
+	// status we saw for it (once we've reconciled). The view layer uses these to
+	// render an honest match-state badge + a direct-to-Hardcover link.
+	HardcoverBookID    *int64
+	HardcoverStatus    *string
+	HardcoverMatchedAt *time.Time
 }
 
 // UpsertReadingItem inserts or updates one item (keyed by owner+source+ASIN).
@@ -136,7 +145,9 @@ func (d *DB) ListReadingItems(ctx context.Context, owner, source string) ([]Read
 	rows, err := d.Pool.Query(ctx,
 		`SELECT owner, source, external_id, title, authors, cover_url, status,
 		        progress_percent, finished, started_at, finished_at, rating,
-		        subtitle, narrators, series, runtime_min, goodreads_rating, synced_at
+		        subtitle, narrators, series, runtime_min, goodreads_rating,
+		        isbn, amazon_asin, hardcover_book_id, hardcover_status,
+		        hardcover_matched_at, synced_at
 		   FROM reading_items
 		  WHERE owner = $1 AND ($2 = '' OR source = $2)
 		  ORDER BY finished, title`,
@@ -151,7 +162,9 @@ func (d *DB) ListReadingItems(ctx context.Context, owner, source string) ([]Read
 		if err := rows.Scan(&it.Owner, &it.Source, &it.ExternalID, &it.Title, &it.Authors,
 			&it.CoverURL, &it.Status, &it.ProgressPercent, &it.Finished, &it.StartedAt,
 			&it.FinishedAt, &it.Rating, &it.Subtitle, &it.Narrators, &it.Series,
-			&it.RuntimeMin, &it.GoodreadsRating, &it.SyncedAt); err != nil {
+			&it.RuntimeMin, &it.GoodreadsRating, &it.ISBN, &it.AmazonASIN,
+			&it.HardcoverBookID, &it.HardcoverStatus, &it.HardcoverMatchedAt,
+			&it.SyncedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, it)

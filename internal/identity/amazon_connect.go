@@ -220,6 +220,20 @@ type readingItemDTO struct {
 	Narrators       string   `json:"narrators,omitempty"`
 	RuntimeMin      *int     `json:"runtimeMin,omitempty"`
 	GoodreadsRating *float64 `json:"goodreadsRating,omitempty"`
+
+	// Identifiers for precise external linking (ASIN is the reliable id; ISBN is
+	// NULL for audiobooks). external_id already carries the ASIN; amazonAsin is
+	// the print/kindle sibling ASIN when known.
+	ISBN       string `json:"isbn,omitempty"`
+	AmazonASIN string `json:"amazonAsin,omitempty"`
+
+	// Hardcover match state (migration 00063). Omitted while unmatched — a nil
+	// hardcoverBookId is the honest "not matched yet" signal the Books table
+	// renders. Once the match sync runs these populate and the row links direct
+	// to its Hardcover book page.
+	HardcoverBookID    *int64  `json:"hardcoverBookId,omitempty"`
+	HardcoverStatus    *string `json:"hardcoverStatus,omitempty"`
+	HardcoverMatchedAt *string `json:"hardcoverMatchedAt,omitempty"`
 }
 
 func toReadingItemDTO(it db.ReadingItem) readingItemDTO {
@@ -229,6 +243,8 @@ func toReadingItemDTO(it db.ReadingItem) readingItemDTO {
 		Rating: it.Rating, SyncedAt: it.SyncedAt.UTC().Format(time.RFC3339),
 		CoverURL: it.CoverURL, Subtitle: it.Subtitle, Series: it.Series,
 		Narrators: it.Narrators, RuntimeMin: it.RuntimeMin, GoodreadsRating: it.GoodreadsRating,
+		ISBN: it.ISBN, AmazonASIN: it.AmazonASIN,
+		HardcoverBookID: it.HardcoverBookID, HardcoverStatus: it.HardcoverStatus,
 	}
 	if it.StartedAt != nil {
 		s := it.StartedAt.UTC().Format(time.RFC3339)
@@ -237,6 +253,10 @@ func toReadingItemDTO(it db.ReadingItem) readingItemDTO {
 	if it.FinishedAt != nil {
 		s := it.FinishedAt.UTC().Format(time.RFC3339)
 		d.FinishedAt = &s
+	}
+	if it.HardcoverMatchedAt != nil {
+		s := it.HardcoverMatchedAt.UTC().Format(time.RFC3339)
+		d.HardcoverMatchedAt = &s
 	}
 	return d
 }

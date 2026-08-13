@@ -49,12 +49,13 @@ afterEach(() => {
 });
 
 describe("BooksPage", () => {
-  it("opens a book's Hardcover page in a new tab when its table row is clicked", async () => {
+  it("opens an ASIN-precise Hardcover search when an unmatched row is clicked", async () => {
     const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
     stub([
       item({
         title: "Project Hail Mary",
         authors: "Andy Weir",
+        externalId: "B08GB58KD5", // the ASIN — more exact than a title search
         status: "reading",
         progressPercent: 30,
       }),
@@ -67,11 +68,53 @@ describe("BooksPage", () => {
 
     expect(openSpy).toHaveBeenCalledTimes(1);
     const [url, target, features] = openSpy.mock.calls[0];
-    expect(url).toBe(
-      "https://hardcover.app/search?q=" +
-        encodeURIComponent("Project Hail Mary Andy Weir"),
-    );
+    expect(url).toBe("https://hardcover.app/search?q=B08GB58KD5");
     expect(target).toBe("_blank");
     expect(features).toContain("noopener");
+  });
+
+  it("links direct to the Hardcover book page for a matched row", async () => {
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
+    stub([
+      item({
+        title: "Dune",
+        authors: "Frank Herbert",
+        externalId: "B0ASIN123",
+        hardcoverBookId: 987654,
+        hardcoverStatus: "read",
+        status: "read",
+        finished: true,
+      }),
+    ]);
+
+    renderWithProviders(<BooksPage />, { withRouter: true });
+
+    const cell = await screen.findByText("Dune");
+    await userEvent.click(cell);
+
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    expect(openSpy.mock.calls[0][0]).toBe("https://hardcover.app/books/987654");
+  });
+
+  it("renders the Hardcover match-state column: 'Not matched' vs a match badge", async () => {
+    stub([
+      item({ title: "Unmatched Book", externalId: "B0UNMATCH", authors: "Nobody" }),
+      item({
+        title: "Matched Book",
+        externalId: "B0MATCHED",
+        authors: "Somebody",
+        hardcoverBookId: 42,
+        hardcoverStatus: "read",
+      }),
+    ]);
+
+    renderWithProviders(<BooksPage />, { withRouter: true });
+
+    // Column header exists.
+    expect(await screen.findByText("Hardcover")).toBeInTheDocument();
+    // Unmatched row shows the honest muted state.
+    expect(screen.getByText("Not matched")).toBeInTheDocument();
+    // Matched row surfaces its shelf status ("read" → "Read").
+    expect(screen.getByText("Read")).toBeInTheDocument();
   });
 });

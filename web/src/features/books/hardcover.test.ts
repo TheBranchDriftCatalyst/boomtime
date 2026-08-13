@@ -43,4 +43,42 @@ describe("hardcoverUrl", () => {
       hardcoverUrl({ title: "Dune", authors: "Frank Herbert", hardcoverId: 12345 }),
     ).toBe("https://hardcover.app/books/12345");
   });
+
+  it("links direct to the book page when a resolved hardcoverBookId is present", () => {
+    expect(
+      hardcoverUrl({
+        title: "Dune",
+        authors: "Frank Herbert",
+        hardcoverBookId: 987654,
+        externalId: "B0ASIN123", // present, but the resolved id wins
+      }),
+    ).toBe("https://hardcover.app/books/987654");
+  });
+
+  it("falls back to an ASIN-precise search when only an ASIN (external_id) is present", () => {
+    expect(
+      hardcoverUrl({
+        title: "Project Hail Mary",
+        authors: "Andy Weir",
+        externalId: "B08GB58KD5",
+      }),
+    ).toBe("https://hardcover.app/search?q=B08GB58KD5");
+  });
+
+  it("prefers amazonAsin over external_id for the ASIN search", () => {
+    expect(
+      hardcoverUrl({
+        title: "Project Hail Mary",
+        authors: "Andy Weir",
+        externalId: "B0AUDIOASN",
+        amazonAsin: "B0PRINTASN",
+      }),
+    ).toBe("https://hardcover.app/search?q=B0PRINTASN");
+  });
+
+  it("still uses the title+author search when neither an id nor an ASIN exists", () => {
+    expect(
+      hardcoverUrl({ title: "Solo", authors: "", externalId: "", amazonAsin: "" }),
+    ).toBe("https://hardcover.app/search?q=" + encodeURIComponent("Solo"));
+  });
 });
