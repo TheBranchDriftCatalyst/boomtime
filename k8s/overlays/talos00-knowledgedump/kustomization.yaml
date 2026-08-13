@@ -44,6 +44,15 @@ resources:
   - grafana-dashboard-worker-queue.yaml # GrafanaDashboard CR (Ops > App folder)
   - keda-servicemonitor.yaml       # scrape KEDA operator metrics (keda ns) for the dashboard
   - grafana-dashboard-keda.yaml    # GrafanaDashboard CR — KEDA autoscaling (Ops > App)
+  # ── DOMAIN dashboards (Apps folder) — what boomtime DID, not pod health ────
+  # Sibling perspective to the two Ops > App dashboards above. The "Apps"
+  # GrafanaFolder itself is declared centrally in talos-homelab
+  # (infrastructure/base/monitoring/grafana-dashboards/folders/apps.yaml);
+  # these CRs only reference it via folderRef. Both are built on boomtime's own
+  # JSON slog output in Loki plus the KEDA/RabbitMQ metrics already scraped
+  # above — the app exports no Prometheus metrics of its own.
+  - grafana-dashboard-daily-review.yaml   # job runs, backlog, domain outcomes, log review
+  - grafana-dashboard-domain-ingest.yaml  # heartbeat/health ingest volume, outcome, latency
 
 # Strategic-merge patches: each adds a feature-specific set of env vars
 # to the base boomtime-config ConfigMap without disturbing existing keys.
@@ -97,6 +106,13 @@ configMapGenerator:
   - name: dashboard-boomtime-keda
     files:
       - grafana/keda-dashboard.json
+  # Domain dashboards (Apps folder)
+  - name: dashboard-boomtime-daily-review
+    files:
+      - grafana/daily-review-dashboard.json
+  - name: dashboard-boomtime-domain-ingest
+    files:
+      - grafana/domain-ingest-dashboard.json
 generatorOptions:
   disableNameSuffixHash: true
 

@@ -1,0 +1,2338 @@
+{
+  "uid": "boomtime-daily-review",
+  "title": "boomtime \u2014 Daily Review",
+  "description": "DOMAIN-perspective daily review of boomtime: what the app DID, not whether its pods are healthy (that is Ops > App). Job runs by kind and outcome, backlog and pipeline flow, the domain outcomes that landed (wakatime imports, Audible/Hardcover book sync, label artwork), and the warning/error pile to read through. SOURCES: boomtime emits NO Prometheus metrics of its own, so every domain panel is built on its structured JSON slog output in Loki (namespace=boomtime); backlog and pipeline panels come from the KEDA scaler and RabbitMQ queue metrics in Mimir. KNOWN GAPS: per-request heartbeat counts, per-project/per-language attribution, and catalyst-go-jobs run durations are not observable today \u2014 they live only in Postgres.",
+  "tags": [
+    "boomtime",
+    "apps",
+    "domain",
+    "daily-review",
+    "jobs"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "id": null,
+  "editable": true,
+  "graphTooltip": 1,
+  "liveNow": false,
+  "preload": false,
+  "fiscalYearStartMonth": 0,
+  "links": [],
+  "weekStart": "",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "refresh": "1m",
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "proc",
+        "type": "custom",
+        "label": "Process",
+        "description": "Which boomtime process to read logs from: the always-on server, the always-on AMQP image worker, or the KEDA ScaledJob drain pods that run the heavy DB job kinds. Default All covers every one of them and excludes the co-located postgres/rabbit/dragonfly pods.",
+        "query": "boomtime,boomtime-worker,boomtime-jobs",
+        "options": [
+          {
+            "text": "boomtime",
+            "value": "boomtime",
+            "selected": false
+          },
+          {
+            "text": "boomtime-worker",
+            "value": "boomtime-worker",
+            "selected": false
+          },
+          {
+            "text": "boomtime-jobs",
+            "value": "boomtime-jobs",
+            "selected": false
+          }
+        ],
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "multi": true,
+        "includeAll": true,
+        "allValue": "boomtime|boomtime-worker|boomtime-jobs",
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "name": "kind",
+        "type": "custom",
+        "label": "Job kind",
+        "description": "catalyst-go-jobs kind (the registry key a handler is registered under). Default All is the regex .+, so a NEW kind shows up here without editing the dashboard \u2014 it just won't be in the picker until it is added to this variable's list.",
+        "query": "audiobooks-audible-backfill,audiobooks-audible-sync,avatar-render,books-kindle-sync,github-stats-refresh,hardcover-push,label-image",
+        "options": [
+          {
+            "text": "audiobooks-audible-backfill",
+            "value": "audiobooks-audible-backfill",
+            "selected": false
+          },
+          {
+            "text": "audiobooks-audible-sync",
+            "value": "audiobooks-audible-sync",
+            "selected": false
+          },
+          {
+            "text": "avatar-render",
+            "value": "avatar-render",
+            "selected": false
+          },
+          {
+            "text": "books-kindle-sync",
+            "value": "books-kindle-sync",
+            "selected": false
+          },
+          {
+            "text": "github-stats-refresh",
+            "value": "github-stats-refresh",
+            "selected": false
+          },
+          {
+            "text": "hardcover-push",
+            "value": "hardcover-push",
+            "selected": false
+          },
+          {
+            "text": "label-image",
+            "value": "label-image",
+            "selected": false
+          }
+        ],
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".+",
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "name": "bucket",
+        "type": "interval",
+        "label": "Bucket",
+        "description": "Width of each bar/sample in the over-time panels. auto keeps roughly 30 buckets across the selected range.",
+        "query": "1m,5m,10m,30m,1h,3h,6h,12h,1d",
+        "options": [
+          {
+            "text": "auto",
+            "value": "$__auto_interval_bucket",
+            "selected": true
+          },
+          {
+            "text": "1m",
+            "value": "1m",
+            "selected": false
+          },
+          {
+            "text": "5m",
+            "value": "5m",
+            "selected": false
+          },
+          {
+            "text": "10m",
+            "value": "10m",
+            "selected": false
+          },
+          {
+            "text": "30m",
+            "value": "30m",
+            "selected": false
+          },
+          {
+            "text": "1h",
+            "value": "1h",
+            "selected": false
+          },
+          {
+            "text": "3h",
+            "value": "3h",
+            "selected": false
+          },
+          {
+            "text": "6h",
+            "value": "6h",
+            "selected": false
+          },
+          {
+            "text": "12h",
+            "value": "12h",
+            "selected": false
+          },
+          {
+            "text": "1d",
+            "value": "1d",
+            "selected": false
+          }
+        ],
+        "current": {
+          "text": "auto",
+          "value": "$__auto_interval_bucket"
+        },
+        "auto": true,
+        "auto_count": 30,
+        "auto_min": "1m",
+        "refresh": 2,
+        "multi": false,
+        "includeAll": false,
+        "hide": 0,
+        "skipUrlSync": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Today at a glance",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Coding heartbeats accepted",
+      "description": "catalyst-waka ingest: accepted POSTs to /heartbeats and /heartbeats.bulk over the dashboard range. NOTE this counts REQUESTS, not individual heartbeats \u2014 a bulk POST carries many and boomtime logs no per-request heartbeat count (see the gaps note in the dashboard description).",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki-v2"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#3987e5",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki-v2"
+          },
+          "expr": "sum(count_over_time({namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |~ \"heartbeats\" | json | msg = \"http request\" | method = \"POST\" | path =~ `/api/v1/users/current/heartbeats(\\.bulk)?` | status < 400 [$__range]))",
+          "queryType": "instant",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
+      "id": 2
+    },
+    {
+      "type": "stat",
+      "title": "Health / workout samples accepted",
+      "description": "catalyst-health ingest: accepted POSTs to /workouts, /workouts.bulk, /health_samples and /health_samples.bulk (the boomtime-watch Apple Watch extension). Zero here means the health domain sent nothing in the range.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki-v2"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#199e70",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki-v2"
+          },
+          "expr": "sum(count_over_time({namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |~ \"workouts|health_samples\" | json | msg = \"http request\" | method = \"POST\" | path =~ `/api/v1/users/current/(workouts|health_samples)(\\.bulk)?` | status < 400 [$__range]))",
+          "queryType": "instant",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
+      "id": 3
+    },
+    {
+      "type": "stat",
+      "title": "Job runs completed",
+      "description": "catalyst-go-jobs runs that reached a handler and returned nil (\"jobs: done\").",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki-v2"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#0ca30c",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki-v2"
+          },
+          "expr": "sum(count_over_time({namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |= \"jobs: done\" | json | msg = \"jobs: done\" | kind =~ \"$kind\" [$__range]))",
+          "queryType": "instant",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
+      "id": 4
+    },
+    {
+      "type": "stat",
+      "title": "Job runs failed",
+      "description": "Runs that exhausted every attempt and were recorded terminally failed. Each one is a piece of domain work that did NOT happen today.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki-v2"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#0ca30c",
+                "value": null
+              },
+              {
+                "color": "#d03b3b",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki-v2"
+          },
+          "expr": "sum(count_over_time({namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |= \"jobs: failed (attempts exhausted)\" | json | kind =~ \"$kind\" [$__range]))",
+          "queryType": "instant",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 1
+      },
+      "id": 5
+    },
+    {
+      "type": "stat",
+      "title": "Retries scheduled",
+      "description": "Runs that errored but had attempts left, so they were re-queued with a linear backoff (attempt x 30s, capped at 10m). Healthy in small numbers; a rising count means something downstream is flaky.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki-v2"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#0ca30c",
+                "value": null
+              },
+              {
+                "color": "#fab219",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki-v2"
+          },
+          "expr": "sum(count_over_time({namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |= \"jobs: retry scheduled\" | json | kind =~ \"$kind\" [$__range]))",
+          "queryType": "instant",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
+      "id": 6
+    },
+    {
+      "type": "stat",
+      "title": "Warnings + errors logged",
+      "description": "Every WARN/ERROR record from the boomtime processes over the range \u2014 the size of today's log-review pile. The feed itself is at the bottom of this dashboard.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki-v2"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#0ca30c",
+                "value": null
+              },
+              {
+                "color": "#fab219",
+                "value": 1
+              },
+              {
+                "color": "#d03b3b",
+                "value": 100
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki-v2"
+          },
+          "expr": "sum(count_over_time({namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |~ `\"level\":\"(WARN|ERROR)\"` [$__range]))",
+          "queryType": "instant",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
+      "id": 7
+    },
+    {
+      "id": 8,
+      "type": "row",
+      "title": "Job runs \u2014 what ran, and how it went",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Job runs by kind",
+      "description": "Terminal catalyst-go-jobs outcomes (done + failed) bucketed over time and stacked by kind. This is the 'what did boomtime work on' view: each bar is the mix of domain work that completed in that bucket. Colors are pinned per kind, so a kind keeps its hue when the others drop out.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki-v2"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [],
+          "custom": {
+            "drawStyle": "bars",
+            "lineInterpolation": "linear",
+            "lineWidth": 0,
+            "fillOpacity": 100,
+            "gradientMode": "none",
+            "spanNulls": false,
+            "showPoints": "never",
+            "pointSize": 8,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "runs",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "audiobooks-audible-backfill"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "audiobooks-audible-sync"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d95926"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "avatar-render"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#199e70"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "books-kindle-sync"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#c98500"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "github-stats-refresh"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d55181"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "hardcover-push"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#008300"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "label-image"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#9085e9"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki-v2"
+          },
+          "expr": "sum by (kind) (count_over_time({namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |~ \"jobs: done|jobs: failed\" | json | msg =~ `jobs: (done|failed.*)` | kind =~ \"$kind\" [$bucket]))",
+          "legendFormat": "{{kind}}"
+        }
+      ],
+      "gridPos": {
+        "h": 9,
+        "w": 14,
+        "x": 0,
+        "y": 6
+      },
+      "id": 9
+    },
+    {
+      "type": "table",
+      "title": "Job kinds over the range",
+      "description": "Per-kind tally of completed / retried / failed runs across the whole range. The table is also the colorblind-safe reading of the stacked chart beside it \u2014 identity by name, not by hue.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki-v2"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [],
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki-v2"
+          },
+          "expr": "sum by (kind) (count_over_time({namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |= \"jobs: done\" | json | msg = \"jobs: done\" | kind =~ \"$kind\" [$__range]))",
+          "queryType": "instant",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki-v2"
+          },
+          "expr": "sum by (kind) (count_over_time({namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |= \"jobs: retry scheduled\" | json | kind =~ \"$kind\" [$__range]))",
+          "queryType": "instant",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki-v2"
+          },
+          "expr": "sum by (kind) (count_over_time({namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |= \"jobs: failed (attempts exhausted)\" | json | kind =~ \"$kind\" [$__range]))",
+          "queryType": "instant",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "kind",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Time 1": true,
+              "Time 2": true,
+              "Time 3": true
+            },
+            "indexByName": {},
+            "renameByName": {
+              "kind": "Kind",
+              "Value #A": "Completed",
+              "Value #B": "Retried",
+              "Value #C": "Failed"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "Completed",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 9,
+        "w": 10,
+        "x": 14,
+        "y": 6
+      },
+      "id": 10
+    },
+    {
+      "type": "timeseries",
+      "title": "Job outcomes over time",
+      "description": "The same runs split by OUTCOME rather than kind: completed, retried, failed. Status colors are reserved (green/amber/red) and each series is named in the legend, so the state never rides on hue alone.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki-v2"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [],
+          "custom": {
+            "drawStyle": "bars",
+            "lineInterpolation": "linear",
+            "lineWidth": 0,
+            "fillOpacity": 100,
+            "gradientMode": "none",
+            "spanNulls": false,
+            "showPoints": "never",
+            "pointSize": 8,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "runs",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "completed"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#0ca30c"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "retried"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#fab219"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "failed"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d03b3b"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki-v2"
+          },
+          "expr": "sum(count_over_time({namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |= \"jobs: done\" | json | msg = \"jobs: done\" | kind =~ \"$kind\" [$bucket]))",
+          "legendFormat": "completed"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki-v2"
+          },
+          "expr": "sum(count_over_time({namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |= \"jobs: retry scheduled\" | json | kind =~ \"$kind\" [$bucket]))",
+          "legendFormat": "retried"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki-v2"
+          },
+          "expr": "sum(count_over_time({namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |= \"jobs: failed (attempts exhausted)\" | json | kind =~ \"$kind\" [$bucket]))",
+          "legendFormat": "failed"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 15
+      },
+      "id": 11
+    },
+    {
+      "type": "logs",
+      "title": "Job failures and retries \u2014 with the reason",
+      "description": "Every terminal failure and scheduled retry, newest first, reformatted to kind / job id / attempt / error. This is the panel to read when the failed-runs stat above is non-zero.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki-v2"
+      },
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki-v2"
+          },
+          "expr": "{namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |~ \"jobs: failed|jobs: retry scheduled|jobs: no handler\" | json | msg =~ `jobs: (failed.*|retry scheduled|no handler for kind)` | kind =~ \"$kind\" | line_format \"{{.kind}}  job={{.id}}  attempt={{.attempt}}{{.attempts}}  {{.msg}}  {{.err}}\""
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 15
+      },
+      "id": 12
+    },
+    {
+      "id": 13,
+      "type": "row",
+      "title": "Backlog and pipeline \u2014 what is still waiting",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 23
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Heavy-job backlog now",
+      "description": "Rows in the Postgres jobs table that are queued AND due for the heavy kinds (avatar-render, label-image) \u2014 read straight off the KEDA postgres scaler that decides whether to schedule a drain pod. This is domain work boomtime has accepted but not yet done.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#0ca30c",
+                "value": null
+              },
+              {
+                "color": "#fab219",
+                "value": 5
+              },
+              {
+                "color": "#d03b3b",
+                "value": 25
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "max(keda_scaler_metrics_value{scaledObject=\"boomtime-jobs\"})",
+          "queryType": "instant",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 24
+      },
+      "id": 14
+    },
+    {
+      "type": "stat",
+      "title": "Image-job queue depth",
+      "description": "Messages sitting ready on the boomtime.image-jobs RabbitMQ queue \u2014 label artwork requested but not yet rendered.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#0ca30c",
+                "value": null
+              },
+              {
+                "color": "#fab219",
+                "value": 10
+              },
+              {
+                "color": "#d03b3b",
+                "value": 50
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "sum(rabbitmq_queue_messages_ready{namespace=\"boomtime\", queue=\"boomtime.image-jobs\"})",
+          "queryType": "instant",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 24
+      },
+      "id": 15
+    },
+    {
+      "type": "stat",
+      "title": "Image jobs in flight",
+      "description": "Unacked messages \u2014 image renders a worker has picked up and not yet finished. A number that never falls means a wedged consumer.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#d95926",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "sum(rabbitmq_queue_messages_unacked{namespace=\"boomtime\", queue=\"boomtime.image-jobs\"})",
+          "queryType": "instant",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 24
+      },
+      "id": 16
+    },
+    {
+      "type": "stat",
+      "title": "Image workers attached",
+      "description": "RabbitMQ consumers on boomtime.image-jobs. Zero with a non-empty queue is the classic stall: work is queued and nothing is draining it.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#199e70",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "sum(rabbitmq_queue_consumers{namespace=\"boomtime\", queue=\"boomtime.image-jobs\"})",
+          "queryType": "instant",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 24
+      },
+      "id": 17
+    },
+    {
+      "type": "timeseries",
+      "title": "Backlog trend",
+      "description": "Both backlogs on one axis (they are the same unit \u2014 items of undone domain work). A sawtooth is healthy: work arrives, a worker drains it. A staircase that only climbs is the thing to catch on a daily review.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "spanNulls": false,
+            "showPoints": "auto",
+            "pointSize": 8,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "items",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "heavy DB jobs due"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "image jobs ready"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#9085e9"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "image jobs in flight"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d95926"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "max(keda_scaler_metrics_value{scaledObject=\"boomtime-jobs\"})",
+          "legendFormat": "heavy DB jobs due"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "sum(rabbitmq_queue_messages_ready{namespace=\"boomtime\", queue=\"boomtime.image-jobs\"})",
+          "legendFormat": "image jobs ready"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "sum(rabbitmq_queue_messages_unacked{namespace=\"boomtime\", queue=\"boomtime.image-jobs\"})",
+          "legendFormat": "image jobs in flight"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 28
+      },
+      "id": 18
+    },
+    {
+      "type": "timeseries",
+      "title": "Image-job flow",
+      "description": "Publish vs deliver rate on boomtime.image-jobs. Delivered tracking published means the pipeline keeps up; a persistent gap is what fills the backlog panel to the left. Redelivered rising means work is being retried rather than completed.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "spanNulls": false,
+            "showPoints": "auto",
+            "pointSize": 8,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "msg/s",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "published"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "delivered"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#199e70"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "redelivered"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#ec835a"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "sum(rate(rabbitmq_queue_messages_published_total{namespace=\"boomtime\", queue=\"boomtime.image-jobs\"}[$__rate_interval]))",
+          "legendFormat": "published"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "sum(rate(rabbitmq_queue_messages_delivered_total{namespace=\"boomtime\", queue=\"boomtime.image-jobs\"}[$__rate_interval]))",
+          "legendFormat": "delivered"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "expr": "sum(rate(rabbitmq_queue_messages_redelivered_total{namespace=\"boomtime\", queue=\"boomtime.image-jobs\"}[$__rate_interval]))",
+          "legendFormat": "redelivered"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 28
+      },
+      "id": 19
+    },
+    {
+      "type": "timeseries",
+      "title": "Image render time",
+      "description": "How long an image job actually took to execute, from the imagejobs consumer's own timing (slog encodes the Go duration as nanoseconds; this panel converts to seconds). This is the ONLY job duration boomtime currently logs \u2014 the catalyst-go-jobs kinds emit no timing at all.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki-v2"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "spanNulls": false,
+            "showPoints": "auto",
+            "pointSize": 8,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "render time",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p95"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d95926"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p50"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki-v2"
+          },
+          "expr": "max(quantile_over_time(0.95, {namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |= \"imagejobs: execute done\" | json | unwrap dur [$bucket])) / 1000000000",
+          "legendFormat": "p95"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki-v2"
+          },
+          "expr": "max(quantile_over_time(0.50, {namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |= \"imagejobs: execute done\" | json | unwrap dur [$bucket])) / 1000000000",
+          "legendFormat": "p50"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 36
+      },
+      "id": 20
+    },
+    {
+      "id": 21,
+      "type": "row",
+      "title": "Domain outcomes \u2014 what actually landed",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 44
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Wakatime heartbeats imported",
+      "description": "Heartbeats pulled in by a completed catalyst-waka bulk import (the \"imported\" total on each \"import completed\" record), summed over the range. Empty when no import ran \u2014 imports are user-triggered, not periodic.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki-v2"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#3987e5",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki-v2"
+          },
+          "expr": "sum(sum_over_time({namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |= \"import completed\" | json | unwrap imported [$__range]))",
+          "queryType": "instant",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 45
+      },
+      "id": 22
+    },
+    {
+      "type": "stat",
+      "title": "Audible library items backfilled",
+      "description": "Items walked by a completed catalyst-books Audible backfill. This is the one-time history pull, distinct from the periodic forward sync below.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki-v2"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#d95926",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki-v2"
+          },
+          "expr": "sum(sum_over_time({namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |= \"audible backfill complete\" | json | unwrap libraryItems [$__range]))",
+          "queryType": "instant",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 45
+      },
+      "id": 23
+    },
+    {
+      "type": "stat",
+      "title": "Books newly finished",
+      "description": "Titles the Audible forward sync saw flip to finished in the range \u2014 the domain event that drives a Hardcover push.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki-v2"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#008300",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki-v2"
+          },
+          "expr": "sum(sum_over_time({namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |= \"audible forward: newly finished\" | json | unwrap count [$__range]))",
+          "queryType": "instant",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 45
+      },
+      "id": 24
+    },
+    {
+      "type": "stat",
+      "title": "Pushed to Hardcover",
+      "description": "Finished books successfully written out to Hardcover. Note the deployment may be in DRY-RUN (BOOM_HARDCOVER_DRYRUN) \u2014 check the warning feed at the bottom, where the dry-run banner is logged on every boot.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki-v2"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#d55181",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki-v2"
+          },
+          "expr": "sum(count_over_time({namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |= \"hardcover: pushed finished book\" [$__range]))",
+          "queryType": "instant",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 45
+      },
+      "id": 25
+    },
+    {
+      "type": "timeseries",
+      "title": "Label-image generation runs",
+      "description": "Outcome of each labelimages sweep: images generated, candidates skipped because artwork already existed, and entries that failed. Stacked, so bar height is the size of the sweep.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki-v2"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [],
+          "custom": {
+            "drawStyle": "bars",
+            "lineInterpolation": "linear",
+            "lineWidth": 0,
+            "fillOpacity": 100,
+            "gradientMode": "none",
+            "spanNulls": false,
+            "showPoints": "never",
+            "pointSize": 8,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "entries",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "generated"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#0ca30c"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "skipped (already had art)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "failed"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d03b3b"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki-v2"
+          },
+          "expr": "sum(sum_over_time({namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |= \"labelimages: run complete\" | json | unwrap generated [$bucket]))",
+          "legendFormat": "generated"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki-v2"
+          },
+          "expr": "sum(sum_over_time({namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |= \"labelimages: run complete\" | json | unwrap skipped_existing [$bucket]))",
+          "legendFormat": "skipped (already had art)"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki-v2"
+          },
+          "expr": "sum(sum_over_time({namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |= \"labelimages: run complete\" | json | unwrap failed [$bucket]))",
+          "legendFormat": "failed"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 49
+      },
+      "id": 26
+    },
+    {
+      "type": "logs",
+      "title": "Domain outcome feed",
+      "description": "The plain-language record of what boomtime accomplished: imports finishing, Audible backfills and forward syncs, Hardcover pushes, avatars and label artwork saved. Read this top-to-bottom for the daily recap.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki-v2"
+      },
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki-v2"
+          },
+          "expr": "{namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |~ \"import completed|audible backfill complete|audible forward: newly finished|hardcover: pushed finished book|labelimages: run complete|labelimages: saved|avatar regen: saved\" | json | line_format \"{{.msg}}  {{.user}}{{.id}}\""
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 49
+      },
+      "id": 27
+    },
+    {
+      "id": 28,
+      "type": "row",
+      "title": "Daily log review",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 57
+      }
+    },
+    {
+      "type": "table",
+      "title": "Top warnings and errors",
+      "description": "Distinct WARN/ERROR messages over the range, most frequent first. Work down this list; the raw feed beside it has the detail.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki-v2"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [],
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki-v2"
+          },
+          "expr": "topk(20, sum by (level, msg) (count_over_time({namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |~ `\"level\":\"(WARN|ERROR)\"` | json [$__range])))",
+          "queryType": "instant",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Time 1": true,
+              "Time 2": true,
+              "Time 3": true
+            },
+            "indexByName": {},
+            "renameByName": {
+              "level": "Level",
+              "msg": "Message",
+              "Value": "Count"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "Count",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 14,
+        "w": 12,
+        "x": 0,
+        "y": 58
+      },
+      "id": 29
+    },
+    {
+      "type": "logs",
+      "title": "Warnings and errors (live)",
+      "description": "Every WARN and ERROR record from the boomtime processes, newest first. Expand a line for the full structured payload (job ids, error strings, upstream response bodies).",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki-v2"
+      },
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki-v2"
+          },
+          "expr": "{namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |~ `\"level\":\"(WARN|ERROR)\"` | json | line_format \"{{.level}}  {{.msg}}  {{.err}}\""
+        }
+      ],
+      "gridPos": {
+        "h": 14,
+        "w": 12,
+        "x": 12,
+        "y": 58
+      },
+      "id": 30
+    }
+  ]
+}

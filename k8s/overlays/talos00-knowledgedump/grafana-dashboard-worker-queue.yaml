@@ -28,7 +28,11 @@ metadata:
     app.kubernetes.io/component: dashboard
     app.kubernetes.io/part-of: boomtime
 spec:
-  folderRef: ops-app
+  # folderUID (not folderRef): the folder CR lives in monitoring, this CR does not —
+  # cross-namespace folderRef never resolves. allowCrossNamespaceImport lets a CR
+  # outside the Grafana instance namespace reconcile at all (was silently skipped).
+  folderUID: ops-app
+  allowCrossNamespaceImport: true
   instanceSelector:
     matchLabels:
       dashboards: 'grafana'

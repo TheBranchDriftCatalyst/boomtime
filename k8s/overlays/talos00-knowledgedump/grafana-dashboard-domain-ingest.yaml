@@ -1,0 +1,44 @@
+---
+# GrafanaDashboard CR: "boomtime — Domain Ingest".
+#
+# The second DOMAIN dashboard (see grafana-dashboard-daily-review.yaml for the
+# folder rationale). Where Daily Review covers what boomtime DID, this one
+# covers what flowed IN and OUT: catalyst-waka coding heartbeats and
+# catalyst-health workout/HealthKit samples arriving, whether they were
+# accepted or silently rejected, what they cost to swallow (p50/p95 handling
+# time), and which domain endpoints are actually being read back.
+#
+# Built entirely on the server's own `msg="http request"` slog records in Loki
+# (uid loki-v2) — method / path / status / dur_ms. There is no app-level
+# Prometheus metric to use instead.
+#
+# CAVEAT baked into the dashboard description: these are REQUEST counts. A
+# `.bulk` POST carries an arbitrary number of heartbeats and boomtime logs no
+# per-request count, so the volume shown is proportional to — not equal to —
+# heartbeats stored. Adding that count to the ingest handler's log line (or a
+# real counter) is the single highest-value observability change for this
+# dashboard.
+#
+# JSON at grafana/domain-ingest-dashboard.json, packaged by the kustomization
+# configMapGenerator as dashboard-boomtime-domain-ingest. uid
+# "boomtime-domain-ingest" is stable (it lives in the JSON).
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: boomtime-domain-ingest
+  namespace: boomtime
+  labels:
+    app.kubernetes.io/component: dashboard
+    app.kubernetes.io/part-of: boomtime
+spec:
+  # folderUID (not folderRef): the folder CR lives in monitoring, this CR does not —
+  # cross-namespace folderRef never resolves. allowCrossNamespaceImport lets a CR
+  # outside the Grafana instance namespace reconcile at all (was silently skipped).
+  folderUID: apps
+  allowCrossNamespaceImport: true
+  instanceSelector:
+    matchLabels:
+      dashboards: 'grafana'
+  configMapRef:
+    name: dashboard-boomtime-domain-ingest
+    key: domain-ingest-dashboard.json

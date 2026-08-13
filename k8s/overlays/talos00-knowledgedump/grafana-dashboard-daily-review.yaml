@@ -1,0 +1,47 @@
+---
+# GrafanaDashboard CR: "boomtime — Daily Review".
+#
+# DOMAIN perspective, not Ops. The two dashboards already in this overlay
+# (grafana-dashboard-keda.yaml, grafana-dashboard-worker-queue.yaml) answer
+# "is the worker scaling / is the queue draining" and live in Ops > App. This
+# one answers "what did boomtime DO today": job runs by kind and outcome, the
+# backlog of accepted-but-undone work, the domain outcomes that actually landed
+# (wakatime imports, Audible/Hardcover book sync, label artwork), and the
+# warning/error pile to read through. folderRef `apps` is the sibling-of-Ops
+# folder declared centrally in
+# talos-homelab:infrastructure/base/monitoring/grafana-dashboards/folders/apps.yaml.
+#
+# DATA SOURCES — boomtime exports NO Prometheus metrics of its own, so:
+#   - every domain panel reads its structured JSON slog output from Loki
+#     (uid loki-v2), stream {namespace="boomtime"};
+#   - backlog/pipeline panels read the KEDA scaler + RabbitMQ queue metrics
+#     from Mimir (uid mimir), which DO exist thanks to keda-servicemonitor.yaml
+#     and rabbitmq-podmonitor.yaml in this same overlay.
+# Nothing here is invented: every expression was run against the live cluster
+# before the panel was written.
+#
+# grafana-operator watches all namespaces (namespaceScope:false), so this
+# reconciles into the shared Grafana from the boomtime namespace. JSON at
+# grafana/daily-review-dashboard.json, packaged by the kustomization
+# configMapGenerator as dashboard-boomtime-daily-review. uid
+# "boomtime-daily-review" is stable (it lives in the JSON).
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: boomtime-daily-review
+  namespace: boomtime
+  labels:
+    app.kubernetes.io/component: dashboard
+    app.kubernetes.io/part-of: boomtime
+spec:
+  # folderUID (not folderRef): the folder CR lives in monitoring, this CR does not —
+  # cross-namespace folderRef never resolves. allowCrossNamespaceImport lets a CR
+  # outside the Grafana instance namespace reconcile at all (was silently skipped).
+  folderUID: apps
+  allowCrossNamespaceImport: true
+  instanceSelector:
+    matchLabels:
+      dashboards: 'grafana'
+  configMapRef:
+    name: dashboard-boomtime-daily-review
+    key: daily-review-dashboard.json
