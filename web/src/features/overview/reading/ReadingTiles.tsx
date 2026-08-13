@@ -138,6 +138,7 @@ export function BooksByGenreTile() {
           data={asGroups(q.data)}
           height={height}
           emptyHint="No genre-tagged books yet."
+          pinAxis="genre"
         />
       )}
     </ChartCard>

@@ -1,6 +1,10 @@
 // Data curation (non-destructive hides + persistent rename rules).
 
-type CurationAction = "hide" | "rename";
+// "pin" is the canonical-entities action (gaka-canon): it forces its
+// (axis, matchValue) to always get its own slice/bar and never fall into the
+// bucket "Other" roll-up. Unlike hide/rename it has no newValue and the query
+// engine auto-applies it at group time.
+type CurationAction = "hide" | "rename" | "pin";
 
 // How a rename rule's matchValue is interpreted. Hide rules are always exact.
 // How a rename rule's matchValue is interpreted:

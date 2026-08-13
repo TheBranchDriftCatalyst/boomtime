@@ -786,6 +786,45 @@ export const api = {
       method: "DELETE",
     }),
 
+  // --- Canonical-entity PINS (gaka-canon) ------------------------------------
+  // A "pin" is a curation rule with action="pin": it forces its (axis, value)
+  // to always get its own slice/bar and never fall into the bucket "Other"
+  // roll-up. The backend query engine auto-applies pins at group time, so
+  // these are just thin wrappers over the same create/list/delete curation
+  // endpoints (mirroring addCurationRule / getCurationRules / deleteCurationRule).
+  //
+  // Pins are always exact matches with no newValue; the body is fixed so
+  // callers only supply (axis, value).
+  pinValue: (axis: string, value: string) =>
+    request<AddCurationRulePayload>("/api/v1/users/current/curation", {
+      method: "POST",
+      body: {
+        axis,
+        action: "pin",
+        matchType: "exact",
+        matchValue: value,
+        applyAtIngest: false,
+      },
+    }),
+
+  // Remove a pin by its curation-rule id (identical to deleteCurationRule, but
+  // named for the pin call sites so intent is legible at the toggle).
+  unpinValue: (ruleId: number) =>
+    request<void>(`/api/v1/users/current/curation/${ruleId}`, {
+      method: "DELETE",
+    }),
+
+  // The current pins — the curation rules list filtered to action==="pin".
+  // Reuses the same { rules: [...] } envelope as getCurationRules.
+  listPins: async (): Promise<CurationRule[]> => {
+    const rules = await unwrap<CurationRule[]>(
+      "/api/v1/users/current/curation",
+      "rules",
+      [],
+    );
+    return rules.filter((r) => r.action === "pin");
+  },
+
   // gaka-dfd: pause / resume a curation rule without deleting it. Body is
   // optional — omit to flip the current value, or pass `enabled` explicitly
   // to set an exact state (defends against double-click races). Returns the

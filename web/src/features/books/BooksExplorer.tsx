@@ -20,6 +20,7 @@ import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { EmptyState } from "@/components/EmptyState";
 import { runQuery, type GroupRow } from "@/lib/queryApi";
 import { cn } from "@/lib/utils";
+import { PinToggle } from "@/features/pins/PinToggle";
 import {
   MEASURES,
   READING_DIMS,
@@ -120,15 +121,20 @@ function GroupBarRow({
   rank,
   measure,
   max,
+  dim,
 }: {
   row: GroupRow;
   rank: number;
   measure: BooksMeasure;
   max: number;
+  dim: ReadingDim;
 }) {
   const other = isOtherRow(row.key);
   const isNull = !other && row.key.trim() === "";
   const pct = max > 0 ? Math.max(2, Math.round((row.value / max) * 100)) : 0;
+  // Only real, named values are pinnable — never the "Other" roll-up or a
+  // null/empty dimension value (nothing meaningful to canonicalize there).
+  const pinnable = !other && !isNull;
 
   return (
     <div className="flex items-center gap-3 px-3 py-2.5">
@@ -150,9 +156,14 @@ function GroupBarRow({
           >
             {groupKeyLabel(row.key)}
           </span>
-          <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
-            {formatMeasureValue(row.value, measure)}
-          </span>
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="font-mono text-xs tabular-nums text-muted-foreground">
+              {formatMeasureValue(row.value, measure)}
+            </span>
+            {pinnable && (
+              <PinToggle axis={dim} value={row.key} className="-my-1" />
+            )}
+          </div>
         </div>
         <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
           <div
@@ -173,9 +184,11 @@ function GroupBarRow({
 function GroupBarTable({
   groups,
   measure,
+  dim,
 }: {
   groups: GroupRow[];
   measure: BooksMeasure;
+  dim: ReadingDim;
 }) {
   const max = useMemo(
     () => groups.reduce((m, g) => Math.max(m, g.value), 0),
@@ -197,6 +210,7 @@ function GroupBarTable({
             rank={rank}
             measure={measure}
             max={max}
+            dim={dim}
           />
         );
       })}
@@ -296,7 +310,7 @@ export function BooksExplorer() {
             top {TOP_N}
             {groups.some((g) => isOtherRow(g.key)) ? ", rest in Other" : ""}
           </div>
-          <GroupBarTable groups={groups} measure={measure} />
+          <GroupBarTable groups={groups} measure={measure} dim={dim} />
         </>
       )}
     </div>

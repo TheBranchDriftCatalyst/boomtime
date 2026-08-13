@@ -8,6 +8,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "@/test/renderWithProviders";
+import { http, HttpResponse } from "@/test/msw/handlers";
+import { server } from "@/test/msw/server";
 import { colorAt } from "@/viz/d3/color";
 import type { QueryResult, QuerySpec } from "@/lib/queryApi";
 
@@ -91,6 +93,43 @@ describe("BooksByGenreTile", () => {
     mockRun.mockRejectedValue(new Error("boom"));
     renderWithProviders(<BooksByGenreTile />);
     expect(await screen.findByText("Failed to load genres.")).toBeInTheDocument();
+  });
+
+  // gaka-canon: the genre donut legend exposes a pin toggle per genre (never on
+  // the "Other" roll-up). Clicking pins that genre via the curation endpoint.
+  it("renders a pin toggle per genre legend row (not Other) and pins with axis=genre", async () => {
+    resolveWith({
+      kind: "groups",
+      groups: [
+        { key: "Science Fiction", value: 6 },
+        { key: "Fantasy", value: 4 },
+        { key: "Other", value: 9 },
+      ],
+    });
+    let posted: unknown;
+    server.use(
+      http.post("/api/v1/users/current/curation", async ({ request }) => {
+        posted = await request.json();
+        return HttpResponse.json({ rule: { id: 1 } });
+      }),
+    );
+
+    renderWithProviders(<BooksByGenreTile />);
+    await screen.findByText("Science Fiction");
+
+    // Two named genres → two toggles; the Other slice has none.
+    const legend = screen.getByTestId("reading-donut-legend");
+    const toggles = within(legend).getAllByTestId("pin-toggle");
+    expect(toggles).toHaveLength(2);
+
+    await userEvent.click(toggles[0]);
+    await waitFor(() => expect(posted).toBeDefined());
+    expect(posted).toMatchObject({
+      axis: "genre",
+      action: "pin",
+      matchType: "exact",
+      matchValue: "Science Fiction",
+    });
   });
 });
 

@@ -11,14 +11,22 @@ import * as d3 from "d3";
 import { colorAt } from "@/viz/d3/color";
 import { EmptyChart } from "@/viz/d3/EmptyChart";
 import type { GroupRow } from "@/lib/queryApi";
+import { PinToggle } from "@/features/pins/PinToggle";
 
 interface ReadingDonutProps {
   data: GroupRow[];
   height?: number;
   emptyHint?: string;
+  // When set, each legend row (except the "Other" roll-up) gets a pin toggle
+  // that pins/unpins that value on this axis (e.g. "genre"). Omit to render a
+  // plain, non-interactive legend.
+  pinAxis?: string;
 }
 
-export function ReadingDonut({ data, height = 280, emptyHint }: ReadingDonutProps) {
+// The backend's bucket roll-up sentinel — never pinnable (it's not a real value).
+const OTHER_KEY = "Other";
+
+export function ReadingDonut({ data, height = 280, emptyHint, pinAxis }: ReadingDonutProps) {
   const rows = useMemo(() => data.filter((d) => d.value > 0), [data]);
 
   const arcs = useMemo(() => {
@@ -86,6 +94,9 @@ export function ReadingDonut({ data, height = 280, emptyHint }: ReadingDonutProp
             <span className="ml-auto shrink-0 tabular-nums text-muted-foreground">
               {a.value}
             </span>
+            {pinAxis && a.key !== OTHER_KEY && (
+              <PinToggle axis={pinAxis} value={a.key} className="-my-1" />
+            )}
           </li>
         ))}
       </ul>

@@ -14,6 +14,8 @@ import { describe, expect, it, vi } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "@/test/renderWithProviders";
+import { http, HttpResponse } from "@/test/msw/handlers";
+import { server } from "@/test/msw/server";
 import { BooksExplorer } from "@/features/books/BooksExplorer";
 import type { QueryResult } from "@/lib/queryApi";
 
@@ -125,5 +127,42 @@ describe("BooksExplorer", () => {
     runQueryMock.mockReturnValue(new Promise(() => {}));
     renderWithProviders(<BooksExplorer />);
     expect(screen.getByTestId("explore-skeleton")).toBeInTheDocument();
+  });
+
+  // gaka-canon: each NAMED group row carries a pin toggle (canonical entities);
+  // the "Other" roll-up does not. Clicking it pins that value on the ACTIVE
+  // grouping dimension (default author) via the curation create endpoint.
+  it("renders a pin toggle per named row (not on Other) and pins with axis=dim", async () => {
+    runQueryMock.mockResolvedValue(
+      groups([
+        { key: "Brandon Sanderson", value: 12 },
+        { key: "Terry Pratchett", value: 7 },
+        { key: "Other", value: 20 },
+      ]),
+    );
+    let posted: unknown;
+    server.use(
+      http.post("/api/v1/users/current/curation", async ({ request }) => {
+        posted = await request.json();
+        return HttpResponse.json({ rule: { id: 1 } });
+      }),
+    );
+
+    renderWithProviders(<BooksExplorer />);
+    await screen.findByTestId("explore-groups");
+
+    // Two named rows → two pin toggles; Other is not pinnable.
+    const toggles = screen.getAllByTestId("pin-toggle");
+    expect(toggles).toHaveLength(2);
+
+    // Click the first (Brandon Sanderson) → pins on the default author dimension.
+    await userEvent.click(toggles[0]);
+    await waitFor(() => expect(posted).toBeDefined());
+    expect(posted).toMatchObject({
+      axis: "author",
+      action: "pin",
+      matchType: "exact",
+      matchValue: "Brandon Sanderson",
+    });
   });
 });
