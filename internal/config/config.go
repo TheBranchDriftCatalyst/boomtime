@@ -85,12 +85,12 @@ type Config struct {
 	// the catalyst-books + catalyst-audiobooks domains and the shared Amazon
 	// connect flow (internal/amazon). Off = every /api/v1/amazon/* route and
 	// the domains are dark. See docs/design/catalyst-domains-spike.md.
-	FeatureBooks            bool
+	FeatureBooks bool
 
 	// HardcoverDryRun (BOOM_HARDCOVER_DRYRUN, default TRUE) blocks + logs every
 	// Hardcover WRITE (mutation) instead of executing it. Fail-safe on: nothing
 	// touches a user's real Hardcover library until this is explicitly disabled.
-	HardcoverDryRun bool
+	HardcoverDryRun         bool
 	GithubOAuthClientID     string
 	GithubOAuthClientSecret string
 	GithubOAuthRedirectURL  string
@@ -152,6 +152,12 @@ type Config struct {
 	DBN1Threshold   int  // BOOM_DB_N1_THRESHOLD: queries/request to WARN
 	DBN1DupThresh   int  // BOOM_DB_N1_DUP_THRESHOLD: identical normalized statements/request to WARN
 	DBExplainSlowMs int  // BOOM_DB_EXPLAIN_SLOW_MS: dev-only auto-EXPLAIN for reads slower than this (0=off)
+
+	// HeartbeatLogSampleN: emit ONE sampled "heartbeats ingested" summary line
+	// per this many heartbeats (BOOM_HEARTBEAT_LOG_SAMPLE_N, default 100). The
+	// ingest success path is otherwise silent — this proves it's alive + flowing
+	// without a per-heartbeat flood. 0 disables the sampled line entirely.
+	HeartbeatLogSampleN int
 
 	RemoteWrite *RemoteWriteConfig
 	GithubToken string
@@ -443,11 +449,13 @@ func Load() *Config {
 		DBUser: getEnv("BOOM_DB_USER", "test"),
 		DBPass: getEnv("BOOM_DB_PASS", "test"),
 
-		DBLogQueries:    getEnvBool("BOOM_DB_LOG_QUERIES", dev),
-		DBLogArgs:       getEnvBool("BOOM_DB_LOG_ARGS", false),
-		DBN1Threshold:   getEnvInt("BOOM_DB_N1_THRESHOLD", 20),
-		DBN1DupThresh:   getEnvInt("BOOM_DB_N1_DUP_THRESHOLD", 10),
-		DBExplainSlowMs: getEnvInt("BOOM_DB_EXPLAIN_SLOW_MS", explainSlowDefault),
+		DBLogQueries:  getEnvBool("BOOM_DB_LOG_QUERIES", dev),
+		DBLogArgs:     getEnvBool("BOOM_DB_LOG_ARGS", false),
+		DBN1Threshold: getEnvInt("BOOM_DB_N1_THRESHOLD", 20),
+		DBN1DupThresh: getEnvInt("BOOM_DB_N1_DUP_THRESHOLD", 10),
+
+		HeartbeatLogSampleN: getEnvInt("BOOM_HEARTBEAT_LOG_SAMPLE_N", 100),
+		DBExplainSlowMs:     getEnvInt("BOOM_DB_EXPLAIN_SLOW_MS", explainSlowDefault),
 
 		GithubToken: getEnv("GITHUB_TOKEN", ""),
 

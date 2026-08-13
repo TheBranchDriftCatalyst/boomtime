@@ -125,6 +125,11 @@ func (h *Handler) storeAndRespond(c *echo.Context, hbs []model.HeartbeatPayload)
 		return apihelpers.RespondErr(c, apierr.Generic())
 	}
 
+	// Narrate ingest at a sampled 1:N rate so an operator can see it's alive +
+	// flowing (with a batch summary) without a per-heartbeat flood on this hot
+	// path. Silent between samples; see sampler.go.
+	h.logIngestSampled(owner, enriched)
+
 	// gaka-wpb: new activity might have flipped a goal — clear the cache
 	// so the next GET /goals/:id/progress recomputes under the fresh
 	// data. Best-effort (non-fatal): a failure here shouldn't sink the

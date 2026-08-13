@@ -23,6 +23,7 @@ package ingest
 import (
 	"log/slog"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/cache"
@@ -45,6 +46,12 @@ type Handler struct {
 	Cfg    *config.Config
 	Logger *slog.Logger
 	Cache  *cache.TTL
+
+	// hbIngested is the process-lifetime count of heartbeats successfully stored,
+	// used only to sample the "heartbeats ingested" narration line (see
+	// sampler.go). Atomic — the ingest handler is a shared singleton hit
+	// concurrently. Zero value is correct (no init needed in New).
+	hbIngested atomic.Int64
 }
 
 // New constructs an ingest.Handler with the passed-in shared deps. Every
