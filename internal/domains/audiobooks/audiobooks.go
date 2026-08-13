@@ -933,15 +933,18 @@ func parseYearMonth(raw json.RawMessage) *time.Time {
 func parseDurationSeconds(raw json.RawMessage) int64 {
 	var num json.Number
 	if err := json.Unmarshal(raw, &num); err == nil {
-		if n, err := num.Int64(); err == nil {
-			return normalizeSeconds(n)
+		// Audible's aggregated_sum is a FLOAT (e.g. 49012010.0), so Int64() fails
+		// on the decimal — parse as float then truncate. normalizeSeconds then
+		// converts the milliseconds magnitude (unit:"Milliseconds") to seconds.
+		if f, err := num.Float64(); err == nil {
+			return normalizeSeconds(int64(f))
 		}
 	}
 	var obj map[string]json.Number
 	if err := json.Unmarshal(raw, &obj); err == nil {
 		for _, v := range obj {
-			if n, err := v.Int64(); err == nil && n > 0 {
-				return normalizeSeconds(n)
+			if f, err := v.Float64(); err == nil && f > 0 {
+				return normalizeSeconds(int64(f))
 			}
 		}
 	}
