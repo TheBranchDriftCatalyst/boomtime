@@ -3,28 +3,26 @@ package books
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/amazon"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/hardcover"
 )
 
-// fakeKindle is an in-memory kindleSource: shelves + their records + per-ASIN
-// sidecar positions, so sweep runs with no network.
+// fakeKindle is an in-memory kindleSource: a fixed cookie jar + library, so
+// sweep runs with no network.
 type fakeKindle struct {
-	datasets []amazon.Dataset
-	records  map[string][]amazon.CollectionRecord // datasetID -> records
-	sidecars map[string]*amazon.SidecarPosition   // asin -> position
+	cookies map[string]string
+	library []amazon.CloudLibraryItem
 }
 
-func (f *fakeKindle) Datasets(context.Context, *amazon.DeviceCredential) ([]amazon.Dataset, error) {
-	return f.datasets, nil
+func (f *fakeKindle) ExchangeWebsiteCookies(context.Context, *amazon.DeviceCredential) (map[string]string, error) {
+	if f.cookies == nil {
+		return map[string]string{"at-main": "token"}, nil
+	}
+	return f.cookies, nil
 }
-func (f *fakeKindle) CollectionRecords(_ context.Context, _ *amazon.DeviceCredential, datasetID string) ([]amazon.CollectionRecord, error) {
-	return f.records[datasetID], nil
-}
-func (f *fakeKindle) Sidecar(_ context.Context, _ *amazon.DeviceCredential, asin string) (*amazon.SidecarPosition, error) {
-	return f.sidecars[asin], nil
+func (f *fakeKindle) KindleCloudLibrary(context.Context, map[string]string) ([]amazon.CloudLibraryItem, error) {
+	return f.library, nil
 }
 
 // fakeResolver is an in-memory metaResolver keyed by ASIN.
@@ -38,63 +36,48 @@ func (f *fakeResolver) LookupByASIN(_ context.Context, asin string) (*hardcover.
 
 // assert the real clients satisfy the domain interfaces (compile-time contract).
 var (
-	_ kindleSource = (*amazon.KindleClient)(nil)
+	_ kindleSource = (*amazon.CloudReaderClient)(nil)
 	_ metaResolver = (*hardcover.Client)(nil)
 )
 
-func TestShelfStatus(t *testing.T) {
+func TestStatusFromPercent(t *testing.T) {
 	cases := []struct {
-		name       string
+		pct        int
 		wantStatus string
-		wantIs     bool
+		wantFin    bool
 	}{
-		{"Currently Readings", "reading", true},
-		{"Currently Reading", "reading", true},
-		{"Done Reading", "read", true},
-		{"Have Not Read", "want", true},
-		{"The Expanse", "", false}, // a series shelf: membership only
-		{"My Favorites", "", false},
+		{0, "want", false},
+		{1, "reading", false},
+		{50, "reading", false},
+		{99, "reading", false},
+		{100, "read", true},
 	}
 	for _, c := range cases {
-		gotStatus, gotIs := shelfStatus(c.name)
-		if gotStatus != c.wantStatus || gotIs != c.wantIs {
-			t.Fatalf("shelfStatus(%q) = (%q,%v), want (%q,%v)", c.name, gotStatus, gotIs, c.wantStatus, c.wantIs)
+		gotStatus, gotFin := statusFromPercent(c.pct)
+		if gotStatus != c.wantStatus || gotFin != c.wantFin {
+			t.Fatalf("statusFromPercent(%d) = (%q,%v), want (%q,%v)", c.pct, gotStatus, gotFin, c.wantStatus, c.wantFin)
 		}
 	}
 }
 
-func lpr(pos int64, ms int64) *amazon.SidecarPosition {
-	t := time.UnixMilli(ms).UTC()
-	return &amazon.SidecarPosition{Position: pos, LastUpdated: &t}
-}
-
-// TestSweep exercises the whole read-side pipeline against fakes: shelf→status
-// union (read>reading>want, series shelf = membership only), sidecar position +
-// date, and Hardcover metadata + linkage — with no network, no DB.
+// TestSweep exercises the whole read-side pipeline against fakes: Cloud Reader
+// library → percentageRead-driven status/progress/finished, Amazon-supplied
+// title/authors/cover, sample filtering, and the optional Hardcover linkage —
+// with no network, no DB.
 func TestSweep(t *testing.T) {
 	fk := &fakeKindle{
-		datasets: []amazon.Dataset{
-			{Identifier: "ds-cur", Name: "Currently Readings", Namespace: amazon.CloudCollectionsNamespace},
-			{Identifier: "ds-done", Name: "Done Reading", Namespace: amazon.CloudCollectionsNamespace},
-			{Identifier: "ds-want", Name: "Have Not Read", Namespace: amazon.CloudCollectionsNamespace},
-			{Identifier: "ds-exp", Name: "The Expanse", Namespace: amazon.CloudCollectionsNamespace},
-			{Identifier: "ds-sync", Name: "device-sync", Namespace: "Kindle.DeviceSync"}, // must be ignored
-		},
-		records: map[string][]amazon.CollectionRecord{
-			"ds-cur":  {{ASIN: "ASIN_READING"}, {ASIN: "ASIN_SERIES"}}, // ASIN_SERIES also on the series shelf
-			"ds-done": {{ASIN: "ASIN_READ"}},
-			"ds-want": {{ASIN: "ASIN_WANT"}},
-			"ds-exp":  {{ASIN: "ASIN_SERIES"}}, // membership only — must not blank the "reading" status
-			"ds-sync": {{ASIN: "ASIN_GHOST"}},  // from an ignored namespace — must not appear
-		},
-		sidecars: map[string]*amazon.SidecarPosition{
-			"ASIN_READING": lpr(1200, 1691234567000),
-			"ASIN_READ":    lpr(9999, 1690000000000),
+		library: []amazon.CloudLibraryItem{
+			{ASIN: "ASIN_READING", Title: "The Reading Book", Authors: []string{"Author, Ada:"}, PercentageRead: 42, CoverURL: "https://img/r.jpg", ResourceType: "EBOOK"},
+			{ASIN: "ASIN_READ", Title: "The Finished Book", Authors: []string{"Writer, Bob:", "Coauthor, Cy:"}, PercentageRead: 100, CoverURL: "https://img/d.jpg", ResourceType: "EBOOK"},
+			{ASIN: "ASIN_WANT", Title: "The Unopened Book", Authors: []string{"Poet, Pat:"}, PercentageRead: 0, CoverURL: "https://img/w.jpg", ResourceType: "EBOOK"},
+			{ASIN: "ASIN_SAMPLE", Title: "A Sample", Authors: []string{"Nobody, No:"}, PercentageRead: 10, ResourceType: "EBOOK_SAMPLE"}, // must be filtered
+			{ASIN: "", Title: "No ASIN", PercentageRead: 5, ResourceType: "EBOOK"},                                                       // must be dropped
 		},
 	}
 	res := &fakeResolver{byASIN: map[string]*hardcover.BookMeta{
-		"ASIN_READING": {BookID: 111, EditionID: 222, Title: "The Reading Book", Authors: "Ada Author", CoverURL: "https://img/r.jpg"},
-		// ASIN_READ intentionally has NO Hardcover entry → ingests ASIN-only.
+		// ASIN_READING gets a Hardcover linkage; Amazon title must still win.
+		"ASIN_READING": {BookID: 111, EditionID: 222, Title: "Hardcover Title (ignored)", Authors: "Ignored", CoverURL: "https://hc/r.jpg"},
+		// ASIN_READ intentionally has NO Hardcover entry → no linkage.
 	}}
 
 	s := &Service{kindle: fk}
@@ -110,16 +93,19 @@ func TestSweep(t *testing.T) {
 	for _, ki := range items {
 		byASIN[ki.Item.ExternalID] = ki
 	}
-	if _, ok := byASIN["ASIN_GHOST"]; ok {
-		t.Fatal("an ASIN from a non-CloudCollections namespace leaked into the sweep")
+	if _, ok := byASIN["ASIN_SAMPLE"]; ok {
+		t.Fatal("a Kindle sample leaked into the sweep")
 	}
-	if len(byASIN) != 4 {
-		t.Fatalf("want 4 unique ASINs, got %d: %v", len(byASIN), keys(byASIN))
+	if _, ok := byASIN[""]; ok {
+		t.Fatal("an item with no ASIN leaked into the sweep")
+	}
+	if len(byASIN) != 3 {
+		t.Fatalf("want 3 ingested items (samples/empty dropped), got %d: %v", len(byASIN), keys(byASIN))
 	}
 
-	// reading book: status reading, source kindle, amazon_asin set, progress 0
-	// (position is not a percent), started_at from the sidecar date, and full
-	// Hardcover metadata + linkage.
+	// reading book: status reading, progress = percentageRead, not finished,
+	// Amazon title/authors/cover, and the Hardcover linkage carried (Amazon title
+	// must win over Hardcover's).
 	r := byASIN["ASIN_READING"]
 	if r.Item.Source != "kindle" {
 		t.Fatalf("source: want kindle, got %q", r.Item.Source)
@@ -127,24 +113,21 @@ func TestSweep(t *testing.T) {
 	if r.Item.Status != "reading" || r.Item.Finished {
 		t.Fatalf("reading book status/finished wrong: %+v", r.Item)
 	}
+	if r.Item.ProgressPercent != 42 {
+		t.Fatalf("progress should equal percentageRead (42), got %d", r.Item.ProgressPercent)
+	}
 	if r.Item.AmazonASIN != "ASIN_READING" {
 		t.Fatalf("amazon_asin not set: %q", r.Item.AmazonASIN)
 	}
-	if r.Item.ProgressPercent != 0 {
-		t.Fatalf("progress should be 0 (LPR position is not a percent), got %d", r.Item.ProgressPercent)
-	}
-	if r.Item.StartedAt == nil || r.Item.StartedAt.UTC() != time.UnixMilli(1691234567000).UTC() {
-		t.Fatalf("started_at should come from the sidecar date, got %v", r.Item.StartedAt)
-	}
-	if r.Item.Title != "The Reading Book" || r.Item.Authors != "Ada Author" || r.Item.CoverURL == "" {
-		t.Fatalf("Hardcover metadata not mapped: %+v", r.Item)
+	if r.Item.Title != "The Reading Book" || r.Item.Authors != "Author, Ada" || r.Item.CoverURL != "https://img/r.jpg" {
+		t.Fatalf("Amazon metadata not mapped (or Hardcover clobbered it): %+v", r.Item)
 	}
 	if r.BookID != 111 || r.EditionID != 222 || r.MatchConf != "asin" {
 		t.Fatalf("Hardcover linkage not carried: bookID=%d editionID=%d conf=%q", r.BookID, r.EditionID, r.MatchConf)
 	}
 
-	// read book: status read, finished true, progress 100, finished_at from the
-	// sidecar date, and (no Hardcover entry) blank title + no linkage.
+	// read book: status read, finished, progress 100, multi-author CSV, no
+	// Hardcover linkage (no entry).
 	rd := byASIN["ASIN_READ"]
 	if rd.Item.Status != "read" || !rd.Item.Finished {
 		t.Fatalf("read book should be finished: %+v", rd.Item)
@@ -152,35 +135,30 @@ func TestSweep(t *testing.T) {
 	if rd.Item.ProgressPercent != 100 {
 		t.Fatalf("finished book progress: want 100, got %d", rd.Item.ProgressPercent)
 	}
-	if rd.Item.FinishedAt == nil || rd.Item.FinishedAt.UTC() != time.UnixMilli(1690000000000).UTC() {
-		t.Fatalf("finished_at should come from the sidecar date, got %v", rd.Item.FinishedAt)
+	if rd.Item.Authors != "Writer, Bob, Coauthor, Cy" {
+		t.Fatalf("multi-author CSV wrong: %q", rd.Item.Authors)
 	}
-	if rd.Item.Title != "" || rd.BookID != 0 {
-		t.Fatalf("ASIN with no Hardcover match should ingest ASIN-only: %+v (bookID=%d)", rd.Item, rd.BookID)
+	if rd.BookID != 0 {
+		t.Fatalf("ASIN with no Hardcover match should carry no linkage: bookID=%d", rd.BookID)
 	}
 
-	// want book: status want, not finished, progress 0, no sidecar → no dates.
+	// want book: status want, not finished, progress 0.
 	w := byASIN["ASIN_WANT"]
 	if w.Item.Status != "want" || w.Item.Finished || w.Item.ProgressPercent != 0 {
 		t.Fatalf("want book wrong: %+v", w.Item)
 	}
-	if w.Item.StartedAt != nil || w.Item.FinishedAt != nil {
-		t.Fatalf("want book should have no dates: %+v", w.Item)
-	}
-
-	// series-only book: on Currently Readings AND The Expanse → the union keeps
-	// the strongest status ("reading"), the series shelf must not blank it.
-	se := byASIN["ASIN_SERIES"]
-	if se.Item.Status != "reading" {
-		t.Fatalf("series+currently union should keep reading, got %q", se.Item.Status)
+	if w.Item.Title != "The Unopened Book" {
+		t.Fatalf("want book title not mapped: %q", w.Item.Title)
 	}
 }
 
-// TestSweepNoHardcover: with a nil resolver, rows still ingest with ASIN only.
+// TestSweepNoHardcover: with a nil resolver, rows still ingest with full Amazon
+// metadata but no linkage.
 func TestSweepNoHardcover(t *testing.T) {
 	fk := &fakeKindle{
-		datasets: []amazon.Dataset{{Identifier: "ds-cur", Name: "Currently Readings", Namespace: amazon.CloudCollectionsNamespace}},
-		records:  map[string][]amazon.CollectionRecord{"ds-cur": {{ASIN: "ASIN_X"}}},
+		library: []amazon.CloudLibraryItem{
+			{ASIN: "ASIN_X", Title: "Standalone", Authors: []string{"Solo, Sam:"}, PercentageRead: 25, CoverURL: "https://img/x.jpg", ResourceType: "EBOOK"},
+		},
 	}
 	s := &Service{kindle: fk}
 	items, hcConnected, err := s.sweep(context.Background(), &amazon.DeviceCredential{}, "bob", nil)
@@ -190,41 +168,40 @@ func TestSweepNoHardcover(t *testing.T) {
 	if hcConnected {
 		t.Fatal("hcConnected should be false with a nil resolver")
 	}
-	if len(items) != 1 || items[0].Item.Title != "" || items[0].BookID != 0 {
-		t.Fatalf("nil-resolver sweep should ingest ASIN-only, got %+v", items)
+	if len(items) != 1 {
+		t.Fatalf("want 1 item, got %d", len(items))
 	}
-	if items[0].Item.ExternalID != "ASIN_X" || items[0].Item.Status != "reading" {
-		t.Fatalf("row mapping wrong: %+v", items[0].Item)
+	it := items[0]
+	if it.Item.ExternalID != "ASIN_X" || it.Item.Status != "reading" || it.Item.ProgressPercent != 25 {
+		t.Fatalf("row mapping wrong: %+v", it.Item)
+	}
+	// Amazon metadata present even without Hardcover; no linkage.
+	if it.Item.Title != "Standalone" || it.Item.Authors != "Solo, Sam" || it.Item.CoverURL == "" {
+		t.Fatalf("Amazon metadata should be present without Hardcover: %+v", it.Item)
+	}
+	if it.BookID != 0 {
+		t.Fatalf("nil-resolver sweep should carry no linkage, got bookID=%d", it.BookID)
 	}
 }
 
-// TestBuildReadingItemStatusUnion asserts the status-rank helper directly.
-func TestStatusRank(t *testing.T) {
-	if !(statusRank("read") > statusRank("reading") && statusRank("reading") > statusRank("want") && statusRank("want") > statusRank("")) {
-		t.Fatal("status rank order must be read > reading > want > unknown")
+// TestBuildReadingItemHardcoverBackfill: Hardcover fills only fields Amazon left
+// blank (title/authors/cover), never overwriting a present Amazon value.
+func TestBuildReadingItemHardcoverBackfill(t *testing.T) {
+	// Amazon left title blank; Hardcover backfills it, but keeps Amazon's author.
+	lib := amazon.CloudLibraryItem{ASIN: "A1", Title: "", Authors: []string{"Amazon, Author:"}, PercentageRead: 60, CoverURL: ""}
+	meta := &hardcover.BookMeta{BookID: 9, EditionID: 90, Title: "Backfilled Title", Authors: "Hardcover Author", CoverURL: "https://hc/c.jpg"}
+	ki := buildReadingItem("u", lib, meta)
+	if ki.Item.Title != "Backfilled Title" {
+		t.Fatalf("blank Amazon title should be backfilled from Hardcover, got %q", ki.Item.Title)
 	}
-}
-
-// TestBuildReadingItemDeletedTombstoneSkipped ensures collectShelves drops a
-// deleted record.
-func TestCollectShelvesSkipsDeleted(t *testing.T) {
-	fk := &fakeKindle{
-		datasets: []amazon.Dataset{{Identifier: "ds", Name: "Currently Readings", Namespace: amazon.CloudCollectionsNamespace}},
-		records: map[string][]amazon.CollectionRecord{"ds": {
-			{ASIN: "KEEP"},
-			{ASIN: "GONE", IsDeleted: true},
-		}},
+	if ki.Item.Authors != "Amazon, Author" {
+		t.Fatalf("present Amazon author must win over Hardcover, got %q", ki.Item.Authors)
 	}
-	s := &Service{kindle: fk}
-	got, err := s.collectShelves(context.Background(), &amazon.DeviceCredential{}, fk.datasets)
-	if err != nil {
-		t.Fatalf("collectShelves: %v", err)
+	if ki.Item.CoverURL != "https://hc/c.jpg" {
+		t.Fatalf("blank Amazon cover should be backfilled, got %q", ki.Item.CoverURL)
 	}
-	if _, ok := got["GONE"]; ok {
-		t.Fatal("deleted record should be skipped")
-	}
-	if _, ok := got["KEEP"]; !ok {
-		t.Fatal("non-deleted record should be kept")
+	if ki.BookID != 9 || ki.EditionID != 90 {
+		t.Fatalf("linkage not carried: %+v", ki)
 	}
 }
 

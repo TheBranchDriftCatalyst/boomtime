@@ -1,8 +1,16 @@
 // Package books is the catalyst-books ingestion domain: KINDLE reading (ebooks).
-// THIN by design — it maps Kindle library + whispersync positions (fetched via
-// the SHARED internal/amazon device credential) into reading state, and
-// registers its periodic sync job on the catalyst-go-jobs scheduler. It owns no
-// auth (that's internal/amazon) and no push (that's internal/hardcover).
+// THIN by design — it maps the read.amazon.com Cloud Reader library (fetched via
+// the SHARED internal/amazon device credential, exchanged for website cookies)
+// into reading state, and registers its periodic sync job on the catalyst-go-jobs
+// scheduler. It owns no auth (that's internal/amazon) and no push (that's
+// internal/hardcover).
+//
+// Library source (gaka: Cloud Reader cutover): the Cloud Reader
+// /kindle-library/search feed returns the user's FULL library with title,
+// authors, percentageRead, and cover directly from Amazon — so titles no longer
+// depend on a Hardcover match. This replaced the whispersync/CloudCollections
+// path (kindle.go), which only saw shelf-filed books (no titles). Hardcover is
+// now used only for the optional book_id/edition_id linkage.
 //
 // Standard domain layout (identical across internal/domains/*, split out as the
 // code grows):
@@ -27,8 +35,8 @@ const KindleSyncKind = "books-kindle-sync"
 
 // KindleBackfillKind is the one-shot, owner-scoped Kindle backfill kind (enqueued
 // on demand from the connect flow / admin, never scheduled). BackfillUser is a
-// full sweep — the Kindle shelves are already the complete current state — so the
-// backfill shares SyncUser's code path.
+// full sweep — the Cloud Reader library is already the complete current state —
+// so the backfill shares SyncUser's code path.
 const KindleBackfillKind = "books-kindle-backfill"
 
 // source is the reading_items.source tag for every row this domain writes.
@@ -47,7 +55,7 @@ type Service struct {
 	// ingest with ASIN only and title left blank.
 	Hardcover *hardcover.Store
 
-	// kindle is the whispersync/sidecar client; swappable in tests via a narrow
+	// kindle is the Cloud Reader library client; swappable in tests via a narrow
 	// interface so SyncUser exercises without a network.
 	kindle kindleSource
 }
@@ -55,7 +63,7 @@ type Service struct {
 // New constructs the books (Kindle) domain service. Hardcover is wired after
 // construction (SetHardcover) so callers without it keep working.
 func New(database *db.DB, az *amazon.Store, logger *slog.Logger) *Service {
-	return &Service{DB: database, Amazon: az, Logger: logger, kindle: amazon.NewKindleClient()}
+	return &Service{DB: database, Amazon: az, Logger: logger, kindle: amazon.NewCloudReaderClient()}
 }
 
 // SetHardcover wires the Hardcover connector (nil-safe).
