@@ -9,7 +9,16 @@
 // ["admin","jobs"] prefix so the table AND the schedules panel refetch at once.
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarClock, ListChecks, Play, RotateCcw } from "lucide-react";
+import {
+  BookOpen,
+  CalendarClock,
+  DownloadCloud,
+  Headphones,
+  ListChecks,
+  Play,
+  RotateCcw,
+  Search,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import {
@@ -36,6 +45,7 @@ import {
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/table";
 import { EmptyState } from "@/components/EmptyState";
 import { api, ApiError } from "@/lib/api";
+import { usePublicConfig } from "@/lib/usePublicConfig";
 import { qk } from "@/lib/queryKeys";
 import { relativeTime } from "@/lib/sourceStatus";
 import { cn } from "@/lib/utils";
@@ -108,6 +118,89 @@ const STATUS_FILTERS: { value: string; label: string }[] = [
   { value: "done", label: "Done" },
   { value: "failed", label: "Failed" },
 ];
+
+// ── reading-steps panel ─────────────────────────────────────────────────────
+
+// On-demand triggers for the catalyst-books pipeline kinds, scoped to the
+// current (admin) user. Each enqueues a worker job and returns a jobId; we
+// surface it via toast. Gated on books_enabled — the whole panel is inert per
+// deployment, mirroring the settings cards. Invalidates the jobs prefix so the
+// table below reflects the freshly-queued run.
+function ReadingStepsPanel() {
+  const qc = useQueryClient();
+  const { config } = usePublicConfig();
+
+  const onStepSuccess = (label: string) => (res: { jobId: number }) => {
+    toast.success(`${label} started (job #${res.jobId})`);
+    qc.invalidateQueries({ queryKey: qk.adminJobsPrefix() });
+  };
+  const onStepError = (label: string) => (e: unknown) =>
+    toast.error(
+      e instanceof ApiError ? `Couldn't run ${label}: ${e.message}` : `Couldn't run ${label}`,
+    );
+
+  const audibleBackfill = useMutation({
+    mutationFn: () => api.backfillAudible(),
+    onSuccess: onStepSuccess("Audible backfill"),
+    onError: onStepError("Audible backfill"),
+  });
+  const kindleBackfill = useMutation({
+    mutationFn: () => api.backfillKindle(),
+    onSuccess: onStepSuccess("Kindle backfill"),
+    onError: onStepError("Kindle backfill"),
+  });
+  const hardcoverMatch = useMutation({
+    mutationFn: () => api.matchHardcover(),
+    onSuccess: onStepSuccess("Hardcover match"),
+    onError: onStepError("Hardcover match"),
+  });
+  const hardcoverPull = useMutation({
+    mutationFn: () => api.pullHardcover(),
+    onSuccess: onStepSuccess("Hardcover pull"),
+    onError: onStepError("Hardcover pull"),
+  });
+
+  if (!config.books_enabled) return null;
+
+  const triggers = [
+    { key: "audible", label: "Audible backfill", icon: Headphones, m: audibleBackfill },
+    { key: "kindle", label: "Kindle backfill", icon: BookOpen, m: kindleBackfill },
+    { key: "match", label: "Hardcover match", icon: Search, m: hardcoverMatch },
+    { key: "pull", label: "Hardcover pull", icon: DownloadCloud, m: hardcoverPull },
+  ];
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 font-mono text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          <BookOpen className="h-4 w-4 text-primary" />
+          Run a reading step
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="flex flex-wrap items-center gap-2">
+          {triggers.map(({ key, label, icon: Icon, m }) => (
+            <Button
+              key={key}
+              variant="outline"
+              size="sm"
+              onClick={() => m.mutate()}
+              disabled={m.isPending}
+              title={`Queue a ${label} run for your account`}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {m.isPending ? "Starting…" : label}
+            </Button>
+          ))}
+        </div>
+        <p className="mt-3 text-xs text-muted-foreground">
+          On-demand pipeline steps for your own account. Each queues a background job — watch it
+          land in the table below.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
 
 // ── schedules panel ─────────────────────────────────────────────────────────
 
@@ -389,6 +482,7 @@ export function JobsTab() {
 
   return (
     <div className="max-w-6xl space-y-6">
+      <ReadingStepsPanel />
       <SchedulesPanel />
 
       <section className="space-y-3">

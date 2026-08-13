@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, Library, Link2Off } from "lucide-react";
+import { DownloadCloud, ExternalLink, Library, Link2Off, Search } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Card, CardContent } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { api, ApiError } from "@/lib/api";
@@ -49,6 +50,19 @@ export function HardcoverConnectCard() {
   const disconnect = useMutation({
     mutationFn: () => api.disconnectHardcover(),
     onSuccess: invalidate,
+  });
+
+  // On-demand pipeline steps. Both READ-ONLY / safe — they enqueue a worker job
+  // (returns a jobId) and never write to the Hardcover shelf. Outcome via toast.
+  const match = useMutation({
+    mutationFn: () => api.matchHardcover(),
+    onSuccess: (res) => toast.success(`Hardcover match started (job #${res.jobId})`),
+    onError: (e) => toast.error(errMsg(e)),
+  });
+  const pull = useMutation({
+    mutationFn: () => api.pullHardcover(),
+    onSuccess: (res) => toast.success(`Hardcover pull started (job #${res.jobId})`),
+    onError: (e) => toast.error(errMsg(e)),
   });
 
   if (!enabled) return null;
@@ -102,6 +116,34 @@ export function HardcoverConnectCard() {
                 <Link2Off className="mr-1.5 h-3.5 w-3.5" />
                 Disconnect
               </Button>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={match.isPending}
+                  onClick={() => match.mutate()}
+                >
+                  <Search className="mr-1.5 h-3.5 w-3.5" />
+                  {match.isPending ? "Starting…" : "Match books"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={pull.isPending}
+                  onClick={() => pull.mutate()}
+                >
+                  <DownloadCloud className="mr-1.5 h-3.5 w-3.5" />
+                  {pull.isPending ? "Starting…" : "Pull from Hardcover"}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Both are read-only and safe — they match your library against Hardcover and pull
+                your reading state in. Neither writes to your Hardcover shelf (outbound writes stay
+                dry-run-gated).
+              </p>
             </div>
 
             {invalid && (

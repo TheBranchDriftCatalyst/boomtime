@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router";
 import { BookOpen, Bookmark, ExternalLink, Link2Off, RefreshCw, Library, Upload } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Card, CardContent } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { api } from "@/lib/api";
@@ -146,6 +147,27 @@ export function AmazonConnectCard() {
     onSuccess: () => setTimeout(invalidateItems, 2000),
   });
 
+  // Kindle uses the SAME Amazon device link. Mirror the Audible pair, but surface
+  // the outcome via toast (the enqueue carries a jobId; the sync carries a count).
+  const syncKindle = useMutation({
+    mutationFn: () => api.syncKindle(),
+    onSuccess: (res) => {
+      toast.success(
+        `Synced ${res.synced} Kindle ${res.synced === 1 ? "item" : "items"}`,
+      );
+      invalidateItems();
+    },
+    onError: (e) => toast.error(errMsg(e)),
+  });
+  const backfillKindle = useMutation({
+    mutationFn: () => api.backfillKindle(),
+    onSuccess: (res) => {
+      toast.success(`Kindle backfill started (job #${res.jobId})`);
+      setTimeout(invalidateItems, 2000);
+    },
+    onError: (e) => toast.error(errMsg(e)),
+  });
+
   const captured = params.get("amazonCaptured");
   useEffect(() => {
     if (!captured) return;
@@ -269,6 +291,29 @@ export function AmazonConnectCard() {
                   className={`mr-1.5 h-3.5 w-3.5${syncNow.isPending ? " animate-spin" : ""}`}
                 />
                 {syncNow.isPending ? "Syncing…" : "Sync now"}
+              </Button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="mr-1 text-xs font-medium text-muted-foreground">Kindle</span>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={backfillKindle.isPending}
+                onClick={() => backfillKindle.mutate()}
+              >
+                <BookOpen className="mr-1.5 h-3.5 w-3.5" />
+                {backfillKindle.isPending ? "Starting…" : "Backfill Kindle library"}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={syncKindle.isPending}
+                onClick={() => syncKindle.mutate()}
+              >
+                <RefreshCw
+                  className={`mr-1.5 h-3.5 w-3.5${syncKindle.isPending ? " animate-spin" : ""}`}
+                />
+                {syncKindle.isPending ? "Syncing…" : "Sync Kindle"}
               </Button>
             </div>
             {backfill.isSuccess && (

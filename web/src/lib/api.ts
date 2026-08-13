@@ -1189,6 +1189,16 @@ export const api = {
     request<{ enqueued: boolean; jobId: number }>("/api/v1/amazon/audible/backfill", {
       method: "POST",
     }),
+  // Kindle ingest (catalyst-books) — same shapes as Audible: the shared Amazon
+  // device feeds Kindle too. syncKindle runs a forward delta synchronously and
+  // returns the item count; backfillKindle enqueues the all-time sweep on the
+  // jobs worker (returns the job id).
+  syncKindle: () =>
+    request<{ synced: number; source: string }>("/api/v1/kindle/sync", { method: "POST" }),
+  backfillKindle: () =>
+    request<{ enqueued: boolean; jobId: number }>("/api/v1/kindle/backfill", {
+      method: "POST",
+    }),
   getBooksItems: (source?: string) =>
     request<{ items: ReadingItemDTO[] }>(
       `/api/v1/books/items${source ? `?source=${encodeURIComponent(source)}` : ""}`,
@@ -1201,6 +1211,19 @@ export const api = {
   connectHardcover: (body: { token: string }) =>
     request<void>("/api/v1/hardcover/connect", { method: "POST", body }),
   disconnectHardcover: () => request<void>("/api/v1/hardcover", { method: "DELETE" }),
+  // Hardcover on-demand pipeline steps (catalyst-books). Both READ-ONLY / safe:
+  // they enqueue a job on the worker (returns the job id) and NEVER write to the
+  // Hardcover shelf — outbound writes stay dry-run-gated. matchHardcover resolves
+  // unmatched reading_items against Hardcover's catalog; pullHardcover pulls the
+  // user's current Hardcover reading state IN.
+  matchHardcover: () =>
+    request<{ enqueued: boolean; jobId: number }>("/api/v1/hardcover/match", {
+      method: "POST",
+    }),
+  pullHardcover: () =>
+    request<{ enqueued: boolean; jobId: number }>("/api/v1/hardcover/pull", {
+      method: "POST",
+    }),
 
   // gaka-anh Phase 2: per-user GitHub stats. Authed cache-or-sync — the server
   // serves a fresh cache or refreshes on demand, and on a GitHub rate-limit
