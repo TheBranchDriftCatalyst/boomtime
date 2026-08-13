@@ -678,11 +678,11 @@ func runCmd() *cobra.Command {
 				jobReg.SetConcurrency(audiobooks.AudibleSyncKind, 1)     // audiobooks-audible-sync
 				jobReg.SetConcurrency(audiobooks.AudibleBackfillKind, 1) // audiobooks-audible-backfill (spec's "books-audible-backfill")
 				if cfg.BooksEnabled() {
-					jobReg.SetConcurrency(audiobooks.HardcoverPushKind, 1) // hardcover-push (global Hardcover rate limit)
-					jobReg.SetConcurrency(hardcover.PullJobKind, 1)        // hardcover-pull (global Hardcover rate limit)
-					jobReg.SetConcurrency(books.KindleSyncKind, 1)         // books-kindle-sync
-					jobReg.SetConcurrency(books.KindleBackfillKind, 1)     // books-kindle-backfill
-					jobReg.SetConcurrency(hardcover.HardcoverMatchKind, 1) // hardcover-match (global Hardcover rate limit)
+					jobReg.SetConcurrency(audiobooks.HardcoverPushKind, 1)   // hardcover-push (global Hardcover rate limit)
+					jobReg.SetConcurrency(hardcover.PullJobKind, 1)          // hardcover-pull (global Hardcover rate limit)
+					jobReg.SetConcurrency(books.KindleSyncKind, 1)           // books-kindle-sync
+					jobReg.SetConcurrency(books.KindleBackfillKind, 1)       // books-kindle-backfill
+					jobReg.SetConcurrency(hardcover.HardcoverMatchKind, 1)   // hardcover-match (global Hardcover rate limit)
 					jobReg.SetConcurrency(bookspipeline.BooksSyncAllKind, 1) // books-sync-all orchestrator (chains the rate-limited stages)
 				}
 

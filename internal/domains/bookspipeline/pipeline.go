@@ -5,13 +5,13 @@
 //
 // Dependency order (guaranteed by running sequentially):
 //
-//	1. Audible ingest   — forward-sync the audiobook library
-//	2. Kindle ingest    — forward-sync the ebook library
-//	3. Hardcover match  — resolve every now-ingested reading_item to a Hardcover
-//	                      book/edition (must run AFTER both ingests so it sees
-//	                      the freshly-added rows)
-//	4. Hardcover pull   — reconcile the remote shelf's status/updated_at onto the
-//	                      now-matched linkage (must run AFTER match)
+//  1. Audible ingest   — forward-sync the audiobook library
+//  2. Kindle ingest    — forward-sync the ebook library
+//  3. Hardcover match  — resolve every now-ingested reading_item to a Hardcover
+//     book/edition (must run AFTER both ingests so it sees
+//     the freshly-added rows)
+//  4. Hardcover pull   — reconcile the remote shelf's status/updated_at onto the
+//     now-matched linkage (must run AFTER match)
 //
 // Each step is best-effort: a per-step error is logged and recorded in the
 // Summary but does NOT abort the chain. Because the steps run sequentially the
