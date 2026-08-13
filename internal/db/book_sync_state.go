@@ -21,6 +21,7 @@ type BookSyncState struct {
 	LastActivityCursor *time.Time // last aggregates window filled (a DATE)
 	LastBackfillAt     *time.Time // NULL until the one-shot backfill completes
 	LastForwardAt      *time.Time
+	LastMatchAt        *time.Time // NULL until the explicit Hardcover match sweep runs (migration 00064)
 }
 
 // GetBookSyncState returns the stored cursors for owner+source, or a zero-valued
@@ -30,11 +31,11 @@ func (d *DB) GetBookSyncState(ctx context.Context, owner, source string) (BookSy
 	st := BookSyncState{Owner: owner, Source: source}
 	err := d.Pool.QueryRow(ctx,
 		`SELECT last_library_cursor, last_finished_cursor, last_activity_cursor,
-		        last_backfill_at, last_forward_at
+		        last_backfill_at, last_forward_at, last_match_at
 		   FROM book_sync_state WHERE owner=$1 AND source=$2`,
 		owner, source).
 		Scan(&st.LastLibraryCursor, &st.LastFinishedCursor, &st.LastActivityCursor,
-			&st.LastBackfillAt, &st.LastForwardAt)
+			&st.LastBackfillAt, &st.LastForwardAt, &st.LastMatchAt)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return st, nil
@@ -51,16 +52,17 @@ func (d *DB) SetBookSyncState(ctx context.Context, st BookSyncState) error {
 	_, err := d.Pool.Exec(ctx,
 		`INSERT INTO book_sync_state
 		   (owner, source, last_library_cursor, last_finished_cursor,
-		    last_activity_cursor, last_backfill_at, last_forward_at, updated_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7, now())
+		    last_activity_cursor, last_backfill_at, last_forward_at, last_match_at, updated_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8, now())
 		 ON CONFLICT (owner, source) DO UPDATE SET
 		    last_library_cursor  = EXCLUDED.last_library_cursor,
 		    last_finished_cursor = EXCLUDED.last_finished_cursor,
 		    last_activity_cursor = EXCLUDED.last_activity_cursor,
 		    last_backfill_at     = COALESCE(EXCLUDED.last_backfill_at, book_sync_state.last_backfill_at),
 		    last_forward_at      = COALESCE(EXCLUDED.last_forward_at, book_sync_state.last_forward_at),
+		    last_match_at        = COALESCE(EXCLUDED.last_match_at, book_sync_state.last_match_at),
 		    updated_at           = now()`,
 		st.Owner, st.Source, st.LastLibraryCursor, st.LastFinishedCursor,
-		st.LastActivityCursor, st.LastBackfillAt, st.LastForwardAt)
+		st.LastActivityCursor, st.LastBackfillAt, st.LastForwardAt, st.LastMatchAt)
 	return err
 }

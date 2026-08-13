@@ -25,6 +25,12 @@ import (
 // KindleSyncKind is the catalyst-go-jobs kind for the periodic Kindle sync.
 const KindleSyncKind = "books-kindle-sync"
 
+// KindleBackfillKind is the one-shot, owner-scoped Kindle backfill kind (enqueued
+// on demand from the connect flow / admin, never scheduled). BackfillUser is a
+// full sweep — the Kindle shelves are already the complete current state — so the
+// backfill shares SyncUser's code path.
+const KindleBackfillKind = "books-kindle-backfill"
+
 // source is the reading_items.source tag for every row this domain writes.
 const source = "kindle"
 

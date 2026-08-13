@@ -24,6 +24,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/domains/audiobooks"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/domains/books"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/github"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/hardcover"
@@ -511,6 +512,55 @@ func runCmd() *cobra.Command {
 						_, perr := hcPull.SyncHardcoverPull(jctx, job.Owner)
 						return perr
 					}))
+
+					// catalyst-books (Kindle) — the ebook mirror of the Audible
+					// wiring above. ONE Amazon device credential feeds both; Hardcover
+					// resolves an ASIN → title/author/cover + book_id/edition_id.
+					kindleSvc := books.New(database, amazon.NewStore(database), logger).
+						SetHardcover(hardcover.NewStore(database))
+
+					// Forward: fan the periodic Kindle sync over every connected user;
+					// a per-user error is logged + skipped so one bad credential
+					// doesn't fail the batch (mirrors AudibleSyncKind).
+					jobReg.Register(books.KindleSyncKind, jobs.HandlerFunc(func(jctx context.Context, _ jobs.Job) error {
+						users, uerr := database.ListUsersWithAmazonDevice(jctx)
+						if uerr != nil {
+							return uerr
+						}
+						for _, u := range users {
+							if _, serr := kindleSvc.SyncUser(jctx, u); serr != nil {
+								logger.Warn("kindle forward: user sync failed", "user", u, "err", serr)
+							}
+						}
+						logger.Info("kindle forward: batch complete", "users", len(users))
+						return nil
+					}))
+
+					// Backfill: one-shot per user (owner-scoped payload), enqueued on
+					// demand from the connect flow / admin (mirrors AudibleBackfillKind).
+					jobReg.Register(books.KindleBackfillKind, jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
+						if job.Owner == "" {
+							return fmt.Errorf("kindle backfill: missing owner")
+						}
+						_, berr := kindleSvc.BackfillUser(jctx, job.Owner)
+						return berr
+					}))
+
+					// hardcover-match kind (gaka-books): the EXPLICIT match stage of
+					// the pipeline (backfill → match → sync). Owner-scoped — resolve
+					// every still-unmatched reading_item to a Hardcover
+					// book_id/edition_id via the read-only ladder and cache the
+					// linkage. Reuses the pull's SyncService (same Store + DB); capped
+					// at 1 below so it shares Hardcover's global rate budget with the
+					// pull + push.
+					jobReg.Register(hardcover.HardcoverMatchKind, jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
+						if job.Owner == "" {
+							return fmt.Errorf("hardcover-match: missing owner")
+						}
+						_, merr := hcPull.MatchUnmatched(jctx, job.Owner)
+						return merr
+					}))
+
 					logger.Info("jobs: audiobooks handlers registered", "audibleSyncEnabled", cfg.AudibleSyncEnabled())
 				}
 
@@ -583,6 +633,9 @@ func runCmd() *cobra.Command {
 				if cfg.BooksEnabled() {
 					jobReg.SetConcurrency(audiobooks.HardcoverPushKind, 1) // hardcover-push (global Hardcover rate limit)
 					jobReg.SetConcurrency(hardcover.PullJobKind, 1)        // hardcover-pull (global Hardcover rate limit)
+					jobReg.SetConcurrency(books.KindleSyncKind, 1)         // books-kindle-sync
+					jobReg.SetConcurrency(books.KindleBackfillKind, 1)     // books-kindle-backfill
+					jobReg.SetConcurrency(hardcover.HardcoverMatchKind, 1) // hardcover-match (global Hardcover rate limit)
 				}
 
 				hostID, _ := os.Hostname()

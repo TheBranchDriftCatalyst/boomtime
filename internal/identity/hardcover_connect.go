@@ -138,6 +138,39 @@ func (h *Handler) PullHardcover(c *echo.Context) error {
 	return c.JSON(http.StatusAccepted, map[string]any{"enqueued": true, "jobId": id})
 }
 
+// MatchHardcover enqueues the explicit `hardcover-match` pipeline stage (the
+// middle step of backfill → match → sync) for the caller: it resolves every
+// still-unmatched reading_item to a Hardcover book_id/edition_id via the read-only
+// match ladder and caches the linkage. It runs on the jobs worker (owner-scoped
+// payload) and returns the enqueued job id immediately rather than blocking on the
+// ladder. BooksEnabled-gated. Idempotent to enqueue: an already-matched row drops
+// out of the worklist, so a duplicate run is harmless. Mirrors PullHardcover.
+func (h *Handler) MatchHardcover(c *echo.Context) error {
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
+	if aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
+	}
+	if h.JobEnqueuer == nil {
+		return apihelpers.RespondErr(c, apierr.BadRequest("background jobs are not available on this server"))
+	}
+	// Confirm Hardcover is actually connected before enqueueing, so the UI gets an
+	// immediate, clear error instead of a job that no-ops later.
+	info, ierr := hardcover.NewStore(h.DB).Info(c.Request().Context(), owner)
+	if ierr != nil {
+		return apihelpers.InternalErr(h.Logger, c, "hardcover connection lookup failed", ierr)
+	}
+	if !info.Connected {
+		return apihelpers.RespondErr(c, apierr.BadRequest("connect Hardcover before running a match"))
+	}
+	id, eerr := h.JobEnqueuer.Enqueue(c.Request().Context(), hardcover.HardcoverMatchKind, nil,
+		jobs.Owner(owner), jobs.MaxAttempts(3))
+	if eerr != nil {
+		return apihelpers.InternalErr(h.Logger, c, "hardcover match enqueue failed", eerr)
+	}
+	h.Logger.Info("hardcover match enqueued", "user", owner, "jobId", id)
+	return c.JSON(http.StatusAccepted, map[string]any{"enqueued": true, "jobId": id})
+}
+
 // DisconnectHardcover clears the stored token (idempotent).
 func (h *Handler) DisconnectHardcover(c *echo.Context) error {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)

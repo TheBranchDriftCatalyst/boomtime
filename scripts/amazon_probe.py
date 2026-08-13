@@ -159,8 +159,10 @@ def main():
     ap = argparse.ArgumentParser(description="Poke the Audible API with a boomtime user's Amazon credential.")
     ap.add_argument("--user", required=True, help="boomtime username (or user_id)")
     ap.add_argument("--path", help="poke a single custom endpoint path instead of the default set")
+    ap.add_argument("--host", help="override the API host (e.g. todo-ta-g7g.amazon.com for Kindle Fiona, api.amazon.com for whispersync)")
     ap.add_argument("--raw", action="store_true", help="print the full raw JSON body")
     ap.add_argument("--out", help="write the raw JSON body to a file")
+    ap.add_argument("--out-raw", dest="out_raw", help="write the raw response BYTES to a file (works for XML/non-JSON, e.g. Fiona)")
     args = ap.parse_args()
 
     cred = load_cred(args.user)
@@ -168,10 +170,18 @@ def main():
           f"customer_id={'yes' if cred.get('customer_id') else 'no'} "
           f"registered={cred.get('registered_at')}")
     signer = Signer(cred)
+    if args.host:
+        signer.host = args.host
+        print(f"# host override -> {signer.host}")
 
     probes = [("custom", args.path)] if args.path else default_probes(cred.get("marketplace"))
     for name, path in probes:
         status, body = signer.get(path)
+        if args.out_raw:
+            with open(args.out_raw, "wb") as f:
+                f.write(body)
+            print(f"  [{name}] status={status} wrote {len(body)} raw bytes -> {args.out_raw}")
+            continue
         j = summarize(name, status, body)
         if args.out and j is not None:
             with open(args.out, "w") as f:

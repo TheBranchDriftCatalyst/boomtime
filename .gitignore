@@ -67,3 +67,4 @@ web/coverage/
 # Claude Code scratch (agent worktrees, session state)
 .claude/
 hardcover-schema.json
+scripts/__pycache__/

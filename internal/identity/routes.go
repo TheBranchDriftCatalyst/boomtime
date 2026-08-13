@@ -90,6 +90,9 @@ func Register(e *echo.Echo, h *Handler) {
 		// Ingest + the siloed view/delete surface (data-deletion on request).
 		e.POST("/api/v1/amazon/audible/sync", h.SyncAudible)
 		e.POST("/api/v1/amazon/audible/backfill", h.BackfillAudible)
+		// catalyst-books (Kindle) ingest triggers — the ebook mirror of audible/*.
+		e.POST("/api/v1/kindle/sync", h.SyncKindle)
+		e.POST("/api/v1/kindle/backfill", h.BackfillKindle)
 		e.GET("/api/v1/books/items", h.GetReadingItems)
 		e.DELETE("/api/v1/books/items", h.DeleteReadingItemsHandler)
 	}
@@ -105,6 +108,9 @@ func Register(e *echo.Echo, h *Handler) {
 		e.POST("/api/v1/hardcover/connect", h.ConnectHardcover)
 		// Inbound sync (PULL half): read the shelf + reconcile linkage.
 		e.POST("/api/v1/hardcover/pull", h.PullHardcover)
+		// Explicit MATCH stage (backfill → match → sync): resolve unmatched
+		// reading_items to a Hardcover book_id/edition_id + cache the linkage.
+		e.POST("/api/v1/hardcover/match", h.MatchHardcover)
 	}
 
 	// User IANA timezone (gaka-dg7). GET reports the raw stored value

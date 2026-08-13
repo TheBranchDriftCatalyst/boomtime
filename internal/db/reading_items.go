@@ -202,6 +202,58 @@ func (d *DB) ListReadingItems(ctx context.Context, owner, source string) ([]Read
 	return out, rows.Err()
 }
 
+// ListUnmatchedReadingItems returns the owner's reading_items that are NOT yet
+// linked to a Hardcover book (hardcover_book_id IS NULL) AND carry at least one
+// matchable identity (an external_id/amazon_asin, an isbn, or a title). It is the
+// worklist for the explicit `hardcover-match` pipeline stage — only the fields the
+// match ladder needs (source, external_id, amazon_asin, isbn, title, authors) are
+// projected. A row with no identity at all is skipped (it could never match).
+func (d *DB) ListUnmatchedReadingItems(ctx context.Context, owner string) ([]ReadingItem, error) {
+	rows, err := d.Pool.Query(ctx,
+		`SELECT source, external_id, isbn, amazon_asin, title, authors
+		   FROM reading_items
+		  WHERE owner = $1
+		    AND hardcover_book_id IS NULL
+		    AND (external_id <> '' OR isbn <> '' OR title <> '')
+		  ORDER BY source, external_id`,
+		owner)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ReadingItem
+	for rows.Next() {
+		it := ReadingItem{Owner: owner}
+		if err := rows.Scan(&it.Source, &it.ExternalID, &it.ISBN, &it.AmazonASIN,
+			&it.Title, &it.Authors); err != nil {
+			return nil, err
+		}
+		out = append(out, it)
+	}
+	return out, rows.Err()
+}
+
+// UpdateReadingItemDisplayMeta backfills title/authors/cover_url onto a row that
+// arrived with them blank (the bare-ASIN Kindle case), keyed by
+// owner+source+external_id. Each column is written ONLY when it is currently empty
+// (a NULLIF/COALESCE guard) so a later, higher-fidelity source is never clobbered
+// by a Hardcover lookup — and an empty incoming value never blanks a good one.
+// Returns the number of rows updated.
+func (d *DB) UpdateReadingItemDisplayMeta(ctx context.Context, owner, source, externalID, title, authors, coverURL string) (int64, error) {
+	tag, err := d.Pool.Exec(ctx,
+		`UPDATE reading_items SET
+		    title     = CASE WHEN title = ''     AND $4 <> '' THEN $4 ELSE title END,
+		    authors   = CASE WHEN authors = ''   AND $5 <> '' THEN $5 ELSE authors END,
+		    cover_url = CASE WHEN cover_url = '' AND $6 <> '' THEN $6 ELSE cover_url END,
+		    synced_at = now()
+		  WHERE owner = $1 AND source = $2 AND external_id = $3`,
+		owner, source, externalID, title, authors, coverURL)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 // HardcoverUserBookLink is the MINIMAL reconcile payload a Hardcover PULL writes
 // back onto an already-linked reading_item (migration 00063). Per the no-mirror
 // design we persist only the shelf status + Hardcover's own updated_at — never a
