@@ -192,6 +192,44 @@ func (d *DB) MarkReadingItemFinished(ctx context.Context, owner, source, asin st
 	return !wasFinished, meta, true, nil
 }
 
+// SetReadingItemFinishedFromInsights backfills a Kindle finish DATE from the
+// Kindle Reading-Insights history onto an existing kindle reading_item (keyed by
+// owner+source('kindle')+asin). Insights is the ONLY per-book finish-DATE source
+// Kindle has — the Cloud Reader library carries no timestamps — so this is how a
+// kindle row's finished_at gets populated. It sets finished=true, status='read',
+// and finished_at = COALESCE(existing, insightsDate) so a richer finish date
+// written earlier (e.g. by a positioned source or the user) is NEVER clobbered.
+//
+// Returns (newlyDated, found):
+//   - found=false when no kindle row for that ASIN exists yet (its library row
+//     hasn't synced); nothing is written and the caller skips it.
+//   - newlyDated=true only when finished_at was previously NULL and is now set
+//     from insights — the accurate "backfilled a date" signal for the summary
+//     log (a re-run over an already-dated row reports newlyDated=false).
+func (d *DB) SetReadingItemFinishedFromInsights(ctx context.Context, owner, asin string, finishedAt time.Time) (newlyDated bool, found bool, err error) {
+	var prevWasNull bool
+	err = d.Pool.QueryRow(ctx,
+		`WITH prev AS (
+		    SELECT finished_at AS pfa FROM reading_items
+		     WHERE owner=$1 AND source='kindle' AND external_id=$2
+		 )
+		 UPDATE reading_items ri SET
+		    finished    = true,
+		    status      = 'read',
+		    finished_at = COALESCE(ri.finished_at, $3),
+		    synced_at   = now()
+		  WHERE ri.owner=$1 AND ri.source='kindle' AND ri.external_id=$2
+		 RETURNING (SELECT pfa FROM prev) IS NULL`,
+		owner, asin, finishedAt).Scan(&prevWasNull)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return false, false, nil
+		}
+		return false, false, err
+	}
+	return prevWasNull, true, nil
+}
+
 // ListReadingItems returns a user's synced items (source=="" → all sources),
 // unfinished first then alphabetical. Never returns raw_meta (the view payload).
 func (d *DB) ListReadingItems(ctx context.Context, owner, source string) ([]ReadingItem, error) {

@@ -11,8 +11,9 @@ import (
 // fakeKindle is an in-memory kindleSource: a fixed cookie jar + library, so
 // sweep runs with no network.
 type fakeKindle struct {
-	cookies map[string]string
-	library []amazon.CloudLibraryItem
+	cookies  map[string]string
+	library  []amazon.CloudLibraryItem
+	insights *amazon.KindleInsights
 }
 
 func (f *fakeKindle) ExchangeWebsiteCookies(context.Context, *amazon.DeviceCredential) (map[string]string, error) {
@@ -23,6 +24,12 @@ func (f *fakeKindle) ExchangeWebsiteCookies(context.Context, *amazon.DeviceCrede
 }
 func (f *fakeKindle) KindleCloudLibrary(context.Context, map[string]string) ([]amazon.CloudLibraryItem, error) {
 	return f.library, nil
+}
+func (f *fakeKindle) FetchKindleInsights(context.Context, map[string]string) (*amazon.KindleInsights, error) {
+	if f.insights == nil {
+		return &amazon.KindleInsights{}, nil
+	}
+	return f.insights, nil
 }
 
 // fakeResolver is an in-memory metaResolver keyed by ASIN.

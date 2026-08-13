@@ -39,6 +39,13 @@ const KindleSyncKind = "books-kindle-sync"
 // so the backfill shares SyncUser's code path.
 const KindleBackfillKind = "books-kindle-backfill"
 
+// KindleInsightsKind is the catalyst-go-jobs kind for the Kindle Reading-Insights
+// ingest: fetch the reading history (finish DATES + streaks) and backfill
+// reading_items.finished_at. It is the finish-date companion to KindleSyncKind
+// (the library feed carries no timestamps) — run it AFTER the library sync so the
+// rows it dates already exist. Owner-scoped or fanned over all connected users.
+const KindleInsightsKind = "books-kindle-insights"
+
 // source is the reading_items.source tag for every row this domain writes.
 const source = "kindle"
 

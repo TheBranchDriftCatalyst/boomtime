@@ -93,6 +93,7 @@ func Register(e *echo.Echo, h *Handler) {
 		// catalyst-books (Kindle) ingest triggers — the ebook mirror of audible/*.
 		e.POST("/api/v1/kindle/sync", h.SyncKindle)
 		e.POST("/api/v1/kindle/backfill", h.BackfillKindle)
+		e.POST("/api/v1/kindle/insights", h.SyncKindleInsights)
 		e.GET("/api/v1/books/items", h.GetReadingItems)
 		e.DELETE("/api/v1/books/items", h.DeleteReadingItemsHandler)
 		// Orchestrator: chain the whole reading-sync pipeline (Audible ingest →

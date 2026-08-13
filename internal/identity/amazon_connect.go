@@ -286,11 +286,20 @@ func (h *Handler) DeleteReadingItemsHandler(c *echo.Context) error {
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
-	n, err := h.DB.DeleteReadingItems(c.Request().Context(), owner, c.QueryParam("source"))
+	source := c.QueryParam("source")
+	n, err := h.DB.DeleteReadingItems(c.Request().Context(), owner, source)
 	if err != nil {
 		return apihelpers.InternalErr(h.Logger, c, "reading items delete failed", err)
 	}
-	h.Logger.Info("reading items deleted", "user", owner, "source", c.QueryParam("source"), "rows", n)
+	// The Kindle insights snapshot is kindle-scoped, so wipe it too when the
+	// delete covers all sources or Kindle specifically (a best-effort companion —
+	// a failure here doesn't fail the primary reading-items wipe).
+	if source == "" || source == "kindle" {
+		if _, derr := h.DB.DeleteKindleReadingInsights(c.Request().Context(), owner); derr != nil {
+			h.Logger.Warn("kindle insights snapshot delete failed", "user", owner, "err", derr)
+		}
+	}
+	h.Logger.Info("reading items deleted", "user", owner, "source", source, "rows", n)
 	return c.JSON(http.StatusOK, map[string]any{"deleted": n})
 }
 

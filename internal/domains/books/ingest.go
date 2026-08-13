@@ -32,6 +32,10 @@ import (
 type kindleSource interface {
 	ExchangeWebsiteCookies(ctx context.Context, cred *amazon.DeviceCredential) (map[string]string, error)
 	KindleCloudLibrary(ctx context.Context, cookies map[string]string) ([]amazon.CloudLibraryItem, error)
+	// FetchKindleInsights pulls the reading-insights history (finish dates +
+	// streaks) — the per-book finish-DATE source the library feed lacks. Same
+	// website-cookie auth as KindleCloudLibrary.
+	FetchKindleInsights(ctx context.Context, cookies map[string]string) (*amazon.KindleInsights, error)
 }
 
 // metaResolver resolves an ASIN to Hardcover metadata + linkage ids. The real

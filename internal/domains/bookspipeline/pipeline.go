@@ -7,10 +7,13 @@
 //
 //  1. Audible ingest   — forward-sync the audiobook library
 //  2. Kindle ingest    — forward-sync the ebook library
-//  3. Hardcover match  — resolve every now-ingested reading_item to a Hardcover
+//  3. Kindle insights  — backfill per-book finish DATES onto the kindle rows the
+//     Kindle ingest just created (must run AFTER Kindle ingest,
+//     which owns row creation; insights only dates existing rows)
+//  4. Hardcover match  — resolve every now-ingested reading_item to a Hardcover
 //     book/edition (must run AFTER both ingests so it sees
 //     the freshly-added rows)
-//  4. Hardcover pull   — reconcile the remote shelf's status/updated_at onto the
+//  5. Hardcover pull   — reconcile the remote shelf's status/updated_at onto the
 //     now-matched linkage (must run AFTER match)
 //
 // Each step is best-effort: a per-step error is logged and recorded in the
@@ -46,20 +49,22 @@ type StepFunc func(ctx context.Context, owner string) (int, error)
 // main.go builds these from the already-constructed audiobooks / books /
 // hardcover services so there is ONE shared instance set; tests pass fakes.
 type Steps struct {
-	AudibleSync StepFunc // 1. Audible forward-sync
-	KindleSync  StepFunc // 2. Kindle forward-sync
-	Match       StepFunc // 3. Hardcover match-unmatched (after both ingests)
-	Pull        StepFunc // 4. Hardcover shelf pull (after match)
+	AudibleSync    StepFunc // 1. Audible forward-sync
+	KindleSync     StepFunc // 2. Kindle forward-sync
+	KindleInsights StepFunc // 3. Kindle finish-date backfill (after Kindle sync)
+	Match          StepFunc // 4. Hardcover match-unmatched (after both ingests)
+	Pull           StepFunc // 5. Hardcover shelf pull (after match)
 }
 
 // Summary aggregates what one RunPipeline call did for a single owner. Counts
 // are per-stage; Errors collects every per-step failure (empty on a clean run).
 type Summary struct {
-	AudibleSynced int      `json:"audibleSynced"`
-	KindleSynced  int      `json:"kindleSynced"`
-	Matched       int      `json:"matched"`
-	Pulled        int      `json:"pulled"`
-	Errors        []string `json:"errors,omitempty"`
+	AudibleSynced      int      `json:"audibleSynced"`
+	KindleSynced       int      `json:"kindleSynced"`
+	InsightsBackfilled int      `json:"insightsBackfilled"`
+	Matched            int      `json:"matched"`
+	Pulled             int      `json:"pulled"`
+	Errors             []string `json:"errors,omitempty"`
 }
 
 // Pipeline is the orchestrator over a fixed Steps set.
@@ -94,6 +99,7 @@ func (p *Pipeline) RunPipeline(ctx context.Context, owner string) (Summary, erro
 	}{
 		{"audible-sync", p.steps.AudibleSync, &sum.AudibleSynced},
 		{"kindle-sync", p.steps.KindleSync, &sum.KindleSynced},
+		{"kindle-insights", p.steps.KindleInsights, &sum.InsightsBackfilled},
 		{"hardcover-match", p.steps.Match, &sum.Matched},
 		{"hardcover-pull", p.steps.Pull, &sum.Pulled},
 	}
@@ -132,6 +138,7 @@ func (p *Pipeline) RunPipeline(ctx context.Context, owner string) (Summary, erro
 			"user", owner,
 			"audibleSynced", sum.AudibleSynced,
 			"kindleSynced", sum.KindleSynced,
+			"insightsBackfilled", sum.InsightsBackfilled,
 			"matched", sum.Matched,
 			"pulled", sum.Pulled,
 			"errors", len(sum.Errors),
