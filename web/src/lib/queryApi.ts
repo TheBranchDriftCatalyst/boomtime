@@ -65,6 +65,13 @@ export interface QuerySpec {
   having?: HavingSpec;
   sort?: SortSpec;
   limit?: number;
+  // rollups requests extra per-group measures alongside the grouped measure;
+  // each lands in GroupRow.stats (with an always-present "count").
+  rollups?: string[];
+  // rows switches to leaf-rows mode (no aggregate): the entity rows under the
+  // where predicate, owner-scoped + paginated by page. Returns a `rows` result.
+  rows?: boolean;
+  page?: { number: number; size: number };
 }
 
 // --- Response union ----------------------------------------------------------
@@ -77,6 +84,10 @@ export interface SeriesPoint {
 export interface GroupRow {
   key: string;
   value: number;
+  // Present only for a rollups query: count is the group's row count, stats the
+  // per-measure rollups (count included).
+  count?: number;
+  stats?: Record<string, number>;
 }
 
 // QueryResult is discriminated on `kind`. Exactly one payload arm is present;
@@ -84,14 +95,17 @@ export interface GroupRow {
 export type QueryResult =
   | { kind: "scalar"; scalar: number }
   | { kind: "series"; series: SeriesPoint[] }
-  | { kind: "groups"; groups: GroupRow[] };
+  | { kind: "groups"; groups: GroupRow[] }
+  | { kind: "rows"; rows: Record<string, unknown>[]; total: number };
 
 // Raw wire shape (optional arms) before we normalize to the union above.
 interface QueryResultWire {
-  kind: "scalar" | "series" | "groups";
+  kind: "scalar" | "series" | "groups" | "rows";
   scalar?: number;
   series?: SeriesPoint[];
   groups?: GroupRow[];
+  rows?: Record<string, unknown>[];
+  total?: number;
 }
 
 // --- Client ------------------------------------------------------------------
@@ -147,6 +161,8 @@ function normalizeResult(wire: QueryResultWire): QueryResult {
       return { kind: "series", series: wire.series ?? [] };
     case "groups":
       return { kind: "groups", groups: wire.groups ?? [] };
+    case "rows":
+      return { kind: "rows", rows: wire.rows ?? [], total: wire.total ?? 0 };
     default:
       throw new ApiError(500, `unexpected query result kind: ${(wire as { kind: string }).kind}`, wire);
   }

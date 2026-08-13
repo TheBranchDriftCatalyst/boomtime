@@ -20,6 +20,32 @@ type Domain struct {
 	Name       string
 	Measures   map[string]Measure
 	Dimensions map[string]Dimension
+
+	// Rows, when set, is the source for leaf-rows mode (Query.Rows()): the entity
+	// table this domain lists row-by-row under the same owner scope + range +
+	// where predicate as its aggregates. nil = the domain has no row listing.
+	Rows *RowSource
+}
+
+// RowSource describes a domain's leaf-rows projection: which table to list, its
+// owner/date columns (TRUSTED, mirroring Measure), the projected columns, and a
+// default ordering. It carries NO aggregate — it is the "show me the actual
+// rows under this drill path" surface.
+type RowSource struct {
+	Table       string      // trusted table name
+	OwnerCol    string      // trusted owner-scoping column
+	DateCol     string      // trusted time-bucketing column (for range filtering)
+	Columns     []RowColumn // projected columns, in output order
+	DefaultSort string      // trusted ORDER BY clause (e.g. "finished_at DESC NULLS LAST")
+}
+
+// RowColumn is one projected leaf-row column. Name is the output key (the JSON
+// key the FE reads — quoted verbatim as the SQL alias so Postgres never
+// case-folds it); Expr is the TRUSTED source SQL column/expression. Both are
+// author-supplied, never user input.
+type RowColumn struct {
+	Name string
+	Expr string
 }
 
 // Measure is an aggregate bound to ONE table. Expr/DateCol/OwnerCol are TRUSTED
@@ -72,4 +98,31 @@ func Register(d Domain) {
 func lookupDomain(name string) (Domain, bool) {
 	d, ok := registry[name]
 	return d, ok
+}
+
+// rowsMeasure builds the synthetic Measure the leaf-rows path hands to
+// buildPredicate, so a rows where-filter is validated by the SAME same-table
+// whitelist the aggregate path uses. Its Dims are the union of every measure's
+// Dims that share the RowSource table — i.e. exactly the dimensions an author
+// already vetted as valid on that table (Dimension.Table is descriptive only,
+// so it is NOT used for this). ok=false when the domain has no RowSource.
+func rowsMeasure(dom Domain) (Measure, bool) {
+	rs := dom.Rows
+	if rs == nil {
+		return Measure{}, false
+	}
+	seen := map[string]bool{}
+	var dims []string
+	for _, m := range dom.Measures {
+		if m.Table != rs.Table {
+			continue
+		}
+		for _, dn := range m.Dims {
+			if !seen[dn] {
+				seen[dn] = true
+				dims = append(dims, dn)
+			}
+		}
+	}
+	return Measure{Name: "__rows", Table: rs.Table, DateCol: rs.DateCol, OwnerCol: rs.OwnerCol, Dims: dims}, true
 }

@@ -98,7 +98,51 @@ func registerReading() {
 				OwnerCol: "owner",
 				Dims:     []string{"source", "status", "series", "author", "genre"},
 			},
+			// finished is a rollup-oriented measure: how many rows in a group are
+			// finished. Same table/date/owner as books+runtime so it can ride as a
+			// rollup alongside either.
+			"finished": {
+				Name:     "finished",
+				Table:    items,
+				Expr:     "sum(case when finished then 1 else 0 end)",
+				DateCol:  "finished_at",
+				OwnerCol: "owner",
+				Dims:     []string{"source", "status", "series", "author", "genre"},
+			},
 		},
 		Dimensions: dims,
+
+		// Leaf-rows source: the reading_items projection the groupable explorer
+		// drills down to. Each column Name is the JSON key the FE ReadingItemDTO
+		// reads (web/src/types/meta.ts) so a rows response is directly castable to
+		// ReadingItemDTO; Expr is the reading_items source column.
+		Rows: &RowSource{
+			Table:       items,
+			OwnerCol:    "owner",
+			DateCol:     "finished_at",
+			DefaultSort: "finished_at DESC NULLS LAST",
+			Columns: []RowColumn{
+				{Name: "source", Expr: "source"},
+				{Name: "externalId", Expr: "external_id"},
+				{Name: "title", Expr: "title"},
+				{Name: "subtitle", Expr: "subtitle"},
+				{Name: "authors", Expr: "authors"},
+				{Name: "narrators", Expr: "narrators"},
+				{Name: "series", Expr: "series"},
+				{Name: "status", Expr: "status"},
+				{Name: "finished", Expr: "finished"},
+				{Name: "progressPercent", Expr: "progress_percent"},
+				{Name: "finishedAt", Expr: "finished_at"},
+				{Name: "rating", Expr: "rating"},
+				{Name: "goodreadsRating", Expr: "goodreads_rating"},
+				{Name: "coverUrl", Expr: "cover_url"},
+				{Name: "runtimeMin", Expr: "runtime_min"},
+				{Name: "isbn", Expr: "isbn"},
+				{Name: "amazonAsin", Expr: "amazon_asin"},
+				{Name: "hardcoverBookId", Expr: "hardcover_book_id"},
+				{Name: "hardcoverStatus", Expr: "hardcover_status"},
+				{Name: "syncedAt", Expr: "synced_at"},
+			},
+		},
 	})
 }

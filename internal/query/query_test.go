@@ -9,6 +9,7 @@ package query_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -259,6 +260,186 @@ func TestReading_RuntimeBySeries(t *testing.T) {
 	}
 	if got["Foundation"] != 1320 {
 		t.Errorf("Foundation runtime = %v, want 1320", got["Foundation"])
+	}
+}
+
+// rollups: a grouped query with rollups returns per-group Stats (count + each
+// rollup measure) computed in ONE round-trip, with the primary measure in Value.
+func TestReading_GroupRollups(t *testing.T) {
+	hz := testutil.NewHarness(t)
+	owner, _ := hz.MintUser("q_reading_rollups")
+	fin := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+
+	// series "Foundation": 2 rows, runtime 600+720=1320, finished 1 (only R1).
+	seedItem(t, hz, owner, "F1", "f1", "read", "Foundation", 600, &fin)
+	seedItem(t, hz, owner, "F2", "f2", "reading", "Foundation", 720, nil)
+	// series "Dune": 3 rows, runtime 300+100+50=450, finished 2 (D1,D2).
+	seedItem(t, hz, owner, "D1", "d1", "read", "Dune", 300, &fin)
+	seedItem(t, hz, owner, "D2", "d2", "read", "Dune", 100, &fin)
+	seedItem(t, hz, owner, "D3", "d3", "reading", "Dune", 50, nil)
+
+	res, err := query.Run(context.Background(), hz.DB.Pool, owner,
+		query.Q("reading").Measure("books").Group("series").
+			Rollups("runtime", "finished"))
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if res.Kind != query.ResultGroups {
+		t.Fatalf("kind = %v, want groups", res.Kind)
+	}
+	by := map[string]query.Group{}
+	for _, g := range res.Groups {
+		by[g.Key] = g
+	}
+	check := func(series string, wantCount, wantRuntime, wantFinished float64) {
+		g, ok := by[series]
+		if !ok {
+			t.Fatalf("missing group %q in %+v", series, res.Groups)
+		}
+		if g.Stats == nil {
+			t.Fatalf("group %q has nil Stats (rollups not populated)", series)
+		}
+		if g.Value != wantCount {
+			t.Errorf("%s Value (books) = %v, want %v", series, g.Value, wantCount)
+		}
+		if g.Stats["count"] != wantCount {
+			t.Errorf("%s stats.count = %v, want %v", series, g.Stats["count"], wantCount)
+		}
+		if g.Stats["runtime"] != wantRuntime {
+			t.Errorf("%s stats.runtime = %v, want %v", series, g.Stats["runtime"], wantRuntime)
+		}
+		if g.Stats["finished"] != wantFinished {
+			t.Errorf("%s stats.finished = %v, want %v", series, g.Stats["finished"], wantFinished)
+		}
+	}
+	check("Foundation", 2, 1320, 1)
+	check("Dune", 3, 450, 2)
+}
+
+// rollups safety: an unknown rollup name, and a rollup measure on a DIFFERENT
+// table than the grouping measure, are both rejected at Compile — no SQL.
+func TestSafety_RejectsBadRollups(t *testing.T) {
+	// Unknown rollup measure.
+	if sql, _, err := query.Compile("owner",
+		query.Q("reading").Measure("books").Group("status").Rollups("bogus")); err == nil {
+		t.Errorf("expected rejection for unknown rollup, got sql=%q", sql)
+	}
+	// Cross-table rollup: books lives on reading_items; seconds lives on
+	// reading_activity → cannot ride as a rollup of a reading_items group.
+	if sql, _, err := query.Compile("owner",
+		query.Q("reading").Measure("books").Group("source").Rollups("seconds")); err == nil {
+		t.Errorf("expected rejection for cross-table rollup, got sql=%q", sql)
+	}
+	// Positive control: same-table rollups compile.
+	if _, _, err := query.Compile("owner",
+		query.Q("reading").Measure("books").Group("status").Rollups("runtime", "finished")); err != nil {
+		t.Fatalf("same-table rollups should compile, got %v", err)
+	}
+}
+
+// back-compat: a grouped query WITHOUT rollups emits the byte-identical
+// two-column SELECT (no count/rollup columns leak in).
+func TestReading_GroupNoRollupsBackCompat(t *testing.T) {
+	sql, _, err := query.Compile("owner", query.Q("reading").Measure("books").Group("status"))
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	if strings.Contains(sql, "count(*) AS count") || strings.Contains(sql, "AS r_") {
+		t.Errorf("non-rollups grouped SQL leaked rollup columns:\n%s", sql)
+	}
+}
+
+// leaf rows mode: owner-scoped + paginated. Another owner's rows never appear;
+// the page/total math is correct; the row maps carry the FE JSON keys.
+func TestReading_LeafRowsPaginationAndScope(t *testing.T) {
+	hz := testutil.NewHarness(t)
+	alice, _ := hz.MintUser("q_rows_alice")
+	bob, _ := hz.MintUser("q_rows_bob")
+
+	// Alice: 3 finished items, distinct finished_at so DefaultSort is deterministic.
+	d1 := time.Date(2026, 6, 3, 0, 0, 0, 0, time.UTC)
+	d2 := time.Date(2026, 6, 2, 0, 0, 0, 0, time.UTC)
+	d3 := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	seedItem(t, hz, alice, "A1", "Alpha", "read", "S", 10, &d1)
+	seedItem(t, hz, alice, "A2", "Bravo", "read", "S", 20, &d2)
+	seedItem(t, hz, alice, "A3", "Chuck", "read", "S", 30, &d3)
+	// Bob: one item that must never leak into Alice's rows.
+	seedItem(t, hz, bob, "B1", "BobBook", "read", "S", 99, &d1)
+
+	// Page 1 of size 2 → 2 rows, total 3, ordered finished_at DESC (A1 then A2).
+	res, err := query.Run(context.Background(), hz.DB.Pool, alice,
+		query.Q("reading").Rows().Page(1, 2))
+	if err != nil {
+		t.Fatalf("run page1: %v", err)
+	}
+	if res.Kind != query.ResultRows {
+		t.Fatalf("kind = %v, want rows", res.Kind)
+	}
+	if res.Total != 3 {
+		t.Errorf("total = %d, want 3", res.Total)
+	}
+	if len(res.Rows) != 2 {
+		t.Fatalf("page1 rows = %d, want 2", len(res.Rows))
+	}
+	if got := res.Rows[0]["title"]; got != "Alpha" {
+		t.Errorf("page1[0].title = %v, want Alpha (finished_at DESC)", got)
+	}
+	if got := res.Rows[0]["externalId"]; got != "A1" {
+		t.Errorf("page1[0].externalId = %v, want A1 (JSON key mapping)", got)
+	}
+	// No Bob row on any page.
+	for _, r := range res.Rows {
+		if r["title"] == "BobBook" {
+			t.Fatalf("owner scope breached: bob's row leaked into alice's rows")
+		}
+	}
+
+	// Page 2 of size 2 → the remaining 1 row (Chuck), total still 3.
+	res2, err := query.Run(context.Background(), hz.DB.Pool, alice,
+		query.Q("reading").Rows().Page(2, 2))
+	if err != nil {
+		t.Fatalf("run page2: %v", err)
+	}
+	if res2.Total != 3 || len(res2.Rows) != 1 || res2.Rows[0]["title"] != "Chuck" {
+		t.Errorf("page2 = total:%d rows:%d first:%v, want total:3 rows:1 first:Chuck",
+			res2.Total, len(res2.Rows), func() any {
+				if len(res2.Rows) > 0 {
+					return res2.Rows[0]["title"]
+				}
+				return nil
+			}())
+	}
+}
+
+// leaf rows injection: an injection-y drill value rides as an ARG, so it matches
+// nothing (scoped empty set) and never executes as SQL — the table survives.
+func TestReading_LeafRowsInjectionValueIsArg(t *testing.T) {
+	hz := testutil.NewHarness(t)
+	owner, _ := hz.MintUser("q_rows_inject")
+	fin := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	seedItem(t, hz, owner, "Z1", "Zed", "read", "RealSeries", 10, &fin)
+
+	res, err := query.Run(context.Background(), hz.DB.Pool, owner,
+		query.Q("reading").Rows().
+			Where(query.Leaf("series", query.OpEq, "'; drop table reading_items; --")).
+			Page(1, 50))
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if res.Kind != query.ResultRows {
+		t.Fatalf("kind = %v, want rows", res.Kind)
+	}
+	if res.Total != 0 || len(res.Rows) != 0 {
+		t.Errorf("injection drill = total:%d rows:%d, want an empty scoped set", res.Total, len(res.Rows))
+	}
+	// The table must still exist (the value was an arg, not executed SQL): a
+	// plain rows query still returns the seeded row.
+	res2, err := query.Run(context.Background(), hz.DB.Pool, owner, query.Q("reading").Rows())
+	if err != nil {
+		t.Fatalf("post-injection run: %v (table dropped?!)", err)
+	}
+	if res2.Total != 1 {
+		t.Errorf("post-injection total = %d, want 1 (table intact, row present)", res2.Total)
 	}
 }
 

@@ -126,6 +126,16 @@ type Query struct {
 	sortDesc  bool
 	sortSet   bool
 
+	// rollups requests extra per-group measures computed in the SAME grouped
+	// query; each lands in Group.Stats (with an always-present "count").
+	rollups []string
+
+	// rowsMode switches the query to leaf-rows mode (Domain.Rows), paginated by
+	// page/pageSize instead of aggregating.
+	rowsMode bool
+	page     int
+	pageSize int
+
 	limit int
 	now   time.Time
 }
@@ -158,6 +168,21 @@ func (q *Query) Sort(field string, desc bool) *Query {
 	return q
 }
 
+// Rollups requests additional per-group measures computed in the SAME grouped
+// query (one round-trip). Each name must be another measure on the same table
+// as the grouping measure; results land in each Group.Stats alongside an
+// always-present "count". Ignored by a non-grouped query.
+func (q *Query) Rollups(names ...string) *Query { q.rollups = names; return q }
+
+// Rows switches the query into leaf-rows mode: instead of an aggregate it
+// returns the domain's entity rows (Domain.Rows) under the SAME owner scope +
+// range + where predicate as the aggregate path, paginated by Page.
+func (q *Query) Rows() *Query { q.rowsMode = true; return q }
+
+// Page sets the 1-based page number + page size for rows mode. Non-positive
+// values fall back to page 1 / a default size at compile time.
+func (q *Query) Page(number, size int) *Query { q.page, q.pageSize = number, size; return q }
+
 // Limit caps the number of returned rows.
 func (q *Query) Limit(n int) *Query { q.limit = n; return q }
 
@@ -172,6 +197,7 @@ const (
 	ResultScalar ResultKind = "scalar"
 	ResultSeries ResultKind = "series"
 	ResultGroups ResultKind = "groups"
+	ResultRows   ResultKind = "rows"
 )
 
 // Point is one time-series bucket.
@@ -185,6 +211,12 @@ type Point struct {
 type Group struct {
 	Key   string
 	Value float64
+
+	// Stats carries the per-group multi-measure rollups when the query set
+	// Rollups(...): always an entry "count", plus one per requested rollup
+	// measure. nil on the single-measure back-compat path. The primary measure
+	// stays in Value (Stats is additive, never a replacement).
+	Stats map[string]float64
 }
 
 // Result is the typed union the consumers read. Exactly one arm is populated,
@@ -194,4 +226,10 @@ type Result struct {
 	Scalar float64
 	Series []Point
 	Groups []Group
+
+	// Rows/Total are populated only for ResultRows (leaf-rows mode): Rows is the
+	// owner-scoped page of entity rows keyed by the RowSource column names; Total
+	// is the unpaginated row count for the same filter.
+	Rows  []map[string]any
+	Total int
 }

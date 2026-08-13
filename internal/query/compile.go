@@ -33,6 +33,15 @@ func Compile(owner string, q *Query) (string, []any, error) {
 	if !ok {
 		return "", nil, fmt.Errorf("query: unknown domain %q", q.domain)
 	}
+
+	// Leaf-rows mode is a distinct shape (no aggregate/measure): defer to the
+	// rows compiler and return its page query for validation. Run issues the same
+	// page query plus a count(*) for Total.
+	if q.rowsMode {
+		page, _, args, err := compileRowsSQL(owner, q, dom)
+		return page, args, err
+	}
+
 	if q.measure == "" {
 		return "", nil, fmt.Errorf("query: no measure set")
 	}
@@ -80,6 +89,30 @@ func Compile(owner string, q *Query) (string, []any, error) {
 		groupByExpr = bucketExpr
 	}
 	selectCols = append(selectCols, valueExpr+" AS value")
+
+	// Multi-measure rollups: extra aggregates computed in the SAME grouped query
+	// (one round-trip). count(*) is always first, then each requested rollup
+	// measure. Each rollup name is registry-trusted (validated below) and its
+	// Expr never carries user input; values still ride as args via the predicate.
+	if len(q.rollups) > 0 {
+		if !grouped {
+			return "", nil, fmt.Errorf("query: rollups require a group dimension")
+		}
+		selectCols = append(selectCols, "count(*) AS count")
+		for _, name := range q.rollups {
+			rm, ok := dom.Measures[name]
+			if !ok {
+				return "", nil, fmt.Errorf("query: unknown rollup measure %q on domain %q", name, q.domain)
+			}
+			// Same-table rule (mirrors supportsDim): a rollup measure must share the
+			// grouping measure's table/owner/date so its Expr is valid in the SAME
+			// GROUP BY over the same owner-scoped, range-filtered row set.
+			if rm.Table != m.Table || rm.OwnerCol != m.OwnerCol || rm.DateCol != m.DateCol {
+				return "", nil, fmt.Errorf("query: rollup measure %q is not on the same table as measure %q", name, q.measure)
+			}
+			selectCols = append(selectCols, fmt.Sprintf("COALESCE(%s, 0)::double precision AS r_%s", rm.Expr, name))
+		}
+	}
 
 	// WHERE: owner scope ($1), then the time range, then the predicate tree.
 	args := []any{owner}
@@ -145,6 +178,89 @@ func Compile(owner string, q *Query) (string, []any, error) {
 	}
 
 	return b.String(), args, nil
+}
+
+// compileRowsSQL renders the leaf-rows page query + a matching count(*) query,
+// sharing ONE args slice (owner $1, range, predicate) so both filter identically.
+// The owner scope + injection guarantee are the aggregate path's verbatim: the
+// owner is pinned to $1, the range/predicate values are positional args, and the
+// projected column Exprs + DefaultSort are registry-trusted (never user input).
+// LIMIT/OFFSET are ints we own (validated non-negative), inlined like the
+// aggregate path's LIMIT.
+func compileRowsSQL(owner string, q *Query, dom Domain) (pageSQL, countSQL string, args []any, err error) {
+	if owner == "" {
+		return "", "", nil, fmt.Errorf("query: empty owner")
+	}
+	rs := dom.Rows
+	if rs == nil {
+		return "", "", nil, fmt.Errorf("query: domain %q does not support row listing", q.domain)
+	}
+	if q.group != "" {
+		return "", "", nil, fmt.Errorf("query: rows mode cannot be combined with a group dimension")
+	}
+	if q.gran != GranNone {
+		return "", "", nil, fmt.Errorf("query: rows mode cannot be combined with a time granularity")
+	}
+	if len(rs.Columns) == 0 {
+		return "", "", nil, fmt.Errorf("query: domain %q row source has no columns", q.domain)
+	}
+
+	// Projection: each trusted Expr AS its QUOTED output name so Postgres returns
+	// the field name byte-exact (an unquoted camelCase alias would lower-fold and
+	// break the FE key mapping).
+	cols := make([]string, len(rs.Columns))
+	for i, c := range rs.Columns {
+		cols[i] = fmt.Sprintf(`%s AS "%s"`, c.Expr, c.Name)
+	}
+
+	// WHERE: owner ($1), then range, then the predicate tree — identical
+	// construction + arg order to the aggregate path, reusing buildPredicate via
+	// a synthetic same-table measure so the same-table whitelist still applies.
+	args = []any{owner}
+	next := 2
+	where := []string{fmt.Sprintf("%s = $1", rs.OwnerCol)}
+
+	if !q.rng.isZero() {
+		start, end, ok := resolveRange(q.anchor(), q.gran, q.rng)
+		if ok {
+			endExcl := time.Date(end.Year(), end.Month(), end.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, 1)
+			where = append(where, fmt.Sprintf("%s >= $%d AND %s < $%d", rs.DateCol, next, rs.DateCol, next+1))
+			args = append(args, start, endExcl)
+			next += 2
+		}
+	}
+
+	if q.where != nil {
+		rm, _ := rowsMeasure(dom)
+		frag, a2, n2, perr := buildPredicate(q.where, rm, dom, args, next)
+		if perr != nil {
+			return "", "", nil, perr
+		}
+		if frag != "" {
+			where = append(where, frag)
+		}
+		args, next = a2, n2
+	}
+	whereSQL := strings.Join(where, " AND ")
+
+	// Pagination: 1-based page, positive size (default 50).
+	page, size := q.page, q.pageSize
+	if size <= 0 {
+		size = 50
+	}
+	if page < 1 {
+		page = 1
+	}
+	offset := (page - 1) * size
+
+	order := ""
+	if rs.DefaultSort != "" {
+		order = "\nORDER BY " + rs.DefaultSort
+	}
+	pageSQL = fmt.Sprintf("SELECT %s\nFROM %s\nWHERE %s%s\nLIMIT %d OFFSET %d",
+		strings.Join(cols, ", "), rs.Table, whereSQL, order, size, offset)
+	countSQL = fmt.Sprintf("SELECT count(*)\nFROM %s\nWHERE %s", rs.Table, whereSQL)
+	return pageSQL, countSQL, args, nil
 }
 
 // orderBy renders the ORDER BY clause. Scalar queries get none.
@@ -303,6 +419,31 @@ func weekStart(t time.Time) time.Time {
 
 // Run compiles the query, executes it, and shapes the typed Result.
 func Run(ctx context.Context, db Querier, owner string, q *Query) (Result, error) {
+	// Leaf-rows mode: a page query + a matching count(*), sharing one args slice.
+	if q.rowsMode {
+		dom, ok := lookupDomain(q.domain)
+		if !ok {
+			return Result{}, fmt.Errorf("query: unknown domain %q", q.domain)
+		}
+		pageSQL, countSQL, args, err := compileRowsSQL(owner, q, dom)
+		if err != nil {
+			return Result{}, err
+		}
+		pr, err := db.Query(ctx, pageSQL, args...)
+		if err != nil {
+			return Result{}, err
+		}
+		out, err := pgx.CollectRows(pr, pgx.RowToMap) // closes pr
+		if err != nil {
+			return Result{}, err
+		}
+		var total int
+		if err := db.QueryRow(ctx, countSQL, args...).Scan(&total); err != nil {
+			return Result{}, err
+		}
+		return Result{Kind: ResultRows, Rows: out, Total: total}, nil
+	}
+
 	sqlText, args, err := Compile(owner, q)
 	if err != nil {
 		return Result{}, err
@@ -321,6 +462,30 @@ func Run(ctx context.Context, db Querier, owner string, q *Query) (Result, error
 		for rows.Next() {
 			var key *string
 			var val float64
+			if len(q.rollups) > 0 {
+				// Columns: key, value, count, r_<rollup>… — scan the rollups into Stats.
+				var count int64
+				rvals := make([]float64, len(q.rollups))
+				dest := make([]any, 0, 3+len(rvals))
+				dest = append(dest, &key, &val, &count)
+				for i := range rvals {
+					dest = append(dest, &rvals[i])
+				}
+				if err := rows.Scan(dest...); err != nil {
+					return Result{}, err
+				}
+				stats := make(map[string]float64, len(rvals)+1)
+				stats["count"] = float64(count)
+				for i, name := range q.rollups {
+					stats[name] = rvals[i]
+				}
+				k := ""
+				if key != nil {
+					k = *key
+				}
+				groups = append(groups, Group{Key: k, Value: val, Stats: stats})
+				continue
+			}
 			if err := rows.Scan(&key, &val); err != nil {
 				return Result{}, err
 			}
@@ -380,6 +545,7 @@ func applyBucketPolicy(groups []Group, p BucketPolicy) []Group {
 	}
 	var kept []Group
 	var other float64
+	var otherStats map[string]float64 // nil until a rolled row carries Stats
 	nonPinnedKept := 0
 	for _, g := range groups {
 		if pinned[strings.ToLower(g.Key)] {
@@ -392,11 +558,17 @@ func applyBucketPolicy(groups []Group, p BucketPolicy) []Group {
 			continue
 		}
 		other += g.Value
+		for k, v := range g.Stats {
+			if otherStats == nil {
+				otherStats = map[string]float64{}
+			}
+			otherStats[k] += v
+		}
 	}
 	// Stable: keep the value-desc order the SQL produced.
 	sort.SliceStable(kept, func(i, j int) bool { return kept[i].Value > kept[j].Value })
-	if p.Other && other > 0 {
-		kept = append(kept, Group{Key: "Other", Value: other})
+	if p.Other && (other > 0 || otherStats != nil) {
+		kept = append(kept, Group{Key: "Other", Value: other, Stats: otherStats})
 	}
 	return kept
 }

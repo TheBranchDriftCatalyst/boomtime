@@ -51,16 +51,22 @@ type pointDTO struct {
 type groupDTO struct {
 	Key   string  `json:"key"`
 	Value float64 `json:"value"`
+	// count + stats are present only for a rollups query (Stats!=nil): count is
+	// the group's row count, stats the per-measure rollups (count included).
+	Count *int               `json:"count,omitempty"`
+	Stats map[string]float64 `json:"stats,omitempty"`
 }
 
 // response is the discriminated-union result envelope. Exactly one of
-// scalar/series/groups is populated, selected by kind. Consumers switch on kind
-// and default a missing array arm to empty.
+// scalar/series/groups/rows is populated, selected by kind. Consumers switch on
+// kind and default a missing array arm to empty.
 type response struct {
-	Kind   string     `json:"kind"`
-	Scalar *float64   `json:"scalar,omitempty"`
-	Series []pointDTO `json:"series,omitempty"`
-	Groups []groupDTO `json:"groups,omitempty"`
+	Kind   string           `json:"kind"`
+	Scalar *float64         `json:"scalar,omitempty"`
+	Series []pointDTO       `json:"series,omitempty"`
+	Groups []groupDTO       `json:"groups,omitempty"`
+	Rows   []map[string]any `json:"rows,omitempty"`
+	Total  *int             `json:"total,omitempty"` // rows mode: unpaginated count
 }
 
 // RunQuery: POST /api/v1/query. Auth required + owner-scoped.
@@ -173,10 +179,23 @@ func shape(res query.Result) response {
 			pts = append(pts, pointDTO{Bucket: p.Bucket.UTC().Format("2006-01-02T15:04:05Z07:00"), Value: p.Value})
 		}
 		return response{Kind: string(res.Kind), Series: pts}
+	case query.ResultRows:
+		rows := res.Rows
+		if rows == nil {
+			rows = []map[string]any{}
+		}
+		total := res.Total
+		return response{Kind: string(res.Kind), Rows: rows, Total: &total}
 	default: // ResultGroups
 		groups := make([]groupDTO, 0, len(res.Groups))
 		for _, g := range res.Groups {
-			groups = append(groups, groupDTO{Key: g.Key, Value: g.Value})
+			dto := groupDTO{Key: g.Key, Value: g.Value}
+			if g.Stats != nil {
+				dto.Stats = g.Stats
+				c := int(g.Stats["count"])
+				dto.Count = &c
+			}
+			groups = append(groups, dto)
 		}
 		return response{Kind: string(res.Kind), Groups: groups}
 	}

@@ -15,6 +15,7 @@ package queryapi_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -51,9 +52,35 @@ type queryResponse struct {
 		Value  float64 `json:"value"`
 	} `json:"series"`
 	Groups []struct {
-		Key   string  `json:"key"`
-		Value float64 `json:"value"`
+		Key   string             `json:"key"`
+		Value float64            `json:"value"`
+		Count *int               `json:"count"`
+		Stats map[string]float64 `json:"stats"`
 	} `json:"groups"`
+	Rows  []map[string]any `json:"rows"`
+	Total *int             `json:"total"`
+}
+
+// seedReadingItem inserts one reading_items row for the queryapi rollup/rows tests.
+func seedReadingItem(hz *testutil.Harness, owner, asin, title, series string, runtimeMin int, finished bool) {
+	var fin any
+	if finished {
+		fin = time.Now().UTC().AddDate(0, 0, -1)
+	}
+	_, err := hz.DB.Pool.Exec(context.Background(), `
+		INSERT INTO reading_items (owner, source, external_id, title, status, series,
+			runtime_min, finished, finished_at)
+		VALUES ($1,'audible',$2,$3,$4,$5,$6,$7,$8)
+		ON CONFLICT (owner, source, external_id) DO NOTHING`,
+		owner, asin, title, statusFor(finished), series, runtimeMin, finished, fin)
+	Expect(err).NotTo(HaveOccurred())
+}
+
+func statusFor(finished bool) string {
+	if finished {
+		return "read"
+	}
+	return "reading"
 }
 
 var _ = Describe("POST /api/v1/query (gaka-174.q)", func() {
@@ -183,6 +210,86 @@ var _ = Describe("POST /api/v1/query (gaka-174.q)", func() {
 		Expect(resp.Kind).To(Equal("scalar"))
 		Expect(resp.Scalar).NotTo(BeNil())
 		Expect(*resp.Scalar).To(Equal(float64(0)))
+	})
+
+	It("returns per-group rollups (count + stats) for a grouped reading query", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		hz.Cfg.FeatureBooks = true
+		e := hz.Router()
+		owner, token := hz.MintUser("q_rollups_http")
+
+		// series "Foundation": 2 rows, runtime 1320, finished 1.
+		seedReadingItem(hz, owner, "F1", "f1", "Foundation", 600, true)
+		seedReadingItem(hz, owner, "F2", "f2", "Foundation", 720, false)
+		// series "Dune": 1 row, runtime 300, finished 1.
+		seedReadingItem(hz, owner, "D1", "d1", "Dune", 300, true)
+
+		rec := doQuery(e, token, map[string]any{
+			"domain":  "reading",
+			"measure": "books",
+			"group":   "series",
+			"rollups": []string{"runtime", "finished"},
+		})
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK), "body=%s", rec.Body.String())
+
+		var resp queryResponse
+		Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+		Expect(resp.Kind).To(Equal("groups"))
+		by := map[string]struct {
+			Count *int
+			Stats map[string]float64
+			Value float64
+		}{}
+		for _, g := range resp.Groups {
+			by[g.Key] = struct {
+				Count *int
+				Stats map[string]float64
+				Value float64
+			}{g.Count, g.Stats, g.Value}
+		}
+		f := by["Foundation"]
+		Expect(f.Count).NotTo(BeNil())
+		Expect(*f.Count).To(Equal(2))
+		Expect(f.Stats["count"]).To(Equal(float64(2)))
+		Expect(f.Stats["runtime"]).To(Equal(float64(1320)))
+		Expect(f.Stats["finished"]).To(Equal(float64(1)))
+		Expect(f.Value).To(Equal(float64(2)), "primary measure (books) stays in value")
+		d := by["Dune"]
+		Expect(d.Stats["runtime"]).To(Equal(float64(300)))
+		Expect(d.Stats["finished"]).To(Equal(float64(1)))
+	})
+
+	It("returns owner-scoped paginated leaf rows with a total", func() {
+		hz := testutil.NewHarness(GinkgoT())
+		hz.Cfg.FeatureBooks = true
+		e := hz.Router()
+		owner, token := hz.MintUser("q_rows_http")
+		otherOwner, _ := hz.MintUser("q_rows_http_other")
+
+		seedReadingItem(hz, owner, "R1", "Alpha", "S", 10, true)
+		seedReadingItem(hz, owner, "R2", "Bravo", "S", 20, true)
+		seedReadingItem(hz, owner, "R3", "Chuck", "S", 30, true)
+		seedReadingItem(hz, otherOwner, "X1", "OtherBook", "S", 99, true)
+
+		rec := doQuery(e, token, map[string]any{
+			"domain": "reading",
+			"rows":   true,
+			"page":   map[string]any{"number": 1, "size": 2},
+		})
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK), "body=%s", rec.Body.String())
+
+		var resp queryResponse
+		Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+		Expect(resp.Kind).To(Equal("rows"))
+		Expect(resp.Total).NotTo(BeNil())
+		Expect(*resp.Total).To(Equal(3), "total counts all owner rows, not just the page")
+		Expect(resp.Rows).To(HaveLen(2), "page size caps the returned rows")
+		// FE JSON keys are preserved (directly castable to ReadingItemDTO).
+		Expect(resp.Rows[0]).To(HaveKey("externalId"))
+		Expect(resp.Rows[0]).To(HaveKey("title"))
+		for _, r := range resp.Rows {
+			Expect(r["title"]).NotTo(Equal("OtherBook"), "owner scope breached")
+		}
 	})
 
 	It("fails closed (401) on a bad credential", func() {

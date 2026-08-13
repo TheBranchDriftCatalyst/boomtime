@@ -31,6 +31,21 @@ type Spec struct {
 	Having  *HavingSpec    `json:"having,omitempty"`
 	Sort    *SortSpec      `json:"sort,omitempty"`
 	Limit   int            `json:"limit,omitempty"`
+
+	// Rollups requests extra per-group measures alongside the grouped measure;
+	// each lands in the group's `stats` (plus an always-present `count`).
+	Rollups []string `json:"rollups,omitempty"`
+
+	// Rows switches to leaf-rows mode (no aggregate): the entity rows under the
+	// where predicate, owner-scoped + paginated by Page. Returns a `rows` result.
+	Rows bool      `json:"rows,omitempty"`
+	Page *PageSpec `json:"page,omitempty"`
+}
+
+// PageSpec is the 1-based pagination window for leaf-rows mode.
+type PageSpec struct {
+	Number int `json:"number"`
+	Size   int `json:"size"`
 }
 
 // PredicateNode mirrors query.Predicate: a leaf {dim, op, values} or a boolean
@@ -124,6 +139,15 @@ func (s *Spec) toQuery() (*query.Query, error) {
 	}
 	if s.Sort != nil {
 		q.Sort(s.Sort.Field, s.Sort.Desc)
+	}
+	if len(s.Rollups) > 0 {
+		q.Rollups(s.Rollups...)
+	}
+	if s.Rows {
+		q.Rows()
+	}
+	if s.Page != nil {
+		q.Page(s.Page.Number, s.Page.Size)
 	}
 	if s.Limit > 0 {
 		q.Limit(s.Limit)
