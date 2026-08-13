@@ -57,6 +57,7 @@ import {
 import { MaxPredicateDepth, MaxStreakDays } from "@/features/goals/constants";
 import { formatDuration, parseDuration } from "@/lib/duration";
 import { useAxisValues } from "@/features/rules/useAxisValues";
+import { useReadingAxisValues } from "@/features/goals/useReadingAxisValues";
 import type { HeartbeatAxis } from "@/types/heartbeats";
 import type {
   GoalActiveDaysWindow,
@@ -123,6 +124,65 @@ function AxisValueInput({
         className="h-8"
         value={value}
         placeholder="e.g. Go"
+        list={suggestions.length > 0 ? listId : undefined}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      {suggestions.length > 0 && (
+        <datalist id={listId}>
+          {suggestions.map((s) => (
+            <option key={s} value={s} />
+          ))}
+        </datalist>
+      )}
+    </>
+  );
+}
+
+// ReadingAxisValueInput mirrors AxisValueInput for the reading path (gaka-wpb):
+// a reading dimension leaf (genre/series/status) filters by a specific value,
+// and autocomplete pulls the user's distinct values for that dimension via
+// useReadingAxisValues (backed by the cross-domain query DSL, NOT the
+// heartbeats/group endpoint the coding path uses — reading has no heartbeats).
+//
+// Suggest-only, exactly like the coding path: a value not in the list is still
+// accepted (the datalist never restricts typing), so aspirational reading goals
+// authored against a genre/series the user hasn't finished a book in yet still
+// commit via onChange. The placeholder mirrors the reading leaf's original
+// per-dimension hint (e.g. "e.g. Fiction" for genre).
+function ReadingAxisValueInput({
+  id,
+  axis,
+  value,
+  placeholder,
+  onChange,
+  "data-testid": dataTestid,
+}: {
+  id: string;
+  axis: GoalReadingAxis;
+  value: string;
+  placeholder: string;
+  onChange: (v: string) => void;
+  "data-testid"?: string;
+}) {
+  const { options } = useReadingAxisValues(axis);
+  const listId = `${id}-suggestions`;
+  const suggestions = useMemo(() => {
+    // useReadingAxisValues already trims empties and the synthetic "Other"
+    // sentinel; the belt-and-braces filter here keeps the two inputs identical
+    // in shape so a future reader sees one pattern, not two.
+    return options
+      .filter((n) => typeof n === "string" && n.length > 0)
+      .filter((n) => !/^Other(\s*\(\d+\s*more\))?$/.test(n))
+      .slice(0, 500);
+  }, [options]);
+  return (
+    <>
+      <Input
+        id={id}
+        className="h-8"
+        data-testid={dataTestid}
+        value={value}
+        placeholder={placeholder}
         list={suggestions.length > 0 ? listId : undefined}
         onChange={(e) => onChange(e.target.value)}
       />
@@ -535,9 +595,9 @@ function TimeLeafEditor({
             {readingAxis ? (
               <div>
                 <Label htmlFor={id.value} className="text-xs">Value</Label>
-                <Input
+                <ReadingAxisValueInput
                   id={id.value}
-                  className="h-8"
+                  axis={readingAxis}
                   data-testid="reading-dimension-value"
                   value={node.value ?? ""}
                   placeholder={
@@ -547,7 +607,7 @@ function TimeLeafEditor({
                         ? "e.g. Foundation"
                         : "e.g. finished"
                   }
-                  onChange={(e) => onChange({ ...node, value: e.target.value })}
+                  onChange={(v) => onChange({ ...node, value: v })}
                 />
                 <span className="text-[10px] text-muted-foreground">
                   Counts runtime of FINISHED books, not live listening.
