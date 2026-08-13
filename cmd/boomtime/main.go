@@ -572,6 +572,33 @@ func runCmd() *cobra.Command {
 						return nil
 					}))
 
+					// books-kindle-reading-time kind: the FORWARD reading-TIME poll —
+					// sample each in-progress kindle book's last-page-read position,
+					// gap-sum consecutive samples into reading sessions, and write
+					// reading-seconds into reading_activity(source='kindle') so Kindle
+					// reading-time unifies with Audible listening-time under the reading
+					// `seconds` measure. An owner-scoped job runs one user; an owner-less
+					// (scheduled/batch) job fans over every connected user — a per-user
+					// error is logged + skipped so one bad credential doesn't fail the
+					// batch (mirrors KindleInsightsKind).
+					jobReg.Register(books.KindleReadingTimeKind, jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
+						if job.Owner != "" {
+							_, rerr := kindleSvc.PollReadingTime(jctx, job.Owner)
+							return rerr
+						}
+						users, uerr := database.ListUsersWithAmazonDevice(jctx)
+						if uerr != nil {
+							return uerr
+						}
+						for _, u := range users {
+							if _, rerr := kindleSvc.PollReadingTime(jctx, u); rerr != nil {
+								logger.Warn("kindle reading-time: user poll failed", "user", u, "err", rerr)
+							}
+						}
+						logger.Info("kindle reading-time: batch complete", "users", len(users))
+						return nil
+					}))
+
 					// hardcover-match kind (gaka-books): the EXPLICIT match stage of
 					// the pipeline (backfill → match → sync). Owner-scoped — resolve
 					// every still-unmatched reading_item to a Hardcover
@@ -709,6 +736,7 @@ func runCmd() *cobra.Command {
 					jobReg.SetConcurrency(books.KindleSyncKind, 1)           // books-kindle-sync
 					jobReg.SetConcurrency(books.KindleBackfillKind, 1)       // books-kindle-backfill
 					jobReg.SetConcurrency(books.KindleInsightsKind, 1)       // books-kindle-insights
+					jobReg.SetConcurrency(books.KindleReadingTimeKind, 1)    // books-kindle-reading-time
 					jobReg.SetConcurrency(hardcover.HardcoverMatchKind, 1)   // hardcover-match (global Hardcover rate limit)
 					jobReg.SetConcurrency(bookspipeline.BooksSyncAllKind, 1) // books-sync-all orchestrator (chains the rate-limited stages)
 				}

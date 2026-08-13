@@ -88,16 +88,15 @@ func (s *Service) SyncInsights(ctx context.Context, owner string) (int, error) {
 		}
 	}
 
-	// TODO(kindle-minutes): read-events/sessions endpoint probe in flight — wire
-	// per-session reading_seconds into reading_activity (source='kindle') HERE,
-	// as a clean extension of this ingest. Each TitleRead.ReadEventID keys a
-	// read-events/sessions endpoint whose per-session duration becomes a
-	// reading_activity bucket — the pages/reading_seconds analogue of Audible's
-	// listening_seconds (reading_activity already has a nullable `pages` column;
-	// the minutes path adds the reading-time analogue). That path writes into
-	// reading_activity WITHOUT touching this finish-date backfill: fetch sessions
-	// here, then s.DB.UpsertReadingActivity(ctx, db.ReadingActivity{Source:
-	// "kindle", ...}) per bucket. Do NOT foreclose it — leave this seam intact.
+	// kindle-minutes (gaka-books): the forward reading-TIME path now lives in
+	// reading_time.go (PollReadingTime / KindleReadingTimeKind) — it polls each
+	// in-progress book's last-page-read POSITION, gap-sums consecutive samples
+	// into reading SESSIONS, and writes reading-seconds into
+	// reading_activity(source='kindle'), the text analogue of Audible's
+	// listening_seconds. It is a SEPARATE job from this finish-date backfill (a
+	// position poll wants a much tighter cadence than the yearly-history ingest),
+	// so it deliberately does NOT run here — this seam is intentionally left as a
+	// pointer, not an inline call.
 
 	s.logInfo(ctx, "kindle insights: backfilled finish dates",
 		"user", owner,

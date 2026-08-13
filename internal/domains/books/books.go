@@ -46,6 +46,13 @@ const KindleBackfillKind = "books-kindle-backfill"
 // rows it dates already exist. Owner-scoped or fanned over all connected users.
 const KindleInsightsKind = "books-kindle-insights"
 
+// KindleReadingTimeKind is the catalyst-go-jobs kind for the FORWARD Kindle
+// reading-TIME poll: sample each in-progress book's last-page-read position,
+// gap-sum consecutive samples into reading sessions, and write reading-seconds
+// into reading_activity(source='kindle'). Owner-scoped or fanned over all
+// connected users. See reading_time.go (PollReadingTime).
+const KindleReadingTimeKind = "books-kindle-reading-time"
+
 // source is the reading_items.source tag for every row this domain writes.
 const source = "kindle"
 
@@ -65,13 +72,30 @@ type Service struct {
 	// kindle is the Cloud Reader library client; swappable in tests via a narrow
 	// interface so SyncUser exercises without a network.
 	kindle kindleSource
+
+	// sidecar is the forward reading-time position source (Fiona CDE last-page-
+	// read); swappable in tests via positionSource so PollReadingTime exercises
+	// the composition without a network. See reading_time.go.
+	sidecar positionSource
 }
 
 // New constructs the books (Kindle) domain service. Hardcover is wired after
 // construction (SetHardcover) so callers without it keep working.
 func New(database *db.DB, az *amazon.Store, logger *slog.Logger) *Service {
-	return &Service{DB: database, Amazon: az, Logger: logger, kindle: amazon.NewCloudReaderClient()}
+	return &Service{
+		DB:      database,
+		Amazon:  az,
+		Logger:  logger,
+		kindle:  amazon.NewCloudReaderClient(),
+		sidecar: amazon.NewKindleSidecarClient(),
+	}
 }
 
 // SetHardcover wires the Hardcover connector (nil-safe).
 func (s *Service) SetHardcover(store *hardcover.Store) *Service { s.Hardcover = store; return s }
+
+// SetSidecar swaps the forward reading-time position source. Production wires
+// *amazon.KindleSidecarClient in New; this seam lets a test inject a fake (the
+// positionSource interface is unexported, but a value implementing
+// FetchLastPagePosition can still be passed in). Mirrors SetHardcover.
+func (s *Service) SetSidecar(sc positionSource) *Service { s.sidecar = sc; return s }
