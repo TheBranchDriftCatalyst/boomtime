@@ -151,7 +151,15 @@ func (h *Handler) AdminJobRetry(c *echo.Context) error {
 	if !ok {
 		return apihelpers.RespondErr(c, apierr.NotFound("job not found"))
 	}
-	newID, err := h.JobEnqueuer.Enqueue(c.Request().Context(), job.Kind, job.Payload)
+	// Preserve the original job's owner + attempt budget on retry. Without the
+	// owner, owner-scoped kinds (e.g. audiobooks-audible-backfill) re-run with an
+	// empty owner and fail "missing owner"; without MaxAttempts a single-attempt
+	// job would silently gain the default retry budget.
+	opts := []jobs.EnqueueOption{jobs.Owner(job.Owner)}
+	if job.MaxAttempts > 0 {
+		opts = append(opts, jobs.MaxAttempts(job.MaxAttempts))
+	}
+	newID, err := h.JobEnqueuer.Enqueue(c.Request().Context(), job.Kind, job.Payload, opts...)
 	if err != nil {
 		return apihelpers.InternalErr(h.Logger, c, "jobs retry failed", err)
 	}
