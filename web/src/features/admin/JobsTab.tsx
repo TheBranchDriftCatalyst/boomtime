@@ -159,10 +159,16 @@ function ReadingStepsPanel() {
     onSuccess: onStepSuccess("Hardcover pull"),
     onError: onStepError("Hardcover pull"),
   });
+  const syncAll = useMutation({
+    mutationFn: () => api.syncAllBooks(),
+    onSuccess: onStepSuccess("Sync all"),
+    onError: onStepError("Sync all"),
+  });
 
   if (!config.books_enabled) return null;
 
   const triggers = [
+    { key: "all", label: "Sync all", icon: Play, m: syncAll },
     { key: "audible", label: "Audible backfill", icon: Headphones, m: audibleBackfill },
     { key: "kindle", label: "Kindle backfill", icon: BookOpen, m: kindleBackfill },
     { key: "match", label: "Hardcover match", icon: Search, m: hardcoverMatch },

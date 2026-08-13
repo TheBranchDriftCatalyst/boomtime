@@ -1224,6 +1224,12 @@ export const api = {
     request<{ enqueued: boolean; jobId: number }>("/api/v1/hardcover/pull", {
       method: "POST",
     }),
+  // books-sync-all: one orchestrator job chaining audible-sync -> kindle-sync ->
+  // hardcover-match -> hardcover-pull, in dependency order.
+  syncAllBooks: () =>
+    request<{ enqueued: boolean; jobId: number }>("/api/v1/books/sync-all", {
+      method: "POST",
+    }),
 
   // gaka-anh Phase 2: per-user GitHub stats. Authed cache-or-sync — the server
   // serves a fresh cache or refreshes on demand, and on a GitHub rate-limit

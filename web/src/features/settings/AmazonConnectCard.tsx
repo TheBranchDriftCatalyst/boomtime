@@ -167,6 +167,16 @@ export function AmazonConnectCard() {
     },
     onError: (e) => toast.error(errMsg(e)),
   });
+  // One-click full pipeline: audible-sync -> kindle-sync -> hardcover-match ->
+  // hardcover-pull, in order (books-sync-all orchestrator).
+  const syncAll = useMutation({
+    mutationFn: () => api.syncAllBooks(),
+    onSuccess: (res) => {
+      toast.success(`Full sync started (job #${res.jobId})`);
+      setTimeout(invalidateItems, 2000);
+    },
+    onError: (e) => toast.error(errMsg(e)),
+  });
 
   const captured = params.get("amazonCaptured");
   useEffect(() => {
@@ -271,6 +281,19 @@ export function AmazonConnectCard() {
               </Button>
             </div>
 
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                disabled={syncAll.isPending}
+                onClick={() => syncAll.mutate()}
+                title="Run the whole pipeline in order: sync Audible + Kindle, match to Hardcover, then reconcile (writes stay dry-run-gated)"
+              >
+                <RefreshCw
+                  className={`mr-1.5 h-3.5 w-3.5${syncAll.isPending ? " animate-spin" : ""}`}
+                />
+                {syncAll.isPending ? "Syncing everything…" : "Sync all"}
+              </Button>
+            </div>
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 size="sm"
