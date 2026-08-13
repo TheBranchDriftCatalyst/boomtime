@@ -85,8 +85,8 @@ func (s *Service) sweep(ctx context.Context, cred *amazon.DeviceCredential, owne
 
 	items := make([]kindleItem, 0, len(library))
 	for _, lib := range library {
-		// Stop before each per-book Hardcover LookupByASIN on cancellation so a
-		// large library sweep aborts promptly instead of resolving every ASIN.
+		// Stop promptly on cancellation — a multi-thousand-book library is a large
+		// mapping loop.
 		if err := ctx.Err(); err != nil {
 			return nil, res != nil, err
 		}
@@ -94,19 +94,15 @@ func (s *Service) sweep(ctx context.Context, cred *amazon.DeviceCredential, owne
 			continue // skip un-keyable rows and Kindle samples
 		}
 
-		// Hardcover metadata (best-effort — nil when not connected / no match).
-		// Title already comes from Amazon; this only adds the book_id/edition_id
-		// linkage (and can enrich the cover if Amazon's was empty).
-		var meta *hardcover.BookMeta
-		if res != nil {
-			if m, err := res.LookupByASIN(ctx, lib.ASIN); err != nil {
-				s.logWarn("kindle: hardcover lookup failed — linkage skipped", "user", owner, "asin", lib.ASIN, "err", err)
-			} else {
-				meta = m
-			}
-		}
-
-		items = append(items, buildReadingItem(owner, lib, meta))
+		// Ingest is Amazon-only: title/authors/cover/progress all come from the
+		// Cloud Reader item, so ingest resolves the whole library with ZERO
+		// Hardcover calls. Hardcover linkage (book_id/edition_id) is deliberately
+		// NOT resolved here — a per-book LookupByASIN over a 2500-book library is
+		// thousands of rate-limited Hardcover calls (hours) AND bypasses the
+		// cache-first match step. The hardcover-match job fills linkage for
+		// unmatched rows cache-first (per-user link → global hardcover_match_cache →
+		// Hardcover only for a book new to all of boomtime). gaka-wzgr.
+		items = append(items, buildReadingItem(owner, lib, nil))
 	}
 	return items, res != nil, nil
 }

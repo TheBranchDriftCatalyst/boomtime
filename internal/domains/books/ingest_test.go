@@ -74,11 +74,10 @@ func TestSweep(t *testing.T) {
 			{ASIN: "", Title: "No ASIN", PercentageRead: 5, ResourceType: "EBOOK"},                                                       // must be dropped
 		},
 	}
-	res := &fakeResolver{byASIN: map[string]*hardcover.BookMeta{
-		// ASIN_READING gets a Hardcover linkage; Amazon title must still win.
-		"ASIN_READING": {BookID: 111, EditionID: 222, Title: "Hardcover Title (ignored)", Authors: "Ignored", CoverURL: "https://hc/r.jpg"},
-		// ASIN_READ intentionally has NO Hardcover entry → no linkage.
-	}}
+	// A non-nil resolver only drives the hcConnected flag now — ingest no longer
+	// calls it per book (linkage is the match step's job), so its contents are
+	// irrelevant to the mapping. It stays non-nil to assert hcConnected == true.
+	res := &fakeResolver{byASIN: map[string]*hardcover.BookMeta{}}
 
 	s := &Service{kindle: fk}
 	items, hcConnected, err := s.sweep(context.Background(), &amazon.DeviceCredential{}, "alice", res)
@@ -104,8 +103,9 @@ func TestSweep(t *testing.T) {
 	}
 
 	// reading book: status reading, progress = percentageRead, not finished,
-	// Amazon title/authors/cover, and the Hardcover linkage carried (Amazon title
-	// must win over Hardcover's).
+	// Amazon title/authors/cover. Ingest is Amazon-only now — it carries NO
+	// Hardcover linkage even when a resolver is supplied (linkage is the
+	// cache-first hardcover-match step's job, not the ingest's). gaka-wzgr.
 	r := byASIN["ASIN_READING"]
 	if r.Item.Source != "kindle" {
 		t.Fatalf("source: want kindle, got %q", r.Item.Source)
@@ -122,12 +122,14 @@ func TestSweep(t *testing.T) {
 	if r.Item.Title != "The Reading Book" || r.Item.Authors != "Author, Ada" || r.Item.CoverURL != "https://img/r.jpg" {
 		t.Fatalf("Amazon metadata not mapped (or Hardcover clobbered it): %+v", r.Item)
 	}
-	if r.BookID != 111 || r.EditionID != 222 || r.MatchConf != "asin" {
-		t.Fatalf("Hardcover linkage not carried: bookID=%d editionID=%d conf=%q", r.BookID, r.EditionID, r.MatchConf)
+	// Ingest never resolves linkage now — BookID stays 0 for every row even with a
+	// resolver present; the match step fills it later, cache-first.
+	if r.BookID != 0 {
+		t.Fatalf("ingest must NOT carry Hardcover linkage (deferred to match): bookID=%d", r.BookID)
 	}
 
 	// read book: status read, finished, progress 100, multi-author CSV, no
-	// Hardcover linkage (no entry).
+	// Hardcover linkage (deferred to the match step).
 	rd := byASIN["ASIN_READ"]
 	if rd.Item.Status != "read" || !rd.Item.Finished {
 		t.Fatalf("read book should be finished: %+v", rd.Item)
