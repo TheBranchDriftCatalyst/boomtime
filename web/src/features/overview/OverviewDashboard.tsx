@@ -19,6 +19,7 @@ import { CategoryBreakdown } from "@/viz/charts/CategoryBreakdown";
 import { ContributionCalendar } from "@/viz/charts/ContributionCalendar";
 import { CumulativeArea } from "@/viz/charts/CumulativeArea";
 import { LinesOfCodeCard } from "@/features/overview/LinesOfCodeCard";
+import { CodingProjectsBreakdown } from "@/features/overview/CodingProjectsBreakdown";
 import { StreakBanner } from "@/viz/charts/StreakBanner";
 import { CategoryStreamgraph } from "@/viz/charts/CategoryStreamgraph";
 import { Punchcard } from "@/viz/charts/Punchcard";
@@ -395,7 +396,21 @@ export function OverviewDashboard({
                       />
                     }
                   >
-                    <PieChart items={stats.projects} />
+                    {/* gaka-canon: the UNSCOPED Overview routes the project
+                        breakdown through the query DSL (coding·project·seconds,
+                        topN+Other) so it honors canonical PINS and exposes a
+                        per-project canonize toggle. The Space-scoped view keeps
+                        the legacy space-aware PieChart — the DSL is per-caller
+                        (no `space` in a QuerySpec), so swapping it there would
+                        silently show the viewer's own projects. */}
+                    {space ? (
+                      <PieChart items={stats.projects} />
+                    ) : (
+                      <CodingProjectsBreakdown
+                        startISO={tr.startISO}
+                        endISO={tr.endISO}
+                      />
+                    )}
                   </ChartCard>
                 </div>
 
