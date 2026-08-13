@@ -1,4 +1,4 @@
-import { useMemo, type ComponentType } from "react";
+import { useMemo, useState, type ComponentType } from "react";
 import { Navigate, useSearchParams } from "react-router";
 import { BookOpen, Github, Library, Plug, ShieldCheck } from "lucide-react";
 import { Page } from "@/layout/Page";
@@ -18,6 +18,11 @@ import { HardcoverConnectCard } from "@/features/settings/HardcoverConnectCard";
 import { LinkedIdentitiesCard } from "@/features/settings/LinkedIdentitiesCard";
 import { PluginSetup } from "@/features/settings/PluginSetup";
 import { PublicProfileCard } from "@/features/settings/PublicProfileCard";
+import {
+  ConnectionCardShell,
+  ConnectionDetailsDrawer,
+  type Provider,
+} from "@/features/settings/ConnectionDetailsDrawer";
 import { TimezoneCard } from "@/features/settings/TimezoneCard";
 import { TokensTab } from "@/features/tokens/TokensTab";
 
@@ -55,22 +60,36 @@ function PluginAndTokensTab() {
 // each card self-gates (renders nothing when its feature is off), so the tab
 // stays tidy per deployment. The header frames the "data fusion" story —
 // boomtime pulls each linked account's signal into one dashboard.
+// The hero chips double as a shortcut into each provider's detail drawer, so
+// they're rendered as real buttons (keyboard-focusable) rather than static
+// spans. onSelect lifts the click up to ConnectionsTab's drawer state.
 function ProviderChip({
   icon: Icon,
   label,
+  provider,
+  onSelect,
 }: {
   icon: ComponentType<{ className?: string }>;
   label: string;
+  provider: Provider;
+  onSelect: (p: Provider) => void;
 }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/5 px-2.5 py-1 text-xs text-foreground/80">
+    <button
+      type="button"
+      onClick={() => onSelect(provider)}
+      className="inline-flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/5 px-2.5 py-1 text-xs text-foreground/80 outline-none transition-colors hover:border-primary/50 hover:bg-primary/10 hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/50"
+    >
       <Icon className="h-3.5 w-3.5 text-primary" />
       {label}
-    </span>
+    </button>
   );
 }
 
 function ConnectionsTab() {
+  // Lifted drawer state — which provider's detail sheet is open (null = closed).
+  const [openProvider, setOpenProvider] = useState<Provider | null>(null);
+
   return (
     <div className="space-y-6">
       <div className="relative overflow-hidden rounded-xl border border-primary/20 bg-gradient-to-br from-primary/10 via-background to-background p-6">
@@ -93,23 +112,40 @@ function ConnectionsTab() {
           <p className="mt-1.5 max-w-xl text-sm text-muted-foreground">
             Link an external account and boomtime fuses its signal into your dashboard — your
             sign-in identity, your GitHub activity, and your Kindle&nbsp;+&nbsp;Audible reading, all
-            in one place.
+            in one place. Click any card for a walkthrough.
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
-            <ProviderChip icon={ShieldCheck} label="Authentik" />
-            <ProviderChip icon={Github} label="GitHub" />
-            <ProviderChip icon={BookOpen} label="Kindle + Audible" />
-            <ProviderChip icon={Library} label="Hardcover" />
+            <ProviderChip icon={ShieldCheck} label="Authentik" provider="authentik" onSelect={setOpenProvider} />
+            <ProviderChip icon={Github} label="GitHub" provider="github" onSelect={setOpenProvider} />
+            <ProviderChip icon={BookOpen} label="Kindle + Audible" provider="amazon" onSelect={setOpenProvider} />
+            <ProviderChip icon={Library} label="Hardcover" provider="hardcover" onSelect={setOpenProvider} />
           </div>
         </div>
       </div>
 
+      {/* Each card is wrapped in a shell that adds the ⓘ affordance + body
+          click-to-open, without touching the card component itself. Cards
+          self-gate (render null when their flag is off); the shell hides
+          itself in that case so no empty affordance is left behind. */}
       <div className="space-y-6">
-        <LinkedIdentitiesCard />
-        <GithubConnectCard />
-        <AmazonConnectCard />
-        <HardcoverConnectCard />
+        <ConnectionCardShell provider="authentik" onShowDetails={setOpenProvider}>
+          <LinkedIdentitiesCard />
+        </ConnectionCardShell>
+        <ConnectionCardShell provider="github" onShowDetails={setOpenProvider}>
+          <GithubConnectCard />
+        </ConnectionCardShell>
+        <ConnectionCardShell provider="amazon" onShowDetails={setOpenProvider}>
+          <AmazonConnectCard />
+        </ConnectionCardShell>
+        <ConnectionCardShell provider="hardcover" onShowDetails={setOpenProvider}>
+          <HardcoverConnectCard />
+        </ConnectionCardShell>
       </div>
+
+      <ConnectionDetailsDrawer
+        provider={openProvider}
+        onClose={() => setOpenProvider(null)}
+      />
     </div>
   );
 }

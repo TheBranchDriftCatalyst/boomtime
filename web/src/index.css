@@ -85,3 +85,61 @@
     scroll-behavior: smooth;
   }
 }
+
+/* ── Connections detail drawer (Settings › Connections) ────────────────────
+ *
+ * Right-side sheet built on Radix Dialog. Radix keeps the Content mounted
+ * while `data-state="closed"` for the duration of a CSS animation, so we drive
+ * both the slide-in and the slide-out off the data-state attribute. Overlay
+ * fades in tandem. Reduced-motion users get an instant open/close.
+ */
+@keyframes boom-drawer-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes boom-drawer-out {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes boom-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes boom-overlay-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+.boom-drawer[data-state="open"] {
+  animation: boom-drawer-in 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.boom-drawer[data-state="closed"] {
+  animation: boom-drawer-out 0.22s ease-in;
+}
+.boom-overlay[data-state="open"] {
+  animation: boom-overlay-in 0.25s ease-out;
+}
+.boom-overlay[data-state="closed"] {
+  animation: boom-overlay-out 0.2s ease-in;
+}
+@media (prefers-reduced-motion: reduce) {
+  .boom-drawer,
+  .boom-overlay {
+    animation-duration: 0.01ms !important;
+  }
+}
