@@ -158,6 +158,13 @@ tasks:
       # run has a fully-populated Reading dashboard with no Amazon sync.
       - BOOM_ENV=dev go run {{.PKG}} seed-reading-demo {{.CLI_ARGS}}
 
+  hardcover:schema-inspect:
+    desc: 'Fetch + summarize the Hardcover GraphQL schema (dimensions/metrics). Set HARDCOVER_TOKEN (a bearer token from hardcover.app/account/api — surrounding quotes auto-stripped) or pass --token-file.'
+    cmds:
+      # Writes the full introspection JSON to hardcover-schema.json (gitignored)
+      # and refreshes the committed distilled reading-domain reference.
+      - python3 scripts/hardcover_schema.py --out hardcover-schema.json --md docs/reference/hardcover-schema-reading.md {{.CLI_ARGS}}
+
   icons:
     desc: 'Rebuild web favicon + iOS/watchOS App Icons from boomtime.svg'
     cmds:
