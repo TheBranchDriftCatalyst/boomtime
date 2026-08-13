@@ -103,6 +103,8 @@ func Register(e *echo.Echo, h *Handler) {
 	e.DELETE("/api/v1/hardcover", h.DisconnectHardcover)
 	if h != nil && h.Cfg != nil && h.Cfg.BooksEnabled() {
 		e.POST("/api/v1/hardcover/connect", h.ConnectHardcover)
+		// Inbound sync (PULL half): read the shelf + reconcile linkage.
+		e.POST("/api/v1/hardcover/pull", h.PullHardcover)
 	}
 
 	// User IANA timezone (gaka-dg7). GET reports the raw stored value

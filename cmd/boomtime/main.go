@@ -495,6 +495,22 @@ func runCmd() *cobra.Command {
 						}
 						return audioSvc.RunHardcoverPush(jctx, p)
 					}))
+
+					// hardcover-pull kind (gaka-books): the INBOUND half of the
+					// bidirectional Hardcover sync. Owner-scoped (needs the user's
+					// token) — reads the shelf + reconciles each entry's status /
+					// updated_at onto the matching reading_item's minimal linkage. No
+					// local shelf mirror. Enqueued on demand from POST
+					// /api/v1/hardcover/pull; capped at 1 below (shares Hardcover's
+					// global rate limit with the push).
+					hcPull := hardcover.NewSyncService(database, hardcover.NewStore(database), logger)
+					jobReg.Register(hardcover.PullJobKind, jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
+						if job.Owner == "" {
+							return fmt.Errorf("hardcover-pull: missing owner")
+						}
+						_, perr := hcPull.SyncHardcoverPull(jctx, job.Owner)
+						return perr
+					}))
 					logger.Info("jobs: audiobooks handlers registered", "audibleSyncEnabled", cfg.AudibleSyncEnabled())
 				}
 
@@ -566,6 +582,7 @@ func runCmd() *cobra.Command {
 				jobReg.SetConcurrency(audiobooks.AudibleBackfillKind, 1) // audiobooks-audible-backfill (spec's "books-audible-backfill")
 				if cfg.BooksEnabled() {
 					jobReg.SetConcurrency(audiobooks.HardcoverPushKind, 1) // hardcover-push (global Hardcover rate limit)
+					jobReg.SetConcurrency(hardcover.PullJobKind, 1)        // hardcover-pull (global Hardcover rate limit)
 				}
 
 				hostID, _ := os.Hostname()

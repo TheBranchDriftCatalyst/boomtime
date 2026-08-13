@@ -172,6 +172,51 @@ func (d *DB) ListReadingItems(ctx context.Context, owner, source string) ([]Read
 	return out, rows.Err()
 }
 
+// HardcoverUserBookLink is the MINIMAL reconcile payload a Hardcover PULL writes
+// back onto an already-linked reading_item (migration 00063). Per the no-mirror
+// design we persist only the shelf status + Hardcover's own updated_at — never a
+// copy of the book. BookID is the match key (reading_items.hardcover_book_id).
+type HardcoverUserBookLink struct {
+	BookID          int64
+	Status          string
+	RemoteUpdatedAt time.Time
+}
+
+// UpdateHardcoverLinkFromPull reconciles a pulled Hardcover shelf entry onto the
+// local reading_item already linked to that Hardcover book (matched earlier by
+// the push/match ladder, so hardcover_book_id is set). It updates ONLY the
+// linkage columns — hardcover_status (from the pulled status_id) and
+// hardcover_remote_updated_at (Hardcover's updated_at) — leaving the row's own
+// source metadata untouched. Returns the number of rows updated: 0 means the
+// user has this book on Hardcover but no matching local reading_item yet
+// (inbound-origin creation is a documented follow-up — the caller logs it).
+// Status=="" is skipped via COALESCE so an unknown upstream status_id never
+// blanks a good value.
+func (d *DB) UpdateHardcoverLinkFromPull(ctx context.Context, owner string, link HardcoverUserBookLink) (int64, error) {
+	if link.BookID == 0 {
+		return 0, nil
+	}
+	var status *string
+	if link.Status != "" {
+		status = &link.Status
+	}
+	var remote *time.Time
+	if !link.RemoteUpdatedAt.IsZero() {
+		t := link.RemoteUpdatedAt.UTC()
+		remote = &t
+	}
+	tag, err := d.Pool.Exec(ctx,
+		`UPDATE reading_items SET
+		    hardcover_status            = COALESCE($3, hardcover_status),
+		    hardcover_remote_updated_at = COALESCE($4, hardcover_remote_updated_at)
+		  WHERE owner = $1 AND hardcover_book_id = $2`,
+		owner, link.BookID, status, remote)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 // DeleteReadingItems wipes a user's synced items (source=="" → all sources) —
 // the "delete my book data" path. Returns the number of rows removed.
 func (d *DB) DeleteReadingItems(ctx context.Context, owner, source string) (int64, error) {

@@ -10,6 +10,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/hardcover"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/labstack/echo/v5"
 )
 
@@ -102,6 +103,39 @@ func (h *Handler) GetHardcoverConnection(c *echo.Context) error {
 		}
 	}
 	return c.JSON(http.StatusOK, resp)
+}
+
+// PullHardcover enqueues the inbound Hardcover sync (the PULL half of the
+// bidirectional sync) for the caller: it reads the user's Hardcover shelf and
+// reconciles each entry's status/updated_at onto the matching local
+// reading_item's minimal linkage. It runs on the jobs worker (owner-scoped
+// payload) and returns the enqueued job id immediately rather than blocking on a
+// paginated shelf sweep. BooksEnabled-gated. Idempotent to enqueue: the pull only
+// updates linkage columns, so a duplicate run is harmless.
+func (h *Handler) PullHardcover(c *echo.Context) error {
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
+	if aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
+	}
+	if h.JobEnqueuer == nil {
+		return apihelpers.RespondErr(c, apierr.BadRequest("background jobs are not available on this server"))
+	}
+	// Confirm Hardcover is actually connected before enqueueing, so the UI gets an
+	// immediate, clear error instead of a job that no-ops later.
+	info, ierr := hardcover.NewStore(h.DB).Info(c.Request().Context(), owner)
+	if ierr != nil {
+		return apihelpers.InternalErr(h.Logger, c, "hardcover connection lookup failed", ierr)
+	}
+	if !info.Connected {
+		return apihelpers.RespondErr(c, apierr.BadRequest("connect Hardcover before running a pull"))
+	}
+	id, eerr := h.JobEnqueuer.Enqueue(c.Request().Context(), hardcover.PullJobKind, nil,
+		jobs.Owner(owner), jobs.MaxAttempts(3))
+	if eerr != nil {
+		return apihelpers.InternalErr(h.Logger, c, "hardcover pull enqueue failed", eerr)
+	}
+	h.Logger.Info("hardcover pull enqueued", "user", owner, "jobId", id)
+	return c.JSON(http.StatusAccepted, map[string]any{"enqueued": true, "jobId": id})
 }
 
 // DisconnectHardcover clears the stored token (idempotent).
