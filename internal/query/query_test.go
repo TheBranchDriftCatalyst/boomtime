@@ -443,6 +443,128 @@ func TestReading_LeafRowsInjectionValueIsArg(t *testing.T) {
 	}
 }
 
+// ilike substring: a case-insensitive substring predicate on title matches
+// regardless of case, constrains BOTH the leaf rows and the grouped aggregate,
+// and a non-matching needle yields an empty scoped set.
+func TestReading_ILikeSubstring(t *testing.T) {
+	hz := testutil.NewHarness(t)
+	owner, _ := hz.MintUser("q_reading_ilike")
+	fin := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+
+	seedItem(t, hz, owner, "H1", "The Hobbit", "read", "Middle-earth", 600, &fin)
+	seedItem(t, hz, owner, "D1", "Dune", "read", "Dune", 720, &fin)
+	seedItem(t, hz, owner, "D2", "Dune Messiah", "read", "Dune", 400, &fin)
+
+	// rows mode: ilike 'hob' matches "The Hobbit" case-insensitively (lowercase
+	// needle vs mixed-case title), and nothing else.
+	res, err := query.Run(context.Background(), hz.DB.Pool, owner,
+		query.Q("reading").Rows().
+			Where(query.Leaf("title", query.OpILike, "hob")).Page(1, 50))
+	if err != nil {
+		t.Fatalf("run ilike rows: %v", err)
+	}
+	if res.Kind != query.ResultRows {
+		t.Fatalf("kind = %v, want rows", res.Kind)
+	}
+	if res.Total != 1 || len(res.Rows) != 1 || res.Rows[0]["title"] != "The Hobbit" {
+		t.Errorf("ilike 'hob' = total:%d rows:%d, want the single Hobbit row", res.Total, len(res.Rows))
+	}
+
+	// ilike 'dune' matches BOTH Dune rows (substring, case-insensitive).
+	res2, err := query.Run(context.Background(), hz.DB.Pool, owner,
+		query.Q("reading").Rows().
+			Where(query.Leaf("title", query.OpILike, "DUNE")).Page(1, 50))
+	if err != nil {
+		t.Fatalf("run ilike rows 2: %v", err)
+	}
+	if res2.Total != 2 {
+		t.Errorf("ilike 'DUNE' total = %d, want 2 (both Dune titles, case-insensitive)", res2.Total)
+	}
+
+	// A non-matching needle yields an empty scoped set (not an error).
+	res3, err := query.Run(context.Background(), hz.DB.Pool, owner,
+		query.Q("reading").Rows().
+			Where(query.Leaf("title", query.OpILike, "xyz")).Page(1, 50))
+	if err != nil {
+		t.Fatalf("run ilike rows 3: %v", err)
+	}
+	if res3.Total != 0 || len(res3.Rows) != 0 {
+		t.Errorf("ilike 'xyz' = total:%d rows:%d, want empty", res3.Total, len(res3.Rows))
+	}
+
+	// grouped aggregate: the SAME ilike predicate constrains the group counts —
+	// ilike 'dune' by series → only the Dune series with count 2 (Hobbit excluded).
+	gres, err := query.Run(context.Background(), hz.DB.Pool, owner,
+		query.Q("reading").Measure("books").Group("series").
+			Where(query.Leaf("title", query.OpILike, "dune")))
+	if err != nil {
+		t.Fatalf("run ilike group: %v", err)
+	}
+	got := map[string]float64{}
+	for _, g := range gres.Groups {
+		got[g.Key] = g.Value
+	}
+	if got["Dune"] != 2 {
+		t.Errorf("grouped ilike 'dune' Dune count = %v, want 2 (aggregate constrained)", got["Dune"])
+	}
+	if _, leaked := got["Middle-earth"]; leaked {
+		t.Errorf("Hobbit's series leaked past the ilike filter: %+v", gres.Groups)
+	}
+}
+
+// ilike injection: a needle containing SQL metacharacters (%, quotes, a
+// drop-table payload) rides as a bound ARG — it is a LITERAL substring, so it
+// matches nothing here and never executes; the table survives intact.
+func TestReading_ILikeInjectionValueIsArg(t *testing.T) {
+	hz := testutil.NewHarness(t)
+	owner, _ := hz.MintUser("q_reading_ilike_inject")
+	fin := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	seedItem(t, hz, owner, "Z1", "Zed", "read", "RealSeries", 10, &fin)
+
+	res, err := query.Run(context.Background(), hz.DB.Pool, owner,
+		query.Q("reading").Rows().
+			Where(query.Leaf("title", query.OpILike, "%'; drop table reading_items; --")).
+			Page(1, 50))
+	if err != nil {
+		t.Fatalf("run ilike injection: %v", err)
+	}
+	if res.Kind != query.ResultRows {
+		t.Fatalf("kind = %v, want rows", res.Kind)
+	}
+	// The whole payload is one literal substring — no seeded title contains it.
+	if res.Total != 0 || len(res.Rows) != 0 {
+		t.Errorf("ilike injection = total:%d rows:%d, want empty scoped set", res.Total, len(res.Rows))
+	}
+	// Table intact: a plain rows query still returns the seeded row.
+	res2, err := query.Run(context.Background(), hz.DB.Pool, owner, query.Q("reading").Rows())
+	if err != nil {
+		t.Fatalf("post-injection run: %v (table dropped?!)", err)
+	}
+	if res2.Total != 1 {
+		t.Errorf("post-injection total = %d, want 1 (table intact)", res2.Total)
+	}
+}
+
+// ilike multi-value: multiple needles OR together (contains ANY substring).
+func TestReading_ILikeMultiValueOR(t *testing.T) {
+	hz := testutil.NewHarness(t)
+	owner, _ := hz.MintUser("q_reading_ilike_multi")
+	fin := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	seedItem(t, hz, owner, "H1", "The Hobbit", "read", "Middle-earth", 600, &fin)
+	seedItem(t, hz, owner, "D1", "Dune", "read", "Dune", 720, &fin)
+	seedItem(t, hz, owner, "C1", "Neuromancer", "read", "Sprawl", 300, &fin)
+
+	res, err := query.Run(context.Background(), hz.DB.Pool, owner,
+		query.Q("reading").Rows().
+			Where(query.Leaf("title", query.OpILike, "hob", "dune")).Page(1, 50))
+	if err != nil {
+		t.Fatalf("run ilike multi: %v", err)
+	}
+	if res.Total != 2 {
+		t.Errorf("ilike ['hob','dune'] total = %d, want 2 (OR of substrings)", res.Total)
+	}
+}
+
 // safety: unknown measure/dimension names are rejected at Compile — no SQL.
 func TestSafety_RejectsUnknownNames(t *testing.T) {
 	cases := []struct {

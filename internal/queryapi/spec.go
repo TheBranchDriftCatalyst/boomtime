@@ -55,7 +55,7 @@ type PageSpec struct {
 type PredicateNode struct {
 	Kind   string           `json:"kind"`             // leaf | and | or | not
 	Dim    string           `json:"dim,omitempty"`    // leaf: dimension name
-	Op     string           `json:"op,omitempty"`     // leaf: eq | neq | in
+	Op     string           `json:"op,omitempty"`     // leaf: eq | neq | in | ilike
 	Values []string         `json:"values,omitempty"` // leaf: comparison values
 	Of     []*PredicateNode `json:"of,omitempty"`     // and/or/not children
 }

@@ -333,6 +333,24 @@ func buildPredicate(p *Predicate, m Measure, dom Domain, args []any, next int) (
 				next++
 			}
 			return fmt.Sprintf("%s IN (%s)", col, strings.Join(ph, ", ")), args, next, nil
+		case OpILike:
+			// Case-insensitive substring match. ILIKE is already case-folding, so we
+			// match the raw text-cast dim expr (NOT the lower()-wrapped `col`) against
+			// '%value%'. The value rides as a positional arg concatenated at runtime by
+			// Postgres (`'%' || $n || '%'`) — the % wildcards are literal SQL, the user
+			// value never is, so this is injection-safe exactly like eq/in. Multiple
+			// values OR together ("contains ANY of these substrings").
+			exprText := fmt.Sprintf("(%s)::text", d.Expr)
+			ph := make([]string, len(p.Values))
+			for i := range p.Values {
+				ph[i] = fmt.Sprintf("%s ILIKE ('%%' || $%d || '%%')", exprText, next)
+				args = append(args, p.Values[i])
+				next++
+			}
+			if len(ph) == 1 {
+				return ph[0], args, next, nil
+			}
+			return "(" + strings.Join(ph, " OR ") + ")", args, next, nil
 		default:
 			return "", nil, 0, fmt.Errorf("query: unknown op %q", p.Op)
 		}

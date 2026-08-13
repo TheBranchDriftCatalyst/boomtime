@@ -9,7 +9,7 @@
 // default view); adding a source/status/series/author/genre axis drills with
 // count + runtime + finished rollups. The search / source / status filters fold
 // into the DSL `where` (and the resetKey) so they constrain the grouping too.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -149,6 +149,16 @@ export function BooksPage() {
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
+  // Debounce the search box: search is now a server-side ILIKE predicate folded
+  // into the explorer's `where` + resetKey, so typing would otherwise re-query
+  // (dropping the explorer's caches) on every keystroke. The <Input> stays fully
+  // responsive on `search`; only the debounced value drives the config/resetKey.
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
   // Hero summary: one unfiltered grouped query (group by source + finished
   // rollup) → whole-library counts. Only when the feature is on.
   const heroQuery = useQuery({
@@ -169,11 +179,11 @@ export function BooksPage() {
       makeBooksExplorerConfig({
         source: sourceFilter,
         status: statusFilter,
-        search,
+        search: debouncedSearch,
       }),
-    [sourceFilter, statusFilter, search],
+    [sourceFilter, statusFilter, debouncedSearch],
   );
-  const resetKey = `${sourceFilter}|${statusFilter}|${search}`;
+  const resetKey = `${sourceFilter}|${statusFilter}|${debouncedSearch}`;
 
   return (
     <Page>
@@ -195,8 +205,8 @@ export function BooksPage() {
               </Card>
             ) : (
               <div className="space-y-3">
-                {/* Controls — folded into the DSL where (source/status) + the
-                    client-side leaf search. */}
+                {/* Controls — all fold into the DSL where: source/status as eq
+                    leaves, the (debounced) search as an ILIKE OR on title/author. */}
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="relative min-w-[220px] flex-1">
                     <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

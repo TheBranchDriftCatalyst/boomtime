@@ -21,6 +21,7 @@ import {
   filtersToPredicate,
   makeBooksExplorerConfig,
   pathToPredicate,
+  searchToPredicate,
   type BooksFilters,
 } from "@/features/books/booksExplorerConfig";
 
@@ -61,6 +62,56 @@ describe("pathToPredicate / filtersToPredicate / buildWhere", () => {
     expect(
       filtersToPredicate({ source: "all", status: "reading", search: "" }),
     ).toEqual([{ kind: "leaf", dim: "status", op: "eq", values: ["reading"] }]);
+  });
+
+  it("maps a search term to an ILIKE OR on title/author (trimmed; blank → none)", () => {
+    expect(searchToPredicate("")).toBeUndefined();
+    expect(searchToPredicate("   ")).toBeUndefined();
+    expect(searchToPredicate("  dune ")).toEqual({
+      kind: "or",
+      of: [
+        { kind: "leaf", dim: "title", op: "ilike", values: ["dune"] },
+        { kind: "leaf", dim: "author", op: "ilike", values: ["dune"] },
+      ],
+    });
+  });
+
+  it("folds search into filtersToPredicate as the ILIKE OR node", () => {
+    expect(
+      filtersToPredicate({ source: "kindle", status: "all", search: "weir" }),
+    ).toEqual([
+      { kind: "leaf", dim: "source", op: "eq", values: ["kindle"] },
+      {
+        kind: "or",
+        of: [
+          { kind: "leaf", dim: "title", op: "ilike", values: ["weir"] },
+          { kind: "leaf", dim: "author", op: "ilike", values: ["weir"] },
+        ],
+      },
+    ]);
+  });
+
+  it("combines a drill path + status + search into one AND-ed where", () => {
+    expect(
+      buildWhere([{ dim: "series", value: "Dune" }], {
+        source: "all",
+        status: "reading",
+        search: "messiah",
+      }),
+    ).toEqual({
+      kind: "and",
+      of: [
+        { kind: "leaf", dim: "series", op: "eq", values: ["Dune"] },
+        { kind: "leaf", dim: "status", op: "eq", values: ["reading"] },
+        {
+          kind: "or",
+          of: [
+            { kind: "leaf", dim: "title", op: "ilike", values: ["messiah"] },
+            { kind: "leaf", dim: "author", op: "ilike", values: ["messiah"] },
+          ],
+        },
+      ],
+    });
   });
 
   it("combines a path + filters into one where predicate", () => {
@@ -136,6 +187,28 @@ describe("source.fetchGroup", () => {
       ],
     });
   });
+
+  it("folds search into the grouped query's where (constrains aggregates)", async () => {
+    runQueryMock.mockResolvedValue({ kind: "groups", groups: [] } satisfies QueryResult);
+
+    const cfg = makeBooksExplorerConfig({
+      source: "all",
+      status: "all",
+      search: "dune",
+    });
+    await cfg.source.fetchGroup([], "author", ["runtime", "finished"]);
+
+    // The group aggregate is constrained by the SAME ILIKE OR — search reaches
+    // the group counts, not just the fetched leaf page.
+    const spec = runQueryMock.mock.calls[0][0] as QuerySpec;
+    expect(spec.where).toEqual({
+      kind: "or",
+      of: [
+        { kind: "leaf", dim: "title", op: "ilike", values: ["dune"] },
+        { kind: "leaf", dim: "author", op: "ilike", values: ["dune"] },
+      ],
+    });
+  });
 });
 
 describe("source.fetchLeaf", () => {
@@ -196,14 +269,13 @@ describe("source.fetchLeaf", () => {
     });
   });
 
-  it("applies the client-side search filter (DSL has no substring op)", async () => {
+  it("folds search into the server-side where (no client-side filtering)", async () => {
+    // The backend applies the ILIKE, so the mock's payload passes through
+    // verbatim — fetchLeaf trusts the server total and does NOT re-filter.
     runQueryMock.mockResolvedValue({
       kind: "rows",
-      rows: [
-        dto({ title: "Project Hail Mary", authors: "Andy Weir" }),
-        dto({ title: "Dune", authors: "Frank Herbert" }),
-      ],
-      total: 2,
+      rows: [dto({ title: "Project Hail Mary", authors: "Andy Weir" })],
+      total: 1,
     } satisfies QueryResult);
 
     const cfg = makeBooksExplorerConfig({
@@ -213,10 +285,19 @@ describe("source.fetchLeaf", () => {
     });
     const res = await cfg.source.fetchLeaf([], 1, 250);
 
-    // Only the matching row survives; total reflects the filtered count.
+    // Rows + total pass through untouched (server already constrained them).
     expect(res.rows).toHaveLength(1);
-    expect((res.rows[0] as ReadingItemDTO).title).toBe("Project Hail Mary");
     expect(res.total).toBe(1);
+
+    // The search rode into spec.where as the ILIKE OR on title/author.
+    const spec = runQueryMock.mock.calls[0][0] as QuerySpec;
+    expect(spec.where).toEqual({
+      kind: "or",
+      of: [
+        { kind: "leaf", dim: "title", op: "ilike", values: ["weir"] },
+        { kind: "leaf", dim: "author", op: "ilike", values: ["weir"] },
+      ],
+    });
   });
 });
 

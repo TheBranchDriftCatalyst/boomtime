@@ -16,7 +16,9 @@ import { ApiError, buildUrl } from "./api";
 
 export type QueryDomain = "coding" | "reading";
 export type Granularity = "none" | "day" | "week" | "month";
-export type PredicateOp = "eq" | "neq" | "in";
+// "ilike" is a case-insensitive substring match (server compiles it to SQL
+// ILIKE '%value%' with the value bound as an arg — injection-safe like eq).
+export type PredicateOp = "eq" | "neq" | "in" | "ilike";
 export type HavingOp = ">=" | "<=" | ">" | "<" | "==" | "!=";
 export type SortField = "measure" | "value" | "bucket" | "key" | (string & {});
 

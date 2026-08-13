@@ -68,7 +68,10 @@ func registerReading() {
 		"series": {Name: "series", Table: items, Expr: "series"},
 		"author": {Name: "author", Table: items, Expr: "authors"},
 		"genre":  {Name: "genre", Table: items, Expr: "genres->>0"},
-		"title":  {Name: "title", Table: items, Expr: "title"},
+		// title is a filter-oriented dimension (books SEARCH folds an ILIKE on it);
+		// it is in the reading_items measures' Dims whitelist so it can filter, but
+		// the FE offers no title group axis (grouping by a near-unique key is moot).
+		"title": {Name: "title", Table: items, Expr: "title"},
 	}
 
 	Register(Domain{
@@ -88,7 +91,7 @@ func registerReading() {
 				Expr:     "count(*)",
 				DateCol:  "finished_at",
 				OwnerCol: "owner",
-				Dims:     []string{"source", "status", "series", "author", "genre"},
+				Dims:     []string{"source", "status", "series", "author", "genre", "title"},
 			},
 			"runtime": {
 				Name:     "runtime",
@@ -96,7 +99,7 @@ func registerReading() {
 				Expr:     "sum(runtime_min)",
 				DateCol:  "finished_at",
 				OwnerCol: "owner",
-				Dims:     []string{"source", "status", "series", "author", "genre"},
+				Dims:     []string{"source", "status", "series", "author", "genre", "title"},
 			},
 			// finished is a rollup-oriented measure: how many rows in a group are
 			// finished. Same table/date/owner as books+runtime so it can ride as a
@@ -107,7 +110,7 @@ func registerReading() {
 				Expr:     "sum(case when finished then 1 else 0 end)",
 				DateCol:  "finished_at",
 				OwnerCol: "owner",
-				Dims:     []string{"source", "status", "series", "author", "genre"},
+				Dims:     []string{"source", "status", "series", "author", "genre", "title"},
 			},
 		},
 		Dimensions: dims,

@@ -53,9 +53,10 @@ func (r Range) isZero() bool {
 type Op string
 
 const (
-	OpEq  Op = "eq"
-	OpNeq Op = "neq"
-	OpIn  Op = "in"
+	OpEq    Op = "eq"
+	OpNeq   Op = "neq"
+	OpIn    Op = "in"
+	OpILike Op = "ilike" // case-insensitive substring match (SQL ILIKE '%value%')
 )
 
 // PredKind tags a predicate node.

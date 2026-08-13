@@ -8,8 +8,10 @@
 //
 // Everything is driven by the cross-domain query DSL (runQuery): fetchGroup runs
 // a grouped `books` query with rollups; fetchLeaf runs the DSL `rows` mode. The
-// page's search / source / status filters fold into each query's `where` (so
-// they constrain the grouping too) — see buildWhere + the caveat on `search`.
+// page's search / source / status filters ALL fold into each query's `where` (so
+// they constrain BOTH the group aggregates and the leaf rows, fully server-side)
+// — see buildWhere. Search compiles to an OR of case-insensitive ILIKE substring
+// matches on title + author (gaka-02sh P2 follow-up).
 import { ExternalLink } from "lucide-react";
 import { Library } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
@@ -37,9 +39,9 @@ import type {
 } from "@/features/explorer/types";
 import type { ReadingItemDTO } from "@/types/meta";
 
-// The page-level filter selections. `all` = no constraint. Folded into every
-// query's `where` (source/status) — see buildWhere. `search` is handled
-// client-side (the DSL has no substring predicate) — see fetchLeaf.
+// The page-level filter selections. `all` = no constraint. ALL three fold into
+// every query's `where` (source/status as eq leaves, search as an ILIKE OR on
+// title/author) — see buildWhere. Nothing is filtered client-side.
 export type SourceFilter = "all" | "audible" | "kindle";
 export type StatusFilter = "all" | "reading" | "finished" | "want";
 
@@ -169,6 +171,24 @@ function eqLeaf(dim: string, value: string): PredicateNode {
   return { kind: "leaf", dim, op: "eq", values: [value] };
 }
 
+function ilikeLeaf(dim: string, value: string): PredicateNode {
+  return { kind: "leaf", dim, op: "ilike", values: [value] };
+}
+
+/**
+ * Map a free-text search term to a server-side predicate: a case-insensitive
+ * substring (ILIKE) match on EITHER title OR author. Whitespace-only / empty →
+ * undefined (no constraint). This is the server-side replacement for the old
+ * client-side page-only filter — because it's a `where` predicate it constrains
+ * the group aggregates (fetchGroup) AND every leaf row (fetchLeaf), not just the
+ * fetched page.
+ */
+export function searchToPredicate(search: string): PredicateNode | undefined {
+  const q = search.trim();
+  if (!q) return undefined;
+  return { kind: "or", of: [ilikeLeaf("title", q), ilikeLeaf("author", q)] };
+}
+
 function andAll(nodes: PredicateNode[]): PredicateNode | undefined {
   if (nodes.length === 0) return undefined;
   if (nodes.length === 1) return nodes[0];
@@ -189,12 +209,12 @@ export function pathToPredicate(path: DrillPath): PredicateNode | undefined {
 }
 
 /**
- * Map the page's source/status selections to dimension-equality leaves.
+ * Map the page's source/status/search selections to `where` leaves.
  * "finished" folds onto status='read' — the canonical finished status the
- * importer sets (internal/db/reading_items.go MarkReadingItemFinished). NOTE:
- * `search` is intentionally NOT here — the DSL predicate ops are eq/neq/in only
- * (no substring), so free-text search can't be a server predicate; it's applied
- * client-side in fetchLeaf.
+ * importer sets (internal/db/reading_items.go MarkReadingItemFinished). `search`
+ * folds to an ILIKE OR on title/author (searchToPredicate) — the DSL now has a
+ * substring op, so free-text search is a real server predicate that constrains
+ * both the group aggregates and the leaf rows.
  */
 export function filtersToPredicate(filters: BooksFilters): PredicateNode[] {
   const leaves: PredicateNode[] = [];
@@ -202,6 +222,8 @@ export function filtersToPredicate(filters: BooksFilters): PredicateNode[] {
   if (filters.status === "reading") leaves.push(eqLeaf("status", "reading"));
   else if (filters.status === "want") leaves.push(eqLeaf("status", "want"));
   else if (filters.status === "finished") leaves.push(eqLeaf("status", "read"));
+  const searchNode = searchToPredicate(filters.search);
+  if (searchNode) leaves.push(searchNode);
   return leaves;
 }
 
@@ -282,19 +304,12 @@ export function makeBooksExplorerConfig(
       };
       const res = await runQuery(spec);
       // The reading RowSource projects keys 1:1 with ReadingItemDTO (see
-      // internal/query/domains.go), so rows cast directly.
-      let rows =
+      // internal/query/domains.go), so rows cast directly. Search is now a
+      // server-side ILIKE predicate folded into `where` (buildWhere), so there is
+      // no client-side page filtering here — total reflects the whole matching set.
+      const rows =
         res.kind === "rows" ? (res.rows as unknown as ReadingItemDTO[]) : [];
-      let total = res.kind === "rows" ? res.total : rows.length;
-      // Free-text search: the DSL can't express substring, so filter the fetched
-      // page client-side (title + author), matching the old Table's behavior.
-      const q = filters.search.trim().toLowerCase();
-      if (q) {
-        rows = rows.filter((r) =>
-          `${r.title} ${r.authors}`.toLowerCase().includes(q),
-        );
-        total = rows.length;
-      }
+      const total = res.kind === "rows" ? res.total : rows.length;
       return { rows, total, page, limit: pageSize };
     },
   };
