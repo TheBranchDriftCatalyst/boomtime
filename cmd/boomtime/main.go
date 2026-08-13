@@ -25,6 +25,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/domains/audiobooks"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/domains/books"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/domains/bookspipeline"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/github"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/hardcover"
@@ -561,6 +562,52 @@ func runCmd() *cobra.Command {
 						return merr
 					}))
 
+					// books-sync-all kind (orchestrator): chain the whole
+					// reading-sync pipeline in dependency order — audible ingest →
+					// kindle ingest → hardcover match → hardcover pull — for one
+					// owner, consolidating the four individual kinds into ONE. Reuses
+					// the SAME service instances built above (audioSvc, kindleSvc,
+					// hcPull) so there is exactly one shared instance set; the
+					// ordering guarantee (match after both ingests, pull after match)
+					// falls out of running the stages sequentially. A per-step error
+					// is logged + recorded in the Summary but does NOT abort the
+					// chain. An owner-scoped job runs the pipeline for job.Owner; an
+					// owner-less (scheduled/batch) job fans it over every user with a
+					// connected Amazon device. Capped at 1 below — it drives the same
+					// global Hardcover rate budget as its constituent stages.
+					booksPipeline := bookspipeline.New(bookspipeline.Steps{
+						AudibleSync: audioSvc.SyncUser,
+						KindleSync:  kindleSvc.SyncUser,
+						Match: func(jctx context.Context, owner string) (int, error) {
+							res, merr := hcPull.MatchUnmatched(jctx, owner)
+							return res.Matched, merr
+						},
+						Pull: func(jctx context.Context, owner string) (int, error) {
+							res, perr := hcPull.SyncHardcoverPull(jctx, owner)
+							return res.Fetched, perr
+						},
+					}, logger)
+					jobReg.Register(bookspipeline.BooksSyncAllKind, jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
+						if job.Owner != "" {
+							_, rerr := booksPipeline.RunPipeline(jctx, job.Owner)
+							return rerr
+						}
+						// Batch/scheduled variant: fan over every connected user. A
+						// per-user pipeline error is logged + skipped so one bad
+						// credential doesn't fail the whole batch.
+						users, uerr := database.ListUsersWithAmazonDevice(jctx)
+						if uerr != nil {
+							return uerr
+						}
+						for _, u := range users {
+							if _, rerr := booksPipeline.RunPipeline(jctx, u); rerr != nil {
+								logger.Warn("books-sync-all: user pipeline failed", "user", u, "err", rerr)
+							}
+						}
+						logger.Info("books-sync-all: batch complete", "users", len(users))
+						return nil
+					}))
+
 					logger.Info("jobs: audiobooks handlers registered", "audibleSyncEnabled", cfg.AudibleSyncEnabled())
 				}
 
@@ -636,6 +683,7 @@ func runCmd() *cobra.Command {
 					jobReg.SetConcurrency(books.KindleSyncKind, 1)         // books-kindle-sync
 					jobReg.SetConcurrency(books.KindleBackfillKind, 1)     // books-kindle-backfill
 					jobReg.SetConcurrency(hardcover.HardcoverMatchKind, 1) // hardcover-match (global Hardcover rate limit)
+					jobReg.SetConcurrency(bookspipeline.BooksSyncAllKind, 1) // books-sync-all orchestrator (chains the rate-limited stages)
 				}
 
 				hostID, _ := os.Hostname()

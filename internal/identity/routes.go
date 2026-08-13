@@ -95,6 +95,9 @@ func Register(e *echo.Echo, h *Handler) {
 		e.POST("/api/v1/kindle/backfill", h.BackfillKindle)
 		e.GET("/api/v1/books/items", h.GetReadingItems)
 		e.DELETE("/api/v1/books/items", h.DeleteReadingItemsHandler)
+		// Orchestrator: chain the whole reading-sync pipeline (Audible ingest →
+		// Kindle ingest → Hardcover match → Hardcover pull) behind ONE enqueue.
+		e.POST("/api/v1/books/sync-all", h.SyncAllBooks)
 	}
 
 	// Hardcover connect (catalyst-books PUSH target). GET/DELETE status are
