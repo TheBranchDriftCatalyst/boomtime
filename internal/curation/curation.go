@@ -390,6 +390,7 @@ func (h *Handler) ApplyRename(c *echo.Context) error {
 	// aggregations so the next fetch is fresh.
 	apihelpers.InvalidateOwnerCache(h.Cache, owner)
 
+	h.Logger.Info("curation rename applied", "ruleId", id, "rows", rows)
 	return c.JSON(http.StatusOK, map[string]any{
 		"rowsAffected": rows,
 		"sqlRun":       sqlUpd + ";\n" + sqlDel + ";",
@@ -444,6 +445,7 @@ func (h *Handler) PurgeHidden(c *echo.Context) error {
 	// aggregations so the next fetch is fresh.
 	apihelpers.InvalidateOwnerCache(h.Cache, owner)
 
+	h.Logger.Info("curation purge-hidden", "ruleId", id, "rows", rows)
 	return c.JSON(http.StatusOK, map[string]any{
 		"rowsAffected":  rows,
 		"sqlRun":        sqlDelRows + ";\n" + sqlDelRule + ";",

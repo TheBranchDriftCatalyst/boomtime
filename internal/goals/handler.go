@@ -137,6 +137,7 @@ func (h *Handler) CreateGoal(c *echo.Context) error {
 		}
 		return apihelpers.InternalErr(h.Logger, c, "create goal failed", err)
 	}
+	h.Logger.Info("goal created", "user", owner, "goal", g.ID)
 	return c.JSON(http.StatusOK, map[string]any{"goal": g})
 }
 
@@ -183,6 +184,7 @@ func (h *Handler) UpdateGoal(c *echo.Context) error {
 	if g == nil {
 		return apihelpers.RespondErr(c, apierr.NotFound("goal not found"))
 	}
+	h.Logger.Info("goal updated", "user", owner, "goal", g.ID)
 	return c.JSON(http.StatusOK, map[string]any{"goal": g})
 }
 
@@ -202,6 +204,7 @@ func (h *Handler) DeleteGoal(c *echo.Context) error {
 	if !ok {
 		return apihelpers.RespondErr(c, apierr.NotFound("goal not found"))
 	}
+	h.Logger.Info("goal deleted", "user", owner, "goal", id)
 	return c.NoContent(http.StatusNoContent)
 }
 
@@ -227,6 +230,7 @@ func (h *Handler) ToggleGoal(c *echo.Context) error {
 	if !found {
 		return apihelpers.RespondErr(c, apierr.NotFound("goal not found"))
 	}
+	h.Logger.Info("goal toggled", "user", owner, "goal", id, "enabled", enabled)
 	return c.JSON(http.StatusOK, map[string]any{"enabled": enabled})
 }
 

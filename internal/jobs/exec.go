@@ -95,12 +95,16 @@ func execute(ctx context.Context, reg *Registry, store *Store, job Job, log *slo
 
 	if job.Attempts < job.MaxAttempts {
 		retryAt := time.Now().Add(retryDelay(job.Attempts))
-		_ = store.Fail(ctx, job.ID, err.Error(), &retryAt)
+		if ferr := store.Fail(ctx, job.ID, err.Error(), &retryAt); ferr != nil {
+			jl.Warn("jobs: fail-state write failed", "err", ferr)
+		}
 		jl.Warn("jobs: retry scheduled",
 			"attempt", job.Attempts, "of", job.MaxAttempts, "dur_ms", time.Since(started).Milliseconds(), "err", err)
 		return outcomeRetry // not terminal — no notify
 	}
-	_ = store.Fail(ctx, job.ID, err.Error(), nil)
+	if ferr := store.Fail(ctx, job.ID, err.Error(), nil); ferr != nil {
+		jl.Warn("jobs: fail-state write failed", "err", ferr)
+	}
 	jl.Error("jobs: failed (attempts exhausted)",
 		"attempts", job.Attempts, "dur_ms", time.Since(started).Milliseconds(), "err", err)
 	notify(StatusFailed, err.Error())

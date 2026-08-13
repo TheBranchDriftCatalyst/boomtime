@@ -11,6 +11,14 @@ import (
 func requestLogger(logger *slog.Logger) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
+			// kubelet probes hit /healthz + /readyz every few seconds; logging
+			// each one would evict useful lines from the LogHub ring buffer.
+			// Skip them entirely (no request line) but leave every other path,
+			// and its log level, untouched.
+			switch c.Request().URL.Path {
+			case "/healthz", "/readyz", "/livez":
+				return next(c)
+			}
 			start := time.Now()
 			err := next(c)
 			status := 0

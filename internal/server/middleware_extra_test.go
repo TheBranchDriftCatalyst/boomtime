@@ -102,6 +102,43 @@ func TestRequestLogger_PropagatesHandlerErrorWithoutSwallowing(t *testing.T) {
 	}
 }
 
+// TestRequestLogger_SkipsKubeletProbes pins the anti-flood INVARIANT that the
+// request logger does NOT emit a line for the kubelet liveness/readiness probes
+// (/healthz, /readyz, /livez) — those hit every few seconds and would evict
+// useful lines from the LogHub ring buffer — while a normal path still logs
+// exactly one line.
+func TestRequestLogger_SkipsKubeletProbes(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	e := echo.New()
+	e.Use(requestLogger(logger))
+	ok := func(c *echo.Context) error { return c.String(http.StatusOK, "ok") }
+	e.GET("/healthz", ok)
+	e.GET("/readyz", ok)
+	e.GET("/livez", ok)
+	e.GET("/api/v1/thing", ok)
+
+	for _, p := range []string{"/healthz", "/readyz", "/livez"} {
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, p, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s: expected 200 (handler still runs), got %d", p, rec.Code)
+		}
+	}
+	if n := strings.Count(buf.String(), `"msg":"http request"`); n != 0 {
+		t.Fatalf("kubelet probes must NOT be logged, got %d http-request records: %s", n, buf.String())
+	}
+
+	// A normal path still logs exactly one line — the skip must not suppress
+	// anything else.
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/thing", nil))
+	if n := strings.Count(buf.String(), `"msg":"http request"`); n != 1 {
+		t.Fatalf("a normal request must log exactly one line, got %d: %s", n, buf.String())
+	}
+}
+
 // --- n1Middleware ---------------------------------------------------------
 
 // TestN1Middleware_NoOpWhenStatsSentinelMissing pins the INVARIANT that

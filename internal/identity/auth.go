@@ -160,6 +160,7 @@ func (h *Handler) Login(c *echo.Context) error {
 		return apihelpers.InternalErr(h.Logger, c, "access token creation failed", err)
 	}
 	h.setRefreshCookie(c, td)
+	h.Logger.Info("login", "user", creds.Username)
 	return c.JSON(http.StatusOK, loginResponse(td, time.Now().UTC()))
 }
 
@@ -206,6 +207,7 @@ func (h *Handler) Register(c *echo.Context) error {
 		return apihelpers.InternalErr(h.Logger, c, "access token creation failed", err)
 	}
 	h.setRefreshCookie(c, td)
+	h.Logger.Info("user registered", "user", creds.Username)
 	return c.JSON(http.StatusOK, loginResponse(td, time.Now().UTC()))
 }
 
@@ -307,7 +309,9 @@ func (h *Handler) Logout(c *echo.Context) error {
 		// gaka-93f.14: revoke any bearers this user minted via /auth/refresh_token
 		// so they die WITH the session, not up to 30 min later. Resolve the owner
 		// from the session before deleting it.
-		if owner, found, _ := h.DB.GetOIDCSessionUser(ctx, refresh); found && owner != "" {
+		var owner string
+		if o, found, _ := h.DB.GetOIDCSessionUser(ctx, refresh); found && o != "" {
+			owner = o
 			_ = h.DB.DeleteUserAccessTokens(ctx, owner)
 		}
 		if err := h.DB.DeleteOIDCSession(ctx, refresh); err != nil {
@@ -315,6 +319,7 @@ func (h *Handler) Logout(c *echo.Context) error {
 		}
 		h.clearRefreshCookie(c)
 		h.clearOIDCFlowCookies(c)
+		h.Logger.Info("logout", "user", owner)
 		return apihelpers.NoContent(c)
 	}
 
@@ -337,6 +342,9 @@ func (h *Handler) Logout(c *echo.Context) error {
 	// (Path + Secure + SameSite) so browsers actually evict the entry.
 	h.clearRefreshCookie(c)
 	h.clearOIDCFlowCookies(c)
+	// The local path revokes by token, not username — the owner isn't resolved
+	// here (an extra lookup would be a behavior change), so log the fact only.
+	h.Logger.Info("logout")
 	return apihelpers.NoContent(c)
 }
 
@@ -363,6 +371,8 @@ func (h *Handler) CreateAPIToken(c *echo.Context) error {
 	if err != nil {
 		return apihelpers.InternalErr(h.Logger, c, "api token insert failed", err)
 	}
+	// Log the fact + safe identifiers only — never the token value in `raw`.
+	h.Logger.Info("api token created", "user", owner, "name", name)
 	return c.JSON(http.StatusOK, model.TokenResponse{APIToken: raw})
 }
 
@@ -391,6 +401,7 @@ func (h *Handler) DeleteToken(c *echo.Context) error {
 	if err := h.DB.DeleteAuthToken(c.Request().Context(), id, owner); err != nil {
 		return apihelpers.InternalErr(h.Logger, c, "api token deletion failed", err)
 	}
+	h.Logger.Info("api token deleted", "user", owner, "id", id)
 	return apihelpers.NoContent(c)
 }
 

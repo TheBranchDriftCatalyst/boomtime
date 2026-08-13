@@ -64,6 +64,7 @@ func (h *Handler) DBExport(c *echo.Context) error {
 		h.Logger.Error("db export failed", "owner", owner, "err", err)
 		return err
 	}
+	h.Logger.Info("database exported", "owner", owner)
 	return nil
 }
 
