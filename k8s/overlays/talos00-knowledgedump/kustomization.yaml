@@ -54,42 +54,24 @@ resources:
   - grafana-dashboard-daily-review.yaml   # job runs, backlog, domain outcomes, log review
   - grafana-dashboard-domain-ingest.yaml  # heartbeat/health ingest volume, outcome, latency
 
-# Strategic-merge patches: each adds a feature-specific set of env vars
-# to the base boomtime-config ConfigMap without disturbing existing keys.
+# Strategic-merge patches on the base boomtime-config ConfigMap + boomtime
+# Deployment.
+#
+# app-config.yaml is the SINGLE consolidated non-secret BOOM_* ConfigMap patch
+# for this overlay — the union of the former per-feature fragments
+# (label-images / llm / tz / github / oidc / usermodel / admin-cli / queue / s3
+# / jobs / books -config.yaml), merged with no value changed. Feature-flag
+# provenance is documented inline in app-config.yaml.
+#
+# The remaining entries are NOT ConfigMap patches: oidc-external-secret.yaml is
+# an ExternalSecret (boomtime-secrets), and the patch-server-* / oidc-hostaliases
+# files patch the boomtime Deployment.
 patchesStrategicMerge:
-  - label-images-config.yaml
-  - llm-config.yaml
-  - tz-config.yaml
-  # gaka-2ip Phase 1: per-user GitHub connect. Non-secret BOOM_* keys
-  # (BOOM_FEATURE_GITHUB_STATS + redirect URL); the OAuth-App creds + state
-  # signing key ride the boomtime-secrets ExternalSecret. INERT until those 1P
-  # fields are provisioned (config.GithubConnectEnabled gates every route +
-  # the config/public flag). See github-config.yaml header.
-  - github-config.yaml
-  # ── PROD OIDC (Authentik) wiring — ACTIVATED 2026-08-05 ──────────────────────
-  # Authentik side is live (provider/app/groups + client_secret in 1Password
-  # `oidc-client-secret`), issuer confirmed. These add BOOM_OIDC_* config +
-  # deliver BOOM_OIDC_CLIENT_SECRET. BOOM_AUTH_PROVIDER stays "local" (see
-  # oidc-config.yaml) — this only makes OIDC *configured* so the account-LINK
-  # flow works; password login is unchanged. Flip to "oidc" is a later,
-  # separate change. Full procedure: OIDC-PROD-WIRING.md.
-  - oidc-config.yaml          # non-secret BOOM_OIDC_* keys on boomtime-config
-  - oidc-external-secret.yaml # BOOM_OIDC_CLIENT_SECRET from 1Password
+  - app-config.yaml           # consolidated non-secret BOOM_* keys on boomtime-config
+  - oidc-external-secret.yaml # BOOM_OIDC_CLIENT_SECRET (+ github/remote-write) from 1Password
   - oidc-hostaliases.yaml     # pod->Authentik goes internal (bypass Cloudflare, gaka-93f.11.2)
-  - usermodel-config.yaml     # BOOM_FEATURE_USER_MODEL=true — RBAC enforcement ON
-  - admin-cli-config.yaml     # BOOM_FEATURE_ADMIN_CLI=true — admin CLI-runner ON (admin-gated)
-  # ── Worker-topology cutover — ACTIVE (2026-08-09; RabbitMQ provisioned Ready in phase 1) ──
-  - queue-config.yaml         # BOOM_QUEUE_BROKER=rabbitmq — THE cutover switch
   - patch-server-rabbit.yaml  # server: --role=server + amqp URL
-  # ── Durable S3 social-card cache (gaka-fym5) ─────────────────────────────
-  # Non-secret endpoint/bucket on boomtime-config + the scoped MinIO creds on
-  # the server (optional refs → inert until talos-homelab reflects the
-  # boomtime-cards-s3-scoped secret). og.png renders live until all four
-  # BOOM_S3_* are present (config.S3Enabled()).
-  - s3-config.yaml            # BOOM_S3_ENDPOINT/BUCKET/USE_SSL (non-secret)
   - patch-server-s3.yaml      # BOOM_S3_ACCESS_KEY/SECRET_KEY (optional secretKeyRef)
-  - jobs-config.yaml          # BOOM_JOBS_EXCLUDE_KINDS=avatar-render (route heavy → ScaledJob)
-  - books-config.yaml         # BOOM_FEATURE_BOOKS=true — Connect-Amazon flow live (gaka-books)
   # NOTE: authentik-blueprint-boomtime.yaml is an Authentik blueprint, NOT a k8s
   # manifest — it is intentionally never added here (applied to Authentik itself).
 
