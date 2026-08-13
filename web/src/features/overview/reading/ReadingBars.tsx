@@ -57,6 +57,7 @@ export function ReadingBars({
             </div>
             <div className="h-2 w-full overflow-hidden rounded-full bg-muted/40">
               <div
+                data-testid="reading-bar-fill"
                 className="h-full rounded-full transition-[width] duration-500"
                 style={{
                   width: `${pct}%`,

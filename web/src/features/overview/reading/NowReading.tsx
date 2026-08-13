@@ -10,9 +10,17 @@ import { Spinner } from "@thebranchdriftcatalyst/catalyst-ui/ui/spinner";
 import { EmptyChart } from "@/viz/d3/EmptyChart";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
+import { openHardcover } from "@/features/books/hardcover";
 import type { ReadingItemDTO } from "@/types/api";
 
 const HEIGHT = 300;
+
+// Books at/above this progress read as "effectively finished" — a lingering
+// 99–100% Audible/Kindle row that never got its status flipped. Keep them out
+// of "Now reading" so the tile shows what you're genuinely mid-way through
+// (gaka-vvij). A backend reclassify-on-sync is the durable belt; this is the
+// suspenders.
+const IN_PROGRESS_MAX_PCT = 95;
 
 export function NowReadingTile() {
   const q = useQuery({
@@ -21,7 +29,7 @@ export function NowReadingTile() {
   });
 
   const items: ReadingItemDTO[] = (q.data?.items ?? [])
-    .filter((it) => it.status === "reading")
+    .filter((it) => it.status === "reading" && it.progressPercent <= IN_PROGRESS_MAX_PCT)
     .sort((a, b) => b.progressPercent - a.progressPercent);
 
   return (
@@ -47,10 +55,21 @@ export function NowReadingTile() {
         >
           {items.map((it) => {
             const pct = Math.max(0, Math.min(100, Math.round(it.progressPercent)));
+            const open = () => openHardcover(it);
             return (
               <li
                 key={`${it.source}:${it.externalId}`}
-                className="flex items-center gap-3"
+                role="link"
+                tabIndex={0}
+                aria-label={`Open ${it.title} on Hardcover`}
+                onClick={open}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    open();
+                  }
+                }}
+                className="flex cursor-pointer items-center gap-3 rounded-md px-1 py-1 transition-colors hover:bg-primary/5 focus-visible:bg-primary/5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40"
                 data-testid="now-reading-row"
               >
                 {it.coverUrl ? (

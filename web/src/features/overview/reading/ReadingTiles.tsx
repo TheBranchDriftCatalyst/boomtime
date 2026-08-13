@@ -11,6 +11,7 @@ import { ChartCard } from "@/components/ChartCard";
 import { colorAt } from "@/viz/d3/color";
 import type { QueryResult, QuerySpec } from "@/lib/queryApi";
 import { useReadingQuery } from "./useReadingQuery";
+import { useReadingRange, readingSpecsForRange } from "./readingRange";
 import { fmtHoursMin, fmtMonthLabel, fmtRuntimeMin } from "./format";
 import { ReadingBars, type ReadingBar } from "./ReadingBars";
 import { ReadingDonut } from "./ReadingDonut";
@@ -28,22 +29,10 @@ const asGroups = (r?: QueryResult) =>
   r?.kind === "groups" ? r.groups : [];
 
 // --- specs (exported so tests document the exact DSL each tile issues) --------
+// Only the all-time GROUPED tiles are static; the three windowed tiles
+// (listening-in-range, trend, finished-per-bucket) derive their spec from the
+// selected range via `readingSpecsForRange` (see ./readingRange).
 export const READING_SPECS = {
-  listeningThisWeek: {
-    domain: "reading",
-    measure: "seconds",
-    over: { granularity: "none", range: { lastN: 7 } },
-  },
-  listeningTrend: {
-    domain: "reading",
-    measure: "seconds",
-    over: { granularity: "week", range: { lastN: 12 } },
-  },
-  codingTrend: {
-    domain: "coding",
-    measure: "seconds",
-    over: { granularity: "week", range: { lastN: 12 } },
-  },
   booksByGenre: {
     domain: "reading",
     measure: "books",
@@ -63,12 +52,6 @@ export const READING_SPECS = {
     group: "genre",
     having: { op: ">=", value: 3 },
   },
-  finishedPerMonth: {
-    domain: "reading",
-    measure: "books",
-    where: { kind: "leaf", dim: "status", op: "eq", values: ["read"] },
-    over: { granularity: "month", range: { lastN: 12 } },
-  },
 } satisfies Record<string, QuerySpec>;
 
 /** Small inline error/loading text used inside a ChartCard body. */
@@ -83,9 +66,10 @@ function ChartState({ height, children }: { height: number; children: React.Reac
   );
 }
 
-// --- Listening this week (scalar KPI) ----------------------------------------
+// --- Listening in range (scalar KPI) -----------------------------------------
 export function ListeningThisWeekTile() {
-  const q = useReadingQuery(READING_SPECS.listeningThisWeek);
+  const [preset] = useReadingRange();
+  const q = useReadingQuery(readingSpecsForRange(preset).listeningInRange);
   const value = q.isLoading
     ? "…"
     : q.isError
@@ -93,19 +77,21 @@ export function ListeningThisWeekTile() {
       : fmtHoursMin(asScalar(q.data));
   return (
     <StatCard
-      name="Listening this week"
+      name="Listening in range"
       value={value}
       icon={<Headphones className="h-6 w-6" />}
       accent="primary"
-      subtitle="Last 7 days"
+      subtitle={preset.scalarSubtitle}
     />
   );
 }
 
 // --- Listening trend, 12 weeks (+ coding overlay) ----------------------------
 export function ListeningTrendTile() {
-  const reading = useReadingQuery(READING_SPECS.listeningTrend);
-  const coding = useReadingQuery(READING_SPECS.codingTrend);
+  const [preset] = useReadingRange();
+  const specs = readingSpecsForRange(preset);
+  const reading = useReadingQuery(specs.listeningTrend);
+  const coding = useReadingQuery(specs.codingTrend);
   const height = 260;
 
   const series: TrendSeries[] = [
@@ -116,7 +102,7 @@ export function ListeningTrendTile() {
   ];
 
   return (
-    <ChartCard title="Listening trend" subtitle="Last 12 weeks · vs coding">
+    <ChartCard title="Listening trend" subtitle={preset.trendSubtitle}>
       {reading.isLoading ? (
         <ChartState height={height}>
           <Spinner />
@@ -162,9 +148,10 @@ export function BooksByGenreTile() {
 export function TopSeriesByRuntimeTile() {
   const q = useReadingQuery(READING_SPECS.topSeriesByRuntime);
   const height = 280;
-  const bars: ReadingBar[] = asGroups(q.data).map((g) => ({
+  const bars: ReadingBar[] = asGroups(q.data).map((g, i) => ({
     label: g.key,
     value: g.value,
+    color: colorAt(i),
   }));
   return (
     <ChartCard title="Top series by runtime" subtitle="Top 8">
@@ -217,15 +204,17 @@ export function ProlificGenresTile() {
 
 // --- Finished per month (bars over time) -------------------------------------
 export function FinishedPerMonthTile() {
-  const q = useReadingQuery(READING_SPECS.finishedPerMonth);
+  const [preset] = useReadingRange();
+  const q = useReadingQuery(readingSpecsForRange(preset).finishedPerMonth);
   const height = 240;
-  const bars: ReadingBar[] = asSeries(q.data).map((p) => ({
+  const bars: ReadingBar[] = asSeries(q.data).map((p, i) => ({
     label: fmtMonthLabel(p.bucket),
     value: p.value,
     title: p.bucket,
+    color: colorAt(i),
   }));
   return (
-    <ChartCard title="Finished per month" subtitle="Last 12 months">
+    <ChartCard title="Finished per month" subtitle={preset.finishedSubtitle}>
       {q.isLoading ? (
         <ChartState height={height}>
           <Spinner />

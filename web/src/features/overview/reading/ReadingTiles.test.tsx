@@ -5,8 +5,10 @@
 // ladders. Non-tautological: the assertions read the MAPPED, formatted output,
 // not the raw fixture.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "@/test/renderWithProviders";
+import { colorAt } from "@/viz/d3/color";
 import type { QueryResult, QuerySpec } from "@/lib/queryApi";
 
 // Mock the DSL client so no network/auth runs; react-query still drives the
@@ -21,11 +23,16 @@ import {
   ProlificGenresTile,
   TopSeriesByRuntimeTile,
 } from "./ReadingTiles";
+import { ReadingRangeControl } from "./ReadingRangeControl";
+import { __resetReadingRange } from "./readingRange";
 
 const mockRun = vi.mocked(runQuery);
 
 afterEach(() => {
   mockRun.mockReset();
+  // The range store is a module singleton — reset it so one test's selection
+  // never leaks into the next.
+  __resetReadingRange();
 });
 
 /** Resolve every runQuery call to one fixed result. */
@@ -38,7 +45,21 @@ describe("ListeningThisWeekTile", () => {
     resolveWith({ kind: "scalar", scalar: 3 * 3600 + 12 * 60 }); // 3h 12m
     renderWithProviders(<ListeningThisWeekTile />);
     expect(await screen.findByText("3h 12m")).toBeInTheDocument();
-    expect(screen.getByText("Listening this week")).toBeInTheDocument();
+    expect(screen.getByText("Listening in range")).toBeInTheDocument();
+  });
+
+  it("queries the default window (12w → 84 days) on first render", async () => {
+    resolveWith({ kind: "scalar", scalar: 0 });
+    renderWithProviders(<ListeningThisWeekTile />);
+    await waitFor(() =>
+      expect(mockRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          domain: "reading",
+          measure: "seconds",
+          over: { granularity: "none", range: { lastN: 84 } },
+        }),
+      ),
+    );
   });
 });
 
@@ -88,6 +109,29 @@ describe("TopSeriesByRuntimeTile", () => {
     expect(screen.getByText("1h 30m")).toBeInTheDocument();
     expect(screen.getAllByTestId("reading-bar")).toHaveLength(2);
   });
+
+  it("colors each bar from the shared colorAt palette (not the plain default)", async () => {
+    resolveWith({
+      kind: "groups",
+      groups: [
+        { key: "The Expanse", value: 600 },
+        { key: "Dune", value: 90 },
+      ],
+    });
+    renderWithProviders(<TopSeriesByRuntimeTile />);
+    await screen.findByText("The Expanse");
+    const fills = screen.getAllByTestId("reading-bar-fill");
+    // Each bar carries a SOLID color (from the shared palette) — not the primary
+    // gradient the un-colored default falls back to...
+    fills.forEach((fill) => {
+      const bg = fill.style.background;
+      expect(bg).not.toContain("linear-gradient");
+      expect(bg).toMatch(/^(rgb|#)/);
+    });
+    // ...and the palette is positional, so adjacent bars differ.
+    expect(fills[0].style.background).not.toBe(fills[1].style.background);
+    expect(colorAt(0)).not.toBe(colorAt(1));
+  });
 });
 
 describe("ProlificGenresTile", () => {
@@ -119,6 +163,55 @@ describe("FinishedPerMonthTile", () => {
     expect(await screen.findByText("Jan 2026")).toBeInTheDocument();
     expect(screen.getByText("Feb 2026")).toBeInTheDocument();
     expect(screen.getAllByTestId("reading-bar")).toHaveLength(2);
+    // Bars are neon-colored per position, not the plain gradient default.
+    const fills = screen.getAllByTestId("reading-bar-fill");
+    fills.forEach((fill) => {
+      expect(fill.style.background).not.toContain("linear-gradient");
+      expect(fill.style.background).toMatch(/^(rgb|#)/);
+    });
+    expect(fills[0].style.background).not.toBe(fills[1].style.background);
+  });
+});
+
+describe("Reading date-range control", () => {
+  it("re-scopes the windowed query when a different window is picked", async () => {
+    resolveWith({ kind: "scalar", scalar: 0 });
+    // Control + a windowed tile share the module store; picking a window must
+    // change the runQuery range the tile issues.
+    renderWithProviders(
+      <>
+        <ReadingRangeControl />
+        <ListeningThisWeekTile />
+      </>,
+    );
+
+    // Default 12W → 84-day window.
+    await waitFor(() =>
+      expect(mockRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          over: { granularity: "none", range: { lastN: 84 } },
+        }),
+      ),
+    );
+
+    mockRun.mockClear();
+    resolveWith({ kind: "scalar", scalar: 0 });
+    const control = screen.getByTestId("reading-range-control");
+    await userEvent.click(within(control).getByRole("radio", { name: "6M" }));
+
+    // 6M → 182-day window; the tile re-issues runQuery with the new range.
+    await waitFor(() =>
+      expect(mockRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          over: { granularity: "none", range: { lastN: 182 } },
+        }),
+      ),
+    );
+    // The picked segment is reflected as checked.
+    expect(within(control).getByRole("radio", { name: "6M" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
   });
 });
 

@@ -28,6 +28,7 @@ import { qk } from "@/lib/queryKeys";
 import { usePublicConfig } from "@/lib/usePublicConfig";
 import { cn } from "@/lib/utils";
 import { BooksExplorer } from "@/features/books/BooksExplorer";
+import { openHardcover } from "@/features/books/hardcover";
 import type { ReadingItemDTO } from "@/types/meta";
 
 // ── small helpers ────────────────────────────────────────────────────────────
@@ -309,10 +310,21 @@ function BooksTable({ items }: { items: ReadingItemDTO[] }) {
         <tbody>
           {items.map((item) => {
             const isAudio = item.source.toLowerCase() === "audible";
+            const open = () => openHardcover(item);
             return (
               <tr
                 key={`${item.source}:${item.externalId}`}
-                className="border-b border-border/60 last:border-0 hover:bg-muted/20"
+                role="link"
+                tabIndex={0}
+                aria-label={`Open ${item.title} on Hardcover`}
+                onClick={open}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    open();
+                  }
+                }}
+                className="cursor-pointer border-b border-border/60 last:border-0 hover:bg-muted/20 focus-visible:bg-muted/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary/40"
               >
                 <td className="py-2.5 pl-3 pr-0 align-middle">
                   <Cover item={item} />

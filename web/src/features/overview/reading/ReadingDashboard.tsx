@@ -17,6 +17,7 @@ import {
 } from "./ReadingTiles";
 import { NowReadingTile } from "./NowReading";
 import { WeeklyListeningGoalTile } from "./WeeklyListeningGoal";
+import { ReadingRangeControl } from "./ReadingRangeControl";
 
 export function ReadingDashboard() {
   return (
@@ -24,7 +25,9 @@ export function ReadingDashboard() {
       <Page.Header
         title="Reading"
         subtitle="Your listening & reading, fused from Kindle + Audible"
-      />
+      >
+        <ReadingRangeControl />
+      </Page.Header>
       <Page.Body>
         <Page.Content>
           <div className="space-y-6">
