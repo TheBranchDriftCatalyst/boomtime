@@ -1,0 +1,232 @@
+// booksExplorerConfig tests — the reading-domain adapter for <GroupableExplorer>
+// (gaka-02sh Track C). runQuery is mocked so we assert the adapter's mapping in
+// isolation:
+//   - fetchGroup issues a grouped `books` query and maps GroupRow → {value,stats}
+//     (count + runtime + finished; "" → null; "Other" preserved).
+//   - fetchLeaf issues the DSL `rows` mode and casts the payload to ReadingItemDTO,
+//     applying the client-side search filter the DSL can't express.
+//   - the page filters (source/status) + drill path fold into every `where`.
+//   - deriveHeroStats sums the source-grouped hero query.
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { QueryResult, QuerySpec } from "@/lib/queryApi";
+import type { ReadingItemDTO } from "@/types/meta";
+
+const { runQueryMock } = vi.hoisted(() => ({ runQueryMock: vi.fn() }));
+vi.mock("@/lib/queryApi", () => ({ runQuery: runQueryMock }));
+
+// Imported AFTER the mock is registered.
+import {
+  buildWhere,
+  deriveHeroStats,
+  filtersToPredicate,
+  makeBooksExplorerConfig,
+  pathToPredicate,
+  type BooksFilters,
+} from "@/features/books/booksExplorerConfig";
+
+const NO_FILTERS: BooksFilters = { source: "all", status: "all", search: "" };
+
+beforeEach(() => {
+  runQueryMock.mockReset();
+});
+
+describe("pathToPredicate / filtersToPredicate / buildWhere", () => {
+  it("maps a drill path to AND-ed eq leaves, skipping null steps", () => {
+    expect(pathToPredicate([])).toBeUndefined();
+    expect(
+      pathToPredicate([{ dim: "author", value: "Sanderson" }]),
+    ).toEqual({ kind: "leaf", dim: "author", op: "eq", values: ["Sanderson"] });
+    expect(
+      pathToPredicate([
+        { dim: "author", value: "Sanderson" },
+        { dim: "series", value: "Stormlight" },
+      ]),
+    ).toEqual({
+      kind: "and",
+      of: [
+        { kind: "leaf", dim: "author", op: "eq", values: ["Sanderson"] },
+        { kind: "leaf", dim: "series", op: "eq", values: ["Stormlight"] },
+      ],
+    });
+  });
+
+  it("folds source + status filters (finished → status='read')", () => {
+    expect(filtersToPredicate(NO_FILTERS)).toEqual([]);
+    expect(
+      filtersToPredicate({ source: "audible", status: "finished", search: "" }),
+    ).toEqual([
+      { kind: "leaf", dim: "source", op: "eq", values: ["audible"] },
+      { kind: "leaf", dim: "status", op: "eq", values: ["read"] },
+    ]);
+    expect(
+      filtersToPredicate({ source: "all", status: "reading", search: "" }),
+    ).toEqual([{ kind: "leaf", dim: "status", op: "eq", values: ["reading"] }]);
+  });
+
+  it("combines a path + filters into one where predicate", () => {
+    expect(
+      buildWhere([{ dim: "author", value: "Weir" }], {
+        source: "kindle",
+        status: "all",
+        search: "",
+      }),
+    ).toEqual({
+      kind: "and",
+      of: [
+        { kind: "leaf", dim: "author", op: "eq", values: ["Weir"] },
+        { kind: "leaf", dim: "source", op: "eq", values: ["kindle"] },
+      ],
+    });
+    expect(buildWhere([], NO_FILTERS)).toBeUndefined();
+  });
+});
+
+describe("source.fetchGroup", () => {
+  it("runs a grouped books query and maps rows to {value,stats}", async () => {
+    runQueryMock.mockResolvedValue({
+      kind: "groups",
+      groups: [
+        {
+          key: "Brandon Sanderson",
+          value: 12,
+          count: 12,
+          stats: { count: 12, runtime: 1320, finished: 5 },
+        },
+        // Empty key = the null dimension value → mapped to value: null.
+        { key: "", value: 3, count: 3, stats: { count: 3, runtime: 60, finished: 0 } },
+        { key: "Other", value: 20, count: 20, stats: { count: 20, runtime: 0, finished: 2 } },
+      ],
+    } satisfies QueryResult);
+
+    const cfg = makeBooksExplorerConfig({
+      source: "audible",
+      status: "all",
+      search: "",
+    });
+    const page = await cfg.source.fetchGroup(
+      [{ dim: "series", value: "Cosmere" }],
+      "author",
+      ["runtime", "finished"],
+    );
+
+    // Mapping: value + full stats; "" → null; "Other" preserved.
+    expect(page.groups).toEqual([
+      { value: "Brandon Sanderson", stats: { count: 12, runtime: 1320, finished: 5 } },
+      { value: null, stats: { count: 3, runtime: 60, finished: 0 } },
+      { value: "Other", stats: { count: 20, runtime: 0, finished: 2 } },
+    ]);
+    expect(page.truncated).toBe(false);
+
+    // The spec carried the axis, the requested rollups, the bucket policy, and
+    // the folded where (drill series + source filter).
+    const spec = runQueryMock.mock.calls[0][0] as QuerySpec;
+    expect(spec).toMatchObject({
+      domain: "reading",
+      measure: "books",
+      group: "author",
+      rollups: ["runtime", "finished"],
+      bucket: { topN: 12, other: true },
+      sort: { field: "value", desc: true },
+    });
+    expect(spec.where).toEqual({
+      kind: "and",
+      of: [
+        { kind: "leaf", dim: "series", op: "eq", values: ["Cosmere"] },
+        { kind: "leaf", dim: "source", op: "eq", values: ["audible"] },
+      ],
+    });
+  });
+});
+
+describe("source.fetchLeaf", () => {
+  const dto = (p: Partial<ReadingItemDTO>): Record<string, unknown> => ({
+    source: "audible",
+    externalId: "B1",
+    title: "Untitled",
+    authors: "",
+    status: "reading",
+    progressPercent: 0,
+    finished: false,
+    syncedAt: "2026-08-01T00:00:00Z",
+    ...p,
+  });
+
+  it("runs the DSL rows mode and casts the payload to ReadingItemDTO", async () => {
+    runQueryMock.mockResolvedValue({
+      kind: "rows",
+      rows: [
+        dto({ title: "Project Hail Mary", authors: "Andy Weir", externalId: "B08" }),
+        dto({ title: "Dune", authors: "Frank Herbert", externalId: "B09" }),
+      ],
+      total: 42,
+    } satisfies QueryResult);
+
+    const cfg = makeBooksExplorerConfig({
+      source: "all",
+      status: "reading",
+      search: "",
+    });
+    const res = await cfg.source.fetchLeaf(
+      [{ dim: "author", value: "Weir" }],
+      1,
+      250,
+    );
+
+    expect(res.total).toBe(42);
+    expect(res.page).toBe(1);
+    expect(res.limit).toBe(250);
+    // Rows are the raw DTO shape, directly usable by the columns.
+    const first = res.rows[0] as ReadingItemDTO;
+    expect(first.title).toBe("Project Hail Mary");
+    expect(first.externalId).toBe("B08");
+
+    const spec = runQueryMock.mock.calls[0][0] as QuerySpec;
+    expect(spec).toMatchObject({
+      domain: "reading",
+      rows: true,
+      page: { number: 1, size: 250 },
+    });
+    // where folds the drill path + the status=reading filter.
+    expect(spec.where).toEqual({
+      kind: "and",
+      of: [
+        { kind: "leaf", dim: "author", op: "eq", values: ["Weir"] },
+        { kind: "leaf", dim: "status", op: "eq", values: ["reading"] },
+      ],
+    });
+  });
+
+  it("applies the client-side search filter (DSL has no substring op)", async () => {
+    runQueryMock.mockResolvedValue({
+      kind: "rows",
+      rows: [
+        dto({ title: "Project Hail Mary", authors: "Andy Weir" }),
+        dto({ title: "Dune", authors: "Frank Herbert" }),
+      ],
+      total: 2,
+    } satisfies QueryResult);
+
+    const cfg = makeBooksExplorerConfig({
+      source: "all",
+      status: "all",
+      search: "weir",
+    });
+    const res = await cfg.source.fetchLeaf([], 1, 250);
+
+    // Only the matching row survives; total reflects the filtered count.
+    expect(res.rows).toHaveLength(1);
+    expect((res.rows[0] as ReadingItemDTO).title).toBe("Project Hail Mary");
+    expect(res.total).toBe(1);
+  });
+});
+
+describe("deriveHeroStats", () => {
+  it("sums the source-grouped hero query into the four hero counts", () => {
+    const stats = deriveHeroStats([
+      { key: "audible", value: 10, count: 10, stats: { count: 10, finished: 6 } },
+      { key: "kindle", value: 4, count: 4, stats: { count: 4, finished: 1 } },
+      { key: "", value: 2, count: 2, stats: { count: 2, finished: 0 } },
+    ]);
+    expect(stats).toEqual({ total: 16, finished: 7, audible: 10, kindle: 4 });
+  });
+});
