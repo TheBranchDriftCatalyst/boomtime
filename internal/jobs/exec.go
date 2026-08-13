@@ -33,6 +33,13 @@ func retryDelay(attempt int) time.Duration {
 // outcome lets a push-based provider (AMQP) re-deliver a retry. On a TERMINAL
 // outcome (done/failed) it fires n.Notify (gaka-hney.6) so the FE can toast.
 func execute(ctx context.Context, reg *Registry, store *Store, job Job, log *slog.Logger, n Notifier) outcome {
+	// Job-scoped logger: EVERY lifecycle line (and, once handlers pull it from
+	// ctx, every handler line) carries job_id/kind/owner as structured attrs, so
+	// the Admin log viewer can filter the stream down to a single job's run
+	// (gaka-f0is). teeHandler flattens these into LogEntry.Attrs automatically.
+	jl := log.With("job_id", job.ID, "kind", job.Kind, "owner", job.Owner)
+	started := time.Now()
+
 	notify := func(status Status, errMsg string) {
 		if n != nil {
 			n.Notify(JobEvent{ID: job.ID, Kind: job.Kind, Owner: job.Owner, Status: status, Error: errMsg})
@@ -42,10 +49,14 @@ func execute(ctx context.Context, reg *Registry, store *Store, job Job, log *slo
 	h, ok := reg.Handler(job.Kind)
 	if !ok {
 		_ = store.Fail(ctx, job.ID, "no handler registered for kind "+job.Kind, nil)
-		log.Warn("jobs: no handler for kind", "kind", job.Kind, "id", job.ID)
+		jl.Warn("jobs: no handler for kind")
 		notify(StatusFailed, "no handler for kind "+job.Kind)
 		return outcomeFailed
 	}
+
+	// "started" is logged for EVERY job kind, DRY — a running job is no longer
+	// silent in the viewer, and the side panel has an opening marker.
+	jl.Info("jobs: started", "attempt", job.Attempts, "of", job.MaxAttempts)
 
 	err := func() (e error) {
 		defer func() {
@@ -62,15 +73,15 @@ func execute(ctx context.Context, reg *Registry, store *Store, job Job, log *slo
 	// would even flip the row back to 'queued' and re-run it. The store write is
 	// also on the cancelled ctx and would fail anyway; just stop, no notify.
 	if ctx.Err() != nil {
-		log.Info("jobs: run stopped by context cancellation", "kind", job.Kind, "id", job.ID)
+		jl.Info("jobs: run stopped by context cancellation", "dur_ms", time.Since(started).Milliseconds())
 		return outcomeFailed
 	}
 
 	if err == nil {
 		if cerr := store.Complete(ctx, job.ID); cerr != nil {
-			log.Warn("jobs: complete failed", "id", job.ID, "err", cerr)
+			jl.Warn("jobs: complete failed", "err", cerr)
 		}
-		log.Info("jobs: done", "kind", job.Kind, "id", job.ID, "attempt", job.Attempts)
+		jl.Info("jobs: done", "attempt", job.Attempts, "dur_ms", time.Since(started).Milliseconds())
 		notify(StatusDone, "")
 		return outcomeDone
 	}
@@ -78,13 +89,13 @@ func execute(ctx context.Context, reg *Registry, store *Store, job Job, log *slo
 	if job.Attempts < job.MaxAttempts {
 		retryAt := time.Now().Add(retryDelay(job.Attempts))
 		_ = store.Fail(ctx, job.ID, err.Error(), &retryAt)
-		log.Warn("jobs: retry scheduled", "kind", job.Kind, "id", job.ID,
-			"attempt", job.Attempts, "of", job.MaxAttempts, "err", err)
+		jl.Warn("jobs: retry scheduled",
+			"attempt", job.Attempts, "of", job.MaxAttempts, "dur_ms", time.Since(started).Milliseconds(), "err", err)
 		return outcomeRetry // not terminal — no notify
 	}
 	_ = store.Fail(ctx, job.ID, err.Error(), nil)
-	log.Error("jobs: failed (attempts exhausted)", "kind", job.Kind, "id", job.ID,
-		"attempts", job.Attempts, "err", err)
+	jl.Error("jobs: failed (attempts exhausted)",
+		"attempts", job.Attempts, "dur_ms", time.Since(started).Milliseconds(), "err", err)
 	notify(StatusFailed, err.Error())
 	return outcomeFailed
 }
