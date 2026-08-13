@@ -13,8 +13,10 @@ import {
   deleteSpacesByPrefix,
   ensureE2EUser,
   seedHeartbeats,
+  seedReadingDemo,
   waitForUrl,
 } from "./helpers";
+import { E2E_USERNAME } from "./consts";
 
 /**
  * Global setup: readiness-poll the stack, register/login an isolated e2e user,
@@ -38,6 +40,13 @@ export default async function globalSetup(_config: FullConfig) {
 
     // 3. Seed heartbeats for THIS user only.
     await seedHeartbeats(request, token);
+
+    // 3b. Seed a rich reading library for THIS user. Reading data has no HTTP
+    // ingest (it only arrives via Amazon/Audible sync), so this shells the
+    // dev-gated `boomtime seed-reading-demo` subcommand straight against the
+    // DB. Best-effort/logged: a missing Go toolchain degrades the reading specs
+    // to their empty-state assertions rather than aborting the whole run.
+    seedReadingDemo(E2E_USERNAME);
 
     // 4. Fresh Space: delete any pre-existing E2E_SPACE_NAME* for a clean slate,
     // then create exactly one.

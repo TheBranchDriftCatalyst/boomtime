@@ -150,6 +150,14 @@ tasks:
     cmds:
       - go run ./tools/gendata {{.CLI_ARGS}}
 
+  seed:reading:
+    desc: 'Seed a rich reading demo library (dev/test only) — usage: task seed:reading -- --user <name>'
+    cmds:
+      # dev-gated in the subcommand itself (refuses unless BOOM_ENV=dev/test).
+      # One command populates reading_items + reading_activity so a local demo
+      # run has a fully-populated Reading dashboard with no Amazon sync.
+      - BOOM_ENV=dev go run {{.PKG}} seed-reading-demo {{.CLI_ARGS}}
+
   icons:
     desc: 'Rebuild web favicon + iOS/watchOS App Icons from boomtime.svg'
     cmds:

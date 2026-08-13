@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import type { APIRequestContext } from "@playwright/test";
@@ -164,6 +165,61 @@ export async function seedHeartbeats(
       `seed heartbeats failed: ${res.status()} ${await res.text()}`,
     );
   }
+}
+
+/**
+ * Seed a rich, deterministic reading library (reading_items + reading_activity)
+ * for the e2e user so the Reading dashboard + Books Explore specs have data.
+ *
+ * Reading data ONLY arrives via the Amazon/Audible sync path — there is no HTTP
+ * ingest for it — so unlike heartbeats we cannot seed it over the API. Instead
+ * we invoke the dev-gated `boomtime seed-reading-demo` subcommand operator-side,
+ * connecting straight to the same Postgres the stack uses (config.Load() reads
+ * the repo .env, BOOM_ENV=dev).
+ *
+ * Best-effort by design: if the Go toolchain / binary isn't reachable this logs
+ * and returns rather than hard-failing global-setup — the reading specs are
+ * written to still render their empty-state tiles, so a missing seed degrades a
+ * data-rich assertion to an empty-state one instead of aborting the whole run.
+ *
+ * Invocation, in order of preference (first that exists wins):
+ *   1. bin/boomtime seed-reading-demo --user <e2e user>   (a prebuilt binary)
+ *   2. go run ./cmd/boomtime seed-reading-demo --user <e2e user>
+ * Both run with cwd = repo root so godotenv picks up ./.env.
+ */
+export function seedReadingDemo(username: string = E2E_USERNAME): void {
+  const repoRoot = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../..",
+  );
+  const args = ["seed-reading-demo", "--user", username];
+
+  const prebuilt = path.join(repoRoot, "bin", "boomtime");
+  const invocation: { cmd: string; argv: string[] } = existsSync(prebuilt)
+    ? { cmd: prebuilt, argv: args }
+    : { cmd: "go", argv: ["run", "./cmd/boomtime", ...args] };
+
+  const res = spawnSync(invocation.cmd, invocation.argv, {
+    cwd: repoRoot,
+    // Default BOOM_ENV=dev so the subcommand's prod-safety gate lets the seed
+    // through even if the env didn't already set it (.env also sets it).
+    env: { ...process.env, BOOM_ENV: process.env.BOOM_ENV ?? "dev" },
+    encoding: "utf8",
+  });
+
+  if (res.error) {
+    console.warn(
+      `[e2e] seed-reading-demo skipped (could not launch ${invocation.cmd}): ${res.error.message}`,
+    );
+    return;
+  }
+  if (res.status !== 0) {
+    console.warn(
+      `[e2e] seed-reading-demo exited ${res.status}: ${res.stderr?.trim() || res.stdout?.trim()}`,
+    );
+    return;
+  }
+  console.log(`[e2e] ${res.stdout?.trim() || "seeded reading demo"}`);
 }
 
 interface Space {
