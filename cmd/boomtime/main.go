@@ -106,6 +106,14 @@ func runCmd() *cobra.Command {
 			auth.SetUserModelEnabled(cfg.FeatureUserModel)
 			logger, logHub := logging.Setup(cfg)
 
+			// Hardcover dry-run safety gate (default ON): block + log every
+			// Hardcover write until the sync mechanism is trusted. Must run before
+			// any hardcover.Client is built (all lazy, well after this).
+			hardcover.Configure(cfg.HardcoverDryRun, logger)
+			if cfg.HardcoverDryRun {
+				logger.Warn("hardcover: DRY-RUN mode ON — all writes are blocked + logged (BOOM_HARDCOVER_DRYRUN=false to enable writes)")
+			}
+
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()
 

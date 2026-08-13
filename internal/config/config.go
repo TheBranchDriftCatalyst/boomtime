@@ -86,6 +86,11 @@ type Config struct {
 	// connect flow (internal/amazon). Off = every /api/v1/amazon/* route and
 	// the domains are dark. See docs/design/catalyst-domains-spike.md.
 	FeatureBooks            bool
+
+	// HardcoverDryRun (BOOM_HARDCOVER_DRYRUN, default TRUE) blocks + logs every
+	// Hardcover WRITE (mutation) instead of executing it. Fail-safe on: nothing
+	// touches a user's real Hardcover library until this is explicitly disabled.
+	HardcoverDryRun bool
 	GithubOAuthClientID     string
 	GithubOAuthClientSecret string
 	GithubOAuthRedirectURL  string
@@ -420,6 +425,7 @@ func Load() *Config {
 		// until ALL are present — so this is inert on a default boot.
 		FeatureGithubStats:      getEnvBool("BOOM_FEATURE_GITHUB_STATS", false),
 		FeatureBooks:            getEnvBool("BOOM_FEATURE_BOOKS", false),
+		HardcoverDryRun:         getEnvBool("BOOM_HARDCOVER_DRYRUN", true),
 		GithubOAuthClientID:     getEnv("BOOM_GITHUB_OAUTH_CLIENT_ID", ""),
 		GithubOAuthClientSecret: getEnv("BOOM_GITHUB_OAUTH_CLIENT_SECRET", ""),
 		GithubOAuthRedirectURL:  getEnv("BOOM_GITHUB_OAUTH_REDIRECT_URL", ""),

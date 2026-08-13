@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -30,6 +31,30 @@ var (
 	ErrRateLimited = errors.New("hardcover: rate limited")
 )
 
+// --- Dry-run safety gate ----------------------------------------------------
+// Every Hardcover MUTATION (write) is gated behind a process-wide dry-run flag.
+// When on (the FAIL-SAFE DEFAULT), no write ever reaches Hardcover — the intended
+// operation is logged instead ("hardcover DRYRUN: would <op>") and the call
+// returns success. READS (me/editions/search/library) always pass through. This
+// protects a user's real Hardcover library while the sync mechanism is built.
+// Toggle via BOOM_HARDCOVER_DRYRUN (default true); wire through hardcover.Configure.
+var (
+	defaultDryRun = true // fail-safe: writes blocked unless explicitly enabled
+	defaultLogger *slog.Logger
+)
+
+// Configure sets the process-wide dry-run default + logger for clients built by
+// NewClient. Call once at startup. dryRun=true blocks+logs all mutations.
+func Configure(dryRun bool, logger *slog.Logger) {
+	defaultDryRun = dryRun
+	defaultLogger = logger
+}
+
+// isMutation reports whether a GraphQL document is a mutation (a write).
+func isMutation(query string) bool {
+	return strings.HasPrefix(strings.TrimSpace(query), "mutation")
+}
+
 // GraphQLError is one entry of a GraphQL response's errors[] array.
 type GraphQLError struct {
 	Message    string          `json:"message"`
@@ -46,16 +71,42 @@ type Client struct {
 	token   string
 	http    *http.Client
 	limiter *rate.Limiter
+	dryRun  bool
+	logger  *slog.Logger
 }
 
 // NewClient builds a client for a bearer token. The token is used only in the
-// Authorization header and is never logged.
+// Authorization header and is never logged. It inherits the process-wide dry-run
+// default (see Configure) so every write is blocked unless dry-run is disabled.
 func NewClient(token string) *Client {
 	return &Client{
 		token:   strings.TrimSpace(token),
 		http:    &http.Client{Timeout: 30 * time.Second},
 		limiter: rate.NewLimiter(rate.Every(time.Second), 1),
+		dryRun:  defaultDryRun,
+		logger:  defaultLogger,
 	}
+}
+
+// SetDryRun overrides the dry-run flag on this client (tests / explicit opt-in).
+func (c *Client) SetDryRun(v bool) *Client { c.dryRun = v; return c }
+
+// DryRun reports whether this client blocks writes.
+func (c *Client) DryRun() bool { return c.dryRun }
+
+// logBlockedMutation records an intended-but-blocked write. vars carry only book
+// ids / status / dates (never the token), so they are safe to log verbatim.
+func (c *Client) logBlockedMutation(query string, vars map[string]any) {
+	op := "mutation"
+	if i := strings.IndexAny(strings.TrimPrefix(strings.TrimSpace(query), "mutation "), "(&{ "); i > 0 {
+		op = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(query), "mutation ")[:i])
+	}
+	body, _ := json.Marshal(vars)
+	l := c.logger
+	if l == nil {
+		l = slog.Default()
+	}
+	l.Warn("hardcover DRYRUN: write blocked", "op", op, "vars", string(body))
 }
 
 // graphql POSTs a query + variables and unmarshals the response `data` into out
@@ -65,6 +116,14 @@ func NewClient(token string) *Client {
 func (c *Client) graphql(ctx context.Context, query string, vars map[string]any, out any) error {
 	if c.token == "" {
 		return ErrBadToken
+	}
+	// Dry-run safety gate: block + log every mutation (write). Reads pass through.
+	// Returns nil (a simulated success) so callers proceed without surfacing an
+	// error; `out` stays zero-valued (e.g. a returned id of 0), which downstream
+	// writes also gate on, so the whole push chain is a no-op that logs its intent.
+	if c.dryRun && isMutation(query) {
+		c.logBlockedMutation(query, vars)
+		return nil
 	}
 	if err := c.limiter.Wait(ctx); err != nil {
 		return err
