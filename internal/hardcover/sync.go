@@ -85,6 +85,10 @@ func (s *SyncService) SyncHardcoverPull(ctx context.Context, owner string) (Pull
 	res.Shelf = BuildShelf(books)
 
 	for _, b := range books {
+		// Honor cancellation between per-book reconciles.
+		if err := ctx.Err(); err != nil {
+			return res, err
+		}
 		n, uerr := s.DB.UpdateHardcoverLinkFromPull(ctx, owner, db.HardcoverUserBookLink{
 			BookID:          int64(b.BookID),
 			Status:          StatusString(b.StatusID),

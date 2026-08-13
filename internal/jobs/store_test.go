@@ -184,6 +184,60 @@ func TestListLatestPerOwnerAndHasPending(t *testing.T) {
 	}
 }
 
+// TestMarkCancelled covers the three cases admin-cancel depends on: a QUEUED job
+// flipped to cancelled is skipped by ClaimNext (so it never runs), MarkCancelled
+// applies to a RUNNING job, and it is a guarded no-op against a TERMINAL job (no
+// clobbering a done/failed row back to cancelled).
+func TestMarkCancelled(t *testing.T) {
+	s, ctx := newTestStore(t)
+
+	// --- queued → cancelled → never claimable ---
+	qid, err := s.Enqueue(ctx, "demo", "", nil, 1, time.Time{})
+	if err != nil {
+		t.Fatalf("Enqueue queued: %v", err)
+	}
+	ok, err := s.MarkCancelled(ctx, qid)
+	if err != nil || !ok {
+		t.Fatalf("MarkCancelled(queued): ok=%v err=%v, want ok=true", ok, err)
+	}
+	if _, claimed, _ := s.ClaimNext(ctx, "w1", nil, nil); claimed {
+		t.Fatal("a cancelled (was-queued) job must not be claimable by ClaimNext")
+	}
+	if j, _, _ := s.Get(ctx, qid); j.Status != StatusCancelled || j.Error != "cancelled by admin" {
+		t.Fatalf("cancelled job = status %q error %q, want cancelled + 'cancelled by admin'", j.Status, j.Error)
+	}
+
+	// --- running → cancelled (running is non-terminal) ---
+	// A slightly-past run_at avoids sub-ms host-vs-DB clock skew making a
+	// just-enqueued row read as not-yet-due; it's still the realistic state a
+	// worker claims moments later.
+	rid, _ := s.Enqueue(ctx, "demo", "", nil, 1, time.Now().Add(-time.Second))
+	if _, claimed, _ := s.ClaimNext(ctx, "w1", nil, nil); !claimed {
+		t.Fatal("expected to claim the running job")
+	}
+	if ok, err := s.MarkCancelled(ctx, rid); err != nil || !ok {
+		t.Fatalf("MarkCancelled(running): ok=%v err=%v, want ok=true", ok, err)
+	}
+	if j, _, _ := s.Get(ctx, rid); j.Status != StatusCancelled {
+		t.Fatalf("running job not cancelled → status %q", j.Status)
+	}
+
+	// --- done → MarkCancelled is a no-op, status preserved ---
+	did, _ := s.Enqueue(ctx, "demo", "", nil, 1, time.Now().Add(-time.Second))
+	if _, claimed, _ := s.ClaimNext(ctx, "w1", nil, nil); !claimed {
+		t.Fatal("expected to claim the to-be-done job")
+	}
+	if err := s.Complete(ctx, did); err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	if ok, err := s.MarkCancelled(ctx, did); err != nil || ok {
+		t.Fatalf("MarkCancelled(done): ok=%v err=%v, want ok=false (no clobber)", ok, err)
+	}
+	if j, _, _ := s.Get(ctx, did); j.Status != StatusDone {
+		t.Fatalf("done job clobbered by MarkCancelled → status %q, want done", j.Status)
+	}
+}
+
 func TestSchedulerClaimIsSingleton(t *testing.T) {
 	s, ctx := newTestStore(t)
 	if err := s.UpsertSchedule(ctx, "cron", time.Hour); err != nil {

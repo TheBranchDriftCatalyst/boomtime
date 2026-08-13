@@ -10,6 +10,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Ban,
   BookOpen,
   CalendarClock,
   DownloadCloud,
@@ -96,6 +97,7 @@ const STATUS_STYLES: Record<AdminJobStatus, string> = {
   running: "border-amber-500/40 bg-amber-500/15 text-amber-400 animate-pulse",
   done: "border-emerald-500/40 bg-emerald-500/15 text-emerald-400",
   failed: "border-destructive/40 bg-destructive/15 text-destructive",
+  cancelled: "border-border bg-muted/60 text-muted-foreground line-through",
 };
 
 function StatusBadge({ status }: { status: AdminJobStatus }) {
@@ -117,6 +119,7 @@ const STATUS_FILTERS: { value: string; label: string }[] = [
   { value: "running", label: "Running" },
   { value: "done", label: "Done" },
   { value: "failed", label: "Failed" },
+  { value: "cancelled", label: "Cancelled" },
 ];
 
 // ── reading-steps panel ─────────────────────────────────────────────────────
@@ -312,11 +315,18 @@ function JobRow({
   job,
   onRetry,
   retrying,
+  onCancel,
+  cancelling,
 }: {
   job: AdminJob;
   onRetry: () => void;
   retrying: boolean;
+  onCancel: () => void;
+  cancelling: boolean;
 }) {
+  // A job is cancellable while it is still pending (queued) or in flight
+  // (running); terminal rows (done/failed/cancelled) only offer Retry on failure.
+  const cancellable = job.status === "running" || job.status === "queued";
   return (
     <TableRow>
       <TableCell className="font-mono text-xs text-muted-foreground">
@@ -364,6 +374,18 @@ function JobRow({
             Retry
           </Button>
         )}
+        {cancellable && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onCancel}
+            disabled={cancelling}
+            title={`Cancel job #${job.id}`}
+          >
+            <Ban className={cn("h-3.5 w-3.5", cancelling && "animate-pulse")} />
+            Cancel
+          </Button>
+        )}
       </TableCell>
     </TableRow>
   );
@@ -400,6 +422,24 @@ function JobsPanel({
     onError: (e) =>
       toast.error(
         e instanceof ApiError ? `Retry failed: ${e.message}` : "Retry failed",
+      ),
+  });
+
+  const cancel = useMutation({
+    mutationFn: (id: number) => api.cancelJob(id),
+    onSuccess: (res, id) => {
+      toast.success(
+        res.cancelled
+          ? res.wasRunning
+            ? `Cancelling job #${id}…`
+            : `Cancelled job #${id}`
+          : `Job #${id} already finished`,
+      );
+      qc.invalidateQueries({ queryKey: qk.adminJobsPrefix() });
+    },
+    onError: (e) =>
+      toast.error(
+        e instanceof ApiError ? `Cancel failed: ${e.message}` : "Cancel failed",
       ),
   });
 
@@ -453,6 +493,8 @@ function JobsPanel({
                     job={job}
                     retrying={retry.isPending && retry.variables === job.id}
                     onRetry={() => retry.mutate(job.id)}
+                    cancelling={cancel.isPending && cancel.variables === job.id}
+                    onCancel={() => cancel.mutate(job.id)}
                   />
                 ))
               )}

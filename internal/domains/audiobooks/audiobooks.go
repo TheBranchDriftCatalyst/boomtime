@@ -360,6 +360,11 @@ func (s *Service) sweepLibrary(ctx context.Context, cred *amazon.DeviceCredentia
 		newest *time.Time
 	)
 	for page := 1; ; page++ {
+		// Honor cancellation (admin cancel / shutdown) between pages so a long
+		// multi-page sweep stops promptly instead of fetching the next page.
+		if err := ctx.Err(); err != nil {
+			return count, newest, err
+		}
 		items, err := s.fetchLibraryPage(ctx, cred, page, purchasedAfter)
 		if err != nil {
 			return count, newest, err
@@ -419,6 +424,10 @@ func (s *Service) sweepFinished(ctx context.Context, cred *amazon.DeviceCredenti
 		token  string
 	)
 	for {
+		// Honor cancellation between continuation pages of the finished sweep.
+		if err := ctx.Err(); err != nil {
+			return events, newest, err
+		}
 		path := "/1.0/stats/status/finished?start_date=" + start.UTC().Format(time.RFC3339)
 		if token != "" {
 			path += "&continuation_token=" + token
@@ -521,6 +530,10 @@ func (s *Service) backfillAggregates(ctx context.Context, cred *amazon.DeviceCre
 	// Safety ceiling so a persistently-non-empty (or misparsed) response can't
 	// loop forever: Audible launched in 1995; 40 years of windows is ample.
 	for i := 0; i < 40; i++ {
+		// Honor cancellation between aggregate windows.
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		windowStart := cur.AddDate(0, -(windowMonths - 1), 0)
 		written, err := s.sweepAggregates(ctx, cred, owner, windowStart, windowMonths, false)
 		if err != nil {
@@ -813,6 +826,11 @@ func (s *Service) syncInProgressToHardcover(ctx context.Context, owner string) {
 		return
 	}
 	for _, it := range items {
+		// Stop before each per-book Hardcover call on cancellation (this loop can
+		// make one rate-limited push per in-progress title).
+		if ctx.Err() != nil {
+			return
+		}
 		in, pct, lenSeconds, ok := inProgressPush(it)
 		if !ok {
 			continue

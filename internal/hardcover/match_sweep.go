@@ -88,6 +88,11 @@ func (s *SyncService) matchWith(ctx context.Context, owner string, client matche
 	}
 
 	for _, it := range items {
+		// Stop before each per-row Hardcover Match call on cancellation — the match
+		// ladder is the expensive, rate-limited part of the sweep.
+		if err := ctx.Err(); err != nil {
+			return res, err
+		}
 		res.Scanned++
 		asin := firstNonEmpty(it.ExternalID, it.AmazonASIN)
 

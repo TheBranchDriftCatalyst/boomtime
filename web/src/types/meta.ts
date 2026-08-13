@@ -94,7 +94,12 @@ export interface AdminUsersPayload {
 // Admin jobs tab — GET /api/v1/admin/jobs + /schedules (gaka-hney). Mirrors
 // internal/admin/jobs.go. Admin-gated (403 for non-admins); the tab is hidden
 // from the sidebar for non-admins just like the other admin sections.
-export type AdminJobStatus = "queued" | "running" | "done" | "failed";
+export type AdminJobStatus =
+  | "queued"
+  | "running"
+  | "done"
+  | "failed"
+  | "cancelled";
 
 export interface AdminJob {
   id: number;

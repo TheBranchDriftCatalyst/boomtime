@@ -166,3 +166,51 @@ func (h *Handler) AdminJobRetry(c *echo.Context) error {
 	h.Logger.Info("admin jobs retry", "actor", owner, "kind", job.Kind, "from", id, "id", newID)
 	return c.JSON(http.StatusOK, map[string]any{"id": newID})
 }
+
+// AdminJobCancel: POST /api/v1/admin/jobs/:id/cancel — cooperatively cancel a
+// queued or running job. Store.MarkCancelled flips the durable status (a queued
+// job is then never claimed; a running job's row is stamped terminal), then a
+// best-effort provider.Cancel(id) cancels the in-process context so a handler that
+// honors ctx stops promptly. Returns {cancelled, wasRunning}.
+//
+// wasRunning reports whether the job was actively executing (DB status 'running',
+// or the provider found + signalled it locally). In-process cancellation only
+// reaches a handler running on THIS pod; the MarkCancelled write is the durable
+// cross-pod signal, and the Dragonfly pub-sub fan-out (see LocalProvider.Cancel)
+// is the multi-pod upgrade for interrupting a run on another pod.
+func (h *Handler) AdminJobCancel(c *echo.Context) error {
+	owner, aerr := h.requireAdmin(c)
+	if aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
+	}
+	if h.JobStore == nil || h.JobEnqueuer == nil {
+		return apihelpers.RespondErr(c, h.jobsUnavailable())
+	}
+	id, perr := strconv.ParseInt(c.Param("id"), 10, 64)
+	if perr != nil {
+		return apihelpers.RespondErr(c, apierr.BadRequest("bad job id"))
+	}
+	job, ok, err := h.JobStore.Get(c.Request().Context(), id)
+	if err != nil {
+		return apihelpers.InternalErr(h.Logger, c, "jobs get failed", err)
+	}
+	if !ok {
+		return apihelpers.RespondErr(c, apierr.NotFound("job not found"))
+	}
+	cancelled, err := h.JobStore.MarkCancelled(c.Request().Context(), id)
+	if err != nil {
+		return apihelpers.InternalErr(h.Logger, c, "jobs cancel failed", err)
+	}
+	// Best-effort in-process ctx cancel (interrupts a running handler that honors
+	// ctx). Reaches the provider via the Canceller capability — the wired provider
+	// is passed as the Enqueuer, mirroring how AdminJobRetry reaches it.
+	wasRunning := job.Status == jobs.StatusRunning
+	if cancelled {
+		if canceller, okc := h.JobEnqueuer.(jobs.Canceller); okc && canceller.Cancel(id) {
+			wasRunning = true
+		}
+	}
+	h.Logger.Info("admin jobs cancel", "actor", owner, "id", id, "kind", job.Kind,
+		"cancelled", cancelled, "wasRunning", wasRunning)
+	return c.JSON(http.StatusOK, map[string]any{"cancelled": cancelled, "wasRunning": wasRunning})
+}

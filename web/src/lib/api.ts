@@ -1106,6 +1106,14 @@ export const api = {
     request<{ id: number }>(`/api/v1/admin/jobs/${id}/retry`, {
       method: "POST",
     }),
+  // Cooperatively cancel a queued/running job. cancelled=false when the job had
+  // already reached a terminal state; wasRunning=true when a live handler's
+  // context was signalled (in-process, this pod).
+  cancelJob: (id: number) =>
+    request<{ cancelled: boolean; wasRunning: boolean }>(
+      `/api/v1/admin/jobs/${id}/cancel`,
+      { method: "POST" },
+    ),
 
   // --- Admin CLI-runner (BOOM_FEATURE_ADMIN_CLI) -----------------------------
   // All three 404 when the backend feature flag is off (routes not

@@ -85,6 +85,11 @@ func (s *Service) sweep(ctx context.Context, cred *amazon.DeviceCredential, owne
 
 	items := make([]kindleItem, 0, len(library))
 	for _, lib := range library {
+		// Stop before each per-book Hardcover LookupByASIN on cancellation so a
+		// large library sweep aborts promptly instead of resolving every ASIN.
+		if err := ctx.Err(); err != nil {
+			return nil, res != nil, err
+		}
 		if lib.ASIN == "" || lib.IsSample() {
 			continue // skip un-keyable rows and Kindle samples
 		}

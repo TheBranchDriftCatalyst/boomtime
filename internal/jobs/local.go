@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -26,6 +27,13 @@ type LocalProvider struct {
 	// cap are excluded from ClaimNext (stay durably queued) and a slot is
 	// Acquired around each run. nil = no throttling (every kind unbounded).
 	limiter KindLimiter
+
+	// cancelMu guards cancels: the per-job CancelFunc of every job CURRENTLY
+	// executing on this provider, keyed by job id (admin-cancel support). A job's
+	// entry lives only for the duration of its handler run — registered in
+	// execTracked before execute, deleted (+ cancelled) when it returns.
+	cancelMu sync.Mutex
+	cancels  map[int64]context.CancelFunc
 }
 
 // SetKindFilter restricts which kinds this provider claims (gaka-hney).
@@ -82,14 +90,65 @@ func (p *LocalProvider) runJob(ctx context.Context, reg *Registry, job Job) bool
 			}
 		}
 	}
-	execute(ctx, reg, p.store, job, p.log, p.notifier)
+	p.execTracked(ctx, reg, job)
 	return true
+}
+
+// execTracked derives a per-job cancellable child context, registers its
+// CancelFunc so Cancel(job.ID) can interrupt a long handler mid-run, runs the job
+// through execute, then unregisters + cancels to free the context. Cancellation
+// is COOPERATIVE: the child ctx is cancelled, but only a handler that honors ctx
+// (checks ctx.Err() between units of work / passes ctx to its network calls) stops
+// promptly — execute() then sees ctx.Err() != nil and skips the Complete/Fail
+// write so the admin's 'cancelled' status stands.
+func (p *LocalProvider) execTracked(ctx context.Context, reg *Registry, job Job) {
+	jobCtx, cancel := context.WithCancel(ctx)
+	p.cancelMu.Lock()
+	p.cancels[job.ID] = cancel
+	p.cancelMu.Unlock()
+	defer func() {
+		p.cancelMu.Lock()
+		delete(p.cancels, job.ID)
+		p.cancelMu.Unlock()
+		cancel() // release the context (no-op if Cancel already fired)
+	}()
+	execute(jobCtx, reg, p.store, job, p.log, p.notifier)
+}
+
+// Cancel signals the in-process context of a job currently executing on THIS
+// provider, returning whether it was found running here. This is the "easy",
+// single-worker cooperative cancel: it interrupts the handler's ctx (the handler
+// must honor it to stop). It does NOT touch the DB — the admin path calls
+// Store.MarkCancelled for the durable terminal status; a QUEUED job (not executing
+// anywhere) returns false here and is stopped purely by that status flip
+// (ClaimNext skips non-'queued' rows).
+//
+// Multi-pod upgrade (Dragonfly/redis bus): with several worker pods the job may be
+// running on a DIFFERENT pod than the admin request landed on, so this in-process
+// map can't reach it. The cross-pod version publishes "cancel <jobID>" on a
+// Dragonfly pub-sub channel every pod subscribes to; each pod checks its own
+// `cancels` map and cancels if it owns the run. Store.MarkCancelled stays the
+// durable signal in every topology, so a queued job is always stopped regardless.
+func (p *LocalProvider) Cancel(jobID int64) bool {
+	p.cancelMu.Lock()
+	cancel, ok := p.cancels[jobID]
+	p.cancelMu.Unlock()
+	if ok {
+		cancel()
+	}
+	return ok
 }
 
 // NewLocalProvider builds the Postgres-backed provider. workerID is stamped
 // into locked_by for observability.
 func NewLocalProvider(store *Store, log *slog.Logger, workerID string) *LocalProvider {
-	return &LocalProvider{store: store, log: log, id: workerID, poll: 5 * time.Second}
+	return &LocalProvider{
+		store:   store,
+		log:     log,
+		id:      workerID,
+		poll:    5 * time.Second,
+		cancels: map[int64]context.CancelFunc{},
+	}
 }
 
 // Name implements Provider.

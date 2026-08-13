@@ -100,6 +100,7 @@ func Register(e *echo.Echo, h *Handler) {
 		e.GET("/api/v1/admin/jobs/schedules", h.AdminJobSchedules, jobsCap)
 		e.POST("/api/v1/admin/jobs/trigger", h.AdminJobTrigger, jobsCap)
 		e.POST("/api/v1/admin/jobs/:id/retry", h.AdminJobRetry, jobsCap)
+		e.POST("/api/v1/admin/jobs/:id/cancel", h.AdminJobCancel, jobsCap)
 	}
 
 	// Durable, resumable wakatime.com import jobs. Auth is the shared

@@ -27,10 +27,21 @@ type Runner interface {
 	Run(ctx context.Context, reg *Registry) error
 }
 
+// Canceller cooperatively interrupts a job that is currently executing in THIS
+// process. Cancel returns whether jobID was found running locally (and its
+// context signalled). It is the in-flight half of an admin cancel; the durable
+// half is Store.MarkCancelled. LocalProvider implements it for real; AMQPProvider
+// returns false (out of scope). See LocalProvider.Cancel for the cross-pod
+// (Dragonfly pub-sub) upgrade an in-process map can't cover.
+type Canceller interface {
+	Cancel(jobID int64) bool
+}
+
 // Provider is a complete job backend.
 type Provider interface {
 	Enqueuer
 	Runner
+	Canceller
 	// Name identifies the backend ("local", "rabbitmq") for logs + admin.
 	Name() string
 	// SetNotifier wires an optional terminal-event sink (gaka-hney.6). nil-safe.

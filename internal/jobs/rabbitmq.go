@@ -49,6 +49,14 @@ func NewAMQPProvider(ch *amqp.Channel, queue string, store *Store, log *slog.Log
 // Name implements Provider.
 func (p *AMQPProvider) Name() string { return "rabbitmq" }
 
+// Cancel implements Provider/Canceller but is a no-op on the AMQP transport (out
+// of scope): in-flight cancel would need per-delivery context tracking mirroring
+// LocalProvider.execTracked, plus the same cross-pod Dragonfly pub-sub fan-out to
+// reach whichever consumer owns the delivery. Store.MarkCancelled still stops a
+// QUEUED job (it's never claimed), so admin-cancel of pending work works here too;
+// only interrupting an already-running AMQP handler is unsupported for now.
+func (p *AMQPProvider) Cancel(jobID int64) bool { return false }
+
 // Enqueue records the job then publishes its id to the queue.
 func (p *AMQPProvider) Enqueue(ctx context.Context, kind string, payload []byte, opts ...EnqueueOption) (int64, error) {
 	c := resolveEnqueue(opts)

@@ -128,3 +128,74 @@ describe("JobsTab — Run a reading step panel", () => {
     );
   });
 });
+
+// A job table row shape for the /admin/jobs stub.
+function jobRow(over: Record<string, unknown>) {
+  const now = new Date().toISOString();
+  return {
+    id: 1,
+    kind: "hardcover-match",
+    status: "running",
+    attempts: 1,
+    maxAttempts: 1,
+    error: "",
+    runAt: now,
+    createdAt: now,
+    startedAt: now,
+    finishedAt: null,
+    ...over,
+  };
+}
+
+describe("JobsTab — cancel a running job", () => {
+  it("shows Cancel on a running row, POSTs cancel, and refetches the list", async () => {
+    config(false); // keep the reading panel out of the way
+    server.use(
+      http.get("/api/v1/admin/jobs/schedules", () => HttpResponse.json({ schedules: [] })),
+    );
+    let listHits = 0;
+    let cancelHits = 0;
+    server.use(
+      http.get("/api/v1/admin/jobs", () => {
+        listHits += 1;
+        return HttpResponse.json({ jobs: [jobRow({ id: 7, status: "running" })] });
+      }),
+      http.post("/api/v1/admin/jobs/7/cancel", () => {
+        cancelHits += 1;
+        return HttpResponse.json({ cancelled: true, wasRunning: true });
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<JobsTab />);
+
+    const cancelBtn = await screen.findByRole("button", { name: /cancel/i });
+    expect(cancelBtn).toBeInTheDocument();
+    const before = listHits;
+
+    await user.click(cancelBtn);
+    await waitFor(() => expect(cancelHits).toBe(1));
+    // Invalidating the jobs prefix refetches the table.
+    await waitFor(() => expect(listHits).toBeGreaterThan(before));
+    await waitFor(() =>
+      expect(toastSuccess).toHaveBeenCalledWith("Cancelling job #7…"),
+    );
+  });
+
+  it("offers no Cancel on a terminal (done) row", async () => {
+    config(false);
+    server.use(
+      http.get("/api/v1/admin/jobs/schedules", () => HttpResponse.json({ schedules: [] })),
+      http.get("/api/v1/admin/jobs", () =>
+        HttpResponse.json({
+          jobs: [jobRow({ id: 8, kind: "hardcover-pull", status: "done", finishedAt: new Date().toISOString() })],
+        }),
+      ),
+    );
+
+    renderWithProviders(<JobsTab />);
+
+    await waitFor(() => expect(screen.getByText("hardcover-pull")).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: /cancel/i })).not.toBeInTheDocument();
+  });
+});

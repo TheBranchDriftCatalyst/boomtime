@@ -26,6 +26,11 @@ const (
 	StatusRunning Status = "running"
 	StatusDone    Status = "done"
 	StatusFailed  Status = "failed"
+	// StatusCancelled is a terminal state set by an admin cancel (Store.MarkCancelled).
+	// A queued job flipped to cancelled is never claimed (ClaimNext filters on
+	// 'queued'); a running job is stamped terminal while LocalProvider.Cancel
+	// interrupts its context.
+	StatusCancelled Status = "cancelled"
 )
 
 // Job is one unit of work.

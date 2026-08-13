@@ -56,6 +56,16 @@ func execute(ctx context.Context, reg *Registry, store *Store, job Job, log *slo
 		return h.Handle(ctx, job)
 	}()
 
+	// Cancelled mid-run (admin cancel via LocalProvider.Cancel, or shutdown): do
+	// NOT record a Complete/Fail that would clobber the terminal 'cancelled' status
+	// the admin path already stamped via Store.MarkCancelled — a Fail-with-retry
+	// would even flip the row back to 'queued' and re-run it. The store write is
+	// also on the cancelled ctx and would fail anyway; just stop, no notify.
+	if ctx.Err() != nil {
+		log.Info("jobs: run stopped by context cancellation", "kind", job.Kind, "id", job.ID)
+		return outcomeFailed
+	}
+
 	if err == nil {
 		if cerr := store.Complete(ctx, job.ID); cerr != nil {
 			log.Warn("jobs: complete failed", "id", job.ID, "err", cerr)

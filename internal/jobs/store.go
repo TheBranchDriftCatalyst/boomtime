@@ -138,6 +138,28 @@ func (s *Store) Fail(ctx context.Context, id int64, errMsg string, retryAt *time
 	return err
 }
 
+// MarkCancelled transitions a job to the terminal 'cancelled' status with a clear
+// error note, but ONLY from a non-terminal state ('queued' or 'running') — a job
+// that already reached done/failed/cancelled is left untouched. Returns whether a
+// row actually changed (i.e. the job was still queued or running).
+//
+// For a QUEUED job this alone stops it: ClaimNext filters on status = 'queued', so
+// a 'cancelled' row is never claimed / never runs. For a RUNNING job it stamps the
+// durable terminal status; the in-flight interruption is LocalProvider.Cancel(id),
+// which cancels the handler's context (cooperative — the handler must honor ctx).
+// Clearing locked_by/locked_at keeps the row's lock bookkeeping consistent with
+// the other terminal transitions.
+func (s *Store) MarkCancelled(ctx context.Context, id int64) (bool, error) {
+	tag, err := s.pool.Exec(ctx,
+		`UPDATE jobs SET status = 'cancelled', finished_at = now(),
+		        error = 'cancelled by admin', locked_by = '', locked_at = NULL
+		  WHERE id = $1 AND status IN ('queued','running')`, id)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
 // UpsertSchedule registers/updates a periodic schedule. On first insert the
 // next run is one interval out, so a restart doesn't fire the job immediately.
 func (s *Store) UpsertSchedule(ctx context.Context, kind string, interval time.Duration) error {
