@@ -51,6 +51,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/query"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -110,6 +111,19 @@ var validActiveDaysWindows = map[string]bool{
 
 var validOps = map[string]bool{">=": true, "<=": true, "==": true}
 
+// validTimeSources whitelists the optional `source` field on a `time` leaf.
+// The empty string is the implicit default and is treated as "coding" — an
+// unset source keeps the legacy hb_rollup_daily evaluation path BYTE-for-byte
+// untouched. "reading" evaluates total listening-seconds over the window via
+// the internal/query reading domain (reading_activity.listening_seconds). Any
+// other source is rejected at validate time, exactly like an unknown axis, so
+// an unsupported source never reaches the evaluator.
+var validTimeSources = map[string]bool{
+	"":        true, // default → coding
+	"coding":  true,
+	"reading": true,
+}
+
 // Predicate is the discriminated union representing one node of the
 // goal spec tree. The Kind field is the tag; only the fields relevant
 // to the kind are populated (others left zero). Marshals back out to
@@ -118,6 +132,11 @@ type Predicate struct {
 	Kind string `json:"kind"`
 
 	// time leaf
+	// Source selects which domain a time leaf measures. Empty (default) or
+	// "coding" → today's hb_rollup_daily attributed-seconds path (unchanged);
+	// "reading" → total listening-seconds via internal/query. omitempty keeps
+	// the wire shape of every existing coding goal identical.
+	Source        string  `json:"source,omitempty"`
 	Axis          string  `json:"axis,omitempty"`
 	Value         *string `json:"value,omitempty"`
 	Op            string  `json:"op,omitempty"`
@@ -172,8 +191,25 @@ func validateNode(p *Predicate, depth int) error {
 	}
 	switch p.Kind {
 	case "time":
-		if _, ok := validHeartbeatAxes[p.Axis]; !ok {
-			return fmt.Errorf("unknown axis %q on time predicate", p.Axis)
+		// Source gates which domain the leaf measures. Validate it in the
+		// whitelist first (an unknown source is rejected before persistence,
+		// same posture as an unknown axis).
+		if !validTimeSources[p.Source] {
+			return fmt.Errorf("unknown source %q on time predicate", p.Source)
+		}
+		switch p.Source {
+		case "", "coding":
+			// Coding leaf: axis MUST be one of the rollup axes (unchanged).
+			if _, ok := validHeartbeatAxes[p.Axis]; !ok {
+				return fmt.Errorf("unknown axis %q on time predicate", p.Axis)
+			}
+		case "reading":
+			// v1 measures TOTAL listening time — there is no per-book axis on
+			// reading_activity, so an axis filter is not supported. Reject a
+			// stray axis rather than silently ignoring it.
+			if p.Axis != "" {
+				return fmt.Errorf("reading time predicate does not support an axis filter in v1 (got axis %q)", p.Axis)
+			}
 		}
 		if !validTimeWindows[p.Window] {
 			return fmt.Errorf("unknown window %q on time predicate", p.Window)
@@ -234,6 +270,7 @@ func validateNode(p *Predicate, depth int) error {
 // progress + hit fields.
 type SubCondition struct {
 	Kind     string  `json:"kind"`
+	Source   string  `json:"source,omitempty"`
 	Axis     string  `json:"axis,omitempty"`
 	Value    *string `json:"value,omitempty"`
 	Op       string  `json:"op,omitempty"`
@@ -336,6 +373,12 @@ func windowRange(now time.Time, window string) (time.Time, time.Time) {
 // language). This mirrors how a hostage-taker composite might phrase
 // "1 hour on any language" via a language leaf with value=null.
 func (e *evaluator) evalTime(ctx context.Context, p *Predicate) (bool, float64, error) {
+	// A reading-source leaf measures total listening-seconds over the window
+	// via the internal/query reading domain — a wholly separate code path from
+	// the hb_rollup_daily coding query below, which is left untouched.
+	if p.Source == "reading" {
+		return e.evalTimeReading(ctx, p)
+	}
 	col, ok := validHeartbeatAxes[p.Axis]
 	if !ok {
 		return false, 0, fmt.Errorf("evalTime: unknown axis %q", p.Axis)
@@ -369,6 +412,36 @@ func (e *evaluator) evalTime(ctx context.Context, p *Predicate) (bool, float64, 
 	hit, prog := compareOp(p.Op, current, p.TargetSeconds)
 	e.subs = append(e.subs, SubCondition{
 		Kind: "time", Axis: p.Axis, Value: p.Value, Op: p.Op, Window: p.Window,
+		Current: current, Target: p.TargetSeconds, Progress: prog, Hit: hit,
+	})
+	return hit, prog, nil
+}
+
+// evalTimeReading is the source=="reading" arm of a time leaf. It sums the
+// owner's listening_seconds over the SAME window the coding path uses (so a
+// "week" reading goal and a "week" coding goal cover the identical date span),
+// delegating the SQL to the internal/query reading domain. No axis filter in
+// v1 — the leaf measures total listening time. The summed seconds are compared
+// to the target exactly like the coding path, and one SubCondition (tagged
+// source="reading") is emitted so the FE can render the detail row.
+func (e *evaluator) evalTimeReading(ctx context.Context, p *Predicate) (bool, float64, error) {
+	// Reuse windowRange so the reading window is byte-for-byte the coding
+	// window's date span; Between resolves to a half-open [start, end+1day)
+	// range in the query compiler, i.e. inclusive of the end day.
+	start, end := windowRange(e.now, p.Window)
+	q := query.Q("reading").
+		Measure("seconds").
+		Over(query.GranNone, query.Between(start, end)).
+		At(e.now)
+	res, err := query.Run(ctx, e.pool, e.owner, q)
+	if err != nil {
+		return false, 0, fmt.Errorf("evalTime reading query: %w", err)
+	}
+	// The reading "seconds" measure is an ungrouped sum → a scalar result.
+	current := int64(res.Scalar)
+	hit, prog := compareOp(p.Op, current, p.TargetSeconds)
+	e.subs = append(e.subs, SubCondition{
+		Kind: "time", Source: "reading", Op: p.Op, Window: p.Window,
 		Current: current, Target: p.TargetSeconds, Progress: prog, Hit: hit,
 	})
 	return hit, prog, nil

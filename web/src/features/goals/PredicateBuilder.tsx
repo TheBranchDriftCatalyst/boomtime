@@ -223,12 +223,29 @@ const OPS: GoalOp[] = [">=", "<=", "=="];
 // defaultLeaf returns a fresh "time" leaf — the least-surprising
 // starting point for a new goal or a new child predicate.
 export function defaultLeaf(): Predicate {
+  // No `source` field: an omitted source is the coding default on both sides
+  // (Go treats "" as coding), so the coding-goal wire shape is byte-for-byte
+  // what it has always been. Only readingLeaf sets an explicit source.
   return {
     kind: "time",
     axis: "language",
     value: null,
     op: ">=",
     target_seconds: 3600,
+    window: "week",
+  };
+}
+
+// readingLeaf returns a reading-source time leaf — the "Listening time
+// (Audible)" metric. Weekly period, 5-hour target (stored as seconds like
+// every time leaf). No axis: v1 sums TOTAL listening time. Mirrors the way
+// defaultLeaf seeds the coding-time goal.
+export function readingLeaf(): Predicate {
+  return {
+    kind: "time",
+    source: "reading",
+    op: ">=",
+    target_seconds: 5 * 3600, // 5 hours / week
     window: "week",
   };
 }
@@ -403,6 +420,11 @@ function TimeLeafEditor({
     target: `${idBase}-target`,
     window: `${idBase}-window`,
   };
+  // A reading-source leaf measures TOTAL listening time — it has no axis/value
+  // (the backend rejects an axis on a reading leaf). Render the source as a
+  // fixed label instead of the axis+value selectors, but share the op/target/
+  // window controls with the coding path so the two shapes stay consistent.
+  const isReading = node.source === "reading";
   return (
     <div className="rounded-md border bg-secondary/20 p-3">
       <div className="mb-2 flex items-center gap-2">
@@ -412,7 +434,9 @@ function TimeLeafEditor({
           disabledDeepen={!onConvertToGroup}
         />
         <span className="flex-1 text-xs text-muted-foreground">
-          Sum time on an axis over a window
+          {isReading
+            ? "Total listening time (Audible) over a window"
+            : "Sum time on an axis over a window"}
         </span>
         {onRemove && (
           <button
@@ -425,33 +449,47 @@ function TimeLeafEditor({
         )}
       </div>
       <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-        <div>
-          <Label htmlFor={id.axis} className="text-xs">Axis</Label>
-          <Select
-            value={node.axis}
-            onValueChange={(v: string) => onChange({ ...node, axis: v as GoalHeartbeatAxis })}
-          >
-            <SelectTrigger id={id.axis} className="h-8">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {AXES.map((a) => (
-                <SelectItem key={a} value={a}>
-                  {a}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label htmlFor={id.value} className="text-xs">Value (blank = any)</Label>
-          <AxisValueInput
-            id={id.value}
-            axis={node.axis}
-            value={node.value ?? ""}
-            onChange={(v) => onChange({ ...node, value: v === "" ? null : v })}
-          />
-        </div>
+        {isReading ? (
+          <div className="col-span-2">
+            <Label className="text-xs">Metric</Label>
+            <div
+              data-testid="reading-metric-label"
+              className="flex h-8 items-center rounded-md border border-input bg-background px-3 text-sm text-muted-foreground"
+            >
+              Listening time (Audible)
+            </div>
+          </div>
+        ) : (
+          <>
+            <div>
+              <Label htmlFor={id.axis} className="text-xs">Axis</Label>
+              <Select
+                value={node.axis ?? "language"}
+                onValueChange={(v: string) => onChange({ ...node, axis: v as GoalHeartbeatAxis })}
+              >
+                <SelectTrigger id={id.axis} className="h-8">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {AXES.map((a) => (
+                    <SelectItem key={a} value={a}>
+                      {a}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor={id.value} className="text-xs">Value (blank = any)</Label>
+              <AxisValueInput
+                id={id.value}
+                axis={node.axis ?? "language"}
+                value={node.value ?? ""}
+                onChange={(v) => onChange({ ...node, value: v === "" ? null : v })}
+              />
+            </div>
+          </>
+        )}
         <div>
           <Label htmlFor={id.op} className="text-xs">Op</Label>
           <Select

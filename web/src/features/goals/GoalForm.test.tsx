@@ -72,6 +72,35 @@ describe("GoalForm Public toggle (Part B Stage 4)", () => {
     expect(captured!.public).toBe(true);
   });
 
+  it("create: 'Listening time (Audible)' metric submits a reading-source weekly spec with no axis", async () => {
+    let captured: Record<string, unknown> | undefined;
+    server.use(
+      http.post("/api/v1/users/current/goals", async ({ request }) => {
+        captured = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ goal: makeGoal({ id: "new-3" }) });
+      }),
+    );
+
+    renderWithProviders(<GoalForm open onOpenChange={() => {}} editing={null} />);
+
+    await userEvent.type(screen.getByLabelText("Name"), "Listen 5h/week");
+    await userEvent.click(screen.getByTestId("metric-listening"));
+    // The reading leaf renders a fixed metric label instead of an axis picker.
+    expect(screen.getByTestId("reading-metric-label")).toHaveTextContent(
+      "Listening time (Audible)",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Create goal" }));
+
+    await waitFor(() => expect(captured).toBeDefined());
+    const spec = captured!.spec as Record<string, unknown>;
+    expect(spec.kind).toBe("time");
+    expect(spec.source).toBe("reading");
+    expect(spec.window).toBe("week");
+    expect(spec.target_seconds).toBe(5 * 3600);
+    // v1 reading goals carry NO axis (backend rejects one).
+    expect(spec.axis).toBeUndefined();
+  });
+
   it("edit: the switch is pre-filled from editing.public — flipping it off sends public:false on save", async () => {
     let captured: Record<string, unknown> | undefined;
     server.use(

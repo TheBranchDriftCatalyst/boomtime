@@ -29,6 +29,7 @@ import { Switch } from "@thebranchdriftcatalyst/catalyst-ui/ui/switch";
 import {
   PredicateBuilder,
   defaultLeaf,
+  readingLeaf,
 } from "@/features/goals/PredicateBuilder";
 import { useGoalMutations } from "@/features/goals/useGoals";
 import { ApiError } from "@/lib/api";
@@ -144,6 +145,39 @@ export function GoalForm({ open, onOpenChange, editing }: GoalFormProps) {
               />
             </div>
           </div>
+
+          {/*
+            Metric quick-start (create mode only): seed the whole spec from a
+            template. "Coding time" mirrors the original default leaf;
+            "Listening time (Audible)" seeds a reading-source weekly goal with
+            an hours target. Hidden in edit mode so it can't clobber an
+            existing tree the author is refining.
+          */}
+          {!editing && (
+            <div>
+              <Label className="text-xs text-muted-foreground">Start from a metric</Label>
+              <div className="mt-1 flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  data-testid="metric-coding"
+                  onClick={() => setSpec(defaultLeaf())}
+                >
+                  Coding time
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  data-testid="metric-listening"
+                  onClick={() => setSpec(readingLeaf())}
+                >
+                  Listening time (Audible)
+                </Button>
+              </div>
+            </div>
+          )}
 
           <div>
             <Label>Predicate</Label>

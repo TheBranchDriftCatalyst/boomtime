@@ -23,6 +23,12 @@ export type GoalTimeWindow = "day" | "week" | "month" | "year" | "lifetime";
 export type GoalActiveDaysWindow = "week" | "month" | "year";
 export type GoalOp = ">=" | "<=" | "==";
 
+// Which domain a `time` leaf measures. Mirrors validTimeSources in
+// internal/goals/eval.go. Undefined/"coding" → attributed coding seconds from
+// hb_rollup_daily (the legacy path, axis-filtered). "reading" → total
+// listening-seconds from reading_activity over the window (no axis in v1).
+export type GoalTimeSource = "coding" | "reading";
+
 // One node of the predicate tree. Discriminated by `kind`. Each
 // variant carries only the fields relevant to it — `omitempty` on
 // the Go side means unused fields don't reach the wire, and TS's
@@ -32,8 +38,13 @@ export type GoalOp = ">=" | "<=" | "==";
 export type Predicate =
   | {
       kind: "time";
-      axis: GoalHeartbeatAxis;
-      value: string | null;
+      // Domain the leaf measures. Omitted = "coding" (the legacy default).
+      // A "reading" leaf carries NO axis/value — it sums total listening time.
+      source?: GoalTimeSource;
+      // axis/value are the coding-path attribution filter. Optional so a
+      // reading leaf (which has neither) is representable in the same variant.
+      axis?: GoalHeartbeatAxis;
+      value?: string | null;
       op: GoalOp;
       target_seconds: number;
       window: GoalTimeWindow;
@@ -87,6 +98,9 @@ export interface Goal {
 // active_days) surface as SubConditions.
 export interface GoalSubCondition {
   kind: "time" | "active_days" | "streak";
+  // Present on reading-source time sub-conditions ("reading"); omitted on the
+  // coding path. Mirrors SubCondition.Source in internal/goals/eval.go.
+  source?: GoalTimeSource;
   axis?: GoalHeartbeatAxis;
   value?: string | null;
   op?: GoalOp;
