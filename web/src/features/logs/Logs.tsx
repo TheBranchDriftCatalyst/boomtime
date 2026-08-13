@@ -4,6 +4,7 @@ import { PageToolbar } from "@thebranchdriftcatalyst/catalyst-ui/components/Page
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { LogViewer, type LogViewerLine } from "@thebranchdriftcatalyst/catalyst-ui/components/LogViewer";
 import { useLogsSocket, type SocketStatus } from "@/features/logs/useLogsSocket";
+import { toLogViewerLine } from "@/features/logs/logLine";
 import { cn } from "@/lib/utils";
 
 // Level filter options (ordered by severity). "all" shows everything.
@@ -52,16 +53,11 @@ export function Logs({ embedded = false }: { embedded?: boolean }) {
         (filter === "all" || normalizeLevel(l.level) === filter) &&
         (sourceFilter === "all" || l.source === sourceFilter),
     );
-    return matching.map((l) => ({
-      id: l.id,
-      ts: l.time,
-      level: l.level,
-      message: l.msg,
-      // Fold source (+ host, when present) into the attrs LogViewer already
-      // renders dim after the message — same treatment the "user" owner tag
-      // gets elsewhere, no LogViewer changes needed to surface it per line.
-      attrs: { ...(l.attrs ?? {}), source: l.source, ...(l.host ? { host: l.host } : {}) },
-    }));
+    // Shared mapping with the per-job panel: folds source (+ host) into the
+    // dim attrs tail. We keep every attr here — including `job_id` — so a
+    // job-tagged line surfaces its id inline in the full viewer (gaka-f0is);
+    // the per-job panel omits job_id/kind/owner since its header implies them.
+    return matching.map((l) => toLogViewerLine(l));
   }, [logs, filter, sourceFilter]);
 
   const st = statusStyles[status];

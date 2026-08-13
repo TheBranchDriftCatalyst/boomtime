@@ -37,6 +37,13 @@ import {
   SelectValue,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/select";
 import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@thebranchdriftcatalyst/catalyst-ui/ui/sheet";
+import {
   Table,
   TableBody,
   TableCell,
@@ -45,6 +52,7 @@ import {
   TableRow,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/table";
 import { EmptyState } from "@/components/EmptyState";
+import { JobLogStream } from "@/features/logs/JobLogStream";
 import { api, ApiError } from "@/lib/api";
 import { usePublicConfig } from "@/lib/usePublicConfig";
 import { qk } from "@/lib/queryKeys";
@@ -313,12 +321,14 @@ function SchedulesPanel() {
 
 function JobRow({
   job,
+  onSelect,
   onRetry,
   retrying,
   onCancel,
   cancelling,
 }: {
   job: AdminJob;
+  onSelect: () => void;
   onRetry: () => void;
   retrying: boolean;
   onCancel: () => void;
@@ -327,8 +337,13 @@ function JobRow({
   // A job is cancellable while it is still pending (queued) or in flight
   // (running); terminal rows (done/failed/cancelled) only offer Retry on failure.
   const cancellable = job.status === "running" || job.status === "queued";
+  // Clicking anywhere on the row opens the per-job log side panel. The Retry /
+  // Cancel buttons stopPropagation so they act without also opening the panel.
   return (
-    <TableRow>
+    <TableRow
+      onClick={onSelect}
+      className="cursor-pointer transition-colors hover:bg-muted/40"
+      title={`View logs for job #${job.id}`}>
       <TableCell className="font-mono text-xs text-muted-foreground">
         {job.id}
       </TableCell>
@@ -366,7 +381,10 @@ function JobRow({
           <Button
             variant="outline"
             size="sm"
-            onClick={onRetry}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRetry();
+            }}
             disabled={retrying}
             title={`Re-enqueue job #${job.id}`}
           >
@@ -378,7 +396,10 @@ function JobRow({
           <Button
             variant="outline"
             size="sm"
-            onClick={onCancel}
+            onClick={(e) => {
+              e.stopPropagation();
+              onCancel();
+            }}
             disabled={cancelling}
             title={`Cancel job #${job.id}`}
           >
@@ -402,6 +423,8 @@ function JobsPanel({
 }) {
   const qc = useQueryClient();
   const trimmedKind = kind.trim();
+  // The row whose log panel is open (null = panel closed).
+  const [selected, setSelected] = useState<AdminJob | null>(null);
   const { data: jobs, isLoading, isError } = useQuery({
     queryKey: qk.adminJobs(status, trimmedKind, 100),
     queryFn: () =>
@@ -491,6 +514,7 @@ function JobsPanel({
                   <JobRow
                     key={job.id}
                     job={job}
+                    onSelect={() => setSelected(job)}
                     retrying={retry.isPending && retry.variables === job.id}
                     onRetry={() => retry.mutate(job.id)}
                     cancelling={cancel.isPending && cancel.variables === job.id}
@@ -502,7 +526,67 @@ function JobsPanel({
           </Table>
         </div>
       </CardContent>
+      <JobDetailSheet
+        job={selected}
+        onOpenChange={(open) => !open && setSelected(null)}
+      />
     </Card>
+  );
+}
+
+// ── per-job log side panel ──────────────────────────────────────────────────
+
+// A right-side drawer streaming one job's logs. Its header restates the job's
+// identity (kind, #id, status, attempts, duration, error), and the body reuses
+// the shared server log stream filtered to this job's id (attrs.job_id). The
+// job stays live: a running job's lines appear as the worker emits them.
+function JobDetailSheet({
+  job,
+  onOpenChange,
+}: {
+  job: AdminJob | null;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Sheet open={!!job} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="right"
+        className="flex w-full flex-col gap-0 sm:max-w-2xl"
+      >
+        {job && (
+          <>
+            <SheetHeader className="space-y-2 pr-8 text-left">
+              <SheetTitle className="flex flex-wrap items-center gap-2 font-mono text-sm">
+                <span className="font-semibold">{job.kind}</span>
+                <span className="text-xs text-muted-foreground">#{job.id}</span>
+                <StatusBadge status={job.status} />
+              </SheetTitle>
+              <SheetDescription asChild>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  <span className="tabular-nums">
+                    attempts {job.attempts}/{job.maxAttempts}
+                  </span>
+                  <span className="tabular-nums">
+                    duration {jobDuration(job.startedAt, job.finishedAt)}
+                  </span>
+                  <span title={new Date(job.createdAt).toLocaleString()}>
+                    created {relativeTime(job.createdAt)}
+                  </span>
+                </div>
+              </SheetDescription>
+              {job.status === "failed" && job.error && (
+                <p className="rounded border border-destructive/40 bg-destructive/10 px-2 py-1 font-mono text-xs text-destructive">
+                  {job.error}
+                </p>
+              )}
+            </SheetHeader>
+            <div className="mt-4 min-h-0 flex-1">
+              <JobLogStream jobId={job.id} />
+            </div>
+          </>
+        )}
+      </SheetContent>
+    </Sheet>
   );
 }
 
