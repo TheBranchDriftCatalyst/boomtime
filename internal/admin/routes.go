@@ -111,6 +111,11 @@ func Register(e *echo.Echo, h *Handler) {
 		e.POST("/api/v1/admin/jobs/trigger", h.AdminJobTrigger, jobsCap)
 		e.POST("/api/v1/admin/jobs/:id/retry", h.AdminJobRetry, jobsCap)
 		e.POST("/api/v1/admin/jobs/:id/cancel", h.AdminJobCancel, jobsCap)
+		// Persisted per-job log stream (gaka-hney): GET serves the durable copy of
+		// a finished job's logs from object storage (404 when none stored); DELETE
+		// wipes ONLY that stored object, leaving the jobs-table row intact.
+		e.GET("/api/v1/admin/jobs/:id/logs", h.AdminJobLogs, jobsCap)
+		e.DELETE("/api/v1/admin/jobs/:id/logs", h.AdminJobLogsDelete, jobsCap)
 	}
 
 	// gaka-metrics: generic in-memory rate-metric registry snapshot (router

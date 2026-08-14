@@ -29,6 +29,9 @@ type LocalProvider struct {
 	// cap are excluded from ClaimNext (stay durably queued) and a slot is
 	// Acquired around each run. nil = no throttling (every kind unbounded).
 	limiter KindLimiter
+	// logCapture persists each job's log stream to object storage on completion
+	// (gaka-hney). nil = persistence off (no S3 configured).
+	logCapture *LogCapture
 
 	// cancelMu guards cancels: the per-job CancelFunc of every job CURRENTLY
 	// executing on this provider, keyed by job id (admin-cancel support). A job's
@@ -46,6 +49,9 @@ func (p *LocalProvider) SetKindFilter(include, exclude []string) {
 
 // SetLimiter wires the per-kind concurrency throttle. nil = unbounded.
 func (p *LocalProvider) SetLimiter(l KindLimiter) { p.limiter = l }
+
+// SetLogCapture wires durable per-job log persistence (gaka-hney). nil = off.
+func (p *LocalProvider) SetLogCapture(lc *LogCapture) { p.logCapture = lc }
 
 // claimExclude merges the static exclude list with the kinds the limiter reports
 // as currently AT their concurrency cap, so ClaimNext skips saturated kinds and
@@ -123,7 +129,7 @@ func (p *LocalProvider) execTracked(ctx context.Context, reg *Registry, job Job)
 		p.cancelMu.Unlock()
 		cancel() // release the context (no-op if Cancel already fired)
 	}()
-	execute(jobCtx, reg, p.store, job, p.log, p.notifier)
+	execute(jobCtx, reg, p.store, job, p.log, p.notifier, p.logCapture)
 }
 
 // Cancel signals the in-process context of a job currently executing on THIS

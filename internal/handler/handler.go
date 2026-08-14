@@ -34,6 +34,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/meta"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/notify"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/objstore"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/queryapi"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/imagejobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/spaces"
@@ -188,6 +189,15 @@ func (h *Handler) SetJobs(store *jobs.Store, enq jobs.Enqueuer, reg *jobs.Regist
 	}
 	if h.Identity != nil {
 		h.Identity.SetJobEnqueuer(enq) // gaka-hney.7: avatar-render enqueue
+	}
+}
+
+// SetJobLogStore propagates the object store the per-job log endpoints read +
+// delete a finished job's persisted logs from (gaka-hney) to h.Admin. Nil = S3
+// not configured; the endpoints degrade to 404 / no-op.
+func (h *Handler) SetJobLogStore(s objstore.Store) {
+	if h.Admin != nil {
+		h.Admin.SetJobLogStore(s)
 	}
 }
 

@@ -35,6 +35,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/objstore"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/imagejobs"
 	labelimages "github.com/TheBranchDriftCatalyst/boomtime/internal/worker/labelimages"
 )
@@ -83,6 +84,11 @@ type Handler struct {
 	// jobs-table aggregates so at-cap back-pressure is visible and idle-but-known
 	// kinds still show. Nil = not wired (overview omits caps / registered kinds).
 	JobRegistry *jobs.Registry
+	// JobLogStore is the object store the GET/DELETE .../logs endpoints read +
+	// delete a FINISHED job's persisted log stream from (gaka-hney). Nil = S3 not
+	// configured; GET returns 404 (no stored logs) and DELETE is a no-op. Set
+	// after construction via SetJobLogStore.
+	JobLogStore objstore.Store
 }
 
 // New constructs an admin.Handler with the passed-in shared deps.
@@ -138,6 +144,12 @@ func (h *Handler) SetJobs(store *jobs.Store, enq jobs.Enqueuer, reg *jobs.Regist
 	h.JobEnqueuer = enq
 	h.JobRegistry = reg
 }
+
+// SetJobLogStore wires the object store the per-job log endpoints read + delete
+// from (gaka-hney). Nil = S3 not configured (GET .../logs 404s, DELETE no-ops).
+// Only assign a non-nil concrete store here — a typed-nil would defeat the
+// nil-check in the handlers.
+func (h *Handler) SetJobLogStore(s objstore.Store) { h.JobLogStore = s }
 
 // requireAdmin: 401 without a token, 403 when not on the admin allowlist.
 // Returns the resolved owner on success. Mirror of the same method on

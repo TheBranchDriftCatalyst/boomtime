@@ -64,6 +64,7 @@ import type {
   AdminJob,
   AdminJobSchedule,
   AdminJobQueue,
+  ServerLogEntry,
   MetricFamily,
   IdentitiesPayload,
   GithubConnection,
@@ -1132,6 +1133,29 @@ export const api = {
       `/api/v1/admin/jobs/${id}/cancel`,
       { method: "POST" },
     ),
+
+  // Persisted per-job log stream (gaka-hney). A FINISHED job's live LogHub lines
+  // are gone once the in-memory ring rolls over; these are the durable copy
+  // flushed to object storage on completion. A 404 (nothing stored — job never
+  // captured, logs deleted, or S3 off) resolves to [] so the viewer shows its
+  // empty state rather than erroring.
+  getJobLogs: async (id: number): Promise<ServerLogEntry[]> => {
+    try {
+      return await unwrap<ServerLogEntry[]>(
+        `/api/v1/admin/jobs/${id}/logs`,
+        "entries",
+        [],
+      );
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return [];
+      throw e;
+    }
+  },
+  // Delete ONLY the stored log object for a job — the jobs-table row is kept.
+  deleteJobLogs: (id: number) =>
+    request<{ deleted: boolean }>(`/api/v1/admin/jobs/${id}/logs`, {
+      method: "DELETE",
+    }),
 
   // --- Admin CLI-runner (BOOM_FEATURE_ADMIN_CLI) -----------------------------
   // All three 404 when the backend feature flag is off (routes not

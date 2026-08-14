@@ -285,6 +285,10 @@ type Config struct {
 	S3AccessKey string
 	S3SecretKey string
 	S3UseSSL    bool // TLS to the S3 endpoint (in-cluster MinIO: false)
+	// S3Region is the bucket region (BOOM_S3_REGION, default us-east-1). MinIO
+	// ignores it, but the AWS SigV4 signer wants a non-empty value. Shared by the
+	// social-card cache (gaka-fym5) and the durable job-log store (gaka-hney).
+	S3Region string
 
 	// catalyst-go-jobs (gaka-hney): the job provider + the periodic github-stats
 	// refresh cadence.
@@ -522,6 +526,7 @@ func Load() *Config {
 	c.S3AccessKey = getEnv("BOOM_S3_ACCESS_KEY", "")
 	c.S3SecretKey = getEnv("BOOM_S3_SECRET_KEY", "")
 	c.S3UseSSL = strings.EqualFold(getEnv("BOOM_S3_USE_SSL", "false"), "true")
+	c.S3Region = getEnv("BOOM_S3_REGION", "us-east-1")
 
 	// catalyst-go-jobs (gaka-hney).
 	c.JobsProvider = getEnv("BOOM_JOBS_PROVIDER", "local")

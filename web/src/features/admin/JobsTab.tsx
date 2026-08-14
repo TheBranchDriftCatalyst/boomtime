@@ -773,7 +773,7 @@ function JobDetailSheet({
               )}
             </SheetHeader>
             <div className="mt-4 min-h-0 flex-1">
-              <JobLogStream jobId={job.id} />
+              <JobLogStream jobId={job.id} status={job.status} />
             </div>
           </>
         )}

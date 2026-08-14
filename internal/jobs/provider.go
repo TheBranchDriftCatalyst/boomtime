@@ -49,6 +49,9 @@ type Provider interface {
 	// SetLimiter wires the job-layer concurrency throttle (fleet-wide per-kind
 	// caps). nil disables throttling — every kind runs unbounded.
 	SetLimiter(KindLimiter)
+	// SetLogCapture wires durable per-job log persistence to object storage
+	// (gaka-hney). nil disables it — logs live only in the in-memory LogHub.
+	SetLogCapture(*LogCapture)
 }
 
 // EnqueueOption tunes a single enqueue.

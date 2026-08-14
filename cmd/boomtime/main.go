@@ -36,6 +36,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/notify"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/objstore"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/imagejobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/server"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
@@ -846,6 +847,23 @@ func runCmd() *cobra.Command {
 				// owning user's browser.
 				jobHub := jobsevents.NewHub()
 				provider.SetNotifier(jobHub)
+
+				// Durable per-job log persistence (gaka-hney): flush each FINISHED
+				// job's log stream to object storage so the Admin Jobs viewer can
+				// still show a completed job's logs after the in-memory LogHub ring
+				// rolls over. objstore.New returns nil when S3 is unconfigured, so
+				// this NO-OPS cleanly on local dev (logs live only in the ring, as
+				// before). Wired on whichever pod runs the job (server or worker),
+				// and the admin GET/DELETE endpoints read the same shared bucket.
+				if objStore, oerr := objstore.New(cfg); oerr != nil {
+					return fmt.Errorf("jobs log store: %w", oerr)
+				} else if objStore != nil {
+					provider.SetLogCapture(jobs.NewLogCapture(logHub, jobs.NewObjLogSink(objStore, logger)))
+					if h != nil {
+						h.SetJobLogStore(objStore) // GET/DELETE /api/v1/admin/jobs/:id/logs
+					}
+					logger.Info("jobs: log persistence enabled", "bucket", cfg.S3Bucket)
+				}
 
 				// Wire the enqueuer onto the audiobooks service NOW that `provider`
 				// exists (it implements jobs.Enqueuer): finished-book detection then

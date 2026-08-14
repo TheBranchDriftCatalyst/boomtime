@@ -214,6 +214,9 @@ export const qk = {
   // gaka-hney: per-kind queue overview. Under the shared ["admin","jobs"]
   // prefix so a trigger/retry invalidation refreshes the queue cards too.
   adminJobQueues: () => ["admin", "jobs", "queues"] as const,
+  // gaka-hney: a finished job's persisted (S3-backed) log stream. Under the
+  // shared ["admin","jobs"] prefix so trigger/retry invalidations sweep it too.
+  adminJobLogs: (id: number) => ["admin", "jobs", "logs", id] as const,
 
   // gaka-metrics: the rate-metric registry snapshot for the admin Metrics tab.
   // Polled on a short interval; no filters (the FE groups client-side).

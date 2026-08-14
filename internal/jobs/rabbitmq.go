@@ -28,6 +28,8 @@ type AMQPProvider struct {
 	// limiter is the job-layer concurrency throttle (fleet-wide per-kind caps).
 	// nil = unbounded. See handle() for the acquire/release + NACK-requeue path.
 	limiter KindLimiter
+	// logCapture persists each job's log stream on completion (gaka-hney). nil = off.
+	logCapture *LogCapture
 }
 
 // SetNotifier implements Provider.
@@ -35,6 +37,9 @@ func (p *AMQPProvider) SetNotifier(n Notifier) { p.notifier = n }
 
 // SetLimiter implements Provider. nil = unbounded.
 func (p *AMQPProvider) SetLimiter(l KindLimiter) { p.limiter = l }
+
+// SetLogCapture implements Provider. nil = off.
+func (p *AMQPProvider) SetLogCapture(lc *LogCapture) { p.logCapture = lc }
 
 // NewAMQPProvider declares the durable jobs queue on ch and returns the provider.
 func NewAMQPProvider(ch *amqp.Channel, queue string, store *Store, log *slog.Logger, workerID string, prefetch int) (*AMQPProvider, error) {
@@ -150,7 +155,7 @@ func (p *AMQPProvider) handle(ctx context.Context, reg *Registry, d amqp.Deliver
 		}
 	}
 
-	oc := execute(ctx, reg, p.store, *job, p.log, p.notifier)
+	oc := execute(ctx, reg, p.store, *job, p.log, p.notifier, p.logCapture)
 	if release != nil {
 		metrics.JobLimiterInflight.WithLabelValues(job.Kind).Dec()
 		release()

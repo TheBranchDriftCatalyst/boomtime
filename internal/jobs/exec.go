@@ -35,7 +35,13 @@ func retryDelay(attempt int) time.Duration {
 // terminal semantics are identical regardless of transport. The returned
 // outcome lets a push-based provider (AMQP) re-deliver a retry. On a TERMINAL
 // outcome (done/failed) it fires n.Notify (gaka-hney.6) so the FE can toast.
-func execute(ctx context.Context, reg *Registry, store *Store, job Job, log *slog.Logger, n Notifier) outcome {
+func execute(ctx context.Context, reg *Registry, store *Store, job Job, log *slog.Logger, n Notifier, capture *LogCapture) outcome {
+	// Durable log capture (gaka-hney): subscribe to the LogHub BEFORE the first
+	// line so a long job's early lines are caught, and flush this job's entries to
+	// object storage on return (the deferred finish runs AFTER the terminal
+	// done/failed line below, so it's included). No-op when capture is nil.
+	defer capture.begin(job.ID)()
+
 	// Job-scoped logger: EVERY lifecycle line (and, once handlers pull it from
 	// ctx, every handler line) carries job_id/kind/owner as structured attrs, so
 	// the Admin log viewer can filter the stream down to a single job's run

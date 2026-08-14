@@ -6,6 +6,7 @@
 package admin
 
 import (
+	"errors"
 	"net/http"
 	"sort"
 	"strconv"
@@ -16,6 +17,8 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/objstore"
 )
 
 type jobDTO struct {
@@ -305,4 +308,72 @@ func (h *Handler) AdminJobCancel(c *echo.Context) error {
 	h.Logger.Info("admin jobs cancel", "actor", owner, "id", id, "kind", job.Kind,
 		"cancelled", cancelled, "wasRunning", wasRunning)
 	return c.JSON(http.StatusOK, map[string]any{"cancelled": cancelled, "wasRunning": wasRunning})
+}
+
+// jobLogEntryDTO mirrors logging.LogEntry for the stored-logs response. It's the
+// SAME shape the live LogHub stream (/api/v1/logs) serializes, so the FE renders
+// stored + live lines through one mapping (web/src/features/logs/logLine.ts).
+type jobLogEntryDTO = logging.LogEntry
+
+// AdminJobLogs: GET /api/v1/admin/jobs/:id/logs — the persisted log stream for a
+// FINISHED job (gaka-hney). A running/queued job streams live from the LogHub
+// (the FE keeps that path); this endpoint serves the durable copy flushed to
+// object storage on completion, so logs survive the in-memory ring rolling over.
+// 404 when nothing is stored (job never captured, logs deleted, or S3 off) — the
+// FE falls back to its empty state. Reads object storage ONLY; never the jobs
+// table.
+func (h *Handler) AdminJobLogs(c *echo.Context) error {
+	if _, aerr := h.requireAdmin(c); aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
+	}
+	id, perr := strconv.ParseInt(c.Param("id"), 10, 64)
+	if perr != nil {
+		return apihelpers.RespondErr(c, apierr.BadRequest("bad job id"))
+	}
+	if h.JobLogStore == nil {
+		// Persistence is off (no S3). Treat as "no stored logs" so the FE shows
+		// its empty state rather than an error.
+		return apihelpers.RespondErr(c, apierr.NotFound("no stored logs for this job"))
+	}
+	rc, err := h.JobLogStore.Get(c.Request().Context(), jobs.JobLogKey(id))
+	if err != nil {
+		if errors.Is(err, objstore.ErrNotFound) {
+			return apihelpers.RespondErr(c, apierr.NotFound("no stored logs for this job"))
+		}
+		return apihelpers.InternalErr(h.Logger, c, "job logs read failed", err)
+	}
+	defer rc.Close()
+	entries, err := jobs.ReadJobLogs(rc)
+	if err != nil {
+		return apihelpers.InternalErr(h.Logger, c, "job logs decode failed", err)
+	}
+	// Never emit null for an empty stored blob — the FE expects an array.
+	if entries == nil {
+		entries = []jobLogEntryDTO{}
+	}
+	return c.JSON(http.StatusOK, map[string]any{"entries": entries})
+}
+
+// AdminJobLogsDelete: DELETE /api/v1/admin/jobs/:id/logs — wipe ONLY the stored
+// log object for a job (gaka-hney). The jobs table row is deliberately left
+// untouched: this clears the log panel's stored view, not the job's history. A
+// missing object is not an error (idempotent). No-op success when S3 is off.
+func (h *Handler) AdminJobLogsDelete(c *echo.Context) error {
+	owner, aerr := h.requireAdmin(c)
+	if aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
+	}
+	id, perr := strconv.ParseInt(c.Param("id"), 10, 64)
+	if perr != nil {
+		return apihelpers.RespondErr(c, apierr.BadRequest("bad job id"))
+	}
+	if h.JobLogStore == nil {
+		// Nothing persisted anywhere — report a clean no-op rather than erroring.
+		return c.JSON(http.StatusOK, map[string]any{"deleted": false})
+	}
+	if err := h.JobLogStore.Delete(c.Request().Context(), jobs.JobLogKey(id)); err != nil {
+		return apihelpers.InternalErr(h.Logger, c, "job logs delete failed", err)
+	}
+	h.Logger.Info("admin jobs logs delete", "actor", owner, "id", id)
+	return c.JSON(http.StatusOK, map[string]any{"deleted": true})
 }
