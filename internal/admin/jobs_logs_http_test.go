@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -32,6 +33,8 @@ type stubObjStore struct {
 	getErr     error
 	deleteKeys []string
 	deleteErr  error
+	listKeys   []string // returned by List (the bulk-clear enumeration)
+	listErr    error
 }
 
 func (s *stubObjStore) Put(context.Context, string, io.Reader, int64, string) error { return nil }
@@ -49,6 +52,13 @@ func (s *stubObjStore) Delete(_ context.Context, key string) error {
 }
 
 func (s *stubObjStore) Exists(context.Context, string) (bool, error) { return false, nil }
+
+func (s *stubObjStore) List(_ context.Context, _ string) ([]string, error) {
+	if s.listErr != nil {
+		return nil, s.listErr
+	}
+	return s.listKeys, nil
+}
 
 func jobLogsRouter(hz *testutil.Harness) *echo.Echo {
 	e := echo.New()
@@ -159,5 +169,103 @@ var _ = Describe("Admin job logs: DELETE", func() {
 		rec := doJSONReqG(e, http.MethodDelete, "/api/v1/admin/jobs/42/logs", nonAdminToken, nil)
 		Expect(rec).To(testutil.HaveStatus(http.StatusForbidden))
 		Expect(stub.deleteKeys).To(BeEmpty(), "gate must fire before any store delete")
+	})
+})
+
+// DELETE /api/v1/admin/jobs/logs[?kind=] — the bulk log-clear (gaka-hney). It
+// enumerates the stored log objects (objstore List) and deletes them; a ?kind=
+// filter reads the jobs table for that kind's ids to keep only matching keys.
+// Object storage only — jobs-table rows are never mutated.
+var _ = Describe("Admin job logs: bulk clear (DELETE /jobs/logs)", func() {
+	It("clears ALL stored logs (every listed key) when no kind is given", func() {
+		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenDB(GinkgoT()))
+		_, token := makeAdmin(hz, "joblogs_clear_all")
+		stub := &stubObjStore{listKeys: []string{jobs.JobLogKey(1), jobs.JobLogKey(5), jobs.JobLogKey(9)}}
+		hz.H.Admin.SetJobLogStore(stub)
+		// JobStore left nil: the unfiltered clear must not need — nor touch — it.
+
+		e := jobLogsRouter(hz)
+		rec := doJSONReqG(e, http.MethodDelete, "/api/v1/admin/jobs/logs", token, nil)
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
+		Expect(rec.Body.String()).To(ContainSubstring(`"deleted":3`))
+		Expect(stub.deleteKeys).To(Equal([]string{jobs.JobLogKey(1), jobs.JobLogKey(5), jobs.JobLogKey(9)}))
+	})
+
+	It("clears only the given kind's stored logs and leaves the jobs rows intact", func() {
+		database := testutil.OpenDB(GinkgoT())
+		hz := testutil.NewHarnessWithDB(GinkgoT(), database)
+		admUser, token := makeAdmin(hz, "joblogs_clear_kind")
+
+		// A real jobs store with two kinds seeded — the kind filter resolves ids
+		// through it (a READ). The minted admin's (unique) username suffixes the
+		// kind names, keeping the shared test DB isolated across runs.
+		ctx := context.Background()
+		js := jobs.NewStore(database.Pool)
+		hz.H.Admin.JobStore = js
+		kindA := "clearkind-A-" + admUser
+		kindB := "clearkind-B-" + admUser
+		a1, err := js.Enqueue(ctx, kindA, "", nil, 1, time.Time{})
+		Expect(err).NotTo(HaveOccurred())
+		a2, err := js.Enqueue(ctx, kindA, "", nil, 1, time.Time{})
+		Expect(err).NotTo(HaveOccurred())
+		b1, err := js.Enqueue(ctx, kindB, "", nil, 1, time.Time{})
+		Expect(err).NotTo(HaveOccurred())
+
+		// The store lists log objects for ALL three ids; only kindA's two survive
+		// the filter.
+		stub := &stubObjStore{listKeys: []string{jobs.JobLogKey(a1), jobs.JobLogKey(a2), jobs.JobLogKey(b1)}}
+		hz.H.Admin.SetJobLogStore(stub)
+
+		e := jobLogsRouter(hz)
+		rec := doJSONReqG(e, http.MethodDelete, "/api/v1/admin/jobs/logs?kind="+kindA, token, nil)
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
+		Expect(rec.Body.String()).To(ContainSubstring(`"deleted":2`))
+		Expect(stub.deleteKeys).To(ConsistOf(jobs.JobLogKey(a1), jobs.JobLogKey(a2)))
+		Expect(stub.deleteKeys).NotTo(ContainElement(jobs.JobLogKey(b1)))
+
+		// The jobs rows themselves are untouched — clearing logs is not a purge.
+		var remaining int
+		Expect(database.Pool.QueryRow(ctx,
+			`SELECT count(*) FROM jobs WHERE kind = ANY($1)`, []string{kindA, kindB},
+		).Scan(&remaining)).To(Succeed())
+		Expect(remaining).To(Equal(3), "no jobs rows may be deleted by a log-clear")
+	})
+
+	It("is a clean no-op (deleted:0) when persistence is off", func() {
+		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenDB(GinkgoT()))
+		_, token := makeAdmin(hz, "joblogs_clear_nostore")
+
+		e := jobLogsRouter(hz)
+		rec := doJSONReqG(e, http.MethodDelete, "/api/v1/admin/jobs/logs", token, nil)
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
+		Expect(rec.Body.String()).To(ContainSubstring(`"deleted":0`))
+	})
+
+	It("no-ops (deleted:0) for a kind filter when the jobs subsystem is off", func() {
+		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenDB(GinkgoT()))
+		_, token := makeAdmin(hz, "joblogs_clear_kind_nostore")
+		stub := &stubObjStore{listKeys: []string{jobs.JobLogKey(1)}}
+		hz.H.Admin.SetJobLogStore(stub)
+		// JobStore nil: a kind filter can't resolve ids, so nothing is deleted.
+
+		e := jobLogsRouter(hz)
+		rec := doJSONReqG(e, http.MethodDelete, "/api/v1/admin/jobs/logs?kind=whatever", token, nil)
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
+		Expect(rec.Body.String()).To(ContainSubstring(`"deleted":0`))
+		Expect(stub.deleteKeys).To(BeEmpty())
+	})
+
+	It("rejects non-admin callers with 403 (no store work)", func() {
+		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenDB(GinkgoT()))
+		stub := &stubObjStore{listKeys: []string{jobs.JobLogKey(1)}}
+		hz.H.Admin.SetJobLogStore(stub)
+
+		_, nonAdminToken := hz.MintUser("joblogs_clear_nonadmin")
+		hz.Cfg.AdminUsers = map[string]struct{}{"secret-admin-dave": {}}
+
+		e := jobLogsRouter(hz)
+		rec := doJSONReqG(e, http.MethodDelete, "/api/v1/admin/jobs/logs", nonAdminToken, nil)
+		Expect(rec).To(testutil.HaveStatus(http.StatusForbidden))
+		Expect(stub.deleteKeys).To(BeEmpty(), "gate must fire before any store work")
 	})
 })

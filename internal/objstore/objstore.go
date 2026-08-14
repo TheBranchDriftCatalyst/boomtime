@@ -47,6 +47,11 @@ type Store interface {
 	// Exists reports whether the object at key is present. Absence returns
 	// (false, nil), not an error.
 	Exists(ctx context.Context, key string) (bool, error)
+	// List returns every object key under prefix (recursive). An empty prefix
+	// lists the whole bucket. A prefix that matches nothing returns an empty
+	// slice, not an error. Backs the admin bulk log-clear (delete every stored
+	// job-log under the `job-logs/` prefix).
+	List(ctx context.Context, prefix string) ([]string, error)
 }
 
 // Client is the minio-go-backed Store.
@@ -117,6 +122,20 @@ func (c *Client) Delete(ctx context.Context, key string) error {
 		return fmt.Errorf("objstore: delete %q: %w", key, err)
 	}
 	return nil
+}
+
+// List implements Store. It walks the bucket under prefix (recursive) and
+// collects the object keys. A per-object Err aborts the walk — a partial listing
+// would let a bulk delete silently miss objects.
+func (c *Client) List(ctx context.Context, prefix string) ([]string, error) {
+	var keys []string
+	for obj := range c.mc.ListObjects(ctx, c.bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: true}) {
+		if obj.Err != nil {
+			return nil, fmt.Errorf("objstore: list %q: %w", prefix, obj.Err)
+		}
+		keys = append(keys, obj.Key)
+	}
+	return keys, nil
 }
 
 // Exists implements Store.

@@ -28,10 +28,14 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
 )
 
+// JobLogPrefix is the object-key namespace every persisted job-log blob lives
+// under. The admin bulk log-clear lists this prefix to enumerate the stored logs.
+const JobLogPrefix = "job-logs/"
+
 // JobLogKey is the object key a job's persisted logs live under. Shared by the
 // writer (objLogSink) and the reader (admin GET/DELETE) so the format lives in
 // exactly one place.
-func JobLogKey(jobID int64) string { return fmt.Sprintf("job-logs/%d.jsonl", jobID) }
+func JobLogKey(jobID int64) string { return fmt.Sprintf("%s%d.jsonl", JobLogPrefix, jobID) }
 
 // jobLogContentType is the newline-delimited-JSON media type for the stored blob.
 const jobLogContentType = "application/x-ndjson"

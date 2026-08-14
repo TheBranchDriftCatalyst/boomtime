@@ -346,6 +346,18 @@ func mapJobStatus(s jobs.Status) string {
 	return string(s)
 }
 
+// rfcPtr renders an optional timestamp as an RFC3339 string pointer (nil stays
+// nil). The jobs-admin HTTP surface that used to share this helper moved to the
+// jobs package (internal/jobs/adminhttp.go); this copy serves the imagejobs
+// status endpoint above.
+func rfcPtr(t *time.Time) *string {
+	if t == nil {
+		return nil
+	}
+	s := t.UTC().Format(time.RFC3339)
+	return &s
+}
+
 // AdminLabelImagesWS: GET /api/v1/admin/label-images/ws — durable stream of
 // registry events to the Admin tab.
 //

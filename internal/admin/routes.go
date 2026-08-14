@@ -15,6 +15,8 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/objstore"
 )
 
 // Register wires the admin-domain endpoints onto e. Handler must be
@@ -100,22 +102,35 @@ func Register(e *echo.Echo, h *Handler) {
 	// AdminLabelImagesWS) — WS handshakes can't carry Authorization.
 	e.GET("/api/v1/admin/label-images/ws", h.AdminLabelImagesWS)
 
-	// catalyst-go-jobs admin (gaka-hney.2): list history, schedules, trigger,
-	// retry. CapAdmin route middleware + requireAdmin in-handler; 503 when the
-	// jobs subsystem isn't wired.
+	// catalyst-go-jobs admin (gaka-hney.2): the WHOLE jobs-admin HTTP surface
+	// (list/queues/schedules/trigger/retry/cancel + per-job & bulk log clear) now
+	// lives in the jobs package as a PORTABLE plugin — jobs.RegisterAdminRoutes.
+	// This is the thin host mount: it owns the URL prefix + route-level CapAdmin
+	// middleware, and injects the boomtime seam via jobs.Deps — the live job
+	// subsystem accessors (wired AFTER this runs, hence functions), boomtime's
+	// requireAdmin as the in-handler guard, and the logger. The plugin never
+	// imports boomtime auth. Route strings + behavior are byte-identical to the
+	// pre-move set (503 when the subsystem isn't wired).
 	if h != nil && h.DB != nil {
 		jobsCap := apihelpers.RequireCap(h.DB, auth.CapAdmin, "view admin jobs")
-		e.GET("/api/v1/admin/jobs", h.AdminJobsList, jobsCap)
-		e.GET("/api/v1/admin/jobs/queues", h.AdminJobQueues, jobsCap)
-		e.GET("/api/v1/admin/jobs/schedules", h.AdminJobSchedules, jobsCap)
-		e.POST("/api/v1/admin/jobs/trigger", h.AdminJobTrigger, jobsCap)
-		e.POST("/api/v1/admin/jobs/:id/retry", h.AdminJobRetry, jobsCap)
-		e.POST("/api/v1/admin/jobs/:id/cancel", h.AdminJobCancel, jobsCap)
-		// Persisted per-job log stream (gaka-hney): GET serves the durable copy of
-		// a finished job's logs from object storage (404 when none stored); DELETE
-		// wipes ONLY that stored object, leaving the jobs-table row intact.
-		e.GET("/api/v1/admin/jobs/:id/logs", h.AdminJobLogs, jobsCap)
-		e.DELETE("/api/v1/admin/jobs/:id/logs", h.AdminJobLogsDelete, jobsCap)
+		g := e.Group("/api/v1/admin/jobs", jobsCap)
+		jobs.RegisterAdminRoutes(g, jobs.Deps{
+			Store:    func() *jobs.Store { return h.JobStore },
+			Enqueuer: func() jobs.Enqueuer { return h.JobEnqueuer },
+			Registry: func() *jobs.Registry { return h.JobRegistry },
+			ObjStore: func() objstore.Store { return h.JobLogStore },
+			// Adapt boomtime's requireAdmin (CapAdmin + IsAdmin) to the plugin's
+			// plain-error guard seam. The returned *apierr.Error keeps its exact
+			// JSON shape via the plugin's guardErr.
+			Guard: func(c *echo.Context) (string, error) {
+				owner, aerr := h.requireAdmin(c)
+				if aerr != nil {
+					return "", aerr
+				}
+				return owner, nil
+			},
+			Logger: h.Logger,
+		})
 	}
 
 	// gaka-metrics: generic in-memory rate-metric registry snapshot (router
