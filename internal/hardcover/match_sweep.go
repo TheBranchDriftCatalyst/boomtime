@@ -96,11 +96,13 @@ func (s *SyncService) matchWith(ctx context.Context, owner string, client matche
 		}
 		res.Scanned++
 		// Periodic progress: a large backlog resolves one rate-limited row at a
-		// time, so emit a heartbeat every ~100 rows to show the sweep is advancing
-		// (final summary logged after the loop).
-		if res.Scanned%100 == 0 {
+		// time (minutes-to-hours for thousands of rows), so emit a heartbeat every
+		// ~25 rows so the job reads as ALIVE in the viewer, with matched/nomatch/
+		// cachehits so the story is legible (final summary logged after the loop).
+		if res.Scanned%25 == 0 {
 			s.logInfo(ctx, "hardcover match: scanned", "user", owner,
-				"scanned", res.Scanned, "of", len(items), "matched", res.Matched, "cachehits", res.CacheHits)
+				"scanned", res.Scanned, "of", len(items),
+				"matched", res.Matched, "nomatch", res.NoMatch, "cachehits", res.CacheHits)
 		}
 		asin := firstNonEmpty(it.ExternalID, it.AmazonASIN)
 
