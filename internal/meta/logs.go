@@ -7,6 +7,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 	"github.com/labstack/echo/v5"
@@ -68,6 +69,8 @@ func (h *Handler) ServerLogsWS(c *echo.Context) error {
 		return nil // handshake failed; nothing more to do
 	}
 	defer conn.CloseNow()
+	metrics.WSActiveConnections.WithLabelValues("logs").Inc()
+	defer metrics.WSActiveConnections.WithLabelValues("logs").Dec()
 
 	// A background context so streaming outlives the HTTP handler return.
 	ctx := context.Background()

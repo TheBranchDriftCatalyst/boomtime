@@ -15,7 +15,16 @@
 // what I expect right now" glance.
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, Cpu, Globe, Router, Send, Server } from "lucide-react";
+import {
+  Activity,
+  Cpu,
+  Database,
+  Globe,
+  Plug,
+  Router,
+  Send,
+  Server,
+} from "lucide-react";
 import {
   Card,
   CardContent,
@@ -32,7 +41,10 @@ type GroupId =
   | "router"
   | "outbound"
   | "limiters"
+  | "jobs"
   | "external"
+  | "datastores"
+  | "connections"
   | "runtime"
   | "other";
 
@@ -62,9 +74,20 @@ const GROUPS: GroupDef[] = [
   {
     id: "limiters",
     label: "Rate-limiters",
-    blurb: "Per-kind background-job concurrency limiter throughput + back-pressure.",
+    blurb: "Both limiters: per-kind job concurrency + the API-level per-user/IP HTTP limiter.",
     icon: Cpu,
-    match: (n) => n.startsWith("jobs_limiter_"),
+    match: (n) =>
+      n.startsWith("jobs_limiter_") || n.startsWith("http_ratelimit_"),
+  },
+  {
+    id: "jobs",
+    label: "Jobs & ingest",
+    blurb: "Background-job runs, AMQP deliveries, and heartbeat ingest throughput.",
+    icon: Activity,
+    match: (n) =>
+      n.startsWith("jobs_run_") ||
+      n.startsWith("boomtime_amqp_") ||
+      n.startsWith("boomtime_heartbeats_"),
   },
   {
     id: "external",
@@ -74,11 +97,31 @@ const GROUPS: GroupDef[] = [
     match: (n) => n.startsWith("hardcover_") || n.startsWith("amazon_"),
   },
   {
+    id: "datastores",
+    label: "Datastores",
+    blurb: "Postgres pool, Redis/Dragonfly pool, and in-memory cache effectiveness.",
+    icon: Database,
+    match: (n) =>
+      n.startsWith("db_pool_") ||
+      n.startsWith("redis_pool_") ||
+      n.startsWith("cache_"),
+  },
+  {
+    id: "connections",
+    label: "Connections",
+    blurb: "Currently-open websocket streams by type.",
+    icon: Plug,
+    match: (n) => n.startsWith("ws_"),
+  },
+  {
     id: "runtime",
     label: "Runtime",
-    blurb: "Go runtime + process collectors (goroutines, GC, heap, FDs, CPU).",
+    blurb: "Go runtime + process collectors (goroutines, GC, heap, FDs, CPU) + build info.",
     icon: Server,
-    match: (n) => n.startsWith("go_") || n.startsWith("process_"),
+    match: (n) =>
+      n.startsWith("go_") ||
+      n.startsWith("process_") ||
+      n === "boomtime_build_info",
   },
 ];
 
@@ -140,7 +183,10 @@ export function MetricsTab() {
       router: [],
       outbound: [],
       limiters: [],
+      jobs: [],
       external: [],
+      datastores: [],
+      connections: [],
       runtime: [],
       other: [],
     };

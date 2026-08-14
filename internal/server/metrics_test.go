@@ -104,3 +104,40 @@ func TestMetricsMiddlewareSkipsProbes(t *testing.T) {
 		t.Errorf("/healthz advanced the router series by %v, want 0 (probe must be skipped)", got)
 	}
 }
+
+// TestRatelimitDecisionCounter drives the real rate-limit middleware past the
+// auth-write burst and asserts http_ratelimit_decisions_total advances with the
+// right decision (allowed vs throttled) under a bounded scope label.
+func TestRatelimitDecisionCounter(t *testing.T) {
+	store := newRateLimitStore(silentLogger(), func(*echo.Context) string { return "" })
+	e := echo.New()
+	e.Use(store.middleware())
+	e.POST("/auth/login", func(c *echo.Context) error { return c.String(http.StatusOK, "ok") })
+
+	allowed := metrics.HTTPRatelimitDecisionsTotal.WithLabelValues("allowed", "ip")
+	throttled := metrics.HTTPRatelimitDecisionsTotal.WithLabelValues("throttled", "ip")
+	beforeA := testutil.ToFloat64(allowed)
+	beforeT := testutil.ToFloat64(throttled)
+
+	// auth-write bucket burst is 10; the 11th/12th same-IP request 429s.
+	var got200, got429 int
+	for i := 0; i < 12; i++ {
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/auth/login", nil))
+		switch rec.Code {
+		case http.StatusOK:
+			got200++
+		case http.StatusTooManyRequests:
+			got429++
+		}
+	}
+	if got200 != 10 || got429 != 2 {
+		t.Fatalf("status split = %d ok / %d throttled, want 10/2", got200, got429)
+	}
+	if d := testutil.ToFloat64(allowed) - beforeA; d != 10 {
+		t.Errorf("allowed decisions delta = %v, want 10", d)
+	}
+	if d := testutil.ToFloat64(throttled) - beforeT; d != 2 {
+		t.Errorf("throttled decisions delta = %v, want 2", d)
+	}
+}

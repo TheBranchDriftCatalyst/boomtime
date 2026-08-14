@@ -12,6 +12,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
@@ -273,6 +274,8 @@ func (h *Handler) ImportJobWS(c *echo.Context) error {
 		return nil // handshake failed; nothing more to do
 	}
 	defer conn.CloseNow()
+	metrics.WSActiveConnections.WithLabelValues("import").Inc()
+	defer metrics.WSActiveConnections.WithLabelValues("import").Dec()
 
 	// A background context so streaming outlives the HTTP handler return.
 	ctx := context.Background()

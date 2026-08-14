@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
 )
 
 // LocalProvider runs jobs with Postgres as the broker: Enqueue inserts a row,
@@ -74,6 +76,8 @@ func (p *LocalProvider) claimExclude(ctx context.Context, reg *Registry) []strin
 func (p *LocalProvider) runJob(ctx context.Context, reg *Registry, job Job) bool {
 	if p.limiter != nil {
 		if max := reg.Concurrency()[job.Kind]; max > 0 {
+			// Publish the configured cap (the headroom denominator).
+			metrics.JobLimiterMax.WithLabelValues(job.Kind).Set(float64(max))
 			release, ok, err := p.limiter.Acquire(ctx, job.Kind,
 				p.id+":"+strconv.FormatInt(job.ID, 10), max)
 			recordAcquire(job.Kind, ok, err)
@@ -87,7 +91,13 @@ func (p *LocalProvider) runJob(ctx context.Context, reg *Registry, job Job) bool
 				}
 				return false
 			} else if release != nil {
-				defer release()
+				// This pod holds a slot for the run's duration — reflect it as
+				// in-flight vs the cap, releasing on completion.
+				metrics.JobLimiterInflight.WithLabelValues(job.Kind).Inc()
+				defer func() {
+					metrics.JobLimiterInflight.WithLabelValues(job.Kind).Dec()
+					release()
+				}()
 			}
 		}
 	}

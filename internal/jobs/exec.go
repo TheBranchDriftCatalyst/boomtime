@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logctx"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
 )
 
 // outcome is what execute did with a job — providers use it to decide any
@@ -53,6 +54,7 @@ func execute(ctx context.Context, reg *Registry, store *Store, job Job, log *slo
 		_ = store.Fail(ctx, job.ID, "no handler registered for kind "+job.Kind, nil)
 		jl.Warn("jobs: no handler for kind")
 		notify(StatusFailed, "no handler for kind "+job.Kind)
+		metrics.JobsRunTotal.WithLabelValues(job.Kind, "failed").Inc()
 		return outcomeFailed
 	}
 
@@ -81,6 +83,7 @@ func execute(ctx context.Context, reg *Registry, store *Store, job Job, log *slo
 	// also on the cancelled ctx and would fail anyway; just stop, no notify.
 	if ctx.Err() != nil {
 		jl.Info("jobs: run stopped by context cancellation", "dur_ms", time.Since(started).Milliseconds())
+		metrics.JobsRunTotal.WithLabelValues(job.Kind, "cancelled").Inc()
 		return outcomeFailed
 	}
 
@@ -90,6 +93,7 @@ func execute(ctx context.Context, reg *Registry, store *Store, job Job, log *slo
 		}
 		jl.Info("jobs: done", "attempt", job.Attempts, "dur_ms", time.Since(started).Milliseconds())
 		notify(StatusDone, "")
+		metrics.JobsRunTotal.WithLabelValues(job.Kind, "done").Inc()
 		return outcomeDone
 	}
 
@@ -100,6 +104,7 @@ func execute(ctx context.Context, reg *Registry, store *Store, job Job, log *slo
 		}
 		jl.Warn("jobs: retry scheduled",
 			"attempt", job.Attempts, "of", job.MaxAttempts, "dur_ms", time.Since(started).Milliseconds(), "err", err)
+		metrics.JobsRunTotal.WithLabelValues(job.Kind, "retry").Inc()
 		return outcomeRetry // not terminal — no notify
 	}
 	if ferr := store.Fail(ctx, job.ID, err.Error(), nil); ferr != nil {
@@ -108,5 +113,6 @@ func execute(ctx context.Context, reg *Registry, store *Store, job Job, log *slo
 	jl.Error("jobs: failed (attempts exhausted)",
 		"attempts", job.Attempts, "dur_ms", time.Since(started).Milliseconds(), "err", err)
 	notify(StatusFailed, err.Error())
+	metrics.JobsRunTotal.WithLabelValues(job.Kind, "failed").Inc()
 	return outcomeFailed
 }

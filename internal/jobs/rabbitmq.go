@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strconv"
 
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -128,6 +129,7 @@ func (p *AMQPProvider) handle(ctx context.Context, reg *Registry, d amqp.Deliver
 	var release func()
 	if p.limiter != nil {
 		if max := reg.Concurrency()[job.Kind]; max > 0 {
+			metrics.JobLimiterMax.WithLabelValues(job.Kind).Set(float64(max))
 			rel, okAcq, aerr := p.limiter.Acquire(ctx, job.Kind,
 				p.id+":"+strconv.FormatInt(id, 10), max)
 			recordAcquire(job.Kind, okAcq, aerr)
@@ -138,18 +140,22 @@ func (p *AMQPProvider) handle(ctx context.Context, reg *Registry, d amqp.Deliver
 				if rerr := p.store.Requeue(ctx, id); rerr != nil {
 					p.log.Warn("jobs: requeue after slot-race failed", "id", id, "err", rerr)
 				}
+				metrics.AMQPDeliveriesTotal.WithLabelValues(p.queue, "requeued").Inc()
 				_ = d.Nack(false, true) // at limit — redeliver later
 				return
 			default:
 				release = rel
+				metrics.JobLimiterInflight.WithLabelValues(job.Kind).Inc()
 			}
 		}
 	}
 
 	oc := execute(ctx, reg, p.store, *job, p.log, p.notifier)
 	if release != nil {
+		metrics.JobLimiterInflight.WithLabelValues(job.Kind).Dec()
 		release()
 	}
+	metrics.AMQPDeliveriesTotal.WithLabelValues(p.queue, "processed").Inc()
 	_ = d.Ack(false)
 
 	// AMQP has no native delayed retry here, so a retry is re-published for an

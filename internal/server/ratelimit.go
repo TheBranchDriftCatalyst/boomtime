@@ -24,7 +24,9 @@
 //     recorded at commit time).
 //
 //   - The middleware short-circuits (never touches the limiter map) for:
+//
 //   - OPTIONS preflight  — CORS middleware owns that flight
+//
 //   - GET /healthz       — kubelet probe MUST be fast + unbucketed
 //
 //   - Testing hook: BOOM_DISABLE_RATE_LIMIT=1 disables everything (returns a
@@ -52,6 +54,7 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
 	"github.com/labstack/echo/v5"
 	"golang.org/x/time/rate"
 )
@@ -357,8 +360,17 @@ func (s *rateLimitStore) middleware() echo.MiddlewareFunc {
 			}
 			group := classifyEndpoint(req.Method, req.URL.Path)
 			key := s.bucketKey(c, group)
+			// scope = which bucket dimension keyed this decision (user vs IP);
+			// bucketKey returns "user:<owner>" or "ip:<addr>". Bounded 2-value
+			// label — makes throttling visible as a LIMITER metric, distinct
+			// from the generic http_requests_total 429s.
+			scope := "ip"
+			if strings.HasPrefix(key, "user:") {
+				scope = "user"
+			}
 			limiter := s.limiterFor(group, key)
 			if !limiter.Allow() {
+				metrics.HTTPRatelimitDecisionsTotal.WithLabelValues("throttled", scope).Inc()
 				// Compute a Retry-After from the reservation delay.
 				res := limiter.Reserve()
 				delay := res.Delay()
@@ -370,6 +382,7 @@ func (s *rateLimitStore) middleware() echo.MiddlewareFunc {
 				}
 				return writeRateLimited(c, retrySec)
 			}
+			metrics.HTTPRatelimitDecisionsTotal.WithLabelValues("allowed", scope).Inc()
 			return next(c)
 		}
 	}

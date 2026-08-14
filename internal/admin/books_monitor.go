@@ -29,6 +29,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
 )
 
 // Reading-monitor tuning bounds. Defaults are deliberately aggressive (this is
@@ -94,6 +95,8 @@ func (h *Handler) AdminBooksReadingMonitorWS(c *echo.Context) error {
 		return nil // handshake failed; nothing more to do
 	}
 	defer conn.CloseNow()
+	metrics.WSActiveConnections.WithLabelValues("books-monitor").Inc()
+	defer metrics.WSActiveConnections.WithLabelValues("books-monitor").Dec()
 
 	// Background context so streaming outlives the HTTP handler return, bounded
 	// by a safety auto-stop so a forgotten open tab can't poll the sidecar

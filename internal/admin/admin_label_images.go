@@ -21,22 +21,22 @@
 //
 // Endpoints:
 //
-//   GET  /api/v1/admin/label-images
-//     -> {enabled: bool, model: string, shimUrl: string,
-//         admin: bool, count: int, items, baseline}
+//	GET  /api/v1/admin/label-images
+//	  -> {enabled: bool, model: string, shimUrl: string,
+//	      admin: bool, count: int, items, baseline}
 //
-//   POST /api/v1/admin/label-images/regenerate
-//     Body: {entries: [{id, prompt, model?, size?, seed?}, ...],
-//            ids?: [...], all?: bool, truncate?: bool}
-//     -> 202 {jobs: [{jobId, labelId, existing}, ...]}
-//     Idempotent per label: if the label already has a queued/running
-//     job the response carries the existing jobId + existing=true. The
-//     server pool absorbs the concurrency the FE previously enforced
-//     client-side.
+//	POST /api/v1/admin/label-images/regenerate
+//	  Body: {entries: [{id, prompt, model?, size?, seed?}, ...],
+//	         ids?: [...], all?: bool, truncate?: bool}
+//	  -> 202 {jobs: [{jobId, labelId, existing}, ...]}
+//	  Idempotent per label: if the label already has a queued/running
+//	  job the response carries the existing jobId + existing=true. The
+//	  server pool absorbs the concurrency the FE previously enforced
+//	  client-side.
 //
-//   GET  /api/v1/admin/label-images/ws
-//     WebSocket. On connect the server writes an initial snapshot then
-//     streams every added/updated/removed event forever.
+//	GET  /api/v1/admin/label-images/ws
+//	  WebSocket. On connect the server writes an initial snapshot then
+//	  streams every added/updated/removed event forever.
 package admin
 
 import (
@@ -50,6 +50,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/labelcatalog"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/imagejobs"
 	labelimages "github.com/TheBranchDriftCatalyst/boomtime/internal/worker/labelimages"
 	"github.com/coder/websocket"
@@ -383,6 +384,8 @@ func (h *Handler) AdminLabelImagesWS(c *echo.Context) error {
 		return nil
 	}
 	defer conn.CloseNow()
+	metrics.WSActiveConnections.WithLabelValues("label-images").Inc()
+	defer metrics.WSActiveConnections.WithLabelValues("label-images").Dec()
 
 	// Background context so the stream survives after the HTTP handler
 	// returns (echo tears down the request context on return).

@@ -34,6 +34,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobsevents"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/notify"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/imagejobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/server"
@@ -215,6 +216,27 @@ func runCmd() *cobra.Command {
 			}
 			defer database.Close()
 
+			// Observability wiring (gaka-metrics): publish build metadata and a
+			// scrape-time reader of the pgx pool's Stat() into the Prometheus registry
+			// served at /metrics. Registered here (not in db.New) so the unit-test
+			// suite — which opens + closes many isolated pools — never scrapes a
+			// closed pool.
+			metrics.RegisterBuildInfo(cfg.Version, cfg.Commit)
+			metrics.RegisterDBPool(func() metrics.DBPoolSample {
+				st := database.Pool.Stat()
+				return metrics.DBPoolSample{
+					AcquiredConns:          st.AcquiredConns(),
+					IdleConns:              st.IdleConns(),
+					TotalConns:             st.TotalConns(),
+					MaxConns:               st.MaxConns(),
+					ConstructingConns:      st.ConstructingConns(),
+					AcquireCount:           st.AcquireCount(),
+					CanceledAcquireCount:   st.CanceledAcquireCount(),
+					EmptyAcquireCount:      st.EmptyAcquireCount(),
+					AcquireDurationSeconds: st.AcquireDuration().Seconds(),
+				}
+			})
+
 			// gaka-93f.27: reap avatar renders orphaned by a restart. The render
 			// runs as an in-process goroutine (identity.RegenerateAvatar), so any
 			// row still 'running' at boot is stale (its goroutine died with the
@@ -330,6 +352,8 @@ func runCmd() *cobra.Command {
 					defer amqpConn.Close()
 					rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPassword})
 					defer rdb.Close()
+					// Scrape-time redis pool stats for the cross-pod log-relay client.
+					metrics.RegisterRedisPool("logs", func() metrics.RedisPoolSample { return redisPoolSample(rdb) })
 					bus := imagejobs.NewRedisEventBus(rdb)
 
 					// Cross-pod Admin Logs relay ("worker logs in Admin Logs
@@ -812,6 +836,8 @@ func runCmd() *cobra.Command {
 				if cfg.RedisAddr != "" {
 					jobsRedis = redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPassword})
 					defer jobsRedis.Close()
+					// Scrape-time redis pool stats for the job-limiter client.
+					metrics.RegisterRedisPool("limiter", func() metrics.RedisPoolSample { return redisPoolSample(jobsRedis) })
 				}
 				provider.SetLimiter(jobs.NewKindLimiter(jobsRedis))
 
@@ -1149,4 +1175,22 @@ func promptStrongPassword(prompt string) (string, error) {
 	// password and returns on an accepted one — but the compiler doesn't
 	// know that, so return a defensive error.
 	return "", fmt.Errorf("no password provided")
+}
+
+// redisPoolSample adapts a *redis.Client's live PoolStats() into the
+// dependency-free metrics.RedisPoolSample the metrics package collects at
+// scrape time. A nil client (redis disabled) yields a zero sample.
+func redisPoolSample(c *redis.Client) metrics.RedisPoolSample {
+	if c == nil {
+		return metrics.RedisPoolSample{}
+	}
+	st := c.PoolStats()
+	return metrics.RedisPoolSample{
+		Hits:       st.Hits,
+		Misses:     st.Misses,
+		Timeouts:   st.Timeouts,
+		TotalConns: st.TotalConns,
+		IdleConns:  st.IdleConns,
+		StaleConns: st.StaleConns,
+	}
 }

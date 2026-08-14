@@ -11,6 +11,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/goals"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/wakatime"
 	"github.com/labstack/echo/v5"
@@ -124,6 +125,10 @@ func (h *Handler) storeAndRespond(c *echo.Context, hbs []model.HeartbeatPayload)
 		h.Logger.Error("failed to store heartbeats", "err", err)
 		return apihelpers.RespondErr(c, apierr.Generic())
 	}
+
+	// Core throughput metric: every persisted heartbeat (Prometheus counts the
+	// rate). Bumped once per batch by the number stored.
+	metrics.HeartbeatsIngestedTotal.Add(float64(len(ids)))
 
 	// Narrate ingest at a sampled 1:N rate so an operator can see it's alive +
 	// flowing (with a batch summary) without a per-heartbeat flood on this hot

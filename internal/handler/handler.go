@@ -92,7 +92,7 @@ type Handler struct {
 // Logs tab; pass nil to disable (Logs endpoints handle a nil hub — see
 // internal/meta/logs.go).
 func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *importer.Worker, hub *importer.Hub, logHub *logging.LogHub) *Handler {
-	sharedCache := cache.New(statsCacheTTL())
+	sharedCache := cache.NewNamed(statsCacheTTL(), "stats")
 	startTime := time.Now()
 	return &Handler{
 		DB:        database,

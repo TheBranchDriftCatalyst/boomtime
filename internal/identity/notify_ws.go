@@ -14,6 +14,7 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
 )
 
 // NotifyWS streams the caller's notification events.
@@ -30,6 +31,8 @@ func (h *Handler) NotifyWS(c *echo.Context) error {
 		return nil
 	}
 	defer conn.CloseNow()
+	metrics.WSActiveConnections.WithLabelValues("notify").Inc()
+	defer metrics.WSActiveConnections.WithLabelValues("notify").Dec()
 
 	// Feature not wired → close cleanly so the client backs off.
 	if h.Notify == nil {

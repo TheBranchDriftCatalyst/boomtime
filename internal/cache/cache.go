@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
 )
 
 // entry holds a cached blob and its expiry deadline (monotonic via time.Now).
@@ -22,6 +24,7 @@ type entry struct {
 // BOOM_STATS_CACHE_TTL=0 without any code branches at the call sites.
 type TTL struct {
 	ttl  time.Duration
+	name string // metrics label (cache_requests_total{cache=…}); "default" if unset
 	mu   sync.RWMutex
 	data map[string]entry
 	stop chan struct{}
@@ -32,9 +35,18 @@ type TTL struct {
 // that mints many unique keys — e.g. cache-miss floods from stale cursor
 // buckets — cannot grow the map without bound. When ttl == 0, no sweeper runs
 // and the cache is inert.
-func New(ttl time.Duration) *TTL {
+func New(ttl time.Duration) *TTL { return NewNamed(ttl, "default") }
+
+// NewNamed is New with a metrics label. `name` tags this cache's
+// cache_requests_total{cache=name,result=hit|miss} series so multiple caches
+// are distinguishable; keep it a bounded, static string.
+func NewNamed(ttl time.Duration, name string) *TTL {
+	if name == "" {
+		name = "default"
+	}
 	c := &TTL{
 		ttl:  ttl,
+		name: name,
 		data: make(map[string]entry),
 		stop: make(chan struct{}),
 	}
@@ -53,6 +65,7 @@ func (c *TTL) Get(key string) ([]byte, bool) {
 	e, ok := c.data[key]
 	c.mu.RUnlock()
 	if !ok {
+		metrics.CacheRequestsTotal.WithLabelValues(c.name, "miss").Inc()
 		return nil, false
 	}
 	if time.Now().After(e.expires) {
@@ -63,8 +76,10 @@ func (c *TTL) Get(key string) ([]byte, bool) {
 			delete(c.data, key)
 		}
 		c.mu.Unlock()
+		metrics.CacheRequestsTotal.WithLabelValues(c.name, "miss").Inc()
 		return nil, false
 	}
+	metrics.CacheRequestsTotal.WithLabelValues(c.name, "hit").Inc()
 	return e.blob, true
 }
 

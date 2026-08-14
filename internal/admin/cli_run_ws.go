@@ -22,6 +22,7 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
 )
 
 // cliStreamMsg is one frame of the CLI run stream:
@@ -89,6 +90,8 @@ func (h *Handler) CLIRunWS(c *echo.Context) error {
 		return nil // handshake failed; nothing more to do
 	}
 	defer conn.CloseNow()
+	metrics.WSActiveConnections.WithLabelValues("cli").Inc()
+	defer metrics.WSActiveConnections.WithLabelValues("cli").Dec()
 
 	ctx := context.Background()
 

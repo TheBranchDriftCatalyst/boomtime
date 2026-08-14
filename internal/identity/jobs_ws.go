@@ -14,6 +14,7 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
 )
 
 // JobEventsWS streams the caller's terminal job events (done/failed).
@@ -30,6 +31,8 @@ func (h *Handler) JobEventsWS(c *echo.Context) error {
 		return nil
 	}
 	defer conn.CloseNow()
+	metrics.WSActiveConnections.WithLabelValues("jobs").Inc()
+	defer metrics.WSActiveConnections.WithLabelValues("jobs").Dec()
 
 	// Feature not wired → close cleanly so the client backs off.
 	if h.JobEvents == nil {

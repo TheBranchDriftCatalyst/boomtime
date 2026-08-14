@@ -139,3 +139,84 @@ func histCount(t *testing.T, o prometheus.Observer) uint64 {
 	}
 	return dm.GetHistogram().GetSampleCount()
 }
+
+// gatherFind returns the first sample value of family `name` whose labels are a
+// superset of `want`, plus whether it was found — a small helper to assert
+// scrape-time collector output via Gather().
+func gatherFind(t *testing.T, name string, want map[string]string) (float64, bool) {
+	t.Helper()
+	fams, err := Registry.Gather()
+	if err != nil {
+		t.Fatalf("gather: %v", err)
+	}
+	for _, f := range fams {
+		if f.GetName() != name {
+			continue
+		}
+		for _, m := range f.GetMetric() {
+			labels := map[string]string{}
+			for _, lp := range m.GetLabel() {
+				labels[lp.GetName()] = lp.GetValue()
+			}
+			ok := true
+			for k, v := range want {
+				if labels[k] != v {
+					ok = false
+					break
+				}
+			}
+			if !ok {
+				continue
+			}
+			switch {
+			case m.GetGauge() != nil:
+				return m.GetGauge().GetValue(), true
+			case m.GetCounter() != nil:
+				return m.GetCounter().GetValue(), true
+			}
+		}
+	}
+	return 0, false
+}
+
+func TestRegisterDBPoolCollector(t *testing.T) {
+	RegisterDBPool(func() DBPoolSample {
+		return DBPoolSample{MaxConns: 10, AcquiredConns: 3, AcquireCount: 42, AcquireDurationSeconds: 1.5}
+	})
+	defer RegisterDBPool(nil)
+
+	if v, ok := gatherFind(t, "db_pool_max_conns", nil); !ok || v != 10 {
+		t.Errorf("db_pool_max_conns = %v (found=%v), want 10", v, ok)
+	}
+	if v, ok := gatherFind(t, "db_pool_acquired_conns", nil); !ok || v != 3 {
+		t.Errorf("db_pool_acquired_conns = %v (found=%v), want 3", v, ok)
+	}
+	if v, ok := gatherFind(t, "db_pool_acquire_count", nil); !ok || v != 42 {
+		t.Errorf("db_pool_acquire_count = %v (found=%v), want 42", v, ok)
+	}
+	if v, ok := gatherFind(t, "db_pool_acquire_duration_seconds_total", nil); !ok || v != 1.5 {
+		t.Errorf("db_pool_acquire_duration_seconds_total = %v (found=%v), want 1.5", v, ok)
+	}
+}
+
+func TestRegisterRedisPoolCollector(t *testing.T) {
+	RegisterRedisPool("test-purpose", func() RedisPoolSample {
+		return RedisPoolSample{Hits: 7, Misses: 2, TotalConns: 4}
+	})
+	defer RegisterRedisPool("test-purpose", nil)
+
+	if v, ok := gatherFind(t, "redis_pool_hits_total", map[string]string{"purpose": "test-purpose"}); !ok || v != 7 {
+		t.Errorf("redis_pool_hits_total{purpose=test-purpose} = %v (found=%v), want 7", v, ok)
+	}
+	if v, ok := gatherFind(t, "redis_pool_total_conns", map[string]string{"purpose": "test-purpose"}); !ok || v != 4 {
+		t.Errorf("redis_pool_total_conns{purpose=test-purpose} = %v (found=%v), want 4", v, ok)
+	}
+}
+
+func TestRegisterBuildInfo(t *testing.T) {
+	RegisterBuildInfo("v1.2.3", "abc123")
+	v, ok := gatherFind(t, "boomtime_build_info", map[string]string{"version": "v1.2.3", "commit": "abc123"})
+	if !ok || v != 1 {
+		t.Errorf("boomtime_build_info{version=v1.2.3,commit=abc123} = %v (found=%v), want 1", v, ok)
+	}
+}
