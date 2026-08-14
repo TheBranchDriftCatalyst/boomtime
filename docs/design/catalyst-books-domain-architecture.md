@@ -445,7 +445,7 @@ flowchart TD
         AGG["stats/aggregates<br/>listening-seconds per period"] --> RET["RETROACTIVE<br/>read totals as-is"]
     end
     subgraph kindle["Kindle (books)"]
-        LPR["whispersync LPR<br/>last-page-read position"] --> FWD["FORWARD<br/>poll & diff positions<br/>→ reading sessions"]
+        LPR["CDE sidecar LPR<br/>(kindle.lpr) position"] --> FWD["FORWARD<br/>poll & diff positions<br/>→ reading sessions"]
     end
 
     GAP --> RASHAPE
@@ -457,7 +457,7 @@ flowchart TD
 |---|---|---|---|
 | **coding** | plugin heartbeats | forward | gap-summed between pings → attributed seconds (heartbeat model) |
 | **Audible** | `stats/aggregates` listening-seconds per day/month | **retroactive** | Amazon already aggregated it; `sweepAggregates` reads the totals directly into `listening_seconds` buckets. No inference. |
-| **Kindle** | whispersync **LPR** (last-page-read) polled over time | **forward** | poll-and-diff: successive LPR positions for an ASIN become reading sessions; the position delta over the interval is the "pages" signal (§6). No native duration exists — it is *reconstructed* from polling. |
+| **Kindle** | per-book CDE-sidecar **LPR** (`kindle.lpr`) polled over time | **forward** | poll-and-diff: successive LPR positions for an ASIN become reading sessions; the position delta over the interval is the "pages" signal (§6). No native duration exists — it is *reconstructed* from polling. |
 
 This is why `reading_activity` carries **both** `listening_seconds` (audio) and a
 nullable `pages` (ebook): the two domains produce structurally different signals
@@ -518,6 +518,45 @@ observed cadence (min / median advance interval, avg Δlocation, implied sec/loc
 then **recommends** `T1`/`T2`/`G` from *your own* reading instead of a guessed
 `interval=6s`.
 
+**The sync-trigger hypothesis — mid-session pushes, or only at session boundaries?**
+whispersync's *real* job is cross-device position **handoff**, and the handoff moments are
+device **close** and **open**. So the furthest-page-read very likely updates on close/open
+(session boundaries), **not** continuously while the page turns. This is the load-bearing
+unknown, and it decides the whole composition math:
+
+- **If session-boundary-only:** mid-session L2 fast-capture sees *nothing* until the book is
+  closed, so the temporal **gap-sum breaks** — there are no intra-session poll samples to
+  sum. Reading-time must then come from **position-delta × reading-speed**, anchored at the
+  close `creationTime` (= when you stopped). *Unless* — the exciting case — the **open**
+  event fires its own marker (a `startReading`-type signal exists on the device surface):
+  then open `creationTime` = session **start** and close `creationTime` = session **end**,
+  and you **bracket** the real session for a *true* duration with **no reading-speed guess
+  at all**.
+- **If continuous:** frequent small advances arrive mid-session and the original gap-sum
+  session model (§5) works directly.
+
+This is a **hypothesis the persistent monitor confirms** — it is exactly what the every-ping
+diagnostic mode below exists to observe.
+
+**Sync-pattern classification (what the monitor decides).** The diagnostic buckets each
+book's observed advances into one of three patterns, and the admin panel **states which
+applies** so the composition method is never guessed:
+
+| Pattern | Signature | Composition |
+|---|---|---|
+| **`continuous`** | frequent advances (< ~2 min apart), **small** Δlocation | temporal **gap-sum** of poll samples (§5) works |
+| **`session-boundary`** | sparse advances, **large** Δlocation jumps | **position-delta** (× reading-speed), or **open/close bracketing** if an open marker fires |
+| **`unknown`** | too few advances observed yet | keep sampling; fall back to position-delta |
+
+**The fidelity floor — our output grain is the binding lower bound.** The capture interval
+is bounded **below** not by whispersync's push rate but by **our own output fidelity**.
+Reading-time is minute-level analytics, so sampling finer than ~60s yields nothing usable
+downstream and only burns ADP-signed Amazon calls (raising the very throttle/notice risk the
+per-book floor above warns about). **Recommend never polling sub-60s regardless of the
+observed cadence; default capture `T2` = 60s.** This *tightens* the earlier "`T2` ≥
+whispersync push cadence" bound — whichever is **coarser**, 60s or the real push cadence,
+is the binding floor.
+
 **Persistent server-side monitor (not tab-tied).** A per-user `reading_monitor_enabled`
 flag drives the two-level engine from the **leader-singleton scheduler**
 (catalyst-go-jobs), so it runs whether or not the admin panel is open — toggle it on,
@@ -528,10 +567,22 @@ status change — normal use) ↔ *every-ping* (a toast on each observed change 
 for the diagnostic/reverse-engineering phase). The panel is then a thin view+toggle
 over persisted state, not the engine.
 
-> **Open decision (scope fork):** whether the monitor *emits* `reading_activity` /
-> reading-heartbeats from the captured sessions (forward composition into the fusion
-> layer) or stays **diagnostic-only** until the cadence is trusted. Until settled, the
-> monitor measures + toasts but does not write reading_activity.
+**Observability home — a dedicated Grafana board, Prometheus + Loki.** The cadence report
+lives in Grafana, not a bespoke UI: a dedicated board (uid `boomtime-reading-monitor`) is the
+canonical view. The persistent monitor emits Prometheus series —
+`boomtime_reading_monitor_advances_total`, `boomtime_reading_monitor_advance_interval_seconds`,
+`boomtime_reading_monitor_active_books`, `boomtime_reading_monitor_sec_per_location` — plus
+per-advance **Loki** logs for the raw stream. The admin panel is then intentionally thin: the
+toggle, the verbose-mode `T1`/`T2`/`G` recommendation, and a **deep-link** into that Grafana
+board.
+
+> **Resolved (scope fork) — the monitor is BOTH.** The persistent monitor *does* emit
+> `reading_activity(source='kindle')` from the captured sessions (forward composition into the
+> fusion layer), feeding a high-level `boomtime_reading_activity_seconds_total` metric on the
+> **Domain dashboard** — **as well as** driving the diagnostic layer above. It is no longer
+> diagnostic-only. The remaining follow-up is narrower: switching the **composition method**
+> (temporal gap-sum vs position-delta / open-close bracketing) per the observed
+> `continuous` / `session-boundary` classification, rather than always gap-summing.
 
 ---
 
@@ -539,76 +590,147 @@ over persisted state, not the engine.
 
 > **This section is the primary record of the Kindle wire protocol** — it is not
 > yet in code (`internal/domains/books` is a stub whose `SyncUser` returns nil).
-> All of it is authenticated by the **shared** `internal/amazon` device
-> credential: `amazon.Sign` ADP-signs every request (`x-adp-token` /
-> `x-adp-alg: SHA256withRSA:1.0` / `x-adp-signature`), exactly as Audible does —
-> **one Amazon registration authenticates both.** Hosts differ per call.
+> **One Amazon registration bootstraps two auth surfaces, and Kindle uses both:**
+> **(1) device-ADP** — `amazon.Sign` ADP-signs the request (`x-adp-token` /
+> `x-adp-alg: SHA256withRSA:1.0` / `x-adp-signature`), exactly as every Audible call
+> does; **(2) web-cookie** — the *same* device `refresh_token` is exchanged for website
+> cookies (§6.2), which authenticate the `read.amazon.com` Cloud Reader and the
+> Reading-Insights endpoints that device-ADP can't reach. Hosts differ per call.
+> Verified live against a real account (2026-08).
 
 ### 6.1 Endpoint map — what each surface actually is
 
 ```mermaid
 flowchart TD
-    CRED["internal/amazon DeviceCredential<br/>ADP-signs everything (Sign)"]
+    REG["internal/amazon registration<br/>(device refresh_token)"]
+    REG --> ADP["device-ADP surface<br/>amazon.Sign (x-adp-*)"]
+    REG --> CK["ap/exchangetoken/cookies<br/>refresh_token → website cookies"]
 
-    CRED --> TODO["todo-ta-g7g.amazon.com<br/>/FionaTodoListProxy/syncMetaData?type=EBOK"]
-    CRED --> ITEMS["todo-ta-g7g.amazon.com<br/>/FionaTodoListProxy/getItems?type=EBOK"]
-    CRED --> COLL["api.amazon.com<br/>/whispersync/v2/data/&lt;customer_id&gt;/datasets"]
-    CRED --> SIDE["cde-ta-g7g.amazon.com<br/>/FionaCDEServiceEngine/sidecar?type=EBOK&key=&lt;ASIN&gt;"]
+    ADP --> TODO["todo-ta-g7g<br/>/FionaTodoListProxy/{syncMetaData,getItems}?type=EBOK"]
+    ADP --> COLL["api.amazon.com<br/>/whispersync/v2/data/&lt;customer_id&gt;/datasets"]
+    ADP --> SIDE["cde-ta-g7g<br/>/FionaCDEServiceEngine/sidecar?type=EBOK&key=&lt;ASIN&gt;"]
+    CK --> LIB["read.amazon.com<br/>/kindle-library/search"]
+    CK --> INS["amazon.com<br/>/kindle/reading/insights/data"]
 
-    TODO -.->|"EMPTY delta-sync — red herring, NOT the library"| X1["✗"]
-    ITEMS -.->|"todo/notification feed (mostly Audible events)"| X2["✗"]
-    COLL ==>|"CloudCollections = SHELVES<br/>records key books by amzn://&lt;ASIN&gt;/BOOK"| SHELF["shelf ⇒ status"]
-    SIDE ==>|"kindle.lpr = last-page-read<br/>position + timestamp (+ annotations)"| HEART["reading-heartbeat source"]
+    TODO -.->|"EMPTY / notification feeds — red herrings, NOT the library"| X1["✗"]
+    COLL -.->|"CloudCollections shelves — STALE (2014), titleless, ~7% match"| ENR["◑ series/shelf enrichment"]
+    SIDE ==>|"kindle.lpr = furthest-page-read<br/>position + creationTime SNAPSHOT"| HEART["forward reading-time (§6.4)"]
+    LIB ==>|"full library + title/author/cover + percentageRead"| PRIMARY["✅ PRIMARY library"]
+    INS ==>|"titles_read[]{asin,date_read} + streaks"| DATES["✅ finish-date backfill"]
 
-    SHELF --> RESOLVE
-    HEART --> RESOLVE["ASIN → metadata via Hardcover match ladder<br/>(device auth returns NO title/author/cover)"]
+    PRIMARY --> RESOLVE["ASIN → Hardcover match ladder<br/>(cross-source; fills gaps + fuses Kindle↔Audible)"]
+    DATES --> RESOLVE
 ```
 
-| Host + path | What it *actually* is | Use |
-|---|---|---|
-| `todo-ta-g7g.amazon.com/FionaTodoListProxy/syncMetaData?type=EBOK` | An **empty delta-sync** feed. The initial red herring — it looks like it should be the library but returns nothing useful. | ✗ not the library |
-| `todo-ta-g7g.amazon.com/FionaTodoListProxy/getItems?type=EBOK` | A **todo/notification feed** — mostly Audible events, not owned ebooks. | ✗ not the library |
-| `api.amazon.com/whispersync/v2/data/<customer_id>/datasets` | **CloudCollections** = the user's **shelves** (Currently Reading / Done Reading / Have Not Read / series). Each `.../datasets/<id>/records` lists books by **ASIN** as keys of the form `amzn://<ASIN>/BOOK`. | ✅ **library + status.** Shelf ⇒ status: reading / read / want. `<customer_id>` is the numeric `DeviceCredential.CustomerID`, **not** the ASIN. |
-| `cde-ta-g7g.amazon.com/FionaCDEServiceEngine/sidecar?type=EBOK&key=<ASIN>` | Per-book **`kindle.lpr`** — last-page-read (position + timestamp) plus annotations/bookmarks. | ✅ **the reading-heartbeat source** (§5). Poll over time; diff positions into sessions. |
+| Host + path | Auth | What it *actually* is | Use |
+|---|---|---|---|
+| `todo-ta-g7g…/FionaTodoListProxy/syncMetaData?type=EBOK` | device-ADP | An **empty delta-sync** feed — looks like the library, returns nothing useful. | ✗ red herring |
+| `todo-ta-g7g…/FionaTodoListProxy/getItems?type=EBOK` | device-ADP | A **todo/notification feed** — mostly Audible events, not owned ebooks. | ✗ red herring |
+| `api.amazon.com/whispersync/v2/data/<customer_id>/datasets` | device-ADP | **CloudCollections** shelves (Currently Reading / Done Reading / Have Not Read / series), books keyed `amzn://<ASIN>/BOOK`. **Live probe: stale (records from 2014), ~136 titleless collection books, only ~7% of Kindle ASINs resolvable via Hardcover.** No reading-time anywhere in whispersync. | ◑ **series/shelf enrichment only** — NOT the primary library. `<customer_id>` = numeric `DeviceCredential.CustomerID`. |
+| `cde-ta-g7g…/FionaCDEServiceEngine/sidecar?type=EBOK&key=<ASIN>` | device-ADP | **`kindle.lpr`** JSON (not XML): exactly one `{type:"kindle.lpr", location, annotationId:"…-furthest-page-read", creationTime}` record = the furthest-page-read **snapshot** (position + Amazon's event time). Actively-read book → 200; non-read → 404. | ✅ **forward reading-time source** (§6.4). Poll → dedupe on `creationTime` → diff `location`. |
+| `www.amazon.com/ap/exchangetoken/cookies` | refresh_token (form POST) | Exchanges the device `refresh_token` for website cookies (`at-main`, `session-token`, `ubid-main`, `x-main`, `session-id`). | 🔑 bootstraps the two cookie-auth surfaces below (§6.2). |
+| `read.amazon.com/kindle-library/search?libraryType=BOOKS&sortType=acquisition_desc&querySize=200[&paginationToken=]` | web-cookie | **The full library WITH metadata** — `itemsList[]{asin, title, authors, percentageRead (0–100), productUrl (cover), webReaderUrl}` + `paginationToken`. **Live: 2512 books.** | ✅ **PRIMARY library + metadata + progress.** `percentageRead` → status (0=want / 100=read / else reading) — but see §6.4: it reads `0` in practice. |
+| `www.amazon.com/kindle/reading/insights/data` | web-cookie (GET, no CSRF) | `goal_info.titles_read[]{asin, date_read, read_event_id, content_type}` — per-book read **dates**, back to 2020 — plus daily/weekly **streaks**, goals, achievements (40KB JSON). | ✅ **finish-date backfill** — the per-book history Cloud Reader's library payload lacks. |
 
-### 6.2 No metadata over device auth
+**Audible — the in-code sibling (same credential, device-ADP).** For completeness, the
+audiobook half is already implemented against `api.audible.com`: `GET /1.0/library`
+(paged `response_groups`, the full ~1036-book library), `GET /1.0/stats/status/finished`
+(finish dates via `event_timestamp` + `continuation_token`), and
+`GET /1.0/stats/aggregates?…total_listening_stats…` (monthly listening-seconds → the
+retroactive `reading_activity` fill of §5). Same ADP signing, different host — the companion
+sync doc has the response-group recipe.
 
-The device-signed endpoints return **no title/author/cover** — only ASINs, shelf
-membership, and reading positions. So Kindle metadata is resolved the same way
-everything else is: **ASIN → Hardcover** via the match ladder (§3, rung 1 on
-`amazon_asin`). This is the second consumer of the one match engine.
+### 6.2 Two auth surfaces, one registration — the cookie exchange
 
-> **Alternative (noted, not chosen):** the clean full-metadata library lives at
-> `read.amazon.com` (the Cloud Reader), but it is **web-cookie** auth, not device
-> auth — a different, more fragile session model. We deliberately resolve metadata
-> through Hardcover instead of taking on a second Amazon auth surface.
+Device-ADP endpoints return **no title/author/cover** — only ASINs, shelf membership, and
+reading positions. The earlier design took that as a hard ceiling and resolved metadata
+*solely* through Hardcover. Live probing found the clean, fully-automatable escape: **the
+same device `refresh_token`** exchanges for website cookies and unlocks the metadata-bearing
+web surfaces — no second registration, no separate login.
 
-### 6.3 Kindle ingest — Option A (chosen)
+1. **`POST www.amazon.com/ap/exchangetoken/cookies`** (form-encoded:
+   `source_token=<refresh_token>`, `source_token_type=refresh_token`,
+   `requested_token_type=auth_cookies`, `domain=.amazon.com`) → website cookies
+   (`at-main`, `session-token`, `ubid-main`, `x-main`, `session-id`; strip quotes). **No
+   CSRF token needed** for the GETs that follow.
+2. Attach `Cookie:` to plain stdlib HTTP (**not** ADP-signed) for both `read.amazon.com`
+   (library, §6.1) and `kindle/reading/insights/data` (finish dates). A `refresh_token →
+   access_token` **bearer** also exists but the library API needs the **cookies** — the
+   bearer just returns the SPA HTML shell.
+
+Where the cookie surfaces still fall short — ASINs Cloud Reader leaves thin, or fusing a
+Kindle row with its Audible sibling — metadata is resolved the same way everything else is:
+**ASIN → Hardcover** via the match ladder (§3, rung 1 on `amazon_asin`). This match step is
+the second consumer of the one match engine and is **cross-source**: it reconciles Kindle and
+Audible `reading_items` onto the same work.
+
+### 6.3 Kindle ingest — the read.amazon.com-primary pipeline
+
+The pipeline was **rebuilt** once live probing settled the library question. The former
+"Option A" (device-auth whispersync shelves *as* the library) yielded only ~136 titleless
+collection books and ~7% Hardcover ASIN coverage; the Cloud Reader returns the full
+~2500-book library **with** metadata and progress. So the library roster now comes from the
+cookie surface, and whispersync is demoted to enrichment:
 
 ```mermaid
 flowchart LR
-    C["CloudCollections<br/>datasets/records"] -->|"ASINs + shelf status"| MAP["shelf ⇒ status<br/>reading/read/want"]
-    S["sidecar?key=ASIN"] -->|"LPR position + date"| POLL["poll & diff over time"]
-    MAP --> RI["reading_items(source='kindle')"]
-    HCV["Hardcover match ladder"] -->|"ASIN → title/author/cover"| RI
-    POLL --> RA["reading_activity<br/>(pages from LPR deltas)"]
+    LIB["Cloud Reader<br/>kindle-library/search"] -->|"asin+title+author+cover+percentageRead"| RI["reading_items(source='kindle')"]
+    INS["Insights<br/>reading/insights/data"] -->|"date_read → finished_at + streaks"| RI
+    S["sidecar?key=ASIN"] -->|"LPR location + creationTime"| POLL["poll & diff over time"]
+    HCV["Hardcover match ladder"] -->|"cross-source fuse + gap-fill"| RI
+    COLL["whispersync CloudCollections"] -.->|"series/shelf (future)"| RI
+    POLL --> RA["reading_activity(source='kindle')<br/>(reading-time from LPR deltas)"]
 ```
 
-The chosen ingest pipeline, mapping onto the existing tables:
+The ingest pipeline, mapping onto the existing tables:
 
-1. **CloudCollections → ASINs + shelf status.** Enumerate `datasets`, read each
-   `records` set, extract the `amzn://<ASIN>/BOOK` keys, map shelf → `status`.
-2. **sidecar → LPR position + date** for each ASIN. This is the polled signal.
-3. **Hardcover → metadata.** Resolve each ASIN to title/author/cover through the
-   match ladder (device auth has none).
-4. **Write** `reading_items(source='kindle')` (state + resolved metadata + the
-   `hardcover_*` linkage) and derive `reading_activity` rows from **polled LPR
-   deltas** (the forward reading-heartbeat model, §5).
+1. **Cloud Reader `kindle-library/search` → library + metadata + progress.** Paginate to
+   exhaustion (`paginationToken`). This is the primary roster and the source of
+   title/author/cover — the whispersync path is not.
+2. **Insights `reading/insights/data` → per-book read dates + streaks.** Backfill
+   `reading_items.finished_at` from `titles_read[].date_read` (history to 2020) and keep
+   streaks/goals for the domain dashboard.
+3. **CDE sidecar `kindle.lpr` → forward reading-time.** Poll per actively-read ASIN, dedupe
+   on `creationTime`, diff `location` into `reading_activity(source='kindle')` (§5, §6.4).
+4. **Hardcover match ladder → cross-source reconciliation + gap-fill** for ASINs Cloud Reader
+   leaves thin, and to fuse each Kindle row with its Audible sibling on `amazon_asin`.
+5. **whispersync CloudCollections → future series/shelf enrichment** — retained, but demoted
+   from "the library" to a later shelf/series signal.
 
-This slots straight into the existing domain shape: `books.Service` already holds
-the shared `*amazon.Store` and the DB; only `SyncUser` (and a `BackfillUser`
-mirror) need filling in, reusing `amazon.SignedGet`/`Sign`, `hardcover.Match`,
-`UpsertReadingItem`, and `UpsertReadingActivity`.
+This still slots into the existing domain shape: `books.Service` holds the shared
+`*amazon.Store` + DB; only `SyncUser` (and a `BackfillUser` mirror) need filling in, reusing
+`amazon.SignedGet`/`Sign` (sidecar), the cookie-exchange helper (library + insights),
+`hardcover.Match`, `UpsertReadingItem`, and `UpsertReadingActivity`.
+
+### 6.4 Reading-time & backfill — SETTLED
+
+Exhaustive live probing (2026-08) pins down exactly what reading history is and isn't
+retrievable without a manual export:
+
+- **Per-session reading MINUTES are NOT retrievable via any credential API.** Whispersync
+  (1000+ datasets paginated) carries zero reading-time/session/history — only
+  LearningDecks/VocabBuilder, the stale CloudCollections shelves, and a
+  `BookReadStateBackfills:{Backfill:"SUCCEEDED"}` migration flag (not per-book data). Every
+  device endpoint (`sidecar`/`kindle.lpr`, `startReading`, `kindle-library`) returns the
+  **current** position + one timestamp, never sessions. The Insights endpoint **ignores**
+  every minutes-shaped param (`includeReadingTime`, `widget=readingTime`, `view=sessions`,
+  `readEventId`, `aggregationLevel`, `startDate/endDate`) and returns a byte-identical body;
+  its only "duration" fields are **streak** lengths (consecutive-day counts), not reading
+  time. `read_event_id` unlocks no detail endpoint (all siblings 404).
+- **The automatable ceiling (cookie API):** per-book read **dates** + **streaks** + goals
+  (Insights) and the sidecar **furthest-page-read snapshot** — shipped as finish-date
+  backfill. That is the whole automated history.
+- **`percentageRead` is always `0` via Cloud Reader in practice** — present in the schema but
+  not populated — so progress/completion for reading-time purposes comes from the sidecar LPR
+  (`location`), not the library payload.
+- **Two ways to get real minutes:** (1) **forward-poll composition** — sidecar
+  `location`+`creationTime` deltas → sessions → `reading_activity` (the §5.1 monitor; live
+  going forward, no history); (2) the manual **Request-My-Data export**
+  `Kindle.Devices.ReadingSession.csv` (real per-session durations = the Audible-aggregates
+  analogue, but async/manual, 50+ files, doesn't cred-automate).
+- **Goal-metric consequence:** ship a cross-source **finished-books COUNT** now (both Kindle
+  and Audible share "finished," no backfill needed); reading-**time** goals unify once Kindle
+  time flows — forward-poll immediately, deeper backfill only via the manual CSV.
 
 ---
 
@@ -658,10 +780,17 @@ domain registry so secrets are never stranded.
   echo-suppress via `hardcover_pushed_at` → last-writer-wins via
   `hardcover_remote_updated_at` (§4.2). Columns exist; the query + reconcile loop
   do not yet.
-- **Kindle ingest job.** Implement `books.Service.SyncUser`/`BackfillUser` against
-  the §6 map (CloudCollections → sidecar LPR → Hardcover metadata →
-  `reading_items`/`reading_activity`), reusing the shared `amazon` + `hardcover`
-  plumbing. Register `KindleSyncKind` + a schedule behind `BooksEnabled()`.
+- **Kindle ingest job.** Implement `books.Service.SyncUser`/`BackfillUser` against the §6.3
+  pipeline (Cloud Reader library+metadata → Insights read-dates → sidecar LPR forward
+  reading-time → cross-source Hardcover match → `reading_items`/`reading_activity`), reusing
+  the shared `amazon` (device-ADP **and** cookie-exchange) + `hardcover` plumbing. Register
+  `KindleSyncKind` (library/insights) + the `books-kindle-reading-time` forward-poll job,
+  both behind `BooksEnabled()`.
+- **Reading-monitor forward composition.** Land the §5.1 persistent monitor: two-level
+  adaptive poll, `reading_activity(source='kindle')` emission, the `boomtime-reading-monitor`
+  Grafana board + Prometheus/Loki wiring, and the `continuous` / `session-boundary`
+  composition switch (gap-sum vs position-delta / open-close bracketing) once the
+  sync-trigger hypothesis is confirmed.
 - **Outbound beyond finish.** Today only the finished edge is mirrored; extending
   the push to status/progress changes is a follow-up once the inbound
   last-writer-wins arbitration is in place (so the two directions don't fight).
