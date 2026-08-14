@@ -80,6 +80,11 @@ func TestListReadingItems_ScansAllFields(t *testing.T) {
 		t.Fatalf("unmatched row should have nil hardcover_* pointers, got %v/%v/%v",
 			u.HardcoverBookID, u.HardcoverStatus, u.HardcoverMatchedAt)
 	}
+	// A never-matched row reads back with a nil slug (the honest "no deep-link
+	// target yet" state — the FE falls back to a search).
+	if u.HardcoverSlug != nil {
+		t.Fatalf("unmatched row should have nil HardcoverSlug, got %v", u.HardcoverSlug)
+	}
 	// A never-pushed row reads back with nil edition + nil pushed-progress.
 	if u.HardcoverEditionID != nil || u.HardcoverPushedProgress != nil {
 		t.Fatalf("unpushed row should have nil edition/pushed_progress, got %v/%v",
@@ -87,6 +92,64 @@ func TestListReadingItems_ScansAllFields(t *testing.T) {
 	}
 	if u.AmazonASIN != "B0AUDIO789" {
 		t.Fatalf("unmatched amazon_asin = %q", u.AmazonASIN)
+	}
+}
+
+// TestSetReadingItemHardcoverLink_PersistsSlug pins the deep-link fix (gaka-qic0):
+// the linkage writer persists hardcover_slug (round-trips through ListReadingItems),
+// and a later link with an EMPTY slug is COALESCE-guarded so it never blanks a good
+// slug written earlier — while a non-empty slug DOES overwrite.
+func TestSetReadingItemHardcoverLink_PersistsSlug(t *testing.T) {
+	d := openTestDB(t)
+	ctx := context.Background()
+	owner := mkSender("hclinkslug")
+	cleanupSender(t, d, ctx, owner)
+	ensureUser(t, d, ctx, owner)
+
+	if err := d.UpsertReadingItem(ctx, ReadingItem{
+		Owner: owner, Source: "kindle", ExternalID: "B0SLUG01",
+		Title: "The Way of Kings", Authors: "Brandon Sanderson", Status: "reading",
+	}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+
+	read := func() ReadingItem {
+		items, err := d.ListReadingItems(ctx, owner, "kindle")
+		if err != nil {
+			t.Fatalf("ListReadingItems: %v", err)
+		}
+		for _, it := range items {
+			if it.ExternalID == "B0SLUG01" {
+				return it
+			}
+		}
+		t.Fatal("row not found")
+		return ReadingItem{}
+	}
+
+	// First link carries a slug — it must persist.
+	if err := d.SetReadingItemHardcoverLink(ctx, owner, "kindle", "B0SLUG01", 4242, 0, "asin", "the-way-of-kings"); err != nil {
+		t.Fatalf("link with slug: %v", err)
+	}
+	if got := read(); got.HardcoverSlug == nil || *got.HardcoverSlug != "the-way-of-kings" {
+		t.Fatalf("HardcoverSlug = %v, want the-way-of-kings", got.HardcoverSlug)
+	}
+
+	// A re-link with an EMPTY slug (e.g. a fuzzy path that carried none) must NOT
+	// clobber the good slug — COALESCE guard.
+	if err := d.SetReadingItemHardcoverLink(ctx, owner, "kindle", "B0SLUG01", 4242, 0, "asin", ""); err != nil {
+		t.Fatalf("re-link empty slug: %v", err)
+	}
+	if got := read(); got.HardcoverSlug == nil || *got.HardcoverSlug != "the-way-of-kings" {
+		t.Fatalf("empty-slug re-link clobbered slug: got %v, want the-way-of-kings", got.HardcoverSlug)
+	}
+
+	// A non-empty slug DOES overwrite.
+	if err := d.SetReadingItemHardcoverLink(ctx, owner, "kindle", "B0SLUG01", 4242, 0, "asin", "kings-v2"); err != nil {
+		t.Fatalf("re-link new slug: %v", err)
+	}
+	if got := read(); got.HardcoverSlug == nil || *got.HardcoverSlug != "kings-v2" {
+		t.Fatalf("non-empty slug should overwrite: got %v, want kings-v2", got.HardcoverSlug)
 	}
 }
 

@@ -106,6 +106,10 @@ export interface ReadingItemDTO {
   hardcoverBookId?: number | null;
   hardcoverStatus?: string | null;
   hardcoverMatchedAt?: string;
+  // The book's Hardcover slug — the /books/<slug> deep-link segment. Preferred
+  // over the numeric id, which 404s on Hardcover's book pages (gaka-qic0). NULL
+  // until a re-match / re-pull backfills it onto an already-matched row.
+  hardcoverSlug?: string | null;
 }
 
 // GET /api/v1/hardcover — the Hardcover push-target connection status

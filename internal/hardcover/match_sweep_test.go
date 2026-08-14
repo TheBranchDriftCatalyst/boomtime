@@ -183,8 +183,9 @@ func TestMatchWith_CacheHitSkipsAPI(t *testing.T) {
 
 	mustUpsert(t, d, ctx, db.ReadingItem{Owner: owner, Source: "audible", ExternalID: asin, AmazonASIN: asin, Title: "Some Title"})
 
-	// Pre-seed the global cache so the sweep resolves without touching the API.
-	if err := d.PutHardcoverMatch(ctx, "asin", asin, 777, 7707, "asin"); err != nil {
+	// Pre-seed the global cache (with a slug) so the sweep resolves without
+	// touching the API — and so we can assert the slug rides the cache→link path.
+	if err := d.PutHardcoverMatch(ctx, "asin", asin, 777, 7707, "asin", "cached-book-slug"); err != nil {
 		t.Fatalf("pre-seed cache: %v", err)
 	}
 
@@ -215,6 +216,18 @@ func TestMatchWith_CacheHitSkipsAPI(t *testing.T) {
 	if len(remaining) != 0 {
 		t.Fatalf("row not linked from cache: %d still unmatched", len(remaining))
 	}
+
+	// The cached slug must have been written onto the per-user row — else a
+	// cache-hit match would still 404 the deep-link.
+	var gotSlug *string
+	if err := d.Pool.QueryRow(ctx,
+		`SELECT hardcover_slug FROM reading_items WHERE owner=$1 AND source='audible' AND external_id=$2`,
+		owner, asin).Scan(&gotSlug); err != nil {
+		t.Fatalf("read back slug: %v", err)
+	}
+	if gotSlug == nil || *gotSlug != "cached-book-slug" {
+		t.Fatalf("hardcover_slug from cache-hit link = %v, want %q", gotSlug, "cached-book-slug")
+	}
 }
 
 // TestMatchWith_CacheMissPopulates (gaka-wzgr) — an exact-id (asin) miss calls the
@@ -234,7 +247,7 @@ func TestMatchWith_CacheMissPopulates(t *testing.T) {
 
 	fake := &fakeMatcher{
 		hits: map[string]MatchResult{
-			asin: {BookID: 555, EditionID: 5505, Method: MatchByASIN, Confidence: 1},
+			asin: {BookID: 555, EditionID: 5505, Slug: "fresh-book-slug", Method: MatchByASIN, Confidence: 1},
 		},
 	}
 
@@ -255,8 +268,8 @@ func TestMatchWith_CacheMissPopulates(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("cache not populated after exact-id miss: ok=%v err=%v", ok, err)
 	}
-	if cached.BookID != 555 || cached.EditionID != 5505 || cached.Method != "asin" {
-		t.Fatalf("cached = %+v, want {555 5505 asin}", cached)
+	if cached.BookID != 555 || cached.EditionID != 5505 || cached.Method != "asin" || cached.Slug != "fresh-book-slug" {
+		t.Fatalf("cached = %+v, want {555 5505 asin fresh-book-slug}", cached)
 	}
 }
 

@@ -122,7 +122,7 @@ func (s *SyncService) matchWith(ctx context.Context, owner string, client matche
 			if cached, ok, lerr := s.DB.LookupHardcoverMatch(ctx, "asin", asinKey); lerr != nil {
 				s.logWarn(ctx, "hardcover match: cache lookup failed — falling through to API", "user", owner, "idtype", "asin", "external", asinKey, "err", lerr)
 			} else if ok && cached.BookID > 0 {
-				m = MatchResult{BookID: cached.BookID, EditionID: cached.EditionID, Method: MatchMethod(cached.Method)}
+				m = MatchResult{BookID: cached.BookID, EditionID: cached.EditionID, Slug: cached.Slug, Method: MatchMethod(cached.Method)}
 				fromCache = true
 			}
 		}
@@ -130,7 +130,7 @@ func (s *SyncService) matchWith(ctx context.Context, owner string, client matche
 			if cached, ok, lerr := s.DB.LookupHardcoverMatch(ctx, "isbn13", isbnKey); lerr != nil {
 				s.logWarn(ctx, "hardcover match: cache lookup failed — falling through to API", "user", owner, "idtype", "isbn13", "external", isbnKey, "err", lerr)
 			} else if ok && cached.BookID > 0 {
-				m = MatchResult{BookID: cached.BookID, EditionID: cached.EditionID, Method: MatchMethod(cached.Method)}
+				m = MatchResult{BookID: cached.BookID, EditionID: cached.EditionID, Slug: cached.Slug, Method: MatchMethod(cached.Method)}
 				fromCache = true
 			}
 		}
@@ -167,17 +167,17 @@ func (s *SyncService) matchWith(ctx context.Context, owner string, client matche
 			// best-effort: log it and keep going so the per-user link still gets written.
 			switch {
 			case m.Method == MatchByASIN && asinKey != "":
-				if perr := s.DB.PutHardcoverMatch(ctx, "asin", asinKey, m.BookID, m.EditionID, string(m.Method)); perr != nil {
+				if perr := s.DB.PutHardcoverMatch(ctx, "asin", asinKey, m.BookID, m.EditionID, string(m.Method), m.Slug); perr != nil {
 					s.logWarn(ctx, "hardcover match: cache put failed", "user", owner, "idtype", "asin", "external", asinKey, "err", perr)
 				}
 			case m.Method == MatchByISBN13 && isbnKey != "":
-				if perr := s.DB.PutHardcoverMatch(ctx, "isbn13", isbnKey, m.BookID, m.EditionID, string(m.Method)); perr != nil {
+				if perr := s.DB.PutHardcoverMatch(ctx, "isbn13", isbnKey, m.BookID, m.EditionID, string(m.Method), m.Slug); perr != nil {
 					s.logWarn(ctx, "hardcover match: cache put failed", "user", owner, "idtype", "isbn13", "external", isbnKey, "err", perr)
 				}
 			}
 		}
 
-		if lerr := s.DB.SetReadingItemHardcoverLink(ctx, owner, it.Source, it.ExternalID, m.BookID, m.EditionID, string(m.Method)); lerr != nil {
+		if lerr := s.DB.SetReadingItemHardcoverLink(ctx, owner, it.Source, it.ExternalID, m.BookID, m.EditionID, string(m.Method), m.Slug); lerr != nil {
 			s.logWarn(ctx, "hardcover match: link write failed", "user", owner, "source", it.Source, "external", it.ExternalID, "err", lerr)
 			res.Skipped++
 			continue

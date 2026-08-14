@@ -165,6 +165,7 @@ func registerReading() {
 				{Name: "amazonAsin", Expr: "amazon_asin"},
 				{Name: "hardcoverBookId", Expr: "hardcover_book_id"},
 				{Name: "hardcoverStatus", Expr: "hardcover_status"},
+				{Name: "hardcoverSlug", Expr: "hardcover_slug"},
 				{Name: "syncedAt", Expr: "synced_at"},
 			},
 		},

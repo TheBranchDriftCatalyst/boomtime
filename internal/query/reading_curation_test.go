@@ -114,6 +114,12 @@ func TestReading_Rows_ExposeCurationLayers(t *testing.T) {
 		t.Fatalf("un-overridden row = status:%v override:%v isOverride:%v, want reading/nil/false",
 			raw["status"], raw["statusOverride"], raw["statusIsOverride"])
 	}
+	// The Rows projection must carry hardcoverSlug (gaka-qic0) so the Books table
+	// can deep-link. A never-matched seed leaves it NULL, but the KEY must be
+	// present (the projection is wired), else the FE column silently vanishes.
+	if _, ok := raw["hardcoverSlug"]; !ok {
+		t.Fatalf("Rows projection missing hardcoverSlug key: %v", raw)
+	}
 }
 
 // sp is a local *string helper.

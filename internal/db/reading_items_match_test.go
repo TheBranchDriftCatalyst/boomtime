@@ -41,7 +41,7 @@ func TestListUnmatchedReadingItems_OnlyNullLinked(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("upsert matched: %v", err)
 	}
-	if err := d.SetReadingItemHardcoverLink(ctx, owner, "kindle", "B0MATCHED3", 999, 0, "asin"); err != nil {
+	if err := d.SetReadingItemHardcoverLink(ctx, owner, "kindle", "B0MATCHED3", 999, 0, "asin", "dune"); err != nil {
 		t.Fatalf("link matched: %v", err)
 	}
 

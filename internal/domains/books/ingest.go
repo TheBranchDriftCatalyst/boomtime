@@ -51,6 +51,7 @@ type kindleItem struct {
 	BookID    int64
 	EditionID int64
 	MatchConf string
+	Slug      string // the book's Hardcover slug (deep-link segment); "" when unresolved
 }
 
 // statusFromPercent maps a Cloud Reader percentageRead (0..100) to a reading
@@ -142,7 +143,7 @@ func (s *Service) SyncUser(ctx context.Context, owner string) (int, error) {
 			return count, err
 		}
 		if ki.BookID > 0 {
-			if err := s.DB.SetReadingItemHardcoverLink(ctx, owner, source, ki.Item.ExternalID, ki.BookID, ki.EditionID, ki.MatchConf); err != nil {
+			if err := s.DB.SetReadingItemHardcoverLink(ctx, owner, source, ki.Item.ExternalID, ki.BookID, ki.EditionID, ki.MatchConf, ki.Slug); err != nil {
 				return count, err
 			}
 		}
@@ -237,6 +238,7 @@ func buildReadingItem(owner string, lib amazon.CloudLibraryItem, meta *hardcover
 		out.Item = ri
 		out.BookID = meta.BookID
 		out.EditionID = meta.EditionID
+		out.Slug = meta.Slug
 		out.MatchConf = "asin" // LookupByASIN is an exact-ASIN edition match.
 	}
 	return out

@@ -93,6 +93,7 @@ func (s *SyncService) SyncHardcoverPull(ctx context.Context, owner string) (Pull
 		n, uerr := s.DB.UpdateHardcoverLinkFromPull(ctx, owner, db.HardcoverUserBookLink{
 			BookID:          int64(b.BookID),
 			Status:          StatusString(b.StatusID),
+			Slug:            b.Slug,
 			RemoteUpdatedAt: b.UpdatedAt,
 			Rating:          b.Rating,
 			FinishedAt:      latestFinishedAt(b.Reads),

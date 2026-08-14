@@ -52,6 +52,11 @@ type ReadingItem struct {
 	HardcoverStatus    *string
 	HardcoverMatchedAt *time.Time
 
+	// HardcoverSlug is the book's Hardcover slug (migration 00070) — the
+	// /books/<slug> path segment the deep-link needs (a numeric id 404s on
+	// Hardcover's book pages). NULL until a match/pull resolves it.
+	HardcoverSlug *string
+
 	// HardcoverEditionID is the resolved edition cached alongside the book id
 	// (migration 00063). NULL until matched. The continuous-progress push uses it
 	// to pin the read to a specific edition WITHOUT re-running the match ladder.
@@ -133,12 +138,15 @@ func (d *DB) UpsertReadingItem(ctx context.Context, it ReadingItem) error {
 
 // SetReadingItemHardcoverLink caches a resolved Hardcover match onto a
 // reading_item (keyed by owner+source+external_id): hardcover_book_id /
-// _edition_id (the resolved ids), hardcover_match_confidence (e.g. "asin"), and
-// hardcover_matched_at = now(). This is the "resolve-once, cache-forever"
-// linkage the catalyst-books Kindle ingest writes so a bare ASIN is pre-linked
-// to Hardcover without a later re-fuzz. No-op when bookID <= 0 (no match). It
-// touches ONLY the linkage columns — never the row's own source metadata.
-func (d *DB) SetReadingItemHardcoverLink(ctx context.Context, owner, source, externalID string, bookID, editionID int64, confidence string) error {
+// _edition_id (the resolved ids), hardcover_match_confidence (e.g. "asin"),
+// hardcover_slug (the /books/<slug> deep-link segment), and hardcover_matched_at
+// = now(). This is the "resolve-once, cache-forever" linkage the catalyst-books
+// Kindle ingest writes so a bare ASIN is pre-linked to Hardcover without a later
+// re-fuzz. No-op when bookID <= 0 (no match). It touches ONLY the linkage columns
+// — never the row's own source metadata. The slug is COALESCE-guarded so an empty
+// slug (a match path that didn't carry one) never clobbers a good one written
+// earlier.
+func (d *DB) SetReadingItemHardcoverLink(ctx context.Context, owner, source, externalID string, bookID, editionID int64, confidence, slug string) error {
 	if bookID <= 0 {
 		return nil
 	}
@@ -150,14 +158,19 @@ func (d *DB) SetReadingItemHardcoverLink(ctx context.Context, owner, source, ext
 	if confidence != "" {
 		conf = &confidence
 	}
+	var slugPtr *string
+	if slug != "" {
+		slugPtr = &slug
+	}
 	_, err := d.Pool.Exec(ctx,
 		`UPDATE reading_items SET
 		    hardcover_book_id          = $4,
 		    hardcover_edition_id       = COALESCE($5, hardcover_edition_id),
 		    hardcover_match_confidence = COALESCE($6, hardcover_match_confidence),
+		    hardcover_slug             = COALESCE($7, hardcover_slug),
 		    hardcover_matched_at       = now()
 		  WHERE owner = $1 AND source = $2 AND external_id = $3`,
-		owner, source, externalID, bookID, edition, conf)
+		owner, source, externalID, bookID, edition, conf, slugPtr)
 	return err
 }
 
@@ -454,7 +467,8 @@ func (d *DB) ListReadingItems(ctx context.Context, owner, source string) ([]Read
 		        progress_percent, finished, started_at, finished_at, rating,
 		        subtitle, narrators, series, runtime_min, goodreads_rating,
 		        isbn, amazon_asin, hardcover_book_id, hardcover_edition_id,
-		        hardcover_status, hardcover_matched_at, hardcover_pushed_progress,
+		        hardcover_status, hardcover_matched_at, hardcover_slug,
+		        hardcover_pushed_progress,
 		        status_override, rating_override, finished_at_override,
 		        curation_updated_at, synced_at
 		   FROM reading_items
@@ -473,7 +487,7 @@ func (d *DB) ListReadingItems(ctx context.Context, owner, source string) ([]Read
 			&it.FinishedAt, &it.Rating, &it.Subtitle, &it.Narrators, &it.Series,
 			&it.RuntimeMin, &it.GoodreadsRating, &it.ISBN, &it.AmazonASIN,
 			&it.HardcoverBookID, &it.HardcoverEditionID, &it.HardcoverStatus,
-			&it.HardcoverMatchedAt, &it.HardcoverPushedProgress,
+			&it.HardcoverMatchedAt, &it.HardcoverSlug, &it.HardcoverPushedProgress,
 			&it.StatusOverride, &it.RatingOverride, &it.FinishedAtOverride,
 			&it.CurationUpdatedAt, &it.SyncedAt); err != nil {
 			return nil, err
@@ -542,6 +556,7 @@ func (d *DB) UpdateReadingItemDisplayMeta(ctx context.Context, owner, source, ex
 type HardcoverUserBookLink struct {
 	BookID          int64
 	Status          string
+	Slug            string // the book's Hardcover slug; "" leaves hardcover_slug untouched
 	RemoteUpdatedAt time.Time
 	// Rating / FinishedAt are the remote curation values the LWW branch adopts into
 	// the OVERRIDE layer when Hardcover is the newer writer. Nil = the remote didn't
@@ -586,10 +601,15 @@ func (d *DB) UpdateHardcoverLinkFromPull(ctx context.Context, owner string, link
 		t := link.RemoteUpdatedAt.UTC()
 		remote = &t
 	}
+	var slug *string
+	if link.Slug != "" {
+		slug = &link.Slug
+	}
 	tag, err := d.Pool.Exec(ctx,
 		`UPDATE reading_items ri SET
 		    hardcover_status            = COALESCE($3, hardcover_status),
 		    hardcover_remote_updated_at = COALESCE($4, hardcover_remote_updated_at),
+		    hardcover_slug              = COALESCE($7, hardcover_slug),
 		    -- LWW adopt-gate (see doc): remote present + strictly newer than our
 		    -- override stamp + not the echo of our own last push.
 		    status_override = CASE WHEN $3::text IS NOT NULL AND $4::timestamptz IS NOT NULL
@@ -609,7 +629,7 @@ func (d *DB) UpdateHardcoverLinkFromPull(ctx context.Context, owner string, link
 		                             AND $3::text IS DISTINCT FROM ri.hardcover_pushed_status
 		                           THEN $4::timestamptz ELSE ri.curation_updated_at END
 		  WHERE ri.owner = $1 AND ri.hardcover_book_id = $2`,
-		owner, link.BookID, status, remote, link.Rating, link.FinishedAt)
+		owner, link.BookID, status, remote, link.Rating, link.FinishedAt, slug)
 	if err != nil {
 		return 0, err
 	}

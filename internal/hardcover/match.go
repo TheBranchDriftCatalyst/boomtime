@@ -35,15 +35,21 @@ type MatchInput struct {
 type MatchResult struct {
 	BookID     int64
 	EditionID  int64
+	Slug       string // the book's Hardcover slug (the /books/<slug> path segment); "" when unknown
 	Method     MatchMethod
 	Confidence float64 // 1.0 for exact-id hits; a 0..1 score for fuzzy search
 }
 
-// hcEdition is the edition shape the ladder selects on.
+// hcEdition is the edition shape the ladder selects on. Book.Slug carries the
+// book's Hardcover slug — the /books/<slug> path segment the deep-link needs
+// (the numeric book id 404s on Hardcover's book pages, only the slug resolves).
 type hcEdition struct {
 	ID              int64 `json:"id"`
 	BookID          int64 `json:"book_id"`
 	ReadingFormatID int64 `json:"reading_format_id"`
+	Book            struct {
+		Slug string `json:"slug"`
+	} `json:"book"`
 }
 
 // Match walks the ladder and STOPS at the first confident hit, returning the
@@ -57,7 +63,7 @@ func (c *Client) Match(ctx context.Context, in MatchInput) (MatchResult, error) 
 			return MatchResult{}, err
 		}
 		if ok {
-			return MatchResult{BookID: ed.BookID, EditionID: ed.ID, Method: MatchByASIN, Confidence: 1}, nil
+			return MatchResult{BookID: ed.BookID, EditionID: ed.ID, Slug: ed.Book.Slug, Method: MatchByASIN, Confidence: 1}, nil
 		}
 	}
 
@@ -68,7 +74,7 @@ func (c *Client) Match(ctx context.Context, in MatchInput) (MatchResult, error) 
 			return MatchResult{}, err
 		}
 		if ok {
-			return MatchResult{BookID: ed.BookID, EditionID: ed.ID, Method: MatchByISBN13, Confidence: 1}, nil
+			return MatchResult{BookID: ed.BookID, EditionID: ed.ID, Slug: ed.Book.Slug, Method: MatchByISBN13, Confidence: 1}, nil
 		}
 	}
 
@@ -96,6 +102,7 @@ func (c *Client) editionByField(ctx context.Context, field, value string) (hcEdi
     id
     book_id
     reading_format_id
+    book { slug }
   }
 }`
 	var data struct {
@@ -117,6 +124,7 @@ func (c *Client) editionsForBook(ctx context.Context, bookID int64) ([]hcEdition
     id
     book_id
     reading_format_id
+    book { slug }
   }
 }`
 	var data struct {
@@ -177,13 +185,14 @@ func (c *Client) searchMatch(ctx context.Context, in MatchInput) (MatchResult, e
 		return MatchResult{Method: MatchNone}, nil
 	}
 
-	editionID, err := c.pickEdition(ctx, best.BookID)
+	editionID, slug, err := c.pickEdition(ctx, best.BookID)
 	if err != nil {
 		return MatchResult{}, err
 	}
 	return MatchResult{
 		BookID:     best.BookID,
 		EditionID:  editionID,
+		Slug:       slug,
 		Method:     MatchBySearch,
 		Confidence: best.Score,
 	}, nil
@@ -191,16 +200,18 @@ func (c *Client) searchMatch(ctx context.Context, in MatchInput) (MatchResult, e
 
 // pickEdition chooses an edition for a book found via search. It prefers the
 // book's default edition ordering (first returned) and returns 0 when the book
-// has no listed editions (a status-only push is still possible off book_id).
-func (c *Client) pickEdition(ctx context.Context, bookID int64) (int64, error) {
+// has no listed editions (a status-only push is still possible off book_id). It
+// also returns the book's slug (all editions of a book carry the same
+// book.slug), so a search-path match still yields the deep-link slug.
+func (c *Client) pickEdition(ctx context.Context, bookID int64) (int64, string, error) {
 	eds, err := c.editionsForBook(ctx, bookID)
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	if len(eds) == 0 {
-		return 0, nil
+		return 0, "", nil
 	}
-	return eds[0].ID, nil
+	return eds[0].ID, eds[0].Book.Slug, nil
 }
 
 // parseSearchResults extracts candidates from a Typesense response JSON. The

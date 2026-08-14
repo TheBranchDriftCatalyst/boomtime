@@ -244,6 +244,9 @@ type readingItemDTO struct {
 	HardcoverBookID    *int64  `json:"hardcoverBookId,omitempty"`
 	HardcoverStatus    *string `json:"hardcoverStatus,omitempty"`
 	HardcoverMatchedAt *string `json:"hardcoverMatchedAt,omitempty"`
+	// hardcoverSlug is the book's Hardcover slug — the FE deep-link prefers it
+	// (/books/<slug>) over the numeric id, which 404s on Hardcover's book pages.
+	HardcoverSlug *string `json:"hardcoverSlug,omitempty"`
 }
 
 func toReadingItemDTO(it db.ReadingItem) readingItemDTO {
@@ -255,6 +258,7 @@ func toReadingItemDTO(it db.ReadingItem) readingItemDTO {
 		Narrators: it.Narrators, RuntimeMin: it.RuntimeMin, GoodreadsRating: it.GoodreadsRating,
 		ISBN: it.ISBN, AmazonASIN: it.AmazonASIN,
 		HardcoverBookID: it.HardcoverBookID, HardcoverStatus: it.HardcoverStatus,
+		HardcoverSlug:  it.HardcoverSlug,
 		StatusDerived:  it.Status,
 		StatusOverride: it.StatusOverride, StatusIsOverride: it.StatusOverride != nil,
 		RatingOverride: it.RatingOverride,
