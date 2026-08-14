@@ -236,6 +236,104 @@ describe("JobsTab — cancel a running job", () => {
   });
 });
 
+describe("JobsTab — queue overview", () => {
+  const now = new Date().toISOString();
+
+  function stubQueues(queues: unknown[]) {
+    server.use(
+      http.get("/api/v1/admin/jobs/queues", () => HttpResponse.json({ queues })),
+      http.get("/api/v1/admin/jobs/schedules", () => HttpResponse.json({ schedules: [] })),
+      http.get("/api/v1/admin/jobs", () => HttpResponse.json({ jobs: [] })),
+    );
+  }
+
+  it("renders a card per kind with headroom bar, depth, throughput and fail ratio", async () => {
+    config(false);
+    stubQueues([
+      // at cap WITH a backlog → pacing; 1 of 3 recent runs failed → 33%.
+      {
+        kind: "hardcover-match",
+        queued: 3,
+        running: 1,
+        maxConcurrency: 1,
+        doneLastHour: 2,
+        failedLastHour: 1,
+        avgDurationMs: 2400,
+        lastRunAt: now,
+        lastStatus: "running",
+      },
+      // idle, well under cap, no failures.
+      {
+        kind: "github-stats-refresh",
+        queued: 0,
+        running: 0,
+        maxConcurrency: 2,
+        doneLastHour: 5,
+        failedLastHour: 0,
+        avgDurationMs: 800,
+        lastRunAt: now,
+        lastStatus: "done",
+      },
+    ]);
+
+    renderWithProviders(<JobsTab />);
+
+    const card = await screen.findByTestId("queue-card-hardcover-match");
+    // Headroom bar label = running/max, and the bar itself is amber at cap.
+    expect(card.textContent).toContain("1/1");
+    expect(screen.getByTestId("queue-bar-hardcover-match").className).toContain(
+      "bg-amber-500",
+    );
+    // At-cap WITH backlog = pacing back-pressure + the queued depth badge.
+    expect(card.textContent).toContain("pacing");
+    expect(card.textContent).toContain("3 queued");
+    // Throughput + fail ratio (share of the trailing hour).
+    expect(card.textContent).toContain("2/h done");
+    expect(card.textContent).toContain("1 failed (33%)");
+    // A kind with failures gets the warn (destructive) color.
+    expect(screen.getByTestId("queue-fail-hardcover-match").className).toContain(
+      "text-destructive",
+    );
+
+    // The idle kind renders too: under-cap bar is NOT amber, no fail color.
+    const idle = screen.getByTestId("queue-card-github-stats-refresh");
+    expect(idle.textContent).toContain("0/2");
+    expect(screen.getByTestId("queue-bar-github-stats-refresh").className).not.toContain(
+      "bg-amber-500",
+    );
+    expect(screen.getByTestId("queue-fail-github-stats-refresh").className).not.toContain(
+      "text-destructive",
+    );
+  });
+
+  it("shows 'at cap' (not 'pacing') when running==max with no backlog", async () => {
+    config(false);
+    stubQueues([
+      {
+        kind: "avatar-render",
+        queued: 0,
+        running: 1,
+        maxConcurrency: 1,
+        doneLastHour: 0,
+        failedLastHour: 0,
+        avgDurationMs: 0,
+        lastRunAt: now,
+        lastStatus: "running",
+      },
+    ]);
+
+    renderWithProviders(<JobsTab />);
+
+    const card = await screen.findByTestId("queue-card-avatar-render");
+    expect(card.textContent).toContain("1/1");
+    expect(card.textContent).toContain("at cap");
+    expect(card.textContent).not.toContain("pacing");
+    expect(screen.getByTestId("queue-bar-avatar-render").className).toContain(
+      "bg-amber-500",
+    );
+  });
+});
+
 describe("JobsTab — per-job log side panel", () => {
   beforeEach(() => {
     config(false); // keep the reading panel out of the way

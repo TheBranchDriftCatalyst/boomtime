@@ -10,10 +10,12 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  AlertTriangle,
   Ban,
   BookOpen,
   CalendarClock,
   DownloadCloud,
+  Gauge,
   Headphones,
   ListChecks,
   Play,
@@ -58,7 +60,7 @@ import { usePublicConfig } from "@/lib/usePublicConfig";
 import { qk } from "@/lib/queryKeys";
 import { relativeTime } from "@/lib/sourceStatus";
 import { cn } from "@/lib/utils";
-import type { AdminJob, AdminJobStatus } from "@/types/api";
+import type { AdminJob, AdminJobQueue, AdminJobStatus } from "@/types/api";
 
 // ── formatting helpers ──────────────────────────────────────────────────────
 
@@ -98,6 +100,17 @@ function jobDuration(started: string | null, finished: string | null): string {
   return `${m}m ${Math.round(s % 60)}s`;
 }
 
+// Compact millisecond duration for the throughput line: "820ms", "2.4s",
+// "1m 3s". "—" for a non-positive/absent value.
+function humanizeMs(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return "—";
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  const s = ms / 1000;
+  if (s < 60) return `${s.toFixed(1)}s`;
+  const m = Math.floor(s / 60);
+  return `${m}m ${Math.round(s % 60)}s`;
+}
+
 // ── status badge ────────────────────────────────────────────────────────────
 
 const STATUS_STYLES: Record<AdminJobStatus, string> = {
@@ -129,6 +142,176 @@ const STATUS_FILTERS: { value: string; label: string }[] = [
   { value: "failed", label: "Failed" },
   { value: "cancelled", label: "Cancelled" },
 ];
+
+// ── queue overview ──────────────────────────────────────────────────────────
+
+// A single per-kind queue card: the headroom bar (running / maxConcurrency) is
+// the centrepiece — filled + labeled "1/1", amber at cap so an operator SEES the
+// limiter holding the line. At cap WITH a backlog is "pacing" (durable
+// back-pressure: the excess stays status=queued in Postgres and drains as slots
+// free). Below it: queue depth, trailing-hour throughput, fail ratio (warn when
+// >0), and the kind's last activity.
+function QueueCard({ q }: { q: AdminJobQueue }) {
+  const unlimited = q.maxConcurrency <= 0;
+  const atCap = !unlimited && q.running >= q.maxConcurrency;
+  const backPressure = atCap && q.queued > 0;
+  const totalRecent = q.doneLastHour + q.failedLastHour;
+  const failRatio = totalRecent > 0 ? q.failedLastHour / totalRecent : 0;
+  const hasFails = q.failedLastHour > 0;
+
+  // Filled fraction of the headroom bar. Unlimited kinds have no ceiling, so a
+  // running kind just shows a full primary bar (no back-pressure is possible).
+  const fillPct = unlimited
+    ? q.running > 0
+      ? 100
+      : 0
+    : q.maxConcurrency > 0
+      ? Math.min(100, (q.running / q.maxConcurrency) * 100)
+      : 0;
+
+  const lastStatus = q.lastStatus as AdminJobStatus;
+  const knownStatus = lastStatus in STATUS_STYLES;
+
+  return (
+    <div
+      data-testid={`queue-card-${q.kind}`}
+      className={cn(
+        "rounded-lg border bg-card p-3 transition-colors",
+        atCap ? "border-amber-500/40" : "border-border",
+      )}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="truncate font-mono text-sm font-medium text-foreground">
+          {q.kind}
+        </span>
+        {knownStatus && q.lastRunAt ? (
+          <StatusBadge status={lastStatus} />
+        ) : (
+          <span className="text-[11px] text-muted-foreground/50">idle</span>
+        )}
+      </div>
+
+      {/* Headroom bar + running/max label. */}
+      <div className="mt-2.5 flex items-center gap-2">
+        <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+          <div
+            data-testid={`queue-bar-${q.kind}`}
+            className={cn(
+              "h-full rounded-full transition-all",
+              atCap ? "bg-amber-500" : "bg-primary",
+            )}
+            style={{ width: `${fillPct}%` }}
+          />
+        </div>
+        <span
+          className={cn(
+            "shrink-0 font-mono text-xs tabular-nums",
+            atCap ? "text-amber-400" : "text-muted-foreground",
+          )}
+          title="running / max concurrency"
+        >
+          {q.running}/{unlimited ? "∞" : q.maxConcurrency}
+        </span>
+      </div>
+
+      {/* Back-pressure indicator: at cap WITH a backlog = pacing. */}
+      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+        {backPressure ? (
+          <span className="inline-flex items-center gap-1 rounded border border-amber-500/40 bg-amber-500/15 px-1.5 py-0.5 font-semibold uppercase tracking-wide text-amber-400">
+            <Gauge className="h-3 w-3" />
+            pacing
+          </span>
+        ) : atCap ? (
+          <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 font-semibold uppercase tracking-wide text-amber-400">
+            at cap
+          </span>
+        ) : null}
+        <span
+          className={cn(
+            "rounded border px-1.5 py-0.5 tabular-nums",
+            q.queued > 0
+              ? "border-border bg-muted text-foreground/80"
+              : "border-transparent text-muted-foreground/50",
+          )}
+          title="queued depth"
+        >
+          {q.queued} queued
+        </span>
+      </div>
+
+      {/* Throughput + fail ratio + last activity. */}
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+        <span className="tabular-nums" title="completed in the last hour">
+          {q.doneLastHour}/h done
+        </span>
+        <span
+          data-testid={`queue-fail-${q.kind}`}
+          className={cn(
+            "inline-flex items-center gap-1 tabular-nums",
+            hasFails && "text-destructive",
+          )}
+          title="failed in the last hour (share of runs)"
+        >
+          {hasFails && <AlertTriangle className="h-3 w-3" />}
+          {q.failedLastHour} failed
+          {totalRecent > 0 && ` (${Math.round(failRatio * 100)}%)`}
+        </span>
+        {q.avgDurationMs > 0 && (
+          <span className="tabular-nums" title="mean run duration (last hour)">
+            avg {humanizeMs(q.avgDurationMs)}
+          </span>
+        )}
+        <span
+          className="tabular-nums"
+          title={q.lastRunAt ? new Date(q.lastRunAt).toLocaleString() : undefined}
+        >
+          last {q.lastRunAt ? relativeTime(q.lastRunAt) : "never"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// The queue overview section: one card per registered/active kind, polled live
+// so back-pressure is visible as it happens. Server sorts most-active first
+// (running, then queued, then throughput).
+function QueueOverview() {
+  const { data: queues, isLoading, isError } = useQuery({
+    queryKey: qk.adminJobQueues(),
+    queryFn: () => api.getJobQueues(),
+    refetchInterval: 5000,
+  });
+
+  return (
+    <section className="space-y-3">
+      <h2 className="flex items-center gap-2 font-mono text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+        <Gauge className="h-4 w-4 text-primary" />
+        Queue
+      </h2>
+      {isError ? (
+        <p className="text-sm text-muted-foreground">
+          Queue stats are unavailable (the jobs subsystem may be disabled).
+        </p>
+      ) : isLoading || !queues ? (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" aria-busy="true">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-28 animate-pulse rounded-lg bg-muted/50" />
+          ))}
+        </div>
+      ) : queues.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No job kinds are registered.
+        </p>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {queues.map((q) => (
+            <QueueCard key={q.kind} q={q} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
 
 // ── reading-steps panel ─────────────────────────────────────────────────────
 
@@ -417,9 +600,11 @@ const JOB_COLS = 8;
 function JobsPanel({
   status,
   kind,
+  activeOnly,
 }: {
   status: string;
   kind: string;
+  activeOnly: boolean;
 }) {
   const qc = useQueryClient();
   const trimmedKind = kind.trim();
@@ -466,6 +651,13 @@ function JobsPanel({
       ),
   });
 
+  // "Active only" narrows the loaded page to in-flight rows (queued|running)
+  // client-side, composing with the status select + kind filter.
+  const visible =
+    activeOnly && jobs
+      ? jobs.filter((j) => j.status === "queued" || j.status === "running")
+      : jobs;
+
   return (
     <Card>
       <CardContent className="p-0">
@@ -493,16 +685,16 @@ function JobsPanel({
                     Failed to load jobs.
                   </TableCell>
                 </TableRow>
-              ) : isLoading || !jobs ? (
+              ) : isLoading || !visible ? (
                 <SkeletonRows />
-              ) : jobs.length === 0 ? (
+              ) : visible.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={JOB_COLS} className="p-0">
                     <EmptyState
                       icon={ListChecks}
                       title="No jobs match"
                       description={
-                        status !== "any" || trimmedKind
+                        activeOnly || status !== "any" || trimmedKind
                           ? "No jobs match the current filters. Clear them, or trigger a run from the Schedules panel above."
                           : "Nothing has been queued yet. Trigger a run from the Schedules panel above."
                       }
@@ -510,7 +702,7 @@ function JobsPanel({
                   </TableCell>
                 </TableRow>
               ) : (
-                jobs.map((job) => (
+                visible.map((job) => (
                   <JobRow
                     key={job.id}
                     job={job}
@@ -611,9 +803,11 @@ function SkeletonRows() {
 export function JobsTab() {
   const [status, setStatus] = useState("any");
   const [kind, setKind] = useState("");
+  const [activeOnly, setActiveOnly] = useState(false);
 
   return (
     <div className="max-w-6xl space-y-6">
+      <QueueOverview />
       <ReadingStepsPanel />
       <SchedulesPanel />
 
@@ -624,6 +818,15 @@ export function JobsTab() {
             Jobs
           </h2>
           <div className="flex items-center gap-2">
+            <Button
+              variant={activeOnly ? "default" : "outline"}
+              size="sm"
+              aria-pressed={activeOnly}
+              onClick={() => setActiveOnly((v) => !v)}
+              title="Show only queued or running jobs"
+            >
+              Active only
+            </Button>
             <Input
               value={kind}
               onChange={(e) => setKind(e.target.value)}
@@ -645,7 +848,7 @@ export function JobsTab() {
           </div>
         </div>
 
-        <JobsPanel status={status} kind={kind} />
+        <JobsPanel status={status} kind={kind} activeOnly={activeOnly} />
       </section>
     </div>
   );

@@ -96,6 +96,12 @@ export const handlers = [
       github_connect_enabled: false,
     }),
   ),
+  // gaka-hney: admin Jobs queue overview. Default = empty so any tab that
+  // mounts the JobsTab (which polls it) renders without an unhandled request;
+  // tests that assert on the queue cards override with server.use.
+  http.get("/api/v1/admin/jobs/queues", () =>
+    HttpResponse.json({ queues: [] }),
+  ),
 ];
 
 export { http, HttpResponse };

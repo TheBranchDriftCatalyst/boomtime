@@ -7,6 +7,7 @@ package admin
 
 import (
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
@@ -28,6 +29,22 @@ type jobDTO struct {
 	CreatedAt   string  `json:"createdAt"`
 	StartedAt   *string `json:"startedAt"`
 	FinishedAt  *string `json:"finishedAt"`
+}
+
+// queueKindDTO is one per-kind row of the queue overview. queued/running are the
+// live depth; doneLastHour/failedLastHour/avgDurationMs are the trailing-hour
+// throughput window; maxConcurrency (0 = unlimited) comes from the registry so
+// the FE can render running/max headroom and flag at-cap back-pressure.
+type queueKindDTO struct {
+	Kind           string  `json:"kind"`
+	Queued         int     `json:"queued"`
+	Running        int     `json:"running"`
+	MaxConcurrency int     `json:"maxConcurrency"`
+	DoneLastHour   int     `json:"doneLastHour"`
+	FailedLastHour int     `json:"failedLastHour"`
+	AvgDurationMs  float64 `json:"avgDurationMs"`
+	LastRunAt      *string `json:"lastRunAt"`
+	LastStatus     string  `json:"lastStatus"`
 }
 
 type scheduleDTO struct {
@@ -78,6 +95,81 @@ func (h *Handler) AdminJobsList(c *echo.Context) error {
 		out = append(out, toJobDTO(j))
 	}
 	return c.JSON(http.StatusOK, map[string]any{"jobs": out})
+}
+
+// AdminJobQueues: GET /api/v1/admin/jobs/queues — the per-kind queue overview
+// (gaka-hney). One GROUP BY scan of the jobs table (ListJobKindStats over the
+// last hour) merged with the registry's per-kind concurrency caps + the full set
+// of registered kinds, so an operator SEES the limiter working: queue depth,
+// running/max headroom, trailing-hour throughput + fail ratio, and last activity.
+// Kinds with no rows yet (freshly registered / only scheduled) still appear with
+// zeroes. Sorted most-active first (running, then queued, then throughput).
+func (h *Handler) AdminJobQueues(c *echo.Context) error {
+	if _, aerr := h.requireAdmin(c); aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
+	}
+	if h.JobStore == nil {
+		return apihelpers.RespondErr(c, h.jobsUnavailable())
+	}
+	since := time.Now().Add(-time.Hour)
+	stats, err := h.JobStore.ListJobKindStats(c.Request().Context(), since)
+	if err != nil {
+		return apihelpers.InternalErr(h.Logger, c, "jobs queue stats failed", err)
+	}
+
+	// Per-kind concurrency caps + the registered-kind universe (both nil-safe when
+	// the registry isn't wired).
+	var caps map[string]int
+	var known []string
+	if h.JobRegistry != nil {
+		caps = h.JobRegistry.Concurrency()
+		known = h.JobRegistry.Kinds()
+	}
+
+	// Index the DB aggregates by kind, then union in every registered kind so a
+	// known-but-idle kind still shows a card at zero depth.
+	byKind := make(map[string]queueKindDTO, len(stats)+len(known))
+	for _, ks := range stats {
+		byKind[ks.Kind] = queueKindDTO{
+			Kind:           ks.Kind,
+			Queued:         ks.Queued,
+			Running:        ks.Running,
+			MaxConcurrency: caps[ks.Kind],
+			DoneLastHour:   ks.DoneRecent,
+			FailedLastHour: ks.FailedRecent,
+			AvgDurationMs:  ks.AvgDurationMs,
+			LastRunAt:      rfcPtr(ks.LastRunAt),
+			LastStatus:     string(ks.LastStatus),
+		}
+	}
+	for _, k := range known {
+		if _, seen := byKind[k]; !seen {
+			byKind[k] = queueKindDTO{Kind: k, MaxConcurrency: caps[k]}
+		}
+	}
+
+	out := make([]queueKindDTO, 0, len(byKind))
+	for _, q := range byKind {
+		out = append(out, q)
+	}
+	// Most-active first: running desc, then queued desc, then trailing-hour
+	// throughput desc, then kind for a stable order.
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.Running != b.Running {
+			return a.Running > b.Running
+		}
+		if a.Queued != b.Queued {
+			return a.Queued > b.Queued
+		}
+		ta := a.DoneLastHour + a.FailedLastHour
+		tb := b.DoneLastHour + b.FailedLastHour
+		if ta != tb {
+			return ta > tb
+		}
+		return a.Kind < b.Kind
+	})
+	return c.JSON(http.StatusOK, map[string]any{"queues": out})
 }
 
 // AdminJobSchedules: GET /api/v1/admin/jobs/schedules

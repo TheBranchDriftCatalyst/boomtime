@@ -106,6 +106,7 @@ func Register(e *echo.Echo, h *Handler) {
 	if h != nil && h.DB != nil {
 		jobsCap := apihelpers.RequireCap(h.DB, auth.CapAdmin, "view admin jobs")
 		e.GET("/api/v1/admin/jobs", h.AdminJobsList, jobsCap)
+		e.GET("/api/v1/admin/jobs/queues", h.AdminJobQueues, jobsCap)
 		e.GET("/api/v1/admin/jobs/schedules", h.AdminJobSchedules, jobsCap)
 		e.POST("/api/v1/admin/jobs/trigger", h.AdminJobTrigger, jobsCap)
 		e.POST("/api/v1/admin/jobs/:id/retry", h.AdminJobRetry, jobsCap)

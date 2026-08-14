@@ -234,6 +234,70 @@ func (s *Store) List(ctx context.Context, status, kind string, limit int) ([]Job
 	return out, rows.Err()
 }
 
+// KindStats is a per-kind aggregate of the jobs table for the admin queue
+// overview (gaka-hney): current queue depth (queued/running are point-in-time,
+// all-time), recent throughput + failures (done/failed over a `since` window,
+// keyed on finished_at), the mean successful+failed run duration over that
+// window, and the kind's most-recent activity timestamp + status.
+//
+// maxConcurrency is deliberately NOT here — it's registry policy (SetConcurrency),
+// merged in by the admin handler so this stays a pure jobs-table read.
+type KindStats struct {
+	Kind          string
+	Queued        int
+	Running       int
+	DoneRecent    int
+	FailedRecent  int
+	AvgDurationMs float64 // 0 when nothing of this kind finished within `since`
+	LastRunAt     *time.Time
+	LastStatus    Status
+}
+
+// ListJobKindStats returns one KindStats per DISTINCT kind present in the jobs
+// table, computed in a single GROUP BY scan (not N queries). `since` bounds the
+// throughput window: the done/failed counts and the avg-duration only consider
+// rows whose finished_at >= since, while queued/running reflect the live depth.
+//
+// last_run_at is the kind's most recent activity (finished, else started, else
+// created) and last_status is that row's status — resolved with array_agg ...
+// ORDER BY so it costs no extra query. Kinds with zero rows never appear here;
+// the admin layer unions in the registered kinds so a known-but-idle kind still
+// shows a card.
+func (s *Store) ListJobKindStats(ctx context.Context, since time.Time) ([]KindStats, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT kind,
+		        count(*) FILTER (WHERE status = 'queued')                       AS queued,
+		        count(*) FILTER (WHERE status = 'running')                      AS running,
+		        count(*) FILTER (WHERE status = 'done'   AND finished_at >= $1) AS done_recent,
+		        count(*) FILTER (WHERE status = 'failed' AND finished_at >= $1) AS failed_recent,
+		        coalesce(avg(EXTRACT(EPOCH FROM (finished_at - started_at)) * 1000)
+		            FILTER (WHERE status IN ('done','failed')
+		                    AND finished_at >= $1 AND started_at IS NOT NULL), 0) AS avg_ms,
+		        max(coalesce(finished_at, started_at, created_at))              AS last_run_at,
+		        (array_agg(status ORDER BY coalesce(finished_at, started_at, created_at) DESC))[1] AS last_status
+		   FROM jobs
+		  GROUP BY kind
+		  ORDER BY kind`,
+		since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []KindStats
+	for rows.Next() {
+		var ks KindStats
+		var lastStatus string
+		if err := rows.Scan(&ks.Kind, &ks.Queued, &ks.Running,
+			&ks.DoneRecent, &ks.FailedRecent, &ks.AvgDurationMs,
+			&ks.LastRunAt, &lastStatus); err != nil {
+			return nil, err
+		}
+		ks.LastStatus = Status(lastStatus)
+		out = append(out, ks)
+	}
+	return out, rows.Err()
+}
+
 // Get loads one job by id (admin detail view).
 func (s *Store) Get(ctx context.Context, id int64) (*Job, bool, error) {
 	row := s.pool.QueryRow(ctx, `SELECT `+jobCols+` FROM jobs WHERE id = $1`, id)

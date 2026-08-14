@@ -178,11 +178,13 @@ func (h *Handler) SetImageJobEvents(ev imagejobs.EventSource) {
 	}
 }
 
-// SetJobs propagates the catalyst-go-jobs Store + Enqueuer to h.Admin
-// (gaka-hney.2) so the admin Jobs tab can list + trigger/retry.
-func (h *Handler) SetJobs(store *jobs.Store, enq jobs.Enqueuer) {
+// SetJobs propagates the catalyst-go-jobs Store + Enqueuer + Registry to h.Admin
+// (gaka-hney.2) so the admin Jobs tab can list + trigger/retry and render the
+// per-kind queue overview (the registry supplies the concurrency caps + the
+// full set of known kinds).
+func (h *Handler) SetJobs(store *jobs.Store, enq jobs.Enqueuer, reg *jobs.Registry) {
 	if h.Admin != nil {
-		h.Admin.SetJobs(store, enq)
+		h.Admin.SetJobs(store, enq, reg)
 	}
 	if h.Identity != nil {
 		h.Identity.SetJobEnqueuer(enq) // gaka-hney.7: avatar-render enqueue

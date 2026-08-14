@@ -861,8 +861,8 @@ func runCmd() *cobra.Command {
 				// guard, --role=worker nil-panics in SetJobs the moment the jobs
 				// block runs, incl. the KEDA drain pod and the image worker.)
 				if h != nil {
-					h.SetJobs(jobStore, provider) // admin Jobs tab (list/trigger/retry)
-					h.SetJobEvents(jobHub)        // /api/v1/jobs/ws push stream
+					h.SetJobs(jobStore, provider, jobReg) // admin Jobs tab (list/trigger/retry + queue overview)
+					h.SetJobEvents(jobHub)                // /api/v1/jobs/ws push stream
 				}
 
 				logger.Info("jobs: wired", "provider", provider.Name(),

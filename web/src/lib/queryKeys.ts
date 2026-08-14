@@ -211,6 +211,9 @@ export const qk = {
   adminJobs: (status?: string, kind?: string, limit?: number) =>
     ["admin", "jobs", "list", status ?? "", kind ?? "", limit ?? 0] as const,
   adminJobSchedules: () => ["admin", "jobs", "schedules"] as const,
+  // gaka-hney: per-kind queue overview. Under the shared ["admin","jobs"]
+  // prefix so a trigger/retry invalidation refreshes the queue cards too.
+  adminJobQueues: () => ["admin", "jobs", "queues"] as const,
 
   // gaka-metrics: the rate-metric registry snapshot for the admin Metrics tab.
   // Polled on a short interval; no filters (the FE groups client-side).

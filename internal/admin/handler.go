@@ -77,6 +77,12 @@ type Handler struct {
 	// via JobEnqueuer. Nil = jobs subsystem not wired (handlers 503).
 	JobStore    *jobs.Store
 	JobEnqueuer jobs.Enqueuer
+	// JobRegistry is the same registry the workers consult — the source of truth
+	// for the full set of known kinds (Kinds) and their fleet-wide concurrency
+	// caps (Concurrency). The queue-overview endpoint merges these onto the
+	// jobs-table aggregates so at-cap back-pressure is visible and idle-but-known
+	// kinds still show. Nil = not wired (overview omits caps / registered kinds).
+	JobRegistry *jobs.Registry
 }
 
 // New constructs an admin.Handler with the passed-in shared deps.
@@ -123,12 +129,14 @@ func (h *Handler) SetImageJobEvents(ev imagejobs.EventSource) {
 	h.ImageJobEvents = ev
 }
 
-// SetJobs wires the catalyst-go-jobs Store + Enqueuer after construction
-// (gaka-hney.2) so the admin Jobs tab can list history + trigger/retry. Nil =
-// jobs not wired; the handlers return 503.
-func (h *Handler) SetJobs(store *jobs.Store, enq jobs.Enqueuer) {
+// SetJobs wires the catalyst-go-jobs Store + Enqueuer + Registry after
+// construction (gaka-hney.2) so the admin Jobs tab can list history +
+// trigger/retry and render the per-kind queue overview. Nil = jobs not wired;
+// the handlers return 503.
+func (h *Handler) SetJobs(store *jobs.Store, enq jobs.Enqueuer, reg *jobs.Registry) {
 	h.JobStore = store
 	h.JobEnqueuer = enq
+	h.JobRegistry = reg
 }
 
 // requireAdmin: 401 without a token, 403 when not on the admin allowlist.

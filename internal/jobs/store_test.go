@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"os"
 	"testing"
 	"time"
@@ -263,5 +264,99 @@ func TestSchedulerClaimIsSingleton(t *testing.T) {
 	// (this is the leader-singleton guarantee across replicas).
 	if k2, _ := s.ClaimDueSchedules(ctx); len(k2) != 0 {
 		t.Fatalf("double-claim returned %v, want none", k2)
+	}
+}
+
+// TestListJobKindStats seeds jobs across kinds, statuses, and times, then asserts
+// the per-kind GROUP BY aggregate: live queued/running depth, trailing-hour
+// done/failed throughput (an OLD done row is excluded), and the mean duration
+// over that window. A kind with only a queued row reports zeroes + a zero avg.
+func TestListJobKindStats(t *testing.T) {
+	s, ctx := newTestStore(t)
+	now := time.Now()
+	ptr := func(tm time.Time) *time.Time { return &tm }
+
+	// seed inserts a job then stamps it into a chosen status with explicit
+	// started/finished times (the natural transitions can't backdate the clock).
+	seed := func(kind, status string, started, finished *time.Time) {
+		id, err := s.Enqueue(ctx, kind, "", nil, 1, time.Time{})
+		if err != nil {
+			t.Fatalf("enqueue %s/%s: %v", kind, status, err)
+		}
+		if _, err := s.pool.Exec(ctx,
+			`UPDATE jobs SET status=$2, started_at=$3, finished_at=$4 WHERE id=$1`,
+			id, status, started, finished); err != nil {
+			t.Fatalf("seed %s/%s: %v", kind, status, err)
+		}
+	}
+
+	within := now.Add(-10 * time.Minute) // comfortably inside the 1h window
+	// alpha: 2 done (1s + 3s), 1 failed (2s) — all within the hour → avg 2000ms;
+	//        1 running; 2 queued; plus 1 OLD done (finished 2h ago, excluded).
+	seed("alpha", "done", ptr(within), ptr(within.Add(1*time.Second)))
+	seed("alpha", "done", ptr(within), ptr(within.Add(3*time.Second)))
+	seed("alpha", "failed", ptr(within), ptr(within.Add(2*time.Second)))
+	seed("alpha", "running", ptr(now.Add(-1*time.Minute)), nil)
+	if _, err := s.Enqueue(ctx, "alpha", "", nil, 1, time.Time{}); err != nil {
+		t.Fatalf("enqueue alpha queued: %v", err)
+	}
+	if _, err := s.Enqueue(ctx, "alpha", "", nil, 1, time.Time{}); err != nil {
+		t.Fatalf("enqueue alpha queued: %v", err)
+	}
+	old := now.Add(-2 * time.Hour)
+	seed("alpha", "done", ptr(old), ptr(old.Add(5*time.Second)))
+
+	// beta: a single queued row — the "known but idle" shape.
+	if _, err := s.Enqueue(ctx, "beta", "", nil, 1, time.Time{}); err != nil {
+		t.Fatalf("enqueue beta: %v", err)
+	}
+
+	stats, err := s.ListJobKindStats(ctx, now.Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("ListJobKindStats: %v", err)
+	}
+	byKind := map[string]KindStats{}
+	for _, ks := range stats {
+		byKind[ks.Kind] = ks
+	}
+
+	a, ok := byKind["alpha"]
+	if !ok {
+		t.Fatalf("alpha missing from stats: %+v", stats)
+	}
+	if a.Queued != 2 {
+		t.Errorf("alpha Queued = %d, want 2", a.Queued)
+	}
+	if a.Running != 1 {
+		t.Errorf("alpha Running = %d, want 1", a.Running)
+	}
+	if a.DoneRecent != 2 { // the 2h-old done is excluded by the window
+		t.Errorf("alpha DoneRecent = %d, want 2 (old done excluded)", a.DoneRecent)
+	}
+	if a.FailedRecent != 1 {
+		t.Errorf("alpha FailedRecent = %d, want 1", a.FailedRecent)
+	}
+	if math.Abs(a.AvgDurationMs-2000) > 1 { // mean of 1000, 3000, 2000
+		t.Errorf("alpha AvgDurationMs = %.1f, want ~2000", a.AvgDurationMs)
+	}
+	if a.LastRunAt == nil {
+		t.Error("alpha LastRunAt = nil, want a timestamp")
+	}
+	if a.LastStatus == "" {
+		t.Error("alpha LastStatus empty, want the most-recent row's status")
+	}
+
+	b, ok := byKind["beta"]
+	if !ok {
+		t.Fatalf("beta missing from stats: %+v", stats)
+	}
+	if b.Queued != 1 || b.Running != 0 || b.DoneRecent != 0 || b.FailedRecent != 0 {
+		t.Errorf("beta = %+v, want only Queued=1", b)
+	}
+	if b.AvgDurationMs != 0 {
+		t.Errorf("beta AvgDurationMs = %.1f, want 0 (nothing finished)", b.AvgDurationMs)
+	}
+	if b.LastStatus != StatusQueued {
+		t.Errorf("beta LastStatus = %q, want queued", b.LastStatus)
 	}
 }

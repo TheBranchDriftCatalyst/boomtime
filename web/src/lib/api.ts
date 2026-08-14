@@ -63,6 +63,7 @@ import type {
   AdminUsersPayload,
   AdminJob,
   AdminJobSchedule,
+  AdminJobQueue,
   MetricFamily,
   IdentitiesPayload,
   GithubConnection,
@@ -1109,6 +1110,11 @@ export const api = {
       "schedules",
       [],
     ),
+  // gaka-hney: per-kind queue overview — live depth, running/max headroom,
+  // trailing-hour throughput + fail ratio. Backs the queue cards atop the Jobs
+  // tab; polled so the limiter's back-pressure is visible in real time.
+  getJobQueues: () =>
+    unwrap<AdminJobQueue[]>("/api/v1/admin/jobs/queues", "queues", []),
   triggerAdminJob: (kind: string) =>
     request<{ id: number }>("/api/v1/admin/jobs/trigger", {
       method: "POST",

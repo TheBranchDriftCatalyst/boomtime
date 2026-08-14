@@ -128,6 +128,27 @@ export interface AdminJobSchedulesPayload {
   schedules: AdminJobSchedule[];
 }
 
+// One row of the per-kind queue overview — GET /api/v1/admin/jobs/queues
+// (gaka-hney). Mirrors internal/admin.queueKindDTO. queued/running are the live
+// depth; maxConcurrency (0 = unlimited) is the registry cap, so running/max is
+// the headroom bar and running >= max (with a backlog) is back-pressure.
+// doneLastHour/failedLastHour/avgDurationMs are the trailing-hour throughput
+// window; lastRunAt/lastStatus are the kind's most-recent activity.
+export interface AdminJobQueue {
+  kind: string;
+  queued: number;
+  running: number;
+  maxConcurrency: number; // 0 = unlimited
+  doneLastHour: number;
+  failedLastHour: number;
+  avgDurationMs: number; // 0 when nothing finished this hour
+  lastRunAt: string | null; // RFC3339, null when the kind has no rows yet
+  lastStatus: string; // "" when the kind has no rows yet
+}
+export interface AdminJobQueuesPayload {
+  queues: AdminJobQueue[];
+}
+
 // Rate-metric registry — GET /api/v1/admin/metrics (gaka-metrics). Mirrors
 // internal/metrics.Series. A generic rolling time-series: any backend call to
 // metrics.Inc(name)/Observe(name) appears here as a series, so the FE renders
