@@ -57,6 +57,43 @@ export interface CurationPatch {
   finishedAt?: string | null;
 }
 
+// gaka-books: state of the SERVER-side reading monitor (the persistent engine
+// that polls each in-progress Kindle book's furthest-page-read and toasts on a
+// reading ping). The admin panel is a thin control over this: GET reads it, PUT
+// flips `enabled` / `mode`. `mode` picks toast frequency — debounced = one toast
+// per book advance; verbose = a toast on every ping. `activeBooks` is how many
+// in-progress books the engine is currently watching; `lastPingAt` is when it
+// last observed a reading ping (null before the first).
+export type ReadingMonitorMode = "debounced" | "verbose";
+
+// Empirically-derived optimal poll intervals (gaka-books). Computed server-side
+// from observed whispersync advances so the admin panel can STATE the answer to
+// "what's the optimal polling timeframe" in plain English, not just link out.
+//   detectSecs        — how often to sweep ALL books for a new advance;
+//   captureSecs       — fast-capture cadence for an actively-advancing book;
+//   idleSecs          — mark a book idle after this long with no advance;
+//   medianAdvanceSecs — median gap between observed whispersync pushes;
+//   p90AdvanceSecs    — 90th-percentile gap (the slow tail);
+//   sampleCount       — advances the recommendation was derived from.
+// The whole object is null when sampleCount is too low to recommend anything.
+export interface ReadingMonitorRecommendation {
+  detectSecs: number;
+  captureSecs: number;
+  idleSecs: number;
+  medianAdvanceSecs: number;
+  p90AdvanceSecs: number;
+  sampleCount: number;
+}
+
+export interface ReadingMonitorState {
+  enabled: boolean;
+  mode: ReadingMonitorMode;
+  activeBooks: number;
+  lastPingAt: string | null;
+  // gaka-books: the optimal-interval answer, or null until enough data.
+  recommendation: ReadingMonitorRecommendation | null;
+}
+
 export interface ReadingItemDTO {
   source: string;
   externalId: string;

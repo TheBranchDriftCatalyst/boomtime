@@ -1,128 +1,79 @@
-// ReadingMonitorPanel — Admin › Books › Reading monitor (gaka-books). A LIVE
-// diagnostic: hit Start, open + read a book on your Kindle/iPad, and watch the
-// furthest-page-read advance in real time. The panel opens a WebSocket that
-// polls each in-progress Kindle book's last-page-read position at a high sample
-// rate and streams every advance here — so we can empirically measure the
-// whispersync sync cadence (how often it pushes, how far it jumps) and decide
-// gap-sum vs position-delta for the reading-time composition.
-//
-// Read-only: nothing observed here is persisted server-side.
-import { useMemo, useState } from "react";
-import {
-  Activity,
-  AlertTriangle,
-  BookOpenCheck,
-  Gauge,
-  Play,
-  Radio,
-  RotateCcw,
-  Square,
-} from "lucide-react";
+// ReadingMonitorPanel — Admin › Books › Reading monitor (gaka-books). A THIN
+// control over the SERVER-side persistent reading monitor. The poll engine no
+// longer runs in this browser tab: it lives server-side, watches each
+// in-progress Kindle book's furthest-page-read, and toasts you on a reading
+// ping. This panel just (a) flips the engine on/off, (b) switches the toast
+// mode, (c) shows a light live status polled from the server, and (d) deep-links
+// to the full cadence report in Grafana. Closing the tab does NOT stop the
+// monitor — it keeps running server-side.
+import { BookOpenCheck, ExternalLink, Gauge, Radio } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
-import { EmptyState } from "@/components/EmptyState";
+import { Switch } from "@thebranchdriftcatalyst/catalyst-ui/ui/switch";
+import { Label } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
+import { api } from "@/lib/api";
+import { qk } from "@/lib/queryKeys";
+import { relativeTime } from "@/lib/sourceStatus";
 import { cn } from "@/lib/utils";
-import {
-  useReadingMonitorSocket,
-  type SocketStatus,
-} from "./useReadingMonitorSocket";
-import {
-  buildRows,
-  computeCadence,
-  fmtDeltaLocation,
-  fmtInterval,
-  type MonitorRow,
-} from "./readingMonitorCadence";
+import type {
+  ReadingMonitorMode,
+  ReadingMonitorRecommendation,
+  ReadingMonitorState,
+} from "@/types/api";
 
-const DEFAULT_INTERVAL = 6;
-const DEFAULT_LIMIT = 12;
+// Grafana deep-link (gaka-books). The cadence board's stable uid is
+// `boomtime-reading-monitor`. Base URL: VITE_GRAFANA_BASE_URL when set (Grafana
+// on its own origin), else a same-host `/grafana` reverse-proxy path — the
+// common self-hosted default. Trailing slash trimmed so the join is clean.
+const CADENCE_BOARD_UID = "boomtime-reading-monitor";
+const GRAFANA_BASE = (
+  import.meta.env.VITE_GRAFANA_BASE_URL ?? "/grafana"
+).replace(/\/$/, "");
+const CADENCE_BOARD_URL = `${GRAFANA_BASE}/d/${CADENCE_BOARD_UID}`;
 
-function statusLabel(status: SocketStatus, running: boolean): string {
-  if (!running) return "idle";
-  switch (status) {
-    case "open":
-      return "live";
-    case "connecting":
-      return "connecting";
-    case "reconnecting":
-      return "reconnecting";
-    default:
-      return "closed";
-  }
-}
+// Poll the status endpoint gently while the panel is open. This is display-only
+// — the actual monitor cadence runs server-side, not off this timer.
+const STATUS_POLL_MS = 15_000;
 
-// A pulsing status dot: green+pulse when live, amber while (re)connecting, grey idle.
-function LiveDot({ status, running }: { status: SocketStatus; running: boolean }) {
-  const live = running && status === "open";
-  const connecting =
-    running && (status === "connecting" || status === "reconnecting");
+const MODES: {
+  id: ReadingMonitorMode;
+  label: string;
+  hint: string;
+}[] = [
+  {
+    id: "debounced",
+    label: "Debounced",
+    hint: "One toast per book advance — a quiet nudge each time a book moves forward.",
+  },
+  {
+    id: "verbose",
+    label: "Verbose",
+    hint: "A toast on every ping — the raw firehose of each reading sample.",
+  },
+];
+
+// A pulsing status dot: green + ping when running, grey when off.
+function LiveDot({ on }: { on: boolean }) {
   return (
     <span className="relative flex h-2.5 w-2.5">
-      {live && (
+      {on && (
         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/70" />
       )}
       <span
         className={cn(
           "relative inline-flex h-2.5 w-2.5 rounded-full",
-          live && "bg-emerald-400",
-          connecting && "bg-amber-400",
-          !live && !connecting && "bg-muted-foreground/50",
+          on ? "bg-emerald-400" : "bg-muted-foreground/50",
         )}
       />
     </span>
   );
 }
 
-// A tiny dependency-free sparkline of one book's position over its samples.
-function Sparkline({ values }: { values: number[] }) {
-  if (values.length < 2) return null;
-  const w = 120;
-  const h = 24;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const span = max - min || 1;
-  const pts = values
-    .map((v, i) => {
-      const x = (i / (values.length - 1)) * w;
-      const y = h - ((v - min) / span) * h;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(" ");
-  return (
-    <svg
-      width={w}
-      height={h}
-      viewBox={`0 0 ${w} ${h}`}
-      className="text-primary"
-      preserveAspectRatio="none"
-      aria-hidden
-    >
-      <polyline
-        points={pts}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={1.5}
-        strokeLinejoin="round"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function StatTile({
-  icon: Icon,
-  label,
-  value,
-  hint,
-}: {
-  icon: typeof Gauge;
-  label: string;
-  value: string;
-  hint?: string;
-}) {
+function StatTile({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="rounded-md border border-border bg-muted/20 p-3">
-      <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
-        <Icon className="h-3.5 w-3.5" />
+      <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
         {label}
       </div>
       <div className="mt-1 font-mono text-lg font-semibold">{value}</div>
@@ -131,49 +82,93 @@ function StatTile({
   );
 }
 
-function timeOnly(iso: string): string {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime())
-    ? iso
-    : d.toLocaleTimeString(undefined, { hour12: false });
+// The headline ANSWER to "what's the optimal polling timeframe" — stated in
+// plain English right on the page, derived from observed advances. Null (too
+// little data) renders the calibrating fallback so the panel never goes silent.
+function RecommendationBlock({
+  recommendation,
+  loading,
+}: {
+  recommendation: ReadingMonitorRecommendation | null | undefined;
+  loading: boolean;
+}) {
+  const rec = recommendation ?? null;
+  return (
+    <div className="rounded-lg border border-primary/40 bg-primary/5 p-4">
+      <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-primary">
+        <Gauge className="h-3.5 w-3.5" />
+        Optimal polling
+      </div>
+      {rec ? (
+        <>
+          <p className="mt-1.5 text-sm leading-relaxed" data-testid="reading-monitor-recommendation">
+            Optimal polling (from{" "}
+            <span className="font-mono font-semibold">{rec.sampleCount}</span>{" "}
+            observed advances): detect all books every{" "}
+            <span className="font-mono font-semibold">~{rec.detectSecs}s</span>,
+            fast-capture an active book every{" "}
+            <span className="font-mono font-semibold">~{rec.captureSecs}s</span>,
+            mark idle after{" "}
+            <span className="font-mono font-semibold">~{rec.idleSecs}s</span> of
+            no advance. Your whispersync pushes at a median of{" "}
+            <span className="font-mono font-semibold">
+              ~{rec.medianAdvanceSecs}s
+            </span>{" "}
+            (p90{" "}
+            <span className="font-mono font-semibold">~{rec.p90AdvanceSecs}s</span>).
+          </p>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            Full cadence analysis + history in Grafana.
+          </p>
+        </>
+      ) : (
+        <p
+          className="mt-1.5 text-sm leading-relaxed text-muted-foreground"
+          data-testid="reading-monitor-recommendation-empty"
+        >
+          {loading
+            ? "Loading calibration…"
+            : "Not enough data yet — turn the monitor on and read a Kindle book to calibrate the optimal intervals."}
+        </p>
+      )}
+    </div>
+  );
 }
 
 export function ReadingMonitorPanel() {
-  const [running, setRunning] = useState(false);
-  const [interval, setIntervalSec] = useState(DEFAULT_INTERVAL);
-  const [limit, setLimit] = useState(DEFAULT_LIMIT);
+  const qc = useQueryClient();
 
-  const stream = useReadingMonitorSocket({
-    enabled: running,
-    intervalSec: interval,
-    limit,
+  const { data, isLoading, isError } = useQuery({
+    queryKey: qk.readingMonitor(),
+    queryFn: () => api.getReadingMonitor(),
+    refetchInterval: STATUS_POLL_MS,
   });
 
-  const rows = useMemo(() => buildRows(stream.samples), [stream.samples]);
-  const cadence = useMemo(() => computeCadence(rows), [rows]);
+  const mutate = useMutation({
+    mutationFn: (body: { enabled?: boolean; mode?: ReadingMonitorMode }) =>
+      api.setReadingMonitor(body),
+    // Write the authoritative server response straight into the cache so the
+    // switch + mode reflect server truth without waiting for the next poll.
+    onSuccess: (next: ReadingMonitorState, vars) => {
+      qc.setQueryData(qk.readingMonitor(), next);
+      if (vars.enabled !== undefined) {
+        toast.success(
+          next.enabled
+            ? "Reading monitor started — running server-side"
+            : "Reading monitor stopped",
+        );
+      } else if (vars.mode !== undefined) {
+        toast.success(`Toast mode: ${next.mode}`);
+      }
+    },
+    onError: (e) => {
+      toast.error(e instanceof Error ? e.message : "Could not update the monitor");
+    },
+  });
 
-  // Newest-on-top for the table.
-  const rowsDesc = useMemo(() => [...rows].reverse(), [rows]);
-
-  // Per-book position series for the sparklines (chronological).
-  const series = useMemo(() => {
-    const byAsin = new Map<string, { title: string; values: number[] }>();
-    for (const r of rows) {
-      const entry = byAsin.get(r.asin) ?? { title: r.title, values: [] };
-      entry.title = r.title;
-      entry.values.push(r.location);
-      byAsin.set(r.asin, entry);
-    }
-    return Array.from(byAsin.entries())
-      .filter(([, e]) => e.values.length >= 2)
-      .map(([asin, e]) => ({ asin, ...e }));
-  }, [rows]);
-
-  const start = () => {
-    stream.clear();
-    setRunning(true);
-  };
-  const stop = () => setRunning(false);
+  const enabled = data?.enabled ?? false;
+  const mode = data?.mode ?? "debounced";
+  const busy = isLoading || mutate.isPending;
 
   return (
     <div className="space-y-4">
@@ -184,233 +179,115 @@ export function ReadingMonitorPanel() {
           <span
             className={cn(
               "flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide",
-              running && stream.status === "open"
+              enabled
                 ? "bg-emerald-500/15 text-emerald-400"
                 : "bg-muted/50 text-muted-foreground",
             )}
           >
-            <LiveDot status={stream.status} running={running} />
-            {statusLabel(stream.status, running)}
+            <LiveDot on={enabled} />
+            {enabled ? "running" : "off"}
           </span>
-        </div>
-
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          <label className="flex items-center gap-1 text-xs text-muted-foreground">
-            interval
-            <input
-              type="number"
-              min={2}
-              max={60}
-              value={interval}
-              disabled={running}
-              onChange={(e) => setIntervalSec(Number(e.target.value) || DEFAULT_INTERVAL)}
-              className="w-16 rounded-md border border-border bg-transparent px-2 py-1 font-mono text-xs disabled:opacity-50"
-            />
-            s
-          </label>
-          <label className="flex items-center gap-1 text-xs text-muted-foreground">
-            books
-            <input
-              type="number"
-              min={1}
-              max={50}
-              value={limit}
-              disabled={running}
-              onChange={(e) => setLimit(Number(e.target.value) || DEFAULT_LIMIT)}
-              className="w-16 rounded-md border border-border bg-transparent px-2 py-1 font-mono text-xs disabled:opacity-50"
-            />
-          </label>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={running || stream.samples.length === 0}
-            onClick={stream.clear}
-          >
-            <RotateCcw className="mr-2 h-4 w-4" />
-            Clear
-          </Button>
-          {running ? (
-            <Button size="sm" variant="destructive" onClick={stop}>
-              <Square className="mr-2 h-4 w-4" />
-              Stop
-            </Button>
-          ) : (
-            <Button size="sm" onClick={start}>
-              <Play className="mr-2 h-4 w-4" />
-              Start
-            </Button>
-          )}
         </div>
       </div>
 
       <p className="text-sm text-muted-foreground">
-        Polls each in-progress Kindle book&apos;s last-page-read position every{" "}
-        <span className="font-mono">{interval}s</span> and streams every advance
-        below. Start the monitor, then open + read a book on your Kindle or iPad
-        and watch the furthest page advance — an empirical probe of the
-        whispersync sync cadence. Read-only; nothing here is persisted.
+        The monitor runs <span className="font-medium">server-side</span> and
+        toasts you when a reading ping lands — turn it on and you can close this
+        tab. The full cadence report (how often whispersync pushes, how far it
+        jumps) lives in Grafana.
       </p>
 
-      {/* Cadence stats */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <StatTile
-          icon={Activity}
-          label="Advances"
-          value={String(cadence.advances)}
-          hint={`${cadence.books} book${cadence.books === 1 ? "" : "s"}`}
-        />
-        <StatTile
-          icon={Gauge}
-          label="Min interval"
-          value={fmtInterval(cadence.minIntervalSec)}
-        />
-        <StatTile
-          icon={Gauge}
-          label="Median interval"
-          value={fmtInterval(cadence.medianIntervalSec)}
-        />
-        <StatTile
-          icon={BookOpenCheck}
-          label="Avg Δloc"
-          value={
-            cadence.avgDeltaLocation === undefined
-              ? "—"
-              : `+${Math.round(cadence.avgDeltaLocation)}`
-          }
-          hint="per advance"
-        />
-        <StatTile
-          icon={Gauge}
-          label="Sec / location"
-          value={
-            cadence.secondsPerLocation === undefined
-              ? "—"
-              : cadence.secondsPerLocation.toFixed(2)
-          }
-          hint="implied"
+      {isError && (
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          Couldn&apos;t reach the reading monitor. Retrying…
+        </div>
+      )}
+
+      {/* The plain-English optimal-polling ANSWER — the star of the panel. */}
+      <RecommendationBlock recommendation={data?.recommendation} loading={isLoading} />
+
+      {/* On/off toggle — the prominent primary control. */}
+      <div className="flex items-center justify-between rounded-lg border border-border bg-muted/10 p-4">
+        <div className="space-y-0.5">
+          <Label htmlFor="reading-monitor-enabled" className="text-base font-semibold">
+            Reading monitor: {enabled ? "ON" : "OFF"}
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            {enabled
+              ? "Running server-side — you can close this tab and it keeps watching."
+              : "Off — no reading pings are being watched."}
+          </p>
+        </div>
+        <Switch
+          id="reading-monitor-enabled"
+          data-testid="reading-monitor-switch"
+          checked={enabled}
+          disabled={busy}
+          onCheckedChange={(checked) => mutate.mutate({ enabled: checked })}
         />
       </div>
 
-      {/* Per-book sparklines */}
-      {series.length > 0 && (
-        <div className="flex flex-wrap gap-4">
-          {series.map((s) => (
-            <div
-              key={s.asin}
-              className="rounded-md border border-border bg-muted/10 px-3 py-2"
+      {/* Toast-mode switch: Debounced ↔ Verbose. */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-4">
+        <div className="space-y-0.5">
+          <div className="text-sm font-medium">Toast mode</div>
+          <p className="text-xs text-muted-foreground">
+            How chatty the reading-ping toasts are.
+          </p>
+        </div>
+        <div
+          className="flex rounded-md border border-border p-0.5"
+          role="group"
+          aria-label="Toast mode"
+        >
+          {MODES.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              title={m.hint}
+              aria-pressed={mode === m.id}
+              disabled={busy}
+              onClick={() => mutate.mutate({ mode: m.id })}
+              className={cn(
+                "rounded px-3 py-1 text-sm transition-colors disabled:opacity-50",
+                mode === m.id
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
             >
-              <div className="max-w-[160px] truncate text-xs font-medium" title={s.title}>
-                {s.title}
-              </div>
-              <Sparkline values={s.values} />
-              <div className="font-mono text-[11px] text-muted-foreground">
-                {s.values[s.values.length - 1]}
-              </div>
-            </div>
+              {m.label}
+            </button>
           ))}
         </div>
-      )}
+      </div>
 
-      {/* Error frames (non-fatal) */}
-      {stream.errors.length > 0 && (
-        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          <div className="mb-1 flex items-center gap-1.5 font-medium">
-            <AlertTriangle className="h-3.5 w-3.5" />
-            {stream.errors.length} stream warning
-            {stream.errors.length === 1 ? "" : "s"}
-          </div>
-          <div className="font-mono">{stream.errors[stream.errors.length - 1]}</div>
-        </div>
-      )}
+      {/* Live status (polled from the server for display only). */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <StatTile
+          label="Active books"
+          value={data ? String(data.activeBooks) : "—"}
+          hint="in-progress, watched"
+        />
+        <StatTile
+          label="Last ping"
+          value={data?.lastPingAt ? relativeTime(data.lastPingAt) : "—"}
+          hint={data?.lastPingAt ? undefined : "no ping yet"}
+        />
+      </div>
 
-      {/* Live sample table */}
-      <SampleTable
-        rows={rowsDesc}
-        running={running}
-        hasSamples={stream.samples.length > 0}
-        lastHeartbeatAt={stream.lastHeartbeat?.sampledAt}
-      />
-    </div>
-  );
-}
-
-function SampleTable({
-  rows,
-  running,
-  hasSamples,
-  lastHeartbeatAt,
-}: {
-  rows: MonitorRow[];
-  running: boolean;
-  hasSamples: boolean;
-  lastHeartbeatAt?: string;
-}) {
-  if (!running && !hasSamples) {
-    return (
-      <EmptyState
-        icon={Radio}
-        title="Monitor idle"
-        description="Start the monitor, then open + read a book on your Kindle to watch the furthest-page-read advance in real time."
-      />
-    );
-  }
-  if (hasSamples === false) {
-    return (
-      <EmptyState
-        icon={BookOpenCheck}
-        title="Waiting for the first advance…"
-        description={
-          lastHeartbeatAt
-            ? `Stream is live (last heartbeat ${timeOnly(lastHeartbeatAt)}). Turn a page in your open book and it will appear here.`
-            : "Stream is live. Open a book and turn a page — advances appear here newest-first."
-        }
-      />
-    );
-  }
-  return (
-    <div className="overflow-x-auto rounded-md border border-border">
-      <table className="w-full text-xs">
-        <thead className="bg-muted/40">
-          <tr>
-            {["time", "book", "location", "Δloc", "creationTime", "Δt"].map((c) => (
-              <th
-                key={c}
-                className="whitespace-nowrap px-2 py-1 text-left font-mono font-medium"
-              >
-                {c}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.seq} className="border-t border-border/60">
-              <td className="whitespace-nowrap px-2 py-1 font-mono text-muted-foreground">
-                {timeOnly(r.sampledAt)}
-              </td>
-              <td className="max-w-[220px] truncate px-2 py-1" title={r.title}>
-                {r.title}
-              </td>
-              <td className="px-2 py-1 font-mono">{r.location}</td>
-              <td
-                className={cn(
-                  "px-2 py-1 font-mono",
-                  r.deltaLocation && r.deltaLocation > 0 && "text-emerald-400",
-                  r.deltaLocation && r.deltaLocation < 0 && "text-destructive",
-                )}
-              >
-                {fmtDeltaLocation(r.deltaLocation)}
-              </td>
-              <td className="whitespace-nowrap px-2 py-1 font-mono text-muted-foreground">
-                {r.creationTime ? timeOnly(r.creationTime) : "—"}
-              </td>
-              <td className="px-2 py-1 font-mono text-muted-foreground">
-                {fmtInterval(r.deltaSeconds)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {/* Grafana deep-link + explanatory line. */}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button asChild size="sm" variant="outline">
+          <a href={CADENCE_BOARD_URL} target="_blank" rel="noopener noreferrer">
+            <BookOpenCheck className="mr-2 h-4 w-4" />
+            Open cadence dashboard
+            <ExternalLink className="ml-2 h-3.5 w-3.5" />
+          </a>
+        </Button>
+        <span className="text-xs text-muted-foreground">
+          Full whispersync cadence report in Grafana.
+        </span>
+      </div>
     </div>
   );
 }

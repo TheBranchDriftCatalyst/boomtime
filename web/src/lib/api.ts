@@ -70,6 +70,8 @@ import type {
   GithubConnection,
   AmazonConnection,
   ReadingItemDTO,
+  ReadingMonitorState,
+  ReadingMonitorMode,
   CurationPatch,
   HardcoverConnection,
   GithubStatsPayload,
@@ -1092,6 +1094,21 @@ export const api = {
         bodyText?: string;
       }>;
     }>(buildUrl("/api/v1/admin/books/diagnostics", params)),
+
+  // Admin › Books › reading monitor (gaka-books): thin control over the
+  // SERVER-side persistent engine. GET reads its live state; PUT flips the
+  // on/off switch and/or the toast mode. The panel polls GET lightly for status
+  // display only — the poll cadence itself runs server-side now, not here.
+  getReadingMonitor: () =>
+    request<ReadingMonitorState>("/api/v1/admin/books/reading-monitor"),
+  setReadingMonitor: (body: {
+    enabled?: boolean;
+    mode?: ReadingMonitorMode;
+  }) =>
+    request<ReadingMonitorState>("/api/v1/admin/books/reading-monitor", {
+      method: "PUT",
+      body,
+    }),
 
   getAdminJobs: (params?: { status?: string; kind?: string; limit?: number }) =>
     unwrap<AdminJob[]>(buildUrl("/api/v1/admin/jobs", params), "jobs", []),

@@ -242,6 +242,11 @@ export const qk = {
   readingItems: (source?: string) =>
     ["reading-items", source ?? ""] as const,
 
+  // gaka-books: SERVER-side reading-monitor state (enabled/mode/activeBooks/
+  // lastPingAt). Polled lightly for the admin control panel's status display;
+  // invalidated after a PUT toggle so the switch reflects the server truth.
+  readingMonitor: () => ["admin", "reading-monitor"] as const,
+
   // gaka-364.3: DB-backed labels catalog. Public (no owner scoping) —
   // one key shared by every consumer (evaluator, hero widget, admin
   // table). Invalidated after PATCH/POST/DELETE on /admin/labels.

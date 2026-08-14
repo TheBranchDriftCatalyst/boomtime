@@ -1,127 +1,143 @@
-// ReadingMonitorPanel.test.tsx — renders the live monitor tab with the stream
-// hook MOCKED, so we assert (a) streamed samples render as delta rows, (b) the
-// cadence stats derive from them, and (c) Start/Stop toggles the stream's
-// `enabled` flag. The socket itself is covered server-side + by the pure
-// cadence tests; here the component wiring is under test.
-import { fireEvent, render, screen, within } from "@testing-library/react";
+// ReadingMonitorPanel.test.tsx — the panel is now a THIN control over the
+// SERVER-side reading monitor. We mock the api layer and assert: (a) live status
+// renders from GET, (b) the on/off toggle PUTs {enabled}, (c) the mode switch
+// PUTs {mode}, and (d) the Grafana cadence deep-link is present. The poll engine
+// itself lives server-side, so there's nothing socket-shaped to test here.
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type {
-  ReadingMonitorStream,
-  ReadingMonitorOptions,
-} from "./useReadingMonitorSocket";
-import type { RawSample } from "./readingMonitorCadence";
+import { api } from "@/lib/api";
+import type { ReadingMonitorState } from "@/types/api";
+import { ReadingMonitorPanel } from "./ReadingMonitorPanel";
 
-// Mutable state the mocked hook returns + the last options it was called with.
-let currentStream: ReadingMonitorStream;
-let lastOptions: ReadingMonitorOptions | undefined;
-
-vi.mock("./useReadingMonitorSocket", () => ({
-  useReadingMonitorSocket: (opts: ReadingMonitorOptions) => {
-    lastOptions = opts;
-    return currentStream;
+vi.mock("@/lib/api", () => ({
+  api: {
+    getReadingMonitor: vi.fn(),
+    setReadingMonitor: vi.fn(),
   },
 }));
 
-// Imported AFTER the mock is registered.
-import { ReadingMonitorPanel } from "./ReadingMonitorPanel";
+vi.mock("sonner", () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
+}));
 
-const clear = vi.fn();
+const getReadingMonitor = vi.mocked(api.getReadingMonitor);
+const setReadingMonitor = vi.mocked(api.setReadingMonitor);
 
-function streamWith(samples: RawSample[], status: ReadingMonitorStream["status"]): ReadingMonitorStream {
+function state(over: Partial<ReadingMonitorState> = {}): ReadingMonitorState {
   return {
-    samples,
-    lastHeartbeat: samples.length
-      ? { books: 1, polled: 1, sampledAt: samples[samples.length - 1].sampledAt }
-      : null,
-    info: "monitor live",
-    errors: [],
-    status,
-    clear,
+    enabled: false,
+    mode: "debounced",
+    activeBooks: 0,
+    lastPingAt: null,
+    recommendation: null,
+    ...over,
   };
 }
 
-const advancingSamples: RawSample[] = [
-  {
-    asin: "A",
-    title: "Book A",
-    location: 100,
-    creationTime: "2026-08-13T10:00:00Z",
-    sampledAt: "2026-08-13T10:00:00Z",
-  },
-  {
-    asin: "A",
-    title: "Book A",
-    location: 150,
-    creationTime: "2026-08-13T10:00:12Z",
-    sampledAt: "2026-08-13T10:00:12Z",
-  },
-];
+function renderPanel() {
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={qc}>
+      <ReadingMonitorPanel />
+    </QueryClientProvider>,
+  );
+}
 
 afterEach(() => {
   vi.clearAllMocks();
-  lastOptions = undefined;
 });
 
 describe("ReadingMonitorPanel", () => {
-  it("idle before Start: shows the idle empty state and the stream is disabled", () => {
-    currentStream = streamWith([], "closed");
-    render(<ReadingMonitorPanel />);
-    expect(screen.getByText("Monitor idle")).toBeInTheDocument();
-    expect(lastOptions?.enabled).toBe(false);
+  it("renders live status from GET", async () => {
+    getReadingMonitor.mockResolvedValue(
+      state({ enabled: true, activeBooks: 3, lastPingAt: new Date().toISOString() }),
+    );
+    renderPanel();
+
+    // Header status pill flips to "running" and the active-books tile shows 3.
+    expect(await screen.findByText("running")).toBeInTheDocument();
+    const activeBooks = screen.getByText("Active books").parentElement as HTMLElement;
+    expect(activeBooks).toHaveTextContent("3");
+    // The ON label reflects the fetched enabled state.
+    expect(screen.getByText(/Reading monitor: ON/)).toBeInTheDocument();
   });
 
-  it("renders streamed samples as newest-first delta rows", () => {
-    currentStream = streamWith(advancingSamples, "open");
-    render(<ReadingMonitorPanel />);
+  it("the on/off toggle PUTs {enabled}", async () => {
+    getReadingMonitor.mockResolvedValue(state({ enabled: false }));
+    setReadingMonitor.mockResolvedValue(state({ enabled: true }));
+    renderPanel();
 
-    const table = screen.getByRole("table");
-    const bodyRows = within(table).getAllByRole("row").slice(1); // drop header
-    expect(bodyRows).toHaveLength(2);
+    // Controls are disabled during the initial load; wait for the fetched
+    // state to settle (switch enabled) before toggling.
+    const sw = await screen.findByTestId("reading-monitor-switch");
+    await waitFor(() => expect(sw).not.toBeDisabled());
+    fireEvent.click(sw);
 
-    // Newest-first: the advance (location 150, Δloc +50) is the top row.
-    expect(within(bodyRows[0]).getByText("150")).toBeInTheDocument();
-    expect(within(bodyRows[0]).getByText("+50")).toBeInTheDocument();
-    expect(within(bodyRows[0]).getByText("12s")).toBeInTheDocument(); // Δt
-
-    // The baseline (first) sample has no delta.
-    expect(within(bodyRows[1]).getByText("100")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(setReadingMonitor).toHaveBeenCalledWith({ enabled: true }),
+    );
   });
 
-  it("derives the cadence stats from the samples", () => {
-    currentStream = streamWith(advancingSamples, "open");
-    render(<ReadingMonitorPanel />);
+  it("the mode switch PUTs {mode}", async () => {
+    getReadingMonitor.mockResolvedValue(state({ mode: "debounced" }));
+    setReadingMonitor.mockResolvedValue(state({ mode: "verbose" }));
+    renderPanel();
 
-    // Advances tile shows 1 (one advance between the two samples). getByText
-    // returns the label row; its parent is the tile holding the value.
-    const advances = screen.getByText("Advances").parentElement as HTMLElement;
-    expect(within(advances).getByText("1")).toBeInTheDocument();
+    const verbose = await screen.findByRole("button", { name: /verbose/i });
+    await waitFor(() => expect(verbose).not.toBeDisabled());
+    fireEvent.click(verbose);
 
-    // Median interval = 12s.
-    const median = screen.getByText("Median interval").parentElement as HTMLElement;
-    expect(within(median).getByText("12s")).toBeInTheDocument();
-
-    // Avg Δloc = +50.
-    const avg = screen.getByText("Avg Δloc").parentElement as HTMLElement;
-    expect(within(avg).getByText("+50")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(setReadingMonitor).toHaveBeenCalledWith({ mode: "verbose" }),
+    );
   });
 
-  it("Start/Stop toggles the stream enabled flag", () => {
-    currentStream = streamWith([], "closed");
-    const { rerender } = render(<ReadingMonitorPanel />);
+  it("renders the optimal-polling recommendation from GET", async () => {
+    getReadingMonitor.mockResolvedValue(
+      state({
+        recommendation: {
+          detectSecs: 30,
+          captureSecs: 6,
+          idleSecs: 300,
+          medianAdvanceSecs: 12,
+          p90AdvanceSecs: 45,
+          sampleCount: 8,
+        },
+      }),
+    );
+    renderPanel();
 
-    // Start.
-    expect(lastOptions?.enabled).toBe(false);
-    fireEvent.click(screen.getByRole("button", { name: /start/i }));
-    expect(lastOptions?.enabled).toBe(true);
-    // Start clears any prior buffer for a fresh measurement.
-    expect(clear).toHaveBeenCalled();
+    const rec = await screen.findByTestId("reading-monitor-recommendation");
+    // The plain-English answer states each interval verbatim on the page.
+    expect(rec).toHaveTextContent("8");
+    expect(rec).toHaveTextContent("~30s");
+    expect(rec).toHaveTextContent("~6s");
+    expect(rec).toHaveTextContent("~300s");
+    expect(rec).toHaveTextContent("~12s");
+    expect(rec).toHaveTextContent("~45s");
+  });
 
-    // Now running: the Stop button is shown.
-    currentStream = streamWith([], "open");
-    rerender(<ReadingMonitorPanel />);
-    const stop = screen.getByRole("button", { name: /stop/i });
-    fireEvent.click(stop);
-    expect(lastOptions?.enabled).toBe(false);
+  it("shows the calibrating fallback when recommendation is null", async () => {
+    getReadingMonitor.mockResolvedValue(state({ recommendation: null }));
+    renderPanel();
+
+    const empty = await screen.findByTestId(
+      "reading-monitor-recommendation-empty",
+    );
+    // The empty block first shows "Loading calibration…"; once the null-rec
+    // response settles it states the calibrate-me fallback.
+    await waitFor(() => expect(empty).toHaveTextContent(/not enough data yet/i));
+  });
+
+  it("shows the Grafana cadence deep-link to the reading-monitor board", async () => {
+    getReadingMonitor.mockResolvedValue(state());
+    renderPanel();
+
+    const link = await screen.findByRole("link", { name: /cadence dashboard/i });
+    expect(link.getAttribute("href")).toContain("/d/boomtime-reading-monitor");
   });
 });

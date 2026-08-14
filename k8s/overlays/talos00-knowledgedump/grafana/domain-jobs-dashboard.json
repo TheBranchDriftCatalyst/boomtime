@@ -742,6 +742,119 @@
       "description": "RabbitMQ job deliveries handled by the AMQP provider (absent on the local in-process provider). processed vs requeued."
     },
     {
+      "id": 32,
+      "type": "gauge",
+      "title": "Reading-monitor active books",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 25
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (source) (boomtime_reading_monitor_active_books{namespace=\"boomtime\"})",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "legendFormat": "{{source}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              },
+              {
+                "value": 1,
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "orientation": "auto",
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "description": "Books the two-level monitor currently has in fine-capture (L2) — i.e. actively being read right now, per source. Driven by the persistent leader-singleton engine, not the admin tab."
+    },
+    {
+      "id": 33,
+      "type": "timeseries",
+      "title": "Reading-monitor advance rate",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 16,
+        "x": 8,
+        "y": 25
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (source) (rate(boomtime_reading_monitor_advances_total{namespace=\"boomtime\"}[$__rate_interval]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "legendFormat": "{{source}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "Whispersync location advances detected per second, per source — the raw signal the dedicated cadence board (uid boomtime-reading-monitor) turns into recommended poll intervals."
+    },
+    {
       "id": 12,
       "type": "row",
       "title": "Job runs — what ran, and how it went",
@@ -751,7 +864,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 25
+        "y": 32
       }
     },
     {
@@ -933,7 +1046,7 @@
         "h": 9,
         "w": 14,
         "x": 0,
-        "y": 26
+        "y": 33
       },
       "id": 13
     },
@@ -1044,7 +1157,7 @@
         "h": 9,
         "w": 10,
         "x": 14,
-        "y": 26
+        "y": 33
       },
       "id": 14
     },
@@ -1185,7 +1298,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 35
+        "y": 42
       },
       "id": 15
     },
@@ -1221,7 +1334,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 35
+        "y": 42
       },
       "id": 16
     },
@@ -1235,7 +1348,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 43
+        "y": 50
       }
     },
     {
@@ -1296,7 +1409,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 44
+        "y": 51
       },
       "id": 18
     },
@@ -1358,7 +1471,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 44
+        "y": 51
       },
       "id": 19
     },
@@ -1420,7 +1533,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 44
+        "y": 51
       },
       "id": 20
     },
@@ -1482,7 +1595,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 44
+        "y": 51
       },
       "id": 21
     },
@@ -1623,7 +1736,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 48
+        "y": 55
       },
       "id": 22
     },
@@ -1659,9 +1772,118 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 48
+        "y": 55
       },
       "id": 23
+    },
+    {
+      "id": 34,
+      "type": "stat",
+      "title": "Kindle reading minutes (range)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 0,
+        "y": 63
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(boomtime_reading_activity_seconds_total{namespace=\"boomtime\",source=\"kindle\"}[$__range])) / 60",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "legendFormat": "kindle min"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "m",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "#199e70"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "description": "Reconstructed Kindle reading time that LANDED as reading_activity over the range (seconds counter → minutes). Empty during the diagnostic-only phase — the monitor measures + toasts but writes no reading_activity until the cadence is trusted."
+    },
+    {
+      "id": 35,
+      "type": "timeseries",
+      "title": "Reading activity landed (rate)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 18,
+        "x": 6,
+        "y": 63
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (source) (rate(boomtime_reading_activity_seconds_total{namespace=\"boomtime\"}[$__rate_interval]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "legendFormat": "{{source}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "reading_activity seconds accruing per wall-second, per source — the forward-composition signal into the fusion layer, once the monitor emits it."
     },
     {
       "id": 24,
@@ -1673,7 +1895,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 56
+        "y": 71
       }
     },
     {
@@ -1750,7 +1972,7 @@
         "h": 10,
         "w": 12,
         "x": 0,
-        "y": 57
+        "y": 72
       },
       "id": 25
     },
@@ -1827,7 +2049,7 @@
         "h": 10,
         "w": 12,
         "x": 12,
-        "y": 57
+        "y": 72
       },
       "id": 26
     },
@@ -1841,7 +2063,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 67
+        "y": 82
       }
     },
     {
@@ -1919,7 +2141,7 @@
         "h": 14,
         "w": 12,
         "x": 0,
-        "y": 68
+        "y": 83
       },
       "id": 28
     },
@@ -1955,7 +2177,7 @@
         "h": 14,
         "w": 12,
         "x": 12,
-        "y": 68
+        "y": 83
       },
       "id": 29
     },
@@ -1969,7 +2191,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 82
+        "y": 97
       }
     },
     {
@@ -2004,7 +2226,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 83
+        "y": 98
       },
       "id": 31
     }

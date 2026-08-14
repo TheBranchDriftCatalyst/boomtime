@@ -176,6 +176,64 @@ var (
 	}, []string{"queue", "outcome"})
 )
 
+// ── Persistent reading-monitor (catalyst-books §5.1) ─────────────────────────
+//
+// The server-side two-level Kindle reading-monitor's cadence signals. A Grafana
+// agent BUILDS TO THESE NAMES — treat them as a PINNED contract; if one must
+// change, flag it loudly. The only label is `source` (currently just "kindle"),
+// bounded by the small fixed set of reading sources — NEVER per-title/ASIN (that
+// would explode cardinality: a library is unbounded).
+//
+// advance_interval_seconds + sec_per_location share the same explicit buckets
+// (5,15,30,60,120,300,600 s) so the panels align — these are the empirical
+// cadence numbers the design's T1/T2/G recommendation reads off (§5.1).
+var (
+	// ReadingMonitorAdvancesTotal counts detected last-page-read advances (a
+	// book's furthest position moved forward), by source. The raw "reading is
+	// happening" event rate.
+	ReadingMonitorAdvancesTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "boomtime_reading_monitor_advances_total",
+		Help: "Detected reading-position advances observed by the persistent monitor, by source.",
+	}, []string{"source"})
+
+	// ReadingMonitorAdvanceInterval is the wall-clock gap (seconds) between two
+	// CONSECUTIVE advances of the same book — the intra-session cadence the fine
+	// L2 poll exists to capture. Observed only when a prior advance exists.
+	ReadingMonitorAdvanceInterval = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "boomtime_reading_monitor_advance_interval_seconds",
+		Help:    "Seconds between consecutive advances of the same book, by source.",
+		Buckets: []float64{5, 15, 30, 60, 120, 300, 600},
+	}, []string{"source"})
+
+	// ReadingMonitorActiveBooks is the current count of books in L2 (fine
+	// capture) across all users, by source — the fleet-wide "actively being read
+	// right now" gauge (set each pass).
+	ReadingMonitorActiveBooks = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "boomtime_reading_monitor_active_books",
+		Help: "Books currently in fine-capture (L2, actively advancing) across all users, by source.",
+	}, []string{"source"})
+
+	// ReadingMonitorSecPerLocation is the implied seconds-per-location-unit for an
+	// advance (advance interval / Δlocation) — the "reading speed" signal that
+	// turns an opaque location delta into a time estimate. Observed only when a
+	// prior advance exists and Δlocation > 0.
+	ReadingMonitorSecPerLocation = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "boomtime_reading_monitor_sec_per_location",
+		Help:    "Implied seconds per location unit (advance interval / Δlocation), by source.",
+		Buckets: []float64{5, 15, 30, 60, 120, 300, 600},
+	}, []string{"source"})
+
+	// ReadingActivitySecondsTotal counts reading-seconds LANDED into
+	// reading_activity by source — the high-level Domain-board throughput metric.
+	// Incremented per newly-observed in-session advance interval (the seconds
+	// composeSessions attributes to that pair), so it stays MONOTONIC despite the
+	// idempotent bucket overwrite of UpsertReadingActivity.
+	ReadingActivitySecondsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "boomtime_reading_activity_seconds_total",
+		Help: "Reading-seconds landed into reading_activity, by source (the Domain-board throughput metric).",
+	}, []string{"source"})
+)
+
 func init() {
 	Registry.MustRegister(
 		HTTPRequestsTotal, HTTPRequestDuration,
@@ -185,6 +243,9 @@ func init() {
 		JobLimiterInflight, JobLimiterMax,
 		HTTPRatelimitDecisionsTotal, CacheRequestsTotal,
 		WSActiveConnections, AMQPDeliveriesTotal,
+		ReadingMonitorAdvancesTotal, ReadingMonitorAdvanceInterval,
+		ReadingMonitorActiveBooks, ReadingMonitorSecPerLocation,
+		ReadingActivitySecondsTotal,
 	)
 	// Runtime + process collectors give the standard go_* / process_* series
 	// (goroutines, GC, heap, open FDs, CPU) for free — the baseline of any
@@ -194,7 +255,7 @@ func init() {
 	// Scrape-time pool collectors (DB + Redis). Unchecked collectors: they emit
 	// nothing until a provider is wired via RegisterDBPool / RegisterRedisPool
 	// (done from cmd at boot), so they're inert in tests that never register.
-	Registry.MustRegister(&dbPoolCollector{}, &redisPoolCollector{})
+	Registry.MustRegister(&dbPoolCollector{}, &redisPoolCollector{}, &amqpQueueCollector{})
 }
 
 // RegisterBuildInfo publishes a boomtime_build_info{version,commit,go_version}
@@ -354,6 +415,68 @@ func (*redisPoolCollector) Collect(ch chan<- prometheus.Metric) {
 		ch <- prometheus.MustNewConstMetric(redisTotalDesc, prometheus.GaugeValue, float64(s.TotalConns), purpose)
 		ch <- prometheus.MustNewConstMetric(redisIdleDesc, prometheus.GaugeValue, float64(s.IdleConns), purpose)
 		ch <- prometheus.MustNewConstMetric(redisStaleDesc, prometheus.CounterValue, float64(s.StaleConns), purpose)
+	}
+}
+
+// ── RabbitMQ queue collector (AMQP, conditional) ─────────────────────────────
+//
+// AMQPQueueSample is one queue's live depth + consumer count, read at scrape
+// time via QueueDeclarePassive. Registered ONLY when the rabbitmq jobs provider
+// is wired (broker=rabbitmq); the deployed default local provider never
+// registers, so these series are simply absent — a clean no-op, not an error.
+//
+// The provider func returns ok=false on any transient failure (connection
+// closed mid-shutdown, passive-declare error) so a scrape degrades to "no
+// sample" instead of panicking Gather. Note QueueDeclarePassive exposes the
+// READY message count + consumers; the ready/unacked split is only in the
+// RabbitMQ management API, already scraped via the operator's own PodMonitor —
+// so state is fixed to "ready" here.
+type AMQPQueueSample struct {
+	Messages  int
+	Consumers int
+}
+
+var (
+	amqpMu        sync.RWMutex
+	amqpProviders = map[string]func() (AMQPQueueSample, bool){}
+)
+
+// RegisterAMQPQueue wires a scrape-time reader of one queue's depth/consumers.
+// Pass nil to remove it. Guard the provider to return ok=false when the broker
+// is unreachable so scrapes never fail.
+func RegisterAMQPQueue(queue string, sample func() (AMQPQueueSample, bool)) {
+	amqpMu.Lock()
+	if sample == nil {
+		delete(amqpProviders, queue)
+	} else {
+		amqpProviders[queue] = sample
+	}
+	amqpMu.Unlock()
+}
+
+var (
+	amqpMessagesDesc  = prometheus.NewDesc("rabbitmq_queue_messages", "Messages in the queue by state (ready via passive declare).", []string{"queue", "state"}, nil)
+	amqpConsumersDesc = prometheus.NewDesc("rabbitmq_queue_consumers", "Consumers currently attached to the queue.", []string{"queue"}, nil)
+)
+
+type amqpQueueCollector struct{}
+
+func (*amqpQueueCollector) Describe(chan<- *prometheus.Desc) {}
+
+func (*amqpQueueCollector) Collect(ch chan<- prometheus.Metric) {
+	amqpMu.RLock()
+	providers := make(map[string]func() (AMQPQueueSample, bool), len(amqpProviders))
+	for k, v := range amqpProviders {
+		providers[k] = v
+	}
+	amqpMu.RUnlock()
+	for queue, p := range providers {
+		s, ok := p()
+		if !ok {
+			continue // broker unreachable this scrape — skip, don't fail Gather
+		}
+		ch <- prometheus.MustNewConstMetric(amqpMessagesDesc, prometheus.GaugeValue, float64(s.Messages), queue, "ready")
+		ch <- prometheus.MustNewConstMetric(amqpConsumersDesc, prometheus.GaugeValue, float64(s.Consumers), queue)
 	}
 }
 

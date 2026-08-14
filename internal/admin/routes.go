@@ -96,6 +96,12 @@ func Register(e *echo.Echo, h *Handler) {
 	// the Authorization header). Read-only: it never persists positions.
 	if h != nil && h.Cfg != nil && h.Cfg.BooksEnabled() {
 		e.GET("/api/v1/admin/books/reading-monitor/ws", h.AdminBooksReadingMonitorWS)
+		// gaka-books §5.1: the PERSISTENT server-side monitor's view+toggle. GET
+		// reports {enabled, mode, activeBooks, lastPingAt}; PUT updates
+		// {enabled?, mode?}. The engine runs on the leader-singleton scheduler
+		// regardless of these — this is only the control surface.
+		e.GET("/api/v1/admin/books/reading-monitor", h.AdminBooksReadingMonitorGet)
+		e.PUT("/api/v1/admin/books/reading-monitor", h.AdminBooksReadingMonitorPut)
 	}
 	// gaka-8bz: durable WS stream of the image-job queue lifecycle.
 	// Auth uses the refresh_token cookie inside the handler (see

@@ -190,36 +190,9 @@ func (s *Service) PollReadingTime(ctx context.Context, owner string) (int, error
 
 	// (2) Recompose every in-progress book's recent samples → per-day seconds,
 	// summed across books, and upsert one reading_activity bucket per day.
-	since := now.Add(-readingTimeLookback)
-	byDay := map[time.Time]int64{}
-	for _, it := range inProgress {
-		if err := ctx.Err(); err != nil {
-			return sampled, err
-		}
-		rows, lerr := s.DB.ListKindleReadingPositions(ctx, owner, it.ExternalID, since)
-		if lerr != nil {
-			return sampled, lerr
-		}
-		for _, d := range composeSessions(toPositionSamples(rows), KindleSessionGap) {
-			byDay[d.Day] += d.Seconds
-		}
-	}
-
-	buckets := 0
-	for day, secs := range byDay {
-		if err := ctx.Err(); err != nil {
-			return sampled, err
-		}
-		if uerr := s.DB.UpsertReadingActivity(ctx, db.ReadingActivity{
-			Owner:            owner,
-			Source:           source, // "kindle"
-			Granularity:      "day",
-			BucketDate:       day,
-			ListeningSeconds: secs, // "activity seconds" — reading time, the text analogue of Audible listening_seconds
-		}); uerr != nil {
-			return sampled, uerr
-		}
-		buckets++
+	buckets, err := s.recomposeReadingActivity(ctx, owner, inProgress, now)
+	if err != nil {
+		return sampled, err
 	}
 
 	s.logInfo(ctx, "kindle reading-time: poll complete",
@@ -229,6 +202,51 @@ func (s *Service) PollReadingTime(ctx context.Context, owner string) (int, error
 		"dayBucketsWritten", buckets,
 	)
 	return sampled, nil
+}
+
+// recomposeReadingActivity gap-sums every in-progress book's recent position
+// samples into per-day reading-seconds, summed ACROSS books, and upserts one
+// reading_activity(source='kindle') bucket per day. It is the reading_time
+// COMPOSITION shared by the periodic PollReadingTime job and the persistent
+// reading-monitor (monitor.go) so both land reading_activity identically —
+// neither reinvents the gap model. Idempotent: it OVERWRITES each day bucket in
+// the lookback window from the full sample history, so re-running with no new
+// samples writes identical values (UpsertReadingActivity keys on
+// owner+source+bucket_date+granularity). Returns the number of day buckets
+// written.
+func (s *Service) recomposeReadingActivity(ctx context.Context, owner string, inProgress []db.ReadingItem, now time.Time) (int, error) {
+	since := now.Add(-readingTimeLookback)
+	byDay := map[time.Time]int64{}
+	for _, it := range inProgress {
+		if err := ctx.Err(); err != nil {
+			return 0, err
+		}
+		rows, lerr := s.DB.ListKindleReadingPositions(ctx, owner, it.ExternalID, since)
+		if lerr != nil {
+			return 0, lerr
+		}
+		for _, d := range composeSessions(toPositionSamples(rows), KindleSessionGap) {
+			byDay[d.Day] += d.Seconds
+		}
+	}
+
+	buckets := 0
+	for day, secs := range byDay {
+		if err := ctx.Err(); err != nil {
+			return buckets, err
+		}
+		if uerr := s.DB.UpsertReadingActivity(ctx, db.ReadingActivity{
+			Owner:            owner,
+			Source:           source, // "kindle"
+			Granularity:      "day",
+			BucketDate:       day,
+			ListeningSeconds: secs, // "activity seconds" — reading time, the text analogue of Audible listening_seconds
+		}); uerr != nil {
+			return buckets, uerr
+		}
+		buckets++
+	}
+	return buckets, nil
 }
 
 // toPositionSamples maps db rows onto the pure composition's input type.

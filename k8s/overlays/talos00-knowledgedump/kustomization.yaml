@@ -59,6 +59,12 @@ resources:
   # first-party ingest/jobs/business counters on top, the validated Loki slog
   # narrative (job runs, domain outcomes, daily review, ingest failures) below.
   - grafana-dashboard-domain-jobs.yaml    # "boomtime · Domain & Jobs" (Apps)
+  # Reading-monitor cadence diagnostic (Apps folder, sibling of Domain & Jobs):
+  # the whispersync two-level polling probe — advance-interval p50/p90 = the
+  # recommended T2/G, active-books + advance rate, and the per-book Loki advance
+  # feed. Deep-linked by the admin reading-monitor panel via uid
+  # boomtime-reading-monitor. See docs/design/catalyst-books-domain-architecture.md §5.1.
+  - grafana-dashboard-reading-monitor.yaml # "boomtime · Reading monitor (whispersync cadence)" (Apps)
 
 # Strategic-merge patches on the base boomtime-config ConfigMap + boomtime
 # Deployment.
@@ -96,6 +102,10 @@ configMapGenerator:
   - name: dashboard-boomtime-domain-jobs
     files:
       - grafana/domain-jobs-dashboard.json
+  # Reading-monitor cadence board (Apps folder).
+  - name: dashboard-boomtime-reading-monitor
+    files:
+      - grafana/reading-monitor-dashboard.json
 generatorOptions:
   disableNameSuffixHash: true
 

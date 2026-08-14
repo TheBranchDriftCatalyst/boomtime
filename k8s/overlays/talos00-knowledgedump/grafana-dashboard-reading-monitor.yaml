@@ -1,0 +1,44 @@
+---
+# GrafanaDashboard CR: "boomtime · Reading monitor (whispersync cadence)".
+#
+# The dedicated cadence diagnostic for the Kindle two-level polling model
+# (docs/design/catalyst-books-domain-architecture.md §5.1). It is the empirical
+# probe the admin reading-monitor panel deep-links into: built entirely on the
+# monitor's own first-party Prometheus metrics (gaka; scraped by
+# servicemonitor.yaml — boomtime_reading_monitor_advances_total /
+# _advance_interval_seconds / _active_books / _sec_per_location and
+# boomtime_reading_activity_seconds_total, all namespace-scoped with a bounded
+# {source} label, NO per-title cardinality) plus the Loki per-book advance feed
+# (uid loki-v2). The p50/p90 of the advance-interval histogram ARE the
+# recommended fine interval T2 / idle gap G — measured from real reading instead
+# of the guessed interval=6s.
+#
+# Same reconcile pattern as the other two boomtime dashboard CRs: grafana-operator
+# runs cluster-wide (namespaceScope:false) so this lands in the shared Grafana
+# from the boomtime namespace; folderUID apps slots it beside "Domain & Jobs" in
+# the sibling-of-Ops "Apps" folder (declared centrally in talos-homelab:
+# infrastructure/base/monitoring/grafana-dashboards/folders/apps.yaml). JSON at
+# grafana/reading-monitor-dashboard.json, packaged by the kustomization
+# configMapGenerator as dashboard-boomtime-reading-monitor. uid
+# "boomtime-reading-monitor" is stable (it lives in the JSON) — the admin FE
+# deep-links this exact uid, do not change it.
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: boomtime-reading-monitor
+  namespace: boomtime
+  labels:
+    app.kubernetes.io/component: dashboard
+    app.kubernetes.io/part-of: boomtime
+spec:
+  # folderUID (not folderRef): the folder CR lives in monitoring, this CR does not —
+  # cross-namespace folderRef never resolves. allowCrossNamespaceImport lets a CR
+  # outside the Grafana instance namespace reconcile at all (was silently skipped).
+  folderUID: apps
+  allowCrossNamespaceImport: true
+  instanceSelector:
+    matchLabels:
+      dashboards: 'grafana'
+  configMapRef:
+    name: dashboard-boomtime-reading-monitor
+    key: reading-monitor-dashboard.json

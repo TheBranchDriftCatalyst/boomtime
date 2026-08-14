@@ -1,0 +1,761 @@
+{
+  "uid": "boomtime-reading-monitor",
+  "title": "boomtime · Reading monitor (whispersync cadence)",
+  "description": "The empirical probe for the Kindle two-level polling model (see catalyst-books-domain-architecture.md §5.1). Kindle reading time is reconstructed by polling — Amazon never pushes — so this board derives the recommended poll intervals from your own reading: p50 advance interval ≈ the fine capture interval T2, p90 ≈ the idle gap G. First-party Prometheus metrics (mimir) up top, the per-book advance log (Loki loki-v2) at the bottom.",
+  "tags": [
+    "apps",
+    "boomtime",
+    "domain",
+    "books",
+    "kindle",
+    "reading-monitor"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "refresh": "1m",
+  "timezone": "browser",
+  "templating": {
+    "list": [
+      {
+        "name": "source",
+        "type": "query",
+        "label": "Source",
+        "description": "The reading source label carried on every reading-monitor metric (bounded — no per-title cardinality). Default All is the regex .+, so a new source appears without editing the board.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "mimir"
+        },
+        "query": {
+          "query": "label_values(boomtime_reading_monitor_advances_total, source)",
+          "refId": "A"
+        },
+        "definition": "label_values(boomtime_reading_monitor_advances_total, source)",
+        "regex": "",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "includeAll": true,
+        "allValue": ".+",
+        "multi": true,
+        "refresh": 2,
+        "sort": 1,
+        "hide": 0,
+        "skipUrlSync": false
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "Whispersync cadence — the two-level polling model",
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Kindle reading time is **reconstructed by polling** — Amazon never pushes, and the sidecar is per-book. So the engine runs two levels: **L1 (detect)** polls every in-progress book at a coarse interval **`T1`** to spot which book advanced; **L2 (capture)** then polls only the active book(s) at a fine interval **`T2`** until idle for a gap **`G`**, then drops back to L1. This collapses cost from *every book fast, always* to *every book slow + the 1–2 actually being read fast*.\n\nThis board is the **empirical probe** for picking `T1`/`T2`/`G` from **your own** reading instead of a guessed `interval=6s`:\n\n- **p50 advance interval ≈ `T2`** — the whispersync push cadence; no point sampling faster than Amazon writes the LPR.\n- **p90 advance interval ≈ `G`** — the longest gap *within* a real session; the idle threshold before dropping back to L1.\n- **active books / advance rate** — how much fine-capture work is live right now.\n\nMetrics come from the **persistent leader-singleton monitor** (runs whether or not the admin panel is open). Detail: `docs/design/catalyst-books-domain-architecture.md` §5.1."
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Active books",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(boomtime_reading_monitor_active_books{namespace=\"boomtime\", source=~\"$source\"})",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "legendFormat": "active"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              },
+              {
+                "value": 1,
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "description": "Books currently in L2 fine-capture (actively being read right now) across the selected source(s)."
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Advance rate",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(boomtime_reading_monitor_advances_total{namespace=\"boomtime\", source=~\"$source\"}[$__rate_interval]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "legendFormat": "adv/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "description": "Whispersync location advances detected per second."
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "p50 advance interval (≈ T2)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 12,
+        "y": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum(rate(boomtime_reading_monitor_advance_interval_seconds_bucket{namespace=\"boomtime\", source=~\"$source\"}[$__rate_interval])) by (le))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "legendFormat": "p50"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "description": "Median gap between consecutive whispersync advances — the observed push cadence. This is the recommended fine capture interval T2 (sampling faster buys nothing)."
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "p90 advance interval (≈ G)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 16,
+        "y": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.90, sum(rate(boomtime_reading_monitor_advance_interval_seconds_bucket{namespace=\"boomtime\", source=~\"$source\"}[$__rate_interval])) by (le))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "legendFormat": "p90"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "yellow"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "description": "90th-percentile advance gap — a proxy for the longest gap still inside one reading session. This is the recommended idle threshold G before L2 drops back to coarse L1 polling."
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "p99 advance interval",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 20,
+        "y": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.99, sum(rate(boomtime_reading_monitor_advance_interval_seconds_bucket{namespace=\"boomtime\", source=~\"$source\"}[$__rate_interval])) by (le))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "legendFormat": "p99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "description": "Tail advance gap. Well above p90 means either genuine session boundaries or L1 detection latency (a session started while polling coarse) — the T1 tradeoff."
+    },
+    {
+      "id": 7,
+      "type": "row",
+      "title": "Advance-interval distribution → recommended T2 / G",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 11
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Advance-interval percentiles (p50 / p90 / p99)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum(rate(boomtime_reading_monitor_advance_interval_seconds_bucket{namespace=\"boomtime\", source=~\"$source\"}[$__rate_interval])) by (le))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "legendFormat": "p50 (≈ T2)"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.90, sum(rate(boomtime_reading_monitor_advance_interval_seconds_bucket{namespace=\"boomtime\", source=~\"$source\"}[$__rate_interval])) by (le))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "legendFormat": "p90 (≈ G)"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum(rate(boomtime_reading_monitor_advance_interval_seconds_bucket{namespace=\"boomtime\", source=~\"$source\"}[$__rate_interval])) by (le))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "legendFormat": "p99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p50 (≈ T2)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p90 (≈ G)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p99"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "mean",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "The advance-interval quantiles over time. Read p50 as the recommended fine interval T2 and p90 as the idle gap G; the spread between them is the shape the session-boundary composition has to resolve."
+    },
+    {
+      "id": 9,
+      "type": "heatmap",
+      "title": "Advance-interval histogram",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(boomtime_reading_monitor_advance_interval_seconds_bucket{namespace=\"boomtime\", source=~\"$source\"}[$__rate_interval])) by (le)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "format": "heatmap",
+          "legendFormat": "{{le}}"
+        }
+      ],
+      "options": {
+        "calculate": false,
+        "cellGap": 1,
+        "color": {
+          "scheme": "Spectral",
+          "mode": "scheme",
+          "steps": 64,
+          "reverse": false
+        },
+        "yAxis": {
+          "unit": "s",
+          "axisPlacement": "left"
+        },
+        "tooltip": {
+          "show": true,
+          "yHistogram": true
+        },
+        "legend": {
+          "show": true
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            }
+          }
+        },
+        "overrides": []
+      },
+      "description": "The full advance-interval distribution as a native histogram heatmap (from the _bucket series). The band the mass concentrates in is the true whispersync cadence; a long tail up the y-axis is the in-session gaps that G must span."
+    },
+    {
+      "id": 10,
+      "type": "row",
+      "title": "Rate & volume",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 21
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Advance rate by source",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 22
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (source) (rate(boomtime_reading_monitor_advances_total{namespace=\"boomtime\", source=~\"$source\"}[$__rate_interval]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "legendFormat": "{{source}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "Detected advances per second, split by source. The bursts are reading sessions; flat zero is idle."
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Active books over time",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 22
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (source) (boomtime_reading_monitor_active_books{namespace=\"boomtime\", source=~\"$source\"})",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "legendFormat": "{{source}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "stepAfter",
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "How many books the engine held in fine-capture (L2) at each moment — the live cost of fast polling."
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Seconds per location (p50 / p90)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 22
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum(rate(boomtime_reading_monitor_sec_per_location_bucket{namespace=\"boomtime\", source=~\"$source\"}[$__rate_interval])) by (le))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.90, sum(rate(boomtime_reading_monitor_sec_per_location_bucket{namespace=\"boomtime\", source=~\"$source\"}[$__rate_interval])) by (le))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "legendFormat": "p90"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "Implied reading pace — seconds spent per Kindle location unit. Feeds the Δlocation → reading-seconds conversion the session reconstruction uses."
+    },
+    {
+      "id": 14,
+      "type": "row",
+      "title": "Per-book advance log — the raw probe",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      }
+    },
+    {
+      "id": 15,
+      "type": "logs",
+      "title": "Whispersync advances (book · location · Δloc · interval)",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki-v2"
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 31
+      },
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki-v2"
+          },
+          "expr": "{namespace=\"boomtime\"} |~ `reading monitor: advance` | json | source =~ `$source` | line_format \"{{.source}}  {{.owner}}  {{.book}}  loc={{.location}}  Δloc={{.dloc}}  interval={{.interval_s}}s  ({{.creation_time}})  asin={{.asin}}\""
+        }
+      ],
+      "description": "Every observed whispersync advance, newest first, one line per ping: source / owner / book / furthest location / Δlocation / interval since the previous advance / Amazon creationTime / ASIN. This raw stream is what the percentile and histogram panels above are computed from — expand a line for the full structured payload."
+    }
+  ]
+}

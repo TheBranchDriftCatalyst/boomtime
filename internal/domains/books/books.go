@@ -28,6 +28,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/amazon"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/hardcover"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/notify"
 )
 
 // KindleSyncKind is the catalyst-go-jobs kind for the periodic Kindle sync.
@@ -64,6 +65,13 @@ const KindleStatusReconcileKind = "books-kindle-status-reconcile"
 // connected users. See reading_time.go (PollReadingTime).
 const KindleReadingTimeKind = "books-kindle-reading-time"
 
+// ReadingMonitorKind is the catalyst-go-jobs kind for the PERSISTENT server-side
+// two-level reading-monitor (catalyst-books §5.1). Scheduled leader-singleton on
+// a short base tick; each run drives the L1/L2 engine over every user with
+// reading_monitor_enabled — so the monitor survives the admin tab closing. See
+// monitor.go (RunMonitorLoop / RunMonitorOnce).
+const ReadingMonitorKind = "books-reading-monitor"
+
 // source is the reading_items.source tag for every row this domain writes.
 const source = "kindle"
 
@@ -79,6 +87,12 @@ type Service struct {
 	// hardcover_book_id/edition_id linkage. nil (or user-not-connected) => rows
 	// ingest with ASIN only and title left blank.
 	Hardcover *hardcover.Store
+
+	// Notify (nil-safe) delivers owner-scoped toasts app-wide — the same seam
+	// Audible finishes use. The persistent reading-monitor (monitor.go) publishes
+	// through it on an advance / status change; nil => no toasts (the monitor's
+	// metrics + reading_activity still land).
+	Notify *notify.Hub
 
 	// kindle is the Cloud Reader library client; swappable in tests via a narrow
 	// interface so SyncUser exercises without a network.
@@ -104,6 +118,11 @@ func New(database *db.DB, az *amazon.Store, logger *slog.Logger) *Service {
 
 // SetHardcover wires the Hardcover connector (nil-safe).
 func (s *Service) SetHardcover(store *hardcover.Store) *Service { s.Hardcover = store; return s }
+
+// SetNotify wires the notification hub (nil-safe) so the persistent
+// reading-monitor can toast on an advance / status change. Mirrors
+// audiobooks.Service.SetNotify.
+func (s *Service) SetNotify(hub *notify.Hub) *Service { s.Notify = hub; return s }
 
 // SetSidecar swaps the forward reading-time position source. Production wires
 // *amazon.KindleSidecarClient in New; this seam lets a test inject a fake (the

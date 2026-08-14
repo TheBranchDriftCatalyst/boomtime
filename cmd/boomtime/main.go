@@ -65,6 +65,15 @@ var (
 	buildTime = ""
 )
 
+// Persistent reading-monitor scheduling (catalyst-books §5.1). The scheduler
+// re-arms the engine every scheduleInterval; each run internally loops for
+// runBudget (kept under the interval so runs don't overlap under the cap=1
+// queue), giving sub-minute L2 cadence despite the ~1-min scheduler tick.
+const (
+	readingMonitorScheduleInterval = time.Minute
+	readingMonitorRunBudget        = 50 * time.Second
+)
+
 func main() {
 	// Load .env if present (dev convenience; direnv handles .envrc in the shell).
 	_ = godotenv.Load()
@@ -562,7 +571,8 @@ func runCmd() *cobra.Command {
 					// wiring above. ONE Amazon device credential feeds both; Hardcover
 					// resolves an ASIN → title/author/cover + book_id/edition_id.
 					kindleSvc := books.New(database, amazon.NewStore(database), logger).
-						SetHardcover(hardcover.NewStore(database))
+						SetHardcover(hardcover.NewStore(database)).
+						SetNotify(notifyHub) // persistent reading-monitor toasts
 
 					// Forward: fan the periodic Kindle sync over every connected user;
 					// a per-user error is logged + skipped so one bad credential
@@ -669,6 +679,26 @@ func runCmd() *cobra.Command {
 						}
 						logger.Info("kindle reading-time: batch complete", "users", len(users))
 						return nil
+					}))
+
+					// books-reading-monitor kind (catalyst-books §5.1): the
+					// PERSISTENT server-side two-level reading-monitor. Scheduled
+					// leader-singleton on a short base tick (below); each run drives
+					// an internal loop (RunMonitorLoop) that polls all in-progress
+					// books coarsely (L1) + the actively-advancing ones finely (L2),
+					// emitting metrics + Loki logs + owner-scoped toasts and landing
+					// reading_activity — for every user with reading_monitor_enabled,
+					// whether or not the admin panel is open. The internal loop gives
+					// sub-minute L2 cadence despite the ~1-min scheduler granularity;
+					// its budget is kept under the schedule period so runs don't pile
+					// up (concurrency capped at 1 below).
+					readingMonitorCfg := books.ReadingMonitorConfig{
+						DetectInterval:  cfg.RMDetectInterval,
+						CaptureInterval: cfg.RMCaptureInterval,
+						IdleGap:         cfg.RMIdleGap,
+					}
+					jobReg.Register(books.ReadingMonitorKind, jobs.HandlerFunc(func(jctx context.Context, _ jobs.Job) error {
+						return kindleSvc.RunMonitorLoop(jctx, readingMonitorCfg, cfg.RMBaseInterval, readingMonitorRunBudget)
 					}))
 
 					// hardcover-match kind (gaka-books): the EXPLICIT match stage of
@@ -815,6 +845,7 @@ func runCmd() *cobra.Command {
 					jobReg.SetConcurrency(books.KindleInsightsKind, 1)        // books-kindle-insights
 					jobReg.SetConcurrency(books.KindleStatusReconcileKind, 1) // books-kindle-status-reconcile
 					jobReg.SetConcurrency(books.KindleReadingTimeKind, 1)     // books-kindle-reading-time
+					jobReg.SetConcurrency(books.ReadingMonitorKind, 1)        // books-reading-monitor (leader-singleton engine)
 					jobReg.SetConcurrency(hardcover.HardcoverMatchKind, 1)    // hardcover-match (global Hardcover rate limit)
 					jobReg.SetConcurrency(bookspipeline.BooksSyncAllKind, 1)  // books-sync-all orchestrator (chains the rate-limited stages)
 				}
@@ -927,7 +958,7 @@ func runCmd() *cobra.Command {
 
 				// The github-refresh schedule is the only piece gated on config;
 				// leader-singleton via the DB, so running it on every server is safe.
-				if cfg.IsServerRole() && (cfg.GithubStatsRefreshEnabled() || cfg.AudibleSyncEnabled()) {
+				if cfg.IsServerRole() && (cfg.GithubStatsRefreshEnabled() || cfg.AudibleSyncEnabled() || cfg.BooksEnabled()) {
 					sched := jobs.NewScheduler(jobStore, provider, logger)
 					if cfg.GithubStatsRefreshEnabled() {
 						if serr := sched.Register(ctx, github.GithubStatsRefreshKind, cfg.GithubStatsRefreshInterval); serr != nil {
@@ -940,6 +971,17 @@ func runCmd() *cobra.Command {
 					if cfg.AudibleSyncEnabled() {
 						if serr := sched.Register(ctx, audiobooks.AudibleSyncKind, cfg.AudibleSyncInterval); serr != nil {
 							logger.Warn("jobs: audible schedule register failed", "err", serr)
+						}
+					}
+					// Persistent reading-monitor (catalyst-books §5.1): re-arm the
+					// engine each schedule period. The re-armed job internally loops
+					// at RMBaseInterval for the run budget, so the effective L2
+					// cadence is sub-minute even though the scheduler fires ~1/min.
+					// Leader-singleton via ClaimDueSchedules → exactly one runs
+					// fleet-wide. Enabled per-user via reading_monitor_enabled.
+					if cfg.BooksEnabled() {
+						if serr := sched.Register(ctx, books.ReadingMonitorKind, readingMonitorScheduleInterval); serr != nil {
+							logger.Warn("jobs: reading-monitor schedule register failed", "err", serr)
 						}
 					}
 					go sched.Run(ctx)
