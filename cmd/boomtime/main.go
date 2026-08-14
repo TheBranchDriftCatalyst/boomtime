@@ -539,6 +539,25 @@ func runCmd() *cobra.Command {
 						return perr
 					}))
 
+					// hardcover-push-curation kind (gaka-books, migration 00069): the
+					// OUTBOUND half of a per-item curation edit. Enqueued by PATCH
+					// /api/v1/books/items/:id/curation — mirrors the row's EFFECTIVE
+					// status/rating/finish onto the user's Hardcover shelf (dry-run-gated).
+					// Owner-scoped; capped at 1 below (shares Hardcover's global rate limit).
+					hcCurationPush := hardcover.NewPushService(database, hardcover.NewStore(database), logger)
+					jobReg.Register(hardcover.CurationPushKind, jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
+						var p hardcover.CurationPushPayload
+						if len(job.Payload) > 0 {
+							if err := json.Unmarshal(job.Payload, &p); err != nil {
+								return fmt.Errorf("hardcover-push-curation: bad payload: %w", err)
+							}
+						}
+						if p.Owner == "" {
+							p.Owner = job.Owner
+						}
+						return hcCurationPush.PushCuration(jctx, p)
+					}))
+
 					// catalyst-books (Kindle) — the ebook mirror of the Audible
 					// wiring above. ONE Amazon device credential feeds both; Hardcover
 					// resolves an ASIN → title/author/cover + book_id/edition_id.
@@ -789,6 +808,7 @@ func runCmd() *cobra.Command {
 				jobReg.SetConcurrency(audiobooks.AudibleBackfillKind, 1) // audiobooks-audible-backfill (spec's "books-audible-backfill")
 				if cfg.BooksEnabled() {
 					jobReg.SetConcurrency(audiobooks.HardcoverPushKind, 1)    // hardcover-push (global Hardcover rate limit)
+					jobReg.SetConcurrency(hardcover.CurationPushKind, 1)      // hardcover-push-curation (global Hardcover rate limit)
 					jobReg.SetConcurrency(hardcover.PullJobKind, 1)           // hardcover-pull (global Hardcover rate limit)
 					jobReg.SetConcurrency(books.KindleSyncKind, 1)            // books-kindle-sync
 					jobReg.SetConcurrency(books.KindleBackfillKind, 1)        // books-kindle-backfill

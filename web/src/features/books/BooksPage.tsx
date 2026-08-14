@@ -25,12 +25,14 @@ import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
 import { Page } from "@/layout/Page";
 import { EmptyState } from "@/components/EmptyState";
 import { runQuery } from "@/lib/queryApi";
+import { qk } from "@/lib/queryKeys";
 import { usePublicConfig } from "@/lib/usePublicConfig";
 import { GroupableExplorer } from "@/features/explorer/GroupableExplorer";
 import {
   deriveHeroStats,
   HERO_SPEC,
   makeBooksExplorerConfig,
+  STATUS_FILTER_OPTIONS,
   type BooksHeroStats,
   type SourceFilter,
   type StatusFilter,
@@ -162,7 +164,7 @@ export function BooksPage() {
   // Hero summary: one unfiltered grouped query (group by source + finished
   // rollup) → whole-library counts. Only when the feature is on.
   const heroQuery = useQuery({
-    queryKey: ["books-hero"],
+    queryKey: qk.booksHero(),
     queryFn: () => runQuery(HERO_SPEC),
     enabled: booksEnabled,
     staleTime: 60_000,
@@ -231,12 +233,7 @@ export function BooksPage() {
                     label="Status"
                     value={statusFilter}
                     onChange={setStatusFilter}
-                    options={[
-                      { value: "all", label: "All" },
-                      { value: "reading", label: "Reading" },
-                      { value: "finished", label: "Finished" },
-                      { value: "want", label: "Want" },
-                    ]}
+                    options={STATUS_FILTER_OPTIONS}
                   />
                   <Button asChild size="sm" variant="outline" className="ml-auto">
                     <Link to="/app/settings?tab=connections">

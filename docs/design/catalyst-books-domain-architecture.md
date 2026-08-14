@@ -270,6 +270,163 @@ Hardcover. Building it is the main open item (§8): grab a real token, verify th
 
 ---
 
+## 4A. Status curation + three-way sync (Kindle/Audible ⇄ boomtime ⇄ Hardcover)
+
+> **This is THE reference for the three-way merge.** Read it before touching
+> status, rating, or finished-date sync. It documents the model implemented across
+> migration `00069`, `internal/db/reading_items.go`, `internal/query/domains.go`,
+> and `internal/hardcover/{push,pull}.go`. The plan of record is
+> `gaka-books` (Hardcover status/curation override + bidirectional LWW).
+
+**The problem.** Three systems disagree about a book's status. **Amazon (Kindle +
+Audible) is a read-only device source — we NEVER sync TO it.** It is also too
+permissive: a stalled book keeps reporting `reading`, and Amazon has no way to
+express **DNF** or **Paused**. The user wants to override the status that maps to
+Hardcover, push that override out, and — when the shelf changes *in* Hardcover —
+pull it back, latest-value-wins. Same for **rating** and **finished-date**.
+
+**The trap this avoids.** Amazon re-derives status on *every* sync with a *fresh*
+timestamp. A naive row-level last-write-wins would therefore let the next Amazon
+sync clobber a user's DNF override — Amazon's clock is always "newer." The fix is
+a **two-layer model**: ingest only ever writes the *derived* layer; overrides live
+in a separate *override* layer; and LWW arbitrates **only** between the two
+curation writers (user and Hardcover) — Amazon is not a participant.
+
+### 4A.1 Field-ownership + sync-direction matrix
+
+| Field | Source of truth | Direction(s) | Conflict rule |
+|---|---|---|---|
+| **status** | Amazon derives; user/Hardcover curate | Amazon → boomtime (derived, one-way); boomtime ⇄ Hardcover (effective, bidirectional) | Effective = `override ?? derived`. Between user and Hardcover: **LWW** on `curation_updated_at` vs `hardcover_remote_updated_at`. Amazon never enters LWW. |
+| **progress / position** (LPR, listening-seconds) | Amazon | Amazon → boomtime, **one-way** | Amazon-owned; feeds `reading_activity` + the derivation heuristic. Never pushed, never overridden. |
+| **finished / finished_at** | Amazon derives a real finish; user/Hardcover override the date | Amazon → boomtime (derived); boomtime ⇄ Hardcover (effective) | Effective `finished_at = COALESCE(finished_at_override, finished_at)`. A real Amazon finish may **promote** an override → `read` once (see 4A.5a). |
+| **rating** | Hardcover-owned inbound; user may override | Hardcover → boomtime (inbound); boomtime → Hardcover (on user override) | Effective `rating = COALESCE(rating_override, rating)`. Pull adopts remote rating into the override layer under LWW. |
+| **canonical metadata** (title, author, cover, series, genre) | Hardcover (resolved via match ladder) | Hardcover → boomtime, **inbound only** | Hardcover-owned; boomtime never writes metadata back. See §3. |
+| **existence** (which books) | Amazon (Kindle + Audible libraries) | Amazon → boomtime, **one-way** | Amazon is the roster. boomtime never creates books in Amazon or Hardcover beyond linking. |
+
+**One-line read:** Amazon is a read-only *source* → boomtime is the *hub* →
+Hardcover is the one *read+write* datasource. Effective **status** and
+**finished_at** round-trip boomtime⇄Hardcover under LWW; **rating** and
+**canonical metadata** are Hardcover-owned inbound; **progress/existence** are
+Amazon-owned inbound. Nothing ever flows back to Kindle or Audible.
+
+### 4A.2 Two-layer status model — derived vs override
+
+Every curated field is stored as **two columns**: a *derived* column that ingest
+recomputes each sync, and an *override* column that only the two curation writers
+touch.
+
+| Layer | Columns | Written by | Recomputed each sync? |
+|---|---|---|---|
+| **derived** | `status`, `finished`, `finished_at`, `rating` | Amazon ingest (`UpsertReadingItem`) | **Yes** — clobbered every sync, by design |
+| **override** | `status_override`, `finished_at_override`, `rating_override`, plus the row-level LWW stamp `curation_updated_at` | ONLY the PATCH endpoint (source=user) or the Hardcover pull LWW branch (source=hardcover) | **No** — sticky |
+
+```
+effective_status      = COALESCE(status_override,      status)
+effective_finished_at = COALESCE(finished_at_override, finished_at)
+effective_rating      = COALESCE(rating_override,      rating)
+```
+
+Migration `00069` adds the four override columns (all NULL, no backfill).
+`UpsertReadingItem`'s column list is **deliberately unchanged** — overrides are
+not in the upsert, so ingest *structurally cannot* clobber them. That invariant is
+the whole safety story; keep the comment on the upsert and never add an override
+column to it.
+
+**Why Amazon is NOT a LWW participant.** LWW compares two timestamps and keeps the
+newer value. Amazon re-derives with `now()` on every sync, so it would *always*
+win a timestamp race and erase a DNF/Paused override on the next poll — the exact
+trap. Therefore ingest writes only the derived layer, and **LWW runs strictly
+between `curation_updated_at` (user's last override) and
+`hardcover_remote_updated_at` (Hardcover's `updated_at`)**. Amazon's fresh
+timestamps never touch that comparison.
+
+### 4A.3 Canonical 1:1 status vocabulary
+
+One vocabulary, 1:1 with Hardcover's enum — no lossy remap:
+
+| boomtime | id | Hardcover `status_id` | Produced by |
+|---|---|---|---|
+| `want` | 1 | Want | Amazon derivation, user, Hardcover |
+| `reading` | 2 | Reading (Currently Reading) | Amazon derivation, user, Hardcover |
+| `read` | 3 | Read | Amazon derivation, user, Hardcover |
+| `paused` | 4 | Paused | **user or Hardcover override only** |
+| `dnf` | 5 | Did Not Finish | **user or Hardcover override only** |
+
+The enum lives in `internal/hardcover/push.go` (`StatusWant=1 … StatusDNF=5`) and
+maps back via `pull.go` `StatusString`. **The rule:** *filter labels == group
+values == pill labels == Hardcover status names.* One set, everywhere — the Status
+filter, the group-by axis values, the FE `STATUS_META` pills, and Hardcover all
+speak `want / reading / read / paused / dnf` (plus `all` on the filter). This
+retires the old rot where the filter said `All / Reading / Finished / Want` (a
+mislabel of `read`) while grouping showed raw `want / reading / read` — filter and
+group-by used to disagree; now they can't. **Amazon only ever produces
+`want / reading / read`;** `paused` and `dnf` come *only* from a user or Hardcover
+override.
+
+### 4A.4 Derivation heuristic + the two group-by axes
+
+Amazon exposes no explicit shelf state we trust for "done," so the derived
+`status` is computed from **completion percentage**:
+
+- **> 95% (audio)** or **100% (kindle)** ⇒ `read` / finished.
+- Otherwise `reading` if opened (an LPR exists), else `want`.
+
+Grounded in `internal/domains/books` ingest (`statusFromPercent`) and
+`internal/domains/audiobooks` (`toReadingItem`). Because status now has two
+meanings, the query DSL exposes **two group-by axes**:
+
+- **`status`** (default) = **effective** `COALESCE(status_override, status)` — what
+  the user/Hardcover curated. This is what the filter, rollups, goals, and pills
+  read, so a DNF/Paused book leaves the "reading" set everywhere.
+- **`statusDerived`** = the raw Amazon column `status`, untouched — "what the source
+  computed." Group by this to see the heuristic's `want / reading / read` buckets
+  before overrides.
+
+Both axes are selectable in the explorer. `finished` as a measure counts
+effective-read rows: `sum(case when COALESCE(status_override,status)='read' then 1
+else 0 end)`. Reading **goals** inherit all of this for free because they run
+through `query.Q("reading")` — making the DSL effective makes goals effective.
+
+### 4A.5 The three sync mechanics
+
+**(a) Amazon-finish promotion.** The one place Amazon may touch the override layer.
+When a finish sweep (`MarkReadingItemFinished` /
+`SetReadingItemFinishedFromInsights`) sees `finished` transition true AND effective
+status ≠ `read`, it sets `status_override='read'` + `curation_updated_at=now()`.
+This is a deliberate **one-time promotion** — a genuine finish (pct≥100 / an
+insights `date_read`) should win over a stale override — and it is **idempotent**:
+once effective status is `read`, it's a no-op. It is emphatically *not* a per-sync
+clobber; it fires only on the finish edge.
+
+**(b) Echo-suppression via `hardcover_pushed_at`.** On a successful push, stamp
+`hardcover_pushed_at=now()` and record the pushed status. The pull's LWW branch
+**skips** adopting a remote change whose value equals our own last push — otherwise
+our own write would bounce back off Hardcover's `updated_at` and re-import as if a
+user had edited it in Hardcover. Reconciliation keys on the stable
+`hardcover_book_id`, so the echo lands on the right row deterministically.
+
+**(c) Dry-run-gated writes (`BOOM_HARDCOVER_DRYRUN`, default TRUE).** Every
+Hardcover mutation — status, rating, finished-date — flows through the process-wide
+dry-run gate in `internal/hardcover/client.go`. With dry-run on (the default), the
+client logs `hardcover DRYRUN: write blocked` and returns a simulated success, so
+the whole curation loop builds, tests, and runs end-to-end **without touching a
+real shelf**. Reads (the pull's `user_books` query) pass through. The user flips
+`BOOM_HARDCOVER_DRYRUN=false` only when ready to write for real. **Safe by
+default** — see §7.
+
+### 4A.6 Pull LWW branch (inbound arbitration)
+
+`UpdateHardcoverLinkFromPull` (`internal/db/reading_items.go`) carries the
+arbitration: when a pulled `user_book` has `hardcover_remote_updated_at >
+curation_updated_at` **AND** its status ≠ our last-pushed status (echo-suppressed
+via `hardcover_pushed_at`), Hardcover wins → adopt remote status/rating/finished
+into the **override** columns and set `curation_updated_at` = the remote time.
+Otherwise keep local; the next push reconciles Hardcover. Note the adoption lands
+in the *override* layer, not the derived layer — so a subsequent Amazon sync still
+can't clobber it.
+
+---
+
 ## 5. The reading-heartbeat model (per-domain translation)
 
 boomtime's coding analytics are built on **heartbeats**: sparse editor pings whose

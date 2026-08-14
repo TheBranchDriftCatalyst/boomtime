@@ -70,6 +70,7 @@ import type {
   GithubConnection,
   AmazonConnection,
   ReadingItemDTO,
+  CurationPatch,
   HardcoverConnection,
   GithubStatsPayload,
   WidgetLinkPayload,
@@ -1156,6 +1157,14 @@ export const api = {
     request<{ deleted: boolean }>(`/api/v1/admin/jobs/${id}/logs`, {
       method: "DELETE",
     }),
+  // Bulk-clear stored job logs: a whole kind (`{ kind }`) or every kind (no arg).
+  // Object storage only — the jobs-table rows are never touched. Returns the
+  // count of stored log objects removed.
+  clearJobLogs: (params?: { kind?: string }) =>
+    request<{ deleted: number }>(
+      buildUrl("/api/v1/admin/jobs/logs", params),
+      { method: "DELETE" },
+    ),
 
   // --- Admin CLI-runner (BOOM_FEATURE_ADMIN_CLI) -----------------------------
   // All three 404 when the backend feature flag is off (routes not
@@ -1252,6 +1261,24 @@ export const api = {
   getBooksItems: (source?: string) =>
     request<{ items: ReadingItemDTO[] }>(
       `/api/v1/books/items${source ? `?source=${encodeURIComponent(source)}` : ""}`,
+    ),
+
+  // Per-book curation override (gaka-books Stage 5). PATCHes the status / rating
+  // / finished-date that maps to Hardcover — the override layer, sticky against
+  // Amazon re-derivation. Returns the updated EFFECTIVE reading row (override ??
+  // derived). A reading row has no numeric id — it's keyed by (source,
+  // external_id) — so we address it by externalId with source as a required
+  // query param (owner comes from auth). status is one of the 5 canonical
+  // values; rating/finishedAt accept null to CLEAR an override (fall back to the
+  // derived layer). Only-present keys are sent, so a rating edit never disturbs
+  // the status override and vice-versa.
+  setBookCuration: (item: ReadingItemDTO, patch: CurationPatch) =>
+    request<ReadingItemDTO>(
+      buildUrl(
+        `/api/v1/books/items/${encodeURIComponent(item.externalId)}/curation`,
+        { source: item.source },
+      ),
+      { method: "PATCH", body: patch },
     ),
 
   // Hardcover connect (catalyst-books PUSH target). Paste-a-bearer-token flow:

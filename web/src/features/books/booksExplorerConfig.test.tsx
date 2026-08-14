@@ -21,7 +21,9 @@ import {
   filtersToPredicate,
   makeBooksExplorerConfig,
   pathToPredicate,
+  READING_AXES,
   searchToPredicate,
+  STATUS_FILTER_OPTIONS,
   type BooksFilters,
 } from "@/features/books/booksExplorerConfig";
 
@@ -51,10 +53,12 @@ describe("pathToPredicate / filtersToPredicate / buildWhere", () => {
     });
   });
 
-  it("folds source + status filters (finished → status='read')", () => {
+  it("folds source + status filters onto the canonical status value (1:1)", () => {
     expect(filtersToPredicate(NO_FILTERS)).toEqual([]);
+    // gaka-books: the filter value IS the canonical column value now — `read`
+    // filters on status='read' directly (no more "finished" → "read" remap).
     expect(
-      filtersToPredicate({ source: "audible", status: "finished", search: "" }),
+      filtersToPredicate({ source: "audible", status: "read", search: "" }),
     ).toEqual([
       { kind: "leaf", dim: "source", op: "eq", values: ["audible"] },
       { kind: "leaf", dim: "status", op: "eq", values: ["read"] },
@@ -62,6 +66,29 @@ describe("pathToPredicate / filtersToPredicate / buildWhere", () => {
     expect(
       filtersToPredicate({ source: "all", status: "reading", search: "" }),
     ).toEqual([{ kind: "leaf", dim: "status", op: "eq", values: ["reading"] }]);
+    // The new paused/dnf statuses fold the same way — they only exist via
+    // curation overrides, but the filter speaks them 1:1.
+    expect(
+      filtersToPredicate({ source: "all", status: "dnf", search: "" }),
+    ).toEqual([{ kind: "leaf", dim: "status", op: "eq", values: ["dnf"] }]);
+  });
+
+  it("offers the canonical status filter set (no stray 'Finished' mislabel value)", () => {
+    // filter VALUES are exactly all + the 5 canonical statuses (== group values
+    // == pill keys). "finished" is gone as a VALUE; `read`'s label is "Finished".
+    expect(STATUS_FILTER_OPTIONS.map((o) => o.value)).toEqual([
+      "all",
+      "want",
+      "reading",
+      "read",
+      "paused",
+      "dnf",
+    ]);
+    const read = STATUS_FILTER_OPTIONS.find((o) => o.value === "read");
+    expect(read?.label).toBe("Finished");
+    // Grouping exposes BOTH the effective status axis and the raw Amazon one.
+    expect(READING_AXES.map((a) => a.id)).toContain("status");
+    expect(READING_AXES.map((a) => a.id)).toContain("statusDerived");
   });
 
   it("maps a search term to an ILIKE OR on title/author (trimmed; blank → none)", () => {

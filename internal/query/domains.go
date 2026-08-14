@@ -64,10 +64,19 @@ func registerReading() {
 	// which is descriptive only. Table below marks each dim's primary home.
 	dims := map[string]Dimension{
 		"source": {Name: "source", Table: activity, Expr: "source"},
-		"status": {Name: "status", Table: items, Expr: "status"},
-		"series": {Name: "series", Table: items, Expr: "series"},
-		"author": {Name: "author", Table: items, Expr: "authors"},
-		"genre":  {Name: "genre", Table: items, Expr: "genres->>0"},
+		// status is the EFFECTIVE status = COALESCE(status_override, status): the
+		// default group-by axis, the filter vocabulary, and what reading goals +
+		// rollups read (migration 00069). DNF/Paused overrides move a book out of the
+		// "reading" set here without losing the Amazon-derived value.
+		"status": {Name: "status", Table: items, Expr: "COALESCE(status_override, status)"},
+		// statusDerived is the RAW Amazon-computed status (un-overridden): the
+		// >95%audio/100%kindle=read heuristic lives in ingest.statusFromPercent, so
+		// grouping by this axis shows the source's want/reading/read buckets while
+		// `status` shows them with curation overrides applied.
+		"statusDerived": {Name: "statusDerived", Table: items, Expr: "status"},
+		"series":        {Name: "series", Table: items, Expr: "series"},
+		"author":        {Name: "author", Table: items, Expr: "authors"},
+		"genre":         {Name: "genre", Table: items, Expr: "genres->>0"},
 		// title is a filter-oriented dimension (books SEARCH folds an ILIKE on it);
 		// it is in the reading_items measures' Dims whitelist so it can filter, but
 		// the FE offers no title group axis (grouping by a near-unique key is moot).
@@ -91,7 +100,7 @@ func registerReading() {
 				Expr:     "count(*)",
 				DateCol:  "finished_at",
 				OwnerCol: "owner",
-				Dims:     []string{"source", "status", "series", "author", "genre", "title"},
+				Dims:     []string{"source", "status", "statusDerived", "series", "author", "genre", "title"},
 			},
 			"runtime": {
 				Name:     "runtime",
@@ -99,18 +108,20 @@ func registerReading() {
 				Expr:     "sum(runtime_min)",
 				DateCol:  "finished_at",
 				OwnerCol: "owner",
-				Dims:     []string{"source", "status", "series", "author", "genre", "title"},
+				Dims:     []string{"source", "status", "statusDerived", "series", "author", "genre", "title"},
 			},
 			// finished is a rollup-oriented measure: how many rows in a group are
-			// finished. Same table/date/owner as books+runtime so it can ride as a
-			// rollup alongside either.
+			// finished — counted off EFFECTIVE status='read' (migration 00069), so a
+			// DNF/Paused override drops out of the finished tally and an Amazon-finish
+			// promotion counts. Same table/date/owner as books+runtime so it can ride
+			// as a rollup alongside either.
 			"finished": {
 				Name:     "finished",
 				Table:    items,
-				Expr:     "sum(case when finished then 1 else 0 end)",
+				Expr:     "sum(case when COALESCE(status_override, status) = 'read' then 1 else 0 end)",
 				DateCol:  "finished_at",
 				OwnerCol: "owner",
-				Dims:     []string{"source", "status", "series", "author", "genre", "title"},
+				Dims:     []string{"source", "status", "statusDerived", "series", "author", "genre", "title"},
 			},
 		},
 		Dimensions: dims,
@@ -132,11 +143,21 @@ func registerReading() {
 				{Name: "authors", Expr: "authors"},
 				{Name: "narrators", Expr: "narrators"},
 				{Name: "series", Expr: "series"},
-				{Name: "status", Expr: "status"},
+				// status is EFFECTIVE (override ?? derived); the curation axes below
+				// expose the layers separately so the FE can render a curated-vs-auto
+				// indicator (migration 00069).
+				{Name: "status", Expr: "COALESCE(status_override, status)"},
+				{Name: "statusDerived", Expr: "status"},
+				{Name: "statusOverride", Expr: "status_override"},
+				{Name: "statusIsOverride", Expr: "(status_override IS NOT NULL)"},
 				{Name: "finished", Expr: "finished"},
 				{Name: "progressPercent", Expr: "progress_percent"},
-				{Name: "finishedAt", Expr: "finished_at"},
-				{Name: "rating", Expr: "rating"},
+				// finishedAt / rating are EFFECTIVE too (override ?? derived), with the
+				// raw override exposed alongside for the indicator.
+				{Name: "finishedAt", Expr: "COALESCE(finished_at_override, finished_at)"},
+				{Name: "finishedAtOverride", Expr: "finished_at_override"},
+				{Name: "rating", Expr: "COALESCE(rating_override, rating)"},
+				{Name: "ratingOverride", Expr: "rating_override"},
 				{Name: "goodreadsRating", Expr: "goodreads_rating"},
 				{Name: "coverUrl", Expr: "cover_url"},
 				{Name: "runtimeMin", Expr: "runtime_min"},

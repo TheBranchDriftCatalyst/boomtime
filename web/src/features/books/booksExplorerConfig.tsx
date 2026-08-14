@@ -19,14 +19,16 @@ import { runQuery, type PredicateNode, type QuerySpec } from "@/lib/queryApi";
 import {
   AuthorCell,
   Cover,
-  fmtDate,
+  FinishedEditor,
   HardcoverBadge,
   ProgressBar,
-  RatingCell,
+  RatingEditor,
   SourceBadge,
-  StatusPill,
+  STATUS_META,
+  StatusSelect,
   TitleCell,
 } from "@/features/books/cells";
+import { BOOK_STATUSES, type BookStatus } from "@/types/meta";
 import { openHardcover } from "@/features/books/hardcover";
 import type {
   Axis,
@@ -43,7 +45,11 @@ import type { ReadingItemDTO } from "@/types/meta";
 // every query's `where` (source/status as eq leaves, search as an ILIKE OR on
 // title/author) — see buildWhere. Nothing is filtered client-side.
 export type SourceFilter = "all" | "audible" | "kindle";
-export type StatusFilter = "all" | "reading" | "finished" | "want";
+// gaka-books: the status filter now speaks the ONE canonical vocabulary (1:1
+// with Hardcover) so filter value == group value == pill key. Was the
+// mismatched all|reading|finished|want, where "finished" was a mislabel of the
+// `read` column value — the filter and the group-by axis disagreed.
+export type StatusFilter = "all" | BookStatus;
 
 export interface BooksFilters {
   source: SourceFilter;
@@ -75,7 +81,12 @@ export function formatMinutes(min: number): string {
 // source / status / series / author / genre.
 export const READING_AXES: Axis[] = [
   { id: "source", label: "Source" },
+  // EFFECTIVE status (override ?? Amazon-derived) — the same axis the filter
+  // reads and goals/rollups run on.
   { id: "status", label: "Status" },
+  // Raw Amazon-derived status (the untouched device layer) — lets a user group
+  // by "what the source computed" vs the effective/curated status (gaka-books).
+  { id: "statusDerived", label: "Status (Amazon)" },
   { id: "series", label: "Series" },
   { id: "author", label: "Author" },
   { id: "genre", label: "Genre" },
@@ -120,7 +131,9 @@ export const BOOK_COLUMNS: Column<ReadingItemDTO>[] = [
     id: "status",
     header: "Status",
     get: (r) => r.status,
-    render: (r) => <StatusPill status={r.status} finished={r.finished} />,
+    // Editable: the pill becomes a StatusSelect dropdown (curation override →
+    // Hardcover) with a provenance dot. Sort key stays the effective status.
+    render: (r) => <StatusSelect item={r} />,
     defaultVisible: true,
   },
   {
@@ -143,15 +156,17 @@ export const BOOK_COLUMNS: Column<ReadingItemDTO>[] = [
     header: "Finished",
     // Recently-finished first; items without a finish date sink to the end.
     get: (r) => (r.finishedAt ? Date.parse(r.finishedAt) : -Infinity),
-    render: (r) => fmtDate(r.finishedAt),
-    cellClassName: "whitespace-nowrap text-muted-foreground",
+    // Editable: inline calendar popover writes the finished_at override.
+    render: (r) => <FinishedEditor item={r} />,
+    cellClassName: "whitespace-nowrap",
     defaultVisible: true,
   },
   {
     id: "rating",
     header: "Rating",
     get: (r) => r.rating ?? r.goodreadsRating ?? 0,
-    render: (r) => <RatingCell item={r} />,
+    // Editable: inline 1..5 star editor writes the rating override.
+    render: (r) => <RatingEditor item={r} />,
     defaultVisible: true,
   },
 ];
@@ -210,22 +225,30 @@ export function pathToPredicate(path: DrillPath): PredicateNode | undefined {
 
 /**
  * Map the page's source/status/search selections to `where` leaves.
- * "finished" folds onto status='read' — the canonical finished status the
- * importer sets (internal/db/reading_items.go MarkReadingItemFinished). `search`
- * folds to an ILIKE OR on title/author (searchToPredicate) — the DSL now has a
- * substring op, so free-text search is a real server predicate that constrains
- * both the group aggregates and the leaf rows.
+ * status folds directly onto the EFFECTIVE `status` dimension using the ONE
+ * canonical value (gaka-books) — the filter value IS the column/group value now
+ * (no more "finished" → "read" remap), so filter and group-by can't disagree.
+ * `search` folds to an ILIKE OR on title/author (searchToPredicate) — the DSL
+ * has a substring op, so free-text search is a real server predicate that
+ * constrains both the group aggregates and the leaf rows.
  */
 export function filtersToPredicate(filters: BooksFilters): PredicateNode[] {
   const leaves: PredicateNode[] = [];
   if (filters.source !== "all") leaves.push(eqLeaf("source", filters.source));
-  if (filters.status === "reading") leaves.push(eqLeaf("status", "reading"));
-  else if (filters.status === "want") leaves.push(eqLeaf("status", "want"));
-  else if (filters.status === "finished") leaves.push(eqLeaf("status", "read"));
+  if (filters.status !== "all") leaves.push(eqLeaf("status", filters.status));
   const searchNode = searchToPredicate(filters.search);
   if (searchNode) leaves.push(searchNode);
   return leaves;
 }
+
+// The canonical status filter options — value == the `status` group value == the
+// pill key, label == the pill label (STATUS_META). Driven off BOOK_STATUSES so
+// the filter can never drift from the pills/groups. `all` leads.
+export const STATUS_FILTER_OPTIONS: Array<{ value: StatusFilter; label: string }> =
+  [
+    { value: "all", label: "All" },
+    ...BOOK_STATUSES.map((s) => ({ value: s, label: STATUS_META[s].label })),
+  ];
 
 /** Combine a drill path + the page filters into one `where` predicate. */
 export function buildWhere(

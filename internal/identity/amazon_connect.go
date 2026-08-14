@@ -207,19 +207,29 @@ type readingItemDTO struct {
 	ExternalID      string   `json:"externalId"`
 	Title           string   `json:"title"`
 	Authors         string   `json:"authors"`
-	Status          string   `json:"status"`
+	Status          string   `json:"status"` // EFFECTIVE = override ?? derived
 	ProgressPercent int      `json:"progressPercent"`
 	Finished        bool     `json:"finished"`
 	StartedAt       *string  `json:"startedAt,omitempty"`
-	FinishedAt      *string  `json:"finishedAt,omitempty"`
-	Rating          *float64 `json:"rating,omitempty"`
+	FinishedAt      *string  `json:"finishedAt,omitempty"` // EFFECTIVE
+	Rating          *float64 `json:"rating,omitempty"`     // EFFECTIVE
 	SyncedAt        string   `json:"syncedAt"`
-	CoverURL        string   `json:"coverUrl,omitempty"`
-	Subtitle        string   `json:"subtitle,omitempty"`
-	Series          string   `json:"series,omitempty"`
-	Narrators       string   `json:"narrators,omitempty"`
-	RuntimeMin      *int     `json:"runtimeMin,omitempty"`
-	GoodreadsRating *float64 `json:"goodreadsRating,omitempty"`
+
+	// Curation override layer (migration 00069). statusDerived is the raw Amazon
+	// value; the *Override fields are the sticky user/Hardcover overrides (null when
+	// none); statusIsOverride drives the FE curated-vs-auto indicator. Status/Rating/
+	// FinishedAt above are the EFFECTIVE (override ?? derived) values.
+	StatusDerived      string   `json:"statusDerived"`
+	StatusOverride     *string  `json:"statusOverride"`
+	StatusIsOverride   bool     `json:"statusIsOverride"`
+	RatingOverride     *float64 `json:"ratingOverride"`
+	FinishedAtOverride *string  `json:"finishedAtOverride"`
+	CoverURL           string   `json:"coverUrl,omitempty"`
+	Subtitle           string   `json:"subtitle,omitempty"`
+	Series             string   `json:"series,omitempty"`
+	Narrators          string   `json:"narrators,omitempty"`
+	RuntimeMin         *int     `json:"runtimeMin,omitempty"`
+	GoodreadsRating    *float64 `json:"goodreadsRating,omitempty"`
 
 	// Identifiers for precise external linking (ASIN is the reliable id; ISBN is
 	// NULL for audiobooks). external_id already carries the ASIN; amazonAsin is
@@ -239,20 +249,27 @@ type readingItemDTO struct {
 func toReadingItemDTO(it db.ReadingItem) readingItemDTO {
 	d := readingItemDTO{
 		Source: it.Source, ExternalID: it.ExternalID, Title: it.Title, Authors: it.Authors,
-		Status: it.Status, ProgressPercent: it.ProgressPercent, Finished: it.Finished,
-		Rating: it.Rating, SyncedAt: it.SyncedAt.UTC().Format(time.RFC3339),
+		Status: it.EffectiveStatus(), ProgressPercent: it.ProgressPercent, Finished: it.Finished,
+		Rating: it.EffectiveRating(), SyncedAt: it.SyncedAt.UTC().Format(time.RFC3339),
 		CoverURL: it.CoverURL, Subtitle: it.Subtitle, Series: it.Series,
 		Narrators: it.Narrators, RuntimeMin: it.RuntimeMin, GoodreadsRating: it.GoodreadsRating,
 		ISBN: it.ISBN, AmazonASIN: it.AmazonASIN,
 		HardcoverBookID: it.HardcoverBookID, HardcoverStatus: it.HardcoverStatus,
+		StatusDerived:  it.Status,
+		StatusOverride: it.StatusOverride, StatusIsOverride: it.StatusOverride != nil,
+		RatingOverride: it.RatingOverride,
 	}
 	if it.StartedAt != nil {
 		s := it.StartedAt.UTC().Format(time.RFC3339)
 		d.StartedAt = &s
 	}
-	if it.FinishedAt != nil {
-		s := it.FinishedAt.UTC().Format(time.RFC3339)
+	if fa := it.EffectiveFinishedAt(); fa != nil {
+		s := fa.UTC().Format(time.RFC3339)
 		d.FinishedAt = &s
+	}
+	if it.FinishedAtOverride != nil {
+		s := it.FinishedAtOverride.UTC().Format(time.RFC3339)
+		d.FinishedAtOverride = &s
 	}
 	if it.HardcoverMatchedAt != nil {
 		s := it.HardcoverMatchedAt.UTC().Format(time.RFC3339)

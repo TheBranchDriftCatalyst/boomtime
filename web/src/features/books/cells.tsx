@@ -5,8 +5,32 @@
 // only a move out of BooksPage.tsx so both the page chrome and the config draw
 // the same components.
 import { useState } from "react";
-import { BookMarked, BookOpen, Headphones, Star } from "lucide-react";
+import { toast } from "sonner";
+import {
+  BookMarked,
+  BookOpen,
+  CalendarDays,
+  Check,
+  ChevronDown,
+  Headphones,
+  Star,
+  X,
+} from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@thebranchdriftcatalyst/catalyst-ui/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@thebranchdriftcatalyst/catalyst-ui/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
+import { useSetBookCuration } from "@/features/books/useBookCuration";
+import { BOOK_STATUSES, type BookStatus } from "@/types/meta";
 import type { ReadingItemDTO } from "@/types/meta";
 
 /** Format an ISO date to a compact "Aug 3, 2026" (em-dash for missing/invalid). */
@@ -50,7 +74,7 @@ export function SourceBadge({ source }: { source: string }) {
 }
 
 // Status pill: want / reading / read / paused / dnf. Each gets a distinct hue.
-const STATUS_META: Record<string, { label: string; className: string }> = {
+export const STATUS_META: Record<string, { label: string; className: string }> = {
   reading: {
     label: "Reading",
     className: "border-primary/40 bg-primary/10 text-primary",
@@ -77,6 +101,12 @@ const STATUS_META: Record<string, { label: string; className: string }> = {
   },
 };
 
+/** Resolve the pill meta for a status key, with the legacy finished fallback. */
+function statusMeta(status: string, finished: boolean) {
+  const key = status.toLowerCase();
+  return STATUS_META[key] ?? (finished ? STATUS_META.read : STATUS_META.reading);
+}
+
 export function StatusPill({
   status,
   finished,
@@ -84,9 +114,7 @@ export function StatusPill({
   status: string;
   finished: boolean;
 }) {
-  const key = status.toLowerCase();
-  const meta =
-    STATUS_META[key] ?? (finished ? STATUS_META.read : STATUS_META.reading);
+  const meta = statusMeta(status, finished);
   return (
     <span
       className={cn(
@@ -96,6 +124,157 @@ export function StatusPill({
     >
       {meta.label}
     </span>
+  );
+}
+
+// --- Curation provenance ------------------------------------------------------
+//
+// Three provenance states for a book's effective status (gaka-books):
+//   auto      — plain Amazon-derived; the device layer, no override. No dot.
+//   curated   — a user override you set (or just set optimistically). A filled
+//               dot in the pill's own hue (currentColor) — "you curated this".
+//   hardcover — an override boomtime ADOPTED from Hardcover (LWW pull). A
+//               distinct fuchsia dot, matching the HardcoverBadge accent.
+type Provenance = "auto" | "curated" | "hardcover";
+
+/**
+ * Classify the effective status. `pendingOverride` is the cell-local optimistic
+ * value (set the instant a user picks a status, before the DTO round-trips) —
+ * when present it always reads as `curated` (the user's own fresh edit).
+ *
+ * A subtlety the backend forces: the Amazon-finish promotion stamps
+ * status_override='read' on EVERY natural finish (to advance the LWW clock), so
+ * statusIsOverride is true for all finished books. We must NOT light the dot
+ * there — that override doesn't DIVERGE from what Amazon derived (both 'read').
+ * The dot only means "the effective status differs from the raw device layer":
+ * override != derived. Within that, an override matching the last-seen Hardcover
+ * shelf reads as adopted-from-Hardcover; otherwise it's a local curation.
+ */
+export function statusProvenance(
+  item: ReadingItemDTO,
+  pendingOverride?: string | null,
+): Provenance {
+  if (pendingOverride != null) return "curated";
+  if (!item.statusIsOverride) return "auto";
+  const override = (item.statusOverride ?? "").toLowerCase();
+  const derived = (item.statusDerived ?? "").toLowerCase();
+  // A natural finish (override == derived) is not a real curation — no dot.
+  if (override && override === derived) return "auto";
+  const hc = (item.hardcoverStatus ?? "").toLowerCase();
+  const eff = (item.status ?? "").toLowerCase();
+  return hc && hc === eff ? "hardcover" : "curated";
+}
+
+const PROV_TITLE: Record<Provenance, string> = {
+  auto: "Amazon-derived status",
+  curated: "Curated override — pushed to Hardcover",
+  hardcover: "Adopted from Hardcover",
+};
+
+/** The subtle dot appended inside the status trigger. `auto` renders nothing. */
+function ProvenanceDot({ provenance }: { provenance: Provenance }) {
+  if (provenance === "auto") return null;
+  return (
+    <span
+      title={PROV_TITLE[provenance]}
+      aria-label={PROV_TITLE[provenance]}
+      data-provenance={provenance}
+      className={cn(
+        "h-1.5 w-1.5 shrink-0 rounded-full ring-1",
+        provenance === "hardcover"
+          ? "bg-fuchsia-500 ring-fuchsia-500/40"
+          : "bg-current ring-current/40 opacity-80",
+      )}
+    />
+  );
+}
+
+// --- StatusSelect: the editable status pill -----------------------------------
+//
+// Replaces the read-only StatusPill in editable contexts. The trigger keeps the
+// pill aesthetic (STATUS_META hue) + a caret + the provenance dot; the menu
+// lists the 5 canonical statuses as mini-pills. Selecting one fires a curation
+// PATCH via useSetBookCuration, optimistically flipping the pill immediately and
+// rolling back (with a toast) on error.
+export function StatusSelect({ item }: { item: ReadingItemDTO }) {
+  const mut = useSetBookCuration(item);
+  // Cell-local optimistic override: the picked status shows instantly and
+  // survives a successful write (the explorer table isn't react-query backed,
+  // so the row prop won't refresh until a reload — we hold the value here).
+  const [override, setOverride] = useState<BookStatus | null>(null);
+
+  const effective = (override ?? item.status ?? "reading").toLowerCase();
+  const meta = statusMeta(effective, item.finished);
+  const provenance = statusProvenance(item, override);
+
+  function choose(next: BookStatus) {
+    if (next === effective) return;
+    const prev = override;
+    setOverride(next); // optimistic
+    mut.mutate(
+      { status: next },
+      {
+        onError: () => {
+          setOverride(prev); // rollback
+          toast.error("Couldn't update status");
+        },
+        onSuccess: (dto) => {
+          // Trust the server's effective status (a real Amazon finish can
+          // promote past the pick), falling back to what we sent.
+          setOverride(((dto.status as BookStatus) ?? next) || next);
+        },
+      },
+    );
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          disabled={mut.isPending}
+          aria-label={`Status: ${meta.label}. Change status`}
+          className={cn(
+            "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-opacity",
+            "hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            mut.isPending && "opacity-60",
+            meta.className,
+          )}
+        >
+          {meta.label}
+          <ProvenanceDot provenance={provenance} />
+          <ChevronDown className="h-3 w-3 opacity-60" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-36 p-1">
+        {BOOK_STATUSES.map((s) => {
+          const m = STATUS_META[s];
+          const active = s === effective;
+          return (
+            <DropdownMenuItem
+              key={s}
+              onSelect={() => choose(s)}
+              className="gap-2 px-1.5 py-1"
+            >
+              <span
+                className={cn(
+                  "inline-flex flex-1 items-center rounded-full border px-2 py-0.5 text-[11px] font-medium",
+                  m.className,
+                )}
+              >
+                {m.label}
+              </span>
+              <Check
+                className={cn(
+                  "h-3.5 w-3.5 shrink-0",
+                  active ? "opacity-100" : "opacity-0",
+                )}
+              />
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -176,6 +355,158 @@ export function RatingCell({ item }: { item: ReadingItemDTO }) {
     );
   }
   return <span className="text-muted-foreground/50">—</span>;
+}
+
+// --- RatingEditor: inline 1..5 star editor ------------------------------------
+//
+// Editable counterpart to RatingCell. Shows 5 stars for the effective rating
+// (user override wins); clicking a star sets that rating, clicking the current
+// rating again clears the override (falls back to the derived/GR layer). A tiny
+// fuchsia dot marks a rating that came from Hardcover. Optimistic + rollback,
+// same shape as StatusSelect.
+export function RatingEditor({ item }: { item: ReadingItemDTO }) {
+  const mut = useSetBookCuration(item);
+  // null = untouched (use item's effective rating); a number = optimistic set.
+  const [override, setOverride] = useState<number | null>(null);
+  const touched = override !== null;
+  const effective = touched ? override : (item.rating ?? 0);
+  const rounded = Math.round(effective);
+  const fromHardcover =
+    !touched &&
+    item.ratingOverride != null &&
+    (item.hardcoverStatus ?? "") !== "";
+
+  function choose(next: number) {
+    const prev = override;
+    const value = next === rounded ? null : next; // click-again clears
+    setOverride(value ?? 0); // optimistic (0 renders as empty stars)
+    mut.mutate(
+      { rating: value },
+      {
+        onError: () => {
+          setOverride(prev);
+          toast.error("Couldn't update rating");
+        },
+        onSuccess: (dto) => setOverride(dto.rating ?? 0),
+      },
+    );
+  }
+
+  const hasUserRating = effective > 0;
+  return (
+    <div
+      className="inline-flex items-center gap-0.5"
+      role="radiogroup"
+      aria-label="Rating"
+    >
+      {[1, 2, 3, 4, 5].map((n) => (
+        <button
+          key={n}
+          type="button"
+          role="radio"
+          aria-checked={n === rounded}
+          aria-label={`${n} star${n > 1 ? "s" : ""}`}
+          disabled={mut.isPending}
+          onClick={() => choose(n)}
+          className="rounded p-0.5 text-muted-foreground/40 transition-colors hover:text-primary focus:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-60"
+        >
+          <Star
+            className={cn(
+              "h-3.5 w-3.5",
+              n <= rounded && hasUserRating && "fill-primary text-primary",
+            )}
+          />
+        </button>
+      ))}
+      {fromHardcover && (
+        <span
+          title="Rating adopted from Hardcover"
+          aria-label="Rating adopted from Hardcover"
+          className="ml-0.5 h-1.5 w-1.5 rounded-full bg-fuchsia-500 ring-1 ring-fuchsia-500/40"
+        />
+      )}
+      {/* Goodreads community average as a muted hint when there's no user rating. */}
+      {!hasUserRating &&
+        typeof item.goodreadsRating === "number" &&
+        item.goodreadsRating > 0 && (
+          <span className="ml-1 rounded bg-muted px-1 py-px font-mono text-[9px] uppercase tracking-wide text-muted-foreground/70">
+            GR {item.goodreadsRating.toFixed(1)}
+          </span>
+        )}
+    </div>
+  );
+}
+
+// --- FinishedEditor: inline finished-date editor ------------------------------
+//
+// Editable counterpart to the plain fmtDate cell. Shows the effective finished
+// date as a button; clicking opens a calendar popover. Picking a day sets the
+// finished_at override (RFC3339); Clear reverts to the derived layer. Optimistic
+// + rollback.
+export function FinishedEditor({ item }: { item: ReadingItemDTO }) {
+  const mut = useSetBookCuration(item);
+  const [open, setOpen] = useState(false);
+  // undefined = untouched; a value (string | null) = optimistic override.
+  const [override, setOverride] = useState<string | null | undefined>(
+    undefined,
+  );
+  const effective = override !== undefined ? override : (item.finishedAt ?? null);
+  const selected = effective ? new Date(effective) : undefined;
+
+  function commit(next: string | null) {
+    const prev = override;
+    setOverride(next); // optimistic
+    setOpen(false);
+    mut.mutate(
+      { finishedAt: next },
+      {
+        onError: () => {
+          setOverride(prev);
+          toast.error("Couldn't update finished date");
+        },
+        onSuccess: (dto) => setOverride(dto.finishedAt ?? null),
+      },
+    );
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          disabled={mut.isPending}
+          aria-label={
+            effective ? `Finished ${fmtDate(effective)}. Change` : "Set finished date"
+          }
+          className={cn(
+            "inline-flex items-center gap-1 whitespace-nowrap rounded px-1 py-0.5 text-xs transition-colors hover:bg-muted focus:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-60",
+            effective ? "text-muted-foreground" : "text-muted-foreground/50",
+          )}
+        >
+          <CalendarDays className="h-3 w-3 opacity-70" />
+          {effective ? fmtDate(effective) : "—"}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-auto p-2">
+        <Calendar
+          mode="single"
+          selected={selected}
+          defaultMonth={selected}
+          onSelect={(d?: Date) => d && commit(d.toISOString())}
+        />
+        {effective && (
+          <button
+            type="button"
+            onClick={() => commit(null)}
+            className="mt-1 flex w-full items-center justify-center gap-1 rounded-sm px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+          >
+            <X className="h-3 w-3" />
+            Clear finished date
+          </button>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 // Cover thumbnail with a graceful synthwave fallback tile when no URL exists

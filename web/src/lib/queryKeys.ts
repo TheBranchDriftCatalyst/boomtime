@@ -292,4 +292,10 @@ export const qk = {
   // uses qk.goalsProgress().
   goalProgress: (id: string) => ["goal-progress", id] as const,
   goalsProgress: () => ["goals-progress"] as const,
+
+  // --- Books (gaka-books) ------------------------------------------------------
+  // Library hero summary (one source-grouped query → Tracked/Finished/…). A
+  // curation override (a book leaving the "reading" set, a fresh finish)
+  // invalidates this so the header counts refetch.
+  booksHero: () => ["books-hero"] as const,
 };

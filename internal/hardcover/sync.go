@@ -94,6 +94,8 @@ func (s *SyncService) SyncHardcoverPull(ctx context.Context, owner string) (Pull
 			BookID:          int64(b.BookID),
 			Status:          StatusString(b.StatusID),
 			RemoteUpdatedAt: b.UpdatedAt,
+			Rating:          b.Rating,
+			FinishedAt:      latestFinishedAt(b.Reads),
 		})
 		if uerr != nil {
 			// A single reconcile failure shouldn't abort the whole sweep.
@@ -173,6 +175,22 @@ func aggregateReadActivity(books []UserBook) map[time.Time]int64 {
 		}
 	}
 	return buckets
+}
+
+// latestFinishedAt returns the most recent finished_at across a shelf entry's
+// reads (nil when none is finished) — the remote finish DATE the LWW branch adopts
+// into finished_at_override when Hardcover is the newer curation writer.
+func latestFinishedAt(reads []UserBookRead) *time.Time {
+	var latest *time.Time
+	for _, r := range reads {
+		if r.FinishedAt == nil {
+			continue
+		}
+		if latest == nil || r.FinishedAt.After(*latest) {
+			latest = r.FinishedAt
+		}
+	}
+	return latest
 }
 
 // onError logs a pull failure and, on a bad token, flips the stored key status so

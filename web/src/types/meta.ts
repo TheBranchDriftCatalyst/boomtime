@@ -34,11 +34,36 @@ export interface AmazonConnection {
 // GET /api/v1/books/items — one siloed reading_items row (catalyst-books /
 // catalyst-audiobooks). Mirrors internal/identity readingItemDTO; NEVER carries
 // the raw source blob.
+// The canonical reading-status vocabulary — EXACT strings, 1:1 with Hardcover's
+// enum (want=1 / reading=2 / read=3 / paused=4 / dnf=5). One shared set drives
+// the status pill, the editable dropdown, the group values, AND the filter, so
+// filter labels == group values == pill labels == Hardcover names (gaka-books).
+export const BOOK_STATUSES = [
+  "want",
+  "reading",
+  "read",
+  "paused",
+  "dnf",
+] as const;
+export type BookStatus = (typeof BOOK_STATUSES)[number];
+
+// Body of PATCH /api/v1/books/items/:id/curation (gaka-books). Every field is
+// optional: only present keys are written, so a rating edit never disturbs the
+// status override. `null` on rating/finishedAt CLEARS that override (revert to
+// the derived layer). status is always one of the 5 canonical values.
+export interface CurationPatch {
+  status?: BookStatus;
+  rating?: number | null;
+  finishedAt?: string | null;
+}
+
 export interface ReadingItemDTO {
   source: string;
   externalId: string;
   title: string;
   authors: string;
+  // EFFECTIVE status: override ?? Amazon-derived. One of the canonical 1:1
+  // Hardcover statuses — want | reading | read | paused | dnf (gaka-books).
   status: string;
   progressPercent: number;
   finished: boolean;
@@ -46,6 +71,23 @@ export interface ReadingItemDTO {
   finishedAt?: string;
   rating?: number;
   syncedAt: string;
+  // --- Curation override layer (gaka-books) --------------------------------
+  // `status`/`rating`/`finishedAt` above are the EFFECTIVE values (override ??
+  // derived). These expose the two layers so the FE can show provenance and
+  // let a user curate the status/rating/finish that maps to Hardcover:
+  //   statusDerived     — raw Amazon-computed status (want|reading|read only);
+  //                       the untouched device layer before any override.
+  //   statusOverride    — the sticky curation override, or null when none.
+  //   statusIsOverride  — true when the effective status came from the override
+  //                       layer (user- or Hardcover-sourced), not from Amazon.
+  //   ratingOverride / finishedAtOverride — the override layer for those fields.
+  // Provenance heuristic: statusIsOverride && hardcoverStatus === status ⇒ the
+  // override was adopted FROM Hardcover; statusIsOverride alone ⇒ user-curated.
+  statusDerived?: string;
+  statusOverride?: string | null;
+  statusIsOverride?: boolean;
+  ratingOverride?: number | null;
+  finishedAtOverride?: string | null;
   // Richer metadata (gaka-books) — optional; a low-fidelity source omits them.
   // Powers the Books page covers + fuller rows.
   coverUrl?: string;

@@ -23,6 +23,94 @@ const (
 	FormatEbook    int64 = 4
 )
 
+// StatusID maps a canonical boomtime status string onto its Hardcover status_id
+// (the inverse of pull.StatusString). Unknown/empty → 0 so a caller can detect an
+// unmappable status and skip the push rather than send a bogus id. This is the
+// single status→id table the curation push uses instead of a hardcoded
+// Reading/Read.
+func StatusID(status string) int64 {
+	switch status {
+	case "want":
+		return StatusWant
+	case "reading":
+		return StatusReading
+	case "read":
+		return StatusRead
+	case "paused":
+		return StatusPaused
+	case "dnf":
+		return StatusDNF
+	default:
+		return 0
+	}
+}
+
+// FormatForSource maps a reading_items.source onto the Hardcover reading_format_id
+// (kindle→ebook, audible→audio). 0 (unknown) is left off the user_book so
+// Hardcover keeps whatever format it has.
+func FormatForSource(source string) int64 {
+	switch source {
+	case "kindle":
+		return FormatEbook
+	case "audible":
+		return FormatAudio
+	default:
+		return 0
+	}
+}
+
+// UpsertUserBookCuration is UpsertUserBook plus an optional rating write — the
+// curation push needs to mirror the user's chosen status AND rating in one
+// user_book mutation (the plain UpsertUserBook never wrote rating). rating nil is
+// omitted (leaves Hardcover's rating untouched); a non-nil rating is written onto
+// the user_book. Same dry-run gating + error contract as UpsertUserBook (the write
+// flows through client.graphql, so under dry-run it is blocked+logged, returns 0).
+func (c *Client) UpsertUserBookCuration(ctx context.Context, bookID, editionID, statusID, readingFormatID int64, rating *float64) (int64, error) {
+	if bookID <= 0 {
+		return 0, fmt.Errorf("hardcover: UpsertUserBookCuration needs a book_id")
+	}
+	object := map[string]any{
+		"book_id":   bookID,
+		"status_id": statusID,
+	}
+	if editionID > 0 {
+		object["edition_id"] = editionID
+	}
+	if readingFormatID > 0 {
+		object["reading_format_id"] = readingFormatID
+	}
+	if rating != nil {
+		object["rating"] = *rating
+	}
+
+	const q = `mutation UpsertUserBookCuration($object: UserBookCreateInput!) {
+  insert_user_book(object: $object) {
+    id
+    error
+    user_book { id }
+  }
+}`
+	var data struct {
+		InsertUserBook struct {
+			ID       int64  `json:"id"`
+			Error    string `json:"error"`
+			UserBook struct {
+				ID int64 `json:"id"`
+			} `json:"user_book"`
+		} `json:"insert_user_book"`
+	}
+	if err := c.graphql(ctx, q, map[string]any{"object": object}, &data); err != nil {
+		return 0, err
+	}
+	if data.InsertUserBook.Error != "" {
+		return 0, fmt.Errorf("hardcover: insert_user_book (curation): %s", data.InsertUserBook.Error)
+	}
+	if id := data.InsertUserBook.UserBook.ID; id > 0 {
+		return id, nil
+	}
+	return data.InsertUserBook.ID, nil
+}
+
 // UpsertUserBook creates-or-updates the user_book row (status + edition) for a
 // matched book and returns Hardcover's user_book id — cache it as
 // hardcover_user_book_id so the read-progress push can update in place. Every

@@ -88,12 +88,13 @@ describe("NowReadingTile", () => {
     ).toBeInTheDocument();
   });
 
-  it("opens the book's Hardcover search in a new tab when a row is clicked", async () => {
+  it("opens an ASIN-precise Hardcover search in a new tab when a row is clicked", async () => {
     const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
     stubItems([
       item({
         title: "The Way of Kings",
         authors: "Brandon Sanderson",
+        externalId: "B0041JKFJW", // the ASIN drives a precise search
         status: "reading",
         progressPercent: 42,
       }),
@@ -105,11 +106,29 @@ describe("NowReadingTile", () => {
 
     expect(openSpy).toHaveBeenCalledTimes(1);
     const [url, target, features] = openSpy.mock.calls[0];
-    expect(url).toBe(
-      "https://hardcover.app/search?q=" +
-        encodeURIComponent("The Way of Kings Brandon Sanderson"),
-    );
+    expect(url).toBe("https://hardcover.app/search?q=B0041JKFJW");
     expect(target).toBe("_blank");
     expect(features).toContain("noopener");
+  });
+
+  it("links direct to the Hardcover book page for a matched in-progress row", async () => {
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
+    stubItems([
+      item({
+        title: "Mistborn",
+        authors: "Brandon Sanderson",
+        externalId: "B002GYI9C4",
+        hardcoverBookId: 55555,
+        status: "reading",
+        progressPercent: 50,
+      }),
+    ]);
+    renderWithProviders(<NowReadingTile />);
+
+    const row = await screen.findByTestId("now-reading-row");
+    await userEvent.click(row);
+
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    expect(openSpy.mock.calls[0][0]).toBe("https://hardcover.app/books/55555");
   });
 });

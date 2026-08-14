@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -60,12 +61,39 @@ type ReadingItem struct {
 	// sync skips a re-push when the current percent equals this value, so a book's
 	// progress mirrors at most once per real change instead of every sync.
 	HardcoverPushedProgress *int
+
+	// Curation override layer (migration 00069). The derived layer above
+	// (Status/Finished/FinishedAt/Rating) is Amazon-owned and recomputed every
+	// sync; these override columns are STICKY and written ONLY by the user (the
+	// curation endpoint) or the Hardcover pull's last-writer-wins branch — NEVER by
+	// ingest. effective = COALESCE(override, derived), computed in the query DSL.
+	//   StatusOverride     — chosen status (want|reading|read|paused|dnf)
+	//   RatingOverride     — chosen rating
+	//   FinishedAtOverride — chosen finish date
+	//   CurationUpdatedAt  — the row-level LWW stamp for the override layer
+	StatusOverride     *string
+	RatingOverride     *float64
+	FinishedAtOverride *time.Time
+	CurationUpdatedAt  *time.Time
+
+	// HardcoverPushedStatus is the status string WE last pushed to Hardcover
+	// (migration 00069), paired with HardcoverPushedAt. The pull's LWW branch uses
+	// it to suppress our own echo — a remote status equal to our last push is not a
+	// genuine Hardcover edit and must not be adopted back into the override layer.
+	HardcoverPushedStatus *string
 }
 
 // UpsertReadingItem inserts or updates one item (keyed by owner+source+ASIN).
 // Dates/rating/metadata use COALESCE so a source that omits them doesn't clobber
 // a value backfilled from Goodreads/Amazon-export (or a higher-fidelity source)
 // later. Text metadata columns are NOT NULL DEFAULT ” so they always overwrite.
+//
+// CURATION INVARIANT (migration 00069): the override columns (status_override,
+// rating_override, finished_at_override, curation_updated_at) are DELIBERATELY
+// absent from both the INSERT column list and the ON CONFLICT SET — ingest writes
+// only the derived layer, so a sync can NEVER clobber a user/Hardcover curation.
+// The override layer is touched only by SetReadingItemCuration, the finish
+// promotion, and UpdateHardcoverLinkFromPull. Do not add override columns here.
 func (d *DB) UpsertReadingItem(ctx context.Context, it ReadingItem) error {
 	_, err := d.Pool.Exec(ctx,
 		`INSERT INTO reading_items
@@ -171,16 +199,30 @@ func (d *DB) MarkReadingItemFinished(ctx context.Context, owner, source, asin st
 	meta.ExternalID = asin
 	err := d.Pool.QueryRow(ctx,
 		`WITH prev AS (
-		    SELECT finished FROM reading_items
+		    SELECT finished, status, status_override FROM reading_items
 		     WHERE owner=$1 AND source=$2 AND external_id=$3
 		 )
 		 UPDATE reading_items ri SET
 		    finished    = true,
 		    status      = 'read',
 		    finished_at = COALESCE(ri.finished_at, $4),
+		    -- Amazon-finish promotion into the override layer (migration 00069): the
+		    -- ONE place ingest may write an override. On the finish TRANSITION
+		    -- (prev.finished=false) a real finish supersedes a stale non-read override
+		    -- ('dnf'/'paused'/'reading') and stamps the LWW clock so Hardcover adopts
+		    -- 'read'. Idempotent: guarded on the PRE-update effective status, and only
+		    -- on the transition, so a re-run — or a deliberate later user override on an
+		    -- already-finished row — is never clobbered.
+		    status_override     = CASE WHEN prev.finished = false
+		                                AND COALESCE(prev.status_override, prev.status) <> 'read'
+		                               THEN 'read' ELSE ri.status_override END,
+		    curation_updated_at = CASE WHEN prev.finished = false
+		                                AND COALESCE(prev.status_override, prev.status) <> 'read'
+		                               THEN now() ELSE ri.curation_updated_at END,
 		    synced_at   = now()
+		  FROM prev
 		  WHERE ri.owner=$1 AND ri.source=$2 AND ri.external_id=$3
-		 RETURNING (SELECT finished FROM prev), ri.title, ri.authors, ri.isbn, ri.amazon_asin`,
+		 RETURNING prev.finished, ri.title, ri.authors, ri.isbn, ri.amazon_asin`,
 		owner, source, asin, finishedAt).
 		Scan(&wasFinished, &meta.Title, &meta.Authors, &meta.ISBN, &meta.AmazonASIN)
 	if err != nil {
@@ -210,16 +252,27 @@ func (d *DB) SetReadingItemFinishedFromInsights(ctx context.Context, owner, asin
 	var prevWasNull bool
 	err = d.Pool.QueryRow(ctx,
 		`WITH prev AS (
-		    SELECT finished_at AS pfa FROM reading_items
+		    SELECT finished_at AS pfa, finished, status, status_override FROM reading_items
 		     WHERE owner=$1 AND source='kindle' AND external_id=$2
 		 )
 		 UPDATE reading_items ri SET
 		    finished    = true,
 		    status      = 'read',
 		    finished_at = COALESCE(ri.finished_at, $3),
+		    -- Amazon-finish promotion into the override layer (migration 00069) — same
+		    -- rule as MarkReadingItemFinished: on the finish TRANSITION a real finish
+		    -- supersedes a stale non-read override and stamps the LWW clock. Idempotent
+		    -- and transition-only, so a re-run never clobbers a later user override.
+		    status_override     = CASE WHEN prev.finished = false
+		                                AND COALESCE(prev.status_override, prev.status) <> 'read'
+		                               THEN 'read' ELSE ri.status_override END,
+		    curation_updated_at = CASE WHEN prev.finished = false
+		                                AND COALESCE(prev.status_override, prev.status) <> 'read'
+		                               THEN now() ELSE ri.curation_updated_at END,
 		    synced_at   = now()
+		  FROM prev
 		  WHERE ri.owner=$1 AND ri.source='kindle' AND ri.external_id=$2
-		 RETURNING (SELECT pfa FROM prev) IS NULL`,
+		 RETURNING prev.pfa IS NULL`,
 		owner, asin, finishedAt).Scan(&prevWasNull)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -257,6 +310,142 @@ func (d *DB) SetReadingItemReading(ctx context.Context, owner, source, externalI
 	return tag.RowsAffected() > 0, nil
 }
 
+// CurationStatuses is the canonical 1:1-with-Hardcover status vocabulary. A
+// status override MUST be one of these five (Amazon ingest only ever produces
+// want/reading/read; paused/dnf come only from a user or Hardcover override).
+var CurationStatuses = map[string]bool{
+	"want": true, "reading": true, "read": true, "paused": true, "dnf": true,
+}
+
+// ReadingItemCurationPatch is the override-layer write for SetReadingItemCuration.
+// Each field has a Set* presence flag so PATCH semantics are exact: Set*=false
+// leaves the column untouched; Set*=true writes the paired value — and a nil value
+// with Set*=true CLEARS the override back to NULL (reverting to the Amazon-derived
+// layer). curation_updated_at is always stamped to now() on any curation write.
+type ReadingItemCurationPatch struct {
+	Status        *string
+	SetStatus     bool
+	Rating        *float64
+	SetRating     bool
+	FinishedAt    *time.Time
+	SetFinishedAt bool
+}
+
+// SetReadingItemCuration writes the curation OVERRIDE layer for one row (keyed by
+// owner+source+external_id) and stamps curation_updated_at=now — the row-level LWW
+// clock. This is the user-driven writer (the PATCH endpoint); the Hardcover pull's
+// LWW branch is the other. It touches ONLY the override columns + the stamp, never
+// the Amazon-derived status/finished/rating, so effective = COALESCE(override,
+// derived) flips without losing what the source computed. A Set-with-nil-value
+// clears that override. Returns the updated row (derived + override, so the caller
+// can render the effective DTO) or (zero, pgx.ErrNoRows) when no such row exists.
+// A non-nil Status override must be one of CurationStatuses.
+func (d *DB) SetReadingItemCuration(ctx context.Context, owner, source, externalID string, patch ReadingItemCurationPatch) (ReadingItem, error) {
+	if patch.SetStatus && patch.Status != nil && !CurationStatuses[*patch.Status] {
+		return ReadingItem{}, fmt.Errorf("db: invalid curation status %q", *patch.Status)
+	}
+	it := ReadingItem{Owner: owner}
+	err := d.Pool.QueryRow(ctx,
+		`UPDATE reading_items ri SET
+		    status_override      = CASE WHEN $4 THEN $5 ELSE ri.status_override END,
+		    rating_override      = CASE WHEN $6 THEN $7 ELSE ri.rating_override END,
+		    finished_at_override = CASE WHEN $8 THEN $9 ELSE ri.finished_at_override END,
+		    curation_updated_at  = now(),
+		    synced_at            = now()
+		  WHERE ri.owner=$1 AND ri.source=$2 AND ri.external_id=$3
+		 RETURNING source, external_id, title, authors, cover_url, status,
+		           progress_percent, finished, started_at, finished_at, rating,
+		           subtitle, narrators, series, runtime_min, goodreads_rating,
+		           isbn, amazon_asin, hardcover_book_id, hardcover_status,
+		           status_override, rating_override, finished_at_override,
+		           curation_updated_at, synced_at`,
+		owner, source, externalID,
+		patch.SetStatus, patch.Status,
+		patch.SetRating, patch.Rating,
+		patch.SetFinishedAt, patch.FinishedAt).
+		Scan(&it.Source, &it.ExternalID, &it.Title, &it.Authors, &it.CoverURL, &it.Status,
+			&it.ProgressPercent, &it.Finished, &it.StartedAt, &it.FinishedAt, &it.Rating,
+			&it.Subtitle, &it.Narrators, &it.Series, &it.RuntimeMin, &it.GoodreadsRating,
+			&it.ISBN, &it.AmazonASIN, &it.HardcoverBookID, &it.HardcoverStatus,
+			&it.StatusOverride, &it.RatingOverride, &it.FinishedAtOverride,
+			&it.CurationUpdatedAt, &it.SyncedAt)
+	if err != nil {
+		return ReadingItem{}, err
+	}
+	return it, nil
+}
+
+// GetReadingItem loads one row by owner+source+external_id — the async curation
+// push handler uses it to read the freshly-written effective status/rating/finish
+// + the cached Hardcover book/edition ids it needs to mirror the curation out.
+// (zero, pgx.ErrNoRows) when the row does not exist for this owner.
+func (d *DB) GetReadingItem(ctx context.Context, owner, source, externalID string) (ReadingItem, error) {
+	it := ReadingItem{Owner: owner}
+	err := d.Pool.QueryRow(ctx,
+		`SELECT source, external_id, title, authors, cover_url, status,
+		        progress_percent, finished, started_at, finished_at, rating,
+		        subtitle, narrators, series, runtime_min, goodreads_rating,
+		        isbn, amazon_asin, hardcover_book_id, hardcover_edition_id,
+		        hardcover_status, status_override, rating_override,
+		        finished_at_override, curation_updated_at, synced_at
+		   FROM reading_items
+		  WHERE owner=$1 AND source=$2 AND external_id=$3`,
+		owner, source, externalID).
+		Scan(&it.Source, &it.ExternalID, &it.Title, &it.Authors, &it.CoverURL, &it.Status,
+			&it.ProgressPercent, &it.Finished, &it.StartedAt, &it.FinishedAt, &it.Rating,
+			&it.Subtitle, &it.Narrators, &it.Series, &it.RuntimeMin, &it.GoodreadsRating,
+			&it.ISBN, &it.AmazonASIN, &it.HardcoverBookID, &it.HardcoverEditionID,
+			&it.HardcoverStatus, &it.StatusOverride, &it.RatingOverride,
+			&it.FinishedAtOverride, &it.CurationUpdatedAt, &it.SyncedAt)
+	if err != nil {
+		return ReadingItem{}, err
+	}
+	return it, nil
+}
+
+// EffectiveStatus / EffectiveRating / EffectiveFinishedAt resolve the override ??
+// derived layers in Go — the same COALESCE the query DSL applies in SQL, for
+// callers holding a scanned ReadingItem (the push handler + the DTO builders).
+func (it ReadingItem) EffectiveStatus() string {
+	if it.StatusOverride != nil {
+		return *it.StatusOverride
+	}
+	return it.Status
+}
+
+func (it ReadingItem) EffectiveRating() *float64 {
+	if it.RatingOverride != nil {
+		return it.RatingOverride
+	}
+	return it.Rating
+}
+
+func (it ReadingItem) EffectiveFinishedAt() *time.Time {
+	if it.FinishedAtOverride != nil {
+		return it.FinishedAtOverride
+	}
+	return it.FinishedAt
+}
+
+// SetReadingItemPushed records a successful (or dry-run-previewed) Hardcover push
+// of a curation: hardcover_pushed_at=now + hardcover_pushed_status=status. This is
+// the echo-suppression stamp — the pull's LWW branch skips adopting a remote status
+// equal to hardcover_pushed_status so our own write doesn't look like a Hardcover
+// edit. Keyed by owner+source+external_id; status "" leaves the status unchanged.
+func (d *DB) SetReadingItemPushed(ctx context.Context, owner, source, externalID, status string) error {
+	var st *string
+	if status != "" {
+		st = &status
+	}
+	_, err := d.Pool.Exec(ctx,
+		`UPDATE reading_items SET
+		    hardcover_pushed_at     = now(),
+		    hardcover_pushed_status = COALESCE($4, hardcover_pushed_status)
+		  WHERE owner=$1 AND source=$2 AND external_id=$3`,
+		owner, source, externalID, st)
+	return err
+}
+
 // ListReadingItems returns a user's synced items (source=="" → all sources),
 // unfinished first then alphabetical. Never returns raw_meta (the view payload).
 func (d *DB) ListReadingItems(ctx context.Context, owner, source string) ([]ReadingItem, error) {
@@ -266,7 +455,8 @@ func (d *DB) ListReadingItems(ctx context.Context, owner, source string) ([]Read
 		        subtitle, narrators, series, runtime_min, goodreads_rating,
 		        isbn, amazon_asin, hardcover_book_id, hardcover_edition_id,
 		        hardcover_status, hardcover_matched_at, hardcover_pushed_progress,
-		        synced_at
+		        status_override, rating_override, finished_at_override,
+		        curation_updated_at, synced_at
 		   FROM reading_items
 		  WHERE owner = $1 AND ($2 = '' OR source = $2)
 		  ORDER BY finished, title`,
@@ -284,7 +474,8 @@ func (d *DB) ListReadingItems(ctx context.Context, owner, source string) ([]Read
 			&it.RuntimeMin, &it.GoodreadsRating, &it.ISBN, &it.AmazonASIN,
 			&it.HardcoverBookID, &it.HardcoverEditionID, &it.HardcoverStatus,
 			&it.HardcoverMatchedAt, &it.HardcoverPushedProgress,
-			&it.SyncedAt); err != nil {
+			&it.StatusOverride, &it.RatingOverride, &it.FinishedAtOverride,
+			&it.CurationUpdatedAt, &it.SyncedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, it)
@@ -352,18 +543,36 @@ type HardcoverUserBookLink struct {
 	BookID          int64
 	Status          string
 	RemoteUpdatedAt time.Time
+	// Rating / FinishedAt are the remote curation values the LWW branch adopts into
+	// the OVERRIDE layer when Hardcover is the newer writer. Nil = the remote didn't
+	// carry that field, so the corresponding override is left untouched.
+	Rating     *float64
+	FinishedAt *time.Time
 }
 
 // UpdateHardcoverLinkFromPull reconciles a pulled Hardcover shelf entry onto the
 // local reading_item already linked to that Hardcover book (matched earlier by
-// the push/match ladder, so hardcover_book_id is set). It updates ONLY the
-// linkage columns — hardcover_status (from the pulled status_id) and
+// the push/match ladder, so hardcover_book_id is set). It always refreshes the
+// provenance linkage — hardcover_status (last-seen remote) and
 // hardcover_remote_updated_at (Hardcover's updated_at) — leaving the row's own
-// source metadata untouched. Returns the number of rows updated: 0 means the
-// user has this book on Hardcover but no matching local reading_item yet
+// Amazon-derived metadata untouched. Returns the number of rows updated: 0 means
+// the user has this book on Hardcover but no matching local reading_item yet
 // (inbound-origin creation is a documented follow-up — the caller logs it).
 // Status=="" is skipped via COALESCE so an unknown upstream status_id never
 // blanks a good value.
+//
+// LAST-WRITER-WINS (migration 00069): Hardcover is the SECOND curation writer
+// (the user's PATCH is the first). When the remote change is newer than our
+// override stamp AND is not our own echo, adopt it into the OVERRIDE layer:
+//
+//	adopt ⇔ remote status present
+//	         AND remote_updated_at > curation_updated_at   (remote is newer)
+//	         AND remote status ≠ hardcover_pushed_status    (not the echo of our push)
+//
+// On adopt: status_override←remote status, rating/finished_at overrides←remote
+// (when carried), curation_updated_at←remote time. Else keep local (the next push
+// reconciles Hardcover). Amazon's per-sync re-derivation is NOT a participant — it
+// never touches these columns — so the LWW is strictly user-vs-Hardcover.
 func (d *DB) UpdateHardcoverLinkFromPull(ctx context.Context, owner string, link HardcoverUserBookLink) (int64, error) {
 	if link.BookID == 0 {
 		return 0, nil
@@ -378,11 +587,29 @@ func (d *DB) UpdateHardcoverLinkFromPull(ctx context.Context, owner string, link
 		remote = &t
 	}
 	tag, err := d.Pool.Exec(ctx,
-		`UPDATE reading_items SET
+		`UPDATE reading_items ri SET
 		    hardcover_status            = COALESCE($3, hardcover_status),
-		    hardcover_remote_updated_at = COALESCE($4, hardcover_remote_updated_at)
-		  WHERE owner = $1 AND hardcover_book_id = $2`,
-		owner, link.BookID, status, remote)
+		    hardcover_remote_updated_at = COALESCE($4, hardcover_remote_updated_at),
+		    -- LWW adopt-gate (see doc): remote present + strictly newer than our
+		    -- override stamp + not the echo of our own last push.
+		    status_override = CASE WHEN $3::text IS NOT NULL AND $4::timestamptz IS NOT NULL
+		                             AND $4::timestamptz > COALESCE(ri.curation_updated_at, 'epoch'::timestamptz)
+		                             AND $3::text IS DISTINCT FROM ri.hardcover_pushed_status
+		                           THEN $3::text ELSE ri.status_override END,
+		    rating_override = CASE WHEN $5::numeric IS NOT NULL AND $4::timestamptz IS NOT NULL
+		                             AND $4::timestamptz > COALESCE(ri.curation_updated_at, 'epoch'::timestamptz)
+		                             AND $3::text IS DISTINCT FROM ri.hardcover_pushed_status
+		                           THEN $5::numeric ELSE ri.rating_override END,
+		    finished_at_override = CASE WHEN $6::timestamptz IS NOT NULL AND $4::timestamptz IS NOT NULL
+		                             AND $4::timestamptz > COALESCE(ri.curation_updated_at, 'epoch'::timestamptz)
+		                             AND $3::text IS DISTINCT FROM ri.hardcover_pushed_status
+		                           THEN $6::timestamptz ELSE ri.finished_at_override END,
+		    curation_updated_at = CASE WHEN $3::text IS NOT NULL AND $4::timestamptz IS NOT NULL
+		                             AND $4::timestamptz > COALESCE(ri.curation_updated_at, 'epoch'::timestamptz)
+		                             AND $3::text IS DISTINCT FROM ri.hardcover_pushed_status
+		                           THEN $4::timestamptz ELSE ri.curation_updated_at END
+		  WHERE ri.owner = $1 AND ri.hardcover_book_id = $2`,
+		owner, link.BookID, status, remote, link.Rating, link.FinishedAt)
 	if err != nil {
 		return 0, err
 	}

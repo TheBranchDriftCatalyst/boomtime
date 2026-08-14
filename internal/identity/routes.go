@@ -97,6 +97,10 @@ func Register(e *echo.Echo, h *Handler) {
 		e.POST("/api/v1/kindle/reconcile", h.ReconcileKindle)
 		e.GET("/api/v1/books/items", h.GetReadingItems)
 		e.DELETE("/api/v1/books/items", h.DeleteReadingItemsHandler)
+		// Curation override: set the effective status/rating/finish for one row
+		// (gaka-books, migration 00069) + enqueue the Hardcover push. Keyed by
+		// owner + ?source= + :externalId (the ASIN).
+		e.PATCH("/api/v1/books/items/:externalId/curation", h.SetBookCuration)
 		// Orchestrator: chain the whole reading-sync pipeline (Audible ingest →
 		// Kindle ingest → Hardcover match → Hardcover pull) behind ONE enqueue.
 		e.POST("/api/v1/books/sync-all", h.SyncAllBooks)
