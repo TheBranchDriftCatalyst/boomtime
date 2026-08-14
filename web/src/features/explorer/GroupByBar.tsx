@@ -1,5 +1,6 @@
-import { useMemo } from "react";
-import { ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
+import { useMemo, useState } from "react";
+import type { DragEvent } from "react";
+import { ChevronLeft, ChevronRight, GripVertical, Plus, X } from "lucide-react";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import {
   Popover,
@@ -16,6 +17,10 @@ interface GroupByBarProps {
 
 /** Ordered add/remove/reorder chip bar for the nesting axes. */
 export function GroupByBar({ axes, groupBy, onChange }: GroupByBarProps) {
+  // Index of the chip currently being dragged, and the index its dragged over.
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
+
   const labelById = useMemo(
     () => new Map(axes.map((a) => [a.id, a.label])),
     [axes],
@@ -36,12 +41,55 @@ export function GroupByBar({ axes, groupBy, onChange }: GroupByBarProps) {
     return out;
   }, [available]);
 
-  function move(index: number, dir: -1 | 1) {
-    const target = index + dir;
-    if (target < 0 || target >= groupBy.length) return;
+  // Move the axis at `from` to sit at position `to`, preserving the others'
+  // relative order. Shared by the ‹ › arrows and by drag-and-drop.
+  function reorder(from: number, to: number) {
+    if (
+      from === to ||
+      from < 0 ||
+      to < 0 ||
+      from >= groupBy.length ||
+      to >= groupBy.length
+    ) {
+      return;
+    }
     const next = [...groupBy];
-    [next[index], next[target]] = [next[target], next[index]];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
     onChange(next);
+  }
+
+  function move(index: number, dir: -1 | 1) {
+    reorder(index, index + dir);
+  }
+
+  function onDragStart(e: DragEvent<HTMLDivElement>, index: number) {
+    setDragIndex(index);
+    setOverIndex(index);
+    e.dataTransfer.effectAllowed = "move";
+    // Carry the source index so a drop can reorder even without React state.
+    e.dataTransfer.setData("text/plain", String(index));
+  }
+
+  function onDragOver(e: DragEvent<HTMLDivElement>, index: number) {
+    // Required so the element becomes a valid drop target.
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (index !== overIndex) setOverIndex(index);
+  }
+
+  function onDrop(e: DragEvent<HTMLDivElement>, index: number) {
+    e.preventDefault();
+    const raw = e.dataTransfer.getData("text/plain");
+    const from = raw === "" ? dragIndex : Number(raw);
+    if (from != null && !Number.isNaN(from)) reorder(from, index);
+    setDragIndex(null);
+    setOverIndex(null);
+  }
+
+  function onDragEnd() {
+    setDragIndex(null);
+    setOverIndex(null);
   }
 
   function remove(axis: string) {
@@ -61,8 +109,27 @@ export function GroupByBar({ axes, groupBy, onChange }: GroupByBarProps) {
       {groupBy.map((axis, i) => (
         <div
           key={axis}
-          className="flex items-center gap-0.5 rounded-md border bg-secondary py-0.5 pl-2 pr-0.5 text-sm"
+          draggable
+          onDragStart={(e) => onDragStart(e, i)}
+          onDragOver={(e) => onDragOver(e, i)}
+          onDrop={(e) => onDrop(e, i)}
+          onDragEnd={onDragEnd}
+          data-testid={`groupby-chip-${i}`}
+          data-drag-over={overIndex === i && dragIndex !== i ? "true" : undefined}
+          className={[
+            "flex cursor-grab items-center gap-0.5 rounded-md border bg-secondary py-0.5 pl-1 pr-0.5 text-sm transition-shadow active:cursor-grabbing",
+            dragIndex === i ? "opacity-40" : "",
+            overIndex === i && dragIndex !== i
+              ? "ring-2 ring-primary ring-offset-1 ring-offset-background"
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
         >
+          <GripVertical
+            className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+            aria-hidden
+          />
           <span className="mr-1 font-mono text-xs text-muted-foreground">
             {i + 1}
           </span>
