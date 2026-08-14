@@ -94,6 +94,7 @@ func Register(e *echo.Echo, h *Handler) {
 		e.POST("/api/v1/kindle/sync", h.SyncKindle)
 		e.POST("/api/v1/kindle/backfill", h.BackfillKindle)
 		e.POST("/api/v1/kindle/insights", h.SyncKindleInsights)
+		e.POST("/api/v1/kindle/reconcile", h.ReconcileKindle)
 		e.GET("/api/v1/books/items", h.GetReadingItems)
 		e.DELETE("/api/v1/books/items", h.DeleteReadingItemsHandler)
 		// Orchestrator: chain the whole reading-sync pipeline (Audible ingest →

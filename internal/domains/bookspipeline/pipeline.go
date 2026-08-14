@@ -10,10 +10,13 @@
 //  3. Kindle insights  — backfill per-book finish DATES onto the kindle rows the
 //     Kindle ingest just created (must run AFTER Kindle ingest,
 //     which owns row creation; insights only dates existing rows)
-//  4. Hardcover match  — resolve every now-ingested reading_item to a Hardcover
+//  4. Kindle reconcile — set honest 'reading' status on non-read kindle books
+//     with a CDE last-page-read record (must run AFTER
+//     insights so it only touches genuinely-non-read rows)
+//  5. Hardcover match  — resolve every now-ingested reading_item to a Hardcover
 //     book/edition (must run AFTER both ingests so it sees
 //     the freshly-added rows)
-//  5. Hardcover pull   — reconcile the remote shelf's status/updated_at onto the
+//  6. Hardcover pull   — reconcile the remote shelf's status/updated_at onto the
 //     now-matched linkage (must run AFTER match)
 //
 // Each step is best-effort: a per-step error is logged and recorded in the
@@ -49,11 +52,12 @@ type StepFunc func(ctx context.Context, owner string) (int, error)
 // main.go builds these from the already-constructed audiobooks / books /
 // hardcover services so there is ONE shared instance set; tests pass fakes.
 type Steps struct {
-	AudibleSync    StepFunc // 1. Audible forward-sync
-	KindleSync     StepFunc // 2. Kindle forward-sync
-	KindleInsights StepFunc // 3. Kindle finish-date backfill (after Kindle sync)
-	Match          StepFunc // 4. Hardcover match-unmatched (after both ingests)
-	Pull           StepFunc // 5. Hardcover shelf pull (after match)
+	AudibleSync     StepFunc // 1. Audible forward-sync
+	KindleSync      StepFunc // 2. Kindle forward-sync
+	KindleInsights  StepFunc // 3. Kindle finish-date backfill (after Kindle sync)
+	KindleReconcile StepFunc // 4. Kindle honest-status reconcile (after insights)
+	Match           StepFunc // 5. Hardcover match-unmatched (after both ingests)
+	Pull            StepFunc // 6. Hardcover shelf pull (after match)
 }
 
 // Summary aggregates what one RunPipeline call did for a single owner. Counts
@@ -62,6 +66,7 @@ type Summary struct {
 	AudibleSynced      int      `json:"audibleSynced"`
 	KindleSynced       int      `json:"kindleSynced"`
 	InsightsBackfilled int      `json:"insightsBackfilled"`
+	StatusReconciled   int      `json:"statusReconciled"`
 	Matched            int      `json:"matched"`
 	Pulled             int      `json:"pulled"`
 	Errors             []string `json:"errors,omitempty"`
@@ -100,6 +105,7 @@ func (p *Pipeline) RunPipeline(ctx context.Context, owner string) (Summary, erro
 		{"audible-sync", p.steps.AudibleSync, &sum.AudibleSynced},
 		{"kindle-sync", p.steps.KindleSync, &sum.KindleSynced},
 		{"kindle-insights", p.steps.KindleInsights, &sum.InsightsBackfilled},
+		{"kindle-status-reconcile", p.steps.KindleReconcile, &sum.StatusReconciled},
 		{"hardcover-match", p.steps.Match, &sum.Matched},
 		{"hardcover-pull", p.steps.Pull, &sum.Pulled},
 	}
@@ -139,6 +145,7 @@ func (p *Pipeline) RunPipeline(ctx context.Context, owner string) (Summary, erro
 			"audibleSynced", sum.AudibleSynced,
 			"kindleSynced", sum.KindleSynced,
 			"insightsBackfilled", sum.InsightsBackfilled,
+			"statusReconciled", sum.StatusReconciled,
 			"matched", sum.Matched,
 			"pulled", sum.Pulled,
 			"errors", len(sum.Errors),

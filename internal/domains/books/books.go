@@ -46,6 +46,17 @@ const KindleBackfillKind = "books-kindle-backfill"
 // rows it dates already exist. Owner-scoped or fanned over all connected users.
 const KindleInsightsKind = "books-kindle-insights"
 
+// KindleStatusReconcileKind is the catalyst-go-jobs kind for the Kindle STATUS
+// reconcile sweep: for every non-read kindle book, poll the CDE sidecar for a
+// last-page-read record and set an honest status — 'reading' when an lpr exists,
+// left 'want' when it 404s. It exists because the Cloud Reader library feed
+// reports percentageRead=0 for every book, so ingest can only default to 'want';
+// the sidecar's lpr is the one signal that a book has actually been opened. Run
+// it AFTER KindleInsightsKind (which sets 'read' + finished_at from the finished
+// history) so this sweep only touches genuinely-non-read rows. Owner-scoped or
+// fanned over all connected users. See ReconcileKindleStatus (reconcile.go).
+const KindleStatusReconcileKind = "books-kindle-status-reconcile"
+
 // KindleReadingTimeKind is the catalyst-go-jobs kind for the FORWARD Kindle
 // reading-TIME poll: sample each in-progress book's last-page-read position,
 // gap-sum consecutive samples into reading sessions, and write reading-seconds

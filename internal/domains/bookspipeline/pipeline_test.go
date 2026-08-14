@@ -19,11 +19,12 @@ func mkStep(name string, n int, err error, order *[]string) StepFunc {
 func TestRunPipeline_OrderAndAggregation(t *testing.T) {
 	var order []string
 	p := New(Steps{
-		AudibleSync:    mkStep("audible", 3, nil, &order),
-		KindleSync:     mkStep("kindle", 5, nil, &order),
-		KindleInsights: mkStep("insights", 4, nil, &order),
-		Match:          mkStep("match", 7, nil, &order),
-		Pull:           mkStep("pull", 9, nil, &order),
+		AudibleSync:     mkStep("audible", 3, nil, &order),
+		KindleSync:      mkStep("kindle", 5, nil, &order),
+		KindleInsights:  mkStep("insights", 4, nil, &order),
+		KindleReconcile: mkStep("reconcile", 6, nil, &order),
+		Match:           mkStep("match", 7, nil, &order),
+		Pull:            mkStep("pull", 9, nil, &order),
 	}, nil)
 
 	sum, err := p.RunPipeline(context.Background(), "alice")
@@ -32,15 +33,16 @@ func TestRunPipeline_OrderAndAggregation(t *testing.T) {
 	}
 
 	// Steps MUST run in dependency order: ingests, kindle-insights (dates the
-	// kindle rows), then match, then pull.
-	want := []string{"audible", "kindle", "insights", "match", "pull"}
+	// kindle rows), kindle-status-reconcile (honest status after insights), then
+	// match, then pull.
+	want := []string{"audible", "kindle", "insights", "reconcile", "match", "pull"}
 	if !reflect.DeepEqual(order, want) {
 		t.Fatalf("step order = %v, want %v", order, want)
 	}
 
 	// Counts aggregate into the right Summary fields.
-	if sum.AudibleSynced != 3 || sum.KindleSynced != 5 || sum.InsightsBackfilled != 4 || sum.Matched != 7 || sum.Pulled != 9 {
-		t.Fatalf("summary counts = %+v, want {3,5,4,7,9}", sum)
+	if sum.AudibleSynced != 3 || sum.KindleSynced != 5 || sum.InsightsBackfilled != 4 || sum.StatusReconciled != 6 || sum.Matched != 7 || sum.Pulled != 9 {
+		t.Fatalf("summary counts = %+v, want {3,5,4,6,7,9}", sum)
 	}
 	if len(sum.Errors) != 0 {
 		t.Fatalf("expected no errors, got %v", sum.Errors)

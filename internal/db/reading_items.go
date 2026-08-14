@@ -230,6 +230,33 @@ func (d *DB) SetReadingItemFinishedFromInsights(ctx context.Context, owner, asin
 	return prevWasNull, true, nil
 }
 
+// SetReadingItemReading flips a reading_item to status='reading' — the honest
+// "this book is actually in progress" signal the Kindle status-reconcile
+// (books-kindle-status-reconcile) writes when the CDE sidecar reports a
+// last-page-read record for a non-read book. The Cloud Reader library feed
+// reports percentageRead=0 for every book, so ingest defaults everything to
+// 'want'; this promotes the ones with an lpr to 'reading'.
+//
+// The WHERE guard (finished=false AND status<>'read' AND status<>'reading')
+// means it NEVER clobbers a read/finished book — a finished book's lpr is just
+// its end position, not evidence it is still being read — and reports an honest
+// "row changed" bool: a book insights already marked 'read' is refused, and a
+// book already 'reading' is a no-op (RowsAffected 0), so a re-run of the sweep
+// changes nothing. Returns whether a row was actually flipped to 'reading'.
+func (d *DB) SetReadingItemReading(ctx context.Context, owner, source, externalID string) (bool, error) {
+	tag, err := d.Pool.Exec(ctx,
+		`UPDATE reading_items SET
+		    status    = 'reading',
+		    synced_at = now()
+		  WHERE owner=$1 AND source=$2 AND external_id=$3
+		    AND finished=false AND status<>'read' AND status<>'reading'`,
+		owner, source, externalID)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
 // ListReadingItems returns a user's synced items (source=="" → all sources),
 // unfinished first then alphabetical. Never returns raw_meta (the view payload).
 func (d *DB) ListReadingItems(ctx context.Context, owner, source string) ([]ReadingItem, error) {

@@ -572,6 +572,34 @@ func runCmd() *cobra.Command {
 						return nil
 					}))
 
+					// books-kindle-status-reconcile kind: the honest-STATUS sweep —
+					// for every non-read kindle book, poll the CDE sidecar for a
+					// last-page-read record and set status='reading' when one exists
+					// (leaving un-opened books 'want'), since the Cloud Reader library
+					// feed reports percentageRead=0 for everything. An owner-scoped job
+					// runs one user; an owner-less (scheduled/batch) job fans over every
+					// connected user — a per-user error is logged + skipped so one bad
+					// credential doesn't fail the batch (mirrors KindleInsightsKind). It
+					// NEVER clobbers a read/finished row, so running it after insights is
+					// safe.
+					jobReg.Register(books.KindleStatusReconcileKind, jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
+						if job.Owner != "" {
+							_, rerr := kindleSvc.ReconcileKindleStatus(jctx, job.Owner)
+							return rerr
+						}
+						users, uerr := database.ListUsersWithAmazonDevice(jctx)
+						if uerr != nil {
+							return uerr
+						}
+						for _, u := range users {
+							if _, rerr := kindleSvc.ReconcileKindleStatus(jctx, u); rerr != nil {
+								logger.Warn("kindle status reconcile: user sweep failed", "user", u, "err", rerr)
+							}
+						}
+						logger.Info("kindle status reconcile: batch complete", "users", len(users))
+						return nil
+					}))
+
 					// books-kindle-reading-time kind: the FORWARD reading-TIME poll —
 					// sample each in-progress kindle book's last-page-read position,
 					// gap-sum consecutive samples into reading sessions, and write
@@ -631,6 +659,10 @@ func runCmd() *cobra.Command {
 						AudibleSync:    audioSvc.SyncUser,
 						KindleSync:     kindleSvc.SyncUser,
 						KindleInsights: kindleSvc.SyncInsights,
+						KindleReconcile: func(jctx context.Context, owner string) (int, error) {
+							res, rerr := kindleSvc.ReconcileKindleStatus(jctx, owner)
+							return res.MarkedReading, rerr
+						},
 						Match: func(jctx context.Context, owner string) (int, error) {
 							res, merr := hcPull.MatchUnmatched(jctx, owner)
 							return res.Matched, merr
@@ -731,14 +763,15 @@ func runCmd() *cobra.Command {
 				jobReg.SetConcurrency(audiobooks.AudibleSyncKind, 1)     // audiobooks-audible-sync
 				jobReg.SetConcurrency(audiobooks.AudibleBackfillKind, 1) // audiobooks-audible-backfill (spec's "books-audible-backfill")
 				if cfg.BooksEnabled() {
-					jobReg.SetConcurrency(audiobooks.HardcoverPushKind, 1)   // hardcover-push (global Hardcover rate limit)
-					jobReg.SetConcurrency(hardcover.PullJobKind, 1)          // hardcover-pull (global Hardcover rate limit)
-					jobReg.SetConcurrency(books.KindleSyncKind, 1)           // books-kindle-sync
-					jobReg.SetConcurrency(books.KindleBackfillKind, 1)       // books-kindle-backfill
-					jobReg.SetConcurrency(books.KindleInsightsKind, 1)       // books-kindle-insights
-					jobReg.SetConcurrency(books.KindleReadingTimeKind, 1)    // books-kindle-reading-time
-					jobReg.SetConcurrency(hardcover.HardcoverMatchKind, 1)   // hardcover-match (global Hardcover rate limit)
-					jobReg.SetConcurrency(bookspipeline.BooksSyncAllKind, 1) // books-sync-all orchestrator (chains the rate-limited stages)
+					jobReg.SetConcurrency(audiobooks.HardcoverPushKind, 1)    // hardcover-push (global Hardcover rate limit)
+					jobReg.SetConcurrency(hardcover.PullJobKind, 1)           // hardcover-pull (global Hardcover rate limit)
+					jobReg.SetConcurrency(books.KindleSyncKind, 1)            // books-kindle-sync
+					jobReg.SetConcurrency(books.KindleBackfillKind, 1)        // books-kindle-backfill
+					jobReg.SetConcurrency(books.KindleInsightsKind, 1)        // books-kindle-insights
+					jobReg.SetConcurrency(books.KindleStatusReconcileKind, 1) // books-kindle-status-reconcile
+					jobReg.SetConcurrency(books.KindleReadingTimeKind, 1)     // books-kindle-reading-time
+					jobReg.SetConcurrency(hardcover.HardcoverMatchKind, 1)    // hardcover-match (global Hardcover rate limit)
+					jobReg.SetConcurrency(bookspipeline.BooksSyncAllKind, 1)  // books-sync-all orchestrator (chains the rate-limited stages)
 				}
 
 				hostID, _ := os.Hostname()
