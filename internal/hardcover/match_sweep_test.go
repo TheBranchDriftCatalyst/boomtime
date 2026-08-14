@@ -60,11 +60,15 @@ func openSweepDB(t *testing.T) *db.DB {
 }
 
 // fakeMatcher is a scripted matcher: Match returns a hit for asin/title keys in
-// hits; LookupByASIN returns metadata for keys in metas.
+// hits; LookupByASIN returns metadata for keys in metas; editionsByField serves
+// the BATCH exact-id rung by projecting the exact-id hits in `hits` back to
+// hcEditions (so one `hits` map drives both the per-row and the batch paths).
 type fakeMatcher struct {
 	hits      map[string]MatchResult // keyed by the ASIN/ISBN/title we expect
 	metas     map[string]*BookMeta   // keyed by ASIN
-	matchCall int
+	matchCall int                    // per-row Match (fuzzy tail) calls
+	batchCall int                    // editionsByField (batch exact-id) calls
+	batchErr  error                  // when set, editionsByField returns it (abort/backoff tests)
 	lookupErr error
 }
 
@@ -87,6 +91,39 @@ func (f *fakeMatcher) LookupByASIN(_ context.Context, asin string) (*BookMeta, e
 		return nil, f.lookupErr
 	}
 	return f.metas[asin], nil
+}
+
+// editionsByField projects the exact-id hits in `hits` into hcEditions keyed by the
+// matched value — mirroring the real batch rung. Only hits whose Method matches the
+// field (asin→MatchByASIN, isbn_13→MatchByISBN13) resolve, so a fuzzy/title hit is
+// never served by the batch (proving the fuzzy tail still goes through Match).
+func (f *fakeMatcher) editionsByField(_ context.Context, field string, values []string) (map[string]hcEdition, error) {
+	if f.batchErr != nil {
+		return nil, f.batchErr
+	}
+	f.batchCall++
+	out := map[string]hcEdition{}
+	for _, v := range values {
+		r, ok := f.hits[v]
+		if !ok {
+			continue
+		}
+		if field == "asin" && r.Method != MatchByASIN {
+			continue
+		}
+		if field == "isbn_13" && r.Method != MatchByISBN13 {
+			continue
+		}
+		ed := hcEdition{ID: r.EditionID, BookID: r.BookID}
+		ed.Book.Slug = r.Slug
+		if field == "asin" {
+			ed.Asin = v
+		} else {
+			ed.Isbn13 = v
+		}
+		out[v] = ed
+	}
+	return out, nil
 }
 
 func TestMatchWith_LinksEnrichesAndStampsCursor(t *testing.T) {
@@ -230,8 +267,9 @@ func TestMatchWith_CacheHitSkipsAPI(t *testing.T) {
 	}
 }
 
-// TestMatchWith_CacheMissPopulates (gaka-wzgr) — an exact-id (asin) miss calls the
-// API AND writes the resolved identity into the global cache for the next user.
+// TestMatchWith_CacheMissPopulates (gaka-wzgr) — an exact-id (asin) cache miss is
+// resolved by the BATCH rung (editionsByField, not per-row Match) AND writes the
+// resolved identity + slug into the global cache for the next user.
 func TestMatchWith_CacheMissPopulates(t *testing.T) {
 	d := openSweepDB(t)
 	ctx := context.Background()
@@ -256,11 +294,14 @@ func TestMatchWith_CacheMissPopulates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("matchWith: %v", err)
 	}
-	if res.Matched != 1 || res.CacheHits != 0 {
-		t.Fatalf("Matched=%d CacheHits=%d, want Matched=1 CacheHits=0", res.Matched, res.CacheHits)
+	if res.Matched != 1 || res.CacheHits != 0 || res.BatchHits != 1 {
+		t.Fatalf("Matched=%d CacheHits=%d BatchHits=%d, want 1/0/1", res.Matched, res.CacheHits, res.BatchHits)
 	}
-	if fake.matchCall != 1 {
-		t.Fatalf("client.Match called %d times, want 1 (cache miss must hit the API)", fake.matchCall)
+	if fake.matchCall != 0 {
+		t.Fatalf("per-row Match called %d times, want 0 (exact-id must resolve via the batch rung)", fake.matchCall)
+	}
+	if fake.batchCall == 0 {
+		t.Fatalf("editionsByField was never called — exact-id miss must hit the batch rung")
 	}
 
 	// The global cache must now carry the resolved identity for the next user.
@@ -322,6 +363,133 @@ func TestMatchWith_FuzzyNotCached(t *testing.T) {
 	}
 	if _, ok, err := d.LookupHardcoverMatch(ctx, "isbn13", isbn); err != nil || ok {
 		t.Fatalf("fuzzy poisoned the cache under isbn13: ok=%v err=%v", ok, err)
+	}
+}
+
+// TestMatchWith_BatchResolvesManyInOneRequest pins the batch rung end-to-end:
+// three ASIN rows resolve in a SINGLE editionsByField call (batchCall==1), each
+// gets linked + slug-carried + cached, and per-row Match is never touched.
+func TestMatchWith_BatchResolvesManyInOneRequest(t *testing.T) {
+	d := openSweepDB(t)
+	ctx := context.Background()
+	owner := fmt.Sprintf("sweep_batch_%d", time.Now().UnixNano())
+	seedUser(t, d, ctx, owner)
+	a1 := fmt.Sprintf("B0BATCH1%d", time.Now().UnixNano())
+	a2 := fmt.Sprintf("B0BATCH2%d", time.Now().UnixNano())
+	a3 := fmt.Sprintf("B0BATCH3%d", time.Now().UnixNano())
+	t.Cleanup(func() {
+		cleanupOwner(d, ctx, owner)
+		_, _ = d.Pool.Exec(ctx, `DELETE FROM hardcover_match_cache WHERE external_id IN ($1,$2,$3)`, a1, a2, a3)
+	})
+
+	for i, a := range []string{a1, a2, a3} {
+		mustUpsert(t, d, ctx, db.ReadingItem{Owner: owner, Source: "audible", ExternalID: a, AmazonASIN: a, Title: fmt.Sprintf("Book %d", i)})
+	}
+
+	fake := &fakeMatcher{hits: map[string]MatchResult{
+		a1: {BookID: 11, EditionID: 110, Slug: "slug-1", Method: MatchByASIN, Confidence: 1},
+		a2: {BookID: 22, EditionID: 220, Slug: "slug-2", Method: MatchByASIN, Confidence: 1},
+		a3: {BookID: 33, EditionID: 330, Slug: "slug-3", Method: MatchByASIN, Confidence: 1},
+	}}
+
+	svc := NewSyncService(d, NewStore(d), nil)
+	res, err := svc.matchWith(ctx, owner, fake)
+	if err != nil {
+		t.Fatalf("matchWith: %v", err)
+	}
+	if res.Matched != 3 || res.BatchHits != 3 {
+		t.Fatalf("Matched=%d BatchHits=%d, want 3/3", res.Matched, res.BatchHits)
+	}
+	if fake.batchCall != 1 {
+		t.Fatalf("editionsByField called %d times, want 1 (all three ASINs in one batch)", fake.batchCall)
+	}
+	if fake.matchCall != 0 {
+		t.Fatalf("per-row Match called %d times, want 0 (batch resolved everything)", fake.matchCall)
+	}
+
+	// All three linked + slug carried, cache populated for the next user.
+	if remaining, _ := d.ListUnmatchedReadingItems(ctx, owner); len(remaining) != 0 {
+		t.Fatalf("%d rows still unmatched after batch", len(remaining))
+	}
+	cached, ok, err := d.LookupHardcoverMatch(ctx, "asin", a2)
+	if err != nil || !ok || cached.BookID != 22 || cached.Slug != "slug-2" {
+		t.Fatalf("cache for a2 = %+v ok=%v err=%v, want book 22 slug-2", cached, ok, err)
+	}
+}
+
+// TestMatchWith_NoMatchStampsAndNextSweepSkips pins the negative/attempt cache
+// (migration 00071): a fuzzy no-match stamps match_attempted_at, and the FOLLOWING
+// sweep excludes that row from its candidates (within the retry window) — so the
+// expensive fuzzy tail runs at most once per window.
+func TestMatchWith_NoMatchStampsAndNextSweepSkips(t *testing.T) {
+	d := openSweepDB(t)
+	ctx := context.Background()
+	owner := fmt.Sprintf("sweep_neg_%d", time.Now().UnixNano())
+	seedUser(t, d, ctx, owner)
+	t.Cleanup(func() { cleanupOwner(d, ctx, owner) })
+
+	// A title-only obscure row (no exact id) → falls to the fuzzy tail → no-match.
+	mustUpsert(t, d, ctx, db.ReadingItem{Owner: owner, Source: "kindle", ExternalID: "B0OBSCURE1", Title: "Nonexistent Zine Vol 9"})
+
+	fake := &fakeMatcher{hits: map[string]MatchResult{}} // nothing resolves
+
+	svc := NewSyncService(d, NewStore(d), nil)
+	res, err := svc.matchWith(ctx, owner, fake)
+	if err != nil {
+		t.Fatalf("first sweep: %v", err)
+	}
+	if res.Scanned != 1 || res.NoMatch != 1 {
+		t.Fatalf("first sweep Scanned=%d NoMatch=%d, want 1/1", res.Scanned, res.NoMatch)
+	}
+	if fake.matchCall != 1 {
+		t.Fatalf("first sweep matchCall=%d, want 1 (the fuzzy attempt)", fake.matchCall)
+	}
+
+	// match_attempted_at must now be stamped.
+	var stamped *time.Time
+	if err := d.Pool.QueryRow(ctx,
+		`SELECT match_attempted_at FROM reading_items WHERE owner=$1 AND source='kindle' AND external_id=$2`,
+		owner, "B0OBSCURE1").Scan(&stamped); err != nil {
+		t.Fatalf("read attempted stamp: %v", err)
+	}
+	if stamped == nil {
+		t.Fatal("match_attempted_at was not stamped after a no-match")
+	}
+
+	// The SECOND sweep must EXCLUDE the recently-attempted row: nothing scanned, and
+	// the fuzzy path is not spent again.
+	fake.matchCall = 0
+	res2, err := svc.matchWith(ctx, owner, fake)
+	if err != nil {
+		t.Fatalf("second sweep: %v", err)
+	}
+	if res2.Scanned != 0 {
+		t.Fatalf("second sweep Scanned=%d, want 0 (row is within the retry window)", res2.Scanned)
+	}
+	if fake.matchCall != 0 {
+		t.Fatalf("second sweep matchCall=%d, want 0 (negative cache must skip the fuzzy retry)", fake.matchCall)
+	}
+}
+
+// TestMatchWith_RateLimitedAborts pins that a rate-limit from the batch rung aborts
+// the whole sweep with ErrRateLimited (mirroring the pull) rather than churning
+// through the backlog and burning the budget.
+func TestMatchWith_RateLimitedAborts(t *testing.T) {
+	d := openSweepDB(t)
+	ctx := context.Background()
+	owner := fmt.Sprintf("sweep_rl_%d", time.Now().UnixNano())
+	asin := fmt.Sprintf("B0RL%d", time.Now().UnixNano())
+	seedUser(t, d, ctx, owner)
+	t.Cleanup(func() { cleanupOwner(d, ctx, owner) })
+
+	mustUpsert(t, d, ctx, db.ReadingItem{Owner: owner, Source: "audible", ExternalID: asin, AmazonASIN: asin, Title: "Rate Limited"})
+
+	fake := &fakeMatcher{hits: map[string]MatchResult{}, batchErr: ErrRateLimited}
+
+	svc := NewSyncService(d, NewStore(d), nil)
+	_, err := svc.matchWith(ctx, owner, fake)
+	if err != ErrRateLimited {
+		t.Fatalf("matchWith err = %v, want ErrRateLimited", err)
 	}
 }
 

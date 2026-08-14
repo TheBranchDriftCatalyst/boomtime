@@ -528,6 +528,58 @@ func (d *DB) ListUnmatchedReadingItems(ctx context.Context, owner string) ([]Rea
 	return out, rows.Err()
 }
 
+// ListUnmatchedReadingItemsForMatch is ListUnmatchedReadingItems narrowed by the
+// negative/attempt cache (migration 00071): it returns the same unmatched-with-an-
+// identity worklist BUT drops rows whose ladder last returned no-match RECENTLY —
+// match_attempted_at >= retryBefore. A no-match is therefore retried at most once
+// per retry window (the caller passes now-window), so a repeat sweep skips the
+// expensive fuzzy tail it already proved fruitless, while still re-checking each
+// row eventually in case Hardcover adds the book later. retryBefore is the OLDEST
+// attempt stamp still considered "fresh"; a row with match_attempted_at IS NULL
+// (never attempted) always qualifies. This is the sweep's candidate loader; the
+// plain ListUnmatchedReadingItems (no window) stays for other callers + a future
+// force-rematch that deliberately ignores the window.
+func (d *DB) ListUnmatchedReadingItemsForMatch(ctx context.Context, owner string, retryBefore time.Time) ([]ReadingItem, error) {
+	rows, err := d.Pool.Query(ctx,
+		`SELECT source, external_id, isbn, amazon_asin, title, authors
+		   FROM reading_items
+		  WHERE owner = $1
+		    AND hardcover_book_id IS NULL
+		    AND (external_id <> '' OR isbn <> '' OR title <> '')
+		    AND (match_attempted_at IS NULL OR match_attempted_at < $2)
+		  ORDER BY source, external_id`,
+		owner, retryBefore.UTC())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ReadingItem
+	for rows.Next() {
+		it := ReadingItem{Owner: owner}
+		if err := rows.Scan(&it.Source, &it.ExternalID, &it.ISBN, &it.AmazonASIN,
+			&it.Title, &it.Authors); err != nil {
+			return nil, err
+		}
+		out = append(out, it)
+	}
+	return out, rows.Err()
+}
+
+// SetReadingItemMatchAttempted stamps match_attempted_at=now() on one row (keyed
+// by owner+source+external_id) — the negative-cache mark the sweep writes when the
+// ladder returns no confident match, so a repeat sweep within the retry window
+// skips the row (see ListUnmatchedReadingItemsForMatch). It touches ONLY the
+// attempt stamp — never the linkage or metadata — and is a no-op (0 rows) when the
+// row does not exist. A subsequent successful match clears the row from the
+// worklist via hardcover_book_id, so the stale stamp is harmless.
+func (d *DB) SetReadingItemMatchAttempted(ctx context.Context, owner, source, externalID string) error {
+	_, err := d.Pool.Exec(ctx,
+		`UPDATE reading_items SET match_attempted_at = now()
+		  WHERE owner = $1 AND source = $2 AND external_id = $3`,
+		owner, source, externalID)
+	return err
+}
+
 // UpdateReadingItemDisplayMeta backfills title/authors/cover_url onto a row that
 // arrived with them blank (the bare-ASIN Kindle case), keyed by
 // owner+source+external_id. Each column is written ONLY when it is currently empty

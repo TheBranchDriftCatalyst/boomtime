@@ -43,13 +43,30 @@ type MatchResult struct {
 // hcEdition is the edition shape the ladder selects on. Book.Slug carries the
 // book's Hardcover slug — the /books/<slug> path segment the deep-link needs
 // (the numeric book id 404s on Hardcover's book pages, only the slug resolves).
+// Asin/Isbn13 are the identity fields the BATCH rung (editionsByField) reads
+// back so a single `_in` response can be mapped to the input row that asked for
+// it (the single-lookup path filters on a known value, so it doesn't need them).
 type hcEdition struct {
-	ID              int64 `json:"id"`
-	BookID          int64 `json:"book_id"`
-	ReadingFormatID int64 `json:"reading_format_id"`
+	ID              int64  `json:"id"`
+	BookID          int64  `json:"book_id"`
+	ReadingFormatID int64  `json:"reading_format_id"`
+	Asin            string `json:"asin"`
+	Isbn13          string `json:"isbn_13"`
 	Book            struct {
 		Slug string `json:"slug"`
 	} `json:"book"`
+}
+
+// keyFor returns the edition's value for the batch field (asin | isbn_13) — the
+// key a batch result is indexed under so the sweep can map it back to the input.
+func (e hcEdition) keyFor(field string) string {
+	switch field {
+	case "asin":
+		return e.Asin
+	case "isbn_13":
+		return e.Isbn13
+	}
+	return ""
 }
 
 // Match walks the ladder and STOPS at the first confident hit, returning the
@@ -115,6 +132,77 @@ func (c *Client) editionByField(ctx context.Context, field, value string) (hcEdi
 		return hcEdition{}, false, nil
 	}
 	return data.Editions[0], true, nil
+}
+
+// editionsBatchChunk caps how many identity values ride in one `_in` query. It
+// stays well under Hasura's argument limits while collapsing thousands of exact-id
+// lookups into a handful of requests — the whole point of the batch rung. The
+// per-request rate limit (client.go) is untouched: each chunk is one request.
+const editionsBatchChunk = 100
+
+// editionsByField resolves MANY editions in one shot by an exact-equality field
+// (asin | isbn_13) using Hasura's `_in`. It de-dupes + trims the inputs, splits
+// them into chunks of editionsBatchChunk, and returns a map keyed by the MATCHED
+// field value (asin/isbn_13) so the caller maps each hit back to the row that
+// asked for it — the batch counterpart of editionByField. First edition wins per
+// key. field is a compile-time constant from the ladder (asin|isbn_13), NEVER
+// user input, so string-splicing it into the query text is safe. Honors ctx
+// cancellation between chunks and surfaces ErrBadToken/ErrRateLimited unchanged.
+func (c *Client) editionsByField(ctx context.Context, field string, values []string) (map[string]hcEdition, error) {
+	out := make(map[string]hcEdition)
+	seen := make(map[string]struct{}, len(values))
+	uniq := make([]string, 0, len(values))
+	for _, v := range values {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		uniq = append(uniq, v)
+	}
+	if len(uniq) == 0 {
+		return out, nil
+	}
+
+	q := `query EditionsByField($vs: [String!]!) {
+  editions(where: {` + field + `: {_in: $vs}}) {
+    id
+    book_id
+    reading_format_id
+    asin
+    isbn_13
+    book { slug }
+  }
+}`
+	for start := 0; start < len(uniq); start += editionsBatchChunk {
+		if err := ctx.Err(); err != nil {
+			return out, err
+		}
+		end := start + editionsBatchChunk
+		if end > len(uniq) {
+			end = len(uniq)
+		}
+		var data struct {
+			Editions []hcEdition `json:"editions"`
+		}
+		if err := c.graphql(ctx, q, map[string]any{"vs": uniq[start:end]}, &data); err != nil {
+			return out, err
+		}
+		for _, ed := range data.Editions {
+			key := ed.keyFor(field)
+			if key == "" {
+				continue
+			}
+			if _, exists := out[key]; exists {
+				continue // first edition per key
+			}
+			out[key] = ed
+		}
+	}
+	return out, nil
 }
 
 // editionsForBook lists a book's editions so the search path can pick one.
