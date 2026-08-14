@@ -5,7 +5,7 @@
 // (parsed JSON with a field table, or raw text for XML/error pages).
 import { useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { AlertTriangle, BookOpen, CheckCircle2, Loader2, Play } from "lucide-react";
+import { AlertTriangle, BookOpen, CheckCircle2, Loader2, Play, Radio } from "lucide-react";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import {
   Card,
@@ -14,6 +14,7 @@ import {
   CardTitle,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { api } from "@/lib/api";
+import { ReadingMonitorPanel } from "./ReadingMonitorPanel";
 
 interface Probe {
   name: string;
@@ -144,7 +145,7 @@ function ProbeView({ probe }: { probe: Probe }) {
   );
 }
 
-export function BooksTab() {
+function SourceDiagnosticsPanel() {
   const [source, setSource] = useState<string>("audible");
   const run = useMutation<DiagResult, Error, string>({
     mutationFn: (s) => api.getBooksDiagnostics({ source: s }),
@@ -208,6 +209,46 @@ export function BooksTab() {
             <ProbeView key={p.name} probe={p} />
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+// The Books admin tab hosts two diagnostics side by side: the one-shot source
+// DUMP (SourceDiagnosticsPanel) and the LIVE reading monitor (ReadingMonitorPanel).
+// A small segmented control switches between them — same admin section, no extra
+// route.
+const VIEWS = [
+  { id: "diagnostics", label: "Source diagnostics", icon: BookOpen },
+  { id: "monitor", label: "Reading monitor", icon: Radio },
+] as const;
+
+export function BooksTab() {
+  const [view, setView] = useState<(typeof VIEWS)[number]["id"]>("diagnostics");
+  return (
+    <div className="space-y-4">
+      <div className="flex w-fit rounded-md border border-border p-0.5">
+        {VIEWS.map((v) => (
+          <button
+            key={v.id}
+            type="button"
+            onClick={() => setView(v.id)}
+            className={
+              "flex items-center gap-1.5 rounded px-3 py-1 text-sm " +
+              (view === v.id
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground")
+            }
+          >
+            <v.icon className="h-4 w-4" />
+            {v.label}
+          </button>
+        ))}
+      </div>
+      {view === "diagnostics" ? (
+        <SourceDiagnosticsPanel />
+      ) : (
+        <ReadingMonitorPanel />
       )}
     </div>
   );

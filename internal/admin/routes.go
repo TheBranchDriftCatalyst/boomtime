@@ -86,6 +86,15 @@ func Register(e *echo.Echo, h *Handler) {
 	e.GET("/api/v1/admin/users", h.ListUsers)
 	// gaka-books: admin diagnostic — dump raw Audible/Kindle source data.
 	e.GET("/api/v1/admin/books/diagnostics", h.AdminBooksDiagnostics)
+	// gaka-books: admin LIVE Kindle reading-monitor — a WS that polls each
+	// in-progress book's last-page-read position at a high rate and streams every
+	// advance, so we can empirically diagnose the whispersync sync cadence.
+	// Registered ONLY when BOOM_FEATURE_BOOKS is on (flag off ⇒ 404, feature
+	// inert). Cookie-authed + admin-gated in-handler (a WS handshake can't carry
+	// the Authorization header). Read-only: it never persists positions.
+	if h != nil && h.Cfg != nil && h.Cfg.BooksEnabled() {
+		e.GET("/api/v1/admin/books/reading-monitor/ws", h.AdminBooksReadingMonitorWS)
+	}
 	// gaka-8bz: durable WS stream of the image-job queue lifecycle.
 	// Auth uses the refresh_token cookie inside the handler (see
 	// AdminLabelImagesWS) — WS handshakes can't carry Authorization.
