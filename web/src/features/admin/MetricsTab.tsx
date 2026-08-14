@@ -1,16 +1,21 @@
-// MetricsTab — Admin > Metrics (gaka-metrics). A GENERIC rate-metrics
-// observability dashboard: it fetches GET /api/v1/admin/metrics (the in-memory
-// rolling time-series registry) and renders EVERY series as a rate-over-time
-// chart, grouped by subsystem. There is no per-metric wiring here — the group
-// derivation and the <RateChart> are generic, so the moment the backend calls
-// metrics.Inc("some.new.series") it appears on this page.
+// MetricsTab — Admin > Metrics (gaka-metrics, pivoted to Prometheus). The
+// backend now exports Prometheus at /metrics (scraped by the cluster Prometheus
+// → Grafana); this tab is the lightweight IN-APP view over the SAME registry.
+// It fetches GET /api/v1/admin/metrics (Registry.Gather() flattened to
+// {families:[{name,help,type,samples}]}) and renders every family grouped by
+// subsystem, with each label-set's current value.
 //
-// Live by design: the snapshot polls on a 5s interval (the same cadence as the
-// Jobs tab). Each series shows its current (most-recent-bucket) rate as a
-// headline plus the full ~2h line.
+// There is no per-metric wiring: the grouping is by name prefix and the sample
+// rendering is generic, so a newly-registered collector shows up automatically
+// (in "Other" until it's given a group here). Live by design — polls every 5s.
+//
+// Note this shows INSTANTANEOUS values (counters are cumulative totals,
+// histograms show count + derived average latency). Rate-over-time + alerting
+// live in Grafana over the /metrics scrape; this tab is the "is this pod doing
+// what I expect right now" glance.
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, Cpu, Globe, Router } from "lucide-react";
+import { Activity, Cpu, Globe, Router, Send, Server } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -20,16 +25,16 @@ import {
 import { EmptyState } from "@/components/EmptyState";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
-import { RateChart, currentRate } from "@/viz/charts/RateChart";
-import type { MetricSeries } from "@/types/api";
+import type { MetricFamily, MetricSample } from "@/types/api";
 
 // ── grouping ────────────────────────────────────────────────────────────────
-//
-// Series names are dotted (http.requests, jobs.limiter.acquired{kind=…},
-// hardcover.calls). We bucket by prefix into operator-meaningful groups. A name
-// that matches nothing falls into "Other" so a brand-new metric is never
-// dropped — it just shows up ungrouped until someone gives it a home here.
-type GroupId = "router" | "limiters" | "external" | "other";
+type GroupId =
+  | "router"
+  | "outbound"
+  | "limiters"
+  | "external"
+  | "runtime"
+  | "other";
 
 interface GroupDef {
   id: GroupId;
@@ -42,24 +47,38 @@ interface GroupDef {
 const GROUPS: GroupDef[] = [
   {
     id: "router",
-    label: "Router",
-    blurb: "HTTP request + error rates across the API router.",
+    label: "Router (incoming)",
+    blurb: "HTTP requests + latency served by the API router (RED, by route template).",
     icon: Router,
-    match: (n) => n.startsWith("http."),
+    match: (n) => n.startsWith("http_request"),
+  },
+  {
+    id: "outbound",
+    label: "Outbound HTTP",
+    blurb: "Every external call boomtime makes, by target host (RED).",
+    icon: Send,
+    match: (n) => n.startsWith("http_client_"),
   },
   {
     id: "limiters",
     label: "Rate-limiters",
     blurb: "Per-kind background-job concurrency limiter throughput + back-pressure.",
     icon: Cpu,
-    match: (n) => n.startsWith("jobs.limiter."),
+    match: (n) => n.startsWith("jobs_limiter_"),
   },
   {
     id: "external",
     label: "External APIs",
-    blurb: "Outbound call rates to third-party services.",
+    blurb: "Semantic per-service call counters (outcome / transport dimensions).",
     icon: Globe,
-    match: (n) => n.startsWith("hardcover.") || n.startsWith("amazon."),
+    match: (n) => n.startsWith("hardcover_") || n.startsWith("amazon_"),
+  },
+  {
+    id: "runtime",
+    label: "Runtime",
+    blurb: "Go runtime + process collectors (goroutines, GC, heap, FDs, CPU).",
+    icon: Server,
+    match: (n) => n.startsWith("go_") || n.startsWith("process_"),
   },
 ];
 
@@ -70,18 +89,43 @@ function groupFor(name: string): GroupId {
 const OTHER: GroupDef = {
   id: "other",
   label: "Other",
-  blurb: "Uncategorized series (newly instrumented metrics land here).",
+  blurb: "Uncategorized families (newly registered collectors land here).",
   icon: Activity,
   match: () => true,
 };
 
-// Shorten a series name for a card title: drop the group prefix, keep the label
-// braces. "jobs.limiter.acquired{kind=x}" → "acquired{kind=x}".
-function shortName(name: string): string {
-  const dot = name.indexOf("{") === -1 ? name : name.slice(0, name.indexOf("{"));
-  const label = name.slice(dot.length);
-  const parts = dot.split(".");
-  return (parts[parts.length - 1] || dot) + label;
+// ── sample value helpers ─────────────────────────────────────────────────────
+
+// primaryValue is the number used to sort + size a sample within its family:
+// the counter/gauge value, or a histogram/summary's observation count.
+function primaryValue(s: MetricSample): number {
+  if (typeof s.value === "number") return s.value;
+  if (typeof s.count === "number") return s.count;
+  return 0;
+}
+
+// formatSample renders a sample's headline: a plain number for counters/gauges,
+// or "N · avg X ms" for histograms/summaries (avg = sum/count, seconds→ms).
+function formatSample(s: MetricSample): string {
+  if (typeof s.value === "number") return s.value.toLocaleString();
+  if (typeof s.count === "number") {
+    const n = s.count.toLocaleString();
+    if (typeof s.sum === "number" && s.count > 0) {
+      const avgMs = (s.sum / s.count) * 1000;
+      return `${n} · avg ${avgMs.toFixed(avgMs < 10 ? 1 : 0)} ms`;
+    }
+    return n;
+  }
+  return "0";
+}
+
+// labelText renders a sample's label set as "k=v · k=v" (sorted for stability),
+// or "—" for an unlabelled sample (e.g. go_goroutines).
+function labelText(labels?: Record<string, string>): string {
+  if (!labels) return "—";
+  const keys = Object.keys(labels).sort();
+  if (keys.length === 0) return "—";
+  return keys.map((k) => `${k}=${labels[k]}`).join(" · ");
 }
 
 export function MetricsTab() {
@@ -92,14 +136,15 @@ export function MetricsTab() {
   });
 
   const grouped = useMemo(() => {
-    const by: Record<GroupId, MetricSeries[]> = {
+    const by: Record<GroupId, MetricFamily[]> = {
       router: [],
+      outbound: [],
       limiters: [],
       external: [],
+      runtime: [],
       other: [],
     };
-    for (const s of data ?? []) by[groupFor(s.name)].push(s);
-    // Stable ordering within a group.
+    for (const f of data ?? []) by[groupFor(f.name)].push(f);
     for (const k of Object.keys(by) as GroupId[])
       by[k].sort((a, b) => a.name.localeCompare(b.name));
     return by;
@@ -131,7 +176,7 @@ export function MetricsTab() {
         <EmptyState
           icon={Activity}
           title="No metrics yet"
-          description="Series appear as soon as instrumented code runs — hit an endpoint, run a job, or make an external API call, then this refreshes every 5s."
+          description="Families appear as soon as instrumented code runs — hit an endpoint, run a job, or make an external API call, then this refreshes every 5s."
         />
       </div>
     );
@@ -144,9 +189,9 @@ export function MetricsTab() {
   return (
     <div className="mx-auto max-w-6xl space-y-8 p-6">
       <p className="text-xs text-muted-foreground">
-        In-memory rate registry · {total} series · ~2h window · refreshing every
-        5s. Any backend <code className="font-mono">metrics.Inc(name)</code>{" "}
-        appears here automatically.
+        Prometheus registry · {total} families · refreshing every 5s. Also
+        scraped at <code className="font-mono">/metrics</code> for Grafana. Any
+        newly-registered collector appears here automatically.
       </p>
 
       {orderedGroups.map((group) => (
@@ -158,9 +203,9 @@ export function MetricsTab() {
             </h2>
             <span className="text-xs text-muted-foreground">{group.blurb}</span>
           </header>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {grouped[group.id].map((series, i) => (
-              <SeriesCard key={series.name} series={series} colorIndex={i} />
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {grouped[group.id].map((family) => (
+              <FamilyCard key={family.name} family={family} />
             ))}
           </div>
         </section>
@@ -169,35 +214,68 @@ export function MetricsTab() {
   );
 }
 
-function SeriesCard({
-  series,
-  colorIndex,
-}: {
-  series: MetricSeries;
-  colorIndex: number;
-}) {
-  const now = currentRate(series);
-  const unit = series.kind === "gauge" ? series.unit ?? "" : "/min";
+function FamilyCard({ family }: { family: MetricFamily }) {
+  // Sort samples by value desc so the hottest label-set reads first; cap the
+  // list so a high-cardinality family (many hosts/routes) stays glanceable.
+  const samples = useMemo(() => {
+    const sorted = [...family.samples].sort(
+      (a, b) => primaryValue(b) - primaryValue(a),
+    );
+    return sorted;
+  }, [family.samples]);
+
+  const max = samples.length > 0 ? primaryValue(samples[0]) || 1 : 1;
+  const shown = samples.slice(0, 12);
+  const hidden = samples.length - shown.length;
+
   return (
     <Card>
       <CardHeader className="pb-2">
         <div className="flex items-baseline justify-between gap-2">
           <CardTitle
             className="truncate font-mono text-xs font-medium"
-            title={series.name}
+            title={family.help || family.name}
           >
-            {shortName(series.name)}
+            {family.name}
           </CardTitle>
-          <span className="shrink-0 font-mono text-sm tabular-nums text-foreground">
-            {now.toLocaleString()}
-            <span className="ml-0.5 text-[10px] text-muted-foreground">
-              {unit}
-            </span>
+          <span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+            {family.type}
           </span>
         </div>
       </CardHeader>
-      <CardContent className="pb-3">
-        <RateChart series={series} colorIndex={colorIndex} height={110} />
+      <CardContent className="space-y-1.5 pb-3">
+        {shown.length === 0 ? (
+          <p className="text-xs text-muted-foreground">no samples</p>
+        ) : (
+          shown.map((s, i) => {
+            const pct = Math.max(2, (primaryValue(s) / max) * 100);
+            return (
+              <div key={i} className="relative">
+                <div
+                  className="absolute inset-y-0 left-0 rounded-sm bg-primary/10"
+                  style={{ width: `${pct}%` }}
+                  aria-hidden
+                />
+                <div className="relative flex items-center justify-between gap-3 px-1.5 py-0.5">
+                  <span
+                    className="truncate font-mono text-[11px] text-muted-foreground"
+                    title={labelText(s.labels)}
+                  >
+                    {labelText(s.labels)}
+                  </span>
+                  <span className="shrink-0 font-mono text-xs tabular-nums text-foreground">
+                    {formatSample(s)}
+                  </span>
+                </div>
+              </div>
+            );
+          })
+        )}
+        {hidden > 0 && (
+          <p className="pt-1 text-[10px] text-muted-foreground">
+            +{hidden} more label sets
+          </p>
+        )}
       </CardContent>
     </Card>
   );

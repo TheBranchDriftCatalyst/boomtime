@@ -28,12 +28,12 @@ func SignedGet(ctx context.Context, cred *DeviceCredential, apiHost, pathAndQuer
 	if cred == nil {
 		return nil, 0, ErrNotRegistered
 	}
-	// External-API call-rate observability (admin Metrics dashboard). Every
-	// device-signed Amazon/Audible/Kindle GET flows through here, so this one
-	// counter captures the full signed-call rate. Cookie-based Cloud Reader
-	// calls (readamazon.go) are counted separately at their own choke point.
-	metrics.Inc(metrics.Name("amazon.calls", "transport", "signed"), 1)
-	metrics.Inc("amazon.calls", 1)
+	// Semantic transport-outcome counter (amazon_calls_total{transport=signed}).
+	// Every device-signed Amazon/Audible/Kindle GET flows through here, so this
+	// one counter captures the full signed-call count. Cookie-based Cloud Reader
+	// calls (readamazon.go) are counted separately with transport=cookie. The
+	// generic per-host outbound metric also records these on the wire.
+	metrics.AmazonCallsTotal.WithLabelValues("signed").Inc()
 	h, err := Sign(cred, "GET", pathAndQuery, nil, time.Now())
 	if err != nil {
 		return nil, 0, err

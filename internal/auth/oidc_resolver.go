@@ -25,6 +25,7 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
 )
 
 // OIDCProviderName is the value stored in user_external_identities.provider.
@@ -68,7 +69,7 @@ func NewOIDCResolver(ctx context.Context, issuer, authorizeURLOverride, clientID
 	// via the keyset built below, and token exchange in exchangeAndVerify)
 	// through a client with a non-"Go-http-client" User-Agent so a Cloudflare-
 	// proxied issuer doesn't 403 it as a bot.
-	httpClient := &http.Client{Transport: &uaRoundTripper{ua: oidcUserAgent, base: http.DefaultTransport}}
+	httpClient := &http.Client{Transport: &uaRoundTripper{ua: oidcUserAgent, base: metrics.InstrumentTransport(http.DefaultTransport)}}
 	ctx = oidc.ClientContext(ctx, httpClient)
 	provider, err := oidc.NewProvider(ctx, strings.TrimRight(issuer, "/")+"/")
 	if err != nil {

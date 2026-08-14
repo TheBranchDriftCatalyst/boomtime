@@ -2,9 +2,10 @@
 // (gaka-metrics). Named invariants:
 //
 //   - admin gate: unauth'd ⇒ 4xx, non-admin ⇒ 403 (no allowlist leak);
-//   - admin ⇒ 200 with a {series:[...]} envelope, and a series that was
-//     Inc'd on the process-global registry shows up with its points;
-//   - ?names= prefix filter narrows the returned series.
+//   - admin ⇒ 200 with a {families:[...]} envelope Gathered from the
+//     process-global Prometheus registry, and a counter registered on that
+//     registry shows up with its value;
+//   - ?names= prefix filter narrows the returned families.
 package admin_test
 
 import (
@@ -17,6 +18,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/labstack/echo/v5"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/admin"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
@@ -30,14 +32,16 @@ func metricsRouter(hz *testutil.Harness) *echo.Echo {
 }
 
 type metricsEnvelope struct {
-	Series []struct {
-		Name   string `json:"name"`
-		Kind   string `json:"kind"`
-		Points []struct {
-			Bucket time.Time `json:"bucket"`
-			Value  float64   `json:"value"`
-		} `json:"points"`
-	} `json:"series"`
+	Families []struct {
+		Name    string `json:"name"`
+		Type    string `json:"type"`
+		Samples []struct {
+			Labels map[string]string `json:"labels"`
+			Value  *float64          `json:"value"`
+			Count  *uint64           `json:"count"`
+			Sum    *float64          `json:"sum"`
+		} `json:"samples"`
+	} `json:"families"`
 }
 
 var _ = Describe("Admin metrics: auth gates", func() {
@@ -58,16 +62,18 @@ var _ = Describe("Admin metrics: auth gates", func() {
 })
 
 var _ = Describe("Admin metrics: GET /api/v1/admin/metrics", func() {
-	It("returns the registry snapshot with an instrumented series", func() {
+	It("returns the Gathered registry with an instrumented counter", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenDB(GinkgoT()))
 		e := metricsRouter(hz)
 		user, token := hz.MintUser("metrics_admin")
 		hz.Cfg.AdminUsers = map[string]struct{}{user: {}}
 
-		// A uniquely-named series so the assertion is robust against whatever
-		// other series the process has accumulated.
-		name := fmt.Sprintf("test.http.series.%d", time.Now().UnixNano())
-		metrics.Inc(name, 3)
+		// A uniquely-named counter registered on the SAME registry the endpoint
+		// Gathers — robust against whatever else the process has accumulated.
+		name := fmt.Sprintf("test_http_series_%d", time.Now().UnixNano())
+		ctr := prometheus.NewCounter(prometheus.CounterOpts{Name: name, Help: "test"})
+		Expect(metrics.Registry.Register(ctr)).To(Succeed())
+		ctr.Add(3)
 
 		rec := doJSONReqG(e, http.MethodGet, "/api/v1/admin/metrics", token, nil)
 		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
@@ -76,37 +82,37 @@ var _ = Describe("Admin metrics: GET /api/v1/admin/metrics", func() {
 		Expect(json.Unmarshal(rec.Body.Bytes(), &env)).To(Succeed())
 
 		var found bool
-		for _, s := range env.Series {
-			if s.Name == name {
+		for _, f := range env.Families {
+			if f.Name == name {
 				found = true
-				Expect(s.Kind).To(Equal("counter"))
-				var sum float64
-				for _, p := range s.Points {
-					sum += p.Value
-				}
-				Expect(sum).To(Equal(float64(3)))
+				Expect(f.Type).To(Equal("counter"))
+				Expect(f.Samples).To(HaveLen(1))
+				Expect(f.Samples[0].Value).NotTo(BeNil())
+				Expect(*f.Samples[0].Value).To(Equal(float64(3)))
 			}
 		}
-		Expect(found).To(BeTrue(), "Inc'd series %q must appear in the snapshot", name)
+		Expect(found).To(BeTrue(), "registered counter %q must appear in the gathered view", name)
 	})
 
-	It("filters series by the ?names= prefix", func() {
+	It("filters families by the ?names= prefix", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenDB(GinkgoT()))
 		e := metricsRouter(hz)
 		user, token := hz.MintUser("metrics_filter_admin")
 		hz.Cfg.AdminUsers = map[string]struct{}{user: {}}
 
-		prefix := fmt.Sprintf("zz_filter_%d.", time.Now().UnixNano())
-		metrics.Inc(prefix+"kept", 1)
+		prefix := fmt.Sprintf("zz_filter_%d_", time.Now().UnixNano())
+		ctr := prometheus.NewCounter(prometheus.CounterOpts{Name: prefix + "kept", Help: "test"})
+		Expect(metrics.Registry.Register(ctr)).To(Succeed())
+		ctr.Inc()
 
 		rec := doJSONReqG(e, http.MethodGet, "/api/v1/admin/metrics?names="+prefix, token, nil)
 		Expect(rec).To(testutil.HaveStatus(http.StatusOK))
 
 		var env metricsEnvelope
 		Expect(json.Unmarshal(rec.Body.Bytes(), &env)).To(Succeed())
-		Expect(env.Series).NotTo(BeEmpty())
-		for _, s := range env.Series {
-			Expect(s.Name).To(HavePrefix(prefix), "prefix filter must exclude other series")
+		Expect(env.Families).NotTo(BeEmpty())
+		for _, f := range env.Families {
+			Expect(f.Name).To(HavePrefix(prefix), "prefix filter must exclude other families")
 		}
 	})
 })

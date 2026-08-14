@@ -1,213 +1,141 @@
 package metrics
 
 import (
-	"fmt"
-	"sync"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
-	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 )
 
-// findSeries returns the named series from a snapshot, or fails.
-func findSeries(t *testing.T, all []Series, name string) Series {
+func TestStatusClass(t *testing.T) {
+	cases := map[int]string{
+		0:   "error", // transport failure, no response
+		100: "1xx",
+		204: "2xx",
+		302: "3xx",
+		404: "4xx",
+		500: "5xx",
+		700: "error", // out of range
+	}
+	for code, want := range cases {
+		if got := StatusClass(code); got != want {
+			t.Errorf("StatusClass(%d) = %q, want %q", code, got, want)
+		}
+	}
+}
+
+// TestInstrumentTransportRecordsClientMetric drives real requests through the
+// instrumented transport against a stub upstream and asserts the outbound RED
+// counter advances — and, crucially, that TWO DIFFERENT PATHS on the SAME host
+// collapse onto ONE series (label cardinality bounded by host, not path).
+func TestInstrumentTransportRecordsClientMetric(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent) // 204 → 2xx
+	}))
+	defer srv.Close()
+
+	host := mustHost(t, srv.URL)
+	client := &http.Client{Transport: InstrumentTransport(nil)}
+
+	ctr := HTTPClientRequestsTotal.WithLabelValues(host, http.MethodGet, "2xx")
+	before := testutil.ToFloat64(ctr)
+
+	// Two distinct paths on the same host.
+	for _, p := range []string{"/a/1", "/b/2"} {
+		resp, err := client.Get(srv.URL + p)
+		if err != nil {
+			t.Fatalf("GET %s: %v", p, err)
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}
+
+	if got := testutil.ToFloat64(ctr) - before; got != 2 {
+		t.Errorf("http_client_requests_total{host=%s,GET,2xx} delta = %v, want 2 (both paths collapse to one series)", host, got)
+	}
+
+	// The duration histogram observed both calls (SampleCount advanced by 2).
+	if got := histCount(t, HTTPClientRequestDuration.WithLabelValues(host)); got < 2 {
+		t.Errorf("http_client_request_duration_seconds{host=%s} sample count = %d, want >= 2", host, got)
+	}
+}
+
+// TestInstrumentTransportRecordsErrorClass verifies a transport-level failure
+// (no response) is recorded with status class "error" and the base's error is
+// returned verbatim.
+func TestInstrumentTransportRecordsErrorClass(t *testing.T) {
+	rt := InstrumentTransport(errRT{})
+	ctr := HTTPClientRequestsTotal.WithLabelValues("err.example", http.MethodGet, "error")
+	before := testutil.ToFloat64(ctr)
+
+	req := httptest.NewRequest(http.MethodGet, "http://err.example/x", nil)
+	resp, err := rt.RoundTrip(req)
+	if err == nil || resp != nil {
+		t.Fatalf("RoundTrip = (%v, %v), want (nil, error)", resp, err)
+	}
+	if got := testutil.ToFloat64(ctr) - before; got != 1 {
+		t.Errorf("error-class counter delta = %v, want 1", got)
+	}
+}
+
+// TestHandlerServesPrometheusText asserts /metrics-style output is served and
+// contains a known series after it is touched.
+func TestHandlerServesPrometheusText(t *testing.T) {
+	HardcoverCallsTotal.WithLabelValues("executed").Inc()
+
+	rec := httptest.NewRecorder()
+	Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /metrics = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	// A CounterVec with no observed label combinations emits no lines, so we
+	// assert only families we actually touched here (hardcover_calls_total,
+	// incremented above) plus the always-present runtime collectors.
+	for _, want := range []string{
+		"# TYPE hardcover_calls_total counter",
+		`hardcover_calls_total{outcome="executed"}`,
+		"go_goroutines",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("/metrics body missing %q", want)
+		}
+	}
+}
+
+// --- helpers ----------------------------------------------------------------
+
+type errRT struct{}
+
+func (errRT) RoundTrip(*http.Request) (*http.Response, error) { return nil, io.EOF }
+
+func mustHost(t *testing.T, raw string) string {
 	t.Helper()
-	for _, s := range all {
-		if s.Name == name {
-			return s
-		}
+	u, err := url.Parse(raw)
+	if err != nil {
+		t.Fatalf("parse %q: %v", raw, err)
 	}
-	t.Fatalf("series %q not found in snapshot %+v", name, all)
-	return Series{}
+	return u.Hostname()
 }
 
-func sumPoints(s Series) float64 {
-	var total float64
-	for _, p := range s.Points {
-		total += p.Value
+// histCount reads a histogram observer's SampleCount by writing the underlying
+// metric to a dto.Metric.
+func histCount(t *testing.T, o prometheus.Observer) uint64 {
+	t.Helper()
+	m, ok := o.(prometheus.Metric)
+	if !ok {
+		t.Fatalf("observer %T is not a prometheus.Metric", o)
 	}
-	return total
-}
-
-func TestIncCountsIntoCurrentBucket(t *testing.T) {
-	r := NewRegistry()
-	for i := 0; i < 5; i++ {
-		r.Inc("http.requests", 1)
+	var dm dto.Metric
+	if err := m.Write(&dm); err != nil {
+		t.Fatalf("write metric: %v", err)
 	}
-	snap := r.Snapshot(time.Time{})
-	s := findSeries(t, snap, "http.requests")
-
-	if s.Kind != "counter" {
-		t.Fatalf("kind = %q, want counter", s.Kind)
-	}
-	// All five landed in the same (current) minute bucket → one point of value 5.
-	if got := sumPoints(s); got != 5 {
-		t.Fatalf("sum = %v, want 5", got)
-	}
-	// The last point must be the current minute bucket.
-	last := s.Points[len(s.Points)-1]
-	wantBucket := time.Now().Truncate(BucketDur)
-	if !last.Bucket.Equal(wantBucket) {
-		t.Fatalf("last bucket = %v, want current minute %v", last.Bucket, wantBucket)
-	}
-	if last.Value != 5 {
-		t.Fatalf("current bucket value = %v, want 5", last.Value)
-	}
-}
-
-func TestObserveGaugeReplacesValue(t *testing.T) {
-	r := NewRegistry()
-	r.Observe("jobs.inflight", 1)
-	r.Observe("jobs.inflight", 4)
-	r.Observe("jobs.inflight", 2)
-	s := findSeries(t, r.Snapshot(time.Time{}), "jobs.inflight")
-	if s.Kind != "gauge" {
-		t.Fatalf("kind = %q, want gauge", s.Kind)
-	}
-	last := s.Points[len(s.Points)-1]
-	if last.Value != 2 {
-		t.Fatalf("gauge current value = %v, want 2 (last observed)", last.Value)
-	}
-}
-
-// distinctBuckets drives the ring directly (bypassing time.Now) to assert that
-// events in different minutes land in different buckets and that the window
-// densifies idle minutes to explicit zeros.
-func TestBucketsSeparateByMinuteAndDensify(t *testing.T) {
-	s := newSeries("x", Counter, "")
-	base := time.Date(2026, 1, 2, 3, 4, 0, 0, time.UTC)
-	s.observe(base, 2)                    // minute 0 → 2
-	s.observe(base.Add(3*time.Minute), 5) // minute 3 → 5 (minutes 1,2 idle)
-	now := base.Add(3 * time.Minute)
-
-	out := s.snapshot(now, time.Time{})
-	// Densified: minutes 0,1,2,3 → four points.
-	if len(out.Points) != 4 {
-		t.Fatalf("points = %d (%+v), want 4 densified", len(out.Points), out.Points)
-	}
-	want := []float64{2, 0, 0, 5}
-	for i, p := range out.Points {
-		if p.Value != want[i] {
-			t.Fatalf("point[%d].Value = %v, want %v (points=%+v)", i, p.Value, want[i], out.Points)
-		}
-		wantStart := base.Add(time.Duration(i) * BucketDur)
-		if !p.Bucket.Equal(wantStart) {
-			t.Fatalf("point[%d].Bucket = %v, want %v", i, p.Bucket, wantStart)
-		}
-	}
-}
-
-// TestRingEvictionAfterWindow verifies buckets older than the window fall out of
-// the ring (bounded memory) rather than accumulating forever.
-func TestRingEvictionAfterWindow(t *testing.T) {
-	s := newSeries("x", Counter, "")
-	base := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
-	s.observe(base, 1) // very old bucket
-
-	// Advance well past the full window; the old bucket must be evicted.
-	later := base.Add(Window + 10*BucketDur)
-	s.observe(later, 3)
-
-	out := s.snapshot(later, time.Time{})
-	if got := sumPoints(out); got != 3 {
-		t.Fatalf("sum after eviction = %v, want 3 (old bucket evicted)", got)
-	}
-	// The ring never exceeds ringSize buckets.
-	if len(s.buf) != ringSize {
-		t.Fatalf("ring len = %d, want %d", len(s.buf), ringSize)
-	}
-	for _, p := range out.Points {
-		if p.Bucket.Before(later.Add(-Window)) {
-			t.Fatalf("point %v is older than the window", p.Bucket)
-		}
-	}
-}
-
-func TestSnapshotSinceFilter(t *testing.T) {
-	s := newSeries("x", Counter, "")
-	base := time.Date(2026, 1, 2, 3, 0, 0, 0, time.UTC)
-	s.observe(base, 1)
-	s.observe(base.Add(5*time.Minute), 1)
-	now := base.Add(5 * time.Minute)
-
-	// since = base+3m drops the first (base) point.
-	out := s.snapshot(now, base.Add(3*time.Minute))
-	for _, p := range out.Points {
-		if p.Bucket.Before(base.Add(3 * time.Minute)) {
-			t.Fatalf("point %v predates since filter", p.Bucket)
-		}
-	}
-	if got := sumPoints(out); got != 1 {
-		t.Fatalf("sum after since filter = %v, want 1", got)
-	}
-}
-
-func TestName(t *testing.T) {
-	cases := []struct {
-		base  string
-		pairs []string
-		want  string
-	}{
-		{"jobs.limiter.acquired", []string{"kind", "gh"}, "jobs.limiter.acquired{kind=gh}"},
-		{"http.requests", []string{"method", "GET"}, "http.requests{method=GET}"},
-		{"http.requests", []string{"a", "1", "b", "2"}, "http.requests{a=1,b=2}"},
-		{"bare", nil, "bare"},
-		{"odd", []string{"only"}, "odd"},
-	}
-	for _, tc := range cases {
-		if got := Name(tc.base, tc.pairs...); got != tc.want {
-			t.Errorf("Name(%q, %v) = %q, want %q", tc.base, tc.pairs, got, tc.want)
-		}
-	}
-}
-
-// TestConcurrentIncRaceFree hammers Inc from many goroutines across many series
-// names; run under -race to catch data races. The final counts must be exact
-// (no lost updates).
-func TestConcurrentIncRaceFree(t *testing.T) {
-	r := NewRegistry()
-	const goroutines = 50
-	const perG = 200
-	const names = 8
-
-	var wg sync.WaitGroup
-	for g := 0; g < goroutines; g++ {
-		wg.Add(1)
-		go func(g int) {
-			defer wg.Done()
-			for i := 0; i < perG; i++ {
-				r.Inc(fmt.Sprintf("series.%d", i%names), 1)
-			}
-		}(g)
-	}
-	// Concurrent readers to race Snapshot against writers.
-	for g := 0; g < 5; g++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := 0; i < 50; i++ {
-				_ = r.Snapshot(time.Time{})
-			}
-		}()
-	}
-	wg.Wait()
-
-	snap := r.Snapshot(time.Time{})
-	var total float64
-	for _, s := range snap {
-		total += sumPoints(s)
-	}
-	want := float64(goroutines * perG)
-	if total != want {
-		t.Fatalf("total increments = %v, want %v (lost updates?)", total, want)
-	}
-}
-
-func TestDefaultRegistryHelpers(t *testing.T) {
-	// Uses the process-global registry; a unique name avoids cross-test bleed.
-	name := fmt.Sprintf("test.default.%d", time.Now().UnixNano())
-	Inc(name, 3)
-	Inc(name, 2)
-	s := findSeries(t, Snapshot(time.Time{}), name)
-	if got := sumPoints(s); got != 5 {
-		t.Fatalf("default registry sum = %v, want 5", got)
-	}
+	return dm.GetHistogram().GetSampleCount()
 }

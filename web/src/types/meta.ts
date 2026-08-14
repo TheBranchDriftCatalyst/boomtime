@@ -149,6 +149,35 @@ export interface MetricsPayload {
   series: MetricSeries[];
 }
 
+// Prometheus gathered view — GET /api/v1/admin/metrics (gaka-metrics, pivoted
+// to Prometheus). The endpoint Gather()s internal/metrics.Registry (the SAME
+// registry scraped at /metrics for Grafana) and flattens each family into
+// {name, help, type, samples}. `type` is the Prometheus metric type
+// ("counter" | "gauge" | "histogram" | "summary" | "untyped"). Each sample is
+// one label-set: counters/gauges carry `value`; histograms/summaries carry
+// `count` + `sum` (the FE derives avg = sum/count, e.g. a latency read-out).
+export type MetricType =
+  | "counter"
+  | "gauge"
+  | "histogram"
+  | "summary"
+  | "untyped";
+export interface MetricSample {
+  labels?: Record<string, string>;
+  value?: number;
+  count?: number;
+  sum?: number;
+}
+export interface MetricFamily {
+  name: string;
+  help?: string;
+  type: MetricType;
+  samples: MetricSample[];
+}
+export interface MetricsFamiliesPayload {
+  families: MetricFamily[];
+}
+
 // Linked external identities — GET /api/v1/users/current/identities (gaka-b5n.4).
 export interface LinkedIdentity {
   provider: string;

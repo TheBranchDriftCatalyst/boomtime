@@ -18,6 +18,7 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 )
 
@@ -64,8 +65,10 @@ func NewService(database *db.DB, logger *slog.Logger) *Service {
 		restBase:   defaultRESTBaseURL,
 		graphqlURL: defaultGraphQLURL,
 		http: &http.Client{
-			Timeout:   syncHTTPTimeout,
-			Transport: &uaRoundTripper{ua: githubUserAgent, base: http.DefaultTransport},
+			Timeout: syncHTTPTimeout,
+			// Instrumented transport UNDER the UA setter: the UA header is still
+			// applied, and the wire call is recorded in the outbound RED metrics.
+			Transport: &uaRoundTripper{ua: githubUserAgent, base: metrics.InstrumentTransport(http.DefaultTransport)},
 		},
 	}
 }

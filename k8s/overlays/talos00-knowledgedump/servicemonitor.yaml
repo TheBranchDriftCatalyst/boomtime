@@ -1,0 +1,35 @@
+---
+# Scrape boomtime's OWN Prometheus metrics (gaka-metrics). The server exposes
+# GET /metrics on the main HTTP port (8080, service port name `http`) —
+# unauthenticated + off the rate-limit/request-log paths, standard for an
+# intra-cluster scrape. This is the app's FIRST first-party metrics surface:
+# the generic RED decorators (incoming router + outbound HTTP clients) plus the
+# job-limiter / hardcover / amazon business counters and the Go/process runtime
+# collectors.
+#
+# Selects the base `boomtime` Service by its labels; the endpoint targets the
+# named `http` port so it follows any future port renumber. Prometheus watches
+# ServiceMonitors cluster-wide (same as the keda ServiceMonitor + rabbitmq
+# PodMonitor in this overlay).
+#
+# NOTE: this scrapes the SERVER role only. The --role=worker Deployment
+# (base/worker) serves just /healthz on :8081 and has no /metrics endpoint, so
+# it is intentionally not covered here — worker-side counters (job limiter,
+# outbound calls) would need a separate metrics listener on that process first.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: boomtime
+  namespace: boomtime
+  labels:
+    app.kubernetes.io/name: boomtime
+    app.kubernetes.io/part-of: boomtime
+spec:
+  selector:
+    matchLabels:
+      app: boomtime
+      app.kubernetes.io/name: boomtime
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s

@@ -19,6 +19,7 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/wakatime"
 )
@@ -55,7 +56,7 @@ const wakatimeAPI = "https://wakatime.com"
 // upstream read would otherwise stall an entire import job goroutine forever
 // (gaka-al6). 60s is generous — wakatime's biggest response (heartbeats for
 // one day) rarely exceeds a few hundred KB — while still bounded.
-var httpClient = &http.Client{Timeout: 60 * time.Second}
+var httpClient = &http.Client{Timeout: 60 * time.Second, Transport: metrics.InstrumentTransport(nil)}
 
 // runningJob is one in-flight job's cancel handle plus a done channel that
 // closes when the worker goroutine exits (finishCancelled or finishError

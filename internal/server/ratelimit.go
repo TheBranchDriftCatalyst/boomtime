@@ -342,7 +342,7 @@ func (s *rateLimitStore) middleware() echo.MiddlewareFunc {
 			if req.Method == http.MethodOptions {
 				return next(c)
 			}
-			if req.Method == http.MethodGet && req.URL.Path == "/healthz" {
+			if req.Method == http.MethodGet && (req.URL.Path == "/healthz" || req.URL.Path == "/metrics") {
 				return next(c)
 			}
 			// gaka-93f.11.5: never rate-limit static SPA assets. A single page load

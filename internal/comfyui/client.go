@@ -48,6 +48,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
 )
 
 // Client is the shim caller. `URL` is the base (e.g. http://localhost:8012).
@@ -83,8 +85,10 @@ func NewClient(url string) (*Client, error) {
 		ResponseHeaderTimeout: 45 * time.Minute,
 	}
 	return &Client{
-		URL:  url,
-		HTTP: &http.Client{Timeout: 50 * time.Minute, Transport: transport},
+		URL: url,
+		// Instrument the custom transport so comfyui-shim calls land in the
+		// outbound RED metrics like every other upstream.
+		HTTP: &http.Client{Timeout: 50 * time.Minute, Transport: metrics.InstrumentTransport(transport)},
 	}, nil
 }
 

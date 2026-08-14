@@ -15,6 +15,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
 )
 
 // register.go — the "Connect Amazon" device-registration flow that yields a
@@ -24,13 +26,13 @@ import (
 // The web UX is a paste-the-URL flow (Amazon redirects to its own maplanding
 // URL after login, not to us):
 //
-//	1. BuildAuthorizeURL(mk) → the Amazon /ap/signin URL + a RegistrationSession
-//	   (PKCE verifier + device serial). The handler seals the session (encrypted)
-//	   into an opaque token the client echoes back.
-//	2. User opens the URL, logs into Amazon (captcha/OTP/2FA), and lands on
-//	   https://www.amazon.<tld>/ap/maplanding?...&openid.oa2.authorization_code=...
-//	3. User pastes that maplanding URL back → CompleteRegistration exchanges the
-//	   code at /auth/register for the adp_token + RSA device key + refresh token.
+//  1. BuildAuthorizeURL(mk) → the Amazon /ap/signin URL + a RegistrationSession
+//     (PKCE verifier + device serial). The handler seals the session (encrypted)
+//     into an opaque token the client echoes back.
+//  2. User opens the URL, logs into Amazon (captcha/OTP/2FA), and lands on
+//     https://www.amazon.<tld>/ap/maplanding?...&openid.oa2.authorization_code=...
+//  3. User pastes that maplanding URL back → CompleteRegistration exchanges the
+//     code at /auth/register for the adp_token + RSA device key + refresh token.
 //
 // ImportAuthFile is the alternative for someone who already ran `audible
 // quickstart` and has a .audible file. Values are Amazon app constants and may
@@ -44,8 +46,15 @@ const (
 	osVersion       = "15.0.0"
 )
 
-// httpClient bounds the register/token calls to Amazon.
-var httpClient = &http.Client{Timeout: 30 * time.Second}
+// httpClient bounds the register/token calls to Amazon. It is the SHARED
+// outbound client for the whole amazon package (SignedGet in client.go, the
+// cookie Cloud-Reader calls in readamazon.go, and the Kindle whispersync/
+// sidecar calls all route through it), so instrumenting its transport once
+// gives per-host outbound RED metrics for every Amazon/Audible/Kindle call.
+var httpClient = &http.Client{
+	Timeout:   30 * time.Second,
+	Transport: metrics.InstrumentTransport(nil),
+}
 
 // mkInfo is a marketplace's Amazon TLD + ids (mkb79 LOCALE_TEMPLATES).
 type mkInfo struct {

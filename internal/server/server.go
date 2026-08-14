@@ -25,6 +25,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/ingest"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/meta"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/queryapi"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/spaces"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
@@ -110,6 +111,17 @@ func NewWithHandler(database *db.DB, cfg *config.Config, logger *slog.Logger, wo
 	// gaka-ar7: stash resolved owner in ctx so the pgx tracer can tag its DEBUG
 	// SQL records with "user" — LogHub's FilterForUser then gates them per tenant.
 	e.Use(userCtxMiddleware(database))
+
+	// GET /metrics — the Prometheus scrape endpoint (internal/metrics.Registry).
+	// Deliberately unauthenticated and off the rate-limit + request-log paths:
+	// it is scraped intra-cluster by Prometheus (same posture as /healthz), and
+	// the middleware chain skips it by path (see metricsMiddleware,
+	// requestLogger, and the rate-limit bypass). No user data is exposed — only
+	// aggregate service metrics.
+	e.GET("/metrics", func(c *echo.Context) error {
+		metrics.Handler().ServeHTTP(c.Response(), c.Request())
+		return nil
+	})
 
 	h := handler.New(database, cfg, logger, worker, hub, logHub)
 	registerRoutes(e, h)

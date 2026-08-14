@@ -29,6 +29,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/cache"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
 )
 
 // Handler bundles the SUBSET of the god-type handler.Handler's
@@ -74,7 +75,7 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, cch *cache.TT
 // EXPOSED as a package-level var so ingest-side tests can swap it out
 // via SwapHTTPClientForTest. Not exported directly — tests use the
 // SwapHTTPClientForTest seam to keep the mutation site auditable.
-var httpClient = &http.Client{Timeout: 15 * time.Second}
+var httpClient = &http.Client{Timeout: 15 * time.Second, Transport: metrics.InstrumentTransport(nil)}
 
 // SwapHTTPClientForTest replaces the package-level httpClient (used by
 // remoteWrite) and returns a restore func the caller MUST defer. Test-only

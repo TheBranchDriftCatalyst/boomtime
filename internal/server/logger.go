@@ -16,7 +16,7 @@ func requestLogger(logger *slog.Logger) echo.MiddlewareFunc {
 			// Skip them entirely (no request line) but leave every other path,
 			// and its log level, untouched.
 			switch c.Request().URL.Path {
-			case "/healthz", "/readyz", "/livez":
+			case "/healthz", "/readyz", "/livez", "/metrics":
 				return next(c)
 			}
 			start := time.Now()

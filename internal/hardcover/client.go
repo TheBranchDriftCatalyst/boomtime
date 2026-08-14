@@ -83,7 +83,7 @@ type Client struct {
 func NewClient(token string) *Client {
 	return &Client{
 		token:   strings.TrimSpace(token),
-		http:    &http.Client{Timeout: 30 * time.Second},
+		http:    &http.Client{Timeout: 30 * time.Second, Transport: metrics.InstrumentTransport(nil)},
 		limiter: rate.NewLimiter(rate.Every(time.Second), 1),
 		dryRun:  defaultDryRun,
 		logger:  defaultLogger,
@@ -119,21 +119,21 @@ func (c *Client) graphql(ctx context.Context, query string, vars map[string]any,
 	if c.token == "" {
 		return ErrBadToken
 	}
-	// External-API call-rate observability (admin Metrics dashboard). Counted
-	// at the choke point so every Hardcover GraphQL call — read or write —
-	// shows up as a rate, split by outcome: a dry-run-blocked mutation never
-	// leaves the process, so it is tracked separately from executed calls.
-	metrics.Inc("hardcover.calls", 1)
+	// Semantic call-outcome counter (hardcover_calls_total{outcome}) on top of
+	// the generic outbound transport metric: a dry-run-blocked mutation never
+	// leaves the process, so it is tracked separately from executed calls (which
+	// the per-host transport metric also sees on the wire).
+	//
 	// Dry-run safety gate: block + log every mutation (write). Reads pass through.
 	// Returns nil (a simulated success) so callers proceed without surfacing an
 	// error; `out` stays zero-valued (e.g. a returned id of 0), which downstream
 	// writes also gate on, so the whole push chain is a no-op that logs its intent.
 	if c.dryRun && isMutation(query) {
-		metrics.Inc(metrics.Name("hardcover.calls", "outcome", "dryrun_blocked"), 1)
+		metrics.HardcoverCallsTotal.WithLabelValues("dryrun_blocked").Inc()
 		c.logBlockedMutation(query, vars)
 		return nil
 	}
-	metrics.Inc(metrics.Name("hardcover.calls", "outcome", "executed"), 1)
+	metrics.HardcoverCallsTotal.WithLabelValues("executed").Inc()
 	if err := c.limiter.Wait(ctx); err != nil {
 		return err
 	}

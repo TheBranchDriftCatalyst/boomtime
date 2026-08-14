@@ -63,7 +63,7 @@ import type {
   AdminUsersPayload,
   AdminJob,
   AdminJobSchedule,
-  MetricSeries,
+  MetricFamily,
   IdentitiesPayload,
   GithubConnection,
   AmazonConnection,
@@ -1092,12 +1092,15 @@ export const api = {
 
   getAdminJobs: (params?: { status?: string; kind?: string; limit?: number }) =>
     unwrap<AdminJob[]>(buildUrl("/api/v1/admin/jobs", params), "jobs", []),
-  // gaka-metrics: the rate-metric registry snapshot (router/limiter/external-API
-  // rates). Generic — every series the backend Inc's appears here automatically.
-  getAdminMetrics: (params?: { since?: string; names?: string }) =>
-    unwrap<MetricSeries[]>(
+  // gaka-metrics: the Prometheus gathered view (router RED, outbound RED,
+  // limiter + external-API business counters, Go/process runtime). Same
+  // registry served at /metrics for Grafana; here it's Gather()ed into
+  // {families:[...]} for the in-app tab. Generic — any newly-registered
+  // collector appears with zero FE wiring. `names` filters by name prefix.
+  getAdminMetrics: (params?: { names?: string }) =>
+    unwrap<MetricFamily[]>(
       buildUrl("/api/v1/admin/metrics", params),
-      "series",
+      "families",
       [],
     ),
   getAdminJobSchedules: () =>

@@ -3,36 +3,23 @@ package jobs
 import (
 	"context"
 	"testing"
-	"time"
+
+	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
 )
 
-func seriesSum(t *testing.T, name string) float64 {
-	t.Helper()
-	for _, s := range metrics.Snapshot(time.Time{}) {
-		if s.Name == name {
-			var total float64
-			for _, p := range s.Points {
-				total += p.Value
-			}
-			return total
-		}
-	}
-	return 0
-}
-
-// TestLimiterAcquireBumpsSeries drives the real in-process limiter (max=1) plus
+// TestLimiterAcquireBumpsCounter drives the real in-process limiter (max=1) plus
 // recordAcquire — the exact pairing runJob uses — and asserts the acquired /
-// atlimit rate-limiter series advance. Delta-based so it is robust against any
-// series the process already holds.
-func TestLimiterAcquireBumpsSeries(t *testing.T) {
+// atlimit outcomes of jobs_limiter_events_total advance. Delta-based so it is
+// robust against any counts the process already holds.
+func TestLimiterAcquireBumpsCounter(t *testing.T) {
 	const kind = "test-limiter-kind"
-	acquired := metrics.Name("jobs.limiter.acquired", "kind", kind)
-	atlimit := metrics.Name("jobs.limiter.atlimit", "kind", kind)
+	acquired := metrics.JobLimiterTotal.WithLabelValues(kind, "acquired")
+	atlimit := metrics.JobLimiterTotal.WithLabelValues(kind, "atlimit")
 
-	beforeAcq := seriesSum(t, acquired)
-	beforeAtl := seriesSum(t, atlimit)
+	beforeAcq := testutil.ToFloat64(acquired)
+	beforeAtl := testutil.ToFloat64(atlimit)
 
 	lim := newMemLimiter()
 	ctx := context.Background()
@@ -53,10 +40,10 @@ func TestLimiterAcquireBumpsSeries(t *testing.T) {
 
 	rel() // free the slot
 
-	if got := seriesSum(t, acquired) - beforeAcq; got != 1 {
-		t.Errorf("jobs.limiter.acquired{kind=%s} delta = %v, want 1", kind, got)
+	if got := testutil.ToFloat64(acquired) - beforeAcq; got != 1 {
+		t.Errorf("jobs_limiter_events_total{kind=%s,outcome=acquired} delta = %v, want 1", kind, got)
 	}
-	if got := seriesSum(t, atlimit) - beforeAtl; got != 1 {
-		t.Errorf("jobs.limiter.atlimit{kind=%s} delta = %v, want 1", kind, got)
+	if got := testutil.ToFloat64(atlimit) - beforeAtl; got != 1 {
+		t.Errorf("jobs_limiter_events_total{kind=%s,outcome=atlimit} delta = %v, want 1", kind, got)
 	}
 }

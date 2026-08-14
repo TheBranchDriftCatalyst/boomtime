@@ -155,10 +155,10 @@ func ExchangeWebsiteCookies(ctx context.Context, cred *DeviceCredential) (map[st
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", cloudReaderUserAgent)
 
-	// External-API call-rate observability: the cookie-based Cloud Reader
-	// transport, split from the ADP-signed calls in client.go.
-	metrics.Inc(metrics.Name("amazon.calls", "transport", "cookie"), 1)
-	metrics.Inc("amazon.calls", 1)
+	// Semantic transport-outcome counter (amazon_calls_total{transport=cookie}):
+	// the cookie-based Cloud Reader transport, split from the ADP-signed calls
+	// in client.go.
+	metrics.AmazonCallsTotal.WithLabelValues("cookie").Inc()
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -230,8 +230,7 @@ func cloudLibraryPage(ctx context.Context, cookieHeader, paginationToken string)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", cloudReaderUserAgent)
 
-	metrics.Inc(metrics.Name("amazon.calls", "transport", "cookie"), 1)
-	metrics.Inc("amazon.calls", 1)
+	metrics.AmazonCallsTotal.WithLabelValues("cookie").Inc()
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, 0, err

@@ -14,6 +14,7 @@ resources:
   - scheduledbackup.yaml # daily base backup → cnpg-backups bucket (03:45)
   - external-secret.yaml
   - ingressroute.yaml
+  - servicemonitor.yaml # scrape boomtime's own /metrics (gaka-metrics: RED + business counters)
   - comfyui-shim-external.yaml
   - ollama-shim-external.yaml
   # ── Worker-topology decoupling (gaka-8bz) — PROD CUTOVER DEFERRED ─────────
@@ -50,7 +51,9 @@ resources:
   # (infrastructure/base/monitoring/grafana-dashboards/folders/apps.yaml);
   # these CRs only reference it via folderRef. Both are built on boomtime's own
   # JSON slog output in Loki plus the KEDA/RabbitMQ metrics already scraped
-  # above — the app exports no Prometheus metrics of its own.
+  # above. As of gaka-metrics the app ALSO exports first-party Prometheus
+  # metrics (see servicemonitor.yaml) — a future dashboard pass can fold the
+  # RED/business series into these panels (see the 4→2 consolidation note).
   - grafana-dashboard-daily-review.yaml   # job runs, backlog, domain outcomes, log review
   - grafana-dashboard-domain-ingest.yaml  # heartbeat/health ingest volume, outcome, latency
 
