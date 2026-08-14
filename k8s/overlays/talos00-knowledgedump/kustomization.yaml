@@ -42,20 +42,23 @@ resources:
   - keda-scaledjob-jobs.yaml       # KEDA ScaledJob — heavy catalyst-go-jobs kinds (avatar-render)
   - rabbitmq-mgmt-ingressroute.yaml # LAN-only mgmt UI (boomtime-rabbit.talos00)
   - rabbitmq-podmonitor.yaml       # Prometheus scrape of the operator metrics
-  - grafana-dashboard-worker-queue.yaml # GrafanaDashboard CR (Ops > App folder)
   - keda-servicemonitor.yaml       # scrape KEDA operator metrics (keda ns) for the dashboard
-  - grafana-dashboard-keda.yaml    # GrafanaDashboard CR — KEDA autoscaling (Ops > App)
-  # ── DOMAIN dashboards (Apps folder) — what boomtime DID, not pod health ────
-  # Sibling perspective to the two Ops > App dashboards above. The "Apps"
-  # GrafanaFolder itself is declared centrally in talos-homelab
-  # (infrastructure/base/monitoring/grafana-dashboards/folders/apps.yaml);
-  # these CRs only reference it via folderRef. Both are built on boomtime's own
-  # JSON slog output in Loki plus the KEDA/RabbitMQ metrics already scraped
-  # above. As of gaka-metrics the app ALSO exports first-party Prometheus
-  # metrics (see servicemonitor.yaml) — a future dashboard pass can fold the
-  # RED/business series into these panels (see the 4→2 consolidation note).
-  - grafana-dashboard-daily-review.yaml   # job runs, backlog, domain outcomes, log review
-  - grafana-dashboard-domain-ingest.yaml  # heartbeat/health ingest volume, outcome, latency
+  # ── CONSOLIDATED dashboards (4→2, gaka-metrics follow-up) ──────────────────
+  # The former per-concern boards (grafana-dashboard-{keda,worker-queue,
+  # daily-review,domain-ingest}.yaml) were merged into two, rebuilt around the
+  # app's now-scraped first-party Prometheus metrics (servicemonitor.yaml) while
+  # carrying the still-relevant KEDA/RabbitMQ (Ops) and Loki slog (Domain)
+  # panels forward verbatim.
+  #
+  # Ops (folderUID ops-app): RED (incoming router + outbound clients), Go/
+  # process runtime, DB + Redis pools, cache hit-rate, the concurrency + HTTP
+  # rate limiters, and the KEDA/queue autoscaling panels.
+  - grafana-dashboard-service-infra.yaml  # "boomtime · Service & Infra" (Ops > App)
+  # Domain (folderUID apps, sibling of Ops — declared centrally in talos-homelab
+  # infrastructure/base/monitoring/grafana-dashboards/folders/apps.yaml): the
+  # first-party ingest/jobs/business counters on top, the validated Loki slog
+  # narrative (job runs, domain outcomes, daily review, ingest failures) below.
+  - grafana-dashboard-domain-jobs.yaml    # "boomtime · Domain & Jobs" (Apps)
 
 # Strategic-merge patches on the base boomtime-config ConfigMap + boomtime
 # Deployment.
@@ -85,19 +88,14 @@ secretGenerator:
     literals:
       - host=amqp://boomtime-rabbit.boomtime.svc.cluster.local:5672/
 configMapGenerator:
-  - name: dashboard-boomtime-worker-queue
+  # Consolidated 4→2 (see the resources block above). Ops board.
+  - name: dashboard-boomtime-service-infra
     files:
-      - grafana/worker-queue-dashboard.json
-  - name: dashboard-boomtime-keda
+      - grafana/service-infra-dashboard.json
+  # Domain board (Apps folder).
+  - name: dashboard-boomtime-domain-jobs
     files:
-      - grafana/keda-dashboard.json
-  # Domain dashboards (Apps folder)
-  - name: dashboard-boomtime-daily-review
-    files:
-      - grafana/daily-review-dashboard.json
-  - name: dashboard-boomtime-domain-ingest
-    files:
-      - grafana/domain-ingest-dashboard.json
+      - grafana/domain-jobs-dashboard.json
 generatorOptions:
   disableNameSuffixHash: true
 

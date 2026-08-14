@@ -1,0 +1,44 @@
+---
+# GrafanaDashboard CR: "boomtime · Domain & Jobs".
+#
+# CONSOLIDATION (4→2): replaces the former grafana-dashboard-daily-review.yaml +
+# grafana-dashboard-domain-ingest.yaml. The DOMAIN perspective (sibling of the
+# Ops "Service & Infra" board). Top row is boomtime's own first-party Prometheus
+# counters (gaka-metrics, scraped by servicemonitor.yaml): heartbeats ingested,
+# jobs_run_total by kind/status, jobs_limiter_events, hardcover/amazon call
+# rates, AMQP deliveries. Crucially the heartbeat panel uses the real
+# boomtime_heartbeats_ingested_total counter — the exact replacement for the
+# ".bulk request-count proxy" the old Domain Ingest board was forced to use off
+# Loki. The rest of the board carries forward the validated Loki slog narrative
+# verbatim (uid loki-v2): job runs + failure reasons, domain outcomes that
+# landed, the read-path consumption table, the daily warn/error review, and the
+# ingest/aggregation failure feed. Dual datasource (mimir + loki-v2) is
+# intentional.
+#
+# folderUID apps = the sibling-of-Ops "Apps" folder declared centrally in
+# talos-homelab:infrastructure/base/monitoring/grafana-dashboards/folders/apps.yaml.
+# grafana-operator watches all namespaces (namespaceScope:false) so this
+# reconciles into the shared Grafana from the boomtime namespace. JSON at
+# grafana/domain-jobs-dashboard.json, packaged by the kustomization
+# configMapGenerator as dashboard-boomtime-domain-jobs. uid
+# "boomtime-domain-jobs" is stable (it lives in the JSON).
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: boomtime-domain-jobs
+  namespace: boomtime
+  labels:
+    app.kubernetes.io/component: dashboard
+    app.kubernetes.io/part-of: boomtime
+spec:
+  # folderUID (not folderRef): the folder CR lives in monitoring, this CR does not —
+  # cross-namespace folderRef never resolves. allowCrossNamespaceImport lets a CR
+  # outside the Grafana instance namespace reconcile at all (was silently skipped).
+  folderUID: apps
+  allowCrossNamespaceImport: true
+  instanceSelector:
+    matchLabels:
+      dashboards: 'grafana'
+  configMapRef:
+    name: dashboard-boomtime-domain-jobs
+    key: domain-jobs-dashboard.json

@@ -1,0 +1,40 @@
+---
+# GrafanaDashboard CR: "boomtime · Service & Infra".
+#
+# CONSOLIDATION (4→2): replaces the former grafana-dashboard-keda.yaml +
+# grafana-dashboard-worker-queue.yaml. Rebuilt around boomtime's first-party
+# Prometheus metrics (gaka-metrics) now scraped by servicemonitor.yaml — the
+# generic RED decorators (incoming router http_requests_total /
+# http_request_duration_seconds + outbound http_client_* per host), the Go/
+# process runtime collectors, the pgx DB pool + go-redis pool collectors, the
+# cache hit-rate counter, and the concurrency + HTTP rate limiters. The
+# still-relevant KEDA scaler + RabbitMQ queue panels from the two old boards are
+# carried forward verbatim (KEDA/queue metrics from keda-servicemonitor.yaml +
+# rabbitmq-podmonitor.yaml in this overlay).
+#
+# Same reconcile pattern as every other boomtime dashboard CR: grafana-operator
+# runs cluster-wide (namespaceScope:false) so this lands in the shared Grafana
+# from the boomtime namespace; folderUID ops-app slots it into "Ops > App".
+# JSON at grafana/service-infra-dashboard.json, packaged by the kustomization
+# configMapGenerator as dashboard-boomtime-service-infra. uid
+# "boomtime-service-infra" is stable (it lives in the JSON).
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: boomtime-service-infra
+  namespace: boomtime
+  labels:
+    app.kubernetes.io/component: dashboard
+    app.kubernetes.io/part-of: boomtime
+spec:
+  # folderUID (not folderRef): the folder CR lives in monitoring, this CR does not —
+  # cross-namespace folderRef never resolves. allowCrossNamespaceImport lets a CR
+  # outside the Grafana instance namespace reconcile at all (was silently skipped).
+  folderUID: ops-app
+  allowCrossNamespaceImport: true
+  instanceSelector:
+    matchLabels:
+      dashboards: 'grafana'
+  configMapRef:
+    name: dashboard-boomtime-service-infra
+    key: service-infra-dashboard.json

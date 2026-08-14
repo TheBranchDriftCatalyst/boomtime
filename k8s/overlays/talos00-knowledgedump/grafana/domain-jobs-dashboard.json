@@ -1,47 +1,24 @@
 {
-  "uid": "boomtime-daily-review",
-  "title": "boomtime \u2014 Daily Review",
-  "description": "DOMAIN-perspective daily review of boomtime: what the app DID, not whether its pods are healthy (that is Ops > App). Job runs by kind and outcome, backlog and pipeline flow, the domain outcomes that landed (wakatime imports, Audible/Hardcover book sync, label artwork), and the warning/error pile to read through. SOURCES: boomtime emits NO Prometheus metrics of its own, so every domain panel is built on its structured JSON slog output in Loki (namespace=boomtime); backlog and pipeline panels come from the KEDA scaler and RabbitMQ queue metrics in Mimir. KNOWN GAPS: per-request heartbeat counts, per-project/per-language attribution, and catalyst-go-jobs run durations are not observable today \u2014 they live only in Postgres.",
+  "uid": "boomtime-domain-jobs",
+  "title": "boomtime · Domain & Jobs",
+  "description": "Consolidated domain view (replaces boomtime-daily-review + boomtime-domain-ingest). Top row is boomtime's own Prometheus counters (heartbeats, job runs, limiter events, Hardcover/Amazon calls); the rest is the validated Loki slog narrative — what ran, what domain outcomes landed, what to read in the daily review, and the read-path/ingest failures. Dual datasource (Prometheus mimir + Loki loki-v2) is intentional.",
   "tags": [
-    "boomtime",
     "apps",
+    "boomtime",
     "domain",
-    "daily-review",
-    "jobs"
+    "jobs",
+    "ingest"
   ],
   "schemaVersion": 39,
   "version": 1,
-  "id": null,
   "editable": true,
   "graphTooltip": 1,
-  "liveNow": false,
-  "preload": false,
-  "fiscalYearStartMonth": 0,
-  "links": [],
-  "weekStart": "",
   "time": {
     "from": "now-24h",
     "to": "now"
   },
-  "timepicker": {},
-  "timezone": "browser",
   "refresh": "1m",
-  "annotations": {
-    "list": [
-      {
-        "builtIn": 1,
-        "datasource": {
-          "type": "grafana",
-          "uid": "-- Grafana --"
-        },
-        "enable": true,
-        "hide": true,
-        "iconColor": "rgba(0, 211, 255, 1)",
-        "name": "Annotations & Alerts",
-        "type": "dashboard"
-      }
-    ]
-  },
+  "timezone": "browser",
   "templating": {
     "list": [
       {
@@ -81,7 +58,7 @@
         "name": "kind",
         "type": "custom",
         "label": "Job kind",
-        "description": "catalyst-go-jobs kind (the registry key a handler is registered under). Default All is the regex .+, so a NEW kind shows up here without editing the dashboard \u2014 it just won't be in the picker until it is added to this variable's list.",
+        "description": "catalyst-go-jobs kind (the registry key a handler is registered under). Default All is the regex .+, so a NEW kind shows up here without editing the dashboard — it just won't be in the picker until it is added to this variable's list.",
         "query": "audiobooks-audible-backfill,audiobooks-audible-sync,avatar-render,books-kindle-sync,github-stats-refresh,hardcover-push,label-image",
         "options": [
           {
@@ -203,419 +180,578 @@
       }
     ]
   },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
   "panels": [
     {
       "id": 1,
       "type": "row",
-      "title": "Today at a glance",
+      "title": "Ingest & jobs — first-party metrics",
       "collapsed": false,
-      "panels": [],
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
         "y": 0
-      }
+      },
+      "panels": [],
+      "description": "boomtime's own Prometheus counters (scraped via the ServiceMonitor) — exact, unlike the Loki request-count proxies below."
     },
     {
+      "id": 2,
       "type": "stat",
-      "title": "Coding heartbeats accepted",
-      "description": "catalyst-waka ingest: accepted POSTs to /heartbeats and /heartbeats.bulk over the dashboard range. NOTE this counts REQUESTS, not individual heartbeats \u2014 a bulk POST carries many and boomtime logs no per-request heartbeat count (see the gaps note in the dashboard description).",
+      "title": "Heartbeats ingested (range)",
       "datasource": {
-        "type": "loki",
-        "uid": "loki-v2"
+        "type": "prometheus",
+        "uid": "mimir"
       },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "mappings": [],
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "#3987e5",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "value",
-        "graphMode": "area",
-        "textMode": "auto",
-        "justifyMode": "auto",
-        "orientation": "auto"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "loki",
-            "uid": "loki-v2"
-          },
-          "expr": "sum(count_over_time({namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |~ \"heartbeats\" | json | msg = \"http request\" | method = \"POST\" | path =~ `/api/v1/users/current/heartbeats(\\.bulk)?` | status < 400 [$__range]))",
-          "queryType": "instant",
-          "instant": true,
-          "range": false
-        }
-      ],
       "gridPos": {
         "h": 4,
-        "w": 4,
+        "w": 5,
         "x": 0,
         "y": 1
       },
-      "id": 2
-    },
-    {
-      "type": "stat",
-      "title": "Health / workout samples accepted",
-      "description": "catalyst-health ingest: accepted POSTs to /workouts, /workouts.bulk, /health_samples and /health_samples.bulk (the boomtime-watch Apple Watch extension). Zero here means the health domain sent nothing in the range.",
-      "datasource": {
-        "type": "loki",
-        "uid": "loki-v2"
-      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(boomtime_heartbeats_ingested_total{namespace=\"boomtime\"}[$__range]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "legendFormat": "hb"
+        }
+      ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
-          "mappings": [],
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "#199e70",
-                "value": null
-              }
-            ]
-          }
+          "unit": "short"
         },
         "overrides": []
       },
       "options": {
         "reduceOptions": {
+          "values": false,
           "calcs": [
             "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
+          ]
         },
-        "colorMode": "value",
-        "graphMode": "area",
+        "orientation": "auto",
         "textMode": "auto",
-        "justifyMode": "auto",
-        "orientation": "auto"
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "description": "Coding heartbeats PERSISTED over the range (real count, not requests)."
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Heartbeat rate",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 5,
+        "y": 1
       },
       "targets": [
         {
           "refId": "A",
+          "expr": "sum(rate(boomtime_heartbeats_ingested_total{namespace=\"boomtime\"}[$__rate_interval]))",
           "datasource": {
-            "type": "loki",
-            "uid": "loki-v2"
+            "type": "prometheus",
+            "uid": "mimir"
           },
-          "expr": "sum(count_over_time({namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |~ \"workouts|health_samples\" | json | msg = \"http request\" | method = \"POST\" | path =~ `/api/v1/users/current/(workouts|health_samples)(\\.bulk)?` | status < 400 [$__range]))",
-          "queryType": "instant",
-          "instant": true,
-          "range": false
+          "legendFormat": "hb/s"
         }
       ],
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 4,
-        "y": 1
-      },
-      "id": 3
-    },
-    {
-      "type": "stat",
-      "title": "Job runs completed",
-      "description": "catalyst-go-jobs runs that reached a handler and returned nil (\"jobs: done\").",
-      "datasource": {
-        "type": "loki",
-        "uid": "loki-v2"
-      },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
-          "mappings": [],
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "#0ca30c",
-                "value": null
-              }
-            ]
-          }
+          "unit": "ops"
         },
         "overrides": []
       },
       "options": {
         "reduceOptions": {
+          "values": false,
           "calcs": [
             "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
+          ]
         },
-        "colorMode": "value",
-        "graphMode": "area",
+        "orientation": "auto",
         "textMode": "auto",
-        "justifyMode": "auto",
-        "orientation": "auto"
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "description": "Live heartbeat ingest rate."
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Job success ratio",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 10,
+        "y": 1
       },
       "targets": [
         {
           "refId": "A",
+          "expr": "sum(increase(jobs_run_total{namespace=\"boomtime\",status=\"done\"}[$__range])) / clamp_min(sum(increase(jobs_run_total{namespace=\"boomtime\"}[$__range])), 1e-9)",
           "datasource": {
-            "type": "loki",
-            "uid": "loki-v2"
+            "type": "prometheus",
+            "uid": "mimir"
           },
-          "expr": "sum(count_over_time({namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |= \"jobs: done\" | json | msg = \"jobs: done\" | kind =~ \"$kind\" [$__range]))",
-          "queryType": "instant",
-          "instant": true,
-          "range": false
+          "legendFormat": "done"
         }
       ],
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 8,
-        "y": 1
-      },
-      "id": 4
-    },
-    {
-      "type": "stat",
-      "title": "Job runs failed",
-      "description": "Runs that exhausted every attempt and were recorded terminally failed. Each one is a piece of domain work that did NOT happen today.",
-      "datasource": {
-        "type": "loki",
-        "uid": "loki-v2"
-      },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
-          "mappings": [],
-          "color": {
-            "mode": "thresholds"
-          },
+          "unit": "percentunit",
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "#0ca30c",
-                "value": null
+                "value": null,
+                "color": "red"
               },
               {
-                "color": "#d03b3b",
-                "value": 1
+                "value": 0.8,
+                "color": "yellow"
+              },
+              {
+                "value": 0.95,
+                "color": "green"
               }
             ]
+          },
+          "color": {
+            "mode": "thresholds"
           }
         },
         "overrides": []
       },
       "options": {
         "reduceOptions": {
+          "values": false,
           "calcs": [
             "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
+          ]
         },
-        "colorMode": "value",
-        "graphMode": "area",
+        "orientation": "auto",
         "textMode": "auto",
-        "justifyMode": "auto",
-        "orientation": "auto"
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "description": "Fraction of terminal job runs that finished done (vs failed/cancelled)."
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Jobs failed (range)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 15,
+        "y": 1
       },
       "targets": [
         {
           "refId": "A",
+          "expr": "sum(increase(jobs_run_total{namespace=\"boomtime\",status=\"failed\"}[$__range]))",
           "datasource": {
-            "type": "loki",
-            "uid": "loki-v2"
+            "type": "prometheus",
+            "uid": "mimir"
           },
-          "expr": "sum(count_over_time({namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |= \"jobs: failed (attempts exhausted)\" | json | kind =~ \"$kind\" [$__range]))",
-          "queryType": "instant",
-          "instant": true,
-          "range": false
+          "legendFormat": "failed"
         }
       ],
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 12,
-        "y": 1
-      },
-      "id": 5
-    },
-    {
-      "type": "stat",
-      "title": "Retries scheduled",
-      "description": "Runs that errored but had attempts left, so they were re-queued with a linear backoff (attempt x 30s, capped at 10m). Healthy in small numbers; a rising count means something downstream is flaky.",
-      "datasource": {
-        "type": "loki",
-        "uid": "loki-v2"
-      },
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "mappings": [],
-          "color": {
-            "mode": "thresholds"
-          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "#0ca30c",
-                "value": null
+                "value": null,
+                "color": "green"
               },
               {
-                "color": "#fab219",
-                "value": 1
+                "value": 1,
+                "color": "red"
               }
             ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "value",
-        "graphMode": "area",
-        "textMode": "auto",
-        "justifyMode": "auto",
-        "orientation": "auto"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "loki",
-            "uid": "loki-v2"
           },
-          "expr": "sum(count_over_time({namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |= \"jobs: retry scheduled\" | json | kind =~ \"$kind\" [$__range]))",
-          "queryType": "instant",
-          "instant": true,
-          "range": false
-        }
-      ],
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 16,
-        "y": 1
-      },
-      "id": 6
-    },
-    {
-      "type": "stat",
-      "title": "Warnings + errors logged",
-      "description": "Every WARN/ERROR record from the boomtime processes over the range \u2014 the size of today's log-review pile. The feed itself is at the bottom of this dashboard.",
-      "datasource": {
-        "type": "loki",
-        "uid": "loki-v2"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "mappings": [],
           "color": {
             "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "#0ca30c",
-                "value": null
-              },
-              {
-                "color": "#fab219",
-                "value": 1
-              },
-              {
-                "color": "#d03b3b",
-                "value": 100
-              }
-            ]
           }
         },
         "overrides": []
       },
       "options": {
         "reduceOptions": {
+          "values": false,
           "calcs": [
             "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
+          ]
         },
-        "colorMode": "value",
-        "graphMode": "area",
+        "orientation": "auto",
         "textMode": "auto",
-        "justifyMode": "auto",
-        "orientation": "auto"
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "description": "Job runs that exhausted retries over the range."
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Hardcover pushes (range)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 19,
+        "y": 1
       },
       "targets": [
         {
           "refId": "A",
+          "expr": "sum(increase(hardcover_calls_total{namespace=\"boomtime\",outcome=\"executed\"}[$__range]))",
           "datasource": {
-            "type": "loki",
-            "uid": "loki-v2"
+            "type": "prometheus",
+            "uid": "mimir"
           },
-          "expr": "sum(count_over_time({namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |~ `\"level\":\"(WARN|ERROR)\"` [$__range]))",
-          "queryType": "instant",
-          "instant": true,
-          "range": false
+          "legendFormat": "pushed"
         }
       ],
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 20,
-        "y": 1
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
       },
-      "id": 7
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "description": "Hardcover GraphQL calls actually executed (not dry-run-blocked)."
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Heartbeat ingest rate",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(boomtime_heartbeats_ingested_total{namespace=\"boomtime\"}[$__rate_interval]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "legendFormat": "heartbeats/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "First-party ingest throughput — the replacement for the Loki '.bulk request count' proxy the old Domain Ingest board was forced to use."
     },
     {
       "id": 8,
+      "type": "timeseries",
+      "title": "Job run rate by kind & status",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (kind, status) (rate(jobs_run_total{namespace=\"boomtime\"}[$__rate_interval]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "legendFormat": "{{kind}} · {{status}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "Terminal job outcomes per kind (done|failed|retry|cancelled)."
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Job-limiter events by kind & outcome",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (kind, outcome) (rate(jobs_limiter_events_total{namespace=\"boomtime\"}[$__rate_interval]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "legendFormat": "{{kind}} · {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "Concurrency-limiter acquired / atlimit / error per job kind."
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "External call rates — Hardcover & Amazon",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(hardcover_calls_total{namespace=\"boomtime\"}[$__rate_interval]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "legendFormat": "hardcover {{outcome}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (transport) (rate(amazon_calls_total{namespace=\"boomtime\"}[$__rate_interval]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "legendFormat": "amazon {{transport}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "Hardcover (executed|dryrun_blocked) and Amazon (signed|cookie) call rates."
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "AMQP job deliveries by outcome",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 19
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (queue, outcome) (rate(boomtime_amqp_deliveries_total{namespace=\"boomtime\"}[$__rate_interval]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "legendFormat": "{{queue}} · {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "RabbitMQ job deliveries handled by the AMQP provider (absent on the local in-process provider). processed vs requeued."
+    },
+    {
+      "id": 12,
       "type": "row",
-      "title": "Job runs \u2014 what ran, and how it went",
+      "title": "Job runs — what ran, and how it went",
       "collapsed": false,
       "panels": [],
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 5
+        "y": 25
       }
     },
     {
@@ -797,14 +933,14 @@
         "h": 9,
         "w": 14,
         "x": 0,
-        "y": 6
+        "y": 26
       },
-      "id": 9
+      "id": 13
     },
     {
       "type": "table",
       "title": "Job kinds over the range",
-      "description": "Per-kind tally of completed / retried / failed runs across the whole range. The table is also the colorblind-safe reading of the stacked chart beside it \u2014 identity by name, not by hue.",
+      "description": "Per-kind tally of completed / retried / failed runs across the whole range. The table is also the colorblind-safe reading of the stacked chart beside it — identity by name, not by hue.",
       "datasource": {
         "type": "loki",
         "uid": "loki-v2"
@@ -908,9 +1044,9 @@
         "h": 9,
         "w": 10,
         "x": 14,
-        "y": 6
+        "y": 26
       },
-      "id": 10
+      "id": 14
     },
     {
       "type": "timeseries",
@@ -1049,13 +1185,13 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 15
+        "y": 35
       },
-      "id": 11
+      "id": 15
     },
     {
       "type": "logs",
-      "title": "Job failures and retries \u2014 with the reason",
+      "title": "Job failures and retries — with the reason",
       "description": "Every terminal failure and scheduled retry, newest first, reformatted to kind / job id / attempt / error. This is the panel to read when the failed-runs stat above is non-zero.",
       "datasource": {
         "type": "loki",
@@ -1085,706 +1221,27 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 15
-      },
-      "id": 12
-    },
-    {
-      "id": 13,
-      "type": "row",
-      "title": "Backlog and pipeline \u2014 what is still waiting",
-      "collapsed": false,
-      "panels": [],
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 23
-      }
-    },
-    {
-      "type": "stat",
-      "title": "Heavy-job backlog now",
-      "description": "Rows in the Postgres jobs table that are queued AND due for the heavy kinds (avatar-render, label-image) \u2014 read straight off the KEDA postgres scaler that decides whether to schedule a drain pod. This is domain work boomtime has accepted but not yet done.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "mimir"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "mappings": [],
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "#0ca30c",
-                "value": null
-              },
-              {
-                "color": "#fab219",
-                "value": 5
-              },
-              {
-                "color": "#d03b3b",
-                "value": 25
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "value",
-        "graphMode": "area",
-        "textMode": "auto",
-        "justifyMode": "auto",
-        "orientation": "auto"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "mimir"
-          },
-          "expr": "max(keda_scaler_metrics_value{scaledObject=\"boomtime-jobs\"})",
-          "queryType": "instant",
-          "instant": true,
-          "range": false
-        }
-      ],
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 0,
-        "y": 24
-      },
-      "id": 14
-    },
-    {
-      "type": "stat",
-      "title": "Image-job queue depth",
-      "description": "Messages sitting ready on the boomtime.image-jobs RabbitMQ queue \u2014 label artwork requested but not yet rendered.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "mimir"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "mappings": [],
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "#0ca30c",
-                "value": null
-              },
-              {
-                "color": "#fab219",
-                "value": 10
-              },
-              {
-                "color": "#d03b3b",
-                "value": 50
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "value",
-        "graphMode": "area",
-        "textMode": "auto",
-        "justifyMode": "auto",
-        "orientation": "auto"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "mimir"
-          },
-          "expr": "sum(rabbitmq_queue_messages_ready{namespace=\"boomtime\", queue=\"boomtime.image-jobs\"})",
-          "queryType": "instant",
-          "instant": true,
-          "range": false
-        }
-      ],
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 6,
-        "y": 24
-      },
-      "id": 15
-    },
-    {
-      "type": "stat",
-      "title": "Image jobs in flight",
-      "description": "Unacked messages \u2014 image renders a worker has picked up and not yet finished. A number that never falls means a wedged consumer.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "mimir"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "mappings": [],
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "#d95926",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "value",
-        "graphMode": "area",
-        "textMode": "auto",
-        "justifyMode": "auto",
-        "orientation": "auto"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "mimir"
-          },
-          "expr": "sum(rabbitmq_queue_messages_unacked{namespace=\"boomtime\", queue=\"boomtime.image-jobs\"})",
-          "queryType": "instant",
-          "instant": true,
-          "range": false
-        }
-      ],
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 12,
-        "y": 24
+        "y": 35
       },
       "id": 16
     },
     {
-      "type": "stat",
-      "title": "Image workers attached",
-      "description": "RabbitMQ consumers on boomtime.image-jobs. Zero with a non-empty queue is the classic stall: work is queued and nothing is draining it.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "mimir"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "mappings": [],
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "#199e70",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "value",
-        "graphMode": "none",
-        "textMode": "auto",
-        "justifyMode": "auto",
-        "orientation": "auto"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "mimir"
-          },
-          "expr": "sum(rabbitmq_queue_consumers{namespace=\"boomtime\", queue=\"boomtime.image-jobs\"})",
-          "queryType": "instant",
-          "instant": true,
-          "range": false
-        }
-      ],
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 18,
-        "y": 24
-      },
-      "id": 17
-    },
-    {
-      "type": "timeseries",
-      "title": "Backlog trend",
-      "description": "Both backlogs on one axis (they are the same unit \u2014 items of undone domain work). A sawtooth is healthy: work arrives, a worker drains it. A staircase that only climbs is the thing to catch on a daily review.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "mimir"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "mappings": [],
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "linear",
-            "lineWidth": 2,
-            "fillOpacity": 12,
-            "gradientMode": "none",
-            "spanNulls": false,
-            "showPoints": "auto",
-            "pointSize": 8,
-            "barAlignment": 0,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisPlacement": "auto",
-            "axisLabel": "items",
-            "axisSoftMin": 0,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "hideFrom": {
-              "tooltip": false,
-              "viz": false,
-              "legend": false
-            }
-          },
-          "color": {
-            "mode": "palette-classic"
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "heavy DB jobs due"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#3987e5"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "image jobs ready"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#9085e9"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "image jobs in flight"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#d95926"
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true,
-          "calcs": [
-            "max",
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "mimir"
-          },
-          "expr": "max(keda_scaler_metrics_value{scaledObject=\"boomtime-jobs\"})",
-          "legendFormat": "heavy DB jobs due"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "mimir"
-          },
-          "expr": "sum(rabbitmq_queue_messages_ready{namespace=\"boomtime\", queue=\"boomtime.image-jobs\"})",
-          "legendFormat": "image jobs ready"
-        },
-        {
-          "refId": "C",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "mimir"
-          },
-          "expr": "sum(rabbitmq_queue_messages_unacked{namespace=\"boomtime\", queue=\"boomtime.image-jobs\"})",
-          "legendFormat": "image jobs in flight"
-        }
-      ],
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 28
-      },
-      "id": 18
-    },
-    {
-      "type": "timeseries",
-      "title": "Image-job flow",
-      "description": "Publish vs deliver rate on boomtime.image-jobs. Delivered tracking published means the pipeline keeps up; a persistent gap is what fills the backlog panel to the left. Redelivered rising means work is being retried rather than completed.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "mimir"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "reqps",
-          "mappings": [],
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "linear",
-            "lineWidth": 2,
-            "fillOpacity": 12,
-            "gradientMode": "none",
-            "spanNulls": false,
-            "showPoints": "auto",
-            "pointSize": 8,
-            "barAlignment": 0,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisPlacement": "auto",
-            "axisLabel": "msg/s",
-            "axisSoftMin": 0,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "hideFrom": {
-              "tooltip": false,
-              "viz": false,
-              "legend": false
-            }
-          },
-          "color": {
-            "mode": "palette-classic"
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "published"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#3987e5"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "delivered"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#199e70"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "redelivered"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#ec835a"
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true,
-          "calcs": [
-            "mean",
-            "max"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "mimir"
-          },
-          "expr": "sum(rate(rabbitmq_queue_messages_published_total{namespace=\"boomtime\", queue=\"boomtime.image-jobs\"}[$__rate_interval]))",
-          "legendFormat": "published"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "mimir"
-          },
-          "expr": "sum(rate(rabbitmq_queue_messages_delivered_total{namespace=\"boomtime\", queue=\"boomtime.image-jobs\"}[$__rate_interval]))",
-          "legendFormat": "delivered"
-        },
-        {
-          "refId": "C",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "mimir"
-          },
-          "expr": "sum(rate(rabbitmq_queue_messages_redelivered_total{namespace=\"boomtime\", queue=\"boomtime.image-jobs\"}[$__rate_interval]))",
-          "legendFormat": "redelivered"
-        }
-      ],
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 28
-      },
-      "id": 19
-    },
-    {
-      "type": "timeseries",
-      "title": "Image render time",
-      "description": "How long an image job actually took to execute, from the imagejobs consumer's own timing (slog encodes the Go duration as nanoseconds; this panel converts to seconds). This is the ONLY job duration boomtime currently logs \u2014 the catalyst-go-jobs kinds emit no timing at all.",
-      "datasource": {
-        "type": "loki",
-        "uid": "loki-v2"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s",
-          "mappings": [],
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "linear",
-            "lineWidth": 2,
-            "fillOpacity": 12,
-            "gradientMode": "none",
-            "spanNulls": false,
-            "showPoints": "auto",
-            "pointSize": 8,
-            "barAlignment": 0,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisPlacement": "auto",
-            "axisLabel": "render time",
-            "axisSoftMin": 0,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "hideFrom": {
-              "tooltip": false,
-              "viz": false,
-              "legend": false
-            }
-          },
-          "color": {
-            "mode": "palette-classic"
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "p95"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#d95926"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "p50"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#3987e5"
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true,
-          "calcs": [
-            "mean",
-            "max"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "loki",
-            "uid": "loki-v2"
-          },
-          "expr": "max(quantile_over_time(0.95, {namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |= \"imagejobs: execute done\" | json | unwrap dur [$bucket])) / 1000000000",
-          "legendFormat": "p95"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "loki",
-            "uid": "loki-v2"
-          },
-          "expr": "max(quantile_over_time(0.50, {namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |= \"imagejobs: execute done\" | json | unwrap dur [$bucket])) / 1000000000",
-          "legendFormat": "p50"
-        }
-      ],
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 36
-      },
-      "id": 20
-    },
-    {
-      "id": 21,
+      "id": 17,
       "type": "row",
-      "title": "Domain outcomes \u2014 what actually landed",
+      "title": "Domain outcomes — what actually landed",
       "collapsed": false,
       "panels": [],
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 44
+        "y": 43
       }
     },
     {
       "type": "stat",
       "title": "Wakatime heartbeats imported",
-      "description": "Heartbeats pulled in by a completed catalyst-waka bulk import (the \"imported\" total on each \"import completed\" record), summed over the range. Empty when no import ran \u2014 imports are user-triggered, not periodic.",
+      "description": "Heartbeats pulled in by a completed catalyst-waka bulk import (the \"imported\" total on each \"import completed\" record), summed over the range. Empty when no import ran — imports are user-triggered, not periodic.",
       "datasource": {
         "type": "loki",
         "uid": "loki-v2"
@@ -1839,9 +1296,9 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 45
+        "y": 44
       },
-      "id": 22
+      "id": 18
     },
     {
       "type": "stat",
@@ -1901,14 +1358,14 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 45
+        "y": 44
       },
-      "id": 23
+      "id": 19
     },
     {
       "type": "stat",
       "title": "Books newly finished",
-      "description": "Titles the Audible forward sync saw flip to finished in the range \u2014 the domain event that drives a Hardcover push.",
+      "description": "Titles the Audible forward sync saw flip to finished in the range — the domain event that drives a Hardcover push.",
       "datasource": {
         "type": "loki",
         "uid": "loki-v2"
@@ -1963,14 +1420,14 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 45
+        "y": 44
       },
-      "id": 24
+      "id": 20
     },
     {
       "type": "stat",
       "title": "Pushed to Hardcover",
-      "description": "Finished books successfully written out to Hardcover. Note the deployment may be in DRY-RUN (BOOM_HARDCOVER_DRYRUN) \u2014 check the warning feed at the bottom, where the dry-run banner is logged on every boot.",
+      "description": "Finished books successfully written out to Hardcover. Note the deployment may be in DRY-RUN (BOOM_HARDCOVER_DRYRUN) — check the warning feed at the bottom, where the dry-run banner is logged on every boot.",
       "datasource": {
         "type": "loki",
         "uid": "loki-v2"
@@ -2025,9 +1482,9 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 45
+        "y": 44
       },
-      "id": 25
+      "id": 21
     },
     {
       "type": "timeseries",
@@ -2166,9 +1623,9 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 49
+        "y": 48
       },
-      "id": 26
+      "id": 22
     },
     {
       "type": "logs",
@@ -2202,12 +1659,180 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 49
+        "y": 48
       },
-      "id": 27
+      "id": 23
     },
     {
-      "id": 28,
+      "id": 24,
+      "type": "row",
+      "title": "Consumption — what is the data being asked for?",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 56
+      }
+    },
+    {
+      "type": "table",
+      "title": "Most-requested domain endpoints",
+      "description": "Top read paths over the range. This is the demand side of the domain: which stats, timelines and widgets are actually being pulled, and how hard. Static asset and health-probe traffic is filtered out.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki-v2"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [],
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki-v2"
+          },
+          "expr": "topk(20, sum by (path) (count_over_time({namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |~ \"/api/\" | json | msg = \"http request\" | method = \"GET\" | path =~ `/api/.+` [$__range])))",
+          "queryType": "instant",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Time 1": true,
+              "Time 2": true,
+              "Time 3": true
+            },
+            "indexByName": {},
+            "renameByName": {
+              "path": "Endpoint",
+              "Value": "Requests"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "Requests",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 57
+      },
+      "id": 25
+    },
+    {
+      "type": "timeseries",
+      "title": "Read-path errors by status",
+      "description": "GET requests to the domain API answered 4xx or 5xx. A rising 5xx here usually means an aggregation query is failing and the dashboard cards are rendering empty for the user.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki-v2"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [],
+          "custom": {
+            "drawStyle": "bars",
+            "lineInterpolation": "linear",
+            "lineWidth": 0,
+            "fillOpacity": 100,
+            "gradientMode": "none",
+            "spanNulls": false,
+            "showPoints": "never",
+            "pointSize": 8,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "responses",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki-v2"
+          },
+          "expr": "sum by (status) (count_over_time({namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |~ \"/api/\" | json | msg = \"http request\" | method = \"GET\" | path =~ `/api/.+` | status >= 400 [$bucket]))",
+          "legendFormat": "{{status}}"
+        }
+      ],
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 57
+      },
+      "id": 26
+    },
+    {
+      "id": 27,
       "type": "row",
       "title": "Daily log review",
       "collapsed": false,
@@ -2216,7 +1841,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 57
+        "y": 67
       }
     },
     {
@@ -2294,9 +1919,9 @@
         "h": 14,
         "w": 12,
         "x": 0,
-        "y": 58
+        "y": 68
       },
-      "id": 29
+      "id": 28
     },
     {
       "type": "logs",
@@ -2330,9 +1955,58 @@
         "h": 14,
         "w": 12,
         "x": 12,
-        "y": 58
+        "y": 68
       },
-      "id": 30
+      "id": 29
+    },
+    {
+      "id": 30,
+      "type": "row",
+      "title": "Ingest problems",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 82
+      }
+    },
+    {
+      "type": "logs",
+      "title": "Ingest and aggregation failures",
+      "description": "The domain-data failure feed: heartbeats that could not be stored, aggregation queries that failed behind the stats endpoints, and rejected ingest writes. Each line here is data the user expected boomtime to have.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki-v2"
+      },
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki-v2"
+          },
+          "expr": "{namespace=\"boomtime\", app_kubernetes_io_name=~\"$proc\"} |~ \"failed to store heartbeats|aggregation query failed|derived status failed|failed to store\" | json | line_format \"{{.level}}  {{.msg}}  {{.err}}\""
+        }
+      ],
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 83
+      },
+      "id": 31
     }
   ]
 }
