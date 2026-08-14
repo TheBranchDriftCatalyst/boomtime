@@ -112,6 +112,15 @@ func Register(e *echo.Echo, h *Handler) {
 		e.POST("/api/v1/admin/jobs/:id/cancel", h.AdminJobCancel, jobsCap)
 	}
 
+	// gaka-metrics: generic in-memory rate-metric registry snapshot (router
+	// request rates + per-kind job rate-limiter + external-API call rates).
+	// requireAdmin in-handler; CapAdmin route middleware for defense-in-depth,
+	// same posture as the jobs cluster. Nil-safe for the OpenAPI drift router.
+	if h != nil && h.DB != nil {
+		metricsCap := apihelpers.RequireCap(h.DB, auth.CapAdmin, "view admin metrics")
+		e.GET("/api/v1/admin/metrics", h.AdminMetrics, metricsCap)
+	}
+
 	// Durable, resumable wakatime.com import jobs. Auth is the shared
 	// bearer-token flow for the JSON endpoints; the WS uses the
 	// refresh_token cookie (WS handshakes can't carry Authorization).

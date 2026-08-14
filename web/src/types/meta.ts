@@ -128,6 +128,27 @@ export interface AdminJobSchedulesPayload {
   schedules: AdminJobSchedule[];
 }
 
+// Rate-metric registry — GET /api/v1/admin/metrics (gaka-metrics). Mirrors
+// internal/metrics.Series. A generic rolling time-series: any backend call to
+// metrics.Inc(name)/Observe(name) appears here as a series, so the FE renders
+// it with zero per-metric wiring. `kind` is "counter" (a per-minute rate) or
+// "gauge" (last observed value per minute); `points` are oldest→newest,
+// per-minute buckets over a ~2h window (idle buckets densified to 0).
+export type MetricKind = "counter" | "gauge";
+export interface MetricPoint {
+  bucket: string; // RFC3339 bucket start (minute-aligned)
+  value: number;
+}
+export interface MetricSeries {
+  name: string;
+  kind: MetricKind;
+  unit?: string;
+  points: MetricPoint[];
+}
+export interface MetricsPayload {
+  series: MetricSeries[];
+}
+
 // Linked external identities — GET /api/v1/users/current/identities (gaka-b5n.4).
 export interface LinkedIdentity {
   provider: string;

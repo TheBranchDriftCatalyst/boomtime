@@ -130,6 +130,7 @@ func (p *AMQPProvider) handle(ctx context.Context, reg *Registry, d amqp.Deliver
 		if max := reg.Concurrency()[job.Kind]; max > 0 {
 			rel, okAcq, aerr := p.limiter.Acquire(ctx, job.Kind,
 				p.id+":"+strconv.FormatInt(id, 10), max)
+			recordAcquire(job.Kind, okAcq, aerr)
 			switch {
 			case aerr != nil:
 				p.log.Warn("jobs: limiter Acquire failed; running unthrottled", "kind", job.Kind, "id", id, "err", aerr)

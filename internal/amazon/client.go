@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
 )
 
 // AudibleAPIHost returns the Audible API host for a marketplace (api.audible.<tld>).
@@ -26,6 +28,12 @@ func SignedGet(ctx context.Context, cred *DeviceCredential, apiHost, pathAndQuer
 	if cred == nil {
 		return nil, 0, ErrNotRegistered
 	}
+	// External-API call-rate observability (admin Metrics dashboard). Every
+	// device-signed Amazon/Audible/Kindle GET flows through here, so this one
+	// counter captures the full signed-call rate. Cookie-based Cloud Reader
+	// calls (readamazon.go) are counted separately at their own choke point.
+	metrics.Inc(metrics.Name("amazon.calls", "transport", "signed"), 1)
+	metrics.Inc("amazon.calls", 1)
 	h, err := Sign(cred, "GET", pathAndQuery, nil, time.Now())
 	if err != nil {
 		return nil, 0, err

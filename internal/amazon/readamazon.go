@@ -41,6 +41,8 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
 )
 
 // Cloud Reader hosts. Both are marketplace-independent for the US account we
@@ -153,6 +155,10 @@ func ExchangeWebsiteCookies(ctx context.Context, cred *DeviceCredential) (map[st
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", cloudReaderUserAgent)
 
+	// External-API call-rate observability: the cookie-based Cloud Reader
+	// transport, split from the ADP-signed calls in client.go.
+	metrics.Inc(metrics.Name("amazon.calls", "transport", "cookie"), 1)
+	metrics.Inc("amazon.calls", 1)
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -224,6 +230,8 @@ func cloudLibraryPage(ctx context.Context, cookieHeader, paginationToken string)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", cloudReaderUserAgent)
 
+	metrics.Inc(metrics.Name("amazon.calls", "transport", "cookie"), 1)
+	metrics.Inc("amazon.calls", 1)
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, 0, err

@@ -1263,6 +1263,14 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 		return op
 	}())
 
+	// NOTE: GET /api/v1/admin/metrics (gaka-metrics) is intentionally NOT
+	// documented here. Like the /api/v1/admin/jobs cluster it is registered
+	// conditionally (only when the admin handler has a live DB), so the
+	// OpenAPI drift router — which wires a nil handler to enumerate paths —
+	// never registers it. Adding a spec entry would trip the drift guard
+	// (spec advertises a path the drift router can't register). Same pattern
+	// as the jobs/cli conditionally-registered admin routes.
+
 	// ==== DASHBOARD LAYOUTS (gaka-keb) =======================================
 	//
 	// Per-user, per-scope persisted layout JSON for the composable dashboard

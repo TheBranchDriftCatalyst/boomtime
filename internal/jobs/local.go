@@ -76,6 +76,7 @@ func (p *LocalProvider) runJob(ctx context.Context, reg *Registry, job Job) bool
 		if max := reg.Concurrency()[job.Kind]; max > 0 {
 			release, ok, err := p.limiter.Acquire(ctx, job.Kind,
 				p.id+":"+strconv.FormatInt(job.ID, 10), max)
+			recordAcquire(job.Kind, ok, err)
 			if err != nil {
 				p.log.Warn("jobs: limiter Acquire failed; running unthrottled", "kind", job.Kind, "id", job.ID, "err", err)
 			} else if !ok {

@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"golang.org/x/time/rate"
+
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
 )
 
 // Endpoint is the Hardcover GraphQL API (Hasura). Every response is HTTP 200
@@ -117,14 +119,21 @@ func (c *Client) graphql(ctx context.Context, query string, vars map[string]any,
 	if c.token == "" {
 		return ErrBadToken
 	}
+	// External-API call-rate observability (admin Metrics dashboard). Counted
+	// at the choke point so every Hardcover GraphQL call — read or write —
+	// shows up as a rate, split by outcome: a dry-run-blocked mutation never
+	// leaves the process, so it is tracked separately from executed calls.
+	metrics.Inc("hardcover.calls", 1)
 	// Dry-run safety gate: block + log every mutation (write). Reads pass through.
 	// Returns nil (a simulated success) so callers proceed without surfacing an
 	// error; `out` stays zero-valued (e.g. a returned id of 0), which downstream
 	// writes also gate on, so the whole push chain is a no-op that logs its intent.
 	if c.dryRun && isMutation(query) {
+		metrics.Inc(metrics.Name("hardcover.calls", "outcome", "dryrun_blocked"), 1)
 		c.logBlockedMutation(query, vars)
 		return nil
 	}
+	metrics.Inc(metrics.Name("hardcover.calls", "outcome", "executed"), 1)
 	if err := c.limiter.Wait(ctx); err != nil {
 		return err
 	}

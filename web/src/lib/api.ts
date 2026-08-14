@@ -63,6 +63,7 @@ import type {
   AdminUsersPayload,
   AdminJob,
   AdminJobSchedule,
+  MetricSeries,
   IdentitiesPayload,
   GithubConnection,
   AmazonConnection,
@@ -1091,6 +1092,14 @@ export const api = {
 
   getAdminJobs: (params?: { status?: string; kind?: string; limit?: number }) =>
     unwrap<AdminJob[]>(buildUrl("/api/v1/admin/jobs", params), "jobs", []),
+  // gaka-metrics: the rate-metric registry snapshot (router/limiter/external-API
+  // rates). Generic — every series the backend Inc's appears here automatically.
+  getAdminMetrics: (params?: { since?: string; names?: string }) =>
+    unwrap<MetricSeries[]>(
+      buildUrl("/api/v1/admin/metrics", params),
+      "series",
+      [],
+    ),
   getAdminJobSchedules: () =>
     unwrap<AdminJobSchedule[]>(
       "/api/v1/admin/jobs/schedules",

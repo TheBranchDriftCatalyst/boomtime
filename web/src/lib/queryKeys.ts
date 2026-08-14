@@ -212,6 +212,10 @@ export const qk = {
     ["admin", "jobs", "list", status ?? "", kind ?? "", limit ?? 0] as const,
   adminJobSchedules: () => ["admin", "jobs", "schedules"] as const,
 
+  // gaka-metrics: the rate-metric registry snapshot for the admin Metrics tab.
+  // Polled on a short interval; no filters (the FE groups client-side).
+  adminMetrics: () => ["admin", "metrics"] as const,
+
   // Admin CLI-runner command catalog (BOOM_FEATURE_ADMIN_CLI). Refetched
   // rarely — the spec only changes on a server restart/redeploy. Run and
   // complete are mutations/imperative calls, so no keys for them.

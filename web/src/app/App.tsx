@@ -106,6 +106,11 @@ const CliTab = lazy(() =>
 const JobsTab = lazy(() =>
   import("@/features/admin/JobsTab").then((m) => ({ default: m.JobsTab })),
 );
+// gaka-metrics: generic rate-metrics observability dashboard (router / job
+// rate-limiter / external-API call rates).
+const MetricsTab = lazy(() =>
+  import("@/features/admin/MetricsTab").then((m) => ({ default: m.MetricsTab })),
+);
 const BooksTab = lazy(() =>
   import("@/features/admin/BooksTab").then((m) => ({ default: m.BooksTab })),
 );
@@ -356,6 +361,14 @@ export function AppRoutes() {
             element={
               <Suspense fallback={<PageFallback />}>
                 <JobsTab />
+              </Suspense>
+            }
+          />
+          <Route
+            path="metrics"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <MetricsTab />
               </Suspense>
             }
           />

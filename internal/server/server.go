@@ -91,6 +91,11 @@ func NewWithHandler(database *db.DB, cfg *config.Config, logger *slog.Logger, wo
 	if cfg.HTTPLog {
 		e.Use(requestLogger(logger))
 	}
+	// Router rate-metric decorations (internal/metrics): unconditional and
+	// cheap (a few counter bumps per request), feeding the admin Metrics
+	// dashboard. Independent of HTTPLog — the graph is useful even when
+	// per-request logging is off.
+	e.Use(metricsMiddleware())
 	if cfg.DBN1Threshold > 0 || cfg.DBN1DupThresh > 0 {
 		e.Use(n1Middleware(logger, cfg.DBN1Threshold, cfg.DBN1DupThresh))
 	}
