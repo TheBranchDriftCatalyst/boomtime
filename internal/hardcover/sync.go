@@ -90,6 +90,21 @@ func (s *SyncService) SyncHardcoverPull(ctx context.Context, owner string) (Pull
 		if err := ctx.Err(); err != nil {
 			return res, err
 		}
+		// Mirror the FULL shelf entry (ALL statuses) into the local candidate store
+		// (migration 00074) — the pool the sweep's LOCAL shelf-match rung scores
+		// unmatched rows against. Best-effort: a mirror-write miss must not fail the
+		// pull (the linkage reconcile below is the primary job), and the next pull
+		// re-upserts it. Kept ALONGSIDE the by-book_id reconcile, not in place of it.
+		updated := b.UpdatedAt
+		if serr := s.DB.UpsertHardcoverShelfEntry(ctx, owner, db.ShelfEntry{
+			BookID: int64(b.BookID),
+			Title:  b.Title,
+			Author: b.Author,
+			Slug:   b.Slug,
+			Status: StatusString(b.StatusID),
+		}, &updated); serr != nil {
+			s.logWarn(ctx, "hardcover pull: shelf mirror upsert failed", "user", owner, "bookId", b.BookID, "err", serr)
+		}
 		n, uerr := s.DB.UpdateHardcoverLinkFromPull(ctx, owner, db.HardcoverUserBookLink{
 			BookID:          int64(b.BookID),
 			Status:          StatusString(b.StatusID),

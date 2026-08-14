@@ -541,11 +541,24 @@ func runCmd() *cobra.Command {
 					// global rate limit with the push).
 					hcPull := hardcover.NewSyncService(database, hardcover.NewStore(database), logger)
 					jobReg.Register(hardcover.PullJobKind, jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
-						if job.Owner == "" {
-							return fmt.Errorf("hardcover-pull: missing owner")
+						if job.Owner != "" {
+							_, perr := hcPull.SyncHardcoverPull(jctx, job.Owner)
+							return perr
 						}
-						_, perr := hcPull.SyncHardcoverPull(jctx, job.Owner)
-						return perr
+						// Batch/scheduled variant (owner-less): fan the pull over every
+						// Hardcover-connected user. A per-user error is logged + skipped so
+						// one bad token doesn't fail the batch (mirrors AudibleSyncKind).
+						users, uerr := database.ListUsersWithHardcoverKey(jctx)
+						if uerr != nil {
+							return uerr
+						}
+						for _, u := range users {
+							if _, perr := hcPull.SyncHardcoverPull(jctx, u); perr != nil {
+								logger.Warn("hardcover pull: user sync failed", "user", u, "err", perr)
+							}
+						}
+						logger.Info("hardcover pull: batch complete", "users", len(users))
+						return nil
 					}))
 
 					// hardcover-push-curation kind (gaka-books, migration 00069): the
@@ -709,11 +722,31 @@ func runCmd() *cobra.Command {
 					// at 1 below so it shares Hardcover's global rate budget with the
 					// pull + push.
 					jobReg.Register(hardcover.HardcoverMatchKind, jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
-						if job.Owner == "" {
-							return fmt.Errorf("hardcover-match: missing owner")
+						// Optional payload: {force:true} = the on-demand force-rematch that
+						// ignores the 30d negative-cache window. Absent/empty → normal sweep.
+						var p hardcover.MatchPayload
+						if len(job.Payload) > 0 {
+							if err := json.Unmarshal(job.Payload, &p); err != nil {
+								return fmt.Errorf("hardcover-match: bad payload: %w", err)
+							}
 						}
-						_, merr := hcPull.MatchUnmatched(jctx, job.Owner)
-						return merr
+						if job.Owner != "" {
+							_, merr := hcPull.MatchUnmatched(jctx, job.Owner, p.Force)
+							return merr
+						}
+						// Batch/scheduled variant (owner-less): fan the match sweep over
+						// every Hardcover-connected user. Per-user error logged + skipped.
+						users, uerr := database.ListUsersWithHardcoverKey(jctx)
+						if uerr != nil {
+							return uerr
+						}
+						for _, u := range users {
+							if _, merr := hcPull.MatchUnmatched(jctx, u, p.Force); merr != nil {
+								logger.Warn("hardcover match: user sweep failed", "user", u, "err", merr)
+							}
+						}
+						logger.Info("hardcover match: batch complete", "users", len(users))
+						return nil
 					}))
 
 					// books-sync-all kind (orchestrator): chain the whole
@@ -738,7 +771,7 @@ func runCmd() *cobra.Command {
 							return res.MarkedReading, rerr
 						},
 						Match: func(jctx context.Context, owner string) (int, error) {
-							res, merr := hcPull.MatchUnmatched(jctx, owner)
+							res, merr := hcPull.MatchUnmatched(jctx, owner, false)
 							return res.Matched, merr
 						},
 						Pull: func(jctx context.Context, owner string) (int, error) {
@@ -958,7 +991,7 @@ func runCmd() *cobra.Command {
 
 				// The github-refresh schedule is the only piece gated on config;
 				// leader-singleton via the DB, so running it on every server is safe.
-				if cfg.IsServerRole() && (cfg.GithubStatsRefreshEnabled() || cfg.AudibleSyncEnabled() || cfg.BooksEnabled()) {
+				if cfg.IsServerRole() && (cfg.GithubStatsRefreshEnabled() || cfg.AudibleSyncEnabled() || cfg.HardcoverSyncEnabled() || cfg.BooksEnabled()) {
 					sched := jobs.NewScheduler(jobStore, provider, logger)
 					if cfg.GithubStatsRefreshEnabled() {
 						if serr := sched.Register(ctx, github.GithubStatsRefreshKind, cfg.GithubStatsRefreshInterval); serr != nil {
@@ -982,6 +1015,20 @@ func runCmd() *cobra.Command {
 					if cfg.BooksEnabled() {
 						if serr := sched.Register(ctx, books.ReadingMonitorKind, readingMonitorScheduleInterval); serr != nil {
 							logger.Warn("jobs: reading-monitor schedule register failed", "err", serr)
+						}
+					}
+					// Periodic Hardcover pull + match (leader-singleton via the DB, so
+					// running the schedule on every server is safe). Both are the
+					// owner-less/batch variants (they fan over every Hardcover-connected
+					// user). The pull refreshes the shelf mirror + reconciles linkage; the
+					// match re-runs the ladder (incl. the LOCAL shelf rung) so a newly-
+					// shelved book auto-links within the interval — no manual re-match.
+					if cfg.HardcoverSyncEnabled() {
+						if serr := sched.Register(ctx, hardcover.PullJobKind, cfg.HardcoverSyncInterval); serr != nil {
+							logger.Warn("jobs: hardcover pull schedule register failed", "err", serr)
+						}
+						if serr := sched.Register(ctx, hardcover.HardcoverMatchKind, cfg.HardcoverSyncInterval); serr != nil {
+							logger.Warn("jobs: hardcover match schedule register failed", "err", serr)
 						}
 					}
 					go sched.Run(ctx)

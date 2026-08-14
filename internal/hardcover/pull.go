@@ -52,6 +52,7 @@ type UserBook struct {
 	Rating    *float64
 	UpdatedAt time.Time
 	Title     string
+	Author    string // first contribution's author name ("" when Hardcover lists none)
 	Slug      string
 	Reads     []UserBookRead
 }
@@ -99,6 +100,11 @@ func (c *Client) Me(ctx context.Context) (int, error) {
 // userBooksQuery is the paginated shelf read. order_by:{id:asc} makes the
 // offset/limit paging stable (without a total order, offset pagination can skip
 // or repeat rows). Every field here is in the VERIFIED shape.
+// The book.contributions edge carries the author(s); we read the FIRST
+// contribution's author name for the local shelf-match scorer (the shelf mirror,
+// migration 00074). contributions is ordered on Hardcover, so contribution[0] is
+// the primary author; a book with no contributions yields an empty author, which
+// the scorer treats as "no author bonus" rather than an error.
 const userBooksQuery = `query UserBooks($u: Int!, $o: Int!, $l: Int!) {
   user_books(where: {user_id: {_eq: $u}}, order_by: {id: asc}, offset: $o, limit: $l) {
     id
@@ -107,7 +113,7 @@ const userBooksQuery = `query UserBooks($u: Int!, $o: Int!, $l: Int!) {
     status_id
     rating
     updated_at
-    book { title slug }
+    book { title slug contributions { author { name } } }
     user_book_reads { id started_at finished_at progress_pages progress_seconds }
   }
 }`
@@ -150,8 +156,13 @@ type rawUserBook struct {
 	Rating    *float64 `json:"rating"`
 	UpdatedAt string   `json:"updated_at"`
 	Book      struct {
-		Title string `json:"title"`
-		Slug  string `json:"slug"`
+		Title         string `json:"title"`
+		Slug          string `json:"slug"`
+		Contributions []struct {
+			Author struct {
+				Name string `json:"name"`
+			} `json:"author"`
+		} `json:"contributions"`
 	} `json:"book"`
 	Reads []struct {
 		ID              int     `json:"id"`
@@ -170,6 +181,7 @@ func (r rawUserBook) toUserBook() UserBook {
 		StatusID:  r.StatusID,
 		Rating:    r.Rating,
 		Title:     r.Book.Title,
+		Author:    firstContributionAuthor(r),
 		Slug:      r.Book.Slug,
 	}
 	if t := parseHardcoverTime(r.UpdatedAt); t != nil {
@@ -186,6 +198,18 @@ func (r rawUserBook) toUserBook() UserBook {
 		})
 	}
 	return ub
+}
+
+// firstContributionAuthor returns the first non-blank contribution author name on
+// a shelf entry (the primary author), or "" when the book lists none. Trimmed so a
+// whitespace-only name doesn't masquerade as an author for the shelf scorer.
+func firstContributionAuthor(r rawUserBook) string {
+	for _, c := range r.Book.Contributions {
+		if name := strings.TrimSpace(c.Author.Name); name != "" {
+			return name
+		}
+	}
+	return ""
 }
 
 // unmarshalUserBooks decodes a user_books JSON array into the typed reconcile

@@ -42,9 +42,29 @@ const kindleReadingSource = "kindle"
 // it (migration 00071 negative cache). A row the ladder proved has no Hardcover
 // book is stamped match_attempted_at; the next sweep within this window excludes
 // it — sparing the expensive fuzzy tail — but after the window it is tried once
-// more in case Hardcover added the book. (A future force-rematch would ignore the
-// window entirely — TODO: thread a "force" flag through MatchUnmatched.)
+// more in case Hardcover added the book. The on-demand force-rematch
+// (MatchUnmatched's force arg / MatchPayload.Force) ignores this window entirely.
 const matchRetryWindow = 30 * 24 * time.Hour
+
+// MatchPayload is the optional job payload for the hardcover-match kind. Force
+// makes the sweep ignore the negative-cache window (the on-demand force-rematch,
+// PART 3) — it loads the FULL unmatched worklist instead of the windowed one. An
+// absent/empty payload defaults Force=false (the scheduled/normal sweep). The
+// LOCAL shelf rung already runs regardless of the window, so Force only changes
+// which rows reach the exact-id + fuzzy phases.
+type MatchPayload struct {
+	Force bool `json:"force"`
+}
+
+// shelfMatchFloor / shelfMatchMargin are the shelf-rung acceptance bar: a row is
+// linked to its best shelf candidate IFF the best score clears the floor AND beats
+// the runner-up by the margin. The margin guards against a personal shelf's series
+// clustering (don't link Book 2 for Book 1). Stricter than the Typesense fuzzy
+// floor (0.6) because a false shelf link is silently wrong, not a visible miss.
+const (
+	shelfMatchFloor  = 0.75
+	shelfMatchMargin = 0.10
+)
 
 // MatchSweepResult reports what one MatchUnmatched sweep did. (Named distinctly
 // from match.go's per-row MatchResult, which this file's counters aggregate.)
@@ -56,6 +76,7 @@ type MatchSweepResult struct {
 	Enriched  int // kindle bare-ASIN rows whose title/author/cover were backfilled via LookupByASIN
 	CacheHits int // rows resolved from the GLOBAL match cache (gaka-wzgr) — zero Hardcover API calls
 	BatchHits int // rows resolved by the BATCHED exact-id rung (editions _in) — many rows per request
+	ShelfHits int // rows resolved by the LOCAL shelf-match rung (owner's own Hardcover shelf) — zero API
 }
 
 // matcher is the narrow, read-only Hardcover client surface the sweep needs.
@@ -73,7 +94,10 @@ type matcher interface {
 // no-op (zero result, nil error) when the user has not connected Hardcover. On a
 // bad token it flips the stored key status to invalid (mirroring the pull/push) so
 // the settings UI prompts a re-paste.
-func (s *SyncService) MatchUnmatched(ctx context.Context, owner string) (MatchSweepResult, error) {
+// force ignores the negative-cache window (loads the full unmatched worklist for
+// the exact-id + fuzzy phases) — the on-demand force-rematch. The LOCAL shelf rung
+// runs regardless of force.
+func (s *SyncService) MatchUnmatched(ctx context.Context, owner string, force bool) (MatchSweepResult, error) {
 	var res MatchSweepResult
 	if s.Store == nil {
 		return res, nil
@@ -86,7 +110,7 @@ func (s *SyncService) MatchUnmatched(ctx context.Context, owner string) (MatchSw
 	if !ok {
 		return res, nil // user hasn't connected Hardcover — nothing to match
 	}
-	return s.matchWith(ctx, owner, client)
+	return s.matchWith(ctx, owner, client, force)
 }
 
 // matchRow carries one candidate reading_item plus the two exact-id keys derived
@@ -106,20 +130,31 @@ type matchRow struct {
 // on ErrBadToken/ErrRateLimited (mirroring the pull — retrying would only burn the
 // budget).
 //
-//	Phase 0  load candidates (unmatched, minus recently no-matched — the neg cache)
-//	Phase 1  GLOBAL cache, zero API — link every already-resolved id
-//	Phase 2  BATCH exact-id (editions _in) — ASINs then ISBNs, many rows per request
-//	Phase 3  per-row FUZZY (Typesense) — the rate-limited tail; no-match stamps the
-//	         attempt cache so the NEXT sweep skips it (the real repeat-sweep win)
-func (s *SyncService) matchWith(ctx context.Context, owner string, client matcher) (MatchSweepResult, error) {
+//	Phase 0   load candidates (unmatched, minus recently no-matched — the neg cache;
+//	          force loads the FULL set, ignoring the window)
+//	Phase 1   GLOBAL cache, zero API — link every already-resolved id
+//	Phase 2   BATCH exact-id (editions _in) — ASINs then ISBNs, many rows per request
+//	Phase 2.5 LOCAL shelf-match (zero API) — score the still-unmatched rows against
+//	          the owner's OWN mirrored Hardcover shelf; runs on the negative-cache-
+//	          EXEMPT full set so a newly-shelved book matches on the next pull
+//	Phase 3   per-row FUZZY (Typesense) — the rate-limited tail; no-match stamps the
+//	          attempt cache so the NEXT sweep skips it (the real repeat-sweep win)
+func (s *SyncService) matchWith(ctx context.Context, owner string, client matcher, force bool) (MatchSweepResult, error) {
 	var res MatchSweepResult
 
-	// Phase 0 — candidate load. Exclude rows the ladder recently proved have no
-	// Hardcover book (migration 00071 negative cache): a no-match is retried at most
-	// once per matchRetryWindow, so a repeat sweep skips the fuzzy tail it already
-	// walked.
-	retryBefore := time.Now().UTC().Add(-matchRetryWindow)
-	items, err := s.DB.ListUnmatchedReadingItemsForMatch(ctx, owner, retryBefore)
+	// Phase 0 — candidate load. Normally exclude rows the ladder recently proved have
+	// no Hardcover book (migration 00071 negative cache): a no-match is retried at
+	// most once per matchRetryWindow, so a repeat sweep skips the fuzzy tail it
+	// already walked. force loads the FULL unmatched set (no window) — the on-demand
+	// force-rematch. Either way the LOCAL shelf pass below runs on the full set.
+	var items []db.ReadingItem
+	var err error
+	if force {
+		items, err = s.DB.ListUnmatchedReadingItems(ctx, owner)
+	} else {
+		retryBefore := time.Now().UTC().Add(-matchRetryWindow)
+		items, err = s.DB.ListUnmatchedReadingItemsForMatch(ctx, owner, retryBefore)
+	}
 	if err != nil {
 		return res, err
 	}
@@ -169,6 +204,15 @@ func (s *SyncService) matchWith(ctx context.Context, owner string, client matche
 			"batchhits", res.BatchHits, "remaining", len(afterIsbn))
 	}
 
+	// Phase 2.5 — LOCAL shelf-match (zero Hardcover API). Score every still-unmatched
+	// row against the owner's OWN mirrored Hardcover shelf (migration 00074). This is
+	// negative-cache EXEMPT — it loads the FULL unmatched set (not the windowed one),
+	// so a book the user just shelved auto-matches on the next pull without a
+	// force-rematch. It runs AFTER the batch phase (which set hardcover_book_id on its
+	// hits, dropping them from the full set) and returns the rows it resolved so the
+	// fuzzy tail below skips them (no wasted Typesense call / conflicting link).
+	shelfResolved := s.shelfMatchPhase(ctx, owner, client, &res)
+
 	// Phase 3 — per-row FUZZY (Typesense), the rate-limited tail. These rows have
 	// EXHAUSTED exact-id (both batch rungs missed), so we pass only title/author —
 	// the ladder skips the empty asin/isbn rungs and issues at most one search. A
@@ -177,6 +221,11 @@ func (s *SyncService) matchWith(ctx context.Context, owner string, client matche
 	for i, r := range afterIsbn {
 		if err := ctx.Err(); err != nil {
 			return res, err
+		}
+		// Skip a row the LOCAL shelf rung already linked (it may still be in this
+		// windowed worklist) — don't spend a fuzzy call on an already-matched row.
+		if _, done := shelfResolved[rowKey(r.it.Source, r.it.ExternalID)]; done {
+			continue
 		}
 		if (i+1)%25 == 0 {
 			s.logInfo(ctx, "hardcover match: fuzzy scanning", "user", owner,
@@ -220,8 +269,120 @@ func (s *SyncService) matchWith(ctx context.Context, owner string, client matche
 	s.logInfo(ctx, "hardcover match: complete",
 		"user", owner, "scanned", res.Scanned, "matched", res.Matched,
 		"nomatch", res.NoMatch, "skipped", res.Skipped, "enriched", res.Enriched,
-		"cachehits", res.CacheHits, "batchhits", res.BatchHits)
+		"cachehits", res.CacheHits, "batchhits", res.BatchHits, "shelfhits", res.ShelfHits)
 	return res, nil
+}
+
+// rowKey identifies a reading_item by its (source, external_id) — the composite the
+// shelf pass tags a resolved row under so the fuzzy tail can skip it.
+func rowKey(source, externalID string) string { return source + "\x00" + externalID }
+
+// shelfMatchPhase is the LOCAL shelf-match rung (Phase 2.5). It loads the owner's
+// whole mirrored Hardcover shelf ONCE, then scores every still-unmatched
+// reading_item against it (reusing scoreCandidate — title Jaccard + author bonus).
+// A row is linked to its best shelf candidate IFF it clears shelfMatchFloor AND
+// beats the runner-up by shelfMatchMargin. On accept it writes the per-user link
+// (edition 0/NULL — the status push works off book_id) and promotes the resolution
+// to the GLOBAL cache under the row's exact-id key when it has one (method "shelf",
+// so the provenance is auditable). It is negative-cache EXEMPT: it loads the FULL
+// unmatched set so a newly-shelved book matches even when match_attempted_at is
+// recent. Best-effort throughout — a shelf-load or link miss never fails the sweep.
+// Returns the set of rowKeys it resolved so the fuzzy tail skips them.
+func (s *SyncService) shelfMatchPhase(ctx context.Context, owner string, client matcher, res *MatchSweepResult) map[string]struct{} {
+	resolved := map[string]struct{}{}
+
+	shelf, err := s.DB.ListHardcoverShelf(ctx, owner)
+	if err != nil {
+		s.logWarn(ctx, "hardcover match: shelf load failed — skipping shelf rung", "user", owner, "err", err)
+		return resolved
+	}
+	if len(shelf) == 0 {
+		return resolved // nothing shelved locally → no candidates
+	}
+
+	// Full unmatched set (no window). Batch-resolved rows already carry
+	// hardcover_book_id and drop out here, so we never re-score them.
+	items, err := s.DB.ListUnmatchedReadingItems(ctx, owner)
+	if err != nil {
+		s.logWarn(ctx, "hardcover match: unmatched load for shelf rung failed", "user", owner, "err", err)
+		return resolved
+	}
+
+	for i := range items {
+		if err := ctx.Err(); err != nil {
+			return resolved
+		}
+		it := items[i]
+		entry, score, ok := bestShelfMatch(MatchInput{Title: it.Title, Author: it.Authors}, shelf)
+		if !ok {
+			continue
+		}
+		r := &matchRow{
+			it:      it,
+			asin:    firstNonEmpty(it.ExternalID, it.AmazonASIN),
+			isbnKey: normalizeISBN(it.ISBN),
+		}
+		m := MatchResult{BookID: entry.BookID, Slug: entry.Slug, Method: MatchByShelf, Confidence: score}
+		if !s.linkAndEnrich(ctx, owner, r, m, client, res) {
+			continue // link write failed → counted Skipped, leave for a later sweep
+		}
+		res.ShelfHits++
+		resolved[rowKey(it.Source, it.ExternalID)] = struct{}{}
+
+		// Promote to the GLOBAL cache under the row's exact-id key when it has one
+		// (method "shelf" — distinguishes it from an exact-id hit). Only keyed on a
+		// present asin/isbn; a title-only row has no cache key. Best-effort.
+		if idType, key := shelfCacheKey(r); key != "" {
+			if perr := s.DB.PutHardcoverMatch(ctx, idType, key, m.BookID, m.EditionID, string(MatchByShelf), m.Slug); perr != nil {
+				s.logWarn(ctx, "hardcover match: shelf cache put failed", "user", owner, "idtype", idType, "external", key, "err", perr)
+			}
+		}
+	}
+	if res.ShelfHits > 0 {
+		s.logInfo(ctx, "hardcover match: shelf phase done", "user", owner, "shelfhits", res.ShelfHits, "shelfsize", len(shelf))
+	}
+	return resolved
+}
+
+// shelfCacheKey returns the global-cache (id_type, external_id) a shelf-matched row
+// should be cached under: its ASIN first, else its normalized ISBN-13. ("", "") when
+// the row is title-only (no exact-id key to cache against).
+func shelfCacheKey(r *matchRow) (idType, key string) {
+	if r.asin != "" {
+		return "asin", r.asin
+	}
+	if r.isbnKey != "" {
+		return "isbn13", r.isbnKey
+	}
+	return "", ""
+}
+
+// bestShelfMatch scores in against every shelf entry (reusing scoreCandidate's
+// title-Jaccard + author bonus) and returns the best entry IFF it clears the
+// shelf-match bar: best score >= shelfMatchFloor AND it beats the runner-up by >=
+// shelfMatchMargin. ok=false when nothing clears the bar (below the floor, an
+// ambiguous top pair, or a zero-id best). A single-entry shelf has no runner-up, so
+// only the floor applies.
+func bestShelfMatch(in MatchInput, shelf []db.ShelfEntry) (db.ShelfEntry, float64, bool) {
+	var best db.ShelfEntry
+	bestScore, runnerScore := -1.0, -1.0
+	for _, e := range shelf {
+		sc := scoreCandidate(in, searchCandidate{BookID: e.BookID, Title: e.Title, Authors: []string{e.Author}})
+		switch {
+		case sc > bestScore:
+			runnerScore = bestScore
+			best, bestScore = e, sc
+		case sc > runnerScore:
+			runnerScore = sc
+		}
+	}
+	if bestScore < shelfMatchFloor || best.BookID <= 0 {
+		return db.ShelfEntry{}, 0, false
+	}
+	if runnerScore >= 0 && bestScore-runnerScore < shelfMatchMargin {
+		return db.ShelfEntry{}, 0, false // ambiguous — a clustered series, don't guess
+	}
+	return best, bestScore, true
 }
 
 // cacheLookup serves a row from the GLOBAL match cache under its exact-id keys

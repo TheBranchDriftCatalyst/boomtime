@@ -16,7 +16,13 @@ const (
 	MatchByASIN   MatchMethod = "asin"
 	MatchByISBN13 MatchMethod = "isbn13"
 	MatchBySearch MatchMethod = "search"
-	MatchNone     MatchMethod = "nomatch"
+	// MatchByShelf resolves a row by scoring it against the user's OWN mirrored
+	// Hardcover shelf (migration 00074) — a LOCAL, zero-API rung that catches books
+	// the user shelved on Hardcover but that don't share an ASIN/ISBN with our
+	// edition. Higher-precision than MatchBySearch (a small curated pool + a strict
+	// runner-up margin), so unlike fuzzy it IS promoted to the global cache.
+	MatchByShelf MatchMethod = "shelf"
+	MatchNone    MatchMethod = "nomatch"
 )
 
 // MatchInput is the identity a reading item arrives with. Any subset may be

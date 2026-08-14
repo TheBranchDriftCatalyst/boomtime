@@ -152,7 +152,7 @@ func TestMatchWith_LinksEnrichesAndStampsCursor(t *testing.T) {
 	}
 
 	svc := NewSyncService(d, NewStore(d), nil)
-	res, err := svc.matchWith(ctx, owner, fake)
+	res, err := svc.matchWith(ctx, owner, fake, false)
 	if err != nil {
 		t.Fatalf("matchWith: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestMatchWith_CacheHitSkipsAPI(t *testing.T) {
 	fake := &fakeMatcher{hits: map[string]MatchResult{}}
 
 	svc := NewSyncService(d, NewStore(d), nil)
-	res, err := svc.matchWith(ctx, owner, fake)
+	res, err := svc.matchWith(ctx, owner, fake, false)
 	if err != nil {
 		t.Fatalf("matchWith: %v", err)
 	}
@@ -290,7 +290,7 @@ func TestMatchWith_CacheMissPopulates(t *testing.T) {
 	}
 
 	svc := NewSyncService(d, NewStore(d), nil)
-	res, err := svc.matchWith(ctx, owner, fake)
+	res, err := svc.matchWith(ctx, owner, fake, false)
 	if err != nil {
 		t.Fatalf("matchWith: %v", err)
 	}
@@ -340,7 +340,7 @@ func TestMatchWith_FuzzyNotCached(t *testing.T) {
 	}
 
 	svc := NewSyncService(d, NewStore(d), nil)
-	res, err := svc.matchWith(ctx, owner, fake)
+	res, err := svc.matchWith(ctx, owner, fake, false)
 	if err != nil {
 		t.Fatalf("matchWith: %v", err)
 	}
@@ -393,7 +393,7 @@ func TestMatchWith_BatchResolvesManyInOneRequest(t *testing.T) {
 	}}
 
 	svc := NewSyncService(d, NewStore(d), nil)
-	res, err := svc.matchWith(ctx, owner, fake)
+	res, err := svc.matchWith(ctx, owner, fake, false)
 	if err != nil {
 		t.Fatalf("matchWith: %v", err)
 	}
@@ -434,7 +434,7 @@ func TestMatchWith_NoMatchStampsAndNextSweepSkips(t *testing.T) {
 	fake := &fakeMatcher{hits: map[string]MatchResult{}} // nothing resolves
 
 	svc := NewSyncService(d, NewStore(d), nil)
-	res, err := svc.matchWith(ctx, owner, fake)
+	res, err := svc.matchWith(ctx, owner, fake, false)
 	if err != nil {
 		t.Fatalf("first sweep: %v", err)
 	}
@@ -459,7 +459,7 @@ func TestMatchWith_NoMatchStampsAndNextSweepSkips(t *testing.T) {
 	// The SECOND sweep must EXCLUDE the recently-attempted row: nothing scanned, and
 	// the fuzzy path is not spent again.
 	fake.matchCall = 0
-	res2, err := svc.matchWith(ctx, owner, fake)
+	res2, err := svc.matchWith(ctx, owner, fake, false)
 	if err != nil {
 		t.Fatalf("second sweep: %v", err)
 	}
@@ -487,9 +487,236 @@ func TestMatchWith_RateLimitedAborts(t *testing.T) {
 	fake := &fakeMatcher{hits: map[string]MatchResult{}, batchErr: ErrRateLimited}
 
 	svc := NewSyncService(d, NewStore(d), nil)
-	_, err := svc.matchWith(ctx, owner, fake)
+	_, err := svc.matchWith(ctx, owner, fake, false)
 	if err != ErrRateLimited {
 		t.Fatalf("matchWith err = %v, want ErrRateLimited", err)
+	}
+}
+
+// TestMatchWith_ShelfMatchAcceptsStrong (PART 2) — a row with NO exact-id/fuzzy
+// hit is linked by the LOCAL shelf rung when it strongly matches an entry on the
+// owner's own mirrored Hardcover shelf: title+author score 1.0, single candidate
+// (no runner-up), so it clears the floor. The link carries the shelf entry's slug,
+// the resolution is promoted to the GLOBAL cache under method "shelf", and the
+// fuzzy tail is NOT spent (matchCall stays 0 — the shelf pass resolved it).
+func TestMatchWith_ShelfMatchAcceptsStrong(t *testing.T) {
+	d := openSweepDB(t)
+	ctx := context.Background()
+	owner := fmt.Sprintf("sweep_shelf_%d", time.Now().UnixNano())
+	asin := fmt.Sprintf("B0SHELF%d", time.Now().UnixNano())
+	seedUser(t, d, ctx, owner)
+	t.Cleanup(func() {
+		cleanupOwner(d, ctx, owner)
+		_, _ = d.Pool.Exec(ctx, `DELETE FROM hardcover_match_cache WHERE external_id=$1`, asin)
+	})
+
+	// The user has this exact book on their Hardcover shelf, but our Kindle row
+	// shares no ASIN/ISBN with the Hardcover edition (fake has no exact-id hit).
+	mustUpsert(t, d, ctx, db.ReadingItem{Owner: owner, Source: "kindle", ExternalID: asin, AmazonASIN: asin, Title: "Project Hail Mary", Authors: "Andy Weir"})
+	if err := d.UpsertHardcoverShelfEntry(ctx, owner, db.ShelfEntry{
+		BookID: 900, Title: "Project Hail Mary", Author: "Andy Weir", Slug: "project-hail-mary", Status: "read",
+	}, nil); err != nil {
+		t.Fatalf("seed shelf: %v", err)
+	}
+
+	fake := &fakeMatcher{hits: map[string]MatchResult{}} // nothing resolves exact-id/fuzzy
+
+	svc := NewSyncService(d, NewStore(d), nil)
+	res, err := svc.matchWith(ctx, owner, fake, false)
+	if err != nil {
+		t.Fatalf("matchWith: %v", err)
+	}
+	if res.ShelfHits != 1 || res.Matched != 1 {
+		t.Fatalf("ShelfHits=%d Matched=%d, want 1/1", res.ShelfHits, res.Matched)
+	}
+	if fake.matchCall != 0 {
+		t.Fatalf("per-row Match called %d times, want 0 (shelf rung must resolve before fuzzy)", fake.matchCall)
+	}
+
+	// Linked to the shelf book + its slug, dropped from the unmatched worklist.
+	if remaining, _ := d.ListUnmatchedReadingItems(ctx, owner); len(remaining) != 0 {
+		t.Fatalf("%d rows still unmatched after shelf match", len(remaining))
+	}
+	var gotBook *int64
+	var gotSlug *string
+	if err := d.Pool.QueryRow(ctx,
+		`SELECT hardcover_book_id, hardcover_slug FROM reading_items WHERE owner=$1 AND source='kindle' AND external_id=$2`,
+		owner, asin).Scan(&gotBook, &gotSlug); err != nil {
+		t.Fatalf("read back link: %v", err)
+	}
+	if gotBook == nil || *gotBook != 900 || gotSlug == nil || *gotSlug != "project-hail-mary" {
+		t.Fatalf("shelf link = book %v slug %v, want 900/project-hail-mary", gotBook, gotSlug)
+	}
+
+	// Promoted to the global cache under method "shelf".
+	cached, ok, err := d.LookupHardcoverMatch(ctx, "asin", asin)
+	if err != nil || !ok {
+		t.Fatalf("shelf match not cached: ok=%v err=%v", ok, err)
+	}
+	if cached.BookID != 900 || cached.Method != "shelf" || cached.Slug != "project-hail-mary" {
+		t.Fatalf("cached shelf match = %+v, want {900 .. shelf project-hail-mary}", cached)
+	}
+}
+
+// TestMatchWith_ShelfMatchRejectsAmbiguous (PART 2) — two shelf entries score
+// identically (a personal shelf clusters a series / multiple editions), so the
+// best fails the runner-up margin (>= 0.10) and the row is left unmatched — better
+// a miss than linking the wrong book of a pair.
+func TestMatchWith_ShelfMatchRejectsAmbiguous(t *testing.T) {
+	d := openSweepDB(t)
+	ctx := context.Background()
+	owner := fmt.Sprintf("sweep_ambig_%d", time.Now().UnixNano())
+	seedUser(t, d, ctx, owner)
+	t.Cleanup(func() { cleanupOwner(d, ctx, owner) })
+
+	// Title-only row → no exact id; two shelf entries with the SAME title/author.
+	mustUpsert(t, d, ctx, db.ReadingItem{Owner: owner, Source: "kindle", ExternalID: "B0AMBIG1", Title: "Foundation", Authors: "Isaac Asimov"})
+	for _, id := range []int64{10, 11} {
+		if err := d.UpsertHardcoverShelfEntry(ctx, owner, db.ShelfEntry{
+			BookID: id, Title: "Foundation", Author: "Isaac Asimov", Slug: fmt.Sprintf("foundation-%d", id), Status: "want",
+		}, nil); err != nil {
+			t.Fatalf("seed shelf %d: %v", id, err)
+		}
+	}
+
+	fake := &fakeMatcher{hits: map[string]MatchResult{}}
+	svc := NewSyncService(d, NewStore(d), nil)
+	res, err := svc.matchWith(ctx, owner, fake, false)
+	if err != nil {
+		t.Fatalf("matchWith: %v", err)
+	}
+	if res.ShelfHits != 0 {
+		t.Fatalf("ShelfHits = %d, want 0 (ambiguous top pair must not link)", res.ShelfHits)
+	}
+	// Still unmatched (it then fell to the fuzzy tail, which also missed → NoMatch).
+	if remaining, _ := d.ListUnmatchedReadingItems(ctx, owner); len(remaining) != 1 {
+		t.Fatalf("row was linked despite ambiguity: %d unmatched (want 1)", len(remaining))
+	}
+}
+
+// TestMatchWith_ShelfMatchRejectsBelowFloor (PART 2) — a partial title overlap
+// that clears the Typesense fuzzy floor (0.6) but NOT the stricter shelf floor
+// (0.75) is rejected: the shelf rung is deliberately more conservative than fuzzy.
+func TestMatchWith_ShelfMatchRejectsBelowFloor(t *testing.T) {
+	d := openSweepDB(t)
+	ctx := context.Background()
+	owner := fmt.Sprintf("sweep_floor_%d", time.Now().UnixNano())
+	seedUser(t, d, ctx, owner)
+	t.Cleanup(func() { cleanupOwner(d, ctx, owner) })
+
+	// "The Left Hand of Darkness" (5 tokens) vs shelf "The Left Hand" (3 tokens):
+	// Jaccard = 3/5 = 0.6, no author match → 0.6, below the 0.75 shelf floor.
+	mustUpsert(t, d, ctx, db.ReadingItem{Owner: owner, Source: "kindle", ExternalID: "B0FLOOR1", Title: "The Left Hand of Darkness", Authors: "Ursula K Le Guin"})
+	if err := d.UpsertHardcoverShelfEntry(ctx, owner, db.ShelfEntry{
+		BookID: 50, Title: "The Left Hand", Author: "Someone Else", Slug: "the-left-hand", Status: "want",
+	}, nil); err != nil {
+		t.Fatalf("seed shelf: %v", err)
+	}
+
+	fake := &fakeMatcher{hits: map[string]MatchResult{}}
+	svc := NewSyncService(d, NewStore(d), nil)
+	res, err := svc.matchWith(ctx, owner, fake, false)
+	if err != nil {
+		t.Fatalf("matchWith: %v", err)
+	}
+	if res.ShelfHits != 0 {
+		t.Fatalf("ShelfHits = %d, want 0 (0.6 is below the 0.75 shelf floor)", res.ShelfHits)
+	}
+	if remaining, _ := d.ListUnmatchedReadingItems(ctx, owner); len(remaining) != 1 {
+		t.Fatalf("below-floor row was linked: %d unmatched (want 1)", len(remaining))
+	}
+}
+
+// TestMatchWith_ShelfMatchIgnoresNegativeCache (PART 2, CRUCIAL) — the LOCAL shelf
+// rung runs on the negative-cache-EXEMPT full set: a row with a RECENT
+// match_attempted_at (excluded from the windowed exact-id/fuzzy worklist, so
+// res.Scanned==0) is still shelf-matched, so a newly-shelved book auto-links on the
+// next pull WITHOUT a force-rematch.
+func TestMatchWith_ShelfMatchIgnoresNegativeCache(t *testing.T) {
+	d := openSweepDB(t)
+	ctx := context.Background()
+	owner := fmt.Sprintf("sweep_shelfneg_%d", time.Now().UnixNano())
+	asin := fmt.Sprintf("B0SHELFNEG%d", time.Now().UnixNano())
+	seedUser(t, d, ctx, owner)
+	t.Cleanup(func() {
+		cleanupOwner(d, ctx, owner)
+		_, _ = d.Pool.Exec(ctx, `DELETE FROM hardcover_match_cache WHERE external_id=$1`, asin)
+	})
+
+	mustUpsert(t, d, ctx, db.ReadingItem{Owner: owner, Source: "kindle", ExternalID: asin, AmazonASIN: asin, Title: "Mistborn", Authors: "Brandon Sanderson"})
+	// Stamp match_attempted_at NOW → the windowed worklist excludes it.
+	if err := d.SetReadingItemMatchAttempted(ctx, owner, "kindle", asin); err != nil {
+		t.Fatalf("stamp attempted: %v", err)
+	}
+	if err := d.UpsertHardcoverShelfEntry(ctx, owner, db.ShelfEntry{
+		BookID: 30, Title: "Mistborn", Author: "Brandon Sanderson", Slug: "mistborn", Status: "reading",
+	}, nil); err != nil {
+		t.Fatalf("seed shelf: %v", err)
+	}
+
+	fake := &fakeMatcher{hits: map[string]MatchResult{}}
+	svc := NewSyncService(d, NewStore(d), nil)
+	res, err := svc.matchWith(ctx, owner, fake, false)
+	if err != nil {
+		t.Fatalf("matchWith: %v", err)
+	}
+	// The windowed pass saw nothing (row is within the retry window)...
+	if res.Scanned != 0 {
+		t.Fatalf("Scanned = %d, want 0 (row is negative-cached out of the windowed set)", res.Scanned)
+	}
+	// ...but the shelf rung still matched it.
+	if res.ShelfHits != 1 || res.Matched != 1 {
+		t.Fatalf("ShelfHits=%d Matched=%d, want 1/1 (shelf rung is negative-cache exempt)", res.ShelfHits, res.Matched)
+	}
+	if remaining, _ := d.ListUnmatchedReadingItems(ctx, owner); len(remaining) != 0 {
+		t.Fatalf("negative-cached row not shelf-linked: %d still unmatched", len(remaining))
+	}
+}
+
+// TestMatchWith_ForceIgnoresWindow (PART 3) — the force-rematch loads the FULL
+// unmatched worklist (no window): a row negative-cached out of the normal sweep is
+// re-checked and resolved by the exact-id rung when force=true.
+func TestMatchWith_ForceIgnoresWindow(t *testing.T) {
+	d := openSweepDB(t)
+	ctx := context.Background()
+	owner := fmt.Sprintf("sweep_force_%d", time.Now().UnixNano())
+	asin := fmt.Sprintf("B0FORCE%d", time.Now().UnixNano())
+	seedUser(t, d, ctx, owner)
+	t.Cleanup(func() {
+		cleanupOwner(d, ctx, owner)
+		_, _ = d.Pool.Exec(ctx, `DELETE FROM hardcover_match_cache WHERE external_id=$1`, asin)
+	})
+
+	mustUpsert(t, d, ctx, db.ReadingItem{Owner: owner, Source: "audible", ExternalID: asin, AmazonASIN: asin, Title: "Forced Rematch"})
+	if err := d.SetReadingItemMatchAttempted(ctx, owner, "audible", asin); err != nil {
+		t.Fatalf("stamp attempted: %v", err)
+	}
+	// An exact-id hit exists now (e.g. Hardcover added the edition since the last try).
+	fake := &fakeMatcher{hits: map[string]MatchResult{
+		asin: {BookID: 444, EditionID: 4404, Slug: "forced-rematch", Method: MatchByASIN, Confidence: 1},
+	}}
+
+	svc := NewSyncService(d, NewStore(d), nil)
+
+	// Normal sweep: the window excludes the row → nothing scanned, nothing matched.
+	res, err := svc.matchWith(ctx, owner, fake, false)
+	if err != nil {
+		t.Fatalf("normal sweep: %v", err)
+	}
+	if res.Scanned != 0 || res.Matched != 0 {
+		t.Fatalf("normal sweep Scanned=%d Matched=%d, want 0/0 (windowed out)", res.Scanned, res.Matched)
+	}
+
+	// Force sweep: ignores the window → the row is scanned + resolved by exact-id.
+	forced, err := svc.matchWith(ctx, owner, fake, true)
+	if err != nil {
+		t.Fatalf("force sweep: %v", err)
+	}
+	if forced.Scanned != 1 || forced.Matched != 1 || forced.BatchHits != 1 {
+		t.Fatalf("force sweep Scanned=%d Matched=%d BatchHits=%d, want 1/1/1", forced.Scanned, forced.Matched, forced.BatchHits)
+	}
+	if remaining, _ := d.ListUnmatchedReadingItems(ctx, owner); len(remaining) != 0 {
+		t.Fatalf("force did not link the row: %d still unmatched", len(remaining))
 	}
 }
 

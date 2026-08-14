@@ -305,6 +305,11 @@ type Config struct {
 	// (AudibleSyncEnabled()). Audible data changes slowly, so a several-hour
 	// cadence is plenty.
 	AudibleSyncInterval time.Duration
+	// HardcoverSyncInterval — how often the periodic Hardcover pull + match run;
+	// 0 = off. Additionally gated behind FeatureBooks (HardcoverSyncEnabled()). This
+	// is what propagates a user's Hardcover shelf edits (and newly-shelved books the
+	// local shelf-match rung can then link) back into boomtime automatically.
+	HardcoverSyncInterval time.Duration
 	// JobsUnified (BOOM_JOBS_UNIFIED, default false) registers the label-image
 	// kind on catalyst-go-jobs (gaka-hney.3) — proving the fold. Prod stays on
 	// the imagejobs pipeline + its dedicated admin UI; the live cutover (reroute
@@ -564,6 +569,7 @@ func Load() *Config {
 	c.JobsProvider = getEnv("BOOM_JOBS_PROVIDER", "local")
 	c.GithubStatsRefreshInterval = parseJobInterval(getEnv("BOOM_GITHUB_STATS_REFRESH_INTERVAL", "8h"))
 	c.AudibleSyncInterval = parseJobInterval(getEnv("BOOM_AUDIBLE_SYNC_INTERVAL", "6h"))
+	c.HardcoverSyncInterval = parseJobInterval(getEnv("BOOM_HARDCOVER_SYNC_INTERVAL", "8h"))
 	c.JobsUnified = getEnvBool("BOOM_JOBS_UNIFIED", false)
 	c.JobsDrain = getEnvBool("BOOM_JOBS_DRAIN", false)
 	c.JobsKinds = splitCSV(getEnv("BOOM_JOBS_KINDS", ""))
@@ -818,6 +824,13 @@ func (c *Config) BooksEnabled() bool { return c.FeatureBooks }
 // configured. Mirrors GithubStatsRefreshEnabled().
 func (c *Config) AudibleSyncEnabled() bool {
 	return c.FeatureBooks && c.AudibleSyncInterval > 0
+}
+
+// HardcoverSyncEnabled reports whether the periodic Hardcover pull + match
+// schedule should run: the books feature is on AND a positive interval is
+// configured. Mirrors AudibleSyncEnabled().
+func (c *Config) HardcoverSyncEnabled() bool {
+	return c.FeatureBooks && c.HardcoverSyncInterval > 0
 }
 
 // OIDCEnabled reports whether the OIDC (Authentik) auth provider is selected
