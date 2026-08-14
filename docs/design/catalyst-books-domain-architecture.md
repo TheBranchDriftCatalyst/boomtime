@@ -477,6 +477,62 @@ author's variant spellings) ride the shared curation **pin** mechanism
 (`internal/curation`, `CurationPin` action) — the same canonical-entity seam the
 coding domain uses, not a books-specific one.
 
+### 5.1 Polling economics — the two-level "limit hack" + the persistent monitor
+
+Kindle reading-time is *reconstructed by polling* (§5, §6), and that reconstruction
+runs into a hard constraint worth stating loudly so nobody naively fast-polls
+everything:
+
+> **Amazon never pushes, and the sidecar is per-book** (`sidecar?type=EBOK&key=<ASIN>`).
+> So to learn whether *anyone is reading right now* you must poll **every in-progress
+> book, for every user** — cost is `O(books × users × 1/interval)`, all ADP-signed
+> calls to `cde-ta-g7g.amazon.com`. That per-book detection sweep is the floor we
+> minimize; hammering it is how we'd get throttled or noticed.
+
+**The nuance that makes a cheap poll safe — `creationTime`.** The `kindle.lpr` record
+carries `creationTime` = *Amazon's* event time for when the furthest-page-read was
+set (not our poll time). So a **coarse** poll never loses total-reading **detection**:
+we always learn the current furthest position **and when Amazon last advanced it**.
+Fast polling buys exactly **one** thing — **intra-session cadence**: resolving whether
+an A→B jump was one continuous session or several bursts with gaps, which is what the
+gap-sum session-boundary composition needs. Detection is cheap; only *fine session
+shape* is expensive.
+
+**Two-level adaptive polling** (the hack):
+
+| Level | Scope | Interval | Purpose |
+|---|---|---|---|
+| **L1 — detect** | ALL in-progress books, per user | `T1` (coarse, minutes) | spot which book(s) advanced = actively being read |
+| **L2 — capture** | ONLY the active book(s) | `T2` (fine, seconds) | sample the cadence for accurate session boundaries, until idle for gap `G` → drop back to L1 |
+
+This collapses cost from "every book fast, always" to "every book slow + the 1–2
+books *actually being read* fast, only while they're read."
+
+**Choosing `T1`/`T2`/`G` — measure, don't guess.** `T2` ≥ the whispersync push cadence
+(no point sampling faster than Amazon actually writes the LPR); `G` = the longest gap
+seen *within* one real reading session; `T1` = how stale detection may be before it
+misses a session *start* — and because `creationTime` backfills the true event time,
+a larger `T1` mostly costs toast **latency**, not data. The **admin reading-monitor
+panel is the empirical probe** for these: it streams every advance and derives the
+observed cadence (min / median advance interval, avg Δlocation, implied sec/location),
+then **recommends** `T1`/`T2`/`G` from *your own* reading instead of a guessed
+`interval=6s`.
+
+**Persistent server-side monitor (not tab-tied).** A per-user `reading_monitor_enabled`
+flag drives the two-level engine from the **leader-singleton scheduler**
+(catalyst-go-jobs), so it runs whether or not the admin panel is open — toggle it on,
+walk away, come back to the full report. It pushes **toasts** through `notify.Hub`
+(owner-scoped, app-wide — same seam Audible finishes use) on a ping/status change,
+with a **mode flag**: *debounced-per-book* (one coalesced toast per advancing book /
+status change — normal use) ↔ *every-ping* (a toast on each observed change — verbose,
+for the diagnostic/reverse-engineering phase). The panel is then a thin view+toggle
+over persisted state, not the engine.
+
+> **Open decision (scope fork):** whether the monitor *emits* `reading_activity` /
+> reading-heartbeats from the captured sessions (forward composition into the fusion
+> layer) or stays **diagnostic-only** until the cadence is trusted. Until settled, the
+> monitor measures + toasts but does not write reading_activity.
+
 ---
 
 ## 6. Kindle API map (reverse-engineered live, 2026-08)
