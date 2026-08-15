@@ -228,6 +228,9 @@ func runCmd() *cobra.Command {
 				N1DupThresh: cfg.DBN1DupThresh,
 				ExplainSlow: time.Duration(cfg.DBExplainSlowMs) * time.Millisecond,
 				Dev:         cfg.IsDev(),
+				// Per-query spans whenever tracing is on, so DB time shows up
+				// inside the HTTP waterfall instead of being an opaque gap.
+				Tracing: tracing.Enabled(),
 			})
 			if err != nil {
 				return fmt.Errorf("db connect: %w", err)

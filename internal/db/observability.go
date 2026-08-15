@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/exaring/otelpgx"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/multitracer"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -35,12 +36,13 @@ type Options struct {
 	N1DupThresh int           // identical normalized statements/request to WARN (0 disables)
 	ExplainSlow time.Duration // dev-only: auto-EXPLAIN reads slower than this (0=off)
 	Dev         bool          // gates the EXPLAIN tracer (never run in prod)
+	Tracing     bool          // emit OpenTelemetry spans per query (TALOS-kvg1)
 }
 
 // enabled reports whether any tracer would be installed. When false, New's plain
 // pgxpool.New path is used verbatim.
 func (o Options) enabled() bool {
-	return o.LogQueries || o.N1Threshold > 0 || o.N1DupThresh > 0 || (o.Dev && o.ExplainSlow > 0)
+	return o.LogQueries || o.N1Threshold > 0 || o.N1DupThresh > 0 || (o.Dev && o.ExplainSlow > 0) || o.Tracing
 }
 
 // NewWithObservability opens a pool like New but attaches the configured tracers
@@ -58,6 +60,15 @@ func NewWithObservability(ctx context.Context, url string, opts Options) (*DB, e
 	}
 
 	var tracers []pgx.QueryTracer
+	if opts.Tracing {
+		// otelpgx emits a child span per query off the context pgx is handed,
+		// so DB work nests under the HTTP server span automatically — that is
+		// what turns a slow endpoint into a readable waterfall (e.g. the open
+		// ~6.4s p95 on /heartbeats.bulk). Query parameters are deliberately NOT
+		// included: they can carry tokens/PII, and the existing tracelog path
+		// already governs arg logging behind BOOM_DB_LOG_ARGS with redaction.
+		tracers = append(tracers, otelpgx.NewTracer())
+	}
 	if opts.LogQueries {
 		tracers = append(tracers, &tracelog.TraceLog{
 			Logger:   newSlogTraceLogger(opts.LogArgs),

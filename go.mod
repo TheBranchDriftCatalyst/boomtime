@@ -5,6 +5,7 @@ go 1.25.7
 require (
 	github.com/coder/websocket v1.8.15
 	github.com/coreos/go-oidc/v3 v3.20.0
+	github.com/exaring/otelpgx v0.11.1
 	github.com/getkin/kin-openapi v0.142.0
 	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/google/uuid v1.6.0
