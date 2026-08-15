@@ -501,6 +501,12 @@ coding domain uses, not a books-specific one.
 
 ### 5.1 Polling economics — the two-level "limit hack" + the persistent monitor
 
+> **Deeper dive:** for the cadence-measurement epistemology (the Nyquist/aliasing
+> limit, what `creationTime` does and doesn't fix, the confirmed/hypothesis/pending
+> ledger) + the confirmation procedure, see
+> [`docs/design/reading-cadence-measurement.md`](./reading-cadence-measurement.md).
+> This section is the *mechanism*; that doc is its *epistemology*.
+
 Kindle reading-time is *reconstructed by polling* (§5, §6), and that reconstruction
 runs into a hard constraint worth stating loudly so nobody naively fast-polls
 everything:
