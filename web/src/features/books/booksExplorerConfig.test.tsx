@@ -29,7 +29,8 @@ import {
   type BooksFilters,
 } from "@/features/books/booksExplorerConfig";
 
-const NO_FILTERS: BooksFilters = { source: "all", status: "all", search: "" };
+const NO_FILTERS: BooksFilters = { source: "all", status: "all",
+      matched: "all", search: "" };
 
 beforeEach(() => {
   runQueryMock.mockReset();
@@ -60,19 +61,38 @@ describe("pathToPredicate / filtersToPredicate / buildWhere", () => {
     // gaka-books: the filter value IS the canonical column value now — `read`
     // filters on status='read' directly (no more "finished" → "read" remap).
     expect(
-      filtersToPredicate({ source: "audible", status: "read", search: "" }),
+      filtersToPredicate({ source: "audible", status: "read",
+      matched: "all", search: "" }),
     ).toEqual([
       { kind: "leaf", dim: "source", op: "eq", values: ["audible"] },
       { kind: "leaf", dim: "status", op: "eq", values: ["read"] },
     ]);
     expect(
-      filtersToPredicate({ source: "all", status: "reading", search: "" }),
+      filtersToPredicate({ source: "all", status: "reading",
+      matched: "all", search: "" }),
     ).toEqual([{ kind: "leaf", dim: "status", op: "eq", values: ["reading"] }]);
     // The new paused/dnf statuses fold the same way — they only exist via
     // curation overrides, but the filter speaks them 1:1.
     expect(
-      filtersToPredicate({ source: "all", status: "dnf", search: "" }),
+      filtersToPredicate({ source: "all", status: "dnf",
+      matched: "all", search: "" }),
     ).toEqual([{ kind: "leaf", dim: "status", op: "eq", values: ["dnf"] }]);
+  });
+
+  it("folds the Hardcover match-state (meta-status) filter onto the isMatched dim", () => {
+    expect(
+      filtersToPredicate({ source: "all", status: "all",
+      matched: "matched", search: "" }),
+    ).toEqual([{ kind: "leaf", dim: "isMatched", op: "eq", values: ["matched"] }]);
+    expect(
+      filtersToPredicate({ source: "all", status: "all",
+      matched: "unmatched", search: "" }),
+    ).toEqual([{ kind: "leaf", dim: "isMatched", op: "eq", values: ["unmatched"] }]);
+    // matched:"all" contributes no predicate.
+    expect(
+      filtersToPredicate({ source: "all", status: "all",
+      matched: "all", search: "" }),
+    ).toEqual([]);
   });
 
   it("offers the canonical status filter set (no stray 'Finished' mislabel value)", () => {
@@ -107,7 +127,8 @@ describe("pathToPredicate / filtersToPredicate / buildWhere", () => {
 
   it("folds search into filtersToPredicate as the ILIKE OR node", () => {
     expect(
-      filtersToPredicate({ source: "kindle", status: "all", search: "weir" }),
+      filtersToPredicate({ source: "kindle", status: "all",
+      matched: "all", search: "weir" }),
     ).toEqual([
       { kind: "leaf", dim: "source", op: "eq", values: ["kindle"] },
       {
@@ -125,6 +146,7 @@ describe("pathToPredicate / filtersToPredicate / buildWhere", () => {
       buildWhere([{ dim: "series", value: "Dune" }], {
         source: "all",
         status: "reading",
+      matched: "all",
         search: "messiah",
       }),
     ).toEqual({
@@ -148,6 +170,7 @@ describe("pathToPredicate / filtersToPredicate / buildWhere", () => {
       buildWhere([{ dim: "author", value: "Weir" }], {
         source: "kindle",
         status: "all",
+      matched: "all",
         search: "",
       }),
     ).toEqual({
@@ -181,6 +204,7 @@ describe("source.fetchGroup", () => {
     const cfg = makeBooksExplorerConfig({
       source: "audible",
       status: "all",
+      matched: "all",
       search: "",
     });
     const page = await cfg.source.fetchGroup(
@@ -223,6 +247,7 @@ describe("source.fetchGroup", () => {
     const cfg = makeBooksExplorerConfig({
       source: "all",
       status: "all",
+      matched: "all",
       search: "dune",
     });
     await cfg.source.fetchGroup([], "author", ["runtime", "finished"]);
@@ -266,6 +291,7 @@ describe("source.fetchLeaf", () => {
     const cfg = makeBooksExplorerConfig({
       source: "all",
       status: "reading",
+      matched: "all",
       search: "",
     });
     const res = await cfg.source.fetchLeaf(
@@ -310,6 +336,7 @@ describe("source.fetchLeaf", () => {
     const cfg = makeBooksExplorerConfig({
       source: "all",
       status: "all",
+      matched: "all",
       search: "weir",
     });
     const res = await cfg.source.fetchLeaf([], 1, 250);
@@ -350,7 +377,8 @@ describe("deriveHeroStats", () => {
 });
 
 describe("makeHeroSpec", () => {
-  const NO_FILTERS_SPEC: BooksFilters = { source: "all", status: "all", search: "" };
+  const NO_FILTERS_SPEC: BooksFilters = { source: "all", status: "all",
+      matched: "all", search: "" };
 
   it("returns the bare hero spec (no where) when no filter is active", () => {
     expect(makeHeroSpec(NO_FILTERS_SPEC)).toEqual({
@@ -363,7 +391,8 @@ describe("makeHeroSpec", () => {
     // The filter-scoped hero uses the SAME source/status/search predicates the
     // explorer folds — so `<filtered>/<total>` counts share one predicate path.
     expect(
-      makeHeroSpec({ source: "hardcover", status: "all", search: "" }).where,
+      makeHeroSpec({ source: "hardcover", status: "all",
+      matched: "all", search: "" }).where,
     ).toEqual({ kind: "leaf", dim: "source", op: "eq", values: ["hardcover"] });
   });
 });

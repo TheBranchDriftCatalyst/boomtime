@@ -37,10 +37,12 @@ import {
   makeHeroSpec,
   READING_AXES,
   STATUS_FILTER_OPTIONS,
+  MATCH_FILTER_OPTIONS,
   type BooksFilters,
   type BooksHeroStats,
   type SourceFilter,
   type StatusFilter,
+  type MatchFilter,
 } from "@/features/books/booksExplorerConfig";
 
 // ── hero + stats ─────────────────────────────────────────────────────────────
@@ -198,6 +200,7 @@ export function BooksPage() {
   const [search, setSearch] = useState("");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [matchedFilter, setMatchedFilter] = useState<MatchFilter>("all");
 
   // Debounce the search box: search is now a server-side ILIKE predicate folded
   // into the explorer's `where` + resetKey, so typing would otherwise re-query
@@ -214,12 +217,16 @@ export function BooksPage() {
     () => ({
       source: sourceFilter,
       status: statusFilter,
+      matched: matchedFilter,
       search: debouncedSearch,
     }),
-    [sourceFilter, statusFilter, debouncedSearch],
+    [sourceFilter, statusFilter, matchedFilter, debouncedSearch],
   );
   const filtersActive =
-    sourceFilter !== "all" || statusFilter !== "all" || debouncedSearch !== "";
+    sourceFilter !== "all" ||
+    statusFilter !== "all" ||
+    matchedFilter !== "all" ||
+    debouncedSearch !== "";
 
   // Hero summary: one unfiltered grouped query (group by source + finished
   // rollup) → whole-library totals. Only when the feature is on.
@@ -255,7 +262,7 @@ export function BooksPage() {
     () => makeBooksExplorerConfig(filters),
     [filters],
   );
-  const resetKey = `${sourceFilter}|${statusFilter}|${debouncedSearch}`;
+  const resetKey = `${sourceFilter}|${statusFilter}|${matchedFilter}|${debouncedSearch}`;
 
   return (
     <Page>
@@ -310,6 +317,12 @@ export function BooksPage() {
                     value={statusFilter}
                     onChange={setStatusFilter}
                     options={STATUS_FILTER_OPTIONS}
+                  />
+                  <FilterSelect<MatchFilter>
+                    label="Match"
+                    value={matchedFilter}
+                    onChange={setMatchedFilter}
+                    options={MATCH_FILTER_OPTIONS}
                   />
                   {/* Subtle divider between the filters and the group-by axes —
                       hidden when the row wraps to avoid a dangling rule. */}

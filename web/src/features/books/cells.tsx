@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import {
+  ArrowRight,
   BookMarked,
   Bookmark,
   BookOpen,
@@ -304,22 +305,42 @@ export function HardcoverBadge({ item }: { item: ReadingItemDTO }) {
       </span>
     );
   }
-  const status = (item.hardcoverStatus ?? "").trim();
-  // A known shelf status → show it (capitalized); otherwise a generic "Matched".
-  const label = status
-    ? status.charAt(0).toUpperCase() + status.slice(1)
-    : "Matched";
+  const remote = (item.hardcoverStatus ?? "").trim().toLowerCase(); // last-seen Hardcover shelf
+  const effective = (item.status ?? "").trim().toLowerCase(); // what boomtime would push
+  const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : "");
+  const remoteLabel = remote ? STATUS_META[remote]?.label ?? cap(remote) : "";
+  const effLabel = effective ? STATUS_META[effective]?.label ?? cap(effective) : "";
+
+  // SYNC DIFF: status is 1:1 with Hardcover, so when the effective (curated) status
+  // diverges from the last-seen Hardcover shelf, the next Hardcover push WOULD change
+  // the shelf remote→effective. Surface that pending change inline (dry-run-safe — it's
+  // just what a sync would do). remote unknown = never pulled → treat as no-diff yet.
+  const diff = remote && effective && remote !== effective;
+  if (diff) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-600 dark:text-amber-400"
+        title={`Sync would update Hardcover: ${remoteLabel} → ${effLabel}. (Writes stay dry-run-gated until enabled.)`}
+      >
+        <BookMarked className="h-3 w-3" />
+        {remoteLabel} <ArrowRight className="h-2.5 w-2.5" /> {effLabel}
+      </span>
+    );
+  }
+
+  // In sync (or remote status unknown): show the shelf status, else a generic "Matched".
+  const label = remote ? remoteLabel : "Matched";
   return (
     <span
       className="inline-flex items-center gap-1 rounded-full border border-fuchsia-500/40 bg-fuchsia-500/10 px-2 py-0.5 text-[11px] font-medium text-fuchsia-600 dark:text-fuchsia-400"
       title={
-        status
-          ? `Matched on Hardcover · ${label}`
+        remote
+          ? `Matched on Hardcover · ${label} (in sync)`
           : "Matched to a Hardcover book"
       }
     >
       <BookMarked className="h-3 w-3" />
-      {status ? label : "Matched"}
+      {label}
     </span>
   );
 }

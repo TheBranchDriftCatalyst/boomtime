@@ -53,9 +53,15 @@ export type SourceFilter = "all" | "audible" | "kindle" | "hardcover";
 // `read` column value — the filter and the group-by axis disagreed.
 export type StatusFilter = "all" | BookStatus;
 
+// MatchFilter is the Hardcover MATCH-STATE meta-status (a facet of sync/linkage
+// state, sibling to the reading status — not a reading-progress value). Its
+// values are exactly the `isMatched` dimension's group values so filter == group.
+export type MatchFilter = "all" | "matched" | "unmatched";
+
 export interface BooksFilters {
   source: SourceFilter;
   status: StatusFilter;
+  matched: MatchFilter;
   search: string;
 }
 
@@ -89,6 +95,9 @@ export const READING_AXES: Axis[] = [
   // Raw Amazon-derived status (the untouched device layer) — lets a user group
   // by "what the source computed" vs the effective/curated status (gaka-books).
   { id: "statusDerived", label: "Status (Amazon)" },
+  // Hardcover match-state — a meta-status facet (linked to Hardcover vs not),
+  // groupable like any status axis so you can split the library by sync state.
+  { id: "isMatched", label: "Match state" },
   { id: "series", label: "Series" },
   { id: "author", label: "Author" },
   { id: "genre", label: "Genre" },
@@ -238,6 +247,7 @@ export function filtersToPredicate(filters: BooksFilters): PredicateNode[] {
   const leaves: PredicateNode[] = [];
   if (filters.source !== "all") leaves.push(eqLeaf("source", filters.source));
   if (filters.status !== "all") leaves.push(eqLeaf("status", filters.status));
+  if (filters.matched !== "all") leaves.push(eqLeaf("isMatched", filters.matched));
   const searchNode = searchToPredicate(filters.search);
   if (searchNode) leaves.push(searchNode);
   return leaves;
@@ -251,6 +261,14 @@ export const STATUS_FILTER_OPTIONS: Array<{ value: StatusFilter; label: string }
     { value: "all", label: "All" },
     ...BOOK_STATUSES.map((s) => ({ value: s, label: STATUS_META[s].label })),
   ];
+
+// The Hardcover match-state (meta-status) filter options — value == the
+// `isMatched` group value, so filter == group == the badge state.
+export const MATCH_FILTER_OPTIONS: Array<{ value: MatchFilter; label: string }> = [
+  { value: "all", label: "All" },
+  { value: "matched", label: "Matched" },
+  { value: "unmatched", label: "Not matched" },
+];
 
 /** Combine a drill path + the page filters into one `where` predicate. */
 export function buildWhere(
