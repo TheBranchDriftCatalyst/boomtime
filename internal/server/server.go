@@ -5,6 +5,7 @@ package server
 import (
 	"embed"
 	"fmt"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/tracing"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -56,6 +57,10 @@ func NewWithHandler(database *db.DB, cfg *config.Config, logger *slog.Logger, wo
 	e := echo.New()
 
 	e.Use(middleware.Recover())
+	// OpenTelemetry server spans (TALOS-kvg1). Registered early so every
+	// request is traced and the span context is available to CORS/auth/
+	// handlers downstream. No-op unless OTEL_EXPORTER_OTLP_ENDPOINT is set.
+	e.Use(tracing.Middleware())
 	// gaka-n5r: CORS is credentialed (AllowCredentials=true is required so the
 	// refresh_token cookie flows behind the Vite proxy), which means the
 	// Access-Control-Allow-Origin value MUST be a checked allowlist entry — the

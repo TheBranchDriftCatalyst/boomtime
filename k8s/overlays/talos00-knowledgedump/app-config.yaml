@@ -82,3 +82,13 @@ data:
 
   # ── catalyst-books / catalyst-audiobooks master gate (gaka-books) ───────────
   BOOM_FEATURE_BOOKS: "true"
+
+  # ── OpenTelemetry tracing (TALOS-kvg1) ──────────────────────────────────────
+  # Ships spans to the in-cluster Alloy collector, which already dual-writes
+  # traces to BOTH Tempo and ClickStack/HyperDX (talos-homelab commit dc8d209)
+  # — no cluster-side pipeline work needed. Tracing is opt-in in code: unset
+  # OTEL_EXPORTER_OTLP_ENDPOINT and the SDK is never initialised.
+  # otel_logs already carries TraceId/SpanId, and boomtime's slog now stamps
+  # trace_id/span_id on every record, so HyperDX can pivot log -> trace.
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://alloy.monitoring.svc:4318"
+  OTEL_SERVICE_NAME: "boomtime"

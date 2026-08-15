@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/tracing"
 	"io"
 	"log/slog"
 	"net/http"
@@ -113,6 +114,18 @@ func runCmd() *cobra.Command {
 			// handler's config). Default-off preserves today's behavior.
 			auth.SetUserModelEnabled(cfg.FeatureUserModel)
 			logger, logHub := logging.Setup(cfg)
+
+			// OpenTelemetry tracing (TALOS-kvg1). Opt-in: no-op unless
+			// OTEL_EXPORTER_OTLP_ENDPOINT is set, so CLI/dev paths are untouched.
+			traceShutdown, terr := tracing.Setup(context.Background(), logger, version)
+			if terr != nil {
+				logger.Warn("tracing: setup failed — continuing without traces", "err", terr)
+			}
+			defer func() {
+				flushCtx, flushCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer flushCancel()
+				_ = traceShutdown(flushCtx)
+			}()
 
 			// Hardcover dry-run safety gate (default ON): block + log every
 			// Hardcover write until the sync mechanism is trusted. Must run before
