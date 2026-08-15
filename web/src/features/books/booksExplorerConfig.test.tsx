@@ -19,7 +19,9 @@ import {
   buildWhere,
   deriveHeroStats,
   filtersToPredicate,
+  HERO_SPEC,
   makeBooksExplorerConfig,
+  makeHeroSpec,
   pathToPredicate,
   READING_AXES,
   searchToPredicate,
@@ -329,12 +331,39 @@ describe("source.fetchLeaf", () => {
 });
 
 describe("deriveHeroStats", () => {
-  it("sums the source-grouped hero query into the four hero counts", () => {
+  it("sums the source-grouped hero query into the per-source hero counts", () => {
     const stats = deriveHeroStats([
       { key: "audible", value: 10, count: 10, stats: { count: 10, finished: 6 } },
       { key: "kindle", value: 4, count: 4, stats: { count: 4, finished: 1 } },
+      // hardcover source — shelved-but-not-owned books.
+      { key: "hardcover", value: 5, count: 5, stats: { count: 5, finished: 2 } },
       { key: "", value: 2, count: 2, stats: { count: 2, finished: 0 } },
     ]);
-    expect(stats).toEqual({ total: 16, finished: 7, audible: 10, kindle: 4 });
+    expect(stats).toEqual({
+      total: 21,
+      finished: 9,
+      audible: 10,
+      kindle: 4,
+      hardcover: 5,
+    });
+  });
+});
+
+describe("makeHeroSpec", () => {
+  const NO_FILTERS_SPEC: BooksFilters = { source: "all", status: "all", search: "" };
+
+  it("returns the bare hero spec (no where) when no filter is active", () => {
+    expect(makeHeroSpec(NO_FILTERS_SPEC)).toEqual({
+      ...HERO_SPEC,
+      where: undefined,
+    });
+  });
+
+  it("folds the active source filter into the hero spec's where", () => {
+    // The filter-scoped hero uses the SAME source/status/search predicates the
+    // explorer folds — so `<filtered>/<total>` counts share one predicate path.
+    expect(
+      makeHeroSpec({ source: "hardcover", status: "all", search: "" }).where,
+    ).toEqual({ kind: "leaf", dim: "source", op: "eq", values: ["hardcover"] });
   });
 });

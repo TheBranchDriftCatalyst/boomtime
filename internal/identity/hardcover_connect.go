@@ -2,8 +2,10 @@ package identity
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
@@ -162,12 +164,22 @@ func (h *Handler) MatchHardcover(c *echo.Context) error {
 	if !info.Connected {
 		return apihelpers.RespondErr(c, apierr.BadRequest("connect Hardcover before running a match"))
 	}
-	id, eerr := h.JobEnqueuer.Enqueue(c.Request().Context(), hardcover.HardcoverMatchKind, nil,
+	// ?force=1 requests a full re-check that ignores the 30d negative-cache window
+	// (a row the ladder previously proved unmatchable is retried now). Carried in the
+	// job payload; absent → the normal windowed sweep.
+	var payload []byte
+	force, _ := strconv.ParseBool(c.QueryParam("force"))
+	if force {
+		if b, merr := json.Marshal(hardcover.MatchPayload{Force: true}); merr == nil {
+			payload = b
+		}
+	}
+	id, eerr := h.JobEnqueuer.Enqueue(c.Request().Context(), hardcover.HardcoverMatchKind, payload,
 		jobs.Owner(owner), jobs.MaxAttempts(3))
 	if eerr != nil {
 		return apihelpers.InternalErr(h.Logger, c, "hardcover match enqueue failed", eerr)
 	}
-	h.Logger.Info("hardcover match enqueued", "user", owner, "jobId", id)
+	h.Logger.Info("hardcover match enqueued", "user", owner, "jobId", id, "force", force)
 	return c.JSON(http.StatusAccepted, map[string]any{"enqueued": true, "jobId": id})
 }
 

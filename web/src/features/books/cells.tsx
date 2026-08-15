@@ -8,6 +8,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import {
   BookMarked,
+  Bookmark,
   BookOpen,
   CalendarDays,
   Check,
@@ -47,7 +48,8 @@ export const fmtDate = (iso?: string): string => {
 };
 
 // The source drives the badge glyph + palette. Audible = amber/headphones,
-// Kindle = sky/book. Anything else falls back to a neutral chip.
+// Kindle = sky/book, Hardcover = fuchsia/bookmark (the shared Hardcover accent).
+// Anything else falls back to a neutral chip.
 export function SourceBadge({ source }: { source: string }) {
   const s = source.toLowerCase();
   if (s === "audible") {
@@ -63,6 +65,14 @@ export function SourceBadge({ source }: { source: string }) {
       <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[11px] font-medium text-sky-600 dark:text-sky-400">
         <BookOpen className="h-3 w-3" />
         Kindle
+      </span>
+    );
+  }
+  if (s === "hardcover") {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-fuchsia-500/40 bg-fuchsia-500/10 px-2 py-0.5 text-[11px] font-medium text-fuchsia-600 dark:text-fuchsia-400">
+        <Bookmark className="h-3 w-3" />
+        Hardcover
       </span>
     );
   }

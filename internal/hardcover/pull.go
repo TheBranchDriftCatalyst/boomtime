@@ -57,6 +57,7 @@ type UserBook struct {
 	UpdatedAt time.Time
 	Title     string
 	Author    string // first contribution's author name ("" when Hardcover lists none)
+	CoverURL  string // book.image.url ("" when Hardcover has no cover) — carried onto source='hardcover' rows
 	Slug      string
 	Reads     []UserBookRead
 }
@@ -117,7 +118,7 @@ const userBooksQuery = `query UserBooks($u: Int!, $o: Int!, $l: Int!) {
     status_id
     rating
     updated_at
-    book { title slug contributions { author { name } } }
+    book { title slug image { url } contributions { author { name } } }
     user_book_reads { id started_at finished_at progress_pages progress_seconds }
   }
 }`
@@ -160,8 +161,11 @@ type rawUserBook struct {
 	Rating    *float64 `json:"rating"`
 	UpdatedAt string   `json:"updated_at"`
 	Book      struct {
-		Title         string `json:"title"`
-		Slug          string `json:"slug"`
+		Title string `json:"title"`
+		Slug  string `json:"slug"`
+		Image struct {
+			URL string `json:"url"`
+		} `json:"image"`
 		Contributions []struct {
 			Author struct {
 				Name string `json:"name"`
@@ -186,6 +190,7 @@ func (r rawUserBook) toUserBook() UserBook {
 		Rating:    r.Rating,
 		Title:     r.Book.Title,
 		Author:    firstContributionAuthor(r),
+		CoverURL:  r.Book.Image.URL,
 		Slug:      r.Book.Slug,
 	}
 	if t := parseHardcoverTime(r.UpdatedAt); t != nil {

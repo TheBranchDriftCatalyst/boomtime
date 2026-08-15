@@ -15,6 +15,10 @@ interface GroupableExplorerProps<Row> {
   // change drops every cache and reloads the root.
   resetKey: string;
   leafMode?: "table" | "json";
+  // When true, the explorer does NOT render its own "Group by" bar — the caller
+  // hosts <GroupByBar> itself (e.g. folded into a consolidated control bar). The
+  // groupBy state stays controlled by the caller either way.
+  hideGroupByBar?: boolean;
 }
 
 /**
@@ -29,6 +33,7 @@ export function GroupableExplorer<Row>({
   onGroupByChange,
   resetKey,
   leafMode = "table",
+  hideGroupByBar = false,
 }: GroupableExplorerProps<Row>) {
   const { labels } = config;
   const requireAxis = groupBy.length === 0 && labels.addAxisHint != null;
@@ -41,15 +46,17 @@ export function GroupableExplorer<Row>({
 
   return (
     <>
-      <Card className="mb-4">
-        <CardContent className="py-4">
-          <GroupByBar
-            axes={config.axes}
-            groupBy={groupBy}
-            onChange={onGroupByChange}
-          />
-        </CardContent>
-      </Card>
+      {!hideGroupByBar && (
+        <Card className="mb-4">
+          <CardContent className="py-4">
+            <GroupByBar
+              axes={config.axes}
+              groupBy={groupBy}
+              onChange={onGroupByChange}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardContent className="py-3">

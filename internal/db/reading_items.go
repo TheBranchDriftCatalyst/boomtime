@@ -688,6 +688,39 @@ func (d *DB) UpdateHardcoverLinkFromPull(ctx context.Context, owner string, link
 	return tag.RowsAffected(), nil
 }
 
+// ListOwnerHardcoverLinkedBookIDs returns the set of hardcover_book_ids already
+// linked to a NON-hardcover reading_item (a matched Kindle/Audible row) for owner.
+// The inbound Hardcover shelf-ingest consults it to SKIP creating a
+// source='hardcover' library row for a shelf book a real Kindle/Audible purchase
+// already represents — the fused library shows one row per book, not a physical-
+// shelf duplicate of an owned ebook/audiobook. Source='hardcover' rows are
+// deliberately EXCLUDED so the ingest keeps re-upserting (refreshing) its own rows
+// idempotently rather than treating them as already-covered; the upsert key
+// (owner+source+external_id) is what prevents a duplicate of the hardcover row
+// itself. Returns an empty (non-nil) map when the owner has no external matches.
+func (d *DB) ListOwnerHardcoverLinkedBookIDs(ctx context.Context, owner string) (map[int64]bool, error) {
+	rows, err := d.Pool.Query(ctx,
+		`SELECT DISTINCT hardcover_book_id
+		   FROM reading_items
+		  WHERE owner = $1
+		    AND hardcover_book_id IS NOT NULL
+		    AND source <> 'hardcover'`,
+		owner)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[int64]bool)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
+}
+
 // DeleteReadingItems wipes a user's synced items (source=="" → all sources) —
 // the "delete my book data" path. Returns the number of rows removed.
 func (d *DB) DeleteReadingItems(ctx context.Context, owner, source string) (int64, error) {

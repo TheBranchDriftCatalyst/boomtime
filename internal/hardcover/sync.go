@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strconv"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logctx"
@@ -50,7 +53,11 @@ type PullResult struct {
 	Fetched  int
 	Linked   int
 	Unlinked int
-	Shelf    *Shelf
+	// Created is how many shelf-only books were materialized as first-class
+	// source='hardcover' reading_items this run (the inbound-origin ingest). A row
+	// re-upserted on a later pull is NOT counted (it wasn't newly created).
+	Created int
+	Shelf   *Shelf
 }
 
 // SyncHardcoverPull runs the inbound sync for owner. It is a no-op (zero result,
@@ -123,10 +130,21 @@ func (s *SyncService) SyncHardcoverPull(ctx context.Context, owner string) (Pull
 			continue
 		}
 		res.Unlinked++
-		// Inbound-origin: on the shelf but not tracked locally. Logged only —
-		// creating a reading_item from a pull is a documented follow-up.
-		s.logInfo(ctx, "hardcover pull: shelf book has no local reading_item (follow-up: inbound-origin create)",
-			"user", owner, "bookId", b.BookID, "title", b.Title, "status", StatusString(b.StatusID))
+		// Inbound-origin: on the shelf but not tracked locally yet. The ingest pass
+		// below materializes it as a source='hardcover' reading_item (unless a
+		// Kindle/Audible match already covers this book_id).
+	}
+
+	// Inbound-origin ingest (AFTER the shelf mirror + matched-row reconcile): turn
+	// every shelf book that no Kindle/Audible reading_item already represents into a
+	// first-class source='hardcover' library row, so the fused library includes the
+	// physical/library books the user only shelved on Hardcover. Idempotent
+	// (owner+source+external_id upsert) and best-effort — a create miss must not
+	// fail the pull.
+	if created, ierr := s.ingestShelfOnlyBooks(ctx, owner, books); ierr != nil {
+		s.logWarn(ctx, "hardcover pull: shelf-only ingest failed", "user", owner, "err", ierr)
+	} else {
+		res.Created = created
 	}
 
 	// Feed real Hardcover reading TIME + read dates into the activity series. Each
@@ -137,8 +155,114 @@ func (s *SyncService) SyncHardcoverPull(ctx context.Context, owner string) (Pull
 	s.upsertReadActivity(ctx, owner, books)
 
 	s.logInfo(ctx, "hardcover pull: complete",
-		"user", owner, "fetched", res.Fetched, "linked", res.Linked, "unlinked", res.Unlinked)
+		"user", owner, "fetched", res.Fetched, "linked", res.Linked,
+		"unlinked", res.Unlinked, "created", res.Created)
 	return res, nil
+}
+
+// ingestShelfOnlyBooks materializes each shelf book that no Kindle/Audible
+// reading_item already represents as a first-class source='hardcover' library row
+// — the inbound-origin ingest. It loads the owner's externally-matched book_ids
+// once (ListOwnerHardcoverLinkedBookIDs) and skips any shelf book already covered
+// by a real ebook/audiobook purchase, so a book the user owns AND shelved shows a
+// single fused row, not a duplicate. Everything else is upserted keyed by
+// owner+source('hardcover')+external_id(the hardcover_book_id), so a re-pull
+// refreshes the row's display/status without ever duplicating it. The Hardcover
+// linkage (book id + edition + slug + matched_at) is stamped on because the row is
+// inherently Hardcover-origin. Returns how many rows were NEWLY created.
+//
+// KNOWN follow-up: if a shelf-only book LATER gains a matched Kindle/Audible row,
+// this stops re-upserting the hardcover row (it enters the skip set) but does NOT
+// delete the already-created one — both rows coexist until a future de-dup pass.
+func (s *SyncService) ingestShelfOnlyBooks(ctx context.Context, owner string, books []UserBook) (int, error) {
+	if s.DB == nil {
+		return 0, nil
+	}
+	linked, err := s.DB.ListOwnerHardcoverLinkedBookIDs(ctx, owner)
+	if err != nil {
+		return 0, err
+	}
+	var created int
+	for _, b := range books {
+		if err := ctx.Err(); err != nil {
+			return created, err
+		}
+		if b.BookID <= 0 {
+			continue // no stable identity → can't key a reading_item
+		}
+		if linked[int64(b.BookID)] {
+			continue // a Kindle/Audible reading_item already represents this book
+		}
+		externalID := strconv.Itoa(b.BookID)
+		newlyCreated, cerr := s.upsertHardcoverSourceRow(ctx, owner, externalID, b)
+		if cerr != nil {
+			// One bad row must not abort the whole ingest.
+			s.logWarn(ctx, "hardcover pull: shelf-only row upsert failed",
+				"user", owner, "bookId", b.BookID, "err", cerr)
+			continue
+		}
+		if newlyCreated {
+			created++
+			s.logInfo(ctx, "hardcover pull: ingested shelf-only book as source=hardcover",
+				"user", owner, "bookId", b.BookID, "title", b.Title, "status", StatusString(b.StatusID))
+		}
+	}
+	return created, nil
+}
+
+// upsertHardcoverSourceRow writes (or refreshes) the source='hardcover' reading_item
+// for one shelf book and stamps its Hardcover linkage. It reports whether the row
+// was NEWLY created (false = an existing row was refreshed) by probing existence
+// before the upsert. The derived layer (status/finished/rating/dates) is filled
+// from the shelf entry; the LWW override reconcile on later pulls keeps curation
+// honest.
+func (s *SyncService) upsertHardcoverSourceRow(ctx context.Context, owner, externalID string, b UserBook) (bool, error) {
+	_, existErr := s.DB.GetReadingItem(ctx, owner, "hardcover", externalID)
+	newlyCreated := errors.Is(existErr, pgx.ErrNoRows)
+	if existErr != nil && !newlyCreated {
+		return false, existErr
+	}
+
+	if err := s.DB.UpsertReadingItem(ctx, db.ReadingItem{
+		Owner:      owner,
+		Source:     "hardcover",
+		ExternalID: externalID,
+		Title:      b.Title,
+		Authors:    b.Author,
+		CoverURL:   b.CoverURL,
+		Status:     StatusString(b.StatusID),
+		Finished:   int64(b.StatusID) == StatusRead,
+		StartedAt:  earliestStartedAt(b.Reads),
+		FinishedAt: latestFinishedAt(b.Reads),
+		Rating:     b.Rating,
+	}); err != nil {
+		return false, err
+	}
+
+	// Stamp the Hardcover linkage — the row is inherently Hardcover-origin, so it is
+	// matched by construction (book id + edition + slug + matched_at=now). editionId
+	// 0 is COALESCE-guarded away inside the helper.
+	if err := s.DB.SetReadingItemHardcoverLink(ctx, owner, "hardcover", externalID,
+		int64(b.BookID), int64(b.EditionID), "hardcover", b.Slug); err != nil {
+		return false, err
+	}
+	return newlyCreated, nil
+}
+
+// earliestStartedAt returns the earliest started_at across a shelf entry's reads
+// (nil when none carries one) — the library "started reading" date for a
+// materialized source='hardcover' row. Symmetric with latestFinishedAt.
+func earliestStartedAt(reads []UserBookRead) *time.Time {
+	var earliest *time.Time
+	for _, r := range reads {
+		if r.StartedAt == nil {
+			continue
+		}
+		if earliest == nil || r.StartedAt.Before(*earliest) {
+			earliest = r.StartedAt
+		}
+	}
+	return earliest
 }
 
 // upsertReadActivity writes one reading_activity bucket per (day → summed

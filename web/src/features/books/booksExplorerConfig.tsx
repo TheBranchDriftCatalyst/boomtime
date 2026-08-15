@@ -44,7 +44,9 @@ import type { ReadingItemDTO } from "@/types/meta";
 // The page-level filter selections. `all` = no constraint. ALL three fold into
 // every query's `where` (source/status as eq leaves, search as an ILIKE OR on
 // title/author) — see buildWhere. Nothing is filtered client-side.
-export type SourceFilter = "all" | "audible" | "kindle";
+// `hardcover` = books shelved on Hardcover but not owned on Kindle/Audible
+// (source='hardcover' reading_items, ingested by the Hardcover backfill).
+export type SourceFilter = "all" | "audible" | "kindle" | "hardcover";
 // gaka-books: the status filter now speaks the ONE canonical vocabulary (1:1
 // with Hardcover) so filter value == group value == pill key. Was the
 // mismatched all|reading|finished|want, where "finished" was a mislabel of the
@@ -374,17 +376,18 @@ export function makeBooksExplorerConfig(
 
 // --- Hero stats --------------------------------------------------------------
 //
-// The header summary cards (Tracked / Finished / Audible / Kindle) are derived
-// from ONE unfiltered grouped query — group by source with a `finished` rollup —
-// so the hero reflects the whole library regardless of the active filters,
-// exactly like the old all-rows counts. Kept DSL-driven so the page no longer
-// needs api.getBooksItems at all.
+// The header summary cards (Tracked / Finished / Audible / Kindle / Hardcover)
+// are derived from a source-grouped query — group by source with a `finished`
+// rollup. The page runs it twice: bare (HERO_SPEC) for the whole-library totals,
+// and filter-scoped (makeHeroSpec) so each card can show `<filtered>/<total>`.
+// Kept DSL-driven so the page no longer needs api.getBooksItems at all.
 
 export interface BooksHeroStats {
   total: number;
   finished: number;
   audible: number;
   kindle: number;
+  hardcover: number;
 }
 
 export const HERO_SPEC: QuerySpec = {
@@ -394,6 +397,16 @@ export const HERO_SPEC: QuerySpec = {
   rollups: ["finished"],
 };
 
+/**
+ * The hero query with the page filters folded into its `where` — the same
+ * source/status/search predicates the explorer uses (filtersToPredicate). Feeds
+ * the FILTER-scoped hero counts so each card can render `<filtered>/<total>`.
+ * With no active filter the where collapses to undefined (== HERO_SPEC).
+ */
+export function makeHeroSpec(filters: BooksFilters): QuerySpec {
+  return { ...HERO_SPEC, where: andAll(filtersToPredicate(filters)) };
+}
+
 export function deriveHeroStats(
   groups: { key: string; count?: number; value: number; stats?: Record<string, number> }[],
 ): BooksHeroStats {
@@ -401,6 +414,7 @@ export function deriveHeroStats(
   let finished = 0;
   let audible = 0;
   let kindle = 0;
+  let hardcover = 0;
   for (const g of groups) {
     const count = g.count ?? g.stats?.count ?? g.value ?? 0;
     total += count;
@@ -408,6 +422,7 @@ export function deriveHeroStats(
     const key = g.key.toLowerCase();
     if (key === "audible") audible += count;
     else if (key === "kindle") kindle += count;
+    else if (key === "hardcover") hardcover += count;
   }
-  return { total, finished, audible, kindle };
+  return { total, finished, audible, kindle, hardcover };
 }

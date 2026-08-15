@@ -302,5 +302,13 @@ export const qk = {
   // Library hero summary (one source-grouped query → Tracked/Finished/…). A
   // curation override (a book leaving the "reading" set, a fresh finish)
   // invalidates this so the header counts refetch.
-  booksHero: () => ["books-hero"] as const,
+  //
+  // Called two ways: bare `booksHero()` for the WHOLE-library totals, and
+  // `booksHero(filters)` for the FILTER-scoped counts (source/status/search) so
+  // the hero can render `<filtered>/<total>`. The filtered variant caches per
+  // filter combination, independent of the unfiltered totals key.
+  booksHero: (filters?: { source: string; status: string; search: string }) =>
+    filters
+      ? (["books-hero", filters.source, filters.status, filters.search] as const)
+      : (["books-hero"] as const),
 };

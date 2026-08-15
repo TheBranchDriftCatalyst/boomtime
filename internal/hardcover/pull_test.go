@@ -122,6 +122,31 @@ func TestUnmarshalUserBooks_VerifiedShape(t *testing.T) {
 	}
 }
 
+// TestUnmarshalUserBooks_CoverURL pins the book.image.url → UserBook.CoverURL
+// mapping the inbound ingest carries onto source='hardcover' rows. A book with no
+// image object yields an empty CoverURL (not an error), and the present url round-
+// trips exactly.
+func TestUnmarshalUserBooks_CoverURL(t *testing.T) {
+	const j = `[
+	  {"id":1,"book_id":800,"edition_id":10,"status_id":3,"updated_at":"2026-01-01T00:00:00Z",
+	   "book":{"title":"With Cover","slug":"with-cover","image":{"url":"https://img/cover.jpg"}},
+	   "user_book_reads":[]},
+	  {"id":2,"book_id":801,"edition_id":20,"status_id":1,"updated_at":"2026-01-01T00:00:00Z",
+	   "book":{"title":"No Cover","slug":"no-cover"},
+	   "user_book_reads":[]}
+	]`
+	books, err := unmarshalUserBooks(json.RawMessage(j))
+	if err != nil {
+		t.Fatalf("unmarshalUserBooks: %v", err)
+	}
+	if books[0].CoverURL != "https://img/cover.jpg" {
+		t.Fatalf("cover url = %q, want https://img/cover.jpg", books[0].CoverURL)
+	}
+	if books[1].CoverURL != "" {
+		t.Fatalf("missing image should yield empty cover url, got %q", books[1].CoverURL)
+	}
+}
+
 func TestStatusString(t *testing.T) {
 	cases := map[int]string{
 		1: "want", 2: "reading", 3: "read", 4: "paused", 5: "dnf", 99: "",

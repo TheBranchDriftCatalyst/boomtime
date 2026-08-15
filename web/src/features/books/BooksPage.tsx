@@ -14,6 +14,7 @@ import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
   BookMarked,
+  Bookmark,
   BookOpen,
   Headphones,
   Library,
@@ -28,11 +29,15 @@ import { runQuery } from "@/lib/queryApi";
 import { qk } from "@/lib/queryKeys";
 import { usePublicConfig } from "@/lib/usePublicConfig";
 import { GroupableExplorer } from "@/features/explorer/GroupableExplorer";
+import { GroupByBar } from "@/features/explorer/GroupByBar";
 import {
   deriveHeroStats,
   HERO_SPEC,
   makeBooksExplorerConfig,
+  makeHeroSpec,
+  READING_AXES,
   STATUS_FILTER_OPTIONS,
+  type BooksFilters,
   type BooksHeroStats,
   type SourceFilter,
   type StatusFilter,
@@ -44,10 +49,14 @@ function StatChip({
   icon: Icon,
   label,
   value,
+  filtered,
 }: {
   icon: typeof Library;
   label: string;
   value: number;
+  // When set (any filter is active), render `<filtered>/<total>` — the filtered
+  // number prominent, the total muted. Undefined → just the total.
+  filtered?: number;
 }) {
   return (
     <div className="flex items-center gap-2.5 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2">
@@ -55,7 +64,18 @@ function StatChip({
         <Icon className="h-4 w-4" />
       </span>
       <div className="leading-tight">
-        <div className="text-lg font-semibold tabular-nums">{value}</div>
+        <div className="text-lg font-semibold tabular-nums">
+          {filtered != null ? (
+            <>
+              <span className="text-foreground">{filtered}</span>
+              <span className="text-sm font-medium text-muted-foreground/60">
+                /{value}
+              </span>
+            </>
+          ) : (
+            value
+          )}
+        </div>
         <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
           {label}
         </div>
@@ -64,7 +84,28 @@ function StatChip({
   );
 }
 
-function BooksHero({ stats }: { stats: BooksHeroStats }) {
+function BooksHero({
+  stats,
+  filtered,
+}: {
+  stats: BooksHeroStats;
+  // The filter-scoped counts, or null when no filter is active (show totals).
+  filtered: BooksHeroStats | null;
+}) {
+  // Each card pairs a whole-library total with its filtered counterpart. When
+  // `filtered` is null every chip shows just the total (today's behavior).
+  const cards: Array<{
+    icon: typeof Library;
+    label: string;
+    total: number;
+    filtered?: number;
+  }> = [
+    { icon: Library, label: "Tracked", total: stats.total, filtered: filtered?.total },
+    { icon: BookMarked, label: "Finished", total: stats.finished, filtered: filtered?.finished },
+    { icon: Headphones, label: "Audible", total: stats.audible, filtered: filtered?.audible },
+    { icon: BookOpen, label: "Kindle", total: stats.kindle, filtered: filtered?.kindle },
+    { icon: Bookmark, label: "Hardcover", total: stats.hardcover, filtered: filtered?.hardcover },
+  ];
   return (
     <div className="relative overflow-hidden rounded-xl border border-primary/20 bg-gradient-to-br from-primary/10 via-background to-background p-6">
       {/* neon bloom + faint grid — synthwave chrome, purely decorative */}
@@ -87,13 +128,19 @@ function BooksHero({ stats }: { stats: BooksHeroStats }) {
         </h2>
         <p className="mt-1.5 max-w-xl text-sm text-muted-foreground">
           Everything boomtime tracks from your linked Amazon account — Audible
-          listens today, Kindle reads next — fused into one library view.
+          listens today, Kindle reads next — plus books you shelve on Hardcover,
+          fused into one library view.
         </p>
         <div className="mt-4 flex flex-wrap gap-2.5">
-          <StatChip icon={Library} label="Tracked" value={stats.total} />
-          <StatChip icon={BookMarked} label="Finished" value={stats.finished} />
-          <StatChip icon={Headphones} label="Audible" value={stats.audible} />
-          <StatChip icon={BookOpen} label="Kindle" value={stats.kindle} />
+          {cards.map((c) => (
+            <StatChip
+              key={c.label}
+              icon={c.icon}
+              label={c.label}
+              value={c.total}
+              filtered={c.filtered}
+            />
+          ))}
         </div>
       </div>
     </div>
@@ -140,6 +187,7 @@ const ZERO_STATS: BooksHeroStats = {
   finished: 0,
   audible: 0,
   kindle: 0,
+  hardcover: 0,
 };
 
 export function BooksPage() {
@@ -161,8 +209,20 @@ export function BooksPage() {
     return () => clearTimeout(t);
   }, [search]);
 
+  // The live filter selections, shared by the hero + the explorer.
+  const filters: BooksFilters = useMemo(
+    () => ({
+      source: sourceFilter,
+      status: statusFilter,
+      search: debouncedSearch,
+    }),
+    [sourceFilter, statusFilter, debouncedSearch],
+  );
+  const filtersActive =
+    sourceFilter !== "all" || statusFilter !== "all" || debouncedSearch !== "";
+
   // Hero summary: one unfiltered grouped query (group by source + finished
-  // rollup) → whole-library counts. Only when the feature is on.
+  // rollup) → whole-library totals. Only when the feature is on.
   const heroQuery = useQuery({
     queryKey: qk.booksHero(),
     queryFn: () => runQuery(HERO_SPEC),
@@ -174,16 +234,26 @@ export function BooksPage() {
       ? deriveHeroStats(heroQuery.data.groups)
       : ZERO_STATS;
 
+  // Filter-scoped hero: the SAME source-grouped query with the active filters
+  // folded into its where — feeds the `<filtered>/<total>` counts. Only runs
+  // when a filter is active (an all-default filtered query would just duplicate
+  // the totals). Keyed per filter combo so each caches independently.
+  const filteredHeroQuery = useQuery({
+    queryKey: qk.booksHero(filters),
+    queryFn: () => runQuery(makeHeroSpec(filters)),
+    enabled: booksEnabled && filtersActive,
+    staleTime: 60_000,
+  });
+  const filteredHeroStats =
+    filtersActive && filteredHeroQuery.data?.kind === "groups"
+      ? deriveHeroStats(filteredHeroQuery.data.groups)
+      : null;
+
   // The reading DomainConfig, closed over the live filters; the resetKey folds
   // the same inputs so the explorer drops its caches on any filter change.
   const explorerConfig = useMemo(
-    () =>
-      makeBooksExplorerConfig({
-        source: sourceFilter,
-        status: statusFilter,
-        search: debouncedSearch,
-      }),
-    [sourceFilter, statusFilter, debouncedSearch],
+    () => makeBooksExplorerConfig(filters),
+    [filters],
   );
   const resetKey = `${sourceFilter}|${statusFilter}|${debouncedSearch}`;
 
@@ -193,7 +263,7 @@ export function BooksPage() {
       <Page.Body>
         <Page.Content>
           <div className="space-y-6">
-            <BooksHero stats={heroStats} />
+            <BooksHero stats={heroStats} filtered={filteredHeroStats} />
 
             {!booksEnabled ? (
               <Card>
@@ -207,10 +277,15 @@ export function BooksPage() {
               </Card>
             ) : (
               <div className="space-y-3">
-                {/* Controls — all fold into the DSL where: source/status as eq
-                    leaves, the (debounced) search as an ILIKE OR on title/author. */}
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="relative min-w-[220px] flex-1">
+                {/* ONE consolidated control bar — search + source + status +
+                    group-by axis chips + connect, folded into a single tight row
+                    that wraps gracefully on narrow widths. The filters fold into
+                    the DSL where (source/status as eq leaves, the debounced
+                    search as an ILIKE OR on title/author); the group-by chips are
+                    the shared <GroupByBar> hosted here instead of by the explorer
+                    (hideGroupByBar), so all controls live in one surface. */}
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-primary/15 bg-card/40 px-3 py-2.5">
+                  <div className="relative min-w-[200px] flex-1">
                     <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
                       value={search}
@@ -227,6 +302,7 @@ export function BooksPage() {
                       { value: "all", label: "All" },
                       { value: "audible", label: "Audible" },
                       { value: "kindle", label: "Kindle" },
+                      { value: "hardcover", label: "Hardcover" },
                     ]}
                   />
                   <FilterSelect<StatusFilter>
@@ -234,6 +310,17 @@ export function BooksPage() {
                     value={statusFilter}
                     onChange={setStatusFilter}
                     options={STATUS_FILTER_OPTIONS}
+                  />
+                  {/* Subtle divider between the filters and the group-by axes —
+                      hidden when the row wraps to avoid a dangling rule. */}
+                  <span
+                    aria-hidden
+                    className="hidden h-6 w-px shrink-0 bg-border md:block"
+                  />
+                  <GroupByBar
+                    axes={READING_AXES}
+                    groupBy={groupBy}
+                    onChange={setGroupBy}
                   />
                   <Button asChild size="sm" variant="outline" className="ml-auto">
                     <Link to="/app/settings?tab=connections">
@@ -248,6 +335,7 @@ export function BooksPage() {
                   groupBy={groupBy}
                   onGroupByChange={setGroupBy}
                   resetKey={resetKey}
+                  hideGroupByBar
                 />
               </div>
             )}

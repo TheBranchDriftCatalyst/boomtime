@@ -13,6 +13,7 @@ import { BOOK_STATUSES, type ReadingItemDTO } from "@/types/meta";
 import {
   FinishedEditor,
   RatingEditor,
+  SourceBadge,
   statusProvenance,
   StatusSelect,
 } from "./cells";
@@ -41,6 +42,22 @@ function deferred<T>() {
 }
 
 afterEach(() => vi.restoreAllMocks());
+
+describe("SourceBadge", () => {
+  it("renders a distinct pill per source (audible / kindle / hardcover)", () => {
+    const { rerender } = renderWithProviders(<SourceBadge source="audible" />);
+    expect(screen.getByText("Audible")).toBeInTheDocument();
+
+    rerender(<SourceBadge source="kindle" />);
+    expect(screen.getByText("Kindle")).toBeInTheDocument();
+
+    // The new hardcover source gets its own fuchsia pill (the Hardcover accent).
+    rerender(<SourceBadge source="hardcover" />);
+    const hc = screen.getByText("Hardcover");
+    expect(hc).toBeInTheDocument();
+    expect(hc.closest("span")?.className).toMatch(/fuchsia/);
+  });
+});
 
 describe("StatusSelect", () => {
   it("offers the 5 canonical statuses in the dropdown", async () => {

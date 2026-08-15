@@ -30,8 +30,10 @@ const row = (p: Record<string, unknown>) => ({
 });
 
 // One runQuery impl for the whole page: rows mode → leaf rows; group "author" →
-// ranked author groups (with rollups); any other group (source) → the hero /
-// source breakdown.
+// ranked author groups (with rollups); source grouping → the hero breakdown.
+// The source-grouped hero runs twice: unfiltered (no where) → whole-library
+// totals; filter-scoped (where present) → a reduced slice, so the hero can
+// render `<filtered>/<total>`.
 function wireQueries() {
   runQueryMock.mockImplementation(async (spec: QuerySpec) => {
     if (spec.rows) {
@@ -62,12 +64,23 @@ function wireQueries() {
         ],
       };
     }
-    // source grouping (hero + source axis).
+    // source grouping (the hero). A where means the FILTER-scoped hero → return
+    // a reduced slice so filtered != total; otherwise the whole-library totals.
+    if (spec.where != null) {
+      return {
+        kind: "groups",
+        groups: [
+          { key: "audible", value: 3, count: 3, stats: { count: 3, finished: 2 } },
+        ],
+      };
+    }
     return {
       kind: "groups",
       groups: [
         { key: "audible", value: 8, count: 8, stats: { count: 8, finished: 4 } },
         { key: "kindle", value: 3, count: 3, stats: { count: 3, finished: 1 } },
+        // hardcover source — shelved-but-not-owned books.
+        { key: "hardcover", value: 5, count: 5, stats: { count: 5, finished: 2 } },
       ],
     };
   });
@@ -104,8 +117,10 @@ describe("BooksPage (merged groupable view)", () => {
     expect(await screen.findByText("Project Hail Mary")).toBeInTheDocument();
     expect(screen.getByText("Dune")).toBeInTheDocument();
 
-    // The hero derives its counts from the source-grouped query (8 + 3 = 11).
-    expect(await screen.findByText("11")).toBeInTheDocument(); // Tracked
+    // The hero derives its counts from the source-grouped query (8 + 3 + 5 = 16).
+    expect(await screen.findByText("16")).toBeInTheDocument(); // Tracked total
+    // No filter is active → cards show plain totals, not `<filtered>/<total>`.
+    expect(screen.queryByText("/16")).toBeNull();
 
     // A flat leaf query ran (rows mode) — not api.getBooksItems.
     expect(
@@ -152,6 +167,58 @@ describe("BooksPage (merged groupable view)", () => {
     expect(openSpy.mock.calls[0][0]).toBe(
       "https://hardcover.app/search?q=B08GB58KD5",
     );
+  });
+
+  it("offers Hardcover in the Source filter and as a hero card", async () => {
+    stubConfig(true);
+    renderWithProviders(<BooksPage />, { withRouter: true });
+    await screen.findByText("Project Hail Mary");
+
+    // The Source dropdown lists Hardcover alongside All/Audible/Kindle.
+    const source = screen.getByLabelText("Source");
+    const opts = within(source)
+      .getAllByRole("option")
+      .map((o) => o.textContent);
+    expect(opts).toEqual(["All", "Audible", "Kindle", "Hardcover"]);
+
+    // The hero surfaces a HARDCOVER count card (source='hardcover' count = 5).
+    expect(screen.getByText("5")).toBeInTheDocument();
+    expect(screen.getAllByText("Hardcover").length).toBeGreaterThan(0);
+  });
+
+  it("shows filtered/total hero counts once a filter is active", async () => {
+    stubConfig(true);
+    renderWithProviders(<BooksPage />, { withRouter: true });
+    await screen.findByText("Project Hail Mary");
+
+    // Baseline: plain totals, no filtered half.
+    expect(screen.getByText("16")).toBeInTheDocument();
+    expect(screen.queryByText("/16")).toBeNull();
+
+    // Activate the Source filter → a filter-scoped hero query fires and each
+    // card renders `<filtered>/<total>` (the muted "/16" total half appears).
+    await userEvent.selectOptions(screen.getByLabelText("Source"), "audible");
+    expect(await screen.findByText("/16")).toBeInTheDocument();
+  });
+
+  it("keeps search, source, status, group-by and connect in one control bar", async () => {
+    stubConfig(true);
+    renderWithProviders(<BooksPage />, { withRouter: true });
+    await screen.findByText("Project Hail Mary");
+
+    // All controls live in the single consolidated bar.
+    expect(
+      screen.getByPlaceholderText(/Search title or author/),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Source")).toBeInTheDocument();
+    expect(screen.getByLabelText("Status")).toBeInTheDocument();
+    expect(screen.getByText("Group by:")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Add axis/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /Connect Amazon/ }),
+    ).toBeInTheDocument();
   });
 
   it("shows the disabled state when the feature is off", async () => {
