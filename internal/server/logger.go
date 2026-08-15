@@ -25,7 +25,11 @@ func requestLogger(logger *slog.Logger) echo.MiddlewareFunc {
 			if resp, ok := c.Response().(*echo.Response); ok {
 				status = resp.Status
 			}
-			logger.Info("http request",
+			// InfoContext (not Info): slog only hands the context to the
+			// handler on the *Context variants, and without it the traceHandler
+			// sees context.Background() with no span — so trace_id/span_id never
+			// get stamped and HyperDX can't pivot log -> trace (TALOS-kvg1).
+			logger.InfoContext(c.Request().Context(), "http request",
 				"method", c.Request().Method,
 				"path", c.Request().URL.Path,
 				"status", status,
