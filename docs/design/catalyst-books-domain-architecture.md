@@ -371,6 +371,28 @@ Amazon exposes no explicit shelf state we trust for "done," so the derived
 - **> 95% (audio)** or **100% (kindle)** ⇒ `read` / finished.
 - Otherwise `reading` if opened (an LPR exists), else `want`.
 
+**Kindle's `reading` is a reconcile sweep, and it is deliberately permissive.** The Cloud
+Reader library feed reports `percentageRead=0` for *every* Kindle book, so ingest can only
+default them all to `want`. The **`books-kindle-status-reconcile`** job (`reconcile.go`,
+`ReconcileKindleStatus`) then gives each non-`read` Kindle book an honest status by polling
+the CDE **sidecar** (the last-page-read record, §6), throttled to one call per ~50 ms:
+
+- sidecar **has an LPR (200)** ⇒ the book has been **opened** ⇒ `want → reading` (+ it seeds
+  one `kindle_reading_positions` sample so the forward reading-time job has an anchor);
+- sidecar **404s** ⇒ no reading state ⇒ honestly left `want`.
+
+It never touches a `read`/finished row, so it is safe to re-run. Its log line reports
+`scanned / of / markedReading / errors`. This sidecar poll is the **only** "started" signal
+Amazon gives us (percentage is useless).
+
+> **Caveat — `reading` means "opened at least once," NOT "actively reading."** An LPR is set
+> the moment you open a book, so a book you cracked open and abandoned still reconciles to
+> `reading`. That permissiveness is expected and is the root of the "Amazon is too permissive
+> about reading" problem — it is precisely why the **override layer** (§4A.2) lets you mark
+> the abandoned ones `dnf`/`paused`, and why **effective** status (not derived) drives the
+> app. For the finer "actively reading now" signal, see the reading monitor's session cadence
+> (§5.1).
+
 Grounded in `internal/domains/books` ingest (`statusFromPercent`) and
 `internal/domains/audiobooks` (`toReadingItem`). Because status now has two
 meanings, the query DSL exposes **two group-by axes**:
@@ -627,7 +649,7 @@ flowchart TD
 | `todo-ta-g7g…/FionaTodoListProxy/syncMetaData?type=EBOK` | device-ADP | An **empty delta-sync** feed — looks like the library, returns nothing useful. | ✗ red herring |
 | `todo-ta-g7g…/FionaTodoListProxy/getItems?type=EBOK` | device-ADP | A **todo/notification feed** — mostly Audible events, not owned ebooks. | ✗ red herring |
 | `api.amazon.com/whispersync/v2/data/<customer_id>/datasets` | device-ADP | **CloudCollections** shelves (Currently Reading / Done Reading / Have Not Read / series), books keyed `amzn://<ASIN>/BOOK`. **Live probe: stale (records from 2014), ~136 titleless collection books, only ~7% of Kindle ASINs resolvable via Hardcover.** No reading-time anywhere in whispersync. | ◑ **series/shelf enrichment only** — NOT the primary library. `<customer_id>` = numeric `DeviceCredential.CustomerID`. |
-| `cde-ta-g7g…/FionaCDEServiceEngine/sidecar?type=EBOK&key=<ASIN>` | device-ADP | **`kindle.lpr`** JSON (not XML): exactly one `{type:"kindle.lpr", location, annotationId:"…-furthest-page-read", creationTime}` record = the furthest-page-read **snapshot** (position + Amazon's event time). Actively-read book → 200; non-read → 404. | ✅ **forward reading-time source** (§6.4). Poll → dedupe on `creationTime` → diff `location`. |
+| `cde-ta-g7g…/FionaCDEServiceEngine/sidecar?type=EBOK&key=<ASIN>` | device-ADP | **`kindle.lpr`** JSON (not XML): exactly one `{type:"kindle.lpr", location, annotationId:"…-furthest-page-read", creationTime}` record = the furthest-page-read **snapshot** (position + Amazon's event time). Actively-read book → 200; non-read → 404. | ✅ **forward reading-time source** (§6.4) AND the **`want→reading` status reconcile** (§4A.4): the `books-kindle-status-reconcile` sweep polls it per non-read book — 200 (has an LPR = *opened at least once*) ⇒ `reading`, 404 ⇒ `want`. Note the permissiveness: 200 means *opened*, not *actively reading*. Poll → dedupe on `creationTime` → diff `location` for reading-time. |
 | `www.amazon.com/ap/exchangetoken/cookies` | refresh_token (form POST) | Exchanges the device `refresh_token` for website cookies (`at-main`, `session-token`, `ubid-main`, `x-main`, `session-id`). | 🔑 bootstraps the two cookie-auth surfaces below (§6.2). |
 | `read.amazon.com/kindle-library/search?libraryType=BOOKS&sortType=acquisition_desc&querySize=200[&paginationToken=]` | web-cookie | **The full library WITH metadata** — `itemsList[]{asin, title, authors, percentageRead (0–100), productUrl (cover), webReaderUrl}` + `paginationToken`. **Live: 2512 books.** | ✅ **PRIMARY library + metadata + progress.** `percentageRead` → status (0=want / 100=read / else reading) — but see §6.4: it reads `0` in practice. |
 | `www.amazon.com/kindle/reading/insights/data` | web-cookie (GET, no CSRF) | `goal_info.titles_read[]{asin, date_read, read_event_id, content_type}` — per-book read **dates**, back to 2020 — plus daily/weekly **streaks**, goals, achievements (40KB JSON). | ✅ **finish-date backfill** — the per-book history Cloud Reader's library payload lacks. |
