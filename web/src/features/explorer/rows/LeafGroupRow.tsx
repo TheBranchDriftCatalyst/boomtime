@@ -4,11 +4,72 @@ import {
   INDENT,
   useExplorerRowContext,
 } from "@/features/explorer/rows/explorerRowContext";
+import { cn } from "@/lib/utils";
 import type { LeafGroupNode, LeafRowNode } from "@/features/explorer/explorerModel";
 import type {
   ChildState,
   LeafPageState,
 } from "@/features/explorer/useExplorerTree";
+
+interface LeafPagerProps {
+  /** Pagination state for the leaf owner (undefined => not yet loaded). */
+  page: LeafPageState | undefined;
+  onSetPage: (page: number) => void;
+  loading?: boolean;
+  className?: string;
+  style?: React.CSSProperties;
+}
+
+/**
+ * Prev / page-of / Next pager for a paginated leaf owner. Renders nothing when
+ * everything fits on one page. Shared by the flat-root leaf-group (inline with
+ * its label) and each terminal group (inline under its own row).
+ */
+export function LeafPager({
+  page: pageState,
+  onSetPage,
+  loading,
+  className,
+  style,
+}: LeafPagerProps) {
+  const total = pageState?.total ?? 0;
+  const limit = pageState?.limit ?? 50;
+  const page = pageState?.page ?? 1;
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  if (total <= limit) return null;
+
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-2 text-xs text-muted-foreground",
+        className,
+      )}
+      style={style}
+    >
+      <span>
+        Page {page} / {totalPages}
+      </span>
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-6"
+        disabled={page <= 1 || loading}
+        onClick={() => onSetPage(page - 1)}
+      >
+        Prev
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-6"
+        disabled={page >= totalPages || loading}
+        onClick={() => onSetPage(page + 1)}
+      >
+        Next
+      </Button>
+    </div>
+  );
+}
 
 interface LeafGroupRowProps {
   node: LeafGroupNode;
@@ -35,9 +96,6 @@ export function LeafGroupRow({
   const colSpan = 1 + columns.length;
 
   const total = pageState?.total ?? 0;
-  const limit = pageState?.limit ?? 50;
-  const page = pageState?.page ?? 1;
-  const totalPages = Math.max(1, Math.ceil(total / limit));
 
   return (
     <tr className="border-t bg-muted/20">
@@ -63,30 +121,12 @@ export function LeafGroupRow({
               </span>
             )}
           </button>
-          {expanded && total > limit && (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span>
-                Page {page} / {totalPages}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-6"
-                disabled={page <= 1 || state?.loading}
-                onClick={() => onSetPage(page - 1)}
-              >
-                Prev
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-6"
-                disabled={page >= totalPages || state?.loading}
-                onClick={() => onSetPage(page + 1)}
-              >
-                Next
-              </Button>
-            </div>
+          {expanded && (
+            <LeafPager
+              page={pageState}
+              onSetPage={onSetPage}
+              loading={state?.loading}
+            />
           )}
         </div>
         {expanded && jsonMode && (

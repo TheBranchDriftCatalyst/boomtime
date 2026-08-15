@@ -42,8 +42,13 @@ export function useLeafSort<Row>(
         if (n.kind === "leafRow") return n;
         const sub = (n as GroupNode | LeafGroupNode).subRows;
         if (!sub) return n;
-        const nextSub =
-          n.kind === "leafGroup" ? [...sub].sort(cmp) : walk(sub);
+        // A leaf owner's children are leaf rows: sort them here. That's either
+        // the synthetic flat-root leaf-group or a terminal group (no nextAxis,
+        // which now holds its rows directly). Non-terminal groups recurse.
+        const ownsLeafRows =
+          n.kind === "leafGroup" ||
+          (n.kind === "group" && !(n as GroupNode).nextAxis);
+        const nextSub = ownsLeafRows ? [...sub].sort(cmp) : walk(sub);
         return { ...n, subRows: nextSub } as ExplorerNode;
       });
     return walk(tree);

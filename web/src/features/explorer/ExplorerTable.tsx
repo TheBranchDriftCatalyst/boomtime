@@ -202,6 +202,8 @@ export function ExplorerTable<TRow>({ ctrl, config, leafMode }: Props<TRow>) {
                       expanded={row.getIsExpanded()}
                       onToggle={() => void toggleRow(row)}
                       decoration={decorate(n, n.path)}
+                      leafPage={ctrl.leafPages[n.id]}
+                      onSetLeafPage={(page) => void ctrl.setLeafPage(n, page)}
                     />
                   );
                 }

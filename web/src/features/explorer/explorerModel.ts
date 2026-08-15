@@ -1,10 +1,11 @@
 import type { DrillPath, GroupStats } from "@/features/explorer/types";
 
 // A single node in the unified explorer table. Group nodes come from the
-// source's grouped fetch (one per axis level); a synthetic leaf-group node owns
-// the paginated leaf rows once the deepest axis is expanded; leaf nodes are the
-// raw domain rows. All three live in the same TanStack Table tree so a single
-// table renders the whole drill-down (server-driven, lazy subRows).
+// source's grouped fetch (one per axis level); a TERMINAL group (deepest axis)
+// owns its paginated leaf rows directly. The synthetic leaf-group node now
+// backs only the flat (zero-axis) "Table" view. Leaf nodes are the raw domain
+// rows. All live in the same TanStack Table tree so a single table renders the
+// whole drill-down (server-driven, lazy subRows).
 export type ExplorerNode<Row = unknown> =
   | GroupNode
   | LeafGroupNode
@@ -29,8 +30,8 @@ export interface GroupNode {
   subRows?: ExplorerNode[];
 }
 
-// A synthetic node under the last group level owning the paginated leaf rows
-// for the fully-drilled drill path.
+// A synthetic node owning the paginated leaf rows for the flat (zero-axis)
+// "Table" view. Drilled leaves attach their rows to the terminal group itself.
 export interface LeafGroupNode {
   kind: "leafGroup";
   id: string;

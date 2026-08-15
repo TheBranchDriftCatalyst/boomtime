@@ -108,7 +108,7 @@ function Harness({
 }
 
 describe("GroupableExplorer", () => {
-  it("expands a group to load children and paginates the leaf rows", async () => {
+  it("expands a terminal group directly to its rows (no intermediate label)", async () => {
     const user = userEvent.setup();
     const source = makeSource();
     render(<Harness config={makeConfig(source)} initialGroupBy={["a"]} />);
@@ -119,18 +119,24 @@ describe("GroupableExplorer", () => {
     expect(screen.getByText("3")).toBeInTheDocument(); // count badge
     expect(screen.getByText("30s")).toBeInTheDocument(); // rollup format
 
-    // Expand a1 -> a single leaf-group ("Rows") child appears.
+    // Expand a1 (the deepest axis) -> its leaf rows render DIRECTLY: no
+    // intermediate "Rows" entity-label node to expand a second time.
     await user.click(screen.getByText("a1"));
-    await screen.findByText("Rows");
-
-    // Expand the leaf group -> first page (2 of 3 rows) + pagination.
-    await user.click(screen.getByText("Rows"));
     await screen.findByText("row-1");
     expect(screen.getByText("row-2")).toBeInTheDocument();
     expect(screen.queryByText("row-3")).not.toBeInTheDocument();
+    // The redundant per-group leaf-group label is gone in the grouped view.
+    expect(screen.queryByText("Rows")).not.toBeInTheDocument();
+    // The pager now sits inline under the terminal group.
     expect(screen.getByText("Page 1 / 2")).toBeInTheDocument();
+    // Leaf rows were fetched for a1's drill path on the single expand.
+    expect(source.fetchLeaf).toHaveBeenCalledWith(
+      [{ dim: "a", value: "a1" }],
+      1,
+      2,
+    );
 
-    // Next page -> the third row.
+    // Next page -> the third row, driven by the inline pager.
     await user.click(screen.getByRole("button", { name: "Next" }));
     await screen.findByText("row-3");
     expect(screen.getByText("Page 2 / 2")).toBeInTheDocument();

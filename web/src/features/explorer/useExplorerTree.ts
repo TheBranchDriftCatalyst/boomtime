@@ -38,11 +38,20 @@ export interface ChildState {
 // LeafGroupRow) instead of hard-capping the flat table at one leafPageSize page.
 export const ROOT_LEAF_ID = "leaf:__root__";
 
-// Leaf pagination is tracked per leaf-group id.
+// Leaf pagination is tracked per leaf-owner id.
 export interface LeafPageState {
   page: number; // 1-based (matches backend)
   total: number;
   limit: number;
+}
+
+// The minimal shape of a node that owns paginated leaf rows: a terminal group
+// (its rows attach to itself) or the synthetic flat-root leaf-group. Both carry
+// the id/path/depth setLeafPage needs to fetch and re-key a page.
+export interface LeafOwner {
+  id: string;
+  path: DrillPath;
+  depth: number;
 }
 
 /**
@@ -226,20 +235,32 @@ export function useExplorerTree<Row>({
       if (node.kind === "group") {
         if (childCache[node.id]?.children || childCache[node.id]?.loading)
           return;
-        // Last axis -> its child is a single leaf-group node.
+        // Last axis -> this group directly owns its paginated leaf rows (no
+        // intermediate leaf-group label to expand a second time). Fetch the
+        // current page and attach the rows as the group's own children;
+        // pagination is tracked under the group's id (its inline pager).
         if (!node.nextAxis) {
-          const leafId = `leaf:${node.id}`;
+          const page = leafPages[node.id]?.page ?? 1;
           setChildCache((c) => ({ ...c, [node.id]: { loading: true, error: false } }));
-          const leafGroup: LeafGroupNode = {
-            kind: "leafGroup",
-            id: leafId,
-            path: node.path,
-            depth: node.depth + 1,
-          };
-          setChildCache((c) => ({
-            ...c,
-            [node.id]: { loading: false, error: false, children: [leafGroup] },
-          }));
+          try {
+            const payload = await fetchLeaf(node.path, page);
+            const rows: LeafRowNode<Row>[] = payload.rows.map((r) => ({
+              kind: "leafRow",
+              id: `row:${node.id}:${rowKey(r)}`,
+              depth: node.depth + 1,
+              row: r,
+            }));
+            setLeafPages((p) => ({
+              ...p,
+              [node.id]: { page, total: payload.total, limit: payload.limit },
+            }));
+            setChildCache((c) => ({
+              ...c,
+              [node.id]: { loading: false, error: false, children: rows },
+            }));
+          } catch {
+            setChildCache((c) => ({ ...c, [node.id]: { loading: false, error: true } }));
+          }
           return;
         }
         // Next axis group level.
@@ -297,28 +318,29 @@ export function useExplorerTree<Row>({
     [axes, childCache, leafPages, fetchGroup, fetchLeaf, buildGroupChildren, rowKey],
   );
 
-  // Change the page for a leaf-group and refetch.
+  // Change the page for a leaf owner (a terminal group or the flat-root
+  // leaf-group) and refetch. Both carry the id/path/depth this needs.
   const setLeafPage = useCallback(
-    async (leafGroup: LeafGroupNode, page: number) => {
-      setChildCache((c) => ({ ...c, [leafGroup.id]: { loading: true, error: false } }));
+    async (owner: LeafOwner, page: number) => {
+      setChildCache((c) => ({ ...c, [owner.id]: { loading: true, error: false } }));
       try {
-        const payload = await fetchLeaf(leafGroup.path, page);
+        const payload = await fetchLeaf(owner.path, page);
         const rows: LeafRowNode<Row>[] = payload.rows.map((r) => ({
           kind: "leafRow",
-          id: `row:${leafGroup.id}:${rowKey(r)}`,
-          depth: leafGroup.depth + 1,
+          id: `row:${owner.id}:${rowKey(r)}`,
+          depth: owner.depth + 1,
           row: r,
         }));
         setLeafPages((p) => ({
           ...p,
-          [leafGroup.id]: { page, total: payload.total, limit: payload.limit },
+          [owner.id]: { page, total: payload.total, limit: payload.limit },
         }));
         setChildCache((c) => ({
           ...c,
-          [leafGroup.id]: { loading: false, error: false, children: rows },
+          [owner.id]: { loading: false, error: false, children: rows },
         }));
       } catch {
-        setChildCache((c) => ({ ...c, [leafGroup.id]: { loading: false, error: true } }));
+        setChildCache((c) => ({ ...c, [owner.id]: { loading: false, error: true } }));
       }
     },
     [fetchLeaf, rowKey],

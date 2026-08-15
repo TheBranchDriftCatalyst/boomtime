@@ -9,10 +9,14 @@ import {
   INDENT,
   useExplorerRowContext,
 } from "@/features/explorer/rows/explorerRowContext";
+import { LeafPager } from "@/features/explorer/rows/LeafGroupRow";
 import { cn } from "@/lib/utils";
 import type { GroupDecoration } from "@/features/explorer/types";
-import type { GroupNode } from "@/features/explorer/explorerModel";
-import type { ChildState } from "@/features/explorer/useExplorerTree";
+import type { GroupNode, LeafRowNode } from "@/features/explorer/explorerModel";
+import type {
+  ChildState,
+  LeafPageState,
+} from "@/features/explorer/useExplorerTree";
 
 interface GroupRowProps {
   node: GroupNode;
@@ -22,6 +26,13 @@ interface GroupRowProps {
   onToggle: () => void;
   /** Domain-injected badges/actions/dimming for this node. */
   decoration?: GroupDecoration;
+  /**
+   * Leaf pagination for a TERMINAL group (no nextAxis): it owns its leaf rows
+   * directly, so the pager (and the JSON blob in JSON mode) render inline under
+   * this row instead of on a separate labeled leaf-group node.
+   */
+  leafPage?: LeafPageState;
+  onSetLeafPage?: (page: number) => void;
 }
 
 /**
@@ -35,11 +46,17 @@ export function GroupRow({
   expanded,
   onToggle,
   decoration,
+  leafPage,
+  onSetLeafPage,
 }: GroupRowProps) {
-  const { columns, rollups, labelForAxis } = useExplorerRowContext();
+  const { columns, rollups, labelForAxis, jsonMode, renderJson } =
+    useExplorerRowContext();
 
   const colSpan = 1 + columns.length;
   const isNull = n.value == null;
+  // A terminal group (deepest axis) owns its paginated leaf rows directly.
+  const isTerminal = !n.nextAxis;
+  const leafIndent = (n.depth + 1) * INDENT;
 
   return (
     <tr className="group/row border-t hover:bg-muted/40">
@@ -102,6 +119,24 @@ export function GroupRow({
           <p className="pl-6 text-xs text-amber-500">
             Showing the top groups only (results truncated).
           </p>
+        )}
+        {isTerminal && expanded && onSetLeafPage && (
+          <LeafPager
+            className="mt-1.5"
+            style={{ paddingLeft: leafIndent }}
+            page={leafPage}
+            onSetPage={onSetLeafPage}
+            loading={state?.loading}
+          />
+        )}
+        {isTerminal && expanded && jsonMode && (
+          <div className="mt-2" style={{ paddingLeft: leafIndent }}>
+            {renderJson(
+              (n.subRows ?? []).map((r) =>
+                r.kind === "leafRow" ? (r as LeafRowNode).row : r,
+              ),
+            )}
+          </div>
         )}
       </td>
     </tr>
