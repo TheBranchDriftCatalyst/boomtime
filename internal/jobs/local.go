@@ -79,6 +79,39 @@ func (p *LocalProvider) claimExclude(ctx context.Context, reg *Registry) []strin
 // and failure paths (execute recovers panics internally, so it always returns).
 // It returns false, having Requeued the row, when the slot couldn't be acquired:
 // a rare exclude/acquire race whose only cost is that attempt-free Requeue.
+// startSlotRefresh re-stamps a held semaphore slot every slotRefreshInterval
+// until the returned stop func is called (which signals AND waits for the
+// goroutine to exit, so it can be sequenced before release()). No-op when there
+// is no limiter.
+func (p *LocalProvider) startSlotRefresh(ctx context.Context, kind, holder string) func() {
+	if p.limiter == nil {
+		return func() {}
+	}
+	done := make(chan struct{})
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		t := time.NewTicker(slotRefreshInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if err := p.limiter.Refresh(ctx, kind, holder); err != nil && ctx.Err() == nil {
+					p.log.Warn("jobs: slot refresh failed", "kind", kind, "err", err)
+				}
+			}
+		}
+	}()
+	return func() {
+		close(done)
+		<-stopped
+	}
+}
+
 func (p *LocalProvider) runJob(ctx context.Context, reg *Registry, job Job) bool {
 	if p.limiter != nil {
 		if max := reg.Concurrency()[job.Kind]; max > 0 {
@@ -100,8 +133,15 @@ func (p *LocalProvider) runJob(ctx context.Context, reg *Registry, job Job) bool
 				// This pod holds a slot for the run's duration — reflect it as
 				// in-flight vs the cap, releasing on completion.
 				metrics.JobLimiterInflight.WithLabelValues(job.Kind).Inc()
+				// Re-stamp the slot every slotRefreshInterval so a long-but-LIVE job
+				// keeps it (semTTL is short now, so a crashed pod's slot prunes fast).
+				// stopRefresh signals-and-waits, so the refresher is guaranteed done
+				// BEFORE release() ZREMs — no refresh can resurrect the freed slot.
+				holder := p.id + ":" + strconv.FormatInt(job.ID, 10)
+				stopRefresh := p.startSlotRefresh(ctx, job.Kind, holder)
 				defer func() {
 					metrics.JobLimiterInflight.WithLabelValues(job.Kind).Dec()
+					stopRefresh()
 					release()
 				}()
 			}

@@ -30,13 +30,26 @@ type KindLimiter interface {
 	// true the returned release func frees the slot; it is safe to call once.
 	// max<=0 is unlimited: ok is always true and release is a no-op.
 	Acquire(ctx context.Context, kind, holder string, max int) (release func(), ok bool, err error)
+	// Refresh re-stamps a live holder's slot so it isn't pruned by the TTL while
+	// the job is still running (the slot analogue of the DB heartbeat). It only
+	// touches an EXISTING holder — a refresh that races a release must not
+	// resurrect the freed slot. Best-effort; a transient error is non-fatal.
+	Refresh(ctx context.Context, kind, holder string) error
 }
 
-// semTTL is how long a reserved slot survives without an explicit release. A pod
-// that crashes mid-job never runs its release func; the TTL-based prune reclaims
-// its slot so the kind can't wedge at limit forever. It must comfortably exceed
-// the longest expected job runtime.
-const semTTL = 15 * time.Minute
+// semTTL is how long a reserved slot survives without a refresh. A running job
+// re-stamps its slot every slotRefreshInterval (see the refresh loop in
+// runJob), so a LIVE job of any duration keeps its slot; a pod that CRASHES
+// mid-job stops refreshing and its slot is pruned within semTTL so the kind
+// can't wedge at limit. It must exceed slotRefreshInterval with margin (NOT the
+// job runtime — the refresh decouples the TTL from how long a job runs, which
+// also fixes the old bug where a job longer than the TTL lost its slot mid-run
+// and let a second run start over the cap).
+const semTTL = 2 * time.Minute
+
+// slotRefreshInterval is how often a running job re-stamps its semaphore slot.
+// Well under semTTL so a live holder is never pruned.
+const slotRefreshInterval = 30 * time.Second
 
 // NewKindLimiter returns a Dragonfly/Redis-backed limiter when rdb is non-nil
 // (fleet-wide, shared across pods), else an in-process fallback that is only
@@ -110,6 +123,17 @@ func (l *redisLimiter) Acquire(ctx context.Context, kind, holder string, max int
 		l.rdb.ZRem(context.Background(), key, holder)
 	}
 	return release, true, nil
+}
+
+// Refresh re-stamps holder's slot to now via ZADD XX (update-only): it never
+// creates a member, so a refresh that races a release (release ZREMs the member
+// first) cannot resurrect the freed slot. Live holder → score bumped past the
+// prune cutoff; already-released holder → no-op.
+func (l *redisLimiter) Refresh(ctx context.Context, kind, holder string) error {
+	return l.rdb.ZAddXX(ctx, semKey(kind), redis.Z{
+		Score:  float64(time.Now().Unix()),
+		Member: holder,
+	}).Err()
 }
 
 func (l *redisLimiter) Excluded(ctx context.Context, limits map[string]int) ([]string, error) {
@@ -191,6 +215,11 @@ func (l *memLimiter) Acquire(_ context.Context, kind, _ string, max int) (func()
 	}
 	return release, true, nil
 }
+
+// Refresh is a no-op for the in-process limiter: its counts are only correct for
+// a single pod (there is no cross-pod TTL prune to keep alive), and release is
+// always run explicitly, so there is nothing to re-stamp.
+func (l *memLimiter) Refresh(_ context.Context, _, _ string) error { return nil }
 
 func (l *memLimiter) Excluded(_ context.Context, limits map[string]int) ([]string, error) {
 	if len(limits) == 0 {

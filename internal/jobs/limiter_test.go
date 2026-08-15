@@ -102,6 +102,37 @@ func TestMemLimiterReleaseIdempotent(t *testing.T) {
 	}
 }
 
+func TestMemLimiterRefreshNoOp(t *testing.T) {
+	// The in-process limiter has no TTL prune, so Refresh is a no-op that must not
+	// alter the count or error — a held slot stays held, an unknown holder is fine.
+	l := newMemLimiter()
+	ctx := context.Background()
+	const kind = "hardcover-match"
+
+	_, ok, _ := l.Acquire(ctx, kind, "h1", 1)
+	if !ok {
+		t.Fatal("expected acquire to succeed")
+	}
+	if err := l.Refresh(ctx, kind, "h1"); err != nil {
+		t.Fatalf("Refresh returned %v, want nil", err)
+	}
+	if err := l.Refresh(ctx, kind, "nonexistent"); err != nil {
+		t.Fatalf("Refresh(unknown) returned %v, want nil", err)
+	}
+	// The slot is still held after refresh — a second acquire at cap 1 is refused.
+	if _, ok, _ := l.Acquire(ctx, kind, "h2", 1); ok {
+		t.Fatal("expected acquire at limit to fail (slot still held after refresh)")
+	}
+}
+
+func TestStartSlotRefreshNilLimiter(t *testing.T) {
+	// With no limiter, startSlotRefresh must return a stop func that is safe to
+	// call and returns promptly (no goroutine to wait on).
+	p := &LocalProvider{}
+	stop := p.startSlotRefresh(context.Background(), "k", "h")
+	stop() // must not block or panic
+}
+
 func TestNewKindLimiterNilClient(t *testing.T) {
 	// A nil *redis.Client must yield the in-process fallback, never nil.
 	l := NewKindLimiter(nil)
