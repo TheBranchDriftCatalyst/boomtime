@@ -3,6 +3,7 @@ package hardcover
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 )
@@ -39,18 +40,23 @@ func (c *Client) SearchCandidates(ctx context.Context, query string, limit int) 
 	if limit <= 0 || limit > 20 {
 		limit = 8
 	}
-	// per_page is a Typesense arg; the query var is the free text. query_type=Book.
-	q := `query Search($query: String!, $per: Int!) {
-  search(query: $query, query_type: "Book", per_page: $per, page: 1) {
+	// per_page MUST be an inline literal, NOT a GraphQL variable: Hardcover's
+	// server-side Typesense call silently returns `results: null` (no GraphQL error,
+	// HTTP 200) when per_page arrives as a bound $variable — so the proven automated
+	// query (match.go searchMatch) uses a literal, and so must this. limit is a
+	// bounded int (1..20, clamped above), so inlining it is injection-safe. Only the
+	// free-text query stays a $variable (it must be parameterized).
+	q := fmt.Sprintf(`query Search($query: String!) {
+  search(query: $query, query_type: "Book", per_page: %d, page: 1) {
     results
   }
-}`
+}`, limit)
 	var data struct {
 		Search struct {
 			Results json.RawMessage `json:"results"`
 		} `json:"search"`
 	}
-	if err := c.graphql(ctx, q, map[string]any{"query": query, "per": limit}, &data); err != nil {
+	if err := c.graphql(ctx, q, map[string]any{"query": query}, &data); err != nil {
 		return nil, err
 	}
 	return parseSearchCandidates(data.Search.Results, limit), nil
