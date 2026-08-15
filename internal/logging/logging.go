@@ -6,7 +6,7 @@ package logging
 
 import (
 	"context"
-	"go.opentelemetry.io/otel/trace"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/tracing"
 	"log/slog"
 	"os"
 	"strings"
@@ -56,7 +56,7 @@ func Setup(c *config.Config) (*slog.Logger, *LogHub) {
 	// traceHandler stamps trace_id/span_id onto every record that carries a
 	// span, which is what lets HyperDX pivot from a log line to its trace
 	// (otel_logs already has TraceId/SpanId columns). No-op without a span.
-	l := slog.New(&traceHandler{Handler: &teeHandler{base: base, hub: hub, stdoutLevel: stdoutLevel}})
+	l := slog.New(tracing.NewSlogHandler(&teeHandler{base: base, hub: hub, stdoutLevel: stdoutLevel}))
 	slog.SetDefault(l)
 	return l, hub
 }
@@ -121,27 +121,4 @@ func (t *teeHandler) WithAttrs(as []slog.Attr) slog.Handler {
 
 func (t *teeHandler) WithGroup(name string) slog.Handler {
 	return &teeHandler{base: t.base.WithGroup(name), hub: t.hub, stdoutLevel: t.stdoutLevel, attrs: t.attrs, group: name}
-}
-
-// traceHandler injects the active span's IDs into log records (TALOS-kvg1).
-type traceHandler struct{ slog.Handler }
-
-func (h *traceHandler) Handle(ctx context.Context, r slog.Record) error {
-	if sc := trace.SpanContextFromContext(ctx); sc.IsValid() {
-		r.AddAttrs(
-			slog.String("trace_id", sc.TraceID().String()),
-			slog.String("span_id", sc.SpanID().String()),
-		)
-	}
-	return h.Handler.Handle(ctx, r)
-}
-
-// WithAttrs/WithGroup must re-wrap, otherwise slog unwraps back to the inner
-// handler and trace IDs silently stop appearing on derived loggers.
-func (h *traceHandler) WithAttrs(as []slog.Attr) slog.Handler {
-	return &traceHandler{Handler: h.Handler.WithAttrs(as)}
-}
-
-func (h *traceHandler) WithGroup(name string) slog.Handler {
-	return &traceHandler{Handler: h.Handler.WithGroup(name)}
 }

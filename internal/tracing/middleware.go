@@ -11,7 +11,10 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const tracerName = "github.com/TheBranchDriftCatalyst/boomtime"
+// TracerName identifies the instrumentation library in emitted spans.
+// Exported so this package can be lifted into a shared module and
+// re-pointed by the consuming service without editing the middleware.
+var TracerName = "github.com/TheBranchDriftCatalyst/boomtime/internal/tracing"
 
 // Middleware produces server spans for every request.
 //
@@ -19,7 +22,7 @@ const tracerName = "github.com/TheBranchDriftCatalyst/boomtime"
 // echo/v4 while boomtime runs echo/v5 (verified 2026-08-15: otelecho v0.70.0
 // requires github.com/labstack/echo/v4).
 func Middleware() echo.MiddlewareFunc {
-	tracer := otel.Tracer(tracerName)
+	tracer := otel.Tracer(TracerName)
 	prop := otel.GetTextMapPropagator()
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {

@@ -1,4 +1,22 @@
-// Package tracing wires OpenTelemetry tracing for boomtime (TALOS-kvg1).
+// Package tracing wires OpenTelemetry tracing (TALOS-kvg1).
+//
+// DESIGNED FOR EXTRACTION: this package is deliberately self-contained so it
+// can be lifted verbatim into a shared catalyst module and reused by other
+// services. It imports nothing from boomtime — only otel, echo and stdlib —
+// and everything service-specific is injected:
+//
+//   - service name  <- OTEL_SERVICE_NAME (falls back to ServiceName)
+//   - endpoint/auth <- standard OTEL_EXPORTER_OTLP_* env
+//   - TracerName    <- exported var, re-point per service
+//
+// Integration surface is three one-liners, nothing more:
+//
+//	tracing.Setup(ctx, logger, version)          // in main, defer the shutdown
+//	e.Use(tracing.Middleware())                  // echo v5 server spans
+//	slog.New(tracing.NewSlogHandler(inner))      // trace_id/span_id on logs
+//
+// Plus one line in any pgx pool config to add per-query spans (see
+// otelpgx registration in internal/db/observability.go).
 //
 // Design notes:
 //   - Tracing is OPT-IN: if OTEL_EXPORTER_OTLP_ENDPOINT is unset, Setup is a
