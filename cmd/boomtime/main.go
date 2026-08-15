@@ -864,9 +864,18 @@ func runCmd() *cobra.Command {
 				//     of the audible-sync handler, above) so all users' Hardcover
 				//     pushes share one cap=1 queue — Hardcover's rate limit is global.
 				//     Registered + capped only inside the BooksEnabled block.
-				jobReg.SetConcurrency(github.GithubStatsRefreshKind, 2)  // github-stats-refresh
-				jobReg.SetConcurrency(identity.AvatarRenderKind, 1)      // avatar-render
-				jobReg.SetConcurrency(labelimages.RegenJobKind, 1)       // label-image
+				jobReg.SetConcurrency(github.GithubStatsRefreshKind, 2) // github-stats-refresh
+				jobReg.SetConcurrency(identity.AvatarRenderKind, 1)     // avatar-render
+				jobReg.SetConcurrency(labelimages.RegenJobKind, 1)      // label-image
+				// Offload routing: these two are the HEAVY kinds drained by the
+				// scale-to-zero worker (KEDA). Marking them here is the SINGLE source
+				// of truth — the worker's include-filter + the server's exclude-filter
+				// are both derived from this set (jobs.DeriveKindFilter), so every
+				// other kind (scheduled reading-monitor, hardcover/audible syncs, …)
+				// is server-resident by default and can't be orphaned by a worker
+				// scaling down mid-run (gaka-caxl).
+				jobReg.SetOffload(identity.AvatarRenderKind)             // avatar-render
+				jobReg.SetOffload(labelimages.RegenJobKind)              // label-image
 				jobReg.SetConcurrency(audiobooks.AudibleSyncKind, 1)     // audiobooks-audible-sync
 				jobReg.SetConcurrency(audiobooks.AudibleBackfillKind, 1) // audiobooks-audible-backfill (spec's "books-audible-backfill")
 				if cfg.BooksEnabled() {
@@ -906,10 +915,15 @@ func runCmd() *cobra.Command {
 					}
 					provider = amqpProv
 				}
-				// Kind-routing (gaka-hney): the always-on server excludes heavy
-				// kinds; a ScaledJob includes them. Only the local provider filters.
+				// Kind-routing (gaka-hney / gaka-caxl): DERIVED from the registry's
+				// offload set + this pod's role so it can't drift — a worker claims
+				// only offload kinds, the server excludes them, "all" claims
+				// everything. Explicit BOOM_JOBS_KINDS / _EXCLUDE_KINDS still override
+				// (operator escape hatch). Only the local provider filters.
 				if lp, ok := provider.(*jobs.LocalProvider); ok {
-					lp.SetKindFilter(cfg.JobsKinds, cfg.JobsExcludeKinds)
+					include, exclude := jobs.DeriveKindFilter(cfg.Role, jobReg.OffloadKinds(), cfg.JobsKinds, cfg.JobsExcludeKinds)
+					lp.SetKindFilter(include, exclude)
+					logger.Info("jobs: kind filter", "role", cfg.Role, "include", include, "exclude", exclude)
 				}
 
 				// Job-layer concurrency throttle (fleet-wide per-kind caps set on

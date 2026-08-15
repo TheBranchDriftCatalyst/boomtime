@@ -95,11 +95,17 @@ type Registry struct {
 	// A kind absent from the map (or set to 0) is unlimited. Register does NOT
 	// touch this — limits are policy set separately via SetConcurrency.
 	concurrency map[string]int
+	// offload marks the heavy/"drainable" kinds that belong on a scale-to-zero
+	// worker (e.g. avatar-render, label-image), NOT the always-on server. The
+	// provider kind-filter is derived from this (see DeriveKindFilter) so a new
+	// scheduled/server-resident kind is server-only by DEFAULT and can never be
+	// silently orphaned by a worker scaling down mid-run. Policy, like concurrency.
+	offload map[string]bool
 }
 
 // NewRegistry returns an empty registry.
 func NewRegistry() *Registry {
-	return &Registry{handlers: map[string]Handler{}, concurrency: map[string]int{}}
+	return &Registry{handlers: map[string]Handler{}, concurrency: map[string]int{}, offload: map[string]bool{}}
 }
 
 // Register binds a handler to a kind (last write wins).
@@ -149,4 +155,55 @@ func (r *Registry) Kinds() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// SetOffload marks a kind as belonging to a scale-to-zero worker rather than the
+// always-on server (see the offload field). Policy, not wiring — call it near
+// SetConcurrency. The worker's include-filter and the server's exclude-filter are
+// both derived from this set (DeriveKindFilter), so routing lives in ONE place
+// and a new kind is server-resident by default.
+func (r *Registry) SetOffload(kind string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.offload[kind] = true
+}
+
+// OffloadKinds returns the offloadable (worker-resident) kinds, sorted.
+func (r *Registry) OffloadKinds() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]string, 0, len(r.offload))
+	for k := range r.offload {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// DeriveKindFilter computes the (include, exclude) kind-filter for a provider from
+// its role and the registry's offload set. An explicit env override (either
+// envInclude or envExclude non-empty) wins entirely — an operator escape hatch.
+// Otherwise the filter is DERIVED so routing can't drift:
+//   - role "worker" (a dedicated, KEDA-scaled pod): claim ONLY offload kinds, so
+//     a worker scaling to zero can never grab — and orphan — a server-resident or
+//     scheduled kind (the reading-monitor-orphan bug, gaka-caxl);
+//   - role "server" (always-on): claim everything EXCEPT offload kinds (those are
+//     drained by the worker);
+//   - any other role ("all" / single-pod dev): no filter, claim everything.
+//
+// A worker with an EMPTY offload set is a misconfiguration (it would claim
+// everything via an empty include); the caller logs the derived filter so that's
+// visible. Pure — unit-tested independently of main wiring.
+func DeriveKindFilter(role string, offload, envInclude, envExclude []string) (include, exclude []string) {
+	if len(envInclude) > 0 || len(envExclude) > 0 {
+		return envInclude, envExclude
+	}
+	switch role {
+	case "worker":
+		return offload, nil
+	case "server":
+		return nil, offload
+	default:
+		return nil, nil
+	}
 }
