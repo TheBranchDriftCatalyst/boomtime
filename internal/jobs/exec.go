@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logctx"
@@ -19,6 +20,38 @@ const (
 	outcomeRetry
 	outcomeFailed
 )
+
+// heartbeatInterval is how often a running job refreshes heartbeat_at. It must be
+// comfortably shorter than the reaper's lease TTL (default 120s) so a live handler
+// always renews before it could be judged stale, even across a missed tick.
+const heartbeatInterval = 30 * time.Second
+
+// startHeartbeat spins a goroutine that stamps store.Heartbeat(id) every
+// heartbeatInterval while a job's handler runs, keeping a LONG but live job (e.g. a
+// 20-min hardcover-match) from being reaped. The returned stop() ends it; call it
+// when the handler returns. The ticker also exits if ctx is cancelled (shutdown /
+// admin-cancel), so no goroutine leaks past the run.
+func startHeartbeat(ctx context.Context, store *Store, id int64, log *slog.Logger) (stop func()) {
+	done := make(chan struct{})
+	go func() {
+		t := time.NewTicker(heartbeatInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if err := store.Heartbeat(ctx, id); err != nil && ctx.Err() == nil {
+					log.Warn("jobs: heartbeat write failed", "id", id, "err", err)
+				}
+			}
+		}
+	}()
+	var once sync.Once
+	return func() { once.Do(func() { close(done) }) }
+}
 
 // retryDelay backs off a retry linearly (attempt × 30s), capped at 10m.
 func retryDelay(attempt int) time.Duration {
@@ -73,6 +106,9 @@ func execute(ctx context.Context, reg *Registry, store *Store, job Job, log *slo
 	// inherits job_id/kind/owner and the Admin viewer can filter to one job's run.
 	hctx := logctx.NewContext(ctx, jl)
 
+	// Keep this row's heartbeat_at fresh for the whole handler run so the stale-job
+	// reaper never reclaims a long-but-live job; stop the ticker once Handle returns.
+	stopHeartbeat := startHeartbeat(hctx, store, job.ID, jl)
 	err := func() (e error) {
 		defer func() {
 			if r := recover(); r != nil {
@@ -81,6 +117,7 @@ func execute(ctx context.Context, reg *Registry, store *Store, job Job, log *slo
 		}()
 		return h.Handle(hctx, job)
 	}()
+	stopHeartbeat()
 
 	// Cancelled mid-run (admin cancel via LocalProvider.Cancel, or shutdown): do
 	// NOT record a Complete/Fail that would clobber the terminal 'cancelled' status

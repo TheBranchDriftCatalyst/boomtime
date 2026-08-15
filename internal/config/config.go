@@ -327,6 +327,12 @@ type Config struct {
 	// so heavy kinds fall through to the ScaledJob.
 	JobsKinds        []string
 	JobsExcludeKinds []string
+	// JobsLeaseTTL (BOOM_JOBS_LEASE_TTL_SECS, default 120s) is the stale-job
+	// reaper's lease: a running row whose heartbeat_at (COALESCEd onto
+	// locked_at/started_at) is older than this is treated as lost — its worker pod
+	// died — and reset to queued (or failed if attempts are exhausted). Comfortably
+	// larger than the 30s handler heartbeat so a live job never trips it.
+	JobsLeaseTTL time.Duration
 
 	// Persistent reading-monitor tuning (catalyst-books §5.1). The two-level
 	// adaptive-poll intervals for the server-side Kindle reading-monitor
@@ -574,6 +580,7 @@ func Load() *Config {
 	c.JobsDrain = getEnvBool("BOOM_JOBS_DRAIN", false)
 	c.JobsKinds = splitCSV(getEnv("BOOM_JOBS_KINDS", ""))
 	c.JobsExcludeKinds = splitCSV(getEnv("BOOM_JOBS_EXCLUDE_KINDS", ""))
+	c.JobsLeaseTTL = time.Duration(getEnvInt("BOOM_JOBS_LEASE_TTL_SECS", 120)) * time.Second
 
 	// Persistent reading-monitor intervals (seconds). Clamped >0 so a bad env
 	// can't stall the engine (a non-positive value falls back to the default).

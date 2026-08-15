@@ -1046,6 +1046,12 @@ func runCmd() *cobra.Command {
 							logger.Error("jobs: provider stopped", "err", rerr)
 						}
 					}()
+					// Stale-job reaper: reclaim 'running' rows whose worker pod died
+					// (every deploy leaves in-flight jobs stuck running, blocking the
+					// per-kind cap). Sweeps once immediately — clearing the current
+					// backlog on boot — then every ~60s. Idempotent + concurrency-safe,
+					// so running it on every server/worker pod is fine.
+					go jobs.RunReaper(ctx, jobStore, cfg.JobsLeaseTTL, logger)
 				}
 			}
 

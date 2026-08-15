@@ -60,7 +60,8 @@ func (s *Store) ClaimNext(ctx context.Context, workerID string, include, exclude
 	row := s.pool.QueryRow(ctx,
 		`UPDATE jobs
 		    SET status = 'running', attempts = attempts + 1,
-		        started_at = now(), locked_by = $1, locked_at = now()
+		        started_at = now(), locked_by = $1, locked_at = now(),
+		        heartbeat_at = now()
 		  WHERE id = (
 		        SELECT id FROM jobs
 		         WHERE status = 'queued' AND run_at <= now()
@@ -89,7 +90,8 @@ func (s *Store) ClaimByID(ctx context.Context, id int64, workerID string) (*Job,
 	row := s.pool.QueryRow(ctx,
 		`UPDATE jobs
 		    SET status = 'running', attempts = attempts + 1,
-		        started_at = now(), locked_by = $2, locked_at = now()
+		        started_at = now(), locked_by = $2, locked_at = now(),
+		        heartbeat_at = now()
 		  WHERE id = $1 AND status = 'queued'
 		  RETURNING `+jobCols,
 		id, workerID)
@@ -158,6 +160,56 @@ func (s *Store) MarkCancelled(ctx context.Context, id int64) (bool, error) {
 		return false, err
 	}
 	return tag.RowsAffected() > 0, nil
+}
+
+// Heartbeat refreshes a running job's liveness stamp. The executing worker calls
+// it on a ~30s tick for the duration of a handler run (see execute), so a LONG but
+// LIVE job keeps a fresh heartbeat_at and is never mistaken for a dead one by
+// ReapStaleRunning. Guarded on status='running': a heartbeat that races the job's
+// own terminal transition (done/failed/cancelled) is a harmless no-op.
+func (s *Store) Heartbeat(ctx context.Context, id int64) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE jobs SET heartbeat_at = now() WHERE id = $1 AND status = 'running'`, id)
+	return err
+}
+
+// ReapStaleRunning reclaims running rows whose worker died — the pod-restart
+// zombie problem: a deploy leaves in-flight jobs status='running' forever, hanging
+// in the admin UI, inflating the running count, and BLOCKING the per-kind
+// concurrency cap so the scheduler's queued work piles up unbounded. A row is
+// stale when its most recent liveness signal — COALESCE(heartbeat_at, locked_at,
+// started_at) — is older than ttl. The COALESCE fallback is what lets the CURRENT
+// backlog (heartbeat_at NULL, pre-heartbeat rows) get reclaimed on first boot.
+//
+// Each stale row is reset in ONE statement: still-retryable (attempts <
+// max_attempts) → back to 'queued' (re-runnable now), else → terminal 'failed'.
+// Guarded on status='running' AND stale, so it's idempotent and concurrency-safe:
+// two pods reaping the same instant is harmless (the second UPDATE matches nothing
+// a claim/reap already moved off 'running'). Returns how many rows were reclaimed.
+func (s *Store) ReapStaleRunning(ctx context.Context, ttl time.Duration) (int, error) {
+	secs := ttl.Seconds()
+	if secs < 1 {
+		secs = 1
+	}
+	tag, err := s.pool.Exec(ctx,
+		`UPDATE jobs SET
+		    status       = CASE WHEN attempts < max_attempts THEN 'queued' ELSE 'failed' END,
+		    error        = CASE WHEN attempts < max_attempts
+		                        THEN 'reclaimed: worker lost (pod restart)'
+		                        ELSE 'worker lost (pod restart)' END,
+		    run_at       = CASE WHEN attempts < max_attempts THEN now()  ELSE run_at      END,
+		    started_at   = CASE WHEN attempts < max_attempts THEN NULL    ELSE started_at  END,
+		    finished_at  = CASE WHEN attempts < max_attempts THEN finished_at ELSE now()   END,
+		    locked_by    = CASE WHEN attempts < max_attempts THEN ''      ELSE locked_by   END,
+		    locked_at    = CASE WHEN attempts < max_attempts THEN NULL    ELSE locked_at   END,
+		    heartbeat_at = CASE WHEN attempts < max_attempts THEN NULL    ELSE heartbeat_at END
+		  WHERE status = 'running'
+		    AND COALESCE(heartbeat_at, locked_at, started_at) < now() - make_interval(secs => $1)`,
+		secs)
+	if err != nil {
+		return 0, err
+	}
+	return int(tag.RowsAffected()), nil
 }
 
 // UpsertSchedule registers/updates a periodic schedule. On first insert the
@@ -371,6 +423,21 @@ func (s *Store) HasPending(ctx context.Context, kind, owner string) (bool, error
 		  WHERE kind = $1 AND owner = $2 AND status IN ('queued','running')`,
 		kind, owner).Scan(&n)
 	return n > 0, err
+}
+
+// HasPendingKind reports whether ANY queued or running job of a kind already
+// exists (owner-agnostic). The scheduler consults it before a periodic enqueue so
+// a transient hang can't stack the queue — e.g. books-reading-monitor fires every
+// minute; without this a stuck run would pile up 100s of duplicate rows behind it.
+func (s *Store) HasPendingKind(ctx context.Context, kind string) (bool, error) {
+	var n int
+	err := s.pool.QueryRow(ctx,
+		`SELECT 1 FROM jobs WHERE kind = $1 AND status IN ('queued','running') LIMIT 1`,
+		kind).Scan(&n)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // scanRow is the shared shape of pgx.Row / a rows cursor position.
