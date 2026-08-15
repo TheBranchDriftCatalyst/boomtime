@@ -23,10 +23,14 @@ import (
 //          user_book_reads:[{id,started_at,finished_at,progress_pages}] ([] unread) }]
 //   Hasura pagination = offset/limit; page until a short page.
 
-// userBooksPageSize is the offset/limit page size for the shelf sweep. 100 keeps
-// each page's JSON small while staying well under Hardcover's rate budget (the
-// throttle in client.graphql already caps us at ~1 req/s).
-const userBooksPageSize = 100
+// userBooksPageSize is the offset/limit page size for the shelf sweep. Kept small
+// (25) because the query now joins book.contributions{author} + user_book_reads
+// per row (for the local shelf-match mirror, migration 00074) — a 100-row page
+// with those joins took Hardcover >30s to return headers on a large library and
+// tripped client.graphql's 30s per-request timeout. Smaller pages return fast;
+// the ~1 req/s throttle already bounds total call volume, so more pages just
+// means a slightly longer (but reliable) sweep.
+const userBooksPageSize = 25
 
 // UserBookRead is one user_book_reads row: a single reading session's dates +
 // page progress. All three are nullable on Hardcover (a shelved-but-unread book
