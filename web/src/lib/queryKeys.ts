@@ -321,4 +321,6 @@ export const qk = {
     filters
       ? (["books-hero", filters.source, filters.status, filters.search] as const)
       : (["books-hero"] as const),
+  // Interactive Hardcover catalog search for the manual match-fixer, keyed by term.
+  hardcoverSearch: (q: string) => ["hardcover-search", q] as const,
 };

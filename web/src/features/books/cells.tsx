@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import {
   ArrowRight,
   BookMarked,
+  Search,
   Bookmark,
   BookOpen,
   CalendarDays,
@@ -32,6 +33,7 @@ import {
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 import { useSetBookCuration } from "@/features/books/useBookCuration";
+import { HardcoverMatchPopover } from "@/features/books/HardcoverMatchPopover";
 import { BOOK_STATUSES, type BookStatus } from "@/types/meta";
 import type { ReadingItemDTO } from "@/types/meta";
 
@@ -296,13 +298,22 @@ export function StatusSelect({ item }: { item: ReadingItemDTO }) {
 export function HardcoverBadge({ item }: { item: ReadingItemDTO }) {
   const matched = item.hardcoverBookId != null;
   if (!matched) {
+    // Not matched → the whole badge is the trigger for the manual match-fixer:
+    // click to search Hardcover's catalog and link a book by hand.
     return (
-      <span
-        className="inline-flex items-center rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] font-medium text-muted-foreground/70"
-        title="Not yet matched to a Hardcover book"
-      >
-        Not matched
-      </span>
+      <HardcoverMatchPopover
+        item={item}
+        trigger={
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 rounded-full border border-dashed border-border bg-muted/40 px-2 py-0.5 text-[11px] font-medium text-muted-foreground/70 transition-colors hover:border-fuchsia-500/50 hover:text-fuchsia-500"
+            title="Not matched — click to find it on Hardcover"
+          >
+            <Search className="h-2.5 w-2.5" />
+            Not matched
+          </button>
+        }
+      />
     );
   }
   const remote = (item.hardcoverStatus ?? "").trim().toLowerCase(); // last-seen Hardcover shelf

@@ -53,10 +53,13 @@ export type SourceFilter = "all" | "audible" | "kindle" | "hardcover";
 // `read` column value — the filter and the group-by axis disagreed.
 export type StatusFilter = "all" | BookStatus;
 
-// MatchFilter is the Hardcover MATCH-STATE meta-status (a facet of sync/linkage
-// state, sibling to the reading status — not a reading-progress value). Its
-// values are exactly the `isMatched` dimension's group values so filter == group.
-export type MatchFilter = "all" | "matched" | "unmatched";
+// MatchFilter is the Hardcover MATCH/SYNC-STATE meta-status (a facet of sync/linkage
+// state, sibling to the reading status — not a reading-progress value).
+//   matched/unmatched → the isMatched dim (linked to Hardcover at all).
+//   diverged          → the syncState dim ('diverged' = matched but effective status
+//                       disagrees with the last-seen Hardcover shelf = a pending sync
+//                       change = the amber diff badge). "Out of sync" in the UI.
+export type MatchFilter = "all" | "matched" | "unmatched" | "diverged";
 
 export interface BooksFilters {
   source: SourceFilter;
@@ -98,6 +101,8 @@ export const READING_AXES: Axis[] = [
   // Hardcover match-state — a meta-status facet (linked to Hardcover vs not),
   // groupable like any status axis so you can split the library by sync state.
   { id: "isMatched", label: "Match state" },
+  // Finer sync facet: unmatched / synced / diverged (out of sync with Hardcover).
+  { id: "syncState", label: "Sync state" },
   { id: "series", label: "Series" },
   { id: "author", label: "Author" },
   { id: "genre", label: "Genre" },
@@ -247,7 +252,11 @@ export function filtersToPredicate(filters: BooksFilters): PredicateNode[] {
   const leaves: PredicateNode[] = [];
   if (filters.source !== "all") leaves.push(eqLeaf("source", filters.source));
   if (filters.status !== "all") leaves.push(eqLeaf("status", filters.status));
-  if (filters.matched !== "all") leaves.push(eqLeaf("isMatched", filters.matched));
+  if (filters.matched === "diverged") {
+    leaves.push(eqLeaf("syncState", "diverged"));
+  } else if (filters.matched !== "all") {
+    leaves.push(eqLeaf("isMatched", filters.matched));
+  }
   const searchNode = searchToPredicate(filters.search);
   if (searchNode) leaves.push(searchNode);
   return leaves;
@@ -268,6 +277,7 @@ export const MATCH_FILTER_OPTIONS: Array<{ value: MatchFilter; label: string }> 
   { value: "all", label: "All" },
   { value: "matched", label: "Matched" },
   { value: "unmatched", label: "Not matched" },
+  { value: "diverged", label: "Out of sync" },
 ];
 
 /** Combine a drill path + the page filters into one `where` predicate. */

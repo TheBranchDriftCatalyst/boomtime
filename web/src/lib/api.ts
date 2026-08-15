@@ -76,6 +76,7 @@ import type {
   ReadingMonitorMode,
   CurationPatch,
   HardcoverConnection,
+  HardcoverCandidate,
   GithubStatsPayload,
   WidgetLinkPayload,
   WidgetLinksPayload,
@@ -1311,6 +1312,25 @@ export const api = {
         { source: item.source },
       ),
       { method: "PATCH", body: patch },
+    ),
+
+  // Manual match-fixer. hardcoverSearch live-queries Hardcover's catalog (Typesense)
+  // for the autocomplete; setBookManualMatch applies a chosen candidate to the row
+  // (writes a "manual" linkage). Both owner-scoped; search is read-only.
+  hardcoverSearch: (q: string) =>
+    request<{ candidates: HardcoverCandidate[] }>(
+      buildUrl("/api/v1/hardcover/search", { q }),
+    ),
+  setBookManualMatch: (
+    item: ReadingItemDTO,
+    pick: { hardcoverBookId: number; editionId?: number; slug?: string },
+  ) =>
+    request<ReadingItemDTO>(
+      buildUrl(
+        `/api/v1/books/items/${encodeURIComponent(item.externalId)}/match`,
+        { source: item.source },
+      ),
+      { method: "POST", body: pick },
     ),
 
   // Hardcover connect (catalyst-books PUSH target). Paste-a-bearer-token flow:

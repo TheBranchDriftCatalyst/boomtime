@@ -215,6 +215,17 @@ export interface HardcoverConnection {
   checkedAt?: string;
 }
 
+// One Hardcover search hit rendered as a pickable card in the manual match-fixer
+// (GET /api/v1/hardcover/search). Fields beyond bookId/title are best-effort.
+export interface HardcoverCandidate {
+  bookId: number;
+  title: string;
+  authors: string[];
+  coverUrl: string;
+  year: number;
+  slug: string;
+}
+
 // Admin caps dashboard — GET /api/v1/admin/users (gaka-93f.6). Mirrors
 // internal/admin/users.go adminUsersResponse.
 export interface AdminUserRow {

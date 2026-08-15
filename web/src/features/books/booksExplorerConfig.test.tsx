@@ -93,6 +93,11 @@ describe("pathToPredicate / filtersToPredicate / buildWhere", () => {
       filtersToPredicate({ source: "all", status: "all",
       matched: "all", search: "" }),
     ).toEqual([]);
+    // "Out of sync" (diverged) folds onto the finer syncState dim, not isMatched.
+    expect(
+      filtersToPredicate({ source: "all", status: "all",
+      matched: "diverged", search: "" }),
+    ).toEqual([{ kind: "leaf", dim: "syncState", op: "eq", values: ["diverged"] }]);
   });
 
   it("offers the canonical status filter set (no stray 'Finished' mislabel value)", () => {

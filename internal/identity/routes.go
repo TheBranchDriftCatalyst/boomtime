@@ -105,6 +105,12 @@ func Register(e *echo.Echo, h *Handler) {
 		// (gaka-books, migration 00069) + enqueue the Hardcover push. Keyed by
 		// owner + ?source= + :externalId (the ASIN).
 		e.PATCH("/api/v1/books/items/:externalId/curation", h.SetBookCuration)
+		// Manual match-fixer: apply a user-chosen Hardcover book to a reading_item
+		// (confidence "manual"). Keyed the same way as curation.
+		e.POST("/api/v1/books/items/:externalId/match", h.SetBookManualMatch)
+		// Interactive Hardcover catalog search (autocomplete for the match-fixer):
+		// live Typesense search → descriptive candidate cards. Owner-scoped, read-only.
+		e.GET("/api/v1/hardcover/search", h.HardcoverSearch)
 		// Orchestrator: chain the whole reading-sync pipeline (Audible ingest →
 		// Kindle ingest → Hardcover match → Hardcover pull) behind ONE enqueue.
 		e.POST("/api/v1/books/sync-all", h.SyncAllBooks)
