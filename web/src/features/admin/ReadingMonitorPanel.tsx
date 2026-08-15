@@ -6,7 +6,16 @@
 // mode, (c) shows a light live status polled from the server, and (d) deep-links
 // to the full cadence report in Grafana. Closing the tab does NOT stop the
 // monitor — it keeps running server-side.
-import { BookOpenCheck, ExternalLink, Gauge, Radio } from "lucide-react";
+import { useEffect, useState } from "react";
+import {
+  BookOpenCheck,
+  ExternalLink,
+  Gauge,
+  Radar,
+  Radio,
+  Square,
+  Timer,
+} from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
@@ -117,6 +126,20 @@ function RecommendationBlock({
             (p90{" "}
             <span className="font-mono font-semibold">~{rec.p90AdvanceSecs}s</span>).
           </p>
+          {/* rm2 · the classification the calibration window fingerprinted: the
+              observed sync SHAPE → the cadence-measurement method it implies. */}
+          <p
+            className="mt-2 rounded-md border border-primary/30 bg-background/40 px-2.5 py-2 text-[13px] leading-relaxed"
+            data-testid="reading-monitor-classification"
+          >
+            <span className="font-medium text-primary">Observed sync pattern:</span>{" "}
+            <span className="font-mono font-semibold uppercase tracking-wide">
+              {rec.syncPattern}
+            </span>{" "}
+            <span className="text-muted-foreground">→</span>{" "}
+            <span className="font-mono font-semibold">{rec.impliedMethod}</span>{" "}
+            method.{rec.rationale ? <> {rec.rationale}</> : null}
+          </p>
           <p className="mt-1 text-[11px] text-muted-foreground">
             Full cadence analysis + history in Grafana.
           </p>
@@ -135,23 +158,171 @@ function RecommendationBlock({
   );
 }
 
+// A 1-Hz clock, live only while `active` — powers the calibration countdown
+// without leaving a timer running once the window closes.
+function useNow(active: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [active]);
+  return now;
+}
+
+// "~7m left" / "~45s left" / "expiring…" — the human read-out of how long the
+// high-fidelity window has to run. Null `until` (or a past instant) reads as
+// expiring so the UI never shows a negative or stale time.
+function formatRemaining(until: string | null, now: number): string {
+  if (!until) return "expiring…";
+  const ms = new Date(until).getTime() - now;
+  if (!Number.isFinite(ms) || ms <= 0) return "expiring…";
+  const secs = Math.round(ms / 1000);
+  if (secs < 90) return `~${secs}s left`;
+  return `~${Math.ceil(secs / 60)}m left`;
+}
+
+// The star of rm2: a prominent, distinctly-styled control that starts / stops
+// the temporary HIGH-FIDELITY calibration window. Idle → a single amber CTA.
+// Active → a pulsing amber panel with a live countdown + the "read a Kindle
+// book now" instruction, so it unmistakably reads as a special burning state.
+function DiagnosticModeCard({
+  calibrating,
+  calibratingUntil,
+  busy,
+  onStart,
+  onStop,
+}: {
+  calibrating: boolean;
+  calibratingUntil: string | null;
+  busy: boolean;
+  onStart: () => void;
+  onStop: () => void;
+}) {
+  const now = useNow(calibrating);
+
+  if (!calibrating) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/40 bg-amber-500/[0.04] p-4">
+        <div className="flex items-start gap-3">
+          <Radar className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
+          <div className="space-y-0.5">
+            <div className="text-sm font-semibold">Diagnostic (calibration) mode</div>
+            <p className="max-w-prose text-xs text-muted-foreground">
+              Opens a short <span className="font-medium">high-fidelity</span>{" "}
+              window (~10s polling for ~20&nbsp;min) to measure your{" "}
+              <span className="font-medium">true</span> whispersync cadence — far
+              finer than the normal 60–120s poll. It auto-expires, and it burns
+              Amazon calls while it runs.
+            </p>
+          </div>
+        </div>
+        <Button
+          size="sm"
+          data-testid="diagnostic-mode-start"
+          disabled={busy}
+          onClick={onStart}
+          className="border border-amber-400/60 bg-amber-500/15 text-amber-300 hover:bg-amber-500/25"
+        >
+          <Radar className="mr-2 h-4 w-4" />
+          Start Diagnostic Mode
+        </Button>
+      </div>
+    );
+  }
+
+  // ACTIVE — pulsing amber panel. A dedicated glow layer animates so the text
+  // stays crisp while the surround breathes.
+  return (
+    <div
+      data-testid="diagnostic-mode-active"
+      className="relative overflow-hidden rounded-lg border border-amber-400/70 bg-amber-500/[0.06] p-4"
+      style={{
+        boxShadow:
+          "0 0 0 1px color-mix(in oklab, oklch(0.82 0.16 78) 45%, transparent), 0 0 22px color-mix(in oklab, oklch(0.82 0.16 78) 30%, transparent)",
+      }}
+    >
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-0 animate-pulse"
+        style={{
+          background:
+            "radial-gradient(120% 80% at 12% 0%, color-mix(in oklab, oklch(0.82 0.16 78) 22%, transparent), transparent 60%)",
+        }}
+      />
+      <div className="relative flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <span className="relative mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400/50" />
+            <Radar className="relative h-5 w-5 text-amber-300" />
+          </span>
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-sm font-semibold text-amber-200">
+              High-fidelity calibration active
+              <span className="inline-flex items-center gap-1 rounded bg-amber-500/20 px-1.5 py-0.5 font-mono text-[11px] font-medium text-amber-200">
+                <Timer className="h-3 w-3" />
+                <span data-testid="diagnostic-mode-countdown">
+                  {formatRemaining(calibratingUntil, now)}
+                </span>
+              </span>
+            </div>
+            <p className="max-w-prose text-xs text-amber-100/80">
+              Read a Kindle book now to measure your true sync cadence — the
+              window is polling at ~10s and auto-expires. Each poll spends an
+              Amazon call, so stop it once you&apos;re done reading.
+            </p>
+          </div>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          data-testid="diagnostic-mode-stop"
+          disabled={busy}
+          onClick={onStop}
+          className="border-amber-400/60 text-amber-200 hover:bg-amber-500/15"
+        >
+          <Square className="mr-2 h-3.5 w-3.5" />
+          Stop
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function ReadingMonitorPanel() {
   const qc = useQueryClient();
 
   const { data, isLoading, isError } = useQuery({
     queryKey: qk.readingMonitor(),
     queryFn: () => api.getReadingMonitor(),
-    refetchInterval: STATUS_POLL_MS,
+    // Poll harder while a calibration window is live so the countdown + the
+    // auto-expiry flip land promptly; back off to the gentle cadence otherwise.
+    refetchInterval: (query) =>
+      query.state.data?.calibrating ? 5_000 : STATUS_POLL_MS,
   });
 
   const mutate = useMutation({
-    mutationFn: (body: { enabled?: boolean; mode?: ReadingMonitorMode }) =>
-      api.setReadingMonitor(body),
+    mutationFn: (body: {
+      enabled?: boolean;
+      mode?: ReadingMonitorMode;
+      calibrate?: boolean;
+    }) => api.setReadingMonitor(body),
     // Write the authoritative server response straight into the cache so the
     // switch + mode reflect server truth without waiting for the next poll.
     onSuccess: (next: ReadingMonitorState, vars) => {
       qc.setQueryData(qk.readingMonitor(), next);
-      if (vars.enabled !== undefined) {
+      // rm2 · calibrate PUTs also refresh the raw feed + the nav-indicator
+      // beacon so both reflect the new window immediately.
+      qc.invalidateQueries({ queryKey: qk.readingMonitorRaw() });
+      qc.invalidateQueries({ queryKey: qk.readingMonitorStatus() });
+      if (vars.calibrate !== undefined) {
+        toast.success(
+          next.calibrating
+            ? "Diagnostic mode started — high-fidelity calibration running"
+            : "Diagnostic mode stopped",
+        );
+      } else if (vars.enabled !== undefined) {
         toast.success(
           next.enabled
             ? "Reading monitor started — running server-side"
@@ -205,6 +376,16 @@ export function ReadingMonitorPanel() {
 
       {/* The plain-English optimal-polling ANSWER — the star of the panel. */}
       <RecommendationBlock recommendation={data?.recommendation} loading={isLoading} />
+
+      {/* rm2 · Diagnostic (calibration) mode — start/stop the high-fidelity
+          window; glows + counts down while active. */}
+      <DiagnosticModeCard
+        calibrating={data?.calibrating ?? false}
+        calibratingUntil={data?.calibratingUntil ?? null}
+        busy={busy}
+        onStart={() => mutate.mutate({ calibrate: true })}
+        onStop={() => mutate.mutate({ calibrate: false })}
+      />
 
       {/* On/off toggle — the prominent primary control. */}
       <div className="flex items-center justify-between rounded-lg border border-border bg-muted/10 p-4">

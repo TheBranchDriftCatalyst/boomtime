@@ -334,26 +334,12 @@ type Config struct {
 	// larger than the 30s handler heartbeat so a live job never trips it.
 	JobsLeaseTTL time.Duration
 
-	// Persistent reading-monitor tuning (catalyst-books §5.1). The two-level
-	// adaptive-poll intervals for the server-side Kindle reading-monitor
-	// (books-reading-monitor kind, gated behind BooksEnabled + the per-user
-	// reading_monitor_enabled flag). All measured, not guessed — the admin panel
-	// derives recommendations from real reading; these are the shipped defaults.
-	//   RMDetectInterval  (BOOM_RM_DETECT_SECS,  120s) — T1: coarse poll of ALL
-	//                     in-progress books to spot which advanced.
-	//   RMCaptureInterval (BOOM_RM_CAPTURE_SECS,  60s) — T2: fine poll of the
-	//                     book(s) actively advancing. Default 60s (NOT finer):
-	//                     reading-time is minute-level analytics, so polling
-	//                     faster only burns Amazon calls for no fidelity gain.
-	//   RMIdleGap         (BOOM_RM_IDLE_SECS,    300s) — G: no advance for this
-	//                     long → the book leaves L2 back to L1.
-	//   RMBaseInterval    (BOOM_RM_BASE_SECS,     15s) — the engine's internal
-	//                     loop tick; per-book due-checks against T1/T2 make the
-	//                     effective cadence exact regardless of this.
-	RMDetectInterval  time.Duration
-	RMCaptureInterval time.Duration
-	RMIdleGap         time.Duration
-	RMBaseInterval    time.Duration
+	// Persistent reading-monitor tuning (catalyst-books §5.1) now lives ENTIRELY in
+	// books.MonitorConfig (internal/domains/books/monitorconfig.go) — the single
+	// source of truth for every knob + coefficient, loaded via
+	// books.LoadMonitorConfig(). main.go loads it and threads it to the engine;
+	// the admin handler loads it for the recommendation coefficients. It is
+	// intentionally NOT a field here so config.go carries no reading-monitor state.
 }
 
 func getEnv(key, def string) string {
@@ -370,17 +356,6 @@ func getEnvInt(key string, def int) int {
 		}
 	}
 	return def
-}
-
-// secsEnv reads an integer number of seconds from key into a Duration; a
-// missing, unparseable, or non-positive value falls back to def seconds. Used
-// for the reading-monitor cadence knobs (BOOM_RM_*).
-func secsEnv(key string, def int) time.Duration {
-	n := getEnvInt(key, def)
-	if n <= 0 {
-		n = def
-	}
-	return time.Duration(n) * time.Second
 }
 
 func getEnvFloat(key string, def float64) float64 {
@@ -581,13 +556,6 @@ func Load() *Config {
 	c.JobsKinds = splitCSV(getEnv("BOOM_JOBS_KINDS", ""))
 	c.JobsExcludeKinds = splitCSV(getEnv("BOOM_JOBS_EXCLUDE_KINDS", ""))
 	c.JobsLeaseTTL = time.Duration(getEnvInt("BOOM_JOBS_LEASE_TTL_SECS", 120)) * time.Second
-
-	// Persistent reading-monitor intervals (seconds). Clamped >0 so a bad env
-	// can't stall the engine (a non-positive value falls back to the default).
-	c.RMDetectInterval = secsEnv("BOOM_RM_DETECT_SECS", 120)
-	c.RMCaptureInterval = secsEnv("BOOM_RM_CAPTURE_SECS", 60)
-	c.RMIdleGap = secsEnv("BOOM_RM_IDLE_SECS", 300)
-	c.RMBaseInterval = secsEnv("BOOM_RM_BASE_SECS", 15)
 
 	// gaka-dg7: operator-wide default TZ for users with no explicit pick.
 	// Validate here so an invalid IANA name never lands into the resolver —

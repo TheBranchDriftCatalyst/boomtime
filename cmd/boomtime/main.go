@@ -65,14 +65,9 @@ var (
 	buildTime = ""
 )
 
-// Persistent reading-monitor scheduling (catalyst-books §5.1). The scheduler
-// re-arms the engine every scheduleInterval; each run internally loops for
-// runBudget (kept under the interval so runs don't overlap under the cap=1
-// queue), giving sub-minute L2 cadence despite the ~1-min scheduler tick.
-const (
-	readingMonitorScheduleInterval = time.Minute
-	readingMonitorRunBudget        = 50 * time.Second
-)
+// Persistent reading-monitor scheduling (catalyst-books §5.1) is now configured
+// entirely by books.MonitorConfig (ScheduleInterval / RunBudget / BaseTick), loaded
+// once via books.LoadMonitorConfig() — no hardcoded consts here anymore.
 
 func main() {
 	// Load .env if present (dev convenience; direnv handles .envrc in the shell).
@@ -583,9 +578,13 @@ func runCmd() *cobra.Command {
 					// catalyst-books (Kindle) — the ebook mirror of the Audible
 					// wiring above. ONE Amazon device credential feeds both; Hardcover
 					// resolves an ASIN → title/author/cover + book_id/edition_id.
+					// Consolidated reading-monitor tuning (single source of truth) —
+					// loaded once, threaded to the engine job + the non-engine poll.
+					rmCfg := books.LoadMonitorConfig()
 					kindleSvc := books.New(database, amazon.NewStore(database), logger).
 						SetHardcover(hardcover.NewStore(database)).
-						SetNotify(notifyHub) // persistent reading-monitor toasts
+						SetNotify(notifyHub). // persistent reading-monitor toasts
+						SetMonitorConfig(rmCfg)
 
 					// Forward: fan the periodic Kindle sync over every connected user;
 					// a per-user error is logged + skipped so one bad credential
@@ -705,13 +704,8 @@ func runCmd() *cobra.Command {
 					// sub-minute L2 cadence despite the ~1-min scheduler granularity;
 					// its budget is kept under the schedule period so runs don't pile
 					// up (concurrency capped at 1 below).
-					readingMonitorCfg := books.ReadingMonitorConfig{
-						DetectInterval:  cfg.RMDetectInterval,
-						CaptureInterval: cfg.RMCaptureInterval,
-						IdleGap:         cfg.RMIdleGap,
-					}
 					jobReg.Register(books.ReadingMonitorKind, jobs.HandlerFunc(func(jctx context.Context, _ jobs.Job) error {
-						return kindleSvc.RunMonitorLoop(jctx, readingMonitorCfg, cfg.RMBaseInterval, readingMonitorRunBudget)
+						return kindleSvc.RunMonitorLoop(jctx, rmCfg)
 					}))
 
 					// hardcover-match kind (gaka-books): the EXPLICIT match stage of
@@ -1021,13 +1015,14 @@ func runCmd() *cobra.Command {
 						}
 					}
 					// Persistent reading-monitor (catalyst-books §5.1): re-arm the
-					// engine each schedule period. The re-armed job internally loops
-					// at RMBaseInterval for the run budget, so the effective L2
-					// cadence is sub-minute even though the scheduler fires ~1/min.
-					// Leader-singleton via ClaimDueSchedules → exactly one runs
+					// engine each schedule period (MonitorConfig.ScheduleInterval). The
+					// re-armed job internally loops at BaseTick for RunBudget, so the
+					// effective L2 cadence is sub-minute even though the scheduler fires
+					// ~1/min. Leader-singleton via ClaimDueSchedules → exactly one runs
 					// fleet-wide. Enabled per-user via reading_monitor_enabled.
 					if cfg.BooksEnabled() {
-						if serr := sched.Register(ctx, books.ReadingMonitorKind, readingMonitorScheduleInterval); serr != nil {
+						schedInterval := books.LoadMonitorConfig().ScheduleInterval
+						if serr := sched.Register(ctx, books.ReadingMonitorKind, schedInterval); serr != nil {
 							logger.Warn("jobs: reading-monitor schedule register failed", "err", serr)
 						}
 					}

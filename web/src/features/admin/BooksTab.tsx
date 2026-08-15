@@ -4,8 +4,20 @@
 // Each "probe" is a raw signed request; we show its status + the verbatim body
 // (parsed JSON with a field table, or raw text for XML/error pages).
 import { useMemo, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
-import { AlertTriangle, BookOpen, CheckCircle2, Loader2, Play, Radio } from "lucide-react";
+import { useSearchParams } from "react-router";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+  AlertTriangle,
+  BookOpen,
+  CheckCircle2,
+  Headphones,
+  Loader2,
+  Play,
+  Radar,
+  Radio,
+  RefreshCw,
+  Tablet,
+} from "lucide-react";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import {
   Card,
@@ -14,6 +26,8 @@ import {
   CardTitle,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { api } from "@/lib/api";
+import { qk } from "@/lib/queryKeys";
+import { relativeTime } from "@/lib/sourceStatus";
 import { ReadingMonitorPanel } from "./ReadingMonitorPanel";
 
 interface Probe {
@@ -214,17 +228,214 @@ function SourceDiagnosticsPanel() {
   );
 }
 
-// The Books admin tab hosts two diagnostics side by side: the one-shot source
-// DUMP (SourceDiagnosticsPanel) and the LIVE reading monitor (ReadingMonitorPanel).
-// A small segmented control switches between them — same admin section, no extra
-// route.
+// rm2 · Raw feed — the human-readable RAW heartbeat/position stream from BOTH
+// reading sources, complementing the Grafana cadence board with an in-app view.
+// A tight table per source: Kindle furthest-page-read samples (asin/title/
+// location/Δloc/creationTime/interval) + Audible per-day listening roll-ups.
+function EmptyStream({ label }: { label: string }) {
+  return (
+    <div className="rounded-md border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">
+      No recent {label} samples yet — turn the monitor on (or start Diagnostic
+      Mode) and read to populate this feed.
+    </div>
+  );
+}
+
+function RawFeedPanel() {
+  const { data, isLoading, isError, refetch, isFetching } = useQuery({
+    queryKey: qk.readingMonitorRaw(),
+    queryFn: () => api.getReadingMonitorRaw(),
+  });
+
+  const kindle = data?.kindle ?? [];
+  const audible = data?.audible ?? [];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2">
+          <Radar className="h-5 w-5 text-primary" />
+          <h2 className="text-lg font-semibold">Books · raw reading feed</h2>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className="ml-auto"
+          disabled={isFetching}
+          onClick={() => refetch()}
+        >
+          <RefreshCw className={"mr-2 h-4 w-4 " + (isFetching ? "animate-spin" : "")} />
+          Refresh
+        </Button>
+      </div>
+
+      <p className="text-sm text-muted-foreground">
+        The most-recent RAW samples the monitor observed from both reading
+        sources — the human-readable complement to the Grafana cadence board.
+        Kindle rows are furthest-page-read observations (Δloc is the position
+        jump since the prior sample); Audible rows are per-day listening
+        roll-ups.
+      </p>
+
+      {isError && (
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          Couldn&apos;t load the raw feed. Try Refresh.
+        </div>
+      )}
+
+      {/* Kindle stream */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <Tablet className="h-4 w-4 text-primary" />
+            Kindle · position stream
+            <span className="ml-auto text-xs text-muted-foreground">
+              {kindle.length} samples
+            </span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+            </div>
+          ) : kindle.length === 0 ? (
+            <EmptyStream label="Kindle" />
+          ) : (
+            <div className="overflow-x-auto rounded-md border border-border">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/40">
+                  <tr>
+                    {["asin", "title", "location", "Δloc", "creationTime", "interval"].map(
+                      (c) => (
+                        <th
+                          key={c}
+                          className="whitespace-nowrap px-2 py-1 text-left font-mono font-medium"
+                        >
+                          {c}
+                        </th>
+                      ),
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {kindle.map((k, i) => (
+                    <tr key={`${k.asin}-${i}`} className="border-t border-border/60">
+                      <td className="px-2 py-1 font-mono">{k.asin}</td>
+                      <td className="max-w-[260px] truncate px-2 py-1" title={k.title}>
+                        {k.title}
+                      </td>
+                      <td className="px-2 py-1 font-mono tabular-nums">{k.location}</td>
+                      <td className="px-2 py-1 font-mono tabular-nums text-primary">
+                        {k.dloc >= 0 ? `+${k.dloc}` : k.dloc}
+                      </td>
+                      <td
+                        className="whitespace-nowrap px-2 py-1"
+                        title={k.creationTime}
+                      >
+                        {k.creationTime ? relativeTime(k.creationTime) : "—"}
+                      </td>
+                      <td className="px-2 py-1 font-mono tabular-nums">
+                        {`~${k.intervalSecs}s`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Audible stream */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <Headphones className="h-4 w-4 text-primary" />
+            Audible · listening stream
+            <span className="ml-auto text-xs text-muted-foreground">
+              {audible.length} samples
+            </span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+            </div>
+          ) : audible.length === 0 ? (
+            <EmptyStream label="Audible" />
+          ) : (
+            <div className="overflow-x-auto rounded-md border border-border">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/40">
+                  <tr>
+                    {["title", "day", "listening-seconds"].map((c) => (
+                      <th
+                        key={c}
+                        className="whitespace-nowrap px-2 py-1 text-left font-mono font-medium"
+                      >
+                        {c}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {audible.map((a, i) => (
+                    <tr key={`${a.title}-${a.day}-${i}`} className="border-t border-border/60">
+                      <td className="max-w-[320px] truncate px-2 py-1" title={a.title}>
+                        {a.title}
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-1 font-mono">{a.day}</td>
+                      <td className="px-2 py-1 font-mono tabular-nums">
+                        {a.listeningSeconds}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// The Books admin tab hosts three diagnostics: the one-shot source DUMP
+// (SourceDiagnosticsPanel), the LIVE reading monitor + Diagnostic Mode control
+// (ReadingMonitorPanel), and the RAW reading feed (RawFeedPanel). A small
+// segmented control switches between them — same admin section, no extra route.
 const VIEWS = [
   { id: "diagnostics", label: "Source diagnostics", icon: BookOpen },
   { id: "monitor", label: "Reading monitor", icon: Radio },
+  { id: "raw", label: "Raw feed", icon: Radar },
 ] as const;
 
+type BooksView = (typeof VIEWS)[number]["id"];
+
+function isBooksView(v: string | null): v is BooksView {
+  return VIEWS.some((view) => view.id === v);
+}
+
 export function BooksTab() {
-  const [view, setView] = useState<(typeof VIEWS)[number]["id"]>("diagnostics");
+  // rm2 · honor ?view=monitor|raw|diagnostics so the global nav indicator can
+  // deep-link straight to the reading-monitor tab. Defaults to diagnostics.
+  const [params, setParams] = useSearchParams();
+  const initial = params.get("view");
+  const [view, setViewState] = useState<BooksView>(
+    isBooksView(initial) ? initial : "diagnostics",
+  );
+
+  function setView(next: BooksView) {
+    setViewState(next);
+    // Reflect the active view in the URL so the tab is shareable / stable
+    // across a reload, without stacking history entries.
+    const p = new URLSearchParams(params);
+    p.set("view", next);
+    setParams(p, { replace: true });
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex w-fit rounded-md border border-border p-0.5">
@@ -245,11 +456,9 @@ export function BooksTab() {
           </button>
         ))}
       </div>
-      {view === "diagnostics" ? (
-        <SourceDiagnosticsPanel />
-      ) : (
-        <ReadingMonitorPanel />
-      )}
+      {view === "diagnostics" && <SourceDiagnosticsPanel />}
+      {view === "monitor" && <ReadingMonitorPanel />}
+      {view === "raw" && <RawFeedPanel />}
     </div>
   );
 }

@@ -64,6 +64,43 @@ func (d *DB) SetReadingMonitorSettings(ctx context.Context, owner string, enable
 	return nil
 }
 
+// GetReadingMonitorCalibration returns a user's calibration-window expiry
+// (users.reading_monitor_calibrating_until) — nil when not calibrating (the
+// column is NULL) or the user row is missing. The engine tests now < this to
+// decide whether to poll at the high-fidelity CalibrationInterval this pass.
+func (d *DB) GetReadingMonitorCalibration(ctx context.Context, owner string) (*time.Time, error) {
+	var until *time.Time
+	row := d.Pool.QueryRow(ctx,
+		`SELECT reading_monitor_calibrating_until FROM users WHERE username = $1`, owner)
+	if err := row.Scan(&until); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return until, nil
+}
+
+// SetReadingMonitorCalibration sets (or, with a nil `until`, clears) a user's
+// calibration-window expiry. StartReadingMonitorCalibration passes now+duration to
+// begin a burst; the admin PUT passes nil to cancel one. A missing user row
+// surfaces as pgx.ErrNoRows so the handler can 404.
+func (d *DB) SetReadingMonitorCalibration(ctx context.Context, owner string, until *time.Time) error {
+	if owner == "" {
+		return errors.New("SetReadingMonitorCalibration: empty owner")
+	}
+	tag, err := d.Pool.Exec(ctx,
+		`UPDATE users SET reading_monitor_calibrating_until = $2 WHERE username = $1`,
+		owner, until)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
 // ListReadingMonitorUsers returns every user with the persistent monitor enabled
 // — the fan-out set the leader-singleton engine sweeps each pass.
 func (d *DB) ListReadingMonitorUsers(ctx context.Context) ([]string, error) {
@@ -162,11 +199,6 @@ type KindleAdvancePair struct {
 	DLoc         int64
 }
 
-// recommendWindowCap bounds how many recent advance samples the recommendation
-// reads, so the percentile computation stays cheap even if the window table
-// grows. Newest-first, so it always reflects the most recent reading.
-const recommendWindowCap = 1000
-
 // InsertReadingMonitorAdvance appends one observed intra-session advance interval
 // to the rolling window. Called by the engine at the same point it observes the
 // advance_interval_seconds histogram (see monitor.go).
@@ -179,17 +211,21 @@ func (d *DB) InsertReadingMonitorAdvance(ctx context.Context, owner, source stri
 }
 
 // ListRecentReadingMonitorAdvances returns a user's advance-interval samples at
-// or after `since`, newest-first and capped — the input the recommendation
-// derives p50/p90 over (order-independent, so newest-first + cap is just a
-// bound).
-func (d *DB) ListRecentReadingMonitorAdvances(ctx context.Context, owner string, since time.Time) ([]KindleAdvancePair, error) {
+// or after `since`, newest-first and capped at `limit` — the input the
+// recommendation derives p50/p90 over (order-independent, so newest-first + cap is
+// just a bound). `limit` is MonitorConfig.WindowCap (default 1000); a non-positive
+// value falls back to 1000 so a caller can pass 0 for "the default bound".
+func (d *DB) ListRecentReadingMonitorAdvances(ctx context.Context, owner string, since time.Time, limit int) ([]KindleAdvancePair, error) {
+	if limit <= 0 {
+		limit = 1000
+	}
 	rows, err := d.Pool.Query(ctx,
 		`SELECT interval_secs, dloc
 		   FROM kindle_reading_monitor_advances
 		  WHERE owner = $1 AND at >= $2
 		  ORDER BY at DESC
 		  LIMIT $3`,
-		owner, since, recommendWindowCap)
+		owner, since, limit)
 	if err != nil {
 		return nil, err
 	}

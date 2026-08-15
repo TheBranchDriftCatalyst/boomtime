@@ -19,13 +19,14 @@ func samples(intervalSecs float64, n int) []db.KindleAdvancePair {
 }
 
 func TestRecommendIntervals_NilBelowMinSamples(t *testing.T) {
+	cfg := MonitorConfig{}
 	// 4 usable intervals < the 5-sample floor → nil.
-	if got := RecommendIntervals(samples(45, 4)); got != nil {
+	if got := RecommendIntervals(samples(45, 4), cfg); got != nil {
 		t.Fatalf("want nil below min samples, got %+v", got)
 	}
 	// Non-positive intervals don't count toward the floor.
 	junk := append(samples(45, 4), db.KindleAdvancePair{IntervalSecs: 0, DLoc: 0})
-	if got := RecommendIntervals(junk); got != nil {
+	if got := RecommendIntervals(junk, cfg); got != nil {
 		t.Fatalf("want nil when usable intervals < min, got %+v", got)
 	}
 }
@@ -33,7 +34,7 @@ func TestRecommendIntervals_NilBelowMinSamples(t *testing.T) {
 func TestRecommendIntervals_FidelityFloorCapsCapture(t *testing.T) {
 	// Fast advances: p50 = p90 = 20s. capture floors at 60s; idle floors at 180s
 	// (round(20*2)=40 < 180); detect = max(2*60, round(20*3)=60) = 120.
-	rec := RecommendIntervals(samples(20, 20))
+	rec := RecommendIntervals(samples(20, 20), MonitorConfig{})
 	if rec == nil {
 		t.Fatal("want a recommendation, got nil")
 	}
@@ -60,7 +61,7 @@ func TestRecommendIntervals_DerivesFromPercentiles(t *testing.T) {
 	// only the last 2 are 600; make the top decile 600 by using 2 highs at index
 	// 18,19 → p90 index 17 = 90. Use a clearer split: 10×120 + 10×600.
 	pairs := append(samples(120, 10), samples(600, 10)...)
-	rec := RecommendIntervals(pairs)
+	rec := RecommendIntervals(pairs, MonitorConfig{})
 	if rec == nil {
 		t.Fatal("want a recommendation, got nil")
 	}

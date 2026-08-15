@@ -25,6 +25,7 @@ package books
 
 import (
 	"context"
+	"math"
 	"sort"
 	"time"
 
@@ -40,16 +41,13 @@ type positionSource interface {
 	FetchLastPagePosition(ctx context.Context, cred *amazon.DeviceCredential, asin string) (position int64, sampledAt time.Time, ok bool, err error)
 }
 
-// KindleSessionGap is the max wall-clock gap between two position samples for the
-// interval between them to count as one continuous reading session. It matches
-// the coding heartbeat gap cutoff (15 min) so a "reading session" and a "coding
-// session" mean the same thing on the fused calendar.
+// KindleSessionGap is the DEFAULT max wall-clock gap between two position samples
+// for the interval between them to count as one continuous reading session. It
+// matches the coding heartbeat gap cutoff (15 min) so a "reading session" and a
+// "coding session" mean the same thing on the fused calendar. The runtime value is
+// MonitorConfig.SessionGap (this const is its default + the value the pure-function
+// table tests compose under); withDefaults folds the same 15m in.
 const KindleSessionGap = 15 * time.Minute
-
-// readingTimeLookback bounds how far back a poll recomputes reading_activity from
-// samples. Buckets older than this are immutable (their samples no longer change),
-// so not rewriting them is safe; recomputing recent days keeps them idempotent.
-const readingTimeLookback = 90 * 24 * time.Hour
 
 // PositionSample is one observed last-page-read position for a book. The pure
 // composition consumes these (the db.KindleReadingPosition rows map onto them).
@@ -190,7 +188,7 @@ func (s *Service) PollReadingTime(ctx context.Context, owner string) (int, error
 
 	// (2) Recompose every in-progress book's recent samples → per-day seconds,
 	// summed across books, and upsert one reading_activity bucket per day.
-	buckets, err := s.recomposeReadingActivity(ctx, owner, inProgress, now)
+	buckets, err := s.recomposeReadingActivity(ctx, owner, inProgress, s.monitorCfg, now)
 	if err != nil {
 		return sampled, err
 	}
@@ -214,8 +212,33 @@ func (s *Service) PollReadingTime(ctx context.Context, owner string) (int, error
 // samples writes identical values (UpsertReadingActivity keys on
 // owner+source+bucket_date+granularity). Returns the number of day buckets
 // written.
-func (s *Service) recomposeReadingActivity(ctx context.Context, owner string, inProgress []db.ReadingItem, now time.Time) (int, error) {
-	since := now.Add(-readingTimeLookback)
+//
+// Method selection (PART 3, gaka-0gdp): it classifies the owner's observed advance
+// cadence (RecommendIntervals) and SELECTS the composition method — session-boundary
+// ⇒ position-delta (Δlocation × reading-speed), else ⇒ the default temporal gap-sum.
+// Because classification stays 'unknown' until high-fidelity calibration data lands,
+// gap-sum remains active in practice; the switch activates automatically the moment
+// calibration classifies session-boundary. The method used is logged.
+func (s *Service) recomposeReadingActivity(ctx context.Context, owner string, inProgress []db.ReadingItem, cfg MonitorConfig, now time.Time) (int, error) {
+	cfg = cfg.withDefaults()
+	since := now.Add(-cfg.ReadingTimeLookback)
+
+	// Pick the composition method from the owner's observed advance cadence.
+	method := MethodGapSum
+	secPerLoc := cfg.DefaultSecPerLocation
+	pairs, perr := s.DB.ListRecentReadingMonitorAdvances(ctx, owner, now.Add(-cfg.RecommendLookback), cfg.WindowCap)
+	if perr != nil {
+		return 0, perr
+	}
+	if rec := RecommendIntervals(pairs, cfg); rec != nil {
+		if rec.ImpliedMethod == MethodPositionDelta {
+			method = MethodPositionDelta
+		}
+		if obs := observedSecPerLocation(pairs); obs > 0 {
+			secPerLoc = obs // prefer the measured reading-speed over the default
+		}
+	}
+
 	byDay := map[time.Time]int64{}
 	for _, it := range inProgress {
 		if err := ctx.Err(); err != nil {
@@ -225,10 +248,20 @@ func (s *Service) recomposeReadingActivity(ctx context.Context, owner string, in
 		if lerr != nil {
 			return 0, lerr
 		}
-		for _, d := range composeSessions(toPositionSamples(rows), KindleSessionGap) {
+		samples := toPositionSamples(rows)
+		var days []DailyReadingSeconds
+		if method == MethodPositionDelta {
+			days = composeSessionsPositionDelta(samples, secPerLoc)
+		} else {
+			days = composeSessions(samples, cfg.SessionGap)
+		}
+		for _, d := range days {
 			byDay[d.Day] += d.Seconds
 		}
 	}
+
+	s.logInfo(ctx, "kindle reading-time: recomposed",
+		"owner", owner, "method", method, "secPerLocation", secPerLoc, "days", len(byDay))
 
 	buckets := 0
 	for day, secs := range byDay {
@@ -256,4 +289,70 @@ func toPositionSamples(rows []db.KindleReadingPosition) []PositionSample {
 		out[i] = PositionSample{Position: r.Position, SampledAt: r.SampledAt}
 	}
 	return out
+}
+
+// composeSessionsPositionDelta composes reading-seconds by the POSITION-DELTA
+// method (§5.1 session-boundary composition). For each consecutive advancing pair
+// (a, b):
+//
+//   - dloc = b.Position - a.Position (only a forward move counts)
+//   - reading-seconds = round(dloc × secPerLocation)
+//   - attributed WHOLLY to the UTC day of b.SampledAt — b's creationTime is the
+//     advance's anchor (when the furthest position was set)
+//
+// Unlike gap-sum it needs NO intra-session poll cadence: it reconstructs time from
+// how far the position moved, so it works when whispersync only writes the LPR at
+// session boundaries (device close/open) and there are no mid-session samples to
+// sum. secPerLocation is the observed reading-speed (median interval/dloc) or a
+// configured default. PURE (samples -> per-day seconds), mirroring composeSessions
+// for the same exhaustive table-testing. Output is ordered by day ascending.
+func composeSessionsPositionDelta(samples []PositionSample, secPerLocation float64) []DailyReadingSeconds {
+	if len(samples) < 2 || secPerLocation <= 0 {
+		return nil
+	}
+	ordered := append([]PositionSample(nil), samples...)
+	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].SampledAt.Before(ordered[j].SampledAt) })
+
+	byDay := map[time.Time]int64{}
+	for i := 1; i < len(ordered); i++ {
+		a, b := ordered[i-1], ordered[i]
+		dloc := b.Position - a.Position
+		if dloc <= 0 {
+			continue // no forward advance → no reading time
+		}
+		secs := int64(math.Round(float64(dloc) * secPerLocation))
+		if secs <= 0 {
+			continue
+		}
+		bt := b.SampledAt.UTC()
+		day := time.Date(bt.Year(), bt.Month(), bt.Day(), 0, 0, 0, 0, time.UTC)
+		byDay[day] += secs
+	}
+
+	out := make([]DailyReadingSeconds, 0, len(byDay))
+	for day, secs := range byDay {
+		if secs > 0 {
+			out = append(out, DailyReadingSeconds{Day: day, Seconds: secs})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Day.Before(out[j].Day) })
+	return out
+}
+
+// observedSecPerLocation returns the median observed seconds-per-location over the
+// advance samples (interval_secs / dloc for each pair with a positive dloc), or 0
+// when no usable sample exists — the position-delta method's measured reading-speed,
+// preferred over the configured default. Order-independent (it sorts internally).
+func observedSecPerLocation(pairs []db.KindleAdvancePair) float64 {
+	rates := make([]float64, 0, len(pairs))
+	for _, p := range pairs {
+		if p.IntervalSecs > 0 && p.DLoc > 0 {
+			rates = append(rates, p.IntervalSecs/float64(p.DLoc))
+		}
+	}
+	if len(rates) == 0 {
+		return 0
+	}
+	sort.Float64s(rates)
+	return percentile(rates, 50)
 }

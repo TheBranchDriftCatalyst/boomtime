@@ -33,6 +33,7 @@ import { useIsAdmin } from "@/features/auth/useIsAdmin";
 import { DevModeToggle } from "@/features/devtools";
 import { useHeaderSlotNode } from "@/layout/HeaderSlot";
 import { MobileNav } from "@/layout/MobileNav";
+import { ReadingDiagnosticIndicator } from "@/layout/ReadingDiagnosticIndicator";
 import { openCommandPalette } from "@/components/CommandPalette";
 
 interface HeaderBarProps {
@@ -152,6 +153,10 @@ export function HeaderBar({ username, onLogout, onCreateSpace }: HeaderBarProps)
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
+        {/* rm2 · app-wide beacon: lights only while a reading-monitor
+            calibration window is running, on every page. */}
+        <ReadingDiagnosticIndicator />
+
         {/* Command palette (⌘K) trigger — an icon on mobile, a search-field
             affordance with the shortcut hint on wide screens. */}
         <button

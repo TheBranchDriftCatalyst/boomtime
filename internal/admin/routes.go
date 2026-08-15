@@ -102,6 +102,10 @@ func Register(e *echo.Echo, h *Handler) {
 		// regardless of these — this is only the control surface.
 		e.GET("/api/v1/admin/books/reading-monitor", h.AdminBooksReadingMonitorGet)
 		e.PUT("/api/v1/admin/books/reading-monitor", h.AdminBooksReadingMonitorPut)
+		// Raw diagnostic stream: recent raw samples for BOTH reading sources
+		// (Kindle position heartbeats + Audible listening buckets) so the FE can
+		// render the raw feed the recommendation is derived from.
+		e.GET("/api/v1/admin/books/reading-monitor/raw", h.AdminBooksReadingMonitorRaw)
 	}
 	// gaka-8bz: durable WS stream of the image-job queue lifecycle.
 	// Auth uses the refresh_token cookie inside the handler (see

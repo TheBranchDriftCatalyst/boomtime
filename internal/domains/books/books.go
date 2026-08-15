@@ -102,18 +102,35 @@ type Service struct {
 	// read); swappable in tests via positionSource so PollReadingTime exercises
 	// the composition without a network. See reading_time.go.
 	sidecar positionSource
+
+	// monitorCfg is the consolidated reading-monitor tuning (monitorconfig.go) —
+	// the single source of truth for every knob + coefficient. Used by the
+	// non-engine reading-time poll (PollReadingTime) for the session gap, lookback,
+	// and composition-method selection. New seeds it with withDefaults(); main.go
+	// overrides it with the env-loaded config via SetMonitorConfig. The persistent
+	// engine (RunMonitorLoop) receives its MonitorConfig as an explicit argument.
+	monitorCfg MonitorConfig
 }
 
 // New constructs the books (Kindle) domain service. Hardcover is wired after
 // construction (SetHardcover) so callers without it keep working.
 func New(database *db.DB, az *amazon.Store, logger *slog.Logger) *Service {
 	return &Service{
-		DB:      database,
-		Amazon:  az,
-		Logger:  logger,
-		kindle:  amazon.NewCloudReaderClient(),
-		sidecar: amazon.NewKindleSidecarClient(),
+		DB:         database,
+		Amazon:     az,
+		Logger:     logger,
+		kindle:     amazon.NewCloudReaderClient(),
+		sidecar:    amazon.NewKindleSidecarClient(),
+		monitorCfg: MonitorConfig{}.withDefaults(),
 	}
+}
+
+// SetMonitorConfig overrides the consolidated reading-monitor tuning (defaults are
+// seeded in New). main.go calls this with books.LoadMonitorConfig() so the
+// env-configured values reach the non-engine reading-time poll. Chainable.
+func (s *Service) SetMonitorConfig(cfg MonitorConfig) *Service {
+	s.monitorCfg = cfg.withDefaults()
+	return s
 }
 
 // SetHardcover wires the Hardcover connector (nil-safe).

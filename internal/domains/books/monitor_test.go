@@ -34,7 +34,9 @@ import (
 )
 
 // monitorCfg is the tuning the engine tests run under: T1=120s, T2=30s, G=300s.
-var monitorCfg = books.ReadingMonitorConfig{
+// withDefaults() (applied inside the engine) folds in every other MonitorConfig
+// field, so only the three the L1/L2/idle tests exercise are set here.
+var monitorCfg = books.MonitorConfig{
 	DetectInterval:  120 * time.Second,
 	CaptureInterval: 30 * time.Second,
 	IdleGap:         300 * time.Second,

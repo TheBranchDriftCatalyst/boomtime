@@ -246,6 +246,16 @@ export const qk = {
   // lastPingAt). Polled lightly for the admin control panel's status display;
   // invalidated after a PUT toggle so the switch reflects the server truth.
   readingMonitor: () => ["admin", "reading-monitor"] as const,
+  // rm2 · the user-scoped beacon behind the global nav indicator. Distinct key
+  // from the admin state so the header's app-wide poll never collides with the
+  // admin panel's richer GET (different endpoint, different scope).
+  readingMonitorStatus: () =>
+    ["books", "reading-monitor", "status"] as const,
+  // rm2 · admin-gated raw sample feed (Kindle + Audible streams) for the Raw
+  // feed tab. Under the ["admin","reading-monitor"] prefix so a calibrate PUT
+  // can sweep it alongside the state.
+  readingMonitorRaw: () =>
+    ["admin", "reading-monitor", "raw"] as const,
 
   // gaka-364.3: DB-backed labels catalog. Public (no owner scoping) —
   // one key shared by every consumer (evaluator, hero widget, admin

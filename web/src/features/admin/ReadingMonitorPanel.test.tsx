@@ -32,6 +32,8 @@ function state(over: Partial<ReadingMonitorState> = {}): ReadingMonitorState {
     activeBooks: 0,
     lastPingAt: null,
     recommendation: null,
+    calibrating: false,
+    calibratingUntil: null,
     ...over,
   };
 }
@@ -106,6 +108,9 @@ describe("ReadingMonitorPanel", () => {
           medianAdvanceSecs: 12,
           p90AdvanceSecs: 45,
           sampleCount: 8,
+          syncPattern: "session-boundary",
+          impliedMethod: "position-delta",
+          rationale: "Advances arrive in bursts at session ends.",
         },
       }),
     );
@@ -119,6 +124,70 @@ describe("ReadingMonitorPanel", () => {
     expect(rec).toHaveTextContent("~300s");
     expect(rec).toHaveTextContent("~12s");
     expect(rec).toHaveTextContent("~45s");
+  });
+
+  it("renders the sync-pattern classification + rationale", async () => {
+    getReadingMonitor.mockResolvedValue(
+      state({
+        recommendation: {
+          detectSecs: 30,
+          captureSecs: 6,
+          idleSecs: 300,
+          medianAdvanceSecs: 12,
+          p90AdvanceSecs: 45,
+          sampleCount: 8,
+          syncPattern: "continuous",
+          impliedMethod: "gap-sum",
+          rationale: "Positions stream steadily while reading.",
+        },
+      }),
+    );
+    renderPanel();
+
+    const cls = await screen.findByTestId("reading-monitor-classification");
+    expect(cls).toHaveTextContent(/observed sync pattern/i);
+    expect(cls).toHaveTextContent("continuous");
+    expect(cls).toHaveTextContent("gap-sum");
+    expect(cls).toHaveTextContent("Positions stream steadily while reading.");
+  });
+
+  it("starting Diagnostic Mode PUTs {calibrate:true}", async () => {
+    getReadingMonitor.mockResolvedValue(state({ calibrating: false }));
+    setReadingMonitor.mockResolvedValue(
+      state({ calibrating: true, calibratingUntil: new Date(Date.now() + 20 * 60_000).toISOString() }),
+    );
+    renderPanel();
+
+    const start = await screen.findByTestId("diagnostic-mode-start");
+    await waitFor(() => expect(start).not.toBeDisabled());
+    fireEvent.click(start);
+
+    await waitFor(() =>
+      expect(setReadingMonitor).toHaveBeenCalledWith({ calibrate: true }),
+    );
+  });
+
+  it("shows the ACTIVE calibration state with a countdown, and Stop PUTs {calibrate:false}", async () => {
+    getReadingMonitor.mockResolvedValue(
+      state({
+        calibrating: true,
+        calibratingUntil: new Date(Date.now() + 8 * 60_000).toISOString(),
+      }),
+    );
+    setReadingMonitor.mockResolvedValue(state({ calibrating: false }));
+    renderPanel();
+
+    // The active panel + a live countdown ("~Xm left") render.
+    expect(await screen.findByTestId("diagnostic-mode-active")).toBeInTheDocument();
+    expect(screen.getByTestId("diagnostic-mode-countdown")).toHaveTextContent(/left/);
+
+    const stop = screen.getByTestId("diagnostic-mode-stop");
+    await waitFor(() => expect(stop).not.toBeDisabled());
+    fireEvent.click(stop);
+
+    await waitFor(() =>
+      expect(setReadingMonitor).toHaveBeenCalledWith({ calibrate: false }),
+    );
   });
 
   it("shows the calibrating fallback when recommendation is null", async () => {

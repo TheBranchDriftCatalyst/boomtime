@@ -76,6 +76,16 @@ export type ReadingMonitorMode = "debounced" | "verbose";
 //   p90AdvanceSecs    — 90th-percentile gap (the slow tail);
 //   sampleCount       — advances the recommendation was derived from.
 // The whole object is null when sampleCount is too low to recommend anything.
+//
+// Diagnostic-mode classification (rm2): the calibration window also fingerprints
+// HOW whispersync ships position, so the recommendation states not just the
+// intervals but the shape of the data behind them.
+//   syncPattern    — 'continuous' (steady position stream) | 'session-boundary'
+//                    (bursts only when a reading session ends) | 'unknown';
+//   impliedMethod  — the cadence-measurement that pattern implies: 'gap-sum'
+//                    (sum inter-advance gaps) | 'position-delta' (diff furthest
+//                    location) | 'unknown';
+//   rationale      — one plain-English sentence explaining the classification.
 export interface ReadingMonitorRecommendation {
   detectSecs: number;
   captureSecs: number;
@@ -83,6 +93,9 @@ export interface ReadingMonitorRecommendation {
   medianAdvanceSecs: number;
   p90AdvanceSecs: number;
   sampleCount: number;
+  syncPattern: "continuous" | "session-boundary" | "unknown";
+  impliedMethod: "gap-sum" | "position-delta" | "unknown";
+  rationale: string;
 }
 
 export interface ReadingMonitorState {
@@ -92,6 +105,48 @@ export interface ReadingMonitorState {
   lastPingAt: string | null;
   // gaka-books: the optimal-interval answer, or null until enough data.
   recommendation: ReadingMonitorRecommendation | null;
+  // rm2 · diagnostic (calibration) mode. When `calibrating` is true a temporary
+  // HIGH-FIDELITY window (~10s polling) is running to measure the true sync
+  // cadence; `calibratingUntil` is when it auto-expires (RFC3339), null when
+  // idle. Server-driven + per-user — closing the tab does NOT cancel it.
+  calibrating: boolean;
+  calibratingUntil: string | null;
+}
+
+// GET /api/v1/books/reading-monitor/status (requireAuth, user-scoped) — the
+// lightweight beacon feed behind the global nav indicator. Just enough to light
+// the "calibration running" pulse on EVERY page, without pulling the admin-only
+// recommendation/raw payload. Polled ~15s from the shared header.
+export interface ReadingMonitorStatus {
+  enabled: boolean;
+  calibrating: boolean;
+  calibratingUntil: string | null;
+}
+
+// GET /api/v1/admin/books/reading-monitor/raw (requireAdmin) — recent raw
+// heartbeat/position samples from BOTH reading sources, the human-readable feed
+// that complements the Grafana cadence board.
+//   Kindle:  one furthest-page-read observation. `location`/`dloc` are Kindle
+//            location units (dloc = Δ since the prior sample); `intervalSecs`
+//            is the gap to the prior sample; `creationTime` is when Amazon
+//            stamped it.
+//   Audible: one day's listening roll-up (`listeningSeconds` on `day`).
+export interface ReadingMonitorKindleSample {
+  asin: string;
+  title: string;
+  location: number;
+  dloc: number;
+  creationTime: string;
+  intervalSecs: number;
+}
+export interface ReadingMonitorAudibleSample {
+  title: string;
+  day: string;
+  listeningSeconds: number;
+}
+export interface ReadingMonitorRaw {
+  kindle: ReadingMonitorKindleSample[];
+  audible: ReadingMonitorAudibleSample[];
 }
 
 export interface ReadingItemDTO {

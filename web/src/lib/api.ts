@@ -71,6 +71,8 @@ import type {
   AmazonConnection,
   ReadingItemDTO,
   ReadingMonitorState,
+  ReadingMonitorStatus,
+  ReadingMonitorRaw,
   ReadingMonitorMode,
   CurationPatch,
   HardcoverConnection,
@@ -1099,16 +1101,29 @@ export const api = {
   // SERVER-side persistent engine. GET reads its live state; PUT flips the
   // on/off switch and/or the toast mode. The panel polls GET lightly for status
   // display only — the poll cadence itself runs server-side now, not here.
+  //
+  // rm2 · `calibrate` starts (true) / cancels (false) the temporary high-
+  // fidelity diagnostic (calibration) window. It's orthogonal to enabled/mode,
+  // so the FE sends it alone. The PUT returns the full state either way.
   getReadingMonitor: () =>
     request<ReadingMonitorState>("/api/v1/admin/books/reading-monitor"),
   setReadingMonitor: (body: {
     enabled?: boolean;
     mode?: ReadingMonitorMode;
+    calibrate?: boolean;
   }) =>
     request<ReadingMonitorState>("/api/v1/admin/books/reading-monitor", {
       method: "PUT",
       body,
     }),
+  // rm2 · user-scoped lightweight beacon (requireAuth, NOT admin-gated) for the
+  // global nav indicator — polled ~15s from the shared header on every page.
+  getReadingMonitorStatus: () =>
+    request<ReadingMonitorStatus>("/api/v1/books/reading-monitor/status"),
+  // rm2 · admin-gated raw sample feed from BOTH reading sources — the human-
+  // readable complement to the Grafana cadence board.
+  getReadingMonitorRaw: () =>
+    request<ReadingMonitorRaw>("/api/v1/admin/books/reading-monitor/raw"),
 
   getAdminJobs: (params?: { status?: string; kind?: string; limit?: number }) =>
     unwrap<AdminJob[]>(buildUrl("/api/v1/admin/jobs", params), "jobs", []),

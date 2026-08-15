@@ -49,29 +49,9 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/notify"
 )
 
-// ReadingMonitorConfig is the two-level engine tuning (from BOOM_RM_* config).
-type ReadingMonitorConfig struct {
-	DetectInterval  time.Duration // T1 — L1 coarse detect cadence (all in-progress books)
-	CaptureInterval time.Duration // T2 — L2 fine capture cadence (active books only)
-	IdleGap         time.Duration // G  — no advance this long → active book returns to L1
-}
-
-// withDefaults fills any non-positive interval with a sane default so a partial
-// config (or a zero value in a test) never stalls the engine.
-func (c ReadingMonitorConfig) withDefaults() ReadingMonitorConfig {
-	if c.DetectInterval <= 0 {
-		c.DetectInterval = 120 * time.Second
-	}
-	if c.CaptureInterval <= 0 {
-		// 60s, not finer: reading-time is minute-level analytics, so polling the
-		// active book faster only burns Amazon calls for no usable fidelity.
-		c.CaptureInterval = 60 * time.Second
-	}
-	if c.IdleGap <= 0 {
-		c.IdleGap = 300 * time.Second
-	}
-	return c
-}
+// The engine's tuning now lives in MonitorConfig (monitorconfig.go) — the single
+// source of truth for every reading-monitor knob + coefficient. RunMonitorLoop /
+// RunMonitorOnce / runMonitorPass all take a MonitorConfig.
 
 // monitorPassResult is the per-owner outcome of one evaluation pass — returned
 // for tests (and folded into the scheduler-run totals).
@@ -88,10 +68,9 @@ type monitorPassResult struct {
 // job re-arms it. Leader-singleton (the scheduler enqueues once per period) +
 // concurrency cap 1 mean exactly one of these runs fleet-wide. A per-pass error
 // is logged and the loop continues — one bad tick never aborts the run.
-func (s *Service) RunMonitorLoop(ctx context.Context, cfg ReadingMonitorConfig, baseTick, budget time.Duration) error {
-	if baseTick <= 0 {
-		baseTick = 15 * time.Second
-	}
+func (s *Service) RunMonitorLoop(ctx context.Context, cfg MonitorConfig) error {
+	cfg = cfg.withDefaults()
+	baseTick, budget := cfg.BaseTick, cfg.RunBudget
 	deadline := time.Now().Add(budget)
 	for {
 		if _, err := s.RunMonitorOnce(ctx, cfg, time.Now().UTC()); err != nil {
@@ -112,7 +91,7 @@ func (s *Service) RunMonitorLoop(ctx context.Context, cfg ReadingMonitorConfig, 
 // then sets the process-global active-books gauge from the DB. Returns the total
 // advances detected across users. A per-user pass error is logged + skipped so
 // one bad credential doesn't fail the sweep.
-func (s *Service) RunMonitorOnce(ctx context.Context, cfg ReadingMonitorConfig, now time.Time) (int, error) {
+func (s *Service) RunMonitorOnce(ctx context.Context, cfg MonitorConfig, now time.Time) (int, error) {
 	users, err := s.DB.ListReadingMonitorUsers(ctx)
 	if err != nil {
 		return 0, err
@@ -141,7 +120,7 @@ func (s *Service) RunMonitorOnce(ctx context.Context, cfg ReadingMonitorConfig, 
 // positionSource, and all state lives in the DB — so the whole L1/L2/idle state
 // machine, the advance metrics, and the toast modes are exercised deterministically
 // without a network. A DISABLED user is a no-op (returns the zero result).
-func (s *Service) runMonitorPass(ctx context.Context, owner string, cfg ReadingMonitorConfig, now time.Time) (monitorPassResult, error) {
+func (s *Service) runMonitorPass(ctx context.Context, owner string, cfg MonitorConfig, now time.Time) (monitorPassResult, error) {
 	cfg = cfg.withDefaults()
 	var res monitorPassResult
 
@@ -153,6 +132,18 @@ func (s *Service) runMonitorPass(ctx context.Context, owner string, cfg ReadingM
 		return res, nil // monitor off for this user — nothing to do
 	}
 	verbose := mode == db.ReadingMonitorModeVerbose
+
+	// Calibration window (PART 2): while now < calibrating_until, poll ALL
+	// in-progress books at the high-fidelity CalibrationInterval instead of the
+	// L1/L2 cadence — normal 60–120s polling ALIASES the sub-60s whispersync
+	// cadence, so the optimal-timing recommendation needs a temporary burst. Auto-
+	// expires: once calibrating_until passes this test is false and the pass reverts
+	// to L1/L2 with no manual step.
+	calibratingUntil, err := s.DB.GetReadingMonitorCalibration(ctx, owner)
+	if err != nil {
+		return res, err
+	}
+	calibrating := calibratingUntil != nil && now.Before(*calibratingUntil)
 
 	cred, err := s.Amazon.Load(ctx, owner)
 	if err != nil {
@@ -193,10 +184,16 @@ func (s *Service) runMonitorPass(ctx context.Context, owner string, cfg ReadingM
 		}
 
 		// Two-level cadence: an active book polls at T2, else T1. A book is "due"
-		// when now >= last_polled_at + its level interval (or never polled).
+		// when now >= last_polled_at + its level interval (or never polled). While
+		// the user is calibrating, EVERY in-progress book polls at the high-fidelity
+		// CalibrationInterval regardless of L1/L2 — the burst that de-aliases the
+		// whispersync cadence.
 		interval := cfg.DetectInterval
 		if st.Active {
 			interval = cfg.CaptureInterval
+		}
+		if calibrating {
+			interval = cfg.CalibrationInterval
 		}
 		if st.LastPolledAt != nil && now.Before(st.LastPolledAt.Add(interval)) {
 			// Not due this tick — persist any idle-expiry flip and move on.
@@ -288,7 +285,7 @@ func (s *Service) runMonitorPass(ctx context.Context, owner string, cfg ReadingM
 				// reading-time. Increment the Domain-board counter by exactly those
 				// new seconds so it stays monotonic despite the idempotent bucket
 				// overwrite below (composeSessions attributes the same seconds).
-				if gap <= KindleSessionGap {
+				if gap <= cfg.SessionGap {
 					metrics.ReadingActivitySecondsTotal.WithLabelValues(source).Add(intervalS)
 				}
 				// Persist the sample so the admin endpoint can derive the interval
@@ -337,7 +334,7 @@ func (s *Service) runMonitorPass(ctx context.Context, owner string, cfg ReadingM
 	// composition — only when this pass captured a new sample (else the buckets
 	// are already correct + this saves a recompute sweep).
 	if sampledAny {
-		if _, rerr := s.recomposeReadingActivity(ctx, owner, inProgress, now); rerr != nil {
+		if _, rerr := s.recomposeReadingActivity(ctx, owner, inProgress, cfg, now); rerr != nil {
 			return res, rerr
 		}
 	}
