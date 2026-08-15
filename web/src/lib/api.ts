@@ -1310,10 +1310,14 @@ export const api = {
   // Hardcover shelf — outbound writes stay dry-run-gated. matchHardcover resolves
   // unmatched reading_items against Hardcover's catalog; pullHardcover pulls the
   // user's current Hardcover reading state IN.
-  matchHardcover: () =>
-    request<{ enqueued: boolean; jobId: number }>("/api/v1/hardcover/match", {
-      method: "POST",
-    }),
+  // force=true re-checks EVERY unmatched book, ignoring the 30-day negative-cache
+  // window (rows the ladder previously proved unmatchable) — use after curating on
+  // Hardcover. Still read-only. Omitted → the normal windowed sweep.
+  matchHardcover: (opts?: { force?: boolean }) =>
+    request<{ enqueued: boolean; jobId: number }>(
+      `/api/v1/hardcover/match${opts?.force ? "?force=1" : ""}`,
+      { method: "POST" },
+    ),
   pullHardcover: () =>
     request<{ enqueued: boolean; jobId: number }>("/api/v1/hardcover/pull", {
       method: "POST",

@@ -643,7 +643,7 @@ function ReadingStepsPanel() {
     onError: onStepError("Kindle backfill"),
   });
   const hardcoverMatch = useMutation({
-    mutationFn: () => api.matchHardcover(),
+    mutationFn: (force?: boolean) => api.matchHardcover({ force }),
     onSuccess: onStepSuccess("Hardcover match"),
     onError: onStepError("Hardcover match"),
   });
@@ -657,6 +657,9 @@ function ReadingStepsPanel() {
     onSuccess: onStepSuccess("Sync all"),
     onError: onStepError("Sync all"),
   });
+  // When checked, a Hardcover match run re-checks EVERY book (?force=1), ignoring
+  // the 30-day negative-cache skip — for after you curate on Hardcover.
+  const [forceMatch, setForceMatch] = useState(false);
 
   if (!config.books_enabled) return null;
 
@@ -683,7 +686,7 @@ function ReadingStepsPanel() {
               key={key}
               variant="outline"
               size="sm"
-              onClick={() => m.mutate()}
+              onClick={() => (key === "match" ? hardcoverMatch.mutate(forceMatch) : m.mutate())}
               disabled={m.isPending}
               title={`Queue a ${label} run for your account`}
             >
@@ -691,6 +694,18 @@ function ReadingStepsPanel() {
               {m.isPending ? "Starting…" : label}
             </Button>
           ))}
+          <label
+            className="flex cursor-pointer select-none items-center gap-1.5 pl-1 text-xs text-muted-foreground"
+            title="Force: re-check every book, ignoring the 30-day 'no confident match' skip window. Use after curating on Hardcover."
+          >
+            <input
+              type="checkbox"
+              className="h-3.5 w-3.5 accent-primary"
+              checked={forceMatch}
+              onChange={(e) => setForceMatch(e.target.checked)}
+            />
+            force re-match
+          </label>
         </div>
         <p className="mt-3 text-xs text-muted-foreground">
           On-demand pipeline steps for your own account. Each queues a background job — watch it

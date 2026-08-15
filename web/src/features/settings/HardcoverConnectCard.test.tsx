@@ -105,6 +105,25 @@ describe("HardcoverConnectCard — match/pull triggers", () => {
     );
   });
 
+  it("force checkbox → POST /hardcover/match?force=1", async () => {
+    enableBooks();
+    hardcover(true);
+    let forceParam: string | null = null;
+    server.use(
+      http.post("/api/v1/hardcover/match", ({ request }) => {
+        forceParam = new URL(request.url).searchParams.get("force");
+        return HttpResponse.json({ enqueued: true, jobId: 7 });
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<HardcoverConnectCard />);
+
+    await user.click(await screen.findByRole("checkbox")); // the "force" toggle
+    await user.click(await screen.findByRole("button", { name: /match books/i }));
+    await waitFor(() => expect(forceParam).toBe("1"));
+  });
+
   it("pulls from Hardcover → POST /hardcover/pull + toast with jobId", async () => {
     enableBooks();
     hardcover(true);

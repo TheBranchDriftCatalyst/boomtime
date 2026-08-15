@@ -55,7 +55,7 @@ export function HardcoverConnectCard() {
   // On-demand pipeline steps. Both READ-ONLY / safe — they enqueue a worker job
   // (returns a jobId) and never write to the Hardcover shelf. Outcome via toast.
   const match = useMutation({
-    mutationFn: () => api.matchHardcover(),
+    mutationFn: (force?: boolean) => api.matchHardcover({ force }),
     onSuccess: (res) => toast.success(`Hardcover match started (job #${res.jobId})`),
     onError: (e) => toast.error(errMsg(e)),
   });
@@ -64,6 +64,8 @@ export function HardcoverConnectCard() {
     onSuccess: (res) => toast.success(`Hardcover pull started (job #${res.jobId})`),
     onError: (e) => toast.error(errMsg(e)),
   });
+  // Force: re-check every book (?force=1), ignoring the 30-day negative-cache skip.
+  const [forceMatch, setForceMatch] = useState(false);
 
   if (!enabled) return null;
 
@@ -124,7 +126,7 @@ export function HardcoverConnectCard() {
                   size="sm"
                   variant="outline"
                   disabled={match.isPending}
-                  onClick={() => match.mutate()}
+                  onClick={() => match.mutate(forceMatch)}
                 >
                   <Search className="mr-1.5 h-3.5 w-3.5" />
                   {match.isPending ? "Starting…" : "Match books"}
@@ -138,6 +140,18 @@ export function HardcoverConnectCard() {
                   <DownloadCloud className="mr-1.5 h-3.5 w-3.5" />
                   {pull.isPending ? "Starting…" : "Pull from Hardcover"}
                 </Button>
+                <label
+                  className="flex cursor-pointer select-none items-center gap-1.5 pl-1 text-xs text-muted-foreground"
+                  title="Force: re-check every book, ignoring the 30-day 'no confident match' skip window. Use after curating on Hardcover."
+                >
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5 accent-primary"
+                    checked={forceMatch}
+                    onChange={(e) => setForceMatch(e.target.checked)}
+                  />
+                  force
+                </label>
               </div>
               <p className="text-xs text-muted-foreground">
                 Both are read-only and safe — they match your library against Hardcover and pull
