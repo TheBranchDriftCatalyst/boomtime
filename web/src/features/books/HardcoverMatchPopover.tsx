@@ -14,6 +14,7 @@ import {
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
+import { useBooksRefresh } from "@/features/books/booksRefresh";
 import type { HardcoverCandidate, ReadingItemDTO } from "@/types/api";
 
 // Grouped-query prefixes whose results derive from reading state — invalidate on a
@@ -29,6 +30,7 @@ export function HardcoverMatchPopover({
   trigger: React.ReactNode;
 }) {
   const qc = useQueryClient();
+  const refreshExplorer = useBooksRefresh();
   const [open, setOpen] = useState(false);
   const [term, setTerm] = useState(
     // Seed the search with the book's own title so the first result set is useful.
@@ -61,6 +63,9 @@ export function HardcoverMatchPopover({
       qc.invalidateQueries({ queryKey: qk.booksHero() });
       qc.invalidateQueries({ queryKey: READING_QUERY_PREFIX });
       qc.invalidateQueries({ queryKey: BOOKS_EXPLORE_PREFIX });
+      // The explorer table isn't react-query backed — bump its resetKey so the
+      // badge flips Not matched → Matched without a page reload (gaka-imeb).
+      refreshExplorer();
       setOpen(false);
     },
   });
@@ -70,7 +75,7 @@ export function HardcoverMatchPopover({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent align="start" className="w-80 p-0">
+      <PopoverContent align="start" className="w-96 p-0">
         <div className="border-b border-border p-2">
           <div className="relative">
             <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -111,16 +116,15 @@ export function HardcoverMatchPopover({
               className="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent disabled:opacity-50"
             >
               {c.coverUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={c.coverUrl}
                   alt=""
-                  className="h-10 w-7 shrink-0 rounded-sm object-cover"
+                  className="h-16 w-11 shrink-0 rounded object-cover"
                   loading="lazy"
                 />
               ) : (
-                <span className="flex h-10 w-7 shrink-0 items-center justify-center rounded-sm bg-muted">
-                  <BookMarked className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="flex h-16 w-11 shrink-0 items-center justify-center rounded bg-muted">
+                  <BookMarked className="h-5 w-5 text-muted-foreground" />
                 </span>
               )}
               <span className="min-w-0 flex-1">
