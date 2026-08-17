@@ -322,7 +322,10 @@ export function makeBooksExplorerConfig(
         group: axis,
         where: buildWhere(path, filters),
         rollups,
-        bucket: { topN: TOP_N, other: true },
+        // No "Other" catch-all for Books: an aggregate 'Other' bucket isn't a real
+        // dimension value, so it drills into nothing (gaka-a6nc). We return every
+        // real group sorted by count desc; the legitimate null group renders as
+        // "(none)". (High-cardinality axes like author just return more real rows.)
         sort: { field: "value", desc: true },
       };
       const res = await runQuery(spec);

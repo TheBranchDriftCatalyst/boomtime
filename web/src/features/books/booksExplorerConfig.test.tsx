@@ -226,17 +226,18 @@ describe("source.fetchGroup", () => {
     ]);
     expect(page.truncated).toBe(false);
 
-    // The spec carried the axis, the requested rollups, the bucket policy, and
-    // the folded where (drill series + source filter).
+    // The spec carried the axis, the requested rollups, and the folded where
+    // (drill series + source filter). No bucket: Books returns all real groups —
+    // no synthetic 'Other' catch-all (gaka-a6nc).
     const spec = runQueryMock.mock.calls[0][0] as QuerySpec;
     expect(spec).toMatchObject({
       domain: "reading",
       measure: "books",
       group: "author",
       rollups: ["runtime", "finished"],
-      bucket: { topN: 12, other: true },
       sort: { field: "value", desc: true },
     });
+    expect(spec.bucket).toBeUndefined();
     expect(spec.where).toEqual({
       kind: "and",
       of: [
