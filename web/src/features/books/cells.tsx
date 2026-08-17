@@ -356,6 +356,39 @@ export function HardcoverBadge({ item }: { item: ReadingItemDTO }) {
   );
 }
 
+// Hardcover list-membership chips (a book property, migration 00077). Compact by
+// default (shows up to `max`, then a "+N"); the detail panel passes a large max to
+// show them all. Empty → nothing.
+export function ListChips({
+  lists,
+  max = 3,
+}: {
+  lists?: string[];
+  max?: number;
+}) {
+  if (!lists || lists.length === 0) return null;
+  const shown = lists.slice(0, max);
+  const extra = lists.length - shown.length;
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1">
+      {shown.map((l) => (
+        <span
+          key={l}
+          className="inline-flex items-center rounded-full border border-indigo-500/40 bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600 dark:text-indigo-300"
+          title={l}
+        >
+          {l}
+        </span>
+      ))}
+      {extra > 0 && (
+        <span className="text-[10px] text-muted-foreground" title={lists.join(", ")}>
+          +{extra}
+        </span>
+      )}
+    </span>
+  );
+}
+
 // Slim progress bar — a neon fill over a track. Clamped 0..100.
 export function ProgressBar({ pct }: { pct: number }) {
   const v = Math.max(0, Math.min(100, Math.round(pct)));

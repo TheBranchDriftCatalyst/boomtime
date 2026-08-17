@@ -247,6 +247,9 @@ type readingItemDTO struct {
 	// hardcoverSlug is the book's Hardcover slug — the FE deep-link prefers it
 	// (/books/<slug>) over the numeric id, which 404s on Hardcover's book pages.
 	HardcoverSlug *string `json:"hardcoverSlug,omitempty"`
+	// hardcoverLists is the book's Hardcover list names (migration 00077) — a
+	// property of the book. Rendered as chips in the detail panel + a "List" axis.
+	HardcoverLists []string `json:"hardcoverLists,omitempty"`
 }
 
 func toReadingItemDTO(it db.ReadingItem) readingItemDTO {
@@ -262,6 +265,14 @@ func toReadingItemDTO(it db.ReadingItem) readingItemDTO {
 		StatusDerived:  it.Status,
 		StatusOverride: it.StatusOverride, StatusIsOverride: it.StatusOverride != nil,
 		RatingOverride: it.RatingOverride,
+	}
+	// hardcover_lists is a jsonb array of list names; decode it into the DTO's
+	// string slice (nil/invalid → omitted).
+	if len(it.HardcoverLists) > 0 {
+		var names []string
+		if err := json.Unmarshal(it.HardcoverLists, &names); err == nil && len(names) > 0 {
+			d.HardcoverLists = names
+		}
 	}
 	if it.StartedAt != nil {
 		s := it.StartedAt.UTC().Format(time.RFC3339)

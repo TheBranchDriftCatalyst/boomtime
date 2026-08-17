@@ -57,7 +57,9 @@ type PullResult struct {
 	// source='hardcover' reading_items this run (the inbound-origin ingest). A row
 	// re-upserted on a later pull is NOT counted (it wasn't newly created).
 	Created int
-	Shelf   *Shelf
+	// Listed is how many books had Hardcover list memberships attached this run.
+	Listed int
+	Shelf  *Shelf
 }
 
 // SyncHardcoverPull runs the inbound sync for owner. It is a no-op (zero result,
@@ -147,6 +149,14 @@ func (s *SyncService) SyncHardcoverPull(ctx context.Context, owner string) (Pull
 		res.Created = created
 	}
 
+	// Attach Hardcover LIST memberships (Guilty Pleasures, Owned, …) as a property
+	// on each book's reading_items (migration 00077) — best-effort, read-only.
+	if listed, lerr := s.attachListMemberships(ctx, owner, client, userID); lerr != nil {
+		s.logWarn(ctx, "hardcover pull: list attach failed", "user", owner, "err", lerr)
+	} else {
+		res.Listed = listed
+	}
+
 	// Feed real Hardcover reading TIME + read dates into the activity series. Each
 	// bucket is (owner, source='hardcover', day) with the summed progress_seconds
 	// of every read that finished / progressed that day. Best-effort: a bucket
@@ -156,8 +166,32 @@ func (s *SyncService) SyncHardcoverPull(ctx context.Context, owner string) (Pull
 
 	s.logInfo(ctx, "hardcover pull: complete",
 		"user", owner, "fetched", res.Fetched, "linked", res.Linked,
-		"unlinked", res.Unlinked, "created", res.Created)
+		"unlinked", res.Unlinked, "created", res.Created, "listed", res.Listed)
 	return res, nil
+}
+
+// attachListMemberships pulls the user's Hardcover lists and writes each book's
+// list-name array onto its reading_items (all editions of the Work, keyed by
+// hardcover_book_id). Returns how many books got a non-empty list set. Read-only
+// against Hardcover; best-effort per book.
+func (s *SyncService) attachListMemberships(ctx context.Context, owner string, client *Client, userID int) (int, error) {
+	lists, err := client.UserLists(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+	membership := listMembershipByBook(lists)
+	listed := 0
+	for bookID, names := range membership {
+		if err := ctx.Err(); err != nil {
+			return listed, err
+		}
+		if werr := s.DB.SetReadingItemListsForBook(ctx, owner, bookID, marshalLists(names)); werr != nil {
+			s.logWarn(ctx, "hardcover pull: set lists failed", "user", owner, "bookId", bookID, "err", werr)
+			continue
+		}
+		listed++
+	}
+	return listed, nil
 }
 
 // ingestShelfOnlyBooks materializes each shelf book that no Kindle/Audible

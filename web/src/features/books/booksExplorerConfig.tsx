@@ -22,6 +22,7 @@ import {
   Cover,
   FinishedEditor,
   HardcoverBadge,
+  ListChips,
   ProgressBar,
   RatingEditor,
   SourceBadge,
@@ -108,6 +109,9 @@ export const READING_AXES: Axis[] = [
   { id: "series", label: "Series" },
   { id: "author", label: "Author" },
   { id: "genre", label: "Genre" },
+  // Hardcover list membership (Guilty Pleasures, Owned, …) — a book property
+  // (migration 00077). v1 groups by the first list; the panel shows all chips.
+  { id: "list", label: "List" },
 ];
 
 // --- Leaf columns ------------------------------------------------------------
@@ -194,6 +198,15 @@ export const BOOK_COLUMNS: Column<ReadingItemDTO>[] = [
     // Editable: inline 1..5 star editor writes the rating override.
     render: (r) => guardClick(<RatingEditor item={r} />),
     defaultVisible: true,
+  },
+  {
+    id: "lists",
+    header: "Lists",
+    // Hardcover list membership chips (a book property). Not default-visible to
+    // keep the row tight — toggle it on via Columns, or see all lists in the panel.
+    get: (r) => (r.hardcoverLists ?? []).join(", "),
+    render: (r) => <ListChips lists={r.hardcoverLists} />,
+    defaultVisible: false,
   },
 ];
 

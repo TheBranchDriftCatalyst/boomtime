@@ -77,6 +77,10 @@ func registerReading() {
 		"series":        {Name: "series", Table: items, Expr: "series"},
 		"author":        {Name: "author", Table: items, Expr: "authors"},
 		"genre":         {Name: "genre", Table: items, Expr: "genres->>0"},
+		// list is the Hardcover LIST-membership axis (migration 00077) — a book
+		// property, jsonb array of list names. v1 exposes the FIRST list (like genre)
+		// as the single-value group/filter axis; the panel shows the full chip set.
+		"list": {Name: "list", Table: items, Expr: "hardcover_lists->>0"},
 		// isMatched is the Hardcover MATCH-STATE axis (matched vs unmatched) —
 		// distinct from a shelf status. It's a derived boolean rendered as a label
 		// so a group-by splits the library into "linked to Hardcover" vs "not yet
@@ -112,7 +116,7 @@ func registerReading() {
 				Expr:     "count(*)",
 				DateCol:  "finished_at",
 				OwnerCol: "owner",
-				Dims:     []string{"source", "status", "statusDerived", "isMatched", "syncState", "series", "author", "genre", "title"},
+				Dims:     []string{"source", "status", "statusDerived", "isMatched", "syncState", "series", "author", "genre", "list", "title"},
 			},
 			"runtime": {
 				Name:     "runtime",
@@ -120,7 +124,7 @@ func registerReading() {
 				Expr:     "sum(runtime_min)",
 				DateCol:  "finished_at",
 				OwnerCol: "owner",
-				Dims:     []string{"source", "status", "statusDerived", "isMatched", "syncState", "series", "author", "genre", "title"},
+				Dims:     []string{"source", "status", "statusDerived", "isMatched", "syncState", "series", "author", "genre", "list", "title"},
 			},
 			// finished is a rollup-oriented measure: how many rows in a group are
 			// finished — counted off EFFECTIVE status='read' (migration 00069), so a
@@ -133,7 +137,7 @@ func registerReading() {
 				Expr:     "sum(case when COALESCE(status_override, status) = 'read' then 1 else 0 end)",
 				DateCol:  "finished_at",
 				OwnerCol: "owner",
-				Dims:     []string{"source", "status", "statusDerived", "isMatched", "syncState", "series", "author", "genre", "title"},
+				Dims:     []string{"source", "status", "statusDerived", "isMatched", "syncState", "series", "author", "genre", "list", "title"},
 			},
 		},
 		Dimensions: dims,
@@ -178,6 +182,8 @@ func registerReading() {
 				{Name: "hardcoverBookId", Expr: "hardcover_book_id"},
 				{Name: "hardcoverStatus", Expr: "hardcover_status"},
 				{Name: "hardcoverSlug", Expr: "hardcover_slug"},
+				// Hardcover list names (jsonb array) — a book property (migration 00077).
+				{Name: "hardcoverLists", Expr: "hardcover_lists"},
 				{Name: "syncedAt", Expr: "synced_at"},
 			},
 		},

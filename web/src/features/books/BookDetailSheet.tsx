@@ -20,6 +20,7 @@ import {
   HardcoverBadge,
   ProgressBar,
   RatingEditor,
+  ListChips,
 } from "@/features/books/cells";
 import { formatMinutes } from "@/features/books/booksExplorerConfig";
 import { openHardcover } from "@/features/books/hardcover";
@@ -90,6 +91,16 @@ export function BookDetailSheet({
                 </div>
               </div>
             </SheetHeader>
+
+            {/* Hardcover lists — a property of the Work (all editions share them). */}
+            {head.hardcoverLists && head.hardcoverLists.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1 py-1">
+                <span className="mr-1 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                  Lists
+                </span>
+                <ListChips lists={head.hardcoverLists} max={20} />
+              </div>
+            )}
 
             {work.isLoading && (
               <div className="flex items-center gap-2 py-4 text-xs text-muted-foreground">

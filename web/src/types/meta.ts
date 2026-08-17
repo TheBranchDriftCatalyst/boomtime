@@ -202,6 +202,10 @@ export interface ReadingItemDTO {
   // over the numeric id, which 404s on Hardcover's book pages (gaka-qic0). NULL
   // until a re-match / re-pull backfills it onto an already-matched row.
   hardcoverSlug?: string | null;
+  // Hardcover LIST memberships (migration 00077) — a property of the book, many-to-
+  // many. Rendered as chips in the detail panel + a "List" group-by axis. Empty/absent
+  // until the Hardcover pull attaches them.
+  hardcoverLists?: string[];
 }
 
 // GET /api/v1/hardcover — the Hardcover push-target connection status

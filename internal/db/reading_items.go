@@ -68,6 +68,12 @@ type ReadingItem struct {
 	// progress mirrors at most once per real change instead of every sync.
 	HardcoverPushedProgress *int
 
+	// HardcoverLists is the book's Hardcover LIST memberships as a JSON array of
+	// list names (migration 00077), or nil. A property of the book — many-to-many,
+	// written by the Hardcover pull (SetReadingItemListsForBook) keyed on
+	// hardcover_book_id so all editions of a Work share it. Never written by ingest.
+	HardcoverLists []byte
+
 	// Curation override layer (migration 00069). The derived layer above
 	// (Status/Finished/FinishedAt/Rating) is Amazon-owned and recomputed every
 	// sync; these override columns are STICKY and written ONLY by the user (the
@@ -372,7 +378,7 @@ func (d *DB) SetReadingItemCuration(ctx context.Context, owner, source, external
 		           subtitle, narrators, series, runtime_min, goodreads_rating,
 		           isbn, amazon_asin, hardcover_book_id, hardcover_status,
 		           status_override, rating_override, finished_at_override,
-		           curation_updated_at, synced_at`,
+		           curation_updated_at, hardcover_lists, synced_at`,
 		owner, source, externalID,
 		patch.SetStatus, patch.Status,
 		patch.SetRating, patch.Rating,
@@ -382,7 +388,7 @@ func (d *DB) SetReadingItemCuration(ctx context.Context, owner, source, external
 			&it.Subtitle, &it.Narrators, &it.Series, &it.RuntimeMin, &it.GoodreadsRating,
 			&it.ISBN, &it.AmazonASIN, &it.HardcoverBookID, &it.HardcoverStatus,
 			&it.StatusOverride, &it.RatingOverride, &it.FinishedAtOverride,
-			&it.CurationUpdatedAt, &it.SyncedAt)
+			&it.CurationUpdatedAt, &it.HardcoverLists, &it.SyncedAt)
 	if err != nil {
 		return ReadingItem{}, err
 	}
@@ -401,7 +407,7 @@ func (d *DB) GetReadingItem(ctx context.Context, owner, source, externalID strin
 		        subtitle, narrators, series, runtime_min, goodreads_rating,
 		        isbn, amazon_asin, hardcover_book_id, hardcover_edition_id,
 		        hardcover_status, status_override, rating_override,
-		        finished_at_override, curation_updated_at, synced_at
+		        finished_at_override, curation_updated_at, hardcover_lists, synced_at
 		   FROM reading_items
 		  WHERE owner=$1 AND source=$2 AND external_id=$3`,
 		owner, source, externalID).
@@ -410,7 +416,7 @@ func (d *DB) GetReadingItem(ctx context.Context, owner, source, externalID strin
 			&it.Subtitle, &it.Narrators, &it.Series, &it.RuntimeMin, &it.GoodreadsRating,
 			&it.ISBN, &it.AmazonASIN, &it.HardcoverBookID, &it.HardcoverEditionID,
 			&it.HardcoverStatus, &it.StatusOverride, &it.RatingOverride,
-			&it.FinishedAtOverride, &it.CurationUpdatedAt, &it.SyncedAt)
+			&it.FinishedAtOverride, &it.CurationUpdatedAt, &it.HardcoverLists, &it.SyncedAt)
 	if err != nil {
 		return ReadingItem{}, err
 	}
@@ -471,7 +477,7 @@ func (d *DB) ListReadingItems(ctx context.Context, owner, source string) ([]Read
 		        hardcover_status, hardcover_matched_at, hardcover_slug,
 		        hardcover_pushed_progress,
 		        status_override, rating_override, finished_at_override,
-		        curation_updated_at, synced_at
+		        curation_updated_at, hardcover_lists, synced_at
 		   FROM reading_items
 		  WHERE owner = $1 AND ($2 = '' OR source = $2)
 		  ORDER BY finished, title`,
@@ -490,12 +496,31 @@ func (d *DB) ListReadingItems(ctx context.Context, owner, source string) ([]Read
 			&it.HardcoverBookID, &it.HardcoverEditionID, &it.HardcoverStatus,
 			&it.HardcoverMatchedAt, &it.HardcoverSlug, &it.HardcoverPushedProgress,
 			&it.StatusOverride, &it.RatingOverride, &it.FinishedAtOverride,
-			&it.CurationUpdatedAt, &it.SyncedAt); err != nil {
+			&it.CurationUpdatedAt, &it.HardcoverLists, &it.SyncedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, it)
 	}
 	return out, rows.Err()
+}
+
+// SetReadingItemListsForBook writes a book's Hardcover LIST memberships onto ALL
+// the owner's reading_items linked to that Hardcover book id (every edition of the
+// Work shares the same lists). lists is the JSON array of list names; passing an
+// empty/nil array clears them (a book removed from every list). No-op when
+// hardcoverBookID <= 0. Written by the Hardcover pull.
+func (d *DB) SetReadingItemListsForBook(ctx context.Context, owner string, hardcoverBookID int64, lists []byte) error {
+	if hardcoverBookID <= 0 {
+		return nil
+	}
+	if lists == nil {
+		lists = []byte("[]")
+	}
+	_, err := d.Pool.Exec(ctx,
+		`UPDATE reading_items SET hardcover_lists = $3
+		  WHERE owner = $1 AND hardcover_book_id = $2`,
+		owner, hardcoverBookID, lists)
+	return err
 }
 
 // ListReadingItemsForWork returns every edition of ONE canonical Work for the
@@ -518,7 +543,7 @@ func (d *DB) ListReadingItemsForWork(ctx context.Context, owner string, hardcove
 		        hardcover_status, hardcover_matched_at, hardcover_slug,
 		        hardcover_pushed_progress,
 		        status_override, rating_override, finished_at_override,
-		        curation_updated_at, synced_at
+		        curation_updated_at, hardcover_lists, synced_at
 		   FROM reading_items
 		  WHERE owner = $1
 		    AND ( ($2::bigint IS NOT NULL AND hardcover_book_id = $2)
@@ -539,7 +564,7 @@ func (d *DB) ListReadingItemsForWork(ctx context.Context, owner string, hardcove
 			&it.HardcoverBookID, &it.HardcoverEditionID, &it.HardcoverStatus,
 			&it.HardcoverMatchedAt, &it.HardcoverSlug, &it.HardcoverPushedProgress,
 			&it.StatusOverride, &it.RatingOverride, &it.FinishedAtOverride,
-			&it.CurationUpdatedAt, &it.SyncedAt); err != nil {
+			&it.CurationUpdatedAt, &it.HardcoverLists, &it.SyncedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, it)
