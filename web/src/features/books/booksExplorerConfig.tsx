@@ -24,6 +24,7 @@ import {
   HardcoverBadge,
   ListChips,
   ProgressBar,
+  PushToHardcoverButton,
   RatingEditor,
   SourceBadge,
   STATUS_META,
@@ -414,18 +415,23 @@ export function makeBooksExplorerConfig(
     // Whole-row click isn't a surface the shared LeafRow exposes; a trailing
     // per-row action opens the book's Hardcover page instead.
     rowActions: (r) => (
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          openHardcover(r);
-        }}
-        title={`Open ${r.title} on Hardcover`}
-        aria-label={`Open ${r.title} on Hardcover`}
-        className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-      >
-        <ExternalLink className="h-3.5 w-3.5" />
-      </button>
+      <div className="flex items-center gap-0.5">
+        {/* Sync-to-Hardcover — only for matched rows (an unmatched book has no
+            Hardcover target). Push-only; re-mirrors the row's current state. */}
+        {r.hardcoverBookId != null && <PushToHardcoverButton item={r} />}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            openHardcover(r);
+          }}
+          title={`Open ${r.title} on Hardcover`}
+          aria-label={`Open ${r.title} on Hardcover`}
+          className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+        </button>
+      </div>
     ),
     // Books drags ZERO curation — no group decorator.
   };

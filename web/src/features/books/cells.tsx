@@ -16,9 +16,12 @@ import {
   Check,
   ChevronDown,
   Headphones,
+  Loader2,
+  RefreshCw,
   Star,
   X,
 } from "lucide-react";
+import { api } from "@/lib/api";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -656,5 +659,50 @@ export function AuthorCell({ item }: { item: ReadingItemDTO }) {
         </div>
       )}
     </div>
+  );
+}
+
+// PushToHardcoverButton — the per-row "sync this book to Hardcover now" circle
+// button (gaka-books). Push-only: re-mirrors the row's CURRENT effective state
+// (status/finish/rating) to Hardcover via the same curation-push path an edit
+// takes; it changes nothing locally. Only meaningful for matched rows, so callers
+// render it only when hardcoverBookId != null. Owns its in-flight spinner + toasts.
+export function PushToHardcoverButton({ item }: { item: ReadingItemDTO }) {
+  const [busy, setBusy] = useState(false);
+
+  const push = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (busy) return;
+    setBusy(true);
+    try {
+      await api.pushBookToHardcover(item);
+      toast.success(`Syncing “${item.title}” to Hardcover`);
+    } catch (err) {
+      // 409 = not matched (shouldn't happen — button is gated on match — but be honest).
+      const msg =
+        err && typeof err === "object" && "status" in err && (err as { status?: number }).status === 409
+          ? "Not matched to Hardcover yet"
+          : "Couldn't sync to Hardcover";
+      toast.error(msg);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={push}
+      disabled={busy}
+      title={`Sync “${item.title}” to Hardcover`}
+      aria-label={`Sync ${item.title} to Hardcover`}
+      className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+    >
+      {busy ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <RefreshCw className="h-3.5 w-3.5" />
+      )}
+    </button>
   );
 }

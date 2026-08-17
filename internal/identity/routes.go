@@ -108,6 +108,10 @@ func Register(e *echo.Echo, h *Handler) {
 		// (gaka-books, migration 00069) + enqueue the Hardcover push. Keyed by
 		// owner + ?source= + :externalId (the ASIN).
 		e.PATCH("/api/v1/books/items/:externalId/curation", h.SetBookCuration)
+		// Push-only: re-mirror one row's CURRENT effective state to Hardcover on
+		// demand (the per-row "sync to Hardcover" button). Same push path as a
+		// curation edit; changes nothing in the DB. Dry-run-gated.
+		e.POST("/api/v1/books/items/:externalId/push", h.PushBookToHardcover)
 		// Manual match-fixer: apply a user-chosen Hardcover book to a reading_item
 		// (confidence "manual"). Keyed the same way as curation.
 		e.POST("/api/v1/books/items/:externalId/match", h.SetBookManualMatch)

@@ -79,6 +79,45 @@ func (h *Handler) SetBookCuration(c *echo.Context) error {
 	return c.JSON(http.StatusOK, toReadingItemDTO(it))
 }
 
+// PushBookToHardcover handles POST /api/v1/books/items/:externalId/push?source=.
+// A push-only sibling of SetBookCuration: it changes NOTHING in the DB, it just
+// re-enqueues the SAME per-item Hardcover curation push (reusing enqueueCurationPush
+// — the exact path a curation edit takes) so the row's CURRENT effective state
+// (status/finish/rating) mirrors out to Hardcover on demand. This is the per-row
+// "sync this book to Hardcover now" button. Owner-scoped; keyed by owner + ?source=
+// + :externalId. The push itself is dry-run-gated by BOOM_HARDCOVER_DRYRUN.
+func (h *Handler) PushBookToHardcover(c *echo.Context) error {
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
+	if aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
+	}
+
+	externalID := c.Param("externalId")
+	if externalID == "" {
+		return apierr.New(http.StatusBadRequest, "missing item externalId", nil).Write(c)
+	}
+	source := c.QueryParam("source")
+	if source == "" {
+		return apierr.New(http.StatusBadRequest, "missing `source` query param (kindle|audible)", nil).Write(c)
+	}
+
+	// Confirm the row exists AND is matched — an unmatched book has no Hardcover
+	// target, so a push would be a no-op; 409 tells the UI to disable the button.
+	it, err := h.DB.GetReadingItem(c.Request().Context(), owner, source, externalID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return apierr.New(http.StatusNotFound, "reading item not found", nil).Write(c)
+		}
+		return apihelpers.InternalErr(h.Logger, c, "push book: load item failed", err)
+	}
+	if it.HardcoverBookID == nil {
+		return apierr.New(http.StatusConflict, "book is not matched to Hardcover — match it first", nil).Write(c)
+	}
+
+	h.enqueueCurationPush(c, owner, it.Source, it.ExternalID)
+	return c.JSON(http.StatusAccepted, map[string]any{"enqueued": true})
+}
+
 // toPatch converts the request body into a db.ReadingItemCurationPatch, decoding
 // each present field and validating the status enum. A present field is written
 // (Set*=true); an explicit null clears the override; an absent field is left alone.

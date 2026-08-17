@@ -1315,6 +1315,18 @@ export const api = {
       { method: "PATCH", body: patch },
     ),
 
+  // Per-row "sync to Hardcover now" — push-only: re-mirrors the row's CURRENT
+  // effective state (status/finish/rating) to Hardcover via the same push path a
+  // curation edit takes. Changes nothing in the DB. 409 if the book isn't matched.
+  pushBookToHardcover: (item: ReadingItemDTO) =>
+    request<{ enqueued: boolean }>(
+      buildUrl(
+        `/api/v1/books/items/${encodeURIComponent(item.externalId)}/push`,
+        { source: item.source },
+      ),
+      { method: "POST" },
+    ),
+
   // Book detail panel: all editions of one canonical Work (rows sharing a
   // hardcover_book_id, or amazon_asin for unmatched siblings). Keyed off the
   // clicked row's hardcoverBookId when matched, else its amazonAsin/externalId.
