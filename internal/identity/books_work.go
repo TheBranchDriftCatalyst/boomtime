@@ -4,11 +4,13 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/labstack/echo/v5"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 )
 
 // books_work.go — GET /api/v1/books/work?bookId=<hcid>&asin=<amazonAsin>.
@@ -44,5 +46,43 @@ func (h *Handler) GetBookWork(c *echo.Context) error {
 	for _, it := range items {
 		editions = append(editions, toReadingItemDTO(it))
 	}
-	return c.JSON(http.StatusOK, map[string]any{"editions": editions})
+
+	// Read history (migration 00078): every discrete read of this Work — a book can
+	// be read more than once. Best-effort; a load miss just omits the history.
+	reads := []readEventDTO{}
+	if evs, rerr := h.DB.ListReadingEventsForWork(c.Request().Context(), owner, bookID, "", asin); rerr == nil {
+		for _, ev := range evs {
+			reads = append(reads, toReadEventDTO(ev))
+		}
+	} else {
+		h.Logger.Warn("load reading events failed", "user", owner, "err", rerr)
+	}
+
+	return c.JSON(http.StatusOK, map[string]any{"editions": editions, "reads": reads})
+}
+
+// readEventDTO is one discrete read in the Book panel's history.
+type readEventDTO struct {
+	Origin          string  `json:"origin"`
+	Source          string  `json:"source,omitempty"`
+	StartedAt       *string `json:"startedAt,omitempty"`
+	FinishedAt      *string `json:"finishedAt,omitempty"`
+	ProgressPages   *int    `json:"progressPages,omitempty"`
+	ProgressSeconds *int    `json:"progressSeconds,omitempty"`
+}
+
+func toReadEventDTO(ev db.ReadingEvent) readEventDTO {
+	d := readEventDTO{
+		Origin: ev.Origin, Source: ev.Source,
+		ProgressPages: ev.ProgressPages, ProgressSeconds: ev.ProgressSeconds,
+	}
+	if ev.StartedAt != nil {
+		s := ev.StartedAt.UTC().Format(time.RFC3339)
+		d.StartedAt = &s
+	}
+	if ev.FinishedAt != nil {
+		s := ev.FinishedAt.UTC().Format(time.RFC3339)
+		d.FinishedAt = &s
+	}
+	return d
 }

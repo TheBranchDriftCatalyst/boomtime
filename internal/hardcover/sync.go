@@ -114,6 +114,11 @@ func (s *SyncService) SyncHardcoverPull(ctx context.Context, owner string) (Pull
 		}, &updated); serr != nil {
 			s.logWarn(ctx, "hardcover pull: shelf mirror upsert failed", "user", owner, "bookId", b.BookID, "err", serr)
 		}
+		// Ingest EVERY Hardcover read as a discrete reading_event (migration 00078) —
+		// the authoritative multiple-reads history. Idempotent (upsert by the stable
+		// user_book_reads id), best-effort. reading_items keeps the latest finish; the
+		// events carry the full history a book can be read more than once.
+		s.ingestHardcoverReads(ctx, owner, b)
 		n, uerr := s.DB.UpdateHardcoverLinkFromPull(ctx, owner, db.HardcoverUserBookLink{
 			BookID:          int64(b.BookID),
 			Status:          StatusString(b.StatusID),
@@ -168,6 +173,28 @@ func (s *SyncService) SyncHardcoverPull(ctx context.Context, owner string) (Pull
 		"user", owner, "fetched", res.Fetched, "linked", res.Linked,
 		"unlinked", res.Unlinked, "created", res.Created, "listed", res.Listed)
 	return res, nil
+}
+
+// ingestHardcoverReads upserts every read of a Hardcover shelf book as a discrete
+// reading_event (origin='hardcover', keyed by the stable user_book_reads id → a
+// re-pull refreshes, never duplicates). Best-effort per read. A shelf entry with no
+// reads (want/unread) writes nothing.
+func (s *SyncService) ingestHardcoverReads(ctx context.Context, owner string, b UserBook) {
+	bookID := int64(b.BookID)
+	for _, r := range b.Reads {
+		if err := s.DB.UpsertReadingEvent(ctx, db.ReadingEvent{
+			Owner:           owner,
+			HardcoverBookID: &bookID,
+			Origin:          db.ReadingEventOriginHardcover,
+			ExternalReadID:  strconv.Itoa(r.ID),
+			StartedAt:       r.StartedAt,
+			FinishedAt:      r.FinishedAt,
+			ProgressPages:   r.ProgressPages,
+			ProgressSeconds: r.ProgressSeconds,
+		}); err != nil {
+			s.logWarn(ctx, "hardcover pull: read event upsert failed", "user", owner, "bookId", b.BookID, "readId", r.ID, "err", err)
+		}
+	}
 }
 
 // attachListMemberships pulls the user's Hardcover lists and writes each book's

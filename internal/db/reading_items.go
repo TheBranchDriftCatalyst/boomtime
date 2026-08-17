@@ -251,6 +251,16 @@ func (d *DB) MarkReadingItemFinished(ctx context.Context, owner, source, asin st
 		}
 		return false, meta, false, err
 	}
+	// Record this finish as a discrete read (migration 00078) so the book's read
+	// history includes Amazon finishes, not only Hardcover reads. Idempotent: the
+	// key is asin+finish-date, so re-ingesting the same finish is a no-op; a re-read
+	// with a DIFFERENT finish date is a new event. Best-effort (never fails the finish).
+	fa := finishedAt.UTC()
+	_ = d.UpsertReadingEvent(ctx, ReadingEvent{
+		Owner: owner, Source: source, ExternalID: asin,
+		Origin: ReadingEventOriginAudible, ExternalReadID: asin + "@" + fa.Format("2006-01-02"),
+		FinishedAt: &fa,
+	})
 	return !wasFinished, meta, true, nil
 }
 
@@ -300,6 +310,14 @@ func (d *DB) SetReadingItemFinishedFromInsights(ctx context.Context, owner, asin
 		}
 		return false, false, err
 	}
+	// Record the Kindle-insights finish as a discrete read (migration 00078), keyed
+	// idempotently by asin+finish-date. Best-effort.
+	fa := finishedAt.UTC()
+	_ = d.UpsertReadingEvent(ctx, ReadingEvent{
+		Owner: owner, Source: "kindle", ExternalID: asin,
+		Origin: ReadingEventOriginKindleInsights, ExternalReadID: asin + "@" + fa.Format("2006-01-02"),
+		FinishedAt: &fa,
+	})
 	return prevWasNull, true, nil
 }
 

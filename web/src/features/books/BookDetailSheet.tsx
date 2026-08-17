@@ -145,6 +145,31 @@ export function BookDetailSheet({
                 </div>
               ))}
             </div>
+
+            {/* Read history — a book can be read more than once (migration 00078). */}
+            {work.data?.reads && work.data.reads.length > 0 && (
+              <div className="space-y-2 border-t border-border pt-3">
+                <div className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                  {work.data.reads.length} read
+                  {work.data.reads.length === 1 ? "" : "s"}
+                </div>
+                {work.data.reads.map((r, i) => (
+                  <div
+                    key={`${r.origin}:${r.finishedAt ?? r.startedAt ?? i}`}
+                    className="flex items-center justify-between gap-2 rounded-md border border-border/60 px-2.5 py-1.5 text-xs"
+                  >
+                    <span className="text-muted-foreground">
+                      {r.startedAt ? fmtDate(r.startedAt) : "—"}
+                      {" → "}
+                      <span className="text-foreground">{fmtDate(r.finishedAt)}</span>
+                    </span>
+                    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                      {r.origin}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </>
         )}
       </SheetContent>

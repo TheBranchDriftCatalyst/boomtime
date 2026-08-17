@@ -77,6 +77,7 @@ import type {
   CurationPatch,
   HardcoverConnection,
   HardcoverCandidate,
+  ReadEvent,
   GithubStatsPayload,
   WidgetLinkPayload,
   WidgetLinksPayload,
@@ -1318,7 +1319,7 @@ export const api = {
   // hardcover_book_id, or amazon_asin for unmatched siblings). Keyed off the
   // clicked row's hardcoverBookId when matched, else its amazonAsin/externalId.
   getBookWork: (item: ReadingItemDTO) =>
-    request<{ editions: ReadingItemDTO[] }>(
+    request<{ editions: ReadingItemDTO[]; reads: ReadEvent[] }>(
       buildUrl("/api/v1/books/work", {
         bookId: item.hardcoverBookId ?? undefined,
         asin:
