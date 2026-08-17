@@ -186,9 +186,13 @@ type ReadInput struct {
 
 func (r ReadInput) object() map[string]any {
 	obj := map[string]any{}
-	if r.Progress != nil {
-		obj["progress"] = *r.Progress
-	}
+	// NOTE: the percent `progress` is NOT a DatesReadInput field (schema
+	// introspection: only progress_pages / progress_seconds exist) — Hardcover
+	// derives the percent from the absolute position against the edition length.
+	// Emitting `progress` gets the whole mutation rejected. Kept on the struct so
+	// callers can pass it (and we still derive pages/seconds from it upstream), but
+	// never sent on the read object.
+	_ = r.Progress
 	if r.ProgressPages != nil {
 		obj["progress_pages"] = *r.ProgressPages
 	}
@@ -204,9 +208,12 @@ func (r ReadInput) object() map[string]any {
 	if r.EditionID > 0 {
 		obj["edition_id"] = r.EditionID
 	}
-	if r.ReadingFormatID > 0 {
-		obj["reading_format_id"] = r.ReadingFormatID
-	}
+	// reading_format_id is NOT a DatesReadInput field either (live error: "field
+	// 'reading_format_id' not found in type: 'DatesReadInput'"), despite the
+	// user_book_reads TABLE carrying the column — the mutation input doesn't accept
+	// it. edition_id pins the format on the read. Kept on the struct for callers but
+	// never emitted onto the read object.
+	_ = r.ReadingFormatID
 	return obj
 }
 

@@ -68,3 +68,4 @@ web/coverage/
 .claude/
 hardcover-schema.json
 scripts/__pycache__/
+hardcover.key

@@ -29,8 +29,11 @@ func TestReadInput_ObjectIncludesProgressFields(t *testing.T) {
 		StartedAt:       &started,
 	}
 	obj := in.object()
-	if obj["progress"] != 42.5 {
-		t.Errorf("progress = %v, want 42.5", obj["progress"])
+	// The percent `progress` is NOT a DatesReadInput field (schema introspection) —
+	// only the absolute positions are. It must never be emitted or Hardcover rejects
+	// the whole read mutation.
+	if _, present := obj["progress"]; present {
+		t.Errorf("progress (percent) must NOT be sent — not a DatesReadInput field; use progress_pages/seconds")
 	}
 	if obj["progress_pages"] != 88 {
 		t.Errorf("progress_pages = %v, want 88", obj["progress_pages"])
@@ -149,10 +152,11 @@ func TestPushProgress_BuildsReadingWithProgress(t *testing.T) {
 		t.Errorf("user_book status_id = %v, want %d (reading)", ubObj["status_id"], StatusReading)
 	}
 
-	// read must carry progress=50 and the derived progress_seconds=18000.
+	// read must carry the derived progress_seconds=18000 (the absolute position is
+	// the progress signal; the percent `progress` is not a DatesReadInput field).
 	readObj, _ := read.vars["object"].(map[string]any)
-	if got := jsonNum(readObj["progress"]); got != 50 {
-		t.Errorf("read progress = %v, want 50", readObj["progress"])
+	if _, present := readObj["progress"]; present {
+		t.Errorf("read must NOT carry the percent `progress` (not a DatesReadInput field)")
 	}
 	if got := jsonNum(readObj["progress_seconds"]); got != 18000 {
 		t.Errorf("read progress_seconds = %v, want 18000", readObj["progress_seconds"])
@@ -238,10 +242,10 @@ func TestPushProgressMatched_SkipsMatch(t *testing.T) {
 	if got := jsonNum(ubObj["status_id"]); got != float64(StatusReading) {
 		t.Errorf("user_book status_id = %v, want %d (reading)", ubObj["status_id"], StatusReading)
 	}
-	// read carries progress=50 + derived progress_seconds=18000.
+	// read carries the derived progress_seconds=18000 (no percent `progress` field).
 	readObj, _ := read.vars["object"].(map[string]any)
-	if got := jsonNum(readObj["progress"]); got != 50 {
-		t.Errorf("read progress = %v, want 50", readObj["progress"])
+	if _, present := readObj["progress"]; present {
+		t.Errorf("read must NOT carry the percent `progress` (not a DatesReadInput field)")
 	}
 	if got := jsonNum(readObj["progress_seconds"]); got != 18000 {
 		t.Errorf("read progress_seconds = %v, want 18000", readObj["progress_seconds"])
