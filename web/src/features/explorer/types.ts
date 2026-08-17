@@ -117,6 +117,10 @@ export interface DomainConfig<Row> {
   renderJson?: (value: unknown) => React.ReactNode;
   // Trailing per-leaf-row actions.
   rowActions?: RowAction<Row>;
+  // Optional: clicking a leaf row calls this (e.g. open a detail panel). Undefined
+  // → rows are not clickable (default). The JSON toggle + rowActions stop
+  // propagation so they don't also trigger a select.
+  onRowSelect?: (row: Row) => void;
   // A hook (called once inside the table body) yielding the per-group-node
   // decorator. It's a hook so the domain can pull in its own data via React
   // hooks (its own data sources + dialog state). A pluggable layer (e.g.

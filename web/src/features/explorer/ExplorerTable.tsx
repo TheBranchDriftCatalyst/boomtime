@@ -137,6 +137,7 @@ export function ExplorerTable<TRow>({ ctrl, config, leafMode }: Props<TRow>) {
       jsonMode,
       renderJson: config.renderJson ?? defaultRenderJson,
       rowActions: config.rowActions as ExplorerRowContextValue["rowActions"],
+      onRowSelect: config.onRowSelect as ExplorerRowContextValue["onRowSelect"],
       labelForAxis,
     }),
     [
@@ -145,6 +146,7 @@ export function ExplorerTable<TRow>({ ctrl, config, leafMode }: Props<TRow>) {
       config.labels.leafGroup,
       config.renderJson,
       config.rowActions,
+      config.onRowSelect,
       supportsJson,
       jsonMode,
       labelForAxis,

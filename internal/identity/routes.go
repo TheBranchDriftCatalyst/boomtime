@@ -97,6 +97,9 @@ func Register(e *echo.Echo, h *Handler) {
 		e.POST("/api/v1/kindle/reconcile", h.ReconcileKindle)
 		e.GET("/api/v1/books/items", h.GetReadingItems)
 		e.DELETE("/api/v1/books/items", h.DeleteReadingItemsHandler)
+		// Book detail side panel: all editions of one canonical Work (rows sharing a
+		// hardcover_book_id, or amazon_asin for unmatched siblings).
+		e.GET("/api/v1/books/work", h.GetBookWork)
 		// User-scoped reading-monitor status for the global nav indicator
 		// (catalyst-books §5.1). Self-only read of {enabled, calibrating,
 		// calibratingUntil} — the admin GET/PUT is separately admin-gated.

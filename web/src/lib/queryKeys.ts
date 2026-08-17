@@ -323,4 +323,6 @@ export const qk = {
       : (["books-hero"] as const),
   // Interactive Hardcover catalog search for the manual match-fixer, keyed by term.
   hardcoverSearch: (q: string) => ["hardcover-search", q] as const,
+  // A Work's editions for the Book detail panel, keyed by the Work identity.
+  bookWork: (key: string) => ["book-work", key] as const,
 };

@@ -1314,6 +1314,20 @@ export const api = {
       { method: "PATCH", body: patch },
     ),
 
+  // Book detail panel: all editions of one canonical Work (rows sharing a
+  // hardcover_book_id, or amazon_asin for unmatched siblings). Keyed off the
+  // clicked row's hardcoverBookId when matched, else its amazonAsin/externalId.
+  getBookWork: (item: ReadingItemDTO) =>
+    request<{ editions: ReadingItemDTO[] }>(
+      buildUrl("/api/v1/books/work", {
+        bookId: item.hardcoverBookId ?? undefined,
+        asin:
+          item.hardcoverBookId == null
+            ? item.amazonAsin || item.externalId
+            : undefined,
+      }),
+    ),
+
   // Manual match-fixer. hardcoverSearch live-queries Hardcover's catalog (Typesense)
   // for the autocomplete; setBookManualMatch applies a chosen candidate to the row
   // (writes a "manual" linkage). Both owner-scoped; search is read-only.

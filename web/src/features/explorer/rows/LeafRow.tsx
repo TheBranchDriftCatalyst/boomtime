@@ -16,18 +16,28 @@ interface LeafRowProps {
 
 /** A single domain row (table mode) with an optional expandable raw-JSON drawer. */
 export function LeafRow({ node: n, expanded, onToggleExpanded }: LeafRowProps) {
-  const { columns, supportsJson, renderJson, rowActions } =
+  const { columns, supportsJson, renderJson, rowActions, onRowSelect } =
     useExplorerRowContext();
   const row = n.row;
+  const clickable = !!onRowSelect;
   return (
     <Fragment>
-      <tr className="border-t hover:bg-muted/30">
+      <tr
+        className={cn(
+          "border-t hover:bg-muted/30",
+          clickable && "cursor-pointer",
+        )}
+        onClick={clickable ? () => onRowSelect!(row) : undefined}
+      >
         <td className="px-2 py-1" style={{ paddingLeft: n.depth * INDENT + 8 }}>
           <div className="flex items-center gap-2">
             {supportsJson && (
               <button
                 className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                onClick={onToggleExpanded}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleExpanded();
+                }}
                 title="Show raw JSON"
               >
                 {expanded ? (
@@ -38,7 +48,11 @@ export function LeafRow({ node: n, expanded, onToggleExpanded }: LeafRowProps) {
                 JSON
               </button>
             )}
-            {rowActions?.(row)}
+            {rowActions && (
+              <span onClick={(e) => e.stopPropagation()}>
+                {rowActions(row)}
+              </span>
+            )}
           </div>
         </td>
         {columns.map((col) => (

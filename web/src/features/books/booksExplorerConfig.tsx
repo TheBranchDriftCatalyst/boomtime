@@ -12,6 +12,7 @@
 // they constrain BOTH the group aggregates and the leaf rows, fully server-side)
 // — see buildWhere. Search compiles to an OR of case-insensitive ILIKE substring
 // matches on title + author (gaka-02sh P2 follow-up).
+import type { ReactNode } from "react";
 import { ExternalLink } from "lucide-react";
 import { Library } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
@@ -110,6 +111,14 @@ export const READING_AXES: Axis[] = [
 
 // --- Leaf columns ------------------------------------------------------------
 
+// guardClick wraps an interactive cell (status dropdown, rating, finished editor,
+// match-fixer) so its clicks don't bubble to the row-level detail-panel open.
+// Non-interactive cells (title/author/source) let the click through so tapping
+// the row opens the Book panel.
+const guardClick = (node: ReactNode) => (
+  <span onClick={(e) => e.stopPropagation()}>{node}</span>
+);
+
 // The 8 book columns (Cover spans its own cell, so 9 Column entries). `render`
 // draws the cell via the shared cells.tsx components; `get` is the sort key.
 export const BOOK_COLUMNS: Column<ReadingItemDTO>[] = [
@@ -149,7 +158,7 @@ export const BOOK_COLUMNS: Column<ReadingItemDTO>[] = [
     get: (r) => r.status,
     // Editable: the pill becomes a StatusSelect dropdown (curation override →
     // Hardcover) with a provenance dot. Sort key stays the effective status.
-    render: (r) => <StatusSelect item={r} />,
+    render: (r) => guardClick(<StatusSelect item={r} />),
     defaultVisible: true,
   },
   {
@@ -157,7 +166,7 @@ export const BOOK_COLUMNS: Column<ReadingItemDTO>[] = [
     header: "Hardcover",
     // Matched rows sort ahead of unmatched (a resolved id > 0).
     get: (r) => (r.hardcoverBookId != null ? 1 : 0),
-    render: (r) => <HardcoverBadge item={r} />,
+    render: (r) => guardClick(<HardcoverBadge item={r} />),
     defaultVisible: true,
   },
   {
@@ -173,7 +182,7 @@ export const BOOK_COLUMNS: Column<ReadingItemDTO>[] = [
     // Recently-finished first; items without a finish date sink to the end.
     get: (r) => (r.finishedAt ? Date.parse(r.finishedAt) : -Infinity),
     // Editable: inline calendar popover writes the finished_at override.
-    render: (r) => <FinishedEditor item={r} />,
+    render: (r) => guardClick(<FinishedEditor item={r} />),
     cellClassName: "whitespace-nowrap",
     defaultVisible: true,
   },
@@ -182,7 +191,7 @@ export const BOOK_COLUMNS: Column<ReadingItemDTO>[] = [
     header: "Rating",
     get: (r) => r.rating ?? r.goodreadsRating ?? 0,
     // Editable: inline 1..5 star editor writes the rating override.
-    render: (r) => <RatingEditor item={r} />,
+    render: (r) => guardClick(<RatingEditor item={r} />),
     defaultVisible: true,
   },
 ];
@@ -309,6 +318,7 @@ const EMPTY_STATE = (
  */
 export function makeBooksExplorerConfig(
   filters: BooksFilters,
+  onRowSelect?: (row: ReadingItemDTO) => void,
 ): DomainConfig<ReadingItemDTO> {
   const source = {
     fetchGroup: async (
@@ -377,6 +387,8 @@ export function makeBooksExplorerConfig(
     rollups: BOOK_ROLLUPS,
     source,
     rowKey: (r) => `${r.source}:${r.externalId}`,
+    // Clicking a row opens the Book detail panel (the Work across all providers).
+    onRowSelect,
     leafPageSize: LEAF_PAGE_SIZE,
     labels: {
       leafGroup: "Books",

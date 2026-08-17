@@ -19,6 +19,8 @@ export interface ExplorerRowContextValue {
   jsonMode: boolean;
   renderJson: (value: unknown) => React.ReactNode;
   rowActions?: RowAction<unknown>;
+  // Optional leaf-row click handler (open a detail panel); undefined = not clickable.
+  onRowSelect?: (row: unknown) => void;
   labelForAxis: (id: string) => string;
 }
 

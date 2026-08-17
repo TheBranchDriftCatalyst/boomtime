@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -475,6 +476,55 @@ func (d *DB) ListReadingItems(ctx context.Context, owner, source string) ([]Read
 		  WHERE owner = $1 AND ($2 = '' OR source = $2)
 		  ORDER BY finished, title`,
 		owner, source)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ReadingItem
+	for rows.Next() {
+		var it ReadingItem
+		if err := rows.Scan(&it.Owner, &it.Source, &it.ExternalID, &it.Title, &it.Authors,
+			&it.CoverURL, &it.Status, &it.ProgressPercent, &it.Finished, &it.StartedAt,
+			&it.FinishedAt, &it.Rating, &it.Subtitle, &it.Narrators, &it.Series,
+			&it.RuntimeMin, &it.GoodreadsRating, &it.ISBN, &it.AmazonASIN,
+			&it.HardcoverBookID, &it.HardcoverEditionID, &it.HardcoverStatus,
+			&it.HardcoverMatchedAt, &it.HardcoverSlug, &it.HardcoverPushedProgress,
+			&it.StatusOverride, &it.RatingOverride, &it.FinishedAtOverride,
+			&it.CurationUpdatedAt, &it.SyncedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, it)
+	}
+	return out, rows.Err()
+}
+
+// ListReadingItemsForWork returns every edition of ONE canonical Work for the
+// owner — the backing for the Book detail side panel. A "Work" is identified by
+// its Hardcover book id when matched (all editions of a book share it), falling
+// back to amazon_asin for unmatched books (which cross-links an Audible edition to
+// its Kindle sibling before either is matched). At least one of hardcoverBookID /
+// amazonASIN must be set; both may be to widen the collapse. Same full projection
+// as ListReadingItems so each row is a complete ReadingItemDTO.
+func (d *DB) ListReadingItemsForWork(ctx context.Context, owner string, hardcoverBookID *int64, amazonASIN string) ([]ReadingItem, error) {
+	amazonASIN = strings.TrimSpace(amazonASIN)
+	if hardcoverBookID == nil && amazonASIN == "" {
+		return nil, nil // no Work identity → nothing to collapse
+	}
+	rows, err := d.Pool.Query(ctx,
+		`SELECT owner, source, external_id, title, authors, cover_url, status,
+		        progress_percent, finished, started_at, finished_at, rating,
+		        subtitle, narrators, series, runtime_min, goodreads_rating,
+		        isbn, amazon_asin, hardcover_book_id, hardcover_edition_id,
+		        hardcover_status, hardcover_matched_at, hardcover_slug,
+		        hardcover_pushed_progress,
+		        status_override, rating_override, finished_at_override,
+		        curation_updated_at, synced_at
+		   FROM reading_items
+		  WHERE owner = $1
+		    AND ( ($2::bigint IS NOT NULL AND hardcover_book_id = $2)
+		       OR ($3 <> '' AND amazon_asin = $3) )
+		  ORDER BY source, external_id`,
+		owner, hardcoverBookID, amazonASIN)
 	if err != nil {
 		return nil, err
 	}

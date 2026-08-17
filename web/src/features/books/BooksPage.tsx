@@ -30,6 +30,8 @@ import { qk } from "@/lib/queryKeys";
 import { usePublicConfig } from "@/lib/usePublicConfig";
 import { GroupableExplorer } from "@/features/explorer/GroupableExplorer";
 import { GroupByBar } from "@/features/explorer/GroupByBar";
+import { BookDetailSheet } from "@/features/books/BookDetailSheet";
+import type { ReadingItemDTO } from "@/types/meta";
 import {
   deriveHeroStats,
   HERO_SPEC,
@@ -256,10 +258,13 @@ export function BooksPage() {
       ? deriveHeroStats(filteredHeroQuery.data.groups)
       : null;
 
+  // Clicking a row opens the Book detail panel for that Work (all provider editions).
+  const [selectedBook, setSelectedBook] = useState<ReadingItemDTO | null>(null);
+
   // The reading DomainConfig, closed over the live filters; the resetKey folds
   // the same inputs so the explorer drops its caches on any filter change.
   const explorerConfig = useMemo(
-    () => makeBooksExplorerConfig(filters),
+    () => makeBooksExplorerConfig(filters, setSelectedBook),
     [filters],
   );
   const resetKey = `${sourceFilter}|${statusFilter}|${matchedFilter}|${debouncedSearch}`;
@@ -355,6 +360,10 @@ export function BooksPage() {
           </div>
         </Page.Content>
       </Page.Body>
+      <BookDetailSheet
+        item={selectedBook}
+        onOpenChange={(open) => !open && setSelectedBook(null)}
+      />
     </Page>
   );
 }
