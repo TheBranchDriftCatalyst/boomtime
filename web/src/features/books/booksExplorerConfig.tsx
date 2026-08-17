@@ -96,9 +96,10 @@ export const READING_AXES: Axis[] = [
   // EFFECTIVE status (override ?? Amazon-derived) — the same axis the filter
   // reads and goals/rollups run on.
   { id: "status", label: "Status" },
-  // Raw Amazon-derived status (the untouched device layer) — lets a user group
-  // by "what the source computed" vs the effective/curated status (gaka-books).
-  { id: "statusDerived", label: "Status (Amazon)" },
+  // NOTE: the raw Amazon-derived status axis ("Status (Amazon)", dim `statusDerived`)
+  // was removed from the default axes — status is 1:1 with the Hardcover shelf now, so
+  // exposing BOTH the effective and the raw-Amazon status overloaded the concept. The
+  // `statusDerived` DSL dimension still exists (diagnostic) but isn't a headline axis.
   // Hardcover match-state — a meta-status facet (linked to Hardcover vs not),
   // groupable like any status axis so you can split the library by sync state.
   { id: "isMatched", label: "Match state" },

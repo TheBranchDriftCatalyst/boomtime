@@ -115,7 +115,9 @@ describe("pathToPredicate / filtersToPredicate / buildWhere", () => {
     expect(read?.label).toBe("Finished");
     // Grouping exposes BOTH the effective status axis and the raw Amazon one.
     expect(READING_AXES.map((a) => a.id)).toContain("status");
-    expect(READING_AXES.map((a) => a.id)).toContain("statusDerived");
+    // statusDerived ("Status (Amazon)") was demoted from the default axes — status
+    // is 1:1 with the Hardcover shelf now (status consolidation).
+    expect(READING_AXES.map((a) => a.id)).not.toContain("statusDerived");
   });
 
   it("maps a search term to an ILIKE OR on title/author (trimmed; blank → none)", () => {
