@@ -13,7 +13,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
-import { useBooksRefresh } from "@/features/books/booksRefresh";
 import type { CurationPatch, ReadingItemDTO } from "@/types/meta";
 
 // Grouped-query cache prefixes whose results derive from reading state. Mirrors
@@ -29,18 +28,15 @@ const BOOKS_EXPLORE_PREFIX = ["books-explore"] as const;
  */
 export function useSetBookCuration(item: ReadingItemDTO) {
   const qc = useQueryClient();
-  const refreshExplorer = useBooksRefresh();
   return useMutation<ReadingItemDTO, Error, CurationPatch>({
     mutationFn: (patch) => api.setBookCuration(item, patch),
     onSuccess: () => {
       // The library hero counts (Tracked / Finished) and any grouped reading
-      // charts re-derive from the row we just changed — refetch them.
+      // charts re-derive from the row we just changed — refetch them. The cell
+      // itself self-updates via cell-local optimistic state (no table refetch).
       qc.invalidateQueries({ queryKey: qk.booksHero() });
       qc.invalidateQueries({ queryKey: READING_QUERY_PREFIX });
       qc.invalidateQueries({ queryKey: BOOKS_EXPLORE_PREFIX });
-      // The explorer table isn't react-query backed — bump its resetKey so the
-      // changed row (status/rating/finished) reflects without a page reload.
-      refreshExplorer();
     },
   });
 }

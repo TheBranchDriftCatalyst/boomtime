@@ -9,7 +9,7 @@
 // default view); adding a source/status/series/author/genre axis drills with
 // count + runtime + finished rollups. The search / source / status filters fold
 // into the DSL `where` (and the resetKey) so they constrain the grouping too.
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -31,7 +31,6 @@ import { usePublicConfig } from "@/lib/usePublicConfig";
 import { GroupableExplorer } from "@/features/explorer/GroupableExplorer";
 import { GroupByBar } from "@/features/explorer/GroupByBar";
 import { BookDetailSheet } from "@/features/books/BookDetailSheet";
-import { BooksRefreshContext } from "@/features/books/booksRefresh";
 import type { ReadingItemDTO } from "@/types/meta";
 import {
   deriveHeroStats,
@@ -262,22 +261,15 @@ export function BooksPage() {
   // Clicking a row opens the Book detail panel for that Work (all provider editions).
   const [selectedBook, setSelectedBook] = useState<ReadingItemDTO | null>(null);
 
-  // Bumped by a mutation (status/rating/finished/match) to force the explorer to
-  // refetch — it's not react-query backed, so it refreshes only when resetKey
-  // changes (gaka-imeb). Folded into resetKey below; a callback goes to the cells.
-  const [dataVersion, setDataVersion] = useState(0);
-  const bumpData = useCallback(() => setDataVersion((v) => v + 1), []);
-
   // The reading DomainConfig, closed over the live filters; the resetKey folds
   // the same inputs so the explorer drops its caches on any filter change.
   const explorerConfig = useMemo(
     () => makeBooksExplorerConfig(filters, setSelectedBook),
     [filters],
   );
-  const resetKey = `${sourceFilter}|${statusFilter}|${matchedFilter}|${debouncedSearch}|${dataVersion}`;
+  const resetKey = `${sourceFilter}|${statusFilter}|${matchedFilter}|${debouncedSearch}`;
 
   return (
-    <BooksRefreshContext.Provider value={bumpData}>
     <Page>
       <Page.Header title="Books" />
       <Page.Body>
@@ -373,7 +365,6 @@ export function BooksPage() {
         onOpenChange={(open) => !open && setSelectedBook(null)}
       />
     </Page>
-    </BooksRefreshContext.Provider>
   );
 }
 

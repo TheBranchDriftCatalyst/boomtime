@@ -296,13 +296,20 @@ export function StatusSelect({ item }: { item: ReadingItemDTO }) {
 // render a muted "Not matched" today and auto-upgrade to "Synced"/status or a
 // generic "Matched" the moment the DTO carries a hardcoverBookId.
 export function HardcoverBadge({ item }: { item: ReadingItemDTO }) {
-  const matched = item.hardcoverBookId != null;
+  // Cell-local optimistic state: a successful manual match updates THIS badge in
+  // place (Not matched → Matched) without refetching the whole table (bad UX).
+  // Persists across re-renders since the row stays mounted; a real explorer
+  // refetch (filter change) later reconciles from the server.
+  const [localMatch, setLocalMatch] = useState<ReadingItemDTO | null>(null);
+  const it = localMatch ?? item;
+  const matched = it.hardcoverBookId != null;
   if (!matched) {
     // Not matched → the whole badge is the trigger for the manual match-fixer:
     // click to search Hardcover's catalog and link a book by hand.
     return (
       <HardcoverMatchPopover
-        item={item}
+        item={it}
+        onMatched={setLocalMatch}
         trigger={
           <button
             type="button"
@@ -316,8 +323,8 @@ export function HardcoverBadge({ item }: { item: ReadingItemDTO }) {
       />
     );
   }
-  const remote = (item.hardcoverStatus ?? "").trim().toLowerCase(); // last-seen Hardcover shelf
-  const effective = (item.status ?? "").trim().toLowerCase(); // what boomtime would push
+  const remote = (it.hardcoverStatus ?? "").trim().toLowerCase(); // last-seen Hardcover shelf
+  const effective = (it.status ?? "").trim().toLowerCase(); // what boomtime would push
   const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : "");
   const remoteLabel = remote ? STATUS_META[remote]?.label ?? cap(remote) : "";
   const effLabel = effective ? STATUS_META[effective]?.label ?? cap(effective) : "";

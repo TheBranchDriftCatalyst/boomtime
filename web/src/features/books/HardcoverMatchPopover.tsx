@@ -14,23 +14,24 @@ import {
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
-import { useBooksRefresh } from "@/features/books/booksRefresh";
 import type { HardcoverCandidate, ReadingItemDTO } from "@/types/api";
 
 // Grouped-query prefixes whose results derive from reading state — invalidate on a
 // successful match so the hero/charts refetch (mirrors useSetBookCuration).
 const READING_QUERY_PREFIX = ["reading-query"] as const;
-const BOOKS_EXPLORE_PREFIX = ["books-explore"] as const;
 
 export function HardcoverMatchPopover({
   item,
   trigger,
+  onMatched,
 }: {
   item: ReadingItemDTO;
   trigger: React.ReactNode;
+  // Called with the updated (matched) row so the CELL self-updates in place — no
+  // whole-table refetch.
+  onMatched?: (updated: ReadingItemDTO) => void;
 }) {
   const qc = useQueryClient();
-  const refreshExplorer = useBooksRefresh();
   const [open, setOpen] = useState(false);
   const [term, setTerm] = useState(
     // Seed the search with the book's own title so the first result set is useful.
@@ -58,14 +59,12 @@ export function HardcoverMatchPopover({
         hardcoverBookId: c.bookId,
         slug: c.slug || undefined,
       }),
-    onSuccess: () => {
-      // Refresh the hero + grouped reading charts so the match is reflected.
+    onSuccess: (updated) => {
+      // Refresh the hero counts (react-query) — cheap, off the table's render path.
       qc.invalidateQueries({ queryKey: qk.booksHero() });
       qc.invalidateQueries({ queryKey: READING_QUERY_PREFIX });
-      qc.invalidateQueries({ queryKey: BOOKS_EXPLORE_PREFIX });
-      // The explorer table isn't react-query backed — bump its resetKey so the
-      // badge flips Not matched → Matched without a page reload (gaka-imeb).
-      refreshExplorer();
+      // Self-update the CELL with the matched row (no whole-table refetch).
+      onMatched?.(updated);
       setOpen(false);
     },
   });
