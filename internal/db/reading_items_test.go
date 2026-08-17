@@ -196,3 +196,62 @@ func TestSetReadingItemPushedProgress(t *testing.T) {
 		t.Fatalf("unrelated row pushed_progress = %v, want nil", other.HardcoverPushedProgress)
 	}
 }
+
+// TestSetReadingItemPushed_AdvancesHardcoverMirror pins the out-of-sync fix: after
+// a successful push, SetReadingItemPushed advances BOTH the echo-suppression stamp
+// (hardcover_pushed_status) AND the local mirror (hardcover_status) to the pushed
+// value — so a book that was 'want' on Hardcover but pushed as 'read' immediately
+// reads as synced (hardcover_status == effective), clearing the "want → finished"
+// divergence badge without waiting for a pull.
+func TestSetReadingItemPushed_AdvancesHardcoverMirror(t *testing.T) {
+	d := openTestDB(t)
+	ctx := context.Background()
+	owner := mkSender("pushmirror")
+	cleanupSender(t, d, ctx, owner)
+	ensureUser(t, d, ctx, owner)
+
+	if err := d.UpsertReadingItem(ctx, ReadingItem{
+		Owner: owner, Source: "audible", ExternalID: "B0MIRROR1",
+		Title: "Project Hail Mary", Authors: "Andy Weir", Status: "read",
+	}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	// Simulate the pre-push state: matched, last-pulled Hardcover shelf = 'want'
+	// (diverged from the effective 'read').
+	if _, err := d.Pool.Exec(ctx,
+		`UPDATE reading_items SET hardcover_book_id=54321, hardcover_status='want'
+		  WHERE owner=$1 AND source='audible' AND external_id='B0MIRROR1'`, owner); err != nil {
+		t.Fatalf("seed diverged state: %v", err)
+	}
+
+	if err := d.SetReadingItemPushed(ctx, owner, "audible", "B0MIRROR1", "read"); err != nil {
+		t.Fatalf("SetReadingItemPushed: %v", err)
+	}
+
+	items, err := d.ListReadingItems(ctx, owner, "audible")
+	if err != nil {
+		t.Fatalf("ListReadingItems: %v", err)
+	}
+	var it *ReadingItem
+	for i := range items {
+		if items[i].ExternalID == "B0MIRROR1" {
+			it = &items[i]
+		}
+	}
+	if it == nil {
+		t.Fatalf("row not found")
+	}
+	if it.HardcoverStatus == nil || *it.HardcoverStatus != "read" {
+		t.Errorf("hardcover_status (mirror) = %v, want 'read' — must advance so the divergence badge clears", it.HardcoverStatus)
+	}
+	// hardcover_pushed_status isn't in the List projection — read it directly.
+	var pushed *string
+	if err := d.Pool.QueryRow(ctx,
+		`SELECT hardcover_pushed_status FROM reading_items
+		  WHERE owner=$1 AND source='audible' AND external_id='B0MIRROR1'`, owner).Scan(&pushed); err != nil {
+		t.Fatalf("read pushed_status: %v", err)
+	}
+	if pushed == nil || *pushed != "read" {
+		t.Errorf("hardcover_pushed_status (echo stamp) = %v, want 'read'", pushed)
+	}
+}

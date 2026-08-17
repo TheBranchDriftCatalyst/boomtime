@@ -475,10 +475,17 @@ func (d *DB) SetReadingItemPushed(ctx context.Context, owner, source, externalID
 	if status != "" {
 		st = &status
 	}
+	// Advance BOTH the echo-suppression stamp (hardcover_pushed_status) AND the local
+	// Hardcover mirror (hardcover_status). After a successful push, Hardcover's shelf
+	// IS this status — so mirroring it here immediately clears the "diverged" /
+	// "<remote> → <effective>" out-of-sync badge (which reads hardcover_status)
+	// without waiting for the next pull. The pull would set the same value anyway
+	// (and its LWW branch suppresses our echo via hardcover_pushed_status).
 	_, err := d.Pool.Exec(ctx,
 		`UPDATE reading_items SET
 		    hardcover_pushed_at     = now(),
-		    hardcover_pushed_status = COALESCE($4, hardcover_pushed_status)
+		    hardcover_pushed_status = COALESCE($4, hardcover_pushed_status),
+		    hardcover_status        = COALESCE($4, hardcover_status)
 		  WHERE owner=$1 AND source=$2 AND external_id=$3`,
 		owner, source, externalID, st)
 	return err
