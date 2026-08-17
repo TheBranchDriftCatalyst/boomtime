@@ -26,6 +26,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/curation"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/goals"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/hardcover"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/identity"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/ingest"
@@ -214,6 +215,14 @@ func (h *Handler) SetJobEvents(hub *jobsevents.Hub) {
 func (h *Handler) SetNotify(hub *notify.Hub) {
 	if h.Identity != nil {
 		h.Identity.SetNotify(hub)
+	}
+}
+
+// SetHardcoverPush propagates the inline curation-push service to h.Identity so the
+// manual per-row sync button can push synchronously (bypass the job queue).
+func (h *Handler) SetHardcoverPush(p *hardcover.PushService) {
+	if h.Identity != nil {
+		h.Identity.SetHardcoverPush(p)
 	}
 }
 

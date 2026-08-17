@@ -17,7 +17,6 @@ import {
   ChevronDown,
   Headphones,
   Loader2,
-  RefreshCw,
   Star,
   X,
 } from "lucide-react";
@@ -304,8 +303,32 @@ export function HardcoverBadge({ item }: { item: ReadingItemDTO }) {
   // Persists across re-renders since the row stays mounted; a real explorer
   // refetch (filter change) later reconciles from the server.
   const [localMatch, setLocalMatch] = useState<ReadingItemDTO | null>(null);
+  const [syncing, setSyncing] = useState(false);
   const it = localMatch ?? item;
   const matched = it.hardcoverBookId != null;
+
+  // Inline sync (bypasses the job queue): push this row's effective state to
+  // Hardcover and swap in the server's updated row so the badge recomputes in place
+  // (the advanced hardcover_status clears the divergence) — no table refresh.
+  const sync = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      const updated = await api.pushBookToHardcover(it);
+      setLocalMatch(updated);
+      toast.success(`Synced “${it.title}” to Hardcover`);
+    } catch (err) {
+      const msg =
+        err && typeof err === "object" && "status" in err && (err as { status?: number }).status === 409
+          ? "Not matched to Hardcover yet"
+          : "Couldn't sync to Hardcover";
+      toast.error(msg);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   if (!matched) {
     // Not matched → the whole badge is the trigger for the manual match-fixer:
     // click to search Hardcover's catalog and link a book by hand.
@@ -338,31 +361,41 @@ export function HardcoverBadge({ item }: { item: ReadingItemDTO }) {
   // just what a sync would do). remote unknown = never pulled → treat as no-diff yet.
   const diff = remote && effective && remote !== effective;
   if (diff) {
+    // The divergence badge IS the sync button: click to push effective→Hardcover
+    // now (inline). On success the row updates in place and this collapses to the
+    // in-sync badge.
     return (
-      <span
-        className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-600 dark:text-amber-400"
-        title={`Sync would update Hardcover: ${remoteLabel} → ${effLabel}. (Writes stay dry-run-gated until enabled.)`}
+      <button
+        type="button"
+        onClick={sync}
+        disabled={syncing}
+        className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-600 transition-colors hover:bg-amber-500/20 disabled:opacity-60 dark:text-amber-400"
+        title={`Click to sync to Hardcover: ${remoteLabel} → ${effLabel}`}
       >
-        <BookMarked className="h-3 w-3" />
+        {syncing ? <Loader2 className="h-3 w-3 animate-spin" /> : <BookMarked className="h-3 w-3" />}
         {remoteLabel} <ArrowRight className="h-2.5 w-2.5" /> {effLabel}
-      </span>
+      </button>
     );
   }
 
-  // In sync (or remote status unknown): show the shelf status, else a generic "Matched".
+  // In sync (or remote status unknown): show the shelf status, else a generic
+  // "Matched". Still clickable to re-push (idempotent) — a manual "force sync".
   const label = remote ? remoteLabel : "Matched";
   return (
-    <span
-      className="inline-flex items-center gap-1 rounded-full border border-fuchsia-500/40 bg-fuchsia-500/10 px-2 py-0.5 text-[11px] font-medium text-fuchsia-600 dark:text-fuchsia-400"
+    <button
+      type="button"
+      onClick={sync}
+      disabled={syncing}
+      className="inline-flex items-center gap-1 rounded-full border border-fuchsia-500/40 bg-fuchsia-500/10 px-2 py-0.5 text-[11px] font-medium text-fuchsia-600 transition-colors hover:bg-fuchsia-500/20 disabled:opacity-60 dark:text-fuchsia-400"
       title={
         remote
-          ? `Matched on Hardcover · ${label} (in sync)`
-          : "Matched to a Hardcover book"
+          ? `Matched on Hardcover · ${label} (in sync) — click to re-push`
+          : "Matched to a Hardcover book — click to sync"
       }
     >
-      <BookMarked className="h-3 w-3" />
+      {syncing ? <Loader2 className="h-3 w-3 animate-spin" /> : <BookMarked className="h-3 w-3" />}
       {label}
-    </span>
+    </button>
   );
 }
 
@@ -662,47 +695,3 @@ export function AuthorCell({ item }: { item: ReadingItemDTO }) {
   );
 }
 
-// PushToHardcoverButton — the per-row "sync this book to Hardcover now" circle
-// button (gaka-books). Push-only: re-mirrors the row's CURRENT effective state
-// (status/finish/rating) to Hardcover via the same curation-push path an edit
-// takes; it changes nothing locally. Only meaningful for matched rows, so callers
-// render it only when hardcoverBookId != null. Owns its in-flight spinner + toasts.
-export function PushToHardcoverButton({ item }: { item: ReadingItemDTO }) {
-  const [busy, setBusy] = useState(false);
-
-  const push = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (busy) return;
-    setBusy(true);
-    try {
-      await api.pushBookToHardcover(item);
-      toast.success(`Syncing “${item.title}” to Hardcover`);
-    } catch (err) {
-      // 409 = not matched (shouldn't happen — button is gated on match — but be honest).
-      const msg =
-        err && typeof err === "object" && "status" in err && (err as { status?: number }).status === 409
-          ? "Not matched to Hardcover yet"
-          : "Couldn't sync to Hardcover";
-      toast.error(msg);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <button
-      type="button"
-      onClick={push}
-      disabled={busy}
-      title={`Sync “${item.title}” to Hardcover`}
-      aria-label={`Sync ${item.title} to Hardcover`}
-      className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
-    >
-      {busy ? (
-        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-      ) : (
-        <RefreshCw className="h-3.5 w-3.5" />
-      )}
-    </button>
-  );
-}

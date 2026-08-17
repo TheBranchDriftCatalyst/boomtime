@@ -1315,11 +1315,13 @@ export const api = {
       { method: "PATCH", body: patch },
     ),
 
-  // Per-row "sync to Hardcover now" — push-only: re-mirrors the row's CURRENT
-  // effective state (status/finish/rating) to Hardcover via the same push path a
-  // curation edit takes. Changes nothing in the DB. 409 if the book isn't matched.
+  // Per-row "sync to Hardcover now" — push-only, INLINE (bypasses the job queue):
+  // re-mirrors the row's CURRENT effective state to Hardcover and returns the
+  // updated row (hardcover_status advanced, so the divergence badge clears). 409 if
+  // the book isn't matched. Falls back to 202 {enqueued} only if the inline service
+  // is unwired server-side — callers should treat a missing status field as success.
   pushBookToHardcover: (item: ReadingItemDTO) =>
-    request<{ enqueued: boolean }>(
+    request<ReadingItemDTO>(
       buildUrl(
         `/api/v1/books/items/${encodeURIComponent(item.externalId)}/push`,
         { source: item.source },

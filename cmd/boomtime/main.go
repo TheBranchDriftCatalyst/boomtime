@@ -578,6 +578,12 @@ func runCmd() *cobra.Command {
 					// status/rating/finish onto the user's Hardcover shelf (dry-run-gated).
 					// Owner-scoped; capped at 1 below (shares Hardcover's global rate limit).
 					hcCurationPush := hardcover.NewPushService(database, hardcover.NewStore(database), logger)
+					// Also hand it to the identity handler so the manual per-row sync
+					// button can push INLINE (bypass this queue) for immediate feedback.
+					// Same instance; a manual click self-throttles via the client limiter.
+					if h != nil {
+						h.SetHardcoverPush(hcCurationPush)
+					}
 					jobReg.Register(hardcover.CurationPushKind, jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
 						var p hardcover.CurationPushPayload
 						if len(job.Payload) > 0 {

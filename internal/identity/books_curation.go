@@ -114,6 +114,22 @@ func (h *Handler) PushBookToHardcover(c *echo.Context) error {
 		return apierr.New(http.StatusConflict, "book is not matched to Hardcover — match it first", nil).Write(c)
 	}
 
+	// Manual single-row sync: push INLINE (bypass the job queue) so the click gets an
+	// immediate real result and the response carries the updated row (hardcover_status
+	// advanced → the out-of-sync badge clears without a reload). Falls back to the
+	// async queue when the inline service isn't wired.
+	if h.HardcoverPush != nil {
+		if perr := h.HardcoverPush.PushCuration(c.Request().Context(),
+			hardcover.CurationPushPayload{Owner: owner, Source: it.Source, ExternalID: it.ExternalID}); perr != nil {
+			return apihelpers.InternalErr(h.Logger, c, "hardcover sync push failed", perr)
+		}
+		// Re-read so the response reflects the just-advanced hardcover_status mirror.
+		if fresh, gerr := h.DB.GetReadingItem(c.Request().Context(), owner, it.Source, it.ExternalID); gerr == nil {
+			it = fresh
+		}
+		return c.JSON(http.StatusOK, toReadingItemDTO(it))
+	}
+
 	h.enqueueCurationPush(c, owner, it.Source, it.ExternalID)
 	return c.JSON(http.StatusAccepted, map[string]any{"enqueued": true})
 }
