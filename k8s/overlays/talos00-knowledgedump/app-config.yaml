@@ -82,6 +82,12 @@ data:
 
   # ── catalyst-books / catalyst-audiobooks master gate (gaka-books) ───────────
   BOOM_FEATURE_BOOKS: "true"
+  # Hardcover as the terminal sink (project_hardcover_terminal_sink): with dry-run
+  # OFF, boomtime WRITES to the user's real Hardcover — status/finish/rating pushes
+  # (curation edits, the per-row sync button, and the audible finished-book sweep)
+  # actually apply instead of being logged-and-blocked. Code default is true (safe);
+  # this deliberately flips it to live writes. Set back to "true" to re-gate.
+  BOOM_HARDCOVER_DRYRUN: "false"
 
   # ── OpenTelemetry tracing (TALOS-kvg1) ──────────────────────────────────────
   # Ships spans to the in-cluster Alloy collector, which already dual-writes
