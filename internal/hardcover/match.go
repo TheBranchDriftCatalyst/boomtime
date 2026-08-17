@@ -3,9 +3,34 @@ package hardcover
 import (
 	"context"
 	"encoding/json"
+	"regexp"
 	"sort"
 	"strings"
 )
+
+// trailingBracketRe matches a trailing "(...)" or "[...]" group — the series /
+// edition markers Amazon appends to titles ("(Rho Agenda Assimilation Book 2)",
+// "(The Kurtherian Endgame Book 7)", "[Unabridged]") that Hardcover's canonical
+// title omits. Left in, they dilute the token-overlap score below the match floor
+// (e.g. "The Altreian Enigma (Rho Agenda Assimilation Book 2)" vs "The Altreian
+// Enigma" = 3/8 = 0.375 < 0.6), so a real book reads as "not matched".
+var trailingBracketRe = regexp.MustCompile(`\s*[\(\[][^\)\]]*[\)\]]\s*$`)
+
+// cleanTitleForMatch strips trailing bracket/paren groups (repeatedly — some
+// titles carry two) for the FUZZY match path. It never empties the title: if a
+// strip would leave nothing (the title was all-parenthetical), the last non-empty
+// form is kept. Used for both the search query and the local similarity score.
+func cleanTitleForMatch(title string) string {
+	t := strings.TrimSpace(title)
+	for {
+		stripped := strings.TrimSpace(trailingBracketRe.ReplaceAllString(t, ""))
+		if stripped == t || stripped == "" {
+			break
+		}
+		t = stripped
+	}
+	return t
+}
 
 // MatchMethod records HOW a reading item was resolved to a Hardcover book, for
 // the match-cache column + the admin diagnostics review list. Order of the
@@ -243,6 +268,11 @@ type searchCandidate struct {
 // floor picks an edition for it. Below the floor it returns MatchNone so the
 // caller never guess-pushes.
 func (c *Client) searchMatch(ctx context.Context, in MatchInput) (MatchResult, error) {
+	// Strip the "(Series … Book N)" cruft for BOTH the query and the local score
+	// (in is by value — this local edit doesn't leak to the caller). Hardcover's
+	// fuzzy search tolerates the noise, but the score floor rejects the diluted
+	// token overlap, so a real book stays unmatched without this.
+	in.Title = cleanTitleForMatch(in.Title)
 	query := strings.TrimSpace(in.Title)
 	if a := strings.TrimSpace(in.Author); a != "" {
 		query += " " + a

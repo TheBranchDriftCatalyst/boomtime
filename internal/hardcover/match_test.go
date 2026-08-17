@@ -164,3 +164,35 @@ func TestEditionsByField_EmptyNoRequest(t *testing.T) {
 		t.Fatalf("got %d editions, want 0", len(m))
 	}
 }
+
+// TestCleanTitleForMatch pins the series-suffix stripping that unblocks matches:
+// Amazon appends "(Series … Book N)" cruft that Hardcover's canonical title omits,
+// diluting the token-overlap score below the floor.
+func TestCleanTitleForMatch(t *testing.T) {
+	cases := map[string]string{
+		"The Altreian Enigma (Rho Agenda Assimilation Book 2)": "The Altreian Enigma",
+		"Enter Into Valhalla (The Kurtherian Endgame Book 6)":  "Enter Into Valhalla",
+		"Rainbow Six (John Clark Novel, A Book 2)":             "Rainbow Six",
+		"Waylander (Drenai Saga Book 3)":                       "Waylander",
+		"Revenger (The Revenger Series Book 1)":                "Revenger",
+		"Some Book [Unabridged] (Series Book 1)":               "Some Book", // two trailing groups
+		"Plain Title":                                          "Plain Title",
+		"(All Parenthetical)":                                  "(All Parenthetical)", // never empties
+	}
+	for in, want := range cases {
+		if got := cleanTitleForMatch(in); got != want {
+			t.Errorf("cleanTitleForMatch(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestScoreCandidate_SeriesSuffixClearsFloor proves the end goal: a candidate whose
+// canonical title matches the CLEANED input clears the 0.6 floor (it did not with
+// the raw "(… Book 2)" title — 3/8 = 0.375).
+func TestScoreCandidate_SeriesSuffixClearsFloor(t *testing.T) {
+	in := MatchInput{Title: cleanTitleForMatch("The Altreian Enigma (Rho Agenda Assimilation Book 2)"), Author: "Richard Phillips"}
+	cand := searchCandidate{BookID: 1, Title: "The Altreian Enigma", Authors: []string{"Richard Phillips"}}
+	if got := scoreCandidate(in, cand); got < 0.6 {
+		t.Errorf("score = %.3f, want >= 0.6 (series suffix stripped → clean title matches)", got)
+	}
+}
