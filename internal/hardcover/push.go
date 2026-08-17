@@ -76,9 +76,12 @@ func (c *Client) UpsertUserBookCuration(ctx context.Context, bookID, editionID, 
 	if editionID > 0 {
 		object["edition_id"] = editionID
 	}
-	if readingFormatID > 0 {
-		object["reading_format_id"] = readingFormatID
-	}
+	// NOTE: reading_format_id is deliberately NOT set here. Hardcover's
+	// UserBookCreateInput has no such field (live error: "field 'reading_format_id'
+	// not found in type: 'UserBookCreateInput'") — format lives on the EDITION, so
+	// edition_id already pins it. readingFormatID stays in the signature for the
+	// read-push (ReadInput) but must never be written onto the user_book object.
+	_ = readingFormatID
 	if rating != nil {
 		object["rating"] = *rating
 	}
@@ -127,9 +130,9 @@ func (c *Client) UpsertUserBook(ctx context.Context, bookID, editionID, statusID
 	if editionID > 0 {
 		object["edition_id"] = editionID
 	}
-	if readingFormatID > 0 {
-		object["reading_format_id"] = readingFormatID
-	}
+	// reading_format_id is NOT a UserBookCreateInput field (Hardcover rejects it) —
+	// edition_id pins the format. See UpsertUserBookCuration for the full note.
+	_ = readingFormatID
 
 	const q = `mutation UpsertUserBook($object: UserBookCreateInput!) {
   insert_user_book(object: $object) {

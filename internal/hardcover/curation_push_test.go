@@ -58,8 +58,14 @@ func TestUpsertUserBookCuration_PassesChosenStatusAndRating(t *testing.T) {
 	if got := jsonNum(obj["rating"]); got != 4.5 {
 		t.Errorf("rating = %v, want 4.5", obj["rating"])
 	}
-	if got := jsonNum(obj["reading_format_id"]); got != float64(FormatEbook) {
-		t.Errorf("reading_format_id = %v, want %d (ebook)", obj["reading_format_id"], FormatEbook)
+	// reading_format_id must NOT be on the user_book object — Hardcover's
+	// UserBookCreateInput has no such field (live 'field not found' error); format
+	// is carried by edition_id. Pin the regression so it can never be re-added here.
+	if _, present := obj["reading_format_id"]; present {
+		t.Errorf("reading_format_id must NOT be sent on UserBookCreateInput (Hardcover rejects it); edition_id carries the format")
+	}
+	if got := jsonNum(obj["edition_id"]); got != float64(8802) {
+		t.Errorf("edition_id = %v, want 8802 (the format-bearing edition)", obj["edition_id"])
 	}
 }
 
