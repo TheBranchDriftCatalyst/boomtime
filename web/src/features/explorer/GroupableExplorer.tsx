@@ -3,6 +3,7 @@ import { Card, CardContent } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { TableRowsSkeleton } from "@/components/Skeletons";
 import { GroupByBar } from "@/features/explorer/GroupByBar";
 import { ExplorerTable } from "@/features/explorer/ExplorerTable";
+import type { LeafSort } from "@/features/explorer/useLeafSort";
 import { useExplorerTree } from "@/features/explorer/useExplorerTree";
 import type { DomainConfig } from "@/features/explorer/types";
 
@@ -19,6 +20,10 @@ interface GroupableExplorerProps<Row> {
   // hosts <GroupByBar> itself (e.g. folded into a consolidated control bar). The
   // groupBy state stays controlled by the caller either way.
   hideGroupByBar?: boolean;
+  // Optional controlled leaf-sort (e.g. persisted in the URL). Both must be set to
+  // take control; omitted → the table owns its sort locally (default).
+  sort?: LeafSort | null;
+  onSortChange?: (s: LeafSort | null) => void;
 }
 
 /**
@@ -34,6 +39,8 @@ export function GroupableExplorer<Row>({
   resetKey,
   leafMode = "table",
   hideGroupByBar = false,
+  sort,
+  onSortChange,
 }: GroupableExplorerProps<Row>) {
   const { labels } = config;
   const requireAxis = groupBy.length === 0 && labels.addAxisHint != null;
@@ -88,7 +95,13 @@ export function GroupableExplorer<Row>({
                   Showing the top groups only (results truncated).
                 </p>
               )}
-              <ExplorerTable ctrl={ctrl} config={config} leafMode={leafMode} />
+              <ExplorerTable
+                ctrl={ctrl}
+                config={config}
+                leafMode={leafMode}
+                sort={sort}
+                onSortChange={onSortChange}
+              />
             </>
           )}
         </CardContent>

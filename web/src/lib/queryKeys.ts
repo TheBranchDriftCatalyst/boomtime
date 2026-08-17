@@ -317,10 +317,38 @@ export const qk = {
   // `booksHero(filters)` for the FILTER-scoped counts (source/status/search) so
   // the hero can render `<filtered>/<total>`. The filtered variant caches per
   // filter combination, independent of the unfiltered totals key.
-  booksHero: (filters?: { source: string; status: string; search: string }) =>
+  booksHero: (filters?: {
+    source: string;
+    status: string;
+    matched?: string;
+    search: string;
+  }) =>
     filters
-      ? (["books-hero", filters.source, filters.status, filters.search] as const)
+      ? ([
+          "books-hero",
+          filters.source,
+          filters.status,
+          filters.matched ?? "all",
+          filters.search,
+        ] as const)
       : (["books-hero"] as const),
+  // Sibling hero query grouped by isMatched → matched/unmatched counts. Same
+  // two-call shape (bare = totals, with filters = scoped), keyed independently.
+  booksMatchHero: (filters?: {
+    source: string;
+    status: string;
+    matched?: string;
+    search: string;
+  }) =>
+    filters
+      ? ([
+          "books-match-hero",
+          filters.source,
+          filters.status,
+          filters.matched ?? "all",
+          filters.search,
+        ] as const)
+      : (["books-match-hero"] as const),
   // Interactive Hardcover catalog search for the manual match-fixer, keyed by term.
   hardcoverSearch: (q: string) => ["hardcover-search", q] as const,
   // A Work's editions for the Book detail panel, keyed by the Work identity.

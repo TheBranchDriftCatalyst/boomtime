@@ -20,8 +20,14 @@ export interface LeafSort {
 export function useLeafSort<Row>(
   tree: ExplorerNode[],
   columns: Column<Row>[],
+  // Optional controlled mode: pass the current sort + a change handler (e.g. to
+  // persist it in the URL). Omitted → the hook owns the sort in local state
+  // (backward-compatible default for every other explorer host).
+  controlled?: { sort: LeafSort | null; onSortChange: (s: LeafSort | null) => void },
 ) {
-  const [sorting, setSorting] = useState<LeafSort | null>(null);
+  const [internal, setInternal] = useState<LeafSort | null>(null);
+  const sorting = controlled ? controlled.sort : internal;
+  const setSorting = controlled ? controlled.onSortChange : setInternal;
 
   const sortedTree = useMemo(() => {
     if (!sorting) return tree;
@@ -56,10 +62,8 @@ export function useLeafSort<Row>(
 
   const toggleSort = useCallback(
     (id: string) =>
-      setSorting((s) =>
-        s?.id === id ? { id, desc: !s.desc } : { id, desc: false },
-      ),
-    [],
+      setSorting(sorting?.id === id ? { id, desc: !sorting.desc } : { id, desc: false }),
+    [sorting, setSorting],
   );
 
   return { sorting, toggleSort, sortedTree };

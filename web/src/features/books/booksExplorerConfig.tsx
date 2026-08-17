@@ -448,6 +448,9 @@ export interface BooksHeroStats {
   audible: number;
   kindle: number;
   hardcover: number;
+  // Hardcover match coverage (isMatched dimension: hardcover_book_id present).
+  matched: number;
+  unmatched: number;
 }
 
 export const HERO_SPEC: QuerySpec = {
@@ -456,6 +459,33 @@ export const HERO_SPEC: QuerySpec = {
   group: "source",
   rollups: ["finished"],
 };
+
+// Second hero query: group by isMatched → matched/unmatched counts (the DSL has no
+// "matched" rollup, so this is a sibling grouped query rather than a rollup on
+// HERO_SPEC). Filter-scoped variant folds the same page filters into its where.
+export const MATCH_HERO_SPEC: QuerySpec = {
+  domain: "reading",
+  measure: "books",
+  group: "isMatched",
+};
+
+export function makeMatchHeroSpec(filters: BooksFilters): QuerySpec {
+  return { ...MATCH_HERO_SPEC, where: andAll(filtersToPredicate(filters)) };
+}
+
+/** matched/unmatched counts from an isMatched-grouped result (keys 'matched'|'unmatched'). */
+export function deriveMatchStats(
+  groups: { key: string; count?: number; value: number; stats?: Record<string, number> }[],
+): { matched: number; unmatched: number } {
+  let matched = 0;
+  let unmatched = 0;
+  for (const g of groups) {
+    const count = g.count ?? g.stats?.count ?? g.value ?? 0;
+    if (g.key.toLowerCase() === "matched") matched += count;
+    else if (g.key.toLowerCase() === "unmatched") unmatched += count;
+  }
+  return { matched, unmatched };
+}
 
 /**
  * The hero query with the page filters folded into its `where` — the same
@@ -484,5 +514,7 @@ export function deriveHeroStats(
     else if (key === "kindle") kindle += count;
     else if (key === "hardcover") hardcover += count;
   }
-  return { total, finished, audible, kindle, hardcover };
+  // matched/unmatched come from the sibling MATCH_HERO_SPEC query (merged in the
+  // page); zero here so a BooksHeroStats is always complete.
+  return { total, finished, audible, kindle, hardcover, matched: 0, unmatched: 0 };
 }

@@ -105,6 +105,10 @@ function stubConfig(booksEnabled: boolean) {
 beforeEach(() => {
   runQueryMock.mockReset();
   wireQueries();
+  // The page persists filter/group/sort in the URL (history.replaceState); jsdom's
+  // location is shared across tests in a file, so reset it or a filter set by one
+  // test leaks into the next test's initial state.
+  window.history.replaceState(null, "", "/");
 });
 afterEach(() => vi.restoreAllMocks());
 

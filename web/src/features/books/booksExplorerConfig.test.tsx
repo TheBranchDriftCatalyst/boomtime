@@ -18,6 +18,7 @@ vi.mock("@/lib/queryApi", () => ({ runQuery: runQueryMock }));
 import {
   buildWhere,
   deriveHeroStats,
+  deriveMatchStats,
   filtersToPredicate,
   HERO_SPEC,
   makeBooksExplorerConfig,
@@ -380,7 +381,19 @@ describe("deriveHeroStats", () => {
       audible: 10,
       kindle: 4,
       hardcover: 5,
+      // matched/unmatched come from the sibling isMatched query, not this one.
+      matched: 0,
+      unmatched: 0,
     });
+  });
+
+  it("sums matched/unmatched from an isMatched-grouped result", () => {
+    expect(
+      deriveMatchStats([
+        { key: "matched", value: 812, count: 812 },
+        { key: "unmatched", value: 457, count: 457 },
+      ]),
+    ).toEqual({ matched: 812, unmatched: 457 });
   });
 });
 

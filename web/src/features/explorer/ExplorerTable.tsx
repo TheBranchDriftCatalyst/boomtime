@@ -18,7 +18,7 @@ import {
   defaultRenderJson,
   type ExplorerRowContextValue,
 } from "@/features/explorer/rows/explorerRowContext";
-import { useLeafSort } from "@/features/explorer/useLeafSort";
+import { useLeafSort, type LeafSort } from "@/features/explorer/useLeafSort";
 import { ROOT_LEAF_ID } from "@/features/explorer/useExplorerTree";
 import { cn } from "@/lib/utils";
 import type { DomainConfig, GroupAction } from "@/features/explorer/types";
@@ -43,9 +43,12 @@ interface Props<TRow> {
   ctrl: Tree;
   config: DomainConfig<TRow>;
   leafMode: "table" | "json";
+  // Optional controlled sort (e.g. persisted in the URL). Omitted → local state.
+  sort?: LeafSort | null;
+  onSortChange?: (s: LeafSort | null) => void;
 }
 
-export function ExplorerTable<TRow>({ ctrl, config, leafMode }: Props<TRow>) {
+export function ExplorerTable<TRow>({ ctrl, config, leafMode, sort, onSortChange }: Props<TRow>) {
   // Seed the flat-root leaf group expanded so the zero-axis "Table" view shows
   // its rows (and the shared leaf pager) immediately. Inert when grouped — no
   // rendered row carries this id.
@@ -59,10 +62,14 @@ export function ExplorerTable<TRow>({ ctrl, config, leafMode }: Props<TRow>) {
       ) as VisibilityState,
   );
 
-  // Sort each loaded leaf page client-side (server has no sort param).
+  // Sort each loaded leaf page client-side (server has no sort param). When the
+  // host passes sort + onSortChange, run controlled (URL-persisted); else local.
   const { sorting, toggleSort, sortedTree } = useLeafSort(
     ctrl.tree,
     config.columns,
+    sort !== undefined && onSortChange
+      ? { sort, onSortChange }
+      : undefined,
   );
 
   const columns = useMemo<ColumnDef<ExplorerNode>[]>(

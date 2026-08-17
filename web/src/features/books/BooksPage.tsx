@@ -18,8 +18,11 @@ import {
   BookOpen,
   Headphones,
   Library,
+  Link2,
   Search,
+  Unlink,
 } from "lucide-react";
+import type { LeafSort } from "@/features/explorer/useLeafSort";
 import { Card, CardContent } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
@@ -34,9 +37,12 @@ import { BookDetailSheet } from "@/features/books/BookDetailSheet";
 import type { ReadingItemDTO } from "@/types/meta";
 import {
   deriveHeroStats,
+  deriveMatchStats,
   HERO_SPEC,
+  MATCH_HERO_SPEC,
   makeBooksExplorerConfig,
   makeHeroSpec,
+  makeMatchHeroSpec,
   READING_AXES,
   STATUS_FILTER_OPTIONS,
   MATCH_FILTER_OPTIONS,
@@ -106,6 +112,8 @@ function BooksHero({
   }> = [
     { icon: Library, label: "Tracked", total: stats.total, filtered: filtered?.total },
     { icon: BookMarked, label: "Finished", total: stats.finished, filtered: filtered?.finished },
+    { icon: Link2, label: "Matched", total: stats.matched, filtered: filtered?.matched },
+    { icon: Unlink, label: "Unmatched", total: stats.unmatched, filtered: filtered?.unmatched },
     { icon: Headphones, label: "Audible", total: stats.audible, filtered: filtered?.audible },
     { icon: BookOpen, label: "Kindle", total: stats.kindle, filtered: filtered?.kindle },
     { icon: Bookmark, label: "Hardcover", total: stats.hardcover, filtered: filtered?.hardcover },
@@ -192,17 +200,54 @@ const ZERO_STATS: BooksHeroStats = {
   audible: 0,
   kindle: 0,
   hardcover: 0,
+  matched: 0,
+  unmatched: 0,
 };
+
+// URL <-> sort serialization: "columnId:asc" / "columnId:desc".
+function parseSort(raw: string | null): LeafSort | null {
+  if (!raw) return null;
+  const [id, dir] = raw.split(":");
+  if (!id) return null;
+  return { id, desc: dir === "desc" };
+}
+function serializeSort(s: LeafSort | null): string | null {
+  return s ? `${s.id}:${s.desc ? "desc" : "asc"}` : null;
+}
 
 export function BooksPage() {
   const { config } = usePublicConfig();
   const booksEnabled = config.books_enabled;
 
-  const [groupBy, setGroupBy] = useState<string[]>([]);
-  const [search, setSearch] = useState("");
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [matchedFilter, setMatchedFilter] = useState<MatchFilter>("all");
+  // Filter / group / sort persist in the URL query string so a view is
+  // shareable + survives reload. Read the initial params once from the live
+  // location (history API — deliberately NOT react-router's useSearchParams, whose
+  // navigation revalidation is heavier than a plain replaceState and needless
+  // here); a single effect below writes the current state back.
+  const initialParams = useMemo(
+    () =>
+      new URLSearchParams(
+        typeof window !== "undefined" ? window.location.search : "",
+      ),
+    [],
+  );
+  const [groupBy, setGroupBy] = useState<string[]>(() => {
+    const g = initialParams.get("group");
+    return g ? g.split(",").filter(Boolean) : [];
+  });
+  const [search, setSearch] = useState(() => initialParams.get("q") ?? "");
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>(
+    () => (initialParams.get("source") as SourceFilter) || "all",
+  );
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(
+    () => (initialParams.get("status") as StatusFilter) || "all",
+  );
+  const [matchedFilter, setMatchedFilter] = useState<MatchFilter>(
+    () => (initialParams.get("match") as MatchFilter) || "all",
+  );
+  const [sort, setSort] = useState<LeafSort | null>(() =>
+    parseSort(initialParams.get("sort")),
+  );
 
   // Debounce the search box: search is now a server-side ILIKE predicate folded
   // into the explorer's `where` + resetKey, so typing would otherwise re-query
@@ -230,6 +275,32 @@ export function BooksPage() {
     matchedFilter !== "all" ||
     debouncedSearch !== "";
 
+  // Write the current view (filter + group + sort) back to the URL. Uses the
+  // DEBOUNCED search so typing doesn't churn history; `replace` so the back
+  // button leaves the page rather than stepping through every tweak. Only keys
+  // that differ from the default are written, keeping shared URLs tidy.
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (sourceFilter !== "all") next.set("source", sourceFilter);
+    if (statusFilter !== "all") next.set("status", statusFilter);
+    if (matchedFilter !== "all") next.set("match", matchedFilter);
+    if (debouncedSearch) next.set("q", debouncedSearch);
+    if (groupBy.length) next.set("group", groupBy.join(","));
+    const s = serializeSort(sort);
+    if (s) next.set("sort", s);
+    if (typeof window === "undefined") return;
+    const nextStr = next.toString();
+    // Only rewrite when it actually differs — skips the mount no-op (state was
+    // just initialized FROM the URL) and redundant history writes. replaceState
+    // keeps it out of the back stack + avoids react-router navigation churn.
+    if (nextStr !== new URLSearchParams(window.location.search).toString()) {
+      const url = nextStr
+        ? `${window.location.pathname}?${nextStr}`
+        : window.location.pathname;
+      window.history.replaceState(window.history.state, "", url);
+    }
+  }, [sourceFilter, statusFilter, matchedFilter, debouncedSearch, groupBy, sort]);
+
   // Hero summary: one unfiltered grouped query (group by source + finished
   // rollup) → whole-library totals. Only when the feature is on.
   const heroQuery = useQuery({
@@ -238,9 +309,21 @@ export function BooksPage() {
     enabled: booksEnabled,
     staleTime: 60_000,
   });
-  const heroStats =
+  // Sibling hero query grouped by isMatched → matched/unmatched (no "matched"
+  // rollup exists, so it's a second grouped query merged into the stats).
+  const matchHeroQuery = useQuery({
+    queryKey: qk.booksMatchHero(),
+    queryFn: () => runQuery(MATCH_HERO_SPEC),
+    enabled: booksEnabled,
+    staleTime: 60_000,
+  });
+  const matchStats =
+    matchHeroQuery.data?.kind === "groups"
+      ? deriveMatchStats(matchHeroQuery.data.groups)
+      : { matched: 0, unmatched: 0 };
+  const heroStats: BooksHeroStats =
     heroQuery.data?.kind === "groups"
-      ? deriveHeroStats(heroQuery.data.groups)
+      ? { ...deriveHeroStats(heroQuery.data.groups), ...matchStats }
       : ZERO_STATS;
 
   // Filter-scoped hero: the SAME source-grouped query with the active filters
@@ -253,9 +336,22 @@ export function BooksPage() {
     enabled: booksEnabled && filtersActive,
     staleTime: 60_000,
   });
-  const filteredHeroStats =
+  // Filter-scoped match counts (same folding), so the Matched/Unmatched chips
+  // also render `<filtered>/<total>`.
+  const filteredMatchHeroQuery = useQuery({
+    queryKey: qk.booksMatchHero(filters),
+    queryFn: () => runQuery(makeMatchHeroSpec(filters)),
+    enabled: booksEnabled && filtersActive,
+    staleTime: 60_000,
+  });
+  const filteredHeroStats: BooksHeroStats | null =
     filtersActive && filteredHeroQuery.data?.kind === "groups"
-      ? deriveHeroStats(filteredHeroQuery.data.groups)
+      ? {
+          ...deriveHeroStats(filteredHeroQuery.data.groups),
+          ...(filteredMatchHeroQuery.data?.kind === "groups"
+            ? deriveMatchStats(filteredMatchHeroQuery.data.groups)
+            : { matched: 0, unmatched: 0 }),
+        }
       : null;
 
   // Clicking a row opens the Book detail panel for that Work (all provider editions).
@@ -354,6 +450,8 @@ export function BooksPage() {
                   onGroupByChange={setGroupBy}
                   resetKey={resetKey}
                   hideGroupByBar
+                  sort={sort}
+                  onSortChange={setSort}
                 />
               </div>
             )}
