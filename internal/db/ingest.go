@@ -84,6 +84,7 @@ func (d *DB) saveHeartbeats(ctx context.Context, hbs []model.HeartbeatPayload, r
 	// (rollup=false) — the cheap ingest path for rollup-denied tiers.
 	if rollup {
 		minBySender := map[string]time.Time{}
+		maxBySender := map[string]time.Time{}
 		for _, hb := range hbs {
 			if hb.Sender == nil {
 				continue
@@ -92,9 +93,16 @@ func (d *DB) saveHeartbeats(ctx context.Context, hbs []model.HeartbeatPayload, r
 			if cur, ok := minBySender[*hb.Sender]; !ok || t.Before(cur) {
 				minBySender[*hb.Sender] = t
 			}
+			if cur, ok := maxBySender[*hb.Sender]; !ok || t.After(cur) {
+				maxBySender[*hb.Sender] = t
+			}
 		}
 		for sender, since := range minBySender {
-			if err := recomputeGaps(ctx, tx, sender, since); err != nil {
+			// Bound the gap recompute to this batch's own span (plus the one
+			// beat that follows it) instead of everything through to now —
+			// see recomputeGapsUntil for why that matters on backlog flushes.
+			until := maxBySender[sender]
+			if err := recomputeGapsUntil(ctx, tx, sender, since, &until); err != nil {
 				return nil, err
 			}
 			if err := refreshRollup(ctx, tx, sender, since); err != nil {
@@ -184,25 +192,59 @@ func insertHeartbeatsBatch(ctx context.Context, tx pgx.Tx, hbs []model.Heartbeat
 }
 
 // RecomputeGaps recomputes gap_seconds (seconds to the previous heartbeat for the
-// same sender, in global time order) for that sender's rows at or after `since`.
-// It anchors on the row immediately before `since` so the first affected row —
-// and any existing beat that now follows a freshly inserted one — is correct.
+// same sender, in global time order) for that sender's rows at or after `since`,
+// with NO upper bound — i.e. a full rebuild to the end of history. Used by the
+// admin/restore rebuild paths. The ingest hot path uses recomputeGapsUntil.
 func (d *DB) RecomputeGaps(ctx context.Context, sender string, since time.Time) error {
 	return recomputeGaps(ctx, d.Pool, sender, since)
 }
 
-// recomputeGaps runs the gap SQL against any pool or in-flight tx.
+// recomputeGaps rebuilds gaps from `since` to the end of history.
 func recomputeGaps(ctx context.Context, q execer, sender string, since time.Time) error {
+	return recomputeGapsUntil(ctx, q, sender, since, nil)
+}
+
+// recomputeGapsUntil recomputes gap_seconds for rows in [since, until], plus the
+// single beat immediately after `until`. A nil `until` means "to the end of
+// history" (full rebuild).
+//
+// WHY THE UPPER BOUND (perf, TALOS-kvg1): a batch only changes the gaps of its
+// OWN rows and of the one existing beat that now follows the batch's newest row
+// — everything after that keeps the same predecessor, so its gap is unchanged.
+// The original query had no upper bound and recomputed (and UPDATEd) every row
+// from `since` to NOW. That is invisible for live traffic (`since` is seconds
+// old: ~0.1ms, 21 buffers) but brutal when a client flushes an OFFLINE BACKLOG,
+// which WakaTime-style plugins do on reconnect: `since` is then the age of the
+// oldest queued beat, and a 30-day-old one scanned 83,090 rows (58ms just to
+// SELECT, plus writing them all) — the mechanism behind the ~6.4s p95 on
+// /heartbeats.bulk. Bounding the window makes the cost proportional to the
+// BATCH, not to how far back it reaches.
+//
+// Correctness is unchanged: `anchor` still supplies the predecessor for the
+// first row, and `horizon` deliberately INCLUDES the next existing beat so an
+// out-of-order insert still fixes that row's gap.
+func recomputeGapsUntil(ctx context.Context, q execer, sender string, since time.Time, until *time.Time) error {
 	_, err := q.Exec(ctx, `
 WITH anchor AS (
     SELECT COALESCE(max(time_sent), '-infinity'::timestamptz) AS t
     FROM heartbeats WHERE sender = $1 AND time_sent < $2
 ),
+horizon AS (
+    -- First beat strictly after the batch: its predecessor may now be one of
+    -- the inserted rows, so it must be recomputed too. Beyond it, nothing
+    -- changed. A NULL $3 yields no rows here -> 'infinity' -> full rebuild.
+    SELECT COALESCE(
+        (SELECT min(time_sent) FROM heartbeats
+          WHERE sender = $1 AND time_sent > $3),
+        'infinity'::timestamptz) AS t
+),
 seq AS (
     SELECT h.id, h.time_sent,
         lag(h.time_sent) OVER (ORDER BY h.time_sent) AS prev
-    FROM heartbeats h, anchor
-    WHERE h.sender = $1 AND h.time_sent >= anchor.t
+    FROM heartbeats h, anchor, horizon
+    WHERE h.sender = $1
+      AND h.time_sent >= anchor.t
+      AND h.time_sent <= horizon.t
 )
 UPDATE heartbeats h
 SET gap_seconds = CASE
@@ -210,7 +252,7 @@ SET gap_seconds = CASE
         ELSE EXTRACT(EPOCH FROM (seq.time_sent - seq.prev))::int
     END
 FROM seq
-WHERE h.id = seq.id AND h.time_sent >= $2`, sender, since)
+WHERE h.id = seq.id AND h.time_sent >= $2`, sender, since, until)
 	return err
 }
 
