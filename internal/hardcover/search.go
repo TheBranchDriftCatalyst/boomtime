@@ -77,9 +77,12 @@ func parseSearchCandidates(raw json.RawMessage, limit int) []Candidate {
 				Title       string      `json:"title"`
 				AuthorNames []string    `json:"author_names"`
 				Slug        string      `json:"slug"`
-				// Cover: Hardcover exposes it under a few names across payloads.
-				Image       string      `json:"image"`
-				CachedImage string      `json:"cached_image"`
+				// image is an OBJECT ({url,color,...}), NOT a string — declaring it
+				// `string` made json.Unmarshal fail the WHOLE hits array → 0 results
+				// (gaka-nq2m). Verified shape 2026-08. Empty object → URL "".
+				Image struct {
+					URL string `json:"url"`
+				} `json:"image"`
 				ReleaseYear json.Number `json:"release_year"`
 				ReleaseDate string      `json:"release_date"`
 			} `json:"document"`
@@ -99,7 +102,7 @@ func parseSearchCandidates(raw json.RawMessage, limit int) []Candidate {
 			BookID:   id,
 			Title:    d.Title,
 			Authors:  d.AuthorNames,
-			CoverURL: firstNonEmpty(d.Image, d.CachedImage),
+			CoverURL: d.Image.URL,
 			Slug:     d.Slug,
 		}
 		if y, err := d.ReleaseYear.Int64(); err == nil && y > 0 {
