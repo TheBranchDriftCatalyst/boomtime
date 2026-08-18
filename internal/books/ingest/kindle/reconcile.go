@@ -25,7 +25,7 @@
 // insert dedupes on (owner,asin,sampled_at). The sweep is cancellable (checks
 // ctx.Err() before each book) and rate-paced (a small delay between books) since
 // it is ~one sidecar call per non-read book — thousands for a large library.
-package reading
+package kindle
 
 import (
 	"context"

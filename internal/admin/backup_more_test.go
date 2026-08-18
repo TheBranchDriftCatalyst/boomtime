@@ -72,4 +72,3 @@ var _ = Describe("restoreMaxBytes helper (in-package)", func() {
 			"restoreMaxBytes must never return 0 (would silently disable the cap)")
 	})
 })
-

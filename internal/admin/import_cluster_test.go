@@ -61,15 +61,15 @@ func silentImportLogger() *slog.Logger {
 // Re-registering these routes on the harness router would trigger echo's
 // duplicate-route panic on repeat spec runs.
 type importDeps struct {
-	Hz      *testutil.Harness
-	H       *handler.Handler
-	Worker  *importer.Worker
-	Hub     *importer.Hub
-	Cfg     *config.Config
-	Router  *echo.Echo
-	Server  *httptest.Server // for websocket / range mocks
-	MockWK  *httptest.Server // wakatime.com stand-in (may be nil)
-	Cancel  context.CancelFunc
+	Hz     *testutil.Harness
+	H      *handler.Handler
+	Worker *importer.Worker
+	Hub    *importer.Hub
+	Cfg    *config.Config
+	Router *echo.Echo
+	Server *httptest.Server // for websocket / range mocks
+	MockWK *httptest.Server // wakatime.com stand-in (may be nil)
+	Cancel context.CancelFunc
 }
 
 func newImportDeps(serverKey string) *importDeps {

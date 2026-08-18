@@ -15,14 +15,14 @@
 //
 // The sweep is factored out of SyncUser so it is unit-testable against fake
 // amazon + hardcover clients with no network + no DB.
-package reading
+package kindle
 
 import (
 	"context"
 	"encoding/json"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/amazon"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/hardcover"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/amazon"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/hardcover"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logctx"
 )
