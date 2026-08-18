@@ -15,6 +15,7 @@
 package notify
 
 import (
+	"context"
 	"sync"
 	"time"
 )
@@ -31,18 +32,43 @@ type Event struct {
 	Body  string         `json:"body,omitempty"`
 	Data  map[string]any `json:"data,omitempty"`
 	At    time.Time      `json:"at"`
+	// Durable marks an event that must NOT be dropped on the floor when the user
+	// has no open WS session: it is written to the persister (a DB row) as well as
+	// fanned out live, so the FE can replay it on the next session. Ephemeral
+	// (Durable=false) events are toast-only. Not serialized to WS subscribers.
+	Durable bool `json:"-"`
+}
+
+// Persister durably stores a notification so it survives a missing session. The
+// signature is primitives-only (no Event) so implementers (e.g. *db.DB) need not
+// import this package. A nil persister on the Hub disables durability (events still
+// fan out live).
+type Persister interface {
+	SaveNotification(ctx context.Context, owner, typ, title, body string, data map[string]any, at time.Time) error
 }
 
 // Hub fans notification events to per-owner subscribers. The zero value is not
 // usable — construct with NewHub. Mirrors jobsevents.Hub.
 type Hub struct {
-	mu   sync.RWMutex
-	subs map[string]map[chan Event]struct{} // owner -> set of channels
+	mu        sync.RWMutex
+	subs      map[string]map[chan Event]struct{} // owner -> set of channels
+	persister Persister                          // nil → durability disabled
+	onErr     func(error)                        // optional durable-save error sink
 }
 
 // NewHub returns an empty hub.
 func NewHub() *Hub {
 	return &Hub{subs: map[string]map[chan Event]struct{}{}}
+}
+
+// SetPersister wires durable storage (call once at startup). onErr, if non-nil, is
+// invoked when a durable save fails (for logging); a failed save does NOT block the
+// live fan-out.
+func (h *Hub) SetPersister(p Persister, onErr func(error)) {
+	h.mu.Lock()
+	h.persister = p
+	h.onErr = onErr
+	h.mu.Unlock()
 }
 
 // Publish delivers the event to the owner's subscribers. Ownerless events
@@ -56,6 +82,20 @@ func (h *Hub) Publish(ev Event) {
 	if ev.At.IsZero() {
 		ev.At = time.Now()
 	}
+	// Durable events are stored BEFORE the live fan-out so a subscriber that reacts
+	// by refetching always sees the row. Best-effort + bounded: a save failure is
+	// reported via onErr but never blocks or drops the live toast.
+	h.mu.RLock()
+	persister, onErr := h.persister, h.onErr
+	h.mu.RUnlock()
+	if ev.Durable && persister != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		if err := persister.SaveNotification(ctx, ev.Owner, ev.Type, ev.Title, ev.Body, ev.Data, ev.At); err != nil && onErr != nil {
+			onErr(err)
+		}
+		cancel()
+	}
+
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	for ch := range h.subs[ev.Owner] {

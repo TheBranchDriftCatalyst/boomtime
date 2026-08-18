@@ -698,6 +698,9 @@ func (s *Service) announceFinished(ctx context.Context, owner string, ev finishe
 				"finishedAt": ev.FinishedAt.UTC().Format(time.RFC3339),
 				"source":     source,
 			},
+			// A finish is a milestone worth keeping — durable, so it shows in the
+			// panel on the user's next session even if they were offline when it fired.
+			Durable: true,
 		})
 	}
 	s.mirrorFinishedToHardcover(ctx, owner, ev)

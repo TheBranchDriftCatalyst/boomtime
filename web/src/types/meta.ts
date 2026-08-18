@@ -219,6 +219,18 @@ export interface HardcoverConnection {
   checkedAt?: string;
 }
 
+// One durable notification (migration 00079) — replayed on session start so a
+// book-finish fired while offline isn't lost. Mirrors db.Notification's JSON.
+export interface NotificationDTO {
+  id: number;
+  type: string;
+  title: string;
+  body?: string;
+  data?: Record<string, unknown>;
+  at: string;
+  readAt?: string;
+}
+
 // One discrete read of a book (migration 00078) — the Book panel's read history.
 // A book can be read more than once; each is a ReadEvent (origin = who produced it).
 export interface ReadEvent {

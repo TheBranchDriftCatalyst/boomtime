@@ -335,6 +335,12 @@ func runCmd() *cobra.Command {
 			// no WS readers, matching the in-process posture documented on
 			// internal/notify (a cross-pod relay is the split-topology follow-up).
 			notifyHub := notify.NewHub()
+			// Durable notifications (migration 00079): events flagged Durable are
+			// written to the notifications table so they survive a missing WS session
+			// and replay on the user's next connect. *db.DB satisfies notify.Persister.
+			notifyHub.SetPersister(database, func(err error) {
+				logger.Warn("notify: durable save failed", "err", err)
+			})
 			if cfg.IsServerRole() {
 				e, h = server.NewWithHandler(database, cfg, logger, worker, hub, logHub)
 				// Wire the labelimages worker into the handler for the

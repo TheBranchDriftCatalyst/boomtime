@@ -107,6 +107,9 @@ func Register(e *echo.Echo, h *Handler) {
 		// Curation override: set the effective status/rating/finish for one row
 		// (gaka-books, migration 00069) + enqueue the Hardcover push. Keyed by
 		// owner + ?source= + :externalId (the ASIN).
+		// Durable notifications (migration 00079): replay on session start + mark read.
+		e.GET("/api/v1/notifications", h.ListNotifications)
+		e.POST("/api/v1/notifications/read", h.MarkNotificationsRead)
 		e.PATCH("/api/v1/books/items/:externalId/curation", h.SetBookCuration)
 		// Push-only: re-mirror one row's CURRENT effective state to Hardcover on
 		// demand (the per-row "sync to Hardcover" button). Same push path as a

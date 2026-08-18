@@ -34,6 +34,7 @@ import { DevModeToggle } from "@/features/devtools";
 import { useHeaderSlotNode } from "@/layout/HeaderSlot";
 import { MobileNav } from "@/layout/MobileNav";
 import { ReadingDiagnosticIndicator } from "@/layout/ReadingDiagnosticIndicator";
+import { NotificationBell } from "@/features/notify/NotificationBell";
 import { openCommandPalette } from "@/components/CommandPalette";
 
 interface HeaderBarProps {
@@ -171,6 +172,9 @@ export function HeaderBar({ username, onLogout, onCreateSpace }: HeaderBarProps)
             ⌘K
           </kbd>
         </button>
+
+        {/* Durable-notification bell + side panel (book finishes land here). */}
+        <NotificationBell />
 
         {/* Admin-only dev utilities — renders nothing for normal users. */}
         {isAdmin && <DevModeToggle variant="ghost" size="icon" />}

@@ -77,6 +77,7 @@ import type {
   CurationPatch,
   HardcoverConnection,
   HardcoverCandidate,
+  NotificationDTO,
   ReadEvent,
   GithubStatsPayload,
   WidgetLinkPayload,
@@ -1328,6 +1329,17 @@ export const api = {
       ),
       { method: "POST" },
     ),
+
+  // Durable notifications (migration 00079): replayed on session start so events
+  // fired while offline aren't dropped. markNotificationsRead flips all unread.
+  getNotifications: () =>
+    request<{ notifications: NotificationDTO[] | null; unreadCount: number }>(
+      buildUrl("/api/v1/notifications"),
+    ),
+  markNotificationsRead: () =>
+    request<{ marked: number }>(buildUrl("/api/v1/notifications/read"), {
+      method: "POST",
+    }),
 
   // Book detail panel: all editions of one canonical Work (rows sharing a
   // hardcover_book_id, or amazon_asin for unmatched siblings). Keyed off the

@@ -11,7 +11,7 @@ import { KeyboardShortcuts } from "@/components/KeyboardShortcuts";
 import { useAuth } from "@/features/auth/useAuth";
 import { useCollapsedSidebar } from "@/layout/useCollapsedSidebar";
 import { useJobNotifications } from "@/features/jobs/useJobNotifications";
-import { useNotifications } from "@/features/notify/useNotifications";
+import { NotificationsProvider } from "@/features/notify/NotificationsProvider";
 
 // AppShell — the authed app frame. The layout is the no-scroll CSS-grid shell
 // (AppShellNoScroll): the shell owns exactly one viewport (h-dvh, overflow
@@ -26,8 +26,6 @@ export function AppShell() {
   const { collapsed, toggleCollapsed } = useCollapsedSidebar();
   // Push toasts when one of the caller's jobs completes/fails (gaka-hney.6).
   useJobNotifications();
-  // Push toasts for domain-agnostic per-user notifications (internal/notify).
-  useNotifications();
 
   async function handleLogout() {
     await logout();
@@ -35,7 +33,9 @@ export function AppShell() {
   }
 
   return (
-    <>
+    // NotificationsProvider owns the notify WS + durable-notification store; it
+    // wraps the shell so the header bell (and any page) can read it.
+    <NotificationsProvider>
       {/* HeaderSlotProvider must wrap BOTH the header and the routed <Outlet/>
           so a page (settings/admin) can hoist its tab strip up into HeaderBar
           to reclaim the page's title+tab row. See @/layout/HeaderSlot. */}
@@ -71,6 +71,6 @@ export function AppShell() {
       />
       <KeyboardShortcuts />
       <WelcomeModal />
-    </>
+    </NotificationsProvider>
   );
 }
