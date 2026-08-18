@@ -29,9 +29,12 @@ func NewDedupReadsCmd() *cobra.Command {
 	var user string
 	var dryRun bool
 	cmd := &cobra.Command{
-		Use:         "dedup-reads",
-		Short:       "Remove duplicate / empty reads on a user's Hardcover (keeps legit re-reads)",
-		Annotations: map[string]string{WebAnnotation: ClassDestructive},
+		Use:   "dedup-reads",
+		Short: "Remove duplicate / empty reads on a user's Hardcover (keeps legit re-reads)",
+		// Deletes data, but classed MUTATING (not destructive) so it can run from the
+		// admin Commands UI — the web hard-blocks the destructive class entirely. The
+		// dry-run default + confirm-sentinel-to-apply is the safety here.
+		Annotations: map[string]string{WebAnnotation: ClassMutating},
 		Long: `Scan a user's Hardcover shelf for books with more than one read and delete the
 noise: empty dateless reads (auto-created by status pushes) and exact-duplicate
 dated reads. Legitimate distinct reads (a real re-read has a different finish date)

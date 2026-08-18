@@ -171,7 +171,9 @@ var registry = map[string]RegistryEntry{
 		},
 	},
 	"hardcover dedup-reads": {
-		Classification:  ClassDestructive,
+		// MUTATING (not destructive) so it's runnable from the web; deletes are gated
+		// by the dry-run default + confirm sentinel. See NewDedupReadsCmd.
+		Classification:  ClassMutating,
 		DryRunSupported: true,
 		RequiredCap:     auth.CapAdmin,
 		NewCommand:      NewDedupReadsCmd,
