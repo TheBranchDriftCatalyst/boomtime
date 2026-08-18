@@ -174,6 +174,12 @@ def main():
         signer.host = args.host
         print(f"# host override -> {signer.host}")
 
+    # Substitute {customer_id} in a --path from the decrypted cred so whispersync
+    # paths (/whispersync/v2/data/{customer_id}/datasets) can be probed without
+    # ever printing the id.
+    if args.path and "{customer_id}" in args.path:
+        args.path = args.path.replace("{customer_id}", cred.get("customer_id", ""))
+
     probes = [("custom", args.path)] if args.path else default_probes(cred.get("marketplace"))
     for name, path in probes:
         status, body = signer.get(path)
