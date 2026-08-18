@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/importer"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/domainreg"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/identity"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
@@ -34,7 +35,7 @@ func TestPSlug_InjectsOGMetaForPublicProfile(t *testing.T) {
 	t.Setenv(rateLimitDisableEnv, "1")
 	t.Setenv("BOOM_CORS_ALLOWED_ORIGINS", "https://ok.example.com")
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	e := New(hz.DB, cfg, logger, nil, importer.NewHub(), nil)
+	e := New(hz.DB, cfg, logger, nil, importer.NewHub(), nil, domainreg.Build().Registry)
 
 	// Public slug → per-user OG tags with an absolute og.png image URL.
 	rr := httptest.NewRecorder()
