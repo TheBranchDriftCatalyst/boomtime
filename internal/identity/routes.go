@@ -76,72 +76,17 @@ func Register(e *echo.Echo, h *Handler) {
 		e.GET("/api/public/profile/:slug/github/stats", h.PublicGithubStats)
 	}
 
-	// Amazon device connect (catalyst-books + catalyst-audiobooks share ONE
-	// Amazon link). GET/DELETE status are ALWAYS registered (GET reports
-	// {connected:false}, DELETE is a no-op when nothing is stored, and the
-	// credential is NEVER returned). The connect + import MUTATION routes gate on
-	// Cfg.BooksEnabled() — inert (404) on a default boot.
-	e.GET("/api/v1/amazon", h.GetAmazonConnection)
-	e.DELETE("/api/v1/amazon", h.DisconnectAmazon)
+	// catalyst-books HTTP surface (Amazon/Kindle/Audible + Hardcover + reading
+	// items/work/curation/match) is registered separately by internal/books.Register
+	// on the shared books.Handler (gaka-zp2s Phase 2). It's mounted by the composition
+	// root; book paths never overlap the identity paths, so relative order is immaterial.
+
+	// Durable notifications (migration 00079) live on identity.Handler (domain-agnostic),
+	// but stay gated on BooksEnabled() to preserve the pre-extraction registration exactly.
+	// TODO(gaka-zp2s): un-gate from BooksEnabled once notifications has its own gate.
 	if h != nil && h.Cfg != nil && h.Cfg.BooksEnabled() {
-		e.POST("/api/v1/amazon/connect/start", h.ConnectAmazonStart)
-		e.POST("/api/v1/amazon/connect/complete", h.ConnectAmazonComplete)
-		e.POST("/api/v1/amazon/connect/import", h.ImportAmazonAuth)
-		// Ingest + the siloed view/delete surface (data-deletion on request).
-		e.POST("/api/v1/amazon/audible/sync", h.SyncAudible)
-		e.POST("/api/v1/amazon/audible/backfill", h.BackfillAudible)
-		// catalyst-books (Kindle) ingest triggers — the ebook mirror of audible/*.
-		e.POST("/api/v1/kindle/sync", h.SyncKindle)
-		e.POST("/api/v1/kindle/backfill", h.BackfillKindle)
-		e.POST("/api/v1/kindle/insights", h.SyncKindleInsights)
-		e.POST("/api/v1/kindle/reconcile", h.ReconcileKindle)
-		e.GET("/api/v1/books/items", h.GetReadingItems)
-		e.DELETE("/api/v1/books/items", h.DeleteReadingItemsHandler)
-		// Book detail side panel: all editions of one canonical Work (rows sharing a
-		// hardcover_book_id, or amazon_asin for unmatched siblings).
-		e.GET("/api/v1/books/work", h.GetBookWork)
-		// User-scoped reading-monitor status for the global nav indicator
-		// (catalyst-books §5.1). Self-only read of {enabled, calibrating,
-		// calibratingUntil} — the admin GET/PUT is separately admin-gated.
-		e.GET("/api/v1/books/reading-monitor/status", h.ReadingMonitorStatus)
-		// Curation override: set the effective status/rating/finish for one row
-		// (gaka-books, migration 00069) + enqueue the Hardcover push. Keyed by
-		// owner + ?source= + :externalId (the ASIN).
-		// Delete one read from the history (reading_events) + propagate to Hardcover.
-		e.DELETE("/api/v1/books/reads/:id", h.DeleteReadingEvent)
-		// Durable notifications (migration 00079): replay on session start + mark read.
 		e.GET("/api/v1/notifications", h.ListNotifications)
 		e.POST("/api/v1/notifications/read", h.MarkNotificationsRead)
-		e.PATCH("/api/v1/books/items/:externalId/curation", h.SetBookCuration)
-		// Push-only: re-mirror one row's CURRENT effective state to Hardcover on
-		// demand (the per-row "sync to Hardcover" button). Same push path as a
-		// curation edit; changes nothing in the DB. Dry-run-gated.
-		e.POST("/api/v1/books/items/:externalId/push", h.PushBookToHardcover)
-		// Manual match-fixer: apply a user-chosen Hardcover book to a reading_item
-		// (confidence "manual"). Keyed the same way as curation.
-		e.POST("/api/v1/books/items/:externalId/match", h.SetBookManualMatch)
-		// Interactive Hardcover catalog search (autocomplete for the match-fixer):
-		// live Typesense search → descriptive candidate cards. Owner-scoped, read-only.
-		e.GET("/api/v1/hardcover/search", h.HardcoverSearch)
-		// Orchestrator: chain the whole reading-sync pipeline (Audible ingest →
-		// Kindle ingest → Hardcover match → Hardcover pull) behind ONE enqueue.
-		e.POST("/api/v1/books/sync-all", h.SyncAllBooks)
-	}
-
-	// Hardcover connect (catalyst-books PUSH target). GET/DELETE status are
-	// ALWAYS registered (GET reports {connected:false}, DELETE is a no-op when
-	// nothing is stored, and the token is NEVER returned). The connect MUTATION
-	// route (validate + store a pasted bearer token) gates on Cfg.BooksEnabled()
-	// — inert (404) on a default boot.
-	e.GET("/api/v1/hardcover", h.GetHardcoverConnection)
-	e.DELETE("/api/v1/hardcover", h.DisconnectHardcover)
-	if h != nil && h.Cfg != nil && h.Cfg.BooksEnabled() {
-		e.POST("/api/v1/hardcover/connect", h.ConnectHardcover)
-		// Inbound sync (PULL half): read the shelf + reconcile linkage.
-		e.POST("/api/v1/hardcover/pull", h.PullHardcover)
-		// Explicit MATCH stage (backfill → match → sync): resolve unmatched
-		// reading_items to a Hardcover book_id/edition_id + cache the linkage.
-		e.POST("/api/v1/hardcover/match", h.MatchHardcover)
 	}
 
 	// User IANA timezone (gaka-dg7). GET reports the raw stored value

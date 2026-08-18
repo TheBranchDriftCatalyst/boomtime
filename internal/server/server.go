@@ -16,6 +16,7 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/admin"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/awards"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/curation"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
@@ -186,6 +187,10 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	// gaka-8tn phase 4a: identity (auth + password + profile + timezone +
 	// wakatime_key + avatar) extracted into internal/identity.
 	identity.Register(e, h.Identity)
+	// gaka-zp2s phase 2: catalyst-books surface (Amazon/Kindle/Audible + Hardcover +
+	// reading items/work/curation/match) extracted into internal/books. Registered
+	// after identity; book paths never overlap identity paths.
+	books.Register(e, h.Books)
 	// gaka-8tn phase 4b: awards cluster (streak ledger + evaluator +
 	// backfill — 7 routes) extracted into internal/awards. Registered
 	// AFTER identity so /awards/* auth checks resolve against the

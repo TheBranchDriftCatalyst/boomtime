@@ -21,6 +21,7 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/admin"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/awards"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/cache"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/curation"
@@ -88,6 +89,7 @@ type Handler struct {
 	Stats    *stats.Handler    // phase 6
 	Admin    *admin.Handler    // phase 7
 	Query    *queryapi.Handler // gaka-174.q: cross-domain query DSL over HTTP
+	Books    *books.Handler    // gaka-zp2s phase 2: catalyst-books domain
 }
 
 // New constructs a Handler. logHub streams server-process slog records to the
@@ -131,6 +133,7 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *impor
 		Stats:    stats.New(database, cfg, logger, sharedCache),
 		Admin:    admin.New(database, cfg, logger, sharedCache, worker, hub),
 		Query:    &queryapi.Handler{DB: database, Cfg: cfg, Logger: logger},
+		Books:    books.New(database, cfg, logger),
 	}
 }
 
@@ -191,6 +194,9 @@ func (h *Handler) SetJobs(store *jobs.Store, enq jobs.Enqueuer, reg *jobs.Regist
 	if h.Identity != nil {
 		h.Identity.SetJobEnqueuer(enq) // gaka-hney.7: avatar-render enqueue
 	}
+	if h.Books != nil {
+		h.Books.SetJobEnqueuer(enq) // gaka-zp2s: book ingest/curation-push enqueue
+	}
 }
 
 // SetJobLogStore propagates the object store the per-job log endpoints read +
@@ -218,11 +224,11 @@ func (h *Handler) SetNotify(hub *notify.Hub) {
 	}
 }
 
-// SetHardcoverPush propagates the inline curation-push service to h.Identity so the
+// SetHardcoverPush propagates the inline curation-push service to h.Books so the
 // manual per-row sync button can push synchronously (bypass the job queue).
 func (h *Handler) SetHardcoverPush(p *hardcover.PushService) {
-	if h.Identity != nil {
-		h.Identity.SetHardcoverPush(p)
+	if h.Books != nil {
+		h.Books.SetHardcoverPush(p)
 	}
 }
 
