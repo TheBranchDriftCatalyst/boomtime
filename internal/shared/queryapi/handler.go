@@ -16,11 +16,11 @@ import (
 
 	"log/slog"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/query"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/query"
 	"github.com/labstack/echo/v5"
 )
 

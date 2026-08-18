@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/query"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/query"
 )
 
 // domains_dims_test.go — pins the reading domain's series/author/genre grouping

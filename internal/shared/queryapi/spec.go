@@ -14,7 +14,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/query"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/query"
 )
 
 // Spec is the JSON request body. It mirrors the DSL grammar

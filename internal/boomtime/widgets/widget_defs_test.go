@@ -20,8 +20,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/widget"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/widget"
 )
 
 // routerWithWidgetDefsG — mirror of the stdlib routerWithWidgetDefs.

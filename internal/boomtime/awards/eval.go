@@ -26,10 +26,10 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/labels"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/stats"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/widget"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/widget"
 	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v5"
 )

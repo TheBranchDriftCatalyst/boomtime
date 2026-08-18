@@ -30,8 +30,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/widget"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/widget"
 )
 
 // mkValidDefBytes marshals a minimal valid widget.Def (1 panel over top-langs).

@@ -24,14 +24,15 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/hardcover"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/awards"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/curation"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/goals"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/ingest"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/queue/imagejobs"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/spaces"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/stats"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/widgets"
 	labelimages "github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/worker/labelimages"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/goals"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/identity"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/queryapi"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/cache"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
@@ -41,8 +42,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/meta"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/notify"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/objstore"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/spaces"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/widgets"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/queryapi"
 )
 
 // Handler bundles shared dependencies for all HTTP handlers. Post

@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/query"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/query"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 

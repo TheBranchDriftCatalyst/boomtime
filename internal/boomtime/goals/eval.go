@@ -51,7 +51,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/query"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/query"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
