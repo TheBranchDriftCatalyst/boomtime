@@ -1,4 +1,4 @@
-package audiobooks
+package audible
 
 import (
 	"context"

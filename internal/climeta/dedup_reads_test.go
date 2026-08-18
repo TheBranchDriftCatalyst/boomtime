@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/hardcover"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/hardcover"
 )
 
 func tp(y, m, d int) *time.Time {

@@ -27,7 +27,7 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/amazon"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/amazon"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
 )

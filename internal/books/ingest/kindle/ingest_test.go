@@ -1,11 +1,11 @@
-package reading
+package kindle
 
 import (
 	"context"
 	"testing"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/amazon"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/hardcover"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/amazon"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/hardcover"
 )
 
 // fakeKindle is an in-memory kindleSource: a fixed cookie jar + library, so

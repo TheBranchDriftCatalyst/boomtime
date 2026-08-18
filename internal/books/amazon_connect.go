@@ -9,8 +9,8 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/amazon"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/audiobooks"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/amazon"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/ingest/audible"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/labstack/echo/v5"
@@ -161,7 +161,7 @@ func (h *Handler) SyncAudible(c *echo.Context) error {
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
-	svc := audiobooks.New(h.DB, amazon.NewStore(h.DB), h.Logger)
+	svc := audible.New(h.DB, amazon.NewStore(h.DB), h.Logger)
 	n, err := svc.SyncUser(c.Request().Context(), owner)
 	if err != nil {
 		// Surface the Amazon-side error (status + snippet) so a signing/format
@@ -190,7 +190,7 @@ func (h *Handler) BackfillAudible(c *echo.Context) error {
 	if _, lerr := amazon.NewStore(h.DB).Load(c.Request().Context(), owner); lerr != nil {
 		return apihelpers.RespondErr(c, apierr.BadRequest("connect Amazon before running a backfill"))
 	}
-	id, eerr := h.JobEnqueuer.Enqueue(c.Request().Context(), audiobooks.AudibleBackfillKind, nil,
+	id, eerr := h.JobEnqueuer.Enqueue(c.Request().Context(), audible.AudibleBackfillKind, nil,
 		jobs.Owner(owner), jobs.MaxAttempts(1))
 	if eerr != nil {
 		return apihelpers.InternalErr(h.Logger, c, "audible backfill enqueue failed", eerr)

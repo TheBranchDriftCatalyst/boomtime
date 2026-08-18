@@ -21,7 +21,7 @@
 // composeSessions is a PURE function (samples -> per-day reading-seconds) so the
 // gap model is exhaustively table-tested without a DB or network. Day-crossing
 // intervals are split at UTC midnight so each day's bucket is exact.
-package reading
+package kindle
 
 import (
 	"context"
@@ -29,7 +29,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/amazon"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/amazon"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 )
 

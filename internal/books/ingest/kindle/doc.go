@@ -20,4 +20,4 @@
 // true) — is documented in
 // docs/design/catalyst-books-domain-architecture.md §4A. Read it before touching
 // status, rating, or finished-date sync.
-package reading
+package kindle

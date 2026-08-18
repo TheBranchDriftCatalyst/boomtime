@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/amazon"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/amazon"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 )
 

@@ -5,9 +5,9 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/amazon"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/hardcover"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/reading"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/amazon"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/hardcover"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/ingest/kindle"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/labstack/echo/v5"
 )
@@ -31,7 +31,7 @@ func (h *Handler) SyncKindle(c *echo.Context) error {
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
-	svc := reading.New(h.DB, amazon.NewStore(h.DB), h.Logger).
+	svc := kindle.New(h.DB, amazon.NewStore(h.DB), h.Logger).
 		SetHardcover(hardcover.NewStore(h.DB))
 	n, err := svc.SyncUser(c.Request().Context(), owner)
 	if err != nil {
@@ -54,7 +54,7 @@ func (h *Handler) SyncKindleInsights(c *echo.Context) error {
 	if aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
-	svc := reading.New(h.DB, amazon.NewStore(h.DB), h.Logger).
+	svc := kindle.New(h.DB, amazon.NewStore(h.DB), h.Logger).
 		SetHardcover(hardcover.NewStore(h.DB))
 	n, err := svc.SyncInsights(c.Request().Context(), owner)
 	if err != nil {
@@ -83,7 +83,7 @@ func (h *Handler) BackfillKindle(c *echo.Context) error {
 	if _, lerr := amazon.NewStore(h.DB).Load(c.Request().Context(), owner); lerr != nil {
 		return apihelpers.RespondErr(c, apierr.BadRequest("connect Amazon before running a backfill"))
 	}
-	id, eerr := h.JobEnqueuer.Enqueue(c.Request().Context(), reading.KindleBackfillKind, nil,
+	id, eerr := h.JobEnqueuer.Enqueue(c.Request().Context(), kindle.KindleBackfillKind, nil,
 		jobs.Owner(owner), jobs.MaxAttempts(1))
 	if eerr != nil {
 		return apihelpers.InternalErr(h.Logger, c, "kindle backfill enqueue failed", eerr)
@@ -114,7 +114,7 @@ func (h *Handler) ReconcileKindle(c *echo.Context) error {
 	if _, lerr := amazon.NewStore(h.DB).Load(c.Request().Context(), owner); lerr != nil {
 		return apihelpers.RespondErr(c, apierr.BadRequest("connect Amazon before reconciling Kindle status"))
 	}
-	id, eerr := h.JobEnqueuer.Enqueue(c.Request().Context(), reading.KindleStatusReconcileKind, nil,
+	id, eerr := h.JobEnqueuer.Enqueue(c.Request().Context(), kindle.KindleStatusReconcileKind, nil,
 		jobs.Owner(owner), jobs.MaxAttempts(1))
 	if eerr != nil {
 		return apihelpers.InternalErr(h.Logger, c, "kindle reconcile enqueue failed", eerr)

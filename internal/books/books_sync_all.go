@@ -5,8 +5,8 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/amazon"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/bookspipeline"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/amazon"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/pipeline"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/labstack/echo/v5"
 )
@@ -39,7 +39,7 @@ func (h *Handler) SyncAllBooks(c *echo.Context) error {
 	if _, lerr := amazon.NewStore(h.DB).Load(c.Request().Context(), owner); lerr != nil {
 		return apihelpers.RespondErr(c, apierr.BadRequest("connect Amazon before running a full sync"))
 	}
-	id, eerr := h.JobEnqueuer.Enqueue(c.Request().Context(), bookspipeline.BooksSyncAllKind, nil,
+	id, eerr := h.JobEnqueuer.Enqueue(c.Request().Context(), pipeline.BooksSyncAllKind, nil,
 		jobs.Owner(owner), jobs.MaxAttempts(1))
 	if eerr != nil {
 		return apihelpers.InternalErr(h.Logger, c, "books sync-all enqueue failed", eerr)

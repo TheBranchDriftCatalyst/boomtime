@@ -27,7 +27,7 @@
 // The four steps are injected as plain funcs (see Steps) so the orchestrator is
 // unit-testable with fakes, without constructing the real audiobooks / books /
 // hardcover services. main.go wires the real services in via closures.
-package bookspipeline
+package pipeline
 
 import (
 	"context"

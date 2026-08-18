@@ -17,7 +17,7 @@
 //	                           fetch only what is new, detects the finished
 //	                           false→true edge → BookFinished event + Hardcover
 //	                           push, then advances the cursors.
-package audiobooks
+package audible
 
 import (
 	"context"
@@ -29,8 +29,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/amazon"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/hardcover"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/amazon"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/hardcover"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logctx"

@@ -11,7 +11,7 @@
 //     writes reading_activity(source='kindle'), and a re-run is idempotent (same
 //     seconds, one bucket per day).
 //   - capturing: a fake that returns a position → a sample is appended.
-package reading_test
+package kindle_test
 
 import (
 	"context"
@@ -23,8 +23,8 @@ import (
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/amazon"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/reading"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/amazon"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/ingest/kindle"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
 )
@@ -49,7 +49,7 @@ func (f *fakeSidecar) FetchLastPagePosition(_ context.Context, _ *amazon.DeviceC
 // newPollService wires a books Service on the harness DB with a seeded Amazon
 // credential (so Amazon.Load succeeds) and the given fake sidecar. Returns the
 // service + owner.
-func newPollService(t *testing.T, hz *testutil.Harness, sc *fakeSidecar) (*reading.Service, string) {
+func newPollService(t *testing.T, hz *testutil.Harness, sc *fakeSidecar) (*kindle.Service, string) {
 	t.Helper()
 	// Amazon credential is stored encrypted — install a throwaway
 	// BOOM_ENCRYPTION_KEY and reset the memoized AEAD so Save/Load round-trip.
@@ -68,7 +68,7 @@ func newPollService(t *testing.T, hz *testutil.Harness, sc *fakeSidecar) (*readi
 	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := reading.New(hz.DB, az, logger)
+	svc := kindle.New(hz.DB, az, logger)
 	svc.SetSidecar(sc)
 	return svc, owner
 }

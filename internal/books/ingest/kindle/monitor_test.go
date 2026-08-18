@@ -11,7 +11,7 @@
 //     composition.
 //   - debounced (one toast per session) vs verbose (one per advance) toast counts.
 //   - a disabled user is a no-op.
-package reading_test
+package kindle_test
 
 import (
 	"context"
@@ -25,8 +25,8 @@ import (
 	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/amazon"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/reading"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/amazon"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/ingest/kindle"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/notify"
@@ -36,7 +36,7 @@ import (
 // monitorCfg is the tuning the engine tests run under: T1=120s, T2=30s, G=300s.
 // withDefaults() (applied inside the engine) folds in every other MonitorConfig
 // field, so only the three the L1/L2/idle tests exercise are set here.
-var monitorCfg = reading.MonitorConfig{
+var monitorCfg = kindle.MonitorConfig{
 	DetectInterval:  120 * time.Second,
 	CaptureInterval: 30 * time.Second,
 	IdleGap:         300 * time.Second,
@@ -45,7 +45,7 @@ var monitorCfg = reading.MonitorConfig{
 // newMonitorService wires a books Service on the harness DB with a seeded Amazon
 // credential, the given fake sidecar, and a notify hub. It mints an owner, ENABLES
 // the persistent monitor for them in `mode`, and returns everything the tests need.
-func newMonitorService(t *testing.T, hz *testutil.Harness, sc *fakeSidecar, mode string) (*reading.Service, string, *notify.Hub) {
+func newMonitorService(t *testing.T, hz *testutil.Harness, sc *fakeSidecar, mode string) (*kindle.Service, string, *notify.Hub) {
 	t.Helper()
 	key := make([]byte, 32)
 	if _, err := io.ReadFull(rand.Reader, key); err != nil {
@@ -68,7 +68,7 @@ func newMonitorService(t *testing.T, hz *testutil.Harness, sc *fakeSidecar, mode
 
 	hub := notify.NewHub()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := reading.New(hz.DB, az, logger).SetNotify(hub)
+	svc := kindle.New(hz.DB, az, logger).SetNotify(hub)
 	svc.SetSidecar(sc)
 
 	t.Cleanup(func() {

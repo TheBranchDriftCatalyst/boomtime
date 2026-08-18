@@ -1,4 +1,4 @@
-package bookspipeline
+package pipeline
 
 import (
 	"context"

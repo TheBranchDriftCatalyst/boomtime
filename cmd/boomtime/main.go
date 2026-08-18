@@ -21,11 +21,11 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/tracing"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/amazon"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/audiobooks"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/bookspipeline"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/hardcover"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/reading"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/amazon"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/hardcover"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/ingest/audible"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/ingest/kindle"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/pipeline"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/comfyui"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
@@ -68,8 +68,8 @@ var (
 )
 
 // Persistent reading-monitor scheduling (catalyst-books §5.1) is now configured
-// entirely by reading.MonitorConfig (ScheduleInterval / RunBudget / BaseTick), loaded
-// once via reading.LoadMonitorConfig() — no hardcoded consts here anymore.
+// entirely by kindle.MonitorConfig (ScheduleInterval / RunBudget / BaseTick), loaded
+// once via kindle.LoadMonitorConfig() — no hardcoded consts here anymore.
 
 func main() {
 	// Load .env if present (dev convenience; direnv handles .envrc in the shell).
@@ -509,16 +509,16 @@ func runCmd() *cobra.Command {
 				// Hoisted out of the BooksEnabled block so the enqueuer can be
 				// wired onto it AFTER `provider` is constructed below (finished
 				// detection then routes Hardcover pushes onto the capped queue).
-				var audioSvc *audiobooks.Service
+				var audioSvc *audible.Service
 				if cfg.BooksEnabled() {
-					audioSvc = audiobooks.New(database, amazon.NewStore(database), logger)
+					audioSvc = audible.New(database, amazon.NewStore(database), logger)
 					audioSvc.SetNotify(notifyHub)
 					audioSvc.SetHardcover(hardcover.NewStore(database))
 
 					// Forward: fan over every connected user, delta-sync each. A
 					// per-user error is logged + skipped so one bad credential
 					// doesn't fail the batch.
-					jobReg.Register(audiobooks.AudibleSyncKind, jobs.HandlerFunc(func(jctx context.Context, _ jobs.Job) error {
+					jobReg.Register(audible.AudibleSyncKind, jobs.HandlerFunc(func(jctx context.Context, _ jobs.Job) error {
 						users, uerr := database.ListUsersWithAmazonDevice(jctx)
 						if uerr != nil {
 							return uerr
@@ -535,7 +535,7 @@ func runCmd() *cobra.Command {
 					// Backfill: one-shot per user (owner-scoped payload), enqueued
 					// on demand from the connect flow / admin. Single attempt — an
 					// all-time sweep is heavy and re-runnable by hand.
-					jobReg.Register(audiobooks.AudibleBackfillKind, jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
+					jobReg.Register(audible.AudibleBackfillKind, jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
 						if job.Owner == "" {
 							return fmt.Errorf("audible backfill: missing owner")
 						}
@@ -547,8 +547,8 @@ func runCmd() *cobra.Command {
 					// pushes share the single concurrency-capped queue (cap=1 below)
 					// — Hardcover's rate limit is a global resource. The payload is
 					// self-contained; owner falls back to the job's owner field.
-					jobReg.Register(audiobooks.HardcoverPushKind, jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
-						var p audiobooks.HardcoverPushPayload
+					jobReg.Register(audible.HardcoverPushKind, jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
+						var p audible.HardcoverPushPayload
 						if len(job.Payload) > 0 {
 							if err := json.Unmarshal(job.Payload, &p); err != nil {
 								return fmt.Errorf("hardcover-push: bad payload: %w", err)
@@ -619,8 +619,8 @@ func runCmd() *cobra.Command {
 					// resolves an ASIN → title/author/cover + book_id/edition_id.
 					// Consolidated reading-monitor tuning (single source of truth) —
 					// loaded once, threaded to the engine job + the non-engine poll.
-					rmCfg := reading.LoadMonitorConfig()
-					kindleSvc := reading.New(database, amazon.NewStore(database), logger).
+					rmCfg := kindle.LoadMonitorConfig()
+					kindleSvc := kindle.New(database, amazon.NewStore(database), logger).
 						SetHardcover(hardcover.NewStore(database)).
 						SetNotify(notifyHub). // persistent reading-monitor toasts
 						SetMonitorConfig(rmCfg)
@@ -628,7 +628,7 @@ func runCmd() *cobra.Command {
 					// Forward: fan the periodic Kindle sync over every connected user;
 					// a per-user error is logged + skipped so one bad credential
 					// doesn't fail the batch (mirrors AudibleSyncKind).
-					jobReg.Register(reading.KindleSyncKind, jobs.HandlerFunc(func(jctx context.Context, _ jobs.Job) error {
+					jobReg.Register(kindle.KindleSyncKind, jobs.HandlerFunc(func(jctx context.Context, _ jobs.Job) error {
 						users, uerr := database.ListUsersWithAmazonDevice(jctx)
 						if uerr != nil {
 							return uerr
@@ -644,7 +644,7 @@ func runCmd() *cobra.Command {
 
 					// Backfill: one-shot per user (owner-scoped payload), enqueued on
 					// demand from the connect flow / admin (mirrors AudibleBackfillKind).
-					jobReg.Register(reading.KindleBackfillKind, jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
+					jobReg.Register(kindle.KindleBackfillKind, jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
 						if job.Owner == "" {
 							return fmt.Errorf("kindle backfill: missing owner")
 						}
@@ -659,7 +659,7 @@ func runCmd() *cobra.Command {
 					// owner-less (scheduled/batch) job fans over every connected user
 					// — a per-user error is logged + skipped so one bad credential
 					// doesn't fail the batch.
-					jobReg.Register(reading.KindleInsightsKind, jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
+					jobReg.Register(kindle.KindleInsightsKind, jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
 						if job.Owner != "" {
 							_, ierr := kindleSvc.SyncInsights(jctx, job.Owner)
 							return ierr
@@ -687,7 +687,7 @@ func runCmd() *cobra.Command {
 					// credential doesn't fail the batch (mirrors KindleInsightsKind). It
 					// NEVER clobbers a read/finished row, so running it after insights is
 					// safe.
-					jobReg.Register(reading.KindleStatusReconcileKind, jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
+					jobReg.Register(kindle.KindleStatusReconcileKind, jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
 						if job.Owner != "" {
 							_, rerr := kindleSvc.ReconcileKindleStatus(jctx, job.Owner)
 							return rerr
@@ -714,7 +714,7 @@ func runCmd() *cobra.Command {
 					// (scheduled/batch) job fans over every connected user — a per-user
 					// error is logged + skipped so one bad credential doesn't fail the
 					// batch (mirrors KindleInsightsKind).
-					jobReg.Register(reading.KindleReadingTimeKind, jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
+					jobReg.Register(kindle.KindleReadingTimeKind, jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
 						if job.Owner != "" {
 							_, rerr := kindleSvc.PollReadingTime(jctx, job.Owner)
 							return rerr
@@ -743,7 +743,7 @@ func runCmd() *cobra.Command {
 					// sub-minute L2 cadence despite the ~1-min scheduler granularity;
 					// its budget is kept under the schedule period so runs don't pile
 					// up (concurrency capped at 1 below).
-					jobReg.Register(reading.ReadingMonitorKind, jobs.HandlerFunc(func(jctx context.Context, _ jobs.Job) error {
+					jobReg.Register(kindle.ReadingMonitorKind, jobs.HandlerFunc(func(jctx context.Context, _ jobs.Job) error {
 						return kindleSvc.RunMonitorLoop(jctx, rmCfg)
 					}))
 
@@ -795,7 +795,7 @@ func runCmd() *cobra.Command {
 					// owner-less (scheduled/batch) job fans it over every user with a
 					// connected Amazon device. Capped at 1 below — it drives the same
 					// global Hardcover rate budget as its constituent stages.
-					booksPipeline := bookspipeline.New(bookspipeline.Steps{
+					booksPipeline := pipeline.New(pipeline.Steps{
 						AudibleSync:    audioSvc.SyncUser,
 						KindleSync:     kindleSvc.SyncUser,
 						KindleInsights: kindleSvc.SyncInsights,
@@ -812,7 +812,7 @@ func runCmd() *cobra.Command {
 							return res.Fetched, perr
 						},
 					}, logger)
-					jobReg.Register(bookspipeline.BooksSyncAllKind, jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
+					jobReg.Register(pipeline.BooksSyncAllKind, jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
 						if job.Owner != "" {
 							_, rerr := booksPipeline.RunPipeline(jctx, job.Owner)
 							return rerr
@@ -889,7 +889,7 @@ func runCmd() *cobra.Command {
 				// kinds are set here.
 				//
 				// NOTE (kind-name reconciliation vs. the spec):
-				//   - the backfill kind is audiobooks.AudibleBackfillKind
+				//   - the backfill kind is audible.AudibleBackfillKind
 				//     ("audiobooks-audible-backfill"), NOT the spec's literal
 				//     "books-audible-backfill" — which is not a registered kind, so
 				//     the cap is set on the real constant.
@@ -907,22 +907,22 @@ func runCmd() *cobra.Command {
 				// other kind (scheduled reading-monitor, hardcover/audible syncs, …)
 				// is server-resident by default and can't be orphaned by a worker
 				// scaling down mid-run (gaka-caxl).
-				jobReg.SetOffload(identity.AvatarRenderKind)             // avatar-render
-				jobReg.SetOffload(labelimages.RegenJobKind)              // label-image
-				jobReg.SetConcurrency(audiobooks.AudibleSyncKind, 1)     // audiobooks-audible-sync
-				jobReg.SetConcurrency(audiobooks.AudibleBackfillKind, 1) // audiobooks-audible-backfill (spec's "books-audible-backfill")
+				jobReg.SetOffload(identity.AvatarRenderKind)          // avatar-render
+				jobReg.SetOffload(labelimages.RegenJobKind)           // label-image
+				jobReg.SetConcurrency(audible.AudibleSyncKind, 1)     // audiobooks-audible-sync
+				jobReg.SetConcurrency(audible.AudibleBackfillKind, 1) // audiobooks-audible-backfill (spec's "books-audible-backfill")
 				if cfg.BooksEnabled() {
-					jobReg.SetConcurrency(audiobooks.HardcoverPushKind, 1)      // hardcover-push (global Hardcover rate limit)
-					jobReg.SetConcurrency(hardcover.CurationPushKind, 1)        // hardcover-push-curation (global Hardcover rate limit)
-					jobReg.SetConcurrency(hardcover.PullJobKind, 1)             // hardcover-pull (global Hardcover rate limit)
-					jobReg.SetConcurrency(reading.KindleSyncKind, 1)            // books-kindle-sync
-					jobReg.SetConcurrency(reading.KindleBackfillKind, 1)        // books-kindle-backfill
-					jobReg.SetConcurrency(reading.KindleInsightsKind, 1)        // books-kindle-insights
-					jobReg.SetConcurrency(reading.KindleStatusReconcileKind, 1) // books-kindle-status-reconcile
-					jobReg.SetConcurrency(reading.KindleReadingTimeKind, 1)     // books-kindle-reading-time
-					jobReg.SetConcurrency(reading.ReadingMonitorKind, 1)        // books-reading-monitor (leader-singleton engine)
-					jobReg.SetConcurrency(hardcover.HardcoverMatchKind, 1)      // hardcover-match (global Hardcover rate limit)
-					jobReg.SetConcurrency(bookspipeline.BooksSyncAllKind, 1)    // books-sync-all orchestrator (chains the rate-limited stages)
+					jobReg.SetConcurrency(audible.HardcoverPushKind, 1)        // hardcover-push (global Hardcover rate limit)
+					jobReg.SetConcurrency(hardcover.CurationPushKind, 1)       // hardcover-push-curation (global Hardcover rate limit)
+					jobReg.SetConcurrency(hardcover.PullJobKind, 1)            // hardcover-pull (global Hardcover rate limit)
+					jobReg.SetConcurrency(kindle.KindleSyncKind, 1)            // books-kindle-sync
+					jobReg.SetConcurrency(kindle.KindleBackfillKind, 1)        // books-kindle-backfill
+					jobReg.SetConcurrency(kindle.KindleInsightsKind, 1)        // books-kindle-insights
+					jobReg.SetConcurrency(kindle.KindleStatusReconcileKind, 1) // books-kindle-status-reconcile
+					jobReg.SetConcurrency(kindle.KindleReadingTimeKind, 1)     // books-kindle-reading-time
+					jobReg.SetConcurrency(kindle.ReadingMonitorKind, 1)        // books-reading-monitor (leader-singleton engine)
+					jobReg.SetConcurrency(hardcover.HardcoverMatchKind, 1)     // hardcover-match (global Hardcover rate limit)
+					jobReg.SetConcurrency(pipeline.BooksSyncAllKind, 1)        // books-sync-all orchestrator (chains the rate-limited stages)
 				}
 
 				hostID, _ := os.Hostname()
@@ -1049,7 +1049,7 @@ func runCmd() *cobra.Command {
 					// so running the schedule on every server is safe. The backfill
 					// kind is NOT scheduled — it's enqueued on demand.
 					if cfg.AudibleSyncEnabled() {
-						if serr := sched.Register(ctx, audiobooks.AudibleSyncKind, cfg.AudibleSyncInterval); serr != nil {
+						if serr := sched.Register(ctx, audible.AudibleSyncKind, cfg.AudibleSyncInterval); serr != nil {
 							logger.Warn("jobs: audible schedule register failed", "err", serr)
 						}
 					}
@@ -1060,8 +1060,8 @@ func runCmd() *cobra.Command {
 					// ~1/min. Leader-singleton via ClaimDueSchedules → exactly one runs
 					// fleet-wide. Enabled per-user via reading_monitor_enabled.
 					if cfg.BooksEnabled() {
-						schedInterval := reading.LoadMonitorConfig().ScheduleInterval
-						if serr := sched.Register(ctx, reading.ReadingMonitorKind, schedInterval); serr != nil {
+						schedInterval := kindle.LoadMonitorConfig().ScheduleInterval
+						if serr := sched.Register(ctx, kindle.ReadingMonitorKind, schedInterval); serr != nil {
 							logger.Warn("jobs: reading-monitor schedule register failed", "err", serr)
 						}
 					}

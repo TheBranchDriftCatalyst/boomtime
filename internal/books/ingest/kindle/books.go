@@ -20,13 +20,13 @@
 //	jobs.go     — <Name>SyncKind + RegisterJobs(reg, sched)
 //	model.go    — source DTOs      (added with the data model)
 //	routes.go   — query endpoints  (added with the query API)
-package reading
+package kindle
 
 import (
 	"log/slog"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/amazon"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/hardcover"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/amazon"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/hardcover"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/notify"
 )
@@ -138,7 +138,7 @@ func (s *Service) SetHardcover(store *hardcover.Store) *Service { s.Hardcover = 
 
 // SetNotify wires the notification hub (nil-safe) so the persistent
 // reading-monitor can toast on an advance / status change. Mirrors
-// audiobooks.Service.SetNotify.
+// audible.Service.SetNotify.
 func (s *Service) SetNotify(hub *notify.Hub) *Service { s.Notify = hub; return s }
 
 // SetSidecar swaps the forward reading-time position source. Production wires
