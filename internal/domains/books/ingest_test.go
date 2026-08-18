@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/amazon"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/hardcover"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/amazon"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/hardcover"
 )
 
 // fakeKindle is an in-memory kindleSource: a fixed cookie jar + library, so

@@ -10,7 +10,7 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/hardcover"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/hardcover"
 )
 
 // hardcover_search.go — the interactive manual match-fixer:

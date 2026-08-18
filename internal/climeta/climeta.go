@@ -31,10 +31,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/hardcover"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/github"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/hardcover"
 )
 
 // WebAnnotation is the cobra Annotations key that opts a command definition

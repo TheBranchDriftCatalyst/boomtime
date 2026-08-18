@@ -3,9 +3,9 @@ package books
 import (
 	"net/http"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/amazon"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/amazon"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/domains/bookspipeline"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/labstack/echo/v5"
