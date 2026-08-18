@@ -79,7 +79,7 @@ func main() {
 		Short:   "Wakatime-compatible coding-time tracker",
 		Version: version,
 	}
-	root.AddCommand(runCmd(), runMigrationsCmd(), createUserCmd(), createTokenCmd(), userCmd(), rotateEncryptionKeyCmd(), labelImagesCmd(), backfillCmd(), seedReadingDemoCmd())
+	root.AddCommand(runCmd(), runMigrationsCmd(), createUserCmd(), createTokenCmd(), userCmd(), rotateEncryptionKeyCmd(), labelImagesCmd(), backfillCmd(), seedReadingDemoCmd(), hardcoverCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

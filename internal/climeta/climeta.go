@@ -34,6 +34,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/github"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/hardcover"
 )
 
 // WebAnnotation is the cobra Annotations key that opts a command definition
@@ -167,6 +168,28 @@ var registry = map[string]RegistryEntry{
 			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 			svc := github.NewService(database, logger)
 			return RunBackfillGithubStats(ctx, database, svc, args.Str("user"), out)
+		},
+	},
+	"hardcover dedup-reads": {
+		Classification:  ClassDestructive,
+		DryRunSupported: true,
+		RequiredCap:     auth.CapAdmin,
+		NewCommand:      NewDedupReadsCmd,
+		FlagCompleters: map[string]cobra.CompletionFunc{
+			"user": CompleteUsernames,
+		},
+		FlagListers: map[string]DBLister{
+			"user": ListUsernames,
+		},
+		Invoke: func(ctx context.Context, database *db.DB, args RunArgs, out io.Writer) error {
+			if err := auth.LoadKeyFromEnv(); err != nil {
+				return fmt.Errorf("cannot decrypt the Hardcover token: %w", err)
+			}
+			user := args.Str("user")
+			if user == "" {
+				return fmt.Errorf("--user is required")
+			}
+			return RunDedupReads(ctx, hardcover.NewStore(database), database, user, args.Bool("dry-run"), out)
 		},
 	},
 	"user list": {

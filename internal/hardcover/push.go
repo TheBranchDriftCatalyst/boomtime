@@ -363,6 +363,29 @@ func (c *Client) updateRead(ctx context.Context, in ReadInput) (int64, error) {
 	return in.UserBookReadID, nil
 }
 
+// BulkDeleteUserBookReads deletes N user_book_reads in ONE request via aliased
+// delete mutations (1 rate-limiter token for the batch) — the fast path for the
+// dedup sweep. Dry-run-gated. Best-effort per id: a missing row is not an error.
+func (c *Client) BulkDeleteUserBookReads(ctx context.Context, ids []int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	var q strings.Builder
+	varDefs := make([]string, len(ids))
+	vars := make(map[string]any, len(ids))
+	for i, id := range ids {
+		varDefs[i] = fmt.Sprintf("$id%d: Int!", i)
+		vars[fmt.Sprintf("id%d", i)] = id
+	}
+	fmt.Fprintf(&q, "mutation BulkDeleteReads(%s) {\n", strings.Join(varDefs, ", "))
+	for i := range ids {
+		fmt.Fprintf(&q, "  d%d: delete_user_book_read(id: $id%d) { id }\n", i, i)
+	}
+	q.WriteString("}")
+	var data map[string]any
+	return c.graphql(ctx, q.String(), vars, &data)
+}
+
 // DeleteUserBookRead deletes a Hardcover user_book_read by id — the outbound half
 // of deleting a read in the bridge, so a junk/empty read (or a finish the user
 // undid) is removed on Hardcover too. Dry-run-gated (the graphql gate blocks the

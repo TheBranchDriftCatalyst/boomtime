@@ -104,6 +104,23 @@ func (d *DB) ListReadingEventsForWork(ctx context.Context, owner string, hardcov
 	return out, rows.Err()
 }
 
+// DeleteReadingEventsByExternalIDs prunes local reading_events for one owner+origin
+// whose external_read_id is in the given set — the local mirror of a bulk read
+// delete on the origin (e.g. the Hardcover dedup sweep). Returns rows removed.
+func (d *DB) DeleteReadingEventsByExternalIDs(ctx context.Context, owner, origin string, externalReadIDs []string) (int64, error) {
+	if len(externalReadIDs) == 0 {
+		return 0, nil
+	}
+	tag, err := d.Pool.Exec(ctx,
+		`DELETE FROM reading_events
+		  WHERE owner = $1 AND origin = $2 AND external_read_id = ANY($3)`,
+		owner, origin, externalReadIDs)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 // DeleteReadingEvent removes one reading_event by (owner, id) and RETURNs its origin
 // + external_read_id so the caller can propagate the delete to the origin (e.g. the
 // Hardcover user_book_read). Returns ok=false if no such row for this owner.
