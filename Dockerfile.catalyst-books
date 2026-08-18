@@ -1,0 +1,38 @@
+# Standalone catalyst-books image (gaka-zp2s P4) — the books domain running in
+# ISOLATION, built from the SAME monorepo as boomtime but importing none of the
+# code domain (proven: `go list -deps ./cmd/catalyst-books` pulls in 0
+# internal/boomtime packages). API-only for now; the standalone books web UI
+# (web/books) is a follow-up, so there's no SPA-build stage — this image is a lean
+# Go binary that serves the books HTTP surface with shared token auth.
+#
+#   docker build -f Dockerfile.catalyst-books -t catalyst-books .
+#
+# ── Stage 1: build the Go binary ─────────────────────────────────────────────
+FROM golang:1.25-alpine AS server
+ARG VERSION=dev
+RUN apk add --no-cache git
+WORKDIR /src
+COPY go.mod go.sum* ./
+RUN go mod download
+# .dockerignore guards secrets/junk out of the builder layers.
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags "-s -w" \
+    -o /out/catalyst-books ./cmd/catalyst-books
+
+# ── Stage 2: minimal runtime ─────────────────────────────────────────────────
+FROM alpine:3.20
+ARG VERSION=dev
+LABEL org.opencontainers.image.title="catalyst-books" \
+      org.opencontainers.image.description="Standalone catalyst-books server — Amazon (Kindle/Audible) + Hardcover reading domain, extracted from boomtime." \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.source="https://github.com/TheBranchDriftCatalyst/boomtime" \
+      org.opencontainers.image.licenses="Unlicense"
+RUN apk add --no-cache ca-certificates tzdata && adduser -D -u 10001 books
+COPY --from=server /out/catalyst-books /usr/local/bin/catalyst-books
+USER books
+# Books is the whole app here; the entrypoint also forces the gate on internally.
+ENV BOOM_PORT=8080 BOOM_FEATURE_BOOKS=true
+EXPOSE 8080
+# The standalone entrypoint runs migrations then serves (no subcommands).
+ENTRYPOINT ["catalyst-books"]
