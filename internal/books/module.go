@@ -7,6 +7,9 @@
 package books
 
 import (
+	"github.com/labstack/echo/v5"
+
+	booksadmin "github.com/TheBranchDriftCatalyst/boomtime/internal/books/admin"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/catalyst"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/domaincols"
@@ -30,4 +33,12 @@ func (Module) EncryptedColumns() []domaincols.EncryptedColumn {
 // whole-DB export.
 func (Module) BackupColumns() []domaincols.BackupColumns {
 	return domaincols.BackupColumnsFor("amazon", "hardcover")
+}
+
+// RegisterAdminRoutes mounts the catalyst-books admin HTTP surface (diagnostics +
+// reading-monitor) onto g — the host anchors g at /api/v1/admin. Delegates to the
+// per-domain internal/books/admin seam folder; behavior is byte-identical to the
+// pre-move registrations that lived in internal/admin/routes.go.
+func (Module) RegisterAdminRoutes(g *echo.Group, d catalyst.Deps) {
+	booksadmin.Register(g, booksadmin.New(d.DB, d.Cfg, d.Logger))
 }

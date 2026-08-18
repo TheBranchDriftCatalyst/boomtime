@@ -86,27 +86,11 @@ func Register(e *echo.Echo, h *Handler) {
 	// gaka-93f.6: admin caps dashboard — users + roles/tiers + effective
 	// capabilities. Admin-gated in the handler (requireAdmin).
 	e.GET("/api/v1/admin/users", h.ListUsers)
-	// gaka-books: admin diagnostic — dump raw Audible/Kindle source data.
-	e.GET("/api/v1/admin/books/diagnostics", h.AdminBooksDiagnostics)
-	// gaka-books: admin LIVE Kindle reading-monitor — a WS that polls each
-	// in-progress book's last-page-read position at a high rate and streams every
-	// advance, so we can empirically diagnose the whispersync sync cadence.
-	// Registered ONLY when BOOM_FEATURE_BOOKS is on (flag off ⇒ 404, feature
-	// inert). Cookie-authed + admin-gated in-handler (a WS handshake can't carry
-	// the Authorization header). Read-only: it never persists positions.
-	if h != nil && h.Cfg != nil && h.Cfg.BooksEnabled() {
-		e.GET("/api/v1/admin/books/reading-monitor/ws", h.AdminBooksReadingMonitorWS)
-		// gaka-books §5.1: the PERSISTENT server-side monitor's view+toggle. GET
-		// reports {enabled, mode, activeBooks, lastPingAt}; PUT updates
-		// {enabled?, mode?}. The engine runs on the leader-singleton scheduler
-		// regardless of these — this is only the control surface.
-		e.GET("/api/v1/admin/books/reading-monitor", h.AdminBooksReadingMonitorGet)
-		e.PUT("/api/v1/admin/books/reading-monitor", h.AdminBooksReadingMonitorPut)
-		// Raw diagnostic stream: recent raw samples for BOTH reading sources
-		// (Kindle position heartbeats + Audible listening buckets) so the FE can
-		// render the raw feed the recommendation is derived from.
-		e.GET("/api/v1/admin/books/reading-monitor/raw", h.AdminBooksReadingMonitorRaw)
-	}
+	// gaka-zp2s: the catalyst-books admin surface (/api/v1/admin/books/diagnostics
+	// + the reading-monitor cluster) moved OUT of this god-package into the
+	// per-domain internal/books/admin seam, mounted via books.Module.
+	// RegisterAdminRoutes from internal/server. Route strings + BooksEnabled()
+	// gating are byte-identical; this package no longer imports internal/books.
 	// gaka-8bz: durable WS stream of the image-job queue lifecycle.
 	// Auth uses the refresh_token cookie inside the handler (see
 	// AdminLabelImagesWS) — WS handshakes can't carry Authorization.

@@ -16,9 +16,12 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/tracing"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/admin"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books"
 	booksapi "github.com/TheBranchDriftCatalyst/boomtime/internal/books/api"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/awards"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/curation"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/github"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/goals"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/ingest"
@@ -27,6 +30,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/widgets"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/identity"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/catalyst"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/logging"
@@ -171,6 +175,21 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	// registerHeartbeatRoutes (source-health). Route strings + order
 	// preserved verbatim.
 	admin.Register(e, h.Admin)
+	// gaka-zp2s: per-domain ADMIN surfaces are mounted through the Module
+	// contract (Module.RegisterAdminRoutes) — the peer of the portable
+	// jobs.RegisterAdminRoutes seam — instead of being hand-wired into
+	// internal/admin. Anchored at /api/v1/admin; each domain sub-registers its
+	// own paths (books → /api/v1/admin/books/*). Driven HERE (not
+	// post-construction) so the OpenAPI drift router — which calls registerRoutes
+	// with a zero-value handler — enumerates the same routes, and so the module
+	// routes register BEFORE registerStatic's "/*" catch-all. boomtime/github
+	// contribute no-op admin surfaces today (BaseModule default); books mounts
+	// its diagnostics + reading-monitor cluster.
+	adminGroup := e.Group("/api/v1/admin")
+	adminDeps := catalyst.Deps{DB: h.DB, Cfg: h.Cfg, Logger: h.Logger}
+	for _, m := range domainModules() {
+		m.RegisterAdminRoutes(adminGroup, adminDeps)
+	}
 	// gaka-8tn phase 1: meta + logs registration is now owned by the meta
 	// domain package. `meta.Register` fans out /api/v1/version,
 	// /api/v1/changelog, /healthz, the OpenAPI spec + Swagger UI, and the
@@ -202,6 +221,16 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	// Cfg.BooksEnabled() inside the handler (runtime, since the domain is a
 	// body field). coding is always available.
 	queryapi.Register(e, h.Query)
+}
+
+// domainModules is the composition root's canonical domain set for route/admin
+// wiring, mirroring cmd/boomtime's buildDomainRegistry order (waka → github →
+// books). Registration order is immaterial for admin routes (distinct paths); the
+// list exists so registerRoutes iterates the Module contract instead of naming each
+// domain's admin surface directly. A domain whose admin surface hasn't been lifted
+// onto its Module yet contributes the BaseModule no-op.
+func domainModules() []catalyst.Module {
+	return []catalyst.Module{boomtime.Module{}, github.Module{}, books.Module{}}
 }
 
 // registerGoalRoutes: user-defined composite goals (gaka-wpb). CRUD +
