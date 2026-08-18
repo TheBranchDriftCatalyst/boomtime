@@ -27,7 +27,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/fixture"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/fixture"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 

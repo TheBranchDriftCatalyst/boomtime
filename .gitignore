@@ -69,3 +69,6 @@ web/coverage/
 hardcover-schema.json
 scripts/__pycache__/
 hardcover.key
+
+# standalone binary built for local testing (cmd/catalyst-books)
+/catalyst-books
