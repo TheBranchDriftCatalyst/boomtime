@@ -20,7 +20,7 @@
 //	jobs.go     — <Name>SyncKind + RegisterJobs(reg, sched)
 //	model.go    — source DTOs      (added with the data model)
 //	routes.go   — query endpoints  (added with the query API)
-package books
+package reading
 
 import (
 	"log/slog"

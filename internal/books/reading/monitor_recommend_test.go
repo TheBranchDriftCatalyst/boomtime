@@ -1,7 +1,7 @@
 // monitor_recommend_test.go — pure (no DB) tests of the interval RECOMMENDATION
 // heuristic. Table-driven over synthetic advance samples so every branch
 // (too-few-samples, the p50/p90 floored derivation) is pinned.
-package books
+package reading
 
 import (
 	"testing"

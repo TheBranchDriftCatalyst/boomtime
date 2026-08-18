@@ -37,7 +37,7 @@
 //
 // The engine is DB-state-driven (kindle_reading_monitor_state), so it is
 // stateless across ticks/pods and safe under the leader-singleton scheduler.
-package books
+package reading
 
 import (
 	"context"

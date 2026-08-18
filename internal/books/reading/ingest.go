@@ -15,7 +15,7 @@
 //
 // The sweep is factored out of SyncUser so it is unit-testable against fake
 // amazon + hardcover clients with no network + no DB.
-package books
+package reading
 
 import (
 	"context"
