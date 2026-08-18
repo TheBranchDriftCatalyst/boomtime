@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"

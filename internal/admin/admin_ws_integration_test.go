@@ -20,7 +20,7 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/imagejobs"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/queue/imagejobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 

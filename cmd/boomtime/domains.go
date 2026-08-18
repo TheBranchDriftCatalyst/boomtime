@@ -3,7 +3,7 @@ package main
 import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/github"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/github"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/domain"
 )
 

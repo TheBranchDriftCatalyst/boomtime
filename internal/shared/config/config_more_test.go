@@ -17,7 +17,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/stats"
 )
 
 // ============================================================================

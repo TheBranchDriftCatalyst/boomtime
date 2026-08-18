@@ -22,7 +22,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/curation"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/curation"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 

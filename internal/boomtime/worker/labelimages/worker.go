@@ -26,8 +26,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/comfyui"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/labelcatalog"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/comfyui"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/labelcatalog"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 )

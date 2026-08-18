@@ -32,7 +32,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/labelcatalog"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/labelcatalog"
 )
 
 // JobStatus tracks the lifecycle of a single label-image regeneration job.

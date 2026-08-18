@@ -3,7 +3,7 @@ package labelimages
 import (
 	"encoding/json"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/labelcatalog"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/labelcatalog"
 )
 
 // RegenJobKind is the catalyst-go-jobs kind for a single label-image

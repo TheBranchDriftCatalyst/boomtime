@@ -20,8 +20,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/stats"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/model"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
 )
 
 // Options are the per-request render knobs (from URL params on the public
