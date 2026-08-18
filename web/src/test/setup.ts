@@ -3,6 +3,12 @@ import { afterAll, afterEach, beforeAll, beforeEach } from "vitest";
 import { cleanup } from "@testing-library/react";
 import { server } from "@/test/msw/server";
 import { authStore } from "@/features/auth/auth";
+import { registerHostDomains } from "@/app/registerDomains";
+
+// Populate the nav / settings / admin registration seams the same way the host
+// app entry does, so components that read them (Sidebar, Settings, AdminPage)
+// render their full domain-grouped surface under test. Idempotent.
+registerHostDomains();
 
 // --- msw lifecycle -----------------------------------------------------------
 beforeAll(() =>

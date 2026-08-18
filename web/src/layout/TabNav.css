@@ -51,6 +51,57 @@
   text-shadow: 0 0 12px color-mix(in oklab, var(--primary) 22%, transparent);
 }
 
+/* ── Grouped variant ───────────────────────────────────────────────────────
+ * GroupedTabNav renders several labeled clusters in one row. The whole strip
+ * scrolls horizontally (header variant) so the bar never wraps; each cluster is
+ * a flex row of [group-label][tablist], separated by a thin divider. */
+.catalyst-tabnav--grouped {
+  gap: 0;
+}
+.catalyst-tabnav--grouped.catalyst-tabnav--header {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none; /* Firefox */
+}
+.catalyst-tabnav--grouped.catalyst-tabnav--header::-webkit-scrollbar {
+  display: none; /* WebKit */
+}
+.catalyst-tabnav__group {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  flex: none;
+}
+/* In a grouped strip the individual tablists must NOT each scroll — the outer
+ * wrapper owns the single horizontal scroll. */
+.catalyst-tabnav--grouped .catalyst-tabnav__list {
+  overflow: visible;
+}
+/* Group header — like the context label but lighter (muted, thinner tracking)
+ * so it reads as a sub-grouping, not the page title. */
+.catalyst-tabnav__group-label {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  font-family: var(--tabnav-font);
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  padding: 0 0.6rem 0 0.15rem;
+}
+/* Vertical divider between groups. */
+.catalyst-tabnav__group-divider {
+  flex: none;
+  width: 1px;
+  align-self: center;
+  height: 1.1rem;
+  margin: 0 0.5rem;
+  background: color-mix(in oklab, var(--border) 80%, transparent);
+}
+
 /* ── Tab list ──────────────────────────────────────────────────────────── */
 .catalyst-tabnav__list {
   display: flex;

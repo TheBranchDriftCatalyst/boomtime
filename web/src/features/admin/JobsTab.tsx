@@ -15,6 +15,7 @@
 // schedules panel refetch at once.
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AdminTabShell } from "@/shared/admin/AdminTabShell";
 import {
   AlertTriangle,
   Ban,
@@ -859,11 +860,14 @@ function JobDetailSheet({
 // ── tab ─────────────────────────────────────────────────────────────────────
 
 export function JobsTab() {
+  // Renders through the shared AdminTabShell base (gaka-zp2s). Each sub-panel
+  // owns its own load/error state, so the shell here provides the consistent
+  // admin-tab wrapper only.
   return (
-    <div className="max-w-6xl space-y-6">
+    <AdminTabShell bodyClassName="max-w-6xl space-y-6">
       <GroupedJobs />
       <ReadingStepsPanel />
       <SchedulesPanel />
-    </div>
+    </AdminTabShell>
   );
 }

@@ -10,7 +10,13 @@ import { CatalystProvider } from "@thebranchdriftcatalyst/catalyst-ui/contexts/C
 import { TooltipProvider } from "@thebranchdriftcatalyst/catalyst-ui/ui/tooltip";
 import { DevProviders } from "@/features/devtools";
 import { authStore } from "@/features/auth/auth";
+import { registerHostDomains } from "@/app/registerDomains";
 import "@/index.css";
+
+// Compose the host app's domains into the shared nav / settings / admin
+// registration seams BEFORE the first render, so the shell renders the full
+// domain-grouped surface. A standalone books entry would compose a leaner set.
+registerHostDomains();
 
 // Cross-tab logout: when another tab writes the "logout" key, clear this tab.
 window.addEventListener("storage", (event) => {
