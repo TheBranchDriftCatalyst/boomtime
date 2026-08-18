@@ -21,6 +21,7 @@ import { toast } from "sonner";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Switch } from "@thebranchdriftcatalyst/catalyst-ui/ui/switch";
 import { Label } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
+import { AdminTabShell } from "@/shared/admin/AdminTabShell";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
 import { relativeTime } from "@/lib/sourceStatus";
@@ -341,8 +342,10 @@ export function ReadingMonitorPanel() {
   const mode = data?.mode ?? "debounced";
   const busy = isLoading || mutate.isPending;
 
+  // Renders through the shared AdminTabShell base (gaka-zp2s); this panel keeps
+  // its own inline isError banner + live-status chrome inside the shell body.
   return (
-    <div className="space-y-4">
+    <AdminTabShell bodyClassName="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2">
           <Radio className="h-5 w-5 text-primary" />
@@ -469,6 +472,6 @@ export function ReadingMonitorPanel() {
           Full whispersync cadence report in Grafana.
         </span>
       </div>
-    </div>
+    </AdminTabShell>
   );
 }

@@ -6,6 +6,7 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { AdminTabShell } from "@/shared/admin/AdminTabShell";
 import {
   AlertTriangle,
   BookOpen,
@@ -437,7 +438,7 @@ export function BooksTab() {
   }
 
   return (
-    <div className="space-y-4">
+    <AdminTabShell bodyClassName="space-y-4">
       <div className="flex w-fit rounded-md border border-border p-0.5">
         {VIEWS.map((v) => (
           <button
@@ -459,6 +460,6 @@ export function BooksTab() {
       {view === "diagnostics" && <SourceDiagnosticsPanel />}
       {view === "monitor" && <ReadingMonitorPanel />}
       {view === "raw" && <RawFeedPanel />}
-    </div>
+    </AdminTabShell>
   );
 }

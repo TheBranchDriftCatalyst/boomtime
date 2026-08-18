@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Spinner } from "@thebranchdriftcatalyst/catalyst-ui/ui/spinner";
+import { AdminTabShell } from "@/shared/admin/AdminTabShell";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
 import { cn } from "@/lib/utils";
@@ -62,15 +62,16 @@ export function UsersTab() {
     staleTime: 30_000,
   });
 
-  if (isLoading) {
-    return (
-      <div className="flex h-[40vh] items-center justify-center">
-        <Spinner />
-      </div>
-    );
-  }
+  // Loading / error chrome comes from the shared AdminTabShell base so every
+  // admin tab surfaces these states identically.
+  if (isLoading) return <AdminTabShell isLoading />;
   if (error || !data) {
-    return <p className="text-sm text-destructive">Failed to load users.</p>;
+    return (
+      <AdminTabShell
+        error={error ?? "Failed to load users."}
+        errorTitle="Failed to load users."
+      />
+    );
   }
 
   const caps = data.capabilities;
@@ -82,7 +83,7 @@ export function UsersTab() {
   const roles = [...roleOrder, ...extraRoles];
 
   return (
-    <div className="max-w-6xl space-y-10">
+    <AdminTabShell bodyClassName="max-w-6xl space-y-10">
       {/* ── Tier legend ─────────────────────────────────────────────── */}
       <section>
         <h2 className="mb-1 font-mono text-xs font-semibold uppercase tracking-widest text-muted-foreground">
@@ -196,6 +197,6 @@ export function UsersTab() {
           <code className="rounded bg-muted/60 px-1">boomtime user disable &lt;user&gt;</code>.
         </p>
       </section>
-    </div>
+    </AdminTabShell>
   );
 }
