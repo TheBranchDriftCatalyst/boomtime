@@ -34,7 +34,6 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/domains"
 	"github.com/spf13/cobra"
 )
 
@@ -89,12 +88,14 @@ func runRotate(ctx context.Context, databaseURL, oldB64, newB64 string, out inte
 	}
 	defer database.Close()
 
-	// Iterate the internal/domains registry: EVERY registered encrypted column
-	// (wakatime, github, amazon device, + any future domain) is re-encrypted, so
-	// a new domain's secret is never stranded on rotation. Decrypt + re-encrypt
-	// EVERY row across ALL columns BEFORE any write — a single decrypt failure
-	// under --old aborts with the affected row and the DB is left untouched.
-	cols := domains.EncryptedColumns()
+	// Iterate the DOMAIN REGISTRY: EVERY registered domain's encrypted column
+	// (boomtime/wakatime, github, books/amazon+hardcover, + any future domain) is
+	// re-encrypted, so a new domain's secret is never stranded on rotation. Decrypt
+	// + re-encrypt EVERY row across ALL columns BEFORE any write — a single decrypt
+	// failure under --old aborts with the affected row and the DB is left untouched.
+	// The registry aggregates each Module's EncryptedColumns() (gaka-zp2s P1); the
+	// order matches the pre-registry list, so rotation is byte-identical.
+	cols := buildDomainRegistry().EncryptedColumns()
 	updates := make([]db.EncryptedColumnUpdate, 0, len(cols))
 	total := 0
 	for _, c := range cols {
