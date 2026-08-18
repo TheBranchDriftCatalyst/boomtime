@@ -7,8 +7,8 @@ package github
 
 import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/domains"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/domain"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/domaincols"
 )
 
 // Module implements domain.Module for the github domain.
@@ -20,6 +20,6 @@ func (Module) Name() string { return "github" }
 func (Module) Enabled(cfg *config.Config) bool { return cfg != nil && cfg.FeatureGithubStats }
 
 // EncryptedColumns: the per-user GitHub token.
-func (Module) EncryptedColumns() []domains.EncryptedColumn {
-	return domains.EncryptedColumnsFor("github")
+func (Module) EncryptedColumns() []domaincols.EncryptedColumn {
+	return domaincols.EncryptedColumnsFor("github")
 }

@@ -7,8 +7,8 @@ package boomtime
 
 import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/domains"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/domain"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/domaincols"
 )
 
 // Module implements domain.Module for the boomtime (wakatime/code) domain.
@@ -20,6 +20,6 @@ func (Module) Name() string { return "boomtime" }
 func (Module) Enabled(*config.Config) bool { return true }
 
 // EncryptedColumns: the imported Wakatime API key (per-user AES-GCM secret).
-func (Module) EncryptedColumns() []domains.EncryptedColumn {
-	return domains.EncryptedColumnsFor("waka")
+func (Module) EncryptedColumns() []domaincols.EncryptedColumn {
+	return domaincols.EncryptedColumnsFor("waka")
 }

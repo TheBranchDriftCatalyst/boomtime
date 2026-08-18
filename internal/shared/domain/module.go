@@ -23,9 +23,9 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/domains"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/notify"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/domaincols"
 )
 
 // IdentityProvider is the seam that lets a Module run WITHOUT importing a concrete
@@ -68,8 +68,8 @@ type Module interface {
 	// EncryptedColumns / BackupColumns surface the domain's per-user AES-GCM
 	// secrets + backup-owned columns, using the dependency-free types the
 	// rotate-encryption-key command and whole-DB export already iterate.
-	EncryptedColumns() []domains.EncryptedColumn
-	BackupColumns() []domains.BackupColumns
+	EncryptedColumns() []domaincols.EncryptedColumn
+	BackupColumns() []domaincols.BackupColumns
 
 	// RegisterRoutes mounts the domain's HTTP surface (push/pull ingest + query).
 	RegisterRoutes(e *echo.Echo, d Deps)
@@ -87,11 +87,11 @@ type Module interface {
 // the future ORM/DAL consolidation one obvious place to grow shared behavior.
 type BaseModule struct{}
 
-func (BaseModule) EncryptedColumns() []domains.EncryptedColumn { return nil }
-func (BaseModule) BackupColumns() []domains.BackupColumns      { return nil }
-func (BaseModule) RegisterRoutes(*echo.Echo, Deps)             {}
-func (BaseModule) RegisterJobs(context.Context, Deps) error    { return nil }
-func (BaseModule) Migrations() fs.FS                           { return nil }
+func (BaseModule) EncryptedColumns() []domaincols.EncryptedColumn { return nil }
+func (BaseModule) BackupColumns() []domaincols.BackupColumns      { return nil }
+func (BaseModule) RegisterRoutes(*echo.Echo, Deps)                {}
+func (BaseModule) RegisterJobs(context.Context, Deps) error       { return nil }
+func (BaseModule) Migrations() fs.FS                              { return nil }
 
 // Registry is the ordered set of Modules wired once at the composition root. The
 // host iterates it for rotate/dump/route/job wiring; a standalone image registers
@@ -125,8 +125,8 @@ func (r *Registry) Enabled(cfg *config.Config) []Module {
 // EncryptedColumns aggregates every registered domain's encrypted columns — the
 // list the key-rotation command re-encrypts. A new domain appears here the moment
 // it's registered, closing the "secret silently stranded on rotation" gap.
-func (r *Registry) EncryptedColumns() []domains.EncryptedColumn {
-	var out []domains.EncryptedColumn
+func (r *Registry) EncryptedColumns() []domaincols.EncryptedColumn {
+	var out []domaincols.EncryptedColumn
 	for _, m := range r.modules {
 		out = append(out, m.EncryptedColumns()...)
 	}
@@ -135,8 +135,8 @@ func (r *Registry) EncryptedColumns() []domains.EncryptedColumn {
 
 // BackupColumns aggregates every registered domain's backup-owned columns for the
 // whole-DB export.
-func (r *Registry) BackupColumns() []domains.BackupColumns {
-	var out []domains.BackupColumns
+func (r *Registry) BackupColumns() []domaincols.BackupColumns {
+	var out []domaincols.BackupColumns
 	for _, m := range r.modules {
 		out = append(out, m.BackupColumns()...)
 	}

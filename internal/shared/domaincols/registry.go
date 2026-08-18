@@ -16,7 +16,7 @@
 // internal/domains/<name>; only the cross-cutting column contract lives here.
 // The fuller Module contract (routes/jobs/migrations/widgets) is the later
 // evolution described in the spike — this is the P0 slice that pays off first.
-package domains
+package domaincols
 
 // EncryptedColumn is a per-row AES-256-GCM-sealed column owned by a domain. The
 // rotate-encryption-key command re-encrypts every one of these under the new
