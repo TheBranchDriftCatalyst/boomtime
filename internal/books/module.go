@@ -7,13 +7,13 @@
 package books
 
 import (
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/catalyst"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/domain"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/domaincols"
 )
 
-// Module implements domain.Module for catalyst-books.
-type Module struct{ domain.BaseModule }
+// Module implements catalyst.Module for catalyst-books.
+type Module struct{ catalyst.BaseModule }
 
 func (Module) Name() string { return "books" }
 

@@ -1,4 +1,4 @@
-// module.go — github as a domain.Module (gaka-zp2s Phase 1). internal/github is
+// module.go — github as a catalyst.Module (gaka-zp2s Phase 1). internal/github is
 // already the cleanest self-contained domain; here it just registers its per-user
 // secret so key-rotation is registry-driven. Its stats-refresh job + fe-only widget
 // keep their existing wiring in P1; the full Module (routes/jobs) is formalized when
@@ -6,13 +6,13 @@
 package github
 
 import (
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/catalyst"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/domain"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/domaincols"
 )
 
-// Module implements domain.Module for the github domain.
-type Module struct{ domain.BaseModule }
+// Module implements catalyst.Module for the github domain.
+type Module struct{ catalyst.BaseModule }
 
 func (Module) Name() string { return "github" }
 
