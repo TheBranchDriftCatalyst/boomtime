@@ -31,6 +31,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/queue/imagejobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/stats"
 	labelimages "github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/worker/labelimages"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/domainreg"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/identity"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
@@ -187,9 +188,13 @@ func runCmd() *cobra.Command {
 			logger.Info("migrations applied", "version", cfg.Version)
 
 			// Domain registry (gaka-zp2s): the pluggable-app framework's composition
-			// root. In P1 it drives key-rotation/backup column aggregation and is the
-			// seam future phases route/job-wire through; here we log the enabled set.
-			domainReg := buildDomainRegistry()
+			// root. ONE registry (built by internal/domainreg) drives key-rotation/backup
+			// column aggregation, the server's route + admin wiring, and (below) the job
+			// wiring — with typed handles to the modules the host late-wires. domainSet.
+			// Books receives its job enqueuer + inline Hardcover push after the jobs
+			// subsystem is built, onto the SAME instance the server mounted routes on.
+			domainSet := domainreg.Build()
+			domainReg := domainSet.Registry
 			enabledDomains := make([]string, 0, len(domainReg.Modules()))
 			for _, m := range domainReg.Enabled(cfg) {
 				enabledDomains = append(enabledDomains, m.Name())
@@ -353,7 +358,7 @@ func runCmd() *cobra.Command {
 				logger.Warn("notify: durable save failed", "err", err)
 			})
 			if cfg.IsServerRole() {
-				e, h = server.NewWithHandler(database, cfg, logger, worker, hub, logHub)
+				e, h = server.NewWithHandler(database, cfg, logger, worker, hub, logHub, domainReg)
 				// Wire the labelimages worker into the handler for the
 				// admin regen endpoints. Passing nil is fine when the
 				// feature is off — the admin handler detects the nil
@@ -595,11 +600,13 @@ func runCmd() *cobra.Command {
 					// status/rating/finish onto the user's Hardcover shelf (dry-run-gated).
 					// Owner-scoped; capped at 1 below (shares Hardcover's global rate limit).
 					hcCurationPush := hardcover.NewPushService(database, hardcover.NewStore(database), logger)
-					// Also hand it to the identity handler so the manual per-row sync
-					// button can push INLINE (bypass this queue) for immediate feedback.
-					// Same instance; a manual click self-throttles via the client limiter.
+					// Also hand it to the books module's handler so the manual per-row
+					// sync button can push INLINE (bypass this queue) for immediate
+					// feedback. Same instance the server mounted the books routes on
+					// (gaka-zp2s); nil-safe on worker roles (no routes → no handler).
+					// A manual click self-throttles via the client limiter.
 					if h != nil {
-						h.SetHardcoverPush(hcCurationPush)
+						domainSet.Books.SetHardcoverPush(hcCurationPush)
 					}
 					jobReg.Register(hardcover.CurationPushKind, jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
 						var p hardcover.CurationPushPayload
@@ -1012,6 +1019,12 @@ func runCmd() *cobra.Command {
 				if h != nil {
 					h.SetJobs(jobStore, provider, jobReg) // admin Jobs tab (list/trigger/retry + queue overview)
 					h.SetJobEvents(jobHub)                // /api/v1/jobs/ws push stream
+					// gaka-zp2s: wire the books enqueuer onto the SAME books.Module
+					// instance the server mounted routes on (the enqueuer exists only
+					// now that `provider` is built — byte-identical to the old
+					// h.SetJobs → h.Books.SetJobEnqueuer forward). provider implements
+					// jobs.Enqueuer.
+					domainSet.Books.SetJobEnqueuer(provider)
 				}
 
 				logger.Info("jobs: wired", "provider", provider.Name(),

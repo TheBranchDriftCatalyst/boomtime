@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/domainreg"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/openapi"
 	"github.com/labstack/echo/v5"
@@ -79,7 +80,7 @@ var _ = Describe("OpenAPI drift guard (gaka-lfc)", func() {
 func newRouterForDrift() *echo.Echo {
 	e := echo.New()
 	h := &handler.Handler{}
-	registerRoutes(e, h)
+	registerRoutes(e, h, domainreg.Build().Registry)
 	// registerStatic adds a "/*" catch-all; we DON'T include it here — the
 	// drift check specifically skips it, but building it also requires a
 	// working embed which the test binary has (the stub dist file).
