@@ -32,6 +32,7 @@ import {
   CardTitle,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { EmptyState } from "@/components/EmptyState";
+import { AdminTabShell } from "@/shared/admin/AdminTabShell";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
 import type { MetricFamily, MetricSample } from "@/types/api";
@@ -196,35 +197,33 @@ export function MetricsTab() {
     return by;
   }, [data]);
 
+  // Loading / error chrome come from the shared AdminTabShell base; the
+  // data-empty and data views keep their metrics-specific EmptyState + layout.
   if (isLoading) {
-    return (
-      <div className="mx-auto max-w-6xl p-6 text-sm text-muted-foreground">
-        Loading metrics…
-      </div>
-    );
+    return <AdminTabShell isLoading className="mx-auto max-w-6xl p-6" />;
   }
   if (isError) {
     return (
-      <div className="mx-auto max-w-6xl p-6">
+      <AdminTabShell className="mx-auto max-w-6xl p-6">
         <EmptyState
           icon={Activity}
           title="Couldn’t load metrics"
           description="The metrics endpoint returned an error. It is admin-only; confirm you’re signed in as an admin."
         />
-      </div>
+      </AdminTabShell>
     );
   }
 
   const total = data?.length ?? 0;
   if (total === 0) {
     return (
-      <div className="mx-auto max-w-6xl p-6">
+      <AdminTabShell className="mx-auto max-w-6xl p-6">
         <EmptyState
           icon={Activity}
           title="No metrics yet"
           description="Families appear as soon as instrumented code runs — hit an endpoint, run a job, or make an external API call, then this refreshes every 5s."
         />
-      </div>
+      </AdminTabShell>
     );
   }
 
@@ -233,7 +232,7 @@ export function MetricsTab() {
   );
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8 p-6">
+    <AdminTabShell className="mx-auto max-w-6xl p-6" bodyClassName="space-y-8">
       <p className="text-xs text-muted-foreground">
         Prometheus registry · {total} families · refreshing every 5s. Also
         scraped at <code className="font-mono">/metrics</code> for Grafana. Any
@@ -256,7 +255,7 @@ export function MetricsTab() {
           </div>
         </section>
       ))}
-    </div>
+    </AdminTabShell>
   );
 }
 
