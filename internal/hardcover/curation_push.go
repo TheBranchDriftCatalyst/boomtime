@@ -160,13 +160,27 @@ func (s *PushService) PushCuration(ctx context.Context, p CurationPushPayload) e
 	// edition/format so it lands on the right printing.
 	if fa := it.EffectiveFinishedAt(); fa != nil {
 		finishedAt := *fa
-		if _, rerr := client.UpsertRead(ctx, userBookID, ReadInput{
+		// Reuse the cached read id so a re-push UPDATES the same read instead of
+		// inserting a duplicate (the fix for accumulating reads on Hardcover). 0 on
+		// the first push → insert; we then cache the returned id below.
+		existingReadID := int64(0)
+		if it.HardcoverReadID != nil {
+			existingReadID = *it.HardcoverReadID
+		}
+		readID, rerr := client.UpsertRead(ctx, userBookID, ReadInput{
 			FinishedAt:      &finishedAt,
 			EditionID:       editionID,
 			ReadingFormatID: format,
-		}); rerr != nil {
+			UserBookReadID:  existingReadID,
+		})
+		if rerr != nil {
 			s.onError(ctx, p.Owner, "upsert user_book_read", rerr)
 			return rerr
+		}
+		if readID > 0 && readID != existingReadID {
+			if serr := s.DB.SetReadingItemPushedReadID(ctx, p.Owner, it.Source, it.ExternalID, readID); serr != nil {
+				s.logWarn(ctx, "hardcover curation-push: cache read id failed", "user", p.Owner, "externalId", it.ExternalID, "err", serr)
+			}
 		}
 	}
 

@@ -62,6 +62,11 @@ type ReadingItem struct {
 	// (migration 00063). NULL until matched. The continuous-progress push uses it
 	// to pin the read to a specific edition WITHOUT re-running the match ladder.
 	HardcoverEditionID *int64
+	// HardcoverReadID is the Hardcover user_book_read id WE last created/updated for
+	// this book (migration 00080). NULL = we've never pushed a read. The finish push
+	// reuses it (update_user_book_read) instead of inserting a NEW read each time —
+	// the idempotency that stops duplicate reads accumulating on Hardcover.
+	HardcoverReadID *int64
 	// HardcoverPushedProgress is the percent WE last actually pushed to Hardcover
 	// for this in-progress row (migration 00065). NULL = never pushed. The forward
 	// sync skips a re-push when the current percent equals this value, so a book's
@@ -186,6 +191,20 @@ func (d *DB) SetReadingItemHardcoverLink(ctx context.Context, owner, source, ext
 // so the next forward sync skips a re-push when the local percent is unchanged.
 // Called ONLY after a real (non-dry-run) push succeeded — a dry-run no-op must
 // leave this NULL/unchanged so flipping dry-run off still flushes the backlog.
+// SetReadingItemPushedReadID caches the Hardcover user_book_read id we just
+// created/updated for this row so the NEXT finish push updates that same read
+// (update_user_book_read) instead of inserting a duplicate. No-op for id<=0.
+func (d *DB) SetReadingItemPushedReadID(ctx context.Context, owner, source, externalID string, readID int64) error {
+	if readID <= 0 {
+		return nil
+	}
+	_, err := d.Pool.Exec(ctx,
+		`UPDATE reading_items SET hardcover_read_id = $4
+		  WHERE owner = $1 AND source = $2 AND external_id = $3`,
+		owner, source, externalID, readID)
+	return err
+}
+
 func (d *DB) SetReadingItemPushedProgress(ctx context.Context, owner, source, externalID string, pct int) error {
 	_, err := d.Pool.Exec(ctx,
 		`UPDATE reading_items SET hardcover_pushed_progress = $4
@@ -425,7 +444,8 @@ func (d *DB) GetReadingItem(ctx context.Context, owner, source, externalID strin
 		        subtitle, narrators, series, runtime_min, goodreads_rating,
 		        isbn, amazon_asin, hardcover_book_id, hardcover_edition_id,
 		        hardcover_status, status_override, rating_override,
-		        finished_at_override, curation_updated_at, hardcover_lists, synced_at
+		        finished_at_override, curation_updated_at, hardcover_lists, synced_at,
+		        hardcover_read_id
 		   FROM reading_items
 		  WHERE owner=$1 AND source=$2 AND external_id=$3`,
 		owner, source, externalID).
@@ -434,7 +454,8 @@ func (d *DB) GetReadingItem(ctx context.Context, owner, source, externalID strin
 			&it.Subtitle, &it.Narrators, &it.Series, &it.RuntimeMin, &it.GoodreadsRating,
 			&it.ISBN, &it.AmazonASIN, &it.HardcoverBookID, &it.HardcoverEditionID,
 			&it.HardcoverStatus, &it.StatusOverride, &it.RatingOverride,
-			&it.FinishedAtOverride, &it.CurationUpdatedAt, &it.HardcoverLists, &it.SyncedAt)
+			&it.FinishedAtOverride, &it.CurationUpdatedAt, &it.HardcoverLists, &it.SyncedAt,
+			&it.HardcoverReadID)
 	if err != nil {
 		return ReadingItem{}, err
 	}

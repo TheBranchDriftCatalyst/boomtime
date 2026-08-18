@@ -305,3 +305,36 @@ func TestListDivergedHardcoverItems(t *testing.T) {
 		t.Errorf("DIV1 payload = %+v, want status=read book=42 edition=99", got[0])
 	}
 }
+
+// TestSetReadingItemPushedReadID caches the Hardcover read id so GetReadingItem
+// returns it — the finish push reuses it to avoid duplicate reads.
+func TestSetReadingItemPushedReadID(t *testing.T) {
+	d := openTestDB(t)
+	ctx := context.Background()
+	owner := mkSender("readid")
+	cleanupSender(t, d, ctx, owner)
+	ensureUser(t, d, ctx, owner)
+
+	if err := d.UpsertReadingItem(ctx, ReadingItem{
+		Owner: owner, Source: "audible", ExternalID: "B0RID1",
+		Title: "T", Authors: "A", Status: "read",
+	}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	// Before: nil.
+	it, err := d.GetReadingItem(ctx, owner, "audible", "B0RID1")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if it.HardcoverReadID != nil {
+		t.Fatalf("read id should start nil, got %v", it.HardcoverReadID)
+	}
+	// After caching → returned by GetReadingItem.
+	if err := d.SetReadingItemPushedReadID(ctx, owner, "audible", "B0RID1", 7001); err != nil {
+		t.Fatalf("cache: %v", err)
+	}
+	it, _ = d.GetReadingItem(ctx, owner, "audible", "B0RID1")
+	if it.HardcoverReadID == nil || *it.HardcoverReadID != 7001 {
+		t.Fatalf("HardcoverReadID = %v, want 7001", it.HardcoverReadID)
+	}
+}

@@ -119,6 +119,9 @@ func (f *fakeRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 	case strings.Contains(env.Query, "insert_user_book_read"):
 		f.mutations = append(f.mutations, recordedMutation{op: "insert_user_book_read", vars: env.Variables})
 		return respond(`{"insert_user_book_read":{"id":7001,"error":"","user_book_read":{"id":7001}}}`), nil
+	case strings.Contains(env.Query, "update_user_book_read"):
+		f.mutations = append(f.mutations, recordedMutation{op: "update_user_book_read", vars: env.Variables})
+		return respond(`{"update_user_book_read":{"id":7001,"error":"","user_book_read":{"id":7001}}}`), nil
 	case strings.Contains(env.Query, "delete_user_book_read"):
 		f.mutations = append(f.mutations, recordedMutation{op: "delete_user_book_read", vars: env.Variables})
 		return respond(`{"delete_user_book_read":{"id":7001}}`), nil
@@ -426,5 +429,31 @@ func TestDeleteUserBookRead(t *testing.T) {
 	}
 	if err := client.DeleteUserBookRead(context.Background(), 0); err == nil {
 		t.Error("id 0 must error before any request")
+	}
+}
+
+// TestUpsertRead_ReuseIdUpdatesNotInserts is the idempotency guarantee: with a
+// cached UserBookReadID the push UPDATES that read (no new insert), so re-pushing a
+// finish never duplicates the read on Hardcover.
+func TestUpsertRead_ReuseIdUpdatesNotInserts(t *testing.T) {
+	rt := &fakeRoundTripper{}
+	client := newFakeClient(rt)
+	fin := time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC)
+
+	// With a known read id → update path.
+	if _, err := client.UpsertRead(context.Background(), 42, ReadInput{FinishedAt: &fin, UserBookReadID: 7001}); err != nil {
+		t.Fatalf("UpsertRead (update): %v", err)
+	}
+	ins, upd := 0, 0
+	for _, m := range rt.mutations {
+		switch m.op {
+		case "insert_user_book_read":
+			ins++
+		case "update_user_book_read":
+			upd++
+		}
+	}
+	if ins != 0 || upd != 1 {
+		t.Fatalf("cached read id must UPDATE not insert: inserts=%d updates=%d", ins, upd)
 	}
 }
