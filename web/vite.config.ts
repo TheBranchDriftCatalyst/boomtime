@@ -53,7 +53,7 @@ export default defineConfig({
       // ONE committed file — Go embeds it (internal/widget/spec.go), the FE
       // reads the exact same bytes through this alias (see
       // src/features/widgets/specs.ts) instead of a generated copy.
-      "@widget-specs": path.resolve(__dirname, "../internal/widget/specs.json"),
+      "@widget-specs": path.resolve(__dirname, "../internal/boomtime/widget/specs.json"),
     },
     dedupe: ["react", "react-dom", "react/jsx-runtime"],
   },

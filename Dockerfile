@@ -16,7 +16,7 @@ COPY web/ ./
 # web/, so the alias would fail to resolve here (it works locally because the
 # whole repo is present). Copy the single source into the aliased path so tsc +
 # vite resolve it — no duplicate file, still one source of truth.
-COPY internal/widget/specs.json /internal/widget/specs.json
+COPY internal/boomtime/widget/specs.json /internal/boomtime/widget/specs.json
 RUN yarn build
 
 # ── Stage 2: build the Go binary with the SPA embedded ───────────────────────
