@@ -12,7 +12,7 @@ package jobsevents
 import (
 	"sync"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/jobs"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 )
 
 // Hub fans terminal job events to per-owner subscribers. The zero value is not

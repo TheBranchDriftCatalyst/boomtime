@@ -26,11 +26,11 @@ import (
 
 	"github.com/labstack/echo/v5"
 
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/identity/oauth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/oauth"
 )
 
 // githubStateMaxAge bounds how long a minted connect `state` stays valid — the

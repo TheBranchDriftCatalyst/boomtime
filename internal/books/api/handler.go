@@ -4,9 +4,9 @@ import (
 	"log/slog"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/hardcover"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/jobs"
 )
 
 // Handler is the catalyst-books HTTP surface (gaka-zp2s Phase 2), extracted from

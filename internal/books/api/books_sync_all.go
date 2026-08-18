@@ -5,9 +5,9 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/amazon"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/pipeline"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/jobs"
 	"github.com/labstack/echo/v5"
 )
 
