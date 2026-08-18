@@ -18,8 +18,8 @@ package ingest
 import (
 	"sort"
 
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/wakatime"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/model"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/wakatime"
 )
 
 // batchHasLastPlaceholder reports whether ANY heartbeat in the batch carries a

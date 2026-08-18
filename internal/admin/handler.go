@@ -28,8 +28,9 @@ import (
 
 	"github.com/labstack/echo/v5"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/imagejobs"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/importer"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/queue/imagejobs"
+	labelimages "github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/worker/labelimages"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/cache"
@@ -37,7 +38,6 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/objstore"
-	labelimages "github.com/TheBranchDriftCatalyst/boomtime/internal/worker/labelimages"
 )
 
 // Handler bundles the SUBSET of the god-type handler.Handler's

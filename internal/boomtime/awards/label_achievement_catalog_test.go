@@ -35,7 +35,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/labels"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/labels"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 

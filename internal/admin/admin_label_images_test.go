@@ -14,7 +14,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/queue/imagejobs"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/queue/imagejobs"
 )
 
 var _ = Describe("event2json", func() {

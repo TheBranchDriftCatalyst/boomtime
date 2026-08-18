@@ -30,7 +30,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/labels"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/labels"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"

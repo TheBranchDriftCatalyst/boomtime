@@ -41,7 +41,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/comfyui"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/comfyui"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"

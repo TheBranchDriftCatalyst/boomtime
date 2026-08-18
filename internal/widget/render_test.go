@@ -31,8 +31,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/stats"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/model"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
 )
 
 // hashHex is the pinning-test helper: sha256 hex of the raw render bytes.

@@ -17,8 +17,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	imagejobs "github.com/TheBranchDriftCatalyst/boomtime/internal/queue/imagejobs"
-	labelimages "github.com/TheBranchDriftCatalyst/boomtime/internal/worker/labelimages"
+	imagejobs "github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/queue/imagejobs"
+	labelimages "github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/worker/labelimages"
 )
 
 var _ = Describe("statsCacheTTL (BOOM_STATS_CACHE_TTL)", func() {

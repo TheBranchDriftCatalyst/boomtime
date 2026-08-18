@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/stats"
 )
 
 // RemoteWriteConfig configures forwarding heartbeats to another Wakatime server.

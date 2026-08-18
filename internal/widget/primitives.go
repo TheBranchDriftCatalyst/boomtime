@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/stats"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/model"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
 )
 
 // ---- top-list bars (used by stats-card body + top-langs / top-projects) ----
