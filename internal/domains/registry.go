@@ -69,6 +69,40 @@ func EncryptedColumns() []EncryptedColumn {
 	return append([]EncryptedColumn(nil), encryptedColumns...)
 }
 
+// EncryptedColumnsFor returns the encrypted columns owned by the named domain(s),
+// in declaration order — so a domain Module (internal/shared/domain) can surface
+// its own slice without duplicating the data. This list stays the single source of
+// truth; the Module registry just aggregates per-domain views of it.
+func EncryptedColumnsFor(domainNames ...string) []EncryptedColumn {
+	want := make(map[string]bool, len(domainNames))
+	for _, d := range domainNames {
+		want[d] = true
+	}
+	var out []EncryptedColumn
+	for _, c := range encryptedColumns {
+		if want[c.Domain] {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// BackupColumnsFor returns the backup column sets owned by the named domain(s), in
+// declaration order — the per-domain view for a Module.
+func BackupColumnsFor(domainNames ...string) []BackupColumns {
+	want := make(map[string]bool, len(domainNames))
+	for _, d := range domainNames {
+		want[d] = true
+	}
+	var out []BackupColumns
+	for _, b := range backupColumns {
+		if want[b.Domain] {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
 // AllBackupColumns returns a copy of the domain-owned column sets to add to the
 // backup, for merging in dump.go.
 func AllBackupColumns() []BackupColumns {

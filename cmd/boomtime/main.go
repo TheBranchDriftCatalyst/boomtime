@@ -185,6 +185,16 @@ func runCmd() *cobra.Command {
 			}
 			logger.Info("migrations applied", "version", cfg.Version)
 
+			// Domain registry (gaka-zp2s): the pluggable-app framework's composition
+			// root. In P1 it drives key-rotation/backup column aggregation and is the
+			// seam future phases route/job-wire through; here we log the enabled set.
+			domainReg := buildDomainRegistry()
+			enabledDomains := make([]string, 0, len(domainReg.Modules()))
+			for _, m := range domainReg.Enabled(cfg) {
+				enabledDomains = append(enabledDomains, m.Name())
+			}
+			logger.Info("domain registry ready", "enabled", enabledDomains, "registered", len(domainReg.Modules()))
+
 			// gaka-6jm.2: probe the at-rest encryption key at boot. We
 			// deliberately do NOT fail startup on a missing/invalid key in
 			// dev/test so existing dev stacks still run — the check is a

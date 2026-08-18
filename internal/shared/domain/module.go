@@ -81,6 +81,18 @@ type Module interface {
 	Migrations() fs.FS
 }
 
+// BaseModule provides no-op defaults for the optional seams so a domain stub only
+// implements what it actually contributes (Name/Enabled + whatever columns/routes/
+// jobs it owns). Embed it and override selectively. Keeps stubs tight — and gives
+// the future ORM/DAL consolidation one obvious place to grow shared behavior.
+type BaseModule struct{}
+
+func (BaseModule) EncryptedColumns() []domains.EncryptedColumn { return nil }
+func (BaseModule) BackupColumns() []domains.BackupColumns      { return nil }
+func (BaseModule) RegisterRoutes(*echo.Echo, Deps)             {}
+func (BaseModule) RegisterJobs(context.Context, Deps) error    { return nil }
+func (BaseModule) Migrations() fs.FS                           { return nil }
+
 // Registry is the ordered set of Modules wired once at the composition root. The
 // host iterates it for rotate/dump/route/job wiring; a standalone image registers
 // only its one domain.
