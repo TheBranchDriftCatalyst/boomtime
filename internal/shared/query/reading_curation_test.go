@@ -10,7 +10,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/query"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/query"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 

@@ -23,7 +23,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/goals"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/goals"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 
 	. "github.com/onsi/ginkgo/v2"

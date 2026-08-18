@@ -17,7 +17,7 @@ import (
 	"github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/goals"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/goals"
 )
 
 var _ = ginkgo.Describe("branch coverage padding (gaka-d6x)", func() {
