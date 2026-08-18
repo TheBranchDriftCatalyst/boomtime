@@ -6,13 +6,13 @@
 package boomtime
 
 import (
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/catalyst"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/domain"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/domaincols"
 )
 
-// Module implements domain.Module for the boomtime (wakatime/code) domain.
-type Module struct{ domain.BaseModule }
+// Module implements catalyst.Module for the boomtime (wakatime/code) domain.
+type Module struct{ catalyst.BaseModule }
 
 func (Module) Name() string { return "boomtime" }
 

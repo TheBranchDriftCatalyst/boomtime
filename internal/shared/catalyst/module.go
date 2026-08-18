@@ -12,7 +12,7 @@
 // Phase 1 (skeleton): the interface + Registry + IdentityProvider seam land here and
 // existing domains register as thin stubs delegating to today's wiring — zero logic
 // moves, behavior byte-identical. Later phases move real logic behind the seam.
-package domain
+package catalyst
 
 import (
 	"context"
