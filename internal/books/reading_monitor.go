@@ -3,7 +3,7 @@
 // (internal/admin/books_monitor_settings.go) is admin-gated; this is the thin
 // self-only read the global nav indicator polls to show "monitor on" / "calibrating"
 // without granting the caller the admin surface. Read-only: it never mutates.
-package identity
+package books
 
 import (
 	"net/http"

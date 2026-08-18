@@ -34,7 +34,6 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/github"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/hardcover"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobsevents"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/notify"
@@ -77,12 +76,6 @@ type Handler struct {
 	// puts an owner-scoped avatar-render job on it. nil = fall back to the
 	// inline goroutine render.
 	JobEnqueuer jobs.Enqueuer
-	// HardcoverPush runs a per-item Hardcover curation push INLINE (synchronously)
-	// for the manual per-row sync button — bypassing the CurationPushKind job queue
-	// so the click gets an immediate real success/failure + the updated row. nil =
-	// fall back to enqueuing (the bulk/scheduled path). The per-client 1 req/s
-	// limiter still self-throttles; a manual click is not serialized with the queue.
-	HardcoverPush *hardcover.PushService
 }
 
 // SetJobEvents wires the job-events hub after construction (gaka-hney.6).
@@ -93,10 +86,6 @@ func (h *Handler) SetNotify(hub *notify.Hub) { h.Notify = hub }
 
 // SetJobEnqueuer wires the jobs enqueuer after construction (gaka-hney.7).
 func (h *Handler) SetJobEnqueuer(e jobs.Enqueuer) { h.JobEnqueuer = e }
-
-// SetHardcoverPush wires the inline curation-push service (for the manual per-row
-// sync button; nil = enqueue via the job queue instead).
-func (h *Handler) SetHardcoverPush(p *hardcover.PushService) { h.HardcoverPush = p }
 
 // New constructs an identity.Handler with the passed-in shared deps.
 // Every field is required in production; nil-checks are the caller's
