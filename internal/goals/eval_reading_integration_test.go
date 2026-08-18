@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/goals"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -113,7 +113,7 @@ var _ = Describe("Evaluate genre'd reading time leaf (DB integration, gaka-dvy9)
 		Expect(err).NotTo(HaveOccurred())
 		prog, err := goals.Evaluate(context.Background(), hz.DB.Pool, owner, p, now)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(prog.SubConditions[0].Current).To(BeEquivalentTo(int64(90*60)))
+		Expect(prog.SubConditions[0].Current).To(BeEquivalentTo(int64(90 * 60)))
 		Expect(prog.Hit).To(BeTrue())
 	})
 })

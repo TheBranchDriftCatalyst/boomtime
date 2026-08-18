@@ -16,11 +16,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/amazon"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/ingest/kindle"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
 // sidecarOutcome scripts one ASIN's sidecar response.

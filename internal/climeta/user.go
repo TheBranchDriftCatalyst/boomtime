@@ -15,8 +15,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 )
 
 // openDB opens a DB connection for a CLI command using the loaded config.

@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/model"
 )
 
 // maxDistinctInSummary caps how many distinct project/language/editor values a

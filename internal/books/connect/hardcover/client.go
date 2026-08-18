@@ -14,7 +14,7 @@ import (
 
 	"golang.org/x/time/rate"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/metrics"
 )
 
 // Endpoint is the Hardcover GraphQL API (Hasura). Every response is HTTP 200

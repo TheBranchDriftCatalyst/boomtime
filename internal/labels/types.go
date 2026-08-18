@@ -106,8 +106,8 @@ type AxisTimeCond struct {
 	Hours float64 `json:"hours"`
 }
 
-func (AxisTimeCond) Kind() string  { return "axis-time" }
-func (AxisTimeCond) isCondition()  {}
+func (AxisTimeCond) Kind() string { return "axis-time" }
+func (AxisTimeCond) isCondition() {}
 
 // AxisTimeSumCond — hours SUMMED across N (axis, value) pairs crosses
 // threshold. Powers TERMINAL PURIST (vim+neovim+emacs) and similar.

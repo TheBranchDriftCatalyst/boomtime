@@ -4,65 +4,65 @@
 //
 // Invariants pinned here (grouped by target):
 //
-//   NewWorker:
-//     - feature-flag-off returns (nil, nil) — no client, no error
-//     - malformed shim URL surfaces a wrapped comfyui: error (not nil-nil)
-//     - flag ON + valid URL populates model + logger, non-nil worker
+//	NewWorker:
+//	  - feature-flag-off returns (nil, nil) — no client, no error
+//	  - malformed shim URL surfaces a wrapped comfyui: error (not nil-nil)
+//	  - flag ON + valid URL populates model + logger, non-nil worker
 //
-//   catalog():
-//     - DB-backed rows with non-empty optimized_prompt become entries
-//       (compiled baseline is NOT used when DB has data)
-//     - Rows with an empty optimized_prompt are silently skipped
-//       (tier labels don't spam the log at every regen)
-//     - When the DB is set but returns zero non-empty rows, worker
-//       falls back to labelcatalog.Entries (compiled baseline)
-//     - A closed pool → ListLabels returns err → fallback to baseline
-//       (transient DB blip does NOT abort a regen)
+//	catalog():
+//	  - DB-backed rows with non-empty optimized_prompt become entries
+//	    (compiled baseline is NOT used when DB has data)
+//	  - Rows with an empty optimized_prompt are silently skipped
+//	    (tier labels don't spam the log at every regen)
+//	  - When the DB is set but returns zero non-empty rows, worker
+//	    falls back to labelcatalog.Entries (compiled baseline)
+//	  - A closed pool → ListLabels returns err → fallback to baseline
+//	    (transient DB blip does NOT abort a regen)
 //
-//   RegenerateEntry (gaka-8bz Executor path):
-//     - happy path saves a fresh row with per-entry Model override taking
-//       precedence over worker's env-configured default
-//     - empty ID / empty Prompt reject BEFORE any DB write (no ciphertext,
-//       no shim hit, no partial row)
-//     - closed-pool → wrapped "delete old row" error (delete-before-save
-//       contract cannot be bypassed by a caller with a stale worker)
+//	RegenerateEntry (gaka-8bz Executor path):
+//	  - happy path saves a fresh row with per-entry Model override taking
+//	    precedence over worker's env-configured default
+//	  - empty ID / empty Prompt reject BEFORE any DB write (no ciphertext,
+//	    no shim hit, no partial row)
+//	  - closed-pool → wrapped "delete old row" error (delete-before-save
+//	    contract cannot be bypassed by a caller with a stale worker)
 //
-//   RegenerateOne (DB-source-of-truth path, post gaka-364.3):
-//     - id present in DB with non-empty optimized_prompt is regenerated
-//       using DB's Description + OptimizedPrompt (NOT the compiled baseline,
-//       even if the id ALSO exists in labelcatalog.Entries)
-//     - id present in DB with EMPTY optimized_prompt returns an explicit
-//       "nothing to generate" error — no silent no-op
+//	RegenerateOne (DB-source-of-truth path, post gaka-364.3):
+//	  - id present in DB with non-empty optimized_prompt is regenerated
+//	    using DB's Description + OptimizedPrompt (NOT the compiled baseline,
+//	    even if the id ALSO exists in labelcatalog.Entries)
+//	  - id present in DB with EMPTY optimized_prompt returns an explicit
+//	    "nothing to generate" error — no silent no-op
 //
-//   RegenerateList (admin regen endpoint path):
-//     - happy path returns (len(entries), 0, nil) and hits the shim once
-//       per entry
-//     - entries with empty ID OR empty Prompt are counted as failed and
-//       skipped (no partial row, no shim hit)
-//     - a pre-cancelled ctx short-circuits BEFORE the first shim hit
-//     - after generating N entries, on a cancel returns the partial count
+//	RegenerateList (admin regen endpoint path):
+//	  - happy path returns (len(entries), 0, nil) and hits the shim once
+//	    per entry
+//	  - entries with empty ID OR empty Prompt are counted as failed and
+//	    skipped (no partial row, no shim hit)
+//	  - a pre-cancelled ctx short-circuits BEFORE the first shim hit
+//	  - after generating N entries, on a cancel returns the partial count
 //
-//   systemPrompt() cache:
-//     - two consecutive calls within TTL result in exactly ONE DB read
-//       (the sysFetched timestamp gates the second call)
-//     - after TTL expiry (simulated by resetting sysFetched to zero-time),
-//       the next call MUST re-read the DB and pick up an admin edit
-//     - sysMu actually serializes concurrent systemPrompt() callers so
-//       parallel generateAndSave invocations converge on one cached value
-//       (positive spec for the mutex — not just `go test -race` coverage)
+//	systemPrompt() cache:
+//	  - two consecutive calls within TTL result in exactly ONE DB read
+//	    (the sysFetched timestamp gates the second call)
+//	  - after TTL expiry (simulated by resetting sysFetched to zero-time),
+//	    the next call MUST re-read the DB and pick up an admin edit
+//	  - sysMu actually serializes concurrent systemPrompt() callers so
+//	    parallel generateAndSave invocations converge on one cached value
+//	    (positive spec for the mutex — not just `go test -race` coverage)
 //
-//   generateAndSave error paths:
-//     - shim 500 → wrapped "shim:" error, no DB row written
-//     - per-entry Seed override is passed through to SaveLabelImage's seed
-//       column verbatim
-//     - per-entry Size override is passed through to the shim request
-//     - final saved `prompt` column carries the FULL 3-segment composition
-//       (systemPrompt + description + entryPrompt) — the "provenance is
-//       self-contained" claim in worker.go:344-346
+//	generateAndSave error paths:
+//	  - shim 500 → wrapped "shim:" error, no DB row written
+//	  - per-entry Seed override is passed through to SaveLabelImage's seed
+//	    column verbatim
+//	  - per-entry Size override is passed through to the shim request
+//	  - final saved `prompt` column carries the FULL 3-segment composition
+//	    (systemPrompt + description + entryPrompt) — the "provenance is
+//	    self-contained" claim in worker.go:344-346
 //
-//   RegenerateEntry model-fallback:
-//     - empty per-entry Model falls back to worker.model (parity with Run
-//       loop; the "override-wins" path is covered elsewhere)
+//	RegenerateEntry model-fallback:
+//	  - empty per-entry Model falls back to worker.model (parity with Run
+//	    loop; the "override-wins" path is covered elsewhere)
 package labelimages
 
 import (
@@ -78,9 +78,9 @@ import (
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/comfyui"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/labelcatalog"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -96,10 +96,10 @@ func silentLogger() *slog.Logger {
 // recording the last request body so we can assert per-entry override
 // propagation (model / seed / size).
 type shimReq struct {
-	Model  string  `json:"model"`
-	Prompt string  `json:"prompt"`
-	Size   string  `json:"size"`
-	Seed   *int64  `json:"seed"`
+	Model  string `json:"model"`
+	Prompt string `json:"prompt"`
+	Size   string `json:"size"`
+	Seed   *int64 `json:"seed"`
 }
 
 func recordingShim(hits *atomic.Int32, lastReq **shimReq) *httptest.Server {

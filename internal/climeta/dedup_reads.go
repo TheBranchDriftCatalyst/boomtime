@@ -18,10 +18,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/hardcover"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 )
 
 // NewDedupReadsCmd builds the `hardcover dedup-reads` command def.

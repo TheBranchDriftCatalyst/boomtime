@@ -17,9 +17,9 @@ import (
 
 	"github.com/labstack/echo/v5"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
 )
 
 const oidcStateCookie = "oidc_state"

@@ -25,7 +25,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
 var _ = Describe("Commits endpoint (gaka-d6x.handler)", func() {
@@ -45,11 +45,11 @@ var _ = Describe("Commits endpoint (gaka-d6x.handler)", func() {
 		_, token := hz.MintUser("commits_missing")
 
 		cases := []string{
-			"/api/v1/commits/alpha/report",                                 // all missing
-			"/api/v1/commits/alpha/report?repoOwner=o&user=u",              // no repoName
-			"/api/v1/commits/alpha/report?repoName=r&user=u",               // no repoOwner
-			"/api/v1/commits/alpha/report?repoName=r&repoOwner=o",          // no user
-			"/api/v1/commits/alpha/report?repoName=&repoOwner=&user=",      // all blank
+			"/api/v1/commits/alpha/report",                            // all missing
+			"/api/v1/commits/alpha/report?repoOwner=o&user=u",         // no repoName
+			"/api/v1/commits/alpha/report?repoName=r&user=u",          // no repoOwner
+			"/api/v1/commits/alpha/report?repoName=r&repoOwner=o",     // no user
+			"/api/v1/commits/alpha/report?repoName=&repoOwner=&user=", // all blank
 		}
 		for _, path := range cases {
 			rec := doJSONReqG(e, http.MethodGet, path, token, nil)

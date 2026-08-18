@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/climeta"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
 )
 
 func specByCommand(t *testing.T, specs []climeta.CommandSpec, command string) climeta.CommandSpec {

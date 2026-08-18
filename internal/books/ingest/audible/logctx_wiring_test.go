@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/logctx"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/logctx"
 )
 
 // capturedRecord is one flattened log line: its message plus every attr the

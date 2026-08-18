@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 )
 
 // ingest_test.go — pins the INBOUND-ORIGIN ingest (ingestShelfOnlyBooks): a

@@ -30,8 +30,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
 // -----------------------------------------------------------------------
@@ -586,4 +586,3 @@ var _ = Describe("LabelsCatalog does not leak transport secrets in the response"
 		}
 	})
 })
-

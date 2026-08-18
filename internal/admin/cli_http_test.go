@@ -27,10 +27,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/admin"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/climeta"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
 // cliRouter builds a fresh Echo with the FULL admin route table registered

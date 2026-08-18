@@ -52,9 +52,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/metrics"
 	"github.com/labstack/echo/v5"
 	"golang.org/x/time/rate"
 )

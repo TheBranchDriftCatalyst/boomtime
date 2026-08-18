@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/amazon"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 )
 
 // fakeSidecar is a scripted amazon.KindleSidecar. Each call to

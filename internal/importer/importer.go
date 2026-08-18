@@ -17,10 +17,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/metrics"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/model"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/wakatime"
 )
 

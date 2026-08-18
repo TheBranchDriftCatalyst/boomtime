@@ -24,13 +24,13 @@ import (
 
 	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/amazon"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/ingest/kindle"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/notify"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/metrics"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/notify"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
 // monitorCfg is the tuning the engine tests run under: T1=120s, T2=30s, G=300s.

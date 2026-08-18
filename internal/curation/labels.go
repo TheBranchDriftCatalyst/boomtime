@@ -3,25 +3,25 @@
 // Split cleanly by auth model:
 //
 //   - PUBLIC:  GET /api/v1/labels/catalog
-//       Returns {systemPrompt, labels: [...]}. Consumed by the FE
-//       useLabelsCatalog hook on every mount that needs to render awards
-//       (public profile, hero widget, showcase widget, admin table).
-//       No auth — the catalog isn't per-user, no secret data leaks (the
-//       systemPrompt IS a global authored prompt fragment, not a token or
-//       secret; if the operator wants to hide it, they simply don't set
-//       one). Cached client-side via staleTime 60s.
+//     Returns {systemPrompt, labels: [...]}. Consumed by the FE
+//     useLabelsCatalog hook on every mount that needs to render awards
+//     (public profile, hero widget, showcase widget, admin table).
+//     No auth — the catalog isn't per-user, no secret data leaks (the
+//     systemPrompt IS a global authored prompt fragment, not a token or
+//     secret; if the operator wants to hide it, they simply don't set
+//     one). Cached client-side via staleTime 60s.
 //
 //   - ADMIN-GATED (requireAdmin): create/update/delete labels + edit the
 //     singleton gen-config. Same admin allowlist as the label-images regen
 //     endpoints (BOOM_ADMIN_USERS). Non-admins get 403.
 //
 //   - ADMIN utility: GET /api/v1/admin/labels/seed.sql
-//       Dumps the current DB state as a `-- +goose Up` SQL body suitable
-//       for committing back as a fresh migration (so a hand-tuned catalog
-//       on prod can be captured as code for a fresh install to replay).
-//       Not intended for the everyday flow — the admin CRUD is the
-//       everyday flow — but useful for backporting operator edits into a
-//       reviewable diff.
+//     Dumps the current DB state as a `-- +goose Up` SQL body suitable
+//     for committing back as a fresh migration (so a hand-tuned catalog
+//     on prod can be captured as code for a fresh install to replay).
+//     Not intended for the everyday flow — the admin CRUD is the
+//     everyday flow — but useful for backporting operator edits into a
+//     reviewable diff.
 package curation
 
 import (
@@ -30,10 +30,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/labels"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 	"github.com/labstack/echo/v5"
 )
 
@@ -66,15 +66,15 @@ func (h *Handler) LabelsCatalog(c *echo.Context) error {
 // load); we require it to be non-empty on POST but leave it optional on
 // PATCH.
 type labelBody struct {
-	ID              *string          `json:"id,omitempty"`
-	Kind            *string          `json:"kind,omitempty"`
-	Label           *string          `json:"label,omitempty"`
-	Glyph           *string          `json:"glyph,omitempty"`
-	Description     *string          `json:"description,omitempty"`
-	OptimizedPrompt *string          `json:"optimizedPrompt,omitempty"`
-	Rank            *int             `json:"rank,omitempty"`
-	Tier            *string          `json:"tier,omitempty"`
-	Condition       json.RawMessage  `json:"condition,omitempty"`
+	ID              *string         `json:"id,omitempty"`
+	Kind            *string         `json:"kind,omitempty"`
+	Label           *string         `json:"label,omitempty"`
+	Glyph           *string         `json:"glyph,omitempty"`
+	Description     *string         `json:"description,omitempty"`
+	OptimizedPrompt *string         `json:"optimizedPrompt,omitempty"`
+	Rank            *int            `json:"rank,omitempty"`
+	Tier            *string         `json:"tier,omitempty"`
+	Condition       json.RawMessage `json:"condition,omitempty"`
 }
 
 // applyLabelBody merges the request body onto `into`. Nil pointers = "not
@@ -324,7 +324,7 @@ func (h *Handler) AdminLabelsSeedSQL(c *echo.Context) error {
 	return c.Blob(http.StatusOK, "text/plain; charset=utf-8", []byte(sb.String()))
 }
 
-// sqlStr renders 'x' with '' escaping. Never returns NULL — caller uses
+// sqlStr renders 'x' with ” escaping. Never returns NULL — caller uses
 // sqlStrOrNull for nullable columns.
 func sqlStr(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "''") + "'"

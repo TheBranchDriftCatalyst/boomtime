@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/model"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
 )
 

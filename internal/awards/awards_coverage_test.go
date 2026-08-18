@@ -29,7 +29,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/labels"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
 var _ = Describe("label coverage sweep (gaka-hc6.6)", func() {

@@ -20,10 +20,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v5"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/ingest/kindle"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 )
 
 // readingMonitorView is the GET/PUT response: the persisted toggle + mode plus

@@ -23,7 +23,7 @@ package kindle
 import (
 	"context"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 )
 
 // SyncInsights fetches the user's Kindle Reading-Insights, stores the raw

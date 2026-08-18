@@ -3,8 +3,8 @@ package stats
 import (
 	"net/http"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
 	"github.com/labstack/echo/v5"
 )
 

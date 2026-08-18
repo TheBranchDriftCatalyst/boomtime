@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/climeta"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
 func TestRunUserListViaRegistryInvoke(t *testing.T) {

@@ -6,7 +6,7 @@
 package boomtime
 
 import (
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/domain"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/domaincols"
 )

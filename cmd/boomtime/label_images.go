@@ -22,8 +22,8 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 	labelimages "github.com/TheBranchDriftCatalyst/boomtime/internal/worker/labelimages"
 	"github.com/spf13/cobra"
 )

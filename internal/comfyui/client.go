@@ -49,7 +49,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/metrics"
 )
 
 // Client is the shim caller. `URL` is the base (e.g. http://localhost:8012).

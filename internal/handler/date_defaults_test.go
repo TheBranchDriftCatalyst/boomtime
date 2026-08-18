@@ -19,7 +19,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
 )
 
 var _ = Describe("apihelpers.ParseTimeParam", func() {

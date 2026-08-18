@@ -26,8 +26,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/cache"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/cache"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 )
 
 // Config is the SUBSET of *config.Config the stats HTTP surface reads. It

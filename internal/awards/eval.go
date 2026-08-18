@@ -24,10 +24,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/labels"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/stats"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/widget"
 	"github.com/jackc/pgx/v5"

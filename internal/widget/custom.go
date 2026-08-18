@@ -12,7 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/model"
 )
 
 // PanelKind is one primitive slot the builder can drop into a layout.
@@ -339,4 +339,3 @@ func panelPlaceholder(f *Frame, r panelRect, msg string) {
 	f.Printf(`<text x="%d" y="%d" font-size="11" fill="%s" text-anchor="middle">%s</text>`,
 		r.X+r.W/2, r.Y+r.H/2, f.Theme.TextMuted, xmlEscape(msg))
 }
-

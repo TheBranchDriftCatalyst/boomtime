@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/query"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
 // seedCurated inserts one reading_item with an optional status_override. A nil

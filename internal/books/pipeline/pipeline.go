@@ -34,7 +34,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/logctx"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/logctx"
 )
 
 // BooksSyncAllKind is the jobs registry kind for the consolidated reading-sync

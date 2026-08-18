@@ -10,8 +10,8 @@ package stats
 import (
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/model"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"

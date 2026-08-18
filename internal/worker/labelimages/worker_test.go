@@ -21,8 +21,8 @@ import (
 	"sync/atomic"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/comfyui"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/labelcatalog"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"

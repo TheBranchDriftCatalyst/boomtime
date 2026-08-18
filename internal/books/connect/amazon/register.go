@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/metrics"
 )
 
 // register.go — the "Connect Amazon" device-registration flow that yields a

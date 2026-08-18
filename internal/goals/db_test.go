@@ -20,8 +20,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/goals"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 
 	"github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"

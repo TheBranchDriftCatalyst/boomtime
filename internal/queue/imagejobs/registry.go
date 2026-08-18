@@ -121,8 +121,8 @@ const (
 // the worker pool) is unbuffered for events but ~200 for job IDs (in practice
 // the queue never exceeds the label catalog size, so 200 is generous).
 type Registry struct {
-	mu     sync.RWMutex
-	jobs   map[string]*Job
+	mu   sync.RWMutex
+	jobs map[string]*Job
 	// byLabel tracks the current (queued or running) jobID for a label so
 	// Enqueue can dedupe. Cleared when a job finishes (retention timer)
 	// OR is superseded by a new Enqueue.
@@ -137,8 +137,8 @@ type Registry struct {
 	// jobsCh is the pool feed. Enqueue nonblocking-writes the new jobID
 	// here; the pool workers Receive from it. Sized to comfortably hold
 	// the whole catalog + margin so Enqueue never has to block.
-	jobsCh  chan string
-	logger  *slog.Logger
+	jobsCh chan string
+	logger *slog.Logger
 
 	retentionDone  time.Duration
 	retentionError time.Duration

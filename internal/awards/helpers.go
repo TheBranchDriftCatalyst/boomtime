@@ -21,6 +21,6 @@ import (
 // evaluates the same payload for the streaks mirror and the label
 // evaluator, so both must read one number.
 const (
-	publicProfilePayloadDays        = identity.PublicProfilePayloadDays
-	publicProfileTimeLimit    int64 = identity.PublicProfileTimeLimit
+	publicProfilePayloadDays       = identity.PublicProfilePayloadDays
+	publicProfileTimeLimit   int64 = identity.PublicProfileTimeLimit
 )

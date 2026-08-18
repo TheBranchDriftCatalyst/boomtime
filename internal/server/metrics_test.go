@@ -9,7 +9,7 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/metrics"
 )
 
 // metricsTestEcho builds a bare echo with the real metricsMiddleware plus the

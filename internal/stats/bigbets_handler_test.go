@@ -23,7 +23,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 	"github.com/labstack/echo/v5"
 )
 
@@ -108,7 +108,7 @@ func seedAIHeartbeat(hz *testutil.Harness, user string) {
 // seedWorkoutHeartbeat inserts a workout heartbeat (ty='workout' is what
 // GetWorkouts filters on). The workout_details companion row is
 // deliberately absent — the LEFT JOIN in GetWorkouts already tolerates a
-// missing details row (source_uuid coalesces to '') and our assertions
+// missing details row (source_uuid coalesces to ”) and our assertions
 // only care about presence of the event, not the HR series.
 func seedWorkoutHeartbeat(hz *testutil.Harness, user string) {
 	kind := "HKWorkoutActivityTypeRunning"

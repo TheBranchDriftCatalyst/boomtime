@@ -7,12 +7,12 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/goals"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/metrics"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/model"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/wakatime"
 	"github.com/labstack/echo/v5"
 )

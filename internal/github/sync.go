@@ -16,10 +16,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/metrics"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/model"
 )
 
 // ErrNoToken is returned by SyncUser when the user has no linked GitHub token.

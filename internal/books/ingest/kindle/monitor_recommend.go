@@ -31,7 +31,7 @@ import (
 	"math"
 	"sort"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 )
 
 // Sync-pattern classification values (the syncPattern field). Public so the FE

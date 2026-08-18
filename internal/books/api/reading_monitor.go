@@ -11,7 +11,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
 )
 
 // readingMonitorStatusResponse is the nav-indicator payload: is the persistent

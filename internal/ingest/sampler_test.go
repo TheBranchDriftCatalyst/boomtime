@@ -6,8 +6,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/model"
 )
 
 // capHandler captures slog records so a test can assert exactly how many

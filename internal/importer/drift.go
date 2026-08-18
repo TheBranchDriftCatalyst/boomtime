@@ -138,15 +138,15 @@ var heartbeatSpec = schemaSpec{
 	// generate noise on day 1; expand as we see live payloads. The critical
 	// ones are `id` (present on every heartbeat) and `created_at`.
 	baseline: map[string]struct{}{
-		"id":                    {},
-		"created_at":            {},
-		"project_root_count":    {},
-		"user_id":               {},
-		"machine_name":          {}, // sometimes returned alongside machine_name_id
-		"line_additions":        {},
-		"line_deletions":        {},
-		"line_deletions_count":  {},
-		"line_additions_count":  {},
+		"id":                   {},
+		"created_at":           {},
+		"project_root_count":   {},
+		"user_id":              {},
+		"machine_name":         {}, // sometimes returned alongside machine_name_id
+		"line_additions":       {},
+		"line_deletions":       {},
+		"line_deletions_count": {},
+		"line_additions_count": {},
 	},
 	required:         []string{"entity", "type", "time", "user_agent_id"},
 	requiredSeverity: driftSeverityError, // heartbeat rows are load-bearing
@@ -159,22 +159,22 @@ var lookupSpec = schemaSpec{
 		"value": jtString,
 	},
 	baseline: map[string]struct{}{
-		"created_at":       {},
-		"last_seen_at":     {},
-		"user_id":          {},
-		"editor":           {}, // ua parses these locally; still baseline OK
-		"version":          {},
-		"os":               {},
-		"language":         {},
+		"created_at":           {},
+		"last_seen_at":         {},
+		"user_id":              {},
+		"editor":               {}, // ua parses these locally; still baseline OK
+		"version":              {},
+		"os":                   {},
+		"language":             {},
 		"is_browser_extension": {},
 		"is_desktop_app":       {},
 		// gaka-1l9: per-lookup metadata added by wakatime.com. Not persisted
 		// per-heartbeat — the important AI signal is on the heartbeat itself.
 		// Listed here to silence unknown_field warnings.
-		"cli_version":          {}, // user_agents
-		"ai_agent":             {}, // user_agents — AI TOOL (Cursor, Copilot, …)
-		"ai_agent_version":     {}, // user_agents
-		"ai_agent_complexity":  {}, // user_agents
+		"cli_version":         {}, // user_agents
+		"ai_agent":            {}, // user_agents — AI TOOL (Cursor, Copilot, …)
+		"ai_agent_version":    {}, // user_agents
+		"ai_agent_complexity": {}, // user_agents
 		// wakatime added the ai_model_* parallel triple on 2026-07-23 to
 		// distinguish the underlying LLM (claude-sonnet-4-5, gpt-4o, …) from
 		// the AI tool wrapping it. Same per-user-agent shape as ai_agent_*.
@@ -183,10 +183,10 @@ var lookupSpec = schemaSpec{
 		"ai_model":            {}, // user_agents — underlying LLM
 		"ai_model_version":    {}, // user_agents
 		"ai_model_complexity": {}, // user_agents
-		"go_version":           {}, // user_agents
-		"name":                 {}, // machine_names
-		"ip":                   {}, // machine_names
-		"timezone":             {}, // machine_names
+		"go_version":          {}, // user_agents
+		"name":                {}, // machine_names
+		"ip":                  {}, // machine_names
+		"timezone":            {}, // machine_names
 	},
 	required:         []string{"id", "value"},
 	requiredSeverity: driftSeverityError, // ua/machine resolution is load-bearing
@@ -196,18 +196,18 @@ var lookupSpec = schemaSpec{
 // text + range{start_date,end_date}. Nested types keep it flat here.
 var allTimeSpec = schemaSpec{
 	known: map[string]jsonType{
-		"total_seconds": jtNumber,
-		"text":          jtString,
-		"range":         jtObject,
-		"is_up_to_date": jtAny,
-		"decimal":       jtAny,
-		"digital":       jtAny,
-		"daily_average": jtAny,
+		"total_seconds":      jtNumber,
+		"text":               jtString,
+		"range":              jtObject,
+		"is_up_to_date":      jtAny,
+		"decimal":            jtAny,
+		"digital":            jtAny,
+		"daily_average":      jtAny,
 		"percent_calculated": jtAny,
 	},
 	baseline: map[string]struct{}{
-		"timeout":            {},
-		"writes_only":        {},
+		"timeout":     {},
+		"writes_only": {},
 	},
 	// No required-severity for this endpoint: range emptiness already handled
 	// by the caller via HasData.
@@ -338,7 +338,7 @@ func (c *driftCollector) checkItem(endpoint, day string, item json.RawMessage, s
 		// A non-object item where an object is expected is envelope-ish drift.
 		c.add(DriftFinding{
 			Endpoint: endpoint, Kind: driftKindEnvelopeChanged,
-			Detail: "list item is not a JSON object: " + err.Error(),
+			Detail:   "list item is not a JSON object: " + err.Error(),
 			Severity: driftSeverityError, FirstSeenDay: day,
 		})
 		return false
@@ -365,8 +365,8 @@ func (c *driftCollector) checkItem(endpoint, day string, item json.RawMessage, s
 		if !checkJSONType(raw, expected) {
 			c.add(DriftFinding{
 				Endpoint: endpoint, Kind: driftKindTypeChanged, Field: k,
-				Detail:   fmt.Sprintf("expected %s, got %s", typeName(expected), rawTypeName(raw)),
-				Severity: driftSeverityWarning,
+				Detail:       fmt.Sprintf("expected %s, got %s", typeName(expected), rawTypeName(raw)),
+				Severity:     driftSeverityWarning,
 				FirstSeenDay: day,
 			})
 		}

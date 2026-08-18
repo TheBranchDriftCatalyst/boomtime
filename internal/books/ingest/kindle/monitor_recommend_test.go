@@ -6,7 +6,7 @@ package kindle
 import (
 	"testing"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 )
 
 // samples builds n advance pairs each with the given interval (seconds).

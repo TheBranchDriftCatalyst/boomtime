@@ -18,7 +18,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 	"github.com/labstack/echo/v5"
 	"golang.org/x/time/rate"
 )
