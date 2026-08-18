@@ -3,7 +3,7 @@
 // table depends on: a MATCHED row serializes hardcoverBookId/status/matchedAt;
 // an UNMATCHED row omits every hardcover_* key (the honest "not matched" state);
 // and the identifiers (isbn/amazonAsin) ride along for ASIN-precise linking.
-package books
+package api
 
 import (
 	"encoding/json"

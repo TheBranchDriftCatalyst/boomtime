@@ -1,4 +1,4 @@
-package books
+package api
 
 import "github.com/labstack/echo/v5"
 
