@@ -9,6 +9,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
 	"net/http/httptest"
 	"time"
 
@@ -18,16 +20,18 @@ import (
 	"github.com/coder/websocket"
 	"github.com/labstack/echo/v5"
 
+	booksadmin "github.com/TheBranchDriftCatalyst/boomtime/internal/books/admin"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
 const readingMonitorPath = "/api/v1/admin/books/reading-monitor/ws"
 
 // mountReadingMonitor returns an httptest server exposing ONLY the reading
-// monitor WS against the harness handler.
+// monitor WS against a books-admin handler built from the harness's DB + Cfg.
 func mountReadingMonitor(hz *testutil.Harness) *httptest.Server {
 	e := echo.New()
-	e.GET(readingMonitorPath, hz.H.Admin.AdminBooksReadingMonitorWS)
+	h := booksadmin.New(hz.DB, hz.Cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	e.GET(readingMonitorPath, h.AdminBooksReadingMonitorWS)
 	return httptest.NewServer(e)
 }
 

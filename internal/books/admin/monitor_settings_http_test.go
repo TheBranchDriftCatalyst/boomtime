@@ -13,6 +13,8 @@ package admin_test
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -21,7 +23,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/admin"
+	booksadmin "github.com/TheBranchDriftCatalyst/boomtime/internal/books/admin"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
@@ -45,7 +47,8 @@ type readingMonitorViewT struct {
 func booksMonitorRouter(hz *testutil.Harness) *echo.Echo {
 	hz.Cfg.FeatureBooks = true
 	e := echo.New()
-	admin.Register(e, hz.H.Admin)
+	g := e.Group("/api/v1/admin")
+	booksadmin.Register(g, booksadmin.New(hz.DB, hz.Cfg, slog.New(slog.NewTextHandler(io.Discard, nil))))
 	return e
 }
 
