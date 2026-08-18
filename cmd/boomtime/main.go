@@ -109,7 +109,7 @@ func runCmd() *cobra.Command {
 			// Apply BOOM_GRADE_* overrides once at boot so every downstream
 			// stats.Grade() picks up the operator's calibration without threading
 			// cfg through every renderer.
-			stats.DefaultGradeConfig = cfg.Grade
+			stats.ApplyGradeConfigFromEnv()
 			// gaka-0oe: publish the user-model switch to the process-global the
 			// Identify seam reads (avoids threading the flag through every
 			// handler's config). Default-off preserves today's behavior.
