@@ -363,6 +363,25 @@ func (c *Client) updateRead(ctx context.Context, in ReadInput) (int64, error) {
 	return in.UserBookReadID, nil
 }
 
+// DeleteUserBookRead deletes a Hardcover user_book_read by id — the outbound half
+// of deleting a read in the bridge, so a junk/empty read (or a finish the user
+// undid) is removed on Hardcover too. Dry-run-gated (the graphql gate blocks the
+// mutation). A missing row on Hardcover is not treated as an error.
+func (c *Client) DeleteUserBookRead(ctx context.Context, id int64) error {
+	if id <= 0 {
+		return fmt.Errorf("hardcover: DeleteUserBookRead needs a read id")
+	}
+	const q = `mutation DeleteRead($id: Int!) {
+  delete_user_book_read(id: $id) { id }
+}`
+	var data struct {
+		Delete struct {
+			ID int64 `json:"id"`
+		} `json:"delete_user_book_read"`
+	}
+	return c.graphql(ctx, q, map[string]any{"id": id}, &data)
+}
+
 // PushProgress is the reusable continuous-progress push: it matches an
 // in-progress reading item to a Hardcover book+edition, marks it
 // currently-reading, and upserts the read with progress=percent — plus

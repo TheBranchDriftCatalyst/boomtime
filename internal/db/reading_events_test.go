@@ -69,3 +69,48 @@ func TestUpsertReadingEvent_Idempotent(t *testing.T) {
 		t.Fatalf("unkeyed event should be a no-op, got %d events", len(got))
 	}
 }
+
+// TestDeleteReadingEvent removes a read by (owner, id), returns its origin +
+// external_read_id (for Hardcover propagation), and reports ok=false when missing
+// or owned by someone else.
+func TestDeleteReadingEvent(t *testing.T) {
+	d := openTestDB(t)
+	ctx := context.Background()
+	owner := mkSender("delread")
+	cleanupSender(t, d, ctx, owner)
+	ensureUser(t, d, ctx, owner)
+
+	book := int64(556677)
+	fin := time.Date(2026, 8, 16, 0, 0, 0, 0, time.UTC)
+	if err := d.UpsertReadingEvent(ctx, ReadingEvent{
+		Owner: owner, HardcoverBookID: &book, Origin: ReadingEventOriginHardcover,
+		ExternalReadID: "hc-999", FinishedAt: &fin,
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	events, err := d.ListReadingEventsForWork(ctx, owner, &book, "", "")
+	if err != nil || len(events) != 1 {
+		t.Fatalf("list: %v (n=%d)", err, len(events))
+	}
+	id := events[0].ID
+	if id == 0 {
+		t.Fatal("listed read has zero id — the SELECT must return it")
+	}
+
+	origin, extID, ok, err := d.DeleteReadingEvent(ctx, owner, id)
+	if err != nil || !ok {
+		t.Fatalf("delete: err=%v ok=%v", err, ok)
+	}
+	if origin != ReadingEventOriginHardcover || extID != "hc-999" {
+		t.Errorf("delete returned origin=%q ext=%q, want hardcover/hc-999", origin, extID)
+	}
+	// Gone now.
+	events, _ = d.ListReadingEventsForWork(ctx, owner, &book, "", "")
+	if len(events) != 0 {
+		t.Fatalf("read still present after delete: %d", len(events))
+	}
+	// Deleting a missing id → ok=false, no error.
+	if _, _, ok, err := d.DeleteReadingEvent(ctx, owner, id); err != nil || ok {
+		t.Fatalf("delete missing: err=%v ok=%v (want nil/false)", err, ok)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -132,6 +133,44 @@ func (h *Handler) PushBookToHardcover(c *echo.Context) error {
 
 	h.enqueueCurationPush(c, owner, it.Source, it.ExternalID)
 	return c.JSON(http.StatusAccepted, map[string]any{"enqueued": true})
+}
+
+// DeleteReadingEvent handles DELETE /api/v1/books/reads/:id. Removes one read from
+// the local reading_events history AND, when it originated on Hardcover, deletes the
+// corresponding user_book_read on the user's Hardcover account (dry-run-gated). This
+// is how a user prunes junk/empty reads (or a finish they undid) — the delete
+// propagates both ways. Owner-scoped.
+func (h *Handler) DeleteReadingEvent(c *echo.Context) error {
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
+	if aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
+	}
+	id, perr := strconv.ParseInt(c.Param("id"), 10, 64)
+	if perr != nil || id <= 0 {
+		return apierr.New(http.StatusBadRequest, "invalid read id", nil).Write(c)
+	}
+
+	origin, externalReadID, ok, err := h.DB.DeleteReadingEvent(c.Request().Context(), owner, id)
+	if err != nil {
+		return apihelpers.InternalErr(h.Logger, c, "delete reading event failed", err)
+	}
+	if !ok {
+		return apierr.New(http.StatusNotFound, "read not found", nil).Write(c)
+	}
+
+	// Propagate to Hardcover when the read came from there. Best-effort: the local
+	// row is already gone; a remote miss is logged, not surfaced as a failure.
+	hardcoverDeleted := false
+	if origin == db.ReadingEventOriginHardcover && h.HardcoverPush != nil {
+		if rid, cErr := strconv.ParseInt(externalReadID, 10, 64); cErr == nil && rid > 0 {
+			if dErr := h.HardcoverPush.DeleteHardcoverRead(c.Request().Context(), owner, rid); dErr != nil {
+				h.Logger.Warn("delete read: hardcover propagation failed", "user", owner, "readId", rid, "err", dErr)
+			} else {
+				hardcoverDeleted = true
+			}
+		}
+	}
+	return c.JSON(http.StatusOK, map[string]any{"deleted": true, "hardcoverDeleted": hardcoverDeleted})
 }
 
 // toPatch converts the request body into a db.ReadingItemCurationPatch, decoding

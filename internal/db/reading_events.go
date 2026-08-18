@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // reading_events.go — discrete READ events (migration 00078). A book can be read
@@ -25,6 +27,7 @@ const (
 
 // ReadingEvent is one discrete read of a book.
 type ReadingEvent struct {
+	ID              int64 // local reading_events PK (0 until listed from the DB)
 	Owner           string
 	Source          string
 	ExternalID      string
@@ -76,7 +79,7 @@ func (d *DB) ListReadingEventsForWork(ctx context.Context, owner string, hardcov
 		return nil, nil
 	}
 	rows, err := d.Pool.Query(ctx,
-		`SELECT owner, source, external_id, hardcover_book_id, origin, external_read_id,
+		`SELECT id, owner, source, external_id, hardcover_book_id, origin, external_read_id,
 		        started_at, finished_at, progress_pages, progress_seconds
 		   FROM reading_events
 		  WHERE owner = $1
@@ -91,7 +94,7 @@ func (d *DB) ListReadingEventsForWork(ctx context.Context, owner string, hardcov
 	var out []ReadingEvent
 	for rows.Next() {
 		var ev ReadingEvent
-		if err := rows.Scan(&ev.Owner, &ev.Source, &ev.ExternalID, &ev.HardcoverBookID,
+		if err := rows.Scan(&ev.ID, &ev.Owner, &ev.Source, &ev.ExternalID, &ev.HardcoverBookID,
 			&ev.Origin, &ev.ExternalReadID, &ev.StartedAt, &ev.FinishedAt,
 			&ev.ProgressPages, &ev.ProgressSeconds); err != nil {
 			return nil, err
@@ -99,4 +102,22 @@ func (d *DB) ListReadingEventsForWork(ctx context.Context, owner string, hardcov
 		out = append(out, ev)
 	}
 	return out, rows.Err()
+}
+
+// DeleteReadingEvent removes one reading_event by (owner, id) and RETURNs its origin
+// + external_read_id so the caller can propagate the delete to the origin (e.g. the
+// Hardcover user_book_read). Returns ok=false if no such row for this owner.
+func (d *DB) DeleteReadingEvent(ctx context.Context, owner string, id int64) (origin, externalReadID string, ok bool, err error) {
+	row := d.Pool.QueryRow(ctx,
+		`DELETE FROM reading_events WHERE owner = $1 AND id = $2
+		 RETURNING origin, external_read_id`,
+		owner, id)
+	switch scanErr := row.Scan(&origin, &externalReadID); scanErr {
+	case nil:
+		return origin, externalReadID, true, nil
+	case pgx.ErrNoRows:
+		return "", "", false, nil
+	default:
+		return "", "", false, scanErr
+	}
 }

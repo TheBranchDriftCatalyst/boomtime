@@ -1330,6 +1330,15 @@ export const api = {
       { method: "POST" },
     ),
 
+  // Delete one read from a book's history (reading_events) + propagate the delete
+  // to Hardcover when it originated there. Returns whether the Hardcover-side
+  // delete also succeeded.
+  deleteReadingEvent: (id: number) =>
+    request<{ deleted: boolean; hardcoverDeleted: boolean }>(
+      buildUrl(`/api/v1/books/reads/${id}`),
+      { method: "DELETE" },
+    ),
+
   // Durable notifications (migration 00079): replayed on session start so events
   // fired while offline aren't dropped. markNotificationsRead flips all unread.
   getNotifications: () =>

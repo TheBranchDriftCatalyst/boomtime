@@ -107,6 +107,8 @@ func Register(e *echo.Echo, h *Handler) {
 		// Curation override: set the effective status/rating/finish for one row
 		// (gaka-books, migration 00069) + enqueue the Hardcover push. Keyed by
 		// owner + ?source= + :externalId (the ASIN).
+		// Delete one read from the history (reading_events) + propagate to Hardcover.
+		e.DELETE("/api/v1/books/reads/:id", h.DeleteReadingEvent)
 		// Durable notifications (migration 00079): replay on session start + mark read.
 		e.GET("/api/v1/notifications", h.ListNotifications)
 		e.POST("/api/v1/notifications/read", h.MarkNotificationsRead)

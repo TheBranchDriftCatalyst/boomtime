@@ -3,8 +3,10 @@
 // (or amazon_asin for unmatched siblings), in one view. Opened by clicking a row
 // in the Books explorer. Reuses the shared cell components so status edits work
 // from the panel too.
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, ExternalLink } from "lucide-react";
+import { toast } from "sonner";
+import { Loader2, ExternalLink, Trash2 } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -25,6 +27,7 @@ import {
 import { formatMinutes } from "@/features/books/booksExplorerConfig";
 import { openHardcover } from "@/features/books/hardcover";
 import type { ReadingItemDTO } from "@/types/api";
+import type { ReadEvent } from "@/types/meta";
 
 export function BookDetailSheet({
   item,
@@ -148,32 +151,85 @@ export function BookDetailSheet({
 
             {/* Read history — a book can be read more than once (migration 00078). */}
             {work.data?.reads && work.data.reads.length > 0 && (
-              <div className="space-y-2 border-t border-border pt-3">
-                <div className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                  {work.data.reads.length} read
-                  {work.data.reads.length === 1 ? "" : "s"}
-                </div>
-                {work.data.reads.map((r, i) => (
-                  <div
-                    key={`${r.origin}:${r.finishedAt ?? r.startedAt ?? i}`}
-                    className="flex items-center justify-between gap-2 rounded-md border border-border/60 px-2.5 py-1.5 text-xs"
-                  >
-                    <span className="text-muted-foreground">
-                      {r.startedAt ? fmtDate(r.startedAt) : "—"}
-                      {" → "}
-                      <span className="text-foreground">{fmtDate(r.finishedAt)}</span>
-                    </span>
-                    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                      {r.origin}
-                    </span>
-                  </div>
-                ))}
-              </div>
+              <ReadsHistory reads={work.data.reads} />
             )}
           </>
         )}
       </SheetContent>
     </Sheet>
+  );
+}
+
+// ReadsHistory renders the per-read list with a delete affordance. Deleting removes
+// the read locally AND (for Hardcover-origin reads) on Hardcover — handy for pruning
+// the junk/empty reads Hardcover auto-creates when a status is set. Optimistic: the
+// row disappears immediately and is restored on failure.
+function ReadsHistory({ reads }: { reads: ReadEvent[] }) {
+  const [removed, setRemoved] = useState<Set<number>>(new Set());
+  const [deleting, setDeleting] = useState<number | null>(null);
+  const visible = reads.filter((r) => !removed.has(r.id));
+  if (visible.length === 0) return null;
+
+  const del = async (r: ReadEvent) => {
+    if (deleting != null) return;
+    setDeleting(r.id);
+    setRemoved((s) => new Set(s).add(r.id)); // optimistic
+    try {
+      const res = await api.deleteReadingEvent(r.id);
+      toast.success(
+        r.origin === "hardcover" && res.hardcoverDeleted
+          ? "Read deleted (here + on Hardcover)"
+          : "Read deleted",
+      );
+    } catch {
+      setRemoved((s) => {
+        const n = new Set(s);
+        n.delete(r.id);
+        return n;
+      });
+      toast.error("Couldn't delete read");
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  return (
+    <div className="space-y-2 border-t border-border pt-3">
+      <div className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+        {visible.length} read{visible.length === 1 ? "" : "s"}
+      </div>
+      {visible.map((r) => (
+        <div
+          key={r.id}
+          className="group flex items-center justify-between gap-2 rounded-md border border-border/60 px-2.5 py-1.5 text-xs"
+        >
+          <span className="text-muted-foreground">
+            {r.startedAt ? fmtDate(r.startedAt) : "—"}
+            {" → "}
+            <span className="text-foreground">{fmtDate(r.finishedAt)}</span>
+          </span>
+          <div className="flex items-center gap-1.5">
+            <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+              {r.origin}
+            </span>
+            <button
+              type="button"
+              onClick={() => del(r)}
+              disabled={deleting != null}
+              title="Delete this read (also on Hardcover)"
+              aria-label="Delete this read"
+              className="rounded p-1 text-muted-foreground/60 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-50"
+            >
+              {deleting === r.id ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 

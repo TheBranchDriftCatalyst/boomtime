@@ -63,6 +63,7 @@ func (h *Handler) GetBookWork(c *echo.Context) error {
 
 // readEventDTO is one discrete read in the Book panel's history.
 type readEventDTO struct {
+	ID              int64   `json:"id"`
 	Origin          string  `json:"origin"`
 	Source          string  `json:"source,omitempty"`
 	StartedAt       *string `json:"startedAt,omitempty"`
@@ -73,7 +74,7 @@ type readEventDTO struct {
 
 func toReadEventDTO(ev db.ReadingEvent) readEventDTO {
 	d := readEventDTO{
-		Origin: ev.Origin, Source: ev.Source,
+		ID: ev.ID, Origin: ev.Origin, Source: ev.Source,
 		ProgressPages: ev.ProgressPages, ProgressSeconds: ev.ProgressSeconds,
 	}
 	if ev.StartedAt != nil {

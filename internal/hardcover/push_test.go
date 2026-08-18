@@ -119,6 +119,9 @@ func (f *fakeRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 	case strings.Contains(env.Query, "insert_user_book_read"):
 		f.mutations = append(f.mutations, recordedMutation{op: "insert_user_book_read", vars: env.Variables})
 		return respond(`{"insert_user_book_read":{"id":7001,"error":"","user_book_read":{"id":7001}}}`), nil
+	case strings.Contains(env.Query, "delete_user_book_read"):
+		f.mutations = append(f.mutations, recordedMutation{op: "delete_user_book_read", vars: env.Variables})
+		return respond(`{"delete_user_book_read":{"id":7001}}`), nil
 	case strings.Contains(env.Query, "search("):
 		f.matchQueries++
 		return respond(`{"search":{"results":{"hits":[]}}}`), nil
@@ -401,5 +404,27 @@ func TestBulkUpsertUserBooks_DryRunNoWrite(t *testing.T) {
 	}
 	if len(rt.mutations) != 0 {
 		t.Fatalf("dry-run must not hit the transport, got %d mutations", len(rt.mutations))
+	}
+}
+
+// TestDeleteUserBookRead issues the delete mutation (recorded by the fake); a
+// non-positive id is a client-side error before any request.
+func TestDeleteUserBookRead(t *testing.T) {
+	rt := &fakeRoundTripper{}
+	client := newFakeClient(rt)
+	if err := client.DeleteUserBookRead(context.Background(), 7001); err != nil {
+		t.Fatalf("DeleteUserBookRead: %v", err)
+	}
+	found := false
+	for _, m := range rt.mutations {
+		if m.op == "delete_user_book_read" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected a delete_user_book_read mutation, got %+v", rt.mutations)
+	}
+	if err := client.DeleteUserBookRead(context.Background(), 0); err == nil {
+		t.Error("id 0 must error before any request")
 	}
 }

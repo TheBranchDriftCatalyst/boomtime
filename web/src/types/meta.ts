@@ -234,6 +234,7 @@ export interface NotificationDTO {
 // One discrete read of a book (migration 00078) — the Book panel's read history.
 // A book can be read more than once; each is a ReadEvent (origin = who produced it).
 export interface ReadEvent {
+  id: number;
   origin: string; // hardcover | audible | kindle-insights
   source?: string;
   startedAt?: string;

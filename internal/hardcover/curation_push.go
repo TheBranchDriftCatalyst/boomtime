@@ -53,6 +53,24 @@ func NewPushService(database *db.DB, store *Store, logger *slog.Logger) *PushSer
 	return &PushService{DB: database, Store: store, Logger: logger}
 }
 
+// DeleteHardcoverRead removes a user_book_read on the owner's Hardcover account
+// (the outbound half of deleting a read in the bridge). No-op if the user hasn't
+// connected Hardcover. Dry-run-gated. Best-effort: the local delete already
+// happened; a Hardcover-side miss is logged, not fatal.
+func (s *PushService) DeleteHardcoverRead(ctx context.Context, owner string, readID int64) error {
+	if s.Store == nil || readID <= 0 {
+		return nil
+	}
+	client, ok, err := s.Store.ClientForUser(ctx, owner)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return nil // Hardcover not connected — nothing to delete remotely
+	}
+	return client.DeleteUserBookRead(ctx, readID)
+}
+
 // PushCuration mirrors reading_items[id]'s EFFECTIVE curation to Hardcover. No-op
 // (nil) when Hardcover is not configured/connected, the row is gone, its status is
 // unmappable, or no confident match exists. Returns the underlying error on a
