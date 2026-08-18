@@ -19,10 +19,10 @@ import (
 	"github.com/labstack/echo/v5"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/admin"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/logging"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/objstore"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/jobs"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/logging"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/objstore"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
 // stubObjStore is an objstore.Store test double. getErr/getBody drive the GET

@@ -2,25 +2,25 @@
 //
 // Three surface areas:
 //
-//   POST /api/v1/admin/avatar/synthesize-prompt   (SSE, self-only-for-now)
-//     Streams an OpenAI-compat chat completion via the configured LLM. The
-//     wire body carries the top-3 label names + a compact activity synopsis
-//     that the FE computed from the caller's stats. Response is proxied SSE
-//     from the upstream — the FE reads it live with a small custom hook.
+//	POST /api/v1/admin/avatar/synthesize-prompt   (SSE, self-only-for-now)
+//	  Streams an OpenAI-compat chat completion via the configured LLM. The
+//	  wire body carries the top-3 label names + a compact activity synopsis
+//	  that the FE computed from the caller's stats. Response is proxied SSE
+//	  from the upstream — the FE reads it live with a small custom hook.
 //
-//   POST /api/v1/users/current/avatar/regenerate   (async, self-only)
-//     Marks user_avatars.status='running', spawns a goroutine that calls
-//     the comfyui shim, and returns 202 immediately. Client polls
-//     status/streams the RIGHT panel via the status endpoint below.
+//	POST /api/v1/users/current/avatar/regenerate   (async, self-only)
+//	  Marks user_avatars.status='running', spawns a goroutine that calls
+//	  the comfyui shim, and returns 202 immediately. Client polls
+//	  status/streams the RIGHT panel via the status endpoint below.
 //
-//   GET  /api/v1/users/current/avatar/status       (self-only)
-//     Compact tri-state {status, error, generatedAt} — never ships bytes.
-//     Cheap enough to poll every 5s during a render.
+//	GET  /api/v1/users/current/avatar/status       (self-only)
+//	  Compact tri-state {status, error, generatedAt} — never ships bytes.
+//	  Cheap enough to poll every 5s during a render.
 //
-//   GET  /api/v1/users/:username/avatar            (PUBLIC)
-//     Serves the raw ready image bytes so the public dossier hero can drop
-//     it into an <img>. 404s when status != 'ready' so an in-flight render
-//     never leaks a stale byte-string down to a fresh viewer.
+//	GET  /api/v1/users/:username/avatar            (PUBLIC)
+//	  Serves the raw ready image bytes so the public dossier hero can drop
+//	  it into an <img>. 404s when status != 'ready' so an in-flight render
+//	  never leaks a stale byte-string down to a fresh viewer.
 //
 // The "admin" path on synthesize-prompt is a temporary constraint from the
 // design: LLM cost is per-token and unbounded per user in the wrong hands,
@@ -41,11 +41,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/comfyui"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/jobs"
 	"github.com/labstack/echo/v5"
 )
 

@@ -3,7 +3,7 @@ package importer
 import (
 	"sync"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 )
 
 // Event is a live update published for a job. Type is one of "log", "progress",

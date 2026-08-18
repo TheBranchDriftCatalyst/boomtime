@@ -10,7 +10,7 @@ package stats
 import (
 	"math"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/model"
 )
 
 // gradeLevels and gradeThresholds are verbatim from github-readme-stats:

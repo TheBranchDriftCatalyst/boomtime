@@ -8,8 +8,8 @@ import (
 	"github.com/labstack/echo/v5"
 	dto "github.com/prometheus/client_model/go"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/metrics"
 )
 
 // AdminMetrics returns a JSON view of the Prometheus registry (gaka-metrics)

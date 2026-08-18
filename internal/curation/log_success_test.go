@@ -23,7 +23,7 @@ import (
 	"github.com/labstack/echo/v5"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/curation"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
 type capRec struct {

@@ -44,9 +44,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/notify"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/metrics"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/notify"
 )
 
 // The engine's tuning now lives in MonitorConfig (monitorconfig.go) — the single

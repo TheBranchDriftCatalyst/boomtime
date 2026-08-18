@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 )
 
 // match_sweep_test.go — exercises the explicit `hardcover-match` sweep end-to-end

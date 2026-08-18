@@ -14,7 +14,7 @@ import (
 	"net/http/httptest"
 	"strings"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 	. "github.com/onsi/gomega"
 )
 

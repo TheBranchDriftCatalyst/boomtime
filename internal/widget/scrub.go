@@ -48,24 +48,24 @@
 //
 // # What Scrub does NOT do
 //
-// - Scrub does NOT modify the input payload. It returns a *StatsPayload
-//   that shares memory with the input wherever no filter fired.
+//   - Scrub does NOT modify the input payload. It returns a *StatsPayload
+//     that shares memory with the input wherever no filter fired.
 //
-// - Scrub does NOT rename anything. Rename rules are applied upstream at
-//   query time (RenameSets in internal/db); by the time a value reaches this
-//   scrubber it is already presented under its rename target and matches
-//   hide rules on that target name.
+//   - Scrub does NOT rename anything. Rename rules are applied upstream at
+//     query time (RenameSets in internal/db); by the time a value reaches this
+//     scrubber it is already presented under its rename target and matches
+//     hide rules on that target name.
 //
-// - Scrub does NOT apply the badge-endpoint's project-level 404. That is a
-//   separate policy handled inline by applyBadgeCuration in
-//   internal/handler/badges.go, because a badge whose sole subject is a
-//   hidden project has no "scrubbed" representation — it must 404.
+//   - Scrub does NOT apply the badge-endpoint's project-level 404. That is a
+//     separate policy handled inline by applyBadgeCuration in
+//     internal/handler/badges.go, because a badge whose sole subject is a
+//     hidden project has no "scrubbed" representation — it must 404.
 package widget
 
 import (
 	"strings"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/model"
 )
 
 // Scrub applies the public-safe contract documented at the top of this file to

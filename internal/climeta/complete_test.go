@@ -13,7 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/climeta"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 )
 
 func TestInvokeCompleterThreadsPriorArgsAndToComplete(t *testing.T) {

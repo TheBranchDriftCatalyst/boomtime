@@ -26,8 +26,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 	"github.com/labstack/echo/v5"
 )
 
@@ -247,7 +247,7 @@ var _ = Describe("AwardsLog (gaka-mwp-streaks)", func() {
 		Expect(hz.DB.Pool.QueryRow(context.Background(),
 			`SELECT period_start FROM award_ledger WHERE username=$1 AND label_id=$2`,
 			user, "old-daily").Scan(&periodStart)).To(Succeed())
-		Expect(periodStart.Before(time.Now().Add(-24 * time.Hour))).To(BeTrue(),
+		Expect(periodStart.Before(time.Now().Add(-24*time.Hour))).To(BeTrue(),
 			"historical `at` was ignored — got period_start=%s", periodStart)
 	})
 

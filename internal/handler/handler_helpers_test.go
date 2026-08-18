@@ -31,7 +31,7 @@ var _ = Describe("statsCacheTTL (BOOM_STATS_CACHE_TTL)", func() {
 			}
 		}, os.Getenv("BOOM_STATS_CACHE_TTL"))
 		_ = os.Unsetenv("BOOM_STATS_CACHE_TTL")
-		Expect(statsCacheTTL()).To(Equal(30 * time.Second),
+		Expect(statsCacheTTL()).To(Equal(30*time.Second),
 			"unset env MUST default to 30s (the FE dashboards depend on this refresh cadence)")
 	})
 
@@ -40,17 +40,17 @@ var _ = Describe("statsCacheTTL (BOOM_STATS_CACHE_TTL)", func() {
 		_ = os.Setenv("BOOM_STATS_CACHE_TTL", "5")
 		Expect(statsCacheTTL()).To(Equal(5 * time.Second))
 		_ = os.Setenv("BOOM_STATS_CACHE_TTL", "0")
-		Expect(statsCacheTTL()).To(Equal(0 * time.Second),
+		Expect(statsCacheTTL()).To(Equal(0*time.Second),
 			"BOOM_STATS_CACHE_TTL=0 MUST disable caching (documented behavior)")
 	})
 
 	It("falls back to 30s when BOOM_STATS_CACHE_TTL is negative or non-numeric (fail-safe)", func() {
 		DeferCleanup(func(prev string) { _ = os.Setenv("BOOM_STATS_CACHE_TTL", prev) }, os.Getenv("BOOM_STATS_CACHE_TTL"))
 		_ = os.Setenv("BOOM_STATS_CACHE_TTL", "not-a-number")
-		Expect(statsCacheTTL()).To(Equal(30 * time.Second),
+		Expect(statsCacheTTL()).To(Equal(30*time.Second),
 			"non-numeric env MUST NOT panic — must fall back to the 30s default")
 		_ = os.Setenv("BOOM_STATS_CACHE_TTL", "-1")
-		Expect(statsCacheTTL()).To(Equal(30 * time.Second),
+		Expect(statsCacheTTL()).To(Equal(30*time.Second),
 			"negative env MUST be rejected (would break the TTL cache invariants)")
 	})
 })

@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/model"
 )
 
 // Payload is the minimum shape the evaluator reads. Matches the FE's

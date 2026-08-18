@@ -3,7 +3,7 @@ package audible
 import (
 	"testing"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 )
 
 // in_progress_test.go — pins which reading_items trigger a continuous-progress

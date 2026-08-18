@@ -14,13 +14,14 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/query"
-	"github.com/labstack/echo/v5"
 	"log/slog"
+
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/query"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
+	"github.com/labstack/echo/v5"
 )
 
 // bodyLimit caps the query spec body. A spec is a small tree of names +

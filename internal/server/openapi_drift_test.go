@@ -17,7 +17,7 @@ import (
 	"strings"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/openapi"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/openapi"
 	"github.com/labstack/echo/v5"
 
 	. "github.com/onsi/ginkgo/v2"

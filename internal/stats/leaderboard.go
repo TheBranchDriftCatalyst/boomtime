@@ -3,8 +3,8 @@ package stats
 import (
 	"sort"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/model"
 )
 
 // ---- Leaderboards (Leaderboards.hs) ----

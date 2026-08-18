@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 )
 
 // match_sweep.go — the EXPLICIT `hardcover-match` pipeline stage. In the

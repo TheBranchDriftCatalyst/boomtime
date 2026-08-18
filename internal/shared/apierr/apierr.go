@@ -1,0 +1,114 @@
+// Package apierr reproduces hakatime's error JSON envelope (Errors.hs).
+// Every error response body is {"error": "<msg>"[, "message": "<extra>"]} with
+// Content-Type application/json;charset=utf-8.
+package apierr
+
+import (
+	"net/http"
+
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/model"
+	"github.com/labstack/echo/v5"
+)
+
+// Error is an HTTP error carrying the hakatime error envelope.
+type Error struct {
+	Status  int
+	Message string
+	Extra   *string
+}
+
+func (e *Error) Error() string { return e.Message }
+
+// New builds an *Error.
+func New(status int, msg string, extra *string) *Error {
+	return &Error{Status: status, Message: msg, Extra: extra}
+}
+
+// Write emits the error envelope onto the Echo context.
+func (e *Error) Write(c *echo.Context) error {
+	c.Response().Header().Set(echo.HeaderContentType, "application/json;charset=utf-8")
+	return c.JSON(e.Status, model.APIErrorData{Error: e.Message, Message: e.Extra})
+}
+
+// Predefined errors matching Haka.Errors.
+
+func MissingAuth() *Error {
+	return New(http.StatusBadRequest, "Missing the 'Authorization' header field", nil)
+}
+
+func MissingQueryParam(param string) *Error {
+	return New(http.StatusBadRequest, "Missing query parameter "+param, nil)
+}
+
+func MissingRefreshTokenCookie() *Error {
+	return New(http.StatusBadRequest, "Missing the 'refresh_token' cookie", nil)
+}
+
+func InvalidToken() *Error {
+	// 401, not 403: an unknown/expired bearer token is an AUTHENTICATION
+	// failure (re-auth may succeed), not an authorization denial. 403 here was
+	// a debugging trap (it masqueraded as a capability denial) AND made clients
+	// misbehave — the web FE only runs its single-flight refresh-retry on 401,
+	// and Wakatime editor plugins treat 401 as retryable but 403 as
+	// permanently-forbidden (silent ingest death on token expiry — that was a
+	// real multi-day heartbeat outage: expired tokens 403'd, and clients gave up).
+	return New(http.StatusUnauthorized, "The given api token doesn't belong to a user", nil)
+}
+
+func InvalidRelation(user, project string) *Error {
+	return New(http.StatusNotFound,
+		"The user "+user+" doesn't have access to project "+project, nil)
+}
+
+func ExpiredRefreshToken() *Error {
+	// 401 (see InvalidToken): an expired/unknown refresh cookie is an
+	// authentication failure. The FE's refresh helper does a DIRECT fetch (not
+	// through the interceptor), so a 401 here can't recurse — it resolves the
+	// single-flight refresh as failed and the app falls through to login.
+	return New(http.StatusUnauthorized, "The given api token has expired", nil)
+}
+
+func DisabledRegistration() *Error {
+	return New(http.StatusForbidden, "Registration is disabled", nil)
+}
+
+func UsernameExists(u string) *Error {
+	return New(http.StatusConflict, "The username "+u+" already exists", nil)
+}
+
+func RegisterError() *Error {
+	return New(http.StatusConflict, "The registration failed due to an internal error", nil)
+}
+
+func InvalidCredentials() *Error {
+	return New(http.StatusForbidden, "Invalid credentials", nil)
+}
+
+// Forbidden is the capability-denied 403 for the user-model substrate
+// (gaka-0oe): a resolved, non-disabled identity that lacks the capability a
+// tier-gated handler requires (e.g. a light-tier user hitting import/backup).
+// Only fires when BOOM_FEATURE_USER_MODEL is on — flag off, every identity has
+// every capability.
+func Forbidden(msg string) *Error {
+	return New(http.StatusForbidden, msg, nil)
+}
+
+func MissingGithubToken() *Error {
+	return New(http.StatusInternalServerError, "The environment variable GITHUB_TOKEN is not set", nil)
+}
+
+func BadRequest(msg string) *Error {
+	return New(http.StatusBadRequest, msg, nil)
+}
+
+func NotFound(msg string) *Error {
+	return New(http.StatusNotFound, msg, nil)
+}
+
+func Generic() *Error {
+	return New(http.StatusInternalServerError, "An internal error occurred", nil)
+}
+
+func GenericHTTP(msg string, extra *string) *Error {
+	return New(http.StatusInternalServerError, msg, extra)
+}

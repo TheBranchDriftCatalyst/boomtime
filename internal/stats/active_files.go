@@ -1,7 +1,7 @@
 package stats
 
 import (
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
 	"github.com/labstack/echo/v5"
 )
 

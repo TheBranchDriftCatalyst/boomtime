@@ -16,10 +16,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/identity"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
 func TestPSlug_InjectsOGMetaForPublicProfile(t *testing.T) {
@@ -103,4 +103,3 @@ func TestInjectOGMeta_NoMarkerLeavesShellUnchanged(t *testing.T) {
 		t.Errorf("shell without marker should be returned unchanged")
 	}
 }
-

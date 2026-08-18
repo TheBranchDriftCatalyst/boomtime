@@ -31,7 +31,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 )
 
 // reconcilePaceDelay throttles the sweep to at most one sidecar call every

@@ -24,7 +24,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/model"
 )
 
 // Default GitHub endpoints. Overridable per-Client so the mock-GitHub httptest

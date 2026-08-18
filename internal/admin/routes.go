@@ -13,10 +13,10 @@ package admin
 import (
 	"github.com/labstack/echo/v5"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/objstore"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/jobs"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/objstore"
 )
 
 // Register wires the admin-domain endpoints onto e. Handler must be

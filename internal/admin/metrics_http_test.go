@@ -21,8 +21,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/admin"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/metrics"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
 func metricsRouter(hz *testutil.Harness) *echo.Echo {

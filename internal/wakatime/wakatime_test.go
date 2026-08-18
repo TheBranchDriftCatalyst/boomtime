@@ -127,14 +127,14 @@ var _ = Describe("LanguageFromEntity", func() {
 	// turns "PureScript" into "PURESCRIPT" (breaking canonical labels).
 	It("preserves mixed-case labels for named languages", func() {
 		names := map[string]string{
-			"x.org":     "Org",
-			"x.zig":     "Zig",
-			"x.purs":    "PureScript",
-			"x.dhall":   "Dhall",
-			"x.cabal":   "Cabal Config",
-			"x.gotmpl":  "Go template",
-			"x.jinja":   "Jinja",
-			"x.tfvars":  "Terraform",
+			"x.org":    "Org",
+			"x.zig":    "Zig",
+			"x.purs":   "PureScript",
+			"x.dhall":  "Dhall",
+			"x.cabal":  "Cabal Config",
+			"x.gotmpl": "Go template",
+			"x.jinja":  "Jinja",
+			"x.tfvars": "Terraform",
 		}
 		for entity, want := range names {
 			got := LanguageFromEntity(entity)

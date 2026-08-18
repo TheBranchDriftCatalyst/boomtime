@@ -42,7 +42,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/metrics"
 )
 
 // Cloud Reader hosts. Both are marketplace-independent for the US account we

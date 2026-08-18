@@ -15,8 +15,8 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/spf13/cobra"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/climeta"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
 )
 
 // cliCompleteBodyLimit caps the complete request body — a command path, a

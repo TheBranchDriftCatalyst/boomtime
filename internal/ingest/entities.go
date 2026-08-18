@@ -11,9 +11,9 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/labstack/echo/v5"
 )
@@ -78,7 +78,7 @@ type redactEntitiesBody struct {
 }
 
 // RedactEntities: POST /api/v1/users/current/heartbeats/entities/redact?confirm=redact-entities.
-// Body: {ty, entities[]}. Blanks the entity column ('') on every matching row,
+// Body: {ty, entities[]}. Blanks the entity column (”) on every matching row,
 // owner-scoped. The heartbeat still counts toward every other axis; only the
 // entity value is scrubbed. Rollup unaffected (entity isn't a rollup axis).
 func (h *Handler) RedactEntities(c *echo.Context) error {

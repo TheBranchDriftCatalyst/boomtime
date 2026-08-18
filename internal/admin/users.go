@@ -8,8 +8,8 @@ package admin
 import (
 	"net/http"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
 	"github.com/labstack/echo/v5"
 )
 

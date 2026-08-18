@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/metrics"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/metrics"
 )
 
 // AudibleAPIHost returns the Audible API host for a marketplace (api.audible.<tld>).

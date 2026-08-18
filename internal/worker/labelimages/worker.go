@@ -27,9 +27,9 @@ import (
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/comfyui"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/labelcatalog"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 )
 
 // systemPromptCacheTTL bounds how often the worker re-reads the singleton

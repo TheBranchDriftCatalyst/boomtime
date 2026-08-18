@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/model"
 )
 
 // ---- Row shaping shared by Stats.hs (StatRow) and Projects.hs (ProjectStatRow) ----

@@ -24,10 +24,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 	"github.com/labstack/echo/v5"
 )
 
@@ -1526,10 +1526,10 @@ var _ = Describe("Cross-endpoint sender-clobber invariants (gaka-d6x.handler)", 
 			"duration_s":  60,
 			"source_uuid": "wk-impersonate-1",
 			// Defense-in-depth: extra fields future proofing against payload drift.
-			"sender":      alice,
-			"owner":       alice,
-			"username":    alice,
-			"user":        alice,
+			"sender":   alice,
+			"owner":    alice,
+			"username": alice,
+			"user":     alice,
 		}
 		rec := doJSONReqG(e, http.MethodPost, "/api/v1/users/current/workouts", bobTok, body)
 		Expect(rec).To(testutil.HaveStatus(http.StatusAccepted))

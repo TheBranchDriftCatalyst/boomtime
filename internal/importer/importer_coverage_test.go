@@ -39,9 +39,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/model"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/model"
 )
 
 // roundTripFunc is a lightweight http.RoundTripper adapter so tests can
@@ -105,8 +105,8 @@ var _ = Describe("checkJSONType predicate matrix (gaka-d6x)", func() {
 			},
 		},
 		{
-			name: "JSON false",
-			raw:  `false`,
+			name:  "JSON false",
+			raw:   `false`,
 			wants: map[jsonType]bool{jtBool: true, jtBoolOrNull: true, jtString: false},
 		},
 		{
@@ -119,18 +119,18 @@ var _ = Describe("checkJSONType predicate matrix (gaka-d6x)", func() {
 			},
 		},
 		{
-			name: "JSON array",
-			raw:  `[]`,
+			name:  "JSON array",
+			raw:   `[]`,
 			wants: map[jsonType]bool{jtArray: true, jtArrayOrNull: true, jtObject: false},
 		},
 		{
-			name: "JSON object",
-			raw:  `{}`,
+			name:  "JSON object",
+			raw:   `{}`,
 			wants: map[jsonType]bool{jtObject: true, jtObjectOrNull: true, jtArray: false},
 		},
 		{
-			name: "whitespace-padded object",
-			raw:  "   \n\t {}\r  ",
+			name:  "whitespace-padded object",
+			raw:   "   \n\t {}\r  ",
 			wants: map[jsonType]bool{jtObject: true, jtObjectOrNull: true},
 		},
 		{
@@ -1591,7 +1591,7 @@ var _ = Describe("Cross-key ciphertext negative (gaka-d6x, security gap #2)", fu
 	// loaded, the ciphertext produced for the same plaintext is DIFFERENT AND
 	// the wrong-key ciphertext does NOT decrypt under the intended key.
 	It("Encrypt under Key1 ≠ Encrypt under Key2; and cross-key Decrypt fails auth", func() {
-		const key1 = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="       // 0x00..0x1f
+		const key1 = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=" // 0x00..0x1f
 		const key2 = "/////////////////////////////////////////wA=" // 0xff*31 + 0x00
 
 		prev, hadPrev := os.LookupEnv("BOOM_ENCRYPTION_KEY")

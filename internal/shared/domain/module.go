@@ -21,11 +21,11 @@ import (
 
 	"github.com/labstack/echo/v5"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/notify"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/domaincols"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/jobs"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/notify"
 )
 
 // IdentityProvider is the seam that lets a Module run WITHOUT importing a concrete

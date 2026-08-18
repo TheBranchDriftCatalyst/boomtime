@@ -18,7 +18,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/labstack/echo/v5"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
 const readingMonitorPath = "/api/v1/admin/books/reading-monitor/ws"
