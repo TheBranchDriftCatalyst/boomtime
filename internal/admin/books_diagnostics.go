@@ -12,9 +12,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/amazon"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/amazon"
 	"github.com/labstack/echo/v5"
 )
 

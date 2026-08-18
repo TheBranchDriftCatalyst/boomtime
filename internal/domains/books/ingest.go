@@ -21,9 +21,9 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/amazon"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/amazon"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/hardcover"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/hardcover"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/logctx"
 )
 

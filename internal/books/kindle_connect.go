@@ -3,11 +3,11 @@ package books
 import (
 	"net/http"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/amazon"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/amazon"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/hardcover"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/domains/books"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/hardcover"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/labstack/echo/v5"
 )

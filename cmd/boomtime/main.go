@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/tracing"
 	"io"
 	"log/slog"
 	"net/http"
@@ -19,8 +18,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/amazon"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/tracing"
+
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/amazon"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/hardcover"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/comfyui"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
@@ -29,7 +31,6 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/domains/bookspipeline"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/github"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/hardcover"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/identity"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
