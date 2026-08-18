@@ -2,21 +2,11 @@ import { useState, type ComponentType, type ReactNode } from "react";
 import { NavLink } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Award,
-  BookOpen,
-  Download,
-  HeartPulse,
-  LayoutDashboard,
-  Library,
-  ListTree,
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
-  Settings2,
-  Shapes,
   ShieldCheck,
-  Target,
   UserCircle,
 } from "lucide-react";
 import {
@@ -30,34 +20,9 @@ import { useIsAdmin } from "@/features/auth/useIsAdmin";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
 import { usePublicConfig } from "@/lib/usePublicConfig";
+import { resolveNavSections } from "@/shared/nav/registry";
+import type { NavSection } from "@/shared/nav/types";
 import { cn } from "@/lib/utils";
-
-interface NavEntry {
-  name: string;
-  icon: ComponentType<{ className?: string }>;
-  to: string;
-  end: boolean;
-  // gaka-books: when set, the entry only shows if this public-config flag is on.
-  // Keeps the feature's nav inert on deployments where it's disabled.
-  flag?: "books_enabled";
-}
-
-const NAV: NavEntry[] = [
-  { name: "Overview", icon: LayoutDashboard, to: "/app", end: true },
-  { name: "Projects", icon: BookOpen, to: "/app/projects", end: false },
-  { name: "Leaderboards", icon: Award, to: "/app/leaderboards", end: false },
-  // gaka-gud: Goals promoted from a Settings sub-tab to a top-level page.
-  { name: "Goals", icon: Target, to: "/app/goals", end: false },
-  // gaka-books: read-only library view. Distinct icon (Library) from Projects'
-  // BookOpen. Gated on books_enabled — filtered out when the feature is off.
-  { name: "Books", icon: Library, to: "/app/books", end: false, flag: "books_enabled" },
-  { name: "Heartbeats", icon: ListTree, to: "/app/heartbeats", end: false },
-  { name: "Wellness", icon: HeartPulse, to: "/app/wellness", end: false },
-  { name: "Catalog", icon: Shapes, to: "/app/catalog", end: false },
-  { name: "Import", icon: Download, to: "/app/import", end: false },
-  // Logs + Changelog live inside Settings tabs now.
-  { name: "Settings", icon: Settings2, to: "/app/settings", end: false },
-];
 
 // Single source for the sidebar item styling (nav links, space links, and the
 // action buttons all share it; buttons pass isActive=false and add w-full).
@@ -145,6 +110,62 @@ function NavItem({
         {!collapsed && <span className="truncate">{name}</span>}
       </NavLink>
     </RailTip>
+  );
+}
+
+/** NavSectionHeader — the uppercase group label above a domain's nav cluster.
+ * Mirrors the Spaces group header so grouped domain sections and Spaces read as
+ * one system. Collapsed rail shows a hairline divider instead of the text. */
+function NavSectionHeader({
+  label,
+  collapsed,
+}: {
+  label: string;
+  collapsed: boolean;
+}) {
+  if (collapsed) {
+    return <div className="mx-1.5 my-2 border-t border-sidebar-border" />;
+  }
+  return (
+    <div className="flex items-center justify-between px-3 pb-1 pt-3">
+      <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </span>
+    </div>
+  );
+}
+
+/** NavSectionGroup — one registered domain section: an optional header followed
+ * by its nav items. Unlabeled sections (core / config) render their items flat,
+ * with no header, so Overview + Settings sit at the top level while the code
+ * pages read as a grouped "Boomtime" domain. */
+function NavSectionGroup({
+  section,
+  collapsed,
+  onNavigate,
+}: {
+  section: NavSection;
+  collapsed: boolean;
+  onNavigate?: () => void;
+}) {
+  return (
+    <div className="space-y-1">
+      {section.label && (
+        <NavSectionHeader label={section.label} collapsed={collapsed} />
+      )}
+      {section.items.map((item) => (
+        <NavItem
+          key={item.to}
+          to={item.to}
+          end={item.end}
+          icon={item.icon}
+          name={item.name}
+          collapsed={collapsed}
+          onNavigate={onNavigate}
+          testId={item.testId}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -312,11 +333,13 @@ export function SidebarBody({
   onToggleCollapsed,
   showCollapseToggle = true,
 }: SidebarBodyProps) {
-  // gaka-books: hide feature-flagged nav entries (currently just Books) when
-  // their public-config flag is off, so the tab is fully inert on deployments
-  // that don't run the feature. The flag defaults false while config loads.
+  // Nav is assembled from the shared nav-registration seam (each domain pushes
+  // its entries in via registerNavItem). resolveNavSections drops flag-gated
+  // items whose public-config flag is off — currently just Books on books_enabled
+  // — so a disabled feature's nav is fully inert. Flags default false while the
+  // config request is in flight.
   const { config } = usePublicConfig();
-  const navItems = NAV.filter((item) => !item.flag || config[item.flag]);
+  const navSections = resolveNavSections(config);
 
   return (
     <>
@@ -336,13 +359,10 @@ export function SidebarBody({
       </div>
 
       <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3">
-        {navItems.map((item) => (
-          <NavItem
-            key={item.to}
-            to={item.to}
-            end={item.end}
-            icon={item.icon}
-            name={item.name}
+        {navSections.map((section) => (
+          <NavSectionGroup
+            key={section.id}
+            section={section}
             collapsed={collapsed}
             onNavigate={onNavigate}
           />

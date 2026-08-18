@@ -66,6 +66,72 @@ export function tabClass(isActive: boolean, extra?: string): string {
   return cn("catalyst-tab", isActive && "catalyst-tab--active", extra);
 }
 
+// ── Grouped variant ─────────────────────────────────────────────────────────
+// GroupedTabNav lays out several labeled tab CLUSTERS in one row, each its own
+// role="tablist" with a small uppercase group header + a divider between groups.
+// It's the primitive the domain-grouped Settings + Admin strips render through:
+// one visual strip, but the tabs are visibly bucketed by domain (Account /
+// CatalystBooks / Boomtime …) instead of one flat list. Still DOMAIN-FREE — the
+// caller supplies the groups + their tab nodes.
+
+export interface TabNavGroup {
+  /** stable key. */
+  id: string;
+  /** uppercase group header; omit for an unlabeled (core) cluster. */
+  label?: ReactNode;
+  /** the group's tab nodes — <button role="tab"> / <NavLink role="tab">. */
+  children: ReactNode;
+}
+
+export interface GroupedTabNavProps {
+  /** accessible base name; each group's tablist appends its label. */
+  ariaLabel: string;
+  groups: TabNavGroup[];
+  variant?: TabNavVariant;
+  /** optional context prefix before the first group (e.g. "Settings"). */
+  label?: ReactNode;
+  className?: string;
+}
+
+export function GroupedTabNav({
+  ariaLabel,
+  groups,
+  variant = "header",
+  label,
+  className,
+}: GroupedTabNavProps) {
+  return (
+    <div
+      className={cn(
+        "catalyst-tabnav catalyst-tabnav--grouped",
+        variant === "header"
+          ? "catalyst-tabnav--header"
+          : "catalyst-tabnav--page",
+        className,
+      )}
+    >
+      {label != null && <span className="catalyst-tabnav__label">{label}</span>}
+      {groups.map((g, i) => (
+        <div key={g.id} className="catalyst-tabnav__group">
+          {i > 0 && (
+            <span aria-hidden="true" className="catalyst-tabnav__group-divider" />
+          )}
+          {g.label != null && (
+            <span className="catalyst-tabnav__group-label">{g.label}</span>
+          )}
+          <div
+            role="tablist"
+            aria-label={g.label != null ? `${ariaLabel}: ${g.label}` : ariaLabel}
+            className="catalyst-tabnav__list"
+          >
+            {g.children}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Back-compat aliases ─────────────────────────────────────────────────────
 // Older call sites used <PageTabStrip>/pageTabClass (the flat underlined page
 // strip). They now resolve to the "page" TabNav variant so the page treatment
