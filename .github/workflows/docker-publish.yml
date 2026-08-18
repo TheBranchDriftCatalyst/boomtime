@@ -8,6 +8,10 @@ on:
   push:
     branches:
       - main
+      # gaka-zp2s: build sha-<commit> images for the domain-framework refactor so a
+      # parallel 'dev' beta can run it. `latest` still only tags on the default
+      # branch (see metadata-action step), so prod is never rolled by this branch.
+      - gaka-domain-framework
   pull_request:
     branches:
       - main
