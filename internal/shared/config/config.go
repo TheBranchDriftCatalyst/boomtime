@@ -9,8 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/stats"
 )
 
 // RemoteWriteConfig configures forwarding heartbeats to another Wakatime server.
@@ -227,12 +225,10 @@ type Config struct {
 	// probably be stored encrypted and secure per user
 	WakatimeAPIKey string
 
-	// Grade holds the stats-card-with-grade calibration (medians + weights). Env
-	// vars BOOM_GRADE_* override individual fields on top of
-	// stats.DefaultGradeConfig — see loadGradeConfig below. cmd/boomtime applies
-	// this to stats.DefaultGradeConfig at boot so downstream renderers picking
-	// stats.Grade() get the tuned config transparently.
-	Grade stats.GradeConfig
+	// NOTE: the stats-card grade calibration (BOOM_GRADE_*) is NO LONGER held here.
+	// It moved to the stats domain (stats.ApplyGradeConfigFromEnv, called at boot)
+	// so this config package stays domain-neutral — a standalone books binary that
+	// imports config must not drag in the code domain (gaka-zp2s decoupling).
 
 	// DefaultTimezone (gaka-dg7) is the IANA name applied by db.ResolveTimezone
 	// when a user has NOT picked an explicit timezone yet
@@ -365,28 +361,6 @@ func getEnvFloat(key string, def float64) float64 {
 		}
 	}
 	return def
-}
-
-// loadGradeConfig starts from stats.DefaultGradeConfig and applies any
-// BOOM_GRADE_* overrides. Unset vars keep the shipped calibration; invalid
-// values are ignored (getEnvFloat / getEnvInt fall back on parse error).
-func loadGradeConfig() stats.GradeConfig {
-	d := stats.DefaultGradeConfig
-	return stats.GradeConfig{
-		StreakMedian:    getEnvFloat("BOOM_GRADE_STREAK_MEDIAN", d.StreakMedian),
-		StreakWeight:    getEnvFloat("BOOM_GRADE_STREAK_WEIGHT", d.StreakWeight),
-		ActiveMedian:    getEnvFloat("BOOM_GRADE_ACTIVE_MEDIAN", d.ActiveMedian),
-		ActiveWeight:    getEnvFloat("BOOM_GRADE_ACTIVE_WEIGHT", d.ActiveWeight),
-		LanguagesMedian: getEnvFloat("BOOM_GRADE_LANGUAGES_MEDIAN", d.LanguagesMedian),
-		LanguagesWeight: getEnvFloat("BOOM_GRADE_LANGUAGES_WEIGHT", d.LanguagesWeight),
-		ProjectsMedian:  getEnvFloat("BOOM_GRADE_PROJECTS_MEDIAN", d.ProjectsMedian),
-		ProjectsWeight:  getEnvFloat("BOOM_GRADE_PROJECTS_WEIGHT", d.ProjectsWeight),
-		DailyAvgMedian:  getEnvFloat("BOOM_GRADE_DAILY_AVG_MEDIAN", d.DailyAvgMedian),
-		DailyAvgWeight:  getEnvFloat("BOOM_GRADE_DAILY_AVG_WEIGHT", d.DailyAvgWeight),
-		HoursMedian:     getEnvFloat("BOOM_GRADE_HOURS_MEDIAN", d.HoursMedian),
-		HoursWeight:     getEnvFloat("BOOM_GRADE_HOURS_WEIGHT", d.HoursWeight),
-		MinRangeDays:    getEnvInt("BOOM_GRADE_MIN_RANGE_DAYS", d.MinRangeDays),
-	}
 }
 
 func getEnvBool(key string, def bool) bool {
@@ -523,8 +497,6 @@ func Load() *Config {
 	if c.WakatimeAPIKey == "" {
 		c.WakatimeAPIKey = rwToken
 	}
-
-	c.Grade = loadGradeConfig()
 
 	// gaka-worker-topology: role/broker gate for the image-job pipeline.
 	// Both default to today's single-process, in-memory behavior — see the

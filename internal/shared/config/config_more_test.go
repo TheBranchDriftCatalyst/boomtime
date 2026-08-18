@@ -16,8 +16,6 @@ package config
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/stats"
 )
 
 // ============================================================================
@@ -320,74 +318,6 @@ var _ = Describe("IsDev (case-insensitive dev-mode gate)", func() {
 		// logging on — the operator has to opt in explicitly.
 		Expect(c.IsDev()).To(BeFalse())
 		Expect(c.DBLogQueries).To(BeFalse())
-	})
-})
-
-var _ = Describe("Grade config env wiring (gaka-hsj tuning knobs)", func() {
-	It("all BOOM_GRADE_* overrides land on the right fields (no swap regression)", func() {
-		clearEnv()
-		// Every knob gets a distinct sentinel so a copy-paste swap (e.g.
-		// StreakMedian assigned from BOOM_GRADE_ACTIVE_MEDIAN) fails the
-		// assertion — this is the anti-tautology pin.
-		setenv("BOOM_GRADE_STREAK_MEDIAN", "11")
-		setenv("BOOM_GRADE_STREAK_WEIGHT", "12")
-		setenv("BOOM_GRADE_ACTIVE_MEDIAN", "21")
-		setenv("BOOM_GRADE_ACTIVE_WEIGHT", "22")
-		setenv("BOOM_GRADE_LANGUAGES_MEDIAN", "31")
-		setenv("BOOM_GRADE_LANGUAGES_WEIGHT", "32")
-		setenv("BOOM_GRADE_PROJECTS_MEDIAN", "41")
-		setenv("BOOM_GRADE_PROJECTS_WEIGHT", "42")
-		setenv("BOOM_GRADE_DAILY_AVG_MEDIAN", "51")
-		setenv("BOOM_GRADE_DAILY_AVG_WEIGHT", "52")
-		setenv("BOOM_GRADE_HOURS_MEDIAN", "61")
-		setenv("BOOM_GRADE_HOURS_WEIGHT", "62")
-		setenv("BOOM_GRADE_MIN_RANGE_DAYS", "77")
-		c := Load()
-		Expect(c.Grade.StreakMedian).To(Equal(11.0))
-		Expect(c.Grade.StreakWeight).To(Equal(12.0))
-		Expect(c.Grade.ActiveMedian).To(Equal(21.0))
-		Expect(c.Grade.ActiveWeight).To(Equal(22.0))
-		Expect(c.Grade.LanguagesMedian).To(Equal(31.0))
-		Expect(c.Grade.LanguagesWeight).To(Equal(32.0))
-		Expect(c.Grade.ProjectsMedian).To(Equal(41.0))
-		Expect(c.Grade.ProjectsWeight).To(Equal(42.0))
-		Expect(c.Grade.DailyAvgMedian).To(Equal(51.0))
-		Expect(c.Grade.DailyAvgWeight).To(Equal(52.0))
-		Expect(c.Grade.HoursMedian).To(Equal(61.0))
-		Expect(c.Grade.HoursWeight).To(Equal(62.0))
-		Expect(c.Grade.MinRangeDays).To(Equal(77))
-	})
-
-	It("no BOOM_GRADE_* set → shipped defaults preserved verbatim (drift guard)", func() {
-		clearEnv()
-		c := Load()
-		// Invariant: if nobody overrode any knob, every field must equal
-		// stats.DefaultGradeConfig. This is what protects the calibration
-		// from silent regression when someone adds a new knob without
-		// wiring the default correctly.
-		Expect(c.Grade).To(Equal(stats.DefaultGradeConfig))
-	})
-
-	It("partial override (only one knob) leaves the rest at their defaults", func() {
-		clearEnv()
-		setenv("BOOM_GRADE_STREAK_MEDIAN", "100")
-		c := Load()
-		Expect(c.Grade.StreakMedian).To(Equal(100.0))
-		// The other 12 fields must still match the shipped calibration —
-		// a partial override must NOT reset unrelated knobs to Go zero.
-		Expect(c.Grade.ActiveMedian).To(Equal(stats.DefaultGradeConfig.ActiveMedian))
-		Expect(c.Grade.MinRangeDays).To(Equal(stats.DefaultGradeConfig.MinRangeDays))
-		Expect(c.Grade.HoursWeight).To(Equal(stats.DefaultGradeConfig.HoursWeight))
-	})
-
-	It("invalid BOOM_GRADE_STREAK_MEDIAN → default preserved (parse-error isolation)", func() {
-		clearEnv()
-		setenv("BOOM_GRADE_STREAK_MEDIAN", "not-a-number")
-		c := Load()
-		// Invariant: one bad env value must not zero a median — CDF math
-		// would blow up. getEnvFloat returns the passed-in default on
-		// parse failure, which is stats.DefaultGradeConfig.StreakMedian.
-		Expect(c.Grade.StreakMedian).To(Equal(stats.DefaultGradeConfig.StreakMedian))
 	})
 })
 
