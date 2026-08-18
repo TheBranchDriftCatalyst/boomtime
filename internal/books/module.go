@@ -8,8 +8,8 @@ package books
 
 import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/domains"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/domain"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/domaincols"
 )
 
 // Module implements domain.Module for catalyst-books.
@@ -22,12 +22,12 @@ func (Module) Enabled(cfg *config.Config) bool { return cfg != nil && cfg.Featur
 
 // EncryptedColumns: the Amazon device credential + Hardcover key (both per-user
 // AES-GCM secrets). Derived from the single-source domains registry.
-func (Module) EncryptedColumns() []domains.EncryptedColumn {
-	return domains.EncryptedColumnsFor("amazon", "hardcover")
+func (Module) EncryptedColumns() []domaincols.EncryptedColumn {
+	return domaincols.EncryptedColumnsFor("amazon", "hardcover")
 }
 
 // BackupColumns: the same secrets + their status/metadata siblings, included in the
 // whole-DB export.
-func (Module) BackupColumns() []domains.BackupColumns {
-	return domains.BackupColumnsFor("amazon", "hardcover")
+func (Module) BackupColumns() []domaincols.BackupColumns {
+	return domaincols.BackupColumnsFor("amazon", "hardcover")
 }

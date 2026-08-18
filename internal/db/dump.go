@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/domains"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/domaincols"
 )
 
 // encryptionKeyEnvName mirrors internal/auth.EncryptionKeyEnv without importing
@@ -73,7 +73,7 @@ var dumpTables = []dumpTable{
 		// the domains registry follow-up). New DOMAIN-owned user columns append
 		// from internal/domains so a fresh domain (amazon → books/audiobooks) is
 		// never silently dropped from backups.
-	}, domains.UserBackupColumns()...)},
+	}, domaincols.UserBackupColumns()...)},
 	{"projects", []string{"name", "description", "owner", "dependencies", "repository"}},
 	// gaka-b5x.2: hashed_token / hashed_refresh_token columns are dumped so
 	// hashed-only rows (new sessions minted after migration 00026) survive an
