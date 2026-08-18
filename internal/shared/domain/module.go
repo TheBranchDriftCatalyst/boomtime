@@ -21,10 +21,10 @@ import (
 
 	"github.com/labstack/echo/v5"
 
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/domaincols"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/notify"
 )
 

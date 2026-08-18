@@ -18,8 +18,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/identity/oauth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/oauth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 

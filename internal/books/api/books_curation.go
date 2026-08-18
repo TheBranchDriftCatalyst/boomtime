@@ -11,10 +11,10 @@ import (
 	"github.com/labstack/echo/v5"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/hardcover"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/jobs"
 )
 
 // books_curation.go — PATCH /api/v1/books/items/:externalId/curation?source=<src>.
