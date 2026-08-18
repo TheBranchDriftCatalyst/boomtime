@@ -22,8 +22,8 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/reading"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/domains/books"
 )
 
 // readingMonitorView is the GET/PUT response: the persisted toggle + mode plus
@@ -41,7 +41,7 @@ type readingMonitorView struct {
 	// Recommendation is the derived optimal-interval answer + sync-pattern
 	// classification the panel STATES in plain English; null until enough
 	// advances are observed to calibrate.
-	Recommendation *books.Recommendation `json:"recommendation"`
+	Recommendation *reading.Recommendation `json:"recommendation"`
 }
 
 // AdminBooksReadingMonitorGet: GET /api/v1/admin/books/reading-monitor — report
@@ -101,7 +101,7 @@ func (h *Handler) AdminBooksReadingMonitorPut(c *echo.Context) error {
 	if req.Calibrate != nil {
 		var until *time.Time
 		if *req.Calibrate {
-			t := time.Now().UTC().Add(books.LoadMonitorConfig().CalibrationDuration)
+			t := time.Now().UTC().Add(reading.LoadMonitorConfig().CalibrationDuration)
 			until = &t
 		}
 		if err := h.DB.SetReadingMonitorCalibration(ctx, owner, until); err != nil {
@@ -236,12 +236,12 @@ func (h *Handler) readingMonitorView(c *echo.Context, owner string) (readingMoni
 	// Derive the interval recommendation + sync-pattern classification from the
 	// advance samples observed over the lookback window (nil until enough land),
 	// using the consolidated MonitorConfig coefficients.
-	rmCfg := books.LoadMonitorConfig()
+	rmCfg := reading.LoadMonitorConfig()
 	pairs, err := h.DB.ListRecentReadingMonitorAdvances(ctx, owner, time.Now().Add(-rmCfg.RecommendLookback), rmCfg.WindowCap)
 	if err != nil {
 		return readingMonitorView{}, err
 	}
-	rec := books.RecommendIntervals(pairs, rmCfg)
+	rec := reading.RecommendIntervals(pairs, rmCfg)
 
 	// Calibration-window status.
 	calUntil, err := h.DB.GetReadingMonitorCalibration(ctx, owner)

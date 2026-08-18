@@ -24,7 +24,7 @@
 //
 // Returns nil (JSON null) when fewer than cfg.MinSamples advances are observed, so
 // the FE shows "not enough data — read a book with the monitor on to calibrate".
-package books
+package reading
 
 import (
 	"fmt"

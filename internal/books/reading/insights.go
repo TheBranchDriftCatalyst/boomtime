@@ -18,7 +18,7 @@
 //     finished_at = date_read (COALESCE — never clobber a richer existing date).
 //  5. log ONE summary line (titles / matched / dates backfilled) — no per-book
 //     flood; the line inherits the running job's job_id via logInfo(ctx, …).
-package books
+package reading
 
 import (
 	"context"

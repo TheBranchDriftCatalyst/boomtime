@@ -2,7 +2,7 @@
 // forward Kindle reading-time composition. This is where the value lives: the
 // gap-sum session model (heartbeat semantics applied to reading position) is
 // exhaustively pinned here without a DB or network.
-package books
+package reading
 
 import (
 	"testing"

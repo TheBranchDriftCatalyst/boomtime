@@ -1,4 +1,4 @@
-package books
+package reading
 
 import (
 	"context"

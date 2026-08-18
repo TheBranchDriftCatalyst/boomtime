@@ -12,7 +12,7 @@
 //
 // Read this file as the spec: each field documents its env var, default, and the
 // equation it feeds.
-package books
+package reading
 
 import (
 	"os"

@@ -5,7 +5,7 @@
 // also pins idempotency (a re-run is a no-op) and ctx-cancellation. External test
 // package (books_test) for the same reason as reading_time_poll_test.go — the
 // testutil harness would form an import cycle with an in-package DB test.
-package books_test
+package reading_test
 
 import (
 	"context"
@@ -18,8 +18,8 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/amazon"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/reading"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/db"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/domains/books"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/testutil"
 )
 
@@ -53,7 +53,7 @@ func (m *mapSidecar) FetchLastPagePosition(_ context.Context, _ *amazon.DeviceCr
 
 // newReconcileService wires a books Service on the harness DB with a seeded
 // Amazon credential (so Amazon.Load succeeds) and the given per-ASIN sidecar.
-func newReconcileService(t *testing.T, hz *testutil.Harness, sc *mapSidecar) (*books.Service, string) {
+func newReconcileService(t *testing.T, hz *testutil.Harness, sc *mapSidecar) (*reading.Service, string) {
 	t.Helper()
 	key := make([]byte, 32)
 	if _, err := io.ReadFull(rand.Reader, key); err != nil {
@@ -70,7 +70,7 @@ func newReconcileService(t *testing.T, hz *testutil.Harness, sc *mapSidecar) (*b
 	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := books.New(hz.DB, az, logger)
+	svc := reading.New(hz.DB, az, logger)
 	svc.SetSidecar(sc)
 	return svc, owner
 }
