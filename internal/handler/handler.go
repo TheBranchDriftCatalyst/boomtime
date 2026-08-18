@@ -21,7 +21,7 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/admin"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/awards"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books"
+	booksapi "github.com/TheBranchDriftCatalyst/boomtime/internal/books/api"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/hardcover"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/cache"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/config"
@@ -89,7 +89,7 @@ type Handler struct {
 	Stats    *stats.Handler    // phase 6
 	Admin    *admin.Handler    // phase 7
 	Query    *queryapi.Handler // gaka-174.q: cross-domain query DSL over HTTP
-	Books    *books.Handler    // gaka-zp2s phase 2: catalyst-books domain
+	Books    *booksapi.Handler // gaka-zp2s phase 2: catalyst-books domain
 }
 
 // New constructs a Handler. logHub streams server-process slog records to the
@@ -133,7 +133,7 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *impor
 		Stats:    stats.New(database, cfg, logger, sharedCache),
 		Admin:    admin.New(database, cfg, logger, sharedCache, worker, hub),
 		Query:    &queryapi.Handler{DB: database, Cfg: cfg, Logger: logger},
-		Books:    books.New(database, cfg, logger),
+		Books:    booksapi.New(database, cfg, logger),
 	}
 }
 

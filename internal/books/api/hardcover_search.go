@@ -1,4 +1,4 @@
-package books
+package api
 
 import (
 	"encoding/json"
