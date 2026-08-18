@@ -73,6 +73,13 @@ type Module interface {
 
 	// RegisterRoutes mounts the domain's HTTP surface (push/pull ingest + query).
 	RegisterRoutes(e *echo.Echo, d Deps)
+	// RegisterAdminRoutes mounts the domain's ADMIN HTTP surface onto g (an
+	// echo.Group whose prefix + any route-level auth the host owns — boomtime
+	// anchors it at /api/v1/admin). This is the peer of the portable
+	// jobs.RegisterAdminRoutes seam (internal/jobs/adminhttp.go), lifted onto
+	// the Module contract so each domain owns its own operator surface instead
+	// of it living in the central internal/admin god-package.
+	RegisterAdminRoutes(g *echo.Group, d Deps)
 	// RegisterJobs registers the domain's job kinds + schedule intervals.
 	RegisterJobs(ctx context.Context, d Deps) error
 
@@ -90,6 +97,7 @@ type BaseModule struct{}
 func (BaseModule) EncryptedColumns() []domaincols.EncryptedColumn { return nil }
 func (BaseModule) BackupColumns() []domaincols.BackupColumns      { return nil }
 func (BaseModule) RegisterRoutes(*echo.Echo, Deps)                {}
+func (BaseModule) RegisterAdminRoutes(*echo.Group, Deps)          {}
 func (BaseModule) RegisterJobs(context.Context, Deps) error       { return nil }
 func (BaseModule) Migrations() fs.FS                              { return nil }
 
