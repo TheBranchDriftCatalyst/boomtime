@@ -4,8 +4,84 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 )
+
+// BulkUserBookInput is one book in a batched status/rating push. Carries the
+// owner-scoped key (source/externalID) + the enum status so the caller can stamp
+// the local mirror after a successful write, plus the resolved Hardcover ids.
+type BulkUserBookInput struct {
+	Source, ExternalID string
+	Status             string // enum (want|reading|read|paused|dnf) — for the mirror stamp
+	BookID, EditionID  int64
+	StatusID           int64
+	Rating             *float64
+}
+
+// BulkPushResult pairs one input with its per-item Hardcover outcome. UserBookID
+// > 0 with an empty Err means the write landed (0 under dry-run / on error).
+type BulkPushResult struct {
+	Input      BulkUserBookInput
+	UserBookID int64
+	Err        string
+}
+
+// BulkUpsertUserBooks pushes N books' status/rating in ONE GraphQL request via
+// aliased insert_user_book mutations (Hardcover has no native array mutation across
+// books). One HTTP request == one rate-limiter token, so a batch of 50 costs the
+// same 1s budget as a single push — the whole point of bulk sync under the 1 req/s
+// cap. reading_format_id is NOT sent (edition_id carries format; see UpsertUserBook).
+// Under dry-run the graphql gate blocks the whole batch and every result stays
+// zero (UserBookID 0), so the caller skips the mirror stamp.
+func (c *Client) BulkUpsertUserBooks(ctx context.Context, items []BulkUserBookInput) ([]BulkPushResult, error) {
+	if len(items) == 0 {
+		return nil, nil
+	}
+	var q strings.Builder
+	varDefs := make([]string, len(items))
+	vars := make(map[string]any, len(items))
+	for i, it := range items {
+		varDefs[i] = fmt.Sprintf("$o%d: UserBookCreateInput!", i)
+		obj := map[string]any{"book_id": it.BookID, "status_id": it.StatusID}
+		if it.EditionID > 0 {
+			obj["edition_id"] = it.EditionID
+		}
+		if it.Rating != nil {
+			obj["rating"] = *it.Rating
+		}
+		vars[fmt.Sprintf("o%d", i)] = obj
+	}
+	fmt.Fprintf(&q, "mutation BulkUpsertUserBooks(%s) {\n", strings.Join(varDefs, ", "))
+	for i := range items {
+		fmt.Fprintf(&q, "  b%d: insert_user_book(object: $o%d) { id error user_book { id } }\n", i, i)
+	}
+	q.WriteString("}")
+
+	// Aliased fields → a per-alias result map (b0, b1, …).
+	var data map[string]struct {
+		ID       int64  `json:"id"`
+		Error    string `json:"error"`
+		UserBook struct {
+			ID int64 `json:"id"`
+		} `json:"user_book"`
+	}
+	if err := c.graphql(ctx, q.String(), vars, &data); err != nil {
+		return nil, err
+	}
+	results := make([]BulkPushResult, len(items))
+	for i := range items {
+		r := BulkPushResult{Input: items[i]}
+		if d, ok := data[fmt.Sprintf("b%d", i)]; ok {
+			r.Err = d.Error
+			if r.UserBookID = d.UserBook.ID; r.UserBookID == 0 {
+				r.UserBookID = d.ID
+			}
+		}
+		results[i] = r
+	}
+	return results, nil
+}
 
 // Hardcover status_id values (reading_items.status maps onto these).
 const (

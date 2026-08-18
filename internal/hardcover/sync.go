@@ -59,6 +59,9 @@ type PullResult struct {
 	Created int
 	// Listed is how many books had Hardcover list memberships attached this run.
 	Listed int
+	// Pushed is how many diverged rows were mirrored OUT to Hardcover this run (the
+	// outbound half of the two-way sync). 0 under dry-run.
+	Pushed int
 	Shelf  *Shelf
 }
 
@@ -169,9 +172,21 @@ func (s *SyncService) SyncHardcoverPull(ctx context.Context, owner string) (Pull
 	// the primary job).
 	s.upsertReadActivity(ctx, owner, books)
 
-	s.logInfo(ctx, "hardcover pull: complete",
+	// OUTBOUND half — the two-way sync (gaka-books). Now that the LWW pull above has
+	// adopted any Hardcover-newer edits, whatever is STILL diverged is where boomtime
+	// is newer → push those out (status/rating), batched. Reuses the same client
+	// (its rate limiter), and is dry-run-gated. Best-effort: a push miss never fails
+	// the (primary, inbound) pull.
+	if pushed, perr := s.PushDivergedToHardcover(ctx, owner, client); perr != nil {
+		s.logWarn(ctx, "hardcover sync: outbound push failed", "user", owner, "err", perr)
+	} else {
+		res.Pushed = pushed
+	}
+
+	s.logInfo(ctx, "hardcover sync: complete",
 		"user", owner, "fetched", res.Fetched, "linked", res.Linked,
-		"unlinked", res.Unlinked, "created", res.Created, "listed", res.Listed)
+		"unlinked", res.Unlinked, "created", res.Created, "listed", res.Listed,
+		"pushed", res.Pushed)
 	return res, nil
 }
 
@@ -195,6 +210,85 @@ func (s *SyncService) ingestHardcoverReads(ctx context.Context, owner string, b 
 			s.logWarn(ctx, "hardcover pull: read event upsert failed", "user", owner, "bookId", b.BookID, "readId", r.ID, "err", err)
 		}
 	}
+}
+
+// bulkPushChunk bounds one batched insert_user_book request. 50 aliased mutations
+// per request keeps the operation well under Hasura's node/complexity limits while
+// collapsing ~1000 books into ~20 rate-limited requests instead of 1000.
+const bulkPushChunk = 50
+
+// PushDivergedToHardcover mirrors every diverged matched row's effective status +
+// rating OUT to Hardcover in batched requests, then advances the local mirror
+// (hardcover_status) + echo-suppression stamp for each row that wrote. This is the
+// bulk outbound half of the two-way sync (gaka-books); the caller runs it AFTER the
+// LWW pull so only boomtime-newer rows remain diverged. Dry-run-gated (the client's
+// graphql gate blocks the batch; every result stays UserBookID 0 → no stamp).
+// Returns how many rows were successfully pushed. Best-effort per chunk.
+func (s *SyncService) PushDivergedToHardcover(ctx context.Context, owner string, client *Client) (int, error) {
+	if s.DB == nil || client == nil {
+		return 0, nil
+	}
+	diverged, err := s.DB.ListDivergedHardcoverItems(ctx, owner)
+	if err != nil {
+		return 0, err
+	}
+	if len(diverged) == 0 {
+		return 0, nil
+	}
+
+	pushed := 0
+	for start := 0; start < len(diverged); start += bulkPushChunk {
+		if err := ctx.Err(); err != nil {
+			return pushed, err
+		}
+		end := start + bulkPushChunk
+		if end > len(diverged) {
+			end = len(diverged)
+		}
+		batch := diverged[start:end]
+
+		items := make([]BulkUserBookInput, 0, len(batch))
+		for _, it := range batch {
+			statusID := StatusID(it.EffectiveStatus)
+			if statusID == 0 {
+				continue // unmappable status — skip (never guess-push)
+			}
+			items = append(items, BulkUserBookInput{
+				Source: it.Source, ExternalID: it.ExternalID, Status: it.EffectiveStatus,
+				BookID: it.HardcoverBookID, EditionID: it.HardcoverEditID,
+				StatusID: statusID, Rating: it.Rating,
+			})
+		}
+		if len(items) == 0 {
+			continue
+		}
+
+		results, berr := client.BulkUpsertUserBooks(ctx, items)
+		if berr != nil {
+			s.onError(ctx, owner, "bulk upsert user_book", berr)
+			return pushed, berr // a transport/token error affects the whole batch — stop
+		}
+		for _, r := range results {
+			if r.Err != "" {
+				s.logWarn(ctx, "hardcover sync: per-book push error", "user", owner,
+					"externalId", r.Input.ExternalID, "err", r.Err)
+				continue
+			}
+			if r.UserBookID <= 0 {
+				continue // dry-run (blocked) or no id returned — nothing landed, no stamp
+			}
+			// Advance the mirror + echo stamp so this row reads as synced and the next
+			// pull doesn't re-adopt our own write.
+			if serr := s.DB.SetReadingItemPushed(ctx, owner, r.Input.Source, r.Input.ExternalID, r.Input.Status); serr != nil {
+				s.logWarn(ctx, "hardcover sync: mirror stamp failed", "user", owner, "externalId", r.Input.ExternalID, "err", serr)
+			}
+			pushed++
+		}
+	}
+	if pushed > 0 {
+		s.logInfo(ctx, "hardcover sync: pushed diverged rows", "user", owner, "count", pushed, "of", len(diverged))
+	}
+	return pushed, nil
 }
 
 // attachListMemberships pulls the user's Hardcover lists and writes each book's

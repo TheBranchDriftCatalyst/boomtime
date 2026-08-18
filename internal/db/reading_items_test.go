@@ -255,3 +255,53 @@ func TestSetReadingItemPushed_AdvancesHardcoverMirror(t *testing.T) {
 		t.Errorf("hardcover_pushed_status (echo stamp) = %v, want 'read'", pushed)
 	}
 }
+
+// TestListDivergedHardcoverItems returns ONLY matched rows whose effective status
+// differs from the last-pulled Hardcover shelf — the bulk outbound work-list.
+func TestListDivergedHardcoverItems(t *testing.T) {
+	d := openTestDB(t)
+	ctx := context.Background()
+	owner := mkSender("diverged")
+	cleanupSender(t, d, ctx, owner)
+	ensureUser(t, d, ctx, owner)
+
+	// seed helper: a matched row with a given hardcover_status + effective status.
+	seed := func(ext, effStatus, hcStatus string, matched bool) {
+		if err := d.UpsertReadingItem(ctx, ReadingItem{
+			Owner: owner, Source: "kindle", ExternalID: ext,
+			Title: ext, Authors: "A", Status: effStatus,
+		}); err != nil {
+			t.Fatalf("upsert %s: %v", ext, err)
+		}
+		bookSQL := "NULL"
+		if matched {
+			bookSQL = "42"
+		}
+		if _, err := d.Pool.Exec(ctx,
+			"UPDATE reading_items SET hardcover_book_id="+bookSQL+", hardcover_status=$2, hardcover_edition_id=99 WHERE owner=$1 AND source='kindle' AND external_id=$3",
+			owner, hcStatus, ext); err != nil {
+			t.Fatalf("seed %s: %v", ext, err)
+		}
+	}
+	seed("DIV1", "read", "want", true)  // matched + diverged  → included
+	seed("SYNC1", "read", "read", true) // matched + in sync   → excluded
+	seed("UNM1", "read", "want", false) // diverged but UNMATCHED → excluded
+	// matched but hardcover_status NULL (never pulled) → excluded (no known remote).
+	if err := d.UpsertReadingItem(ctx, ReadingItem{Owner: owner, Source: "kindle", ExternalID: "NULLHC", Title: "n", Authors: "A", Status: "read"}); err != nil {
+		t.Fatalf("upsert NULLHC: %v", err)
+	}
+	if _, err := d.Pool.Exec(ctx, "UPDATE reading_items SET hardcover_book_id=7 WHERE owner=$1 AND source='kindle' AND external_id='NULLHC'", owner); err != nil {
+		t.Fatalf("seed NULLHC: %v", err)
+	}
+
+	got, err := d.ListDivergedHardcoverItems(ctx, owner)
+	if err != nil {
+		t.Fatalf("ListDivergedHardcoverItems: %v", err)
+	}
+	if len(got) != 1 || got[0].ExternalID != "DIV1" {
+		t.Fatalf("want exactly [DIV1], got %+v", got)
+	}
+	if got[0].EffectiveStatus != "read" || got[0].HardcoverBookID != 42 || got[0].HardcoverEditID != 99 {
+		t.Errorf("DIV1 payload = %+v, want status=read book=42 edition=99", got[0])
+	}
+}

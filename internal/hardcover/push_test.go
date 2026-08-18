@@ -3,6 +3,7 @@ package hardcover
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -100,6 +101,18 @@ func (f *fakeRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 		}
 		ed, _ := json.Marshal([]hcEdition{*f.editionByASIN})
 		return respond(`{"editions":` + string(ed) + `}`), nil
+	case strings.Contains(env.Query, "BulkUpsertUserBooks"):
+		// Aliased batch: one recorded mutation, and a per-alias (b0,b1,…) data map
+		// echoing a distinct user_book id per input variable (o0,o1,…).
+		f.mutations = append(f.mutations, recordedMutation{op: "bulk_insert_user_book", vars: env.Variables})
+		parts := make([]string, 0, len(env.Variables))
+		for i := 0; i < len(env.Variables); i++ {
+			if _, ok := env.Variables[fmt.Sprintf("o%d", i)]; !ok {
+				break
+			}
+			parts = append(parts, fmt.Sprintf(`"b%d":{"id":%d,"error":"","user_book":{"id":%d}}`, i, 9100+i, 9100+i))
+		}
+		return respond("{" + strings.Join(parts, ",") + "}"), nil
 	case strings.Contains(env.Query, "insert_user_book("):
 		f.mutations = append(f.mutations, recordedMutation{op: "insert_user_book", vars: env.Variables})
 		return respond(`{"insert_user_book":{"id":9001,"error":"","user_book":{"id":9001}}}`), nil
@@ -325,5 +338,68 @@ func jsonNum(v any) float64 {
 		return float64(n)
 	default:
 		return -1
+	}
+}
+
+// TestBulkUpsertUserBooks_BatchesInOneRequest pins the bulk-sync core: N books go
+// out as ONE aliased-mutation request (1 rate-limiter token), each object carries
+// book_id/status_id/edition_id (never reading_format_id), and results map back
+// per-input via the b0/b1/… aliases.
+func TestBulkUpsertUserBooks_BatchesInOneRequest(t *testing.T) {
+	rt := &fakeRoundTripper{}
+	client := newFakeClient(rt)
+	rating := 4.0
+	items := []BulkUserBookInput{
+		{Source: "kindle", ExternalID: "A1", Status: "read", BookID: 11, EditionID: 111, StatusID: StatusRead},
+		{Source: "audible", ExternalID: "A2", Status: "reading", BookID: 22, EditionID: 222, StatusID: StatusReading, Rating: &rating},
+	}
+	res, err := client.BulkUpsertUserBooks(context.Background(), items)
+	if err != nil {
+		t.Fatalf("BulkUpsertUserBooks: %v", err)
+	}
+	// Exactly ONE request for the whole batch.
+	bulk := 0
+	for _, m := range rt.mutations {
+		if m.op == "bulk_insert_user_book" {
+			bulk++
+		}
+	}
+	if bulk != 1 {
+		t.Fatalf("want 1 batched request, got %d", bulk)
+	}
+	if len(res) != 2 || res[0].UserBookID != 9100 || res[1].UserBookID != 9101 {
+		t.Fatalf("results = %+v, want two rows with ids 9100/9101", res)
+	}
+	// The batched object carries no reading_format_id (Hardcover rejects it).
+	obj0, _ := rt.mutations[0].vars["o0"].(map[string]any)
+	if _, present := obj0["reading_format_id"]; present {
+		t.Errorf("bulk object must NOT carry reading_format_id")
+	}
+	if got := jsonNum(obj0["status_id"]); got != float64(StatusRead) {
+		t.Errorf("o0 status_id = %v, want %d", obj0["status_id"], StatusRead)
+	}
+	obj1, _ := rt.mutations[0].vars["o1"].(map[string]any)
+	if got := jsonNum(obj1["rating"]); got != 4.0 {
+		t.Errorf("o1 rating = %v, want 4.0", obj1["rating"])
+	}
+}
+
+// TestBulkUpsertUserBooks_DryRunNoWrite: under dry-run the batch is blocked, so every
+// result has a zero UserBookID (the caller then skips the mirror stamp).
+func TestBulkUpsertUserBooks_DryRunNoWrite(t *testing.T) {
+	rt := &fakeRoundTripper{}
+	client := NewClient("tok").SetDryRun(true)
+	client.http = &http.Client{Transport: rt}
+	res, err := client.BulkUpsertUserBooks(context.Background(), []BulkUserBookInput{
+		{Source: "kindle", ExternalID: "A1", Status: "read", BookID: 11, StatusID: StatusRead},
+	})
+	if err != nil {
+		t.Fatalf("BulkUpsertUserBooks (dry-run): %v", err)
+	}
+	if len(res) != 1 || res[0].UserBookID != 0 {
+		t.Fatalf("dry-run should not land a write; got %+v", res)
+	}
+	if len(rt.mutations) != 0 {
+		t.Fatalf("dry-run must not hit the transport, got %d mutations", len(rt.mutations))
 	}
 }

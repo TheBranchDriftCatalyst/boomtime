@@ -491,6 +491,53 @@ func (d *DB) SetReadingItemPushed(ctx context.Context, owner, source, externalID
 	return err
 }
 
+// DivergedHardcoverItem is one matched row whose EFFECTIVE status has drifted from
+// the last-known Hardcover shelf (hardcover_status) — the outbound half of the
+// two-way sync. Carries just what a status/rating push needs.
+type DivergedHardcoverItem struct {
+	Source          string
+	ExternalID      string
+	EffectiveStatus string
+	HardcoverBookID int64
+	HardcoverEditID int64
+	Rating          *float64
+}
+
+// ListDivergedHardcoverItems returns the owner's matched rows where the effective
+// status (override ?? derived) differs from the last-pulled Hardcover shelf — i.e.
+// syncState='diverged'. This is the bulk-push work-list: after the LWW pull adopts
+// any Hardcover-newer edits, whatever is STILL diverged is where boomtime is newer
+// and should be pushed out. Unmatched rows (no book_id) are excluded — nothing to
+// push. Rating is the effective rating (override ?? derived).
+func (d *DB) ListDivergedHardcoverItems(ctx context.Context, owner string) ([]DivergedHardcoverItem, error) {
+	rows, err := d.Pool.Query(ctx,
+		`SELECT source, external_id,
+		        COALESCE(status_override, status)              AS eff_status,
+		        hardcover_book_id,
+		        COALESCE(hardcover_edition_id, 0)              AS edition_id,
+		        COALESCE(rating_override, rating)              AS eff_rating
+		   FROM reading_items
+		  WHERE owner = $1
+		    AND hardcover_book_id IS NOT NULL
+		    AND hardcover_status IS NOT NULL
+		    AND hardcover_status IS DISTINCT FROM COALESCE(status_override, status)`,
+		owner)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []DivergedHardcoverItem
+	for rows.Next() {
+		var it DivergedHardcoverItem
+		if err := rows.Scan(&it.Source, &it.ExternalID, &it.EffectiveStatus,
+			&it.HardcoverBookID, &it.HardcoverEditID, &it.Rating); err != nil {
+			return nil, err
+		}
+		out = append(out, it)
+	}
+	return out, rows.Err()
+}
+
 // ListReadingItems returns a user's synced items (source=="" → all sources),
 // unfinished first then alphabetical. Never returns raw_meta (the view payload).
 func (d *DB) ListReadingItems(ctx context.Context, owner, source string) ([]ReadingItem, error) {
