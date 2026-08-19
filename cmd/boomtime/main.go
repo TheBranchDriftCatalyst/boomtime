@@ -481,36 +481,15 @@ func runCmd() *cobra.Command {
 				jobStore := jobs.NewStore(database.Pool)
 				jobReg := jobs.NewRegistry()
 
-				// The github handler is wired HERE (Service + DB in scope) so the
-				// jobs package stays domain-free: fan over connected users, refresh
-				// each. A rate-limit fails the batch so it retries later; a per-user
-				// error (incl. a token SyncUser marks invalid) is logged + skipped.
-				githubSvc := github.NewService(database, logger)
-				jobReg.Register(github.GithubStatsRefreshKind, jobs.HandlerFunc(func(jctx context.Context, _ jobs.Job) error {
-					users, uerr := database.ListUsersWithGithubToken(jctx)
-					if uerr != nil {
-						return uerr
-					}
-					for _, u := range users {
-						if _, serr := githubSvc.SyncUser(jctx, u); serr != nil {
-							if errors.Is(serr, github.ErrRateLimited) {
-								return fmt.Errorf("github rate limited at user %q: %w", u, serr)
-							}
-							logger.Warn("github refresh: user sync failed", "user", u, "err", serr)
-						}
-					}
-					logger.Info("github refresh: batch complete", "users", len(users))
-					return nil
-				}))
-
-				// catalyst-books (gaka-zp2s): the domain's job KINDS + fleet caps are
-				// registered through the Module contract (books.Module.RegisterJobs →
-				// internal/books/jobs) instead of inline here — driven off the SAME registry
-				// the server route-wires from. boomtime/github still register their kinds
-				// below until their seam extraction (step 3). Runs at the same point the old
-				// inline block did — BEFORE `provider` is built — so the books enqueuer is
-				// late-bound via domainSet.Books.WireJobEnqueuer(provider) once it exists.
-				// Runs on every role (workers process the kinds).
+				// Per-domain job KINDS + fleet caps are registered through the Module
+				// contract (Module.RegisterJobs) instead of inline here (gaka-zp2s):
+				// github registers github-stats-refresh (internal/boomtime/github), books
+				// registers its whole kind set (internal/books/jobs). Driven off the SAME
+				// registry the server route-wires from; the jobs package stays domain-free.
+				// Runs at the same point the old inline block did — BEFORE `provider` is
+				// built — so the books enqueuer is late-bound via
+				// domainSet.Books.WireJobEnqueuer(provider) once it exists. Runs on every
+				// role (workers process the kinds).
 				jobsDeps := catalyst.Deps{DB: database, Cfg: cfg, Jobs: jobReg, Notify: notifyHub, Logger: logger}
 				for _, mod := range domainReg.Modules() {
 					if jerr := mod.RegisterJobs(ctx, jobsDeps); jerr != nil {
@@ -570,9 +549,8 @@ func runCmd() *cobra.Command {
 				// unlimited. Only kinds that actually exist as registered handler
 				// kinds are set here. (The books caps moved into internal/books/jobs
 				// with their kinds — gaka-zp2s.)
-				jobReg.SetConcurrency(github.GithubStatsRefreshKind, 2) // github-stats-refresh
-				jobReg.SetConcurrency(identity.AvatarRenderKind, 1)     // avatar-render
-				jobReg.SetConcurrency(labelimages.RegenJobKind, 1)      // label-image
+				jobReg.SetConcurrency(identity.AvatarRenderKind, 1) // avatar-render
+				jobReg.SetConcurrency(labelimages.RegenJobKind, 1)  // label-image
 				// Offload routing: these two are the HEAVY kinds drained by the
 				// scale-to-zero worker (KEDA). Marking them here is the SINGLE source
 				// of truth — the worker's include-filter + the server's exclude-filter
