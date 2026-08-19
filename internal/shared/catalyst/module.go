@@ -22,6 +22,7 @@ import (
 	"github.com/labstack/echo/v5"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/cache"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/domaincols"
@@ -53,6 +54,12 @@ type Deps struct {
 	Notify   *notify.Hub
 	Identity IdentityProvider
 	Logger   *slog.Logger
+	// Cache is the ONE shared stats TTL cache the host builds (in handler.New)
+	// and threads to every domain so a cache invalidation from any reader/writer
+	// reaches all the others (e.g. an ingest write clears a goals-progress entry).
+	// Nil in the OpenAPI drift router (zero-value handler) — Modules only stash it
+	// on their bags at registration, never dereference it there.
+	Cache *cache.TTL
 }
 
 // Module is one pluggable data domain, end-to-end. Every method is optional in
