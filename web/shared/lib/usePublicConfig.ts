@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@shared/lib/api";
 import { qk } from "@shared/lib/queryKeys";
 import type { PublicConfig } from "@shared/types/api";
+import { IS_BOOKS_STANDALONE } from "@shared/lib/standalone";
 
 // Boot-time client config (gaka-93f.1.1). GET /api/v1/config/public tells the
 // FE which auth provider is active, whether registration/billing are on, and
@@ -21,6 +22,20 @@ const FALLBACK: PublicConfig = {
   books_enabled: false,
 };
 
+// Standalone books app: there is NO /api/v1/config/public endpoint (the whole app
+// IS books), so the fetch would 404 and fall back to books_enabled:false — hiding
+// the Books nav + showing "Books isn't enabled". Report a fixed standalone config
+// (books on, no registration/oidc/github) and skip the doomed request.
+const STANDALONE_CONFIG: PublicConfig = {
+  registration_enabled: false,
+  auth_provider: "local",
+  oidc_enabled: false,
+  billing_enabled: false,
+  beta_flags: {},
+  github_connect_enabled: false,
+  books_enabled: true,
+};
+
 export function usePublicConfig(): { config: PublicConfig; isLoading: boolean } {
   const { data, isLoading } = useQuery({
     queryKey: qk.publicConfig(),
@@ -29,6 +44,8 @@ export function usePublicConfig(): { config: PublicConfig; isLoading: boolean } 
     gcTime: Infinity,
     refetchOnWindowFocus: false,
     retry: 1,
+    enabled: !IS_BOOKS_STANDALONE,
   });
+  if (IS_BOOKS_STANDALONE) return { config: STANDALONE_CONFIG, isLoading: false };
   return { config: data ?? FALLBACK, isLoading };
 }
