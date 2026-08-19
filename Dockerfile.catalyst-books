@@ -31,6 +31,15 @@ COPY internal/boomtime/widget/specs.json /internal/boomtime/widget/specs.json
 # link the colocated root's node_modules at /web/node_modules.
 COPY internal/books/web/src /internal/books/web/src
 RUN ln -s /web/node_modules /internal/books/web/node_modules
+# gaka-zp2s / gaka-abg0 Step B Phase 2: the boomtime (code) domain FE is
+# colocated under internal/boomtime/web/src (outside /web), reached via the
+# `@boomtime/*` alias. The standalone books bundle tree-shakes boomtime OUT, but
+# `yarn build:books` first runs `tsc -b` over tsconfig.app.json, whose `include`
+# now covers the boomtime tree — so tsc type-checks those files and they must be
+# present in the image. Bring the single source in at the aliased path (no
+# duplicate) and link its node_modules at /web/node_modules.
+COPY internal/boomtime/web/src /internal/boomtime/web/src
+RUN ln -s /web/node_modules /internal/boomtime/web/node_modules
 RUN yarn build:books
 
 # ── Stage 2: build the Go binary with the books SPA embedded ─────────────────
