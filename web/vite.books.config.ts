@@ -38,6 +38,14 @@ const baseConfig = base as UserConfig;
 export default defineConfig({
   ...baseConfig,
   plugins: [...(baseConfig.plugins ?? []), renameBooksIndexHtml()],
+  // Standalone flags consumed by src/features/auth/useAuth.tsx (single-owner, no
+  // auth) — the FE counterpart of the backend's auth.SetStandaloneOwner. Only the
+  // books build sets these; the host build never does.
+  define: {
+    ...(baseConfig.define ?? {}),
+    "import.meta.env.VITE_BOOKS_STANDALONE": JSON.stringify("true"),
+    "import.meta.env.VITE_BOOKS_OWNER": JSON.stringify("owner"),
+  },
   build: {
     ...baseConfig.build,
     outDir: "dist-books",
