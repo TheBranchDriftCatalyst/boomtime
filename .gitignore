@@ -26,6 +26,9 @@ internal/books/web/dist/
 # ../../../web/node_modules (env artifact; recreated like web/node_modules,
 # and re-linked in the Docker web stages). Never commit it.
 internal/books/web/node_modules
+# Colocated boomtime FE resolves bare deps the same way (Phase 2 env artifact;
+# symlink -> ../../../web/node_modules, re-linked in the Docker web stages).
+internal/boomtime/web/node_modules
 
 # Editor / OS
 .DS_Store

@@ -27,6 +27,14 @@ COPY internal/boomtime/widget/specs.json /internal/boomtime/widget/specs.json
 # link the colocated root's node_modules at /web/node_modules.
 COPY internal/books/web/src /internal/books/web/src
 RUN ln -s /web/node_modules /internal/books/web/node_modules
+# gaka-zp2s / gaka-abg0 Step B Phase 2: the boomtime (code) domain FE is
+# PHYSICALLY colocated with its Go package under internal/boomtime/web/src
+# (outside /web), reached via the `@boomtime/*` alias and scanned for Tailwind
+# via an @source in web/src/index.css. The host build imports it (the boomtime
+# domain register), so bring the source in at the aliased path — same
+# no-duplicate trick as books above. Link its node_modules at /web/node_modules.
+COPY internal/boomtime/web/src /internal/boomtime/web/src
+RUN ln -s /web/node_modules /internal/boomtime/web/node_modules
 RUN yarn build
 
 # ── Stage 2: build the Go binary with the SPA embedded ───────────────────────
