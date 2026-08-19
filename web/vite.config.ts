@@ -68,6 +68,14 @@ export default defineConfig({
       // boundary-aware (`@` compiles to /^@(\/|$)/), so `@books/...` never
       // gets swallowed by the `@` entry above regardless of order.
       "@books": path.resolve(__dirname, "../internal/books/web/src"),
+      // gaka-zp2s / gaka-abg0 Step B Phase 2: the boomtime (code) domain FE is
+      // PHYSICALLY colocated with its Go package under internal/boomtime/web/src
+      // (outside this Vite root). `@boomtime/*` resolves there. Only the host
+      // build (vite.config.ts) registers the boomtime domain; the standalone
+      // books build (vite.books.config.ts) never imports it, so it tree-shakes
+      // out. Vite string aliases are boundary-aware (`@` compiles to /^@(\/|$)/),
+      // so `@boomtime/...` is never swallowed by the `@` entry above.
+      "@boomtime": path.resolve(__dirname, "../internal/boomtime/web/src"),
       // Part B Stage 2 (gaka-174.x): the canonical widget spec registry is
       // ONE committed file — Go embeds it (internal/widget/spec.go), the FE
       // reads the exact same bytes through this alias (see
