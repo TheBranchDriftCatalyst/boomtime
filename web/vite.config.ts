@@ -49,6 +49,14 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      // gaka-zp2s / gaka-abg0 Step B: the books domain FE is PHYSICALLY
+      // colocated with its Go package under internal/books/web/src (outside
+      // this Vite root). `@books/*` resolves there so both the host build and
+      // the standalone books build (vite.books.config.ts, which extends this
+      // config) source the exact same books tree. Vite's string aliases are
+      // boundary-aware (`@` compiles to /^@(\/|$)/), so `@books/...` never
+      // gets swallowed by the `@` entry above regardless of order.
+      "@books": path.resolve(__dirname, "../internal/books/web/src"),
       // Part B Stage 2 (gaka-174.x): the canonical widget spec registry is
       // ONE committed file — Go embeds it (internal/widget/spec.go), the FE
       // reads the exact same bytes through this alias (see
@@ -61,6 +69,15 @@ export default defineConfig({
     port: 5173,
     host: true, // bind 0.0.0.0 so the dev server is reachable from Docker
     proxy,
+    // The books FE lives under ../internal/books/web (outside this Vite root),
+    // reached via the `@books` alias above. Allow the dev server to serve files
+    // from the repo root so those out-of-root modules load in `yarn dev`.
+    // (Production `vite build` doesn't enforce fs.allow — it's a dev-only guard
+    // — but the widget-specs JSON already imports from ../internal, so keeping
+    // the allowance explicit documents the cross-root reach.)
+    fs: {
+      allow: [path.resolve(__dirname, "..")],
+    },
   },
   build: {
     outDir: "dist",
