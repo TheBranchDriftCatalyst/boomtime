@@ -12,6 +12,7 @@ import { useAuth } from "@/features/auth/useAuth";
 import { useCollapsedSidebar } from "@/layout/useCollapsedSidebar";
 import { useJobNotifications } from "@/features/jobs/useJobNotifications";
 import { NotificationsProvider } from "@/features/notify/NotificationsProvider";
+import { IS_BOOKS_STANDALONE } from "@/lib/standalone";
 
 // AppShell — the authed app frame. The layout is the no-scroll CSS-grid shell
 // (AppShellNoScroll): the shell owns exactly one viewport (h-dvh, overflow
@@ -70,7 +71,10 @@ export function AppShell() {
         onLogout={handleLogout}
       />
       <KeyboardShortcuts />
-      <WelcomeModal />
+      {/* The first-run WelcomeModal is the CODE-domain onboarding ("Import
+          Wakatime data" → /app/import). It's meaningless in the books-only
+          standalone (no import/spaces/widgets), so it's host-only. */}
+      {!IS_BOOKS_STANDALONE && <WelcomeModal />}
     </NotificationsProvider>
   );
 }
