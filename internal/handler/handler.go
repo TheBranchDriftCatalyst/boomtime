@@ -20,8 +20,6 @@ import (
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/admin"
-	booksapi "github.com/TheBranchDriftCatalyst/boomtime/internal/books/api"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/hardcover"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/awards"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/curation"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/goals"
@@ -89,7 +87,10 @@ type Handler struct {
 	Stats    *stats.Handler    // phase 6
 	Admin    *admin.Handler    // phase 7
 	Query    *queryapi.Handler // gaka-174.q: cross-domain query DSL over HTTP
-	Books    *booksapi.Handler // gaka-zp2s phase 2: catalyst-books domain
+	// gaka-zp2s: the catalyst-books HTTP surface is no longer a bag on this god-type
+	// — it is owned by books.Module (RegisterRoutes builds + stashes it, the host
+	// late-wires its enqueuer/Hardcover-push). This package no longer imports the books
+	// domain.
 }
 
 // New constructs a Handler. logHub streams server-process slog records to the
@@ -133,7 +134,6 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *impor
 		Stats:    stats.New(database, cfg, logger, sharedCache),
 		Admin:    admin.New(database, cfg, logger, sharedCache, worker, hub),
 		Query:    &queryapi.Handler{DB: database, Cfg: cfg, Logger: logger},
-		Books:    booksapi.New(database, cfg, logger),
 	}
 }
 
@@ -194,9 +194,8 @@ func (h *Handler) SetJobs(store *jobs.Store, enq jobs.Enqueuer, reg *jobs.Regist
 	if h.Identity != nil {
 		h.Identity.SetJobEnqueuer(enq) // gaka-hney.7: avatar-render enqueue
 	}
-	if h.Books != nil {
-		h.Books.SetJobEnqueuer(enq) // gaka-zp2s: book ingest/curation-push enqueue
-	}
+	// gaka-zp2s: the books enqueuer is wired onto books.Module directly by the
+	// composition root (cmd/boomtime), not through this god-type.
 }
 
 // SetJobLogStore propagates the object store the per-job log endpoints read +
@@ -221,14 +220,6 @@ func (h *Handler) SetJobEvents(hub *jobsevents.Hub) {
 func (h *Handler) SetNotify(hub *notify.Hub) {
 	if h.Identity != nil {
 		h.Identity.SetNotify(hub)
-	}
-}
-
-// SetHardcoverPush propagates the inline curation-push service to h.Books so the
-// manual per-row sync button can push synchronously (bypass the job queue).
-func (h *Handler) SetHardcoverPush(p *hardcover.PushService) {
-	if h.Books != nil {
-		h.Books.SetHardcoverPush(p)
 	}
 }
 

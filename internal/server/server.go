@@ -16,12 +16,8 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/tracing"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/admin"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books"
-	booksapi "github.com/TheBranchDriftCatalyst/boomtime/internal/books/api"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/awards"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/curation"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/github"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/goals"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/ingest"
@@ -51,15 +47,15 @@ var distFS embed.FS
 // to the constructed *handler.Handler — this shape is preserved for
 // backward compatibility with existing tests that only care about the
 // Echo instance.)
-func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *importer.Worker, hub *importer.Hub, logHub *logging.LogHub) *echo.Echo {
-	e, _ := NewWithHandler(database, cfg, logger, worker, hub, logHub)
+func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *importer.Worker, hub *importer.Hub, logHub *logging.LogHub, reg *catalyst.Registry) *echo.Echo {
+	e, _ := NewWithHandler(database, cfg, logger, worker, hub, logHub, reg)
 	return e
 }
 
 // NewWithHandler is New but also returns the constructed *handler.Handler
 // so callers (cmd/boomtime) can wire post-construction dependencies like
 // the label-images worker.
-func NewWithHandler(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *importer.Worker, hub *importer.Hub, logHub *logging.LogHub) (*echo.Echo, *handler.Handler) {
+func NewWithHandler(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *importer.Worker, hub *importer.Hub, logHub *logging.LogHub, reg *catalyst.Registry) (*echo.Echo, *handler.Handler) {
 	e := echo.New()
 
 	e.Use(middleware.Recover())
@@ -135,7 +131,7 @@ func NewWithHandler(database *db.DB, cfg *config.Config, logger *slog.Logger, wo
 	})
 
 	h := handler.New(database, cfg, logger, worker, hub, logHub)
-	registerRoutes(e, h)
+	registerRoutes(e, h, reg)
 	registerStatic(e, h, cfg, logger)
 	return e, h
 }
@@ -143,7 +139,14 @@ func NewWithHandler(database *db.DB, cfg *config.Config, logger *slog.Logger, wo
 // registerRoutes wires all API routes, one registration func per domain. The
 // call order (and the order within each func) preserves the original flat
 // registration sequence.
-func registerRoutes(e *echo.Echo, h *handler.Handler) {
+func registerRoutes(e *echo.Echo, h *handler.Handler, reg *catalyst.Registry) {
+	// gaka-zp2s: the composition root threads ONE catalyst.Registry (built in
+	// internal/domainreg) through here so per-domain wiring flows via the Module
+	// contract instead of this package naming each domain. deps carries the core
+	// deps a Module needs to build its handlers; the OpenAPI drift router passes a
+	// zero-value handler, so these are nil there and each Module's nil-guards keep
+	// the enumerated route set identical.
+	deps := catalyst.Deps{DB: h.DB, Cfg: h.Cfg, Logger: h.Logger}
 	registerHeartbeatRoutes(e, h)
 	// gaka-8tn phase 5a: ingest (heartbeats + workouts + health_samples +
 	// heartbeats explorer + entities) extracted into internal/ingest.
@@ -186,9 +189,8 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	// contribute no-op admin surfaces today (BaseModule default); books mounts
 	// its diagnostics + reading-monitor cluster.
 	adminGroup := e.Group("/api/v1/admin")
-	adminDeps := catalyst.Deps{DB: h.DB, Cfg: h.Cfg, Logger: h.Logger}
-	for _, m := range domainModules() {
-		m.RegisterAdminRoutes(adminGroup, adminDeps)
+	for _, m := range reg.Modules() {
+		m.RegisterAdminRoutes(adminGroup, deps)
 	}
 	// gaka-8tn phase 1: meta + logs registration is now owned by the meta
 	// domain package. `meta.Register` fans out /api/v1/version,
@@ -207,10 +209,15 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	// gaka-8tn phase 4a: identity (auth + password + profile + timezone +
 	// wakatime_key + avatar) extracted into internal/identity.
 	identity.Register(e, h.Identity)
-	// gaka-zp2s phase 2: catalyst-books surface (Amazon/Kindle/Audible + Hardcover +
-	// reading items/work/curation/match) extracted into internal/books. Registered
-	// after identity; book paths never overlap identity paths.
-	booksapi.Register(e, h.Books)
+	// gaka-zp2s: per-domain HTTP surfaces are mounted through the Module contract
+	// (Module.RegisterRoutes) instead of being named here. Today books mounts its
+	// Amazon/Kindle/Audible + Hardcover + reading-items surface (into internal/books/api)
+	// and stashes its handler for late-wiring; boomtime/github contribute no-op
+	// RegisterRoutes until their seam extraction (steps 3+). Registered after identity;
+	// book paths never overlap identity paths, so relative order is immaterial.
+	for _, m := range reg.Modules() {
+		m.RegisterRoutes(e, deps)
+	}
 	// gaka-8tn phase 4b: awards cluster (streak ledger + evaluator +
 	// backfill — 7 routes) extracted into internal/awards. Registered
 	// AFTER identity so /awards/* auth checks resolve against the
@@ -221,16 +228,6 @@ func registerRoutes(e *echo.Echo, h *handler.Handler) {
 	// Cfg.BooksEnabled() inside the handler (runtime, since the domain is a
 	// body field). coding is always available.
 	queryapi.Register(e, h.Query)
-}
-
-// domainModules is the composition root's canonical domain set for route/admin
-// wiring, mirroring cmd/boomtime's buildDomainRegistry order (waka → github →
-// books). Registration order is immaterial for admin routes (distinct paths); the
-// list exists so registerRoutes iterates the Module contract instead of naming each
-// domain's admin surface directly. A domain whose admin surface hasn't been lifted
-// onto its Module yet contributes the BaseModule no-op.
-func domainModules() []catalyst.Module {
-	return []catalyst.Module{boomtime.Module{}, github.Module{}, books.Module{}}
 }
 
 // registerGoalRoutes: user-defined composite goals (gaka-wpb). CRUD +

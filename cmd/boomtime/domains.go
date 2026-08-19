@@ -1,24 +1,16 @@
 package main
 
 import (
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/github"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/domainreg"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/catalyst"
 )
 
-// buildDomainRegistry is the composition root's canonical domain set (gaka-zp2s).
-// Registration ORDER is load-bearing: the aggregated EncryptedColumns() must match
-// the pre-registry order (waka → github → amazon → hardcover) so key-rotation is
-// byte-identical. Both the server (main.go) and the rotate-encryption-key command
-// build from this ONE list, so a new domain is added in exactly one place.
+// buildDomainRegistry returns the composition root's canonical domain registry
+// (gaka-zp2s), built by the single source in internal/domainreg. Used by commands
+// that only need the aggregated column contract (rotate-encryption-key); the server
+// path uses domainreg.Build() directly so it also gets the typed late-wire handles.
 //
-// A standalone image would build a registry with only its own Module; the host
-// registers them all.
+// A standalone image builds its own single-domain wiring; the host registers them all.
 func buildDomainRegistry() *catalyst.Registry {
-	r := catalyst.NewRegistry()
-	r.Add(boomtime.Module{}) // waka (base domain)
-	r.Add(github.Module{})   // github stats
-	r.Add(books.Module{})    // catalyst-books (amazon + hardcover)
-	return r
+	return domainreg.Build().Registry
 }
