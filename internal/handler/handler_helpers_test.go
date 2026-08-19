@@ -16,9 +16,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	imagejobs "github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/queue/imagejobs"
-	labelimages "github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/worker/labelimages"
 )
 
 var _ = Describe("statsCacheTTL (BOOM_STATS_CACHE_TTL)", func() {
@@ -55,25 +52,6 @@ var _ = Describe("statsCacheTTL (BOOM_STATS_CACHE_TTL)", func() {
 	})
 })
 
-var _ = Describe("Handler post-construction setters (SetLabelImagesWorker / SetImageJobQueue)", func() {
-	// The setters are 2-line assignments; the invariant here is that they
-	// leave the field on the SAME Handler pointer (not a copy) — which is
-	// load-bearing because cmd/boomtime constructs the handler before the
-	// worker/queue exist, then wires them in place.
-	It("SetLabelImagesWorker mutates the receiver's field (nil-in, non-nil-after)", func() {
-		h := &Handler{}
-		Expect(h.LabelImagesWorker).To(BeNil())
-		w := &labelimages.Worker{}
-		h.SetLabelImagesWorker(w)
-		Expect(h.LabelImagesWorker).To(BeIdenticalTo(w),
-			"setter MUST update the field on the SAME receiver — cmd/boomtime relies on post-construction wiring")
-	})
-
-	It("SetImageJobQueue mutates the receiver's field", func() {
-		h := &Handler{}
-		Expect(h.ImageJobQueue).To(BeNil())
-		r := &imagejobs.Registry{}
-		h.SetImageJobQueue(r)
-		Expect(h.ImageJobQueue).To(BeIdenticalTo(r))
-	})
-})
+// gaka-zp2s: the SetLabelImagesWorker / SetImageJobQueue post-construction-setter
+// invariants moved with those setters onto boomtime.Module (its admin handler); see
+// internal/boomtime/admin.
