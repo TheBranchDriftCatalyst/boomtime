@@ -17,6 +17,16 @@ COPY web/ ./
 # whole repo is present). Copy the single source into the aliased path so tsc +
 # vite resolve it — no duplicate file, still one source of truth.
 COPY internal/boomtime/widget/specs.json /internal/boomtime/widget/specs.json
+# gaka-zp2s / gaka-abg0 Step B: the books domain FE is PHYSICALLY colocated with
+# its Go package under internal/books/web/src (outside /web), reached via the
+# `@books/*` alias (web/vite.config.ts + web/tsconfig.app.json) and scanned for
+# Tailwind classes via an @source in web/src/index.css. The host build imports
+# it (registerBooksDomain), so bring the source in at the aliased path — same
+# no-duplicate, single-source-of-truth trick as the widget spec above. tsc
+# resolves bare deps (react, vitest, …) by walking up from each file, so also
+# link the colocated root's node_modules at /web/node_modules.
+COPY internal/books/web/src /internal/books/web/src
+RUN ln -s /web/node_modules /internal/books/web/node_modules
 RUN yarn build
 
 # ── Stage 2: build the Go binary with the SPA embedded ───────────────────────
