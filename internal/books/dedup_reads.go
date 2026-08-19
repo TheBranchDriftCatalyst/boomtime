@@ -7,7 +7,7 @@
 // DESTRUCTIVE + dry-run-supported: a web run defaults to dry-run (report only);
 // applying requires the confirm sentinel. Needs the user's Hardcover token
 // (BOOM_ENCRYPTION_KEY to decrypt) — a --user with no linked Hardcover is a no-op.
-package climeta
+package books
 
 import (
 	"context"
@@ -20,9 +20,37 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/hardcover"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/climeta"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 )
+
+// init registers the `hardcover dedup-reads` command into the climeta web-run
+// allowlist (gaka-zp2s) — the CLI framework stays domain-free; the books domain
+// contributes its own vetted command here. Fires whenever package books loads (the
+// composition root pulls it in via internal/domainreg; test binaries blank-import it).
+func init() {
+	climeta.Register("hardcover dedup-reads", climeta.RegistryEntry{
+		// MUTATING (not destructive) so it's runnable from the web; deletes are gated
+		// by the dry-run default + confirm sentinel. See NewDedupReadsCmd.
+		Classification:  climeta.ClassMutating,
+		DryRunSupported: true,
+		RequiredCap:     auth.CapAdmin,
+		NewCommand:      NewDedupReadsCmd,
+		FlagCompleters:  map[string]cobra.CompletionFunc{"user": climeta.CompleteUsernames},
+		FlagListers:     map[string]climeta.DBLister{"user": climeta.ListUsernames},
+		Invoke: func(ctx context.Context, database *db.DB, args climeta.RunArgs, out io.Writer) error {
+			if err := auth.LoadKeyFromEnv(); err != nil {
+				return fmt.Errorf("cannot decrypt the Hardcover token: %w", err)
+			}
+			user := args.Str("user")
+			if user == "" {
+				return fmt.Errorf("--user is required")
+			}
+			return RunDedupReads(ctx, hardcover.NewStore(database), database, user, args.Bool("dry-run"), out)
+		},
+	})
+}
 
 // NewDedupReadsCmd builds the `hardcover dedup-reads` command def.
 func NewDedupReadsCmd() *cobra.Command {
@@ -34,7 +62,7 @@ func NewDedupReadsCmd() *cobra.Command {
 		// Deletes data, but classed MUTATING (not destructive) so it can run from the
 		// admin Commands UI — the web hard-blocks the destructive class entirely. The
 		// dry-run default + confirm-sentinel-to-apply is the safety here.
-		Annotations: map[string]string{WebAnnotation: ClassMutating},
+		Annotations: map[string]string{climeta.WebAnnotation: climeta.ClassMutating},
 		Long: `Scan a user's Hardcover shelf for books with more than one read and delete the
 noise: empty dateless reads (auto-created by status pushes) and exact-duplicate
 dated reads. Legitimate distinct reads (a real re-read has a different finish date)
@@ -67,7 +95,7 @@ are KEPT. Deletes on Hardcover AND prunes the local reading_events mirror.
 	cmd.ValidArgsFunction = func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	_ = cmd.RegisterFlagCompletionFunc("user", CompleteUsernames)
+	_ = cmd.RegisterFlagCompletionFunc("user", climeta.CompleteUsernames)
 	return cmd
 }
 

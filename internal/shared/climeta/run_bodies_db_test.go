@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/climeta"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/climeta"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 

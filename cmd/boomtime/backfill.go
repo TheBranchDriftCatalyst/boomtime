@@ -6,7 +6,7 @@
 // SAME definitions in-process:
 //   - `backfill last-context`  (climeta.NewBackfillLastContextCmd) — resolve
 //     stored <<LAST_PROJECT/BRANCH/LANGUAGE>> WakaTime placeholder tokens.
-//   - `backfill github-stats`  (climeta.NewBackfillGithubStatsCmd) — refresh
+//   - `backfill github-stats`  (github.NewBackfillGithubStatsCmd) — refresh
 //     the per-user GitHub stats cache.
 //
 // (The former `backfill git` git-history experiment — gaka-vh8 — was removed;
@@ -15,7 +15,8 @@
 package main
 
 import (
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/climeta"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/github"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/climeta"
 	"github.com/spf13/cobra"
 )
 
@@ -26,6 +27,6 @@ func backfillCmd() *cobra.Command {
 		Short: "One-shot historical-data maintenance (last-context, github-stats)",
 	}
 	cmd.AddCommand(climeta.NewBackfillLastContextCmd())
-	cmd.AddCommand(climeta.NewBackfillGithubStatsCmd())
+	cmd.AddCommand(github.NewBackfillGithubStatsCmd())
 	return cmd
 }
