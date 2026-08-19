@@ -36,6 +36,7 @@ import { MobileNav } from "@/layout/MobileNav";
 import { ReadingDiagnosticIndicator } from "@/layout/ReadingDiagnosticIndicator";
 import { NotificationBell } from "@/features/notify/NotificationBell";
 import { openCommandPalette } from "@/components/CommandPalette";
+import { IS_BOOKS_STANDALONE, STANDALONE_APP_NAME } from "@/lib/standalone";
 
 interface HeaderBarProps {
   username: string;
@@ -71,6 +72,13 @@ const PAGE_TITLES: Record<string, string> = {
 
 function pageTitleFromPath(pathname: string): string {
   const seg = pathname.replace(/^\/app\/?/, "").split("/")[0] ?? "";
+  // The books-only standalone lands on /app/books (no "books" key in the host
+  // map above) and brands its fallback "CatalystBooks" instead of "Boomtime".
+  // Host behavior is untouched — the flag folds to false there.
+  if (IS_BOOKS_STANDALONE) {
+    if (seg === "books") return "Books";
+    return PAGE_TITLES[seg] ?? STANDALONE_APP_NAME;
+  }
   return PAGE_TITLES[seg] ?? "Boomtime";
 }
 
