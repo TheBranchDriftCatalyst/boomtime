@@ -29,6 +29,7 @@ import (
 	booksapi "github.com/TheBranchDriftCatalyst/boomtime/internal/books/api"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/hardcover"
 	booksdb "github.com/TheBranchDriftCatalyst/boomtime/internal/books/db"
+	booksweb "github.com/TheBranchDriftCatalyst/boomtime/internal/books/web"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
@@ -91,6 +92,15 @@ func main() {
 	// Inline Hardcover push for the per-row sync button (nil-safe without it).
 	h.SetHardcoverPush(hardcover.NewPushService(database, hardcover.NewStore(database), logger))
 	booksapi.Register(e, h)
+
+	// Serve the embedded books SPA (web/dist-books) with an index.html fallback
+	// for client-side routing. Registered AFTER the API + /healthz so Echo's
+	// "/*" catch-all never shadows them. The books UI is the SAME shell/theme as
+	// boomtime with ONLY the books domain surfaced (registerBooksAppDomains).
+	if err := booksweb.RegisterSPA(e, logger); err != nil {
+		logger.Error("failed to mount books SPA", "err", err)
+		os.Exit(1)
+	}
 
 	port := cfg.Port
 	if port == 0 {

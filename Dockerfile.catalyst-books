@@ -1,13 +1,30 @@
 # Standalone catalyst-books image (gaka-zp2s P4) — the books domain running in
 # ISOLATION, built from the SAME monorepo as boomtime but importing none of the
 # code domain (proven: `go list -deps ./cmd/catalyst-books` pulls in 0
-# internal/boomtime packages). API-only for now; the standalone books web UI
-# (web/books) is a follow-up, so there's no SPA-build stage — this image is a lean
-# Go binary that serves the books HTTP surface with shared token auth.
+# internal/boomtime packages). Serves the books HTTP surface AND the books-only
+# SPA (same boomtime shell/theme, ONLY the books domain surfaced — see
+# web/src/books-main.tsx + `yarn build:books`).
 #
 #   docker build -f Dockerfile.catalyst-books -t catalyst-books .
 #
-# ── Stage 1: build the Go binary ─────────────────────────────────────────────
+# ── Stage 1: build the books-only SPA ────────────────────────────────────────
+# Mirrors the host Dockerfile's web stage but runs `yarn build:books` → the
+# tree-shaken, boomtime-free bundle in web/dist-books.
+FROM node:22-alpine AS web
+WORKDIR /web
+COPY web/package.json web/yarn.lock ./
+# --ignore-engines: a transitive dep declares node>=24 but nothing here needs
+# node 24 semantics (see the host Dockerfile for the full rationale).
+RUN yarn install --frozen-lockfile --ignore-engines
+COPY web/ ./
+# The "@widget-specs" alias resolves to ../internal/boomtime/widget/specs.json;
+# this stage only copies web/, and the books build's tsc pass type-checks every
+# src file (even the tree-shaken ones), so provide the single source at the
+# aliased path — no duplicate, still one source of truth.
+COPY internal/boomtime/widget/specs.json /internal/boomtime/widget/specs.json
+RUN yarn build:books
+
+# ── Stage 2: build the Go binary with the books SPA embedded ─────────────────
 FROM golang:1.25-alpine AS server
 ARG VERSION=dev
 RUN apk add --no-cache git
@@ -16,6 +33,8 @@ COPY go.mod go.sum* ./
 RUN go mod download
 # .dockerignore guards secrets/junk out of the builder layers.
 COPY . .
+# Embed the books-only SPA (internal/books/web embeds internal/books/web/dist).
+COPY --from=web /web/dist-books ./internal/books/web/dist
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -ldflags "-s -w" \
     -o /out/catalyst-books ./cmd/catalyst-books
