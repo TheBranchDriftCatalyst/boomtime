@@ -8,11 +8,15 @@
 package books
 
 import (
+	"context"
+	"log/slog"
+
 	"github.com/labstack/echo/v5"
 
 	booksadmin "github.com/TheBranchDriftCatalyst/boomtime/internal/books/admin"
 	booksapi "github.com/TheBranchDriftCatalyst/boomtime/internal/books/api"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/hardcover"
+	booksjobs "github.com/TheBranchDriftCatalyst/boomtime/internal/books/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/catalyst"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
@@ -28,7 +32,8 @@ import (
 // registry), so the registry stores a pointer.
 type Module struct {
 	catalyst.BaseModule
-	h *booksapi.Handler
+	h   *booksapi.Handler
+	svc *booksjobs.Services
 }
 
 // New constructs an empty books Module. The HTTP handler is built lazily in
@@ -84,4 +89,33 @@ func (m *Module) SetHardcoverPush(p *hardcover.PushService) {
 // per-domain internal/books/admin seam folder.
 func (*Module) RegisterAdminRoutes(g *echo.Group, d catalyst.Deps) {
 	booksadmin.Register(g, booksadmin.New(d.DB, d.Cfg, d.Logger))
+}
+
+// RegisterJobs registers the catalyst-books job KINDS + fleet caps (internal/books/jobs)
+// and stashes the shared services for late-wiring. It runs at the SAME point the old
+// inline cmd/boomtime block did — before the jobs provider exists — so the enqueuer is
+// late-bound via WireJobEnqueuer; the inline Hardcover-push service is handed to the
+// HTTP handler here (nil-safe on worker roles where no handler was built). Byte-identical
+// to the pre-extraction wiring.
+func (m *Module) RegisterJobs(ctx context.Context, d catalyst.Deps) error {
+	m.svc = booksjobs.Register(d.Jobs, d.DB, d.Cfg, d.Notify, d.Logger)
+	m.SetHardcoverPush(m.svc.CurationPush())
+	return nil
+}
+
+// WireJobEnqueuer late-binds the jobs provider (a jobs.Enqueuer) once it exists:
+// onto the audiobooks service (finished-book Hardcover pushes route to the capped
+// queue) AND onto the HTTP handler (book ingest / curation-push enqueue). Both are
+// nil-safe — mirrors the pre-extraction `audioSvc.SetEnqueuer(provider)` (any role) +
+// `h.Books.SetJobEnqueuer(provider)` (server role only).
+func (m *Module) WireJobEnqueuer(enq jobs.Enqueuer) {
+	m.svc.WireEnqueuer(enq)
+	m.SetJobEnqueuer(enq)
+}
+
+// RegisterSchedules registers the books leader-singleton schedules on sched, gated
+// exactly as the pre-extraction host block. The host owns the outer "build the
+// scheduler at all" condition + go sched.Run.
+func (*Module) RegisterSchedules(ctx context.Context, sched *jobs.Scheduler, cfg *config.Config, logger *slog.Logger) {
+	booksjobs.RegisterSchedules(ctx, sched, cfg, logger)
 }
