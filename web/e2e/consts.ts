@@ -2,11 +2,18 @@
 // global-teardown, and the spec so the seeded target project + Space name stay
 // in sync across all three.
 
-/** Base URL the browser + request contexts hit (Vite dev server, proxies API). */
-export const BASE_URL = "http://localhost:5173";
+/**
+ * Base URL the browser + request contexts hit (Vite dev server, proxies API).
+ * Override with E2E_BASE_URL to run the suite against a non-default host/port
+ * (e.g. a Tilt-shadowed :8080 forces the stack onto alternate ports).
+ */
+export const BASE_URL = process.env.E2E_BASE_URL ?? "http://localhost:5173";
 
-/** Go backend, polled for readiness in global-setup. */
-export const BACKEND_URL = "http://localhost:8080";
+/**
+ * Go backend, polled for readiness in global-setup. Override with
+ * E2E_BACKEND_URL when the backend is not on the default :8080.
+ */
+export const BACKEND_URL = process.env.E2E_BACKEND_URL ?? "http://localhost:8080";
 
 /**
  * Dedicated, isolated e2e user. NEVER touch panda's real data — everything is

@@ -18,7 +18,9 @@ export default defineConfig({
   globalTeardown: "./e2e/global-teardown.ts",
 
   use: {
-    baseURL: "http://localhost:5173",
+    // Parameterized so the suite can target a non-default host/port; keep in
+    // sync with BASE_URL in e2e/consts.ts (which global-setup uses).
+    baseURL: process.env.E2E_BASE_URL ?? "http://localhost:5173",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
