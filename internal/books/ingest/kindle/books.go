@@ -146,3 +146,11 @@ func (s *Service) SetNotify(hub *notify.Hub) *Service { s.Notify = hub; return s
 // positionSource interface is unexported, but a value implementing
 // FetchLastPagePosition can still be passed in). Mirrors SetHardcover.
 func (s *Service) SetSidecar(sc positionSource) *Service { s.sidecar = sc; return s }
+
+// SetKindleSource swaps the Cloud Reader library wire. Production wires
+// *amazon.CloudReaderClient in New; this seam lets a DB-backed (external-package)
+// test inject a fake library so SyncUser exercises the full ingest→reading_items
+// write path without a network. The kindleSource interface is unexported, but a
+// value implementing its methods can still be passed in (same pattern as
+// SetSidecar). Chainable.
+func (s *Service) SetKindleSource(k kindleSource) *Service { s.kindle = k; return s }
