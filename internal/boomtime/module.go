@@ -10,8 +10,15 @@ import (
 	"github.com/labstack/echo/v5"
 
 	boomtimeadmin "github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/admin"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/awards"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/curation"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/goals"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/importer"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/ingest"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/queue/imagejobs"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/spaces"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/stats"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/widgets"
 	labelimages "github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/worker/labelimages"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/catalyst"
@@ -43,13 +50,48 @@ func (*Module) EncryptedColumns() []domaincols.EncryptedColumn {
 	return domaincols.EncryptedColumnsFor("waka")
 }
 
-// RegisterRoutes builds the boomtime admin/operator handler and mounts its surface
-// (label-images cluster + public label-image GET + wakatime.com import cluster) on the
-// full echo — the prefixes are mixed, so this uses RegisterRoutes rather than the
-// /api/v1/admin group. Stashes the handler for post-construction late-wiring.
+// RegisterRoutes mounts the boomtime domain's full HTTP surface (gaka-zp2s): the
+// admin/operator cluster (label-images + public label-image GET + wakatime.com import)
+// PLUS the code/wakatime query + ingest routes lifted off the god-handler
+// (ingest / curation / stats / widgets / goals / spaces / awards). Each per-domain
+// handler "bag" is built here from Deps — the ONE shared stats cache arrives via
+// d.Cache so a cache invalidation from any bag reaches every reader, byte-identical to
+// the pre-move handler.New wiring. The admin handler is stashed for post-construction
+// late-wiring (import worker, label-images worker, image-job queue, jobs store).
+//
+// Registration order preserves the pre-move relative sequence
+// (ingest → curation → stats → widgets → goals → spaces → awards); the bags are
+// non-overlapping across domains, so their global slot moving to this single
+// Module.RegisterRoutes call leaves the routing tree — and the drift-guard route set —
+// identical. The nil-guards inside each domain's Register keep the OpenAPI drift router
+// (zero-value Deps) enumerating the same paths without dereferencing a nil DB/cache.
 func (m *Module) RegisterRoutes(e *echo.Echo, d catalyst.Deps) {
+	// Admin/operator surface (label-images cluster + public label-image GET +
+	// wakatime.com import cluster). Mixed prefixes ⇒ mounted on the full echo, not
+	// the /api/v1/admin group.
 	m.admin = boomtimeadmin.New(d.DB, d.Cfg, d.Logger)
 	boomtimeadmin.Register(e, m.admin)
+
+	// Ingest (heartbeats + workouts + health_samples + explorer + entities).
+	// Registered first among the data domains so /heartbeats.bulk stays the
+	// fast-path first-match (its own Register preserves the intra-cluster order).
+	ingest.Register(e, ingest.New(d.DB, d.Cfg, d.Logger, d.Cache))
+	// Curation (hide/rename rules + destructive triplet + labels catalog admin).
+	curation.Register(e, curation.New(d.DB, d.Cfg, d.Logger, d.Cache))
+	// Stats (derived + core stats + big-bet aggregations + files + projects +
+	// leaderboards + commits). stats.New takes the Config-subset interface, which
+	// *config.Config satisfies.
+	stats.Register(e, stats.New(d.DB, d.Cfg, d.Logger, d.Cache))
+	// Badges + embeddable widgets + widget-def CRUD.
+	widgets.Register(e, widgets.New(d.DB, d.Cfg, d.Logger, d.Cache))
+	// User-defined composite goals (CRUD + toggle + progress). /goals/progress
+	// registers BEFORE /goals/:id inside goals.Register to win path matching.
+	goals.Register(e, &goals.Handler{DB: d.DB, Logger: d.Logger})
+	// Spaces + dashboard-layout. /spaces/preview registers BEFORE /spaces/:id inside
+	// spaces.Register to win path matching.
+	spaces.Register(e, &spaces.Handler{DB: d.DB, Logger: d.Logger, Cache: d.Cache})
+	// Awards cluster (streak ledger + evaluator + backfill).
+	awards.Register(e, awards.New(d.DB, d.Cfg, d.Logger))
 }
 
 // SetImportWorker late-binds the wakatime.com import-job worker + hub onto the admin

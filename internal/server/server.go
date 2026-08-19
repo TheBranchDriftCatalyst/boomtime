@@ -15,14 +15,7 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/tracing"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/awards"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/curation"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/goals"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/importer"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/ingest"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/spaces"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/stats"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/widgets"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/identity"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/admin"
@@ -146,29 +139,13 @@ func registerRoutes(e *echo.Echo, h *handler.Handler, reg *catalyst.Registry) {
 	// deps a Module needs to build its handlers; the OpenAPI drift router passes a
 	// zero-value handler, so these are nil there and each Module's nil-guards keep
 	// the enumerated route set identical.
-	deps := catalyst.Deps{DB: h.DB, Cfg: h.Cfg, Logger: h.Logger}
-	registerHeartbeatRoutes(e, h)
-	// gaka-8tn phase 5a: ingest (heartbeats + workouts + health_samples +
-	// heartbeats explorer + entities) extracted into internal/ingest.
-	// Registered EARLY so /heartbeats.bulk stays the fast-path first-match.
-	ingest.Register(e, h.Ingest)
-	// gaka-8tn phase 5b: curation (hide/rename rules + destructive triplet +
-	// labels catalog admin) extracted into internal/curation. `curation.Register`
-	// fans out the 8 /curation/... routes formerly in registerCurationRoutes
-	// plus the 6 labels-catalog + admin routes formerly in registerMiscRoutes.
-	// Order preserved: /curation/:id/preview still registers BEFORE the /:id
-	// triplet so the static suffix wins path matching against Echo's param
-	// matcher.
-	curation.Register(e, h.Curation)
-	// gaka-8tn phase 6: stats HTTP surface (derived + core stats + big-bet
-	// aggregations + files + projects + leaderboards + commits) extracted
-	// into internal/stats. `stats.Register` fans out the 16 routes formerly
-	// in registerStatsRoutes plus the projects + active_files + leaderboards
-	// + commits routes previously split between registerStatsRoutes and
-	// registerMiscRoutes. Route strings + order preserved verbatim.
-	stats.Register(e, h.Stats)
-	registerStatsRoutes(e, h)
-	registerMiscRoutes(e, h)
+	deps := catalyst.Deps{DB: h.DB, Cfg: h.Cfg, Logger: h.Logger, Cache: h.Cache}
+	// gaka-zp2s: the boomtime data-domain HTTP surface (ingest / curation / stats /
+	// widgets / goals / spaces / awards) is no longer named here — it moved onto
+	// boomtime.Module.RegisterRoutes (driven by the reg.Modules() loop below), so this
+	// package imports no boomtime data domain. Route strings + order are byte-identical;
+	// the module registers them at the module-loop slot and the domains don't overlap,
+	// so the routing tree (and the drift-guard route set) is unchanged.
 	// gaka-8tn phase 7: admin domain (label-images admin + git-history
 	// backfill + whole-DB backup export/import + wakatime.com import
 	// cluster + source-health observability + the public label-image GET
@@ -198,16 +175,9 @@ func registerRoutes(e *echo.Echo, h *handler.Handler, reg *catalyst.Registry) {
 	// /api/v1/logs REST + WS endpoints. Order preserved: same effective
 	// route set as pre-refactor registerLogRoutes + registerMetaRoutes.
 	meta.Register(e, h.Meta)
-	registerGoalRoutes(e, h)
-	// gaka-8tn phase 2a: spaces + dashboard-layout registration is now
-	// owned by the spaces domain package. `spaces.Register` fans out the
-	// eight /spaces/... routes (formerly registerSpaceRoutes) plus the
-	// three /dashboard/:scope routes (formerly buried in registerAuthRoutes).
-	// Order preserved: /spaces/preview still registers BEFORE /spaces/:id
-	// so the static route wins path matching against Echo's param matcher.
-	spaces.Register(e, h.Spaces)
 	// gaka-8tn phase 4a: identity (auth + password + profile + timezone +
-	// wakatime_key + avatar) extracted into internal/identity.
+	// wakatime_key + avatar) extracted into internal/identity. Identity is an
+	// intentional infra peer (not a boomtime data domain), so it stays wired here.
 	identity.Register(e, h.Identity)
 	// gaka-zp2s: per-domain HTTP surfaces are mounted through the Module contract
 	// (Module.RegisterRoutes) instead of being named here. Today books mounts its
@@ -218,11 +188,6 @@ func registerRoutes(e *echo.Echo, h *handler.Handler, reg *catalyst.Registry) {
 	for _, m := range reg.Modules() {
 		m.RegisterRoutes(e, deps)
 	}
-	// gaka-8tn phase 4b: awards cluster (streak ledger + evaluator +
-	// backfill — 7 routes) extracted into internal/awards. Registered
-	// AFTER identity so /awards/* auth checks resolve against the
-	// identity-owned session middleware in the same order as pre-refactor.
-	awards.Register(e, h.Awards)
 	// gaka-174.q: the cross-domain query DSL HTTP surface (POST /api/v1/query).
 	// Auth-required + owner-scoped; the reading domain is gated behind
 	// Cfg.BooksEnabled() inside the handler (runtime, since the domain is a
@@ -230,76 +195,11 @@ func registerRoutes(e *echo.Echo, h *handler.Handler, reg *catalyst.Registry) {
 	queryapi.Register(e, h.Query)
 }
 
-// registerGoalRoutes: user-defined composite goals (gaka-wpb). CRUD +
-// toggle + per-goal progress + batched progress (one round trip for
-// every enabled goal, used by dashboards). Owner-scoped; cross-owner
-// id access returns 404, never 403 (no oracle). The /goals/progress
-// batched endpoint is registered BEFORE /goals/:id so it isn't
-// shadowed by the param route (same pattern as spaces/preview).
-//
-// gaka-8tn phase 2b: routes now delegate to the goals-domain handler
-// (h.Goals) — see internal/goals/handler.go.
-func registerGoalRoutes(e *echo.Echo, h *handler.Handler) {
-	goals.Register(e, h.Goals)
-}
-
-// registerHeartbeatRoutes: no-op after gaka-8tn phase 7. The ingest
-// cluster (heartbeats + workouts + health_samples + explorer +
-// entities) moved to ingest.Register in phase 5a; source-health
-// observability moved to admin.Register in phase 7. This stub stays
-// so a `git blame` on the route table still lands on the historical
-// rationale; delete during phase 8 collapse.
-func registerHeartbeatRoutes(_ *echo.Echo, _ *handler.Handler) {}
-
-// registerCurationRoutes: data curation (hide / rename labels).
-//
-// gaka-8tn phase 5b: the /curation cluster + labels catalog admin
-// routes moved to curation.Register (see registerRoutes' curation
-// fan-out). Route strings preserved verbatim. This function stays as
-// a documented no-op so a `git blame` on the route table still lands
-// on the historical rationale; delete during phase 8 collapse.
-func registerCurationRoutes(_ *echo.Echo, _ *handler.Handler) {}
-
-// registerStatsRoutes: no-op after gaka-8tn phase 7. The dashboard
-// aggregation cluster (derived + stats + timeline + big-bets + files +
-// projects + leaderboards + commits) moved to stats.Register in phase
-// 6; the whole-database backup pair (dump download + destructive
-// restore) moved to admin.Register in phase 7. This stub stays so a
-// `git blame` on the route table still lands on the historical
-// rationale; delete during phase 8 collapse.
-func registerStatsRoutes(_ *echo.Echo, _ *handler.Handler) {}
-
-// registerMiscRoutes: only the widgets fan-out is left here after
-// gaka-8tn phase 7 lifted the admin/label-images/backfill/label-image-
-// public trio into admin.Register.
-func registerMiscRoutes(e *echo.Echo, h *handler.Handler) {
-	// gaka-8tn phase 3: Badges + embeddable widgets + widget-def CRUD extracted
-	// into internal/widgets; the route strings + registration order are
-	// preserved verbatim inside widgets.Register.
-	widgets.Register(e, h.Widgets)
-
-	// gaka-8tn phase 4a: PublicProfile + CHIBI avatar endpoints moved
-	// to identity.Register. Route strings preserved verbatim.
-
-	// gaka-8tn phase 5b: labels catalog admin (public GET /labels/catalog +
-	// admin CRUD + gen-config PATCH + seed.sql dumper) moved to
-	// curation.Register alongside the curation-rules cluster. Route
-	// strings preserved verbatim.
-
-	// gaka-8tn phase 6: leaderboards + commits moved to stats.Register.
-	// Route strings preserved verbatim.
-
-	// gaka-8tn phase 7: label-images admin cluster + git-history backfill
-	// cluster + the public GET /labels/:id/image endpoint moved to
-	// admin.Register. Route strings + registration order preserved
-	// verbatim.
-}
-
-// registerImportRoutes: no-op after gaka-8tn phase 7. The wakatime.com
-// durable, resumable import job cluster moved to admin.Register. This
-// stub stays so a `git blame` on the route table still lands on the
-// historical rationale; delete during phase 8 collapse.
-func registerImportRoutes(_ *echo.Echo, _ *handler.Handler) {}
+// gaka-zp2s: the phase-8 no-op route stubs (registerGoalRoutes /
+// registerHeartbeatRoutes / registerCurationRoutes / registerStatsRoutes /
+// registerMiscRoutes / registerImportRoutes) are gone — every boomtime data-domain
+// route now registers via boomtime.Module.RegisterRoutes, so this package names no
+// boomtime data domain at all.
 
 // registerStatic serves the SPA: from BOOM_DASHBOARD_PATH on disk if set, else
 // from the embedded dist FS. Non-API routes fall back to index.html.
