@@ -22,6 +22,15 @@ COPY web/ ./
 # src file (even the tree-shaken ones), so provide the single source at the
 # aliased path — no duplicate, still one source of truth.
 COPY internal/boomtime/widget/specs.json /internal/boomtime/widget/specs.json
+# gaka-zp2s / gaka-abg0 Step B: the books domain FE is PHYSICALLY colocated with
+# THIS Go package under internal/books/web/src (outside /web), reached via the
+# `@books/*` alias and scanned for Tailwind via an @source in web/src/index.css.
+# The standalone books entry (index.books.html → books-main.tsx) composes it, so
+# bring the source in at the aliased path (no duplicate — same tree the host
+# build reads). tsc resolves bare deps by walking up from each file, so also
+# link the colocated root's node_modules at /web/node_modules.
+COPY internal/books/web/src /internal/books/web/src
+RUN ln -s /web/node_modules /internal/books/web/node_modules
 RUN yarn build:books
 
 # ── Stage 2: build the Go binary with the books SPA embedded ─────────────────
