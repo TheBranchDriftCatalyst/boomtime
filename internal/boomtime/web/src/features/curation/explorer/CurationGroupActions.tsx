@@ -7,10 +7,10 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/dropdown-menu";
-import { axisLabel } from "@/lib/axes";
+import { axisLabel } from "@shared/lib/axes";
 import { RenameGroupDialog } from "@boomtime/features/curation/explorer/RenameGroupDialog";
-import { cn } from "@/lib/utils";
-import type { GroupNode } from "@/features/explorer/explorerModel";
+import { cn } from "@shared/lib/utils";
+import type { GroupNode } from "@shared/features/explorer/explorerModel";
 import type { SuppressInfo } from "@boomtime/features/curation/explorer/useSuppression";
 import type { SpaceOption } from "@boomtime/features/curation/explorer/useSpaceMembership";
 

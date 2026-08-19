@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RestoreConfirmDialog } from "@boomtime/features/heartbeats/RestoreConfirmDialog";
-import { renderWithProviders } from "@/test/renderWithProviders";
-import { server } from "@/test/msw/server";
-import { http, HttpResponse } from "@/test/msw/handlers";
+import { renderWithProviders } from "@shared/test/renderWithProviders";
+import { server } from "@shared/test/msw/server";
+import { http, HttpResponse } from "@shared/test/msw/handlers";
 
 const file = () =>
   new File(["PK\x03\x04fake"], "boomtime-backup.zip", { type: "application/zip" });

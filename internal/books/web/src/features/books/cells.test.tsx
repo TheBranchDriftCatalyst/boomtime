@@ -7,9 +7,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { renderWithProviders } from "@/test/renderWithProviders";
-import { api } from "@/lib/api";
-import { BOOK_STATUSES, type ReadingItemDTO } from "@/types/meta";
+import { renderWithProviders } from "@shared/test/renderWithProviders";
+import { api } from "@shared/lib/api";
+import { BOOK_STATUSES, type ReadingItemDTO } from "@shared/types/meta";
 import {
   FinishedEditor,
   RatingEditor,

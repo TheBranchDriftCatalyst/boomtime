@@ -3,8 +3,8 @@
 // CATEGORY_BY_KIND entry (silently bucketed into "Other") and keeps
 // `embeddable` honest against the specs.json `target`.
 import { describe, expect, it } from "vitest";
-import type { PublicConfig } from "@/types/meta";
-import { WIDGET_CATALOG } from "@/features/widgets/catalog";
+import type { PublicConfig } from "@shared/types/meta";
+import { WIDGET_CATALOG } from "@shared/features/widgets/catalog";
 import {
   CATALOG_CATEGORIES,
   CATALOG_WIDGETS,

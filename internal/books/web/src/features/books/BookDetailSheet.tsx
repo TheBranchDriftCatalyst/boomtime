@@ -14,8 +14,8 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/sheet";
-import { api } from "@/lib/api";
-import { qk } from "@/lib/queryKeys";
+import { api } from "@shared/lib/api";
+import { qk } from "@shared/lib/queryKeys";
 import {
   SourceBadge,
   StatusSelect,
@@ -26,8 +26,8 @@ import {
 } from "@books/features/books/cells";
 import { formatMinutes } from "@books/features/books/booksExplorerConfig";
 import { openHardcover } from "@books/features/books/hardcover";
-import type { ReadingItemDTO } from "@/types/api";
-import type { ReadEvent } from "@/types/meta";
+import type { ReadingItemDTO } from "@shared/types/api";
+import type { ReadEvent } from "@shared/types/meta";
 
 export function BookDetailSheet({
   item,

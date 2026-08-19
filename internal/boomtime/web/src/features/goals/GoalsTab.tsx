@@ -20,12 +20,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/popover";
-import { GoalsListSkeleton } from "@/components/Skeletons";
+import { GoalsListSkeleton } from "@shared/components/Skeletons";
 import { GoalForm } from "@boomtime/features/goals/GoalForm";
 import { GoalNearnessStrip } from "@boomtime/features/goals/GoalNearnessStrip";
 import { GoalsList } from "@boomtime/features/goals/GoalsList";
 import { useGoalMutations, useGoalsQuery } from "@boomtime/features/goals/useGoals";
-import type { Goal } from "@/types/api";
+import type { Goal } from "@shared/types/api";
 
 export function GoalsTab() {
   const { data: goals, isLoading } = useGoalsQuery();

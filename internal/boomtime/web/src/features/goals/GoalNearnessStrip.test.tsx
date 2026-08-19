@@ -6,7 +6,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { GoalNearnessStrip } from "@boomtime/features/goals/GoalNearnessStrip";
-import type { Goal } from "@/types/api";
+import type { Goal } from "@shared/types/api";
 
 vi.mock("@boomtime/features/goals/useGoals", () => ({
   useAllGoalProgress: () => ({

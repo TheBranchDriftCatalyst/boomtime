@@ -15,8 +15,8 @@
 // separate layer so the % label stays fully legible).
 import { Radar } from "lucide-react";
 import { useAllGoalProgress } from "@boomtime/features/goals/useGoals";
-import { cn } from "@/lib/utils";
-import type { Goal } from "@/types/api";
+import { cn } from "@shared/lib/utils";
+import type { Goal } from "@shared/types/api";
 
 export function GoalNearnessStrip({ goals }: { goals: Goal[] }) {
   const { data: batch } = useAllGoalProgress();

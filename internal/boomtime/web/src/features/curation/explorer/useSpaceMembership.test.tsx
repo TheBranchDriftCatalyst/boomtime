@@ -3,10 +3,10 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useSpaceMembership } from "@boomtime/features/curation/explorer/useSpaceMembership";
-import { server } from "@/test/msw/server";
-import { http, HttpResponse } from "@/test/msw/handlers";
-import type { GroupNode } from "@/features/explorer/explorerModel";
-import type { HeartbeatAxis } from "@/types/api";
+import { server } from "@shared/test/msw/server";
+import { http, HttpResponse } from "@shared/test/msw/handlers";
+import type { GroupNode } from "@shared/features/explorer/explorerModel";
+import type { HeartbeatAxis } from "@shared/types/api";
 
 function wrapper(qc: QueryClient) {
   return ({ children }: { children: ReactNode }) => (

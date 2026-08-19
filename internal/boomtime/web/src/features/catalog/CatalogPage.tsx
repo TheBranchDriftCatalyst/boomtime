@@ -12,15 +12,15 @@
 // rasterized in-page.
 import { useMemo, useState } from "react";
 import { Camera, Ruler } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { Page } from "@/layout/Page";
+import { cn } from "@shared/lib/utils";
+import { Page } from "@shared/layout/Page";
 import {
   CatalogDataProvider,
   useCatalogSource,
   type CatalogSource,
 } from "./CatalogDataSource";
-import { specForKind } from "@/features/widgets/specs";
-import { usePublicConfig } from "@/lib/usePublicConfig";
+import { specForKind } from "@shared/features/widgets/specs";
+import { usePublicConfig } from "@shared/lib/usePublicConfig";
 import { CATALOG_CATEGORIES, visibleCatalogWidgets } from "./catalogEntries";
 import { CatalogWidgetRenderer } from "./CatalogWidgetRenderer";
 import { WidgetCatalogCard } from "./WidgetCatalogCard";

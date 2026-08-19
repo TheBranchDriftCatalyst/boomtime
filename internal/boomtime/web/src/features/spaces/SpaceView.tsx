@@ -2,16 +2,16 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { Check, Pencil, Settings2, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
-import { OverviewDashboard } from "@/features/overview/OverviewDashboard";
+import { OverviewDashboard } from "@shared/features/overview/OverviewDashboard";
 import { SpaceRuleForm } from "@boomtime/features/spaces/SpaceRuleForm";
-import { Page } from "@/layout/Page";
-import { QueryGate } from "@/components/QueryGate";
+import { Page } from "@shared/layout/Page";
+import { QueryGate } from "@shared/components/QueryGate";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
-import { axisLabel } from "@/lib/axes";
+import { axisLabel } from "@shared/lib/axes";
 import { useSpace, useSpaceMutations } from "@boomtime/features/spaces/useSpaces";
-import type { HeartbeatAxis } from "@/types/api";
+import type { HeartbeatAxis } from "@shared/types/api";
 
 export function SpaceView() {
   const { id } = useParams<{ id: string }>();

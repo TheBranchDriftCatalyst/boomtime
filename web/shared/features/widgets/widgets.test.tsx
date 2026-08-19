@@ -1,0 +1,208 @@
+import { describe, expect, it, vi } from "vitest";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { http, HttpResponse } from "msw";
+import { server } from "@shared/test/msw/server";
+import { renderWithProviders } from "@shared/test/renderWithProviders";
+import {
+  SVG_RENDERABLE_KINDS,
+  WIDGET_CATALOG,
+  catalogFor,
+  embedSnippets,
+  embeddableCatalogFor,
+  widgetSvgUrl,
+} from "./catalog";
+import { WidgetCard } from "./WidgetCard";
+import { WidgetsPanel } from "./WidgetsPanel";
+
+vi.mock("sonner", () => ({
+  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
+}));
+
+const BASE = "http://localhost:8080/widget/svg/abc-123";
+
+describe("catalog", () => {
+  it("filters entries by scope", () => {
+    const user = catalogFor("user").map((e) => e.kind);
+    expect(user).toContain("stats-card-with-grade");
+    expect(user).toContain("top-projects");
+
+    const project = catalogFor("project").map((e) => e.kind);
+    // grade is person-tuned and top-projects is meaningless inside one project
+    expect(project).not.toContain("stats-card-with-grade");
+    expect(project).not.toContain("top-projects");
+    expect(project).toContain("top-langs");
+  });
+
+  it("embeddableCatalogFor offers backend-renderable kinds and excludes FE-only ones", () => {
+    // The Embeddable Widgets panel must only offer kinds the backend SVG
+    // endpoint can render — else the cards 404 and show empty (the bug this
+    // guards). Part B Stage 1 gave the stat tiles + chip lists backend SVG
+    // twins, and Part B Stage 4 gave the goal-* tiles a privacy-gated SVG
+    // twin too, so they are all now offered; grade-badge, hero-identity,
+    // labels-showcase and the overview-* kinds remain FE-only.
+    const embeddable = embeddableCatalogFor("user").map((e) => e.kind);
+    expect(embeddable).toContain("stats-card");
+    expect(embeddable).toContain("punchcard");
+    for (const nowRenderable of [
+      "total-time-stat",
+      "daily-avg-stat",
+      "current-streak-stat",
+      "longest-streak-stat",
+      "active-days-stat",
+      "categories-chart",
+      "editors-chips",
+      "platforms-chips",
+      "goal-progress",
+      "goal-ring",
+      "goal-list",
+    ]) {
+      expect(embeddable).toContain(nowRenderable);
+    }
+    for (const feOnly of [
+      "grade-badge",
+      "hero-identity",
+      "labels-showcase",
+      "loc",
+      "overview-stats",
+    ]) {
+      expect(embeddable).not.toContain(feOnly);
+    }
+    // every kind the panel offers is on the backend whitelist
+    for (const k of embeddable) expect(SVG_RENDERABLE_KINDS.has(k)).toBe(true);
+  });
+
+  it("every SVG_RENDERABLE_KINDS kind exists as a catalog entry", () => {
+    const known = new Set(WIDGET_CATALOG.map((e) => e.kind));
+    for (const k of SVG_RENDERABLE_KINDS) expect(known.has(k)).toBe(true);
+  });
+
+  it("every entry carries primitives metadata for the v2 builder", () => {
+    for (const e of WIDGET_CATALOG) {
+      expect(e.primitives.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("builds widget URLs with range + theme params", () => {
+    expect(widgetSvgUrl(BASE, "top-langs", { days: 30, theme: "dark" })).toBe(
+      `${BASE}/top-langs?days=30&theme=dark`,
+    );
+  });
+
+  it("builds the three embed snippet formats", () => {
+    const s = embedSnippets("https://x/widget/svg/u/stats-card?days=30&theme=dark");
+    expect(s.markdown).toBe(
+      "![Coding stats](https://x/widget/svg/u/stats-card?days=30&theme=dark)",
+    );
+    expect(s.html).toContain('<img src="https://x/widget/svg/u/stats-card');
+    expect(s.url).toContain("/widget/svg/u/stats-card");
+  });
+
+  // gaka-hsj: the stats-card kind is the hero widget for this ticket. Pin it
+  // as the first catalog entry so the widget-links panel surfaces it above
+  // the fold on every scope. If someone reorders the catalog and demotes
+  // stats-card, we want a red test forcing an explicit decision, not a
+  // silent drop.
+  it("stats-card is offered on every scope and generates both snippet formats", () => {
+    const entry = WIDGET_CATALOG.find((e) => e.kind === "stats-card");
+    expect(entry).toBeDefined();
+    // Hero card ships to all three surfaces the FE panel switches on.
+    expect(entry!.scopes).toEqual(
+      expect.arrayContaining(["user", "project", "space"]),
+    );
+
+    const url = widgetSvgUrl(BASE, "stats-card", { days: 7, theme: "light" });
+    expect(url).toBe(`${BASE}/stats-card?days=7&theme=light`);
+    const s = embedSnippets(url);
+    expect(s.markdown).toBe(`![Coding stats](${url})`);
+    expect(s.html).toBe(`<img src="${url}" alt="Coding stats" />`);
+    expect(s.url).toBe(url);
+  });
+});
+
+describe("WidgetCard", () => {
+  it("copies the Markdown snippet on click", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    renderWithProviders(
+      <WidgetCard
+        entry={WIDGET_CATALOG[0]}
+        baseUrl={BASE}
+        days={30}
+        theme="dark"
+      />,
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /Copy Markdown/i }),
+    );
+    expect(writeText).toHaveBeenCalledWith(
+      `![Coding stats](${BASE}/stats-card?days=30&theme=dark)`,
+    );
+  });
+
+  it("renders a live preview object pointing at the public URL", () => {
+    renderWithProviders(
+      <WidgetCard
+        entry={WIDGET_CATALOG[2] /* top-langs */}
+        baseUrl={BASE}
+        days={7}
+        theme="light"
+      />,
+    );
+    const preview = screen.getByLabelText(/Top Languages preview/i);
+    expect(preview).toHaveAttribute(
+      "data",
+      `${BASE}/top-langs?days=7&theme=light`,
+    );
+  });
+});
+
+describe("WidgetsPanel", () => {
+  it("mints the link on open and shows the scope's catalog", async () => {
+    let minted = 0;
+    server.use(
+      http.get("/api/v1/users/current/widgets/link", ({ request }) => {
+        minted++;
+        const url = new URL(request.url);
+        expect(url.searchParams.get("scopeType")).toBe("user");
+        return HttpResponse.json({
+          widgetBaseUrl: BASE,
+          linkId: "abc-123",
+        });
+      }),
+    );
+
+    renderWithProviders(<WidgetsPanel scopeType="user" />);
+    expect(minted).toBe(0); // lazy: no mint before open
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /Open widgets panel/i }),
+    );
+    await waitFor(() => expect(minted).toBe(1));
+
+    // user scope shows every backend-SVG-renderable widget incl. the grade card
+    for (const entry of embeddableCatalogFor("user")) {
+      expect(await screen.findByText(entry.title)).toBeInTheDocument();
+    }
+    // …but NOT the FE-only / dashboard-only kinds (they'd 404 as SVG embeds)
+    expect(screen.queryByText("Grade Badge")).not.toBeInTheDocument();
+    expect(screen.queryByText("Labels Showcase")).not.toBeInTheDocument();
+  });
+
+  it("project scope hides user-only widgets", async () => {
+    server.use(
+      http.get("/api/v1/users/current/widgets/link", () =>
+        HttpResponse.json({ widgetBaseUrl: BASE, linkId: "abc-123" }),
+      ),
+    );
+    renderWithProviders(<WidgetsPanel scopeType="project" scopeRef="proj-x" />);
+    await userEvent.click(
+      screen.getByRole("button", { name: /Open widgets panel/i }),
+    );
+    expect(await screen.findByText("Top Languages")).toBeInTheDocument();
+    expect(screen.queryByText("Stats Card + Grade")).not.toBeInTheDocument();
+    expect(screen.queryByText("Top Projects")).not.toBeInTheDocument();
+  });
+});

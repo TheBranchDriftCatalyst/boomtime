@@ -10,9 +10,9 @@ import { Eye, EyeOff, Loader2, Pencil, Plus, Target, Trash2 } from "lucide-react
 import { Progress } from "@thebranchdriftcatalyst/catalyst-ui/ui/progress";
 import { Badge } from "@thebranchdriftcatalyst/catalyst-ui/ui/badge";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
-import { EmptyState } from "@/components/EmptyState";
+import { EmptyState } from "@shared/components/EmptyState";
 import { useAllGoalProgress, useGoalMutations } from "@boomtime/features/goals/useGoals";
-import type { Goal, GoalProgress } from "@/types/api";
+import type { Goal, GoalProgress } from "@shared/types/api";
 
 export function GoalsList({
   goals,

@@ -2,14 +2,14 @@ import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
-import { QueryGate } from "@/components/QueryGate";
+import { QueryGate } from "@shared/components/QueryGate";
 import { ImportStateBadge } from "@boomtime/features/import/ImportStateBadge";
 import { DriftBanner } from "@boomtime/features/import/DriftBanner";
 import { LogViewer } from "@thebranchdriftcatalyst/catalyst-ui/components/LogViewer";
 import { LabeledStat } from "@thebranchdriftcatalyst/catalyst-ui/ui/labeled-stat";
-import { api } from "@/lib/api";
-import { qk } from "@/lib/queryKeys";
-import { formatElapsed } from "@/lib/utils";
+import { api } from "@shared/lib/api";
+import { qk } from "@shared/lib/queryKeys";
+import { formatElapsed } from "@shared/lib/utils";
 
 interface RunDetailProps {
   jobId: number;

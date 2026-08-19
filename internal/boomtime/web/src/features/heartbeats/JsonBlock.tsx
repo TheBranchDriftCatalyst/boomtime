@@ -1,8 +1,8 @@
 import { Copy } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
-import { copyToClipboard } from "@/lib/utils";
-import { cn } from "@/lib/utils";
+import { copyToClipboard } from "@shared/lib/utils";
+import { cn } from "@shared/lib/utils";
 
 interface JsonBlockProps {
   value: unknown;

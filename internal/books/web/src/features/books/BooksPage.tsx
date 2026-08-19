@@ -22,19 +22,19 @@ import {
   Search,
   Unlink,
 } from "lucide-react";
-import type { LeafSort } from "@/features/explorer/useLeafSort";
+import type { LeafSort } from "@shared/features/explorer/useLeafSort";
 import { Card, CardContent } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
-import { Page } from "@/layout/Page";
-import { EmptyState } from "@/components/EmptyState";
-import { runQuery } from "@/lib/queryApi";
-import { qk } from "@/lib/queryKeys";
-import { usePublicConfig } from "@/lib/usePublicConfig";
-import { GroupableExplorer } from "@/features/explorer/GroupableExplorer";
-import { GroupByBar } from "@/features/explorer/GroupByBar";
+import { Page } from "@shared/layout/Page";
+import { EmptyState } from "@shared/components/EmptyState";
+import { runQuery } from "@shared/lib/queryApi";
+import { qk } from "@shared/lib/queryKeys";
+import { usePublicConfig } from "@shared/lib/usePublicConfig";
+import { GroupableExplorer } from "@shared/features/explorer/GroupableExplorer";
+import { GroupByBar } from "@shared/features/explorer/GroupByBar";
 import { BookDetailSheet } from "@books/features/books/BookDetailSheet";
-import type { ReadingItemDTO } from "@/types/meta";
+import type { ReadingItemDTO } from "@shared/types/meta";
 import {
   deriveHeroStats,
   deriveMatchStats,

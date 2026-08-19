@@ -3,15 +3,15 @@ import {
   capLines,
   useDurableSocket,
   type SocketStatus,
-} from "@/hooks/useDurableSocket";
+} from "@shared/hooks/useDurableSocket";
 import type {
   ImportJob,
   ImportLogLine,
   ImportSocketMessage,
-} from "@/types/api";
-import { isTerminalState } from "@/types/api";
+} from "@shared/types/api";
+import { isTerminalState } from "@shared/types/api";
 
-export type { SocketStatus } from "@/hooks/useDurableSocket";
+export type { SocketStatus } from "@shared/hooks/useDurableSocket";
 
 export interface ImportJobStream {
   job: ImportJob | null;

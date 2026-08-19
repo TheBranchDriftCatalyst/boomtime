@@ -1,7 +1,7 @@
 import { useMemo } from "react";
-import { MIN_SLICE_SECONDS, colorAt, paletteByName } from "@/viz/d3/color";
-import { useBucketedDaily } from "@/viz/useBucketedDaily";
-import type { ProjectStatistics } from "@/types/api";
+import { MIN_SLICE_SECONDS, colorAt, paletteByName } from "@shared/viz/d3/color";
+import { useBucketedDaily } from "@shared/viz/useBucketedDaily";
+import type { ProjectStatistics } from "@shared/types/api";
 
 /**
  * Bucketed chart series for a project's detail charts. Buckets the daily

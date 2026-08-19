@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Page } from "@/layout/Page";
-import { WidgetsPanel } from "@/features/widgets/WidgetsPanel";
-import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
-import { TimeLimitDropdown } from "@/components/toolbar/TimeLimitDropdown";
+import { Page } from "@shared/layout/Page";
+import { WidgetsPanel } from "@shared/features/widgets/WidgetsPanel";
+import { DateRangePicker } from "@shared/components/toolbar/DateRangePicker";
+import { TimeLimitDropdown } from "@shared/components/toolbar/TimeLimitDropdown";
 import { CommitListModal } from "@boomtime/features/projects/CommitListModal";
-import { useTimeRange } from "@/hooks/useTimeRange";
-import { api } from "@/lib/api";
-import { qk } from "@/lib/queryKeys";
+import { useTimeRange } from "@shared/hooks/useTimeRange";
+import { api } from "@shared/lib/api";
+import { qk } from "@shared/lib/queryKeys";
 import { AllProjectsRail } from "@boomtime/features/projects/AllProjectsRail";
 import { ProjectDetail } from "@boomtime/features/projects/ProjectDetail";
 

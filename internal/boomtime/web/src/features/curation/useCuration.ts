@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/api";
-import { qk } from "@/lib/queryKeys";
-import type { AddCurationRuleBody } from "@/types/api";
+import { api } from "@shared/lib/api";
+import { qk } from "@shared/lib/queryKeys";
+import type { AddCurationRuleBody } from "@shared/types/api";
 
 export function useCurationRules() {
   return useQuery({

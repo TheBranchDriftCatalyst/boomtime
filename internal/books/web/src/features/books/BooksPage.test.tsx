@@ -8,14 +8,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { renderWithProviders } from "@/test/renderWithProviders";
-import { server } from "@/test/msw/server";
-import { http, HttpResponse } from "@/test/msw/handlers";
-import type { QuerySpec } from "@/lib/queryApi";
+import { renderWithProviders } from "@shared/test/renderWithProviders";
+import { server } from "@shared/test/msw/server";
+import { http, HttpResponse } from "@shared/test/msw/handlers";
+import type { QuerySpec } from "@shared/lib/queryApi";
 import { BooksPage } from "./BooksPage";
 
 const { runQueryMock } = vi.hoisted(() => ({ runQueryMock: vi.fn() }));
-vi.mock("@/lib/queryApi", () => ({ runQuery: runQueryMock }));
+vi.mock("@shared/lib/queryApi", () => ({ runQuery: runQueryMock }));
 
 const row = (p: Record<string, unknown>) => ({
   source: "audible",

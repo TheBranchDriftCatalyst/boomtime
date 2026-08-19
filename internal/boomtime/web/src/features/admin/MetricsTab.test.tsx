@@ -11,10 +11,10 @@ import { describe, expect, it } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 
 import { MetricsTab } from "@boomtime/features/admin/MetricsTab";
-import { renderWithProviders } from "@/test/renderWithProviders";
-import { server } from "@/test/msw/server";
-import { http, HttpResponse } from "@/test/msw/handlers";
-import type { MetricFamily } from "@/types/api";
+import { renderWithProviders } from "@shared/test/renderWithProviders";
+import { server } from "@shared/test/msw/server";
+import { http, HttpResponse } from "@shared/test/msw/handlers";
+import type { MetricFamily } from "@shared/types/api";
 
 function stubMetrics(families: MetricFamily[]) {
   server.use(

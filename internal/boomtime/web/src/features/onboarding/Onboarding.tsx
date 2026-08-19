@@ -7,12 +7,12 @@ import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Card, CardContent } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
 import { Label } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
-import { useAuth } from "@/features/auth/useAuth";
-import { usePublicConfig } from "@/lib/usePublicConfig";
-import { useBetaRegistration } from "@/features/onboarding/betaRegistration";
+import { useAuth } from "@shared/features/auth/useAuth";
+import { usePublicConfig } from "@shared/lib/usePublicConfig";
+import { useBetaRegistration } from "@shared/features/onboarding/betaRegistration";
 import { OnboardingBackdrop } from "@boomtime/features/onboarding/OnboardingBackdrop";
 import { WhyStep } from "@boomtime/features/onboarding/OnboardingWhy";
-import { ApiError } from "@/lib/api";
+import { ApiError } from "@shared/lib/api";
 
 // Routed beta onboarding flow (gaka-93f.1.2): welcome -> what-is-boomtime demo
 // -> signup. Reached by the RootLayout gate when the beta preview flag is

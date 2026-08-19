@@ -8,8 +8,8 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { toast } from "sonner";
-import { cn, copyToClipboard } from "@/lib/utils";
-import type { DriftFinding } from "@/types/api";
+import { cn, copyToClipboard } from "@shared/lib/utils";
+import type { DriftFinding } from "@shared/types/api";
 
 interface DriftBannerProps {
   findings: DriftFinding[] | null | undefined;

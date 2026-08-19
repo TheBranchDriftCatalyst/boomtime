@@ -1,6 +1,6 @@
 import { Badge } from "@thebranchdriftcatalyst/catalyst-ui/ui/badge";
-import { cn } from "@/lib/utils";
-import type { ImportJobState } from "@/types/api";
+import { cn } from "@shared/lib/utils";
+import type { ImportJobState } from "@shared/types/api";
 
 const STYLES: Record<ImportJobState, string> = {
   queued: "bg-slate-500/15 text-slate-500",

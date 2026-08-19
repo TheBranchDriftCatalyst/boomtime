@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { api } from "@/lib/api";
-import { qk } from "@/lib/queryKeys";
+import { api } from "@shared/lib/api";
+import { qk } from "@shared/lib/queryKeys";
 
 /**
  * Per-source ingestion health (editor/plugin/machine last check-in). Powers the

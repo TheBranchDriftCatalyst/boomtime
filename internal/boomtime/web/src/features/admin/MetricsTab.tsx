@@ -31,11 +31,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
-import { EmptyState } from "@/components/EmptyState";
-import { AdminTabShell } from "@/shared/admin/AdminTabShell";
-import { api } from "@/lib/api";
-import { qk } from "@/lib/queryKeys";
-import type { MetricFamily, MetricSample } from "@/types/api";
+import { EmptyState } from "@shared/components/EmptyState";
+import { AdminTabShell } from "@shared/shared/admin/AdminTabShell";
+import { api } from "@shared/lib/api";
+import { qk } from "@shared/lib/queryKeys";
+import type { MetricFamily, MetricSample } from "@shared/types/api";
 
 // ── grouping ────────────────────────────────────────────────────────────────
 type GroupId =

@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Page } from "@/layout/Page";
+import { Page } from "@shared/layout/Page";
 import { Spinner } from "@thebranchdriftcatalyst/catalyst-ui/ui/spinner";
 import { CurrentRunPanel } from "@boomtime/features/import/CurrentRunPanel";
 import { HistoryList } from "@boomtime/features/import/HistoryList";
 import { RunDetail } from "@boomtime/features/import/RunDetail";
 import { StartImportForm } from "@boomtime/features/import/StartImportForm";
 import { useImportJobSocket } from "@boomtime/features/import/useImportJobSocket";
-import { api } from "@/lib/api";
-import { qk } from "@/lib/queryKeys";
-import { isTerminalState } from "@/types/api";
+import { api } from "@shared/lib/api";
+import { qk } from "@shared/lib/queryKeys";
+import { isTerminalState } from "@shared/types/api";
 
 export function Import() {
   const qc = useQueryClient();

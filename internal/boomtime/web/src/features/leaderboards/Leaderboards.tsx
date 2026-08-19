@@ -2,11 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, Trophy } from "lucide-react";
 import { Link } from "react-router";
-import { QueryGate } from "@/components/QueryGate";
-import { LeaderboardsSkeleton } from "@/components/Skeletons";
-import { EmptyState } from "@/components/EmptyState";
-import { Page } from "@/layout/Page";
-import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
+import { QueryGate } from "@shared/components/QueryGate";
+import { LeaderboardsSkeleton } from "@shared/components/Skeletons";
+import { EmptyState } from "@shared/components/EmptyState";
+import { Page } from "@shared/layout/Page";
+import { DateRangePicker } from "@shared/components/toolbar/DateRangePicker";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import {
@@ -21,11 +21,11 @@ import {
   TableCell,
   TableRow,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/table";
-import { useTimeRange } from "@/hooks/useTimeRange";
-import { api } from "@/lib/api";
-import { qk } from "@/lib/queryKeys";
-import { secondsToHms } from "@/lib/utils";
-import type { LeaderboardEntry } from "@/types/api";
+import { useTimeRange } from "@shared/hooks/useTimeRange";
+import { api } from "@shared/lib/api";
+import { qk } from "@shared/lib/queryKeys";
+import { secondsToHms } from "@shared/lib/utils";
+import type { LeaderboardEntry } from "@shared/types/api";
 
 function LeaderboardTable({ users }: { users: LeaderboardEntry[] }) {
   if (users.length === 0) {

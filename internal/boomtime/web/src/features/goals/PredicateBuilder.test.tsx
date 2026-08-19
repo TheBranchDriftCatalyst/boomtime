@@ -30,7 +30,7 @@ import {
   defaultLeaf,
   readingLeaf,
 } from "@boomtime/features/goals/PredicateBuilder";
-import type { Predicate } from "@/types/api";
+import type { Predicate } from "@shared/types/api";
 
 type TimeLeaf = Extract<Predicate, { kind: "time" }>;
 

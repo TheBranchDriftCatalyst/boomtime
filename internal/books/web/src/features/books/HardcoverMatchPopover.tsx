@@ -12,9 +12,9 @@ import {
   PopoverTrigger,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/popover";
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
-import { api } from "@/lib/api";
-import { qk } from "@/lib/queryKeys";
-import type { HardcoverCandidate, ReadingItemDTO } from "@/types/api";
+import { api } from "@shared/lib/api";
+import { qk } from "@shared/lib/queryKeys";
+import type { HardcoverCandidate, ReadingItemDTO } from "@shared/types/api";
 
 // Grouped-query prefixes whose results derive from reading state — invalidate on a
 // successful match so the hero/charts refetch (mirrors useSetBookCuration).

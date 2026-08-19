@@ -7,14 +7,14 @@
 // (catalogEntries.test.ts covers that).
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
-import { renderWithProviders } from "@/test/renderWithProviders";
-import type { PublicConfig } from "@/types/meta";
-import { __resetReadingRange } from "@/features/overview/reading/readingRange";
+import { renderWithProviders } from "@shared/test/renderWithProviders";
+import type { PublicConfig } from "@shared/types/meta";
+import { __resetReadingRange } from "@shared/features/overview/reading/readingRange";
 
 // Control the boot config the page gates on. Every other flag stays fixed;
 // only books_enabled varies per test.
 let booksEnabled = false;
-vi.mock("@/lib/usePublicConfig", () => ({
+vi.mock("@shared/lib/usePublicConfig", () => ({
   usePublicConfig: (): { config: PublicConfig; isLoading: boolean } => ({
     isLoading: false,
     config: {

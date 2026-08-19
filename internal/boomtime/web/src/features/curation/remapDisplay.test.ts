@@ -4,7 +4,7 @@ import {
   templateToBackend,
   templateToJs,
 } from "@boomtime/features/curation/remapDisplay";
-import type { CurationRule } from "@/types/api";
+import type { CurationRule } from "@shared/types/api";
 
 function rule(over: Partial<CurationRule>): CurationRule {
   return {

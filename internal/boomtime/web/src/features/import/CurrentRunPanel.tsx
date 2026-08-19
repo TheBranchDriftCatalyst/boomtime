@@ -7,9 +7,9 @@ import { ImportStateBadge } from "@boomtime/features/import/ImportStateBadge";
 import { DriftBanner } from "@boomtime/features/import/DriftBanner";
 import { LogViewer } from "@thebranchdriftcatalyst/catalyst-ui/components/LogViewer";
 import { LabeledStat } from "@thebranchdriftcatalyst/catalyst-ui/ui/labeled-stat";
-import { formatElapsed } from "@/lib/utils";
-import { isTerminalState } from "@/types/api";
-import type { ImportJob, ImportLogLine } from "@/types/api";
+import { formatElapsed } from "@shared/lib/utils";
+import { isTerminalState } from "@shared/types/api";
+import type { ImportJob, ImportLogLine } from "@shared/types/api";
 import type { SocketStatus } from "@boomtime/features/import/useImportJobSocket";
 
 interface CurrentRunPanelProps {

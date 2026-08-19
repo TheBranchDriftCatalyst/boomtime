@@ -1,0 +1,496 @@
+/* arasaka.css — Arasaka Corp variant of the public dashboard chrome
+ * (gaka-res). Only applies when the Arasaka theme is selected via the
+ * catalyst-ui theme switcher; boomtime + all other themes continue to
+ * use the sibling hacker.css unchanged.
+ *
+ * gaka-k2p charter: this file is now the "Arasaka Corporate Intelligence
+ * Dossier" pass. The subject's coding profile reads as a classified file:
+ *  - crimson (--primary) on jet black
+ *  - ONE amber accent (#f5a623) reserved for CLASSIFIED stamps
+ *  - JetBrains Mono for data / stat readouts
+ *  - Chakra Petch for section headers (loaded in web/index.html)
+ *  - fixed-pos grid + scanline overlays (see .public-dashboard::before/after)
+ *  - dossier header banner above the hero
+ *  - hairline section dividers with a centered mini-glyph
+ *  - L-shape corner brackets on every tile via ::before/::after
+ *  - restrained motion — cards cascade in ONCE, then quiet
+ */
+
+/* Katakana signage — hidden by default, revealed only under Arasaka. */
+.arasaka-katakana {
+  display: none;
+}
+
+/* ---------------------------------------------------------------------
+ * Amber accent — reserved for classification chips. Kept as a local
+ * custom prop so we don't leak it into the theme's global token pool.
+ * ---------------------------------------------------------------------
+ */
+.theme-arasaka .public-dashboard {
+  --arasaka-amber: #f5a623;
+
+  /* Grid primitive skin override — sharper, denser. */
+  --grid-tile-bg: color-mix(in oklab, var(--card) 96%, transparent);
+  --grid-tile-fg: var(--card-foreground);
+  --grid-tile-border: color-mix(in oklab, var(--primary) 30%, transparent);
+  --grid-tile-header-fg: var(--primary);
+  --grid-tile-header-kind-fg: var(--muted-foreground);
+  --grid-tile-radius: 2px;
+  --grid-tile-header-h: 22px;
+  --grid-tile-font: "Inter Tight", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --grid-tile-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular,
+    "SF Mono", Menlo, monospace;
+  --grid-toggle-active-bg: var(--primary);
+  --grid-toggle-active-fg: var(--background);
+  --grid-toggle-idle-fg: var(--muted-foreground);
+  --grid-editing-dot-color: color-mix(in oklab, var(--primary) 15%, transparent);
+  --grid-remove-fg: var(--primary);
+
+  position: relative;
+  isolation: isolate;
+}
+
+/* --------------------------------------------------------------------- *
+ * Fixed background layers:                                              *
+ *   ::before → 1px crimson grid, 24px cells, ~4% opacity ("graph paper")*
+ *   ::after  → horizontal scanlines, 3px stride, ~4% opacity (CRT)     *
+ * Both are pointer-events:none and sit behind content via z-index.     *
+ * --------------------------------------------------------------------- */
+.theme-arasaka .public-dashboard::before,
+.theme-arasaka .public-dashboard::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+}
+.theme-arasaka .public-dashboard::before {
+  background-image:
+    linear-gradient(
+      to right,
+      color-mix(in oklab, var(--primary) 4%, transparent) 0,
+      color-mix(in oklab, var(--primary) 4%, transparent) 1px,
+      transparent 1px,
+      transparent 24px
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in oklab, var(--primary) 4%, transparent) 0,
+      color-mix(in oklab, var(--primary) 4%, transparent) 1px,
+      transparent 1px,
+      transparent 24px
+    );
+}
+.theme-arasaka .public-dashboard::after {
+  background-image: linear-gradient(
+    transparent 50%,
+    rgba(0, 0, 0, 0.15) 50%
+  );
+  background-size: 100% 3px;
+  mix-blend-mode: multiply;
+  opacity: 0.4;
+}
+
+/* --------------------------------------------------------------------- *
+ * DOSSIER HEADER BANNER — the memorable thing.                         *
+ * Rendered by PublicDashboard.tsx as `.public-dashboard__classline`.   *
+ * --------------------------------------------------------------------- */
+.public-dashboard__classline {
+  display: none; /* hidden under non-Arasaka themes */
+}
+.theme-arasaka .public-dashboard__classline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  min-height: 28px;
+  margin-bottom: 20px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--primary) 90%, transparent);
+  background: color-mix(in oklab, var(--primary) 8%, transparent);
+  border-top: 1px solid color-mix(in oklab, var(--primary) 40%, transparent);
+  border-bottom: 1px solid color-mix(in oklab, var(--primary) 40%, transparent);
+  overflow: hidden;
+  white-space: nowrap;
+}
+.theme-arasaka .public-dashboard__classline-block {
+  color: var(--arasaka-amber);
+  font-size: 12px;
+  line-height: 1;
+}
+.theme-arasaka .public-dashboard__classline-text {
+  /* Type-in on mount — 1.6s to sweep across, then static. Steps() gives
+   * the character-by-character terminal feel without a JS ticker. */
+  display: inline-block;
+  overflow: hidden;
+  white-space: nowrap;
+  animation: dossier-typein 1.6s steps(64, end) both;
+}
+.theme-arasaka .public-dashboard__classline-cursor {
+  display: inline-block;
+  width: 0.55em;
+  height: 1em;
+  background: currentColor;
+  vertical-align: -2px;
+  margin-left: 2px;
+  animation: dossier-cursor-resolve 2s step-end 1;
+  animation-fill-mode: forwards;
+}
+.theme-arasaka .public-dashboard__classline-stamp {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  background: var(--arasaka-amber);
+  color: #1a1200;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  border-radius: 1px;
+  /* Slight uppercase weight so the stamp looks physically pressed. */
+  text-shadow: none;
+}
+@keyframes dossier-typein {
+  from { width: 0; }
+  to   { width: 100%; }
+}
+@keyframes dossier-cursor-resolve {
+  /* Blink 4x while type-in runs (0-80%), then vanish for the rest. */
+  0%   { opacity: 1; }
+  10%  { opacity: 0; }
+  20%  { opacity: 1; }
+  30%  { opacity: 0; }
+  40%  { opacity: 1; }
+  50%  { opacity: 0; }
+  60%  { opacity: 1; }
+  70%  { opacity: 0; }
+  80%  { opacity: 1; }
+  90%, 100% { opacity: 0; }
+}
+
+/* Hero — corporate signage, no gradient text. Static red bar left of name. */
+.theme-arasaka .public-dashboard__hero {
+  padding: 20px 0 16px;
+  border-bottom: 1px solid color-mix(in oklab, var(--primary) 20%, transparent);
+  margin-bottom: 16px;
+}
+
+.theme-arasaka .public-dashboard__hero-title {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-weight: 700;
+  font-size: clamp(44px, 7vw, 82px);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  line-height: 0.95;
+  color: var(--foreground);
+  text-shadow: none;
+  background: none;
+  /* Overwrite the gradient-clip from hacker.css so the title becomes solid. */
+  -webkit-text-fill-color: currentColor;
+  -webkit-background-clip: border-box;
+  background-clip: border-box;
+}
+
+.theme-arasaka .public-dashboard__hero-title::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 0.8em;
+  background: var(--primary);
+  margin-right: 14px;
+  vertical-align: -6%;
+  box-shadow: 0 0 6px color-mix(in oklab, var(--primary) 60%, transparent);
+}
+
+.theme-arasaka .public-dashboard__hero-meta {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  margin-bottom: 10px;
+}
+
+.theme-arasaka .public-dashboard__hero-tagline {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  gap: 10px;
+}
+
+.theme-arasaka .public-dashboard__hero-underline {
+  width: 64px;
+  height: 1px;
+  background: var(--primary);
+  box-shadow: none; /* kill the boomtime glow */
+}
+
+.theme-arasaka .public-dashboard__footer {
+  padding: 16px 0 24px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.10em;
+  color: var(--muted-foreground);
+  border-top: 1px solid color-mix(in oklab, var(--primary) 20%, transparent);
+  margin-top: 20px;
+}
+
+/* Kill the perpetual cursor blink — one blink on mount then static. */
+.theme-arasaka .public-dashboard__footer .public-dashboard__footer-cursor {
+  animation: arasaka-oneshot-blink 0.8s step-end 1;
+  animation-fill-mode: forwards;
+  opacity: 1;
+}
+@keyframes arasaka-oneshot-blink {
+  0%, 50% { opacity: 0; }
+  51%, 100% { opacity: 1; }
+}
+
+/* Grid bootup — faster, subtler (opacity only). */
+.theme-arasaka .public-dashboard__grid {
+  animation: arasaka-bootup 0.25s ease both;
+}
+@keyframes arasaka-bootup {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Katakana signage — visible only under Arasaka. Noto Sans JP for authentic
+ * corporate glyph shapes; primary color at 60% opacity so it reads as an
+ * accent not a headline. */
+.theme-arasaka .arasaka-katakana {
+  display: inline;
+  font-family: "Noto Sans JP", "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  color: color-mix(in oklab, var(--primary) 60%, transparent);
+  letter-spacing: 0.06em;
+  margin-left: 8px;
+  vertical-align: 1px;
+  font-weight: 400;
+}
+
+/* --- Grid tile chrome under Arasaka ---------------------------------- *
+ * The `.catalyst-grid-tile` class lives in @shared/lib/grid/grid.css and is
+ * shared across themes. We override only the perpetual-motion animations
+ * and the corner geometry here, scoped by `.theme-arasaka`. */
+
+/* Chamfered corners: top-right + bottom-left 8x8px tri-cut.
+ * clip-path composes with react-grid-layout's inline transform.
+ * `position: relative` is REQUIRED so our ::before/::after L-brackets
+ * anchor to the tile (react-grid-layout applies position:absolute inline
+ * but that's a positioned ancestor either way; explicit relative here
+ * documents intent). Adds a container-query context so children can
+ * respond to the actual tile width. */
+.theme-arasaka .catalyst-grid-tile {
+  clip-path: polygon(
+    0 0,
+    calc(100% - 8px) 0,
+    100% 8px,
+    100% 100%,
+    8px 100%,
+    0 calc(100% - 8px)
+  );
+  container-type: inline-size;
+  animation: arasaka-tile-fade 0.4s ease both;
+  animation-delay: calc(var(--tile-index, 0) * 40ms);
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+.theme-arasaka .catalyst-grid-tile:hover {
+  border-color: color-mix(in oklab, var(--primary) 55%, transparent);
+  background: color-mix(in oklab, var(--card) 90%, transparent);
+}
+/* NOTE: animate OPACITY ONLY. react-grid-layout positions every tile via an
+ * inline `transform: translate(x, y)`, and an animated `transform` (even
+ * translateY(0)) overrides that inline style under fill-mode:both — which
+ * collapsed all tiles onto the same spot. Never animate transform here. */
+@keyframes arasaka-tile-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* L-shape corner brackets — 6px legs, 1px stroke, primary @60% opacity.
+ * Rendered via layered linear-gradients on ::before/::after so we don't
+ * need extra DOM nodes. Each pseudo covers half the tile (top vs bottom)
+ * and draws 2 L brackets via masked gradient corners.
+ *
+ * Skipped: the shipped `.catalyst-grid-tile__corner` box-drawing glyphs
+ * (┌┐└┘) are hidden under Arasaka so we don't get double-brackets. */
+.theme-arasaka .catalyst-grid-tile__corner {
+  display: none;
+}
+.theme-arasaka .catalyst-grid-tile::before,
+.theme-arasaka .catalyst-grid-tile::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 7px;
+  pointer-events: none;
+  z-index: 2;
+}
+.theme-arasaka .catalyst-grid-tile::before {
+  top: 0;
+  /* Top-left + top-right L brackets — 6px legs, 1px stroke. */
+  background:
+    linear-gradient(to right, color-mix(in oklab, var(--primary) 60%, transparent) 0 6px, transparent 6px) top left / 6px 1px no-repeat,
+    linear-gradient(to bottom, color-mix(in oklab, var(--primary) 60%, transparent) 0 6px, transparent 6px) top left / 1px 6px no-repeat,
+    linear-gradient(to left,  color-mix(in oklab, var(--primary) 60%, transparent) 0 6px, transparent 6px) top right / 6px 1px no-repeat,
+    linear-gradient(to bottom, color-mix(in oklab, var(--primary) 60%, transparent) 0 6px, transparent 6px) top right / 1px 6px no-repeat;
+}
+.theme-arasaka .catalyst-grid-tile::after {
+  bottom: 0;
+  /* Bottom-left + bottom-right L brackets. */
+  background:
+    linear-gradient(to right, color-mix(in oklab, var(--primary) 60%, transparent) 0 6px, transparent 6px) bottom left / 6px 1px no-repeat,
+    linear-gradient(to top,   color-mix(in oklab, var(--primary) 60%, transparent) 0 6px, transparent 6px) bottom left / 1px 6px no-repeat,
+    linear-gradient(to left,  color-mix(in oklab, var(--primary) 60%, transparent) 0 6px, transparent 6px) bottom right / 6px 1px no-repeat,
+    linear-gradient(to top,   color-mix(in oklab, var(--primary) 60%, transparent) 0 6px, transparent 6px) bottom right / 1px 6px no-repeat;
+}
+.theme-arasaka .catalyst-grid-tile:hover::before,
+.theme-arasaka .catalyst-grid-tile:hover::after {
+  /* Brighten brackets on hover (opacity only, no animation). */
+  filter: brightness(1.35);
+}
+
+/* Kill the perpetual blinking `> ` prompt in tile headers. */
+.theme-arasaka .catalyst-grid-tile__prompt {
+  animation: none;
+}
+
+/* Denser tile bodies + tabular-nums for column alignment.
+ * gaka-k2p: py reduced 12→8px (~30% tighter) per charter density target;
+ * px stays for horizontal breathing room around glyphs. */
+.theme-arasaka .catalyst-grid-tile__body {
+  padding: 8px 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Header uses Chakra Petch (compressed geometric) for that dossier /
+ * classified-file feel. Weight 600, wider tracking. */
+.theme-arasaka .catalyst-grid-tile__header {
+  font-family: "Chakra Petch", "JetBrains Mono", ui-monospace, monospace;
+  letter-spacing: 0.10em;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.theme-arasaka .catalyst-grid-tile__title {
+  letter-spacing: 0.10em;
+  font-family: "Chakra Petch", "JetBrains Mono", ui-monospace, monospace;
+  font-weight: 600;
+}
+/* Tighten the `· kind-id` suffix in headers — reduce opacity so it doesn't
+ * compete with the title glyphs. */
+.theme-arasaka .catalyst-grid-tile__kind {
+  opacity: 0.4;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+}
+
+/* Stat card values (BigStat.dossier-stat__value) — subtle glow under
+ * Arasaka. Kept off the base component so non-Arasaka themes stay clean. */
+.theme-arasaka .dossier-stat__value {
+  text-shadow: 0 0 8px color-mix(in oklch, var(--primary) 40%, transparent);
+}
+.theme-arasaka .dossier-stat__label {
+  font-family: "Chakra Petch", "JetBrains Mono", ui-monospace, monospace;
+  font-weight: 600;
+}
+
+/* Chip hover state — brighten background + border only, no motion. */
+.theme-arasaka .dossier-chip {
+  transition: background 0.15s ease, border-color 0.15s ease,
+    color 0.15s ease;
+}
+.theme-arasaka .dossier-chip:hover {
+  background: color-mix(in oklab, var(--primary) 22%, transparent);
+  border-color: color-mix(in oklab, var(--primary) 65%, transparent);
+  color: var(--foreground);
+}
+
+/* --------------------------------------------------------------------- *
+ * Section dividers.                                                    *
+ * PublicDashboard.tsx doesn't emit these directly — they'd need to be   *
+ * placed between RGL rows, which we can't do in the current dashboard   *
+ * layout without breaking the drag/resize invariants of the primitive.  *
+ * Instead we use the grid's own gutters as visual dividers, and add a   *
+ * decorative dashed rule below the hero.                                *
+ * --------------------------------------------------------------------- */
+.theme-arasaka .public-dashboard__grid {
+  border-top: 1px dashed color-mix(in oklab, var(--primary) 22%, transparent);
+  padding-top: 14px;
+  position: relative;
+}
+.theme-arasaka .public-dashboard__grid::before {
+  content: "▬▬▬";
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0 8px;
+  background: var(--background);
+  color: color-mix(in oklab, var(--primary) 45%, transparent);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: 0.3em;
+}
+
+/* --------------------------------------------------------------------- *
+ * DOSSIER FOUNDATION amp (gaka-174.1).                                  *
+ * The frame + labeled field rail (base look in dossier.css) get the     *
+ * full corpo-file treatment under Arasaka: brighter crimson spine,      *
+ * amber field labels, a live STATUS pulse.                              *
+ * --------------------------------------------------------------------- */
+.theme-arasaka .public-dashboard__frame {
+  --dossier-line: color-mix(in oklab, var(--primary) 55%, transparent);
+}
+.theme-arasaka .dossier-corner {
+  width: 16px;
+  height: 16px;
+  border-color: var(--primary);
+  box-shadow: 0 0 6px color-mix(in oklab, var(--primary) 60%, transparent);
+}
+
+.theme-arasaka .public-dashboard__dossier-fields {
+  border-color: color-mix(in oklab, var(--primary) 45%, transparent);
+  border-radius: 2px;
+  background: color-mix(in oklab, var(--primary) 6%, var(--background));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--primary) 12%, transparent),
+    0 0 18px color-mix(in oklab, var(--primary) 10%, transparent);
+}
+.theme-arasaka .dossier-field {
+  border-right-color: color-mix(in oklab, var(--primary) 30%, transparent);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+.theme-arasaka .dossier-field__label {
+  color: var(--arasaka-amber);
+  letter-spacing: 0.26em;
+}
+.theme-arasaka .dossier-field__value {
+  color: color-mix(in oklab, var(--primary) 92%, white);
+  text-shadow: 0 0 8px color-mix(in oklab, var(--primary) 40%, transparent);
+}
+.theme-arasaka .dossier-field__value--accent {
+  color: var(--arasaka-amber);
+}
+.theme-arasaka .dossier-field__value--accent::before {
+  color: var(--arasaka-amber);
+  filter: drop-shadow(0 0 4px var(--arasaka-amber));
+}
+.theme-arasaka .public-dashboard__footer {
+  border-top-color: color-mix(in oklab, var(--primary) 35%, transparent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Live "operative online" tell — the STATUS dot breathes. */
+  .theme-arasaka .dossier-field__value--accent::before {
+    animation: arasaka-status-pulse 2s ease-in-out infinite;
+  }
+  @keyframes arasaka-status-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+}

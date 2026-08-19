@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { DatabaseBackup, Download, Upload } from "lucide-react";
 import { toast } from "sonner";
-import { ApiError, api } from "@/lib/api";
+import { ApiError, api } from "@shared/lib/api";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Card, CardContent, CardHeader } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { RestoreConfirmDialog } from "@boomtime/features/heartbeats/RestoreConfirmDialog";

@@ -21,16 +21,16 @@ import { toast } from "sonner";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Switch } from "@thebranchdriftcatalyst/catalyst-ui/ui/switch";
 import { Label } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
-import { AdminTabShell } from "@/shared/admin/AdminTabShell";
-import { api } from "@/lib/api";
-import { qk } from "@/lib/queryKeys";
-import { relativeTime } from "@/lib/sourceStatus";
-import { cn } from "@/lib/utils";
+import { AdminTabShell } from "@shared/shared/admin/AdminTabShell";
+import { api } from "@shared/lib/api";
+import { qk } from "@shared/lib/queryKeys";
+import { relativeTime } from "@shared/lib/sourceStatus";
+import { cn } from "@shared/lib/utils";
 import type {
   ReadingMonitorMode,
   ReadingMonitorRecommendation,
   ReadingMonitorState,
-} from "@/types/api";
+} from "@shared/types/api";
 
 // Grafana deep-link (gaka-books). The cadence board's stable uid is
 // `boomtime-reading-monitor`. Base URL: VITE_GRAFANA_BASE_URL when set (Grafana

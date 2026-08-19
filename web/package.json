@@ -6,7 +6,7 @@
   "//sideEffects": "Only CSS + the app entry have import-time side effects. Everything else (incl. the per-domain registration modules) is pure at import, so an app entry that never imports a domain's register module lets the bundler drop that domain's component graph.",
   "sideEffects": [
     "**/*.css",
-    "src/main.tsx"
+    "shared/main.tsx"
   ],
   "scripts": {
     "dev": "vite",

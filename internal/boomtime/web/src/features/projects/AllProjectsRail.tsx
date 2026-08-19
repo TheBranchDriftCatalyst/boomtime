@@ -3,16 +3,16 @@ import { Calculator, Clock, Code, Crown } from "lucide-react";
 import { StatCard } from "@thebranchdriftcatalyst/catalyst-ui/components/StatCard";
 import { TopProjectsBar } from "@boomtime/features/projects/TopProjectsBar";
 import { CrossProjectFilesTable } from "@boomtime/features/projects/CrossProjectFilesTable";
-import { QueryGate } from "@/components/QueryGate";
+import { QueryGate } from "@shared/components/QueryGate";
 import {
   ProjectDetailSkeleton,
   TableRowsSkeleton,
-} from "@/components/Skeletons";
-import { ChartCard } from "@/components/ChartCard";
-import { api } from "@/lib/api";
-import { qk } from "@/lib/queryKeys";
-import { secondsToHms } from "@/lib/utils";
-import { mostActive as topByName } from "@/lib/mostActive";
+} from "@shared/components/Skeletons";
+import { ChartCard } from "@shared/components/ChartCard";
+import { api } from "@shared/lib/api";
+import { qk } from "@shared/lib/queryKeys";
+import { secondsToHms } from "@shared/lib/utils";
+import { mostActive as topByName } from "@shared/lib/mostActive";
 
 interface AllProjectsRailProps {
   startISO: string;

@@ -4,15 +4,15 @@
 import { useState, type ComponentType } from "react";
 import { BookOpen, Github, Library, Plug, ShieldCheck } from "lucide-react";
 
-import { GithubConnectCard } from "@/features/settings/GithubConnectCard";
-import { AmazonConnectCard } from "@/features/settings/AmazonConnectCard";
-import { HardcoverConnectCard } from "@/features/settings/HardcoverConnectCard";
-import { LinkedIdentitiesCard } from "@/features/settings/LinkedIdentitiesCard";
+import { GithubConnectCard } from "@shared/features/settings/GithubConnectCard";
+import { AmazonConnectCard } from "@shared/features/settings/AmazonConnectCard";
+import { HardcoverConnectCard } from "@shared/features/settings/HardcoverConnectCard";
+import { LinkedIdentitiesCard } from "@shared/features/settings/LinkedIdentitiesCard";
 import {
   ConnectionCardShell,
   ConnectionDetailsDrawer,
   type Provider,
-} from "@/features/settings/ConnectionDetailsDrawer";
+} from "@shared/features/settings/ConnectionDetailsDrawer";
 
 // The hero chips double as a shortcut into each provider's detail drawer, so
 // they're real focusable buttons; onSelect lifts the click up to ConnectionsTab.

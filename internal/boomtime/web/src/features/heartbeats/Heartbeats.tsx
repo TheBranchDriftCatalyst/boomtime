@@ -1,17 +1,17 @@
 import { useState } from "react";
 import { Braces, Files, Search, Table2 } from "lucide-react";
-import { Page } from "@/layout/Page";
-import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
-import { TimeLimitDropdown } from "@/components/toolbar/TimeLimitDropdown";
+import { Page } from "@shared/layout/Page";
+import { DateRangePicker } from "@shared/components/toolbar/DateRangePicker";
+import { TimeLimitDropdown } from "@shared/components/toolbar/TimeLimitDropdown";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
 import { BackupPanel } from "@boomtime/features/heartbeats/BackupPanel";
 import { SourceHealthPanel } from "@boomtime/features/heartbeats/SourceHealthPanel";
 import { EntityExplorer } from "@boomtime/features/heartbeats/EntityExplorer";
-import { GroupableExplorer } from "@/features/explorer/GroupableExplorer";
+import { GroupableExplorer } from "@shared/features/explorer/GroupableExplorer";
 import { useHeartbeatsExplorerConfig } from "@boomtime/features/heartbeats/explorerConfig";
 import { DEFAULT_GROUP_BY } from "@boomtime/features/heartbeats/axes";
-import { useTimeRange } from "@/hooks/useTimeRange";
+import { useTimeRange } from "@shared/hooks/useTimeRange";
 
 type LeafMode = "table" | "json";
 type Tab = "explorer" | "entities";

@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { isSuppressibleAxis } from "@boomtime/features/curation/explorer/curationAxes";
 import { useCurationMutations, useCurationRules } from "@boomtime/features/curation/useCuration";
 import { remapDisplay } from "@boomtime/features/curation/remapDisplay";
-import type { GroupNode } from "@/features/explorer/explorerModel";
+import type { GroupNode } from "@shared/features/explorer/explorerModel";
 
 // Result of looking up a group's suppression state.
 export interface SuppressInfo {

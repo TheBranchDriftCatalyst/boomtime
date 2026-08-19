@@ -7,7 +7,7 @@ import {
   useCurationMutations,
   useCurationRules,
 } from "@boomtime/features/curation/useCuration";
-import type { CurationRule } from "@/types/api";
+import type { CurationRule } from "@shared/types/api";
 
 // The "Hidden data" Settings tab: hide/unhide projects + sources. Renames live
 // in the sibling RemappingsTab; both share the same rules query (react-query

@@ -1,5 +1,5 @@
 import { CURATABLE_AXES } from "@boomtime/features/rules/axes";
-import type { HeartbeatAxis } from "@/types/api";
+import type { HeartbeatAxis } from "@shared/types/api";
 
 // Axes whose curation "hide" rules the backend actually excludes from the
 // dashboards. The curation Suppress toggle is only offered for these — a hide

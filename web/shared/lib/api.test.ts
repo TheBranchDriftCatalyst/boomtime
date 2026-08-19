@@ -1,0 +1,411 @@
+import { afterEach, describe, expect, it } from "vitest";
+import { ApiError, api, buildUrl } from "@shared/lib/api";
+import { authStore } from "@shared/features/auth/auth";
+import { server } from "@shared/test/msw/server";
+import { http, HttpResponse } from "@shared/test/msw/handlers";
+import {
+  authResponse,
+  curationRule,
+  curationRules,
+  importJob,
+  rawLeaderboards,
+  rawTimeline,
+  rawToken,
+} from "@shared/test/factories";
+
+describe("buildUrl (P0)", () => {
+  it("returns the path unchanged with no params", () => {
+    expect(buildUrl("/x")).toBe("/x");
+    expect(buildUrl("/x", {})).toBe("/x");
+  });
+
+  it("drops undefined/null/'' but keeps 0", () => {
+    expect(
+      buildUrl("/x", { a: undefined, b: null, c: "", page: 0, limit: 50 }),
+    ).toBe("/x?page=0&limit=50");
+  });
+
+  it("URL-encodes values", () => {
+    expect(buildUrl("/x", { q: "a b&c" })).toBe("/x?q=a+b%26c");
+  });
+
+  it("no trailing ? when all params drop out", () => {
+    expect(buildUrl("/x", { a: undefined, b: "" })).toBe("/x");
+  });
+});
+
+describe("api normalizers (msw, raw hakatime shapes) — P0", () => {
+  it("getTokens maps tknId->id, tknName->name, tknDesc->desc", async () => {
+    server.use(
+      http.get("/auth/tokens", () =>
+        HttpResponse.json([
+          rawToken({ tknId: "abc", tknName: "n", tknDesc: "d", lastUsage: null }),
+        ]),
+      ),
+    );
+    const tokens = await api.getTokens();
+    expect(tokens).toEqual([
+      { id: "abc", name: "n", desc: "d", lastUsage: null },
+    ]);
+  });
+
+  it("getTimeline maps timelineLangs -> langs and t* keys", async () => {
+    server.use(
+      http.get("/api/v1/users/current/timeline", () =>
+        HttpResponse.json(
+          rawTimeline({
+            Go: [
+              { tName: "Go", tRangeStart: "2026-07-09T10:00:00Z", tRangeEnd: "2026-07-09T11:00:00Z" },
+            ],
+          }),
+        ),
+      ),
+    );
+    const tl = await api.getTimeline({ start: "a", end: "b" });
+    expect(tl.langs.Go).toEqual([
+      { name: "Go", rangeStart: "2026-07-09T10:00:00Z", rangeEnd: "2026-07-09T11:00:00Z" },
+    ]);
+  });
+
+  it("getTimeline: absent timelineLangs -> {} langs", async () => {
+    server.use(
+      http.get("/api/v1/users/current/timeline", () => HttpResponse.json({})),
+    );
+    const tl = await api.getTimeline({ start: "a", end: "b" });
+    expect(tl.langs).toEqual({});
+  });
+
+  it("getLeaderboards maps lang -> languages", async () => {
+    server.use(
+      http.get("/api/v1/leaderboards", () =>
+        HttpResponse.json(
+          rawLeaderboards({
+            global: [{ name: "x", value: 10 }],
+            lang: { Go: [{ name: "x", value: 5 }] },
+          }),
+        ),
+      ),
+    );
+    const lb = await api.getLeaderboards({ start: "a", end: "b" });
+    expect(lb.global).toEqual([{ name: "x", value: 10 }]);
+    expect(lb.languages).toEqual({ Go: [{ name: "x", value: 5 }] });
+  });
+
+  it("getLeaderboards: missing keys -> [] / {}", async () => {
+    server.use(
+      http.get("/api/v1/leaderboards", () => HttpResponse.json({})),
+    );
+    const lb = await api.getLeaderboards({ start: "a", end: "b" });
+    expect(lb.global).toEqual([]);
+    expect(lb.languages).toEqual({});
+  });
+
+  it("getCurationRules unwraps { rules } -> bare array", async () => {
+    const rule = curationRule({ id: 9 });
+    server.use(
+      http.get("/api/v1/users/current/curation", () =>
+        HttpResponse.json(curationRules([rule])),
+      ),
+    );
+    expect(await api.getCurationRules()).toEqual([rule]);
+  });
+
+  it("getCurationRules: absent rules key -> []", async () => {
+    server.use(
+      http.get("/api/v1/users/current/curation", () => HttpResponse.json({})),
+    );
+    expect(await api.getCurationRules()).toEqual([]);
+  });
+
+  it("getImportJobs unwraps { jobs } -> bare array", async () => {
+    const job = importJob({ id: 3 });
+    server.use(
+      http.get("/import/jobs", () => HttpResponse.json({ jobs: [job] })),
+    );
+    expect(await api.getImportJobs()).toEqual([job]);
+  });
+
+  it("getImportJobs: absent jobs key -> []", async () => {
+    server.use(http.get("/import/jobs", () => HttpResponse.json({})));
+    expect(await api.getImportJobs()).toEqual([]);
+  });
+
+  it("getSourceHealth unwraps { sources } -> bare array", async () => {
+    const source = {
+      plugin: "vscode/1.0",
+      machine: "laptop",
+      lastSeen: "2026-07-09T00:00:00Z",
+      count: 42,
+    };
+    server.use(
+      http.get("/api/v1/users/current/sources/health", () =>
+        HttpResponse.json({ sources: [source] }),
+      ),
+    );
+    expect(await api.getSourceHealth()).toEqual([source]);
+  });
+
+  it("getSourceHealth: absent sources key -> []", async () => {
+    server.use(
+      http.get("/api/v1/users/current/sources/health", () =>
+        HttpResponse.json({}),
+      ),
+    );
+    expect(await api.getSourceHealth()).toEqual([]);
+  });
+
+  it("getSpaces unwraps { spaces } -> bare array", async () => {
+    const space = { id: 1, name: "Work", position: 0, ruleCount: 2 };
+    server.use(
+      http.get("/api/v1/users/current/spaces", () =>
+        HttpResponse.json({ spaces: [space] }),
+      ),
+    );
+    expect(await api.getSpaces()).toEqual([space]);
+  });
+});
+
+describe("request() error envelope + auth header (P0)", () => {
+  it("prefers .message, then .error, then statusText", async () => {
+    server.use(
+      http.get("/api/v1/users/current/stats", () =>
+        HttpResponse.json({ message: "boom", error: "ignored" }, { status: 500 }),
+      ),
+    );
+    await expect(
+      api.getStats({ start: "a", end: "b" }),
+    ).rejects.toMatchObject({ message: "boom", status: 500 });
+  });
+
+  it("falls back to .error when no .message", async () => {
+    server.use(
+      http.get("/api/v1/users/current/stats", () =>
+        HttpResponse.json({ error: "nope" }, { status: 400 }),
+      ),
+    );
+    await expect(api.getStats({ start: "a", end: "b" })).rejects.toMatchObject({
+      message: "nope",
+      status: 400,
+    });
+  });
+
+  it("throws ApiError carrying status + payload", async () => {
+    server.use(
+      http.get("/api/v1/users/current/stats", () =>
+        HttpResponse.json({ error: "e" }, { status: 403 }),
+      ),
+    );
+    const err = await api.getStats({ start: "a", end: "b" }).catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.status).toBe(403);
+    expect(err.payload).toEqual({ error: "e" });
+  });
+
+  it("sends Authorization only when a token is present, verbatim", async () => {
+    let seen: string | null = "unset";
+    server.use(
+      http.get("/api/v1/users/current/stats", ({ request }) => {
+        seen = request.headers.get("authorization");
+        return HttpResponse.json({});
+      }),
+    );
+
+    // No token -> no header.
+    await api.getStats({ start: "a", end: "b" });
+    expect(seen).toBeNull();
+
+    // With token -> `Basic <token>` verbatim.
+    authStore.update(authResponse({ token: "TOK123" }));
+    await api.getStats({ start: "a", end: "b" });
+    expect(seen).toBe("Basic TOK123");
+  });
+});
+
+describe("session-expiry bounce (silent refresh on 401)", () => {
+  afterEach(() => authStore.clear());
+
+  it("clears the session when the refresh ITSELF 401s → ProtectedRoute bounces to /login", async () => {
+    authStore.update(authResponse({ token: "DEADTOK" }));
+    expect(authStore.isLoggedIn()).toBe(true);
+    server.use(
+      http.get(
+        "/api/v1/users/current/stats",
+        () => new HttpResponse(null, { status: 401 }),
+      ),
+      http.post(
+        "/auth/refresh_token",
+        () => new HttpResponse(null, { status: 401 }),
+      ),
+    );
+    await expect(api.getStats({ start: "a", end: "b" })).rejects.toThrow();
+    // Cleared → isLoggedIn is now false, so ProtectedRoute renders <Navigate to="/login">.
+    expect(authStore.isLoggedIn()).toBe(false);
+  });
+
+  it("does NOT clear the session when the refresh fails transiently (5xx)", async () => {
+    authStore.update(authResponse({ token: "TOK" }));
+    server.use(
+      http.get(
+        "/api/v1/users/current/stats",
+        () => new HttpResponse(null, { status: 401 }),
+      ),
+      http.post(
+        "/auth/refresh_token",
+        () => new HttpResponse(null, { status: 503 }),
+      ),
+    );
+    await expect(api.getStats({ start: "a", end: "b" })).rejects.toThrow();
+    // A transient refresh failure must NOT nuke a session that may still be valid.
+    expect(authStore.isLoggedIn()).toBe(true);
+  });
+
+  it("retries transparently when the refresh SUCCEEDS (no bounce, no error)", async () => {
+    authStore.update(authResponse({ token: "STALE" }));
+    let calls = 0;
+    server.use(
+      http.get("/api/v1/users/current/stats", () => {
+        calls += 1;
+        // First hit 401s (stale access token); after refresh, succeed.
+        return calls === 1
+          ? new HttpResponse(null, { status: 401 })
+          : HttpResponse.json({ ok: true });
+      }),
+      http.post("/auth/refresh_token", () =>
+        HttpResponse.json(authResponse({ token: "FRESH" })),
+      ),
+    );
+    await expect(api.getStats({ start: "a", end: "b" })).resolves.toBeDefined();
+    expect(authStore.isLoggedIn()).toBe(true);
+    expect(calls).toBe(2); // 401 → refresh → retried once
+  });
+});
+
+describe("api mutation call shapes (P1)", () => {
+  it("addCurationRule POSTs the body to /curation", async () => {
+    let body: unknown;
+    server.use(
+      http.post("/api/v1/users/current/curation", async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({ rule: { id: 1 } });
+      }),
+    );
+    await api.addCurationRule({
+      axis: "project",
+      action: "rename",
+      matchValue: "a",
+      newValue: "b",
+      matchType: "regex",
+    });
+    // gaka: api normalizes an absent `applyAtIngest` to an explicit false.
+    expect(body).toEqual({
+      axis: "project",
+      action: "rename",
+      matchValue: "a",
+      newValue: "b",
+      matchType: "regex",
+      applyAtIngest: false,
+    });
+  });
+
+  it("addCurationRule threads applyAtIngest through when set", async () => {
+    let body: unknown;
+    server.use(
+      http.post("/api/v1/users/current/curation", async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({ rule: { id: 1 } });
+      }),
+    );
+    await api.addCurationRule({
+      axis: "entity",
+      action: "rename",
+      matchValue: "a",
+      newValue: "b",
+      matchType: "exact",
+      applyAtIngest: true,
+    });
+    expect(body).toMatchObject({ applyAtIngest: true });
+  });
+
+  it("deleteToken encodeURIComponent's the path param", async () => {
+    let path = "";
+    server.use(
+      http.delete("/auth/token/:id", ({ params }) => {
+        path = String(params.id);
+        return new HttpResponse(null, { status: 200 });
+      }),
+    );
+    await api.deleteToken("a/b c");
+    expect(path).toBe("a/b c"); // msw decodes; the point is it didn't error
+  });
+});
+
+// --- Admin CLI-runner (BOOM_FEATURE_ADMIN_CLI) -------------------------------
+
+describe("admin CLI-runner api methods", () => {
+  it("runCliCommand POSTs {command, flags, confirm?} and returns the run payload", async () => {
+    let body: unknown;
+    server.use(
+      http.post("/api/v1/admin/cli/run", async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({
+          ok: false,
+          output: "partial",
+          exitError: "boom",
+          dryRun: true,
+          durationMs: 7,
+        });
+      }),
+    );
+    const res = await api.runCliCommand({
+      command: "backfill last-context",
+      flags: { "dry-run": false, username: "panda" },
+      confirm: "backfill last-context",
+    });
+    expect(body).toEqual({
+      command: "backfill last-context",
+      flags: { "dry-run": false, username: "panda" },
+      confirm: "backfill last-context",
+    });
+    // HTTP 200 with ok:false is a valid run outcome, not a thrown ApiError.
+    expect(res.ok).toBe(false);
+    expect(res.exitError).toBe("boom");
+    expect(res.dryRun).toBe(true);
+  });
+
+  it("completeCli POSTs the completion context verbatim", async () => {
+    let body: unknown;
+    server.use(
+      http.post("/api/v1/admin/cli/complete", async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({
+          suggestions: [{ value: "panda" }],
+          directive: {
+            noFileComp: true,
+            noSpace: false,
+            noSort: false,
+            keepOrder: false,
+            error: false,
+          },
+        });
+      }),
+    );
+    const res = await api.completeCli({
+      command: "user show",
+      args: [],
+      toComplete: "pa",
+    });
+    expect(body).toEqual({ command: "user show", args: [], toComplete: "pa" });
+    expect(res.suggestions).toEqual([{ value: "panda" }]);
+    expect(res.directive.noFileComp).toBe(true);
+  });
+
+  it("getCliSpec surfaces a 404 as an ApiError (feature-disabled signal)", async () => {
+    server.use(
+      http.get("/api/v1/admin/cli/spec", () =>
+        HttpResponse.json({ message: "not found" }, { status: 404 }),
+      ),
+    );
+    await expect(api.getCliSpec()).rejects.toMatchObject({ status: 404 });
+    await expect(api.getCliSpec()).rejects.toBeInstanceOf(ApiError);
+  });
+});

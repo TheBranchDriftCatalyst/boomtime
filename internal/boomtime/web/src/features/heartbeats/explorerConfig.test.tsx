@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { pathToFilters, toGroupPage } from "@boomtime/features/heartbeats/explorerConfig";
-import type { HeartbeatGroupPayload } from "@/types/api";
+import type { HeartbeatGroupPayload } from "@shared/types/api";
 
 describe("heartbeats explorer source adapter", () => {
   it("maps a drill path to heartbeat filters, dropping null steps", () => {

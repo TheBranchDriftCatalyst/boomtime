@@ -13,12 +13,12 @@ import {
   MatchPreviewList,
 } from "@boomtime/features/rules/MatchPreviewList";
 import { CURATABLE_AXES } from "@boomtime/features/rules/axes";
-import { axisLabel } from "@/lib/axes";
+import { axisLabel } from "@shared/lib/axes";
 import { useAxisValues } from "@boomtime/features/rules/useAxisValues";
 import { useCurationMutations } from "@boomtime/features/curation/useCuration";
 import { templateToBackend, templateToJs } from "@boomtime/features/curation/remapDisplay";
-import { cn } from "@/lib/utils";
-import type { CurationMatchType, HeartbeatAxis } from "@/types/api";
+import { cn } from "@shared/lib/utils";
+import type { CurationMatchType, HeartbeatAxis } from "@shared/types/api";
 
 type Mode = CurationMatchType; // "exact" | "regex" | "template"
 

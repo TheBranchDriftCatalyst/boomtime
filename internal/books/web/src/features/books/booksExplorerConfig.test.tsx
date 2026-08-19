@@ -8,11 +8,11 @@
 //   - the page filters (source/status) + drill path fold into every `where`.
 //   - deriveHeroStats sums the source-grouped hero query.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { QueryResult, QuerySpec } from "@/lib/queryApi";
-import type { ReadingItemDTO } from "@/types/meta";
+import type { QueryResult, QuerySpec } from "@shared/lib/queryApi";
+import type { ReadingItemDTO } from "@shared/types/meta";
 
 const { runQueryMock } = vi.hoisted(() => ({ runQueryMock: vi.fn() }));
-vi.mock("@/lib/queryApi", () => ({ runQuery: runQueryMock }));
+vi.mock("@shared/lib/queryApi", () => ({ runQuery: runQueryMock }));
 
 // Imported AFTER the mock is registered.
 import {

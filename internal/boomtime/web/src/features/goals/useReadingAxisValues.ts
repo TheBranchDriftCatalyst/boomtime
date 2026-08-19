@@ -25,9 +25,9 @@
 // suggest-only, so aspirational reading goals ("finish the Foundation series
 // before I own any of it") work by just typing.
 import { useQuery } from "@tanstack/react-query";
-import { ApiError } from "@/lib/api";
-import { runQuery } from "@/lib/queryApi";
-import type { GoalReadingAxis } from "@/types/api";
+import { ApiError } from "@shared/lib/api";
+import { runQuery } from "@shared/lib/queryApi";
+import type { GoalReadingAxis } from "@shared/types/api";
 
 // Synthetic rollup bucket the query DSL emits for the long tail — never a real
 // user value. Same shape AxisValueInput filters on the coding path.

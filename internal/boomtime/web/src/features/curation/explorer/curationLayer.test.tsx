@@ -3,10 +3,10 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { curationLayer } from "@boomtime/features/curation/explorer/curationLayer";
-import { server } from "@/test/msw/server";
-import { http, HttpResponse } from "@/test/msw/handlers";
-import type { GroupAction } from "@/features/explorer/types";
-import type { GroupNode } from "@/features/explorer/explorerModel";
+import { server } from "@shared/test/msw/server";
+import { http, HttpResponse } from "@shared/test/msw/handlers";
+import type { GroupAction } from "@shared/features/explorer/types";
+import type { GroupNode } from "@shared/features/explorer/explorerModel";
 
 // The layer is exercised entirely on its own — no <GroupableExplorer>, no
 // heartbeats config — proving it is a self-contained abstraction that renders

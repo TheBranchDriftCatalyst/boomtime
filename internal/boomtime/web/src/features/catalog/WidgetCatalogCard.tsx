@@ -9,7 +9,7 @@ import { useState, type ReactNode } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { Copy, Check, Code2 } from "lucide-react";
 import { toast } from "sonner";
-import { embedSnippets } from "@/features/widgets/catalog";
+import { embedSnippets } from "@shared/features/widgets/catalog";
 
 /** The subset of catalog metadata a card renders. Structural — matches the
  * entries produced by catalogEntries.ts (CATALOG_WIDGETS). */

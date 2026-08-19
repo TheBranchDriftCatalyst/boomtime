@@ -1,4 +1,4 @@
-import type { HeartbeatRow } from "@/types/api";
+import type { HeartbeatRow } from "@shared/types/api";
 
 export interface LeafColumn {
   id: string;

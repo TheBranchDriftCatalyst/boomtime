@@ -1,4 +1,4 @@
-import type { CurationRule } from "@/types/api";
+import type { CurationRule } from "@shared/types/api";
 
 /** Group curation rules by axis, preserving encounter order. */
 export function groupByAxis(rules: CurationRule[]): Map<string, CurationRule[]> {

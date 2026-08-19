@@ -11,9 +11,9 @@ import {
   widgetSvgUrl,
   embedSnippets,
   type WidgetPrimitive,
-} from "@/features/widgets/catalog";
-import { specForKind } from "@/features/widgets/specs";
-import type { PublicConfig } from "@/types/meta";
+} from "@shared/features/widgets/catalog";
+import { specForKind } from "@shared/features/widgets/specs";
+import type { PublicConfig } from "@shared/types/meta";
 
 /** Boot-config feature flags a catalog entry can be gated behind. A subset of
  * PublicConfig's boolean keys — the flag is read via usePublicConfig() in

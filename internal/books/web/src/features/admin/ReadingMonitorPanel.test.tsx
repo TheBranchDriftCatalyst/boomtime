@@ -7,11 +7,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { api } from "@/lib/api";
-import type { ReadingMonitorState } from "@/types/api";
+import { api } from "@shared/lib/api";
+import type { ReadingMonitorState } from "@shared/types/api";
 import { ReadingMonitorPanel } from "./ReadingMonitorPanel";
 
-vi.mock("@/lib/api", () => ({
+vi.mock("@shared/lib/api", () => ({
   api: {
     getReadingMonitor: vi.fn(),
     setReadingMonitor: vi.fn(),

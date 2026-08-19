@@ -20,9 +20,9 @@ import {
   TableHeader,
   TableRow,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/table";
-import { api, ApiError } from "@/lib/api";
-import { qk } from "@/lib/queryKeys";
-import type { CurationRule } from "@/types/api";
+import { api, ApiError } from "@shared/lib/api";
+import { qk } from "@shared/lib/queryKeys";
+import type { CurationRule } from "@shared/types/api";
 
 /**
  * gaka-cr4 + gaka-due: shared destructive-confirm modal for BOTH curation

@@ -2,9 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StartImportForm } from "@boomtime/features/import/StartImportForm";
-import { renderWithProviders } from "@/test/renderWithProviders";
-import { server } from "@/test/msw/server";
-import { http, HttpResponse } from "@/test/msw/handlers";
+import { renderWithProviders } from "@shared/test/renderWithProviders";
+import { server } from "@shared/test/msw/server";
+import { http, HttpResponse } from "@shared/test/msw/handlers";
 
 // The double-base64 bug that motivates this file:
 //   FE btoa(token) -> BE base64(base64(token)) -> Basic header decodes to

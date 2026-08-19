@@ -9,7 +9,7 @@
 //   (b) an ASIN (external_id / amazonAsin) → an ASIN-precise Hardcover SEARCH.
 //       An ASIN pins a single edition far more exactly than a fuzzy title.
 //   (c) title + authors search — the last-resort fallback.
-import type { ReadingItemDTO } from "@/types/meta";
+import type { ReadingItemDTO } from "@shared/types/meta";
 
 // Accept the DTO's linking fields. `hardcoverBookId` is the resolved match
 // (migration 00063); `hardcoverSlug`/`hardcoverId` remain honored for when the
