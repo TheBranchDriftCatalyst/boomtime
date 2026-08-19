@@ -33,6 +33,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/queryapi"
 )
 
 func main() {
@@ -92,6 +93,12 @@ func main() {
 	// Inline Hardcover push for the per-row sync button (nil-safe without it).
 	h.SetHardcoverPush(hardcover.NewPushService(database, hardcover.NewStore(database), logger))
 	booksapi.Register(e, h)
+
+	// The books library view (GroupableExplorer) loads via the cross-domain query
+	// DSL (POST /api/v1/query) — without it the list is "Failed to load your
+	// library". queryapi is shared + isolation-clean (0 boomtime deps); the books FE
+	// only issues "reading"-domain queries here.
+	queryapi.Register(e, &queryapi.Handler{DB: database, Cfg: cfg, Logger: logger})
 
 	// Serve the embedded books SPA (web/dist-books) with an index.html fallback
 	// for client-side routing. Registered AFTER the API + /healthz so Echo's
