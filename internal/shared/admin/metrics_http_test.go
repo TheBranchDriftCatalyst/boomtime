@@ -20,7 +20,7 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/admin"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/admin"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/metrics"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )

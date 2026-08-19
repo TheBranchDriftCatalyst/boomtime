@@ -17,6 +17,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	boomtimeadmin "github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/admin"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
@@ -39,10 +40,12 @@ var _ = Describe("ImportRequest (gaka-6jm.8)", func() {
 		worker := importer.NewWorker(workerCtx, hz.DB, silent, hub)
 		cfg := &config.Config{Port: 8080, EnableRegistration: true, SessionExpiry: 24}
 		h := handler.New(hz.DB, cfg, silent, worker, hub, nil)
+		bh := boomtimeadmin.New(hz.DB, cfg, silent)
+		bh.SetImportWorker(worker, hub)
 
 		e := echo.New()
 		e.POST("/auth/login", h.Identity.Login) // route table shim so echo doesn't 404 on middleware (gaka-8tn phase 4a)
-		e.POST("/api/v1/users/current/import", h.Admin.ImportRequest)
+		e.POST("/api/v1/users/current/import", bh.ImportRequest)
 
 		// Baseline: no saved key.
 		_, has, err := hz.DB.GetEncryptedWakatimeKey(context.Background(), user)

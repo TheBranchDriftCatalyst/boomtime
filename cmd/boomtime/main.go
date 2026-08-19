@@ -356,11 +356,13 @@ func runCmd() *cobra.Command {
 			})
 			if cfg.IsServerRole() {
 				e, h = server.NewWithHandler(database, cfg, logger, worker, hub, logHub, domainReg)
-				// Wire the labelimages worker into the handler for the
-				// admin regen endpoints. Passing nil is fine when the
-				// feature is off — the admin handler detects the nil
-				// worker and returns 503.
-				h.SetLabelImagesWorker(liWorker)
+				// gaka-zp2s: the label-images regen + wakatime.com import admin
+				// surfaces are owned by boomtime.Module (its admin handler, mounted
+				// by RegisterRoutes during NewWithHandler). Late-wire them onto that
+				// SAME instance: the import worker/hub, and the label-images worker
+				// (nil is fine when the feature is off — handlers 503).
+				domainSet.Boomtime.SetImportWorker(worker, hub)
+				domainSet.Boomtime.SetLabelImagesWorker(liWorker)
 				// /api/v1/notify/ws fans events to the owning user's browser.
 				h.SetNotify(notifyHub)
 			}
@@ -436,8 +438,8 @@ func runCmd() *cobra.Command {
 						// worker pod's events (see Registry.Apply).
 						mirror := imagejobs.NewRegistry(logger)
 						go imagejobs.PumpBusIntoRegistry(ctx, bus, mirror)
-						h.SetImageJobQueue(producer)
-						h.SetImageJobEvents(mirror)
+						domainSet.Boomtime.SetImageJobQueue(producer)
+						domainSet.Boomtime.SetImageJobEvents(mirror)
 						logger.Info("imagejobs: amqp producer wired", "queue", cfg.RabbitQueue)
 					}
 					if cfg.IsWorkerRole() {
@@ -463,8 +465,8 @@ func runCmd() *cobra.Command {
 							Logger:      logger,
 						})
 						imgPool.Start(ctx)
-						h.SetImageJobQueue(registry)
-						h.SetImageJobEvents(registry)
+						domainSet.Boomtime.SetImageJobQueue(registry)
+						domainSet.Boomtime.SetImageJobEvents(registry)
 						logger.Info("imagejobs pool wired", "concurrency", concurrency)
 					}
 				}
@@ -652,6 +654,9 @@ func runCmd() *cobra.Command {
 				if h != nil {
 					h.SetJobs(jobStore, provider, jobReg) // admin Jobs tab (list/trigger/retry + queue overview)
 					h.SetJobEvents(jobHub)                // /api/v1/jobs/ws push stream
+					// gaka-zp2s: the boomtime label-images admin handler reads the jobs
+					// store/enqueuer for its per-label BOOM_JOBS_UNIFIED status poll.
+					domainSet.Boomtime.SetJobs(jobStore, provider)
 				}
 
 				logger.Info("jobs: wired", "provider", provider.Name(),

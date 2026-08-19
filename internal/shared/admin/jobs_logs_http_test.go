@@ -18,8 +18,8 @@ import (
 
 	"github.com/labstack/echo/v5"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/admin"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/admin"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/logging"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/objstore"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"

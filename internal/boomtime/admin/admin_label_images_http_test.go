@@ -64,7 +64,7 @@ func buildLiWorker(cfg *config.Config, hz *testutil.Harness) *labelimages.Worker
 var _ = Describe("AdminLabelImagesInfo (gaka-myv): admin gate + shape", func() {
 	It("returns 401/400 for unauth'd, 403 for non-admin, 200 with envelope for admin", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "alili"))
-		e := hz.Router()
+		e := boomtimeRouter(hz)
 
 		// (1) no token.
 		rec := liDo(e, http.MethodGet, "/api/v1/admin/label-images", "", nil)
@@ -112,7 +112,7 @@ var _ = Describe("AdminLabelImagesInfo (gaka-myv): admin gate + shape", func() {
 		// to strip them from the field before serving.
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "aliinfoshim"))
 		hz.Cfg.ComfyUIShimURL = "http://127.0.0.1:8080/generate"
-		e := hz.Router()
+		e := boomtimeRouter(hz)
 		user, token := hz.MintUser("li_shim")
 		hz.Cfg.AdminUsers = map[string]struct{}{user: {}}
 		rec := liDo(e, http.MethodGet, "/api/v1/admin/label-images", token, nil)
@@ -131,7 +131,7 @@ var _ = Describe("AdminLabelImagesInfo (gaka-myv): admin gate + shape", func() {
 var _ = Describe("AdminLabelImagesRegenerate (gaka-myv/gaka-8bz): feature gate + validation + idempotency", func() {
 	It("returns 503 when either Worker or ImageJobQueue is nil (feature disabled)", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "aliregen"))
-		e := hz.Router()
+		e := boomtimeRouter(hz)
 		user, token := hz.MintUser("li_regen_off")
 		hz.Cfg.AdminUsers = map[string]struct{}{user: {}}
 		// Neither wired: default state after NewHarness.
@@ -146,11 +146,11 @@ var _ = Describe("AdminLabelImagesRegenerate (gaka-myv/gaka-8bz): feature gate +
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "aliregen"))
 		hz.Cfg.FeatureLabelImages = true
 		hz.Cfg.ComfyUIShimURL = "http://127.0.0.1:1"
-		e := hz.Router()
+		e, bh := boomtimeRouterH(hz)
 		user, token := hz.MintUser("li_regen_validate")
 		hz.Cfg.AdminUsers = map[string]struct{}{user: {}}
-		hz.H.SetLabelImagesWorker(buildLiWorker(hz.Cfg, hz))
-		hz.H.SetImageJobQueue(imagejobs.NewRegistry(nil))
+		bh.SetLabelImagesWorker(buildLiWorker(hz.Cfg, hz))
+		bh.SetImageJobQueue(imagejobs.NewRegistry(nil))
 
 		// (1) empty entries.
 		rec := liDo(e, http.MethodPost, "/api/v1/admin/label-images/regenerate", token,
@@ -185,11 +185,11 @@ var _ = Describe("AdminLabelImagesRegenerate (gaka-myv/gaka-8bz): feature gate +
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "aliregen"))
 		hz.Cfg.FeatureLabelImages = true
 		hz.Cfg.ComfyUIShimURL = "http://127.0.0.1:1"
-		e := hz.Router()
+		e, bh := boomtimeRouterH(hz)
 		user, token := hz.MintUser("li_regen_ok")
 		hz.Cfg.AdminUsers = map[string]struct{}{user: {}}
-		hz.H.SetLabelImagesWorker(buildLiWorker(hz.Cfg, hz))
-		hz.H.SetImageJobQueue(imagejobs.NewRegistry(nil))
+		bh.SetLabelImagesWorker(buildLiWorker(hz.Cfg, hz))
+		bh.SetImageJobQueue(imagejobs.NewRegistry(nil))
 
 		body := map[string]any{
 			"entries": []map[string]any{{"id": "polyglot", "prompt": "cyber oracle"}},
@@ -221,11 +221,11 @@ var _ = Describe("AdminLabelImagesRegenerate (gaka-myv/gaka-8bz): feature gate +
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "aliregen"))
 		hz.Cfg.FeatureLabelImages = true
 		hz.Cfg.ComfyUIShimURL = "http://127.0.0.1:1"
-		e := hz.Router()
+		e, bh := boomtimeRouterH(hz)
 		user, token := hz.MintUser("li_regen_all")
 		hz.Cfg.AdminUsers = map[string]struct{}{user: {}}
-		hz.H.SetLabelImagesWorker(buildLiWorker(hz.Cfg, hz))
-		hz.H.SetImageJobQueue(imagejobs.NewRegistry(nil))
+		bh.SetLabelImagesWorker(buildLiWorker(hz.Cfg, hz))
+		bh.SetImageJobQueue(imagejobs.NewRegistry(nil))
 		ctx := context.Background()
 
 		// Seed a fake label_images row so we can prove `truncate=true` wiped it.
@@ -258,12 +258,12 @@ var _ = Describe("AdminLabelImagesRegenerate (gaka-myv/gaka-8bz): feature gate +
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "aliregen"))
 		hz.Cfg.FeatureLabelImages = true
 		hz.Cfg.ComfyUIShimURL = "http://127.0.0.1:1"
-		e := hz.Router()
+		e, bh := boomtimeRouterH(hz)
 		user, token := hz.MintUser("li_regen_desc")
 		hz.Cfg.AdminUsers = map[string]struct{}{user: {}}
-		hz.H.SetLabelImagesWorker(buildLiWorker(hz.Cfg, hz))
+		bh.SetLabelImagesWorker(buildLiWorker(hz.Cfg, hz))
 		reg := imagejobs.NewRegistry(nil)
-		hz.H.SetImageJobQueue(reg)
+		bh.SetImageJobQueue(reg)
 
 		// Enqueue against a real label id from the migrated catalog. Any id in
 		// the labels table works; the handler pulls the DB Description.
@@ -294,11 +294,11 @@ var _ = Describe("AdminLabelImagesRegenerate: malformed body branch", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "alimal"))
 		hz.Cfg.FeatureLabelImages = true
 		hz.Cfg.ComfyUIShimURL = "http://127.0.0.1:1"
-		e := hz.Router()
+		e, bh := boomtimeRouterH(hz)
 		user, token := hz.MintUser("li_regen_mal")
 		hz.Cfg.AdminUsers = map[string]struct{}{user: {}}
-		hz.H.SetLabelImagesWorker(buildLiWorker(hz.Cfg, hz))
-		hz.H.SetImageJobQueue(imagejobs.NewRegistry(nil))
+		bh.SetLabelImagesWorker(buildLiWorker(hz.Cfg, hz))
+		bh.SetImageJobQueue(imagejobs.NewRegistry(nil))
 
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/label-images/regenerate",
 			bytes.NewReader([]byte(`{not-json`)))
@@ -313,7 +313,7 @@ var _ = Describe("AdminLabelImagesRegenerate: malformed body branch", func() {
 var _ = Describe("AdminLabelImagesWS (gaka-8bz): cookie-auth + admin-gate + feature-gate", func() {
 	It("rejects a request with no refresh_token cookie", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "aliws"))
-		e := hz.Router()
+		e := boomtimeRouter(hz)
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/label-images/ws", nil)
 		req.Header.Set("Connection", "Upgrade")
 		req.Header.Set("Upgrade", "websocket")
@@ -327,7 +327,7 @@ var _ = Describe("AdminLabelImagesWS (gaka-8bz): cookie-auth + admin-gate + feat
 
 	It("rejects a non-admin with a valid cookie (403 pre-upgrade)", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "aliws"))
-		e := hz.Router()
+		e := boomtimeRouter(hz)
 		ctx := context.Background()
 		user, _ := hz.MintUser("liws_nonadmin")
 		refresh := fmt.Sprintf("refresh-li-%d", time.Now().UnixNano())
@@ -346,7 +346,7 @@ var _ = Describe("AdminLabelImagesWS (gaka-8bz): cookie-auth + admin-gate + feat
 
 	It("admin cookie + no ImageJobQueue → 503 (feature disabled after admin-gate)", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "aliws"))
-		e := hz.Router()
+		e := boomtimeRouter(hz)
 		ctx := context.Background()
 		user, _ := hz.MintUser("liws_admin_noqueue")
 		hz.Cfg.AdminUsers = map[string]struct{}{user: {}}

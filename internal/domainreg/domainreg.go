@@ -25,6 +25,10 @@ import (
 // byte-identical.
 type Set struct {
 	Registry *catalyst.Registry
+	// Boomtime is the same *boomtime.Module instance stored in Registry — the host
+	// late-wires its import worker, label-images worker, image-job queue, and jobs
+	// store onto it after those subsystems initialize.
+	Boomtime *boomtime.Module
 	// Books is the same *books.Module instance stored in Registry — the host wires its
 	// job enqueuer + inline Hardcover push onto it after the jobs subsystem is built.
 	Books *books.Module
@@ -33,10 +37,11 @@ type Set struct {
 // Build constructs the canonical boomtime domain set. A new domain is added here in
 // exactly one place and immediately participates in route/admin/job/column wiring.
 func Build() Set {
+	boomtimeMod := boomtime.New()
 	booksMod := books.New()
 	r := catalyst.NewRegistry()
-	r.Add(boomtime.Module{}) // waka (base domain)
-	r.Add(github.Module{})   // github stats
-	r.Add(booksMod)          // catalyst-books (amazon + hardcover)
-	return Set{Registry: r, Books: booksMod}
+	r.Add(boomtimeMod)     // waka (base domain)
+	r.Add(github.Module{}) // github stats
+	r.Add(booksMod)        // catalyst-books (amazon + hardcover)
+	return Set{Registry: r, Boomtime: boomtimeMod, Books: booksMod}
 }

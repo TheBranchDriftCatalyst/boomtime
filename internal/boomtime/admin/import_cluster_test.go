@@ -36,6 +36,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 
+	boomtimeadmin "github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/admin"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
@@ -87,17 +88,19 @@ func newImportDeps(serverKey string) *importDeps {
 		WakatimeAPIKey:     serverKey, // controlled per test
 	}
 	h := handler.New(hz.DB, cfg, logger, worker, hub, nil)
+	bh := boomtimeadmin.New(hz.DB, cfg, logger)
+	bh.SetImportWorker(worker, hub)
 
 	e := echo.New()
 	// Full import route surface — one line per handler method under test.
-	e.POST("/api/v1/users/current/import", h.Admin.ImportRequest)
-	e.GET("/api/v1/users/current/import/config", h.Admin.ImportConfig)
-	e.POST("/api/v1/users/current/import/wakatime-range", h.Admin.WakatimeRange)
-	e.GET("/api/v1/users/current/import/jobs", h.Admin.ImportJobs)
-	e.GET("/api/v1/users/current/import/jobs/:id", h.Admin.ImportJob)
-	e.POST("/api/v1/users/current/import/jobs/:id/cancel", h.Admin.ImportJobCancel)
-	e.GET("/api/v1/users/current/import/jobs/:id/logs", h.Admin.ImportJobLogs)
-	e.GET("/api/v1/users/current/import/jobs/:id/ws", h.Admin.ImportJobWS)
+	e.POST("/api/v1/users/current/import", bh.ImportRequest)
+	e.GET("/api/v1/users/current/import/config", bh.ImportConfig)
+	e.POST("/api/v1/users/current/import/wakatime-range", bh.WakatimeRange)
+	e.GET("/api/v1/users/current/import/jobs", bh.ImportJobs)
+	e.GET("/api/v1/users/current/import/jobs/:id", bh.ImportJob)
+	e.POST("/api/v1/users/current/import/jobs/:id/cancel", bh.ImportJobCancel)
+	e.GET("/api/v1/users/current/import/jobs/:id/logs", bh.ImportJobLogs)
+	e.GET("/api/v1/users/current/import/jobs/:id/ws", bh.ImportJobWS)
 
 	deps := &importDeps{
 		Hz:     hz,

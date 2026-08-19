@@ -26,8 +26,8 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/spf13/cobra"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/admin"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/climeta"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/admin"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
