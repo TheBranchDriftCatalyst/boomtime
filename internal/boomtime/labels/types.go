@@ -1,5 +1,5 @@
 // Package labels is the Go port of the client-side label DSL that used to
-// live in web/src/features/publicprofile/labels/. Mirrors conditions.ts +
+// live in web/shared/features/publicprofile/labels/. Mirrors conditions.ts +
 // evaluator.ts + tierLabels.ts + types.ts byte-for-byte in semantics so a
 // server-side evaluate produces the same awards a browser-side evaluate
 // would produce for the same payload.

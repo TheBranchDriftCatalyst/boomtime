@@ -1,8 +1,8 @@
 package widget
 
 // Theme is a hardcoded palette for server-rendered SVG widgets. The values
-// mirror the SPA's theme tokens (web/src/theme/theme.css :root / .dark) and
-// CHART_COLORS (web/src/lib/config.ts) — hex approximations of the oklch
+// mirror the SPA's theme tokens (web/shared/theme/theme.css :root / .dark) and
+// CHART_COLORS (web/shared/lib/config.ts) — hex approximations of the oklch
 // tokens, since SVG wants concrete colors and GitHub camo strips external CSS.
 type Theme struct {
 	Background string
@@ -15,7 +15,7 @@ type Theme struct {
 	Palette    []string
 }
 
-// chartPalette mirrors CHART_COLORS in web/src/lib/config.ts, order-for-order.
+// chartPalette mirrors CHART_COLORS in web/shared/lib/config.ts, order-for-order.
 var chartPalette = []string{
 	"#05d9e8", "#ff2d95", "#a3ff3c", "#b967ff", "#ffb13d", "#3b7bff",
 	"#ff5e7e", "#2dffb3", "#ff8f1f", "#e94bff", "#00f0ff", "#ffe94d",

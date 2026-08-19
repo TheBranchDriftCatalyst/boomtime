@@ -60,7 +60,7 @@ func (h *Handler) Version(c *echo.Context) error {
 }
 
 // Changelog serves the embedded CHANGELOG.md verbatim as text/markdown. The FE
-// parses it client-side (see web/src/lib/changelog.ts) so the response format
+// parses it client-side (see web/shared/lib/changelog.ts) so the response format
 // stays deterministic and the payload stays cache-friendly (identical bytes
 // for every request until the next release).
 func (h *Handler) Changelog(c *echo.Context) error {

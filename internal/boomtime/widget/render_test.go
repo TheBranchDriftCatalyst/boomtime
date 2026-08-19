@@ -373,9 +373,9 @@ var _ = Describe("Stat-tile + chip twins (Part B Stage 1)", func() {
 })
 
 // Drift guard: the BE whitelist must match the FE catalog
-// (web/src/features/widgets/catalog.ts) — update BOTH when adding a kind.
+// (web/shared/features/widgets/catalog.ts) — update BOTH when adding a kind.
 var _ = Describe("Kinds() matches the FE catalog verbatim", func() {
-	It("returns the same ordered list as web/src/features/widgets/catalog.ts", func() {
+	It("returns the same ordered list as web/shared/features/widgets/catalog.ts", func() {
 		want := []string{
 			"active-days-stat",
 			"activity-heatmap",

@@ -17,7 +17,7 @@
 --   }
 --
 -- The `i` values are widget catalog KIND ids (see internal/widget/render.go's
--- `kinds` map / web/src/features/widgets/catalog.ts). One catalog, one
+-- `kinds` map / web/shared/features/widgets/catalog.ts). One catalog, one
 -- scrubber, one renderer contract — the layout is just a placement of those
 -- kinds.
 

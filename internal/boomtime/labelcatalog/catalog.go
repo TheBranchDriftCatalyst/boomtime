@@ -1,5 +1,5 @@
 // Package labelcatalog is the Go-side mirror of the TypeScript label catalog
-// (web/src/features/publicprofile/labels/catalog.ts). It carries JUST what the
+// (web/shared/features/publicprofile/labels/catalog.ts). It carries JUST what the
 // label-image worker needs — the pair {id, imagePrompt} for every label the
 // backend should render an image for.
 //

@@ -3,10 +3,10 @@
 // the ONLY render path (the legacy hand-written Render() this file used to
 // sanity-check against is gone). Three invariant classes:
 //
-//   - Cross-language guard: every WIDGET_CATALOG kind (web/src/features/
+//   - Cross-language guard: every WIDGET_CATALOG kind (web/shared/features/
 //     widgets/catalog.ts) has a spec entry, classified "both" or "fe-only",
 //     with the "both" set matching Kinds() exactly. The TS-side twin
-//     (web/src/features/widgets/specs.test.ts) pins the same list from the
+//     (web/shared/features/widgets/specs.test.ts) pins the same list from the
 //     FE's own catalog.ts import.
 //   - NeedsForSpec(spec) == Needs(kind) for every "both" kind — trivially
 //     true post-cutover since Needs(kind) is now DEFINED as
@@ -59,7 +59,7 @@ var catalogFEOnlyKinds = []string{
 	"wellness",
 }
 
-var _ = Describe("Spec registry mirrors the FE catalog (web/src/features/widgets/catalog.ts)", func() {
+var _ = Describe("Spec registry mirrors the FE catalog (web/shared/features/widgets/catalog.ts)", func() {
 	It("every catalog kind has a spec entry classified both|fe-only", func() {
 		for _, kind := range Kinds() {
 			spec, ok := SpecFor(kind)

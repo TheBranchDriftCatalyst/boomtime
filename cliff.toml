@@ -1,6 +1,6 @@
 # git-cliff configuration for boomtime.
 #
-# The output is machine-parsed by web/src/lib/changelog.ts. If you change the
+# The output is machine-parsed by web/shared/lib/changelog.ts. If you change the
 # `body` template or the group names, update that parser (and its tests) too.
 
 [changelog]

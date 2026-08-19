@@ -3,7 +3,7 @@
 # code domain (proven: `go list -deps ./cmd/catalyst-books` pulls in 0
 # internal/boomtime packages). Serves the books HTTP surface AND the books-only
 # SPA (same boomtime shell/theme, ONLY the books domain surfaced — see
-# web/src/books-main.tsx + `yarn build:books`).
+# web/shared/books-main.tsx + `yarn build:books`).
 #
 #   docker build -f Dockerfile.catalyst-books -t catalyst-books .
 #
@@ -24,7 +24,7 @@ COPY web/ ./
 COPY internal/boomtime/widget/specs.json /internal/boomtime/widget/specs.json
 # gaka-zp2s / gaka-abg0 Step B: the books domain FE is PHYSICALLY colocated with
 # THIS Go package under internal/books/web/src (outside /web), reached via the
-# `@books/*` alias and scanned for Tailwind via an @source in web/src/index.css.
+# `@books/*` alias and scanned for Tailwind via an @source in web/shared/index.css.
 # The standalone books entry (index.books.html → books-main.tsx) composes it, so
 # bring the source in at the aliased path (no duplicate — same tree the host
 # build reads). tsc resolves bare deps by walking up from each file, so also

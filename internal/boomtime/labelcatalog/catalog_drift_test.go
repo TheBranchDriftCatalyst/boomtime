@@ -22,7 +22,7 @@ import (
 // resolveTSCatalogPath is the ginkgo equivalent of catalogTSPath — Skips
 // the current spec when the TS catalog is missing.
 func resolveTSCatalogPath() string {
-	rel, err := filepath.Abs("../../web/src/features/publicprofile/labels/catalog.ts")
+	rel, err := filepath.Abs("../../web/shared/features/publicprofile/labels/catalog.ts")
 	if err != nil {
 		ginkgo.Skip("cannot resolve TS catalog path: " + err.Error())
 	}

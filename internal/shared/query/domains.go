@@ -144,7 +144,7 @@ func registerReading() {
 
 		// Leaf-rows source: the reading_items projection the groupable explorer
 		// drills down to. Each column Name is the JSON key the FE ReadingItemDTO
-		// reads (web/src/types/meta.ts) so a rows response is directly castable to
+		// reads (web/shared/types/meta.ts) so a rows response is directly castable to
 		// ReadingItemDTO; Expr is the reading_items source column.
 		Rows: &RowSource{
 			Table:       items,
