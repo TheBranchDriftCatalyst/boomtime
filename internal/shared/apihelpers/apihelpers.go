@@ -204,6 +204,16 @@ func ResolveUser(database *db.DB, c *echo.Context) (string, string, *apierr.Erro
 // call sites don't have to thread the flag through three different handler
 // config shapes.
 func Identify(database *db.DB, c *echo.Context) (*auth.Identity, *apierr.Error) {
+	// Standalone single-tenant short-circuit (gaka-zp2s books-standalone). When the
+	// STANDALONE catalyst-books binary pins a fixed owner (auth.SetStandaloneOwner,
+	// from BOOM_STANDALONE_OWNER), there is NO auth stack — no tokens, cookies, or
+	// users-model to resolve against — so every caller IS that one owner. Return a
+	// synthetic all-caps Identity for it WITHOUT any header parse or DB lookup.
+	// The boomtime HOST never sets a standalone owner, so StandaloneOwner() is
+	// false there and this branch is dead — the host path below is 100% unchanged.
+	if owner, ok := auth.StandaloneOwner(); ok {
+		return auth.AllCapsIdentity(owner), nil
+	}
 	// auth-dry Phase 1: the auth middleware (internal/server) resolves the
 	// bearer token → Identity ONCE per request and stashes it via SetIdentity.
 	// Return that instead of resolving again — it eliminates the second
