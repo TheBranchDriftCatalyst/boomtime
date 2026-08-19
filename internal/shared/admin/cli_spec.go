@@ -16,8 +16,8 @@ import (
 
 	"github.com/labstack/echo/v5"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/climeta"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/climeta"
 )
 
 // cliSpecResponse is the GET /api/v1/admin/cli/spec envelope.

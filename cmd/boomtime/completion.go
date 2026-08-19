@@ -7,7 +7,7 @@ package main
 // zsh` and the hidden `__complete` dispatch behave identically to before the
 // move — cobra sees the same func values.
 import (
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/climeta"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/climeta"
 )
 
 var (
