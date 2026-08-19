@@ -19,7 +19,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/admin"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/awards"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/curation"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/goals"
@@ -31,6 +30,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/identity"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs/jobsevents"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/admin"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/cache"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"

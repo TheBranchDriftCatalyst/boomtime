@@ -14,7 +14,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/admin"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/admin"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
