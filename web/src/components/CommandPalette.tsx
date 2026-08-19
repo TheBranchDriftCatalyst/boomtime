@@ -8,6 +8,7 @@ import {
   HeartPulse,
   KeyRound,
   LayoutDashboard,
+  Library,
   ListTree,
   LogOut,
   Moon,
@@ -24,6 +25,7 @@ import {
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/dialog";
 import { useTheme } from "@thebranchdriftcatalyst/catalyst-ui/contexts/Theme";
 import { useSpaces } from "@/features/spaces/useSpaces";
+import { IS_BOOKS_STANDALONE } from "@/lib/standalone";
 
 // Global open event — a header/mobile search button dispatches this so the
 // palette stays decoupled from its triggers (it also opens on ⌘K / Ctrl-K).
@@ -36,7 +38,9 @@ export function openCommandPalette() {
 
 // Nav destinations — mirrors the sidebar NAV. Small + stable, so kept inline
 // rather than shared (the sidebar owns its own copy for its distinct styling).
-const PAGES: { name: string; icon: typeof LayoutDashboard; to: string }[] = [
+// The books-only standalone lists ONLY its reachable pages (the code-domain
+// routes aren't mounted there), so ⌘K never jumps to a dead route.
+const HOST_PAGES: { name: string; icon: typeof LayoutDashboard; to: string }[] = [
   { name: "Overview", icon: LayoutDashboard, to: "/app" },
   { name: "Projects", icon: BookOpen, to: "/app/projects" },
   { name: "Leaderboards", icon: Award, to: "/app/leaderboards" },
@@ -47,6 +51,11 @@ const PAGES: { name: string; icon: typeof LayoutDashboard; to: string }[] = [
   { name: "Import", icon: Download, to: "/app/import" },
   { name: "Settings", icon: Settings2, to: "/app/settings" },
 ];
+const BOOKS_STANDALONE_PAGES: typeof HOST_PAGES = [
+  { name: "Books", icon: Library, to: "/app/books" },
+  { name: "Settings", icon: Settings2, to: "/app/settings" },
+];
+const PAGES = IS_BOOKS_STANDALONE ? BOOKS_STANDALONE_PAGES : HOST_PAGES;
 
 interface CommandPaletteProps {
   onCreateSpace: () => void;
@@ -131,10 +140,14 @@ export function CommandPalette({ onCreateSpace, onLogout }: CommandPaletteProps)
             )}
 
             <Command.Group heading="Actions">
-              <Item value="new space create" onSelect={() => run(onCreateSpace)}>
-                <Plus className="h-4 w-4 shrink-0 text-muted-foreground" />
-                New space
-              </Item>
+              {/* "New space" is a host-only (code-domain) action — the books
+                  standalone has no Spaces. */}
+              {!IS_BOOKS_STANDALONE && (
+                <Item value="new space create" onSelect={() => run(onCreateSpace)}>
+                  <Plus className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  New space
+                </Item>
+              )}
               <Item
                 value="api tokens keys"
                 onSelect={() => run(() => navigate("/app/settings?tab=tokens"))}

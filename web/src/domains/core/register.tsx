@@ -22,6 +22,7 @@ import { registerSettingsSection } from "@/shared/settings/registry";
 import { registerAdminTab } from "@/shared/admin/registry";
 import { registerRoute } from "@/shared/routing/registry";
 import { PageFallback } from "@/shared/routing/PageFallback";
+import { IS_BOOKS_STANDALONE } from "@/lib/standalone";
 
 const ProfileTab = lazy(() =>
   import("./AccountTabs").then((m) => ({ default: m.ProfileTab })),
@@ -109,11 +110,16 @@ const Logs = lazy(() =>
 export function registerCoreDomain(): void {
   // ── Nav ────────────────────────────────────────────────────────────────
   // Overview: the mixed-fusion dashboard, first + ungrouped (it fuses BOTH
-  // domains, so it deliberately isn't bucketed under one).
-  registerNavItem(
-    { id: "core", order: 0 },
-    { name: "Overview", icon: LayoutDashboard, to: "/app", end: true },
-  );
+  // domains, so it deliberately isn't bucketed under one). HOST-ONLY: it fuses
+  // the code + books domains, so the books-only standalone (which never
+  // registers the code domain) has nothing to fuse — its nav is Books +
+  // Settings + Profile, and /app redirects straight to /app/books (below).
+  if (!IS_BOOKS_STANDALONE) {
+    registerNavItem(
+      { id: "core", order: 0 },
+      { name: "Overview", icon: LayoutDashboard, to: "/app", end: true },
+    );
+  }
   // Settings: domain-agnostic account/config entry (Logs + Changelog live in it).
   registerNavItem(
     { id: "config", order: 90 },
@@ -188,10 +194,16 @@ export function registerCoreDomain(): void {
   registerRoute({ path: "*", element: <Navigate to="/" replace />, order: 1000 });
 
   // ── /app leaves (core) ─────────────────────────────────────────────────
+  // The /app index: HOST renders the mixed-fusion Overview. The books-only
+  // STANDALONE has no Overview (it fuses the code domain, which isn't
+  // registered here), so /app redirects to the Books library — the app's real
+  // home — and the Overview module never enters the books entry graph.
   registerRoute({
     parent: "app",
     index: true,
-    element: (
+    element: IS_BOOKS_STANDALONE ? (
+      <Navigate to="/app/books" replace />
+    ) : (
       <Suspense fallback={<PageFallback />}>
         <Overview />
       </Suspense>
