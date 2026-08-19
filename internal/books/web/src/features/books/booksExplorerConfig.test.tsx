@@ -28,7 +28,7 @@ import {
   searchToPredicate,
   STATUS_FILTER_OPTIONS,
   type BooksFilters,
-} from "@/features/books/booksExplorerConfig";
+} from "@books/features/books/booksExplorerConfig";
 
 const NO_FILTERS: BooksFilters = { source: "all", status: "all",
       matched: "all", search: "" };

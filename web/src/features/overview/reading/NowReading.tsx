@@ -10,7 +10,7 @@ import { Spinner } from "@thebranchdriftcatalyst/catalyst-ui/ui/spinner";
 import { EmptyChart } from "@/viz/d3/EmptyChart";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
-import { openHardcover } from "@/features/books/hardcover";
+import { openHardcover } from "@books/features/books/hardcover";
 import type { ReadingItemDTO } from "@/types/api";
 
 const HEIGHT = 300;

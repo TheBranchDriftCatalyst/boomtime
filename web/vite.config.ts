@@ -46,6 +46,17 @@ export default defineConfig({
     tailwindcss(),
     catalystPlugin({ noFlash: { legacyStorageKey: "boomtime-theme" } }),
   ],
+  // gaka-zp2s / gaka-abg0 Step B: the colocated books FE lives OUTSIDE this Vite
+  // root (internal/books/web/src). esbuild's per-file tsconfig discovery only
+  // walks up from the file, so it never finds web/tsconfig's `jsx: "react-jsx"`
+  // for those out-of-root .tsx files and falls back to the classic runtime —
+  // which emits bare `React.createElement` and throws "React is not defined" at
+  // runtime/in Vitest. Pin the automatic runtime globally so in-root and
+  // colocated .tsx transform identically.
+  esbuild: {
+    jsx: "automatic",
+    jsxImportSource: "react",
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
@@ -161,16 +172,25 @@ export default defineConfig({
     globals: true,
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
-    // Co-located *.test.ts(x) files.
-    include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    // Co-located *.test.ts(x) files — in this Vite root (src/) AND the books
+    // FE colocated with its Go package under internal/books/web/src
+    // (gaka-zp2s / gaka-abg0 Step B).
+    include: [
+      "src/**/*.{test,spec}.{ts,tsx}",
+      "../internal/books/web/src/**/*.{test,spec}.{ts,tsx}",
+    ],
     css: false,
     restoreMocks: true,
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],
-      include: ["src/**/*.{ts,tsx}"],
+      include: [
+        "src/**/*.{ts,tsx}",
+        "../internal/books/web/src/**/*.{ts,tsx}",
+      ],
       exclude: [
         "src/**/*.{test,spec}.{ts,tsx}",
+        "../internal/books/web/src/**/*.{test,spec}.{ts,tsx}",
         "src/test/**",
         "src/main.tsx",
         "src/**/*.d.ts",

@@ -23,9 +23,9 @@ import {
   ProgressBar,
   RatingEditor,
   ListChips,
-} from "@/features/books/cells";
-import { formatMinutes } from "@/features/books/booksExplorerConfig";
-import { openHardcover } from "@/features/books/hardcover";
+} from "@books/features/books/cells";
+import { formatMinutes } from "@books/features/books/booksExplorerConfig";
+import { openHardcover } from "@books/features/books/hardcover";
 import type { ReadingItemDTO } from "@/types/api";
 import type { ReadEvent } from "@/types/meta";
 

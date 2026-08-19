@@ -22,10 +22,10 @@ const ConnectionsTab = lazy(() =>
 // Kindle later). Gated in the sidebar on books_enabled; the route itself is
 // always mounted (the page renders a disabled-state card when the flag is off).
 const Books = lazy(() =>
-  import("@/features/books/BooksPage").then((m) => ({ default: m.BooksPage })),
+  import("@books/features/books/BooksPage").then((m) => ({ default: m.BooksPage })),
 );
 const BooksTab = lazy(() =>
-  import("@/features/admin/BooksTab").then((m) => ({ default: m.BooksTab })),
+  import("@books/features/admin/BooksTab").then((m) => ({ default: m.BooksTab })),
 );
 
 export function registerBooksDomain(): void {

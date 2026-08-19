@@ -29,9 +29,9 @@ import {
   STATUS_META,
   StatusSelect,
   TitleCell,
-} from "@/features/books/cells";
+} from "@books/features/books/cells";
 import { BOOK_STATUSES, type BookStatus } from "@/types/meta";
-import { openHardcover } from "@/features/books/hardcover";
+import { openHardcover } from "@books/features/books/hardcover";
 import type {
   Axis,
   Column,

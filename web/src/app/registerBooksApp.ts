@@ -13,7 +13,7 @@
 // Same shell, same providers, same theme as the host (see books-main.tsx) —
 // only the registered domains differ.
 import { registerCoreDomain } from "@/domains/core/register";
-import { registerBooksDomain } from "@/domains/books/register";
+import { registerBooksDomain } from "@books/domains/books/register";
 
 let done = false;
 
