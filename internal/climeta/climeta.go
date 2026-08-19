@@ -24,14 +24,10 @@ package climeta
 
 import (
 	"context"
-	"fmt"
 	"io"
-	"log/slog"
 
 	"github.com/spf13/cobra"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/hardcover"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/github"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
@@ -143,57 +139,11 @@ var registry = map[string]RegistryEntry{
 			return RunBackfillLastContext(ctx, database, args.Bool("dry-run"), out)
 		},
 	},
-	"backfill github-stats": {
-		Classification:  ClassMutating,
-		DryRunSupported: false,
-		RequiredCap:     auth.CapAdmin,
-		NewCommand:      NewBackfillGithubStatsCmd,
-		// Mirrors the CLI's own refusal to run with the feature off.
-		Available: func(cfg *config.Config) bool { return cfg != nil && cfg.FeatureGithubStats },
-		FlagCompleters: map[string]cobra.CompletionFunc{
-			"user": CompleteUsernames,
-		},
-		FlagListers: map[string]DBLister{
-			"user": ListUsernames,
-		},
-		Invoke: func(ctx context.Context, database *db.DB, args RunArgs, out io.Writer) error {
-			// Fail fast with ONE clear error when the encryption key is
-			// missing — mirrors the CLI RunE precheck. Without it every
-			// user would fail individually at Decrypt inside the loop.
-			if err := auth.LoadKeyFromEnv(); err != nil {
-				return fmt.Errorf("cannot decrypt stored tokens: %w", err)
-			}
-			// The github.Service logger is discarded here: per-user outcomes
-			// already land in out, and the admin endpoint owns audit logging.
-			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-			svc := github.NewService(database, logger)
-			return RunBackfillGithubStats(ctx, database, svc, args.Str("user"), out)
-		},
-	},
-	"hardcover dedup-reads": {
-		// MUTATING (not destructive) so it's runnable from the web; deletes are gated
-		// by the dry-run default + confirm sentinel. See NewDedupReadsCmd.
-		Classification:  ClassMutating,
-		DryRunSupported: true,
-		RequiredCap:     auth.CapAdmin,
-		NewCommand:      NewDedupReadsCmd,
-		FlagCompleters: map[string]cobra.CompletionFunc{
-			"user": CompleteUsernames,
-		},
-		FlagListers: map[string]DBLister{
-			"user": ListUsernames,
-		},
-		Invoke: func(ctx context.Context, database *db.DB, args RunArgs, out io.Writer) error {
-			if err := auth.LoadKeyFromEnv(); err != nil {
-				return fmt.Errorf("cannot decrypt the Hardcover token: %w", err)
-			}
-			user := args.Str("user")
-			if user == "" {
-				return fmt.Errorf("--user is required")
-			}
-			return RunDedupReads(ctx, hardcover.NewStore(database), database, user, args.Bool("dry-run"), out)
-		},
-	},
+	// gaka-zp2s: the DOMAIN-coupled commands "backfill github-stats" (github) and
+	// "hardcover dedup-reads" (books) register themselves into this map via
+	// climeta.Register from their own packages' init() — see internal/boomtime/github
+	// and internal/books. This keeps climeta domain-free (the CLI framework never
+	// imports a data domain), so it can fold under internal/shared.
 	"user list": {
 		Classification: ClassReadonly,
 		RequiredCap:    auth.CapAdmin,
@@ -217,3 +167,10 @@ var registry = map[string]RegistryEntry{
 // Registry returns the web-run allowlist. Callers must treat the map as
 // read-only.
 func Registry() map[string]RegistryEntry { return registry }
+
+// Register adds a command to the web-run allowlist (gaka-zp2s). It is the seam
+// domain packages use to contribute their own vetted commands from init() —
+// keeping climeta itself free of any data-domain import. Registration order is
+// immaterial (the map is keyed by command path); a duplicate path overwrites.
+// Not safe for concurrent use — call only from package init(), before serving.
+func Register(path string, e RegistryEntry) { registry[path] = e }

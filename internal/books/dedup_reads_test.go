@@ -1,4 +1,4 @@
-package climeta
+package books
 
 import (
 	"testing"
