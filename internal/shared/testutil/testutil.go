@@ -30,10 +30,10 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/spaces"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/stats"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/widgets"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/handler"
 )
 
 const defaultTestDatabaseURL = "postgres://test:test@localhost:5432/boomtime_test?sslmode=disable"
