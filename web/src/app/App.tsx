@@ -28,7 +28,10 @@ function buildRouteElements(
   return defs
     .filter((d) => (d.parent ?? undefined) === parent)
     .map((d) => {
-      const children = buildRouteElements(defs, d.id);
+      // Only recurse for routes that declare an `id` (mount points). A route
+      // with no `id` is a leaf: recursing with `d.id === undefined` would
+      // re-match the root bucket (parent === undefined) and infinite-loop.
+      const children = d.id ? buildRouteElements(defs, d.id) : [];
       if (d.index) {
         return (
           <Route key={`${parent ?? "root"}:index`} index element={d.element} />

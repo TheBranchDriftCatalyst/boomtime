@@ -83,7 +83,9 @@ export function useBetaRegistration(): BetaRegistration {
   // Server kill switch: only false when the server EXPLICITLY disables it.
   // Unknown/loading defaults to allowed so the preview works before config
   // lands.
-  const serverAllows = config.beta_flags.user_registration !== false;
+  // Null-safe: standalone/loading has no server config yet — "unknown defaults
+  // to allowed" (a missing config must never crash the app on every path).
+  const serverAllows = config?.beta_flags?.user_registration !== false;
 
   useEffect(() => {
     const v = params.get(BETA_PARAM);

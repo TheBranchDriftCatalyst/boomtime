@@ -27,7 +27,36 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 const REFRESH_MARGIN_MS = 5 * 60_000;
 const CHECK_INTERVAL_MS = 60_000;
 
+// Standalone books build (VITE_BOOKS_STANDALONE): single owner, NO auth — the FE
+// counterpart of the backend's auth.SetStandaloneOwner short-circuit. The owner is
+// always "logged in": no /auth/refresh_token bootstrap, no /login redirect.
+const BOOKS_STANDALONE = import.meta.env.VITE_BOOKS_STANDALONE === "true";
+const STANDALONE_OWNER =
+  (import.meta.env.VITE_BOOKS_OWNER as string | undefined) || "owner";
+
+// AuthProvider dispatches on a BUILD constant — it calls no hooks itself, so the
+// Rules of Hooks are safe and the unused branch dead-code-eliminates per build.
 export function AuthProvider({ children }: { children: ReactNode }) {
+  return BOOKS_STANDALONE ? (
+    <StandaloneAuthProvider>{children}</StandaloneAuthProvider>
+  ) : (
+    <HostAuthProvider>{children}</HostAuthProvider>
+  );
+}
+
+function StandaloneAuthProvider({ children }: { children: ReactNode }) {
+  const value: AuthContextValue = {
+    isLoggedIn: true,
+    username: STANDALONE_OWNER,
+    bootstrapping: false,
+    login: async () => {},
+    register: async () => {},
+    logout: async () => {},
+  };
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+function HostAuthProvider({ children }: { children: ReactNode }) {
   const snapshot = useSyncExternalStore(
     authStore.subscribe,
     authStore.getSnapshot,
