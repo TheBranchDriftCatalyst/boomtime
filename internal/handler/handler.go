@@ -25,11 +25,9 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/goals"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/ingest"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/queue/imagejobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/spaces"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/stats"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/widgets"
-	labelimages "github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/worker/labelimages"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/identity"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs/jobsevents"
@@ -57,22 +55,9 @@ type Handler struct {
 	Cache  *cache.TTL
 	// StartTime is set at handler construction; /healthz reports uptime from it.
 	StartTime time.Time
-	// LabelImagesWorker drives on-demand image regeneration via the
-	// admin endpoints (gaka-myv). nil = feature disabled; handlers
-	// respond with 503 in that case.
-	LabelImagesWorker *labelimages.Worker
-	// ImageJobQueue accepts admin regen enqueues (gaka-8bz, transport-
-	// generalized by the worker-topology decoupling). *imagejobs.Registry
-	// under broker=inprocess (the registry owns the pool feed channel; the
-	// pool is constructed and started at server startup in cmd/boomtime) or
-	// *imagejobs.AMQPProducer under broker=rabbitmq. nil = feature
-	// disabled; the admin handler checks for nil and 503s accordingly.
-	ImageJobQueue imagejobs.Enqueuer
-	// ImageJobEvents backs AdminLabelImagesWS's live stream + reconnect
-	// snapshot. Usually the SAME underlying *imagejobs.Registry as
-	// ImageJobQueue (broker=inprocess), or the broker=rabbitmq "mirror"
-	// Registry fed by imagejobs.PumpBusIntoRegistry. nil = feature disabled.
-	ImageJobEvents imagejobs.EventSource
+	// gaka-zp2s: the label-images worker / image-job queue + events moved off this
+	// god-type onto boomtime.Module (its admin handler owns the regen endpoints).
+	// The host late-wires them there directly.
 
 	// Extracted per-domain handler bags (gaka-8tn). Each field points at
 	// deps the domain actually reads (a subset of the god-type).
@@ -132,56 +117,14 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *impor
 		Ingest:   ingest.New(database, cfg, logger, sharedCache),
 		Curation: curation.New(database, cfg, logger, sharedCache),
 		Stats:    stats.New(database, cfg, logger, sharedCache),
-		Admin:    admin.New(database, cfg, logger, sharedCache, worker, hub),
+		Admin:    admin.New(database, cfg, logger, sharedCache),
 		Query:    &queryapi.Handler{DB: database, Cfg: cfg, Logger: logger},
 	}
 }
 
-// SetLabelImagesWorker wires the label-images worker after construction.
-// Called by cmd/boomtime once NewWorker succeeds; nil is fine when the
-// feature is disabled — admin handlers detect the nil worker and return
-// 503 Service Unavailable with a clear "feature disabled" message.
-//
-// Propagates the wired worker to h.Admin (phase 7) so the admin regen
-// handler that lives on *admin.Handler picks it up.
-func (h *Handler) SetLabelImagesWorker(w *labelimages.Worker) {
-	h.LabelImagesWorker = w
-	if h.Admin != nil {
-		h.Admin.SetLabelImagesWorker(w)
-	}
-}
-
-// SetImageJobQueue wires the image-job Enqueuer after construction. Called
-// by cmd/boomtime when the label-images feature is on so the admin regen
-// endpoint has somewhere to enqueue jobs. Nil = feature off.
-//
-// Convenience: when e also satisfies imagejobs.EventSource (true for
-// *imagejobs.Registry — the broker=inprocess case, and every existing
-// test), ImageJobEvents is wired to the same value so callers that only
-// know about one queue object don't have to call both setters. The
-// broker=rabbitmq split (an *imagejobs.AMQPProducer paired with a separate
-// mirror Registry) calls SetImageJobEvents explicitly afterward — see
-// cmd/boomtime/main.go.
-func (h *Handler) SetImageJobQueue(e imagejobs.Enqueuer) {
-	h.ImageJobQueue = e
-	if es, ok := e.(imagejobs.EventSource); ok {
-		h.ImageJobEvents = es
-	}
-	if h.Admin != nil {
-		h.Admin.SetImageJobQueue(e)
-	}
-}
-
-// SetImageJobEvents wires the image-job EventSource after construction.
-// Only needed when it differs from ImageJobQueue (broker=rabbitmq's
-// producer+mirror split) — SetImageJobQueue already wires it for the
-// common case where one object satisfies both interfaces.
-func (h *Handler) SetImageJobEvents(ev imagejobs.EventSource) {
-	h.ImageJobEvents = ev
-	if h.Admin != nil {
-		h.Admin.SetImageJobEvents(ev)
-	}
-}
+// gaka-zp2s: SetLabelImagesWorker / SetImageJobQueue / SetImageJobEvents moved off this
+// god-type — the label-images regen surface is owned by boomtime.Module (its admin
+// handler), which cmd/boomtime late-wires directly via domainSet.Boomtime.
 
 // SetJobs propagates the catalyst-go-jobs Store + Enqueuer + Registry to h.Admin
 // (gaka-hney.2) so the admin Jobs tab can list + trigger/retry and render the

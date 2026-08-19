@@ -12,11 +12,34 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
+
+// installEncryptionKeyForTest sets BOOM_ENCRYPTION_KEY to a deterministic 32 bytes and
+// resets the auth singleton so auth.Encrypt/Decrypt work for the spec's duration.
+// Kept here for the admin cli_http suite after the import cluster's copy moved to
+// internal/boomtime/admin with the import tests (gaka-zp2s).
+func installEncryptionKeyForTest() {
+	const key = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+	prev, hadPrev := os.LookupEnv(auth.EncryptionKeyEnv)
+	os.Setenv(auth.EncryptionKeyEnv, key)
+	auth.ResetForTest()
+	Expect(auth.LoadKeyFromEnv()).To(Succeed())
+	DeferCleanup(func() {
+		if hadPrev {
+			os.Setenv(auth.EncryptionKeyEnv, prev)
+		} else {
+			os.Unsetenv(auth.EncryptionKeyEnv)
+		}
+		auth.ResetForTest()
+	})
+}
 
 // testutilTokenData builds a db.TokenData with a throwaway (unused) access
 // token and the caller-supplied refresh token. Used by WS tests to stand up a

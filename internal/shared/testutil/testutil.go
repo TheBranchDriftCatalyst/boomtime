@@ -274,7 +274,8 @@ func (hz *Harness) Router() *echo.Echo {
 	// biggest single source of test-code duplication before this fold.
 	// Every one is now a single route line here.
 	e.POST("/api/v1/users/current/password", h.Identity.ChangePassword) // gaka-8tn phase 4a: h.Identity
-	e.GET("/api/v1/labels/:id/image", h.Admin.LabelImage)               // gaka-8tn phase 7: h.Admin
+	// gaka-zp2s: the label-images admin cluster + public label-image GET moved to
+	// internal/boomtime/admin; those suites build their own boomtime-admin router.
 	// gaka-8tn phase 3: widget-def CRUD extracted to internal/widgets.
 	e.GET("/api/v1/users/current/widget-defs", h.Widgets.ListWidgetDefs)
 	e.POST("/api/v1/users/current/widget-defs", h.Widgets.CreateWidgetDef)
@@ -300,13 +301,8 @@ func (hz *Harness) Router() *echo.Echo {
 	e.PUT("/api/v1/users/current/dashboard/:scope", h.Spaces.PutDashboardLayout)       // gaka-8tn phase 2a
 	e.DELETE("/api/v1/users/current/dashboard/:scope", h.Spaces.DeleteDashboardLayout) // gaka-8tn phase 2a
 	e.POST("/api/v1/users/current/wakatime_key", h.Identity.SaveWakatimeKey)           // gaka-8tn phase 4a: h.Identity
-	// gaka-d6x.handler: admin cluster (label-images regeneration). Wired here so
-	// per-file test suites don't have to re-register (Echo panics on duplicate
-	// route registration).
-	// gaka-8tn phase 7: receivers moved to h.Admin (internal/admin).
-	e.GET("/api/v1/admin/label-images", h.Admin.AdminLabelImagesInfo)
-	e.POST("/api/v1/admin/label-images/regenerate", h.Admin.AdminLabelImagesRegenerate)
-	e.GET("/api/v1/admin/label-images/ws", h.Admin.AdminLabelImagesWS)
+	// gaka-zp2s: label-images admin cluster moved to internal/boomtime/admin; its
+	// suites build their own boomtime-admin router (no longer mirrored here).
 	// gaka-d6x.handler misc cluster: routes previously only in the production
 	// router (internal/server), now mirrored here so tests don't hand-register
 	// and hit the duplicate-route panic.

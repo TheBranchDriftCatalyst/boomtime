@@ -44,12 +44,13 @@ var _ = Describe("AdminLabelImagesWS: full handshake + snapshot frame (post-Acce
 		user, _ := hz.MintUser("wsli_admin")
 		hz.Cfg.AdminUsers = map[string]struct{}{user: {}}
 		reg := imagejobs.NewRegistry(nil)
-		hz.H.SetImageJobQueue(reg)
+		e, bh := boomtimeRouterH(hz)
+		bh.SetImageJobQueue(reg)
 
 		refresh := fmt.Sprintf("refresh-wsli-%d", time.Now().UnixNano())
 		Expect(hz.DB.CreateAccessTokens(ctx, testutilTokenData(user, refresh), 24)).To(Succeed())
 
-		srv := httptest.NewServer(hz.Router())
+		srv := httptest.NewServer(e)
 		DeferCleanup(srv.Close)
 
 		conn, _, err := dialAdminWS(srv.URL, "/api/v1/admin/label-images/ws", refresh)
@@ -83,12 +84,13 @@ var _ = Describe("AdminLabelImagesWS: full handshake + snapshot frame (post-Acce
 		userB, _ := hz.MintUser("wsli_2b")
 		hz.Cfg.AdminUsers = map[string]struct{}{userA: {}, userB: {}}
 		reg := imagejobs.NewRegistry(nil)
-		hz.H.SetImageJobQueue(reg)
+		e, bh := boomtimeRouterH(hz)
+		bh.SetImageJobQueue(reg)
 
 		refreshB := fmt.Sprintf("refresh-wsli2b-%d", time.Now().UnixNano())
 		Expect(hz.DB.CreateAccessTokens(ctx, testutilTokenData(userB, refreshB), 24)).To(Succeed())
 
-		srv := httptest.NewServer(hz.Router())
+		srv := httptest.NewServer(e)
 		DeferCleanup(srv.Close)
 
 		conn, _, err := dialAdminWS(srv.URL, "/api/v1/admin/label-images/ws", refreshB)
@@ -122,12 +124,13 @@ var _ = Describe("AdminLabelImagesWS: full handshake + snapshot frame (post-Acce
 		user, _ := hz.MintUser("wsli_live")
 		hz.Cfg.AdminUsers = map[string]struct{}{user: {}}
 		reg := imagejobs.NewRegistry(nil)
-		hz.H.SetImageJobQueue(reg)
+		e, bh := boomtimeRouterH(hz)
+		bh.SetImageJobQueue(reg)
 
 		refresh := fmt.Sprintf("refresh-wslilive-%d", time.Now().UnixNano())
 		Expect(hz.DB.CreateAccessTokens(ctx, testutilTokenData(user, refresh), 24)).To(Succeed())
 
-		srv := httptest.NewServer(hz.Router())
+		srv := httptest.NewServer(e)
 		DeferCleanup(srv.Close)
 
 		conn, _, err := dialAdminWS(srv.URL, "/api/v1/admin/label-images/ws", refresh)
