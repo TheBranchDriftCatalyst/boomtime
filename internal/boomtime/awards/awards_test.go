@@ -37,9 +37,10 @@ import (
 // paths and Echo panics on duplicate registration.
 func awardsAuxRouter(hz *testutil.Harness) *echo.Echo {
 	e := echo.New()
-	h := hz.H
-	e.POST("/api/v1/users/current/awards/log", h.Awards.AwardsLog)
-	e.GET("/api/public/profile/:slug/awards/streaks", h.Awards.PublicAwardsStreaks)
+	// gaka-zp2s: the awards bag lives on the harness now (moved off *handler.Handler
+	// when the boomtime data domains folded onto boomtime.Module).
+	e.POST("/api/v1/users/current/awards/log", hz.Awards.AwardsLog)
+	e.GET("/api/public/profile/:slug/awards/streaks", hz.Awards.PublicAwardsStreaks)
 	return e
 }
 

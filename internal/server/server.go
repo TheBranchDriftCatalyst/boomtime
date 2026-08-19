@@ -15,7 +15,6 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/tracing"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/identity"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/admin"
@@ -40,15 +39,15 @@ var distFS embed.FS
 // to the constructed *handler.Handler — this shape is preserved for
 // backward compatibility with existing tests that only care about the
 // Echo instance.)
-func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *importer.Worker, hub *importer.Hub, logHub *logging.LogHub, reg *catalyst.Registry) *echo.Echo {
-	e, _ := NewWithHandler(database, cfg, logger, worker, hub, logHub, reg)
+func New(database *db.DB, cfg *config.Config, logger *slog.Logger, logHub *logging.LogHub, reg *catalyst.Registry) *echo.Echo {
+	e, _ := NewWithHandler(database, cfg, logger, logHub, reg)
 	return e
 }
 
 // NewWithHandler is New but also returns the constructed *handler.Handler
 // so callers (cmd/boomtime) can wire post-construction dependencies like
 // the label-images worker.
-func NewWithHandler(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *importer.Worker, hub *importer.Hub, logHub *logging.LogHub, reg *catalyst.Registry) (*echo.Echo, *handler.Handler) {
+func NewWithHandler(database *db.DB, cfg *config.Config, logger *slog.Logger, logHub *logging.LogHub, reg *catalyst.Registry) (*echo.Echo, *handler.Handler) {
 	e := echo.New()
 
 	e.Use(middleware.Recover())
@@ -123,7 +122,7 @@ func NewWithHandler(database *db.DB, cfg *config.Config, logger *slog.Logger, wo
 		return nil
 	})
 
-	h := handler.New(database, cfg, logger, worker, hub, logHub)
+	h := handler.New(database, cfg, logger, logHub)
 	registerRoutes(e, h, reg)
 	registerStatic(e, h, cfg, logger)
 	return e, h

@@ -23,7 +23,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/domainreg"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
@@ -339,7 +338,7 @@ func TestNewWithHandler_WiresCorsRateLimitAndStaticInCorrectOrder(t *testing.T) 
 	t.Setenv("BOOM_CORS_ALLOWED_ORIGINS", "https://ok.example.com")
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	e, h := NewWithHandler(database, cfg, logger, nil, importer.NewHub(), nil, domainreg.Build().Registry)
+	e, h := NewWithHandler(database, cfg, logger, nil, domainreg.Build().Registry)
 	if e == nil || h == nil {
 		t.Fatalf("NewWithHandler must return non-nil (echo=%v, handler=%v)", e, h)
 	}
@@ -436,11 +435,11 @@ func TestNew_ConvenienceWrapperReturnsSameEcho(t *testing.T) {
 	t.Setenv("BOOM_CORS_ALLOWED_ORIGINS", "https://ok.example.com")
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	e := New(database, cfg, logger, nil, importer.NewHub(), nil, domainreg.Build().Registry)
+	e := New(database, cfg, logger, nil, domainreg.Build().Registry)
 	if e == nil {
 		t.Fatal("New returned nil")
 	}
-	e2, _ := NewWithHandler(database, cfg, logger, nil, importer.NewHub(), nil, domainreg.Build().Registry)
+	e2, _ := NewWithHandler(database, cfg, logger, nil, domainreg.Build().Registry)
 
 	// Build (method+path) sets for both echoes.
 	routeSet := func(e *echo.Echo) map[string]struct{} {

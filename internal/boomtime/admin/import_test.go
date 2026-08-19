@@ -39,7 +39,7 @@ var _ = Describe("ImportRequest (gaka-6jm.8)", func() {
 		hub := importer.NewHub()
 		worker := importer.NewWorker(workerCtx, hz.DB, silent, hub)
 		cfg := &config.Config{Port: 8080, EnableRegistration: true, SessionExpiry: 24}
-		h := handler.New(hz.DB, cfg, silent, worker, hub, nil)
+		h := handler.New(hz.DB, cfg, silent, nil)
 		bh := boomtimeadmin.New(hz.DB, cfg, silent)
 		bh.SetImportWorker(worker, hub)
 

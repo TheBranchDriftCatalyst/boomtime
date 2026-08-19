@@ -87,7 +87,7 @@ func newImportDeps(serverKey string) *importDeps {
 		SessionExpiry:      24,
 		WakatimeAPIKey:     serverKey, // controlled per test
 	}
-	h := handler.New(hz.DB, cfg, logger, worker, hub, nil)
+	h := handler.New(hz.DB, cfg, logger, nil)
 	bh := boomtimeadmin.New(hz.DB, cfg, logger)
 	bh.SetImportWorker(worker, hub)
 
