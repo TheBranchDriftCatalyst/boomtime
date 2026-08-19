@@ -53,7 +53,7 @@ jobs:
             # branch-name for every push
             type=ref,event=branch
             # short sha for immutable-ref use (Image Updater, rollbacks)
-            type=sha,prefix=sha-,format=short
+            type=sha,prefix=sha-,format=short,enable={{is_default_branch}}
             # `latest` only on default branch pushes
             type=raw,value=latest,enable={{is_default_branch}}
 
