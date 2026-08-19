@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"io/fs"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
@@ -30,7 +31,28 @@ func MigrateURL(ctx context.Context, url string) error {
 }
 
 func migrateDB(ctx context.Context, sqldb *sql.DB) error {
-	goose.SetBaseFS(migrationFS)
+	return migrateDBFS(ctx, sqldb, migrationFS)
+}
+
+// MigrateURLFS is MigrateURL against a CALLER-SUPPLIED migration FS instead of
+// the host's embedded set (gaka-zp2s books-standalone). The STANDALONE
+// catalyst-books binary uses it to apply its own books-only schema
+// (internal/books/db.MigrationsFS) to a fresh books-only database — the host's
+// full migration set (users / wakatime / stats / …) is deliberately NOT applied
+// there. The default MigrateURL / Migrate the host boots with are untouched, so
+// host behavior is unchanged. fsys must expose a top-level "migrations"
+// directory of goose SQL files (an embed.FS of `migrations/*.sql`).
+func MigrateURLFS(ctx context.Context, url string, fsys fs.FS) error {
+	sqldb, err := sql.Open("pgx", url)
+	if err != nil {
+		return err
+	}
+	defer sqldb.Close()
+	return migrateDBFS(ctx, sqldb, fsys)
+}
+
+func migrateDBFS(ctx context.Context, sqldb *sql.DB, fsys fs.FS) error {
+	goose.SetBaseFS(fsys)
 	if err := goose.SetDialect("postgres"); err != nil {
 		return err
 	}
