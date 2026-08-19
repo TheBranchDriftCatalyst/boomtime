@@ -9,19 +9,23 @@
 -- EMPTY, so one forward migration reflecting the end state is equivalent to
 -- replaying the whole history.
 --
--- Difference from the host schema: every books DATA table below carries
---   owner text NOT NULL
--- as a PLAIN column — the host's `REFERENCES public.users(username) ON DELETE
--- CASCADE` FK is STRIPPED, since the standalone DB has no full users table.
+-- Base case = ONE real user (gaka-zp2s books-scope). The standalone runs as a
+-- single local owner, and the owner<->books relation is KEPT exactly as the
+-- host has it: every books DATA table's `owner` column carries the host's
+--   owner text NOT NULL REFERENCES public.users(username) ON DELETE CASCADE
+-- FK — matching the host schema table-for-table (the two host tables that are
+-- deliberately FK-free, reading_events + notifications, stay FK-free here too).
 -- Indexes and UNIQUE / PRIMARY KEY constraints are preserved verbatim.
 --
--- ONE non-books-data table is included: a MINIMAL `users` stub. The books DAL
--- (internal/shared/db/{amazon_device,hardcover_token,reading_monitor}.go) stores
--- the owner's connect CREDENTIALS and reading-monitor settings as COLUMNS ON
--- `users` — those are column writes, not FKs, so they cannot be de-FK'd away.
--- The stub holds ONLY the owner key + exactly those columns; NO password, salt,
--- role, capabilities, wakatime, OIDC, timezone, avatar, or public-profile
--- columns. cmd/catalyst-books seeds the single owner row at boot.
+-- The FK target is a MINIMAL `users` stub (below): the ONE real users row.
+-- cmd/catalyst-books INSERTs the single owner into it right after these
+-- migrations run and BEFORE it serves any request, so the row every books
+-- table FKs to exists before any owner-scoped write. The books DAL
+-- (internal/shared/db/{amazon_device,hardcover_token,reading_monitor}.go) also
+-- stores the owner's connect CREDENTIALS + reading-monitor settings as COLUMNS
+-- ON `users`, so the stub holds the owner key + exactly those columns; NO
+-- password, salt, role, capabilities, wakatime, OIDC, timezone, avatar, or
+-- public-profile columns.
 -- ============================================================================
 
 -- ---- minimal owner-credential stub -----------------------------------------
@@ -45,7 +49,7 @@ CREATE TABLE IF NOT EXISTS public.users (
 -- ---- reading_items (final shape: 00058+00060+00063+00065+00069+00070+00071+00077+00080)
 CREATE TABLE IF NOT EXISTS public.reading_items (
     id                          bigserial   PRIMARY KEY,
-    owner                       text        NOT NULL,
+    owner                       text        NOT NULL REFERENCES public.users(username) ON DELETE CASCADE,
     source                      text        NOT NULL,
     external_id                 text        NOT NULL,
     title                       text        NOT NULL DEFAULT '',
@@ -104,7 +108,7 @@ CREATE INDEX IF NOT EXISTS reading_items_hardcover_book_idx
 -- ---- reading_activity (00061) ----------------------------------------------
 CREATE TABLE IF NOT EXISTS public.reading_activity (
     id                bigserial   PRIMARY KEY,
-    owner             text        NOT NULL,
+    owner             text        NOT NULL REFERENCES public.users(username) ON DELETE CASCADE,
     source            text        NOT NULL,
     granularity       text        NOT NULL DEFAULT 'day',
     bucket_date       date        NOT NULL,
@@ -118,7 +122,7 @@ CREATE INDEX IF NOT EXISTS reading_activity_owner_idx
 
 -- ---- book_sync_state (00062 + 00064) ---------------------------------------
 CREATE TABLE IF NOT EXISTS public.book_sync_state (
-    owner                text NOT NULL,
+    owner                text NOT NULL REFERENCES public.users(username) ON DELETE CASCADE,
     source               text NOT NULL,
     last_library_cursor  timestamptz,
     last_finished_cursor timestamptz,
@@ -144,7 +148,7 @@ CREATE TABLE IF NOT EXISTS hardcover_match_cache (
 
 -- ---- kindle_reading_insights (00067) ---------------------------------------
 CREATE TABLE IF NOT EXISTS public.kindle_reading_insights (
-    owner      text        PRIMARY KEY,
+    owner      text        PRIMARY KEY REFERENCES public.users(username) ON DELETE CASCADE,
     raw        jsonb       NOT NULL,
     fetched_at timestamptz NOT NULL DEFAULT now()
 );
@@ -152,7 +156,7 @@ CREATE TABLE IF NOT EXISTS public.kindle_reading_insights (
 -- ---- kindle_reading_positions (00068) --------------------------------------
 CREATE TABLE IF NOT EXISTS public.kindle_reading_positions (
     id         bigserial   PRIMARY KEY,
-    owner      text        NOT NULL,
+    owner      text        NOT NULL REFERENCES public.users(username) ON DELETE CASCADE,
     asin       text        NOT NULL,
     position   bigint      NOT NULL,
     sampled_at timestamptz NOT NULL DEFAULT now(),
@@ -163,7 +167,7 @@ CREATE INDEX IF NOT EXISTS kindle_reading_positions_owner_asin_sampled_idx
 
 -- ---- kindle_reading_monitor_state (00072) ----------------------------------
 CREATE TABLE IF NOT EXISTS public.kindle_reading_monitor_state (
-    owner           text        NOT NULL,
+    owner           text        NOT NULL REFERENCES public.users(username) ON DELETE CASCADE,
     asin            text        NOT NULL,
     last_location   bigint      NOT NULL DEFAULT 0,
     last_advance_at timestamptz,
@@ -178,7 +182,7 @@ CREATE INDEX IF NOT EXISTS kindle_reading_monitor_state_active_idx
 -- ---- kindle_reading_monitor_advances (00073) -------------------------------
 CREATE TABLE IF NOT EXISTS public.kindle_reading_monitor_advances (
     id            bigserial        PRIMARY KEY,
-    owner         text             NOT NULL,
+    owner         text             NOT NULL REFERENCES public.users(username) ON DELETE CASCADE,
     source        text             NOT NULL DEFAULT 'kindle',
     interval_secs double precision NOT NULL,
     dloc          bigint           NOT NULL,
@@ -189,7 +193,7 @@ CREATE INDEX IF NOT EXISTS kindle_reading_monitor_advances_owner_at_idx
 
 -- ---- hardcover_user_shelf (00074) ------------------------------------------
 CREATE TABLE IF NOT EXISTS public.hardcover_user_shelf (
-    owner             text        NOT NULL,
+    owner             text        NOT NULL REFERENCES public.users(username) ON DELETE CASCADE,
     hardcover_book_id bigint      NOT NULL,
     title             text        NOT NULL DEFAULT '',
     author            text        NOT NULL DEFAULT '',
