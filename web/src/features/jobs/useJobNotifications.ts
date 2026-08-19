@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { toast } from "sonner";
+import { IS_BOOKS_STANDALONE } from "@/lib/standalone";
 
 // Mirrors internal/jobs.JobEvent (only the terminal fields the FE toasts on).
 interface JobEvent {
@@ -27,6 +28,9 @@ function label(kind: string): string {
  */
 export function useJobNotifications() {
   useEffect(() => {
+    // The books-only standalone server doesn't run the jobs event stream
+    // (/api/v1/jobs/ws) — don't open a socket that 404s + retries forever.
+    if (IS_BOOKS_STANDALONE) return;
     let ws: WebSocket | null = null;
     let closed = false;
     let retry: ReturnType<typeof setTimeout> | undefined;

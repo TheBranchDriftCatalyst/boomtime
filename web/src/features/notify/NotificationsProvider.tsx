@@ -21,6 +21,7 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { IS_BOOKS_STANDALONE } from "@/lib/standalone";
 
 // Mirrors internal/notify.Event (Durable is server-only, not on the WS wire).
 export interface NotifyEvent {
@@ -58,6 +59,9 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
 
   // Replay durable notifications from the server (session-start delivery).
   const refresh = useCallback(async () => {
+    // The books-only standalone server serves neither the notify stream nor the
+    // durable-notifications endpoint — skip the replay so it doesn't 404.
+    if (IS_BOOKS_STANDALONE) return;
     try {
       const res = await api.getNotifications();
       const durable = (res.notifications ?? []).map<StoredNotification>((n) => ({
@@ -88,6 +92,9 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
 
   // The single WS subscription (live delivery). Reconnects on a dropped socket.
   useEffect(() => {
+    // No notify WS on the books-only standalone server — don't open a socket
+    // that would fail + retry every 5s and spam the console.
+    if (IS_BOOKS_STANDALONE) return;
     let ws: WebSocket | null = null;
     let closed = false;
     let retry: ReturnType<typeof setTimeout> | undefined;
@@ -137,7 +144,8 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
       prev.some((n) => !n.read) ? prev.map((n) => ({ ...n, read: true })) : prev,
     );
     // Durable rows are server-authoritative — persist the read flip (best-effort).
-    void api.markNotificationsRead().catch(() => {});
+    // The standalone books server has no such endpoint, so skip the POST.
+    if (!IS_BOOKS_STANDALONE) void api.markNotificationsRead().catch(() => {});
   }, []);
 
   const unreadCount = notifications.reduce((n, x) => n + (x.read ? 0 : 1), 0);
