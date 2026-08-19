@@ -8,7 +8,7 @@ import { Link } from "react-router";
 import { Headphones, Target } from "lucide-react";
 import { ChartCard } from "@/components/ChartCard";
 import { Spinner } from "@thebranchdriftcatalyst/catalyst-ui/ui/spinner";
-import { useGoalsQuery, useGoalProgress } from "@/features/goals/useGoals";
+import { useGoalsQuery, useGoalProgress } from "@boomtime/features/goals/useGoals";
 import type { Goal, Predicate } from "@/types/api";
 
 const HEIGHT = 260;

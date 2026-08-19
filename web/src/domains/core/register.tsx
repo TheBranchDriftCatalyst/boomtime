@@ -47,7 +47,7 @@ const Register = lazy(() =>
   import("@/features/auth/Register").then((m) => ({ default: m.Register })),
 );
 const Onboarding = lazy(() =>
-  import("@/features/onboarding/Onboarding").then((m) => ({
+  import("@boomtime/features/onboarding/Onboarding").then((m) => ({
     default: m.Onboarding,
   })),
 );

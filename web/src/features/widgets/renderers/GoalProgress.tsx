@@ -10,7 +10,7 @@
 // public view, network error), renders a neutral placeholder — a
 // missing goal shouldn't crash the whole dashboard.
 import { Progress } from "@thebranchdriftcatalyst/catalyst-ui/ui/progress";
-import { useAllGoalProgress, useGoalsQuery } from "@/features/goals/useGoals";
+import { useAllGoalProgress, useGoalsQuery } from "@boomtime/features/goals/useGoals";
 import type { Goal, GoalProgress as GoalProgressT } from "@/types/api";
 
 export function GoalProgress() {

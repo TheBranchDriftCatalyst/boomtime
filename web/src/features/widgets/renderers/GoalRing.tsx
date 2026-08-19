@@ -6,7 +6,7 @@
 //
 // Fewer than 3 goals renders the ones we have; more than 3 truncates — the
 // tile is intentionally small and 4+ rings become illegible.
-import { useAllGoalProgress, useGoalsQuery } from "@/features/goals/useGoals";
+import { useAllGoalProgress, useGoalsQuery } from "@boomtime/features/goals/useGoals";
 import type { Goal, GoalProgress } from "@/types/api";
 
 const BOX = 132;
