@@ -355,7 +355,7 @@ func runCmd() *cobra.Command {
 				logger.Warn("notify: durable save failed", "err", err)
 			})
 			if cfg.IsServerRole() {
-				e, h = server.NewWithHandler(database, cfg, logger, worker, hub, logHub, domainReg)
+				e, h = server.NewWithHandler(database, cfg, logger, logHub, domainReg)
 				// gaka-zp2s: the label-images regen + wakatime.com import admin
 				// surfaces are owned by boomtime.Module (its admin handler, mounted
 				// by RegisterRoutes during NewWithHandler). Late-wire them onto that

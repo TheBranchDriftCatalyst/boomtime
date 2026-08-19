@@ -23,7 +23,13 @@ import (
 
 	"github.com/labstack/echo/v5"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/importer"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/awards"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/curation"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/goals"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/ingest"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/spaces"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/stats"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/widgets"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
@@ -131,11 +137,28 @@ type HarnessT interface {
 }
 
 // Harness bundles a live Handler + DB for HTTP integration tests.
+//
+// gaka-zp2s: the boomtime DATA-domain handler bags moved off *handler.Handler onto
+// boomtime.Module (so handler imports no boomtime data domain). The harness owns them
+// directly here — testutil is a test-support package and may import boomtime freely —
+// built off the SAME shared cache handler.New allocates (H.Cache) so an ingest write
+// still invalidates a cached goals-progress entry, exactly as production does via
+// catalyst.Deps.Cache. Router() wires these plus the infra-peer bags still on H
+// (Meta/Identity/Admin/Query).
 type Harness struct {
 	T   HarnessT
 	DB  *db.DB
 	H   *handler.Handler
 	Cfg *config.Config
+
+	// Boomtime data-domain bags, sharing H.Cache.
+	Ingest   *ingest.Handler
+	Curation *curation.Handler
+	Stats    *stats.Handler
+	Widgets  *widgets.Handler
+	Goals    *goals.Handler
+	Spaces   *spaces.Handler
+	Awards   *awards.Handler
 }
 
 // NewHarness builds a Handler wired to the isolated DB with a discardable logger
@@ -162,8 +185,21 @@ func NewHarnessWithDB(t HarnessT, database *db.DB) *Harness {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	// LogHub is optional for handlers under test — nil disables the Logs live
 	// stream, which the harness router doesn't register anyway.
-	h := handler.New(database, cfg, logger, nil, importer.NewHub(), nil)
-	return &Harness{T: t, DB: database, H: h, Cfg: cfg}
+	h := handler.New(database, cfg, logger, nil)
+	// Build the boomtime data-domain bags off the SAME shared cache handler.New
+	// allocated (h.Cache) — production threads that instance through catalyst.Deps.Cache
+	// to boomtime.Module, so sharing it here keeps cross-domain invalidation identical.
+	cch := h.Cache
+	return &Harness{
+		T: t, DB: database, H: h, Cfg: cfg,
+		Ingest:   ingest.New(database, cfg, logger, cch),
+		Curation: curation.New(database, cfg, logger, cch),
+		Stats:    stats.New(database, cfg, logger, cch),
+		Widgets:  widgets.New(database, cfg, logger, cch),
+		Goals:    &goals.Handler{DB: database, Logger: logger},
+		Spaces:   &spaces.Handler{DB: database, Logger: logger, Cache: cch},
+		Awards:   awards.New(database, cfg, logger),
+	}
 }
 
 // Router returns a fresh Echo router with the API routes used by the HTTP
@@ -178,78 +214,78 @@ func (hz *Harness) Router() *echo.Echo {
 	e.POST("/auth/register", h.Identity.Register)
 	e.POST("/auth/refresh_token", h.Identity.RefreshToken)
 	// curation — gaka-8tn phase 5b: receivers moved to h.Curation (internal/curation).
-	e.GET("/api/v1/users/current/curation", h.Curation.ListCuration)
-	e.POST("/api/v1/users/current/curation", h.Curation.CreateCuration)
-	e.DELETE("/api/v1/users/current/curation/:id", h.Curation.DeleteCuration)
-	e.GET("/api/v1/users/current/curation/:id/affected", h.Curation.CurationAffected)
+	e.GET("/api/v1/users/current/curation", hz.Curation.ListCuration)
+	e.POST("/api/v1/users/current/curation", hz.Curation.CreateCuration)
+	e.DELETE("/api/v1/users/current/curation/:id", hz.Curation.DeleteCuration)
+	e.GET("/api/v1/users/current/curation/:id/affected", hz.Curation.CurationAffected)
 	// gaka-d6x.handler: extra curation routes (preview/apply/purge/toggle)
 	// so the full curation cluster is testable via testutil.Router without
 	// per-file re-wiring (which would duplicate + panic).
-	e.GET("/api/v1/users/current/curation/:id/preview", h.Curation.ApplyRenamePreview)
-	e.POST("/api/v1/users/current/curation/:id/apply", h.Curation.ApplyRename)
-	e.POST("/api/v1/users/current/curation/:id/purge", h.Curation.PurgeHidden)
-	e.POST("/api/v1/users/current/curation/:id/toggle", h.Curation.ToggleCuration)
-	// labels catalog (public GET + admin CRUD) — gaka-8tn phase 5b: h.Curation.
-	e.GET("/api/v1/labels/catalog", h.Curation.LabelsCatalog)
-	e.POST("/api/v1/admin/labels", h.Curation.AdminCreateLabel)
-	e.PATCH("/api/v1/admin/labels/:id", h.Curation.AdminUpdateLabel)
-	e.DELETE("/api/v1/admin/labels/:id", h.Curation.AdminDeleteLabel)
-	e.PATCH("/api/v1/admin/label-gen-config", h.Curation.AdminUpdateLabelGenConfig)
-	e.GET("/api/v1/admin/labels/seed.sql", h.Curation.AdminLabelsSeedSQL)
+	e.GET("/api/v1/users/current/curation/:id/preview", hz.Curation.ApplyRenamePreview)
+	e.POST("/api/v1/users/current/curation/:id/apply", hz.Curation.ApplyRename)
+	e.POST("/api/v1/users/current/curation/:id/purge", hz.Curation.PurgeHidden)
+	e.POST("/api/v1/users/current/curation/:id/toggle", hz.Curation.ToggleCuration)
+	// labels catalog (public GET + admin CRUD) — gaka-8tn phase 5b: hz.Curation.
+	e.GET("/api/v1/labels/catalog", hz.Curation.LabelsCatalog)
+	e.POST("/api/v1/admin/labels", hz.Curation.AdminCreateLabel)
+	e.PATCH("/api/v1/admin/labels/:id", hz.Curation.AdminUpdateLabel)
+	e.DELETE("/api/v1/admin/labels/:id", hz.Curation.AdminDeleteLabel)
+	e.PATCH("/api/v1/admin/label-gen-config", hz.Curation.AdminUpdateLabelGenConfig)
+	e.GET("/api/v1/admin/labels/seed.sql", hz.Curation.AdminLabelsSeedSQL)
 	// spaces — gaka-8tn phase 2a: receivers moved to h.Spaces (internal/spaces).
-	e.GET("/api/v1/users/current/spaces", h.Spaces.ListSpaces)
-	e.POST("/api/v1/users/current/spaces", h.Spaces.CreateSpace)
-	e.GET("/api/v1/users/current/spaces/preview", h.Spaces.SpacePreview)
-	e.GET("/api/v1/users/current/spaces/:id", h.Spaces.GetSpace)
-	e.PATCH("/api/v1/users/current/spaces/:id", h.Spaces.UpdateSpace)
-	e.DELETE("/api/v1/users/current/spaces/:id", h.Spaces.DeleteSpace)
-	e.POST("/api/v1/users/current/spaces/:id/rules", h.Spaces.AddSpaceRule)
-	e.DELETE("/api/v1/users/current/spaces/:id/rules/:rid", h.Spaces.DeleteSpaceRule)
+	e.GET("/api/v1/users/current/spaces", hz.Spaces.ListSpaces)
+	e.POST("/api/v1/users/current/spaces", hz.Spaces.CreateSpace)
+	e.GET("/api/v1/users/current/spaces/preview", hz.Spaces.SpacePreview)
+	e.GET("/api/v1/users/current/spaces/:id", hz.Spaces.GetSpace)
+	e.PATCH("/api/v1/users/current/spaces/:id", hz.Spaces.UpdateSpace)
+	e.DELETE("/api/v1/users/current/spaces/:id", hz.Spaces.DeleteSpace)
+	e.POST("/api/v1/users/current/spaces/:id/rules", hz.Spaces.AddSpaceRule)
+	e.DELETE("/api/v1/users/current/spaces/:id/rules/:rid", hz.Spaces.DeleteSpaceRule)
 	// whole-database backup (dump download + destructive restore).
 	// gaka-8tn phase 7: receivers moved to h.Admin (internal/admin).
 	e.GET("/api/v1/users/current/db/export", h.Admin.DBExport)
 	e.POST("/api/v1/users/current/db/import", h.Admin.DBImport)
 	// stats / aggregations — gaka-8tn phase 6: receivers moved to h.Stats
 	// (internal/stats).
-	e.GET("/api/v1/users/current/stats", h.Stats.Stats)
-	e.GET("/api/v1/users/current/stats/momentum", h.Stats.Momentum)
-	e.GET("/api/v1/users/current/files", h.Stats.ActiveFiles)
-	e.GET("/api/v1/users/current/projects/:project", h.Stats.ProjectStats)
-	e.GET("/api/v1/projects", h.Stats.ProjectList)
+	e.GET("/api/v1/users/current/stats", hz.Stats.Stats)
+	e.GET("/api/v1/users/current/stats/momentum", hz.Stats.Momentum)
+	e.GET("/api/v1/users/current/files", hz.Stats.ActiveFiles)
+	e.GET("/api/v1/users/current/projects/:project", hz.Stats.ProjectStats)
+	e.GET("/api/v1/projects", hz.Stats.ProjectList)
 	// embeddable widgets (auth'd link CRUD + public SVG) — gaka-8tn phase 3:
-	// domain lives at internal/widgets; test harness re-points to h.Widgets.X.
-	e.GET("/api/v1/users/current/widgets/link", h.Widgets.WidgetLink)
-	e.GET("/api/v1/users/current/widgets/links", h.Widgets.WidgetLinkList)
-	e.POST("/api/v1/users/current/widgets/link/:id/roll", h.Widgets.WidgetLinkRoll)
-	e.GET("/widget/svg/:uuid/:kind", h.Widgets.WidgetSvg)
+	// domain lives at internal/widgets; test harness re-points to hz.Widgets.X.
+	e.GET("/api/v1/users/current/widgets/link", hz.Widgets.WidgetLink)
+	e.GET("/api/v1/users/current/widgets/links", hz.Widgets.WidgetLinkList)
+	e.POST("/api/v1/users/current/widgets/link/:id/roll", hz.Widgets.WidgetLinkRoll)
+	e.GET("/widget/svg/:uuid/:kind", hz.Widgets.WidgetSvg)
 	// gaka-wpb: goals CRUD + toggle + progress (per-goal + batched).
 	// /goals/progress registered BEFORE /goals/:id to win path matching
 	// (Echo picks the first registered match for overlapping patterns).
 	// gaka-8tn phase 2b: repointed to the goals-domain handler bag.
-	e.GET("/api/v1/users/current/goals", h.Goals.ListGoals)
-	e.POST("/api/v1/users/current/goals", h.Goals.CreateGoal)
-	e.GET("/api/v1/users/current/goals/progress", h.Goals.GetAllGoalProgress)
-	e.GET("/api/v1/users/current/goals/:id", h.Goals.GetGoal)
-	e.PATCH("/api/v1/users/current/goals/:id", h.Goals.UpdateGoal)
-	e.DELETE("/api/v1/users/current/goals/:id", h.Goals.DeleteGoal)
-	e.POST("/api/v1/users/current/goals/:id/toggle", h.Goals.ToggleGoal)
-	e.GET("/api/v1/users/current/goals/:id/progress", h.Goals.GetGoalProgress)
+	e.GET("/api/v1/users/current/goals", hz.Goals.ListGoals)
+	e.POST("/api/v1/users/current/goals", hz.Goals.CreateGoal)
+	e.GET("/api/v1/users/current/goals/progress", hz.Goals.GetAllGoalProgress)
+	e.GET("/api/v1/users/current/goals/:id", hz.Goals.GetGoal)
+	e.PATCH("/api/v1/users/current/goals/:id", hz.Goals.UpdateGoal)
+	e.DELETE("/api/v1/users/current/goals/:id", hz.Goals.DeleteGoal)
+	e.POST("/api/v1/users/current/goals/:id/toggle", hz.Goals.ToggleGoal)
+	e.GET("/api/v1/users/current/goals/:id/progress", hz.Goals.GetGoalProgress)
 	// gaka-wpb: heartbeat ingest so we can prove the invalidation hook
 	// (SaveHeartbeats → InvalidateGoalsForOwner) clears cached
 	// progress. Just the bulk endpoint — single- and bulk-shaped
 	// requests go through the same storeAndRespond path.
-	e.POST("/api/v1/users/current/heartbeats.bulk", h.Ingest.HeartbeatBulk)
+	e.POST("/api/v1/users/current/heartbeats.bulk", hz.Ingest.HeartbeatBulk)
 	// gaka-d6x.handler: full ingest cluster (heartbeat single, workouts,
 	// health samples, explore reads). Wired so the ingest cluster tests
 	// exercise the real HTTP paths without re-registering routes.
-	e.POST("/api/v1/users/current/heartbeats", h.Ingest.Heartbeat)
-	e.GET("/api/v1/users/current/heartbeats", h.Ingest.HeartbeatsList)
-	e.GET("/api/v1/users/current/heartbeats/latest", h.Ingest.HeartbeatsLatest)
-	e.GET("/api/v1/users/current/heartbeats/group", h.Ingest.HeartbeatsGroup)
-	e.POST("/api/v1/users/current/workouts", h.Ingest.Workouts)
-	e.POST("/api/v1/users/current/workouts.bulk", h.Ingest.WorkoutsBulk)
-	e.POST("/api/v1/users/current/health_samples", h.Ingest.HealthSamples)
-	e.POST("/api/v1/users/current/health_samples.bulk", h.Ingest.HealthSamplesBulk)
+	e.POST("/api/v1/users/current/heartbeats", hz.Ingest.Heartbeat)
+	e.GET("/api/v1/users/current/heartbeats", hz.Ingest.HeartbeatsList)
+	e.GET("/api/v1/users/current/heartbeats/latest", hz.Ingest.HeartbeatsLatest)
+	e.GET("/api/v1/users/current/heartbeats/group", hz.Ingest.HeartbeatsGroup)
+	e.POST("/api/v1/users/current/workouts", hz.Ingest.Workouts)
+	e.POST("/api/v1/users/current/workouts.bulk", hz.Ingest.WorkoutsBulk)
+	e.POST("/api/v1/users/current/health_samples", hz.Ingest.HealthSamples)
+	e.POST("/api/v1/users/current/health_samples.bulk", hz.Ingest.HealthSamplesBulk)
 	// gaka-9v4: per-user chibi avatar. Regenerate/status are auth'd
 	// self-only, UserAvatar is public — the harness registers all three
 	// so a single handler test covers the full surface.
@@ -260,14 +296,14 @@ func (hz *Harness) Router() *echo.Echo {
 	e.POST("/api/v1/admin/avatar/synthesize-prompt", h.Identity.SynthesizeAvatarPrompt)
 	// gaka-hc6.3 + gaka-hc6.5.1: server-side award evaluation + historical
 	// backfill. Public/own variants + the backfill entry point.
-	// gaka-8tn phase 4b: receivers moved to h.Awards.* (awards extracted).
-	e.GET("/api/v1/users/current/awards", h.Awards.OwnAwards)
-	e.GET("/api/public/profile/:slug/awards", h.Awards.PublicAwards)
-	e.POST("/api/v1/users/current/awards/backfill", h.Awards.AwardsBackfill)
+	// gaka-8tn phase 4b: receivers moved to hz.Awards.* (awards extracted).
+	e.GET("/api/v1/users/current/awards", hz.Awards.OwnAwards)
+	e.GET("/api/public/profile/:slug/awards", hz.Awards.PublicAwards)
+	e.POST("/api/v1/users/current/awards/backfill", hz.Awards.AwardsBackfill)
 	// gaka-mwp-streaks: streak walker + ledger inspector — needed for the
 	// integration test's ledger-write assertion.
-	e.GET("/api/v1/users/current/awards/streaks", h.Awards.AwardsStreaks)
-	e.GET("/api/v1/users/current/awards/ledger", h.Awards.AwardsLedger)
+	e.GET("/api/v1/users/current/awards/streaks", hz.Awards.AwardsStreaks)
+	e.GET("/api/v1/users/current/awards/ledger", hz.Awards.AwardsLedger)
 	// gaka-0vp.18 (DRY audit): folded 8 per-file routerWithXxx helpers into
 	// the central Router() below. The per-file builders were 5-11 LOC each,
 	// existed in stdlib + ginkgo pairs (byte-identical), and were the
@@ -277,11 +313,11 @@ func (hz *Harness) Router() *echo.Echo {
 	// gaka-zp2s: the label-images admin cluster + public label-image GET moved to
 	// internal/boomtime/admin; those suites build their own boomtime-admin router.
 	// gaka-8tn phase 3: widget-def CRUD extracted to internal/widgets.
-	e.GET("/api/v1/users/current/widget-defs", h.Widgets.ListWidgetDefs)
-	e.POST("/api/v1/users/current/widget-defs", h.Widgets.CreateWidgetDef)
-	e.PATCH("/api/v1/users/current/widget-defs/:name", h.Widgets.UpdateWidgetDef)
-	e.DELETE("/api/v1/users/current/widget-defs/:name", h.Widgets.DeleteWidgetDef)
-	e.GET("/widget/svg/:uuid/named", h.Widgets.WidgetDefSvg)
+	e.GET("/api/v1/users/current/widget-defs", hz.Widgets.ListWidgetDefs)
+	e.POST("/api/v1/users/current/widget-defs", hz.Widgets.CreateWidgetDef)
+	e.PATCH("/api/v1/users/current/widget-defs/:name", hz.Widgets.UpdateWidgetDef)
+	e.DELETE("/api/v1/users/current/widget-defs/:name", hz.Widgets.DeleteWidgetDef)
+	e.GET("/widget/svg/:uuid/named", hz.Widgets.WidgetDefSvg)
 	e.GET("/api/v1/logs", h.Meta.ServerLogs)                                   // gaka-8tn phase 1: meta domain
 	e.GET("/api/v1/users/current/timezone", h.Identity.GetTimezone)            // gaka-8tn phase 4a: h.Identity
 	e.PATCH("/api/v1/users/current/timezone", h.Identity.UpdateTimezone)       // gaka-8tn phase 4a: h.Identity
@@ -297,10 +333,10 @@ func (hz *Harness) Router() *echo.Echo {
 	// Echo's duplicate-route panic.)
 	e.GET("/api/v1/users/current/github/stats", h.Identity.GetGithubStats)
 	e.GET("/api/public/profile/:slug/github/stats", h.Identity.PublicGithubStats)
-	e.GET("/api/v1/users/current/dashboard/:scope", h.Spaces.GetDashboardLayout)       // gaka-8tn phase 2a: moved to h.Spaces
-	e.PUT("/api/v1/users/current/dashboard/:scope", h.Spaces.PutDashboardLayout)       // gaka-8tn phase 2a
-	e.DELETE("/api/v1/users/current/dashboard/:scope", h.Spaces.DeleteDashboardLayout) // gaka-8tn phase 2a
-	e.POST("/api/v1/users/current/wakatime_key", h.Identity.SaveWakatimeKey)           // gaka-8tn phase 4a: h.Identity
+	e.GET("/api/v1/users/current/dashboard/:scope", hz.Spaces.GetDashboardLayout)       // gaka-8tn phase 2a: moved to h.Spaces
+	e.PUT("/api/v1/users/current/dashboard/:scope", hz.Spaces.PutDashboardLayout)       // gaka-8tn phase 2a
+	e.DELETE("/api/v1/users/current/dashboard/:scope", hz.Spaces.DeleteDashboardLayout) // gaka-8tn phase 2a
+	e.POST("/api/v1/users/current/wakatime_key", h.Identity.SaveWakatimeKey)            // gaka-8tn phase 4a: h.Identity
 	// gaka-zp2s: label-images admin cluster moved to internal/boomtime/admin; its
 	// suites build their own boomtime-admin router (no longer mirrored here).
 	// gaka-d6x.handler misc cluster: routes previously only in the production
@@ -311,21 +347,21 @@ func (hz *Harness) Router() *echo.Echo {
 	e.GET("/healthz", h.Meta.Healthz)
 	e.GET("/api/v1/version", h.Meta.Version)
 	e.GET("/api/v1/changelog", h.Meta.Changelog)
-	e.GET("/api/v1/users/current/heartbeats/entities", h.Ingest.ListEntitiesByType)
-	e.POST("/api/v1/users/current/heartbeats/entities/redact", h.Ingest.RedactEntities)
+	e.GET("/api/v1/users/current/heartbeats/entities", hz.Ingest.ListEntitiesByType)
+	e.POST("/api/v1/users/current/heartbeats/entities/redact", hz.Ingest.RedactEntities)
 	// gaka-8tn phase 7: receivers moved to h.Admin (internal/admin).
 	e.GET("/api/v1/users/current/sources/health", h.Admin.SourceHealth)
 	// gaka-8tn phase 6: receivers moved to h.Stats (internal/stats).
-	e.GET("/api/v1/users/current/timeline", h.Stats.Timeline)
-	e.GET("/api/v1/users/current/statusbar/today", h.Stats.StatusbarToday)
-	e.GET("/api/v1/users/current/derived/status", h.Stats.DerivedStatus)
-	e.POST("/api/v1/users/current/derived/resync", h.Stats.DerivedResync)
+	e.GET("/api/v1/users/current/timeline", hz.Stats.Timeline)
+	e.GET("/api/v1/users/current/statusbar/today", hz.Stats.StatusbarToday)
+	e.GET("/api/v1/users/current/derived/status", hz.Stats.DerivedStatus)
+	e.POST("/api/v1/users/current/derived/resync", hz.Stats.DerivedResync)
 	// gaka-8tn phase 3: badges extracted to internal/widgets.
-	e.GET("/badge/link/:project", h.Widgets.BadgeLink)
-	e.GET("/badge/svg/:svg", h.Widgets.BadgeSvg)
-	// gaka-8tn phase 6: leaderboards + commits moved to h.Stats.
-	e.GET("/api/v1/leaderboards", h.Stats.Leaderboards)
-	e.GET("/api/v1/commits/:project/report", h.Stats.Commits)
+	e.GET("/badge/link/:project", hz.Widgets.BadgeLink)
+	e.GET("/badge/svg/:svg", hz.Widgets.BadgeSvg)
+	// gaka-8tn phase 6: leaderboards + commits moved to hz.Stats.
+	e.GET("/api/v1/leaderboards", hz.Stats.Leaderboards)
+	e.GET("/api/v1/commits/:project/report", hz.Stats.Commits)
 	// gaka-174.q: cross-domain query DSL endpoint. Mirrors the production
 	// registration (queryapi.Register) so the HTTP suites can drive it.
 	e.POST("/api/v1/query", h.Query.RunQuery)

@@ -19,14 +19,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/awards"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/curation"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/goals"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/importer"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/ingest"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/spaces"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/stats"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/widgets"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/identity"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs/jobsevents"
@@ -48,55 +40,51 @@ type Handler struct {
 	DB     *db.DB
 	Cfg    *config.Config
 	Logger *slog.Logger
-	Worker *importer.Worker
-	Hub    *importer.Hub
 	// LogHub streams the server process's own slog records to the Logs tab.
 	LogHub *logging.LogHub
 	Cache  *cache.TTL
 	// StartTime is set at handler construction; /healthz reports uptime from it.
 	StartTime time.Time
-	// gaka-zp2s: the label-images worker / image-job queue + events moved off this
-	// god-type onto boomtime.Module (its admin handler owns the regen endpoints).
-	// The host late-wires them there directly.
 
-	// Extracted per-domain handler bags (gaka-8tn). Each field points at
-	// deps the domain actually reads (a subset of the god-type).
-	Meta     *meta.Handler     // phase 1
-	Spaces   *spaces.Handler   // phase 2a
-	Goals    *goals.Handler    // phase 2b
-	Widgets  *widgets.Handler  // phase 3
-	Identity *identity.Handler // phase 4a
-	Awards   *awards.Handler   // phase 4b
-	Ingest   *ingest.Handler   // phase 5a
-	Curation *curation.Handler // phase 5b
-	Stats    *stats.Handler    // phase 6
-	Admin    *admin.Handler    // phase 7
+	// Remaining per-domain handler bags. After gaka-zp2s all the boomtime DATA-domain
+	// bags (ingest/curation/stats/widgets/goals/spaces/awards) moved onto
+	// boomtime.Module (built in Module.RegisterRoutes off catalyst.Deps.Cache), and the
+	// boomtime import/label-images worker wiring moved onto boomtime.Module's admin
+	// handler — so this package imports NO boomtime data domain. What stays are the
+	// infra-peer bags: meta (shared), identity (auth/profile peer), admin (shared cross-
+	// cutting operator surface), and the cross-domain query DSL.
+	Meta     *meta.Handler     // phase 1 (shared)
+	Identity *identity.Handler // phase 4a (infra peer)
+	Admin    *admin.Handler    // phase 7 (shared)
 	Query    *queryapi.Handler // gaka-174.q: cross-domain query DSL over HTTP
-	// gaka-zp2s: the catalyst-books HTTP surface is no longer a bag on this god-type
-	// — it is owned by books.Module (RegisterRoutes builds + stashes it, the host
-	// late-wires its enqueuer/Hardcover-push). This package no longer imports the books
-	// domain.
+	// gaka-zp2s: the catalyst-books HTTP surface is owned by books.Module; the boomtime
+	// data-domain surfaces are owned by boomtime.Module. This god-type no longer holds
+	// or imports either.
 }
 
 // New constructs a Handler. logHub streams server-process slog records to the
 // Logs tab; pass nil to disable (Logs endpoints handle a nil hub — see
 // internal/meta/logs.go).
-func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *importer.Worker, hub *importer.Hub, logHub *logging.LogHub) *Handler {
+//
+// gaka-zp2s: the wakatime.com import worker + hub are no longer parameters — that
+// worker is late-wired onto boomtime.Module (SetImportWorker) by the composition root,
+// not stashed on this god-type. New builds the ONE shared stats cache (h.Cache) that
+// the composition root threads to boomtime.Module via catalyst.Deps.Cache so every
+// domain — boomtime bags included — shares a single cache and one domain's
+// invalidation reaches every reader.
+func New(database *db.DB, cfg *config.Config, logger *slog.Logger, logHub *logging.LogHub) *Handler {
 	sharedCache := cache.NewNamed(statsCacheTTL(), "stats")
 	startTime := time.Now()
 	return &Handler{
 		DB:        database,
 		Cfg:       cfg,
 		Logger:    logger,
-		Worker:    worker,
-		Hub:       hub,
 		LogHub:    logHub,
 		Cache:     sharedCache,
 		StartTime: startTime,
-		// Per-domain handler bags (gaka-8tn). Each shares the SAME
-		// underlying instances the god-type holds (DB, sharedCache,
-		// logger, logHub) so cache invalidations from any domain reach
-		// every reader.
+		// The remaining infra-peer bags share the SAME sharedCache the boomtime
+		// bags receive via catalyst.Deps.Cache, so cache invalidations cross
+		// every domain.
 		Meta: &meta.Handler{
 			Cfg:       cfg,
 			Logger:    logger,
@@ -105,18 +93,7 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, worker *impor
 			DB:        database,
 			StartTime: startTime,
 		},
-		Spaces: &spaces.Handler{
-			DB:     database,
-			Logger: logger,
-			Cache:  sharedCache,
-		},
-		Goals:    &goals.Handler{DB: database, Logger: logger},
-		Widgets:  widgets.New(database, cfg, logger, sharedCache),
 		Identity: identity.New(database, cfg, logger, sharedCache),
-		Awards:   awards.New(database, cfg, logger),
-		Ingest:   ingest.New(database, cfg, logger, sharedCache),
-		Curation: curation.New(database, cfg, logger, sharedCache),
-		Stats:    stats.New(database, cfg, logger, sharedCache),
 		Admin:    admin.New(database, cfg, logger, sharedCache),
 		Query:    &queryapi.Handler{DB: database, Cfg: cfg, Logger: logger},
 	}

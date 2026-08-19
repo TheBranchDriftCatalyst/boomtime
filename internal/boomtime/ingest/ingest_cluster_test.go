@@ -24,8 +24,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/importer"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/ingest"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 	"github.com/labstack/echo/v5"
@@ -378,9 +377,12 @@ var _ = Describe("Heartbeat ingest (gaka-d6x.handler)", func() {
 				RemoteWrite:        &config.RemoteWriteConfig{URL: upstream.URL, Token: "shared-secret"},
 			}
 			silent := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
-			h := handler.New(hz.DB, cfg, silent, nil, importer.NewHub(), nil)
+			// gaka-zp2s: build the ingest bag directly (it moved off *handler.Handler onto
+			// boomtime.Module). This test needs its OWN cfg (RemoteWrite set), so it can't
+			// reuse the harness's default-cfg hz.Ingest.
+			ing := ingest.New(hz.DB, cfg, silent, nil)
 			e := echo.New()
-			e.POST("/api/v1/users/current/heartbeats.bulk", h.Ingest.HeartbeatBulk)
+			e.POST("/api/v1/users/current/heartbeats.bulk", ing.HeartbeatBulk)
 
 			body := []map[string]any{{
 				"time":       float64(time.Now().Unix()),
