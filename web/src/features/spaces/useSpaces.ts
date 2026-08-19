@@ -1,12 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
+import { IS_BOOKS_STANDALONE } from "@/lib/standalone";
 import type { AddSpaceRuleBody } from "@/types/api";
 
 export function useSpaces() {
   return useQuery({
     queryKey: qk.spaces(),
     queryFn: () => api.getSpaces(),
+    // Spaces are a host-only (code-domain) concept. The books-only standalone
+    // server doesn't serve GET /api/v1/users/current/spaces, so disable the
+    // fetch entirely there — the sidebar drops the Spaces group and the command
+    // palette just shows no spaces (data stays undefined) instead of spamming
+    // the console with 404 retries.
+    enabled: !IS_BOOKS_STANDALONE,
   });
 }
 

@@ -23,6 +23,7 @@ import { usePublicConfig } from "@/lib/usePublicConfig";
 import { resolveNavSections } from "@/shared/nav/registry";
 import type { NavSection } from "@/shared/nav/types";
 import { cn } from "@/lib/utils";
+import { IS_BOOKS_STANDALONE, STANDALONE_APP_NAME } from "@/lib/standalone";
 
 // Single source for the sidebar item styling (nav links, space links, and the
 // action buttons all share it; buttons pass isActive=false and add w-full).
@@ -355,7 +356,11 @@ export function SidebarBody({
           aria-hidden="true"
           className="h-8 w-8 shrink-0 rounded-lg"
         />
-        {!collapsed && <span className="text-lg font-semibold">Boomtime</span>}
+        {!collapsed && (
+          <span className="text-lg font-semibold">
+            {IS_BOOKS_STANDALONE ? STANDALONE_APP_NAME : "Boomtime"}
+          </span>
+        )}
       </div>
 
       <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3">
@@ -368,19 +373,32 @@ export function SidebarBody({
           />
         ))}
 
-        <AdminNavLink collapsed={collapsed} onNavigate={onNavigate} />
-
-        {/* Profile lives in the Spaces group — it's semantically a "space" too
-            (a scoped, publishable view of your data). Order: Profile first,
-            then user-created Spaces, then New space. */}
-        <SpacesNavGroup
-          collapsed={collapsed}
-          onCreateSpace={onCreateSpace}
-          onNavigate={onNavigate}
-          publicProfileSlot={
+        {/* Admin + Spaces are HOST-ONLY. The books-only standalone is a
+            single-local-user app: no admin console, no user-created Spaces
+            (and no /spaces fetch — see useSpaces). Its nav is Books + Settings
+            + Profile ONLY, so we render the lone Profile link directly instead
+            of the Spaces group that would otherwise host it. */}
+        {IS_BOOKS_STANDALONE ? (
+          <div className="pt-4">
             <ProfileNavLink collapsed={collapsed} onNavigate={onNavigate} />
-          }
-        />
+          </div>
+        ) : (
+          <>
+            <AdminNavLink collapsed={collapsed} onNavigate={onNavigate} />
+
+            {/* Profile lives in the Spaces group — it's semantically a "space"
+                too (a scoped, publishable view of your data). Order: Profile
+                first, then user-created Spaces, then New space. */}
+            <SpacesNavGroup
+              collapsed={collapsed}
+              onCreateSpace={onCreateSpace}
+              onNavigate={onNavigate}
+              publicProfileSlot={
+                <ProfileNavLink collapsed={collapsed} onNavigate={onNavigate} />
+              }
+            />
+          </>
+        )}
       </nav>
 
       <div className="shrink-0 space-y-1 border-t p-3">
