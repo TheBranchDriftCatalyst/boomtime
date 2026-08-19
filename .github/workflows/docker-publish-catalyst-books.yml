@@ -1,0 +1,72 @@
+# Builds the STANDALONE catalyst-books image (Dockerfile.catalyst-books) — the books
+# domain running in isolation (gaka-zp2s). Separate GHCR package `catalyst-books`, so
+# the boomtime ImageUpdater (which watches ghcr.io/<owner>/boomtime) never sees it.
+# Same default-branch sha guard as docker-publish.yml.
+name: docker-publish-catalyst-books
+
+on:
+  push:
+    branches:
+      - main
+      - gaka-domain-framework
+    paths:
+      # only rebuild when books/shared/entrypoint/dockerfile change
+      - "cmd/catalyst-books/**"
+      - "internal/books/**"
+      - "internal/shared/**"
+      - "internal/identity/**"
+      - "Dockerfile.catalyst-books"
+      - ".github/workflows/docker-publish-catalyst-books.yml"
+  workflow_dispatch: {}
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/catalyst-books
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=sha-,format=short,enable={{is_default_branch}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Derive VERSION for -X main.version
+        id: version
+        run: echo "version=$(git describe --tags --always --dirty 2>/dev/null || git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.catalyst-books
+          push: true
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
