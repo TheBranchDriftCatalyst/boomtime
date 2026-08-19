@@ -15,7 +15,6 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/tracing"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/admin"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/awards"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/curation"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/goals"
@@ -26,6 +25,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/widgets"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/identity"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/admin"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/catalyst"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
