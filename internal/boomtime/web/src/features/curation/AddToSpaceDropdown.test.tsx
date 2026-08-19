@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AddToSpaceDropdown } from "@boomtime/features/curation/AddToSpaceDropdown";
-import { renderWithProviders } from "@/test/renderWithProviders";
-import { server } from "@/test/msw/server";
-import { http, HttpResponse } from "@/test/msw/handlers";
-import type { CurationRule } from "@/types/api";
+import { renderWithProviders } from "@shared/test/renderWithProviders";
+import { server } from "@shared/test/msw/server";
+import { http, HttpResponse } from "@shared/test/msw/handlers";
+import type { CurationRule } from "@shared/types/api";
 
 // gaka-esv: the AddToSpaceDropdown is FE-only composition on top of the
 // existing spaces endpoints. Tests focus on:

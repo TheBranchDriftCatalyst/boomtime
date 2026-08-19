@@ -8,7 +8,7 @@ import {
   useCurationMutations,
   useCurationRules,
 } from "@boomtime/features/curation/useCuration";
-import type { CurationRule } from "@/types/api";
+import type { CurationRule } from "@shared/types/api";
 
 // The "Remappings" Settings tab: curation rules with per-row destructive
 // actions.

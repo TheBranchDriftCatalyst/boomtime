@@ -11,9 +11,9 @@
 // invalidating the react-query surfaces that DO derive from reading state (the
 // page hero counts + any grouped reading/books charts) so they refetch.
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/api";
-import { qk } from "@/lib/queryKeys";
-import type { CurationPatch, ReadingItemDTO } from "@/types/meta";
+import { api } from "@shared/lib/api";
+import { qk } from "@shared/lib/queryKeys";
+import type { CurationPatch, ReadingItemDTO } from "@shared/types/meta";
 
 // Grouped-query cache prefixes whose results derive from reading state. Mirrors
 // usePins: invalidate them so a status change (a book leaving the "reading" set,

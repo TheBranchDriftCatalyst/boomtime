@@ -13,7 +13,7 @@
 //   - The authoring UI accepts `$1` (familiar) and `templateToBackend` converts
 //     `$N`→`\N` before sending, matching the backend's normalized form.
 
-import type { CurationRule } from "@/types/api";
+import type { CurationRule } from "@shared/types/api";
 
 /** Convert Postgres-style `\N` backrefs to JS `$N` (for String.replace). */
 export function templateToJs(template: string): string {

@@ -1,8 +1,8 @@
 import { Layers } from "lucide-react";
-import { secondsToHms } from "@/lib/utils";
-import { shortPath } from "@/lib/pathLabel";
-import { cn } from "@/lib/utils";
-import type { CrossProjectFile } from "@/types/api";
+import { secondsToHms } from "@shared/lib/utils";
+import { shortPath } from "@shared/lib/pathLabel";
+import { cn } from "@shared/lib/utils";
+import type { CrossProjectFile } from "@shared/types/api";
 
 interface CrossProjectFilesTableProps {
   files: CrossProjectFile[];

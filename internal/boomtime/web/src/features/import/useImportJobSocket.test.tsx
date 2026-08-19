@@ -1,9 +1,9 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { useImportJobSocket } from "@boomtime/features/import/useImportJobSocket";
-import { mockImportWs, type MockImportWs } from "@/test/ws";
-import { importJob, importLog } from "@/test/factories";
-import type { ImportJob } from "@/types/api";
+import { mockImportWs, type MockImportWs } from "@shared/test/ws";
+import { importJob, importLog } from "@shared/test/factories";
+import type { ImportJob } from "@shared/types/api";
 
 let ws: MockImportWs | undefined;
 

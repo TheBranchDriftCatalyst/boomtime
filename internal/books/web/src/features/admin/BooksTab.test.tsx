@@ -5,12 +5,12 @@
 import { screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { api } from "@/lib/api";
-import type { ReadingMonitorRaw } from "@/types/api";
-import { renderWithProviders } from "@/test/renderWithProviders";
+import { api } from "@shared/lib/api";
+import type { ReadingMonitorRaw } from "@shared/types/api";
+import { renderWithProviders } from "@shared/test/renderWithProviders";
 import { BooksTab } from "./BooksTab";
 
-vi.mock("@/lib/api", () => ({
+vi.mock("@shared/lib/api", () => ({
   api: { getReadingMonitorRaw: vi.fn() },
 }));
 

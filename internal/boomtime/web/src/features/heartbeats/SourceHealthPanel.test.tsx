@@ -5,11 +5,11 @@ import {
   deriveSourceStatus,
   relativeTime,
   STATUS_RANK,
-} from "@/lib/sourceStatus";
-import { renderWithProviders } from "@/test/renderWithProviders";
-import { server } from "@/test/msw/server";
-import { http, HttpResponse } from "@/test/msw/handlers";
-import type { SourceHealth } from "@/types/api";
+} from "@shared/lib/sourceStatus";
+import { renderWithProviders } from "@shared/test/renderWithProviders";
+import { server } from "@shared/test/msw/server";
+import { http, HttpResponse } from "@shared/test/msw/handlers";
+import type { SourceHealth } from "@shared/types/api";
 
 const HOUR = 3600_000;
 const DAY = 24 * HOUR;

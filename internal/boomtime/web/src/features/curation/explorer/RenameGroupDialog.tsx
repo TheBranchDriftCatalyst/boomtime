@@ -6,9 +6,9 @@ import {
   DialogTitle,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/dialog";
 import { RemappingForm } from "@boomtime/features/curation/RemappingForm";
-import { axisLabel } from "@/lib/axes";
-import type { GroupNode } from "@/features/explorer/explorerModel";
-import type { HeartbeatAxis } from "@/types/api";
+import { axisLabel } from "@shared/lib/axes";
+import type { GroupNode } from "@shared/features/explorer/explorerModel";
+import type { HeartbeatAxis } from "@shared/types/api";
 
 interface RenameGroupDialogProps {
   /** The group being renamed; null = dialog closed. */

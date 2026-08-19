@@ -29,9 +29,9 @@
 //     inside the heartbeat mutation hook — deliberately kept out of
 //     scope here.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/api";
-import { qk } from "@/lib/queryKeys";
-import type { CreateGoalBody, UpdateGoalBody } from "@/types/api";
+import { api } from "@shared/lib/api";
+import { qk } from "@shared/lib/queryKeys";
+import type { CreateGoalBody, UpdateGoalBody } from "@shared/types/api";
 import { GoalCacheTTLMs } from "@boomtime/features/goals/constants";
 
 export function useGoalsQuery() {

@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RemappingRow } from "@boomtime/features/curation/RemappingRow";
-import { renderWithProviders } from "@/test/renderWithProviders";
-import { server } from "@/test/msw/server";
-import { http, HttpResponse } from "@/test/msw/handlers";
-import type { CurationRule } from "@/types/api";
+import { renderWithProviders } from "@shared/test/renderWithProviders";
+import { server } from "@shared/test/msw/server";
+import { http, HttpResponse } from "@shared/test/msw/handlers";
+import type { CurationRule } from "@shared/types/api";
 
 // gaka-dfd: eyeball toggle on curation rows. The row renders an EyeOff icon
 // when the rule is enabled ("click to pause") and an Eye icon when disabled

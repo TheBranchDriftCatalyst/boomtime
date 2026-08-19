@@ -55,10 +55,10 @@ import {
   SelectValue,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/select";
 import { MaxPredicateDepth, MaxStreakDays } from "@boomtime/features/goals/constants";
-import { formatDuration, parseDuration } from "@/lib/duration";
+import { formatDuration, parseDuration } from "@shared/lib/duration";
 import { useAxisValues } from "@boomtime/features/rules/useAxisValues";
 import { useReadingAxisValues } from "@boomtime/features/goals/useReadingAxisValues";
-import type { HeartbeatAxis } from "@/types/heartbeats";
+import type { HeartbeatAxis } from "@shared/types/heartbeats";
 import type {
   GoalActiveDaysWindow,
   GoalHeartbeatAxis,
@@ -66,7 +66,7 @@ import type {
   GoalReadingAxis,
   GoalTimeWindow,
   Predicate,
-} from "@/types/api";
+} from "@shared/types/api";
 
 type TimeLeaf = Extract<Predicate, { kind: "time" }>;
 

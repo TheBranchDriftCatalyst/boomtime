@@ -8,11 +8,11 @@ import { AxisValueField } from "@boomtime/features/rules/AxisValueField";
 import { MatchTypeToggle } from "@boomtime/features/rules/MatchTypeToggle";
 import { MatchPreviewList } from "@boomtime/features/rules/MatchPreviewList";
 import { CURATABLE_AXES } from "@boomtime/features/rules/axes";
-import { axisLabel } from "@/lib/axes";
+import { axisLabel } from "@shared/lib/axes";
 import { useSpaceMutations } from "@boomtime/features/spaces/useSpaces";
-import { api } from "@/lib/api";
-import { qk } from "@/lib/queryKeys";
-import type { HeartbeatAxis, SpaceMatchType } from "@/types/api";
+import { api } from "@shared/lib/api";
+import { qk } from "@shared/lib/queryKeys";
+import type { HeartbeatAxis, SpaceMatchType } from "@shared/types/api";
 
 const MODES: readonly SpaceMatchType[] = ["exact", "regex"];
 

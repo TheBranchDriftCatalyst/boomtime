@@ -3,11 +3,11 @@ import { Link } from "react-router";
 import { Activity } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
-import { EmptyState } from "@/components/EmptyState";
-import { api } from "@/lib/api";
-import { qk } from "@/lib/queryKeys";
-import { AXES } from "@/lib/axes";
-import { secondsToHms, truncate } from "@/lib/utils";
+import { EmptyState } from "@shared/components/EmptyState";
+import { api } from "@shared/lib/api";
+import { qk } from "@shared/lib/queryKeys";
+import { AXES } from "@shared/lib/axes";
+import { secondsToHms, truncate } from "@shared/lib/utils";
 import { LEAF_COLUMNS, leafCellText } from "@boomtime/features/heartbeats/leafColumns";
 import { LEAF_PAGE_SIZE } from "@boomtime/features/heartbeats/axes";
 import { JsonBlock } from "@boomtime/features/heartbeats/JsonBlock";
@@ -18,12 +18,12 @@ import type {
   DomainConfig,
   GroupPage,
   Rollup,
-} from "@/features/explorer/types";
+} from "@shared/features/explorer/types";
 import type {
   HeartbeatAxis,
   HeartbeatGroupPayload,
   HeartbeatRow,
-} from "@/types/api";
+} from "@shared/types/api";
 
 // Group axes offered by the heartbeats explorer (the shared AXES metadata).
 const HEARTBEAT_AXES: Axis[] = AXES.map((a) => ({

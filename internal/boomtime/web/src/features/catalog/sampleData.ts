@@ -41,21 +41,21 @@ import type {
   StatsPayload,
   TimelinePayload,
   TimelineRange,
-} from "@/types/stats";
+} from "@shared/types/stats";
 import type {
   Goal,
   GoalProgress as GoalProgressT,
   BatchGoalProgress,
   PublicConfig,
-} from "@/types/api";
+} from "@shared/types/api";
 import type {
   GithubContributionDay,
   GithubLanguage,
   GithubStatsPayload,
   GithubTopRepo,
-} from "@/types/github";
-import type { LabelAward } from "@/features/publicprofile/labels/types";
-import { DEFAULT_TIME_LIMIT, TIMELINE_HOUR_OPTIONS } from "@/lib/config";
+} from "@shared/types/github";
+import type { LabelAward } from "@shared/features/publicprofile/labels/types";
+import { DEFAULT_TIME_LIMIT, TIMELINE_HOUR_OPTIONS } from "@shared/lib/config";
 
 // ---------------------------------------------------------------------------
 // Deterministic PRNG — mulberry32. Small, fast, good-enough distribution for

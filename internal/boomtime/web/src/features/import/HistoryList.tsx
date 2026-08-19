@@ -8,8 +8,8 @@ import {
   TableRow,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/table";
 import { ImportStateBadge } from "@boomtime/features/import/ImportStateBadge";
-import { cn, formatElapsed } from "@/lib/utils";
-import type { ImportJob } from "@/types/api";
+import { cn, formatElapsed } from "@shared/lib/utils";
+import type { ImportJob } from "@shared/types/api";
 
 interface HistoryListProps {
   jobs: ImportJob[];

@@ -32,8 +32,8 @@ import {
   readingLeaf,
 } from "@boomtime/features/goals/PredicateBuilder";
 import { useGoalMutations } from "@boomtime/features/goals/useGoals";
-import { ApiError } from "@/lib/api";
-import type { Goal, Predicate } from "@/types/api";
+import { ApiError } from "@shared/lib/api";
+import type { Goal, Predicate } from "@shared/types/api";
 
 interface GoalFormProps {
   open: boolean;

@@ -1,12 +1,12 @@
 import { useMemo, useState } from "react";
-import { Combobox } from "@/components/ui/combobox";
+import { Combobox } from "@shared/components/ui/combobox";
 import { Card, CardContent, CardHeader, CardTitle } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { AxisSelect } from "@boomtime/features/rules/AxisSelect";
 import { HiddenValueBadge } from "@boomtime/features/curation/HiddenValueBadge";
 import { groupByAxis } from "@boomtime/features/curation/groupByAxis";
-import { axisLabel } from "@/lib/axes";
+import { axisLabel } from "@shared/lib/axes";
 import { useAxisValues } from "@boomtime/features/rules/useAxisValues";
-import type { CurationRule, HeartbeatAxis } from "@/types/api";
+import type { CurationRule, HeartbeatAxis } from "@shared/types/api";
 
 // Axes exposed in the "hidden sources" picker.
 const SOURCE_AXES: readonly HeartbeatAxis[] = ["editor", "plugin", "machine"];

@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/api";
-import { qk } from "@/lib/queryKeys";
-import { IS_BOOKS_STANDALONE } from "@/lib/standalone";
-import type { AddSpaceRuleBody } from "@/types/api";
+import { api } from "@shared/lib/api";
+import { qk } from "@shared/lib/queryKeys";
+import { IS_BOOKS_STANDALONE } from "@shared/lib/standalone";
+import type { AddSpaceRuleBody } from "@shared/types/api";
 
 export function useSpaces() {
   return useQuery({

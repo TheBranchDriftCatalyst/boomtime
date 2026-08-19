@@ -59,7 +59,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      "@shared": path.resolve(__dirname, "./shared"),
       // gaka-zp2s / gaka-abg0 Step B: the books domain FE is PHYSICALLY
       // colocated with its Go package under internal/books/web/src (outside
       // this Vite root). `@books/*` resolves there so both the host build and
@@ -179,12 +179,12 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "jsdom",
-    setupFiles: ["./src/test/setup.ts"],
-    // Co-located *.test.ts(x) files — in this Vite root (src/) AND the books
-    // FE colocated with its Go package under internal/books/web/src
-    // (gaka-zp2s / gaka-abg0 Step B).
+    setupFiles: ["./shared/test/setup.ts"],
+    // Co-located *.test.ts(x) files — in this Vite root's shared bucket
+    // (shared/) AND the books FE colocated with its Go package under
+    // internal/books/web/src (gaka-zp2s / gaka-abg0 Step B).
     include: [
-      "src/**/*.{test,spec}.{ts,tsx}",
+      "shared/**/*.{test,spec}.{ts,tsx}",
       "../internal/books/web/src/**/*.{test,spec}.{ts,tsx}",
       "../internal/boomtime/web/src/**/*.{test,spec}.{ts,tsx}",
     ],
@@ -194,17 +194,17 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "html"],
       include: [
-        "src/**/*.{ts,tsx}",
+        "shared/**/*.{ts,tsx}",
         "../internal/books/web/src/**/*.{ts,tsx}",
         "../internal/boomtime/web/src/**/*.{ts,tsx}",
       ],
       exclude: [
-        "src/**/*.{test,spec}.{ts,tsx}",
+        "shared/**/*.{test,spec}.{ts,tsx}",
         "../internal/books/web/src/**/*.{test,spec}.{ts,tsx}",
         "../internal/boomtime/web/src/**/*.{test,spec}.{ts,tsx}",
-        "src/test/**",
-        "src/main.tsx",
-        "src/**/*.d.ts",
+        "shared/test/**",
+        "shared/main.tsx",
+        "shared/**/*.d.ts",
       ],
     },
   },

@@ -11,11 +11,11 @@
 import { describe, expect, it } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { renderWithProviders } from "@/test/renderWithProviders";
-import { server } from "@/test/msw/server";
-import { http, HttpResponse } from "@/test/msw/handlers";
+import { renderWithProviders } from "@shared/test/renderWithProviders";
+import { server } from "@shared/test/msw/server";
+import { http, HttpResponse } from "@shared/test/msw/handlers";
 import { GoalForm } from "@boomtime/features/goals/GoalForm";
-import type { Goal } from "@/types/api";
+import type { Goal } from "@shared/types/api";
 
 function makeGoal(overrides: Partial<Goal> = {}): Goal {
   return {

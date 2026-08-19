@@ -17,11 +17,11 @@ import {
   Target,
 } from "lucide-react";
 
-import { registerNavItem } from "@/shared/nav/registry";
-import { registerSettingsSection } from "@/shared/settings/registry";
-import { registerAdminTab } from "@/shared/admin/registry";
-import { registerRoute } from "@/shared/routing/registry";
-import { PageFallback } from "@/shared/routing/PageFallback";
+import { registerNavItem } from "@shared/shared/nav/registry";
+import { registerSettingsSection } from "@shared/shared/settings/registry";
+import { registerAdminTab } from "@shared/shared/admin/registry";
+import { registerRoute } from "@shared/shared/routing/registry";
+import { PageFallback } from "@shared/shared/routing/PageFallback";
 
 // Settings tab bodies are lazy() so registration is cheap + side-effect free —
 // each keeps its own code-split chunk (as it had inside the lazy Settings page).
@@ -36,7 +36,7 @@ const RemappingsTab = lazy(() =>
   })),
 );
 const WidgetLinksCard = lazy(() =>
-  import("@/features/widgets/WidgetLinksCard").then((m) => ({
+  import("@shared/features/widgets/WidgetLinksCard").then((m) => ({
     default: m.WidgetLinksCard,
   })),
 );
@@ -77,7 +77,7 @@ const CatalogPage = lazy(() =>
 );
 // Admin code-domain tabs.
 const AdminTab = lazy(() =>
-  import("@/features/admin/AdminTab").then((m) => ({ default: m.AdminTab })),
+  import("@shared/features/admin/AdminTab").then((m) => ({ default: m.AdminTab })),
 );
 const MetricsTab = lazy(() =>
   import("@boomtime/features/admin/MetricsTab").then((m) => ({ default: m.MetricsTab })),

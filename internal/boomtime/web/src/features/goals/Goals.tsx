@@ -4,7 +4,7 @@
 // body (GoalsTab: New-goal button + list + the create/edit form) is reused
 // verbatim; this file only supplies the Page shell so it stands alone in the
 // nav like Overview / Projects.
-import { Page } from "@/layout/Page";
+import { Page } from "@shared/layout/Page";
 import { GoalsTab } from "@boomtime/features/goals/GoalsTab";
 
 export function Goals() {

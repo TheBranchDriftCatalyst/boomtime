@@ -12,9 +12,9 @@ import {
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
 import { Label } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
 import { Spinner } from "@thebranchdriftcatalyst/catalyst-ui/ui/spinner";
-import { api } from "@/lib/api";
-import { secondsToHms } from "@/lib/utils";
-import type { Commit } from "@/types/api";
+import { api } from "@shared/lib/api";
+import { secondsToHms } from "@shared/lib/utils";
+import type { Commit } from "@shared/types/api";
 
 interface CommitListModalProps {
   project: string | null;

@@ -31,25 +31,25 @@
 // sampleData.ts's SAMPLE_RANGE_DAYS) and stays that width.
 import { useMemo, useState, type ComponentType } from "react";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { api } from "@/lib/api";
-import { qk } from "@/lib/queryKeys";
-import { useAuth } from "@/features/auth/useAuth";
-import { OverviewDataProvider } from "@/features/overview/OverviewDataContext";
+import { api } from "@shared/lib/api";
+import { qk } from "@shared/lib/queryKeys";
+import { useAuth } from "@shared/features/auth/useAuth";
+import { OverviewDataProvider } from "@shared/features/overview/OverviewDataContext";
 import {
   useOverviewMomentum,
   useOverviewPunchcard,
   useOverviewSessions,
   useOverviewStats,
-} from "@/features/overview/overviewWidgets";
-import { WidgetRenderer } from "@/features/widgets/renderers/WidgetRenderer";
-import { OverviewWidgetRenderer } from "@/features/widgets/renderers/OverviewWidgetRenderer";
+} from "@shared/features/overview/overviewWidgets";
+import { WidgetRenderer } from "@shared/features/widgets/renderers/WidgetRenderer";
+import { OverviewWidgetRenderer } from "@shared/features/widgets/renderers/OverviewWidgetRenderer";
 import {
   BooksByGenreTile,
   FinishedPerMonthTile,
   ListeningThisWeekTile,
   ListeningTrendTile,
   TopSeriesByRuntimeTile,
-} from "@/features/overview/reading/ReadingTiles";
+} from "@shared/features/overview/reading/ReadingTiles";
 import {
   SAMPLE_CATALOG_PAYLOAD,
   buildRealCatalogPayload,

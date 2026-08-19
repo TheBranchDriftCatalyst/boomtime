@@ -1,9 +1,9 @@
 import { useMemo } from "react";
-import { Combobox } from "@/components/ui/combobox";
+import { Combobox } from "@shared/components/ui/combobox";
 import { Card, CardContent, CardHeader, CardTitle } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { HiddenValueBadge } from "@boomtime/features/curation/HiddenValueBadge";
 import { useAxisValues } from "@boomtime/features/rules/useAxisValues";
-import type { CurationRule } from "@/types/api";
+import type { CurationRule } from "@shared/types/api";
 
 export function HiddenProjectsCard({
   rules,

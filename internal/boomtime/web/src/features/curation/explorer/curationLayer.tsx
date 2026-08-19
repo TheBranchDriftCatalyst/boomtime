@@ -5,12 +5,12 @@ import {
   Badge,
   badgeVariants,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/badge";
-import { cn } from "@/lib/utils";
+import { cn } from "@shared/lib/utils";
 import { CurationGroupActions } from "@boomtime/features/curation/explorer/CurationGroupActions";
 import { useSuppression } from "@boomtime/features/curation/explorer/useSuppression";
 import { useSpaceMembership } from "@boomtime/features/curation/explorer/useSpaceMembership";
-import type { GroupAction } from "@/features/explorer/types";
-import type { GroupNode } from "@/features/explorer/explorerModel";
+import type { GroupAction } from "@shared/features/explorer/types";
+import type { GroupNode } from "@shared/features/explorer/explorerModel";
 
 /**
  * The curation layer — a fully self-contained, pluggable abstraction that

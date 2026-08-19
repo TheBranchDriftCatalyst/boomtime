@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { DestructiveActionDialog } from "@boomtime/features/curation/DestructiveActionDialog";
-import { renderWithProviders } from "@/test/renderWithProviders";
-import { server } from "@/test/msw/server";
-import { http, HttpResponse } from "@/test/msw/handlers";
-import type { CurationRule } from "@/types/api";
+import { renderWithProviders } from "@shared/test/renderWithProviders";
+import { server } from "@shared/test/msw/server";
+import { http, HttpResponse } from "@shared/test/msw/handlers";
+import type { CurationRule } from "@shared/types/api";
 
 // Spy on sonner toasts so we can assert per-variant success + error copy.
 const toastError = vi.fn();

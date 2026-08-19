@@ -21,7 +21,7 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { PredicateBuilder } from "@boomtime/features/goals/PredicateBuilder";
-import type { Predicate } from "@/types/api";
+import type { Predicate } from "@shared/types/api";
 
 // Mock the reading-axis-values hook: deterministic distinct-value set, no
 // network. Both tests read from this same list.

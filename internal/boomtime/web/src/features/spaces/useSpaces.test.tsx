@@ -3,8 +3,8 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useSpaceMutations } from "@boomtime/features/spaces/useSpaces";
-import { server } from "@/test/msw/server";
-import { http, HttpResponse } from "@/test/msw/handlers";
+import { server } from "@shared/test/msw/server";
+import { http, HttpResponse } from "@shared/test/msw/handlers";
 
 // The scoped-dashboard keys every Space/rule change must invalidate, plus the
 // space list (and, when known, the one space's detail).

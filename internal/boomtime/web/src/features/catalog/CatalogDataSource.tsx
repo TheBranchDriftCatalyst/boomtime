@@ -27,25 +27,25 @@
 // built from `rangeDays`.
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import { QueryClient } from "@tanstack/react-query";
-import { qk } from "@/lib/queryKeys";
-import type { QueryResult, QuerySpec } from "@/lib/queryApi";
-import { READING_SPECS } from "@/features/overview/reading/ReadingTiles";
+import { qk } from "@shared/lib/queryKeys";
+import type { QueryResult, QuerySpec } from "@shared/lib/queryApi";
+import { READING_SPECS } from "@shared/features/overview/reading/ReadingTiles";
 import {
   DEFAULT_RANGE_KEY,
   READING_RANGE_PRESETS,
   readingSpecsForRange,
-} from "@/features/overview/reading/readingRange";
-import { loadStored, saveStored } from "@/lib/persist";
-import { DEFAULT_TIME_LIMIT, TIMELINE_HOUR_OPTIONS } from "@/lib/config";
-import type { OverviewDataContextValue } from "@/features/overview/OverviewDataContext";
-import type { TimeRangeControls } from "@/hooks/useTimeRange";
+} from "@shared/features/overview/reading/readingRange";
+import { loadStored, saveStored } from "@shared/lib/persist";
+import { DEFAULT_TIME_LIMIT, TIMELINE_HOUR_OPTIONS } from "@shared/lib/config";
+import type { OverviewDataContextValue } from "@shared/features/overview/OverviewDataContext";
+import type { TimeRangeControls } from "@shared/hooks/useTimeRange";
 import type {
   MomentumPayload,
   PublicDashboardPayload,
   PunchcardPayload,
   SessionsPayload,
   StatsPayload,
-} from "@/types/stats";
+} from "@shared/types/stats";
 import {
   SAMPLE_AI_ACTIVITY,
   SAMPLE_AWARDS,

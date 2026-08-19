@@ -12,21 +12,21 @@ import {
   PersonStanding,
   Zap,
 } from "lucide-react";
-import { Page } from "@/layout/Page";
-import { DateRangePicker } from "@/components/toolbar/DateRangePicker";
-import { ChartCard } from "@/components/ChartCard";
-import { QueryGate } from "@/components/QueryGate";
+import { Page } from "@shared/layout/Page";
+import { DateRangePicker } from "@shared/components/toolbar/DateRangePicker";
+import { ChartCard } from "@shared/components/ChartCard";
+import { QueryGate } from "@shared/components/QueryGate";
 import { Card, CardContent } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
-import { ColumnChart } from "@/viz/charts/ColumnChart";
-import { useTimeRange } from "@/hooks/useTimeRange";
-import { api } from "@/lib/api";
-import { qk } from "@/lib/queryKeys";
+import { ColumnChart } from "@shared/viz/charts/ColumnChart";
+import { useTimeRange } from "@shared/hooks/useTimeRange";
+import { api } from "@shared/lib/api";
+import { qk } from "@shared/lib/queryKeys";
 import type {
   HealthActivityDay,
   WorkoutEvent,
   WorkoutLabelSummary,
   WorkoutListPayload,
-} from "@/types/api";
+} from "@shared/types/api";
 
 export function Wellness() {
   const tr = useTimeRange();

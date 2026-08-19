@@ -6,9 +6,9 @@ import {
   DropdownMenuTrigger,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/dropdown-menu";
 import { Label } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
-import { axisLabel } from "@/lib/axes";
-import { cn } from "@/lib/utils";
-import type { HeartbeatAxis } from "@/types/api";
+import { axisLabel } from "@shared/lib/axes";
+import { cn } from "@shared/lib/utils";
+import type { HeartbeatAxis } from "@shared/types/api";
 
 interface AxisSelectProps {
   /** Axes offered in the dropdown (e.g. CURATABLE_AXES or a subset). */

@@ -15,8 +15,8 @@
 import type { ReactNode } from "react";
 import { ExternalLink } from "lucide-react";
 import { Library } from "lucide-react";
-import { EmptyState } from "@/components/EmptyState";
-import { runQuery, type PredicateNode, type QuerySpec } from "@/lib/queryApi";
+import { EmptyState } from "@shared/components/EmptyState";
+import { runQuery, type PredicateNode, type QuerySpec } from "@shared/lib/queryApi";
 import {
   AuthorCell,
   Cover,
@@ -30,7 +30,7 @@ import {
   StatusSelect,
   TitleCell,
 } from "@books/features/books/cells";
-import { BOOK_STATUSES, type BookStatus } from "@/types/meta";
+import { BOOK_STATUSES, type BookStatus } from "@shared/types/meta";
 import { openHardcover } from "@books/features/books/hardcover";
 import type {
   Axis,
@@ -40,8 +40,8 @@ import type {
   GroupPage,
   LeafResult,
   Rollup,
-} from "@/features/explorer/types";
-import type { ReadingItemDTO } from "@/types/meta";
+} from "@shared/features/explorer/types";
+import type { ReadingItemDTO } from "@shared/types/meta";
 
 // The page-level filter selections. `all` = no constraint. ALL three fold into
 // every query's `where` (source/status as eq leaves, search as an ILIKE OR on

@@ -1,10 +1,10 @@
-import { Combobox } from "@/components/ui/combobox";
+import { Combobox } from "@shared/components/ui/combobox";
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
 import { Label } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
-import { axisLabel } from "@/lib/axes";
+import { axisLabel } from "@shared/lib/axes";
 import { useAxisValues } from "@boomtime/features/rules/useAxisValues";
-import { cn } from "@/lib/utils";
-import type { HeartbeatAxis } from "@/types/api";
+import { cn } from "@shared/lib/utils";
+import type { HeartbeatAxis } from "@shared/types/api";
 
 interface AxisValueFieldProps {
   /** Axis whose real values feed the exact-mode autocomplete + search texts. */

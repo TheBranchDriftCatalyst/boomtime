@@ -21,7 +21,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/tooltip";
-import { Calendar } from "@/components/ui/calendar";
+import { Calendar } from "@shared/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
 import { Label } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
@@ -30,10 +30,10 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/popover";
-import { api } from "@/lib/api";
-import { qk } from "@/lib/queryKeys";
-import { removeDays } from "@/lib/utils";
-import type { ImportRequest } from "@/types/api";
+import { api } from "@shared/lib/api";
+import { qk } from "@shared/lib/queryKeys";
+import { removeDays } from "@shared/lib/utils";
+import type { ImportRequest } from "@shared/types/api";
 
 interface StartImportFormProps {
   disabled?: boolean;

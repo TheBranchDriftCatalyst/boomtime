@@ -6,7 +6,7 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { AdminTabShell } from "@/shared/admin/AdminTabShell";
+import { AdminTabShell } from "@shared/shared/admin/AdminTabShell";
 import {
   AlertTriangle,
   BookOpen,
@@ -26,9 +26,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
-import { api } from "@/lib/api";
-import { qk } from "@/lib/queryKeys";
-import { relativeTime } from "@/lib/sourceStatus";
+import { api } from "@shared/lib/api";
+import { qk } from "@shared/lib/queryKeys";
+import { relativeTime } from "@shared/lib/sourceStatus";
 import { ReadingMonitorPanel } from "./ReadingMonitorPanel";
 
 interface Probe {

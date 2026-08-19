@@ -17,14 +17,14 @@ import { Badge } from "@thebranchdriftcatalyst/catalyst-ui/ui/badge";
 import { AddToSpaceDropdown } from "@boomtime/features/curation/AddToSpaceDropdown";
 import { RemappingForm } from "@boomtime/features/curation/RemappingForm";
 import { useCurationMutations } from "@boomtime/features/curation/useCuration";
-import { api } from "@/lib/api";
-import { qk } from "@/lib/queryKeys";
+import { api } from "@shared/lib/api";
+import { qk } from "@shared/lib/queryKeys";
 import { templateToDisplay } from "@boomtime/features/curation/remapDisplay";
 import type {
   CurationMatchType,
   CurationRule,
   HeartbeatAxis,
-} from "@/types/api";
+} from "@shared/types/api";
 
 export function RemappingRow({
   rule,

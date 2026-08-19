@@ -1,4 +1,4 @@
-import type { HeartbeatAxis } from "@/types/api";
+import type { HeartbeatAxis } from "@shared/types/api";
 
 /**
  * The single source of truth for the 9 axes that curation rules can target:

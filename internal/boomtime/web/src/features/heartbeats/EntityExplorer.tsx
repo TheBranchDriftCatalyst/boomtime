@@ -6,8 +6,8 @@ import {
 } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { EraserIcon } from "lucide-react";
-import { api, ApiError } from "@/lib/api";
-import { qk } from "@/lib/queryKeys";
+import { api, ApiError } from "@shared/lib/api";
+import { qk } from "@shared/lib/queryKeys";
 import { Spinner } from "@thebranchdriftcatalyst/catalyst-ui/ui/spinner";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Card, CardContent } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
@@ -28,7 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/dialog";
-import type { EntitySummary, EntityType } from "@/types/api";
+import type { EntitySummary, EntityType } from "@shared/types/api";
 
 // The four entity-type buckets stored in heartbeats.ty. Order chosen so
 // file+app (the noisiest desktop plugins) sit before the browser-plugin

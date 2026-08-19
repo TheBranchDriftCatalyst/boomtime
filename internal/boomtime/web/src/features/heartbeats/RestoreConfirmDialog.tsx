@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ApiError, api } from "@/lib/api";
-import { formatBytes } from "@/lib/utils";
-import { useAuth } from "@/features/auth/useAuth";
+import { ApiError, api } from "@shared/lib/api";
+import { formatBytes } from "@shared/lib/utils";
+import { useAuth } from "@shared/features/auth/useAuth";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
 import {

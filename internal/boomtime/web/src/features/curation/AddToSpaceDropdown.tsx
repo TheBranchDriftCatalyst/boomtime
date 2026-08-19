@@ -27,7 +27,7 @@ import {
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/dropdown-menu";
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
 import { useSpaceMutations, useSpaces } from "@boomtime/features/spaces/useSpaces";
-import type { CurationRule, SpaceMatchType } from "@/types/api";
+import type { CurationRule, SpaceMatchType } from "@shared/types/api";
 
 // Map curation matchType → space matchType. template is a rename-only
 // transform; when quick-adding to a Space it degrades to `regex` (the

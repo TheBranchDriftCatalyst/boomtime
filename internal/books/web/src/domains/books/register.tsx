@@ -9,11 +9,11 @@
 import { lazy, Suspense } from "react";
 import { Library } from "lucide-react";
 
-import { registerNavItem } from "@/shared/nav/registry";
-import { registerSettingsSection } from "@/shared/settings/registry";
-import { registerAdminTab } from "@/shared/admin/registry";
-import { registerRoute } from "@/shared/routing/registry";
-import { PageFallback } from "@/shared/routing/PageFallback";
+import { registerNavItem } from "@shared/shared/nav/registry";
+import { registerSettingsSection } from "@shared/shared/settings/registry";
+import { registerAdminTab } from "@shared/shared/admin/registry";
+import { registerRoute } from "@shared/shared/routing/registry";
+import { PageFallback } from "@shared/shared/routing/PageFallback";
 
 const ConnectionsTab = lazy(() =>
   import("./ConnectionsTab").then((m) => ({ default: m.ConnectionsTab })),

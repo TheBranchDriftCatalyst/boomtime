@@ -1,7 +1,7 @@
 import { useMemo } from "react";
-import { colorAt } from "@/viz/d3/color";
-import { secondsToHms } from "@/lib/utils";
-import type { ResourceStats } from "@/types/api";
+import { colorAt } from "@shared/viz/d3/color";
+import { secondsToHms } from "@shared/lib/utils";
+import type { ResourceStats } from "@shared/types/api";
 
 interface TopProjectsBarProps {
   projects: ResourceStats[];

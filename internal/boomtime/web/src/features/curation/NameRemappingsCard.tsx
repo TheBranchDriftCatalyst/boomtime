@@ -4,8 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@thebranchdriftcatalys
 import { RemappingForm } from "@boomtime/features/curation/RemappingForm";
 import { RemappingRow } from "@boomtime/features/curation/RemappingRow";
 import { groupByAxis } from "@boomtime/features/curation/groupByAxis";
-import { axisLabel } from "@/lib/axes";
-import type { CurationRule, HeartbeatAxis } from "@/types/api";
+import { axisLabel } from "@shared/lib/axes";
+import type { CurationRule, HeartbeatAxis } from "@shared/types/api";
 
 export function NameRemappingsCard({
   rules,

@@ -20,7 +20,7 @@ import {
   Star,
   X,
 } from "lucide-react";
-import { api } from "@/lib/api";
+import { api } from "@shared/lib/api";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,12 +32,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
-import { cn } from "@/lib/utils";
+import { Calendar } from "@shared/components/ui/calendar";
+import { cn } from "@shared/lib/utils";
 import { useSetBookCuration } from "@books/features/books/useBookCuration";
 import { HardcoverMatchPopover } from "@books/features/books/HardcoverMatchPopover";
-import { BOOK_STATUSES, type BookStatus } from "@/types/meta";
-import type { ReadingItemDTO } from "@/types/meta";
+import { BOOK_STATUSES, type BookStatus } from "@shared/types/meta";
+import type { ReadingItemDTO } from "@shared/types/meta";
 
 /** Format an ISO date to a compact "Aug 3, 2026" (em-dash for missing/invalid). */
 export const fmtDate = (iso?: string): string => {

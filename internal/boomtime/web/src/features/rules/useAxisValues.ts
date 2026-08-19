@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { api } from "@/lib/api";
-import { qk } from "@/lib/queryKeys";
-import type { ComboboxOption } from "@/components/ui/combobox";
-import type { HeartbeatAxis } from "@/types/api";
+import { api } from "@shared/lib/api";
+import { qk } from "@shared/lib/queryKeys";
+import type { ComboboxOption } from "@shared/components/ui/combobox";
+import type { HeartbeatAxis } from "@shared/types/api";
 
 // Wide, all-time window so the distinct-value list is complete regardless of
 // the dashboard's current date range.

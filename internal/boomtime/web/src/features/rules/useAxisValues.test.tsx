@@ -3,9 +3,9 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useAxisValues } from "@boomtime/features/rules/useAxisValues";
-import { server } from "@/test/msw/server";
-import { http, HttpResponse } from "@/test/msw/handlers";
-import { groupPayload } from "@/test/factories";
+import { server } from "@shared/test/msw/server";
+import { http, HttpResponse } from "@shared/test/msw/handlers";
+import { groupPayload } from "@shared/test/factories";
 
 function wrapper() {
   const qc = new QueryClient({

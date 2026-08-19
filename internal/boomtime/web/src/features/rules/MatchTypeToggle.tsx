@@ -1,5 +1,5 @@
 import { Label } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
-import { cn } from "@/lib/utils";
+import { cn } from "@shared/lib/utils";
 
 interface MatchTypeToggleProps<M extends string> {
   /** Ordered modes to offer (e.g. ["exact", "regex"] or with "template"). */

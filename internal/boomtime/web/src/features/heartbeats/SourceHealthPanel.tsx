@@ -6,9 +6,9 @@ import {
   relativeTime,
   STATUS_RANK,
   type SourceStatus,
-} from "@/lib/sourceStatus";
-import type { SourceHealth } from "@/types/api";
-import { cn } from "@/lib/utils";
+} from "@shared/lib/sourceStatus";
+import type { SourceHealth } from "@shared/types/api";
+import { cn } from "@shared/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 
 // Synthwave-friendly pill styling per status. active = healthy green,

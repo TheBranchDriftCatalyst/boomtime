@@ -23,12 +23,12 @@
 //     github-commits, ai-assistance, wellness, overview-timeline).
 import { beforeEach, describe, expect, it } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
-import { renderWithProviders } from "@/test/renderWithProviders";
-import { server } from "@/test/msw/server";
-import { http, HttpResponse } from "@/test/msw/handlers";
+import { renderWithProviders } from "@shared/test/renderWithProviders";
+import { server } from "@shared/test/msw/server";
+import { http, HttpResponse } from "@shared/test/msw/handlers";
 import { CatalogWidgetRenderer } from "./CatalogWidgetRenderer";
 import { SAMPLE_GOALS, SAMPLE_USERNAME } from "./sampleData";
-import { __resetReadingRange } from "@/features/overview/reading/readingRange";
+import { __resetReadingRange } from "@shared/features/overview/reading/readingRange";
 
 // >=2 "both", >=2 fe-only (incl. one overview self-fetcher), >=1 goal, plus
 // extra coverage across every category so a regression in any one dispatch
