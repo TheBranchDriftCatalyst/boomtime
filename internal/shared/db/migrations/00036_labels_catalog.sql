@@ -2,7 +2,7 @@
 -- +goose StatementBegin
 
 -- gaka-364.3: labels catalog moved from TypeScript to the DB. Previously the
--- 114-entry manifest lived in web/src/features/publicprofile/labels/catalog.ts
+-- 114-entry manifest lived in web/shared/features/publicprofile/labels/catalog.ts
 -- and every edit required a PR + deploy — painful for iterating on prompts +
 -- imagery. Post-pivot, the FE fetches /api/v1/labels/catalog and the admin
 -- CRUD tab edits rows live.
@@ -65,9 +65,9 @@ CREATE TABLE public.label_gen_config (
 INSERT INTO public.label_gen_config (singleton, system_prompt) VALUES (true, '');
 
 -- Seed: 114 label rows. Derived byte-for-byte from
--- web/src/features/publicprofile/labels/catalog.ts (id, kind, label, glyph,
+-- web/shared/features/publicprofile/labels/catalog.ts (id, kind, label, glyph,
 -- rank, tier, condition) + the creative-writer manifest (gaka-364.2) at
--- web/src/features/publicprofile/labels/prompts.manifest.json (description,
+-- web/shared/features/publicprofile/labels/prompts.manifest.json (description,
 -- optimizedPrompt, systemPrompt).
 --
 -- Generator: scripts/gen_labels_seed.mts (committed so the derivation is

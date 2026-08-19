@@ -87,7 +87,7 @@ type Requirements struct {
 // target:"both" spec in specs.json (Part B Stage 5: this now includes the
 // goal-* kinds, which pre-cutover rendered via IsAlwaysSpecKind outside the
 // legacy `kinds` map). The FE widget catalog
-// (web/src/features/widgets/catalog.ts SVG_RENDERABLE_KINDS) must list
+// (web/shared/features/widgets/catalog.ts SVG_RENDERABLE_KINDS) must list
 // exactly these kinds — TestKindsMatchFrontendCatalog guards the two lists
 // against drift.
 func Kinds() []string {

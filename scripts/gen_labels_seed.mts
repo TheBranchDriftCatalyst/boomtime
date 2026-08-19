@@ -19,15 +19,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { LABEL_CATALOG } from "../web/src/features/publicprofile/labels/catalog.ts";
-import type { LabelSpec } from "../web/src/features/publicprofile/labels/types.ts";
+import { LABEL_CATALOG } from "../web/shared/features/publicprofile/labels/catalog.ts";
+import type { LabelSpec } from "../web/shared/features/publicprofile/labels/types.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const manifestPath = path.join(
   __dirname,
   "..",
   "web",
-  "src",
+  "shared",
   "features",
   "publicprofile",
   "labels",

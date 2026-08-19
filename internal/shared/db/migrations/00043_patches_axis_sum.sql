@@ -14,7 +14,7 @@
 -- axis-time-sum solves this: {kind:"axis-time-sum", axis, values:[...],
 -- op, hours} → sums totalSeconds across every entry whose name matches
 -- one of `values` (case-insensitive), then compares to the threshold.
--- See web/src/features/publicprofile/labels/types.ts + conditions.ts.
+-- See web/shared/features/publicprofile/labels/types.ts + conditions.ts.
 --
 -- Ranks stay in the 200+ patch band; slotted between existing patches
 -- for a natural sort order.

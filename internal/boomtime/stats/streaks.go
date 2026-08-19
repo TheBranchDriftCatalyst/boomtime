@@ -1,8 +1,8 @@
 // streaks.go — payload-derived streak / active-day helpers shared by the
 // grade blend (grade.go) and the SVG stat-tile widgets (Part B Stage 1:
 // current-streak-stat / longest-streak-stat / active-days-stat). Each mirrors
-// the FE reference in web/src/features/publicprofile/grade.ts +
-// web/src/features/widgets/renderers/WidgetRenderer.tsx EXACTLY so the SVG
+// the FE reference in web/shared/features/publicprofile/grade.ts +
+// web/shared/features/widgets/renderers/WidgetRenderer.tsx EXACTLY so the SVG
 // embed and the in-page React tile always agree on the number.
 package stats
 

@@ -2,7 +2,7 @@
 // Stage 2; the ONLY render path as of the Part B Stage 5 cutover). ONE
 // committed specs.json describes every catalog kind — Go embeds it via the
 // directive below (see the var block), and the FE imports the SAME file
-// (see web/src/features/widgets/specs.ts) so there is exactly one source of
+// (see web/shared/features/widgets/specs.ts) so there is exactly one source of
 // truth, no codegen, no drift. renderSpec is renderCustom/renderPanel's
 // generalization: same OpenFrame + panelRect + Emit* vocabulary, but driven
 // by data (a Spec) instead of a hand-written renderer per kind.
@@ -29,7 +29,7 @@ var specsJSON []byte
 // SpecTarget classifies a spec. "both" is backend-renderable (this engine)
 // AND FE-renderable (the composable dashboard); "fe-only" kinds carry no
 // panels — they exist purely so the cross-language guard (spec_test.go +
-// web/src/features/widgets/specs.test.ts) can prove every catalog kind is
+// web/shared/features/widgets/specs.test.ts) can prove every catalog kind is
 // classified one way or the other, with none silently unaccounted for.
 type SpecTarget string
 

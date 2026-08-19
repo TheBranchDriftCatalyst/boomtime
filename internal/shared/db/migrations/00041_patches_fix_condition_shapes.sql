@@ -16,7 +16,7 @@
 -- migration UPDATEs the rows in place. All 24 wave-2 patches (00040)
 -- shipped with correct field names, so they don't need touching.
 --
--- See web/src/features/publicprofile/labels/types.ts for the source of
+-- See web/shared/features/publicprofile/labels/types.ts for the source of
 -- truth on evaluator kinds + field names.
 
 UPDATE public.labels

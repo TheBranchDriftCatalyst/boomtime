@@ -28,7 +28,7 @@ import (
 // with a running count; capped total.
 
 // DriftFinding is one schema mismatch detected during an import run. The JSON
-// shape is the FE contract (see web/src/types/import.ts DriftFinding).
+// shape is the FE contract (see web/shared/types/import.ts DriftFinding).
 type DriftFinding struct {
 	Endpoint     string `json:"endpoint"`
 	Kind         string `json:"kind"`   // unknown_field | missing_required | type_changed | envelope_changed
