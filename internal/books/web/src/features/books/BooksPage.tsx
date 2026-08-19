@@ -33,7 +33,7 @@ import { qk } from "@/lib/queryKeys";
 import { usePublicConfig } from "@/lib/usePublicConfig";
 import { GroupableExplorer } from "@/features/explorer/GroupableExplorer";
 import { GroupByBar } from "@/features/explorer/GroupByBar";
-import { BookDetailSheet } from "@/features/books/BookDetailSheet";
+import { BookDetailSheet } from "@books/features/books/BookDetailSheet";
 import type { ReadingItemDTO } from "@/types/meta";
 import {
   deriveHeroStats,
@@ -51,7 +51,7 @@ import {
   type SourceFilter,
   type StatusFilter,
   type MatchFilter,
-} from "@/features/books/booksExplorerConfig";
+} from "@books/features/books/booksExplorerConfig";
 
 // ── hero + stats ─────────────────────────────────────────────────────────────
 

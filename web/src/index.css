@@ -27,6 +27,19 @@
  */
 @source "../node_modules/@thebranchdriftcatalyst/catalyst-ui/dist";
 
+/*
+ * gaka-zp2s / gaka-abg0 Step B: the books domain FE is colocated with its Go
+ * package under internal/books/web/src — OUTSIDE this Vite root (web/). Tailwind
+ * v4's automatic content detection only scans from the project root, so without
+ * this hint the utilities used ONLY inside the books tree (BooksPage, the books
+ * explorer cells, the admin BooksTab / ReadingMonitorPanel, …) would never make
+ * it into the emitted CSS — the host bundle would silently lose book-only
+ * classes. Explicit @source keeps the emitted utilities byte-identical to when
+ * these files lived under web/src. Both the host build and the standalone books
+ * build import this stylesheet, so both scan the colocated tree.
+ */
+@source "../../internal/books/web/src";
+
 @layer base {
   body {
     font-feature-settings: "rlig" 1, "calt" 1;

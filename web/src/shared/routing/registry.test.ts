@@ -10,7 +10,7 @@ import { describe, expect, it, afterEach } from "vitest";
 import { getRoutes, registerRoute, __resetRouteRegistry } from "./registry";
 import type { RouteDef } from "./types";
 import { registerCoreDomain } from "@/domains/core/register";
-import { registerBooksDomain } from "@/domains/books/register";
+import { registerBooksDomain } from "@books/domains/books/register";
 import { registerBoomtimeDomain } from "@/domains/boomtime/register";
 
 // Flatten the registry into "parent > leaf" path strings (index routes shown as

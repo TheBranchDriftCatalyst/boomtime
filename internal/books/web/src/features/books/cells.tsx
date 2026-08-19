@@ -34,8 +34,8 @@ import {
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
-import { useSetBookCuration } from "@/features/books/useBookCuration";
-import { HardcoverMatchPopover } from "@/features/books/HardcoverMatchPopover";
+import { useSetBookCuration } from "@books/features/books/useBookCuration";
+import { HardcoverMatchPopover } from "@books/features/books/HardcoverMatchPopover";
 import { BOOK_STATUSES, type BookStatus } from "@/types/meta";
 import type { ReadingItemDTO } from "@/types/meta";
 
