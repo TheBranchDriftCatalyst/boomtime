@@ -1,21 +1,27 @@
 // Core (domain-agnostic) registration module.
 //
 // Registers the FE surface that belongs to NO single domain: the mixed-fusion
-// Overview, the Settings entry, the account-level settings tabs, and the
-// operational admin tabs (users / data / jobs / cli / logs).
+// Overview, the app shell + auth/public routes, the Settings entry, the
+// account-level settings tabs, and the operational admin tabs (users / data /
+// jobs / cli / logs).
 //
 // Like every domain module it imports the shell's register API + its own things
 // and NOTHING from another domain — the host entry decides it runs (see
-// web/src/app/registerDomains.ts). Settings tab BODIES are lazy() so registering
-// stays cheap: nothing heavy lands in the app-entry chunk, and each tab keeps
-// its own code-split chunk. That laziness also keeps registration side-effect
-// free for tests (feature modules aren't evaluated until a tab actually renders).
-import { lazy } from "react";
+// web/src/app/registerDomains.ts). CRITICAL: registration must stay side-effect
+// free — every route/tab body is lazy() so NO feature/shell module is evaluated
+// merely by registering (the test setup registers all domains up front; eager
+// imports here would pull heavy chains into the pre-test module graph and break
+// per-file vi.mock isolation). Each lazy() also keeps its own code-split chunk,
+// so the app-entry bundle stays lean.
+import { lazy, Suspense } from "react";
+import { Navigate } from "react-router";
 import { LayoutDashboard, Settings2 } from "lucide-react";
 
 import { registerNavItem } from "@/shared/nav/registry";
 import { registerSettingsSection } from "@/shared/settings/registry";
 import { registerAdminTab } from "@/shared/admin/registry";
+import { registerRoute } from "@/shared/routing/registry";
+import { PageFallback } from "@/shared/routing/PageFallback";
 
 const ProfileTab = lazy(() =>
   import("./AccountTabs").then((m) => ({ default: m.ProfileTab })),
@@ -27,6 +33,77 @@ const Changelog = lazy(() =>
   import("@/features/changelog/Changelog").then((m) => ({
     default: m.Changelog,
   })),
+);
+
+// ── Route bodies (all lazy — one chunk per import site, zero eager eval) ───
+const RootRedirect = lazy(() =>
+  import("./RootRedirect").then((m) => ({ default: m.RootRedirect })),
+);
+const Login = lazy(() =>
+  import("@/features/auth/Login").then((m) => ({ default: m.Login })),
+);
+const Register = lazy(() =>
+  import("@/features/auth/Register").then((m) => ({ default: m.Register })),
+);
+const Onboarding = lazy(() =>
+  import("@/features/onboarding/Onboarding").then((m) => ({
+    default: m.Onboarding,
+  })),
+);
+const EditableProfilePage = lazy(() =>
+  import("@/features/publicprofile/EditableProfilePage").then((m) => ({
+    default: m.EditableProfilePage,
+  })),
+);
+// The "/app" shell: ProtectedRoute + AppShell — lazy so its whole layout/
+// sidebar chain stays out of the entry bundle AND out of the test module graph.
+const ProtectedRoute = lazy(() =>
+  import("@/app/ProtectedRoute").then((m) => ({ default: m.ProtectedRoute })),
+);
+const AppShell = lazy(() =>
+  import("@/layout/AppShell").then((m) => ({ default: m.AppShell })),
+);
+const AdminRoute = lazy(() =>
+  import("@/app/AdminRoute").then((m) => ({ default: m.AdminRoute })),
+);
+const AppShellRoute = () => (
+  <ProtectedRoute>
+    <AppShell />
+  </ProtectedRoute>
+);
+const Overview = lazy(() =>
+  import("@/features/overview/Overview").then((m) => ({ default: m.Overview })),
+);
+const InAppProfile = lazy(() =>
+  import("@/features/publicprofile/InAppProfilePage").then((m) => ({
+    default: m.InAppProfilePage,
+  })),
+);
+const Settings = lazy(() =>
+  import("@/features/settings/Settings").then((m) => ({ default: m.Settings })),
+);
+const AdminPage = lazy(() =>
+  import("@/features/admin/AdminPage").then((m) => ({ default: m.AdminPage })),
+);
+const AdminShellRoute = () => (
+  <AdminRoute>
+    <AdminPage />
+  </AdminRoute>
+);
+const UsersTab = lazy(() =>
+  import("@/features/admin/UsersTab").then((m) => ({ default: m.UsersTab })),
+);
+const DataTab = lazy(() =>
+  import("@/features/admin/DataTab").then((m) => ({ default: m.DataTab })),
+);
+const CliTab = lazy(() =>
+  import("@/features/admin/CliTab").then((m) => ({ default: m.CliTab })),
+);
+const JobsTab = lazy(() =>
+  import("@/features/admin/JobsTab").then((m) => ({ default: m.JobsTab })),
+);
+const Logs = lazy(() =>
+  import("@/features/logs/Logs").then((m) => ({ default: m.Logs })),
 );
 
 export function registerCoreDomain(): void {
@@ -42,6 +119,193 @@ export function registerCoreDomain(): void {
     { id: "config", order: 90 },
     { name: "Settings", icon: Settings2, to: "/app/settings" },
   );
+
+  // ── Routes ─────────────────────────────────────────────────────────────
+  // Top-level (pre-/outside-app) routes + the "/app" shell wrapper that every
+  // domain's app pages nest under. Domains register their leaves with
+  // parent: "app" (or parent: "admin" for the admin sub-shell below).
+  registerRoute({
+    path: "/",
+    element: (
+      <Suspense fallback={<PageFallback />}>
+        <RootRedirect />
+      </Suspense>
+    ),
+    order: 0,
+  });
+  registerRoute({
+    path: "/login",
+    element: (
+      <Suspense fallback={<PageFallback />}>
+        <Login />
+      </Suspense>
+    ),
+    order: 10,
+  });
+  registerRoute({
+    path: "/register",
+    element: (
+      <Suspense fallback={<PageFallback />}>
+        <Register />
+      </Suspense>
+    ),
+    order: 20,
+  });
+  // Beta onboarding preview (gaka-93f.1.2): reached via BetaOnboardingGate when
+  // ?enable_beta_user_registration=true is set.
+  registerRoute({
+    path: "/onboarding",
+    element: (
+      <Suspense fallback={<PageFallback />}>
+        <Onboarding />
+      </Suspense>
+    ),
+    order: 30,
+  });
+  // Public profile — anonymous for visitors, editable for owners (gaka-ie3).
+  registerRoute({
+    path: "/p/:slug",
+    element: (
+      <Suspense fallback={<PageFallback />}>
+        <EditableProfilePage />
+      </Suspense>
+    ),
+    order: 40,
+  });
+  // The "/app" shell: ProtectedRoute + AppShell. id "app" is the mount point the
+  // other domains hang their pages off of.
+  registerRoute({
+    id: "app",
+    path: "/app",
+    element: (
+      <Suspense fallback={<PageFallback />}>
+        <AppShellRoute />
+      </Suspense>
+    ),
+    order: 60,
+  });
+  // SPA catch-all — unknown paths bounce to "/" (which then routes by auth).
+  registerRoute({ path: "*", element: <Navigate to="/" replace />, order: 1000 });
+
+  // ── /app leaves (core) ─────────────────────────────────────────────────
+  registerRoute({
+    parent: "app",
+    index: true,
+    element: (
+      <Suspense fallback={<PageFallback />}>
+        <Overview />
+      </Suspense>
+    ),
+    order: 0,
+  });
+  // gaka-4ng: owner's profile inside the app skeleton.
+  registerRoute({
+    parent: "app",
+    path: "profile",
+    element: (
+      <Suspense fallback={<PageFallback />}>
+        <InAppProfile />
+      </Suspense>
+    ),
+    order: 20,
+  });
+  // gaka-ebq: Logs moved under /app/admin/logs; keep the old bookmarkable URL.
+  registerRoute({
+    parent: "app",
+    path: "logs",
+    element: <Navigate to="/app/admin/logs" replace />,
+    order: 90,
+  });
+  // Changelog still ships as a Settings tab.
+  registerRoute({
+    parent: "app",
+    path: "changelog",
+    element: <Navigate to="/app/settings?tab=changelog" replace />,
+    order: 100,
+  });
+  // /app/admin — admin-only sub-shell (AdminRoute + AdminPage). id "admin" is
+  // the mount point for the per-domain admin tabs.
+  registerRoute({
+    id: "admin",
+    parent: "app",
+    path: "admin",
+    element: (
+      <Suspense fallback={<PageFallback />}>
+        <AdminShellRoute />
+      </Suspense>
+    ),
+    order: 110,
+  });
+  registerRoute({
+    parent: "app",
+    path: "settings",
+    element: (
+      <Suspense fallback={<PageFallback />}>
+        <Settings />
+      </Suspense>
+    ),
+    order: 120,
+  });
+
+  // ── /app/admin leaves (core / operational) ─────────────────────────────
+  registerRoute({
+    parent: "admin",
+    index: true,
+    element: <Navigate to="/app/admin/labels" replace />,
+    order: 0,
+  });
+  registerRoute({
+    parent: "admin",
+    path: "users",
+    element: (
+      <Suspense fallback={<PageFallback />}>
+        <UsersTab />
+      </Suspense>
+    ),
+    order: 10,
+  });
+  registerRoute({
+    parent: "admin",
+    path: "cli",
+    element: (
+      <Suspense fallback={<PageFallback />}>
+        <CliTab />
+      </Suspense>
+    ),
+    order: 30,
+  });
+  registerRoute({
+    parent: "admin",
+    path: "jobs",
+    element: (
+      <Suspense fallback={<PageFallback />}>
+        <JobsTab />
+      </Suspense>
+    ),
+    order: 40,
+  });
+  registerRoute({
+    parent: "admin",
+    path: "data",
+    element: (
+      <Suspense fallback={<PageFallback />}>
+        <DataTab />
+      </Suspense>
+    ),
+    order: 60,
+  });
+  registerRoute({
+    parent: "admin",
+    path: "logs",
+    element: (
+      <Suspense fallback={<PageFallback />}>
+        {/* embedded so the AdminPage's toolbar/tab-strip stays the single page
+            heading — Logs otherwise renders its own PageToolbar title. */}
+        <Logs embedded />
+      </Suspense>
+    ),
+    order: 80,
+  });
 
   // ── Settings (Account group) ───────────────────────────────────────────
   registerSettingsSection({
