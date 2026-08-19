@@ -39,8 +39,8 @@ RUN go mod download
 # that secrets/junk don't leak into builder layers (auditable via docker
 # history --no-trunc on a --target=server build).
 COPY . .
-# Embed the built SPA (server package embeds internal/server/dist).
-COPY --from=web /web/dist ./internal/server/dist
+# Embed the built SPA (server package embeds internal/shared/server/dist).
+COPY --from=web /web/dist ./internal/shared/server/dist
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -ldflags "-s -w -X main.version=${VERSION} -X main.branch=${BRANCH} -X main.commit=${COMMIT} -X main.buildTime=${BUILDTIME}" \
     -o /out/boomtime ./cmd/boomtime

@@ -15,12 +15,12 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/tracing"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/identity"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/admin"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/catalyst"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/handler"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/logging"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/meta"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/metrics"

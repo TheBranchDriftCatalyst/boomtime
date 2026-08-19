@@ -17,7 +17,7 @@ import (
 	"strings"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/domainreg"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/handler"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/handler"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/openapi"
 	"github.com/labstack/echo/v5"
 
