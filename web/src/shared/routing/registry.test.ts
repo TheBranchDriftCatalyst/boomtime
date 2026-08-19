@@ -11,7 +11,7 @@ import { getRoutes, registerRoute, __resetRouteRegistry } from "./registry";
 import type { RouteDef } from "./types";
 import { registerCoreDomain } from "@/domains/core/register";
 import { registerBooksDomain } from "@books/domains/books/register";
-import { registerBoomtimeDomain } from "@/domains/boomtime/register";
+import { registerBoomtimeDomain } from "@boomtime/domains/boomtime/register";
 
 // Flatten the registry into "parent > leaf" path strings (index routes shown as
 // "<parent>/(index)"), ordered the way App.tsx would nest them.

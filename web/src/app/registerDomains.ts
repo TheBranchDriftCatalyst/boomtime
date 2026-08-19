@@ -12,7 +12,7 @@
 // one way, from the entry down into the shell's registries.
 import { registerCoreDomain } from "@/domains/core/register";
 import { registerBooksDomain } from "@books/domains/books/register";
-import { registerBoomtimeDomain } from "@/domains/boomtime/register";
+import { registerBoomtimeDomain } from "@boomtime/domains/boomtime/register";
 
 let done = false;
 

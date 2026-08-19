@@ -8,7 +8,7 @@ import { Label } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
 import { X } from "lucide-react";
 import type { Axis, Condition, CmpOp } from "@/features/publicprofile/labels/types";
 import type { HeartbeatAxis } from "@/types/heartbeats";
-import { useAxisValues } from "@/features/rules/useAxisValues";
+import { useAxisValues } from "@boomtime/features/rules/useAxisValues";
 import { Combobox } from "@/components/ui/combobox";
 
 // The labels DSL uses plural axis names; the heartbeats-group endpoint that

@@ -3,7 +3,7 @@
 // renderers so a dashboard rendering all three shares one round
 // trip.
 import { Progress } from "@thebranchdriftcatalyst/catalyst-ui/ui/progress";
-import { useAllGoalProgress, useGoalsQuery } from "@/features/goals/useGoals";
+import { useAllGoalProgress, useGoalsQuery } from "@boomtime/features/goals/useGoals";
 
 export function GoalList() {
   const { data: goals } = useGoalsQuery();

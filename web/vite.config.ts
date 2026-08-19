@@ -186,6 +186,7 @@ export default defineConfig({
     include: [
       "src/**/*.{test,spec}.{ts,tsx}",
       "../internal/books/web/src/**/*.{test,spec}.{ts,tsx}",
+      "../internal/boomtime/web/src/**/*.{test,spec}.{ts,tsx}",
     ],
     css: false,
     restoreMocks: true,
@@ -195,10 +196,12 @@ export default defineConfig({
       include: [
         "src/**/*.{ts,tsx}",
         "../internal/books/web/src/**/*.{ts,tsx}",
+        "../internal/boomtime/web/src/**/*.{ts,tsx}",
       ],
       exclude: [
         "src/**/*.{test,spec}.{ts,tsx}",
         "../internal/books/web/src/**/*.{test,spec}.{ts,tsx}",
+        "../internal/boomtime/web/src/**/*.{test,spec}.{ts,tsx}",
         "src/test/**",
         "src/main.tsx",
         "src/**/*.d.ts",

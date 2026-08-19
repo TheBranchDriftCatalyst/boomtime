@@ -40,6 +40,18 @@
  */
 @source "../../internal/books/web/src";
 
+/*
+ * gaka-zp2s / gaka-abg0 Step B Phase 2: the boomtime (code) domain FE is
+ * colocated with its Go package under internal/boomtime/web/src — OUTSIDE this
+ * Vite root (web/). Same rationale as the books @source above: Tailwind v4 only
+ * scans from the project root, so without this hint the utilities used ONLY in
+ * the boomtime tree (Projects, Heartbeats, Goals, Spaces, Curation, Import, the
+ * admin MetricsTab, the Wakatime onboarding, …) would drop out of the emitted
+ * CSS. Only the host build imports the boomtime domain, but this stylesheet is
+ * shared, so keeping the @source here keeps host utilities byte-identical.
+ */
+@source "../../internal/boomtime/web/src";
+
 @layer base {
   body {
     font-feature-settings: "rlig" 1, "calt" 1;

@@ -15,7 +15,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/tooltip";
-import { useSpaces } from "@/features/spaces/useSpaces";
+import { useSpaces } from "@boomtime/features/spaces/useSpaces";
 import { useIsAdmin } from "@/features/auth/useIsAdmin";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";

@@ -24,7 +24,7 @@ import {
   DialogTitle,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/dialog";
 import { useTheme } from "@thebranchdriftcatalyst/catalyst-ui/contexts/Theme";
-import { useSpaces } from "@/features/spaces/useSpaces";
+import { useSpaces } from "@boomtime/features/spaces/useSpaces";
 import { IS_BOOKS_STANDALONE } from "@/lib/standalone";
 
 // Global open event — a header/mobile search button dispatches this so the
