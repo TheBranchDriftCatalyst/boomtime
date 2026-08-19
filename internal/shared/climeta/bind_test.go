@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/climeta"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/climeta"
 )
 
 // synthetic spec exercising every param type in one place.

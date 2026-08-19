@@ -16,7 +16,7 @@ package main
 
 import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/github"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/climeta"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/climeta"
 	"github.com/spf13/cobra"
 )
 
