@@ -3,7 +3,7 @@ package main
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/climeta"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books"
 )
 
 // hardcoverCmd is the `boomtime hardcover …` parent. Subcommands live in
@@ -14,6 +14,6 @@ func hardcoverCmd() *cobra.Command {
 		Use:   "hardcover",
 		Short: "Hardcover maintenance commands",
 	}
-	cmd.AddCommand(climeta.NewDedupReadsCmd())
+	cmd.AddCommand(books.NewDedupReadsCmd())
 	return cmd
 }

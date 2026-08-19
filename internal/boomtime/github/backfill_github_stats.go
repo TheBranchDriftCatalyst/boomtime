@@ -4,7 +4,7 @@
 // command def and call the same body in-process.
 //
 // Iterates every user with a linked GitHub token (or just --user) and runs
-// github.Service.SyncUser, which upserts ONE row per user (replace-on-conflict).
+// Service.SyncUser, which upserts ONE row per user (replace-on-conflict).
 // SAFELY RE-RUNNABLE: a second run overwrites each row rather than accumulating,
 // so re-running is a no-op on data — same idempotency guarantee as the on-demand
 // endpoint. Runs against the DB in-process (like rotate-encryption-key), so
@@ -15,7 +15,7 @@
 //
 // Gated on BOOM_FEATURE_GITHUB_STATS — the feature master switch. NEVER logs a
 // token; per-user output is success / skip / error only.
-package climeta
+package github
 
 import (
 	"context"
@@ -27,11 +27,41 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/github"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/climeta"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 )
+
+// init registers the `backfill github-stats` command into the climeta web-run
+// allowlist (gaka-zp2s) — the CLI framework stays domain-free; the github domain
+// contributes its own vetted command here. Fires whenever package github loads (the
+// composition root pulls it in via internal/domainreg; test binaries blank-import it).
+func init() {
+	climeta.Register("backfill github-stats", climeta.RegistryEntry{
+		Classification:  climeta.ClassMutating,
+		DryRunSupported: false,
+		RequiredCap:     auth.CapAdmin,
+		NewCommand:      NewBackfillGithubStatsCmd,
+		// Mirrors the CLI's own refusal to run with the feature off.
+		Available:      func(cfg *config.Config) bool { return cfg != nil && cfg.FeatureGithubStats },
+		FlagCompleters: map[string]cobra.CompletionFunc{"user": climeta.CompleteUsernames},
+		FlagListers:    map[string]climeta.DBLister{"user": climeta.ListUsernames},
+		Invoke: func(ctx context.Context, database *db.DB, args climeta.RunArgs, out io.Writer) error {
+			// Fail fast with ONE clear error when the encryption key is missing —
+			// mirrors the CLI RunE precheck. Without it every user would fail
+			// individually at Decrypt inside the loop.
+			if err := auth.LoadKeyFromEnv(); err != nil {
+				return fmt.Errorf("cannot decrypt stored tokens: %w", err)
+			}
+			// The Service logger is discarded here: per-user outcomes already land in
+			// out, and the admin endpoint owns audit logging.
+			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+			svc := NewService(database, logger)
+			return RunBackfillGithubStats(ctx, database, svc, args.Str("user"), out)
+		},
+	})
+}
 
 // NewBackfillGithubStatsCmd builds the `backfill github-stats` command def —
 // shared by the CLI (cmd/boomtime) and the admin CLI-runner's introspection.
@@ -43,7 +73,7 @@ func NewBackfillGithubStatsCmd() *cobra.Command {
 		// Web allowlist (admin CLI-runner): mutating without --dry-run, so
 		// every web run requires the confirm sentinel. Availability is
 		// additionally gated on cfg.FeatureGithubStats in the registry.
-		Annotations: map[string]string{WebAnnotation: ClassMutating},
+		Annotations: map[string]string{climeta.WebAnnotation: climeta.ClassMutating},
 		Long: `Sync each linked user's GitHub stats into github_stats_cache. One row per
 user is upserted (replace-on-conflict), so re-running never accrues duplicates —
 the command is safely re-runnable.
@@ -74,7 +104,7 @@ stored token). Never logs tokens.
 			defer database.Close()
 
 			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
-			svc := github.NewService(database, logger)
+			svc := NewService(database, logger)
 			return RunBackfillGithubStats(ctx, database, svc, user, cmd.OutOrStdout())
 		},
 	}
@@ -83,14 +113,14 @@ stored token). Never logs tokens.
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 	// Smart completion: TAB --user to pick an existing user from the DB.
-	_ = cmd.RegisterFlagCompletionFunc("user", CompleteUsernames)
+	_ = cmd.RegisterFlagCompletionFunc("user", climeta.CompleteUsernames)
 	return cmd
 }
 
 // RunBackfillGithubStats is the extracted body so a test — and the admin
 // CLI-runner — can drive the loop against an in-process DB + mock-GitHub
 // service without cobra + config.Load.
-func RunBackfillGithubStats(ctx context.Context, database *db.DB, svc *github.Service, user string, out io.Writer) error {
+func RunBackfillGithubStats(ctx context.Context, database *db.DB, svc *Service, user string, out io.Writer) error {
 	var users []string
 	if user != "" {
 		users = []string{user}
@@ -111,7 +141,7 @@ func RunBackfillGithubStats(ctx context.Context, database *db.DB, svc *github.Se
 	var ok, skipped, failed int
 	for _, u := range users {
 		if _, err := svc.SyncUser(ctx, u); err != nil {
-			if errors.Is(err, github.ErrNoToken) {
+			if errors.Is(err, ErrNoToken) {
 				fmt.Fprintf(out, "  skip %s: no linked token\n", u)
 				skipped++
 				continue
