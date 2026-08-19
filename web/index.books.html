@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en" class="h-full">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="mask-icon" href="/favicon.svg" color="#ef4444" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0a0a0a" />
+    <meta name="description" content="CatalystBooks — self-hosted reading analytics (Kindle / Audible / Hardcover)." />
+    <!--OG_META
+      OpenGraph / Twitter card block. Kept identical in shape to index.html so
+      the standalone server can reuse the same block if it ever grows per-page
+      OG injection. The generic block below stands in for the SPA.
+    -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="catalyst-books" />
+    <meta property="og:title" content="CatalystBooks" />
+    <meta property="og:description" content="Self-hosted reading analytics." />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="CatalystBooks" />
+    <meta name="twitter:description" content="Self-hosted reading analytics." />
+    <!--/OG_META-->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <title>CatalystBooks</title>
+    <!--
+      No-flash-of-wrong-theme <script> is injected automatically by
+      `catalystPlugin({ noFlash: { legacyStorageKey: "boomtime-theme" } })`
+      at build/dev time. See web/vite.books.config.ts.
+    -->
+  </head>
+  <body class="h-full">
+    <div id="root" class="h-full"></div>
+    <script type="module" src="/src/books-main.tsx"></script>
+  </body>
+</html>
