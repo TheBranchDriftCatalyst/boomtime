@@ -12,6 +12,9 @@ metadata:
   namespace: boomtime
 spec:
   replicas: 1
+  rabbitmq:
+    additionalConfig: |
+      prometheus.return_per_object_metrics = true
   resources:
     requests:
       cpu: 100m
