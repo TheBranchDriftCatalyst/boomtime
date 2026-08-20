@@ -82,6 +82,11 @@ data:
 
   # ── catalyst-books / catalyst-audiobooks master gate (gaka-books) ───────────
   BOOM_FEATURE_BOOKS: "true"
+  # Audible library forward-sync cadence (finish detection: is_finished / ≥95% →
+  # "read"). Code default is 6h; dropped to 1h so a finished audiobook promotes
+  # reading→read within the hour without a manual "Sync now". Trade: more Audible
+  # API calls. The near-real-time reading monitor (30s) is separate (live sessions).
+  BOOM_AUDIBLE_SYNC_INTERVAL: "1h"
   # Hardcover as the terminal sink (project_hardcover_terminal_sink): with dry-run
   # OFF, boomtime WRITES to the user's real Hardcover — status/finish/rating pushes
   # (curation edits, the per-row sync button, and the audible finished-book sweep)
