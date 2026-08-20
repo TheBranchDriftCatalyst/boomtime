@@ -27,6 +27,7 @@ import { Card, CardContent } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
 import { Page } from "@shared/layout/Page";
+import { TabNav, tabClass } from "@shared/layout/PageTabs";
 import { EmptyState } from "@shared/components/EmptyState";
 import { runQuery } from "@shared/lib/queryApi";
 import { qk } from "@shared/lib/queryKeys";
@@ -52,6 +53,11 @@ import {
   type StatusFilter,
   type MatchFilter,
 } from "@books/features/books/booksExplorerConfig";
+import { ReadingEventsTab } from "@books/features/books/ReadingEventsTab";
+
+// The two Books-page views. "library" is the existing groupable book table;
+// "events" is the reading-events table (gaka-z5dz). Persisted in the URL as ?view.
+type BooksView = "library" | "events";
 
 // ── hero + stats ─────────────────────────────────────────────────────────────
 
@@ -248,6 +254,10 @@ export function BooksPage() {
   const [sort, setSort] = useState<LeafSort | null>(() =>
     parseSort(initialParams.get("sort")),
   );
+  // Active tab. Read once from ?view; a single effect below writes it back.
+  const [view, setView] = useState<BooksView>(() =>
+    initialParams.get("view") === "events" ? "events" : "library",
+  );
 
   // Debounce the search box: search is now a server-side ILIKE predicate folded
   // into the explorer's `where` + resetKey, so typing would otherwise re-query
@@ -281,6 +291,7 @@ export function BooksPage() {
   // that differ from the default are written, keeping shared URLs tidy.
   useEffect(() => {
     const next = new URLSearchParams();
+    if (view === "events") next.set("view", "events");
     if (sourceFilter !== "all") next.set("source", sourceFilter);
     if (statusFilter !== "all") next.set("status", statusFilter);
     if (matchedFilter !== "all") next.set("match", matchedFilter);
@@ -299,7 +310,7 @@ export function BooksPage() {
         : window.location.pathname;
       window.history.replaceState(window.history.state, "", url);
     }
-  }, [sourceFilter, statusFilter, matchedFilter, debouncedSearch, groupBy, sort]);
+  }, [view, sourceFilter, statusFilter, matchedFilter, debouncedSearch, groupBy, sort]);
 
   // Hero summary: one unfiltered grouped query (group by source + finished
   // rollup) → whole-library totals. Only when the feature is on.
@@ -384,7 +395,35 @@ export function BooksPage() {
                 </CardContent>
               </Card>
             ) : (
-              <div className="space-y-3">
+              <>
+                {/* Tab strip: Library (the existing groupable book table) |
+                    Reading Events (the reads-over-events table, gaka-z5dz). The
+                    active tab persists in the URL as ?view. */}
+                <TabNav ariaLabel="Books views" variant="page">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={view === "library"}
+                    className={tabClass(view === "library")}
+                    onClick={() => setView("library")}
+                  >
+                    Library
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={view === "events"}
+                    className={tabClass(view === "events")}
+                    onClick={() => setView("events")}
+                  >
+                    Reading Events
+                  </button>
+                </TabNav>
+
+                {view === "events" ? (
+                  <ReadingEventsTab />
+                ) : (
+                  <div className="space-y-3">
                 {/* ONE consolidated control bar — search + source + status +
                     group-by axis chips + connect, folded into a single tight row
                     that wraps gracefully on narrow widths. The filters fold into
@@ -453,7 +492,9 @@ export function BooksPage() {
                   sort={sort}
                   onSortChange={setSort}
                 />
-              </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </Page.Content>
