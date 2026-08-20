@@ -5,13 +5,15 @@ package query
 // grammar, and safety model are domain-agnostic.
 //
 // TABLE / OWNER-COLUMN map (the only per-table trusted facts the compiler needs):
-//   - hb_rollup_daily   owner col = "sender"  date col = "day"
-//   - reading_activity  owner col = "owner"   date col = "bucket_date"
-//   - reading_items     owner col = "owner"   date col = "finished_at"
+//   - hb_rollup_daily          owner col = "sender"  date col = "day"
+//   - reading_activity         owner col = "owner"   date col = "bucket_date"
+//   - reading_items            owner col = "owner"   date col = "finished_at"
+//   - reading_events_enriched  owner col = "owner"   date col = "finished_at"
 
 func init() {
 	registerCoding()
 	registerReading()
+	registerReadingEvents()
 }
 
 // registerCoding wires the coding domain over hb_rollup_daily. One measure —
@@ -185,6 +187,84 @@ func registerReading() {
 				// Hardcover list names (jsonb array) — a book property (migration 00077).
 				{Name: "hardcoverLists", Expr: "hardcover_lists"},
 				{Name: "syncedAt", Expr: "synced_at"},
+			},
+		},
+	})
+}
+
+// registerReadingEvents wires the reading-EVENTS domain over the
+// reading_events_enriched VIEW (migration 00081 / books 00003): each discrete read
+// (reading_events) LEFT JOIN LATERAL its book row (reading_items) for title/author/
+// series/genre/status. It is a DISTINCT domain from "reading" — not another measure
+// on it — because a query domain has exactly ONE leaf-rows RowSource, and "reading"
+// already spends that on reading_items (the library, one row per BOOK). The events
+// table needs its own leaf projection (one row per READ, with origin + per-event
+// finished_at), so it gets its own domain sharing the same owner-scope + injection
+// model.
+//
+// One measure — `reads` = count(*) over the view — grouped/filtered by the event
+// axes. origin (hardcover|audible|kindle) is the events-only axis; source/series/
+// author/genre/status/title reuse the reading_items metadata the view exposes (the
+// same trusted Exprs as the reading domain, valid here because the view carries
+// those columns). status reads EFFECTIVE status (COALESCE(status_override, status)),
+// both columns exposed by the view.
+func registerReadingEvents() {
+	const view = "reading_events_enriched"
+
+	dims := map[string]Dimension{
+		// origin: who produced the read (hardcover | audible | kindle) — the
+		// events-only provenance axis, distinct from source (the Amazon edition kind).
+		"origin": {Name: "origin", Table: view, Expr: "origin"},
+		"source": {Name: "source", Table: view, Expr: "source"},
+		"series": {Name: "series", Table: view, Expr: "series"},
+		"author": {Name: "author", Table: view, Expr: "authors"},
+		"genre":  {Name: "genre", Table: view, Expr: "genres->>0"},
+		// EFFECTIVE status (override ?? item status) — both columns are exposed by the
+		// view so this shared Expr resolves exactly as it does on reading_items.
+		"status": {Name: "status", Table: view, Expr: "COALESCE(status_override, status)"},
+		// title: a filter-oriented dimension (folds an ILIKE for search); grouping by a
+		// near-unique key is moot, but it is whitelisted so the FE search can filter.
+		"title": {Name: "title", Table: view, Expr: "title"},
+	}
+
+	Register(Domain{
+		Name: "readingEvents",
+		Measures: map[string]Measure{
+			// reads: how many discrete reads fall in a group/window. count(*) over the
+			// view; a book read three times contributes three reads (unlike the reading
+			// domain's `books`, which counts the ONE reading_items row).
+			"reads": {
+				Name:     "reads",
+				Table:    view,
+				Expr:     "count(*)",
+				DateCol:  "finished_at",
+				OwnerCol: "owner",
+				Dims:     []string{"origin", "source", "series", "author", "genre", "status", "title"},
+			},
+		},
+		Dimensions: dims,
+
+		// Leaf-rows source: one row per READ. Each column Name is the JSON key the FE
+		// ReadingEventDTO reads (internal/books/web/.../readingEventsExplorerConfig);
+		// Expr is the view column. status is EFFECTIVE (status_effective column).
+		Rows: &RowSource{
+			Table:       view,
+			OwnerCol:    "owner",
+			DateCol:     "finished_at",
+			DefaultSort: "finished_at DESC NULLS LAST",
+			Columns: []RowColumn{
+				{Name: "origin", Expr: "origin"},
+				{Name: "source", Expr: "source"},
+				{Name: "externalId", Expr: "external_id"},
+				{Name: "hardcoverBookId", Expr: "hardcover_book_id"},
+				{Name: "title", Expr: "title"},
+				{Name: "authors", Expr: "authors"},
+				{Name: "series", Expr: "series"},
+				{Name: "status", Expr: "status_effective"},
+				{Name: "startedAt", Expr: "started_at"},
+				{Name: "finishedAt", Expr: "finished_at"},
+				{Name: "progressPages", Expr: "progress_pages"},
+				{Name: "progressSeconds", Expr: "progress_seconds"},
 			},
 		},
 	})
