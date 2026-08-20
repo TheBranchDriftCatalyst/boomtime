@@ -82,10 +82,12 @@ func (h *Handler) RunQuery(c *echo.Context) error {
 		return apihelpers.RespondErr(c, aerr)
 	}
 
-	// Gate the reading domain exactly like the other books routes: when the
+	// Gate the books-owned domains exactly like the other books routes: when the
 	// feature is off, the domain does not exist as far as the API is concerned
-	// (404, no oracle). Coding is always available.
-	if spec.Domain == "reading" && (h.Cfg == nil || !h.Cfg.BooksEnabled()) {
+	// (404, no oracle). Both the reading library ("reading") and the reading-events
+	// table ("readingEvents") are books surfaces. Coding is always available.
+	if (spec.Domain == "reading" || spec.Domain == "readingEvents") &&
+		(h.Cfg == nil || !h.Cfg.BooksEnabled()) {
 		return apihelpers.RespondErr(c, apierr.NotFound("unknown domain"))
 	}
 

@@ -14,7 +14,10 @@ import { ApiError, buildUrl } from "./api";
 
 // --- Request spec ------------------------------------------------------------
 
-export type QueryDomain = "coding" | "reading";
+// "readingEvents" is the reading-EVENTS domain (measure `reads` over the
+// reading_events_enriched view) — a book's discrete reads, one row per read, as
+// opposed to "reading" (the library, one row per book). Books-gated like "reading".
+export type QueryDomain = "coding" | "reading" | "readingEvents";
 export type Granularity = "none" | "day" | "week" | "month";
 // "ilike" is a case-insensitive substring match (server compiles it to SQL
 // ILIKE '%value%' with the value bound as an arg — injection-safe like eq).

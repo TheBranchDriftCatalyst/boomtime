@@ -6,7 +6,7 @@
 //   - a leaf row's trailing action opens that book's Hardcover page.
 // The public config (books_enabled) is stubbed via MSW like the rest of the app.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "@shared/test/renderWithProviders";
 import { server } from "@shared/test/msw/server";
@@ -36,6 +36,32 @@ const row = (p: Record<string, unknown>) => ({
 // render `<filtered>/<total>`.
 function wireQueries() {
   runQueryMock.mockImplementation(async (spec: QuerySpec) => {
+    // Reading Events tab (gaka-z5dz): the readingEvents domain. Rows mode → event
+    // rows (one per read); grouped → per-origin read counts. Harmless to the
+    // library tests, which never touch this domain.
+    if (spec.domain === "readingEvents") {
+      if (spec.rows) {
+        return {
+          kind: "rows",
+          total: 1,
+          rows: [
+            {
+              origin: "audible",
+              source: "audible",
+              externalId: "B08GB58KD5",
+              title: "Project Hail Mary",
+              authors: "Andy Weir",
+              status: "read",
+              finishedAt: "2026-08-10T00:00:00Z",
+            },
+          ],
+        };
+      }
+      return {
+        kind: "groups",
+        groups: [{ key: "audible", value: 2, count: 2, stats: { count: 2 } }],
+      };
+    }
     if (spec.rows) {
       return {
         kind: "rows",
@@ -232,5 +258,62 @@ describe("BooksPage (merged groupable view)", () => {
     expect(
       await screen.findByText("Books isn't enabled on this server"),
     ).toBeInTheDocument();
+  });
+});
+
+describe("BooksPage tabs (Library | Reading Events)", () => {
+  it("renders both tabs and defaults to the Library view", async () => {
+    stubConfig(true);
+    renderWithProviders(<BooksPage />, { withRouter: true });
+
+    // Both tabs present.
+    expect(await screen.findByRole("tab", { name: "Library" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", { name: "Reading Events" }),
+    ).toBeInTheDocument();
+
+    // Library is the default active tab → the book table renders as today.
+    expect(screen.getByRole("tab", { name: "Library" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(await screen.findByText("Project Hail Mary")).toBeInTheDocument();
+    // The library-only "Match" filter is present; the events-only "Origin" is not.
+    expect(screen.getByLabelText("Match")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Origin")).toBeNull();
+  });
+
+  it("switches to the Reading Events table and fires a readingEvents query", async () => {
+    stubConfig(true);
+    renderWithProviders(<BooksPage />, { withRouter: true });
+    await screen.findByText("Project Hail Mary");
+
+    await userEvent.click(screen.getByRole("tab", { name: "Reading Events" }));
+
+    // The events tab is now active…
+    expect(
+      screen.getByRole("tab", { name: "Reading Events" }),
+    ).toHaveAttribute("aria-selected", "true");
+    // …and its distinct control (the Origin filter) is shown while the library's
+    // Match filter is gone (the library subtree unmounted).
+    expect(await screen.findByLabelText("Origin")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Match")).toBeNull();
+
+    // A readingEvents query fired (the events table drives its own DSL domain).
+    await waitFor(() =>
+      expect(
+        runQueryMock.mock.calls.some(
+          (c) => (c[0] as QuerySpec).domain === "readingEvents",
+        ),
+      ).toBe(true),
+    );
+
+    // Switching back restores the Library view.
+    await userEvent.click(screen.getByRole("tab", { name: "Library" }));
+    expect(screen.getByRole("tab", { name: "Library" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(await screen.findByLabelText("Match")).toBeInTheDocument();
   });
 });

@@ -243,6 +243,28 @@ export interface ReadEvent {
   progressSeconds?: number;
 }
 
+// One ENRICHED reading-event row (leaf of the Reading Events explorer tab,
+// gaka-z5dz). Mirrors the `readingEvents` domain RowSource projection over the
+// reading_events_enriched view: the event fields (origin/source/finished) plus the
+// book metadata resolved by the LATERAL join to reading_items (title/authors/
+// series/status). Distinct from ReadEvent (the Book-panel history, no book meta):
+// this is what the axis-grouping events table lists. Metadata keys are optional —
+// an event with no matching reading_items row leaves them null.
+export interface ReadingEventRowDTO {
+  origin: string; // hardcover | audible | kindle
+  source: string; // the Amazon edition kind ("" for a hardcover-only read)
+  externalId: string;
+  hardcoverBookId?: number | null;
+  title?: string | null;
+  authors?: string | null;
+  series?: string | null;
+  status?: string | null; // effective status (override ?? item status)
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  progressPages?: number | null;
+  progressSeconds?: number | null;
+}
+
 // One Hardcover search hit rendered as a pickable card in the manual match-fixer
 // (GET /api/v1/hardcover/search). Fields beyond bookId/title are best-effort.
 export interface HardcoverCandidate {
