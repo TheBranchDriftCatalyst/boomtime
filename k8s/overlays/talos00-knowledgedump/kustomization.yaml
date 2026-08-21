@@ -76,12 +76,12 @@ resources:
 # provenance is documented inline in app-config.yaml.
 #
 # The remaining entries are NOT ConfigMap patches: oidc-external-secret.yaml is
-# an ExternalSecret (boomtime-secrets), and the patch-server-* / oidc-hostaliases
+# an ExternalSecret (boomtime-secrets), and the patch-server-* / oidc-kyverno-label
 # files patch the boomtime Deployment.
 patchesStrategicMerge:
   - app-config.yaml           # consolidated non-secret BOOM_* keys on boomtime-config
   - oidc-external-secret.yaml # BOOM_OIDC_CLIENT_SECRET (+ github/remote-write) from 1Password
-  - oidc-hostaliases.yaml     # pod->Authentik goes internal (bypass Cloudflare, gaka-93f.11.2)
+  - oidc-kyverno-label.yaml   # pod label -> Kyverno injects the Authentik hostAlias (gaka-93f.11.2)
   - patch-server-rabbit.yaml  # server: --role=server + amqp URL
   - patch-server-s3.yaml      # BOOM_S3_ACCESS_KEY/SECRET_KEY (optional secretKeyRef)
   # NOTE: authentik-blueprint-boomtime.yaml is an Authentik blueprint, NOT a k8s

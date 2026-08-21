@@ -1,0 +1,43 @@
+---
+# gaka-93f.11.2 (migrated) — opt this pod into the cluster-wide Kyverno
+# `oidc-hostalias` ClusterPolicy.
+#
+# WHY THE ALIAS EXISTS: auth.knowledgedump.space is Cloudflare-proxied.
+# Server-side OIDC HTTP from the pod (discovery / token / JWKS) egresses via the
+# home IP and hits Cloudflare; Cloudflare's bot/threat protection 403'd it (and
+# escalated to blocking the whole source IP, taking out browser access too). A
+# hostAlias pinning auth.knowledgedump.space to Traefik's ClusterIP keeps those
+# calls inside the cluster so they NEVER touch Cloudflare. TLS stays valid —
+# Traefik serves the *.knowledgedump.space wildcard cert. BROWSER access is
+# unaffected: clients outside the cluster resolve via public DNS → Cloudflare.
+#
+# WHAT CHANGED: the hostAlias used to be hand-written into this overlay (the
+# former oidc-hostaliases.yaml, also hand-copied into manyfold). It is now
+# injected at admission by the Kyverno ClusterPolicy `oidc-hostalias`
+# (talos-homelab: infrastructure/base/kyverno-policies/oidc-hostalias.yaml),
+# which patches any POD carrying the label below. The pinned Traefik ClusterIP
+# now lives in exactly one place — the policy — instead of being duplicated per
+# app, so a Traefik service rebuild is a one-line fix cluster-wide.
+#
+# The label MUST be on the pod template (spec.template.metadata.labels): Kyverno
+# matches Pods, not Deployments. It is deliberately NOT on the Deployment's own
+# metadata.labels (nothing matches those) nor on spec.selector (immutable).
+#
+# NOTE: the policy is failurePolicy: Ignore — if Kyverno is down during a
+# rollout the pod admits WITHOUT the alias and server-side OIDC breaks until it
+# is recreated. Symptom: SSO login fails mid-flow / Cloudflare 403 in the pod
+# logs. Check `kubectl get pod -n boomtime -l app=boomtime \
+#   -o jsonpath='{.items[*].spec.hostAliases}'` before blaming Authentik.
+#
+# Scoped to this overlay on purpose: the `local` overlay talks to its own
+# in-cluster Authentik (overlays/local/authentik.yaml) and must NOT get a
+# talos00 Traefik ClusterIP aliased over it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: boomtime
+spec:
+  template:
+    metadata:
+      labels:
+        catalyst.io/oidc: "true"
