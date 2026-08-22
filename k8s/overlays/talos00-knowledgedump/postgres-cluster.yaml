@@ -33,7 +33,27 @@ spec:
 
   storage:
     size: 10Gi
-    storageClass: fatboy-nfs-appdata
+    # local-path = the node's NVMe. Talos mounts its EPHEMERAL partition at /var,
+    # which is exactly where local-path provisions, so this is direct NVMe rather
+    # than a network round trip. Moved off NFS 2026-08-21 (talos-homelab TALOS-bna2).
+    #
+    # CHOSEN ON MEASUREMENT. Across all 11 CNPG clusters in the fleet,
+    # cnpg_pg_stat_database_blks_read — disk reads that MISSED the shared buffer
+    # cache — reads 0.00/s everywhere EXCEPT here, where it is 5.91/s. boomtime is
+    # the only database in the cluster whose working set does not fit in RAM, so it
+    # is the only one where storage latency shows up in query time at all. It also
+    # commits 5.16 tx/s, and every commit costs a WAL fsync that was previously a
+    # network round trip to the Synology. This is the DB behind the /heartbeats.bulk
+    # p95 work, and the read path is the half that optimisation could not fix.
+    #
+    # SAFE ONLY BECAUSE instances IS 3. local-path is WaitForFirstConsumer, so each
+    # PV pins to whichever node first mounts it. Three instances plus CNPG's default
+    # pod anti-affinity puts three copies on three different nodes, so losing a node
+    # loses one pinned volume and CNPG promotes a survivor automatically.
+    # *** NEVER reduce this cluster to instances:1 while on local-path. *** That
+    # combination is strictly worse than NFS: a node loss would strand the only copy
+    # with no recovery short of a barman restore.
+    storageClass: local-path
 
   resources:
     requests:
