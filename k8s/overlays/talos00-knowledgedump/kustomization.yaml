@@ -76,8 +76,12 @@ resources:
 # provenance is documented inline in app-config.yaml.
 #
 # The remaining entries are NOT ConfigMap patches: oidc-external-secret.yaml is
-# an ExternalSecret (boomtime-secrets), and the patch-server-* / oidc-kyverno-label
-# files patch the boomtime Deployment.
+# an ExternalSecret (boomtime-secrets), and the patch-server-* files patch the
+# boomtime Deployment. The OIDC hostAlias is NO LONGER patched here at all: the
+# pod carries catalyst.io/oidc=true from k8s/base/deployment.yaml, and the
+# cluster-wide Kyverno ClusterPolicy oidc-hostalias injects the alias at
+# admission. Both the old oidc-hostaliases.yaml and its oidc-kyverno-label.yaml
+# successor are gone.
 patchesStrategicMerge:
   - app-config.yaml           # consolidated non-secret BOOM_* keys on boomtime-config
   - oidc-external-secret.yaml # BOOM_OIDC_CLIENT_SECRET (+ github/remote-write) from 1Password
