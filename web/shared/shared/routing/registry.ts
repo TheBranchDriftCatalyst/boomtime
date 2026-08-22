@@ -13,6 +13,11 @@ import type { RouteDef } from "./types";
 // registration order never matters (final order comes from the `order` field).
 const routes = new Map<string, RouteDef>();
 
+// The derived read is CACHED for a stable identity between calls, dropped on
+// every write. See the note in ../admin/registry.ts — same reasoning
+// (TALOS-6y60). Callers must treat the returned array as IMMUTABLE.
+let routesCache: RouteDef[] | null = null;
+
 function keyFor(r: RouteDef): string {
   const parent = r.parent ?? "";
   const leaf = r.index ? "\0index" : (r.path ?? "");
@@ -22,6 +27,7 @@ function keyFor(r: RouteDef): string {
 /** Register (or replace) a single route. Idempotent by (parent, path|index). */
 export function registerRoute(route: RouteDef): void {
   routes.set(keyFor(route), route);
+  routesCache = null;
 }
 
 function sortKey(o?: number): number {
@@ -30,14 +36,19 @@ function sortKey(o?: number): number {
 
 /** All registered routes, globally ordered by `order`. The router (App.tsx)
  *  buckets these into a nested tree by `parent`; a stable global sort means
- *  each sibling group comes out in `order`. */
+ *  each sibling group comes out in `order`. Stable identity until the registry
+ *  changes; treat as immutable. */
 export function getRoutes(): RouteDef[] {
-  return Array.from(routes.values()).sort(
-    (a, b) => sortKey(a.order) - sortKey(b.order),
-  );
+  if (!routesCache) {
+    routesCache = Array.from(routes.values()).sort(
+      (a, b) => sortKey(a.order) - sortKey(b.order),
+    );
+  }
+  return routesCache;
 }
 
 /** Test aid — clears the registry so a test can register a known fixture set. */
 export function __resetRouteRegistry(): void {
   routes.clear();
+  routesCache = null;
 }

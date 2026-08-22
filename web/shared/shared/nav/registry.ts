@@ -11,6 +11,19 @@ import type { NavFlag, NavItem, NavSection, NavSectionMeta } from "./types";
 // the `order` fields, so registration order never matters.
 const sections = new Map<string, NavSection>();
 
+// Derived reads are CACHED for a stable identity between calls, dropped on
+// every write. See the note in ../admin/registry.ts — same reasoning
+// (TALOS-6y60): a fresh array per call defeats every useMemo keyed on it and
+// re-runs identity-keyed effects (useHeaderSlot) on every render. Callers must
+// treat the returned value as IMMUTABLE.
+let sectionsCache: NavSection[] | null = null;
+let resolvedCache: { key: string; value: NavSection[] } | null = null;
+
+function invalidate(): void {
+  sectionsCache = null;
+  resolvedCache = null;
+}
+
 /** Register a single nav destination into a (possibly new) section. Idempotent:
  *  re-registering the same section+route replaces the prior entry, so repeated
  *  registration (HMR, test setup re-import) never duplicates. The latest section
@@ -32,6 +45,7 @@ export function registerNavItem(section: NavSectionMeta, item: NavItem): void {
       items: [item],
     });
   }
+  invalidate();
 }
 
 function sortKey(o?: number): number {
@@ -39,31 +53,50 @@ function sortKey(o?: number): number {
 }
 
 /** All registered sections, ordered by section `order` then items by item
- *  `order`. Read at render time — registration has already happened at entry. */
+ *  `order`. Read at render time — registration has already happened at entry.
+ *  Stable identity until the registry changes; treat as immutable. */
 export function getNavSections(): NavSection[] {
-  return Array.from(sections.values())
+  if (sectionsCache) return sectionsCache;
+  sectionsCache = Array.from(sections.values())
     .sort((a, b) => sortKey(a.order) - sortKey(b.order))
     .map((s) => ({
       ...s,
       items: [...s.items].sort((a, b) => sortKey(a.order) - sortKey(b.order)),
     }));
+  return sectionsCache;
 }
 
 /** Resolve the registry against the loaded public-config flags: drop flag-gated
  *  items whose flag is off, then drop any section left empty. This is what the
- *  sidebar renders, in order. */
+ *  sidebar renders, in order. Stable identity for as long as the registry AND
+ *  the flags it actually gates on are unchanged (the config object itself gets
+ *  a new identity on every react-query read, so keying on the object would
+ *  never hit); treat as immutable. */
 export function resolveNavSections(
   config: Partial<Record<NavFlag, boolean>>,
 ): NavSection[] {
-  return getNavSections()
+  const all = getNavSections();
+  // Key on the resolved value of every flag any registered item gates on —
+  // that, plus the registry itself, is the complete input to the filter below.
+  const flags = new Set<NavFlag>();
+  for (const s of all) for (const i of s.items) if (i.flag) flags.add(i.flag);
+  const key = [...flags]
+    .sort()
+    .map((f) => `${f}:${config[f] ? "1" : "0"}`)
+    .join(",");
+  if (resolvedCache?.key === key) return resolvedCache.value;
+  const value = all
     .map((s) => ({
       ...s,
       items: s.items.filter((i) => !i.flag || config[i.flag]),
     }))
     .filter((s) => s.items.length > 0);
+  resolvedCache = { key, value };
+  return value;
 }
 
 /** Test aid — clears the registry so a test can register a known fixture set. */
 export function __resetNavRegistry(): void {
   sections.clear();
+  invalidate();
 }
