@@ -1,0 +1,57 @@
+---
+# ════════════════════════════════════════════════════════════════════════════
+# dev.boomtime.knowledgedump.space — feature-branch preview environment
+# talos-homelab TALOS-hvcf
+# ════════════════════════════════════════════════════════════════════════════
+#
+# WHAT THIS IS
+# All four objects here were created by hand on 2026-08-18 to preview a feature
+# branch and were never committed anywhere. Nothing referenced them: no
+# argocd.argoproj.io/instance, no kustomize.toolkit.fluxcd.io/name, no manifest
+# in any repo. A cluster rebuild or a stray prune would have silently taken the
+# whole environment with it — including the external-dns/Cloudflare wiring on
+# the IngressRoute, which is the genuinely annoying part to reconstruct.
+#
+# The Deployment is committed at replicas: 0, which is its current and intended
+# state. See deployment.yaml for how to revive it.
+#
+# ── WHY THIS IS A SEPARATE OVERLAY AND NOT PART OF talos00-knowledgedump ────
+# Because the prod overlay would silently destroy the point of this
+# environment. talos00-knowledgedump/kustomization.yaml carries an `images:`
+# transformer for ghcr.io/thebranchdriftcatalyst/boomtime, and the Argo CD
+# Application layers its own kustomize.images override on top — an override the
+# ImageUpdater CRD in talos-homelab rewrites every time a new prod tag is
+# published. Kustomize's image transformer matches on image NAME, so any
+# boomtime container built under that kustomization gets its tag rewritten
+# regardless of which file declared it. Verified: a deployment pinned to
+# :gaka-domain-framework built under that transformer comes out as :latest.
+#
+# Nesting this dev Deployment there would therefore mean its feature-branch tag
+# is overwritten with prod's tag on every prod image publish — the environment
+# would silently start running prod's code. Hence: separate overlay, separate
+# build, no image transformer at all.
+#
+# ── STATUS: IN GIT, NOT YET AUTO-SYNCED ────────────────────────────────────
+# This directory is reproducible today with:
+#     kubectl apply -k k8s/overlays/talos00-dev
+# which is what TALOS-hvcf was actually about — the environment is no longer
+# tribal knowledge and survives a rebuild.
+#
+# It is NOT yet continuously reconciled, because that needs a second Argo CD
+# Application pointed at this path, and Argo CD Applications for this repo live
+# in talos-homelab (infrastructure/base/argocd/applications/), not here. That
+# is a deliberate cross-repo follow-up rather than something to smuggle in via
+# the prod overlay — see the section above for why the prod Application cannot
+# be reused. Tracked as a follow-up on TALOS-hvcf.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: boomtime
+
+resources:
+  - deployment.yaml   # replicas: 0 by design
+  - service.yaml      # clusterIP omitted so the live one is preserved
+  - ingressroute.yaml # websecure route + http→https redirect (both hosts wired)
+
+# NO `images:` transformer here, on purpose — see the block above. The image
+# tag is a documented manual override in deployment.yaml.

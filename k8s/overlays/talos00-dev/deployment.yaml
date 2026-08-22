@@ -1,0 +1,164 @@
+---
+# dev.boomtime.knowledgedump.space — the feature-branch preview server.
+#
+# CAPTURED FROM LIVE, NOT AUTHORED (talos-homelab TALOS-hvcf). Created by hand
+# on 2026-08-18 and never committed. Transcribed from the running object with
+# the runtime cruft removed (status, resourceVersion, uid, generation,
+# creationTimestamp, managedFields, deployment.kubernetes.io/revision, and the
+# kubectl.kubernetes.io/restartedAt annotation left over from a manual rollout
+# restart).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: boomtime-dev
+  labels:
+    app: boomtime-dev
+    app.kubernetes.io/name: boomtime
+    app.kubernetes.io/part-of: catalyst
+    boomtime-variant: dev-refactor
+spec:
+  # *** 0 IS THE INTENDED COMMITTED DEFAULT — do not "fix" this to 1. ***
+  # This environment is idle by design and costs nothing while scaled down;
+  # the Service and both IngressRoutes stay up so the hostname remains wired
+  # and reviving it is `kubectl scale --replicas=1` plus an image tag.
+  replicas: 0
+  revisionHistoryLimit: 10
+  progressDeadlineSeconds: 600
+  selector:
+    matchLabels:
+      app: boomtime-dev
+  strategy:
+    # Recreate, not RollingUpdate: this is a single-replica preview box sharing
+    # the prod database (see the BOOM_DB_* env below), so overlapping old and
+    # new pods across a deploy buys nothing and risks two writers.
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: boomtime-dev
+        app.kubernetes.io/name: boomtime
+        # Kyverno ClusterPolicy oidc-hostalias matches this label and injects a
+        # hostAlias pinning auth.knowledgedump.space to the in-cluster Traefik
+        # ClusterIP, so server-side OIDC calls never egress into Cloudflare
+        # (where bot protection blocks them and SSO dies mid-flow).
+        #
+        # DELIBERATE CHANGE FROM THE LIVE OBJECT: the live Deployment carries a
+        # hand-written `hostAliases` entry with the literal IP 10.103.83.240.
+        # That IP is Traefik's ClusterIP and is not stable — if the Traefik
+        # Service is ever recreated it changes, and dev SSO breaks in a way
+        # nobody would connect back to this file. The policy resolves it
+        # dynamically ({{ traefikIP }}), and this label is the same mechanism
+        # k8s/base/deployment.yaml already uses for prod. Safe to switch here
+        # because replicas is 0, so no running pod is affected.
+        catalyst.io/oidc: "true"
+    spec:
+      containers:
+        - name: boomtime
+          # ── IMAGE TAG: MANUAL OVERRIDE, ON PURPOSE ────────────────────────
+          # The whole point of this environment is previewing an ARBITRARY
+          # feature branch, so there is no correct tag to commit. The value
+          # below is whatever branch was last previewed; treat it as a
+          # placeholder, not as intent.
+          #
+          # To deploy a branch:
+          #   kubectl set image -n boomtime deploy/boomtime-dev \
+          #     boomtime=ghcr.io/thebranchdriftcatalyst/boomtime:<branch-tag>
+          #   kubectl scale -n boomtime deploy/boomtime-dev --replicas=1
+          #
+          # FUTURE DIRECTION (not built — deliberately not over-engineered for
+          # a single hand-driven preview box): an Argo CD ApplicationSet with a
+          # git branch generator would spin one of these per open branch and
+          # make the tag a generator parameter instead of a manual edit. Worth
+          # doing only once more than one branch needs previewing at a time.
+          image: ghcr.io/thebranchdriftcatalyst/boomtime:gaka-domain-framework
+          imagePullPolicy: Always # branch tags are mutable — always re-pull
+          args:
+            - run
+            - --role=server
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            # Shares prod's ConfigMap and Secrets. The dev-specific overrides
+            # below are appended after, so they win.
+            - configMapRef:
+                name: boomtime-config
+            - secretRef:
+                name: boomtime-secrets
+                optional: true
+            - secretRef:
+                name: boomtime-encryption-key
+                optional: true
+          env:
+            - name: BOOM_S3_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: boomtime-cards-s3-scoped
+                  key: AWS_ACCESS_KEY_ID
+                  optional: true
+            - name: BOOM_S3_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: boomtime-cards-s3-scoped
+                  key: AWS_SECRET_ACCESS_KEY
+                  optional: true
+            - name: RABBIT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: boomtime-rabbit-default-user
+                  key: username
+            - name: RABBIT_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: boomtime-rabbit-default-user
+                  key: password
+            - name: BOOM_RABBITMQ_URL
+              value: amqp://$(RABBIT_USER):$(RABBIT_PASS)@boomtime-rabbit.boomtime.svc.cluster.local:5672/
+            # *** THIS POINTS AT THE PRODUCTION DATABASE. ***
+            # boomtime-postgres-app is the prod boomtime cluster's app secret —
+            # this preview env reads and writes prod data. Captured as-is
+            # because that is what is live and changing it is a behavioural
+            # decision, not a capture. If this env is ever revived for anything
+            # riskier than UI work, point it at its own CNPG cluster first.
+            - name: BOOM_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: boomtime-postgres-app
+                  key: username
+            - name: BOOM_DB_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: boomtime-postgres-app
+                  key: password
+            # Dev-hostname overrides — these are why the env needs its own
+            # Deployment rather than a replica of prod's.
+            - name: BOOM_OIDC_REDIRECT_URL
+              value: https://dev.boomtime.knowledgedump.space/auth/callback/oidc
+            - name: BOOM_GITHUB_OAUTH_REDIRECT_URL
+              value: https://dev.boomtime.knowledgedump.space/auth/github/callback
+            - name: BOOM_CORS_ALLOWED_ORIGINS
+              value: https://dev.boomtime.knowledgedump.space
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

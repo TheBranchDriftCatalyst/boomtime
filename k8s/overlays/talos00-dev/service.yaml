@@ -1,0 +1,26 @@
+---
+# ClusterIP fronting the boomtime-dev pods. Captured from live (talos-homelab
+# TALOS-hvcf); `clusterIP`/`clusterIPs` are deliberately OMITTED so the
+# already-assigned 10.98.30.71 is preserved on apply rather than fought over —
+# clusterIP is immutable, and restating it in git is how an unrelated cluster
+# rebuild turns into an unapplyable manifest.
+#
+# Stays up even at replicas 0. An endpoint-less Service costs nothing and keeps
+# the IngressRoutes valid, so reviving the env is a scale, not a rewire.
+apiVersion: v1
+kind: Service
+metadata:
+  name: boomtime-dev
+  labels:
+    app: boomtime-dev
+    app.kubernetes.io/name: boomtime
+    boomtime-variant: dev-refactor
+spec:
+  type: ClusterIP
+  selector:
+    app: boomtime-dev
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
