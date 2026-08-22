@@ -15,7 +15,15 @@ import { useHeaderSlot } from "@shared/layout/HeaderSlot";
 import { getAdminGroups } from "@shared/shared/admin/registry";
 
 export function AdminSectionPage() {
-  const groups = getAdminGroups();
+  // Read the registry ONCE. getAdminGroups() derives a fresh array (and fresh
+  // group objects) on every call, so calling it raw during render handed
+  // useMemo below a dependency that changed every time — the memo never hit,
+  // useHeaderSlot's identity-keyed effect re-ran on every render, and its
+  // setNode bounced the provider state straight back into this component. That
+  // loop tripped React's update-depth limit and blanked the routed <Outlet/>.
+  // Registration happens once at entry (registerHostDomains) before the first
+  // render, so an empty dep list is correct — same pattern Settings.tsx uses.
+  const groups = useMemo(() => getAdminGroups(), []);
 
   // Hoist the grouped tab strip into the HeaderBar (reclaims the page title
   // row). NavLink computes active state from the URL so the node identity never
