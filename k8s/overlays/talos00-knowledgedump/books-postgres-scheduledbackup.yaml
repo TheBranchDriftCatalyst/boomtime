@@ -1,0 +1,30 @@
+---
+# Daily base backup for books-postgres (talos-homelab TALOS-1psu).
+#
+# NEW — before this, the ONLY ScheduledBackup in the namespace was
+# boomtime-postgres-daily, which targets boomtime-postgres. A cluster-wide sweep
+# found none targeting books-postgres, so it was covered by neither CNPG nor
+# Velero. Continuous WAL archiving comes from the Cluster's `plugins` stanza;
+# this drives the periodic base backups those WAL segments replay on top of.
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: books-postgres-daily
+  labels:
+    app.kubernetes.io/name: books-postgres
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: boomtime
+    app: catalyst-books
+spec:
+  # 04:00 daily — the next free slot after boomtime-postgres-daily at 03:45,
+  # continuing the fleet stagger documented in scheduledbackup.yaml (forgejo
+  # 02:00 → zipline 03:30 → boomtime 03:45). CNPG cron is 6-field:
+  # sec min hour dom mon dow.
+  schedule: "0 0 4 * * *"
+  immediate: true # take one immediately — this cluster has never had a backup
+  backupOwnerReference: self
+  method: plugin # in-tree barmanObjectStore was removed in CNPG 1.30
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+  cluster:
+    name: books-postgres

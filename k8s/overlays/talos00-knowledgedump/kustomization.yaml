@@ -12,6 +12,13 @@ resources:
   # cnpg-minio-backup secret arrives via reflector from talos-homelab's
   # minio/cnpg-backup ExternalSecret (its allow-list includes `boomtime`).
   - scheduledbackup.yaml # daily base backup → cnpg-backups bucket (03:45)
+  # ── catalyst-books standalone DB (talos-homelab TALOS-1psu) ───────────────
+  # Captured from a live, hand-applied cluster that no GitOps system owned and
+  # that had NO backup from either system. Listed here so Argo CD adopts it;
+  # the ObjectStore + ScheduledBackup are new and close the backup gap.
+  - books-postgres-cluster.yaml
+  - books-postgres-objectstore.yaml
+  - books-postgres-scheduledbackup.yaml
   - external-secret.yaml
   - ingressroute.yaml
   - servicemonitor.yaml # scrape boomtime's own /metrics (gaka-metrics: RED + business counters)

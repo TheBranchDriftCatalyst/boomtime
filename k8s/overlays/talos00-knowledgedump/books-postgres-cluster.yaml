@@ -1,0 +1,104 @@
+---
+# CloudNativePG Cluster for the catalyst-books standalone variant.
+#
+# CAPTURED FROM LIVE, NOT AUTHORED (talos-homelab TALOS-1psu). This cluster was
+# applied by hand on 2026-08-19 during the catalyst-books standalone work and
+# never committed, so it was owned by NEITHER GitOps system and — because it
+# carries the velero.io/exclude-from-backup label with no CNPG backup config to
+# take over — had ZERO backup coverage from either. This file exists to put it
+# under Argo CD, and books-postgres-objectstore.yaml + books-postgres-
+# scheduledbackup.yaml exist to close the backup gap.
+#
+# Every field below was transcribed from the LIVE object so adoption is a
+# no-op diff. The ONE deliberate delta is the `plugins` stanza (see there).
+# *** Do not "tidy" this spec. *** Adding or changing fields on a live CNPG
+# Cluster can trigger a rollout, and at instances:1 a rollout is downtime.
+#
+# CNPG auto-creates Secret `books-postgres-app` (the `books` role) and the
+# `books-postgres-{rw,ro,r}` Services, same as boomtime-postgres.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: books-postgres
+  # These two labels are EXACTLY what the live object carries. They are
+  # deliberately NOT supplemented with the app.kubernetes.io/* labels used by
+  # boomtime-postgres: the CNPG operator here runs with
+  # INHERITED_LABELS=app.kubernetes.io/*, so adding those to a Cluster
+  # propagates them onto the running pod and overwrites CNPG's own
+  # app.kubernetes.io/name (boomtime-postgres-1 shows `boomtime-postgres` where
+  # books-postgres-1 shows the operator default `postgresql`). Harmless in
+  # principle, but it is live-pod churn bought for nothing during an adoption
+  # whose entire premise is "change as little as possible".
+  labels:
+    app: catalyst-books
+    boomtime-variant: books-standalone
+spec:
+  inheritedMetadata:
+    labels:
+      # Keeps Velero off the pods/PVCs because CNPG owns this cluster's backups.
+      # Until the `plugins` stanza below existed that promise was unbacked — the
+      # label excluded it from Velero while nothing else was backing it up. See
+      # talos-homelab [[backup-coverage-demarcation]].
+      velero.io/exclude-from-backup: "true"
+
+  # *** LEAVE instances AND storageClass ALONE. ***
+  # instances:1 is only survivable because fatboy-nfs-appdata is node-
+  # independent: the single copy is not pinned to a node, so losing the node
+  # loses the pod and not the volume. NEVER pair instances:1 with local-path
+  # (see the inverse warning in postgres-cluster.yaml, which is instances:3
+  # precisely because it sits on local-path).
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+
+  bootstrap:
+    # Only consulted at first bootstrap; the cluster is long since initialised.
+    # Recorded to keep the manifest a faithful, replayable description.
+    initdb:
+      database: books
+      owner: books
+
+  storage:
+    size: 2Gi
+    storageClass: fatboy-nfs-appdata
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+  monitoring:
+    # Same rationale as boomtime-postgres: the global PodMonitor already scrapes
+    # CNPG pods, so a per-cluster one would double-scrape.
+    enablePodMonitor: false
+
+  # ── THE ONE INTENTIONAL DELTA FROM THE LIVE OBJECT ────────────────────────
+  # The live Cluster has no `plugins` stanza, which is exactly why it had no
+  # backups. Adding it wires books-postgres into the barman-cloud CNPG-I plugin
+  # (deployment plugin-barman-cloud in ns databases) for continuous WAL
+  # archiving, and makes the `method: plugin` ScheduledBackup possible.
+  #
+  # EXPECT A ONE-TIME POD RECREATION ON FIRST SYNC. The plugin is delivered as
+  # an injected initContainer + `plugins` volume (compare boomtime-postgres-1,
+  # which has initContainers [bootstrap-controller, plugin-barman-cloud],
+  # against books-postgres-1, which has only [bootstrap-controller]). Changing
+  # the pod spec means CNPG must replace the pod, and at instances:1 that is a
+  # brief primary outage rather than a rolling one. A verified pg_dump was
+  # taken and pushed to s3://cnpg-backups/books-postgres/manual-dumps/ before
+  # this file was committed, precisely so that restart was covered.
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: books-postgres
+
+  postgresql:
+    # pg_hba is the ONLY postgresql key the live object sets explicitly;
+    # everything else under postgresql.parameters there (archive_mode,
+    # wal_level, ...) is operator-derived. Deliberately not restated — writing
+    # operator defaults back as user intent is how a harmless-looking edit turns
+    # into a config reload on a live primary.
+    pg_hba:
+      - host all all 10.0.0.0/8 md5
+      - host all all 192.168.0.0/16 md5

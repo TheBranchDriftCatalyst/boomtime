@@ -1,0 +1,40 @@
+---
+# Barman Cloud plugin ObjectStore for books-postgres (talos-homelab TALOS-1psu).
+#
+# NEW — the live cluster had no backup destination of any kind. Modelled on
+# objectstore.yaml (boomtime-postgres) and pointed at the SAME MinIO bucket with
+# a DIFFERENT prefix, so the two clusters' base backups and WAL never interleave.
+#
+# Credentials come from the `cnpg-minio-backup` Secret already present in this
+# namespace — reflected in from talos-homelab's minio/cnpg-backup ExternalSecret,
+# whose reflector allow-list already includes `boomtime`. No new secret plumbing
+# is required; the same Secret backs boomtime-postgres.
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: books-postgres
+  labels:
+    app.kubernetes.io/name: books-postgres
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: boomtime
+    app: catalyst-books
+spec:
+  # Shorter than boomtime-postgres's 30d: this database is ~8 MiB and its value
+  # is the schema plus a handful of user rows, not a long history worth of
+  # point-in-time recovery. 14 days of WAL is ample to walk back from a bad
+  # migration, which is the realistic failure mode here.
+  retentionPolicy: "14d"
+  configuration:
+    destinationPath: s3://cnpg-backups/books-postgres
+    endpointURL: http://minio-hl.minio.svc:9000
+    s3Credentials:
+      accessKeyId:
+        name: cnpg-minio-backup
+        key: ACCESS_KEY_ID
+      secretAccessKey:
+        name: cnpg-minio-backup
+        key: ACCESS_SECRET_KEY
+    wal:
+      compression: gzip
+    data:
+      compression: gzip
