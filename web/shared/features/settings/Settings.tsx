@@ -1,18 +1,24 @@
 import { Suspense, useMemo } from "react";
 import { Navigate, useSearchParams } from "react-router";
 import { Spinner } from "@thebranchdriftcatalyst/catalyst-ui/ui/spinner";
-import { Page } from "@shared/layout/Page";
-import { GroupedTabNav, tabClass } from "@shared/layout/PageTabs";
-import { useHeaderSlot } from "@shared/layout/HeaderSlot";
+import { SectionPage } from "@shared/layout/SectionPage";
+import type { SectionRailGroup } from "@shared/layout/SectionRail";
 import {
   getSettingsSections,
   getSettingsTabs,
 } from "@shared/shared/settings/registry";
 
-// Settings is now a THIN consumer of the settings-registration seam. The tab
+// Settings is a THIN consumer of the settings-registration seam. The tab
 // bodies + their grouping (Account / CatalystBooks / Boomtime) are registered by
 // each domain's module (web/src/domains/*/register.tsx); this page only resolves
-// the active tab from ?tab= and renders the grouped strip + the active body.
+// the active tab from ?tab= and hands the rest to <SectionPage>.
+//
+// gaka-4x33: the grouped tab strip this used to hoist into the app HeaderBar is
+// now a vertical rail inside the content column, exactly as Admin does it — the
+// two sections are the same shape and now share one implementation. Settings
+// switches on a query param rather than a route, which is why its rail entries
+// carry `onSelect`/`active` instead of `to`; that fork is the only difference
+// between the two call sites.
 //
 // gaka-ebq: the legacy ?tab=logs / ?tab=admin values redirect to
 // /app/admin/{logs,labels}; gaka-gud: ?tab=goals redirects to /app/goals. The
@@ -45,69 +51,57 @@ export function Settings() {
   // immediately (Profile is opt-in via ?tab=profile / the avatar menu).
   const active = tabs.some((t) => t.id === aliased) ? aliased : "plugin";
 
-  // gaka-5jp: the tab strip is HOISTED into the app HeaderBar (reclaiming the
-  // whole Page.Header title row). Built once per active-tab change + memoized so
-  // useHeaderSlot's identity-keyed effect doesn't thrash the header. The
-  // "Settings" prefix keeps page context now that the title row is gone.
-  const headerTabs = useMemo(
+  // Rail groups mirror the registry's sections. Memoized on the active tab so
+  // the identity only changes when the highlight actually moves.
+  const railGroups: SectionRailGroup[] = useMemo(
     () =>
-      redirect ? null : (
-        <GroupedTabNav
-          ariaLabel="Settings sections"
-          variant="header"
-          label="Settings"
-          groups={sections.map((s) => ({
-            id: s.id,
-            label: s.label,
-            children: s.tabs.map((t) => (
-              <button
-                key={t.id}
-                role="tab"
-                aria-selected={t.id === active}
-                onClick={() => setParams({ tab: t.id }, { replace: true })}
-                className={tabClass(t.id === active)}
-              >
-                {t.label}
-              </button>
-            )),
-          }))}
-        />
-      ),
-    [active, redirect, setParams, sections],
+      sections.map((section) => ({
+        id: section.id,
+        label: section.label,
+        items: section.tabs.map((t) => ({
+          id: t.id,
+          label: t.label,
+          icon: t.icon,
+          active: t.id === active,
+          onSelect: () => setParams({ tab: t.id }, { replace: true }),
+        })),
+      })),
+    [sections, active, setParams],
   );
-  useHeaderSlot(headerTabs);
 
   if (redirect) {
     // Fire via <Navigate> so it routes through the router (scroll/state).
-    // Hooks above run unconditionally (headerTabs is null on a redirect render)
-    // so this early return is legal.
+    // Every hook above runs unconditionally, so this early return is legal.
     return <Navigate to={redirect} replace />;
   }
 
   const tab = tabs.find((t) => t.id === active)!;
 
   return (
-    <Page>
-      <Page.Body>
-        <Page.Content>
-          <div
-            role="tabpanel"
-            className={active === "profile" ? "max-w-6xl" : "max-w-4xl"}
-          >
-            {/* Tab bodies are registered as lazy() components (each keeps its
-                own chunk), so a switch suspends until the chunk loads. */}
-            <Suspense
-              fallback={
-                <div className="flex h-[40vh] items-center justify-center">
-                  <Spinner />
-                </div>
-              }
-            >
-              {tab.render()}
-            </Suspense>
-          </div>
-        </Page.Content>
-      </Page.Body>
-    </Page>
+    <SectionPage
+      ariaLabel="Settings sections"
+      groups={railGroups}
+      title={tab.label}
+      description={tab.description}
+      // Width comes from the registry now. Profile was the one tab that needed
+      // the extra room, and it used to be special-cased right here with an
+      // inline ternary on the tab id — the kind of shell-side exception every
+      // new wide tab had to be added to by hand.
+      width={tab.width ?? "default"}
+    >
+      <div role="tabpanel">
+        {/* Tab bodies are registered as lazy() components (each keeps its own
+            chunk), so a switch suspends until the chunk loads. */}
+        <Suspense
+          fallback={
+            <div className="flex h-[40vh] items-center justify-center">
+              <Spinner />
+            </div>
+          }
+        >
+          {tab.render()}
+        </Suspense>
+      </div>
+    </SectionPage>
   );
 }

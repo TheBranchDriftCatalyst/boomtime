@@ -6,7 +6,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
-  ShieldCheck,
   UserCircle,
 } from "lucide-react";
 import {
@@ -278,37 +277,6 @@ function ProfileNavLink({
   );
 }
 
-/** AdminNavLink — top-level Admin section entry (gaka-ebq). Rendered only
- * when the current user is on BOOM_ADMIN_USERS. Matches active on any
- * /app/admin descendant so a sub-tab (labels/backfill/logs) still lights
- * up the parent link. Hidden entirely (not disabled, not "unauthorized")
- * for non-admins — same visual model as PublicProfileNavLink: if it isn't
- * yours, it isn't in the sidebar. */
-function AdminNavLink({
-  collapsed,
-  onNavigate,
-}: {
-  collapsed: boolean;
-  onNavigate?: () => void;
-}) {
-  const { isAdmin, isLoading } = useIsAdmin();
-  // Render nothing during the first-paint auth check so we don't flash a
-  // link in for admins-of-record who reload. The Overview page is happy
-  // to render behind us regardless.
-  if (isLoading || !isAdmin) return null;
-
-  return (
-    <NavItem
-      to="/app/admin"
-      icon={ShieldCheck}
-      name="Admin"
-      collapsed={collapsed}
-      onNavigate={onNavigate}
-      testId="sidebar-admin"
-    />
-  );
-}
-
 interface SidebarBodyProps {
   collapsed: boolean;
   onLogout: () => void;
@@ -340,7 +308,13 @@ export function SidebarBody({
   // — so a disabled feature's nav is fully inert. Flags default false while the
   // config request is in flight.
   const { config } = usePublicConfig();
-  const navSections = resolveNavSections(config);
+  // gaka-dr5w: Admin is a REGISTERED nav item now (in the System section) with
+  // `adminOnly: true`, rather than a bespoke component rendered outside the
+  // section loop. Treating "still loading" as not-admin preserves the old
+  // behavior of rendering nothing during the first-paint auth check, so an
+  // admin reloading the page never sees the link flash in.
+  const { isAdmin, isLoading: isAdminLoading } = useIsAdmin();
+  const navSections = resolveNavSections(config, isAdmin && !isAdminLoading);
 
   return (
     <>
@@ -383,21 +357,20 @@ export function SidebarBody({
             <ProfileNavLink collapsed={collapsed} onNavigate={onNavigate} />
           </div>
         ) : (
-          <>
-            <AdminNavLink collapsed={collapsed} onNavigate={onNavigate} />
-
-            {/* Profile lives in the Spaces group — it's semantically a "space"
-                too (a scoped, publishable view of your data). Order: Profile
-                first, then user-created Spaces, then New space. */}
-            <SpacesNavGroup
-              collapsed={collapsed}
-              onCreateSpace={onCreateSpace}
-              onNavigate={onNavigate}
-              publicProfileSlot={
-                <ProfileNavLink collapsed={collapsed} onNavigate={onNavigate} />
-              }
-            />
-          </>
+          /* Spaces stays outside the registry: its items are USER data fetched
+             at runtime, not registrations. Admin used to sit here too and that
+             was the bug — see the System section in core/register.tsx.
+             Profile lives in the Spaces group because it's semantically a
+             "space" too (a scoped, publishable view of your data). Order:
+             Profile first, then user-created Spaces, then New space. */
+          <SpacesNavGroup
+            collapsed={collapsed}
+            onCreateSpace={onCreateSpace}
+            onNavigate={onNavigate}
+            publicProfileSlot={
+              <ProfileNavLink collapsed={collapsed} onNavigate={onNavigate} />
+            }
+          />
         )}
       </nav>
 

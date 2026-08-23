@@ -14,7 +14,10 @@ import {
 // The committed backend fixture (3000 rows, camelCase, dated ~Apr–Jul 2026).
 const FIXTURE_PATH = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
-  "../../internal/db/testdata/heartbeats_fixture.json",
+  // Moved with the internal/{shared,books,boomtime} domain split — the old
+  // internal/db path made globalSetup throw ENOENT, which aborted the ENTIRE
+  // e2e suite before a single spec ran.
+  "../../internal/shared/db/testdata/heartbeats_fixture.json",
 );
 
 // Keep ingest snappy: the spec only needs realistic data inside the default

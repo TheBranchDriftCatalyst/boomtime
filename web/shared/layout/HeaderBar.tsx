@@ -139,10 +139,14 @@ export function HeaderBar({ username, onLogout, onCreateSpace }: HeaderBarProps)
       {/* Mobile-only hamburger → nav drawer (the desktop rail is hidden < md). */}
       <MobileNav onLogout={onLogout} onCreateSpace={onCreateSpace} />
 
-      {/* Left/center: hoisted page chrome (tab strip) when a page set one,
-          else a time-aware greeting with a refined terminal treatment.
-          flex-1 min-w-0 gives the slot room; the strip scrolls-x on narrow
-          widths (TabNav.css) so the header never wraps. */}
+      {/* Left/center: hoisted page chrome when a page set one, else a
+          time-aware greeting with a refined terminal treatment.
+          flex-1 min-w-0 lets the slot shrink, which — together with the shell's
+          minmax(0,…) column floor (gaka-c26s) — is what keeps an oversized
+          hoisted node from displacing the control cluster to its right. Admin
+          and Settings no longer hoist anything wide (their nav is a rail in the
+          content column now), but the guarantee has to hold for whatever gets
+          hoisted next; web/e2e/shell-layout.spec.ts asserts it directly. */}
       <div className="flex h-full min-w-0 flex-1 items-center">
         {slot ?? (
           <div

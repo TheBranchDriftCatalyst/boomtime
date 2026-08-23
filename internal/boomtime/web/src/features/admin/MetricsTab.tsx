@@ -200,11 +200,11 @@ export function MetricsTab() {
   // Loading / error chrome come from the shared AdminTabShell base; the
   // data-empty and data views keep their metrics-specific EmptyState + layout.
   if (isLoading) {
-    return <AdminTabShell isLoading className="mx-auto max-w-6xl p-6" />;
+    return <AdminTabShell isLoading />;
   }
   if (isError) {
     return (
-      <AdminTabShell className="mx-auto max-w-6xl p-6">
+      <AdminTabShell>
         <EmptyState
           icon={Activity}
           title="Couldn’t load metrics"
@@ -217,7 +217,7 @@ export function MetricsTab() {
   const total = data?.length ?? 0;
   if (total === 0) {
     return (
-      <AdminTabShell className="mx-auto max-w-6xl p-6">
+      <AdminTabShell>
         <EmptyState
           icon={Activity}
           title="No metrics yet"
@@ -232,7 +232,7 @@ export function MetricsTab() {
   );
 
   return (
-    <AdminTabShell className="mx-auto max-w-6xl p-6" bodyClassName="space-y-8">
+    <AdminTabShell bodyClassName="space-y-8">
       <p className="text-xs text-muted-foreground">
         Prometheus registry · {total} families · refreshing every 5s. Also
         scraped at <code className="font-mono">/metrics</code> for Grafana. Any

@@ -23,6 +23,7 @@
 // (Settings.tsx filters the tab out otherwise; the server also 403s any
 // non-admin request, so the tab is a UX aid, not a security boundary).
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { usePageActions } from "@shared/layout/PageActionsSlot";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import { cn } from "@shared/lib/utils";
 import {
@@ -475,6 +476,26 @@ export function AdminTab() {
     return new Date(meta.generatedAt).getTime();
   }
 
+  // Live counts of what's in the catalog and whether generation is on — the one
+  // piece of the old in-body header the section shell can't render for us, so
+  // it rides the page-actions slot up into the shell's header instead.
+  //
+  // ABOVE the early returns below, deliberately: hooks must run on every render
+  // and the loading/error branches return before this point. Memoized because
+  // the node is the slot effect's dependency. It reads `rows`/`status.data`,
+  // which are simply empty while loading — the header renders an honest
+  // "0 labels · 0 images" for that beat rather than crashing.
+  const catalogStats = useMemo(
+    () => (
+      <span className="text-xs text-muted-foreground">
+        {rows.length} labels · {status.data?.count ?? 0} images ·{" "}
+        <strong>{status.data?.enabled ? "gen ON" : "gen OFF"}</strong>
+      </span>
+    ),
+    [rows.length, status.data?.count, status.data?.enabled],
+  );
+  usePageActions(catalogStats);
+
   if (catalog.isLoading || status.isLoading) {
     return <p className="text-sm text-muted-foreground">Loading admin status…</p>;
   }
@@ -493,23 +514,20 @@ export function AdminTab() {
     <div className="space-y-6">
       {/* --- LABELS + IMAGES ------------------------------------------------ */}
       <section className="rounded-md border border-border bg-card p-4">
-        <div className="flex items-baseline justify-between">
-          <h2 className="font-mono text-sm font-semibold uppercase tracking-wider">
-            Labels catalog
-          </h2>
-          <span className="text-xs text-muted-foreground">
-            {rows.length} labels · {status.data?.count ?? 0} images ·{" "}
-            <strong>{status.data?.enabled ? "gen ON" : "gen OFF"}</strong>
+        {/* gaka-9e9k: the "Labels catalog" heading and its blurb used to live
+            here and duplicated what the section shell already renders from the
+            registry (title "Labels" + its description). Only the LIVE counters
+            are genuinely this component's to report, and they ride the
+            page-actions slot up into that same header — see catalogStats above.
+            What stays below is a real sub-toolbar: bulk actions + transport
+            badges. */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Kept from the deleted blurb: which shim/model a regen will use is
+              operator-critical and belongs beside the buttons that trigger one. */}
+          <span className="mr-1 text-[11px] text-muted-foreground">
+            shim {status.data?.shimUrl || "not configured"} · model{" "}
+            <code className="font-mono">{status.data?.model ?? "—"}</code>
           </span>
-        </div>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Edit label metadata + prompts live. Image generation uses the
-          ComfyUI shim ({status.data?.shimUrl || "not configured"}) under
-          model <code className="font-mono">{status.data?.model ?? "—"}</code>.
-          Click a row to open the editor.
-        </p>
-
-        <div className="mt-4 flex flex-wrap items-center gap-2">
           <Button
             size="sm"
             variant="default"

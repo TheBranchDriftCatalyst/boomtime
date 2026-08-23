@@ -57,6 +57,10 @@ vi.mock("@shared/features/logs/useLogsSocket", () => ({
 }));
 
 import { JobsTab } from "@shared/features/admin/JobsTab";
+import {
+  PageActionsOutlet,
+  PageActionsProvider,
+} from "@shared/layout/PageActionsSlot";
 import { authStore } from "@shared/features/auth/auth";
 import { renderWithProviders } from "@shared/test/renderWithProviders";
 import { server } from "@shared/test/msw/server";
@@ -141,12 +145,26 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+// JobsTab pushes its tab-level control ("Clear all logs") UP through the
+// page-actions slot instead of hand-rolling a header row (gaka-9e9k), so
+// mounting it bare renders that button nowhere. This reproduces the section
+// shell's composition — provider + a reader — so the tests drive the same
+// wiring production does rather than a shape that only exists under test.
+function renderJobsTab() {
+  return renderWithProviders(
+    <PageActionsProvider>
+      <PageActionsOutlet />
+      <JobsTab />
+    </PageActionsProvider>,
+  );
+}
+
 describe("JobsTab — Run a reading step panel", () => {
   beforeEach(() => stubReads([], () => []));
 
   it("renders the 4 reading triggers when books_enabled", async () => {
     config(true);
-    renderWithProviders(<JobsTab />);
+    renderJobsTab();
 
     await waitFor(() =>
       expect(screen.getByText(/run a reading step/i)).toBeInTheDocument(),
@@ -159,7 +177,7 @@ describe("JobsTab — Run a reading step panel", () => {
 
   it("hides the reading panel when books are disabled (rest of tab intact)", async () => {
     config(false);
-    renderWithProviders(<JobsTab />);
+    renderJobsTab();
 
     // The Schedules panel still renders — the tab isn't broken.
     await waitFor(() => expect(screen.getByText(/schedules/i)).toBeInTheDocument());
@@ -178,7 +196,7 @@ describe("JobsTab — Run a reading step panel", () => {
     );
 
     const user = userEvent.setup();
-    renderWithProviders(<JobsTab />);
+    renderJobsTab();
 
     await user.click(await screen.findByRole("button", { name: /kindle backfill/i }));
     await waitFor(() => expect(hit).toBe(1));
@@ -221,7 +239,7 @@ describe("JobsTab — grouped kind headers", () => {
       () => [],
     );
 
-    renderWithProviders(<JobsTab />);
+    renderJobsTab();
 
     const group = await screen.findByTestId("job-group-hardcover-match");
     // Headroom label = running/max, bar is amber at cap.
@@ -268,7 +286,7 @@ describe("JobsTab — grouped kind headers", () => {
       () => [],
     );
 
-    renderWithProviders(<JobsTab />);
+    renderJobsTab();
 
     const group = await screen.findByTestId("job-group-avatar-render");
     expect(group.textContent).toContain("at cap");
@@ -291,7 +309,7 @@ describe("JobsTab — expand a kind and paginate its runs", () => {
     );
 
     const user = userEvent.setup();
-    renderWithProviders(<JobsTab />);
+    renderJobsTab();
 
     // Expand the group via its header toggle.
     await user.click(await screen.findByTitle(/expand hardcover-match/i));
@@ -318,7 +336,7 @@ describe("JobsTab — per-row actions inside an expanded kind", () => {
       (kind) => (kind === "hardcover-match" ? runs : []),
     );
     const user = userEvent.setup();
-    renderWithProviders(<JobsTab />);
+    renderJobsTab();
     await user.click(await screen.findByTitle(/expand hardcover-match/i));
     return user;
   }
@@ -412,7 +430,7 @@ describe("JobsTab — bulk log clears (confirm-gated)", () => {
     );
 
     const user = userEvent.setup();
-    renderWithProviders(<JobsTab />);
+    renderJobsTab();
 
     await user.click(await screen.findByRole("button", { name: /clear all logs/i }));
     await waitFor(() => expect(deleteUrl).not.toBeNull());
@@ -433,7 +451,7 @@ describe("JobsTab — bulk log clears (confirm-gated)", () => {
     );
 
     const user = userEvent.setup();
-    renderWithProviders(<JobsTab />);
+    renderJobsTab();
     await user.click(await screen.findByRole("button", { name: /clear all logs/i }));
     // Give any (erroneous) request a chance to fire, then assert none did.
     await new Promise((r) => setTimeout(r, 50));
@@ -453,7 +471,7 @@ describe("JobsTab — bulk log clears (confirm-gated)", () => {
     );
 
     const user = userEvent.setup();
-    renderWithProviders(<JobsTab />);
+    renderJobsTab();
 
     await user.click(await screen.findByRole("button", { name: /clear hardcover-match logs/i }));
     await waitFor(() => expect(deleteUrl).not.toBeNull());

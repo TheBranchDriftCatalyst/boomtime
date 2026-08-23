@@ -74,6 +74,11 @@ function PageHeader({ title, subtitle, children, className }: PageHeaderProps) {
 
 export interface PageBodyProps {
   children: ReactNode;
+  /** Optional LEFT rail — section sub-navigation (see `<SectionRail>`). Fixed
+   * width on md+, and on narrow viewports it stacks ABOVE the content so the
+   * nav stays the first thing you reach. Distinct from `aside`, which is
+   * supplementary and hides on small screens; nav is never optional. */
+  nav?: ReactNode;
   /** Optional right rail. When present, content + aside sit side-by-side and
    * the aside is fixed-width on large viewports, stacking under content on
    * small ones. */
@@ -81,18 +86,57 @@ export interface PageBodyProps {
   className?: string;
 }
 
-/** Page body — the horizontal split between the main content column and an
- * optional aside rail. Fills the remaining height and hides its own overflow;
- * the scroll lives one level down in `<Page.Content>` so content and aside can
- * scroll independently. */
-function PageBody({ children, aside, className }: PageBodyProps) {
+/** Page body — the horizontal split between an optional nav rail, the main
+ * content column, and an optional aside rail. Fills the remaining height and
+ * hides its own overflow; the scroll lives one level down in `<Page.Content>`
+ * so each column scrolls independently. */
+function PageBody({ children, nav, aside, className }: PageBodyProps) {
   return (
     <div
       data-testid="page-body"
-      className={cn("flex min-h-0 flex-1 gap-4", className)}
+      className={cn(
+        "flex min-h-0 flex-1 gap-4",
+        // With a nav rail the body stacks on narrow viewports (rail on top,
+        // content under) and becomes a row at md+. Without one the old
+        // always-row behavior is preserved byte-for-byte.
+        nav && "flex-col md:flex-row md:gap-0",
+        className,
+      )}
     >
+      {nav}
       {children}
       {aside}
+    </div>
+  );
+}
+
+export interface PageNavProps {
+  children: ReactNode;
+  className?: string;
+}
+
+/** Page nav — the left rail container. Owns width, divider, padding, and its
+ * OWN scroll, so a section with more entries than fit never pushes the page
+ * (or, as the header tab strip once did, the shell) out of shape. `shrink-0`
+ * plus the `minmax(0,1fr)` content column means a long label truncates inside
+ * the rail instead of widening it.
+ *
+ * On mobile the rail stacks ABOVE the content, where an unbounded list would
+ * push the page body off the first screen entirely — a 9-entry admin rail ate
+ * ~500px before you reached anything. `max-h-56` there turns it into its own
+ * short scroller so the content is always visible under it; from md up the cap
+ * lifts and the rail runs full height beside the body. */
+function PageNav({ children, className }: PageNavProps) {
+  return (
+    <div
+      data-testid="page-nav"
+      className={cn(
+        "min-h-0 max-h-56 shrink-0 overflow-y-auto px-3 py-4",
+        "md:max-h-none md:w-56 md:border-r md:px-4",
+        className,
+      )}
+    >
+      {children}
     </div>
   );
 }
@@ -141,11 +185,15 @@ function PageAside({ children, className }: PageAsideProps) {
 // Namespaced sub-parts so call sites read as one cohesive unit:
 //   <Page>
 //     <Page.Header title="Overview">{controls}</Page.Header>
-//     <Page.Body aside={<Page.Aside>…</Page.Aside>}>
+//     <Page.Body
+//       nav={<Page.Nav><SectionRail …/></Page.Nav>}   // optional left rail
+//       aside={<Page.Aside>…</Page.Aside>}            // optional right rail
+//     >
 //       <Page.Content>…</Page.Content>
 //     </Page.Body>
 //   </Page>
 Page.Header = PageHeader;
 Page.Body = PageBody;
+Page.Nav = PageNav;
 Page.Content = PageContent;
 Page.Aside = PageAside;

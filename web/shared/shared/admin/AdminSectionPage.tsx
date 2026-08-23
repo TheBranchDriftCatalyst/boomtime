@@ -1,72 +1,73 @@
 // AdminSectionPage — the shared Admin section shell (the formal "AdminPage"
-// primitive). It owns the page chrome only: the POM <Page> body + the
-// domain-grouped tab strip hoisted into the app HeaderBar, then an <Outlet/> for
-// whichever tab body the router mounted.
+// primitive). It is now a thin adapter: resolve the admin-registration seam
+// into rail groups + the active tab's presentation metadata, then hand both to
+// the domain-free <SectionPage>. It imports no tab component, so tab bodies
+// stay lazy-loaded at the router boundary and the grouping is driven entirely
+// by what each domain registered.
 //
-// It reads the admin-registration seam (getAdminGroups) — it does NOT import any
-// tab component. Tab bodies stay lazy-loaded at the router boundary, so this
-// shell pulls zero domain code and the grouping is driven entirely by what each
-// domain registered.
+// gaka-4x33: the grouped tab strip this used to hoist into the app HeaderBar
+// (via useHeaderSlot) is gone — it now renders as a vertical rail inside the
+// content column, and the app header falls back to its own "// Admin" title,
+// which it already had a mapping for. Two reasons it had to move: the strip's
+// intrinsic width stretched the shell's grid column and clipped the header's
+// right-side controls off-viewport (gaka-c26s), and nine tabs under three
+// group labels is a list, not a tab strip.
 import { useMemo } from "react";
-import { NavLink, Outlet } from "react-router";
-import { Page } from "@shared/layout/Page";
-import { GroupedTabNav, tabClass } from "@shared/layout/PageTabs";
-import { useHeaderSlot } from "@shared/layout/HeaderSlot";
+import { Outlet, useLocation } from "react-router";
+import { SectionPage } from "@shared/layout/SectionPage";
+import type { SectionRailGroup } from "@shared/layout/SectionRail";
 import { getAdminGroups } from "@shared/shared/admin/registry";
+import type { AdminTabDef } from "@shared/shared/admin/types";
 
 export function AdminSectionPage() {
-  // Read the registry ONCE. getAdminGroups() derives a fresh array (and fresh
-  // group objects) on every call, so calling it raw during render handed
-  // useMemo below a dependency that changed every time — the memo never hit,
-  // useHeaderSlot's identity-keyed effect re-ran on every render, and its
-  // setNode bounced the provider state straight back into this component. That
-  // loop tripped React's update-depth limit and blanked the routed <Outlet/>.
-  // Registration happens once at entry (registerHostDomains) before the first
-  // render, so an empty dep list is correct — same pattern Settings.tsx uses.
+  // Read the registry ONCE per mount. getAdminGroups() derives a fresh array
+  // (and fresh group objects) on every call, so reading it raw during render
+  // hands every downstream memo a dependency that changes every time — which
+  // is what once defeated the header-slot memo and blanked this very route.
+  // Registration happens at entry (registerHostDomains) before the first
+  // render, so an empty dep list is correct — the same pattern Settings uses.
   const groups = useMemo(() => getAdminGroups(), []);
+  const { pathname } = useLocation();
 
-  // Hoist the grouped tab strip into the HeaderBar (reclaims the page title
-  // row). NavLink computes active state from the URL so the node identity never
-  // needs to change — memoize on the registered groups so the header slot stays
-  // stable across unrelated re-renders. The "Admin" prefix keeps page context.
-  const headerTabs = useMemo(
-    () => (
-      <GroupedTabNav
-        ariaLabel="Admin sections"
-        variant="header"
-        label="Admin"
-        groups={groups.map((g) => ({
-          id: g.id,
-          label: g.label,
-          children: g.tabs.map((t) => (
-            <NavLink
-              key={t.id}
-              to={t.to}
-              role="tab"
-              end
-              className={({ isActive }) => tabClass(isActive)}
-            >
-              {t.label}
-            </NavLink>
-          )),
-        }))}
-      />
-    ),
+  // Which tab is showing? Matched off the URL rather than threaded down from
+  // the route table, so a tab body never has to announce itself and a deep
+  // link or back-button lands on the right header with no extra wiring.
+  const activeTab: AdminTabDef | undefined = useMemo(() => {
+    const tabs = groups.flatMap((g) => g.tabs).filter((t) => !t.external);
+    // Longest match wins, so a nested path (/app/admin/labels/42) still
+    // resolves to its parent tab instead of falling through to no header.
+    return tabs
+      .filter((t) => pathname === t.to || pathname.startsWith(`${t.to}/`))
+      .sort((a, b) => b.to.length - a.to.length)[0];
+  }, [groups, pathname]);
+
+  const railGroups: SectionRailGroup[] = useMemo(
+    () =>
+      groups.map((g) => ({
+        id: g.id,
+        label: g.label,
+        items: g.tabs.map((t) => ({
+          id: t.id,
+          label: t.label,
+          icon: t.icon,
+          to: t.to,
+          external: t.external,
+        })),
+      })),
     [groups],
   );
-  useHeaderSlot(headerTabs);
 
   return (
-    <Page>
-      <Page.Body>
-        <Page.Content>
-          {/* Sub-route mount. Each child owns its own max-width — labels wants
-              the full 6xl for the wide catalog table, logs runs full-bleed. */}
-          <div>
-            <Outlet />
-          </div>
-        </Page.Content>
-      </Page.Body>
-    </Page>
+    <SectionPage
+      ariaLabel="Admin sections"
+      groups={railGroups}
+      // Falls back to the section name on a path no tab claims, so the header
+      // never blinks empty mid-navigation.
+      title={activeTab?.label ?? "Admin"}
+      description={activeTab?.description}
+      width={activeTab?.width ?? "default"}
+    >
+      <Outlet />
+    </SectionPage>
   );
 }

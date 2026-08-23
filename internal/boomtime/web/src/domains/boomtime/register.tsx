@@ -8,18 +8,26 @@
 // tree-shakes away, router table included.
 import { lazy, Suspense } from "react";
 import {
+  Activity,
   Award,
   BookOpen,
   Download,
+  EyeOff,
   HeartPulse,
+  LayoutGrid,
   ListTree,
   Shapes,
+  Shuffle,
+  Tag,
   Target,
 } from "lucide-react";
 
 import { registerNavItem } from "@shared/shared/nav/registry";
 import { registerSettingsSection } from "@shared/shared/settings/registry";
-import { registerAdminTab } from "@shared/shared/admin/registry";
+import {
+  registerAdminGroup,
+  registerAdminTab,
+} from "@shared/shared/admin/registry";
 import { registerRoute } from "@shared/shared/routing/registry";
 import { PageFallback } from "@shared/shared/routing/PageFallback";
 
@@ -217,14 +225,39 @@ export function registerBoomtimeDomain(): void {
     label: "Boomtime",
     order: 20,
     tabs: [
-      { id: "curation", label: "Hidden data", order: 0, render: () => <CurationTab /> },
-      { id: "remappings", label: "Remappings", order: 1, render: () => <RemappingsTab /> },
-      { id: "widgets", label: "Widgets", order: 2, render: () => <WidgetLinksCard /> },
+      {
+        id: "curation", label: "Hidden data", order: 0, icon: EyeOff, width: "wide",
+        description: "Projects, languages, and machines hidden from your views.",
+        render: () => <CurationTab />,
+      },
+      {
+        id: "remappings", label: "Remappings", order: 1, icon: Shuffle, width: "wide",
+        description: "Rename entities so the same work reads as one thing.",
+        render: () => <RemappingsTab />,
+      },
+      {
+        id: "widgets", label: "Widgets", order: 2, icon: LayoutGrid,
+        description: "Embeddable stat cards and their roll-able links.",
+        render: () => <WidgetLinksCard />,
+      },
     ],
   });
 
   // ── Admin (Boomtime group) ─────────────────────────────────────────────
-  const group = { id: "boomtime", label: "Boomtime", order: 20 };
-  registerAdminTab({ id: "labels", label: "Labels", to: "/app/admin/labels", group, order: 0 });
-  registerAdminTab({ id: "metrics", label: "Metrics", to: "/app/admin/metrics", group, order: 1 });
+  registerAdminGroup({
+    id: "boomtime",
+    label: "Boomtime",
+    order: 20,
+    description: "Coding-analytics operations.",
+  });
+  registerAdminTab({
+    id: "labels", label: "Labels", to: "/app/admin/labels", group: "boomtime", order: 0,
+    icon: Tag, width: "full",
+    description: "Edit label metadata + prompts live, and regenerate artwork.",
+  });
+  registerAdminTab({
+    id: "metrics", label: "Metrics", to: "/app/admin/metrics", group: "boomtime", order: 1,
+    icon: Activity, width: "wide",
+    description: "Runtime metric families scraped from this server.",
+  });
 }

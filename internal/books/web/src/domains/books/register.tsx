@@ -7,11 +7,14 @@
 // own things; the page/tab bodies are lazy() so registration stays cheap +
 // side-effect free, and a boomtime-free (books-only) build keeps working.
 import { lazy, Suspense } from "react";
-import { Library } from "lucide-react";
+import { Library, Plug } from "lucide-react";
 
 import { registerNavItem } from "@shared/shared/nav/registry";
 import { registerSettingsSection } from "@shared/shared/settings/registry";
-import { registerAdminTab } from "@shared/shared/admin/registry";
+import {
+  registerAdminGroup,
+  registerAdminTab,
+} from "@shared/shared/admin/registry";
 import { registerRoute } from "@shared/shared/routing/registry";
 import { PageFallback } from "@shared/shared/routing/PageFallback";
 
@@ -67,16 +70,29 @@ export function registerBooksDomain(): void {
     label: "CatalystBooks",
     order: 10,
     tabs: [
-      { id: "connections", label: "Connections", order: 0, render: () => <ConnectionsTab /> },
+      {
+        id: "connections", label: "Connections", order: 0, icon: Plug, width: "wide",
+        description: "Linked reading sources and their sync state.",
+        render: () => <ConnectionsTab />,
+      },
     ],
   });
 
   // ── Admin (CatalystBooks group) ────────────────────────────────────────
+  registerAdminGroup({
+    id: "catalystbooks",
+    label: "CatalystBooks",
+    order: 10,
+    description: "Reading-domain ingest and monitoring.",
+  });
   registerAdminTab({
     id: "books",
     label: "Books",
     to: "/app/admin/books",
-    group: { id: "catalystbooks", label: "CatalystBooks", order: 10 },
+    group: "catalystbooks",
     order: 0,
+    icon: Library,
+    width: "wide",
+    description: "Reading sources, sync state, and the reading monitor.",
   });
 }

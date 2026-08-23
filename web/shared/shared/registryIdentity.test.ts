@@ -21,6 +21,7 @@ import {
   __resetAdminRegistry,
   getAdminGroups,
   getAdminTabs,
+  registerAdminGroup,
   registerAdminTab,
 } from "@shared/shared/admin/registry";
 import {
@@ -51,14 +52,18 @@ beforeEach(() => {
 });
 
 describe("admin registry", () => {
+  // gaka-9e9k: groups are registered separately now and tabs reference one by
+  // id, so the group meta lives in exactly one place instead of being copied
+  // onto every tab that belongs to it.
   const tab = (id: string) => ({
     id,
     label: id.toUpperCase(),
     to: `/app/admin/${id}`,
-    group: { id: "ops", label: "Operations", order: 1 },
+    group: "ops",
   });
 
   it("returns the same reference until a registration changes it", () => {
+    registerAdminGroup({ id: "ops", label: "Operations", order: 1 });
     registerAdminTab(tab("labels"));
 
     const first = getAdminGroups();

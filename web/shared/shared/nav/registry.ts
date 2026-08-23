@@ -66,29 +66,36 @@ export function getNavSections(): NavSection[] {
   return sectionsCache;
 }
 
-/** Resolve the registry against the loaded public-config flags: drop flag-gated
- *  items whose flag is off, then drop any section left empty. This is what the
+/** Resolve the registry against the loaded public-config flags AND the caller's
+ *  admin status: drop flag-gated items whose flag is off and admin-only items
+ *  for non-admins, then drop any section left empty. This is what the
  *  sidebar renders, in order. Stable identity for as long as the registry AND
  *  the flags it actually gates on are unchanged (the config object itself gets
  *  a new identity on every react-query read, so keying on the object would
  *  never hit); treat as immutable. */
 export function resolveNavSections(
   config: Partial<Record<NavFlag, boolean>>,
+  isAdmin = false,
 ): NavSection[] {
   const all = getNavSections();
   // Key on the resolved value of every flag any registered item gates on —
-  // that, plus the registry itself, is the complete input to the filter below.
+  // that, plus `isAdmin` and the registry itself, is the complete input to the
+  // filter below. `isAdmin` joins the key unconditionally: it is one character
+  // and getting it wrong would serve a cached non-admin nav to an admin (or
+  // worse, the reverse) for the life of the process.
   const flags = new Set<NavFlag>();
   for (const s of all) for (const i of s.items) if (i.flag) flags.add(i.flag);
-  const key = [...flags]
-    .sort()
-    .map((f) => `${f}:${config[f] ? "1" : "0"}`)
-    .join(",");
+  const key = [
+    `admin:${isAdmin ? "1" : "0"}`,
+    ...[...flags].sort().map((f) => `${f}:${config[f] ? "1" : "0"}`),
+  ].join(",");
   if (resolvedCache?.key === key) return resolvedCache.value;
   const value = all
     .map((s) => ({
       ...s,
-      items: s.items.filter((i) => !i.flag || config[i.flag]),
+      items: s.items.filter(
+        (i) => (!i.flag || config[i.flag]) && (!i.adminOnly || isAdmin),
+      ),
     }))
     .filter((s) => s.items.length > 0);
   resolvedCache = { key, value };

@@ -21,6 +21,17 @@ export interface NavItem {
   end?: boolean;
   /** when set, the entry only renders if this public-config flag is on. */
   flag?: NavFlag;
+  /**
+   * When true the entry renders only for admins (gaka-dr5w). Admin used to be
+   * rendered by a bespoke component OUTSIDE the section loop, which is half of
+   * why it appeared to belong to whichever group happened to precede it. As a
+   * registered item it sits in a real section and inherits that section's
+   * header like everything else.
+   *
+   * NOT a security boundary — AdminRoute and the server's allowlist are. This
+   * only decides whether the link is worth showing.
+   */
+  adminOnly?: boolean;
   /** optional stable test id, forwarded to the rendered NavLink. */
   testId?: string;
   /** sort key within a section (ascending; unset sorts last, stable). */

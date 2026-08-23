@@ -818,7 +818,7 @@ export function CliTab() {
   }
 
   return (
-    <div className="max-w-6xl">
+    <div>
       <div className="grid gap-6 md:grid-cols-[260px_1fr]">
         {/* Command list */}
         <nav aria-label="Commands" className="space-y-4">

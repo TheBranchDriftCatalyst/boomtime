@@ -13,7 +13,7 @@ export function DataTab() {
     <AdminTabShell
       title="Storage & derived data"
       description="Heartbeat vs rollup health, table + database sizes, index breakdown, and resync."
-      bodyClassName="max-w-5xl space-y-4"
+      bodyClassName="space-y-4"
     >
       <DerivedStatusPanel />
     </AdminTabShell>

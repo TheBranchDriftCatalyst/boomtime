@@ -45,9 +45,21 @@ export interface AppShellNoScrollProps {
  * `overflow-y-auto` engage.
  *
  * Grid:
- *   cols = [sidebar auto][content 1fr]
+ *   cols = [sidebar auto][content minmax(0,1fr)]  // minmax(0,…) == min-w-0
  *   rows = [header auto][content minmax(0,1fr)]   // minmax(0,…) == min-h-0
  *   sidebar spans both rows; header + main stack in the content column.
+ *
+ * BOTH tracks need the minmax(0,…) floor, and the COLUMN one is the subtler of
+ * the pair (gaka-c26s). A bare `1fr` is `minmax(auto, 1fr)`: the track refuses
+ * to shrink below its content's min-content width. Any wide child — the
+ * header's hoisted tab strip is the one that bit us — therefore STRETCHES the
+ * content column past the viewport instead of overflowing inside it. The
+ * shell's own `overflow-hidden` then clips the excess with no scrollbar, so
+ * whatever sat at the far right of the header (search, notifications, the
+ * avatar menu, logout) became permanently unreachable: 209px of overshoot at a
+ * 1512px viewport, the entire control cluster gone by 1280px. Clamping the
+ * floor to 0 lets the track stay viewport-sized and pushes the overflow down
+ * into the child that owns it (the strip scrolls itself; see TabNav.css).
  */
 export function AppShellNoScroll({
   sidebar,
@@ -58,7 +70,7 @@ export function AppShellNoScroll({
   return (
     <div
       className={cn(
-        "grid h-dvh grid-cols-[auto_1fr] grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background",
+        "grid h-dvh grid-cols-[auto_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background",
         className,
       )}
     >

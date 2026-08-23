@@ -13,9 +13,10 @@
 // 5s interval. Every mutation (trigger/retry/cancel + the log-clears) invalidates
 // the shared ["admin","jobs"] prefix so the group headers, the open rows, AND the
 // schedules panel refetch at once.
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AdminTabShell } from "@shared/shared/admin/AdminTabShell";
+import { usePageActions } from "@shared/layout/PageActionsSlot";
 import {
   AlertTriangle,
   Ban,
@@ -551,7 +552,10 @@ function GroupedJobs() {
       toast.error(e instanceof ApiError ? `Clear failed: ${e.message}` : "Clear failed"),
   });
 
-  const onClearAll = () => {
+  // useCallback, not a bare arrow: this is a dependency of the memoized header
+  // node below, and a fresh identity every render would defeat that memo and
+  // re-run the slot effect on every render.
+  const onClearAll = useCallback(() => {
     if (
       window.confirm(
         "Delete ALL stored job logs? Job history is kept — only the saved log streams are removed.",
@@ -559,27 +563,33 @@ function GroupedJobs() {
     ) {
       clearAll.mutate();
     }
-  };
+  }, [clearAll]);
+
+  // gaka-9e9k: "Clear all logs" belongs to the TAB, not to this panel — it is
+  // the tab-level destructive action. It rides the page-actions slot up into
+  // the header the section shell already renders, so this panel no longer
+  // hand-rolls a title row (the shell titles the page "Jobs" from the registry,
+  // which is where the duplicate heading came from). Memoized because the node
+  // is the slot effect's dependency.
+  const headerActions = useMemo(
+    () => (
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={onClearAll}
+        disabled={clearAll.isPending}
+        title="Delete every stored job-log stream (job history is kept)"
+      >
+        <Trash2 className={cn("h-3.5 w-3.5", clearAll.isPending && "animate-pulse")} />
+        Clear all logs
+      </Button>
+    ),
+    [onClearAll, clearAll.isPending],
+  );
+  usePageActions(headerActions);
 
   return (
     <section className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 font-mono text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          <ListChecks className="h-4 w-4 text-primary" />
-          Jobs
-        </h2>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onClearAll}
-          disabled={clearAll.isPending}
-          title="Delete every stored job-log stream (job history is kept)"
-        >
-          <Trash2 className={cn("h-3.5 w-3.5", clearAll.isPending && "animate-pulse")} />
-          Clear all logs
-        </Button>
-      </div>
-
       <Card>
         <CardContent className="p-0">
           {isError ? (
@@ -864,7 +874,7 @@ export function JobsTab() {
   // owns its own load/error state, so the shell here provides the consistent
   // admin-tab wrapper only.
   return (
-    <AdminTabShell bodyClassName="max-w-6xl space-y-6">
+    <AdminTabShell bodyClassName="space-y-6">
       <GroupedJobs />
       <ReadingStepsPanel />
       <SchedulesPanel />

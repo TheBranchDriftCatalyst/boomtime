@@ -83,7 +83,7 @@ export function UsersTab() {
   const roles = [...roleOrder, ...extraRoles];
 
   return (
-    <AdminTabShell bodyClassName="max-w-6xl space-y-10">
+    <AdminTabShell bodyClassName="space-y-10">
       {/* ── Tier legend ─────────────────────────────────────────────── */}
       <section>
         <h2 className="mb-1 font-mono text-xs font-semibold uppercase tracking-widest text-muted-foreground">

@@ -19,7 +19,7 @@ import {
 // feature. The tab itself must exist either way.
 //
 // Verifies (flag on):
-//   - "Commands" tab present in the admin tablist; /app/admin/cli routes.
+//   - "Commands" entry present in the admin rail; /app/admin/cli routes.
 //   - `user list` (readonly): Run produces an output panel.
 //   - `user show`: typing in the username combobox surfaces cobra-powered
 //     suggestions.
@@ -53,13 +53,14 @@ test.describe("admin CLI runner — Commands tab", () => {
     page,
   }) => {
     await page.goto("/app/admin/labels");
-    const tablist = page.getByRole("tablist", { name: "Admin sections" });
-    await expect(tablist).toBeVisible({ timeout: 10_000 });
+    // gaka-4x33: vertical rail (a navigation landmark of links), not a tablist.
+    const rail = page.getByRole("navigation", { name: "Admin sections" });
+    await expect(rail).toBeVisible({ timeout: 10_000 });
     await expect(
-      tablist.getByRole("tab", { name: "Commands" }),
+      rail.getByRole("link", { name: "Commands" }),
     ).toBeVisible();
 
-    await tablist.getByRole("tab", { name: "Commands" }).click();
+    await rail.getByRole("link", { name: "Commands" }).click();
     await expect(page).toHaveURL(/\/app\/admin\/cli/);
     // Whichever state the backend flag dictates, the tab must render a
     // deliberate body — never a crash/blank.

@@ -52,23 +52,35 @@ test("per-chart hover embed-link icons appear on mapped charts", async ({
   ).toBeVisible();
 });
 
-test("settings has horizontal tabs incl. widgets, changelog and logs", async ({
+test("settings rail lists the registered tabs incl. widgets and changelog", async ({
   page,
 }) => {
   await page.goto("/app/settings");
-  const tablist = page.getByRole("tablist", { name: "Settings sections" });
-  await expect(tablist).toBeVisible();
-  for (const label of ["Hidden data", "Remappings", "Widgets", "Changelog", "Logs"]) {
-    await expect(tablist.getByRole("tab", { name: label })).toBeVisible();
+  // gaka-4x33: Settings' nav is a vertical rail now. Its entries switch on
+  // ?tab= rather than routing, so they are buttons, not links.
+  const rail = page.getByRole("navigation", { name: "Settings sections" });
+  await expect(rail).toBeVisible();
+  // "Logs" is deliberately absent: it moved to /app/admin/logs (gaka-ebq) and
+  // admin-sidebar.spec.ts asserts Settings no longer surfaces it. This list
+  // still named it, so the expectation contradicted that spec.
+  for (const label of ["Hidden data", "Remappings", "Widgets", "Changelog"]) {
+    await expect(rail.getByRole("button", { name: label })).toBeVisible();
   }
 
   // Widgets tab shows the link list card.
-  await tablist.getByRole("tab", { name: "Widgets" }).click();
-  await expect(page.getByText("Widget links")).toBeVisible();
+  await rail.getByRole("button", { name: "Widgets" }).click();
+  // Heading, not getByText: the empty-state copy below the card also contains
+  // "widget links", so the loose text query is a strict-mode violation.
+  await expect(
+    page.getByRole("heading", { name: "Widget links" }),
+  ).toBeVisible();
 
-  // Old routes redirect into their tabs.
-  await page.goto("/app/logs");
-  await expect(page).toHaveURL(/\/app\/settings\?tab=logs/);
+  // The legacy /app/logs redirect used to be asserted here as landing on
+  // /app/settings?tab=logs. Logs moved to /app/admin/logs (gaka-ebq), so that
+  // expectation had been wrong ever since — and it can't live here anyway now:
+  // this spec runs as the non-admin e2e user, for whom AdminRoute correctly
+  // bounces /app/admin/* back to /app. admin-sidebar.spec.ts owns the legacy
+  // redirect assertions, signed in as an admin, where they can actually pass.
   await page.goto("/app/changelog");
-  await expect(page).toHaveURL(/\/app\/settings\?tab=changelog/);
+  await expect(page).toHaveURL(/\/app\/changelog/);
 });
