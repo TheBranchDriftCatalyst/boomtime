@@ -11,7 +11,7 @@ import (
 // (per-day-per-category time) may be nil; when present it is folded into the
 // Categories segment aligned to the same day series as the other segments.
 //
-// githubGrid (gaka-csx P3) is the owner's cached GitHub contribution grid
+// githubGrid (boom-csx P3) is the owner's cached GitHub contribution grid
 // (one {date,count} per day, trailing year). It may be nil — when nil OR empty
 // the resulting payload's GithubDailyTotal stays nil (omitted), keeping the
 // wire shape byte-identical to a no-GitHub payload. When present, the grid is
@@ -37,7 +37,7 @@ func ToStatsPayload(t0, t1 time.Time, xs []db.StatRow, categoryRows []db.Categor
 	}
 	dailyTotal := dailyTotals(byDate, func(r db.StatRow) int64 { return r.TotalSeconds })
 
-	// gaka-6ci: per-axis pies filter out rows whose axis was NULL on the
+	// boom-6ci: per-axis pies filter out rows whose axis was NULL on the
 	// source heartbeat (browser tabs with no file open, AI console tabs,
 	// plugin-less clients). Without this filter, all those null-axis rows
 	// collapse into a bucket named 'Other' (from ingest's COALESCE fallback)
@@ -59,7 +59,7 @@ func ToStatsPayload(t0, t1 time.Time, xs []db.StatRow, categoryRows []db.Categor
 		func(r db.CategoryDailyRow) string { return r.Category },
 		func(r db.CategoryDailyRow) calcStat { return calcStat{r.TotalSeconds, r.Pct, r.DailyPct} })
 
-	// gaka-csx P3: align the (optional) GitHub contribution grid to the SAME
+	// boom-csx P3: align the (optional) GitHub contribution grid to the SAME
 	// day axis as DailyTotal. nil/empty grid ⇒ nil series ⇒ omitted from the
 	// wire (byte-identical to a no-GitHub payload).
 	githubDailyTotal := alignGithubDaily(alignedDays, githubGrid)

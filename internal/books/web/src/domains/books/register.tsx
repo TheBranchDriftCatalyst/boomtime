@@ -21,7 +21,7 @@ import { PageFallback } from "@shared/shared/routing/PageFallback";
 const ConnectionsTab = lazy(() =>
   import("./ConnectionsTab").then((m) => ({ default: m.ConnectionsTab })),
 );
-// gaka-books: read-only library view of the siloed reading_items (Audible now,
+// boom-books: read-only library view of the siloed reading_items (Audible now,
 // Kindle later). Gated in the sidebar on books_enabled; the route itself is
 // always mounted (the page renders a disabled-state card when the flag is off).
 const Books = lazy(() =>

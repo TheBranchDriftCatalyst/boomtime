@@ -1,4 +1,4 @@
-// ai_activity_ginkgo_test.go — ginkgo mirror of ai_activity_test.go (gaka-0vp.13).
+// ai_activity_ginkgo_test.go — ginkgo mirror of ai_activity_test.go (boom-0vp.13).
 // 1:1 case map (4 stdlib TestXxx → 4 Its):
 //
 //	TestAIActivityFiltersNonAIHeartbeats             → "filters heartbeats with no AI signal"

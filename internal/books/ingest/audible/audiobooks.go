@@ -60,7 +60,7 @@ const (
 	libraryPageSize = 300
 
 	// readingFinishedPct: at/above this percent_complete a title counts as finished
-	// even without Audible's is_finished flag (gaka-vvij).
+	// even without Audible's is_finished flag (boom-vvij).
 	readingFinishedPct = 95.0
 )
 
@@ -270,7 +270,7 @@ func (li LibraryItem) toReadingItem(owner string) db.ReadingItem {
 	}
 	// Treat >=95% listened as completed even when Audible's is_finished flag never
 	// flipped — users routinely stop at 99% and never mark a title "finished", so
-	// near-done books were wrongly showing as in-progress. gaka-vvij.
+	// near-done books were wrongly showing as in-progress. boom-vvij.
 	finished := li.IsFinished || li.PercentComplete >= readingFinishedPct
 	status := "reading"
 	switch {
@@ -962,7 +962,7 @@ func (s *Service) hardcoverError(ctx context.Context, owner, op string, err erro
 // logInfo/logWarn resolve the job-scoped logger from ctx (logctx.FromContext),
 // falling back to s.Logger off a job. Threading ctx means every handler line
 // inherits the running job's job_id/kind/owner so the Admin viewer can filter to
-// one job's run (gaka-f0is).
+// one job's run (boom-f0is).
 func (s *Service) logInfo(ctx context.Context, msg string, args ...any) {
 	if l := logctx.FromContext(ctx, s.Logger); l != nil {
 		l.Info(msg, args...)

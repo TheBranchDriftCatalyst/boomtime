@@ -1,6 +1,6 @@
 // CodingProjectsBreakdown — the Overview "Project breakdown" tile, migrated off
 // the old stats endpoint (`api.getStats().projects` → PieChart) onto the
-// cross-domain query DSL (gaka-canon). It issues ONE coding spec —
+// cross-domain query DSL (boom-canon). It issues ONE coding spec —
 //
 //   from(coding)·group(project)·measure(seconds)·bucket(topN + Other)
 //

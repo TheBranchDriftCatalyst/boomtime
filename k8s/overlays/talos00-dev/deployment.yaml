@@ -70,7 +70,7 @@ spec:
           # git branch generator would spin one of these per open branch and
           # make the tag a generator parameter instead of a manual edit. Worth
           # doing only once more than one branch needs previewing at a time.
-          image: ghcr.io/thebranchdriftcatalyst/boomtime:gaka-domain-framework
+          image: ghcr.io/thebranchdriftcatalyst/boomtime:boom-domain-framework
           imagePullPolicy: Always # branch tags are mutable — always re-pull
           args:
             - run

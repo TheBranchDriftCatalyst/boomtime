@@ -96,7 +96,7 @@ export function HourBarChart({ hour, height = 320 }: HourBarChartProps) {
           const nextH = (d.h + 1) % 24;
           const title = `${String(d.h).padStart(2, "0")}:00–${String(nextH).padStart(2, "0")}:00`;
           const r = rank.get(d.h) ?? 0;
-          // gaka-9pt: rankedContent gives us Activity + Share + rank in one
+          // boom-9pt: rankedContent gives us Activity + Share + rank in one
           // call. Empty hours still render a single "Activity: 0" row and no
           // rank (r === 0 makes fmtRank collapse) — keeps the layout stable.
           const { rows, footer } = rankedContent(d.y, total, r, activeHours, secondsToHms, {

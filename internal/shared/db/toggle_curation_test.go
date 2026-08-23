@@ -1,4 +1,4 @@
-// toggle_curation_ginkgo_test.go — ginkgo mirror of toggle_curation_test.go (gaka-0vp.13).
+// toggle_curation_ginkgo_test.go — ginkgo mirror of toggle_curation_test.go (boom-0vp.13).
 // 1:1 case map (7 stdlib TestXxx → 7 Its):
 //
 //	TestToggleCurationRuleHappyPath          → It "ToggleCurationRule: happy path"
@@ -17,7 +17,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = ginkgo.Describe("curation rule toggle (gaka-dfd)", func() {
+var _ = ginkgo.Describe("curation rule toggle (boom-dfd)", func() {
 	ginkgo.It("ToggleCurationRule flips enabled and returns the new value each time", func() {
 		d := openTestDBG()
 		ctx := context.Background()

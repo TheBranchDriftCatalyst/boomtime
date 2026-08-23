@@ -7,7 +7,7 @@ import (
 )
 
 // RegenJobKind is the catalyst-go-jobs kind for a single label-image
-// regeneration (gaka-hney Stage 3 — folds the imagejobs pipeline onto the
+// regeneration (boom-hney Stage 3 — folds the imagejobs pipeline onto the
 // generic DB queue). One job == one label. A label-image job sets its `owner`
 // to the LabelID so the admin status endpoint can pull the latest job per
 // label without parsing JSON payloads, and so re-enqueues dedupe per label.

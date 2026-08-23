@@ -1,5 +1,5 @@
 // InAppProfilePage — the owner's profile dashboard mounted INSIDE the app
-// skeleton (gaka-4ng). Route: /app/profile (under AppShell → sidebar + header).
+// skeleton (boom-4ng). Route: /app/profile (under AppShell → sidebar + header).
 //
 // This is the owner's default way to view + edit their profile, unified with
 // the other in-app dashboards: the full dossier chrome (hero, classification
@@ -58,7 +58,7 @@ export function InAppProfilePage() {
           // `transform` establishes a containing block so the dossier's
           // position:fixed grid/scanline overlays (arasaka/dossier css) and the
           // floating mode toggle stay INSIDE the app content area instead of
-          // escaping over the sidebar/header. gaka-4ng — needs visual QA.
+          // escaping over the sidebar/header. boom-4ng — needs visual QA.
           <div className="relative" style={{ transform: "translateZ(0)" }}>
             <ProfileModeToggle mode={mode} onChange={setMode} />
             {mode === "preview" ? (

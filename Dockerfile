@@ -17,7 +17,7 @@ COPY web/ ./
 # whole repo is present). Copy the single source into the aliased path so tsc +
 # vite resolve it — no duplicate file, still one source of truth.
 COPY internal/boomtime/widget/specs.json /internal/boomtime/widget/specs.json
-# gaka-zp2s / gaka-abg0 Step B: the books domain FE is PHYSICALLY colocated with
+# boom-zp2s / boom-abg0 Step B: the books domain FE is PHYSICALLY colocated with
 # its Go package under internal/books/web/src (outside /web), reached via the
 # `@books/*` alias (web/vite.config.ts + web/tsconfig.app.json) and scanned for
 # Tailwind classes via an @source in web/shared/index.css. The host build imports
@@ -27,7 +27,7 @@ COPY internal/boomtime/widget/specs.json /internal/boomtime/widget/specs.json
 # link the colocated root's node_modules at /web/node_modules.
 COPY internal/books/web/src /internal/books/web/src
 RUN ln -s /web/node_modules /internal/books/web/node_modules
-# gaka-zp2s / gaka-abg0 Step B Phase 2: the boomtime (code) domain FE is
+# boom-zp2s / boom-abg0 Step B Phase 2: the boomtime (code) domain FE is
 # PHYSICALLY colocated with its Go package under internal/boomtime/web/src
 # (outside /web), reached via the `@boomtime/*` alias and scanned for Tailwind
 # via an @source in web/shared/index.css. The host build imports it (the boomtime
@@ -74,7 +74,7 @@ LABEL org.opencontainers.image.title="boomtime" \
       org.opencontainers.image.licenses="Unlicense"
 RUN apk add --no-cache ca-certificates tzdata bash bash-completion && adduser -D -u 10001 boomtime
 COPY --from=server /out/boomtime /usr/local/bin/boomtime
-# Bake shell completions into the image at build time (gaka-0oe.10). Generation
+# Bake shell completions into the image at build time (boom-0oe.10). Generation
 # is offline (no DB) and runs in THIS stage so the binary executes on the target
 # platform — generating in the builder would break cross-arch (buildx) images.
 # Static command/role completion works out of the box; dynamic entity

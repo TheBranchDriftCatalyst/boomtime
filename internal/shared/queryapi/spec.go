@@ -1,5 +1,5 @@
 // Package queryapi is the thin HTTP surface over the internal/query DSL
-// (gaka-174.q). It exposes ONE owner-scoped endpoint — POST /api/v1/query —
+// (boom-174.q). It exposes ONE owner-scoped endpoint — POST /api/v1/query —
 // that maps a typed JSON spec onto a *query.Query, validates it against the
 // domain registry (Compile), runs it, and returns the typed Result as JSON.
 //

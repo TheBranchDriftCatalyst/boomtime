@@ -1,6 +1,6 @@
 package climeta
 
-// Transparent shell-completion layer (gaka-0oe.10), relocated verbatim from
+// Transparent shell-completion layer (boom-0oe.10), relocated verbatim from
 // cmd/boomtime/completion.go so the admin CLI-runner can drive the SAME
 // completion funcs the shell uses (cmd/boomtime re-imports these via thin
 // aliases, so `boomtime completion zsh` behavior is unchanged).

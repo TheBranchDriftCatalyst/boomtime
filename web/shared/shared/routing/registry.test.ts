@@ -1,5 +1,5 @@
 // Proves the registration-driven router reproduces the host app's exact route
-// table (gaka-zp2s). The shell (App.tsx) builds its <Routes> from getRoutes();
+// table (boom-zp2s). The shell (App.tsx) builds its <Routes> from getRoutes();
 // this test asserts that after the host composition registers all three domains
 // (done in test setup via registerHostDomains), the flattened path tree is
 // byte-for-byte what the old static <Routes> list declared — so the refactor is

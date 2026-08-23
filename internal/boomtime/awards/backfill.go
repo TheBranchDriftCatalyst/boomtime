@@ -1,6 +1,6 @@
-// backfill.go: server-side historical award-replay (gaka-hc6.5.1).
+// backfill.go: server-side historical award-replay (boom-hc6.5.1).
 //
-// Unblocks the full delete of the client-side evaluator (gaka-hc6.5) by
+// Unblocks the full delete of the client-side evaluator (boom-hc6.5) by
 // moving the last runtime call site — AdminTab's StreakBackfillSection —
 // off the browser. The FE now POSTs {days: N} and the server walks N days
 // backwards computing the payload as-if-EndDate=D for each and writing
@@ -14,7 +14,7 @@
 //     the full catalog, and calls LogAwards with at=D. Idempotent —
 //     re-running is a no-op via the existing (username, label_id,
 //     period_start) PK.
-//   - Timezone comes from gaka-dg7 resolveUserTZ, same as the /awards
+//   - Timezone comes from boom-dg7 resolveUserTZ, same as the /awards
 //     handlers. A user in Pacific gets Pacific day-boundaries; the
 //     server clock's tz doesn't leak in.
 //   - Response is a summary: {daysProcessed, rowsWritten, skipped, tookMs}.

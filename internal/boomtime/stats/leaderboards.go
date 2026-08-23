@@ -20,7 +20,7 @@ func (h *Handler) Leaderboards(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		// gaka-o4m: the raw leaderboards query hardcodes a 15-min gap cutoff
+		// boom-o4m: the raw leaderboards query hardcodes a 15-min gap cutoff
 		// (no timeLimit param), which is exactly what the rollup captured at
 		// ingest — so summing rollup total_seconds reproduces the raw sum
 		// byte-for-byte whenever the requester's hide + Space rules stay

@@ -1,4 +1,4 @@
-// ProfileChrome — floating dossier controls for /p/:slug (gaka-174.2/.5).
+// ProfileChrome — floating dossier controls for /p/:slug (boom-174.2/.5).
 //
 // One fixed cluster holding the feature-flag "flipper" + the theme switcher,
 // rendered in BOTH read (PublicDashboard) and edit (ProfileEditor) modes.

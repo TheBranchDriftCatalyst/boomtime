@@ -1,4 +1,4 @@
-// GithubStatTiles.tsx (gaka-csx P3) — the FIRST GitHub-only surface on the
+// GithubStatTiles.tsx (boom-csx P3) — the FIRST GitHub-only surface on the
 // Overview. It is a GH-ONLY tile strip, so it obeys invariant case (B):
 //
 //   • Feature entirely off (github_connect_enabled === false) → render NOTHING.
@@ -129,7 +129,7 @@ export function GithubStatTiles() {
 }
 
 /**
- * GithubTilesBody (gaka-2ud P5) — the PURE, presentational 4-tile strip built
+ * GithubTilesBody (boom-2ud P5) — the PURE, presentational 4-tile strip built
  * from an already-fetched GithubStatsPayload. Extracted from GithubStatTiles so
  * the SAME tiles render on the authed Overview (self-fetch wrapper above) and on
  * the PUBLIC profile (publicprofile/GithubCard, which fetches the public mirror

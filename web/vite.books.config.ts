@@ -1,4 +1,4 @@
-// Standalone catalyst-books build (gaka-zp2s). Reuses the host vite config
+// Standalone catalyst-books build (boom-zp2s). Reuses the host vite config
 // verbatim (same plugins, resolve aliases, and manualChunks vendor-splitting)
 // but swaps the HTML entry to index.books.html (which loads src/books-main.tsx,
 // composing ONLY the core + books domains) and emits to dist-books/.

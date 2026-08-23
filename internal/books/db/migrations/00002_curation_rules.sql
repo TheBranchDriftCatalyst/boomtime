@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- curation_rules (gaka-omt2): the cross-domain query DSL's applyCanonicalPins
+-- curation_rules (boom-omt2): the cross-domain query DSL's applyCanonicalPins
 -- (db.LoadPinnedSet: SELECT match_value ... WHERE sender/action/axis + enabled)
 -- reads this per owner/axis. The standalone mounts the query DSL (POST
 -- /api/v1/query) for the books library view, so without this table every library

@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- gaka-wpb: goals — composite predicate-tree targets with cached progress.
+-- boom-wpb: goals — composite predicate-tree targets with cached progress.
 --
 -- One row per (owner, name). `spec` holds the recursive predicate tree as
 -- opaque JSONB (see internal/stats/goals.go for the validated shape).

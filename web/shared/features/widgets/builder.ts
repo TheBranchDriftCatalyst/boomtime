@@ -1,4 +1,4 @@
-// Builder types + spec encoding (gaka-567). Mirrors internal/widget/custom.go:
+// Builder types + spec encoding (boom-567). Mirrors internal/widget/custom.go:
 // keep the WidgetPanelKind / WidgetLayout / WidgetDef shapes in sync — the
 // backend Def decoder validates against the same whitelist.
 

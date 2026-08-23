@@ -1,4 +1,4 @@
-// Proves the STANDALONE books composition (gaka-zp2s) is genuinely books-only:
+// Proves the STANDALONE books composition (boom-zp2s) is genuinely books-only:
 // with VITE_BOOKS_STANDALONE=true, registerBooksAppDomains() yields a nav of
 // Books + Settings ONLY (Overview is gone; Profile is a Sidebar-hardcoded link,
 // not a registry item), the /app index route redirects to /app/books instead of

@@ -1,4 +1,4 @@
--- gaka-dg7: day boundary computed in user-local TZ ($6) so the branch daily
+-- boom-dg7: day boundary computed in user-local TZ ($6) so the branch daily
 -- series lines up with the day series the project-daily-extras + top-level
 -- daily total use. All three must bucket the same way or the FE overlays go
 -- crooked.
@@ -8,7 +8,7 @@
 -- Returns one row per (day, branch) plus the pct/daily_pct windows so the Go
 -- shaper can build ResourceStats aligned to the same day series as DailyTotal.
 -- $1 sender, $2 project, $3 start, $4 end, $5 limit (minutes), $6 IANA tz name.
--- gaka-6ci: branch chart is per-branch — null-branch heartbeats
+-- boom-6ci: branch chart is per-branch — null-branch heartbeats
 -- (browser sessions with no VCS context) shouldn't create an 'Other'
 -- branch bucket that dominates the chart.
 WITH stats AS (

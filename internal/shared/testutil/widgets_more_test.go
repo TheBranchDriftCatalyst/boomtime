@@ -1,12 +1,12 @@
 // widgets_more_test.go — extra coverage for widgets.go / widget_defs.go
-// public-render branches (gaka-d6x.handler). The stdlib widget_defs_test.go
+// public-render branches (boom-d6x.handler). The stdlib widget_defs_test.go
 // (in handler_test) already covers CRUD + scrub. This file targets the
 // public /widget/svg/:uuid/... branches the ginkgo widgets_test.go doesn't:
 //
 //   - The custom kind: /widget/svg/:uuid/custom?spec=<base64> — exercises
 //     IsCustomKind + DecodeDef + RenderCustom + NeedsForDef branches inside
 //     WidgetSvg. Missing spec, malformed spec, and happy-path are all invariants.
-//   - Project-scope hidden → 404 (gaka-6jm.5). Load-bearing on privacy:
+//   - Project-scope hidden → 404 (boom-6jm.5). Load-bearing on privacy:
 //     a curated-away project name cannot be probed by minting-then-fetching.
 //   - Space scope: mint via space + fetch renders 200 (WidgetSvg
 //     WidgetScopeSpace switch branch).
@@ -63,7 +63,7 @@ func mintLinkG(e http.Handler, token, scopeType, scopeRef string) minLinkResp {
 	return out
 }
 
-var _ = Describe("WidgetSvg extras (gaka-d6x.handler)", func() {
+var _ = Describe("WidgetSvg extras (boom-d6x.handler)", func() {
 	Describe("custom-kind branches (?spec=base64(Def))", func() {
 		It("400s when spec is MISSING on the custom kind (DecodeDef must not accept empty)", func() {
 			hz := testutil.NewHarness(GinkgoTB())
@@ -143,7 +143,7 @@ var _ = Describe("WidgetSvg extras (gaka-d6x.handler)", func() {
 		})
 	})
 
-	Describe("project-scope hidden gate (gaka-6jm.5 privacy)", func() {
+	Describe("project-scope hidden gate (boom-6jm.5 privacy)", func() {
 		It("404s AFTER the owner curates the pinned project — id lookup would otherwise 200", func() {
 			hz := testutil.NewHarness(GinkgoTB())
 			e := hz.Router()
@@ -176,7 +176,7 @@ var _ = Describe("WidgetSvg extras (gaka-d6x.handler)", func() {
 			rec = doG(e, http.MethodGet,
 				"/widget/svg/"+link.LinkID+"/stats-card", "", nil)
 			Expect(rec).To(testutil.HaveStatus(http.StatusNotFound),
-				"PRIVACY LEAK (gaka-6jm.5): curated project scope must 404, got %d body=%s",
+				"PRIVACY LEAK (boom-6jm.5): curated project scope must 404, got %d body=%s",
 				rec.Code, rec.Body.String())
 		})
 	})
@@ -401,7 +401,7 @@ var _ = Describe("WidgetSvg extras (gaka-d6x.handler)", func() {
 				"roll on non-uuid must 400: body=%s", rec.Body.String())
 		})
 
-		It("accepts a rename-target project scope AND the minted link renders src-name data under the renamed label (gaka-xuc: LoadRenameSets fallback + expansion)", func() {
+		It("accepts a rename-target project scope AND the minted link renders src-name data under the renamed label (boom-xuc: LoadRenameSets fallback + expansion)", func() {
 			hz := testutil.NewHarness(GinkgoTB())
 			e := hz.Router()
 			user, token := hz.MintUser("wc_rename_scope")
@@ -409,7 +409,7 @@ var _ = Describe("WidgetSvg extras (gaka-d6x.handler)", func() {
 			// Seed raw project 'src-name' with a known-precise 3-hour block so
 			// we can assert the renderer resolved the rename target back to
 			// the source project's activity. If LoadRenameSets always returned
-			// empty (breaking the gaka-xuc fallback) the DB row might still
+			// empty (breaking the boom-xuc fallback) the DB row might still
 			// be created but the SVG would render empty (no rows match the
 			// scope's expanded member set) — the ContainSubstring assertions
 			// below would then fail.
@@ -436,7 +436,7 @@ var _ = Describe("WidgetSvg extras (gaka-d6x.handler)", func() {
 				"/api/v1/users/current/widgets/link?scopeType=project&scopeRef=dst-name",
 				token, nil)
 			Expect(rec).To(testutil.HaveStatus(http.StatusOK),
-				"rename-target scope should be accepted (gaka-xuc): body=%s", rec.Body.String())
+				"rename-target scope should be accepted (boom-xuc): body=%s", rec.Body.String())
 			var minted minLinkResp
 			decodeG(rec, &minted)
 			Expect(minted.LinkID).NotTo(BeEmpty(), "mint returned empty linkId: %s", rec.Body.String())
@@ -519,7 +519,7 @@ var _ = Describe("WidgetSvg extras (gaka-d6x.handler)", func() {
 		})
 	})
 
-	Describe("public-render cache-key owner-prefix invariant (gaka-6jm.3 cache correctness)", func() {
+	Describe("public-render cache-key owner-prefix invariant (boom-6jm.3 cache correctness)", func() {
 		It("curation change BUSTS cached SVG bytes — same URL renders fresh output after a hide rule (owner-prefixed cache sweep)", func() {
 			hz := testutil.NewHarness(GinkgoTB())
 			e := hz.Router()

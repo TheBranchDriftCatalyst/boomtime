@@ -1,7 +1,7 @@
 // Package openapi builds and serves the OpenAPI 3 description of boomtime's
 // HTTP API plus a self-contained interactive explorer UI.
 //
-// Design (see gaka-lfc):
+// Design (see boom-lfc):
 //   - Approach B — hand-authored openapi3.T built via kin-openapi. The spec is
 //     centralized in this file; response schemas are reflected from
 //     internal/model/*.go via openapi3gen so schema drift is impossible unless
@@ -138,7 +138,7 @@ func setRouterEcho(e *echo.Echo) {
 // components) so a single sweep captures the shape of the whole API.
 //
 // After the hand-authored operations, an auto-derive post-pass (option A,
-// gaka-lfc) walks e's registered routes and stubs any (method, path) that
+// boom-lfc) walks e's registered routes and stubs any (method, path) that
 // isn't explicitly documented — so a new route satisfies the drift guard
 // without a hand-written doc.AddOperation entry. When e is nil (Spec called
 // before any router registers, e.g. schema-only unit tests) the pass is
@@ -885,7 +885,7 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 		return op
 	}())
 
-	// ==== PUBLIC PROFILE (gaka-6jm.1) ========================================
+	// ==== PUBLIC PROFILE (boom-6jm.1) ========================================
 	//
 	// The `/api/v1/users/current/profile` pair is the owner-side toggle + slug
 	// CRUD; `/api/public/profile/{slug}` is the auth-less renderer. Payload
@@ -964,7 +964,7 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 				return a
 			}()},
 			"punchcard": refSchema("PunchcardPayload"),
-			// gaka-keb: the owner's persisted dashboard layout, if any.
+			// boom-keb: the owner's persisted dashboard layout, if any.
 			// Omitted from the payload entirely when the owner never saved
 			// a layout — the FE falls back to a default array.
 			"layout": &openapi3.SchemaRef{Value: openapi3.NewObjectSchema()},
@@ -978,7 +978,7 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 		return op
 	}())
 
-	// ==== AWARDS (gaka-mwp-streaks + gaka-hc6) ==============================
+	// ==== AWARDS (boom-mwp-streaks + boom-hc6) ==============================
 	//
 	// Server-side award evaluation + streak ledger + historical backfill.
 	// The own variants require a valid API token; the public variants resolve
@@ -1061,7 +1061,7 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 		return op
 	}())
 
-	// ==== HEALTHZ (gaka-lfc drift backfill — gaka-08m) =======================
+	// ==== HEALTHZ (boom-lfc drift backfill — boom-08m) =======================
 	doc.AddOperation("/healthz", "GET", func() *openapi3.Operation {
 		op := &openapi3.Operation{Tags: []string{tagMeta}, Summary: "Liveness + DB reachability probe",
 			Description: "Unauthenticated probe used by container orchestrators + uptime monitors. Returns {status,uptime,db:{ok,schema},build:{version,commit,branch,buildTime}}. Never returns 500 for DB unreachability — reports ok=false in the envelope so probes can distinguish 'process alive' from 'db up' via 200 body inspection.",
@@ -1070,7 +1070,7 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 		return op
 	}())
 
-	// ==== WORKOUTS + HEALTH SAMPLES (Apple Watch ingest — gaka-08m) =========
+	// ==== WORKOUTS + HEALTH SAMPLES (Apple Watch ingest — boom-08m) =========
 	//
 	// Owner-scoped ingest endpoints for HealthKit data (workouts + raw
 	// samples). Workouts flow through the heartbeats table (ty='workout') so
@@ -1144,7 +1144,7 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 		return op
 	}())
 
-	// ==== ENTITY EXPLORER (gaka-90x — drift backfill gaka-08m) ==============
+	// ==== ENTITY EXPLORER (boom-90x — drift backfill boom-08m) ==============
 	doc.AddOperation("/api/v1/users/current/heartbeats/entities", "GET", func() *openapi3.Operation {
 		op := &openapi3.Operation{Tags: []string{tagExplorer}, Summary: "List entities by axis",
 			Description: "Per-type flat list of entities the caller has heartbeats for (?ty=file|project|...)."}
@@ -1171,7 +1171,7 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 		return op
 	}())
 
-	// ==== AVATARS (gaka-9v4 — drift backfill gaka-08m) ======================
+	// ==== AVATARS (boom-9v4 — drift backfill boom-08m) ======================
 	doc.AddOperation("/api/v1/users/current/avatar/status", "GET", func() *openapi3.Operation {
 		op := &openapi3.Operation{Tags: []string{tagAvatar}, Summary: "Own avatar status",
 			Description: "Reports whether the caller has an avatar pending, ready, or absent."}
@@ -1206,7 +1206,7 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 		return op
 	}())
 
-	// ==== WIDGET DEFS + NAMED SVG (gaka-08m drift backfill) =================
+	// ==== WIDGET DEFS + NAMED SVG (boom-08m drift backfill) =================
 	//
 	// Per-user named widget templates + the public render endpoint for
 	// resolving them.
@@ -1265,13 +1265,13 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 
 	doc.AddOperation("/api/v1/admin/users", "GET", func() *openapi3.Operation {
 		op := &openapi3.Operation{Tags: []string{tagAdmin}, Summary: "List users with roles + effective capabilities",
-			Description: "Admin caps dashboard (gaka-93f.6): every user's role/tier + effective capabilities + disabled status, plus the role→capabilities legend. Admin-gated."}
+			Description: "Admin caps dashboard (boom-93f.6): every user's role/tier + effective capabilities + disabled status, plus the role→capabilities legend. Admin-gated."}
 		setStatus(op, http.StatusOK, rInline("{capabilities, roles, users}.", mapObject()))
 		stdErrors(op, "401", "403", "500")
 		return op
 	}())
 
-	// NOTE: GET /api/v1/admin/metrics (gaka-metrics) is intentionally NOT
+	// NOTE: GET /api/v1/admin/metrics (boom-metrics) is intentionally NOT
 	// documented here. Like the /api/v1/admin/jobs cluster it is registered
 	// conditionally (only when the admin handler has a live DB), so the
 	// OpenAPI drift router — which wires a nil handler to enumerate paths —
@@ -1279,7 +1279,7 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 	// (spec advertises a path the drift router can't register). Same pattern
 	// as the jobs/cli conditionally-registered admin routes.
 
-	// ==== DASHBOARD LAYOUTS (gaka-keb) =======================================
+	// ==== DASHBOARD LAYOUTS (boom-keb) =======================================
 	//
 	// Per-user, per-scope persisted layout JSON for the composable dashboard
 	// grid. Scope is a small allowlist (public_profile today). Layout is
@@ -1323,7 +1323,7 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 		return op
 	}())
 
-	// ==== GOALS (gaka-wpb) ===================================================
+	// ==== GOALS (boom-wpb) ===================================================
 	//
 	// Composite predicate-tree targets with per-goal + batched progress
 	// endpoints. Spec is opaque JSONB validated server-side via
@@ -1472,7 +1472,7 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 		return op
 	}())
 
-	// ==== INTEGRATIONS: WAKATIME KEY (gaka-6jm.2) ============================
+	// ==== INTEGRATIONS: WAKATIME KEY (boom-6jm.2) ============================
 	//
 	// Encrypted-at-rest imported Wakatime API key. Plaintext is NEVER returned
 	// on GET — the shape is metadata-only (hasSavedKey, status, checkedAt).
@@ -1523,7 +1523,7 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 		return op
 	}())
 
-	// ==== USER TIMEZONE (gaka-dg7) ==========================================
+	// ==== USER TIMEZONE (boom-dg7) ==========================================
 	//
 	// Per-user IANA timezone used by every dow/hour/date bucket the server
 	// computes. GET reports both the raw stored value (empty = never picked)
@@ -1628,14 +1628,14 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 		return op
 	}())
 
-	// gaka-myv: shared per-archetype label image bytes. PUBLIC (no auth).
+	// boom-myv: shared per-archetype label image bytes. PUBLIC (no auth).
 	// Cache-Control is `public, max-age=31536000, immutable`; the FE appends
 	// ?v=<generated_at.epoch> to bust the browser cache after a regeneration.
 	// The endpoint IGNORES the ?v query param — it's a routing no-op there
 	// purely for the cache-bust side effect.
 	doc.AddOperation("/api/v1/labels/{id}/image", "GET", func() *openapi3.Operation {
 		op := &openapi3.Operation{Tags: []string{tagProfile}, Summary: "Public label archetype image",
-			Description: "Shared image bytes for a memeification label archetype (one per id, same for every user who earned it). Generated via the ComfyUI shim (gaka-myv). Response is `image/png` (or whatever mime the shim returned). Cache-Control is `public, max-age=31536000, immutable`; the FE busts the cache by appending `?v=<generated_at.epoch>` to the src on every render — the endpoint ignores that param and always serves the current bytes.",
+			Description: "Shared image bytes for a memeification label archetype (one per id, same for every user who earned it). Generated via the ComfyUI shim (boom-myv). Response is `image/png` (or whatever mime the shim returned). Cache-Control is `public, max-age=31536000, immutable`; the FE busts the cache by appending `?v=<generated_at.epoch>` to the src on every render — the endpoint ignores that param and always serves the current bytes.",
 			Security:    &public,
 			Parameters: openapi3.Parameters{
 				pathParamStr("id", "Label id (see internal/labelcatalog for the shipped set: late-night-coder, mac-native, vim-enjoyer, ...)."),
@@ -1646,7 +1646,7 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 		return op
 	}())
 
-	// gaka-myv: Admin tab endpoints. Both require auth + admin allowlist
+	// boom-myv: Admin tab endpoints. Both require auth + admin allowlist
 	// (BOOM_ADMIN_USERS). Non-admins get 403.
 	doc.AddOperation("/api/v1/admin/label-images", "GET", func() *openapi3.Operation {
 		op := &openapi3.Operation{Tags: []string{tagProfile}, Summary: "Admin: label-images feature status",
@@ -1666,7 +1666,7 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 		stdErrors(op, "400", "401", "403", "500")
 		return op
 	}())
-	// gaka-8bz: durable WS stream of the in-memory image-job queue. On
+	// boom-8bz: durable WS stream of the in-memory image-job queue. On
 	// connect the server emits {kind:"snapshot", jobs:[...]} then every
 	// lifecycle event (added/updated/removed) forever. Cookie auth
 	// (refresh_token) — WS handshakes cannot carry Authorization.
@@ -1678,7 +1678,7 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 		return op
 	}())
 
-	// gaka-364.3: DB-backed labels catalog + admin CRUD.
+	// boom-364.3: DB-backed labels catalog + admin CRUD.
 	doc.AddOperation("/api/v1/labels/catalog", "GET", func() *openapi3.Operation {
 		op := &openapi3.Operation{Tags: []string{tagProfile}, Summary: "Public labels catalog + global generation systemPrompt",
 			Description: "Returns {systemPrompt: string, labels: [Label]}. Consumed by the FE evaluator on every public-profile / dashboard mount. PUBLIC — no auth required; the catalog isn't per-user.",
@@ -1889,11 +1889,11 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 		return op
 	}())
 
-	// ==== AUTO-DERIVED STUBS (gaka-lfc, option A) ============================
+	// ==== AUTO-DERIVED STUBS (boom-lfc, option A) ============================
 	//
 	// Every registered route above is hand-authored. This pass backfills a
 	// MINIMAL operation for any route the router registers that isn't already
-	// documented, so a brand-new handler passes the gaka-lfc drift guard with
+	// documented, so a brand-new handler passes the boom-lfc drift guard with
 	// ZERO edits to this file. Explicit entries always win — we never overwrite
 	// an operation that already exists. Add an explicit doc.AddOperation entry
 	// only when you want documented request/response body schemas; the stub is
@@ -1919,7 +1919,7 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 			op := &openapi3.Operation{
 				Tags:    []string{inferAutoTag(p)},
 				Summary: strings.ToUpper(method[:1]) + strings.ToLower(method[1:]) + " " + p,
-				Description: "Auto-derived stub (gaka-lfc option A): this route is registered but " +
+				Description: "Auto-derived stub (boom-lfc option A): this route is registered but " +
 					"has no hand-written spec entry, so request/response bodies are undocumented. " +
 					"Add an explicit doc.AddOperation entry in internal/openapi/spec.go to enrich it.",
 			}

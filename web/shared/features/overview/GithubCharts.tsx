@@ -1,4 +1,4 @@
-// GithubCharts.tsx (gaka-v1k Phase 4) — three GitHub-ONLY chart widgets built
+// GithubCharts.tsx (boom-v1k Phase 4) — three GitHub-ONLY chart widgets built
 // entirely from the ALREADY-CACHED P2 GithubStatsPayload (qk.githubStats):
 //
 //   • GithubCommitsCard    — commits over time (contribution grid → weekly area)
@@ -130,7 +130,7 @@ export function GithubChartsSection() {
 // ===========================================================================
 // Pure chart bodies — take an already-fetched payload, render bare content (no
 // outer Card) so the grid tile / ChartCard supplies the frame. Reused by BOTH
-// the standalone widget cards and the legacy section AND (gaka-2ud P5) the
+// the standalone widget cards and the legacy section AND (boom-2ud P5) the
 // PUBLIC-profile GithubCard.
 //
 // Each body accepts an optional `accent` color so the SAME implementation

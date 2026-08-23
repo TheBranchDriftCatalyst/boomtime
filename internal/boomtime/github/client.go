@@ -1,5 +1,5 @@
 // Package github is the GitHub data fetcher for the per-user stats feature
-// (gaka-anh Phase 2). It talks REST (GET /user, /user/repos, per-repo
+// (boom-anh Phase 2). It talks REST (GET /user, /user/repos, per-repo
 // /languages) + GraphQL (contributionsCollection) using a per-user OAuth token
 // held in memory ONLY for the duration of a call — never logged, never
 // persisted here (the encrypted token lives on users.encrypted_github_token;
@@ -36,7 +36,7 @@ const (
 
 // githubUserAgent is a benign, self-identifying User-Agent. GitHub requires a
 // UA header, and a Cloudflare-proxied edge 403s the stock "Go-http-client" UA
-// (gaka-93f.23) — this mirrors the OIDC/OAuth resolvers' benign-UA approach.
+// (boom-93f.23) — this mirrors the OIDC/OAuth resolvers' benign-UA approach.
 const githubUserAgent = "boomtime-github/1.0 (+https://boomtime.knowledgedump.space)"
 
 // Tunables that keep each sync small — we never page through thousands of
@@ -129,7 +129,7 @@ func (c *Client) FetchRepos(ctx context.Context) ([]Repo, error) {
 	q := url.Values{}
 	q.Set("per_page", fmt.Sprintf("%d", reposPerPage))
 	q.Set("sort", "pushed")
-	// gaka-anh fix: GitHub /user/repos returns 422 when `type` is combined with
+	// boom-anh fix: GitHub /user/repos returns 422 when `type` is combined with
 	// `affiliation` (or `visibility`). Use `affiliation=owner` ALONE to fetch
 	// the user's own repos — don't also set `type`.
 	q.Set("affiliation", "owner")

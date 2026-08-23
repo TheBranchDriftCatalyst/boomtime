@@ -21,7 +21,7 @@ export interface WidgetHostProps {
   tileIndex: number;
   instance: WidgetInstance;
   view?: string;
-  /** Opaque per-widget config blob (gaka-lzr), forwarded to instance.render. */
+  /** Opaque per-widget config blob (boom-lzr), forwarded to instance.render. */
   config?: Record<string, unknown>;
   editable: boolean;
   /** Edit-mode selection state — drives `data-selected` styling. */
@@ -87,7 +87,7 @@ export const WidgetHost = forwardRef<HTMLDivElement, WidgetHostProps>(function W
 
       <header
         className="catalyst-grid-tile__header"
-        // Click (not drag) selects the tile in edit mode (gaka-lzr). RGL still
+        // Click (not drag) selects the tile in edit mode (boom-lzr). RGL still
         // starts a drag on mousedown+move; a plain click falls through here.
         onClick={editable && onSelect ? onSelect : undefined}
       >

@@ -1,6 +1,6 @@
 package db
 
-// Test coverage for award_ledger.go (gaka-se2.5). Pyramid:
+// Test coverage for award_ledger.go (boom-se2.5). Pyramid:
 //   - Unit tests (no DB) for pure helpers: KindDefaultPeriod, ResolvePeriod,
 //     PeriodBounds, periodStepBackward, ValidatePeriod.
 //   - Integration tests (real DB, isolated boomtime_test) for LogAwards,

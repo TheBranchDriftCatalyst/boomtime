@@ -1,4 +1,4 @@
-// client_ginkgo_test.go — ginkgo mirror of client_test.go (gaka-0vp).
+// client_ginkgo_test.go — ginkgo mirror of client_test.go (boom-0vp).
 // 1:1 case map (7 stdlib TestXxx):
 //
 //	TestNewClient_EmptyURL           → NewClient > "empty URL is a no-op"

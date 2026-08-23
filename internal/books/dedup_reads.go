@@ -26,7 +26,7 @@ import (
 )
 
 // init registers the `hardcover dedup-reads` command into the climeta web-run
-// allowlist (gaka-zp2s) — the CLI framework stays domain-free; the books domain
+// allowlist (boom-zp2s) — the CLI framework stays domain-free; the books domain
 // contributes its own vetted command here. Fires whenever package books loads (the
 // composition root pulls it in via internal/domainreg; test binaries blank-import it).
 func init() {

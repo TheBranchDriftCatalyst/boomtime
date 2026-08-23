@@ -1,4 +1,4 @@
-// RateChart.test.tsx — the generic rate-over-time chart (gaka-metrics).
+// RateChart.test.tsx — the generic rate-over-time chart (boom-metrics).
 // Non-tautological invariants:
 //   1. A series WITH points mounts a chart surface (an <svg>) without throwing
 //      — jsdom has no layout so the D3 draw is width-gated, but the surface

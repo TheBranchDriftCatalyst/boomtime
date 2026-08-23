@@ -1,4 +1,4 @@
-// aggregation_invariants_ginkgo_test.go — ginkgo mirror of aggregation_invariants_test.go (gaka-0vp.13).
+// aggregation_invariants_ginkgo_test.go — ginkgo mirror of aggregation_invariants_test.go (boom-0vp.13).
 // 1:1 case map (4 stdlib TestXxx → 4 Its):
 //
 //	TestCategoryDailyPerDaySumsMatchGrandTotal   → It "CategoryDaily per-day sums match grand total + cross-checks GetUserActivity"
@@ -14,7 +14,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = ginkgo.Describe("aggregation invariants (gaka-oew)", func() {
+var _ = ginkgo.Describe("aggregation invariants (boom-oew)", func() {
 	ginkgo.It("CategoryDaily per-day sums match the grand total, and cross-check GetUserActivity", func() {
 		d := openTestDBG()
 		f := newSenderG(d, "catgrand")
@@ -55,7 +55,7 @@ var _ = ginkgo.Describe("aggregation invariants (gaka-oew)", func() {
 		Expect(totalStatSeconds(act)).To(Equal(grand))
 	})
 
-	ginkgo.It("GetTotalTimeBetween: per-window sums correct and tenant-isolated (regression: gaka-6yr unnest ambiguity)", func() {
+	ginkgo.It("GetTotalTimeBetween: per-window sums correct and tenant-isolated (regression: boom-6yr unnest ambiguity)", func() {
 		d := openTestDBG()
 		f := newSenderG(d, "ttbtwn")
 		sender := f.Sender()

@@ -11,7 +11,7 @@ func TestParseSearchCandidates(t *testing.T) {
 	// (dropped). Defensive parsing means missing fields just yield empty values.
 	// The REAL Hardcover shape (verified 2026-08): document.image is an OBJECT
 	// ({url}), not a string — declaring it string once failed the whole unmarshal →
-	// 0 results (gaka-nq2m). An EMPTY image object must yield CoverURL "".
+	// 0 results (boom-nq2m). An EMPTY image object must yield CoverURL "".
 	raw := json.RawMessage(`{
       "hits": [
         {"document": {"id": "101", "title": "Project Hail Mary",

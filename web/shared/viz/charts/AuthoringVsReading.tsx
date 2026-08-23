@@ -81,7 +81,7 @@ export function AuthoringVsReading({
         .attr("stroke", card)
         .attr("stroke-width", 1)
         .on("mousemove", (event, d) => {
-          // gaka-9pt: shared time+share builder — same shape everywhere.
+          // boom-9pt: shared time+share builder — same shape everywhere.
           showTip(
             event,
             tooltipHtml({
@@ -166,7 +166,7 @@ export function AuthoringVsReading({
           .style("font-size", "10px")
           .text("Authoring ratio over time");
 
-        // gaka-9pt: hover targets on the line. Previously the ratio-over-time
+        // boom-9pt: hover targets on the line. Previously the ratio-over-time
         // line was silent; now every point exposes its date + ratio %. Use
         // transparent-but-larger circles as the hit target so pointing at the
         // line (not exactly the vertex) still fires.

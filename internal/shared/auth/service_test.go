@@ -1,4 +1,4 @@
-// service_test.go — gaka-se2.4 SECURITY-CRITICAL integration coverage for
+// service_test.go — boom-se2.4 SECURITY-CRITICAL integration coverage for
 // the auth.CreateUser / CreateAPIToken / VerifyUserCredentials trio that
 // both the CLI and HTTP register/login paths compose over.
 //
@@ -112,7 +112,7 @@ func registerUserCleanup(database *db.DB, username string) {
 	})
 }
 
-var _ = Describe("CreateUser (gaka-se2.4)", func() {
+var _ = Describe("CreateUser (boom-se2.4)", func() {
 	It("persists the argon2id hash of the password — plaintext never lands in the DB", func() {
 		database := openServiceTestDB()
 		ctx := context.Background()
@@ -173,7 +173,7 @@ var _ = Describe("CreateUser (gaka-se2.4)", func() {
 	})
 })
 
-var _ = Describe("CreateAPIToken (gaka-se2.4)", func() {
+var _ = Describe("CreateAPIToken (boom-se2.4)", func() {
 	It("returns a non-empty raw token AND persists only its SHA-256 (raw never lands in DB)", func() {
 		database := openServiceTestDB()
 		ctx := context.Background()
@@ -189,7 +189,7 @@ var _ = Describe("CreateAPIToken (gaka-se2.4)", func() {
 
 		// Read the stored hashed_token back — must be the SHA-256 of ToBase64(raw),
 		// NOT the raw bytes themselves. This is what makes a DB read useless to
-		// an attacker (gaka-b5x.2).
+		// an attacker (boom-b5x.2).
 		var storedHashed []byte
 		var tokenName *string
 		Expect(database.Pool.QueryRow(ctx,
@@ -203,7 +203,7 @@ var _ = Describe("CreateAPIToken (gaka-se2.4)", func() {
 			"CRITICAL: base64(raw) landed unmodified — must be SHA-256 hashed")
 		// And it MUST equal SHA-256(base64(raw)) — the exact contract.
 		Expect(storedHashed).To(Equal(HashToken(ToBase64(raw))),
-			"hashed_token must be SHA-256(ToBase64(raw)) per gaka-b5x.2")
+			"hashed_token must be SHA-256(ToBase64(raw)) per boom-b5x.2")
 		Expect(len(storedHashed)).To(Equal(32), "SHA-256 output is 32 bytes")
 
 		// Optional name is stored so the tokens list can render it.
@@ -231,7 +231,7 @@ var _ = Describe("CreateAPIToken (gaka-se2.4)", func() {
 	})
 })
 
-var _ = Describe("service error propagation (gaka-se2.4 infra failures)", func() {
+var _ = Describe("service error propagation (boom-se2.4 infra failures)", func() {
 	// These specs prove that the composed service functions actually surface
 	// the underlying db-layer errors (rather than swallowing / mislabelling
 	// them). We close the pool BEFORE the call so every db.* op fails with a
@@ -272,7 +272,7 @@ var _ = Describe("service error propagation (gaka-se2.4 infra failures)", func()
 	})
 })
 
-var _ = Describe("VerifyUserCredentials (gaka-se2.4 user-enumeration defense)", func() {
+var _ = Describe("VerifyUserCredentials (boom-se2.4 user-enumeration defense)", func() {
 	It("returns nil for a correct username + password pair", func() {
 		database := openServiceTestDB()
 		ctx := context.Background()

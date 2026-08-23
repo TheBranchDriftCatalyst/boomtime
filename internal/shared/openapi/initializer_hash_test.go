@@ -1,7 +1,7 @@
 // initializer_hash_test.go — byte-identity pin for the extracted
-// swagger-initializer.js (gaka-8tn.1).
+// swagger-initializer.js (boom-8tn.1).
 //
-// Before gaka-8tn.1 the initializer JS lived as a 1000-LOC raw-string
+// Before boom-8tn.1 the initializer JS lived as a 1000-LOC raw-string
 // constant inside ui.go. This test pins the SHA-256 of what UIHandler
 // actually serves at /swagger-initializer.js so that:
 //
@@ -42,7 +42,7 @@ import (
 // extraction dropped bytes (unintentional: bisect and restore).
 const initializerSHA256 = "997c2ecb1371edb7cf86fd209a3f3472c5fa15618c3e801c892a67a8d33e0073"
 
-var _ = Describe("openapi.UIHandler served initializer bytes (gaka-8tn.1)", func() {
+var _ = Describe("openapi.UIHandler served initializer bytes (boom-8tn.1)", func() {
 	It("serves swagger-initializer.js whose SHA-256 matches the pre-refactor pin", func() {
 		h := openapi.UIHandler("/api/docs")
 		req := httptest.NewRequest(http.MethodGet, "/api/docs/swagger-initializer.js", nil)

@@ -12,7 +12,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/metrics"
 )
 
-// AdminMetrics returns a JSON view of the Prometheus registry (gaka-metrics)
+// AdminMetrics returns a JSON view of the Prometheus registry (boom-metrics)
 // for the admin Metrics tab. It Gather()s internal/metrics.Registry — the SAME
 // registry served at /metrics for the cluster scrape — and flattens it into a
 // small, FE-friendly shape: one family per metric, each with its samples

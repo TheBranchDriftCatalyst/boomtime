@@ -1,6 +1,6 @@
 // handler_helpers_test.go — internal-package (package handler) coverage
 // for the small helpers that remain on the composition facade after
-// gaka-8tn phase 8: statsCacheTTL env parsing + the setter methods
+// boom-8tn phase 8: statsCacheTTL env parsing + the setter methods
 // (SetLabelImagesWorker / SetImageJobQueue).
 //
 // The former resolveOwnerFromCookie / loadSpace / resolveUser / cachedJSON
@@ -52,6 +52,6 @@ var _ = Describe("statsCacheTTL (BOOM_STATS_CACHE_TTL)", func() {
 	})
 })
 
-// gaka-zp2s: the SetLabelImagesWorker / SetImageJobQueue post-construction-setter
+// boom-zp2s: the SetLabelImagesWorker / SetImageJobQueue post-construction-setter
 // invariants moved with those setters onto boomtime.Module (its admin handler); see
 // internal/boomtime/admin.

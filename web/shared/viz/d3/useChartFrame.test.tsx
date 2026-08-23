@@ -1,4 +1,4 @@
-// useChartFrame.test.tsx (gaka-3nw) — regression: the ResizeObserver must bind
+// useChartFrame.test.tsx (boom-3nw) — regression: the ResizeObserver must bind
 // when the measured host div mounts LATER than the first render.
 //
 // The real bug: charts render <EmptyChart> (which mounts no ChartSurface, so
@@ -44,7 +44,7 @@ function Probe({ attach }: { attach: boolean }) {
   );
 }
 
-describe("useChartFrame (gaka-3nw)", () => {
+describe("useChartFrame (boom-3nw)", () => {
   it("measures width when the host mounts LATER than the first render", async () => {
     const { getByTestId, rerender } = render(<Probe attach={false} />);
     // EmptyChart phase — no host mounted, nothing measured.

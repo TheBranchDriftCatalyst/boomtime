@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- gaka-dg7: per-user IANA timezone for badge/streak/daily-rollup calculations.
+-- boom-dg7: per-user IANA timezone for badge/streak/daily-rollup calculations.
 --
 -- Before this migration, every SQL that pulled dow/hour/date out of time_sent
 -- did so in UTC. Result: a US-Pacific user's 22:00 local (06:00 UTC) never

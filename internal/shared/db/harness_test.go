@@ -239,7 +239,7 @@ func scalarCountG(d *DB, ctx context.Context, q, sender string) int {
 	return n
 }
 
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
+// -- helpers restored from stdlib partner (boom-0vp.17) --
 func mkSender(prefix string) string {
 	return prefix + "_" + time.Now().Format("150405.000000000")
 }

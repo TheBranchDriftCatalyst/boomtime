@@ -95,7 +95,7 @@ describe("BooksByGenreTile", () => {
     expect(await screen.findByText("Failed to load genres.")).toBeInTheDocument();
   });
 
-  // gaka-canon: the genre donut legend exposes a pin toggle per genre (never on
+  // boom-canon: the genre donut legend exposes a pin toggle per genre (never on
   // the "Other" roll-up). Clicking pins that genre via the curation endpoint.
   it("renders a pin toggle per genre legend row (not Other) and pins with axis=genre", async () => {
     resolveWith({

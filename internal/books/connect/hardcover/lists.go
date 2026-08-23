@@ -34,7 +34,7 @@ type UserList struct {
 
 // list_books(limit: 2000) — an inline LITERAL, not a $variable: Hardcover's
 // server-side Typesense/Hasura args can silently mishandle bound variables (the
-// search bug gaka-nq2m), so per-list membership uses a generous literal cap. Real
+// search bug boom-nq2m), so per-list membership uses a generous literal cap. Real
 // lists are tiny, so the tail is never dropped in practice.
 const userListsQuery = `query Lists($u: Int!, $o: Int!, $l: Int!) {
   lists(where: {user_id: {_eq: $u}}, order_by: {id: asc}, offset: $o, limit: $l) {

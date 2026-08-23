@@ -112,7 +112,7 @@ func TestSweep(t *testing.T) {
 	// reading book: status reading, progress = percentageRead, not finished,
 	// Amazon title/authors/cover. Ingest is Amazon-only now — it carries NO
 	// Hardcover linkage even when a resolver is supplied (linkage is the
-	// cache-first hardcover-match step's job, not the ingest's). gaka-wzgr.
+	// cache-first hardcover-match step's job, not the ingest's). boom-wzgr.
 	r := byASIN["ASIN_READING"]
 	if r.Item.Source != "kindle" {
 		t.Fatalf("source: want kindle, got %q", r.Item.Source)

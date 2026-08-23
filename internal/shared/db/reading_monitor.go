@@ -1,5 +1,5 @@
 // reading_monitor.go: DB accessors for the PERSISTENT server-side Kindle
-// reading-monitor (gaka-books §5.1). Two concerns, both siloed on the user:
+// reading-monitor (boom-books §5.1). Two concerns, both siloed on the user:
 //
 //   - the per-user toggle + toast mode (users.reading_monitor_enabled /
 //     reading_monitor_mode) — what the admin endpoint reads/writes and what the

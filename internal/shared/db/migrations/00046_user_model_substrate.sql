@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- User-model substrate (gaka-0oe.1 / gaka-93f). Additive + default-safe:
+-- User-model substrate (boom-0oe.1 / boom-93f). Additive + default-safe:
 --   role         TEXT        NOT NULL DEFAULT 'full'
 --   capabilities JSONB       NOT NULL DEFAULT '{}'::jsonb
 --   disabled_at  TIMESTAMPTZ NULL

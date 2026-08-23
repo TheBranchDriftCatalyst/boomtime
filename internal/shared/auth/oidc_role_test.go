@@ -1,4 +1,4 @@
-// Unit tests for the OIDC group→role mapping (gaka-0oe.11) — pure logic, the
+// Unit tests for the OIDC group→role mapping (boom-0oe.11) — pure logic, the
 // deterministic core of tier assignment from Authentik groups.
 package auth
 

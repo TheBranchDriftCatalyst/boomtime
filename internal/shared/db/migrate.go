@@ -35,7 +35,7 @@ func migrateDB(ctx context.Context, sqldb *sql.DB) error {
 }
 
 // MigrateURLFS is MigrateURL against a CALLER-SUPPLIED migration FS instead of
-// the host's embedded set (gaka-zp2s books-standalone). The STANDALONE
+// the host's embedded set (boom-zp2s books-standalone). The STANDALONE
 // catalyst-books binary uses it to apply its own books-only schema
 // (internal/books/db.MigrationsFS) to a fresh books-only database — the host's
 // full migration set (users / wakatime / stats / …) is deliberately NOT applied

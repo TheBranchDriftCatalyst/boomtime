@@ -1,4 +1,4 @@
-// NotificationsProvider — the per-user notification store (gaka-books).
+// NotificationsProvider — the per-user notification store (boom-books).
 // Subscribes ONCE to the domain-agnostic notify stream (/api/v1/notify/ws), raises
 // a sonner toast per event (as before), AND keeps a viewable list surfaced by the
 // header bell + panel.

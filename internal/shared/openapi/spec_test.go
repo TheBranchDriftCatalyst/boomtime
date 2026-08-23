@@ -1,4 +1,4 @@
-// spec_ginkgo_test.go — ginkgo mirror of spec_test.go (gaka-0vp).
+// spec_ginkgo_test.go — ginkgo mirror of spec_test.go (boom-0vp).
 // 1:1 case map (4 stdlib TestXxx):
 //
 //	TestSpecBuildsAndValidates            → Spec > "builds + validates + round-trips"

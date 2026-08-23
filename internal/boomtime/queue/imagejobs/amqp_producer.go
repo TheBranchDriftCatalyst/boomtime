@@ -1,5 +1,5 @@
 // amqp_producer.go — API-side Enqueuer for the worker-topology decoupling
-// (gaka-8bz follow-up). Replaces Registry's welded enqueue->jobsCh->Pool
+// (boom-8bz follow-up). Replaces Registry's welded enqueue->jobsCh->Pool
 // path with an AMQP publish a separate worker pod consumes, and replaces
 // Registry's in-memory byLabel dedup map with a Dragonfly/Redis SET NX
 // lock so the same per-label idempotency holds across pods. See

@@ -40,7 +40,7 @@ duplication, and reorganize the Admin section for CX.
 ### 1.1 The shell + scroll model
 
 Entry: `web/src/main.tsx` → `createBrowserRouter` (data router, migrated in
-gaka-ie3 to unlock `useBlocker`) with a single `RootLayout` route whose child is
+boom-ie3 to unlock `useBlocker`) with a single `RootLayout` route whose child is
 a `path:"*"` catch-all lazy-loading `AppRoutes` (`web/src/app/App.tsx`). The
 classic `<Routes>` tree lives in `AppRoutes`; `/app/*` renders inside
 `<AppShell>` behind `<ProtectedRoute>`.

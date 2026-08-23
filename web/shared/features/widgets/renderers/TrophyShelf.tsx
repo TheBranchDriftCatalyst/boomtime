@@ -1,4 +1,4 @@
-// TrophyShelf — lazy WebGL boundary for the 3D award medallions (gaka-174.5).
+// TrophyShelf — lazy WebGL boundary for the 3D award medallions (boom-174.5).
 //
 // Wraps catalyst-ui's <DossierTrophyShelf> (the R3F coin scene). Only loads
 // three/R3F when there are awards to show AND the client supports WebGL and

@@ -1,7 +1,7 @@
 // testhelpers_test.go — ginkgo test helpers local to the awards
 // package's external mirror suite (package awards_test). Mirror of the
 // same-named helpers in internal/handler/testhelpers_test.go — the
-// awards domain (gaka-8tn phase 4b) keeps a private copy so it's
+// awards domain (boom-8tn phase 4b) keeps a private copy so it's
 // self-contained until phase 8 promotes these to a shared
 // internal/testutil/handlerhelpers package.
 package awards_test

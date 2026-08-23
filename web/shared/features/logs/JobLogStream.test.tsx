@@ -1,4 +1,4 @@
-// JobLogStream.test.tsx — the FINISHED-job path (gaka-hney): a done/failed job
+// JobLogStream.test.tsx — the FINISHED-job path (boom-hney): a done/failed job
 // renders its DURABLE stored logs (GET .../logs), and the trash button deletes
 // just the stored object (DELETE .../logs) then drops to the empty state.
 //

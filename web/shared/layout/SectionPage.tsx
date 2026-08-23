@@ -1,5 +1,5 @@
 // SectionPage — the shared layout for a SECTION: a page that owns a rail of
-// sub-destinations plus a body that swaps between them (gaka-4x33).
+// sub-destinations plus a body that swaps between them (boom-4x33).
 //
 // Admin and Settings are both this shape, and both used to hand-roll it by
 // hoisting a grouped tab strip into the app HeaderBar. This composes the same
@@ -18,7 +18,7 @@
 // Three things it fixes structurally:
 //
 //   · The rail lives INSIDE the content column, so section nav can never again
-//     stretch the shell grid and clip the app header's controls (gaka-c26s).
+//     stretch the shell grid and clip the app header's controls (boom-c26s).
 //   · The title row is rendered ONCE, here, from registry metadata — so tabs
 //     stop each inventing their own (three tabs had three different header
 //     treatments) and the label in the rail always matches the title above the

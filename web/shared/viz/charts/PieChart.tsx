@@ -78,7 +78,7 @@ export function PieChart({ items, height = 320 }: PieChartProps) {
         .on("mousemove", (event, d) => {
           const share = (d.data.totalSeconds / total) * 100;
           const rank = sortedIndex.get(d.data.name) ?? 0;
-          // gaka-7m4: the synthesized "Other (N more)" slice carries the tail
+          // boom-7m4: the synthesized "Other (N more)" slice carries the tail
           // in otherMembers. Show the per-member breakdown instead of the
           // generic Time/Share row so hovers reveal what got collapsed.
           if (d.data.otherMembers && d.data.otherMembers.length > 0) {

@@ -1,4 +1,4 @@
-// db.go — CRUD accessors for user-defined composite goals (gaka-wpb).
+// db.go — CRUD accessors for user-defined composite goals (boom-wpb).
 //
 // One row per (owner, name). `spec` is an opaque JSONB blob validated
 // upstream by internal/goals/eval.go before we ever see it; from this

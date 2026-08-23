@@ -14,7 +14,7 @@ func ToLeaderboardsPayload(rows []db.LeaderboardRow) model.LeaderboardsPayload {
 	// group by user (global)
 	global := mkGlobalList(groupBySender(rows))
 
-	// group by language, then by user within each language. gaka-6ci: skip
+	// group by language, then by user within each language. boom-6ci: skip
 	// rows whose source heartbeat had NULL language (browser/AI-console
 	// sessions) so per-language leaderboards don't include a leaderboard
 	// titled 'Other' that just ranks "who browses the most". The global

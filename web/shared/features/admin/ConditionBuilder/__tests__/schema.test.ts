@@ -1,4 +1,4 @@
-// schema.test.ts — Zod schema round-trip + depth-cap tests (gaka-6uf).
+// schema.test.ts — Zod schema round-trip + depth-cap tests (boom-6uf).
 // Mirrors the Go table tests in internal/labels/validate_test.go — every
 // primitive should round-trip cleanly, malformed shapes should reject
 // with the same JSON-pointer path the server would emit.

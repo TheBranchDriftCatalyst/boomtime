@@ -1,4 +1,4 @@
-// useDashboardEditStore (gaka-lzr, Phase 4) — the local edit store for the
+// useDashboardEditStore (boom-lzr, Phase 4) — the local edit store for the
 // in-app dashboard editor: a reducer + BOUNDED undo/redo history over
 // `{ layout, selectedKey }`.
 //

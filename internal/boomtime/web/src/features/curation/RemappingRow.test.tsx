@@ -7,7 +7,7 @@ import { server } from "@shared/test/msw/server";
 import { http, HttpResponse } from "@shared/test/msw/handlers";
 import type { CurationRule } from "@shared/types/api";
 
-// gaka-dfd: eyeball toggle on curation rows. The row renders an EyeOff icon
+// boom-dfd: eyeball toggle on curation rows. The row renders an EyeOff icon
 // when the rule is enabled ("click to pause") and an Eye icon when disabled
 // ("click to resume"). Clicking POSTs {enabled: !current} to the toggle
 // endpoint. The row's opacity dims when paused so the "not doing anything"
@@ -32,7 +32,7 @@ function makeRule(overrides: Partial<CurationRule> = {}): CurationRule {
 // mount inside a router. `withRouter: true` is enough.
 const RENDER_OPTS = { withRouter: true };
 
-describe("RemappingRow — toggle (gaka-dfd)", () => {
+describe("RemappingRow — toggle (boom-dfd)", () => {
   it("renders EyeOff when enabled and Eye when disabled", () => {
     const noop = () => undefined;
     const { rerender } = renderWithProviders(

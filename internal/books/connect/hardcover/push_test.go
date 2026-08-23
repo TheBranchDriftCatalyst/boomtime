@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// push_test.go — pins the continuous-progress push (gaka-books A):
+// push_test.go — pins the continuous-progress push (boom-books A):
 //   - ReadInput.object() includes the progress fields when set and OMITS them
 //     when nil (a partial update must never null out Hardcover data).
 //   - PushProgress builds status=reading + the right progress payload, deriving

@@ -1,6 +1,6 @@
 // testhelpers_test.go — package-goals mirrors of the ginkgo test helpers
 // that internal/db/harness_test.go defines for the db-package tests
-// (gaka-8tn phase 2b). Kept in `package goals_test` so they compose with
+// (boom-8tn phase 2b). Kept in `package goals_test` so they compose with
 // testutil (which imports db) without creating an import cycle.
 //
 // The helpers are shims — the assertions and Describe/It bodies of the

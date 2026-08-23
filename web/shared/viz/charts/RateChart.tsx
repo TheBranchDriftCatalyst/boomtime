@@ -1,5 +1,5 @@
 // RateChart — a GENERIC "rate over time" area+line chart for one metric series
-// (gaka-metrics). It renders ANY internal/metrics series: counter series show a
+// (boom-metrics). It renders ANY internal/metrics series: counter series show a
 // per-minute event rate, gauge series show the last observed value per minute.
 // New backend metrics need ZERO frontend work — the Metrics tab maps each
 // series straight onto this component.

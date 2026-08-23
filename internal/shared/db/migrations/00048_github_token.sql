@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- Per-user GitHub OAuth-App connection (gaka-2ip Phase 1). Mirrors the
+-- Per-user GitHub OAuth-App connection (boom-2ip Phase 1). Mirrors the
 -- encrypted-at-rest shape of the Wakatime key columns (migrations 00023/00024):
 --
 --   encrypted_github_token  — AES-256-GCM ciphertext of the user's GitHub OAuth

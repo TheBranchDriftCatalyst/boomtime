@@ -1,5 +1,5 @@
 // books_diagnostics.go: an admin-only "dump everything this source returns" tool
-// (gaka-books). It runs raw signed PROBES against the Audible + Kindle endpoints
+// (boom-books). It runs raw signed PROBES against the Audible + Kindle endpoints
 // using the admin's own Amazon device credential and returns each response
 // verbatim (status + parsed JSON or raw text), so we can eyeball every field a
 // source exposes before committing it to the reading_items model. This is also

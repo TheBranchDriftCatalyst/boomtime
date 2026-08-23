@@ -13,7 +13,7 @@ interface ContributionCalendarProps {
   // RAW daily series (NOT weekly-bucketed): parallel arrays.
   dates: string[];
   values: number[]; // seconds per day
-  // gaka-csx P3 / gaka-nmk: OPTIONAL GitHub contribution-count overlay, aligned
+  // boom-csx P3 / boom-nmk: OPTIONAL GitHub contribution-count overlay, aligned
   // index-for-index to `dates`/`values`. When ABSENT the render is
   // byte-identical to the coding-time-only calendar (the additive invariant):
   // no extra DOM, no message. When PRESENT, each day with ≥1 commit gets the
@@ -23,10 +23,10 @@ interface ContributionCalendarProps {
   ghValues?: number[];
 }
 
-// gaka-nmk: bumped 13 → 15 so a 1–2 digit commit count fits legibly in-cell.
+// boom-nmk: bumped 13 → 15 so a 1–2 digit commit count fits legibly in-cell.
 const CELL = 15;
 const GAP = 3;
-// gaka-nmk: below this cell size the in-cell count would be cramped/illegible,
+// boom-nmk: below this cell size the in-cell count would be cramped/illegible,
 // so we fall back to the tooltip only (which still carries the commits row).
 const MIN_CELL_FOR_GH_LABEL = 12;
 // Near-white label + dark halo for the GH commit count. Chosen over the
@@ -50,7 +50,7 @@ export function ContributionCalendar({ dates, values, ghValues }: ContributionCa
 
   // The overlay is active ONLY when a ghValues array is supplied. Absent ⇒ the
   // draw below never appends a single overlay element, so the DOM is
-  // byte-identical to the coding-time-only calendar (gaka-csx invariant A).
+  // byte-identical to the coding-time-only calendar (boom-csx invariant A).
   const ghActive = Array.isArray(ghValues);
   const days = useMemo(
     () =>
@@ -118,7 +118,7 @@ export function ContributionCalendar({ dates, values, ghValues }: ContributionCa
         .attr("height", CELL)
         .attr("rx", 2)
         .attr("fill", emptyCell);
-      // gaka-9pt: rank ACTIVE days by seconds desc. Ranking against every day
+      // boom-9pt: rank ACTIVE days by seconds desc. Ranking against every day
       // in the window (many 0-seconds days on quiet ranges) would make even
       // top days look unimportant; the calendar is exactly about "which days
       // were my best?".
@@ -161,7 +161,7 @@ export function ContributionCalendar({ dates, values, ghValues }: ContributionCa
             rows0 = [{ label: "Activity", value: "No activity" }];
             footer = undefined;
           }
-          // gaka-csx P3: surface the day's GitHub commits alongside coding time
+          // boom-csx P3: surface the day's GitHub commits alongside coding time
           // when the overlay is active. Only appears when there were commits, so
           // the tooltip stays quiet on GH-empty days (and identical when the
           // overlay is absent entirely).
@@ -186,7 +186,7 @@ export function ContributionCalendar({ dates, values, ghValues }: ContributionCa
         })
         .on("mouseleave", hideTip);
 
-      // gaka-nmk: GitHub commit overlay, now the COUNT as a text label instead
+      // boom-nmk: GitHub commit overlay, now the COUNT as a text label instead
       // of the old green corner triangle (which was invisible green-on-teal).
       // One label per day that had commits, centered in the cell, drawn over
       // the coding-time fill. Rendered ONLY when the overlay is active, there is
@@ -262,7 +262,7 @@ export function ContributionCalendar({ dates, values, ghValues }: ContributionCa
 
   if (days.length === 0) return <EmptyChart height={svgHeight} />;
 
-  // gaka-k2p: always left-align. Previously a short window was centered,
+  // boom-k2p: always left-align. Previously a short window was centered,
   // which stranded a big empty white gap to the LEFT of the cells on the
   // public dashboard's full-bleed h=3 calendar card. Left-aligning keeps
   // the axis labels flush and lets long windows scroll horizontally in

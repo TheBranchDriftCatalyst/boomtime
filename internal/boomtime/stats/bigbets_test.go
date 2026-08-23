@@ -1,4 +1,4 @@
-// bigbets_ginkgo_test.go — ginkgo mirror of bigbets_test.go (gaka-tst-ginkgo).
+// bigbets_ginkgo_test.go — ginkgo mirror of bigbets_test.go (boom-tst-ginkgo).
 // 1:1 case map (7 stdlib TestXxx):
 //
 //	TestCategoriesFoldIn      → ToStatsPayload categories > "folds category-daily rows aligned to day series"

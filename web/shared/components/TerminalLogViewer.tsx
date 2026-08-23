@@ -16,7 +16,7 @@ interface TerminalLogViewerProps {
   className?: string;
 }
 
-/** TerminalLogViewer (gaka-hney.5): a dark, monospace, auto-scrolling log/terminal
+/** TerminalLogViewer (boom-hney.5): a dark, monospace, auto-scrolling log/terminal
  * panel that streams appended output live. Presentational + reusable — the CLI
  * runner and the jobs UI (S2) both feed it. */
 export function TerminalLogViewer({

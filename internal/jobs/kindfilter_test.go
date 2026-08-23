@@ -27,7 +27,7 @@ func TestDeriveKindFilter(t *testing.T) {
 	}{
 		{
 			// A dedicated worker claims ONLY the offload kinds, so scaling to zero
-			// can't orphan a server-resident/scheduled kind (gaka-caxl).
+			// can't orphan a server-resident/scheduled kind (boom-caxl).
 			name: "worker derives include=offload", role: "worker",
 			wantInclude: offload, wantExclude: nil,
 		},

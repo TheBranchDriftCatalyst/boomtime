@@ -1,4 +1,4 @@
-// template_rename_ginkgo_test.go — ginkgo mirror of template_rename_test.go (gaka-0vp.13).
+// template_rename_ginkgo_test.go — ginkgo mirror of template_rename_test.go (boom-0vp.13).
 // 1:1 case map (5 stdlib TestXxx → 5 Its; NormalizeTemplate uses DescribeTable Entries):
 //
 //	TestNormalizeTemplate                     → DescribeTable "NormalizeTemplate" 10 entries

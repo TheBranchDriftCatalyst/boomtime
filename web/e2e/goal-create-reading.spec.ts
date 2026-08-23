@@ -14,7 +14,7 @@ import {
 } from "./goals-helpers";
 
 // goal-create-reading — the READING half of the cross-domain builder, plus the
-// gaka-bs5l regression guard: a reading leaf must STAY reading through a
+// boom-bs5l regression guard: a reading leaf must STAY reading through a
 // KindSwitcher round-trip (wrap in a group, unwrap) AND through a later edit —
 // it must never silently revert to a coding axis.
 const GOAL_NAME = "E2E Reading Goal";
@@ -46,7 +46,7 @@ test("creates a Listening-time reading goal that survives a Kind round-trip", as
 
   await setTarget(dialog, "3h");
 
-  // gaka-bs5l: wrap the reading leaf in an AND group, then unwrap back to a
+  // boom-bs5l: wrap the reading leaf in an AND group, then unwrap back to a
   // single Time leaf. It MUST remain reading (recovered via readingLeafOf), not
   // fall back to the coding default.
   await pickOption(page, kindSwitcher(dialog, "Time on axis"), "All of (AND)");

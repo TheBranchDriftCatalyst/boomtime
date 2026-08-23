@@ -1,6 +1,6 @@
 // Package server: CORS allowlist config isolated from server wiring.
 //
-// gaka-n5r: the previous implementation used UnsafeAllowOriginFunc to reflect
+// boom-n5r: the previous implementation used UnsafeAllowOriginFunc to reflect
 // ANY Origin back with Access-Control-Allow-Credentials=true. An attacker page
 // on evil.example.com could then read credentialed responses from a victim's
 // local boomtime instance (login response body leaks the fresh access token).

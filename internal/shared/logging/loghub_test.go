@@ -1,4 +1,4 @@
-// loghub_ginkgo_test.go — ginkgo mirror of loghub_test.go (gaka-0vp).
+// loghub_ginkgo_test.go — ginkgo mirror of loghub_test.go (boom-0vp).
 // 1:1 case map (11 stdlib TestXxx):
 //
 //	TestLogHubPublishDeliversToSubscribers   → LogHub > "Publish delivers to every subscriber"
@@ -144,7 +144,7 @@ var _ = Describe("LogHub", func() {
 	})
 })
 
-var _ = Describe("FilterForUser (gaka-awh.2 owner scoping)", func() {
+var _ = Describe("FilterForUser (boom-awh.2 owner scoping)", func() {
 	It("passes an owner-matched entry through", func() {
 		in := []LogEntry{
 			{Msg: "wakatime key saved for A", Attrs: map[string]string{OwnerAttrKey: "alice"}},

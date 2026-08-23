@@ -43,7 +43,7 @@ type TokenResponse struct {
 
 // UserStatus is the inner user object (noPrefixOptions on rFull_name etc.).
 //
-// Wakatime-compat notes (gaka-dg7): full_name / email / photo are consumed by
+// Wakatime-compat notes (boom-dg7): full_name / email / photo are consumed by
 // unmodified Wakatime editor plugins that expect this exact shape. Adding
 // fields is safe (JSON decoders ignore unknowns) and matches how is_admin was
 // introduced. NEVER remove or rename an existing key here without confirming
@@ -53,16 +53,16 @@ type UserStatus struct {
 	FullName string `json:"full_name"` // rFull_name -> full_name
 	Email    string `json:"email"`     // rEmail -> email
 	Photo    string `json:"photo"`     // rPhoto -> photo
-	// gaka-myv: signal to the FE whether this user is on the admin allowlist
+	// boom-myv: signal to the FE whether this user is on the admin allowlist
 	// (BOOM_ADMIN_USERS). The FE conditionally shows the Admin tab based on
 	// this — server also enforces via the admin endpoints, so the flag is a
 	// UX aid, not a security boundary.
 	IsAdmin bool `json:"is_admin"` // omit-defaults not used to keep the shape stable
-	// gaka-dg7: user's raw stored IANA name ('' = never picked). The FE
+	// boom-dg7: user's raw stored IANA name ('' = never picked). The FE
 	// picker reads this to decide "your explicit choice" vs "auto-detect
 	// from browser". Wakatime-compat: additive field, unknown to plugins.
 	Timezone string `json:"timezone"`
-	// gaka-dg7: what the server ACTUALLY resolves to via the 3-level chain
+	// boom-dg7: what the server ACTUALLY resolves to via the 3-level chain
 	// (user > BOOM_DEFAULT_TIMEZONE > "UTC"). The FE's auto-detect on first
 	// login only fires when this differs from the browser's zone AND
 	// Timezone == '' (user hasn't opted in). NEVER "".

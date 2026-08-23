@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- catalyst-books / catalyst-audiobooks synced reading state (gaka-books).
+-- catalyst-books / catalyst-audiobooks synced reading state (boom-books).
 -- SILOED by design: one domain-owned table, ON DELETE CASCADE with the user,
 -- and a per-user/per-source delete path (see internal/db/reading_items.go) so a
 -- user can wipe their book data on request. It does NOT touch heartbeats /

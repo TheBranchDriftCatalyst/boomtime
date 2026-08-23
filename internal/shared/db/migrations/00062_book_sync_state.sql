@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- Forward-sync cursors for the catalyst-audiobooks/books domains (gaka-books).
+-- Forward-sync cursors for the catalyst-audiobooks/books domains (boom-books).
 -- Rather than smear cursor columns across reading_items, the per-user/per-source
 -- delta bookkeeping lives here. SILOED — ON DELETE CASCADE with the user.
 --   last_library_cursor  — newest library purchase_date seen (forward &purchased_after=)

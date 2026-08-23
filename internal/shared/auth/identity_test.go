@@ -1,4 +1,4 @@
-// Tests for the user-model capability/identity primitives (gaka-0oe.1). Pure
+// Tests for the user-model capability/identity primitives (boom-0oe.1). Pure
 // logic — no DB, no HTTP — so these run deterministically and are the flag-ON
 // behavior guarantee the substrate needs before any handler is refactored.
 package auth

@@ -136,7 +136,7 @@ export function registerCoreDomain(): void {
       { name: "Overview", icon: LayoutDashboard, to: "/app", end: true },
     );
   }
-  // ── System (gaka-dr5w) ─────────────────────────────────────────────────
+  // ── System (boom-dr5w) ─────────────────────────────────────────────────
   // Settings + Admin are CROSS-CUTTING surfaces, not boomtime pages. They used
   // to read as boomtime pages for two different reasons: Settings registered
   // into an UNLABELED section, and a section without a label renders flat, so
@@ -196,7 +196,7 @@ export function registerCoreDomain(): void {
     ),
     order: 20,
   });
-  // Beta onboarding preview (gaka-93f.1.2): reached via BetaOnboardingGate when
+  // Beta onboarding preview (boom-93f.1.2): reached via BetaOnboardingGate when
   // ?enable_beta_user_registration=true is set.
   registerRoute({
     path: "/onboarding",
@@ -207,7 +207,7 @@ export function registerCoreDomain(): void {
     ),
     order: 30,
   });
-  // Public profile — anonymous for visitors, editable for owners (gaka-ie3).
+  // Public profile — anonymous for visitors, editable for owners (boom-ie3).
   registerRoute({
     path: "/p/:slug",
     element: (
@@ -249,7 +249,7 @@ export function registerCoreDomain(): void {
     ),
     order: 0,
   });
-  // gaka-4ng: owner's profile inside the app skeleton.
+  // boom-4ng: owner's profile inside the app skeleton.
   registerRoute({
     parent: "app",
     path: "profile",
@@ -260,7 +260,7 @@ export function registerCoreDomain(): void {
     ),
     order: 20,
   });
-  // gaka-ebq: Logs moved under /app/admin/logs; keep the old bookmarkable URL.
+  // boom-ebq: Logs moved under /app/admin/logs; keep the old bookmarkable URL.
   registerRoute({
     parent: "app",
     path: "logs",
@@ -399,7 +399,7 @@ export function registerCoreDomain(): void {
   });
 
   // ── Admin (core / operational group) ───────────────────────────────────
-  // The group is registered ONCE (gaka-9e9k) instead of being re-declared
+  // The group is registered ONCE (boom-9e9k) instead of being re-declared
   // inline on every tab; tabs reference it by id. Each tab carries the
   // presentation the section shell renders on its behalf — icon for the rail,
   // description for the title row, width for the body — so no tab hand-rolls

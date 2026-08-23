@@ -1,4 +1,4 @@
-// Package db — labels.go: CRUD for the DB-backed labels catalog (gaka-364.3).
+// Package db — labels.go: CRUD for the DB-backed labels catalog (boom-364.3).
 //
 // Rows land here from the initial seed (migration 00036) and, thereafter,
 // from the admin CRUD UI. The public GET endpoint reads the whole table
@@ -43,7 +43,7 @@ type Label struct {
 	OptimizedPrompt string `json:"optimizedPrompt"`
 	Rank            int    `json:"rank"`
 	Tier            string `json:"tier"`
-	// gaka-mwp-streaks: per-label period override for the award ledger.
+	// boom-mwp-streaks: per-label period override for the award ledger.
 	// Empty string = "use the kind default" (see db.KindDefaultPeriod).
 	// Valid values: "" | "daily" | "weekly" | "monthly" | "lifetime".
 	PeriodDefault string          `json:"periodDefault"`

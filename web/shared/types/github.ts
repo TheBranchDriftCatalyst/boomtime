@@ -1,4 +1,4 @@
-// github.ts — GitHub stats wire types (gaka-anh Phase 2). Mirrors
+// github.ts — GitHub stats wire types (boom-anh Phase 2). Mirrors
 // internal/model/github_stats.go GithubStatsPayload. These are the shapes
 // returned by GET /api/v1/users/current/github/stats (authed) and
 // GET /api/public/profile/:slug/github/stats (public). NONE carries the token —

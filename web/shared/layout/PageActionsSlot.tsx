@@ -1,5 +1,5 @@
 // PageActionsSlot — the seam that lets a routed tab body push DYNAMIC chrome
-// into a page header it does not own (gaka-9e9k).
+// into a page header it does not own (boom-9e9k).
 //
 // The problem it solves: once a section shell (Admin, Settings) renders each
 // tab's header from the registration DSL — title, description, width — a tab

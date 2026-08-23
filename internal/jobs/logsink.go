@@ -1,4 +1,4 @@
-// logsink.go — durable persistence of a background job's log stream (gaka-hney).
+// logsink.go — durable persistence of a background job's log stream (boom-hney).
 //
 // A FINISHED job's lines vanish once the in-memory LogHub ring rolls over, so
 // the Admin Jobs viewer shows "No logs yet" for anything that completed a while

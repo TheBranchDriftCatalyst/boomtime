@@ -1,4 +1,4 @@
-// rename_merge_ginkgo_test.go — ginkgo mirror of rename_merge_test.go (gaka-0vp.13).
+// rename_merge_ginkgo_test.go — ginkgo mirror of rename_merge_test.go (boom-0vp.13).
 // 1:1 case map (15 stdlib TestXxx incl 3 subtests → 14 Its + 1 DescribeTable(3)):
 //
 //	TestRenameRawPreservation             → It "rename mutates no raw data"

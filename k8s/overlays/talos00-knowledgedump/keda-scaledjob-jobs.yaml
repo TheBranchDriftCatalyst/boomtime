@@ -1,5 +1,5 @@
 ---
-# KEDA ScaledJob for the catalyst-go-jobs HEAVY DB kinds (gaka-hney) — the
+# KEDA ScaledJob for the catalyst-go-jobs HEAVY DB kinds (boom-hney) — the
 # PROPER primitive for long-running work. Unlike the image ScaledObject (which
 # scales a Deployment and lets HPA SIGKILL a pod mid-render → RabbitMQ redelivery
 # amplification), a ScaledJob schedules ONE Kubernetes Job per pending job: the

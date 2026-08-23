@@ -72,7 +72,7 @@ const Import = lazy(() =>
 const Wellness = lazy(() =>
   import("@boomtime/features/wellness/Wellness").then((m) => ({ default: m.Wellness })),
 );
-// gaka-gud: Goals promoted from a Settings sub-tab to a top-level page.
+// boom-gud: Goals promoted from a Settings sub-tab to a top-level page.
 const Goals = lazy(() =>
   import("@boomtime/features/goals/Goals").then((m) => ({ default: m.Goals })),
 );
@@ -126,7 +126,7 @@ export function registerBoomtimeDomain(): void {
     ),
     order: 10,
   });
-  // gaka-gud: Goals as a top-level page (moved out of Settings).
+  // boom-gud: Goals as a top-level page (moved out of Settings).
   registerRoute({
     parent: "app",
     path: "goals",

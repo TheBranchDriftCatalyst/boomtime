@@ -14,7 +14,7 @@ import { OnboardingBackdrop } from "@boomtime/features/onboarding/OnboardingBack
 import { WhyStep } from "@boomtime/features/onboarding/OnboardingWhy";
 import { ApiError } from "@shared/lib/api";
 
-// Routed beta onboarding flow (gaka-93f.1.2): welcome -> what-is-boomtime demo
+// Routed beta onboarding flow (boom-93f.1.2): welcome -> what-is-boomtime demo
 // -> signup. Reached by the RootLayout gate when the beta preview flag is
 // active (?enable_beta_user_registration=true), including for an already-
 // logged-in user so the new UX can be walked without logging out.

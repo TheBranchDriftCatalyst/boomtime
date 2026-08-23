@@ -1,5 +1,5 @@
 // Package jobsevents is boomtime's push-notification hub for catalyst-go-jobs
-// terminal events (gaka-hney.6). It implements jobs.Notifier: a completed or
+// terminal events (boom-hney.6). It implements jobs.Notifier: a completed or
 // failed job fans out to every WebSocket subscriber watching that job's owner,
 // so the FE can toast on completion.
 //

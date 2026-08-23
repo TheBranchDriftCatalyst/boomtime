@@ -13,7 +13,7 @@ import (
 
 // HealthSamples ingests a single HealthKit sample:
 // POST /api/v1/users/current/health_samples. Body capped at apihelpers.BodyLimitLarge
-// (gaka-d6x.handler critique fix).
+// (boom-d6x.handler critique fix).
 func (h *Handler) HealthSamples(c *echo.Context) error {
 	var s model.HealthSamplePayload
 	if aerr := apihelpers.BindJSONWithLimit(c, &s, apihelpers.BodyLimitLarge); aerr != nil {
@@ -30,7 +30,7 @@ func (h *Handler) HealthSamples(c *echo.Context) error {
 // (envelope form, then bare array) see the same bytes — echo's DefaultBinder
 // reads c.Request().Body directly (json.NewDecoder), so the second Bind
 // would otherwise see an empty reader and 400 on any bare-array payload
-// (gaka-d6x.handler critique). MaxBytesReader also prevents OOM via
+// (boom-d6x.handler critique). MaxBytesReader also prevents OOM via
 // oversized ingest.
 func (h *Handler) HealthSamplesBulk(c *echo.Context) error {
 	r := c.Request()

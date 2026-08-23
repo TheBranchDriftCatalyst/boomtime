@@ -1,8 +1,8 @@
 // LabelsShowcase — dashboard widget that renders ALL labels awarded by
-// the framework (gaka-364), grouped by category (tier / archetype /
+// the framework (boom-364), grouped by category (tier / archetype /
 // tribe). Complements the top-3 slice shown on the hero tagline.
 //
-// gaka-hc6.4: awards now come from the server via useAwards() — no more
+// boom-hc6.4: awards now come from the server via useAwards() — no more
 // client-side evaluate(). The server also writes ledger rows on its own,
 // so the previous useLogAwards() POST is gone (double-write eliminated).
 // `data` is still accepted to keep the widget renderer contract stable,
@@ -16,7 +16,7 @@ import { TrophyShelf, trophyShelfSupported } from "@shared/features/widgets/rend
 import { useFeatureFlag } from "@shared/lib/featureFlags";
 import "./TrophyShelf.css";
 
-// gaka-364.1: "meme" group renders FIRST so the OP shiznit lands top of the
+// boom-364.1: "meme" group renders FIRST so the OP shiznit lands top of the
 // showcase widget the same way it lands top of the hero tagline. Rank-desc
 // sort inside the group is inherited from the evaluator, we just group here.
 const GROUP_ORDER: Array<LabelAward["kind"]> = [
@@ -42,7 +42,7 @@ export interface LabelsShowcaseProps {
 }
 
 export function LabelsShowcase(_: LabelsShowcaseProps) {
-  // gaka-174.5: the 3D medallion shelf is opt-in behind a feature flag; the
+  // boom-174.5: the 3D medallion shelf is opt-in behind a feature flag; the
   // classic chip grid is the default. Flip it on via the dossier flipper.
   const [labels3D] = useFeatureFlag("labels3D");
   const awards = useAwards();
@@ -59,7 +59,7 @@ export function LabelsShowcase(_: LabelsShowcaseProps) {
     );
   }
 
-  // gaka-174.5: 3D medallions only when the viewer has flipped the flag ON
+  // boom-174.5: 3D medallions only when the viewer has flipped the flag ON
   // AND the client supports WebGL. Otherwise fall through to the classic chip
   // grid (the default), which also keeps the hover-tooltip descriptions.
   if (labels3D && trophyShelfSupported()) {
@@ -90,7 +90,7 @@ export function LabelsShowcase(_: LabelsShowcaseProps) {
               {list.map((a) => (
                 <li key={a.id}>
                   {/*
-                    gaka-mem-chip: LabelChip owns the full chip chrome —
+                    boom-mem-chip: LabelChip owns the full chip chrome —
                     image or glyph + hover tooltip with the achievement's
                     description. Replaces the earlier native title=... tip
                     which browsers style inconsistently and can't show an image.

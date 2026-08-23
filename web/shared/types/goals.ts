@@ -1,4 +1,4 @@
-// Goals feature types (gaka-wpb) — mirror the backend Go structs in
+// Goals feature types (boom-wpb) — mirror the backend Go structs in
 // internal/stats/goals.go and internal/db/goals.go. The spec is a
 // discriminated union walked recursively; the backend validator
 // guards it (POST/PATCH return 400 with an error string on any
@@ -19,7 +19,7 @@ export type GoalHeartbeatAxis =
   | "machine"
   | "platform";
 
-// Reading dimensions a reading-source `time` leaf may filter by (gaka-dvy9).
+// Reading dimensions a reading-source `time` leaf may filter by (boom-dvy9).
 // Mirrors validReadingAxes in internal/goals/eval.go, which mirrors the reading
 // domain's `runtime` measure Dims (internal/query/domains.go). A genre'd reading
 // goal measures the RUNTIME of books on this dimension = value FINISHED in the

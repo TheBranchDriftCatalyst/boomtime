@@ -1,6 +1,6 @@
 // Package identity owns the auth-facing HTTP + profile + timezone +
 // wakatime_key + avatar endpoints. Extracted from the god-type
-// handler.Handler as part of gaka-8tn phase 4a.
+// handler.Handler as part of boom-8tn phase 4a.
 //
 // SECURITY POSTURE: this package covers the auth surface (Login, Register,
 // RefreshToken, Logout, ChangePassword, API-token CRUD) plus the
@@ -19,7 +19,7 @@
 // ResolveOwnerFromCookie / QueryInt64 / BindJSONWithLimit / InternalErr
 // / CachedJSON / CachedBlob / InvalidateOwnerCache) live in
 // internal/apihelpers/ — this package imports that instead of carrying
-// per-file shims (gaka-8tn phase 8 collapse).
+// per-file shims (boom-8tn phase 8 collapse).
 package identity
 
 import (
@@ -55,43 +55,43 @@ type Handler struct {
 	Cfg    *config.Config
 	Logger *slog.Logger
 	Cache  *cache.TTL
-	// GithubStats is the GitHub stats refresh service (gaka-anh Phase 2). Used
+	// GithubStats is the GitHub stats refresh service (boom-anh Phase 2). Used
 	// by the authed /github/stats endpoint's on-demand-if-stale path. Always
 	// non-nil in production (constructed in New with the real GitHub
 	// endpoints); it is inert until a GET hits a stale/absent cache. Handler-
 	// level tests overwrite this field with github.NewServiceForTest pointed at
 	// a mock-GitHub httptest server.
 	GithubStats *github.Service
-	// Cards is the durable S3/MinIO social-card cache (gaka-fym5). nil when
+	// Cards is the durable S3/MinIO social-card cache (boom-fym5). nil when
 	// BOOM_S3_* is unset (or the client failed to init) — the og.png handler
 	// then renders live on every request rather than erroring.
 	Cards *cardstore.Store
-	// JobEvents is the catalyst-go-jobs push hub (gaka-hney.6). Set after
+	// JobEvents is the catalyst-go-jobs push hub (boom-hney.6). Set after
 	// construction; the /api/v1/jobs/ws stream subscribes to it. nil = no push.
 	JobEvents *jobsevents.Hub
 	// Notify is the domain-agnostic per-user notification hub. Set after
 	// construction; the /api/v1/notify/ws stream subscribes to it. nil = no push.
 	Notify *notify.Hub
-	// JobEnqueuer enqueues catalyst-go-jobs (gaka-hney.7) — RegenerateAvatar
+	// JobEnqueuer enqueues catalyst-go-jobs (boom-hney.7) — RegenerateAvatar
 	// puts an owner-scoped avatar-render job on it. nil = fall back to the
 	// inline goroutine render.
 	JobEnqueuer jobs.Enqueuer
 }
 
-// SetJobEvents wires the job-events hub after construction (gaka-hney.6).
+// SetJobEvents wires the job-events hub after construction (boom-hney.6).
 func (h *Handler) SetJobEvents(hub *jobsevents.Hub) { h.JobEvents = hub }
 
 // SetNotify wires the domain-agnostic notification hub after construction.
 func (h *Handler) SetNotify(hub *notify.Hub) { h.Notify = hub }
 
-// SetJobEnqueuer wires the jobs enqueuer after construction (gaka-hney.7).
+// SetJobEnqueuer wires the jobs enqueuer after construction (boom-hney.7).
 func (h *Handler) SetJobEnqueuer(e jobs.Enqueuer) { h.JobEnqueuer = e }
 
 // New constructs an identity.Handler with the passed-in shared deps.
 // Every field is required in production; nil-checks are the caller's
 // responsibility (the god-type's New wires all four unconditionally).
 func New(database *db.DB, cfg *config.Config, logger *slog.Logger, cch *cache.TTL) *Handler {
-	// Durable social-card cache (gaka-fym5). Unset config → (nil, nil); a
+	// Durable social-card cache (boom-fym5). Unset config → (nil, nil); a
 	// client-init failure → logged + nil. Either way Cards stays nil and the
 	// og.png handler renders live, so the feature degrades gracefully.
 	cards, err := cardstore.New(cfg.S3Endpoint, cfg.S3Bucket, cfg.S3AccessKey, cfg.S3SecretKey, cfg.S3UseSSL)
@@ -114,7 +114,7 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, cch *cache.TT
 // (which computes the SAME payload window when evaluating
 // /public/profile/:slug/awards streaks) reads ONE canonical value — a
 // drift here vs. there would show up as a label present on /p/:slug but
-// missing on the awards mirror (gaka-hc6.3 invariant).
+// missing on the awards mirror (boom-hc6.3 invariant).
 const PublicProfilePayloadDays = 60
 
 // PublicProfileTimeLimit locks the aggregation to the app default (15-min

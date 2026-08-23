@@ -1,4 +1,4 @@
-// loc.go — lines-of-code aggregations (gaka-yfg), derived from
+// loc.go — lines-of-code aggregations (boom-yfg), derived from
 // heartbeats.file_lines (the file's total line count at edit time). NO GitHub
 // dependency.
 //
@@ -45,7 +45,7 @@ var locIgnorePatterns = []string{
 	"%_pb2.py",
 	"%.generated.%",
 	"%.snap",
-	// Data files (gaka-yfg follow-up, user call): JSON/CSV/etc. are DATA, not
+	// Data files (boom-yfg follow-up, user call): JSON/CSV/etc. are DATA, not
 	// hand-written code — generated caches, fixtures, dumps, exports. These
 	// dominate LOC for data-heavy projects (e.g. catalyst-data's 137k-line
 	// ner_pass.json / pipeline-cache). YAML is deliberately KEPT (talos-homelab
@@ -122,7 +122,7 @@ ORDER BY loc DESC, project ASC`
 // files as it grew, sampled across [t0,t1] and bounded to
 // locMaxOverTimePoints points.
 //
-// Cost bound (gaka-yfg): the expensive part is "for each day D, the sum over
+// Cost bound (boom-yfg): the expensive part is "for each day D, the sum over
 // files of each file's most-recent file_lines with time_sent <= end-of-D".
 // Doing that as N per-day as-of scans would table-scan the whole corpus per
 // day. Instead this is ONE window-function pass:

@@ -1,7 +1,7 @@
 // middleware_extra_test.go — coverage boost for the middleware trio
 // (requestLogger, n1Middleware, userCtxMiddleware) and the two low-covered
 // helpers (limiterFor unknown-group defense, bucketKey wakatime-probe with
-// no lookup, userLookupFromDB nil-db fast path). gaka-d6x.
+// no lookup, userLookupFromDB nil-db fast path). boom-d6x.
 //
 // These are UNIT tests that don't need Postgres for the middleware wiring
 // pieces — real DB integration lives in server_integration_test.go.

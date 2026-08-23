@@ -343,7 +343,7 @@ export async function waitForUrl(
 export { BACKEND_URL, BASE_URL };
 
 // -------------------------------------------------------------------------
-// gaka-dvb — helpers for the recent-features Playwright suite (admin
+// boom-dvb — helpers for the recent-features Playwright suite (admin
 // sidebar, swagger docs, backfill tab, avatar tab, public dossier).
 //
 // These are additive: the existing add-to-space/widgets specs continue to
@@ -427,7 +427,7 @@ export async function loginAsUser(
 /**
  * Convenience: log in as the admin fixture. Returns false (so the caller
  * can `test.skip`) when no admin credentials are configured — the
- * gaka-ebq / gaka-vh8 / gaka-9v4 specs treat missing admin creds as
+ * boom-ebq / boom-vh8 / boom-9v4 specs treat missing admin creds as
  * "environment not wired for this test", not a failure.
  */
 export async function loginAsAdmin(page: Page): Promise<boolean> {

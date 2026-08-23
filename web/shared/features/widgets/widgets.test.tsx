@@ -98,7 +98,7 @@ describe("catalog", () => {
     expect(s.url).toContain("/widget/svg/u/stats-card");
   });
 
-  // gaka-hsj: the stats-card kind is the hero widget for this ticket. Pin it
+  // boom-hsj: the stats-card kind is the hero widget for this ticket. Pin it
   // as the first catalog entry so the widget-links panel surfaces it above
   // the fold on every scope. If someone reorders the catalog and demotes
   // stats-card, we want a red test forcing an explicit decision, not a

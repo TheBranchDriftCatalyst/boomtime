@@ -1,5 +1,5 @@
 // handler_test.go — coverage for SpecHandler / DocsHandler / Register /
-// UIHandler / strPtr / itoa (gaka-se2.3).
+// UIHandler / strPtr / itoa (boom-se2.3).
 //
 // The pyramid these tests implement:
 //   - SpecHandler: response is valid JSON that PARSES BACK as
@@ -7,7 +7,7 @@
 //     headers are pinned.
 //   - DocsHandler: X-Frame-Options SAMEORIGIN AND CSP frame-ancestors
 //     are BOTH present — either missing enables the clickjacking path
-//     the gaka-6jm/gaka-b5x threat model closes.
+//     the boom-6jm/boom-b5x threat model closes.
 //   - UIHandler: index.html served with cache-bust query + no-store;
 //     swagger-initializer.js served with no-store; static assets fall
 //     through to http.FileServer (cacheable).
@@ -35,7 +35,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/openapi"
 )
 
-var _ = Describe("openapi.SpecHandler (gaka-se2.3)", func() {
+var _ = Describe("openapi.SpecHandler (boom-se2.3)", func() {
 	newRec := func() (*httptest.ResponseRecorder, *echo.Context) {
 		e := echo.New()
 		req := httptest.NewRequest(http.MethodGet, "/api/openapi.json", nil)
@@ -69,7 +69,7 @@ var _ = Describe("openapi.SpecHandler (gaka-se2.3)", func() {
 	})
 })
 
-var _ = Describe("openapi.DocsHandler (gaka-se2.3, security)", func() {
+var _ = Describe("openapi.DocsHandler (boom-se2.3, security)", func() {
 	// SECURITY-CRITICAL: BOTH headers must be present. Missing X-Frame-Options
 	// AND missing CSP frame-ancestors together enable the token-mint-FAB
 	// clickjacking attack path (a hostile iframe embeds /api/docs, tricks
@@ -106,7 +106,7 @@ var _ = Describe("openapi.DocsHandler (gaka-se2.3, security)", func() {
 	})
 })
 
-var _ = Describe("openapi.UIHandler (gaka-se2.3)", func() {
+var _ = Describe("openapi.UIHandler (boom-se2.3)", func() {
 	h := openapi.UIHandler("/api/docs")
 
 	It("serves index.html at the root with a cache-bust query on swagger-initializer.js", func() {
@@ -154,7 +154,7 @@ var _ = Describe("openapi.UIHandler (gaka-se2.3)", func() {
 	})
 })
 
-var _ = Describe("openapi.Register (gaka-se2.3)", func() {
+var _ = Describe("openapi.Register (boom-se2.3)", func() {
 	It("wires both /api/openapi.json and /api/docs onto the echo instance", func() {
 		e := echo.New()
 		openapi.Register(e)
@@ -193,7 +193,7 @@ var _ = Describe("openapi.Register (gaka-se2.3)", func() {
 
 // -- pure helpers -------------------------------------------------------
 
-var _ = Describe("openapi.strPtr / itoa (gaka-se2.3)", func() {
+var _ = Describe("openapi.strPtr / itoa (boom-se2.3)", func() {
 	It("strPtr returns a pointer whose deref matches the input for a non-empty string", func() {
 		p := openapi.StrPtrForTest("hello")
 		Expect(p).NotTo(BeNil())

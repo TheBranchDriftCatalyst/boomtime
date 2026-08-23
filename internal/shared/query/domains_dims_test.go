@@ -8,7 +8,7 @@ import (
 )
 
 // domains_dims_test.go — pins the reading domain's series/author/genre grouping
-// dimensions (gaka-books C). Pure Compile assertions: no pg harness, so these
+// dimensions (boom-books C). Pure Compile assertions: no pg harness, so these
 // run everywhere. Non-tautological — the runtime-by-author case FAILS if author
 // is dropped from the runtime measure's Dims whitelist (the gap this closed).
 

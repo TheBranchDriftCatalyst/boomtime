@@ -1,5 +1,5 @@
 // sync_integration_test.go — DB-backed (integration) proof of the Kindle
-// ingest→reading_items write path (gaka-c8a9). The unit tests (ingest_test.go)
+// ingest→reading_items write path (boom-c8a9). The unit tests (ingest_test.go)
 // exercise the pure `sweep`/`buildReadingItem` mapping with fakes; this pins the
 // half they can't reach: SyncUser actually UPSERTING rows into
 // reading_items(source='kindle') on a real Postgres, and the IDEMPOTENCY

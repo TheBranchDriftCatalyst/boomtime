@@ -1,4 +1,4 @@
-// timezone_more_test.go — gaka-d6x.handler: additional coverage for
+// timezone_more_test.go — boom-d6x.handler: additional coverage for
 // timezone.go (trimTimezoneName + UpdateTimezone with whitespace-padded
 // values + resolveUserTZ fallback).
 //
@@ -39,7 +39,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
-var _ = Describe("Timezone extra branches (gaka-d6x.handler)", func() {
+var _ = Describe("Timezone extra branches (boom-d6x.handler)", func() {
 	It("unauth GET /timezone → 4xx", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()

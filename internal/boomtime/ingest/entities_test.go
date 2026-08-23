@@ -1,4 +1,4 @@
-// entities_test.go — gaka-d6x.handler: cover ListEntitiesByType + RedactEntities.
+// entities_test.go — boom-d6x.handler: cover ListEntitiesByType + RedactEntities.
 // Named invariants:
 //
 //	"missing/bad type → 400" — the ?type= whitelist rejects the empty
@@ -28,7 +28,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
-var _ = Describe("Entity Explorer (gaka-d6x.handler)", func() {
+var _ = Describe("Entity Explorer (boom-d6x.handler)", func() {
 	It("unauthenticated → 4xx (no DB touch)", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()

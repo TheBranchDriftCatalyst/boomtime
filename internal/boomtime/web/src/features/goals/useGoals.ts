@@ -1,4 +1,4 @@
-// useGoals — React Query hooks for the goals feature (gaka-wpb).
+// useGoals — React Query hooks for the goals feature (boom-wpb).
 //
 // Mirrors the shape of useCuration:
 //

@@ -1,5 +1,5 @@
 // curation_unauth_test.go — unauth branch coverage for the curation
-// cluster (gaka-d6x.handler). Every user-scoped handler starts with:
+// cluster (boom-d6x.handler). Every user-scoped handler starts with:
 //
 //	_, owner, aerr := h.resolveUser(c); if aerr != nil { return respondErr(c, aerr) }
 //

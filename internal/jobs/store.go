@@ -46,7 +46,7 @@ func (s *Store) Enqueue(ctx context.Context, kind, owner string, payload []byte,
 // attempts, and returns it. ok=false when nothing is due. FOR UPDATE SKIP
 // LOCKED makes it safe for many concurrent workers — each gets a distinct row.
 //
-// Kind-routing (gaka-hney): `include` restricts to those kinds (empty = any);
+// Kind-routing (boom-hney): `include` restricts to those kinds (empty = any);
 // `exclude` skips those kinds. So the always-on server can drain light kinds
 // (exclude the heavy ones) while a ScaledJob drains only the heavy kinds
 // (include them) — all on the same queue, no double-claim.
@@ -287,7 +287,7 @@ func (s *Store) List(ctx context.Context, status, kind string, limit int) ([]Job
 }
 
 // KindStats is a per-kind aggregate of the jobs table for the admin queue
-// overview (gaka-hney): current queue depth (queued/running are point-in-time,
+// overview (boom-hney): current queue depth (queued/running are point-in-time,
 // all-time), recent throughput + failures (done/failed over a `since` window,
 // keyed on finished_at), the mean successful+failed run duration over that
 // window, and the kind's most-recent activity timestamp + status.
@@ -386,7 +386,7 @@ func (s *Store) ListSchedules(ctx context.Context) ([]Schedule, error) {
 }
 
 // ListLatestPerOwner returns the most recent job per distinct owner for a kind
-// (gaka-hney Stage 3): the label-images admin tab reads the latest label-image
+// (boom-hney Stage 3): the label-images admin tab reads the latest label-image
 // job per label (owner == labelID) from the DB queue instead of the old
 // in-memory imagejobs registry. Both terminal and in-flight jobs are included;
 // owner=="" rows (kinds that don't scope by owner) are excluded.

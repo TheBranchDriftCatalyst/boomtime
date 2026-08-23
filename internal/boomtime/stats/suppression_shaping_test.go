@@ -1,4 +1,4 @@
-// suppression_shaping_ginkgo_test.go — ginkgo mirror of suppression_shaping_test.go (gaka-tst-ginkgo).
+// suppression_shaping_ginkgo_test.go — ginkgo mirror of suppression_shaping_test.go (boom-tst-ginkgo).
 // 1:1 case map (1 stdlib TestXxx):
 //
 //	TestSuppressionShapingExcluded → ToStatsPayload > "shaping doesn't reintroduce SUPPRESS across breakdowns"
@@ -11,7 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("ToStatsPayload suppression shaping (gaka-tst-ginkgo)", func() {
+var _ = Describe("ToStatsPayload suppression shaping (boom-tst-ginkgo)", func() {
 	It("shaping never reintroduces a SUPPRESS row into any breakdown", func() {
 		d1 := day(2025, 6, 1)
 		// Rows as the DB would return them AFTER excluding SUPPRESS: only KEEP values.

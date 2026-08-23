@@ -4,7 +4,7 @@
 # CONSOLIDATION (4→2): replaces the former grafana-dashboard-daily-review.yaml +
 # grafana-dashboard-domain-ingest.yaml. The DOMAIN perspective (sibling of the
 # Ops "Service & Infra" board). Top row is boomtime's own first-party Prometheus
-# counters (gaka-metrics, scraped by servicemonitor.yaml): heartbeats ingested,
+# counters (boom-metrics, scraped by servicemonitor.yaml): heartbeats ingested,
 # jobs_run_total by kind/status, jobs_limiter_events, hardcover/amazon call
 # rates, AMQP deliveries. Crucially the heartbeat panel uses the real
 # boomtime_heartbeats_ingested_total counter — the exact replacement for the

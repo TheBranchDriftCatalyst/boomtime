@@ -1,6 +1,6 @@
 // user_timezone.go: per-user IANA timezone storage + the 3-level TZ resolver
 // used by every SQL that extracts a dow / hour / date bucket from time_sent
-// (gaka-dg7).
+// (boom-dg7).
 //
 // Resolution order (applied by ResolveTimezone):
 //

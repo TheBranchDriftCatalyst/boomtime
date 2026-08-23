@@ -60,7 +60,7 @@ func (r RenameSets) HasAxis(axis string) bool {
 
 // ExactSourcesFor returns every raw value on the given axis that this rename
 // map maps to `target` via an EXACT rule. Used by the widget-link path
-// (gaka-xuc) so a scope pinned to a renamed/merged project name expands to
+// (boom-xuc) so a scope pinned to a renamed/merged project name expands to
 // the raw source names actually stored in heartbeats. Regex + template
 // renames are intentionally ignored — reverse-engineering a pattern to enum
 // its inputs is unreliable; the common merge case is exact-rules only.
@@ -91,9 +91,9 @@ func (r RenameSets) ExactSourcesFor(axis, target string) []string {
 // `~*` (case-insensitive) so a pattern like `^Meet` matches `meet-*` too.
 func (d *DB) LoadRenameSets(ctx context.Context, sender string) (RenameSets, error) {
 	rs := RenameSets{byAxis: map[string]axisRenames{}}
-	// gaka-dfd: disabled rules are skipped — a paused rename rule stops
+	// boom-dfd: disabled rules are skipped — a paused rename rule stops
 	// remapping. The rule row survives; only its query-time effect pauses.
-	// gaka-scrub: apply_at_ingest rules are EXCLUDED from query-time remap. Those
+	// boom-scrub: apply_at_ingest rules are EXCLUDED from query-time remap. Those
 	// rules already rewrote the stored row at ingest, so re-applying at read would
 	// double-transform (a template rule `(\d+)`→`X\1X` would fire twice). They
 	// affect only newly-ingested rows; old rows stay raw (or use on-demand Apply).
@@ -250,7 +250,7 @@ var statRowRemapAxes = []struct{ axis, col string }{
 // (e.g. day1 has 3× "Writing Docs" / 1× "writing docs" → MODE picks "Writing Docs";
 // day2 has 3× "writing docs" / 1× "Writing Docs" → MODE picks "writing docs").
 // Downstream Go aggregation (segment/segmentAligned) then sees two rows with
-// different display names for the same lower-key — gaka-5db. For multi-day
+// different display names for the same lower-key — boom-5db. For multi-day
 // aggregations use the two-CTE `by_variant` + `canonical` pattern (see
 // bigbets.go GetCategoryDaily) which picks canonical GLOBALLY, weighted by
 // total_seconds so the highest-total variant wins deterministically.
@@ -263,7 +263,7 @@ func caseFoldPick(expr string) string {
 // highest-total variant wins (alphabetical ASC tie-break for determinism). The
 // CTE scans `sourceTable` (must be a preceding CTE in the same WITH block that
 // exposes `<expr>` and `total_seconds` columns). The emitted CTE columns are
-// (lc, canonical). See gaka-5db: fixes multi-day case-variant duplicates by
+// (lc, canonical). See boom-5db: fixes multi-day case-variant duplicates by
 // making the display pick GLOBAL across all days/weeks rather than per-group.
 func canonicalPickCTE(name, sourceTable, expr string) string {
 	return fmt.Sprintf(`%s AS (
@@ -285,7 +285,7 @@ func canonicalPickCTE(name, sourceTable, expr string) string {
 // variants — never mediated by curation — still merge. Per-axis canonical
 // display casings are picked GLOBALLY across all days (highest-total variant
 // wins; alphabetical ASC tie-break) so multi-day aggregations return one row
-// per lower-key with a consistent display name (gaka-5db). Prior implementation
+// per lower-key with a consistent display name (boom-5db). Prior implementation
 // used MODE() per (day, lower(col)) group which produced different casings per
 // day, surfacing as duplicate rows downstream (Category breakdown widget).
 func (rs RenameSets) regroupStatRows(inner string, nextArg int, args []any) (string, []any) {
@@ -319,7 +319,7 @@ regrouped AS (
         cm.canonical AS machine,
         cen.canonical AS entity,
         CAST(SUM(base.total_seconds) AS int8) AS total_seconds,
-        -- gaka-6ci: axis-missing flags survive the remap. bool_and means
+        -- boom-6ci: axis-missing flags survive the remap. bool_and means
         -- "if ANY contributing row had a real (non-null) axis value, the
         -- regrouped row is NOT missing" — so a rename that merges a
         -- browser session (project NULL) into a real project only marks
@@ -367,7 +367,7 @@ FROM regrouped`,
 // wrap always runs so pure case variants merge with or without a rename.
 // Canonical display casings are picked GLOBALLY per axis (highest-total variant
 // wins) so multi-day rows for the same lower-key don't surface as duplicates
-// downstream (gaka-5db).
+// downstream (boom-5db).
 func (rs RenameSets) regroupProjectStatRows(inner string, nextArg int, args []any) (string, []any) {
 	inner = trimSQL(inner)
 	var langExpr string
@@ -382,7 +382,7 @@ regrouped AS (
         cl.canonical AS language,
         cen.canonical AS entity, ty,
         CAST(SUM(base.total_seconds) AS int8) AS total_seconds,
-        -- gaka-6ci: propagate axis-missing flags through the rename regroup.
+        -- boom-6ci: propagate axis-missing flags through the rename regroup.
         bool_and(base.language_missing) AS language_missing,
         bool_and(base.entity_missing) AS entity_missing
     FROM base

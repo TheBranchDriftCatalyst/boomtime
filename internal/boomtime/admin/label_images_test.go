@@ -1,4 +1,4 @@
-// label_images_ginkgo_test.go — ginkgo mirror of label_images_test.go (gaka-myv).
+// label_images_ginkgo_test.go — ginkgo mirror of label_images_test.go (boom-myv).
 // 1:1 case map (3 stdlib TestXxx):
 //
 //	TestLabelImage_Served                   → LabelImage > "serves bytes + Cache-Control verbatim"
@@ -21,7 +21,7 @@ import (
 // routerWithLabelImagesGinkgo — mirror of the stdlib file's helper.
 // Distinct name avoids duplicate-symbol collision.
 
-var _ = Describe("LabelImage (gaka-myv)", func() {
+var _ = Describe("LabelImage (boom-myv)", func() {
 	It("serves saved bytes with the exact Cache-Control envelope", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := boomtimeRouter(hz)

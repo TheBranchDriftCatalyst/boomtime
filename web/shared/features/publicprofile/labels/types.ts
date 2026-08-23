@@ -1,5 +1,5 @@
 // types.ts — DSL vocabulary for the labels/memeification framework
-// (gaka-364).
+// (boom-364).
 //
 // The whole idea: adding a new label = one object literal in
 // `catalog.ts`. Not one function body — one *literal*. That's only
@@ -183,12 +183,12 @@ export interface LabelSpec {
    *    - "tier"      — 5-band ladder per axis-value (novice → legend).
    *    - "archetype" — personality trait; you can hold several at once.
    *    - "tribe"     — community identity (editor/OS allegiance).
-   *    - "meme"      — the OP shiznit (gaka-364.1) — memecore / kawaii /
+   *    - "meme"      — the OP shiznit (boom-364.1) — memecore / kawaii /
    *      space-marine / sigma-grindset flavor. Ranks intentionally OUTRANK
    *      archetypes so they win the hero top-3 slot when they fire.
    */
   /**
-   *    - "patch"     — memewarfare wave 1 (gaka-mwp): event-driven military
+   *    - "patch"     — memewarfare wave 1 (boom-mwp): event-driven military
    *      -op awards ("Rapid Response Team", "Fire Fighter"). Additive to
    *      the other four; renders with a distinct double-amber border + ★
    *      prefix so patches read as "citations", not archetypes.
@@ -212,18 +212,18 @@ export interface LabelSpec {
    *  collisions among the 5 tier specs generated per axis-value so only the
    *  highest reached is awarded. */
   tierKey?: string; // e.g. "languages:python"
-  /** gaka-mwp-streaks: per-label period override for the award ledger.
+  /** boom-mwp-streaks: per-label period override for the award ledger.
    *  Empty = inherit kind default (see useAwardStreaks KIND_DEFAULT_PERIOD:
    *  tier/tribe = lifetime, archetype/meme = weekly, patch = daily).
    *  Named values: "daily" | "weekly" | "monthly" | "lifetime". */
   periodDefault?: string;
-  /** Optional prompt template for the ComfyUI label-image worker (gaka-myv).
+  /** Optional prompt template for the ComfyUI label-image worker (boom-myv).
    *  When set, the worker will render an emblem image for this label and
    *  serve it in place of the glyph. Kept next to the spec so authoring a
    *  new label carries its own art brief. When absent, the frontend falls
    *  back to the glyph.
    *
-   *  Legacy: pre-gaka-364.3 this was the ONLY prompt field. Post-pivot, the
+   *  Legacy: pre-boom-364.3 this was the ONLY prompt field. Post-pivot, the
    *  server's `optimizedPrompt` column is authoritative; the FE type keeps
    *  imagePrompt as an alias so evaluator tests can continue using inline
    *  fixture specs without needing the DB catalog wire format. See the
@@ -231,7 +231,7 @@ export interface LabelSpec {
   imagePrompt?: string;
 }
 
-/** Wire shape returned by GET /api/v1/labels/catalog (gaka-364.3). The rows
+/** Wire shape returned by GET /api/v1/labels/catalog (boom-364.3). The rows
  *  are convertible to LabelSpec for the evaluator via `dbRowToSpec`. */
 export interface LabelCatalogRow {
   id: string;
@@ -242,7 +242,7 @@ export interface LabelCatalogRow {
   optimizedPrompt: string;
   rank: number;
   tier: string; // may be "" when kind !== "tier"
-  /** gaka-mwp-streaks: per-label period override; empty = use kind default. */
+  /** boom-mwp-streaks: per-label period override; empty = use kind default. */
   periodDefault?: string;
   condition: Condition;
   createdAt: string;

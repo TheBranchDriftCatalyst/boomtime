@@ -1,4 +1,4 @@
-// module.go — github as a catalyst.Module (gaka-zp2s Phase 1). internal/github is
+// module.go — github as a catalyst.Module (boom-zp2s Phase 1). internal/github is
 // already the cleanest self-contained domain; here it just registers its per-user
 // secret so key-rotation is registry-driven. Its stats-refresh job + fe-only widget
 // keep their existing wiring in P1; the full Module (routes/jobs) is formalized when
@@ -29,7 +29,7 @@ func (Module) EncryptedColumns() []domaincols.EncryptedColumn {
 	return domaincols.EncryptedColumnsFor("github")
 }
 
-// RegisterJobs registers the github-stats-refresh kind + its fleet cap (gaka-zp2s),
+// RegisterJobs registers the github-stats-refresh kind + its fleet cap (boom-zp2s),
 // lifted verbatim from cmd/boomtime. It fans over every user with a linked GitHub
 // token and refreshes each; a rate-limit fails the batch so it retries later, while a
 // per-user error is logged + skipped. Registered UNCONDITIONALLY (only the SCHEDULE is

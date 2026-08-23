@@ -1,5 +1,5 @@
 // reading_items_match_test.go — pins the DB seams the explicit `hardcover-match`
-// pipeline stage relies on (gaka-books): ListUnmatchedReadingItems returns ONLY
+// pipeline stage relies on (boom-books): ListUnmatchedReadingItems returns ONLY
 // rows with a NULL hardcover_book_id and at least one matchable identity;
 // UpdateReadingItemDisplayMeta backfills a bare row's title/author/cover WITHOUT
 // clobbering an already-populated field; and book_sync_state.last_match_at

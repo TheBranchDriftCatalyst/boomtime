@@ -1,4 +1,4 @@
-// user_avatar_ginkgo_test.go — ginkgo mirror of user_avatar_test.go (gaka-9v4).
+// user_avatar_ginkgo_test.go — ginkgo mirror of user_avatar_test.go (boom-9v4).
 // 1:1 case map (6 stdlib TestXxx):
 //
 //	TestAvatar_SynthesizePrompt_401WithoutToken   → SynthesizePrompt > "no token → auth failure (not 2xx)"
@@ -24,7 +24,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
-var _ = Describe("Avatar SynthesizePrompt (gaka-9v4)", func() {
+var _ = Describe("Avatar SynthesizePrompt (boom-9v4)", func() {
 	It("rejects unauth'd callers before any LLM check leaks config posture", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
@@ -75,7 +75,7 @@ var _ = Describe("Avatar SynthesizePrompt (gaka-9v4)", func() {
 	})
 })
 
-var _ = Describe("Avatar Regenerate (gaka-9v4)", func() {
+var _ = Describe("Avatar Regenerate (boom-9v4)", func() {
 	It("returns 503 when the comfyui shim is not configured", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
@@ -111,7 +111,7 @@ var _ = Describe("Avatar Regenerate (gaka-9v4)", func() {
 	})
 })
 
-var _ = Describe("Avatar PublicGet (gaka-9v4)", func() {
+var _ = Describe("Avatar PublicGet (boom-9v4)", func() {
 	It("404s no-row + running rows; serves 200+bytes only when status=ready", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
@@ -144,7 +144,7 @@ var _ = Describe("Avatar PublicGet (gaka-9v4)", func() {
 	})
 })
 
-var _ = Describe("Avatar Status (gaka-9v4)", func() {
+var _ = Describe("Avatar Status (boom-9v4)", func() {
 	It("returns {status:none} for a user with no row", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()

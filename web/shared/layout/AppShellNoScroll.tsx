@@ -50,7 +50,7 @@ export interface AppShellNoScrollProps {
  *   sidebar spans both rows; header + main stack in the content column.
  *
  * BOTH tracks need the minmax(0,…) floor, and the COLUMN one is the subtler of
- * the pair (gaka-c26s). A bare `1fr` is `minmax(auto, 1fr)`: the track refuses
+ * the pair (boom-c26s). A bare `1fr` is `minmax(auto, 1fr)`: the track refuses
  * to shrink below its content's min-content width. Any wide child — the
  * header's hoisted tab strip is the one that bit us — therefore STRETCHES the
  * content column past the viewport instead of overflowing inside it. The

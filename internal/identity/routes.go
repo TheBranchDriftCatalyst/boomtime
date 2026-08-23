@@ -1,5 +1,5 @@
 // routes.go — Echo route registrations for the identity domain
-// (gaka-8tn phase 4a). Extracted from internal/server/server.go's
+// (boom-8tn phase 4a). Extracted from internal/server/server.go's
 // registerAuthRoutes (auth + password + profile + timezone + wakatime
 // key) and registerMiscRoutes (avatar routes) so those functions in
 // server.go collapse toward N domain-Register calls.
@@ -24,7 +24,7 @@ func Register(e *echo.Echo, h *Handler) {
 	e.POST("/auth/register", h.Register)
 	e.POST("/auth/refresh_token", h.RefreshToken)
 	e.POST("/auth/logout", h.Logout)
-	// OIDC (Authentik) web login (gaka-0oe.11) + account linking (gaka-b5n.4).
+	// OIDC (Authentik) web login (boom-0oe.11) + account linking (boom-b5n.4).
 	// login/link 404 unless OIDC is configured; the OpenAPI auto-derive picks
 	// them up.
 	e.GET("/auth/login/oidc", h.LoginOIDC)
@@ -38,27 +38,27 @@ func Register(e *echo.Echo, h *Handler) {
 	e.POST("/auth/token", h.UpdateToken)
 	e.GET("/auth/users/current", h.CurrentUser)
 
-	// Change password (gaka-6jm): auth'd, re-verifies the current password,
+	// Change password (boom-6jm): auth'd, re-verifies the current password,
 	// re-hashes with argon2id, and revokes every refresh token for the
 	// owner so other browsers get bounced. Registered under the
 	// users/current tree (not /auth/) so it uses the same access-token
 	// auth as sibling /api/v1/users/current/* endpoints.
 	e.POST("/api/v1/users/current/password", h.ChangePassword)
 
-	// Public profile (gaka-6jm.1): auth'd GET/PUT for the caller's own
+	// Public profile (boom-6jm.1): auth'd GET/PUT for the caller's own
 	// enable-toggle + slug. The PUBLIC read endpoint (see below) resolves
 	// the slug and returns the scrubbed payload.
 	e.GET("/api/v1/users/current/profile", h.GetPublicProfile)
 	e.PUT("/api/v1/users/current/profile", h.PutPublicProfile)
 
-	// Encrypted-at-rest imported Wakatime API key (gaka-6jm.2). GET
+	// Encrypted-at-rest imported Wakatime API key (boom-6jm.2). GET
 	// reports only {"hasSavedKey": bool} — plaintext is never returned.
 	// POST persists a user-supplied key under AES-256-GCM. DELETE clears it.
 	e.GET("/api/v1/users/current/wakatime_key", h.GetWakatimeKey)
 	e.POST("/api/v1/users/current/wakatime_key", h.SaveWakatimeKey)
 	e.DELETE("/api/v1/users/current/wakatime_key", h.DeleteWakatimeKey)
 
-	// Per-user GitHub OAuth-App connection (gaka-2ip Phase 1). The
+	// Per-user GitHub OAuth-App connection (boom-2ip Phase 1). The
 	// status/disconnect API is ALWAYS registered — GET reports
 	// {connected:false} and DELETE is a no-op when nothing is stored, and
 	// the token is NEVER returned. The two /auth/github/* browser-redirect
@@ -70,7 +70,7 @@ func Register(e *echo.Echo, h *Handler) {
 	if h != nil && h.Cfg != nil && h.Cfg.GithubConnectEnabled() {
 		e.GET("/auth/github/connect", h.ConnectGithub)
 		e.GET("/auth/github/callback", h.CallbackGithub)
-		// gaka-anh Phase 2: GitHub stats (authed cache-or-sync + public
+		// boom-anh Phase 2: GitHub stats (authed cache-or-sync + public
 		// cache-only). Gated with the connect routes — inert on a default boot.
 		e.GET("/api/v1/users/current/github/stats", h.GetGithubStats)
 		e.GET("/api/public/profile/:slug/github/stats", h.PublicGithubStats)
@@ -78,18 +78,18 @@ func Register(e *echo.Echo, h *Handler) {
 
 	// catalyst-books HTTP surface (Amazon/Kindle/Audible + Hardcover + reading
 	// items/work/curation/match) is registered separately by internal/books.Register
-	// on the shared books.Handler (gaka-zp2s Phase 2). It's mounted by the composition
+	// on the shared books.Handler (boom-zp2s Phase 2). It's mounted by the composition
 	// root; book paths never overlap the identity paths, so relative order is immaterial.
 
 	// Durable notifications (migration 00079) live on identity.Handler (domain-agnostic),
 	// but stay gated on BooksEnabled() to preserve the pre-extraction registration exactly.
-	// TODO(gaka-zp2s): un-gate from BooksEnabled once notifications has its own gate.
+	// TODO(boom-zp2s): un-gate from BooksEnabled once notifications has its own gate.
 	if h != nil && h.Cfg != nil && h.Cfg.BooksEnabled() {
 		e.GET("/api/v1/notifications", h.ListNotifications)
 		e.POST("/api/v1/notifications/read", h.MarkNotificationsRead)
 	}
 
-	// User IANA timezone (gaka-dg7). GET reports the raw stored value
+	// User IANA timezone (boom-dg7). GET reports the raw stored value
 	// (''=unset) alongside the server's 3-level-resolved effectiveTimezone
 	// so the FE can render "your choice" vs "server default" and only
 	// auto-detect-and-prompt when the two differ. PATCH validates via
@@ -109,7 +109,7 @@ func Register(e *echo.Echo, h *Handler) {
 	// boomtime-branded card (no oracle). Public data only (widget.Scrub path).
 	e.GET("/api/public/profile/:slug/og.png", h.PublicProfileOGImage)
 
-	// gaka-9v4: per-user CHIBI avatar. Prompt-synthesis SSE is authed
+	// boom-9v4: per-user CHIBI avatar. Prompt-synthesis SSE is authed
 	// (currently admin-gated; see user_avatar.go for the rationale).
 	// Regenerate + status are self-only (resolveUser gates on token).
 	// Public GET serves the ready image bytes to the profile hero.
@@ -118,7 +118,7 @@ func Register(e *echo.Echo, h *Handler) {
 	e.GET("/api/v1/users/current/avatar/status", h.GetAvatarStatus)
 	e.GET("/api/v1/users/:username/avatar", h.UserAvatar)
 
-	// Per-user catalyst-go-jobs push stream (gaka-hney.6): terminal job events
+	// Per-user catalyst-go-jobs push stream (boom-hney.6): terminal job events
 	// (e.g. avatar-render complete) for toasts. Cookie-authed in-handler.
 	e.GET("/api/v1/jobs/ws", h.JobEventsWS)
 

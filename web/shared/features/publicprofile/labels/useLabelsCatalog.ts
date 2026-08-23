@@ -1,5 +1,5 @@
 // useLabelsCatalog — react-query fetch hook for the DB-backed labels catalog
-// (gaka-364.3). Public endpoint (no auth); the FE evaluator can't award
+// (boom-364.3). Public endpoint (no auth); the FE evaluator can't award
 // anything without it, so every consumer that needs `evaluate(payload)`
 // also calls this hook.
 //
@@ -32,7 +32,7 @@ export function dbRowToSpec(row: LabelCatalogRow): LabelSpec {
     rank: row.rank,
     condition: row.condition,
     imagePrompt: row.optimizedPrompt || undefined,
-    // gaka-mwp-streaks: pass through per-label period override so
+    // boom-mwp-streaks: pass through per-label period override so
     // useAwardStreaks.resolvePeriod can use it. Empty = kind default.
     periodDefault: row.periodDefault,
   };

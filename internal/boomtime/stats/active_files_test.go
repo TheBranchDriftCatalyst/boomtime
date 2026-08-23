@@ -1,4 +1,4 @@
-// active_files_test.go — gaka-d6x.handler: cover ActiveFiles.
+// active_files_test.go — boom-d6x.handler: cover ActiveFiles.
 //
 // Named invariants:
 //
@@ -33,7 +33,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
-var _ = Describe("ActiveFiles (gaka-d6x.handler)", func() {
+var _ = Describe("ActiveFiles (boom-d6x.handler)", func() {
 	It("rejects unauth'd GET with 4xx", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()

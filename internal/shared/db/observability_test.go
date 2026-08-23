@@ -1,4 +1,4 @@
-// observability_ginkgo_test.go — ginkgo mirror of observability_test.go (gaka-0vp.13).
+// observability_ginkgo_test.go — ginkgo mirror of observability_test.go (boom-0vp.13).
 // 1:1 case map (15 stdlib TestXxx incl 6 subtests → 12 Its + 1 DescribeTable(6)):
 //
 //	TestRedactArgsMasksSensitive                          → DescribeTable "redactArgs" 6 entries
@@ -14,8 +14,8 @@
 //	TestUserFrom_NilCtx                                   → It "UserFrom on nil ctx does not panic"
 //	TestWithUser_EmptyIsNoOp                              → It "WithUser(ctx, \"\") preserves prior value"
 //	TestSensitiveSQLRegex_UnchangedByChanges              → DescribeTable "sensitiveSQL regex hits" (6 entries — inlined in an It)
-//	TestPgxTracer_TagsUserOnPerUserQueries_GakaAr7Regression → It "gaka-ar7: tracer tags per-user query with owner"
-//	TestPgxTracer_SkipsUserWhenLogArgsOff                 → It "gaka-ar7: owner-tag survives logArgs=off"
+//	TestPgxTracer_TagsUserOnPerUserQueries_GakaAr7Regression → It "boom-ar7: tracer tags per-user query with owner"
+//	TestPgxTracer_SkipsUserWhenLogArgsOff                 → It "boom-ar7: owner-tag survives logArgs=off"
 package db
 
 import (
@@ -206,7 +206,7 @@ var _ = ginkgo.Describe("observability", func() {
 		}
 	})
 
-	ginkgo.It("gaka-ar7: per-user tracer event carries owner attr and masks sensitive args; server-scope has no user attr", func() {
+	ginkgo.It("boom-ar7: per-user tracer event carries owner attr and masks sensitive args; server-scope has no user attr", func() {
 		cap := &captureHandler{}
 		prev := slog.Default()
 		slog.SetDefault(slog.New(cap))
@@ -229,7 +229,7 @@ var _ = ginkgo.Describe("observability", func() {
 		Expect(records).To(HaveLen(2))
 
 		perUser := records[0]
-		Expect(perUser["user"]).To(Equal("victim"), "gaka-ar7 REGRESSION: per-user tracer event missing owner attr")
+		Expect(perUser["user"]).To(Equal("victim"), "boom-ar7 REGRESSION: per-user tracer event missing owner attr")
 		args, _ := perUser["args"].([]any)
 		Expect(args).To(HaveLen(1))
 		Expect(args[0]).To(Equal("***"), "sensitive arg redaction regressed")
@@ -239,7 +239,7 @@ var _ = ginkgo.Describe("observability", func() {
 		Expect(ok).To(BeFalse(), "server-scope tracer event unexpectedly carries user attr")
 	})
 
-	ginkgo.It("gaka-ar7: owner-tagging survives logArgs=false (args dropped, user attr kept)", func() {
+	ginkgo.It("boom-ar7: owner-tagging survives logArgs=false (args dropped, user attr kept)", func() {
 		cap := &captureHandler{}
 		prev := slog.Default()
 		slog.SetDefault(slog.New(cap))
@@ -261,7 +261,7 @@ var _ = ginkgo.Describe("observability", func() {
 	})
 })
 
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
+// -- helpers restored from stdlib partner (boom-0vp.17) --
 func traceStart(sql string) pgx.TraceQueryStartData {
 	return pgx.TraceQueryStartData{SQL: sql}
 }

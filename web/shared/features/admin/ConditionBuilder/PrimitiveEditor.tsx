@@ -1,5 +1,5 @@
 // PrimitiveEditor — one big switch that renders the per-kind field group
-// for every primitive Condition (gaka-6uf). Ordered so a future kind
+// for every primitive Condition (boom-6uf). Ordered so a future kind
 // addition mirrors formatCondition.ts's switch structure.
 import { useState } from "react";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";

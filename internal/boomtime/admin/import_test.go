@@ -1,4 +1,4 @@
-// import_ginkgo_test.go — ginkgo mirror of import_test.go (gaka-6jm.8).
+// import_ginkgo_test.go — ginkgo mirror of import_test.go (boom-6jm.8).
 // 1:1 case map (1 stdlib TestXxx):
 //
 //	TestImportRequestDoesNotEagerlySaveTypedKey → ImportRequest > "does not eagerly persist typed apiToken; save is deferred to worker"
@@ -25,7 +25,7 @@ import (
 	"github.com/labstack/echo/v5"
 )
 
-var _ = Describe("ImportRequest (gaka-6jm.8)", func() {
+var _ = Describe("ImportRequest (boom-6jm.8)", func() {
 	It("does not eagerly persist the typed apiToken; save is deferred to worker terminal success", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		user, token := hz.MintUser("import_noneager")
@@ -44,7 +44,7 @@ var _ = Describe("ImportRequest (gaka-6jm.8)", func() {
 		bh.SetImportWorker(worker, hub)
 
 		e := echo.New()
-		e.POST("/auth/login", h.Identity.Login) // route table shim so echo doesn't 404 on middleware (gaka-8tn phase 4a)
+		e.POST("/auth/login", h.Identity.Login) // route table shim so echo doesn't 404 on middleware (boom-8tn phase 4a)
 		e.POST("/api/v1/users/current/import", bh.ImportRequest)
 
 		// Baseline: no saved key.
@@ -74,7 +74,7 @@ var _ = Describe("ImportRequest (gaka-6jm.8)", func() {
 		_, has, err = hz.DB.GetEncryptedWakatimeKey(context.Background(), user)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(has).To(BeFalse(),
-			"gaka-6jm.8 violated: handler eagerly persisted the typed key on submit")
+			"boom-6jm.8 violated: handler eagerly persisted the typed key on submit")
 
 		// Best-effort: cancel any running job before DB teardown so the worker's
 		// terminal DB write doesn't race the test cleanup.

@@ -1,4 +1,4 @@
-// fixture_ginkgo_test.go — ginkgo mirror of fixture_test.go (gaka-0vp.13).
+// fixture_ginkgo_test.go — ginkgo mirror of fixture_test.go (boom-0vp.13).
 // 1:1 case map (1 stdlib TestXxx → 1 It):
 //
 //	TestFixturePipeline → It "fixture pipeline: golden smoke test on realistic anonymized data"
@@ -133,7 +133,7 @@ var _ = ginkgo.Describe("fixture pipeline", func() {
 	})
 })
 
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
+// -- helpers restored from stdlib partner (boom-0vp.17) --
 //
 //go:embed testdata/heartbeats_fixture.json
 var fixtureFS embed.FS

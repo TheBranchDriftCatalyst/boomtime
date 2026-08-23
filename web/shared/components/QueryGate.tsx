@@ -13,7 +13,7 @@ interface QueryGateProps<T> {
   /** Shown when the query fails, e.g. "Failed to load projects." */
   errorMessage: string;
   /**
-   * Optional content-shaped placeholder rendered while loading (gaka-gbbl.2).
+   * Optional content-shaped placeholder rendered while loading (boom-gbbl.2).
    * When omitted the gate falls back to the centered `<Spinner/>`, so every
    * existing caller is unchanged; heavy pages pass a `<…Skeleton/>` from
    * `@shared/components/Skeletons` that previews the eventual layout.

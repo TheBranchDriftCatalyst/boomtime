@@ -1,5 +1,5 @@
 // routes.go — Echo route registrations for the admin domain
-// (gaka-8tn phase 7). Extracted from internal/server/server.go's
+// (boom-8tn phase 7). Extracted from internal/server/server.go's
 // registerImportRoutes + the admin/backup/label-images/sources chunks
 // inside registerMiscRoutes + registerStatsRoutes + registerHeartbeat
 // Routes so those functions collapse toward N domain-Register calls.
@@ -65,11 +65,11 @@ func Register(e *echo.Echo, h *Handler) {
 	e.GET("/api/v1/users/current/db/export", h.DBExport)
 	e.POST("/api/v1/users/current/db/import", h.DBImport)
 
-	// gaka-93f.6: admin caps dashboard — users + roles/tiers + effective
+	// boom-93f.6: admin caps dashboard — users + roles/tiers + effective
 	// capabilities. Admin-gated in the handler (requireAdmin).
 	e.GET("/api/v1/admin/users", h.ListUsers)
 
-	// gaka-zp2s: the per-DOMAIN admin surfaces moved OUT of this god-package —
+	// boom-zp2s: the per-DOMAIN admin surfaces moved OUT of this god-package —
 	// catalyst-books (/api/v1/admin/books/*) to internal/books/admin (mounted via
 	// books.Module.RegisterAdminRoutes), and boomtime's label-image regeneration
 	// (/api/v1/admin/label-images/* + the public /api/v1/labels/:id/image) plus the
@@ -77,7 +77,7 @@ func Register(e *echo.Echo, h *Handler) {
 	// boomtime.Module.RegisterRoutes). Route strings + gating are byte-identical; this
 	// package now imports no data domain.
 
-	// catalyst-go-jobs admin (gaka-hney.2): the WHOLE jobs-admin HTTP surface
+	// catalyst-go-jobs admin (boom-hney.2): the WHOLE jobs-admin HTTP surface
 	// (list/queues/schedules/trigger/retry/cancel + per-job & bulk log clear) now
 	// lives in the jobs package as a PORTABLE plugin — jobs.RegisterAdminRoutes.
 	// This is the thin host mount: it owns the URL prefix + route-level CapAdmin
@@ -108,7 +108,7 @@ func Register(e *echo.Echo, h *Handler) {
 		})
 	}
 
-	// gaka-metrics: generic in-memory rate-metric registry snapshot (router
+	// boom-metrics: generic in-memory rate-metric registry snapshot (router
 	// request rates + per-kind job rate-limiter + external-API call rates).
 	// requireAdmin in-handler; CapAdmin route middleware for defense-in-depth,
 	// same posture as the jobs cluster. Nil-safe for the OpenAPI drift router.
@@ -130,7 +130,7 @@ func Register(e *echo.Echo, h *Handler) {
 		e.GET("/api/v1/admin/cli/spec", h.CLISpec, cliCap)
 		e.POST("/api/v1/admin/cli/run", h.CLIRun, cliCap)
 		e.POST("/api/v1/admin/cli/complete", h.CLIComplete, cliCap)
-		// Streaming twin of /cli/run (gaka-hney.5). Cookie-authed + admin-gated
+		// Streaming twin of /cli/run (boom-hney.5). Cookie-authed + admin-gated
 		// in-handler like the other WS routes (a WS handshake can't carry the
 		// cap middleware's header), so no cliCap here.
 		e.GET("/api/v1/admin/cli/run/ws", h.CLIRunWS)

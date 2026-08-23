@@ -43,7 +43,7 @@ export { escapeHtml };
  *
  * 1. Structured: `tooltipHtml(spec: TooltipSpec)` — preferred going forward,
  *    escapes every field and produces the standard title/subtitle/rows/footer
- *    layout. Sibling bead gaka-7m4 consumes this signature via `spec.rows`.
+ *    layout. Sibling bead boom-7m4 consumes this signature via `spec.rows`.
  *
  * 2. Legacy positional: `tooltipHtml(title: string, ...rows)` where each row
  *    is either a plain string or `[label, value]`. Kept for zero-churn

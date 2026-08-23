@@ -1,4 +1,4 @@
-// widgets_ginkgo_test.go — ginkgo mirror of widgets_test.go (bd gaka-6jm.5).
+// widgets_ginkgo_test.go — ginkgo mirror of widgets_test.go (bd boom-6jm.5).
 // 1:1 case map (4 stdlib TestXxx):
 //
 //	TestIsWidgetScopeProjectHidden_HiddenProject     → isWidgetScopeProjectHidden > "hidden project reported (case-insensitive)"

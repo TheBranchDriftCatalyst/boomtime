@@ -48,7 +48,7 @@ type Layout = {
 };
 
 // Collapse a multi-column layout into a single-column vertical stack for phone
-// breakpoints (gaka-k26n.2). A 12-col magazine layout is illegible at 375px (a
+// breakpoints (boom-k26n.2). A 12-col magazine layout is illegible at 375px (a
 // w=3 tile is ~28px), so we preserve reading order (row-major), give every tile
 // the full mobile width, and re-flow y so nothing overlaps. Pure + module-level
 // so it's trivially testable. Applied READ-ONLY only — see the wiring below.
@@ -80,7 +80,7 @@ export interface DraggableGridLayoutProps {
   rowHeight?: number;
   /** If provided, INITIAL layout that seeds when storage returns null. */
   seedLayout?: GridLayoutItem[];
-  /** Edit-mode tile selection (gaka-lzr). When set, the matching tile gets
+  /** Edit-mode tile selection (boom-lzr). When set, the matching tile gets
    * `data-selected` for styling and the config sidebar targets it. */
   selectedKey?: string | null;
   /** Fired when a tile is selected (its key) or the empty grid is clicked
@@ -153,7 +153,7 @@ export function DraggableGridLayout({
     // `static: true` per-item flag so drag never fires here in read-only.
     if (!editable) return;
     // Preserve per-item view/hidden/config metadata across RGL's geometry-only
-    // shape (gaka-lzr). Extracted to a pure helper so the contract is tested.
+    // shape (boom-lzr). Extracted to a pure helper so the contract is tested.
     const merged = applyPositions(layout, next);
     setLayout(merged);
     void storage.save(merged);
@@ -171,7 +171,7 @@ export function DraggableGridLayout({
     void storage.save(merged);
   };
 
-  // Phone-breakpoint collapse (gaka-k26n.2). In READ mode we swap in a
+  // Phone-breakpoint collapse (boom-k26n.2). In READ mode we swap in a
   // single-column stacked layout (and 1 col) at xs/xxs so the public /p/:slug
   // dashboard is legible on a phone. EDIT mode is deliberately left on the
   // full grid at every breakpoint: the editor is desktop-only, and swapping
@@ -192,7 +192,7 @@ export function DraggableGridLayout({
       style={{ width: "100%" }}
       className={`catalyst-grid${editable ? " catalyst-grid--editing" : ""}`}
       data-testid="catalyst-grid"
-      // Clicking empty grid space (not a tile) clears the selection (gaka-lzr).
+      // Clicking empty grid space (not a tile) clears the selection (boom-lzr).
       onClick={
         editable && onSelectTile
           ? (e) => {

@@ -1,5 +1,5 @@
 // untaggedShare.ts — small helper for the "N% untagged / browsing"
-// subtitle on per-axis charts (gaka-6ci). Backend filters null-axis
+// subtitle on per-axis charts (boom-6ci). Backend filters null-axis
 // heartbeats out of the per-axis pie total, so the sum of the visible
 // slices is < the grand total. This helper computes the delta and
 // formats it for a ChartCard subtitle.

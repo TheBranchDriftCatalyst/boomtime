@@ -36,7 +36,7 @@ interface CliStreamMsg {
   error?: string;
 }
 
-/** useCliRunStream (gaka-hney.5): opens the /api/v1/admin/cli/run/ws socket,
+/** useCliRunStream (boom-hney.5): opens the /api/v1/admin/cli/run/ws socket,
  * sends one run request, and accumulates the live output + terminal status so a
  * <TerminalLogViewer> can render it. Cookie-authed (same-origin WS). */
 export function useCliRunStream() {

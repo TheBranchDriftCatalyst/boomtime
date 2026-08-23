@@ -1,4 +1,4 @@
-// profile_ginkgo_test.go — ginkgo mirror of profile_test.go (gaka-6jm.1/.12/bi2).
+// profile_ginkgo_test.go — ginkgo mirror of profile_test.go (boom-6jm.1/.12/bi2).
 // 1:1 case map (2 stdlib TestXxx):
 //
 //	TestPublicProfileCacheHeadersTightPolicy → public profile cache headers > "tight policy (max-age=60, must-revalidate, no s-maxage, quoted ETag)"
@@ -18,7 +18,7 @@ import (
 )
 
 // routerWithPublicProfileG — mirror of the stdlib file's routerWithPublicProfile.
-var _ = Describe("public profile cache headers (gaka-6jm.12)", func() {
+var _ = Describe("public profile cache headers (boom-6jm.12)", func() {
 	It("advertises tight policy — max-age=60, must-revalidate, no s-maxage, quoted ETag", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
@@ -61,7 +61,7 @@ var _ = Describe("public profile cache headers (gaka-6jm.12)", func() {
 	})
 })
 
-var _ = Describe("PutPublicProfile body-size cap (gaka-bi2)", func() {
+var _ = Describe("PutPublicProfile body-size cap (boom-bi2)", func() {
 	It("rejects a 5 KiB body with 413 before slug regex runs", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()

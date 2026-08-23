@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- Fix (gaka-mwp): wave-1 seed patches (00039) shipped with two
+-- Fix (boom-mwp): wave-1 seed patches (00039) shipped with two
 -- condition JSON shapes that don't match the evaluator's expected
 -- field names. Result: both patches silently never fire on any real
 -- payload — the evaluator drops them without error.

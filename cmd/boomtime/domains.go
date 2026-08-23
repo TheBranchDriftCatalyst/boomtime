@@ -6,7 +6,7 @@ import (
 )
 
 // buildDomainRegistry returns the composition root's canonical domain registry
-// (gaka-zp2s), built by the single source in internal/domainreg. Used by commands
+// (boom-zp2s), built by the single source in internal/domainreg. Used by commands
 // that only need the aggregated column contract (rotate-encryption-key); the server
 // path uses domainreg.Build() directly so it also gets the typed late-wire handles.
 //

@@ -1,4 +1,4 @@
--- 00079_notifications.sql — DURABLE notifications (gaka-books). The notify hub is
+-- 00079_notifications.sql — DURABLE notifications (boom-books). The notify hub is
 -- an in-process WS fan-out: an event fired while the user has no open session is
 -- dropped on the floor. Durable events are ALSO written here, so they survive a
 -- missing session and are delivered when the user next connects (fetched on mount +

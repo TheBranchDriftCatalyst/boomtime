@@ -5,7 +5,7 @@
 // DB/Cfg/Logger/Cache (+ the catalyst-go-jobs store, a domain-free plugin), so
 // it imports no data domain — the boomtime-specific admin surface (label-image
 // regeneration + the wakatime.com import cluster) moved to internal/boomtime/admin
-// (gaka-zp2s), and the books admin surface to internal/books/admin.
+// (boom-zp2s), and the books admin surface to internal/books/admin.
 //
 // SECURITY POSTURE: every admin-gated endpoint runs requireAdmin BEFORE
 // reading the body. The destructive restore endpoint (DBImport) demands an
@@ -35,7 +35,7 @@ import (
 //   - Cfg    — admin allowlist (IsAdmin)
 //   - Logger — export/restore + audit logging
 //   - Cache  — busted on the RestoreAll path so dashboards pick up new state
-//   - JobStore / JobEnqueuer / JobRegistry — catalyst-go-jobs (gaka-hney.2), the
+//   - JobStore / JobEnqueuer / JobRegistry — catalyst-go-jobs (boom-hney.2), the
 //     portable jobs-admin cluster (list/trigger/retry + queue overview). Set after
 //     construction. Nil = jobs subsystem not wired (handlers 503).
 //   - JobLogStore — object store the per-job log endpoints read + delete from.
@@ -63,7 +63,7 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, cch *cache.TT
 }
 
 // SetJobs wires the catalyst-go-jobs Store + Enqueuer + Registry after construction
-// (gaka-hney.2) so the admin Jobs tab can list history + trigger/retry and render the
+// (boom-hney.2) so the admin Jobs tab can list history + trigger/retry and render the
 // per-kind queue overview. Nil = jobs not wired; the handlers return 503.
 func (h *Handler) SetJobs(store *jobs.Store, enq jobs.Enqueuer, reg *jobs.Registry) {
 	h.JobStore = store
@@ -72,7 +72,7 @@ func (h *Handler) SetJobs(store *jobs.Store, enq jobs.Enqueuer, reg *jobs.Regist
 }
 
 // SetJobLogStore wires the object store the per-job log endpoints read + delete from
-// (gaka-hney). Nil = S3 not configured (GET .../logs 404s, DELETE no-ops).
+// (boom-hney). Nil = S3 not configured (GET .../logs 404s, DELETE no-ops).
 func (h *Handler) SetJobLogStore(s objstore.Store) { h.JobLogStore = s }
 
 // requireAdmin: 401 without a token, 403 when not on the admin allowlist. Returns the

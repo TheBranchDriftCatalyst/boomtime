@@ -1,4 +1,4 @@
-// rename_apply_test.go — the ingest-time rename applier (gaka-scrub). Pure specs
+// rename_apply_test.go — the ingest-time rename applier (boom-scrub). Pure specs
 // construct rules directly (same package); the parity + loader specs use the
 // live test DB. The parity spec is the load-bearing one: it proves the Go
 // applier agrees with Postgres regexp_replace (first-match-only), so a rule
@@ -81,7 +81,7 @@ var _ = ginkgo.Describe("IngestRenameSet.Apply", func() {
 	})
 })
 
-var _ = ginkgo.Describe("Go applier ↔ Postgres regexp_replace PARITY (gaka-scrub)", func() {
+var _ = ginkgo.Describe("Go applier ↔ Postgres regexp_replace PARITY (boom-scrub)", func() {
 	ginkgo.It("template output matches regexp_replace(input, pat, tmpl, 'i') for every case", func() {
 		d := openTestDBG()
 		ctx := context.Background()

@@ -1,4 +1,4 @@
-// OverviewWidgetRenderer (gaka-7uc, Phase 3) — dispatches an Overview widget
+// OverviewWidgetRenderer (boom-7uc, Phase 3) — dispatches an Overview widget
 // kind id to its in-page, SELF-FETCHING React renderer for the composable
 // Overview dashboard grid (Phase 4 wires the visible editor).
 //
@@ -54,7 +54,7 @@ import {
   useOverviewHealthActivity,
 } from "@shared/features/overview/overviewWidgets";
 import type { PunchcardPayload, StatsPayload } from "@shared/types/stats";
-// Part B Stage 3 (gaka-174.x) built the data-driven alternative to this
+// Part B Stage 3 (boom-174.x) built the data-driven alternative to this
 // file's switch cases, for target:"both" kinds only, gated behind the
 // widgetSpecEngine FE flag. Part B Stage 5 cutover: the flag is gone — every
 // target:"both" kind routes through SpecRenderer unconditionally now (see
@@ -68,7 +68,7 @@ import {
 export interface OverviewWidgetRendererProps {
   kind: string;
   view?: string;
-  /** Opaque per-widget config (gaka-lzr). Thin for now: may carry a `topN`
+  /** Opaque per-widget config (boom-lzr). Thin for now: may carry a `topN`
    * for list widgets. Threaded but otherwise ignored safely. */
   config?: Record<string, unknown>;
 }

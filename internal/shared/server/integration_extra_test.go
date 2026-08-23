@@ -1,4 +1,4 @@
-// integration_extra_test.go — DB-backed coverage boost for gaka-d6x.
+// integration_extra_test.go — DB-backed coverage boost for boom-d6x.
 //
 // These tests need Postgres (BOOM_TEST_DATABASE_URL). They cover:
 //   - userLookupFromDB happy/miss paths (bucket key by resolved owner)
@@ -72,7 +72,7 @@ func mintUserAndToken(t *testing.T, database *db.DB, prefix string) (username, t
 //
 //  1. A real token belonging to alice MUST resolve to "alice" (proves the
 //     hot path — otherwise EVERY authenticated request would silently
-//     fall back to IP bucketing, defeating gaka-jk6's user-scope limit).
+//     fall back to IP bucketing, defeating boom-jk6's user-scope limit).
 //  2. A bogus/tampered token MUST resolve to "" — never to some OTHER
 //     user (no oracle: the limiter caller can't distinguish "no auth"
 //     from "wrong auth" via the bucket key).
@@ -126,7 +126,7 @@ func TestUserLookupFromDB_ValidTokenResolvesToOwner_InvalidReturnsEmpty(t *testi
 // --- userCtxMiddleware end-to-end ----------------------------------------
 
 // TestUserCtxMiddleware_ValidTokenStampsOwnerIntoCtx pins the INVARIANT
-// central to gaka-ar7 (LogHub cross-tenant leak fix): a valid token MUST
+// central to boom-ar7 (LogHub cross-tenant leak fix): a valid token MUST
 // end up as db.UserFrom(ctx) so the pgx tracer's DEBUG SQL records carry
 // the "user" attr for LogHub filtering. Without this stamp, every SQL
 // query would broadcast to every authenticated Logs viewer.
@@ -159,7 +159,7 @@ func TestUserCtxMiddleware_ValidTokenStampsOwnerIntoCtx(t *testing.T) {
 // no-oracle INVARIANT: a token that doesn't match any user MUST NOT stamp
 // SOME OTHER (e.g. previously-cached) user into ctx. A stale/misresolved
 // stamp would attribute SQL to the wrong owner — exactly the cross-tenant
-// leak gaka-ar7 closed. Fail-open on DB errors is intentional; we assert
+// leak boom-ar7 closed. Fail-open on DB errors is intentional; we assert
 // there's no wrong-user attribution.
 func TestUserCtxMiddleware_UnknownTokenDoesNotStamp(t *testing.T) {
 	database := testutil.OpenDB(t)
@@ -208,7 +208,7 @@ func TestUserCtxMiddleware_UnknownTokenDoesNotStamp(t *testing.T) {
 // is CLOSED — every GetUserByToken returns an err (not ErrNoRows), which
 // the middleware must treat identically to "unknown token": no stamp,
 // no denial. A regression that stamps SOME user on DB error would
-// re-open the cross-tenant LogHub leak gaka-ar7 closed.
+// re-open the cross-tenant LogHub leak boom-ar7 closed.
 func TestUserCtxMiddleware_DBErrorPathIsFailOpen(t *testing.T) {
 	database := testutil.OpenDB(t)
 	// Mint a real token so ParseAuthHeader accepts it. We're not going to
@@ -240,7 +240,7 @@ func TestUserCtxMiddleware_DBErrorPathIsFailOpen(t *testing.T) {
 		t.Fatalf("DB error must NOT deny request (fail-open contract); got status %d", rec.Code)
 	}
 	// No stamp: a DB error MUST leave the ctx unstamped — never fake a
-	// user. Wrong-user attribution would re-open gaka-ar7's cross-tenant
+	// user. Wrong-user attribution would re-open boom-ar7's cross-tenant
 	// LogHub leak.
 	if stamped != "" {
 		t.Errorf("DB error must NOT stamp any user into ctx; got %q — would cross-attribute SQL to wrong owner", stamped)

@@ -1,5 +1,5 @@
 /* hacker.css — catalyst-hacker theme overrides for the public dashboard
- * (gaka-keb). Sets the CSS custom properties the isolated grid primitive
+ * (boom-keb). Sets the CSS custom properties the isolated grid primitive
  * (web/src/lib/grid/grid.css) reads. All boomtime-domain color / font
  * tokens live here — the primitive itself stays skinnable by any consumer.
  */
@@ -25,7 +25,7 @@
   position: relative;
   min-height: 100vh;
   color: var(--foreground);
-  /* CRT scanline overlay (very faint), gaka-keb design brief. */
+  /* CRT scanline overlay (very faint), boom-keb design brief. */
   background-image: repeating-linear-gradient(
     to bottom,
     color-mix(in oklab, var(--primary) 8%, transparent) 0,

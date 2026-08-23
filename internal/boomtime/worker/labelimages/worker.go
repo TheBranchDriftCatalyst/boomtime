@@ -1,5 +1,5 @@
 // Package labelimages runs the ComfyUI-shim-backed label archetype image
-// generation loop (gaka-myv). Two entrypoints:
+// generation loop (boom-myv). Two entrypoints:
 //
 //   - Run(ctx): iterate the shipped catalog, generate + save any label that
 //     doesn't already have a row in label_images. Called from `boomtime run`
@@ -96,7 +96,7 @@ func newWorkerForTest(database *db.DB, client *comfyui.Client, model string, log
 // Order of preference:
 //  1. Explicit `entries` field (tests inject via newWorkerForTest so the
 //     unit suite doesn't need a live labels table).
-//  2. DB-backed labels catalog (post-gaka-364.3 — the new source of truth).
+//  2. DB-backed labels catalog (post-boom-364.3 — the new source of truth).
 //     Every row with a non-empty optimized_prompt becomes an entry.
 //  3. Fall back to the compiled-in labelcatalog.Entries baseline if the DB
 //     read fails or the table is empty (the old pre-pivot behavior). This
@@ -175,7 +175,7 @@ func (w *Worker) Run(ctx context.Context) {
 }
 
 // RegenerateEntry is the exported single-call generate+save path used by the
-// imagejobs pool Executor (gaka-8bz). Unlike RegenerateOne it takes the fully-
+// imagejobs pool Executor (boom-8bz). Unlike RegenerateOne it takes the fully-
 // resolved catalog Entry (id + prompt + optional model/size/seed overrides)
 // instead of looking it up from the DB — the imagejobs.Registry already holds
 // exactly those fields when the operator submits a regen, so the caller
@@ -202,7 +202,7 @@ func (w *Worker) RegenerateEntry(ctx context.Context, e labelcatalog.Entry) erro
 // Errors from shim/DB are returned to the caller so the CLI surfaces
 // non-zero exit on failure.
 //
-// Post gaka-364.3 the DB is the source of truth: look up id → prompt
+// Post boom-364.3 the DB is the source of truth: look up id → prompt
 // there first, fall back to the compiled labelcatalog baseline so the
 // CLI still works on a partially-migrated dev DB.
 func (w *Worker) RegenerateOne(ctx context.Context, id string) error {
@@ -304,7 +304,7 @@ func (w *Worker) systemPrompt(ctx context.Context) string {
 //
 // Empty parts are dropped so the join stays clean — an operator with
 // a blank systemPrompt still gets `${description}, ${entryPrompt}`, and
-// a label without a description falls back to the pre-gaka-8bz
+// a label without a description falls back to the pre-boom-8bz
 // `${systemPrompt}, ${entryPrompt}` shape.
 func buildFinalPrompt(systemPrompt, description, entryPrompt string) string {
 	parts := make([]string, 0, 3)

@@ -1,5 +1,5 @@
 // JobLogStream — the job-scoped log panel inside the Admin > Jobs side drawer
-// (gaka-f0is, gaka-hney).
+// (boom-f0is, boom-hney).
 //
 // Two sources, chosen by the job's lifecycle:
 //   - ACTIVE (queued|running): stream live from the server LogHub via

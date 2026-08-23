@@ -1,5 +1,5 @@
 // Package spaces owns the spaces + dashboard-layout HTTP surface. Extracted
-// from the god-type handler.Handler as part of gaka-8tn phase 2a so a domain
+// from the god-type handler.Handler as part of boom-8tn phase 2a so a domain
 // (spaces) owns its handler struct + routes + tests as one folder.
 //
 // A Space is a named, user-scoped filter (see internal/db/spaces.go for the
@@ -77,7 +77,7 @@ func (h *Handler) CreateSpace(c *echo.Context) error {
 		return apihelpers.RespondErr(c, aerr)
 	}
 	var req spaceRequest
-	// gaka-bi2: 4 KiB cap — space create body is a single short name string.
+	// boom-bi2: 4 KiB cap — space create body is a single short name string.
 	if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitSmall); aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -104,7 +104,7 @@ func (h *Handler) UpdateSpace(c *echo.Context) error {
 		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "Invalid space id", nil))
 	}
 	var req spacePatchRequest
-	// gaka-bi2: 4 KiB cap — patch body is optional name + position int.
+	// boom-bi2: 4 KiB cap — patch body is optional name + position int.
 	if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitSmall); aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -178,7 +178,7 @@ func (h *Handler) AddSpaceRule(c *echo.Context) error {
 		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "Invalid space id", nil))
 	}
 	var req spaceRuleRequest
-	// gaka-bi2: 64 KiB cap — rule adds carry an axis + matchValue (regex or
+	// boom-bi2: 64 KiB cap — rule adds carry an axis + matchValue (regex or
 	// literal); Medium leaves headroom for template rules without allowing a
 	// runaway body.
 	if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitMedium); aerr != nil {

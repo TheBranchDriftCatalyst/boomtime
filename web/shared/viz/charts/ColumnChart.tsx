@@ -25,7 +25,7 @@ export interface ColumnSeries {
   name: string;
   values: number[];
   color: string;
-  // gaka-7m4: when this series is the synthesized "Other (N more)" segment,
+  // boom-7m4: when this series is the synthesized "Other (N more)" segment,
   // the caller carries the collapsed tail members so the stacked-segment
   // tooltip can render a breakdown of what's inside Other (range-total, not
   // per-day — the per-day breakdown would defeat the payload cap).
@@ -166,7 +166,7 @@ export function ColumnChart(props: ColumnChartProps) {
               .attr("stroke", card)
               .attr("stroke-width", 0.5)
               .on("mousemove", (event) => {
-                // gaka-7m4: hovering the Other segment reveals the collapsed
+                // boom-7m4: hovering the Other segment reveals the collapsed
                 // members. Breakdown is range-total (not per-day) — labelled
                 // so the user knows this row totals across the whole range,
                 // not just this day. The day-scoped Time/Share stays visible.

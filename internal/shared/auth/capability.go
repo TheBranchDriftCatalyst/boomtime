@@ -1,5 +1,5 @@
 // capability.go — the role + capability primitives for the user-demarcation
-// substrate (gaka-0oe / gaka-93f). Pure types + the role→default-grant map;
+// substrate (boom-0oe / boom-93f). Pure types + the role→default-grant map;
 // no DB, no config, no HTTP. The Identity that consumes these lives in
 // identity.go.
 //
@@ -10,7 +10,7 @@
 // BOOM_FEATURE_USER_MODEL flips on — see apihelpers.Identify.
 //
 // This package is deliberately dependency-light so it can later lift out into
-// a reusable `catalyst-auth` module (gaka-93f architecture note) without
+// a reusable `catalyst-auth` module (boom-93f architecture note) without
 // dragging boomtime internals along.
 package auth
 
@@ -85,7 +85,7 @@ var AllCapabilities = []Capability{
 }
 
 // RoleFromGroups derives a boomtime Role from an OIDC identity's provider
-// groups via the BOOM_AUTHENTIK_GROUP_TO_ROLE map (gaka-0oe.11). Among all
+// groups via the BOOM_AUTHENTIK_GROUP_TO_ROLE map (boom-0oe.11). Among all
 // groups that map to a valid role, the HIGHEST-privilege one wins
 // (admin>full>service>light) — deterministic regardless of token group order.
 // No match → RoleLight (fail-closed to the cheapest tier).

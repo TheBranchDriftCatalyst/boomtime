@@ -1,7 +1,7 @@
 package identity
 
 // wakatime_key.go — endpoints for the encrypted-at-rest imported Wakatime API
-// key (gaka-6jm.2).
+// key (boom-6jm.2).
 //
 // SECURITY POSTURE (paranoid on purpose):
 //
@@ -77,7 +77,7 @@ const wakatimeProbeTimeout = 10 * time.Second
 // server-side effect (which status to store) is surfaced.
 //
 // owner is threaded through so the probe's warning log lines are tagged with
-// the acting user (gaka-awh.2). It's not used for auth here — the caller has
+// the acting user (boom-awh.2). It's not used for auth here — the caller has
 // already resolved the owner — only as the slog attribute the LogHub filter
 // keys off of.
 func (h *Handler) probeWakatimeKey(ctx context.Context, owner, plaintext string) db.WakatimeKeyStatus {
@@ -149,7 +149,7 @@ func (h *Handler) SaveWakatimeKey(c *echo.Context) error {
 		return apihelpers.RespondErr(c, aerr)
 	}
 	var req wakatimeKeySaveRequest
-	// gaka-bi2: 4 KiB cap — the body is a single opaque key string; anything
+	// boom-bi2: 4 KiB cap — the body is a single opaque key string; anything
 	// larger cannot be a real Wakatime API key and just wastes memory before
 	// the encrypt step.
 	if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitSmall); aerr != nil {

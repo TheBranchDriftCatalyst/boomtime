@@ -1,4 +1,4 @@
-// githubStatsWidget.ts (gaka-v1k Phase 4) — shared, JSX-free plumbing for the
+// githubStatsWidget.ts (boom-v1k Phase 4) — shared, JSX-free plumbing for the
 // GitHub-only chart widgets (commits / repos / languages). Split out of the
 // .tsx so those files export ONLY components (react-refresh clean) and so all
 // three GH charts read from ONE react-query cache entry.

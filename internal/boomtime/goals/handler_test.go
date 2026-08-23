@@ -1,4 +1,4 @@
-// goals_ginkgo_test.go — ginkgo mirror of goals_test.go (gaka-wpb).
+// goals_ginkgo_test.go — ginkgo mirror of goals_test.go (boom-wpb).
 // 1:1 case map (13 stdlib TestXxx incl. subtests → 26 Its):
 //
 //	TestGoalsCRUDRoundtrip                           → goals CRUD > "POST/GET/LIST/PATCH/DELETE round-trip semantically intact"
@@ -53,7 +53,7 @@ func createGoalG(e http.Handler, token, name, spec string) string {
 	return env.Goal.ID
 }
 
-var _ = Describe("goals CRUD (gaka-wpb)", func() {
+var _ = Describe("goals CRUD (boom-wpb)", func() {
 	It("POST/GET/LIST/PATCH/DELETE round-trip preserves the spec semantically", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
@@ -621,5 +621,5 @@ func min(a, b int) int {
 	return b
 }
 
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
+// -- helpers restored from stdlib partner (boom-0vp.17) --
 const weeklyGoSpec = `{"kind":"time","axis":"language","value":"Go","op":">=","target_seconds":3600,"window":"week"}`

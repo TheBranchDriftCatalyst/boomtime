@@ -43,7 +43,7 @@ const queryClient = new QueryClient({
   },
 });
 
-// gaka-ie3: migrated from <BrowserRouter> + <Routes> to
+// boom-ie3: migrated from <BrowserRouter> + <Routes> to
 // createBrowserRouter + <RouterProvider> so the data-router-only APIs
 // (useBlocker, unstable_usePrompt) are available. The route table is
 // declared in @shared/app/App (`ROUTES`); RootLayout wraps every child with
@@ -86,7 +86,7 @@ createRoot(document.getElementById("root")!).render(
       */}
       <TooltipProvider delayDuration={200}>
         {/*
-          gaka-1im: admin-only devtools annotation subsystem. DevProviders is a
+          boom-1im: admin-only devtools annotation subsystem. DevProviders is a
           cheap localStorage-backed AnnotationProvider — safe to mount for every
           user; the actual UI (<DevModeToggle/>) is admin-gated in HeaderBar.
         */}

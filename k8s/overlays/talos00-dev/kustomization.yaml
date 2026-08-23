@@ -24,7 +24,7 @@
 # published. Kustomize's image transformer matches on image NAME, so any
 # boomtime container built under that kustomization gets its tag rewritten
 # regardless of which file declared it. Verified: a deployment pinned to
-# :gaka-domain-framework built under that transformer comes out as :latest.
+# :boom-domain-framework built under that transformer comes out as :latest.
 #
 # Nesting this dev Deployment there would therefore mean its feature-branch tag
 # is overwritten with prod's tag on every prod image publish — the environment

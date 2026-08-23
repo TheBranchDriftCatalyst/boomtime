@@ -1,5 +1,5 @@
 // PublicProfileCard — Settings tab card that owns the public-profile
-// enable-toggle + slug for the caller (gaka-6jm.1).
+// enable-toggle + slug for the caller (boom-6jm.1).
 //
 // Contract:
 //   - Reads via GET /api/v1/users/current/profile on mount.

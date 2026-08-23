@@ -15,7 +15,7 @@ import (
 // Workouts ingests a single workout: POST /api/v1/users/current/workouts.
 // Wraps the same singleton-vs-bulk split as heartbeats so the companion app
 // can start with one-off POSTs before batching. Body capped at apihelpers.BodyLimitLarge
-// (gaka-d6x.handler critique fix).
+// (boom-d6x.handler critique fix).
 func (h *Handler) Workouts(c *echo.Context) error {
 	var w model.WorkoutPayload
 	if aerr := apihelpers.BindJSONWithLimit(c, &w, apihelpers.BodyLimitLarge); aerr != nil {
@@ -33,7 +33,7 @@ func (h *Handler) Workouts(c *echo.Context) error {
 // (envelope form, then bare array) see the same bytes — echo's DefaultBinder
 // reads c.Request().Body directly (json.NewDecoder), so the second Bind would
 // otherwise see an empty reader and 400 on any bare-array payload
-// (gaka-d6x.handler critique). The MaxBytesReader also prevents OOM via
+// (boom-d6x.handler critique). The MaxBytesReader also prevents OOM via
 // oversized ingest.
 func (h *Handler) WorkoutsBulk(c *echo.Context) error {
 	r := c.Request()

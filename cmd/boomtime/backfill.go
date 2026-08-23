@@ -9,7 +9,7 @@
 //   - `backfill github-stats`  (github.NewBackfillGithubStatsCmd) — refresh
 //     the per-user GitHub stats cache.
 //
-// (The former `backfill git` git-history experiment — gaka-vh8 — was removed;
+// (The former `backfill git` git-history experiment — boom-vh8 — was removed;
 // it synthesized fake heartbeats and never graduated past an experiment.)
 
 package main

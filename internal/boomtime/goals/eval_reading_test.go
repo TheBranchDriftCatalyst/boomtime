@@ -27,7 +27,7 @@ var _ = Describe("ValidateSpec (reading-source time leaf)", func() {
 		Expect(err).NotTo(HaveOccurred())
 	})
 
-	It("accepts a genre'd reading goal (axis=genre + value, gaka-dvy9)", func() {
+	It("accepts a genre'd reading goal (axis=genre + value, boom-dvy9)", func() {
 		spec := `{"kind":"time","source":"reading","axis":"genre","value":"Fiction","op":">=","target_seconds":10800,"window":"week"}`
 		p, err := ValidateSpec(json.RawMessage(spec))
 		Expect(err).NotTo(HaveOccurred())
@@ -56,7 +56,7 @@ var _ = Describe("ValidateSpec (reading-source time leaf)", func() {
 			`{"kind":"time","source":"chicken","op":">=","target_seconds":1,"window":"week"}`,
 			"unknown source"),
 		// A coding axis ("language") is NOT a reading dimension — the runtime
-		// measure only attributes genre/series/status (gaka-dvy9).
+		// measure only attributes genre/series/status (boom-dvy9).
 		Entry("reading source with a non-reading axis",
 			`{"kind":"time","source":"reading","axis":"language","op":">=","target_seconds":1,"window":"week"}`,
 			"unknown reading axis"),

@@ -137,7 +137,7 @@ func (h *LogHub) Backfill(afterID int64) []LogEntry {
 // semantics enforced when a requester is not identifiable.
 const OwnerAttrKey = "user"
 
-// FilterForUser is the per-record owner gate that fixes gaka-awh.2 — LogHub
+// FilterForUser is the per-record owner gate that fixes boom-awh.2 — LogHub
 // used to fan every record out to every authenticated viewer, leaking cross-
 // tenant activity metadata (who saved a wakatime key, whose password rotated,
 // which owner's import job just finished). Records tagged with an owner via

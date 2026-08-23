@@ -1,6 +1,6 @@
 // testhelpers_test.go — boomtime-admin copy of the external ginkgo test helpers
 // (testutilTokenData) + local router builders that stand up the moved label-images /
-// import admin surface (gaka-zp2s). The internal/admin copies stay put for the
+// import admin surface (boom-zp2s). The internal/admin copies stay put for the
 // admin-package tests that remain there.
 package admin_test
 

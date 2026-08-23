@@ -1,4 +1,4 @@
-// GoalNearnessStrip tests (gaka-cl9) — pin the at-a-glance overview's core
+// GoalNearnessStrip tests (boom-cl9) — pin the at-a-glance overview's core
 // behavior: one cell per goal (INCLUDING paused/disabled goals, shown dimmed as
 // "—" when they have no evaluated progress), correct %, and the lastProgress
 // fallback when the batch is missing a goal. Mocks the batched progress hook so

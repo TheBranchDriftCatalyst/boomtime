@@ -1,4 +1,4 @@
-// handler_ginkgo_test.go — ginkgo mirror of handler_test.go (gaka-bi2).
+// handler_ginkgo_test.go — ginkgo mirror of handler_test.go (boom-bi2).
 // 1:1 case map (4 stdlib TestXxx):
 //
 //	TestBindJSONWithLimit_HappyPath        → BindJSONWithLimit > "under-cap body binds cleanly"
@@ -48,7 +48,7 @@ func runBindLimitGinkgo(body []byte, dst any, limit int64) (*httptest.ResponseRe
 	return rec, bound
 }
 
-var _ = Describe("BindJSONWithLimit (gaka-bi2)", func() {
+var _ = Describe("BindJSONWithLimit (boom-bi2)", func() {
 	It("binds cleanly on an under-cap body and 204s the downstream handler", func() {
 		body, err := json.Marshal(tinyPayloadGinkgo{
 			CurrentPassword: "test1234",
@@ -163,7 +163,7 @@ type panicReaderCloserGinkgo struct {
 func (p *panicReaderCloserGinkgo) Read(b []byte) (int, error) { return p.r.Read(b) }
 func (p *panicReaderCloserGinkgo) Close() error               { return nil }
 
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
+// -- helpers restored from stdlib partner (boom-0vp.17) --
 type tinyPayload struct {
 	CurrentPassword string `json:"currentPassword"`
 	NewPassword     string `json:"newPassword"`

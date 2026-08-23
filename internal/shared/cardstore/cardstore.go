@@ -1,5 +1,5 @@
 // Package cardstore is the durable S3/MinIO-backed cache for rendered social
-// cards (gaka-fym5). It holds exactly one object per user — cards/<user>.png,
+// cards (boom-fym5). It holds exactly one object per user — cards/<user>.png,
 // overwritten on regen — so it's a bounded, durable cache rather than an
 // ever-growing archive. The og.png handler passes through it: serve the cached
 // PNG when fresh, otherwise render → Put → serve. MinIO stays private

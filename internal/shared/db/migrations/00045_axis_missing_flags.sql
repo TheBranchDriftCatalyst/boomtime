@@ -1,4 +1,4 @@
--- 00045_axis_missing_flags.sql (gaka-6ci)
+-- 00045_axis_missing_flags.sql (boom-6ci)
 --
 -- Add per-axis "was this originally NULL on the source heartbeat?" sentinel
 -- columns to hb_rollup_daily. Fixes the semantic collision where NULL-axis
@@ -8,15 +8,15 @@
 -- bucket, making a language pie report 55%+ 'Other' when the real answer is
 -- "half your tracked time was browsing."
 --
--- Design (per gaka-6ci):
+-- Design (per boom-6ci):
 --   - Additive columns, all NOT NULL DEFAULT FALSE. No PK change, no dedupe
 --     hazard (Postgres NULL != NULL in composite unique keys, so allowing
 --     NULL on the axis columns themselves is out — see the schema-audit
 --     bead for rejection rationale).
 --   - Ingest (internal/db/ingest.go) populates via `bool_or(<col> IS NULL)`
---     over each rollup group. See phase 2 of gaka-6ci.
+--     over each rollup group. See phase 2 of boom-6ci.
 --   - Per-chart discriminators live in the 8 aggregation SQL files (phase 3
---     of gaka-6ci). Language pie / project pie / file breakdown add
+--     of boom-6ci). Language pie / project pie / file breakdown add
 --     `WHERE NOT <axis>_missing`; category pie / total-time / editor pie
 --     do not (browsing IS a category, browsers ARE editors, total must
 --     reconcile).
@@ -24,7 +24,7 @@
 -- Backfill note: existing rows keep <axis>_missing = FALSE. As users add new
 -- heartbeats and their historical days get re-rolled (ingest.go DELETEs then
 -- INSERTs on rollup rebuild), the flags self-heal. An operator can also run
--- `boomtime rebuild-rollup-flags` (gaka-6ci.6) to force immediate correction.
+-- `boomtime rebuild-rollup-flags` (boom-6ci.6) to force immediate correction.
 
 -- +goose Up
 ALTER TABLE hb_rollup_daily

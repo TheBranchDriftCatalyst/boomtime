@@ -1,5 +1,5 @@
 // PredicateBuilder tests — lock down the state transitions of the
-// recursive builder (gaka-wpb). This is the one novel piece with no
+// recursive builder (boom-wpb). This is the one novel piece with no
 // pattern-match in the codebase; each test asserts a load-bearing
 // invariant of the lift-and-lower design.
 //
@@ -113,7 +113,7 @@ describe("PredicateBuilder", () => {
   // REAL DOM (Radix Select's pointer events work now that setup.ts
   // shims hasPointerCapture / setPointerCapture / releasePointerCapture).
   //
-  // gaka-wpb.1 (audit): the earlier version of this test hand-built
+  // boom-wpb.1 (audit): the earlier version of this test hand-built
   // `{ kind: "all", of: [leaf] }` and asserted on the literal — a
   // pure tautology that would pass even if convertKind returned
   // null. This version pins the LOAD-BEARING contract: after the
@@ -148,13 +148,13 @@ describe("PredicateBuilder", () => {
     expect(group.of[0]).toMatchObject({ kind: "time", target_seconds: 999 });
   });
 
-  // gaka-bs5l (P0): a reading leaf MUST stay reading through every edit. The
+  // boom-bs5l (P0): a reading leaf MUST stay reading through every edit. The
   // original bug: convertKind(from, "time") returned the coding defaultLeaf(),
   // so a kind round-trip on a reading leaf silently reverted it to the coding
   // axis. This test edits the op AND round-trips the kind (reading-time →
   // All-of → back to Time) and asserts source stays "reading" the whole way.
   // Before the fix, the final assertion fails (source is dropped → coding).
-  it("reading leaf stays 'reading' through an op edit + kind round-trip (gaka-bs5l)", async () => {
+  it("reading leaf stays 'reading' through an op edit + kind round-trip (boom-bs5l)", async () => {
     const user = userEvent.setup();
     render(<Harness initial={readingLeaf()} />);
     expect((readSpec() as TimeLeaf).source).toBe("reading");
@@ -186,7 +186,7 @@ describe("PredicateBuilder", () => {
     expect(after.source).toBe("reading");
   });
 
-  // gaka-dvy9: a genre'd reading goal — pick the Genre dimension and type a
+  // boom-dvy9: a genre'd reading goal — pick the Genre dimension and type a
   // value; the built spec carries source="reading", axis="genre", value.
   it("builds a genre-filtered reading spec (dimension picker + value)", async () => {
     const user = userEvent.setup();
@@ -301,7 +301,7 @@ describe("PredicateBuilder", () => {
     expect(after.of[1]).toMatchObject({ target_seconds: 3600 });
   });
 
-  // gaka-wpb.1 (audit): the previous version admitted in-comment it
+  // boom-wpb.1 (audit): the previous version admitted in-comment it
   // wasn't testing immutability — readSpec() re-parses the DOM so
   // "distinguishable snapshots" don't prove non-mutation. This
   // version captures the object reference passed to the harness's
@@ -353,7 +353,7 @@ describe("PredicateBuilder", () => {
     expect(readSpec()).toMatchObject({ kind: "time", target_seconds: 42 });
   });
 
-  // gaka-wpb.1 (audit): the earlier "has within helper" test was a
+  // boom-wpb.1 (audit): the earlier "has within helper" test was a
   // no-op lint-quieter. Replaced with a real test that pins the
   // depth-cap invariant on the "convert to group" affordance.
   //

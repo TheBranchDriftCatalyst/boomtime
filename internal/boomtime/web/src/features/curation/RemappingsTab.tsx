@@ -13,7 +13,7 @@ import type { CurationRule } from "@shared/types/api";
 // The "Remappings" Settings tab: curation rules with per-row destructive
 // actions.
 //
-// gaka-cr4 + gaka-due: rows can be rename OR hide rules; the row icons
+// boom-cr4 + boom-due: rows can be rename OR hide rules; the row icons
 // dispatch on rule.action. Zap opens the apply modal (rename → rewrite raw
 // heartbeats + delete the rule); Trash2 opens the purge modal (hide →
 // delete raw heartbeats + delete the rule). ONE DestructiveActionDialog

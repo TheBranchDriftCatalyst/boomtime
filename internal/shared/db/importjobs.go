@@ -34,7 +34,7 @@ type Job struct {
 	StartedAt     *time.Time `json:"startedAt"`
 	FinishedAt    *time.Time `json:"finishedAt"`
 	// Drift is a JSON array of wakatime.com API schema-drift findings observed
-	// during the run (gaka-unq.1). Stored as raw JSON so this package doesn't
+	// during the run (boom-unq.1). Stored as raw JSON so this package doesn't
 	// import the importer package. Nil when no drift was recorded.
 	Drift json.RawMessage `json:"drift,omitempty"`
 }

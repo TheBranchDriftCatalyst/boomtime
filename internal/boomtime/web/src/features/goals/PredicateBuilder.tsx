@@ -1,5 +1,5 @@
 // PredicateBuilder — recursive editor for the composite goal spec
-// (gaka-wpb). This is THE novel piece of the goals feature — no
+// (boom-wpb). This is THE novel piece of the goals feature — no
 // catalyst-ui primitive to reuse, no existing pattern in the app
 // (unlike RemappingForm, which is a flat form).
 //
@@ -80,7 +80,7 @@ type TimeLeaf = Extract<Predicate, { kind: "time" }>;
 // against /stats silently drops any language / project the user has
 // only used a little. Predicates authored against those missing values
 // would never match a heartbeat, so completeness of this list is
-// load-bearing (gaka-cov2 audit).
+// load-bearing (boom-cov2 audit).
 //
 // Non-existing values are STILL accepted — the datalist is suggest-only,
 // not restrict-to-list, so operators can author aspirational goals
@@ -138,7 +138,7 @@ function AxisValueInput({
   );
 }
 
-// ReadingAxisValueInput mirrors AxisValueInput for the reading path (gaka-wpb):
+// ReadingAxisValueInput mirrors AxisValueInput for the reading path (boom-wpb):
 // a reading dimension leaf (genre/series/status) filters by a specific value,
 // and autocomplete pulls the user's distinct values for that dimension via
 // useReadingAxisValues (backed by the cross-domain query DSL, NOT the
@@ -279,7 +279,7 @@ const AXES: GoalHeartbeatAxis[] = [
   "machine",
   "platform",
 ];
-// Reading dimensions a reading leaf may filter by (gaka-dvy9). The sentinel
+// Reading dimensions a reading leaf may filter by (boom-dvy9). The sentinel
 // "" is the default TOTAL-listening mode (no dimension); the others map to the
 // runtime-of-finished-books path. Mirrors validReadingAxes in
 // internal/goals/eval.go. Radix Select forbids an empty-string item value, so
@@ -453,7 +453,7 @@ function KindSwitcher({
 // reachable: `from` itself, or the FIRST child of a group / not / streak. Used
 // so a kind round-trip on a reading leaf (e.g. Listening → All-of → back to
 // Time, or wrap-in-group then unwrap) KEEPS its reading source/axis/value
-// instead of silently reverting to the coding default (gaka-bs5l). A reading
+// instead of silently reverting to the coding default (boom-bs5l). A reading
 // leaf must stay reading through every edit.
 function readingLeafOf(from: Predicate): TimeLeaf | null {
   if (from.kind === "time") return from.source === "reading" ? from : null;
@@ -473,7 +473,7 @@ function convertKind(from: Predicate, nextKind: Predicate["kind"]): Predicate {
   switch (nextKind) {
     case "time":
       // Preserve a reading leaf across the round-trip if one is recoverable;
-      // otherwise fall back to the coding default (gaka-bs5l).
+      // otherwise fall back to the coding default (boom-bs5l).
       return readingLeafOf(from) ?? defaultLeaf();
     case "active_days":
       return { kind: "active_days", op: ">=", n: 5, window: "week" };
@@ -491,7 +491,7 @@ function convertKind(from: Predicate, nextKind: Predicate["kind"]): Predicate {
 }
 
 // seedLeaf picks the leaf to carry into a new group/streak wrapper: a
-// recoverable reading leaf first (so reading survives, gaka-bs5l), then a
+// recoverable reading leaf first (so reading survives, boom-bs5l), then a
 // same-shape coding time leaf, else a fresh coding default. For a coding leaf
 // readingLeafOf returns null, so the coding path is byte-for-byte unchanged.
 function seedLeaf(from: Predicate): Predicate {
@@ -522,7 +522,7 @@ function TimeLeafEditor({
     target: `${idBase}-target`,
     window: `${idBase}-window`,
   };
-  // A reading-source leaf has two shapes (gaka-dvy9): with NO dimension it
+  // A reading-source leaf has two shapes (boom-dvy9): with NO dimension it
   // measures TOTAL listening time (reading_activity); with a reading dimension
   // (genre/series/status) it measures the RUNTIME of FINISHED books on that
   // dimension (reading_items). Either way it shares the op/target/window

@@ -1,4 +1,4 @@
-// curation_ginkgo_test.go — ginkgo mirror of curation_test.go (gaka-0vp.13).
+// curation_ginkgo_test.go — ginkgo mirror of curation_test.go (boom-0vp.13).
 // 1:1 case map (4 stdlib TestXxx → 4 Its):
 //
 //	TestExclusionPredicateShape   → "exclusionPredicate: shape + arg indexing"

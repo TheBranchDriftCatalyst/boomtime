@@ -18,19 +18,19 @@ import (
 // files for rationale.
 func Register(e *echo.Echo, h *Handler) {
 	// Meta cluster: version disclosure, embedded changelog, health probe,
-	// plus the self-hosted OpenAPI spec + Swagger UI (gaka-lfc). The
+	// plus the self-hosted OpenAPI spec + Swagger UI (boom-lfc). The
 	// OpenAPI registration doesn't touch the meta Handler — it's colocated
 	// here because it shares the "public transparency" audience.
 	e.GET("/api/v1/version", h.Version)
 	e.GET("/api/v1/changelog", h.Changelog)
 	e.GET("/healthz", h.Healthz)
-	// Public client-config advertisement (gaka-93f.1.1): auth provider,
+	// Public client-config advertisement (boom-93f.1.1): auth provider,
 	// registration/billing/beta switches the FE needs at boot. Non-sensitive,
 	// same public audience as /version + /healthz.
 	e.GET("/api/v1/config/public", h.PublicConfig)
 	openapi.Register(e)
 
-	// Server-log stream cluster (gaka-awh.2): REST tail (Authorization-gated)
+	// Server-log stream cluster (boom-awh.2): REST tail (Authorization-gated)
 	// and the live WebSocket (refresh_token-cookie-gated because WS handshakes
 	// can't carry an Authorization header).
 	e.GET("/api/v1/logs", h.ServerLogs)

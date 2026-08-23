@@ -1,4 +1,4 @@
-// dashboard_layouts_test.go — stdlib tests for dashboard_layouts.go (gaka-se2.7).
+// dashboard_layouts_test.go — stdlib tests for dashboard_layouts.go (boom-se2.7).
 //
 // Every t.Run pins ONE named invariant. No trivial round-trips: cross-owner
 // isolation and byte-preserving JSONB are the load-bearing checks.
@@ -94,7 +94,7 @@ func TestDashboardLayouts(t *testing.T) {
 	})
 
 	t.Run("byte-preserving-jsonb-roundtrip", func(t *testing.T) {
-		// gaka-25r pattern: JSONB *can* reorder keys, but we store with
+		// boom-25r pattern: JSONB *can* reorder keys, but we store with
 		// $3::jsonb. This test pins the current contract — if someone swaps to
 		// a normalized storage, they must update this test AND the callers.
 		owner := "dl_bytes_" + mkStamp()

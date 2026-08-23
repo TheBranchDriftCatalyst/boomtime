@@ -12,7 +12,7 @@ interface MobileNavProps {
   onCreateSpace: () => void;
 }
 
-/** MobileNav — the phone/tablet navigation (gaka-k26n.1). Below md the desktop
+/** MobileNav — the phone/tablet navigation (boom-k26n.1). Below md the desktop
  * rail is hidden, so this hamburger lives in the header and opens the full nav
  * as a left-side Sheet drawer. It reuses SidebarBody verbatim (always expanded,
  * no collapse toggle) so the drawer and the rail never drift, and every nav

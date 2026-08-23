@@ -32,7 +32,7 @@ type HeartbeatPayload struct {
 	Project      *string    `json:"project"`
 	Type         EntityType `json:"type"` // ty -> type
 	TimeSent     float64    `json:"time"` // time_sent -> time
-	// gaka-1l9: AI-assistance fields wakatime.com started emitting 2026-07-03.
+	// boom-1l9: AI-assistance fields wakatime.com started emitting 2026-07-03.
 	// Kept optional (`,omitempty` so heartbeats from non-AI plugins don't
 	// re-encode a bunch of null keys and blow up on-wire size).
 	AIInputTokens      *int64  `json:"ai_input_tokens,omitempty"`

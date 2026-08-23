@@ -28,7 +28,7 @@ type AMQPProvider struct {
 	// limiter is the job-layer concurrency throttle (fleet-wide per-kind caps).
 	// nil = unbounded. See handle() for the acquire/release + NACK-requeue path.
 	limiter KindLimiter
-	// logCapture persists each job's log stream on completion (gaka-hney). nil = off.
+	// logCapture persists each job's log stream on completion (boom-hney). nil = off.
 	logCapture *LogCapture
 }
 

@@ -14,7 +14,7 @@ import (
 // available); the hide exclusion + space scope are spliced in after it via
 // applyScopes.
 //
-// gaka-dg7: args now hold $1..$5 ($5 = IANA tz name) so the predicates start
+// boom-dg7: args now hold $1..$5 ($5 = IANA tz name) so the predicates start
 // at $6. The anchor itself is unchanged — it references only $3, and the
 // exclusion is spliced immediately after the "<= $3" text.
 const bigBetRangeAnchor = "AND time_sent <= $3"
@@ -42,7 +42,7 @@ func (d *DB) GetCategoryDaily(ctx context.Context, sender string, start, end tim
 }
 
 // GetCategoryDailyRollup mirrors GetCategoryDaily but reads the pre-aggregated
-// hb_rollup_daily (gaka-o4m). Fast path for the Overview at the default 15-min
+// hb_rollup_daily (boom-o4m). Fast path for the Overview at the default 15-min
 // limit — callers must guard with the same rollup-axes gate as the stats fast
 // path (no hide / no Space rule on axes outside RollupAxes). $tz is accepted
 // for signature parity with the raw variant but is unused: the rollup's `day`
@@ -113,7 +113,7 @@ type PunchcardCell struct {
 // GetPunchcard returns dow x hour coding-time cells (excluding all hidden axis
 // values). No renamable axis in the output (dow/hour), so no rename remap applies.
 func (d *DB) GetPunchcard(ctx context.Context, sender string, start, end time.Time, limit int64, tz string, hs HiddenSets, ms MemberSets, spaceRequested bool) ([]PunchcardCell, error) {
-	// gaka-dg7: $5 = IANA tz for the dow/hour buckets. THIS is the query
+	// boom-dg7: $5 = IANA tz for the dow/hour buckets. THIS is the query
 	// where the badge-misfire bug lived — a Pacific user's 22:00 local
 	// (06:00 UTC) never fired late-night-coder because the dow/hour bucket
 	// was UTC. Now the bucket matches their clock, so the archetype
@@ -145,7 +145,7 @@ type SessionRow struct {
 // gap cutoff that both bounds in-session time and defines a session break is
 // limit*60 seconds. No renamable axis in the output (session_day), so no remap.
 func (d *DB) GetSessions(ctx context.Context, sender string, start, end time.Time, limit int64, tz string, hs HiddenSets, ms MemberSets, spaceRequested bool) ([]SessionRow, error) {
-	// gaka-dg7: $5 = IANA tz for the session_day bucket.
+	// boom-dg7: $5 = IANA tz for the session_day bucket.
 	query, args, _ := applyScopes(qGetSessions, bigBetRangeAnchor,
 		hs, ms, spaceRequested, rawHeartbeatCols, []any{sender, start, end, limit, tz}, 6)
 	var out []SessionRow
@@ -174,13 +174,13 @@ type MomentumRow struct {
 // The Go shaper picks the top-N projects and gap-fills the week series. A project
 // rename re-groups the (project, week) rows by the remapped project (merges).
 func (d *DB) GetMomentum(ctx context.Context, sender string, start, end time.Time, limit int64, tz string, hs HiddenSets, rs RenameSets, ms MemberSets, spaceRequested bool) ([]MomentumRow, error) {
-	// gaka-dg7: $5 = IANA tz for the ISO Monday week-start bucket.
+	// boom-dg7: $5 = IANA tz for the ISO Monday week-start bucket.
 	return d.momentum(ctx, qGetMomentum, bigBetRangeAnchor,
 		[]any{sender, start, end, limit, tz}, 6, rawHeartbeatCols, hs, rs, ms, spaceRequested)
 }
 
 // GetMomentumRollup mirrors GetMomentum but reads the pre-aggregated
-// hb_rollup_daily (gaka-o4m). Fast path for the Momentum widget at the default
+// hb_rollup_daily (boom-o4m). Fast path for the Momentum widget at the default
 // 15-min limit — callers must guard with the same rollup-axes gate as the
 // stats fast path (no hide / no Space rule on axes outside RollupAxes). $tz
 // is accepted for signature parity with the raw variant but is unused: the
@@ -199,7 +199,7 @@ func (d *DB) momentum(ctx context.Context, baseQuery, anchor string, baseArgs []
 	// Always wrap: fold project casing and pick a canonical display GLOBALLY
 	// across all weeks (highest-total variant wins; alphabetical ASC tie-break)
 	// so a project doesn't surface as two rows when its case-mix changes across
-	// weeks (gaka-5db). Runs even with no project rename so pure case variants
+	// weeks (boom-5db). Runs even with no project rename so pure case variants
 	// merge without a curation rule.
 	var expr string
 	expr, args, next = rs.remapExpr("project", "project", "", next, args)

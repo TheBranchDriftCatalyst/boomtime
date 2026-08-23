@@ -1,4 +1,4 @@
-// entities.go: Entity Explorer endpoints (gaka-90x). Read a flat per-ty list
+// entities.go: Entity Explorer endpoints (boom-90x). Read a flat per-ty list
 // of every entity value the owner has, plus a REDACT that blanks the entity
 // column on individually-selected rows — the heartbeat rows themselves stay
 // (contributing to project/language/machine totals), only the specific
@@ -90,7 +90,7 @@ func (h *Handler) RedactEntities(c *echo.Context) error {
 		return apihelpers.RespondErr(c, apierr.BadRequest("missing confirm=redact-entities — this endpoint scrubs the entity column on heartbeat rows"))
 	}
 	var body redactEntitiesBody
-	// gaka-bi2: 64 KiB cap — batches are bounded to 500 entities; each entity
+	// boom-bi2: 64 KiB cap — batches are bounded to 500 entities; each entity
 	// is a short URL/path/app name. Medium fits comfortably (500 * ~120 chars).
 	if aerr := apihelpers.BindJSONWithLimit(c, &body, apihelpers.BodyLimitMedium); aerr != nil {
 		return apihelpers.RespondErr(c, aerr)

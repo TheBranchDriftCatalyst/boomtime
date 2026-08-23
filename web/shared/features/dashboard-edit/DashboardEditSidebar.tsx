@@ -1,10 +1,10 @@
-// DashboardEditSidebar (gaka-lzr, Phase 4) — the edit rail. Two-state by
+// DashboardEditSidebar (boom-lzr, Phase 4) — the edit rail. Two-state by
 // design (mirrors the profile ProfileEditor palette):
 //
 //   - Nothing selected → CATALOG: the widgets NOT already in the layout, each a
 //     button that adds it at the bottom of the grid.
 //   - A tile selected  → CONFIG: the per-widget config form. Phase 4 leaves a
-//     TODO placeholder; the real form is Phase 5 (gaka-lzr config schema).
+//     TODO placeholder; the real form is Phase 5 (boom-lzr config schema).
 //
 // The palette entries (catalog − in-layout) are computed by the caller
 // (DashboardEditor) so this component stays presentational.
@@ -37,7 +37,7 @@ export function DashboardEditSidebar({
           <div className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-primary">
             {selectedKey}
           </div>
-          {/* TODO(gaka-lzr Phase 5): render the per-widget config form
+          {/* TODO(boom-lzr Phase 5): render the per-widget config form
               (WidgetConfigForm) — title override, chart-view toggle, top-N. */}
           <p className="mt-2 text-[10px] text-muted-foreground">
             Widget configuration is coming soon. For now, drag to move, drag a

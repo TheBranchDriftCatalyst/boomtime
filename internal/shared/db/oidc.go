@@ -1,5 +1,5 @@
 // oidc.go — server-side OIDC session store + external-identity provisioning
-// (gaka-0oe.11). Session cookie values + provider refresh tokens are stored
+// (boom-0oe.11). Session cookie values + provider refresh tokens are stored
 // SHA-256-hashed only (same posture as auth.go's hashed_token columns).
 package db
 
@@ -17,7 +17,7 @@ import (
 // CreateOIDCSession stores an OIDC session: hashed opaque cookie → (username,
 // id_token expiry, encrypted provider refresh). rawSessionID is plaintext (only
 // its SHA-256 is persisted). encryptedRefresh is the AES-256-GCM ciphertext of
-// the provider refresh_token (gaka-93f.11.6) — stored recoverably so
+// the provider refresh_token (boom-93f.11.6) — stored recoverably so
 // /auth/refresh_token can do a refresh-grant; pass nil when there is none or
 // when BOOM_ENCRYPTION_KEY is unset (session still works, silent refresh off).
 func (d *DB) CreateOIDCSession(ctx context.Context, rawSessionID, username string, expiry time.Time, encryptedRefresh []byte) error {
@@ -29,7 +29,7 @@ func (d *DB) CreateOIDCSession(ctx context.Context, rawSessionID, username strin
 }
 
 // GetOIDCSessionRefresh returns the encrypted provider refresh + id_token expiry
-// for a NON-expired OIDC session cookie (gaka-93f.11.6). ok=false when the
+// for a NON-expired OIDC session cookie (boom-93f.11.6). ok=false when the
 // session is absent/expired; encryptedRefresh is nil when none was stored.
 func (d *DB) GetOIDCSessionRefresh(ctx context.Context, rawSessionID string) (encryptedRefresh []byte, expiry time.Time, ok bool, err error) {
 	row := d.Pool.QueryRow(ctx,
@@ -47,7 +47,7 @@ func (d *DB) GetOIDCSessionRefresh(ctx context.Context, rawSessionID string) (en
 
 // RotateOIDCSession extends a session in place: new id_token expiry + the
 // (possibly rotated) encrypted provider refresh, keyed by the SAME cookie
-// (gaka-93f.11.6). Silent session extension — no new cookie is minted.
+// (boom-93f.11.6). Silent session extension — no new cookie is minted.
 func (d *DB) RotateOIDCSession(ctx context.Context, rawSessionID string, newExpiry time.Time, encryptedRefresh []byte) error {
 	_, err := d.Pool.Exec(ctx,
 		`UPDATE oidc_sessions SET id_token_expiry = $2, encrypted_refresh = $3
@@ -178,7 +178,7 @@ func (d *DB) HasUsablePassword(ctx context.Context, username string) (bool, erro
 }
 
 // UserExists reports whether a username is taken. General-purpose helper
-// (previously the autolink-by-username check, removed in gaka-93f.12).
+// (previously the autolink-by-username check, removed in boom-93f.12).
 func (d *DB) UserExists(ctx context.Context, username string) (bool, error) {
 	var exists bool
 	err := d.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE username=$1)`, username).Scan(&exists)
@@ -196,7 +196,7 @@ func (d *DB) ProvisionOIDCUser(ctx context.Context, preferredUsername, provider,
 	}
 	defer tx.Rollback(ctx)
 
-	// gaka-93f.19: pick + claim the username in ONE atomic step. The old
+	// boom-93f.19: pick + claim the username in ONE atomic step. The old
 	// EXISTS-then-INSERT uniquify had a TOCTOU race — two first-logins picking
 	// the same free name would both pass the EXISTS check, then the second
 	// INSERT would 23505 and surface as a 500. Instead try preferred,

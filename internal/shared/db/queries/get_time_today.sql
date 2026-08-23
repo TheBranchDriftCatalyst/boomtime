@@ -1,4 +1,4 @@
--- gaka-dg7: "today" bounded by user-local midnight ($2 IANA tz name) instead
+-- boom-dg7: "today" bounded by user-local midnight ($2 IANA tz name) instead
 -- of UTC midnight. Before the fix, an 11pm-PT status bar refresh saw the
 -- next-day UTC bounds and reported 0 for the actual local day's coding.
 --

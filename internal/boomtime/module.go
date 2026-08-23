@@ -1,6 +1,6 @@
 // Package boomtime is the wakatime/coding-analytics domain module (the app's original
 // domain). It implements catalyst.Module: the per-user Wakatime secret column contract
-// (so key-rotation is registry-driven) and — as of the gaka-zp2s seam extraction — its
+// (so key-rotation is registry-driven) and — as of the boom-zp2s seam extraction — its
 // admin/operator HTTP surface (label-image regeneration + the wakatime.com import
 // cluster) via RegisterRoutes → internal/boomtime/admin. The remaining code/wakatime
 // query routes (ingest/stats/curation/…) are lifted here in a later phase.
@@ -50,7 +50,7 @@ func (*Module) EncryptedColumns() []domaincols.EncryptedColumn {
 	return domaincols.EncryptedColumnsFor("waka")
 }
 
-// RegisterRoutes mounts the boomtime domain's full HTTP surface (gaka-zp2s): the
+// RegisterRoutes mounts the boomtime domain's full HTTP surface (boom-zp2s): the
 // admin/operator cluster (label-images + public label-image GET + wakatime.com import)
 // PLUS the code/wakatime query + ingest routes lifted off the god-handler
 // (ingest / curation / stats / widgets / goals / spaces / awards). Each per-domain

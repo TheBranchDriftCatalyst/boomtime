@@ -1,4 +1,4 @@
-// badges_ginkgo_test.go — ginkgo mirror of badges_test.go (bd gaka-6jm.3).
+// badges_ginkgo_test.go — ginkgo mirror of badges_test.go (bd boom-6jm.3).
 // 1:1 case map (4 stdlib TestXxx):
 //
 //	TestApplyBadgeCuration_HiddenProject      → applyBadgeCuration > "hidden project resolves to 'hidden' (case-insensitive)"

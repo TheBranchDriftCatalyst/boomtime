@@ -1,5 +1,5 @@
 // oidc_resolver.go — the OIDCResolver (Authentik) implementation of
-// IdentityResolver (gaka-0oe.11). Web sessions become boomtime opaque cookies
+// IdentityResolver (boom-0oe.11). Web sessions become boomtime opaque cookies
 // backed by oidc_sessions; editor plugins keep using local API tokens
 // (ResolveBearer delegates to local). The login START + callback live in the
 // identity handlers, which call AuthCodeURL / HandleCallback on this concrete
@@ -42,7 +42,7 @@ type OIDCResolver struct {
 }
 
 // oidcUserAgent replaces the default "Go-http-client" User-Agent on every
-// server-side OIDC HTTP call (gaka-93f.23). A Cloudflare-proxied issuer
+// server-side OIDC HTTP call (boom-93f.23). A Cloudflare-proxied issuer
 // (auth.knowledgedump.space) has "Go-http-client" on its managed-bot blocklist
 // and 403s discovery/token/jwks; a benign UA passes (verified: default wget UA
 // succeeds, Go-http-client UA 403s). Not a browser-spoof — just off the bot list.
@@ -65,7 +65,7 @@ func (t *uaRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 // oauth2 config. Returns an error if the issuer is unreachable (boot fails
 // loudly rather than silently falling back).
 func NewOIDCResolver(ctx context.Context, issuer, authorizeURLOverride, clientID, clientSecret, redirectURL string, groupToRole map[string]string, autoprovision bool) (*OIDCResolver, error) {
-	// gaka-93f.23: route ALL server-side OIDC HTTP (discovery here, JWKS refresh
+	// boom-93f.23: route ALL server-side OIDC HTTP (discovery here, JWKS refresh
 	// via the keyset built below, and token exchange in exchangeAndVerify)
 	// through a client with a non-"Go-http-client" User-Agent so a Cloudflare-
 	// proxied issuer doesn't 403 it as a bot.
@@ -151,7 +151,7 @@ type CallbackResult struct {
 // expiry, and the provider refresh_token.
 func (r *OIDCResolver) exchangeAndVerify(ctx context.Context, code, expectedNonce string) (oidcClaims, []byte, time.Time, string, *apierr.Error) {
 	var zero oidcClaims
-	// gaka-93f.23: route the token exchange (oauth2) + any lazy JWKS refresh
+	// boom-93f.23: route the token exchange (oauth2) + any lazy JWKS refresh
 	// (go-oidc) through the benign-UA client so Cloudflare doesn't 403 them.
 	if r.httpClient != nil {
 		ctx = oidc.ClientContext(ctx, r.httpClient)
@@ -169,7 +169,7 @@ func (r *OIDCResolver) exchangeAndVerify(ctx context.Context, code, expectedNonc
 	if err != nil {
 		return zero, nil, time.Time{}, "", apierr.New(http.StatusUnauthorized, "OIDC id_token verification failed", nil)
 	}
-	// gaka-93f.16: verify the nonce we minted at authorize-time is echoed in the
+	// boom-93f.16: verify the nonce we minted at authorize-time is echoed in the
 	// id_token (OIDC core §3.1.3.7 step 11). go-oidc does NOT check this
 	// automatically — without it, an id_token minted for a different auth request
 	// at the same issuer could be injected. We ALWAYS send a nonce, so an empty
@@ -208,7 +208,7 @@ func (r *OIDCResolver) HandleCallback(ctx context.Context, database *db.DB, code
 	if err != nil {
 		return nil, apierr.Generic()
 	}
-	// gaka-93f.11.6: persist the provider refresh ENCRYPTED (recoverable) so
+	// boom-93f.11.6: persist the provider refresh ENCRYPTED (recoverable) so
 	// /auth/refresh_token can silently rotate the session. Best-effort: if
 	// there's no refresh or BOOM_ENCRYPTION_KEY is unset, store nil — the
 	// session still works, only silent refresh is unavailable (no re-login
@@ -231,7 +231,7 @@ func (r *OIDCResolver) HandleCallback(ctx context.Context, database *db.DB, code
 
 // RefreshSession exchanges a stored provider refresh_token for a fresh id_token
 // (OAuth2 refresh-grant) and returns the new session expiry + the possibly
-// rotated refresh_token (gaka-93f.11.6). It re-verifies the refreshed id_token's
+// rotated refresh_token (boom-93f.11.6). It re-verifies the refreshed id_token's
 // signature/issuer/audience/expiry via the same JWKS verifier as login — but
 // does NOT check a nonce (a refresh-grant id_token carries none; nonce binds the
 // original authorization request only). Any failure (IdP rejects the refresh,
@@ -266,7 +266,7 @@ func (r *OIDCResolver) RefreshSession(ctx context.Context, rawRefresh string) (t
 	return expiry, newRefresh, nil
 }
 
-// HandleLink (link mode, gaka-b5n.4): exchange + verify, then bind the resolved
+// HandleLink (link mode, boom-b5n.4): exchange + verify, then bind the resolved
 // (authentik, sub) to currentUsername — the account the caller is ALREADY
 // logged in as. Does NOT create a session (the caller keeps theirs). Idempotent
 // if already linked to the same user; 409 if the identity belongs to a
@@ -287,7 +287,7 @@ func (r *OIDCResolver) HandleLink(ctx context.Context, database *db.DB, code, cu
 		return apierr.New(http.StatusConflict, "this Authentik identity is already linked to another account", nil)
 	}
 	if err := database.LinkExternalIdentity(ctx, currentUsername, OIDCProviderName, claims.Sub, claims.Email, claimsJSON); err != nil {
-		// gaka-93f.19: a concurrent link of the SAME (provider, sub) can slip
+		// boom-93f.19: a concurrent link of the SAME (provider, sub) can slip
 		// between the GetUserByExternalIdentity check above and this INSERT,
 		// racing the UNIQUE(provider, sub) constraint. That's the identity being
 		// taken, not a server fault — surface the SAME 409 the pre-check returns
@@ -307,7 +307,7 @@ func (r *OIDCResolver) resolveOrProvision(ctx context.Context, database *db.DB, 
 	if username, ok, err := database.GetUserByExternalIdentity(ctx, OIDCProviderName, claims.Sub); err != nil {
 		return "", apierr.Generic()
 	} else if ok {
-		// gaka-93f.19: only rewrite users.role when the group-derived role
+		// boom-93f.19: only rewrite users.role when the group-derived role
 		// actually DIFFERS from what's stored. An unconditional SetUserRole on
 		// EVERY login silently clobbered an operator's manual role change (and
 		// swallowed the write error). Read the current role, compare, log the
@@ -336,7 +336,7 @@ func (r *OIDCResolver) resolveOrProvision(ctx context.Context, database *db.DB, 
 	if preferred == "" {
 		return "", apierr.New(http.StatusBadRequest, "OIDC identity has neither preferred_username nor email", nil)
 	}
-	// gaka-93f.18: never insert an IdP-supplied username verbatim. Reject
+	// boom-93f.18: never insert an IdP-supplied username verbatim. Reject
 	// control chars / whitespace / '|' (cache-key delimiter) / non-ASCII before
 	// it can become a boomtime username. Fail closed with a clear 400 rather
 	// than provisioning a hostile/namespace-colliding account.
@@ -344,7 +344,7 @@ func (r *OIDCResolver) resolveOrProvision(ctx context.Context, database *db.DB, 
 		return "", apierr.New(http.StatusBadRequest, "OIDC preferred_username is not an acceptable boomtime username: "+err.Error(), nil)
 	}
 
-	// NOTE: username-based autolink was REMOVED (gaka-93f.12, red-team HIGH).
+	// NOTE: username-based autolink was REMOVED (boom-93f.12, red-team HIGH).
 	// Matching an IdP-supplied preferred_username against an existing boomtime
 	// account and binding to it — with no email_verified check — was an
 	// unauthenticated account-takeover primitive (name your Authentik user

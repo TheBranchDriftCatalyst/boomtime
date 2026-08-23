@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 // status-curation — the Hardcover status-curation OVERRIDE on the Books explorer
-// (/app/books), shipped in 1b7e484 (gaka-books). The Status column is now an
+// (/app/books), shipped in 1b7e484 (boom-books). The Status column is now an
 // editable dropdown (StatusSelect) over the 5 canonical statuses
 // (want|reading|read|paused|dnf). Changing it PATCHes
 //   /api/v1/books/items/:externalId/curation?source=<kindle|audible>
@@ -194,7 +194,7 @@ test("the Status filter offers the canonical set and filters by effective (overr
   // --- Assert the disconnect fix: the filter speaks the ONE canonical
   // vocabulary (want/reading/read/paused/dnf) — same values as the group-by
   // axis + the pill keys — with an "all" lead. Was the mismatched
-  // all|reading|finished|want before gaka-books. ----------------------------
+  // all|reading|finished|want before boom-books. ----------------------------
   const values = await statusFilter.evaluate((el) =>
     Array.from((el as HTMLSelectElement).options).map((o) => o.value),
   );

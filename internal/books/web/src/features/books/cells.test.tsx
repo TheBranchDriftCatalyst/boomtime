@@ -1,4 +1,4 @@
-// cells.test.tsx — the editable Books curation cells (gaka-books Stage 5).
+// cells.test.tsx — the editable Books curation cells (boom-books Stage 5).
 // api.setBookCuration is spied so we assert the wiring in isolation: the
 // StatusSelect dropdown offers the 5 canonical statuses, selecting one fires an
 // optimistic PATCH with the right body (and the pill flips before the request

@@ -1,5 +1,5 @@
 // book_sync_state.go: per-user/per-source forward-sync cursors for the
-// catalyst-audiobooks/books domains (gaka-books). Cursors advance ONLY after a
+// catalyst-audiobooks/books domains (boom-books). Cursors advance ONLY after a
 // page/window is durably upserted, so a crash re-fetches the last window rather
 // than skipping it (at-least-once; the idempotent upserts absorb the overlap).
 // Cascade-deletes with the user. See migrations/00062.

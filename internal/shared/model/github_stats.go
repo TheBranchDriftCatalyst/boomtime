@@ -1,5 +1,5 @@
 // github_stats.go — wire + storage value types for the per-user GitHub stats
-// feature (gaka-anh Phase 2). These are the SHARED leaf types: the fetcher
+// feature (boom-anh Phase 2). These are the SHARED leaf types: the fetcher
 // (internal/github) produces them, the cache layer (internal/db
 // GithubStatsCacheRow) stores them as JSONB, and the HTTP payload
 // (GithubStatsPayload below) serializes them to the FE. Keeping them in the

@@ -1,6 +1,6 @@
 // client_coverage_test.go — additional ginkgo specs covering the branches
 // that client_test.go doesn't exercise, taking the package coverage from
-// ~69% to >=90% (gaka-d6x).
+// ~69% to >=90% (boom-d6x).
 //
 // Cases pin NAMED INVARIANTS on the wire contract, security-relevant
 // framing (raw-bytes MIME sniffing on adversarial payloads), and the

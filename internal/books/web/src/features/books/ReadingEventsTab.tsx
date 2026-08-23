@@ -1,5 +1,5 @@
 // ReadingEventsTab.tsx — the "Reading Events" tab body on the Books page
-// (gaka-z5dz). The same <GroupableExplorer> axis-grouping table the Library tab
+// (boom-z5dz). The same <GroupableExplorer> axis-grouping table the Library tab
 // uses, but driven by the readingEvents DomainConfig (the `reads` measure over the
 // reading_events_enriched view): one row per discrete READ, groupable by
 // origin/source/series/author/genre/status.

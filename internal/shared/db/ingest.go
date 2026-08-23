@@ -18,7 +18,7 @@ import (
 // SaveHeartbeats transaction.
 type execer interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
-	// gaka-dg7: refreshRollup needs to read users.timezone before rebuilding
+	// boom-dg7: refreshRollup needs to read users.timezone before rebuilding
 	// so the daily bucket is computed in the sender's TZ. Both pgxpool.Pool
 	// and pgx.Tx satisfy this method.
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
@@ -36,7 +36,7 @@ func (d *DB) SaveHeartbeats(ctx context.Context, hbs []model.HeartbeatPayload) (
 
 // SaveHeartbeatsRaw ingests heartbeats WITHOUT phase 3 (recomputeGaps +
 // refreshRollup) — the cheap path for identities denied CapGenerateRollups
-// (gaka-0oe.3). Phases 1+2 (project upsert + heartbeat insert) are identical to
+// (boom-0oe.3). Phases 1+2 (project upsert + heartbeat insert) are identical to
 // SaveHeartbeats, so time-window queries still see the raw rows; they just fall
 // back to on-the-fly aggregation instead of hb_rollup_daily. Used by the ingest
 // handler when BOOM_FEATURE_ROLLUP_SKIP is on and the caller can't generate
@@ -164,7 +164,7 @@ func insertHeartbeatsBatch(ctx context.Context, tx pgx.Tx, hbs []model.Heartbeat
 			hb.UserAgent, hb.Branch, hb.Category, cursor, hb.Dependencies,
 			hb.Entity, hb.IsWrite, hb.Language, hb.Lineno, hb.FileLines,
 			hb.Project, string(hb.Type), unixToTime(hb.TimeSent),
-			// gaka-1l9: AI-assistance fields ($19..$25). Nullable at every
+			// boom-1l9: AI-assistance fields ($19..$25). Nullable at every
 			// layer — heartbeats from plugins that don't emit them bind NULL.
 			hb.AIInputTokens, hb.AIOutputTokens, hb.AILineChanges,
 			hb.HumanLineChanges, hb.AIPromptLength, hb.AISession,
@@ -275,7 +275,7 @@ func (d *DB) RefreshRollup(ctx context.Context, sender string, since time.Time) 
 // refreshRollup runs the DELETE+INSERT rollup rebuild against any pool or
 // in-flight tx. Must run inside a tx to keep the DELETE and INSERT atomic.
 //
-// gaka-dg7: the `day` column is now computed in the sender's user-local TZ
+// boom-dg7: the `day` column is now computed in the sender's user-local TZ
 // (resolved 3-level: users.timezone > BOOM_DEFAULT_TIMEZONE > UTC) so the
 // fast-path get_user_activity_rollup.sql serves user-local daily buckets
 // automatically — no read-side AT TIME ZONE dance needed. The DELETE
@@ -322,7 +322,7 @@ func refreshRollup(ctx context.Context, q execer, sender string, since time.Time
 	// The WHERE lower bound is symmetric: local midnight -> timestamptz ->
 	// naked UTC to compare against time_sent.
 	// Insert now writes the <axis>_missing sentinel columns alongside the
-	// COALESCE'd axis values (gaka-6ci). The flag is true iff EVERY row in
+	// COALESCE'd axis values (boom-6ci). The flag is true iff EVERY row in
 	// the group had NULL on that axis — bool_and works because within a
 	// group, either they're all NULL (heartbeats from a null-language
 	// browser session) or they all share the same literal value (which
@@ -621,7 +621,7 @@ func (d *DB) GetDerivedStatus(ctx context.Context, sender string) (DerivedStatus
 // heartbeatsIndexSizes returns every index on the heartbeats table with its
 // on-disk size, largest first. Used by GetDerivedStatus to surface the
 // storage cost of each index — the trigram / text_pattern_ops indexes shipped
-// for gaka-o4m are the biggest cost line items.
+// for boom-o4m are the biggest cost line items.
 func (d *DB) heartbeatsIndexSizes(ctx context.Context) ([]IndexSize, error) {
 	rows, err := d.Pool.Query(ctx, `
 		SELECT indexname, pg_relation_size((schemaname || '.' || indexname)::regclass) AS bytes

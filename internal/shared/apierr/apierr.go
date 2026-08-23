@@ -85,7 +85,7 @@ func InvalidCredentials() *Error {
 }
 
 // Forbidden is the capability-denied 403 for the user-model substrate
-// (gaka-0oe): a resolved, non-disabled identity that lacks the capability a
+// (boom-0oe): a resolved, non-disabled identity that lacks the capability a
 // tier-gated handler requires (e.g. a light-tier user hitting import/backup).
 // Only fires when BOOM_FEATURE_USER_MODEL is on — flag off, every identity has
 // every capability.

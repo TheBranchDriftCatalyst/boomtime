@@ -254,5 +254,5 @@ var _ = Describe("Worker (nil receiver) — feature-disabled gate", func() {
 	})
 })
 
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
+// -- helpers restored from stdlib partner (boom-0vp.17) --
 const testDatabaseURL = "postgres://test:test@localhost:5432/boomtime_test?sslmode=disable"

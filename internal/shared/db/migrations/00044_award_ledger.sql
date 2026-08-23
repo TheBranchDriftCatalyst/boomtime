@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- Award ledger (gaka-mwp-streaks): persist WHICH labels fired for a user
+-- Award ledger (boom-mwp-streaks): persist WHICH labels fired for a user
 -- in a given period so we can display streak badges ("3x NIGHT WATCH")
 -- on the LabelChip.
 --
@@ -10,7 +10,7 @@
 -- one row per (user, label, period_start). Streak = walk backward from
 -- current period, count consecutive periods until first gap.
 --
--- Period is computed FROM THE USER'S TIMEZONE (gaka-dg7 resolver already
+-- Period is computed FROM THE USER'S TIMEZONE (boom-dg7 resolver already
 -- exists) so a "daily" streak in Pacific isn't broken by UTC day-flip.
 --
 -- ----------------------------------------------------------------------

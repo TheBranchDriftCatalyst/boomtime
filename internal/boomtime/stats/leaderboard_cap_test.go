@@ -1,4 +1,4 @@
-// leaderboard_cap_ginkgo_test.go — ginkgo mirror of leaderboard_cap_test.go (gaka-tst-ginkgo).
+// leaderboard_cap_ginkgo_test.go — ginkgo mirror of leaderboard_cap_test.go (boom-tst-ginkgo).
 // 1:1 case map (3 stdlib TestXxx):
 //
 //	TestToLeaderboardsPayloadGlobalCapAndSort              → ToLeaderboardsPayload > "top-20 cap and desc sort"

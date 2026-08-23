@@ -16,7 +16,7 @@ import (
 )
 
 // The package used to expose a process-wide LogHub via a package-global +
-// Hub() accessor (audit gaka-yzs). That's gone — Setup returns the hub
+// Hub() accessor (audit boom-yzs). That's gone — Setup returns the hub
 // explicitly and callers thread it through server.New / handler.New. Same
 // pattern importer.Hub already follows: dependency-injected, testable,
 // no hidden order dependency between Setup and handler.New.

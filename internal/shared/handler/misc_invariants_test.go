@@ -1,4 +1,4 @@
-// misc_invariants_test.go — gaka-d6x.handler: addresses the "missingInvariants"
+// misc_invariants_test.go — boom-d6x.handler: addresses the "missingInvariants"
 // and "securityGaps" callouts from the misc-handler critique that couldn't be
 // grafted onto an existing file without diluting its invariant list.
 //
@@ -50,7 +50,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
-var _ = Describe("DBImport concurrency / cross-user rejection (gaka-d6x.handler)", func() {
+var _ = Describe("DBImport concurrency / cross-user rejection (boom-d6x.handler)", func() {
 	It("returns 409 when HasActiveImportJobs is true (double-click restore path)", func() {
 		// Isolated DB so the queued job we plant doesn't affect other tests.
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "dbimp_active"))
@@ -107,7 +107,7 @@ var _ = Describe("DBImport concurrency / cross-user rejection (gaka-d6x.handler)
 	})
 })
 
-var _ = Describe("Commits: upstream body leak guard (gaka-d6x.handler)", func() {
+var _ = Describe("Commits: upstream body leak guard (boom-d6x.handler)", func() {
 	It("upstream 401 body from api.github.com does NOT appear in the client response", func() {
 		// The existing commits_test.go tests the happy 401 path against the
 		// real api.github.com (via a token guaranteed to fail) and asserts
@@ -120,12 +120,12 @@ var _ = Describe("Commits: upstream body leak guard (gaka-d6x.handler)", func() 
 		// upstream JSON keys/values GitHub returns on 401
 		// ({"message":"Bad credentials", "documentation_url":"..."}).
 		hz := testutil.NewHarness(GinkgoT())
-		hz.Cfg.GithubToken = "definitely-not-a-real-token-gaka-d6x-leak-guard"
+		hz.Cfg.GithubToken = "definitely-not-a-real-token-boom-d6x-leak-guard"
 		e := hz.Router()
 		_, token := hz.MintUser("commits_leak_guard")
 
 		rec := doJSONReqG(e, http.MethodGet,
-			"/api/v1/commits/alpha/report?repoName=nonexistent-repo-gaka-d6x&repoOwner=TheBranchDriftCatalyst&user=someuser",
+			"/api/v1/commits/alpha/report?repoName=nonexistent-repo-boom-d6x&repoOwner=TheBranchDriftCatalyst&user=someuser",
 			token, nil)
 		Expect(rec).To(testutil.HaveStatus(http.StatusInternalServerError),
 			"body=%s", rec.Body.String())
@@ -141,7 +141,7 @@ var _ = Describe("Commits: upstream body leak guard (gaka-d6x.handler)", func() 
 	})
 })
 
-var _ = Describe("RedactEntities cross-user isolation (gaka-d6x.handler)", func() {
+var _ = Describe("RedactEntities cross-user isolation (boom-d6x.handler)", func() {
 	It("bob cannot scrub alice's entity rows (owner-scoped SQL)", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
@@ -188,7 +188,7 @@ var _ = Describe("RedactEntities cross-user isolation (gaka-d6x.handler)", func(
 	})
 })
 
-var _ = Describe("PublicProfile revalidation contract (gaka-d6x.handler)", func() {
+var _ = Describe("PublicProfile revalidation contract (boom-d6x.handler)", func() {
 	It("re-sends its own ETag in the response header so a client can revalidate on the next request", func() {
 		// The critique noted that the existing ETag test asserts the header
 		// is present + quoted but never verifies the 304 revalidation.
@@ -242,7 +242,7 @@ var _ = Describe("PublicProfile revalidation contract (gaka-d6x.handler)", func(
 	})
 })
 
-var _ = Describe("Restore max-bytes boundary (gaka-d6x.handler)", func() {
+var _ = Describe("Restore max-bytes boundary (boom-d6x.handler)", func() {
 	It("a body exactly at the cap size is accepted past the size gate (proves boundary is inclusive)", func() {
 		// The oversize test uses a 16-byte cap + 100-byte body to prove
 		// oversize → 413. This companion pins the OTHER side of the

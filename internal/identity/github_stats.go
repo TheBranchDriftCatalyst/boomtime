@@ -1,4 +1,4 @@
-// github_stats.go — the per-user GitHub stats endpoints (gaka-anh Phase 2).
+// github_stats.go — the per-user GitHub stats endpoints (boom-anh Phase 2).
 //
 //	GET /api/v1/users/current/github/stats        (authed)  — cache-or-sync
 //	GET /api/public/profile/:slug/github/stats     (public) — cache-only

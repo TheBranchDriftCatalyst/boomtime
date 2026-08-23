@@ -1,5 +1,5 @@
 // sampleData.ts — deterministic, believable "sample" fixtures for the widget
-// catalog gallery (gaka-174.x follow-on). Every one of the 40 catalog kinds
+// catalog gallery (boom-174.x follow-on). Every one of the 40 catalog kinds
 // needs SOMETHING to render for a no-data user and for an unauth visitor of
 // a future public catalog page, so this module is the single source of
 // truth for "sample" data across every payload shape the renderers consume:

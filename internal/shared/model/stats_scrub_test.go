@@ -1,5 +1,5 @@
 // stats_scrub_test.go — non-tautological coverage for the axis-hide
-// scrubber path (gaka-se2.2). Pins the following invariants:
+// scrubber path (boom-se2.2). Pins the following invariants:
 //
 //   - hiddenNameSet: distinguishes nil-input from empty-axis (both yield
 //     nil), and lowercases values so a callers can look up any-case name.
@@ -33,7 +33,7 @@ func sumOtherSeconds(members []OtherMember) int64 {
 	return s
 }
 
-var _ = Describe("HiddenSetsMap.Values / Projects (gaka-se2.2)", func() {
+var _ = Describe("HiddenSetsMap.Values / Projects (boom-se2.2)", func() {
 	It("returns nil for an unset axis (distinguishes unset from empty)", func() {
 		h := HiddenSetsMap{}
 		Expect(h.Values("project")).To(BeNil(),
@@ -51,7 +51,7 @@ var _ = Describe("HiddenSetsMap.Values / Projects (gaka-se2.2)", func() {
 	})
 })
 
-var _ = Describe("hiddenNameSet (gaka-se2.2)", func() {
+var _ = Describe("hiddenNameSet (boom-se2.2)", func() {
 	It("returns nil when hidden is nil (nil-passthrough)", func() {
 		Expect(hiddenNameSet(nil, "project")).To(BeNil())
 	})
@@ -74,7 +74,7 @@ var _ = Describe("hiddenNameSet (gaka-se2.2)", func() {
 	})
 })
 
-var _ = Describe("scrubSegmentTail (gaka-se2.2)", func() {
+var _ = Describe("scrubSegmentTail (boom-se2.2)", func() {
 	It("returns (seg, false) when the segment is empty (nil-passthrough)", func() {
 		out, changed := scrubSegmentTail(nil, map[string]struct{}{"x": {}})
 		Expect(out).To(BeNil())
@@ -155,7 +155,7 @@ var _ = Describe("scrubSegmentTail (gaka-se2.2)", func() {
 	})
 })
 
-var _ = Describe("StatsPayload.ScrubTail (gaka-se2.2)", func() {
+var _ = Describe("StatsPayload.ScrubTail (boom-se2.2)", func() {
 	makePayload := func() *StatsPayload {
 		return &StatsPayload{
 			Projects: []ResourceStats{

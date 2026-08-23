@@ -1,5 +1,5 @@
 # Builds the STANDALONE catalyst-books image (Dockerfile.catalyst-books) — the books
-# domain running in isolation (gaka-zp2s). Separate GHCR package `catalyst-books`, so
+# domain running in isolation (boom-zp2s). Separate GHCR package `catalyst-books`, so
 # the boomtime ImageUpdater (which watches ghcr.io/<owner>/boomtime) never sees it.
 # Same default-branch sha guard as docker-publish.yml.
 name: docker-publish-catalyst-books
@@ -8,7 +8,7 @@ on:
   push:
     branches:
       - main
-      - gaka-domain-framework
+      - boom-domain-framework
     paths:
       # only rebuild when books/shared/entrypoint/dockerfile change
       - "cmd/catalyst-books/**"

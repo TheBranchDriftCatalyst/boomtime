@@ -1,4 +1,4 @@
-// hardcover.test.ts — the Hardcover deep-link builder (gaka-qic0). The DTO has
+// hardcover.test.ts — the Hardcover deep-link builder (boom-qic0). The DTO has
 // no slug/id today, so the contract that matters is the SEARCH fallback and its
 // encoding; the direct-page branches are covered so they're already correct the
 // day the DTO grows those fields.

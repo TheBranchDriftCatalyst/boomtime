@@ -1,4 +1,4 @@
-// BooksPage.test.tsx — the merged groupable Books view (gaka-02sh Track C).
+// BooksPage.test.tsx — the merged groupable Books view (boom-02sh Track C).
 // runQuery is mocked (discriminated on the spec) so the real page pipeline runs:
 //   - groupBy [] → the flat leaf table (DSL rows mode) renders book rows;
 //   - adding an axis (Author) → the DSL grouped query renders group rows with
@@ -36,7 +36,7 @@ const row = (p: Record<string, unknown>) => ({
 // render `<filtered>/<total>`.
 function wireQueries() {
   runQueryMock.mockImplementation(async (spec: QuerySpec) => {
-    // Reading Events tab (gaka-z5dz): the readingEvents domain. Rows mode → event
+    // Reading Events tab (boom-z5dz): the readingEvents domain. Rows mode → event
     // rows (one per read); grouped → per-origin read counts. Harmless to the
     // library tests, which never touch this domain.
     if (spec.domain === "readingEvents") {

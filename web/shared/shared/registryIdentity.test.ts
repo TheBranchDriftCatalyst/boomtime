@@ -52,7 +52,7 @@ beforeEach(() => {
 });
 
 describe("admin registry", () => {
-  // gaka-9e9k: groups are registered separately now and tabs reference one by
+  // boom-9e9k: groups are registered separately now and tabs reference one by
   // id, so the group meta lives in exactly one place instead of being copied
   // onto every tab that belongs to it.
   const tab = (id: string) => ({

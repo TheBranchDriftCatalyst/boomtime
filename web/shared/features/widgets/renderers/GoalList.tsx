@@ -1,5 +1,5 @@
 // GoalList — compact list of all enabled goals with tiny progress
-// bars per row (gaka-wpb). Same batched query as the other goal
+// bars per row (boom-wpb). Same batched query as the other goal
 // renderers so a dashboard rendering all three shares one round
 // trip.
 import { Progress } from "@thebranchdriftcatalyst/catalyst-ui/ui/progress";

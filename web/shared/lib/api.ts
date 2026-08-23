@@ -83,7 +83,7 @@ import type {
   WidgetLinkPayload,
   WidgetLinksPayload,
   WidgetScope,
-  // gaka-wpb: goals feature types.
+  // boom-wpb: goals feature types.
   BatchGoalProgress,
   CreateGoalBody,
   Goal,
@@ -320,7 +320,7 @@ export const api = {
       auth: false,
     }),
 
-  // gaka-93f.1.1: public client-config advertisement. Unauthenticated; read
+  // boom-93f.1.1: public client-config advertisement. Unauthenticated; read
   // once at boot so the FE can branch the signup CTA (local vs Authentik),
   // show/hide billing, and honor the beta-onboarding kill switch.
   publicConfig: () =>
@@ -342,7 +342,7 @@ export const api = {
       body: body?.name ? { name: body.name } : undefined,
     }),
 
-  // Change password (gaka-6jm). Server verifies currentPassword, hashes the
+  // Change password (boom-6jm). Server verifies currentPassword, hashes the
   // new one with argon2id, and revokes every other refresh token for the
   // owner — the caller's access token stays valid so no immediate re-login.
   changePassword: (body: { currentPassword: string; newPassword: string }) =>
@@ -351,7 +351,7 @@ export const api = {
       body,
     }),
 
-  // Encrypted-at-rest imported Wakatime API key (gaka-6jm.2).
+  // Encrypted-at-rest imported Wakatime API key (boom-6jm.2).
   //
   // - GET returns {hasSavedKey, keyStatus?, checkedAt?}. No hint or prefix
   //   of the plaintext is ever surfaced. keyStatus is "valid" | "invalid" |
@@ -376,7 +376,7 @@ export const api = {
       method: "DELETE",
     }),
 
-  // Per-user IANA timezone (gaka-dg7).
+  // Per-user IANA timezone (boom-dg7).
   //
   // GET returns {timezone, effectiveTimezone}:
   //   - `timezone` is the raw stored value (empty = user has never picked).
@@ -397,7 +397,7 @@ export const api = {
       { method: "PATCH", body: { timezone } },
     ),
 
-  // Public profile (gaka-6jm.1). GET returns the caller's toggle + slug so
+  // Public profile (boom-6jm.1). GET returns the caller's toggle + slug so
   // Settings can render the current state and the Sidebar can conditionally
   // show a "Public profile" nav link. PUT writes { enabled, slug }; the
   // server enforces the slug regex, blocks reserved names, and returns 409
@@ -426,7 +426,7 @@ export const api = {
       cardTagline: string;
     }>("/api/v1/users/current/profile", { method: "PUT", body }),
   // Public payload — no auth. Used by the /p/:slug dashboard route.
-  // gaka-174.7: optional `days` re-scopes the STATS window (server clamps to
+  // boom-174.7: optional `days` re-scopes the STATS window (server clamps to
   // 1..365, default 60). Labels/awards come from a separate endpoint that
   // stays on the canonical window, so re-scoping never touches them.
   getPublicDashboard: (slug: string, days?: number) =>
@@ -436,7 +436,7 @@ export const api = {
       { auth: false },
     ),
 
-  // Dashboard layout persistence (gaka-keb). Per-user, per-scope.
+  // Dashboard layout persistence (boom-keb). Per-user, per-scope.
   // GET returns `{ layout: ... }` or 404 when no layout is saved. PUT
   // upserts. DELETE clears (FE reverts to default). Small (4 KiB) body cap
   // enforced server-side; the FE typically emits well under 2 KiB.
@@ -528,12 +528,12 @@ export const api = {
       params,
     }),
 
-  // gaka-1l9: AI-assistance per-day metrics + range summary (input/output
+  // boom-1l9: AI-assistance per-day metrics + range summary (input/output
   // tokens, AI vs human line changes, distinct sessions, latest plan).
   getAIActivity: (params: RangeParams) =>
     request<AIActivityPayload>("/api/v1/users/current/stats/ai", { params }),
 
-  // gaka-yfg: total + per-project lines of code (current snapshot) plus a
+  // boom-yfg: total + per-project lines of code (current snapshot) plus a
   // bounded total-LOC-over-time growth curve, derived from file_lines with the
   // generated/vendored ignore filter applied server-side. No GitHub dependency.
   getLoc: (params: StatsParams) =>
@@ -735,7 +735,7 @@ export const api = {
       "/api/v1/users/current/heartbeats/latest",
     ),
 
-  // --- Entity Explorer (gaka-90x) --------------------------------------------
+  // --- Entity Explorer (boom-90x) --------------------------------------------
 
   // Per-ty flat list of every entity the owner has, with count + first/last seen.
   listEntitiesByType: (ty: EntityType, limit = 500) =>
@@ -797,7 +797,7 @@ export const api = {
       method: "DELETE",
     }),
 
-  // --- Canonical-entity PINS (gaka-canon) ------------------------------------
+  // --- Canonical-entity PINS (boom-canon) ------------------------------------
   // A "pin" is a curation rule with action="pin": it forces its (axis, value)
   // to always get its own slice/bar and never fall into the bucket "Other"
   // roll-up. The backend query engine auto-applies pins at group time, so
@@ -836,7 +836,7 @@ export const api = {
     return rules.filter((r) => r.action === "pin");
   },
 
-  // gaka-dfd: pause / resume a curation rule without deleting it. Body is
+  // boom-dfd: pause / resume a curation rule without deleting it. Body is
   // optional — omit to flip the current value, or pass `enabled` explicitly
   // to set an exact state (defends against double-click races). Returns the
   // new enabled value.
@@ -855,7 +855,7 @@ export const api = {
       `/api/v1/users/current/curation/${id}/affected`,
     ),
 
-  // gaka-cr4 + gaka-due: preview a destructive curation action. The response
+  // boom-cr4 + boom-due: preview a destructive curation action. The response
   // shape is a discriminated union on rule.action — rename rules get the
   // apply-preview payload (UPDATE + rule-delete SQL, before/after diff),
   // hide rules get the purge-preview payload (DELETE heartbeats + rule-delete
@@ -867,7 +867,7 @@ export const api = {
       `/api/v1/users/current/curation/${id}/preview`,
     ),
 
-  // gaka-cr4: DESTRUCTIVELY apply a rename rule — rewrites raw heartbeat rows
+  // boom-cr4: DESTRUCTIVELY apply a rename rule — rewrites raw heartbeat rows
   // (UPDATE) and removes the rule row itself, atomically. Rejects non-rename
   // rules with 400. Returned sqlRun matches the preview's sqlPlanned verbatim.
   applyCurationRule: (id: number) =>
@@ -876,7 +876,7 @@ export const api = {
       { method: "POST" },
     ),
 
-  // gaka-due: DESTRUCTIVELY purge a hide rule — DELETEs every heartbeat row
+  // boom-due: DESTRUCTIVELY purge a hide rule — DELETEs every heartbeat row
   // the rule matches, then removes the rule row itself, atomically. Rejects
   // non-hide rules with 400. Data-obliterating: the FE gates this behind a
   // "type rule id N to confirm" input to prevent muscle-memory Enter
@@ -887,7 +887,7 @@ export const api = {
       { method: "POST" },
     ),
 
-  // --- Goals (gaka-wpb) --------------------------------------------------------
+  // --- Goals (boom-wpb) --------------------------------------------------------
   // Backend wraps the list in {goals:[...]} — unwrap to a bare Goal[]
   // for consumers (matches getCurationRules).
   getGoals: () => unwrap<Goal[]>("/api/v1/users/current/goals", "goals", []),
@@ -1006,7 +1006,7 @@ export const api = {
   getChangelog: () =>
     request<string>("/api/v1/changelog", { auth: false }),
 
-  // --- Admin: label images (gaka-myv) ---------------------------------------
+  // --- Admin: label images (boom-myv) ---------------------------------------
   // Admin-gated (403 for non-admins). Info returns feature status + row count.
   // Regenerate takes the FE catalog snapshot so the Go side doesn't have to
   // mirror memecore/kawaii/space-marine expansions — the FE is authoritative.
@@ -1016,7 +1016,7 @@ export const api = {
       model: string;
       shimUrl: string;
       count: number;
-      // gaka-myv: per-label metadata for the Admin table (no bytes — the
+      // boom-myv: per-label metadata for the Admin table (no bytes — the
       // FE fetches images on demand via /api/v1/labels/:id/image).
       items: Array<{
         id: string;
@@ -1024,7 +1024,7 @@ export const api = {
         generatedAt: string;
       }>;
       baseline: string[];
-      // worker-topology decoupling (gaka-8bz follow-up): which transport is
+      // worker-topology decoupling (boom-8bz follow-up): which transport is
       // actually executing regens. "inprocess" = the server's own pool;
       // "rabbitmq" = a separate boomtime-worker pod via the AMQP queue.
       broker: "inprocess" | "rabbitmq";
@@ -1035,7 +1035,7 @@ export const api = {
       // is configured.
       mgmtUrl?: string;
     }>("/api/v1/admin/label-images"),
-  // gaka-8bz: server-side queue + WS. The response now returns per-entry
+  // boom-8bz: server-side queue + WS. The response now returns per-entry
   // jobIds; the FE watches the WS for the actual lifecycle rather than
   // polling. `existing:true` means the label already had an in-flight job
   // and the caller got its handle rather than starting a duplicate.
@@ -1056,7 +1056,7 @@ export const api = {
       jobs: Array<{ jobId: string; labelId: string; existing: boolean }>;
     }>("/api/v1/admin/label-images/regenerate", { method: "POST", body }),
 
-  // Per-label regen status from the DB job queue (gaka-hney Stage 3). Under
+  // Per-label regen status from the DB job queue (boom-hney Stage 3). Under
   // BOOM_JOBS_UNIFIED the admin tab polls this instead of the imagejobs WS.
   // Returns the latest job per label (queued/running always; done/error within
   // their retention window). `jobs: []` when the jobs subsystem is off.
@@ -1071,20 +1071,20 @@ export const api = {
       }>;
     }>("/api/v1/admin/label-images/status"),
 
-  // --- Labels catalog (gaka-364.3) -----------------------------------------
+  // --- Labels catalog (boom-364.3) -----------------------------------------
   // Public GET for evaluator + admin table; admin-gated CRUD + gen-config
   // + seed.sql dump for the admin sheet editor.
   getLabelsCatalog: () =>
     request<LabelsCatalogPayload>("/api/v1/labels/catalog", { auth: false }),
-  // gaka-93f.6: admin caps dashboard — users + roles/tiers + effective caps.
+  // boom-93f.6: admin caps dashboard — users + roles/tiers + effective caps.
   getAdminUsers: () => request<AdminUsersPayload>("/api/v1/admin/users"),
 
-  // --- Admin: background jobs (gaka-hney) ------------------------------------
+  // --- Admin: background jobs (boom-hney) ------------------------------------
   // Admin-gated (403 for non-admins). The list + schedules endpoints wrap
   // their result in a single-key envelope ({ jobs }, { schedules }); unwrap to
   // the bare array so the Jobs tab consumes a flat list. trigger/retry both
   // return the affected job id.
-  // Admin › Books diagnostics (gaka-books): raw source dump for Audible/Kindle.
+  // Admin › Books diagnostics (boom-books): raw source dump for Audible/Kindle.
   getBooksDiagnostics: (params: { source: string }) =>
     request<{
       source: string;
@@ -1100,7 +1100,7 @@ export const api = {
       }>;
     }>(buildUrl("/api/v1/admin/books/diagnostics", params)),
 
-  // Admin › Books › reading monitor (gaka-books): thin control over the
+  // Admin › Books › reading monitor (boom-books): thin control over the
   // SERVER-side persistent engine. GET reads its live state; PUT flips the
   // on/off switch and/or the toast mode. The panel polls GET lightly for status
   // display only — the poll cadence itself runs server-side now, not here.
@@ -1130,7 +1130,7 @@ export const api = {
 
   getAdminJobs: (params?: { status?: string; kind?: string; limit?: number }) =>
     unwrap<AdminJob[]>(buildUrl("/api/v1/admin/jobs", params), "jobs", []),
-  // gaka-metrics: the Prometheus gathered view (router RED, outbound RED,
+  // boom-metrics: the Prometheus gathered view (router RED, outbound RED,
   // limiter + external-API business counters, Go/process runtime). Same
   // registry served at /metrics for Grafana; here it's Gather()ed into
   // {families:[...]} for the in-app tab. Generic — any newly-registered
@@ -1147,7 +1147,7 @@ export const api = {
       "schedules",
       [],
     ),
-  // gaka-hney: per-kind queue overview — live depth, running/max headroom,
+  // boom-hney: per-kind queue overview — live depth, running/max headroom,
   // trailing-hour throughput + fail ratio. Backs the queue cards atop the Jobs
   // tab; polled so the limiter's back-pressure is visible in real time.
   getJobQueues: () =>
@@ -1170,7 +1170,7 @@ export const api = {
       { method: "POST" },
     ),
 
-  // Persisted per-job log stream (gaka-hney). A FINISHED job's live LogHub lines
+  // Persisted per-job log stream (boom-hney). A FINISHED job's live LogHub lines
   // are gone once the in-memory ring rolls over; these are the durable copy
   // flushed to object storage on completion. A 404 (nothing stored — job never
   // captured, logs deleted, or S3 off) resolves to [] so the viewer shows its
@@ -1243,14 +1243,14 @@ export const api = {
       body,
     }),
 
-  // gaka-b5n.4: linked external identities (OIDC account linking).
+  // boom-b5n.4: linked external identities (OIDC account linking).
   getIdentities: () => request<IdentitiesPayload>("/api/v1/users/current/identities"),
   unlinkIdentity: (provider: string) =>
     request<void>(`/api/v1/users/current/identities/${encodeURIComponent(provider)}`, {
       method: "DELETE",
     }),
 
-  // gaka-2ip Phase 1: per-user GitHub connect. GET reports {connected, login,
+  // boom-2ip Phase 1: per-user GitHub connect. GET reports {connected, login,
   // status, checkedAt} — NEVER the token. The connect flow itself is a
   // top-level browser redirect (window.location = "/auth/github/connect"), not
   // an XHR, so there's no api.ts method for it. DELETE clears the stored token.
@@ -1298,7 +1298,7 @@ export const api = {
       `/api/v1/books/items${source ? `?source=${encodeURIComponent(source)}` : ""}`,
     ),
 
-  // Per-book curation override (gaka-books Stage 5). PATCHes the status / rating
+  // Per-book curation override (boom-books Stage 5). PATCHes the status / rating
   // / finished-date that maps to Hardcover — the override layer, sticky against
   // Amazon re-derivation. Returns the updated EFFECTIVE reading row (override ??
   // derived). A reading row has no numeric id — it's keyed by (source,
@@ -1414,7 +1414,7 @@ export const api = {
       method: "POST",
     }),
 
-  // gaka-anh Phase 2: per-user GitHub stats. Authed cache-or-sync — the server
+  // boom-anh Phase 2: per-user GitHub stats. Authed cache-or-sync — the server
   // serves a fresh cache or refreshes on demand, and on a GitHub rate-limit
   // returns the last-good cache with `stale: true`. NEVER carries the token.
   // The public mirror (GET /api/public/profile/:slug/github/stats) is served by
@@ -1422,7 +1422,7 @@ export const api = {
   getGithubStats: () =>
     request<GithubStatsPayload>("/api/v1/users/current/github/stats"),
 
-  // gaka-2ud Phase 5: the PUBLIC, UNAUTH mirror served by the public-profile
+  // boom-2ud Phase 5: the PUBLIC, UNAUTH mirror served by the public-profile
   // feature (GET /api/public/profile/:slug/github/stats). Cache-only server-side
   // (never syncs), respects `public_profile_enabled`, and 404s when there's no
   // cache / the profile isn't public. Returns the SAME GithubStatsPayload as the
@@ -1450,7 +1450,7 @@ export const api = {
       method: "PATCH",
       body: { systemPrompt },
     }),
-  // gaka-mwp-streaks: award-ledger writes + reads.
+  // boom-mwp-streaks: award-ledger writes + reads.
   //
   // `at` (optional, ISO-8601) is for the backfill tool on the admin
   // labels tab — server buckets against that instant instead of
@@ -1490,7 +1490,7 @@ export const api = {
       `/api/public/profile/${encodeURIComponent(slug)}/awards/streaks`,
     ),
 
-  // gaka-hc6.3 / gaka-hc6.4: server-side award evaluation. Replaces the
+  // boom-hc6.3 / boom-hc6.4: server-side award evaluation. Replaces the
   // client-side evaluate() call. Own variant WRITES the ledger; public
   // variant is read-only for the ledger.
   getOwnAwards: () =>
@@ -1519,7 +1519,7 @@ export const api = {
         condition?: unknown;
       }>
     >(`/api/public/profile/${encodeURIComponent(slug)}/awards`),
-  // gaka-hc6.5.1: historical replay. Server walks N days back, evaluates
+  // boom-hc6.5.1: historical replay. Server walks N days back, evaluates
   // each day's snapshot, writes ledger rows with at=D. Replaces the
   // per-day client-side loop that used to run in StreakBackfillSection.
   awardsBackfill: (days: number) =>
@@ -1546,7 +1546,7 @@ export const api = {
     return await res.text();
   },
 
-  // --- Avatar (gaka-9v4) -----------------------------------------------------
+  // --- Avatar (boom-9v4) -----------------------------------------------------
   // Prompt synthesis is SSE — the FE reads the ReadableStream directly via
   // useAvatarPromptStream (see features/settings/avatar/useAvatarPromptStream)
   // so it doesn't go through the JSON-envelope request() helper.

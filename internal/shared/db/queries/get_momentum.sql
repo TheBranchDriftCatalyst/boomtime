@@ -1,4 +1,4 @@
--- gaka-dg7: week boundary computed in user-local TZ ($5) — Postgres'
+-- boom-dg7: week boundary computed in user-local TZ ($5) — Postgres'
 -- date_trunc('week', X) yields the ISO Monday of X's timezone, so we shift
 -- into the user's TZ first. Fixes momentum weekly bumps drifting across a
 -- Sunday-in-UTC boundary for west-coast users.
@@ -8,7 +8,7 @@
 -- `AND NOT (project = ANY($n))` after the range-end anchor. The Go side selects
 -- the top-N projects by total and gap-fills the week series.
 -- $1 sender, $2 start, $3 end, $4 limit (minutes), $5 IANA tz name.
--- gaka-6ci: momentum is a per-project chart, so null-project heartbeats
+-- boom-6ci: momentum is a per-project chart, so null-project heartbeats
 -- (browser sessions with no project context) shouldn't create a fake
 -- "Other" project bump. Filter before the aggregation. Coalesce becomes a
 -- no-op but kept for defense-in-depth against a future refactor loosening

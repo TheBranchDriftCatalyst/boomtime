@@ -1,4 +1,4 @@
-// sources_health_ginkgo_test.go — ginkgo mirror of sources_health_test.go (gaka-0vp.13).
+// sources_health_ginkgo_test.go — ginkgo mirror of sources_health_test.go (boom-0vp.13).
 // 1:1 case map (1 stdlib TestXxx → 1 It):
 //
 //	TestSourceHealthShape → "ListSourceHealth > per-(plugin,machine) shape"

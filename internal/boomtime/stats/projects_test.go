@@ -1,4 +1,4 @@
-// projects_test.go — gaka-d6x.handler: cover ProjectStats + ProjectList.
+// projects_test.go — boom-d6x.handler: cover ProjectStats + ProjectList.
 //
 // Named invariants:
 //
@@ -27,7 +27,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
-var _ = Describe("ProjectStats (gaka-d6x.handler)", func() {
+var _ = Describe("ProjectStats (boom-d6x.handler)", func() {
 	It("unauth'd → 4xx", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
@@ -86,7 +86,7 @@ var _ = Describe("ProjectStats (gaka-d6x.handler)", func() {
 	})
 })
 
-var _ = Describe("ProjectList (gaka-d6x.handler)", func() {
+var _ = Describe("ProjectList (boom-d6x.handler)", func() {
 	It("unauth'd → 4xx", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()

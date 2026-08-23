@@ -88,7 +88,7 @@ func (s *Service) SyncInsights(ctx context.Context, owner string) (int, error) {
 		}
 	}
 
-	// kindle-minutes (gaka-books): the forward reading-TIME path now lives in
+	// kindle-minutes (boom-books): the forward reading-TIME path now lives in
 	// reading_time.go (PollReadingTime / KindleReadingTimeKind) — it polls each
 	// in-progress book's last-page-read POSITION, gap-sums consecutive samples
 	// into reading SESSIONS, and writes reading-seconds into

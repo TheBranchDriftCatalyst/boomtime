@@ -1,4 +1,4 @@
-// Command catalyst-books is the STANDALONE catalyst-books server (gaka-zp2s P4) —
+// Command catalyst-books is the STANDALONE catalyst-books server (boom-zp2s P4) —
 // the books domain running in isolation, buildable as its own image. It wires only
 // internal/books + internal/shared (+ the job runner); it imports ZERO of the
 // boomtime code domain, which is the whole point of the split: `go build ./cmd/

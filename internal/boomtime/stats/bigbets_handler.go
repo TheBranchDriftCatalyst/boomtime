@@ -7,7 +7,7 @@ import (
 )
 
 // Punchcard: GET /api/v1/users/current/stats/punchcard?start&end&timeLimit.
-// Day-of-week x hour-of-day intensity in the caller's LOCAL time (gaka-dg7).
+// Day-of-week x hour-of-day intensity in the caller's LOCAL time (boom-dg7).
 // Excludes all hidden axis values.
 func (h *Handler) Punchcard(c *echo.Context) error {
 	s, aerr := h.dashboardScope(c, 7)
@@ -111,7 +111,7 @@ func (h *Handler) Momentum(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		// gaka-o4m: same rollup fast-path gate as the stats handler. Project
+		// boom-o4m: same rollup fast-path gate as the stats handler. Project
 		// (the only renamable output axis here) IS a rollup axis; the rollup's
 		// per-day sums roll up to weeks via date_trunc('week', day) and the
 		// output row shape (project, week_start, total_seconds) is unchanged.

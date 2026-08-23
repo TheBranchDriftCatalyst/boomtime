@@ -1,6 +1,6 @@
 ---
 # KEDA ≥2.16 split-cred TriggerAuthentication for the rabbitmq scaler
-# (worker-topology decoupling, gaka-8bz follow-up): a creds-less `host` URI
+# (worker-topology decoupling, boom-8bz follow-up): a creds-less `host` URI
 # (from the boomtime-rabbit-keda-host Secret — see the secretGenerator in
 # kustomization.yaml) plus separate username/password params sourced
 # straight from the operator's default-user Secret. No controller needs to
@@ -26,7 +26,7 @@ spec:
       name: boomtime-rabbit-default-user
       key: password
 ---
-# Postgres scaler auth for the catalyst-go-jobs ScaledJob (gaka-hney): split
+# Postgres scaler auth for the catalyst-go-jobs ScaledJob (boom-hney): split
 # params sourced from the CNPG-generated boomtime-postgres-app secret. boomtime
 # itself connects sslmode=disable in-cluster; the scaler matches (sslmode is a
 # trigger-metadata field, set in keda-scaledjob-jobs.yaml).

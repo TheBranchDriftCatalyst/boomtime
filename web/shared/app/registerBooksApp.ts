@@ -1,4 +1,4 @@
-// STANDALONE catalyst-books composition root (gaka-zp2s) — the ONE place the
+// STANDALONE catalyst-books composition root (boom-zp2s) — the ONE place the
 // books-only app decides which domains register their FE surface. The mirror of
 // web/src/app/registerDomains.ts (the host), but composing a LEANER set:
 //

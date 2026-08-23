@@ -1,4 +1,4 @@
-// redact_entities_ginkgo_test.go — ginkgo mirror of redact_entities_test.go (gaka-0vp.13).
+// redact_entities_ginkgo_test.go — ginkgo mirror of redact_entities_test.go (boom-0vp.13).
 // 1:1 case map (4 stdlib TestXxx → 4 Its):
 //
 //	TestRedactEntitiesCaseInsensitiveAndOwnerScoped → "case-insensitive + owner-scoped"

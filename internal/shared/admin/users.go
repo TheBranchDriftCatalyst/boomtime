@@ -1,6 +1,6 @@
 package admin
 
-// users.go — the admin caps dashboard data source (gaka-93f.6). Surfaces every
+// users.go — the admin caps dashboard data source (boom-93f.6). Surfaces every
 // user's role/tier + effective capabilities + disabled status, plus the
 // role→capabilities legend, so an operator can see who's on which tier and what
 // each tier grants. Admin-gated. Read-only v1 (set-role/disable stay in the

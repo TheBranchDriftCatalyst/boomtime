@@ -42,7 +42,7 @@ func (h *Handler) ChangePassword(c *echo.Context) error {
 	// re-parse the header for the token value.
 	callerToken, _ := apihelpers.TokenFromHeader(c)
 	var req changePasswordRequest
-	// gaka-bi2: 4 KiB cap. The body is two short strings; anything larger is
+	// boom-bi2: 4 KiB cap. The body is two short strings; anything larger is
 	// an attempt to amplify the argon2 verify below into a memory DoS.
 	if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitSmall); aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
@@ -61,8 +61,8 @@ func (h *Handler) ChangePassword(c *echo.Context) error {
 		// from the generic 403 "your access token is bad".
 		return apihelpers.RespondErr(c, apierr.New(http.StatusUnauthorized, "Current password is incorrect", nil))
 	}
-	// gaka-0gu: delegate to the shared auth.ValidatePassword extracted during
-	// gaka-e5e. This kills the duplicate inline validator that used a
+	// boom-0gu: delegate to the shared auth.ValidatePassword extracted during
+	// boom-e5e. This kills the duplicate inline validator that used a
 	// byte-based len() check (which under-counted multibyte scripts) and an
 	// ASCII-only letter/digit range (which rejected non-Latin passwords). The
 	// shared version is rune-counted + unicode.IsLetter/IsDigit — safe for
@@ -82,7 +82,7 @@ func (h *Handler) ChangePassword(c *echo.Context) error {
 	if err := h.DB.ChangePasswordAndRevoke(ctx, owner, newHash, newSalt, callerToken); err != nil {
 		return apihelpers.InternalErr(h.Logger, c, "password change failed", err)
 	}
-	// gaka-awh.2: tag the record with "user" so the LogHub owner-filter
+	// boom-awh.2: tag the record with "user" so the LogHub owner-filter
 	// (logging.FilterForUser) hides it from other authenticated Logs viewers.
 	// Never log the password, hash, or salt — the fact of a change is all
 	// that's needed for operator visibility.

@@ -12,7 +12,7 @@
 // Policy rationale: this mirrors OWASP ASVS v4 §2.1.1 (minimum 8 chars) +
 // §2.1.9 (composition rules are optional but a single-class-of-character
 // check catches the "12345678" / "aaaaaaaa" toy passwords the red team
-// found in gaka-e5e). We deliberately keep it un-draconian — the goal is to
+// found in boom-e5e). We deliberately keep it un-draconian — the goal is to
 // block trivially-cracked passwords, not to invent a rule set that pushes
 // users toward reused-elsewhere passwords or sticky-note storage.
 //

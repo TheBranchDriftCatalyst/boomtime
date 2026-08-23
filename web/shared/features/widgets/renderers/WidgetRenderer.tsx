@@ -1,12 +1,12 @@
 // WidgetRenderer — dispatches a widget kind id to the in-page React
-// renderer for the composable dashboard grid (gaka-keb).
+// renderer for the composable dashboard grid (boom-keb).
 //
 // Every kind that opts into `dashboardScopes: ['profile']` must have an
 // entry here. Unknown / unrendered kinds fall through to a small
 // placeholder — the DashboardGrid also filters upstream so this branch
 // mostly guards against catalog-renderer drift.
 import type { PublicDashboardPayload } from "@shared/types/stats";
-// Part B Stage 3 (gaka-174.x) built the data-driven alternative to a
+// Part B Stage 3 (boom-174.x) built the data-driven alternative to a
 // hand-written switch case per target:"both" kind, gated behind the
 // widgetSpecEngine FE flag. Part B Stage 5 cutover: the flag is gone —
 // EVERY target:"both" kind now routes through SpecRenderer unconditionally.
@@ -22,8 +22,8 @@ import type { PublicDashboardPayload } from "@shared/types/stats";
 import { specForKind } from "@shared/features/widgets/specs";
 import { SpecRenderer } from "@shared/features/widgets/renderers/SpecRenderer";
 import { HoloGradeBadge } from "@shared/features/widgets/renderers/HoloGradeBadge";
-// gaka-364: label evaluator drives the hero tagline (top-3 awards) +
-// the labels-showcase widget. gaka-hc6.4: awards come from the server
+// boom-364: label evaluator drives the hero tagline (top-3 awards) +
+// the labels-showcase widget. boom-hc6.4: awards come from the server
 // via useAwards() — no more client-side evaluate(), no more client POST
 // to /awards/log (server writes the ledger atomically on its own read).
 // While the fetch is in flight useAwards returns [] and the fallback
@@ -32,11 +32,11 @@ import { useAwards } from "@shared/features/publicprofile/labels/useAwards";
 import { useAwardStreaks } from "@shared/features/publicprofile/labels/useAwardStreaks";
 import { LabelChip } from "@shared/features/publicprofile/labels/LabelChip";
 import { LabelsShowcase } from "@shared/features/widgets/renderers/LabelsShowcase";
-// gaka-9v4: per-user chibi avatar slot in the hero identity tile. Falls
+// boom-9v4: per-user chibi avatar slot in the hero identity tile. Falls
 // back to initials when the user hasn't rendered one yet — the profile
 // still reads cleanly for the "new operator" case.
 import { UserAvatarImage } from "@shared/features/publicprofile/UserAvatarImage";
-// gaka-2ud P5: the public GitHub stats tile. Self-fetches the UNAUTH public
+// boom-2ud P5: the public GitHub stats tile. Self-fetches the UNAUTH public
 // mirror by slug and self-hides on 404 / empty — no CTA, no error on the
 // public page. FE-only (no SVG variant — no spec panels).
 import { GithubCard } from "@shared/features/publicprofile/GithubCard";
@@ -51,7 +51,7 @@ export interface WidgetRendererProps {
   kind: string;
   view?: string;
   data: PublicDashboardPayload;
-  /** gaka-2ud P5: the public profile slug. Threaded from PublicDashboard /
+  /** boom-2ud P5: the public profile slug. Threaded from PublicDashboard /
    * ProfileEditor so slug-scoped kinds (github-stats) can fetch the public
    * mirror. Falls back to `data.username` for callers that don't pass it. */
   slug?: string;
@@ -74,11 +74,11 @@ export function WidgetRenderer({ kind, view, data, slug, ctx }: WidgetRendererPr
     case "grade-badge":
       return <HoloGradeBadge data={data} />;
 
-    // gaka-364: labels showcase — all awarded labels grouped by kind
+    // boom-364: labels showcase — all awarded labels grouped by kind
     case "labels-showcase":
       return <LabelsShowcase data={data} />;
 
-    // gaka-2ud P5: public GitHub stats. Needs the SLUG to fetch the unauth
+    // boom-2ud P5: public GitHub stats. Needs the SLUG to fetch the unauth
     // public mirror; falls back to the payload's username. Renders nothing
     // when there's no public GitHub data (no CTA on the public page).
     case "github-stats":
@@ -90,12 +90,12 @@ export function WidgetRenderer({ kind, view, data, slug, ctx }: WidgetRendererPr
 }
 
 function HeroIdentity({ data }: { data: PublicDashboardPayload }) {
-  // gaka-364: hero tagline is the top-3 awarded labels from the memeification
+  // boom-364: hero tagline is the top-3 awarded labels from the memeification
   // catalog. Fallback text when there are no awards at all — deliberately
   // unambiguous ("NEW OPERATOR" signals "we've got no data on you" more
   // clearly than the old POLYGLOT-CLASS placeholder ever did).
   //
-  // gaka-mem-chip: the previous split of "plain-text tagline row" +
+  // boom-mem-chip: the previous split of "plain-text tagline row" +
   // "separate emblem row of naked <img>s" collapsed into ONE row of
   // <LabelChip>s. Each chip carries its own image + hover tooltip with
   // the description of what the label means. No duplication.
@@ -110,7 +110,7 @@ function HeroIdentity({ data }: { data: PublicDashboardPayload }) {
       style={{ gap: 16 }}
       data-testid="hero-identity"
     >
-      {/* gaka-9v4: chibi avatar square. Falls back to initials in an
+      {/* boom-9v4: chibi avatar square. Falls back to initials in an
        *  amber-bordered square when the user hasn't rendered one — the
        *  hero still reads cleanly in the "new operator" empty state. */}
       <div className="shrink-0" data-testid="hero-avatar-slot">

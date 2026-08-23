@@ -1,4 +1,4 @@
-// importer_ginkgo_test.go — ginkgo mirror of importer_test.go (gaka-0vp).
+// importer_ginkgo_test.go — ginkgo mirror of importer_test.go (boom-0vp).
 // 1:1 case map (4 stdlib TestXxx):
 //
 //	TestDayRangeInclusivePlusOne                   → DayRange / TotalDays > "same-day range yields 2 entries"

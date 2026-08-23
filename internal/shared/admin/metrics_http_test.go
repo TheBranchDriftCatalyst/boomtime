@@ -1,5 +1,5 @@
 // metrics_http_test.go — HTTP coverage for GET /api/v1/admin/metrics
-// (gaka-metrics). Named invariants:
+// (boom-metrics). Named invariants:
 //
 //   - admin gate: unauth'd ⇒ 4xx, non-admin ⇒ 403 (no allowlist leak);
 //   - admin ⇒ 200 with a {families:[...]} envelope Gathered from the

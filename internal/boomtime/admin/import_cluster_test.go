@@ -1,6 +1,6 @@
 // import_cluster_test.go — comprehensive coverage of the import handler
-// cluster (gaka-d6x.handler). Complements the existing import_test.go which
-// pins gaka-6jm.8 save-on-success. This file adds:
+// cluster (boom-d6x.handler). Complements the existing import_test.go which
+// pins boom-6jm.8 save-on-success. This file adds:
 //
 //   - Job list/read/logs endpoints with cross-user isolation invariants
 //   - Cancel path (queued, running-in-worker, already-terminal, cross-user)
@@ -175,7 +175,7 @@ var _ = Describe("ImportConfig", func() {
 // WakatimeRange
 // -----------------------------------------------------------------------------
 
-var _ = Describe("WakatimeRange (gaka-awh.2)", func() {
+var _ = Describe("WakatimeRange (boom-awh.2)", func() {
 	It("returns hasData:false (no error) when there is no effective key — no oracle leak", func() {
 		deps := newImportDeps("") // no server key
 		user, token := deps.Hz.MintUser("wr_nokey")
@@ -207,7 +207,7 @@ var _ = Describe("WakatimeRange (gaka-awh.2)", func() {
 	// on CI workers that have already resolved a proxy elsewhere.
 
 	It("malformed JSON body is tolerated (bind error ignored) → falls back to server key path", func() {
-		// gaka-awh.2: body is optional; the handler ignores bind errors so a
+		// boom-awh.2: body is optional; the handler ignores bind errors so a
 		// broken body doesn't 400 the range probe. With no server key the
 		// endpoint still returns hasData:false rather than an error envelope
 		// — the same no-oracle invariant as the empty-body case.
@@ -287,7 +287,7 @@ var _ = Describe("ImportRequest additional branches", func() {
 	})
 
 	It("submit response envelope has the expected shape ({jobId, jobStatus, job}) with job.State=queued and job.Owner=caller", func() {
-		// Pin the FULL success envelope — the sibling gaka-6jm.8 test asserts
+		// Pin the FULL success envelope — the sibling boom-6jm.8 test asserts
 		// no eager key-save, but nothing else asserted that {jobStatus} even
 		// exists or that {job.State} is "queued" (not "running"). A regression
 		// that returned state="running" on the first submit would silently break
@@ -728,7 +728,7 @@ var _ = Describe("ImportJobCancel", func() {
 
 		// LOAD-BEARING: by the time the cancel response returns, the DB row
 		// MUST be terminal — this is the whole point of the done-channel
-		// (no 150ms sleep race, gaka-al6). Cancelled OR failed both count as
+		// (no 150ms sleep race, boom-al6). Cancelled OR failed both count as
 		// terminal (worker may catch ctx.Done vs finishCancelled path).
 		Expect([]string{db.JobStateCancelled, db.JobStateFailed}).To(ContainElement(payloadOut.Job.State),
 			"cancel returned before job hit terminal state; done channel not honored (got %s)", payloadOut.Job.State)
@@ -1168,16 +1168,16 @@ var _ = Describe("ImportRequest body-size behavior (undocumented cap)", func() {
 })
 
 // -----------------------------------------------------------------------------
-// Handler-level integration smoke for gaka-6jm.10: a wakatime.com 401 during
+// Handler-level integration smoke for boom-6jm.10: a wakatime.com 401 during
 // the RUN (not the pre-submit /users/current probe) MUST flip
 // users.wakatime_key_status to 'invalid' AND MUST NOT persist the typed key.
 // The applyKeyOutcome unit test already covers the state machine — this test
 // pins the full handler → worker → DB pathway.
 // -----------------------------------------------------------------------------
 
-var _ = Describe("ImportRequest full-loop: typed key + wakatime 401 → status=invalid, no save (gaka-6jm.10 handler-level)", func() {
+var _ = Describe("ImportRequest full-loop: typed key + wakatime 401 → status=invalid, no save (boom-6jm.10 handler-level)", func() {
 	It("with a prior saved (valid) key: 401 during run flips status→invalid but LEAVES the prior ciphertext intact (no clobber, no fresh save)", func() {
-		// Full-loop pin for gaka-6jm.10: the applyKeyOutcome unit test in
+		// Full-loop pin for boom-6jm.10: the applyKeyOutcome unit test in
 		// internal/importer/apply_key_outcome_test.go covers the state machine
 		// in isolation — this test exercises the FULL pathway:
 		//     handler POST → worker fetchLookups → 401 → FinishImportJob(failed)
@@ -1246,7 +1246,7 @@ var _ = Describe("ImportRequest full-loop: typed key + wakatime 401 → status=i
 			}
 			return *info.Status
 		}, 2*time.Second, 25*time.Millisecond).Should(Equal(string(db.WakatimeKeyStatusInvalid)),
-			"gaka-6jm.10: wakatime_key_status was not flipped to 'invalid' after 401")
+			"boom-6jm.10: wakatime_key_status was not flipped to 'invalid' after 401")
 
 		// LOAD-BEARING #2: the ORIGINAL ciphertext is still there — the
 		// typed-and-401'd key was NOT persisted. Decrypt to confirm the
@@ -1255,12 +1255,12 @@ var _ = Describe("ImportRequest full-loop: typed key + wakatime 401 → status=i
 		blob, has, err := deps.Hz.DB.GetEncryptedWakatimeKey(ctx, user)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(has).To(BeTrue(),
-			"gaka-6jm.10: original saved key was clobbered to NULL by the 401 outcome (should be untouched)")
+			"boom-6jm.10: original saved key was clobbered to NULL by the 401 outcome (should be untouched)")
 		decrypted, err := auth.Decrypt(blob)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(decrypted)).To(Equal(string(originalPlaintext)),
-			"gaka-6jm.10: the typed key was persisted despite 401 — save-on-success skipped path failed")
+			"boom-6jm.10: the typed key was persisted despite 401 — save-on-success skipped path failed")
 		Expect(string(decrypted)).NotTo(Equal(typedKey),
-			"gaka-6jm.10: the typed 401'd key overwrote the previously-valid ciphertext")
+			"boom-6jm.10: the typed 401'd key overwrote the previously-valid ciphertext")
 	})
 })

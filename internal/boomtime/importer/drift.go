@@ -6,7 +6,7 @@ import (
 	"sort"
 )
 
-// gaka-unq.1: wakatime.com API schema-drift detection.
+// boom-unq.1: wakatime.com API schema-drift detection.
 //
 // Design choice: two-pass decode (raw map + typed struct + set-diff of keys)
 // per-endpoint against a hand-authored schemaSpec, rather than
@@ -15,7 +15,7 @@ import (
 // Rationale:
 //   - DisallowUnknownFields aborts on the FIRST unknown field and turns decode
 //     into a hard error. That is the opposite of "warn, don't fail", the
-//     ergonomic requirement for the import path (see plan gaka-unq.1). It also
+//     ergonomic requirement for the import path (see plan boom-unq.1). It also
 //     gives no structured findings and cannot express a benign-field allowlist
 //     so wakatime.com routinely shipping additive fields would break imports.
 //   - Raw-message byte comparison against a golden payload is too brittle
@@ -123,7 +123,7 @@ var heartbeatSpec = schemaSpec{
 		"project":         jtStringOrNull,
 		"type":            jtString,
 		"time":            jtNumber,
-		// gaka-1l9: wakatime.com's AI-assistance heartbeat fields (first seen
+		// boom-1l9: wakatime.com's AI-assistance heartbeat fields (first seen
 		// 2026-07-03). Persisted to matching heartbeats columns.
 		"ai_input_tokens":      jtNumberOrNull,
 		"ai_output_tokens":     jtNumberOrNull,
@@ -168,7 +168,7 @@ var lookupSpec = schemaSpec{
 		"language":             {},
 		"is_browser_extension": {},
 		"is_desktop_app":       {},
-		// gaka-1l9: per-lookup metadata added by wakatime.com. Not persisted
+		// boom-1l9: per-lookup metadata added by wakatime.com. Not persisted
 		// per-heartbeat — the important AI signal is on the heartbeat itself.
 		// Listed here to silence unknown_field warnings.
 		"cli_version":         {}, // user_agents

@@ -1,4 +1,4 @@
-// bigbets_test.go — gaka-d6x.handler
+// bigbets_test.go — boom-d6x.handler
 //
 // Coverage suite for the bigbets cluster (bigbets.go): Punchcard,
 // Sessions, AIActivity, HealthActivity, WorkoutList, Momentum.
@@ -46,7 +46,7 @@ func bigbetsRouter(hz *testutil.Harness) *echo.Echo {
 	e := echo.New()
 	h := hz.H
 	// Auth-shim so unauth requests get a normal 4xx rather than 404.
-	// gaka-8tn phase 4a: Login moved to h.Identity.
+	// boom-8tn phase 4a: Login moved to h.Identity.
 	e.POST("/auth/login", h.Identity.Login)
 	e.GET("/api/v1/users/current/stats/punchcard", hz.Stats.Punchcard)
 	e.GET("/api/v1/users/current/stats/sessions", hz.Stats.Sessions)
@@ -134,7 +134,7 @@ func seedWorkoutHeartbeat(hz *testutil.Harness, user string) {
 	Expect(err).NotTo(HaveOccurred())
 }
 
-var _ = Describe("Punchcard (gaka-dg7)", func() {
+var _ = Describe("Punchcard (boom-dg7)", func() {
 	It("returns a payload with cells + totals matching seeded blocks; cross-user rows never leak", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "bigbets"))
 		e := bigbetsRouter(hz)
@@ -176,7 +176,7 @@ var _ = Describe("Punchcard (gaka-dg7)", func() {
 		_ = userB
 	})
 
-	// gaka-d6x.handler critique: pin exact code, not a 4xx range.
+	// boom-d6x.handler critique: pin exact code, not a 4xx range.
 	It("unauth /stats/punchcard returns exactly 400 (MissingAuth)", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "bigbets"))
 		e := bigbetsRouter(hz)
@@ -187,7 +187,7 @@ var _ = Describe("Punchcard (gaka-dg7)", func() {
 			rec.Code, rec.Body.String())
 	})
 
-	// gaka-d6x.handler critique: /current/ endpoints derive owner
+	// boom-d6x.handler critique: /current/ endpoints derive owner
 	// ENTIRELY from the token, so an attacker cannot supply a path prefix
 	// to spoof identity. Prove that: B (token) sees empty data even
 	// though A has seed data — B's token owns B, regardless of path.
@@ -222,7 +222,7 @@ var _ = Describe("Punchcard (gaka-dg7)", func() {
 	})
 })
 
-var _ = Describe("Sessions (gaka-dg7)", func() {
+var _ = Describe("Sessions (boom-dg7)", func() {
 	It("returns summary/daily/histogram + gap-fills daily to the queried range", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "bigbets"))
 		e := bigbetsRouter(hz)
@@ -249,7 +249,7 @@ var _ = Describe("Sessions (gaka-dg7)", func() {
 		Expect(payloadA.Summary.Count).To(BeNumerically(">=", 1),
 			"seeded 3 daily blocks must yield >=1 session; got %d", payloadA.Summary.Count)
 		Expect(payloadA.Summary.TotalSeconds).To(BeNumerically(">", 0))
-		// gaka-d6x.handler critique: the previous assertion was `>=3` with a
+		// boom-d6x.handler critique: the previous assertion was `>=3` with a
 		// message claiming to pin the 14-day gap-fill invariant — a tautology
 		// where the check was 10x looser than the stated invariant. genDates
 		// on [now-14d, now] emits 15 midnight-UTC days (both endpoints
@@ -275,7 +275,7 @@ var _ = Describe("Sessions (gaka-dg7)", func() {
 	})
 })
 
-var _ = Describe("AIActivity (gaka-dg7)", func() {
+var _ = Describe("AIActivity (boom-dg7)", func() {
 	It("returns hasData=true with a summary when AI-tagged heartbeats exist for the caller", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "bigbets"))
 		e := bigbetsRouter(hz)
@@ -297,7 +297,7 @@ var _ = Describe("AIActivity (gaka-dg7)", func() {
 			"seeded AI heartbeat must flip hasData=true; body=%s", rec.Body.String())
 	})
 
-	// gaka-d6x.handler critique: the previous spec only asserted
+	// boom-d6x.handler critique: the previous spec only asserted
 	// hasData=false — a handler that ALWAYS returned false would pass.
 	// This version pins the FULL empty-shape contract: hasData=false AND
 	// the payload envelope is a well-formed JSON object with the expected
@@ -364,7 +364,7 @@ var _ = Describe("AIActivity (gaka-dg7)", func() {
 	})
 })
 
-var _ = Describe("HealthActivity (gaka-dg7)", func() {
+var _ = Describe("HealthActivity (boom-dg7)", func() {
 	It("returns hasData=false for an empty range and 200s cleanly", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "bigbets"))
 		e := bigbetsRouter(hz)
@@ -410,7 +410,7 @@ var _ = Describe("HealthActivity (gaka-dg7)", func() {
 	})
 })
 
-var _ = Describe("WorkoutList (gaka-dg7)", func() {
+var _ = Describe("WorkoutList (boom-dg7)", func() {
 	It("returns hasData=true + events list scoped to caller; B never sees A's events", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "bigbets"))
 		e := bigbetsRouter(hz)
@@ -459,7 +459,7 @@ var _ = Describe("WorkoutList (gaka-dg7)", func() {
 	})
 })
 
-var _ = Describe("Momentum (gaka-dg7)", func() {
+var _ = Describe("Momentum (boom-dg7)", func() {
 	It("returns per-project weekly series; respects ?top clamp; cross-user rows never appear", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "bigbets"))
 		e := bigbetsRouter(hz)
@@ -523,7 +523,7 @@ var _ = Describe("Momentum (gaka-dg7)", func() {
 		_ = userA
 	})
 
-	// gaka-d6x.handler critique: pin the exact contract (400 MissingAuth).
+	// boom-d6x.handler critique: pin the exact contract (400 MissingAuth).
 	It("unauth /stats/momentum returns exactly 400 (MissingAuth)", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "bigbets"))
 		e := bigbetsRouter(hz)
@@ -534,7 +534,7 @@ var _ = Describe("Momentum (gaka-dg7)", func() {
 			rec.Code, rec.Body.String())
 	})
 
-	// gaka-d6x.handler critique: only ?top=0 and ?top=2 paths were
+	// boom-d6x.handler critique: only ?top=0 and ?top=2 paths were
 	// covered. Pin the ?top-upper-bound behavior: the handler applies
 	// only `if top < 1 { top = 8 }` and ToMomentumPayload slices
 	// `order[:top]` which is a no-op when top > len(order). So a huge

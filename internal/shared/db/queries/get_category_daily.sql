@@ -1,4 +1,4 @@
--- gaka-dg7: day boundary computed in user-local TZ ($5) — mirrors
+-- boom-dg7: day boundary computed in user-local TZ ($5) — mirrors
 -- get_user_activity so the category daily buckets align with the top-level
 -- daily total series a Pacific user sees in the Overview.
 --
@@ -8,7 +8,7 @@
 -- range-end anchor (see categoryDailyRangeAnchor). Returns pct/daily_pct windows
 -- so the Go shaper can build ResourceStats aligned to the same day series.
 -- $1 sender, $2 start, $3 end, $4 limit (minutes), $5 IANA tz name.
--- gaka-6ci: filter out null-category heartbeats BEFORE aggregation. A
+-- boom-6ci: filter out null-category heartbeats BEFORE aggregation. A
 -- browser plugin or AI console tab whose category field wasn't set
 -- shouldn't be silently classified as a real category — the category
 -- pie is titled "categories," so only real categories belong. The

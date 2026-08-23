@@ -1,4 +1,4 @@
-// NotificationBell — the header bell + side panel (gaka-books). Shows an unread
+// NotificationBell — the header bell + side panel (boom-books). Shows an unread
 // badge; opening the panel lists notifications (durable, replayed on session start,
 // + this session's live ones) and marks them read. Book finishes land here.
 import { useState } from "react";

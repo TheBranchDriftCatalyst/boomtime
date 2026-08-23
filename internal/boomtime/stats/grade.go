@@ -1,5 +1,5 @@
 // grade.go computes the letter grade shown on the stats-card-with-grade widget
-// (gaka-hsj). It is a faithful port of github-readme-stats' rank algorithm
+// (boom-hsj). It is a faithful port of github-readme-stats' rank algorithm
 // (src/calculateRank.js): the same two CDFs, the same weighted-blend shape, the
 // same percentile thresholds and level ladder. The ONLY local adaptation is the
 // metric set — GitHub's commits/prs/issues/reviews/stars/followers are swapped
@@ -54,7 +54,7 @@ type GradeConfig struct {
 	MinRangeDays int
 }
 
-// DefaultGradeConfig is the shipped calibration (see gaka-hsj plan). Kept as a
+// DefaultGradeConfig is the shipped calibration (see boom-hsj plan). Kept as a
 // package-level var so cmd/boomtime (via ApplyGradeConfigFromEnv) can tune it
 // once at boot without threading a config value through every renderer.
 var DefaultGradeConfig = GradeConfig{

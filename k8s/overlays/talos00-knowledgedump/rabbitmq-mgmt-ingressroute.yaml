@@ -1,6 +1,6 @@
 ---
 # LAN-gated access to the RabbitMQ management UI (worker-topology
-# decoupling, gaka-8bz follow-up). The RabbitMQ Cluster Operator enables
+# decoupling, boom-8bz follow-up). The RabbitMQ Cluster Operator enables
 # the management plugin by default and exposes it on the auto-created
 # `boomtime-rabbit` Service, port 15672 — this just fronts it with the
 # same lan-only pattern the app itself uses (see ingressroute.yaml's

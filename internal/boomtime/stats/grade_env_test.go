@@ -6,7 +6,7 @@ import (
 )
 
 // TestApplyGradeConfigFromEnv pins the grade-knob wiring that moved here from
-// internal/shared/config (gaka-zp2s decoupling): each BOOM_GRADE_* override lands
+// internal/shared/config (boom-zp2s decoupling): each BOOM_GRADE_* override lands
 // on the right field (anti-swap sentinels), unset keeps the shipped default, and a
 // bad value falls back to the default (parse-error isolation).
 func TestApplyGradeConfigFromEnv(t *testing.T) {

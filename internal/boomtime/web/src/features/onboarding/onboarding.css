@@ -1,4 +1,4 @@
-/* Floating demo-widget backdrop for the onboarding page (gaka-93f.1.2).
+/* Floating demo-widget backdrop for the onboarding page (boom-93f.1.2).
  *
  * Two-layer motion so the static skew/scale (outer, inline transform) is kept
  * even when the bob animation is disabled: the inner .ob-bob only translates.

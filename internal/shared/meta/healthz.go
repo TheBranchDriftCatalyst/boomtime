@@ -27,7 +27,7 @@ type HealthzResponse struct {
 	UptimeSeconds int64  `json:"uptimeSeconds"`
 	DBReachable   bool   `json:"dbReachable"`
 	SchemaVersion int64  `json:"schemaVersion"`
-	// Features is the effective user-model substrate switch map (gaka-0oe.1):
+	// Features is the effective user-model substrate switch map (boom-0oe.1):
 	// {user_model: on|off, auth_provider: local|oidc, rollup_skip: on|off}.
 	// Gives ops a one-shot check of which substrate is active in a running
 	// deploy without shelling into the pod.

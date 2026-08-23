@@ -46,7 +46,7 @@ func seedReadingItemG(hz *testutil.Harness, owner, extID, genre, series string, 
 	Expect(err).NotTo(HaveOccurred(), "seed reading_items")
 }
 
-var _ = Describe("Evaluate genre'd reading time leaf (DB integration, gaka-dvy9)", func() {
+var _ = Describe("Evaluate genre'd reading time leaf (DB integration, boom-dvy9)", func() {
 	// A genre'd reading goal sums runtime_min (→ seconds) of books with
 	// genre=value FINISHED in the window. It must EXCLUDE: other genres, books
 	// finished outside the window, and unfinished books.

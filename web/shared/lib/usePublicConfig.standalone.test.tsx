@@ -1,4 +1,4 @@
-// Unit guard for the STANDALONE books public-config gate (gaka-zp2s / gaka-omt2).
+// Unit guard for the STANDALONE books public-config gate (boom-zp2s / boom-omt2).
 //
 // The lean catalyst-books server serves NO /api/v1/config/public endpoint, so the
 // host fetch would 404 → FALLBACK books_enabled:false → the Books nav is hidden
@@ -52,7 +52,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-describe("usePublicConfig standalone gate (gaka-zp2s)", () => {
+describe("usePublicConfig standalone gate (boom-zp2s)", () => {
   it("standalone: books_enabled=true and NEVER fetches the missing /config/public", async () => {
     vi.stubEnv("VITE_BOOKS_STANDALONE", "true");
     const { result } = await renderConfig();

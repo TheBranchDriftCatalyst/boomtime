@@ -5,7 +5,7 @@ interface ChartCardProps {
   title: string;
   /**
    * Optional secondary line under the title — small, muted, sits inline
-   * with the title. Used by per-axis charts (gaka-6ci) to disclose
+   * with the title. Used by per-axis charts (boom-6ci) to disclose
    * excluded time ("28% untagged / browsing") so users see the gap
    * between the chart's aggregated total and their real tracked time.
    */

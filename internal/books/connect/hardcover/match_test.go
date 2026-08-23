@@ -10,7 +10,7 @@ import (
 )
 
 // match_test.go — pins the deep-link slug threading through the match ladder
-// (gaka-qic0). The Hardcover book PAGE resolves on the book's SLUG, not the
+// (boom-qic0). The Hardcover book PAGE resolves on the book's SLUG, not the
 // numeric id, so an exact-id match MUST surface book.slug on the MatchResult or
 // the "open on Hardcover" link 404s. Uses the shared fakeRoundTripper
 // (push_test.go), which serializes the injected hcEdition — including its

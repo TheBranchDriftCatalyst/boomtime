@@ -1,4 +1,4 @@
-// PinToggle.test.tsx — the canonical-entities pin control (gaka-canon).
+// PinToggle.test.tsx — the canonical-entities pin control (boom-canon).
 //
 // Non-tautological anchors (real usePins + real api + MSW; nothing about pins
 // is mocked, so we assert the ACTUAL wire behavior end-to-end):

@@ -1,4 +1,4 @@
-// oidc.go — the OIDC (Authentik) web login handlers (gaka-0oe.11):
+// oidc.go — the OIDC (Authentik) web login handlers (boom-0oe.11):
 //
 //	GET /auth/login/oidc     → 302 to the provider authorize endpoint
 //	GET /auth/callback/oidc  → code exchange, provision/lookup, set session
@@ -24,7 +24,7 @@ import (
 
 const oidcStateCookie = "oidc_state"
 
-// oidcNonceCookie stores the OIDC nonce (gaka-93f.16) so the callback can assert
+// oidcNonceCookie stores the OIDC nonce (boom-93f.16) so the callback can assert
 // the id_token echoes it. Same lifetime/attrs as the state cookie.
 const oidcNonceCookie = "oidc_nonce"
 
@@ -43,7 +43,7 @@ func (h *Handler) setOIDCFlowCookie(c *echo.Context, name, value string) {
 	})
 }
 
-// clearOIDCFlowCookies expires the state+nonce cookies (gaka-93f.17). Called on
+// clearOIDCFlowCookies expires the state+nonce cookies (boom-93f.17). Called on
 // logout so an abandoned in-flight link flow can't be completed by a DIFFERENT
 // user on the same (shared/kiosk) browser: without the oidc_state cookie the
 // callback's CSRF check fails, so the stale link intent can never be consumed.
@@ -60,7 +60,7 @@ func oidcResolver() *auth.OIDCResolver {
 }
 
 // linkIntents maps an in-flight OAuth `state` → the boomtime user who initiated
-// an account LINK (gaka-b5n.4). The state is the CSRF token (random +
+// an account LINK (boom-b5n.4). The state is the CSRF token (random +
 // cookie-verified), so it's a safe, unguessable key — the callback can't be
 // tricked into linking to an arbitrary account. In-memory + short-TTL (single
 // dev instance; a shared store is a multi-instance follow-up).
@@ -77,7 +77,7 @@ type linkIntent struct {
 func putLinkIntent(state, username string) {
 	linkIntents.Lock()
 	defer linkIntents.Unlock()
-	// gaka-93f.17/.19: reap expired intents on every insert so an authenticated
+	// boom-93f.17/.19: reap expired intents on every insert so an authenticated
 	// user who repeatedly STARTS (and abandons) link flows can't grow the map
 	// without bound — abandoned intents are otherwise only removed when their
 	// exact random state is later presented (never). The map is tiny in
@@ -117,14 +117,14 @@ func (h *Handler) LoginOIDC(c *echo.Context) error {
 	if err1 != nil || err2 != nil {
 		return apihelpers.RespondErr(c, apierr.Generic())
 	}
-	// Short-lived CSRF state + nonce cookies (gaka-93f.16).
+	// Short-lived CSRF state + nonce cookies (boom-93f.16).
 	h.setOIDCFlowCookie(c, oidcStateCookie, state)
 	h.setOIDCFlowCookie(c, oidcNonceCookie, nonce)
 	return c.Redirect(http.StatusFound, resolver.AuthCodeURL(state, nonce))
 }
 
 // LinkOIDC: GET /auth/link/oidc — start an account-LINK flow for the currently
-// logged-in user (gaka-b5n.4). Available whenever OIDC is configured (works
+// logged-in user (boom-b5n.4). Available whenever OIDC is configured (works
 // under provider=local, so you can link your password account before flipping
 // to oidc). The current user is resolved from the session COOKIE — this is a
 // top-level browser navigation, which can't carry an Authorization header.
@@ -161,7 +161,7 @@ func (h *Handler) CallbackOIDC(c *echo.Context) error {
 	if cerr != nil || stateCookie.Value == "" || stateCookie.Value != c.QueryParam("state") {
 		return h.oidcErrorRedirect(c, "state_mismatch")
 	}
-	// Capture the nonce we set at authorize-time (gaka-93f.16); a missing cookie
+	// Capture the nonce we set at authorize-time (boom-93f.16); a missing cookie
 	// leaves it "" so exchangeAndVerify fails closed.
 	nonce := ""
 	if nc, nerr := c.Cookie(oidcNonceCookie); nerr == nil {
@@ -179,7 +179,7 @@ func (h *Handler) CallbackOIDC(c *echo.Context) error {
 		return h.oidcErrorRedirect(c, "missing_code")
 	}
 
-	// LINK MODE (gaka-b5n.4): if this state was started by /auth/link/oidc,
+	// LINK MODE (boom-b5n.4): if this state was started by /auth/link/oidc,
 	// bind the resolved identity to the initiating user and keep their existing
 	// session — do NOT mint a new one.
 	if username, ok := takeLinkIntent(c.QueryParam("state")); ok {
@@ -210,7 +210,7 @@ func (h *Handler) CallbackOIDC(c *echo.Context) error {
 		Path:     strings.TrimSuffix(h.Cfg.APIPrefix, "/") + "/",
 		HttpOnly: true,
 		Secure:   h.Cfg.CookieSecure,
-		// gaka-93f.19: Strict, matching the local session cookie (auth.go
+		// boom-93f.19: Strict, matching the local session cookie (auth.go
 		// setRefreshCookie). The `oidc_state` CSRF cookie must be Lax to
 		// survive the provider's cross-site redirect back, but this SESSION
 		// cookie is only ever set AFTER the callback completes, so Strict is
@@ -236,7 +236,7 @@ type identityResponse struct {
 
 // ListIdentities: GET /api/v1/users/current/identities — the caller's linked
 // identities + whether OIDC linking is available + whether they have a password
-// (drives the Settings > Account "Linked identities" card, gaka-b5n.4/.7).
+// (drives the Settings > Account "Linked identities" card, boom-b5n.4/.7).
 func (h *Handler) ListIdentities(c *echo.Context) error {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {

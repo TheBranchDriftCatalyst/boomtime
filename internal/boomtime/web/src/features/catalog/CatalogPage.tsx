@@ -47,7 +47,7 @@ function CatalogInner({ variant = "app" }: CatalogPageProps) {
   const [rulers, setRulers] = useState(false);
   const [activeCat, setActiveCat] = useState<string | null>(null);
 
-  // gaka-qcxg: the visible widget slice honors boot-config feature flags — the
+  // boom-qcxg: the visible widget slice honors boot-config feature flags — the
   // reading-domain kinds only appear when books_enabled is on (same gate as the
   // Reading overview tab). On the public /catalog page this reads the real
   // server config too (GET /config/public is unauthed), so the gallery matches

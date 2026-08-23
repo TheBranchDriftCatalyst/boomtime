@@ -1,4 +1,4 @@
-// wakatime_key_ginkgo_test.go — ginkgo mirror of wakatime_key_test.go (gaka-bi2).
+// wakatime_key_ginkgo_test.go — ginkgo mirror of wakatime_key_test.go (boom-bi2).
 // 1:1 case map (1 stdlib TestXxx):
 //
 //	TestSaveWakatimeKey_BodySizeCap_413 → SaveWakatimeKey body-size cap > "5 KiB body → 413, no probe"
@@ -16,7 +16,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
-var _ = Describe("SaveWakatimeKey body-size cap (gaka-bi2)", func() {
+var _ = Describe("SaveWakatimeKey body-size cap (boom-bi2)", func() {
 	It("rejects a 5 KiB body with 413 before probeWakatimeKey runs", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()

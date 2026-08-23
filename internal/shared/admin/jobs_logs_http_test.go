@@ -1,5 +1,5 @@
 // jobs_logs_http_test.go — HTTP coverage for the persisted per-job log endpoints
-// (gaka-hney): GET /api/v1/admin/jobs/:id/logs and DELETE .../logs. The object
+// (boom-hney): GET /api/v1/admin/jobs/:id/logs and DELETE .../logs. The object
 // store is a stub, so these exercise the handler contract end-to-end WITHOUT a
 // live S3: fixture entries → 200 JSON; absent → 404; DELETE calls the store's
 // Delete (never the jobs table) and is a no-op when persistence is off; and the
@@ -172,7 +172,7 @@ var _ = Describe("Admin job logs: DELETE", func() {
 	})
 })
 
-// DELETE /api/v1/admin/jobs/logs[?kind=] — the bulk log-clear (gaka-hney). It
+// DELETE /api/v1/admin/jobs/logs[?kind=] — the bulk log-clear (boom-hney). It
 // enumerates the stored log objects (objstore List) and deletes them; a ?kind=
 // filter reads the jobs table for that kind's ids to keep only matching keys.
 // Object storage only — jobs-table rows are never mutated.

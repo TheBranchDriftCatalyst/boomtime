@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- Kindle last-page-read POSITION samples (gaka-books): the raw time-series the
+-- Kindle last-page-read POSITION samples (boom-books): the raw time-series the
 -- FORWARD reading-TIME composition gap-sums into reading SESSIONS. Each poll of
 -- the Fiona CDE sidecar appends one row per in-progress kindle book holding the
 -- current last-page-read position + when it was observed. SILOED like

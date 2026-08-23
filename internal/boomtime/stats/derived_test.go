@@ -1,4 +1,4 @@
-// derived_test.go — gaka-d6x.handler: cover DerivedStatus/DerivedResync.
+// derived_test.go — boom-d6x.handler: cover DerivedStatus/DerivedResync.
 // Named invariants:
 //
 //	"unauth → 4xx no leak" — a missing/bad token returns 4xx BEFORE
@@ -35,7 +35,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
-var _ = Describe("Derived endpoints (gaka-d6x.handler)", func() {
+var _ = Describe("Derived endpoints (boom-d6x.handler)", func() {
 	It("rejects unauthenticated GET /derived/status with 4xx (fail-closed)", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()

@@ -1,5 +1,5 @@
 // UserAvatarImage.test.tsx — non-tautological coverage of the per-user
-// chibi avatar <img> with initials fallback (gaka-9v4).
+// chibi avatar <img> with initials fallback (boom-9v4).
 //
 // Invariants under test:
 //   - src is built from /api/v1/users/{username}/avatar and URL-encodes

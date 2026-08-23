@@ -1,4 +1,4 @@
-// CatalogPage.test.tsx — gaka-qcxg: the reading-domain widgets are books_enabled
+// CatalogPage.test.tsx — boom-qcxg: the reading-domain widgets are books_enabled
 // -gated in the gallery. This renders the PUBLIC catalog (variant="public",
 // which forces the zero-network sample source) and flips the mocked
 // usePublicConfig flag, asserting the Reading section + its cards appear ONLY

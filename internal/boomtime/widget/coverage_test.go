@@ -1,5 +1,5 @@
 // coverage_test.go — additional invariant-focused tests filling coverage gaps
-// on primitives, custom-panel dispatch, theming, and frame plumbing (gaka-d6x).
+// on primitives, custom-panel dispatch, theming, and frame plumbing (boom-d6x).
 //
 // Each It pins a NAMED INVARIANT expressed as a defensive property of the
 // public rendering contract:

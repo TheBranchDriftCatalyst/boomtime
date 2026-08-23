@@ -1,5 +1,5 @@
 // ingest_raw_test.go — SaveHeartbeatsRaw skips the phase-3 rollup/gap
-// maintenance while still inserting the raw heartbeats (gaka-0oe.3). This is
+// maintenance while still inserting the raw heartbeats (boom-0oe.3). This is
 // the DB-level guarantee the rollup-skip ingest dispatch relies on: an
 // ingest-only tier's writes land but never touch hb_rollup_daily.
 package db
@@ -13,7 +13,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = ginkgo.Describe("SaveHeartbeatsRaw (gaka-0oe.3 rollup-skip)", func() {
+var _ = ginkgo.Describe("SaveHeartbeatsRaw (boom-0oe.3 rollup-skip)", func() {
 	ginkgo.It("inserts the heartbeat but does NOT write hb_rollup_daily", func() {
 		d := openTestDBG()
 		ctx := context.Background()

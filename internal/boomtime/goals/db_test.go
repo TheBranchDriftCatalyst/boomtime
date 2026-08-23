@@ -1,4 +1,4 @@
-// goals_ginkgo_test.go — ginkgo mirror of goals_test.go (gaka-0vp.13).
+// goals_ginkgo_test.go — ginkgo mirror of goals_test.go (boom-0vp.13).
 // 1:1 case map (13 stdlib TestXxx → 13 Its):
 //
 //	TestGoalsCRUDAndSpecRoundtrip           → It "CRUD + spec round-trip"
@@ -34,7 +34,7 @@ func cleanupGoalsG(d *db.DB, ctx context.Context, sender string) {
 	})
 }
 
-var _ = ginkgo.Describe("goals (gaka-wpb)", func() {
+var _ = ginkgo.Describe("goals (boom-wpb)", func() {
 	ginkgo.It("CRUD happy path + spec JSONB round-trips semantically through create/read/PATCH", func() {
 		d := openTestDBG()
 		ctx := context.Background()

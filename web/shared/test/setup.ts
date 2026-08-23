@@ -78,7 +78,7 @@ if (typeof (globalThis as { ResizeObserver?: unknown }).ResizeObserver === "unde
 // Radix trigger fail with "target.hasPointerCapture is not a function".
 // Shim as no-ops (return false for hasPointerCapture — jsdom never
 // captures pointers, so the answer is genuinely "no").
-// gaka-wpb.1 (audit): the goals PredicateBuilder tests were the first
+// boom-wpb.1 (audit): the goals PredicateBuilder tests were the first
 // to trip on this; the "convert leaf to group" test had to be
 // tautologized to work around the missing shim. Adding it here lets
 // that test drive the real DOM instead.

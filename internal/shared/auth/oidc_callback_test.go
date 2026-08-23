@@ -1,4 +1,4 @@
-// Mock-Authentik integration test for OIDCResolver.HandleCallback (gaka-0oe.11,
+// Mock-Authentik integration test for OIDCResolver.HandleCallback (boom-0oe.11,
 // design §9.1). A local httptest.Server plays the OIDC provider — serving the
 // discovery doc, a JWKS, and a /token endpoint that returns a locally-signed
 // id_token — so the whole callback path (code exchange → JWKS verify → §6.5
@@ -23,7 +23,7 @@ import (
 const mockKID = "mock-key-1"
 
 // mockNonce is baked into the id_token AND passed to HandleCallback so the
-// gaka-93f.16 nonce check passes deterministically in tests.
+// boom-93f.16 nonce check passes deterministically in tests.
 const mockNonce = "mock-nonce-abc123"
 
 // mockAuthentik spins an httptest OIDC provider signing id_tokens with `key`.
@@ -173,7 +173,7 @@ var _ = Describe("OIDCResolver.HandleCallback (mock Authentik)", func() {
 		Expect(res2.Identity.Username).To(Equal(preferred))
 	})
 
-	It("updates a returning user's role when the provider groups now map to a different role (gaka-93f.19 write-on-change)", func() {
+	It("updates a returning user's role when the provider groups now map to a different role (boom-93f.19 write-on-change)", func() {
 		database := openServiceTestDB()
 		ctx := context.Background()
 
@@ -222,7 +222,7 @@ var _ = Describe("OIDCResolver.HandleCallback (mock Authentik)", func() {
 		Expect(full3.Role).To(Equal(string(RoleAdmin)))
 	})
 
-	It("rejects an id_token whose nonce does not match the expected nonce (gaka-93f.16)", func() {
+	It("rejects an id_token whose nonce does not match the expected nonce (boom-93f.16)", func() {
 		database := openServiceTestDB()
 		ctx := context.Background()
 

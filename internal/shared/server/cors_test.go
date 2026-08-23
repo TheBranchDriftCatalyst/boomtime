@@ -1,4 +1,4 @@
-// cors_ginkgo_test.go — ginkgo mirror of cors_test.go (gaka-0vp).
+// cors_ginkgo_test.go — ginkgo mirror of cors_test.go (boom-0vp).
 //
 // 1:1 case map (3 stdlib TestXxx):
 //
@@ -125,7 +125,7 @@ var _ = Describe("isOriginAllowed (empty allowlist)", func() {
 	)
 })
 
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
+// -- helpers restored from stdlib partner (boom-0vp.17) --
 func silentLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }

@@ -1,4 +1,4 @@
-// jobs_ws.go — GET /api/v1/jobs/ws (gaka-hney.6): the per-user push stream for
+// jobs_ws.go — GET /api/v1/jobs/ws (boom-hney.6): the per-user push stream for
 // catalyst-go-jobs terminal events. The FE opens it once (in AppShell) and
 // toasts when one of the caller's jobs completes or fails. Cookie-authed (a WS
 // handshake can't set an Authorization header) and user-scoped via the hub, so

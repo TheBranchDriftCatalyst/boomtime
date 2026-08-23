@@ -1,5 +1,5 @@
 // widget_links_test.go — stdlib tests for the DB accessors in widgets.go
-// (gaka-se2.7). Sibling of widgets_test.go which tests the pure helpers.
+// (boom-se2.7). Sibling of widgets_test.go which tests the pure helpers.
 // Every t.Run pins ONE named invariant. Cross-owner isolation and the
 // origin-cap semantics are the load-bearing checks.
 package db
@@ -506,7 +506,7 @@ func TestProjectMemberSet(t *testing.T) {
 
 func TestProjectMemberSetWithRenames(t *testing.T) {
 	// Expansion: a project pinned in the scope must reach the raw heartbeats
-	// stored under every rename SOURCE name too (gaka-xuc). This mirrors the
+	// stored under every rename SOURCE name too (boom-xuc). This mirrors the
 	// ginkgo test but pins it as stdlib coverage of widgets.go too.
 	t.Run("scope-ref-plus-rename-sources-all-lowered-and-deduped", func(t *testing.T) {
 		// mkRenames stores KEYS as-given (no lowering) but ExactSourcesFor

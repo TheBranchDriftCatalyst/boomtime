@@ -1,6 +1,6 @@
 // SYNTHWAVE / OUTRUN categorical chart palette — the LEGACY fallback used by
 // `colorAt(i)` in @shared/viz/d3/color when the active theme's `--chart-N` token is
-// unavailable (SSR, pre-mount, or a hypothetical broken theme). Since gaka-538
+// unavailable (SSR, pre-mount, or a hypothetical broken theme). Since boom-538
 // the CURRENT source-of-truth for chart colors is the theme's `--chart-1..12`
 // tokens, read via getComputedStyle at draw time. Do NOT reference this array
 // directly from chart code — always route through `colorAt(i)` so theme swaps

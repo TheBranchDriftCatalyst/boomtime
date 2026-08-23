@@ -1,4 +1,4 @@
-// Tests for GET /api/v1/config/public (gaka-93f.1.1). Internal package test
+// Tests for GET /api/v1/config/public (boom-93f.1.1). Internal package test
 // so it can construct a *Handler with an explicit *config.Config and assert
 // the response faithfully mirrors the flags — no DB, no auth.
 package meta

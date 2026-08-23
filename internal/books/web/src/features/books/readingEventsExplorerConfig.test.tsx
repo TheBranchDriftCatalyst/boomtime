@@ -1,5 +1,5 @@
 // readingEventsExplorerConfig tests — the readingEvents adapter for
-// <GroupableExplorer> (gaka-z5dz). runQuery is mocked so we assert the adapter's
+// <GroupableExplorer> (boom-z5dz). runQuery is mocked so we assert the adapter's
 // mapping in isolation:
 //   - fetchGroup issues a grouped `reads` query (domain readingEvents) and maps
 //     GroupRow → {value, stats:{count}} ("" → null); reads has no rollups, so the

@@ -1,16 +1,16 @@
 // useAwardStreaks — client for the label-award streak ledger
-// (gaka-mwp-streaks).
+// (boom-mwp-streaks).
 //
-// Post gaka-hc6.5: the WRITE path is gone. Server /awards writes ledger
+// Post boom-hc6.5: the WRITE path is gone. Server /awards writes ledger
 // rows on its own read (see internal/handler/awards_eval.go), so no
 // client-side POST is needed. The historical backfill tool that used
 // to loop day-by-day is now a single POST /awards/backfill call
-// (see gaka-hc6.5.1).
+// (see boom-hc6.5.1).
 //
 // This file now only owns the READ path — the streak map that
 // LabelChip needs to render Nx badges.
 //
-// gaka-ie3: mirrors useAwards' route-sniffing default. If the caller
+// boom-ie3: mirrors useAwards' route-sniffing default. If the caller
 // omits `slug`, we look at useParams to decide whether we're on a
 // public profile route (/p/:slug) or an authed view. Without this a
 // public visitor hitting /p/:slug fires /users/current/awards/streaks

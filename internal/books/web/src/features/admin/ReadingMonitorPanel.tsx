@@ -1,4 +1,4 @@
-// ReadingMonitorPanel — Admin › Books › Reading monitor (gaka-books). A THIN
+// ReadingMonitorPanel — Admin › Books › Reading monitor (boom-books). A THIN
 // control over the SERVER-side persistent reading monitor. The poll engine no
 // longer runs in this browser tab: it lives server-side, watches each
 // in-progress Kindle book's furthest-page-read, and toasts you on a reading
@@ -32,7 +32,7 @@ import type {
   ReadingMonitorState,
 } from "@shared/types/api";
 
-// Grafana deep-link (gaka-books). The cadence board's stable uid is
+// Grafana deep-link (boom-books). The cadence board's stable uid is
 // `boomtime-reading-monitor`. Base URL: VITE_GRAFANA_BASE_URL when set (Grafana
 // on its own origin), else a same-host `/grafana` reverse-proxy path — the
 // common self-hosted default. Trailing slash trimmed so the join is clean.
@@ -342,7 +342,7 @@ export function ReadingMonitorPanel() {
   const mode = data?.mode ?? "debounced";
   const busy = isLoading || mutate.isPending;
 
-  // Renders through the shared AdminTabShell base (gaka-zp2s); this panel keeps
+  // Renders through the shared AdminTabShell base (boom-zp2s); this panel keeps
   // its own inline isError banner + live-status chrome inside the shell body.
   return (
     <AdminTabShell bodyClassName="space-y-4">

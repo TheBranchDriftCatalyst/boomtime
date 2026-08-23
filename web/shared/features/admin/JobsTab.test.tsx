@@ -1,4 +1,4 @@
-// JobsTab.test.tsx — the Admin > Jobs tab (gaka-hney). Non-tautological coverage
+// JobsTab.test.tsx — the Admin > Jobs tab (boom-hney). Non-tautological coverage
 // of the three pieces that carry behaviour:
 //   1. Run-a-reading-step panel: renders (and only renders) its triggers when
 //      books_enabled; a click POSTs the matching endpoint + toasts the jobId.
@@ -146,7 +146,7 @@ afterEach(() => {
 });
 
 // JobsTab pushes its tab-level control ("Clear all logs") UP through the
-// page-actions slot instead of hand-rolling a header row (gaka-9e9k), so
+// page-actions slot instead of hand-rolling a header row (boom-9e9k), so
 // mounting it bare renders that button nowhere. This reproduces the section
 // shell's composition — provider + a reader — so the tests drive the same
 // wiring production does rather than a shape that only exists under test.

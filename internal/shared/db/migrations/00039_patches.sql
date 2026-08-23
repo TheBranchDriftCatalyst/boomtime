@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- Memewarfare protocols wave 1 (gaka-mwp): add `patch` as a 5th label kind.
+-- Memewarfare protocols wave 1 (boom-mwp): add `patch` as a 5th label kind.
 --
 -- ADDITIVE — the existing 114 labels (tier/archetype/tribe/meme) stay put.
 -- Patches sit alongside them as a new dimension:

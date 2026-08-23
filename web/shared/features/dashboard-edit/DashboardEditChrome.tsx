@@ -1,4 +1,4 @@
-// DashboardEditChrome (gaka-lzr, Phase 4) — the Page.Header chrome for the
+// DashboardEditChrome (boom-lzr, Phase 4) — the Page.Header chrome for the
 // in-app dashboard editor: an Edit | Preview segmented toggle, Undo / Redo
 // buttons, a subtle dirty indicator, and the ⌘Z / ⌘⇧Z keyboard shortcuts.
 //

@@ -1,4 +1,4 @@
-// sync.go — the SyncUser refresh service (gaka-anh Phase 2). Both the
+// sync.go — the SyncUser refresh service (boom-anh Phase 2). Both the
 // on-demand-if-stale HTTP path and the `boomtime backfill github-stats` cobra
 // command call SyncUser; it is IDEMPOTENT by construction (the assembled row is
 // upserted one-row-per-user, replacing not accumulating).
@@ -43,7 +43,7 @@ type Service struct {
 
 // uaRoundTripper sets a benign User-Agent on every outbound request without
 // mutating the shared request (RoundTripper must not modify its argument).
-// Mirrors internal/auth/oidc_resolver.go's transport (gaka-93f.23) — GitHub
+// Mirrors internal/auth/oidc_resolver.go's transport (boom-93f.23) — GitHub
 // requires a UA and a Cloudflare edge 403s the stock Go one.
 type uaRoundTripper struct {
 	ua   string

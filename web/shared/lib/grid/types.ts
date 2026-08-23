@@ -1,4 +1,4 @@
-// Public types for the isolated grid primitive (gaka-6qg extraction target).
+// Public types for the isolated grid primitive (boom-6qg extraction target).
 //
 // This folder is a self-contained npm-package-in-waiting: nothing here
 // imports from boomtime-domain code. See grid.css for the CSS-var contract
@@ -11,7 +11,7 @@ import type { ReactNode } from "react";
  * across sessions. `i` is a caller-defined stable id (widget kind in
  * boomtime). `view` and `hidden` are optional extension slots for chart-
  * toggle state and edit-mode "hide but keep placement" state. `config` is an
- * opaque per-widget config blob (gaka-lzr) — the primitive never inspects it,
+ * opaque per-widget config blob (boom-lzr) — the primitive never inspects it,
  * only round-trips it; the consumer (boomtime's widget config schema) owns its
  * shape. Kept as `Record<string, unknown>` so the primitive stays domain-free. */
 export interface GridLayoutItem {
@@ -36,7 +36,7 @@ export interface WidgetInstance {
     view?: string;
     width: number;
     height: number;
-    /** The layout entry's opaque per-widget config blob (gaka-lzr), if any. */
+    /** The layout entry's opaque per-widget config blob (boom-lzr), if any. */
     config?: Record<string, unknown>;
   }) => ReactNode;
   defaultLayout?: { w: number; h: number };

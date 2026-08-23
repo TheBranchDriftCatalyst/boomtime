@@ -1,4 +1,4 @@
-// handler.go — the POST /api/v1/query HTTP handler (gaka-174.q).
+// handler.go — the POST /api/v1/query HTTP handler (boom-174.q).
 //
 // Flow: identify the owner → bind the (body-limited) spec → gate the reading
 // domain behind BooksEnabled → map the spec to a *query.Query → Compile-validate

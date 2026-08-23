@@ -8,8 +8,8 @@
 // Uses catalyst-ui's Tooltip primitive (Radix under the hood). Assumes
 // <TooltipProvider> is mounted at the app root (see main.tsx).
 //
-// gaka-mem-chip: added atop the memeification framework (gaka-364) and the
-// label-images pipeline (gaka-myv) — pulls both together into one visual
+// boom-mem-chip: added atop the memeification framework (boom-364) and the
+// label-images pipeline (boom-myv) — pulls both together into one visual
 // primitive so downstream widgets don't reimplement chip chrome each time.
 // We import Radix Tooltip primitives DIRECTLY (bypassing catalyst-ui's
 // re-export) so the Root / Trigger / Portal / Content all share the same
@@ -64,7 +64,7 @@ export interface LabelChipProps {
   bustHint?: string | number;
   /** Optional extra classes on the trigger chip. */
   className?: string;
-  /** Streak count for this award (gaka-mwp-streaks). Values ≤ 1 render no
+  /** Streak count for this award (boom-mwp-streaks). Values ≤ 1 render no
    *  badge. Values ≥ 2 render a small amber "Nx" pill in the top-right
    *  corner — "3x", "12x", etc. */
   streak?: number;

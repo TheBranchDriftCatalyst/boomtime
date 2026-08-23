@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- gaka-wpb (Part B Stage 4): goals.public — per-goal opt-in to appear on the
+-- boom-wpb (Part B Stage 4): goals.public — per-goal opt-in to appear on the
 -- owner's embeddable goal widgets (goal-progress / goal-ring / goal-list).
 -- Goals stay PRIVATE BY DEFAULT: a goal only reaches the public
 -- /widget/svg/... endpoint when BOTH enabled AND public are true. Default

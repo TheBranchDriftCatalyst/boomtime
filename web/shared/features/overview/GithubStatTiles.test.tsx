@@ -1,4 +1,4 @@
-// GithubStatTiles.test.tsx (gaka-csx P3) — the three states of the GH-only
+// GithubStatTiles.test.tsx (boom-csx P3) — the three states of the GH-only
 // Overview surface, per invariant case (B):
 //
 //   1. Feature off (github_connect_enabled === false)  → renders NOTHING.
@@ -68,7 +68,7 @@ beforeEach(() => {
 });
 afterEach(() => authStore.clear());
 
-describe("GithubStatTiles (gaka-csx P3)", () => {
+describe("GithubStatTiles (boom-csx P3)", () => {
   it("renders nothing when the feature is disabled server-side", async () => {
     enableFeature(false);
     const { container } = renderWithProviders(<GithubStatTiles />, {

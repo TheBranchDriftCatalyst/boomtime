@@ -1,4 +1,4 @@
-// goals_ginkgo_test.go — ginkgo mirror of goals_test.go (gaka-tst-ginkgo).
+// goals_ginkgo_test.go — ginkgo mirror of goals_test.go (boom-tst-ginkgo).
 // 1:1 case map (18 stdlib TestXxx; several have subtests):
 //
 //	TestValidateSpec_AcceptsHappyLeaves        → ValidateSpec > "accepts every happy-leaf shape (table of 7)"

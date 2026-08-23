@@ -16,7 +16,7 @@ interface EmptyStateProps {
 }
 
 /**
- * Shared, on-brand empty state (gaka-gbbl.2): an accent-tinted icon tile, a
+ * Shared, on-brand empty state (boom-gbbl.2): an accent-tinted icon tile, a
  * headline, a muted one-liner, and an optional CTA. Card-less by design — the
  * caller wraps it in a <Card>/<CardContent> when the surrounding surface needs
  * a panel, or drops it straight into an existing card body. Mirrors the

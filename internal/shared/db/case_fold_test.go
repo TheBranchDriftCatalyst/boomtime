@@ -1,4 +1,4 @@
-// case_fold_ginkgo_test.go — ginkgo mirror of case_fold_test.go (gaka-0vp.13).
+// case_fold_ginkgo_test.go — ginkgo mirror of case_fold_test.go (boom-0vp.13).
 // 1:1 case map (6 stdlib TestXxx incl 7+2 subtests → 5 Its + 1 DescribeTable(7) + 1 DescribeTable(2)):
 //
 //	TestCaseFoldAggregationAcrossAxes → DescribeTable "case-fold aggregation across axes" (7 axes)
@@ -260,7 +260,7 @@ var _ = ginkgo.Describe("case folding", func() {
 		Expect(found).To(BeTrue())
 	})
 
-	ginkgo.It("[category] multi-day canonical pick: ONE display casing across all days (gaka-5db)", func() {
+	ginkgo.It("[category] multi-day canonical pick: ONE display casing across all days (boom-5db)", func() {
 		d := openTestDBG()
 		f := newSenderG(d, "cfmulticat")
 		ctx := f.Ctx()

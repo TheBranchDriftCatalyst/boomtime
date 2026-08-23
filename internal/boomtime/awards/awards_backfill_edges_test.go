@@ -1,5 +1,5 @@
 // awards_backfill_edges_test.go — extra edge coverage for AwardsBackfill
-// (gaka-hc6.5.1). The primary suite in awards_eval_test.go covers the
+// (boom-hc6.5.1). The primary suite in awards_eval_test.go covers the
 // happy path + days clamp; this file closes the remaining branches:
 // (a) unauth'd caller → auth failure (never 200 — no oracle);
 // (b) malformed JSON body → 400;
@@ -22,7 +22,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
-var _ = Describe("AwardsBackfill (gaka-hc6.5.1) edge branches", func() {
+var _ = Describe("AwardsBackfill (boom-hc6.5.1) edge branches", func() {
 	It("rejects an unauth'd caller with a pinned 4xx AND a body that leaks no internals", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "awbfe"))
 		e := hz.Router()

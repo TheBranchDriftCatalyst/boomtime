@@ -1,5 +1,5 @@
 // routes.go — Echo route registrations for the curation domain
-// (gaka-8tn phase 5b). Extracted from internal/server/server.go's
+// (boom-8tn phase 5b). Extracted from internal/server/server.go's
 // registerCurationRoutes + the admin-labels chunk inside
 // registerMiscRoutes so those functions collapse toward N domain-
 // Register calls.
@@ -48,11 +48,11 @@ func Register(e *echo.Echo, h *Handler) {
 	e.GET("/api/v1/users/current/curation/:id/preview", h.ApplyRenamePreview)
 	e.POST("/api/v1/users/current/curation/:id/apply", h.ApplyRename)
 	e.POST("/api/v1/users/current/curation/:id/purge", h.PurgeHidden)
-	// gaka-dfd: pause/resume a rule without deleting it. Body optional —
+	// boom-dfd: pause/resume a rule without deleting it. Body optional —
 	// empty POST flips, {"enabled":true|false} sets an exact value.
 	e.POST("/api/v1/users/current/curation/:id/toggle", h.ToggleCuration)
 
-	// gaka-364.3: DB-backed labels catalog. Public GET returns the whole
+	// boom-364.3: DB-backed labels catalog. Public GET returns the whole
 	// catalog for the FE evaluator + admin table; admin CRUD lets a
 	// whitelisted operator edit labels + the global gen-config live.
 	e.GET("/api/v1/labels/catalog", h.LabelsCatalog)

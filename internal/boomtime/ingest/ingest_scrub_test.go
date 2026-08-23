@@ -1,5 +1,5 @@
 // ingest_scrub_test.go — end-to-end proof that an apply_at_ingest rename rule
-// (gaka-scrub) rewrites the STORED heartbeat field. POSTs a heartbeat and reads
+// (boom-scrub) rewrites the STORED heartbeat field. POSTs a heartbeat and reads
 // the row back, so it pins the whole path (storeAndRespond → LoadIngestRenameRules
 // → IngestRenameSet.Apply → Save), not just the applier unit.
 package ingest_test
@@ -15,7 +15,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
-var _ = Describe("Ingest-time rename scrub (gaka-scrub)", func() {
+var _ = Describe("Ingest-time rename scrub (boom-scrub)", func() {
 	hbBody := func(entity string) map[string]any {
 		return map[string]any{
 			"time": float64(time.Now().Unix()), "entity": entity, "type": "file",

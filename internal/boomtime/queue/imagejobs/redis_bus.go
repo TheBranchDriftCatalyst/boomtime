@@ -1,5 +1,5 @@
 // redis_bus.go — cross-pod progress relay (worker-topology decoupling,
-// gaka-8bz follow-up). Under broker=rabbitmq, the AMQPConsumer (worker pod)
+// boom-8bz follow-up). Under broker=rabbitmq, the AMQPConsumer (worker pod)
 // publishes lifecycle events here; every server pod's mirror Registry
 // subscribes via PumpBusIntoRegistry and applies them (Registry.Apply) so
 // AdminLabelImagesWS stays truthful regardless of which pod is actually

@@ -1,4 +1,4 @@
-// user_avatar_unit_test.go — gaka-d6x.handler: in-package unit tests for
+// user_avatar_unit_test.go — boom-d6x.handler: in-package unit tests for
 // user_avatar.go helpers that aren't reachable via the HTTP surface.
 //
 // Named invariant:

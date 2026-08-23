@@ -1,4 +1,4 @@
-// logging_test.go — coverage for slog init + tee/hub fan-out (gaka-d6x).
+// logging_test.go — coverage for slog init + tee/hub fan-out (boom-d6x).
 //
 // Named invariants exercised (no bare roundtrips):
 //
@@ -19,7 +19,7 @@
 //   teeHandler.Handle
 //     - "record without attrs publishes with nil Attrs (JSON emits no key vs empty {})"
 //     - "record with attrs flattens each attr under its key"
-//     - "hub=nil handler still delegates to base without panic (defensive: gaka-yzs)"
+//     - "hub=nil handler still delegates to base without panic (defensive: boom-yzs)"
 //
 //   teeHandler.WithAttrs
 //     - "WithAttrs accumulates across chained calls (attrs on the returned handler)"
@@ -270,7 +270,7 @@ var _ = Describe("teeHandler", func() {
 		Expect(entries[0].Attrs).To(HaveKey("count"))
 	})
 
-	It("hub=nil handler still delegates to base without panic (defensive: gaka-yzs)", func() {
+	It("hub=nil handler still delegates to base without panic (defensive: boom-yzs)", func() {
 		// Named invariant: callers that don't wire a hub (tests, migrations,
 		// early boot) must still be able to log. teeHandler.Handle guards `t.hub
 		// != nil` — this test would panic on a regression that dropped it.

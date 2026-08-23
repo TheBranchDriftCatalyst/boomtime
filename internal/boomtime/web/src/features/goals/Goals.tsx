@@ -1,4 +1,4 @@
-// Goals — top-level page (gaka-gud). Promoted from a Settings sub-tab to its
+// Goals — top-level page (boom-gud). Promoted from a Settings sub-tab to its
 // own left-nav destination as the goal system grows (multiple views,
 // punchboard-style trackers, "an attribute over an axis/axis-span"). The tab
 // body (GoalsTab: New-goal button + list + the create/edit form) is reused

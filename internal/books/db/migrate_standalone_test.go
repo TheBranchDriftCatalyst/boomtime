@@ -1,5 +1,5 @@
 // migrate_standalone_test.go — unit coverage for the books-only migration set
-// applied via shared/db.MigrateURLFS (gaka-zp2s). This is the schema-focused
+// applied via shared/db.MigrateURLFS (boom-zp2s). This is the schema-focused
 // layer: it exercises ONLY the migration function against a throwaway database
 // (no HTTP, no seed, no server). It proves three things the composition tests
 // can't isolate:

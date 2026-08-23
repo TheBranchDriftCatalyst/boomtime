@@ -11,7 +11,7 @@ for now — it is Phase 2 (Postgres-native), sketched in §9.
 **Why image jobs first:** they are the bursty, external-compute-bound jobs (each
 regen is a 5–10 min ComfyUI/Ollama call that ignores `ctx`), they are already
 isolated behind an `Executor` interface, and they are explicitly **non-durable**
-today (`gaka-8bz`) so we lose nothing by re-homing them. The import worker, by
+today (`boom-8bz`) so we lose nothing by re-homing them. The import worker, by
 contrast, is durable Postgres-native day-by-day work whose natural queue is the DB.
 
 ---

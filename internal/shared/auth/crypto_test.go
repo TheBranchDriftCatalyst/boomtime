@@ -1,4 +1,4 @@
-// crypto_ginkgo_test.go — ginkgo mirror of crypto_test.go (gaka-0vp).
+// crypto_ginkgo_test.go — ginkgo mirror of crypto_test.go (boom-0vp).
 // 1:1 case map (4 stdlib TestXxx):
 //
 //	TestRoundTrip                → Encrypt/Decrypt > "round-trips; nonce is fresh per call"

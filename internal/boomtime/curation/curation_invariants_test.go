@@ -1,6 +1,6 @@
 // curation_invariants_test.go — invariants and security gaps flagged during
 // the critique review for the curation / spaces / labels handler cluster
-// (gaka-d6x.handler). Each spec here traces to a specific critique item —
+// (boom-d6x.handler). Each spec here traces to a specific critique item —
 // the top-of-file comment naming the gap it closes, and inline comments
 // explaining WHY the assertion isn't tautological (i.e. what regression it
 // would catch that no other spec would).
@@ -39,7 +39,7 @@ import (
 // explicitly claim invalidateOwnerCache runs; no spec verified the effect).
 // -----------------------------------------------------------------------
 
-var _ = Describe("Curation writes invalidate the owner cache (gaka-d6x.handler)", func() {
+var _ = Describe("Curation writes invalidate the owner cache (boom-d6x.handler)", func() {
 	It("CreateCuration drops the owner's cached aggregation prefix", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
@@ -143,10 +143,10 @@ var _ = Describe("Curation writes invalidate the owner cache (gaka-d6x.handler)"
 // -----------------------------------------------------------------------
 // Curation: BindJSONWithLimit oversize-body cap (413) — missing invariant.
 // The edge test file only covers malformed JSON; the size cap itself was
-// never asserted. gaka-bi2 wired this specifically as a DoS guard.
+// never asserted. boom-bi2 wired this specifically as a DoS guard.
 // -----------------------------------------------------------------------
 
-var _ = Describe("Curation body-size caps (gaka-bi2)", func() {
+var _ = Describe("Curation body-size caps (boom-bi2)", func() {
 	It("CreateCuration returns 413 when the body exceeds BodyLimitMedium (64 KiB)", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
@@ -205,7 +205,7 @@ var _ = Describe("CreateCuration empty-body POST", func() {
 // invariant should be pinned).
 // -----------------------------------------------------------------------
 
-var _ = Describe("CreateCuration re-insert cross-user scoping (gaka-dfd)", func() {
+var _ = Describe("CreateCuration re-insert cross-user scoping (boom-dfd)", func() {
 	It("user A re-POSTing the SAME rule as user B's disabled rule does NOT flip user B's enabled=true", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
@@ -367,7 +367,7 @@ var _ = Describe("Spaces writes invalidate the owner cache", func() {
 })
 
 // createSpaceH — local mirror of the helper originally colocated in
-// spaces_http_test.go (moved to internal/spaces/ in gaka-8tn phase 2a).
+// spaces_http_test.go (moved to internal/spaces/ in boom-8tn phase 2a).
 // Kept here so the cross-domain shape check below stays in the
 // handler_test package without pulling in the spaces test binary.
 func createSpaceH(e http.Handler, token, name string) int {

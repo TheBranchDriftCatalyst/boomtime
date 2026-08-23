@@ -1,5 +1,5 @@
 // github_stats_test.go — end-to-end coverage of the GitHub stats endpoints
-// (gaka-anh Phase 2). A mock-GitHub httptest server (REST /user, /user/repos,
+// (boom-anh Phase 2). A mock-GitHub httptest server (REST /user, /user/repos,
 // per-repo /languages, and /graphql) drives github.Service.SyncUser through the
 // real Echo router + DB. Pins: IDEMPOTENCY (sync twice -> one row, no doubling),
 // the authed cache-or-sync policy (fresh / stale-resync / rate-limited-stale),
@@ -88,7 +88,7 @@ func wireGithubStats(hz *testutil.Harness, srv *httptest.Server) http.Handler {
 	return e
 }
 
-var _ = Describe("GitHub stats (gaka-anh Phase 2)", func() {
+var _ = Describe("GitHub stats (boom-anh Phase 2)", func() {
 	ctx := context.Background()
 
 	Describe("idempotent sync", func() {

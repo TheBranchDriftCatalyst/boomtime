@@ -52,7 +52,7 @@ function buildMarkdownTable(findings: DriftFinding[]): string {
 }
 
 /**
- * gaka-unq.1: warning banner shown on the Import page when the wakatime.com API
+ * boom-unq.1: warning banner shown on the Import page when the wakatime.com API
  * schema has drifted during a run (unknown/missing/type-changed fields, or a
  * broken envelope). Amber when only warnings; red-tinted when any finding has
  * severity=error. Collapsible detail table.
@@ -149,7 +149,7 @@ export function DriftBanner({ findings }: DriftBannerProps) {
             </table>
           </div>
 
-          {/* gaka-rl6: copy affordances for feeding findings back into a
+          {/* boom-rl6: copy affordances for feeding findings back into a
               schema-update loop (LLM prompt, PR body, or a bespoke API). */}
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
             <span className="opacity-70">Feed these findings back:</span>

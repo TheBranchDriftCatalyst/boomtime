@@ -1,5 +1,5 @@
 // awards_coverage_test.go — parametrized "every label in the catalog
-// fires against a seeded minimum-viable dataset" test (gaka-hc6.6).
+// fires against a seeded minimum-viable dataset" test (boom-hc6.6).
 //
 // Runs one subtest per label in the DB catalog. Each subtest:
 //
@@ -17,7 +17,7 @@
 //   - Any label whose axis is unknown to the synthesizer (defensive
 //     for future primitives; loud rather than silent)
 //
-// Follow-up ticket to close the gap: gaka-hc6.6.1 (fires only when
+// Follow-up ticket to close the gap: boom-hc6.6.1 (fires only when
 // this test's skip-count changes).
 //
 // Isolation guarantees:
@@ -184,7 +184,7 @@ func synthesize(cond labels.Condition, sender string) synthResult {
 		// dailyTotal will never exceed the window length so no streak
 		// >60 days can fire. Report this as a coverage-test skip; the
 		// label itself might still be reached via a future
-		// full-history-window backfill endpoint (gaka-hc6.6.2).
+		// full-history-window backfill endpoint (boom-hc6.6.2).
 		if c.Days > 60 {
 			return synthResult{skip: fmt.Sprintf("streak.days=%d exceeds /awards 60d payload window", c.Days)}
 		}
@@ -294,7 +294,7 @@ func synthesize(cond labels.Condition, sender string) synthResult {
 		// ordering trap we seed ONLY the target value — total = target,
 		// share = 100% ≥ any pct threshold. Deliberately doesn't test the
 		// two-value case (that's an evaluator-behavior gap tracked in
-		// gaka-hc6.6.1).
+		// boom-hc6.6.1).
 		bigSetter := axisFieldSetter(c.Axis, "covtop")
 		if bigSetter == nil {
 			return synthResult{skip: "unknown axis"}
@@ -303,13 +303,13 @@ func synthesize(cond labels.Condition, sender string) synthResult {
 		return synthResult{beats: beats, at: base}
 
 	case labels.TrendCond:
-		return synthResult{skip: "trend primitive — needs 14d specific pattern; deferred to gaka-hc6.6.1"}
+		return synthResult{skip: "trend primitive — needs 14d specific pattern; deferred to boom-hc6.6.1"}
 
 	case labels.NotCond:
-		return synthResult{skip: "top-level `not` — negation seed logic deferred to gaka-hc6.6.1"}
+		return synthResult{skip: "top-level `not` — negation seed logic deferred to boom-hc6.6.1"}
 
 	case labels.AllCond, labels.AnyCond:
-		return synthResult{skip: "top-level composed all/any — recursion + case analysis deferred to gaka-hc6.6.1"}
+		return synthResult{skip: "top-level composed all/any — recursion + case analysis deferred to boom-hc6.6.1"}
 	}
 	return synthResult{skip: fmt.Sprintf("unhandled condition kind %T", cond)}
 }
@@ -339,7 +339,7 @@ func makeBlock(start time.Time, n int, apply func(*testutil.HB) bool) []testutil
 
 // TestLabelCoverage is the epic-defining test — every label in the DB
 // catalog must fire against its own minimum-viable seeded fixture.
-// Skipped labels file into gaka-hc6.6.1 (recorded via t.Skip on each).
+// Skipped labels file into boom-hc6.6.1 (recorded via t.Skip on each).
 func TestLabelCoverage(t *testing.T) {
 	if testing.Short() {
 		t.Skip("coverage sweep is expensive; -short skips it")

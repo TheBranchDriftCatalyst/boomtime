@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- Per-day (or per-month) reading/listening activity time-series (gaka-books):
+-- Per-day (or per-month) reading/listening activity time-series (boom-books):
 -- the grain the fusion layer overlays on the coding calendar. SILOED like
 -- reading_items — ON DELETE CASCADE with the user, never writes into
 -- heartbeats/stats. reading_items is the current-state table (one row per book);

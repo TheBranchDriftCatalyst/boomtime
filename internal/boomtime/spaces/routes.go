@@ -23,7 +23,7 @@ func Register(e *echo.Echo, h *Handler) {
 	e.POST("/api/v1/users/current/spaces/:id/rules", h.AddSpaceRule)
 	e.DELETE("/api/v1/users/current/spaces/:id/rules/:rid", h.DeleteSpaceRule)
 
-	// Dashboard layout persistence (gaka-keb). Per-user, per-scope. Scope
+	// Dashboard layout persistence (boom-keb). Per-user, per-scope. Scope
 	// today is "public_profile"; the handler enforces the small allowlist so
 	// a stale FE can't squat rows for future scopes.
 	e.GET("/api/v1/users/current/dashboard/:scope", h.GetDashboardLayout)

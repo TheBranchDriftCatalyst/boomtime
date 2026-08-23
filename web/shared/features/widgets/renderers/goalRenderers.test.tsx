@@ -1,5 +1,5 @@
 // goalRenderers.test.tsx — tests for the three goal tile renderers
-// (gaka-wpb): GoalProgress, GoalList, GoalRing. Each renderer is a
+// (boom-wpb): GoalProgress, GoalList, GoalRing. Each renderer is a
 // thin display layer over useGoalsQuery + useAllGoalProgress; the
 // invariants under test:
 //
@@ -18,7 +18,7 @@
 //   - RING CAP: GoalRing slices to first 3 enabled goals — a
 //     regression that showed all 6 goals would flood the layout.
 //
-// gaka-wpb.1 (audit): the goals agent's initial commit shipped these
+// boom-wpb.1 (audit): the goals agent's initial commit shipped these
 // renderers without tests. This file plugs the gap so a future
 // refactor that (say) swaps `batch?.progress?.[g.id] ?? lastProgress`
 // for the reverse fallback order gets caught here.
@@ -82,7 +82,7 @@ function stubGoalsAndProgress(
   );
 }
 
-describe("GoalProgress renderer (gaka-wpb)", () => {
+describe("GoalProgress renderer (boom-wpb)", () => {
   it("renders 'No goals yet' placeholder when no enabled goals exist", async () => {
     stubGoalsAndProgress([], {});
     renderWithProviders(<GoalProgress />);
@@ -144,7 +144,7 @@ describe("GoalProgress renderer (gaka-wpb)", () => {
   });
 });
 
-describe("GoalList renderer (gaka-wpb)", () => {
+describe("GoalList renderer (boom-wpb)", () => {
   it("renders 'No goals yet' when the enabled list is empty", async () => {
     stubGoalsAndProgress(
       [makeGoal({ enabled: false, name: "hidden" })],
@@ -199,7 +199,7 @@ describe("GoalList renderer (gaka-wpb)", () => {
   });
 });
 
-describe("GoalRing renderer (gaka-wpb)", () => {
+describe("GoalRing renderer (boom-wpb)", () => {
   it("renders 'No goals yet' when no enabled goals exist", async () => {
     stubGoalsAndProgress([], {});
     renderWithProviders(<GoalRing />);

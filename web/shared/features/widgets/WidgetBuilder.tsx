@@ -36,7 +36,7 @@ const DEFAULT_PANELS: WidgetPanelKind[] = [
   "grade",
 ];
 
-// The Widget Builder Sheet (gaka-567). Layout + one primitive per panel + a
+// The Widget Builder Sheet (boom-567). Layout + one primitive per panel + a
 // title; the spec is base64-encoded into the URL, previewed live via
 // <object>, and copyable as Markdown when you like it. No saved-def table
 // for v1 — the whole composition lives in the URL.

@@ -80,7 +80,7 @@ export function OverviewDashboard({
   const tr = useTimeRange();
   const [timelineHours, setTimelineHours] = useState(12);
 
-  // gaka-lzr Phase 4: the in-app dashboard editor, STRICTLY behind the
+  // boom-lzr Phase 4: the in-app dashboard editor, STRICTLY behind the
   // default-off `overviewEditor` flag. The hook is called unconditionally (it
   // owns a local store + builds the grid/chrome/sidebar nodes; no network) but
   // its output is only RENDERED when the flag is on — so the flag-off path
@@ -136,7 +136,7 @@ export function OverviewDashboard({
     queryFn: () =>
       api.getMomentum({ start: tr.startISO, end: tr.endISO, top: 8, space }),
   });
-  // gaka-1l9: AI-assistance metrics — the endpoint returns hasData=false when
+  // boom-1l9: AI-assistance metrics — the endpoint returns hasData=false when
   // the user has no AI-tagged heartbeats in the range, so the card just
   // early-returns. Not scoped by Space (AI usage is cross-cutting per user).
   const aiActivityQuery = useQuery({
@@ -195,7 +195,7 @@ export function OverviewDashboard({
       name: c.name,
       values: c.totalDaily,
       color: palette.get(c.name)!,
-      // gaka-7m4: forward the collapsed-tail members on the Other segment so
+      // boom-7m4: forward the collapsed-tail members on the Other segment so
       // the stacked-column tooltip can break down what "Other" contains.
       otherMembers: c.otherMembers,
       otherCount: c.otherCount,
@@ -207,7 +207,7 @@ export function OverviewDashboard({
   const mostActiveProject = mostActive(stats?.projects ?? []);
   const mostActiveLang = mostActive(stats?.languages ?? []);
 
-  // gaka-lzr Phase 4: when the editor flag is ON, render the draggable
+  // boom-lzr Phase 4: when the editor flag is ON, render the draggable
   // widget-grid path (Edit/Preview toggle in the header, the add-widget rail in
   // the aside during edit, the grid in the content region). The widgets
   // self-fetch through the SAME OverviewDataProvider + qk.* keys the legacy
@@ -247,7 +247,7 @@ export function OverviewDashboard({
   }
 
   return (
-    // gaka-38v: provide the shared Overview inputs so Phase-3 self-fetching
+    // boom-38v: provide the shared Overview inputs so Phase-3 self-fetching
     // widgets can read them via useOverviewData. The legacy render below is
     // unchanged — the provider adds no DOM, so output stays byte-identical.
     <OverviewDataProvider value={{ tr, timelineHours, setTimelineHours, space }}>
@@ -266,7 +266,7 @@ export function OverviewDashboard({
         />
       </Page.Header>
       <Page.Body>
-        {/* gaka-k0q: opt-in magnetic vertical scroll. `proximity` (see
+        {/* boom-k0q: opt-in magnetic vertical scroll. `proximity` (see
             .snap-sections) only tugs near a section boundary, so scrolling
             through a chart is never fought; the curated `.snap-section`
             landmarks below give the page a handful of natural rest points. */}
@@ -307,14 +307,14 @@ export function OverviewDashboard({
                   />
                 </div>
 
-                {/* gaka-csx P3: GitHub stat strip — a GH-ONLY surface. Renders
+                {/* boom-csx P3: GitHub stat strip — a GH-ONLY surface. Renders
                     nothing when the feature is off, a "Connect GitHub" CTA when
                     unlinked/empty, and GH-branded tiles once connected + synced.
                     Self-fetches via a separate optional query; never blocks the
                     Overview. */}
                 <GithubStatTiles />
 
-                {/* gaka-1l9: AI-assistance strip — self-hides when the range has no
+                {/* boom-1l9: AI-assistance strip — self-hides when the range has no
                     AI-tagged heartbeats (user is on a non-AI plugin, or range is
                     pre-2026-07-03 when wakatime.com started emitting these). */}
                 <AIAssistanceCard data={aiActivityQuery.data} />
@@ -354,7 +354,7 @@ export function OverviewDashboard({
                   </ChartCard>
                 </div>
 
-                {/* gaka-v1k P4: GitHub-only charts — commits-over-time, top
+                {/* boom-v1k P4: GitHub-only charts — commits-over-time, top
                     repos by stars, and language breakdown, all from the cached
                     P2 payload. Grouped here with the GH tiles + calendar so the
                     GitHub surfaces read together. Self-hides when the feature is
@@ -396,7 +396,7 @@ export function OverviewDashboard({
                       />
                     }
                   >
-                    {/* gaka-canon: the UNSCOPED Overview routes the project
+                    {/* boom-canon: the UNSCOPED Overview routes the project
                         breakdown through the query DSL (coding·project·seconds,
                         topN+Other) so it honors canonical PINS and exposes a
                         per-project canonize toggle. The Space-scoped view keeps
@@ -435,7 +435,7 @@ export function OverviewDashboard({
                   </ChartCard>
                 </div>
 
-                {/* gaka-yfg: lines of code — total + per-project + growth over
+                {/* boom-yfg: lines of code — total + per-project + growth over
                     time, derived from file_lines (no GitHub). Self-fetches via
                     the shared OverviewDataProvider, so it degrades to a gentle
                     empty state when the range has no line-count data. */}

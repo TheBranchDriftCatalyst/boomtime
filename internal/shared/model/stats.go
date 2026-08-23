@@ -239,7 +239,7 @@ type StatsPayload struct {
 	// external GitHub call); otherwise it stays nil and omitempty drops the key
 	// entirely, so a payload with no GitHub data is byte-identical to today's.
 	// The contribution calendar renders this as an additive overlay; its
-	// absence must never change the base single-series render (gaka-csx P3
+	// absence must never change the base single-series render (boom-csx P3
 	// invariant: GH data is additive + degrades gracefully).
 	GithubDailyTotal []int64         `json:"githubDailyTotal,omitempty"`
 	Projects         []ResourceStats `json:"projects"`

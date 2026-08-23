@@ -1,6 +1,6 @@
 package github
 
-// Unit coverage for the GitHub fetcher (gaka-anh Phase 2). No DB — a mock
+// Unit coverage for the GitHub fetcher (boom-anh Phase 2). No DB — a mock
 // httptest server stands in for api.github.com (REST) + the GraphQL endpoint.
 // Pins the parse shapes, the pure helpers (TopReposByStars / SumStars), and the
 // typed rate-limit / unauthorized error mapping the sync + handler branch on.

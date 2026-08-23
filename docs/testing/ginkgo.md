@@ -1,6 +1,6 @@
 # Ginkgo migration guide
 
-Epic: `gaka-tst-ginkgo` — convert every `_test.go` file 1:1 from the
+Epic: `boom-tst-ginkgo` — convert every `_test.go` file 1:1 from the
 Go stdlib `testing` package to
 [ginkgo v2](https://onsi.github.io/ginkgo/) +
 [gomega](https://onsi.github.io/gomega/).
@@ -142,7 +142,7 @@ Use `-v` for the nested spec tree. Use `-ginkgo.focus="regex"` to filter.
 ## Kill switch
 
 After every stdlib case has a verified ginkgo equivalent in every
-package (the last child of `gaka-tst-ginkgo`):
+package (the last child of `boom-tst-ginkgo`):
 
 1. Delete every stdlib `*_test.go` **except** each package's
    `<pkg>_suite_test.go`.

@@ -1,4 +1,4 @@
-// GoalRing — Apple-Watch-style concentric rings for up to 3 goals (gaka-wpb).
+// GoalRing — Apple-Watch-style concentric rings for up to 3 goals (boom-wpb).
 //
 // Drawn as ONE SVG of concentric progress arcs (not stacked CircularGauges —
 // those each render a centered value, which overlapped into garbage at the

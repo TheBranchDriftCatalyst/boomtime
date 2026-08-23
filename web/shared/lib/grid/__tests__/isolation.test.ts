@@ -1,4 +1,4 @@
-// isolation.test.ts — enforces the extraction contract from gaka-6qg /
+// isolation.test.ts — enforces the extraction contract from boom-6qg /
 // design-brief: web/src/lib/grid/* must NOT import from boomtime-domain
 // modules (@shared/features, @shared/components, @shared/theme, @shared/lib/api,
 // @thebranchdriftcatalyst/catalyst-ui). Allowed: react, react-dom,

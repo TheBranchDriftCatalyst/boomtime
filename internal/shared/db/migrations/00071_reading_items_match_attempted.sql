@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- catalyst-books negative/attempt cache (gaka-books): the hardcover-match sweep's
+-- catalyst-books negative/attempt cache (boom-books): the hardcover-match sweep's
 -- fuzzy tail is the expensive part — every still-unmatched row spends one live,
 -- rate-limited Typesense search PER SWEEP, even when the last sweep already proved
 -- Hardcover has no book for it. Stamp match_attempted_at when a row exhausts the

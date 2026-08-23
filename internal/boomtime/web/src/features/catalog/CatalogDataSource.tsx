@@ -308,7 +308,7 @@ function seedSampleQueryClient(qc: QueryClient): void {
   qc.setQueryData(qk.githubStats(), SAMPLE_GITHUB_STATS);
   qc.setQueryData(qk.publicGithubStats(SAMPLE_USERNAME), SAMPLE_GITHUB_STATS);
 
-  // Reading domain (gaka-qcxg) — the reading-* catalog kinds self-fetch via
+  // Reading domain (boom-qcxg) — the reading-* catalog kinds self-fetch via
   // useReadingQuery (key ["reading-query", spec], see useReadingQuery.ts).
   // Seed the exact specs each tile issues so sample mode is zero-network like
   // every other kind. The two grouped tiles use the module-level READING_SPECS

@@ -75,7 +75,7 @@ function normalizeToRgb(css: string): string {
  *
  * Always returns an rgb-shape string (canvas-normalized) so downstream
  * d3.interpolateRgb / d3.color consumers work regardless of the theme's
- * source color space (oklch/hsl/hex all become rgb here). See gaka-538
+ * source color space (oklch/hsl/hex all become rgb here). See boom-538
  * for the original token migration and the d3-oklch-parse regression
  * that followed.
  *

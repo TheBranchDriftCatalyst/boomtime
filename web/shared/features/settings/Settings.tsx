@@ -13,15 +13,15 @@ import {
 // each domain's module (web/src/domains/*/register.tsx); this page only resolves
 // the active tab from ?tab= and hands the rest to <SectionPage>.
 //
-// gaka-4x33: the grouped tab strip this used to hoist into the app HeaderBar is
+// boom-4x33: the grouped tab strip this used to hoist into the app HeaderBar is
 // now a vertical rail inside the content column, exactly as Admin does it — the
 // two sections are the same shape and now share one implementation. Settings
 // switches on a query param rather than a route, which is why its rail entries
 // carry `onSelect`/`active` instead of `to`; that fork is the only difference
 // between the two call sites.
 //
-// gaka-ebq: the legacy ?tab=logs / ?tab=admin values redirect to
-// /app/admin/{logs,labels}; gaka-gud: ?tab=goals redirects to /app/goals. The
+// boom-ebq: the legacy ?tab=logs / ?tab=admin values redirect to
+// /app/admin/{logs,labels}; boom-gud: ?tab=goals redirects to /app/goals. The
 // remap lives in the active-tab resolver so bookmarks + old links keep working.
 const LEGACY_ADMIN_TAB_REDIRECTS: Record<string, string> = {
   logs: "/app/admin/logs",
@@ -29,7 +29,7 @@ const LEGACY_ADMIN_TAB_REDIRECTS: Record<string, string> = {
   goals: "/app/goals",
 };
 
-// Tabs that were merged/moved keep their old ?tab= value working (gaka-books):
+// Tabs that were merged/moved keep their old ?tab= value working (boom-books):
 // avatar now lives in Profile; API tokens merged into the Plugin tab.
 const SETTINGS_TAB_ALIASES: Record<string, string> = {
   avatar: "profile",

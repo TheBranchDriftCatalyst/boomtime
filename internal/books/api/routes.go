@@ -2,7 +2,7 @@ package api
 
 import "github.com/labstack/echo/v5"
 
-// Register mounts the catalyst-books HTTP surface (gaka-zp2s Phase 2). Extracted
+// Register mounts the catalyst-books HTTP surface (boom-zp2s Phase 2). Extracted
 // verbatim from internal/identity/routes.go — same routes, same order, same
 // BooksEnabled() gating — so the API is byte-identical. Called by the composition
 // root after the identity routes (book paths never overlap non-book paths, so the
@@ -37,7 +37,7 @@ func Register(e *echo.Echo, h *Handler) {
 		// Delete one read from the history (reading_events) + propagate to Hardcover.
 		e.DELETE("/api/v1/books/reads/:id", h.DeleteReadingEvent)
 		// Curation override: set the effective status/rating/finish for one row
-		// (gaka-books, migration 00069) + enqueue the Hardcover push.
+		// (boom-books, migration 00069) + enqueue the Hardcover push.
 		e.PATCH("/api/v1/books/items/:externalId/curation", h.SetBookCuration)
 		// Push-only: re-mirror one row's CURRENT effective state to Hardcover on demand.
 		e.POST("/api/v1/books/items/:externalId/push", h.PushBookToHardcover)

@@ -1,6 +1,6 @@
 ---
 # boomtime-worker: image-job execution, decoupled from the API pod
-# (worker-topology decoupling, gaka-8bz follow-up). Same image as the
+# (worker-topology decoupling, boom-8bz follow-up). Same image as the
 # server Deployment, run with --role=worker — no HTTP API, just the AMQP
 # consumer (broker=rabbitmq) driving labelimages.Worker.RegenerateEntry.
 #

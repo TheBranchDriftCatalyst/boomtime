@@ -79,7 +79,7 @@ func parseSearchCandidates(raw json.RawMessage, limit int) []Candidate {
 				Slug        string      `json:"slug"`
 				// image is an OBJECT ({url,color,...}), NOT a string — declaring it
 				// `string` made json.Unmarshal fail the WHOLE hits array → 0 results
-				// (gaka-nq2m). Verified shape 2026-08. Empty object → URL "".
+				// (boom-nq2m). Verified shape 2026-08. Empty object → URL "".
 				Image struct {
 					URL string `json:"url"`
 				} `json:"image"`

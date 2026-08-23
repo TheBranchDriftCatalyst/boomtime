@@ -1,6 +1,6 @@
 package model
 
-// loc.go — payloads for the Lines-of-Code feature (gaka-yfg). LOC is derived
+// loc.go — payloads for the Lines-of-Code feature (boom-yfg). LOC is derived
 // entirely from heartbeats.file_lines (the file's total line count at edit
 // time) — NO GitHub dependency. Per-project "current" LOC sums each file's
 // latest-known line count; the over-time series snapshots the whole-repo total

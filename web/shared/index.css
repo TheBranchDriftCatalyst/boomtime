@@ -18,7 +18,7 @@
  * place, this belt-and-suspenders line is REDUNDANT and safe to remove.
  *
  * REMOVAL SCHEDULED: 2026-10-22 (90 days post-2.5.1 publish). See bead
- * gaka-ozo — deferred until the date, then it lands on `bd ready` as an
+ * boom-ozo — deferred until the date, then it lands on `bd ready` as an
  * actionable followup. Rationale for the wait: give
  * every consumer app a full cache-refresh cycle + a few deploys' worth of
  * proof that 2.5.1's @source scan holds up before dropping the safety net.
@@ -28,7 +28,7 @@
 @source "../node_modules/@thebranchdriftcatalyst/catalyst-ui/dist";
 
 /*
- * gaka-zp2s / gaka-abg0 Step B: the books domain FE is colocated with its Go
+ * boom-zp2s / boom-abg0 Step B: the books domain FE is colocated with its Go
  * package under internal/books/web/src — OUTSIDE this Vite root (web/). Tailwind
  * v4's automatic content detection only scans from the project root, so without
  * this hint the utilities used ONLY inside the books tree (BooksPage, the books
@@ -41,7 +41,7 @@
 @source "../../internal/books/web/src";
 
 /*
- * gaka-zp2s / gaka-abg0 Step B Phase 2: the boomtime (code) domain FE is
+ * boom-zp2s / boom-abg0 Step B Phase 2: the boomtime (code) domain FE is
  * colocated with its Go package under internal/boomtime/web/src — OUTSIDE this
  * Vite root (web/). Same rationale as the books @source above: Tailwind v4 only
  * scans from the project root, so without this hint the utilities used ONLY in
@@ -58,7 +58,7 @@
   }
 }
 
-/* ── Scroll-snap utilities (gaka-k0q) ──────────────────────────────────────
+/* ── Scroll-snap utilities (boom-k0q) ──────────────────────────────────────
  *
  * Portable, opt-in magnetic-scroll helpers. Plain classes (not Tailwind
  * utilities) so they can be dropped onto a scroll container + its children

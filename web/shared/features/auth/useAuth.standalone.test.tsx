@@ -1,4 +1,4 @@
-// Unit coverage for the STANDALONE books auth gate (gaka-zp2s) — the FE mirror
+// Unit coverage for the STANDALONE books auth gate (boom-zp2s) — the FE mirror
 // of the backend's auth.SetStandaloneOwner short-circuit.
 //
 // AuthProvider dispatches on the VITE_BOOKS_STANDALONE build constant (read at

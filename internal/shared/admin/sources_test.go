@@ -1,4 +1,4 @@
-// sources_test.go — gaka-d6x.handler: cover SourceHealth.
+// sources_test.go — boom-d6x.handler: cover SourceHealth.
 // Named invariants:
 //
 //	"unauth → 4xx" — the endpoint MUST require a token; a missing token
@@ -25,7 +25,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
-var _ = Describe("SourceHealth (gaka-d6x.handler)", func() {
+var _ = Describe("SourceHealth (boom-d6x.handler)", func() {
 	It("rejects unauth'd GET with 4xx (no DB touch)", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()

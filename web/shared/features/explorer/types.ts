@@ -1,6 +1,6 @@
 import type React from "react";
 
-// The tight, domain-agnostic interface for the groupable explorer (gaka-02sh).
+// The tight, domain-agnostic interface for the groupable explorer (boom-02sh).
 // A domain supplies a DomainConfig<Row>; <GroupableExplorer config={cfg}/> is
 // the only public surface. Nothing here knows about heartbeats, books, or any
 // specific backend — the domain's TreeSource + columns + rollups drive it all.

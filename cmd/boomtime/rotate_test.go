@@ -95,7 +95,7 @@ func TestRotateSmoke(t *testing.T) {
 		}
 	}
 
-	// gaka-2ip: also seed a GitHub token (for the first user) under OLD so the
+	// boom-2ip: also seed a GitHub token (for the first user) under OLD so the
 	// smoke test proves BOTH encrypted columns rotate together in one command.
 	ghUser := users[0].name
 	const ghPlaintext = "gho_alice_github_token"

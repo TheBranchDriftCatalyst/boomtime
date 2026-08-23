@@ -1,5 +1,5 @@
 // Package admin is the boomtime (code/wakatime) domain's ADMIN + operator HTTP
-// surface (gaka-zp2s), extracted from the central internal/admin god-package so
+// surface (boom-zp2s), extracted from the central internal/admin god-package so
 // the boomtime domain owns its own operator endpoints — the peer of internal/books/
 // admin. It carries the label-image regeneration cluster (+ the public label-image
 // GET that pairs with it) and the durable wakatime.com import-job cluster.
@@ -104,12 +104,12 @@ func (h *Handler) requireAdmin(c *echo.Context) (string, *apierr.Error) {
 // prefixes are mixed). Route strings + middleware are byte-identical to the pre-move
 // registrations in internal/admin/routes.go.
 func Register(e *echo.Echo, h *Handler) {
-	// gaka-myv: PUBLIC label image bytes (no auth) — label content is fixed catalog
+	// boom-myv: PUBLIC label image bytes (no auth) — label content is fixed catalog
 	// data, not per-user data. Reads do NOT check the feature flag so already-generated
 	// images keep serving after a flag flip.
 	e.GET("/api/v1/labels/:id/image", h.LabelImage)
 
-	// gaka-myv / gaka-8bz: label-images admin cluster — authed AND admin-gated
+	// boom-myv / boom-8bz: label-images admin cluster — authed AND admin-gated
 	// (requireAdmin, in-handler). Info + Regenerate + the per-label DB-queue status
 	// poll (BOOM_JOBS_UNIFIED). The WS auths via the refresh_token cookie in-handler.
 	e.GET("/api/v1/admin/label-images", h.AdminLabelImagesInfo)

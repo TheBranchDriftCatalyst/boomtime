@@ -1,4 +1,4 @@
-// labels.go — HTTP surface for the DB-backed labels catalog (gaka-364.3).
+// labels.go — HTTP surface for the DB-backed labels catalog (boom-364.3).
 //
 // Split cleanly by auth model:
 //
@@ -132,7 +132,7 @@ func (h *Handler) AdminCreateLabel(c *echo.Context) error {
 	if len(body.Condition) == 0 {
 		return apihelpers.RespondErr(c, apierr.BadRequest("`condition` JSONB is required"))
 	}
-	// gaka-6uf: schema-validate the condition BEFORE the DB write. Without
+	// boom-6uf: schema-validate the condition BEFORE the DB write. Without
 	// this, malformed conditions (bad op, missing required field, out-of-
 	// range enum) sit in the DB until evaluator load and either always- or
 	// never-fire silently. The rich JSON-pointer path helps the FE surface
@@ -184,7 +184,7 @@ func (h *Handler) AdminUpdateLabel(c *echo.Context) error {
 	if existing == nil {
 		return apihelpers.RespondErr(c, apierr.NotFound("label not found"))
 	}
-	// gaka-6uf: when the PATCH body includes a condition, schema-validate it
+	// boom-6uf: when the PATCH body includes a condition, schema-validate it
 	// before the write. Partial-PATCH-omit-condition still allowed (nil = no
 	// change). Same rich JSON-pointer path surfaces on the FE.
 	if len(body.Condition) > 0 {

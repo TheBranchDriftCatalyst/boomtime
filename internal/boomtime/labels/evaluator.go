@@ -190,7 +190,7 @@ func EvaluateCondition(cond Condition, p *Payload) bool {
 		}
 		return cmp(float64(sumSec)/3600.0, c.Op, c.Hours)
 	case AxisPctCond:
-		// gaka-hc6.6: the port initially mirrored the TS eval which
+		// boom-hc6.6: the port initially mirrored the TS eval which
 		// divided TotalPct by 100. That was wrong — the aggregation
 		// emits TotalPct as a 0..1 decimal (from the SQL
 		// `total_seconds / SUM(total_seconds) OVER ()`), not a percent.

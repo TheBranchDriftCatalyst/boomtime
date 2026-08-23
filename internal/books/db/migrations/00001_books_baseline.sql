@@ -2,14 +2,14 @@
 -- +goose StatementBegin
 
 -- ============================================================================
--- catalyst-books STANDALONE baseline (gaka-zp2s books-standalone).
+-- catalyst-books STANDALONE baseline (boom-zp2s books-standalone).
 --
 -- Consolidated FINAL shape of every table internal/books reads or writes,
 -- distilled from the host's incremental migrations 00057–00080. This DB starts
 -- EMPTY, so one forward migration reflecting the end state is equivalent to
 -- replaying the whole history.
 --
--- Base case = ONE real user (gaka-zp2s books-scope). The standalone runs as a
+-- Base case = ONE real user (boom-zp2s books-scope). The standalone runs as a
 -- single local owner, and the owner<->books relation is KEPT exactly as the
 -- host has it: every books DATA table's `owner` column carries the host's
 --   owner text NOT NULL REFERENCES public.users(username) ON DELETE CASCADE

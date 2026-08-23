@@ -1,4 +1,4 @@
-// RawJsonPane — textarea escape hatch (gaka-6uf). Users can drop into
+// RawJsonPane — textarea escape hatch (boom-6uf). Users can drop into
 // raw JSON for debugging or to express something the builder hasn't
 // caught up to. Text is preserved between toggles (see index.tsx) so a
 // half-typed blob doesn't disappear on a tab switch. Applying invalid

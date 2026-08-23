@@ -1,5 +1,5 @@
 // Package awards owns the label-award streak ledger + evaluator HTTP surface
-// (gaka-8tn phase 4b). Extracted from internal/handler/ so the awards domain
+// (boom-8tn phase 4b). Extracted from internal/handler/ so the awards domain
 // (log/streaks/ledger inspection + server-side evaluation + historical
 // backfill) owns its handler struct, routes, and tests as one folder.
 //
@@ -8,14 +8,14 @@
 //   - handler.go — the streak ledger endpoints (this file):
 //     POST /awards/log, GET /awards/streaks, GET /awards/ledger, and the
 //     public /p/:slug/awards/streaks mirror. Timezone always comes from the
-//     RESOLVED user tz (gaka-dg7 resolveUserTZ), never assumed UTC.
+//     RESOLVED user tz (boom-dg7 resolveUserTZ), never assumed UTC.
 //
-//   - eval.go — server-side award evaluation (gaka-hc6.3):
+//   - eval.go — server-side award evaluation (boom-hc6.3):
 //     GET /awards (own, WRITES ledger) and GET /public/profile/:slug/awards
 //     (public, does NOT write). Runs the labels evaluator against the
 //     dashboard payload.
 //
-//   - backfill.go — historical replay (gaka-hc6.5.1):
+//   - backfill.go — historical replay (boom-hc6.5.1):
 //     POST /awards/backfill. Walks N days back computing each day's payload
 //     snapshot + writing ledger rows at that day. Idempotent.
 //
@@ -68,7 +68,7 @@ type awardLogReq struct {
 		LabelID    string `json:"labelId"`
 		PeriodType string `json:"periodType"`
 	} `json:"items"`
-	// gaka-mwp-streaks backfill: when set, the server buckets the log
+	// boom-mwp-streaks backfill: when set, the server buckets the log
 	// against THIS timestamp instead of time.Now(). Enables a client-
 	// side tool to walk N historical days, evaluate against that day's
 	// stats, and populate the ledger so streak badges immediately show

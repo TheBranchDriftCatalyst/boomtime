@@ -5,7 +5,7 @@
 // http.NewRequest / httpClient.Do, all silent early-returns).
 //
 // Extracted from internal/handler/handler_helpers_test.go as part of
-// gaka-8tn phase 5a — the tests moved with the code they cover. Assertions
+// boom-8tn phase 5a — the tests moved with the code they cover. Assertions
 // are BYTE-IDENTICAL to the pre-refactor versions; only the package
 // declaration changed (handler → ingest) so the `Handler` and
 // `remoteWrite`/`headerPtr` references now resolve inside this package.
@@ -54,7 +54,7 @@ var _ = Describe("headerPtr", func() {
 // json.Marshal branch is unreachable in practice ([]HeartbeatPayload always
 // marshals) and is left as documented-unreachable.
 //
-// gaka-d6x.handler critique fix: previously both specs only asserted
+// boom-d6x.handler critique fix: previously both specs only asserted
 // "does not panic" — the exact anti-pattern the reviewer flagged. A
 // regression that leaked memory, forgot resp.Body.Close on error, or
 // leaked goroutines would all pass "no panic" in the calling goroutine.

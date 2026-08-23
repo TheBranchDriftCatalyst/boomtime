@@ -1,4 +1,4 @@
-// stats_more_test.go — gaka-d6x.handler: cover Stats/Timeline/StatusbarToday
+// stats_more_test.go — boom-d6x.handler: cover Stats/Timeline/StatusbarToday
 // beyond the fast-path integration test.
 //
 // Named invariants:

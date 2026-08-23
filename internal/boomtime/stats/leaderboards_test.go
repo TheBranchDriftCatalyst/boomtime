@@ -1,4 +1,4 @@
-// leaderboards_test.go — gaka-d6x.handler: cover Leaderboards.
+// leaderboards_test.go — boom-d6x.handler: cover Leaderboards.
 //
 // Named invariants:
 //
@@ -37,7 +37,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
-var _ = Describe("Leaderboards (gaka-d6x.handler)", func() {
+var _ = Describe("Leaderboards (boom-d6x.handler)", func() {
 	It("rejects unauth'd GET with 4xx", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
@@ -70,7 +70,7 @@ var _ = Describe("Leaderboards (gaka-d6x.handler)", func() {
 			"lang must render as {} not null: %s", rec.Body.String())
 		// `global` is a WHOLE-DB view — asserting it's globally empty would
 		// fail under any parallel test that seeds heartbeats into the shared
-		// test DB (gaka-peu). The per-owner invariant we actually want is
+		// test DB (boom-peu). The per-owner invariant we actually want is
 		// that our zero-heartbeat user does NOT appear in the top-N.
 		for _, row := range env.Global {
 			Expect(row["user"]).NotTo(Equal(lbEmptyUser),

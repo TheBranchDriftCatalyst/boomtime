@@ -139,7 +139,7 @@ var registry = map[string]RegistryEntry{
 			return RunBackfillLastContext(ctx, database, args.Bool("dry-run"), out)
 		},
 	},
-	// gaka-zp2s: the DOMAIN-coupled commands "backfill github-stats" (github) and
+	// boom-zp2s: the DOMAIN-coupled commands "backfill github-stats" (github) and
 	// "hardcover dedup-reads" (books) register themselves into this map via
 	// climeta.Register from their own packages' init() — see internal/boomtime/github
 	// and internal/books. This keeps climeta domain-free (the CLI framework never
@@ -168,7 +168,7 @@ var registry = map[string]RegistryEntry{
 // read-only.
 func Registry() map[string]RegistryEntry { return registry }
 
-// Register adds a command to the web-run allowlist (gaka-zp2s). It is the seam
+// Register adds a command to the web-run allowlist (boom-zp2s). It is the seam
 // domain packages use to contribute their own vetted commands from init() —
 // keeping climeta itself free of any data-domain import. Registration order is
 // immaterial (the map is keyed by command path); a duplicate path overwrites.

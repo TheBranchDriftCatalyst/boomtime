@@ -1,4 +1,4 @@
-// githubStreak.ts (gaka-csx P3) — pure derivation split out of GithubStatTiles
+// githubStreak.ts (boom-csx P3) — pure derivation split out of GithubStatTiles
 // so the component file only exports a component (react-refresh clean).
 
 import type { GithubContributionDay } from "@shared/types/github";

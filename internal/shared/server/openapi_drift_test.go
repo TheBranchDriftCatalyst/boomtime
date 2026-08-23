@@ -1,5 +1,5 @@
 // openapi_drift_ginkgo_test.go — ginkgo mirror of openapi_drift_test.go
-// (gaka-0vp).
+// (boom-0vp).
 //
 // 1:1 case map (1 stdlib TestXxx):
 //
@@ -25,7 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("OpenAPI drift guard (gaka-lfc)", func() {
+var _ = Describe("OpenAPI drift guard (boom-lfc)", func() {
 	It("router and spec agree on every (method, path) pair", func() {
 		e := newRouterForDrift()
 
@@ -63,7 +63,7 @@ var _ = Describe("OpenAPI drift guard (gaka-lfc)", func() {
 		for k := range got {
 			_, ok := want[k]
 			Expect(ok).To(BeTrue(),
-				"router has %s %s but the OpenAPI spec does not (gaka-lfc drift guard: add a doc.AddOperation entry in internal/openapi/spec.go)",
+				"router has %s %s but the OpenAPI spec does not (boom-lfc drift guard: add a doc.AddOperation entry in internal/openapi/spec.go)",
 				k.method, k.path)
 		}
 		// Spec advertises something the router doesn't → dead docs.
@@ -76,7 +76,7 @@ var _ = Describe("OpenAPI drift guard (gaka-lfc)", func() {
 	})
 })
 
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
+// -- helpers restored from stdlib partner (boom-0vp.17) --
 func newRouterForDrift() *echo.Echo {
 	e := echo.New()
 	h := &handler.Handler{}

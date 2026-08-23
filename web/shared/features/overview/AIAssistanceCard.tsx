@@ -8,7 +8,7 @@ interface AIAssistanceCardProps {
   data: AIActivityPayload | undefined;
 }
 
-// gaka-1l9: Overview surface for wakatime.com's AI-assistance metrics
+// boom-1l9: Overview surface for wakatime.com's AI-assistance metrics
 // (heartbeats.ai_*). Renders nothing when the range holds no AI-tagged
 // heartbeats — the AIActivityPayload.hasData short-circuits this without
 // consuming a viz slot for users on non-AI editor plugins.

@@ -1,4 +1,4 @@
-// query_test.go — DB-backed tests for the cross-domain query DSL (gaka-174.q).
+// query_test.go — DB-backed tests for the cross-domain query DSL (boom-174.q).
 //
 // Uses the shared testutil harness (ephemeral/isolated boomtime_test pg, auto
 // migrated) exactly like the goals + stats suites. Each test mints a fresh user

@@ -1,4 +1,4 @@
-// widget_defs.go: named/saved custom widget compositions (gaka-3nu). Sibling
+// widget_defs.go: named/saved custom widget compositions (boom-3nu). Sibling
 // to handler.go (widget_links). Ownership is per-user; the public renderer
 // resolves the def's owner and applies the owner's curation the same way the
 // widget_link renderer does.
@@ -81,7 +81,7 @@ func (h *Handler) CreateWidgetDef(c *echo.Context) error {
 		return apihelpers.RespondErr(c, aerr)
 	}
 	var body widgetDefBody
-	// gaka-bi2: 64 KiB cap — the inline spec is bounded to 32 KiB
+	// boom-bi2: 64 KiB cap — the inline spec is bounded to 32 KiB
 	// (widgetDefMax) inside validateWidgetDefSpec; Medium leaves headroom for
 	// the name + envelope without letting a hostile client force a huge decode.
 	if aerr := apihelpers.BindJSONWithLimit(c, &body, apihelpers.BodyLimitMedium); aerr != nil {
@@ -121,7 +121,7 @@ func (h *Handler) UpdateWidgetDef(c *echo.Context) error {
 		return apihelpers.RespondErr(c, apierr.BadRequest("name is required"))
 	}
 	var body widgetDefBody
-	// gaka-bi2: 64 KiB cap (see CreateWidgetDef for the reasoning).
+	// boom-bi2: 64 KiB cap (see CreateWidgetDef for the reasoning).
 	if aerr := apihelpers.BindJSONWithLimit(c, &body, apihelpers.BodyLimitMedium); aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
@@ -216,7 +216,7 @@ func (h *Handler) WidgetDefSvg(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		// gaka-dg7: same owner-tz frame as WidgetSvg — a public named-def
+		// boom-dg7: same owner-tz frame as WidgetSvg — a public named-def
 		// render must reflect the owner's local dow/hour buckets.
 		tz := apihelpers.ResolveUserTZ(h.DB, h.Logger, ctx, owner, h.Cfg.DefaultTimezone)
 
@@ -233,12 +233,12 @@ func (h *Handler) WidgetDefSvg(c *echo.Context) error {
 		}
 
 		payload := stats.ToStatsPayload(t0, t1, rows, nil, nil)
-		// gaka-6jm.13: enforce the public-safe contract on the named-def path
+		// boom-6jm.13: enforce the public-safe contract on the named-def path
 		// too. WidgetSvg (widgets.go) calls widget.Scrub on the identical
 		// StatsPayload before ANY renderer sees it; this handler shipped
 		// without that call, so the "Other (N more)" tail could leak a curated
 		// project/language/etc. name into the SVG. Mirrors the WidgetSvg wiring
-		// exactly (gaka-6jm.3 there) — helpers are reused, not duplicated.
+		// exactly (boom-6jm.3 there) — helpers are reused, not duplicated.
 		//
 		// Scope-project 404 gate is intentionally NOT applied here: widget-defs
 		// are user-scoped in v1 (see the file/type docstring in
@@ -268,9 +268,9 @@ func (h *Handler) WidgetDefSvg(c *echo.Context) error {
 				return nil, err
 			}
 			mp := stats.ToMomentumPayload(t0, t1, mrows, 6)
-			// gaka-6jm.13: same rationale as the StatsPayload scrub above —
+			// boom-6jm.13: same rationale as the StatsPayload scrub above —
 			// belt to the DB predicate's braces on the momentum path. Mirrors
-			// the WidgetSvg momentum wiring (gaka-6jm.6 there).
+			// the WidgetSvg momentum wiring (boom-6jm.6 there).
 			data.Momentum = widget.ScrubMomentum(&mp, hidden)
 		}
 		if needs.Sessions {

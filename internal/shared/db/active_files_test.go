@@ -1,4 +1,4 @@
-// active_files_ginkgo_test.go — ginkgo mirror of active_files_test.go (gaka-0vp.13).
+// active_files_ginkgo_test.go — ginkgo mirror of active_files_test.go (boom-0vp.13).
 // 1:1 case map (5 stdlib TestXxx → 5 Its):
 //
 //	TestActiveFilesCrossProject           → "cross-project files count projects+time"
@@ -141,7 +141,7 @@ var _ = ginkgo.Describe("GetActiveFiles", func() {
 	})
 })
 
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
+// -- helpers restored from stdlib partner (boom-0vp.17) --
 func afByEntity(files []ActiveFile) map[string]ActiveFile {
 	m := make(map[string]ActiveFile, len(files))
 	for _, f := range files {

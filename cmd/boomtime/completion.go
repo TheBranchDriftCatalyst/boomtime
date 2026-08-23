@@ -1,6 +1,6 @@
 package main
 
-// Transparent shell-completion layer (gaka-0oe.10). The generator + concrete
+// Transparent shell-completion layer (boom-0oe.10). The generator + concrete
 // completion funcs moved verbatim to internal/climeta so the admin CLI-runner
 // (BOOM_FEATURE_ADMIN_CLI) can drive the SAME completers over HTTP; these
 // aliases keep every cmd/boomtime call site unchanged. `boomtime completion

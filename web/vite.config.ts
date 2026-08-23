@@ -46,7 +46,7 @@ export default defineConfig({
     tailwindcss(),
     catalystPlugin({ noFlash: { legacyStorageKey: "boomtime-theme" } }),
   ],
-  // gaka-zp2s / gaka-abg0 Step B: the colocated books FE lives OUTSIDE this Vite
+  // boom-zp2s / boom-abg0 Step B: the colocated books FE lives OUTSIDE this Vite
   // root (internal/books/web/src). esbuild's per-file tsconfig discovery only
   // walks up from the file, so it never finds web/tsconfig's `jsx: "react-jsx"`
   // for those out-of-root .tsx files and falls back to the classic runtime —
@@ -60,7 +60,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@shared": path.resolve(__dirname, "./shared"),
-      // gaka-zp2s / gaka-abg0 Step B: the books domain FE is PHYSICALLY
+      // boom-zp2s / boom-abg0 Step B: the books domain FE is PHYSICALLY
       // colocated with its Go package under internal/books/web/src (outside
       // this Vite root). `@books/*` resolves there so both the host build and
       // the standalone books build (vite.books.config.ts, which extends this
@@ -68,7 +68,7 @@ export default defineConfig({
       // boundary-aware (`@` compiles to /^@(\/|$)/), so `@books/...` never
       // gets swallowed by the `@` entry above regardless of order.
       "@books": path.resolve(__dirname, "../internal/books/web/src"),
-      // gaka-zp2s / gaka-abg0 Step B Phase 2: the boomtime (code) domain FE is
+      // boom-zp2s / boom-abg0 Step B Phase 2: the boomtime (code) domain FE is
       // PHYSICALLY colocated with its Go package under internal/boomtime/web/src
       // (outside this Vite root). `@boomtime/*` resolves there. Only the host
       // build (vite.config.ts) registers the boomtime domain; the standalone
@@ -76,7 +76,7 @@ export default defineConfig({
       // out. Vite string aliases are boundary-aware (`@` compiles to /^@(\/|$)/),
       // so `@boomtime/...` is never swallowed by the `@` entry above.
       "@boomtime": path.resolve(__dirname, "../internal/boomtime/web/src"),
-      // Part B Stage 2 (gaka-174.x): the canonical widget spec registry is
+      // Part B Stage 2 (boom-174.x): the canonical widget spec registry is
       // ONE committed file — Go embeds it (internal/widget/spec.go), the FE
       // reads the exact same bytes through this alias (see
       // src/features/widgets/specs.ts) instead of a generated copy.
@@ -101,7 +101,7 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
-    // gaka-4hv / gaka-93f.23: split heavyweight vendor libs off the main entry
+    // boom-4hv / boom-93f.23: split heavyweight vendor libs off the main entry
     // AND coalesce the long tail of sub-2KB chunks. Before this, a page load
     // fetched 50+ tiny files: one chunk per lucide icon, one per lazy theme,
     // and one per catalyst-ui UI primitive. We group those into a handful of
@@ -182,7 +182,7 @@ export default defineConfig({
     setupFiles: ["./shared/test/setup.ts"],
     // Co-located *.test.ts(x) files — in this Vite root's shared bucket
     // (shared/) AND the books FE colocated with its Go package under
-    // internal/books/web/src (gaka-zp2s / gaka-abg0 Step B).
+    // internal/books/web/src (boom-zp2s / boom-abg0 Step B).
     include: [
       "shared/**/*.{test,spec}.{ts,tsx}",
       "../internal/books/web/src/**/*.{test,spec}.{ts,tsx}",

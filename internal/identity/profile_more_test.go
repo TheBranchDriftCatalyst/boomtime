@@ -1,4 +1,4 @@
-// profile_more_test.go — gaka-d6x.handler: cover the profile handler paths
+// profile_more_test.go — boom-d6x.handler: cover the profile handler paths
 // not exercised by profile_test.go (GetPublicProfile, PutPublicProfile
 // validation branches, and PublicProfile 404 / disabled paths).
 //
@@ -37,7 +37,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
-var _ = Describe("GetPublicProfile / PutPublicProfile (gaka-d6x.handler)", func() {
+var _ = Describe("GetPublicProfile / PutPublicProfile (boom-d6x.handler)", func() {
 	It("unauth GET → 4xx", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
@@ -181,7 +181,7 @@ var _ = Describe("GetPublicProfile / PutPublicProfile (gaka-d6x.handler)", func(
 	})
 })
 
-var _ = Describe("PublicProfile (public /p/:slug) (gaka-d6x.handler)", func() {
+var _ = Describe("PublicProfile (public /p/:slug) (boom-d6x.handler)", func() {
 	It("unknown slug → 404 (terse, no oracle)", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()

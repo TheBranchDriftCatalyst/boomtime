@@ -18,7 +18,7 @@ const HEIGHT = 300;
 // Books at/above this progress read as "effectively finished" — a lingering
 // 99–100% Audible/Kindle row that never got its status flipped. Keep them out
 // of "Now reading" so the tile shows what you're genuinely mid-way through
-// (gaka-vvij). A backend reclassify-on-sync is the durable belt; this is the
+// (boom-vvij). A backend reclassify-on-sync is the durable belt; this is the
 // suspenders.
 const IN_PROGRESS_MAX_PCT = 95;
 

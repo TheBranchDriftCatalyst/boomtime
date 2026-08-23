@@ -1,4 +1,4 @@
-// label_images_unit_test.go — gaka-d6x.handler: in-package unit tests for
+// label_images_unit_test.go — boom-d6x.handler: in-package unit tests for
 // LabelImage's empty-id guard (the branch is unreachable via the wired
 // route because echo drops routes with a blank param segment).
 //

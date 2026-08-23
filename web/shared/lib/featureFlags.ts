@@ -1,4 +1,4 @@
-// featureFlags.ts — tiny client-side feature-flip system (gaka-174).
+// featureFlags.ts — tiny client-side feature-flip system (boom-174).
 //
 // localStorage-backed, per-browser, default-off unless a flag opts in. A flag
 // is a viewer preference ("show me the experimental thing"), not server state.
@@ -27,7 +27,7 @@ export const FEATURE_FLAGS: FeatureFlagDef[] = [
     key: "overviewEditor",
     label: "Dashboard edit mode",
     description:
-      "Enable the in-app Overview edit/preview mode: drag, add, and configure widgets on your dashboard (gaka-lzr).",
+      "Enable the in-app Overview edit/preview mode: drag, add, and configure widgets on your dashboard (boom-lzr).",
     default: false,
   },
 ];

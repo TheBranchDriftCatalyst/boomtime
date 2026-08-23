@@ -1,4 +1,4 @@
-// config_more_test.go (gaka-d6x) — closes the coverage gap on the
+// config_more_test.go (boom-d6x) — closes the coverage gap on the
 // internal/config package. Each spec pins a NAMED INVARIANT documented in the
 // It string; nothing here is a bare "insert x; get x" roundtrip.
 //
@@ -84,7 +84,7 @@ var _ = Describe("AdminUsers (default-deny access control)", func() {
 // State-machine gates: feature flags with AND-of-two-things semantics
 // ============================================================================
 
-var _ = Describe("LabelImagesEnabled (gaka-myv two-key gate)", func() {
+var _ = Describe("LabelImagesEnabled (boom-myv two-key gate)", func() {
 	It("flag off + URL empty → disabled", func() {
 		clearEnv()
 		c := Load()
@@ -133,7 +133,7 @@ var _ = Describe("LabelImagesEnabled (gaka-myv two-key gate)", func() {
 	})
 })
 
-var _ = Describe("LLMEnabled (gaka-9v4 API-key gate)", func() {
+var _ = Describe("LLMEnabled (boom-9v4 API-key gate)", func() {
 	It("unset key → disabled → handler must 503 with clear message", func() {
 		clearEnv()
 		c := Load()
@@ -174,7 +174,7 @@ var _ = Describe("LLMEnabled (gaka-9v4 API-key gate)", func() {
 // Error paths: validators and default fall-through
 // ============================================================================
 
-var _ = Describe("validateDefaultTimezone (gaka-dg7 startup validator)", func() {
+var _ = Describe("validateDefaultTimezone (boom-dg7 startup validator)", func() {
 	It("unset → returns empty (resolver falls through to UTC)", func() {
 		clearEnv()
 		c := Load()

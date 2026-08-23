@@ -1,4 +1,4 @@
-// labels_ginkgo_test.go — ginkgo mirror of labels_test.go (gaka-0vp.13).
+// labels_ginkgo_test.go — ginkgo mirror of labels_test.go (boom-0vp.13).
 // 1:1 case map (6 stdlib TestXxx + 4 subtests → 6 Its + 1 DescribeTable(4)):
 //
 //	TestLabels_ListSeeded                    → It "ListLabels: seeded ids + condition JSONB integrity"

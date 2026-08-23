@@ -1,4 +1,4 @@
-// apply_key_outcome_ginkgo_test.go — ginkgo mirror of apply_key_outcome_test.go (gaka-0vp).
+// apply_key_outcome_ginkgo_test.go — ginkgo mirror of apply_key_outcome_test.go (boom-0vp).
 // 1:1 case map (3 stdlib TestXxx — one per canonical outcome):
 //
 //	TestApplyKeyOutcomeSuccessPersistsTypedToken           → applyKeyOutcome > "completed + no 401 + typed token → persists new blob and status='valid'"
@@ -117,7 +117,7 @@ func withEncryptionKeyGinkgo() {
 	})
 }
 
-var _ = Describe("Worker.applyKeyOutcome (gaka-6jm.8, gaka-6jm.10)", func() {
+var _ = Describe("Worker.applyKeyOutcome (boom-6jm.8, boom-6jm.10)", func() {
 	It("completed + no 401 + typed token → persists new blob and status='valid' (save-on-success)", func() {
 		database := openImportOutcomeDBGinkgo()
 		withEncryptionKeyGinkgo()
@@ -196,7 +196,7 @@ var _ = Describe("Worker.applyKeyOutcome (gaka-6jm.8, gaka-6jm.10)", func() {
 	})
 })
 
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
+// -- helpers restored from stdlib partner (boom-0vp.17) --
 const applyKeyOutcomeDBSfx = "_import_outcome"
 
 func applyKeyOutcomeDSN() string {

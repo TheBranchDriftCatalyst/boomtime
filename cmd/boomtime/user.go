@@ -1,7 +1,7 @@
 package main
 
 // `boomtime user ...` — offline user administration for the user-model
-// substrate (gaka-0oe.10): set-role, disable, enable, list, show. No HTTP
+// substrate (boom-0oe.10): set-role, disable, enable, list, show. No HTTP
 // surface for the state-changing commands; these are operator tools run
 // against the DB directly. Every entity/role argument is TAB-completable via
 // the completion layer (internal/climeta, aliased in completion.go).
@@ -32,7 +32,7 @@ func userCmd() *cobra.Command {
 		Use:   "user",
 		Short: "Manage users: roles, enable/disable, list, show",
 		Long: "Offline user administration for the user-model substrate " +
-			"(gaka-0oe). Roles gate capabilities when BOOM_FEATURE_USER_MODEL=on; " +
+			"(boom-0oe). Roles gate capabilities when BOOM_FEATURE_USER_MODEL=on; " +
 			"a disabled user fails closed on every auth path.",
 	}
 	cmd.AddCommand(climeta.NewUserListCmd(), climeta.NewUserShowCmd(), userSetRoleCmd(), userDisableCmd(), userEnableCmd())

@@ -1,5 +1,5 @@
 // ingest_cluster_test.go — HTTP-level tests for the ingest cluster
-// (gaka-d6x.handler): heartbeats.go, heartbeats_explore.go, health_samples.go,
+// (boom-d6x.handler): heartbeats.go, heartbeats_explore.go, health_samples.go,
 // workouts.go. Every spec pins a NAMED INVARIANT (never a bare
 // "insert-x get-x roundtrip") and every user-scoped write includes a
 // cross-user isolation check that would fail if the handler leaked writes
@@ -112,7 +112,7 @@ func latestEnrichedRow(hz *testutil.Harness, owner string) enrichedRow {
 
 // -- Heartbeat single + bulk ingest ---------------------------------------
 
-var _ = Describe("Heartbeat ingest (gaka-d6x.handler)", func() {
+var _ = Describe("Heartbeat ingest (boom-d6x.handler)", func() {
 	Context("POST /api/v1/users/current/heartbeats (single)", func() {
 		It("returns 400 on a malformed JSON body — no partial state, no id, DB unchanged", func() {
 			hz := testutil.NewHarness(GinkgoT())
@@ -377,7 +377,7 @@ var _ = Describe("Heartbeat ingest (gaka-d6x.handler)", func() {
 				RemoteWrite:        &config.RemoteWriteConfig{URL: upstream.URL, Token: "shared-secret"},
 			}
 			silent := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
-			// gaka-zp2s: build the ingest bag directly (it moved off *handler.Handler onto
+			// boom-zp2s: build the ingest bag directly (it moved off *handler.Handler onto
 			// boomtime.Module). This test needs its OWN cfg (RemoteWrite set), so it can't
 			// reuse the harness's default-cfg hz.Ingest.
 			ing := ingest.New(hz.DB, cfg, silent, nil)
@@ -828,7 +828,7 @@ var _ = Describe("HeartbeatsList (GET /api/v1/users/current/heartbeats)", func()
 // resolve. This gives full handler coverage while pinning invariants that
 // are actually testable in this environment.
 
-var _ = Describe("HealthSamples ingest (gaka-d6x.handler)", func() {
+var _ = Describe("HealthSamples ingest (boom-d6x.handler)", func() {
 	It("POST /health_samples.bulk: envelope form {\"data\":[]} short-circuits to accepted:0 (happy-path terminal)", func() {
 		// Reaches: storeSamples resolveUser OK path, SaveHealthSamples
 		// len==0 fast-return, invalidateOwnerCache, JSON 202 render. This
@@ -859,7 +859,7 @@ var _ = Describe("HealthSamples ingest (gaka-d6x.handler)", func() {
 	})
 
 	It("POST /health_samples.bulk: bare-array form IS accepted (envelope-or-array polymorphism verified after body-buffering fix)", func() {
-		// gaka-d6x.handler critique fix: previously the bare-array retry
+		// boom-d6x.handler critique fix: previously the bare-array retry
 		// silently 400'd because echo's DefaultBinder ate the body on the
 		// first Bind — a coverage-only test. Now storeSamples buffers the
 		// body once via io.ReadAll + two json.Unmarshal attempts, so a
@@ -928,7 +928,7 @@ var _ = Describe("HealthSamples ingest (gaka-d6x.handler)", func() {
 		// This test originally exploited a prod bug where SaveHealthSamples'
 		// ON CONFLICT ON CONSTRAINT idx_health_samples_dedupe returned
 		// SQLSTATE 42704 (the index is a UNIQUE INDEX, not a constraint).
-		// Fixed in gaka-uli (a677586) — ON CONFLICT now targets the
+		// Fixed in boom-uli (a677586) — ON CONFLICT now targets the
 		// columns directly. The prior test asserted 500; now it correctly
 		// asserts 202. The error-branch coverage the old assertion was
 		// standing in for lives in the DB-pool-closed suite below.
@@ -958,7 +958,7 @@ var _ = Describe("HealthSamples ingest (gaka-d6x.handler)", func() {
 // branch. The user cleanup Cleanup registered by MintUser is a no-op on a
 // closed pool (harmless).
 
-var _ = Describe("Ingest DB-error branches (gaka-d6x.handler)", func() {
+var _ = Describe("Ingest DB-error branches (boom-d6x.handler)", func() {
 	setupClosedPool := func(prefix string) (echoInst http.Handler, token string) {
 		hz := testutil.NewHarness(GinkgoT())
 		_, token = hz.MintUser(prefix)
@@ -1071,7 +1071,7 @@ var _ = Describe("Ingest DB-error branches (gaka-d6x.handler)", func() {
 	})
 })
 
-var _ = Describe("Workouts ingest (gaka-d6x.handler)", func() {
+var _ = Describe("Workouts ingest (boom-d6x.handler)", func() {
 	It("POST /workouts: single workout lands as a ty=workout heartbeat with project=Kind (fallback)", func() {
 		// storeWorkouts translates each WorkoutPayload into a
 		// HeartbeatPayload with Type=workout. When Label is unset the
@@ -1164,7 +1164,7 @@ var _ = Describe("Workouts ingest (gaka-d6x.handler)", func() {
 	})
 
 	It("POST /workouts.bulk: bare-array form IS accepted AND lands identical rows to the envelope form (polymorphism verified)", func() {
-		// gaka-d6x.handler critique fix: previously the bare-array retry
+		// boom-d6x.handler critique fix: previously the bare-array retry
 		// silently 400'd because echo's DefaultBinder ate the body on the
 		// first Bind — a coverage-only test with an identical outcome to
 		// the malformed-JSON spec. Now WorkoutsBulk buffers the body once
@@ -1367,7 +1367,7 @@ var _ = Describe("Workouts ingest (gaka-d6x.handler)", func() {
 
 // -- Body-size limits on ingest endpoints (DoS defense) -----------------
 //
-// gaka-d6x.handler critique fix: previously the ingest endpoints used bare
+// boom-d6x.handler critique fix: previously the ingest endpoints used bare
 // c.Bind() with NO MaxBytesReader wrap, so an authenticated hostile client
 // could POST a multi-GB body and OOM the process. Now every ingest
 // endpoint is wrapped in BindJSONWithLimit(BodyLimitLarge) or a manual
@@ -1390,7 +1390,7 @@ func doRawJSONG(e http.Handler, method, target, token string, body []byte) *http
 	return rec
 }
 
-var _ = Describe("Ingest body-size limits (gaka-d6x.handler DoS defense)", func() {
+var _ = Describe("Ingest body-size limits (boom-d6x.handler DoS defense)", func() {
 	// Build a well-formed JSON payload just OVER the BodyLimitLarge cap
 	// (8 MiB). We use valid JSON so a MaxBytesReader trip is the
 	// UNAMBIGUOUS failure mode — if we sent junk bytes, json.SyntaxError
@@ -1499,7 +1499,7 @@ var _ = Describe("Ingest body-size limits (gaka-d6x.handler DoS defense)", func(
 
 // -- Sender-clobber invariants for /workouts and /health_samples ---------
 //
-// gaka-d6x.handler critique fix: the sender-clobber test previously existed
+// boom-d6x.handler critique fix: the sender-clobber test previously existed
 // ONLY for /heartbeats. workouts.go and health_samples.go take owner from
 // resolveUser and pass to SaveWorkouts/SaveHealthSamples — safe by
 // construction TODAY. If someone adds a Sender field to WorkoutPayload or
@@ -1507,7 +1507,7 @@ var _ = Describe("Ingest body-size limits (gaka-d6x.handler DoS defense)", func(
 // silently reintroduce with no CI signal. These specs pin the invariant
 // at the HTTP boundary so a payload-shape drift is caught.
 
-var _ = Describe("Cross-endpoint sender-clobber invariants (gaka-d6x.handler)", func() {
+var _ = Describe("Cross-endpoint sender-clobber invariants (boom-d6x.handler)", func() {
 	It("POST /workouts: bob's payload with any injected sender fields MUST NOT create rows for alice", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()

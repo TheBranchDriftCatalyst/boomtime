@@ -84,7 +84,7 @@ const OVERVIEW_ONLY_FE_KINDS = new Set<string>([
   "github-languages",
 ]);
 
-// gaka-qcxg: reading-domain fe-only kinds → their existing Reading dashboard
+// boom-qcxg: reading-domain fe-only kinds → their existing Reading dashboard
 // tile. Each tile SELF-FETCHES via useReadingQuery (runQuery, POST
 // /api/v1/query) under whichever QueryClient wraps it — the seeded sample
 // client in sample mode, the app's ambient client in mine mode — so one

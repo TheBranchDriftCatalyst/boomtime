@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// sync_test.go — pins the pull→reading_activity aggregation (gaka-books B): each
+// sync_test.go — pins the pull→reading_activity aggregation (boom-books B): each
 // user_book_read with progress_seconds>0 or a finished_at becomes a day bucket,
 // reads on the same day SUM, and a dateless/timeless read is skipped. Pure
 // (aggregateReadActivity) so it needs no live client or DB.

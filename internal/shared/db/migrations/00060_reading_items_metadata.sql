@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- catalyst-audiobooks full-field ingest (gaka-books): the Audible /1.0/library
+-- catalyst-audiobooks full-field ingest (boom-books): the Audible /1.0/library
 -- item carries far more than title+authors. These columns are ADDITIVE (all
 -- nullable or defaulted) so existing reading_items rows are untouched, and the
 -- table stays siloed — it does NOT write into heartbeats/stats/any core model.

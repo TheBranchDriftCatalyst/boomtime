@@ -1,5 +1,5 @@
 // standalone_integration_test.go — Layer-2 integration coverage for the
-// STANDALONE catalyst-books composition (gaka-zp2s).
+// STANDALONE catalyst-books composition (boom-zp2s).
 //
 // This is the layer the unit tests can't reach: it stands up the WHOLE
 // standalone HTTP surface exactly as main() wires it — books-only migration

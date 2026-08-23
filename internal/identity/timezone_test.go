@@ -1,4 +1,4 @@
-// timezone_ginkgo_test.go — ginkgo mirror of timezone_test.go (gaka-dg7).
+// timezone_ginkgo_test.go — ginkgo mirror of timezone_test.go (boom-dg7).
 // 1:1 case map (2 stdlib TestXxx):
 //
 //	TestUpdateTimezone_RejectsInvalidIANA → timezone endpoints > "PATCH invalid IANA → 400, no DB write"
@@ -37,7 +37,7 @@ func doJSONGinkgo(e *echo.Echo, method, path, token string, body any) *httptest.
 	return rec
 }
 
-var _ = Describe("timezone endpoints (gaka-dg7)", func() {
+var _ = Describe("timezone endpoints (boom-dg7)", func() {
 	It("rejects an invalid IANA name with 400 and does not touch the DB", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()

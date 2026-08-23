@@ -5,7 +5,7 @@ import {
   stackReachableFromEnv,
 } from "./helpers";
 
-// gaka-9v4 — Settings > Avatar tab (chibi portrait pipeline).
+// boom-9v4 — Settings > Avatar tab (chibi portrait pipeline).
 //
 // Real generation takes 15s to 25min so this spec NEVER runs an actual
 // render. We short-circuit the POST via `page.route()` so the RENDER
@@ -23,7 +23,7 @@ import {
 //   * Empty-state avatar preview: the ID-silhouette fallback (initials +
 //     amber corner-bracket frame) appears when no avatar exists.
 
-test.describe("gaka-9v4 — Settings > Avatar tab", () => {
+test.describe("boom-9v4 — Settings > Avatar tab", () => {
   test.skip(!stackReachableFromEnv(), NO_STACK_REASON);
 
   test.beforeEach(async ({ page }) => {

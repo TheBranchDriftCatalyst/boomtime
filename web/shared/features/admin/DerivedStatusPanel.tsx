@@ -129,7 +129,7 @@ export function DerivedStatusPanel() {
                       {perf && (
                         <span
                           className="rounded bg-primary/15 px-1 text-[10px] font-medium uppercase tracking-wide text-primary"
-                          title="Perf index for Space regex queries (gaka-o4m)"
+                          title="Perf index for Space regex queries (boom-o4m)"
                         >
                           perf
                         </span>

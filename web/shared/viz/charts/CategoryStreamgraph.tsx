@@ -112,7 +112,7 @@ export function CategoryStreamgraph({
             rng && rng.start && rng.end && rng.start !== rng.end
               ? fmtDateRange(rng.start, rng.end)
               : formatDay(new Date(dates[i]));
-          // gaka-7m4: on the "Other" layer, append a range-total breakdown
+          // boom-7m4: on the "Other" layer, append a range-total breakdown
           // of the collapsed categories. Look them up on the source
           // ResourceStats (series is orderCategories(categories)).
           const source = series.find((s) => s.name === layer.key);

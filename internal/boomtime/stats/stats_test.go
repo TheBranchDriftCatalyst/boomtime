@@ -1,4 +1,4 @@
-// stats_ginkgo_test.go — ginkgo mirror of stats_test.go (gaka-tst-ginkgo).
+// stats_ginkgo_test.go — ginkgo mirror of stats_test.go (boom-tst-ginkgo).
 // 1:1 case map (3 stdlib TestXxx with 6 subtests → 1 DescribeTable of 6 Entries
 // plus 2 Its):
 //
@@ -75,7 +75,7 @@ var _ = Describe("ToStatsPayload", func() {
 		Expect(p.Languages).To(HaveLen(2))
 	})
 
-	// gaka-csx P3: the optional GitHub contribution overlay aligns index-for-
+	// boom-csx P3: the optional GitHub contribution overlay aligns index-for-
 	// index to DailyTotal when a cache grid is present, and stays nil (omitted)
 	// when absent — the additive-invariant no-op.
 	It("aligns GithubDailyTotal to DailyTotal when a grid is present", func() {
@@ -132,5 +132,5 @@ var _ = Describe("ToLeaderboardsPayload", func() {
 	})
 })
 
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
+// -- helpers restored from stdlib partner (boom-0vp.17) --
 func ptr(v int64) *int64 { return &v }

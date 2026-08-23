@@ -24,7 +24,7 @@ func mkTokenData(user string) db.TokenData {
 }
 
 // setRefreshCookie writes the refresh_token cookie: HttpOnly, SameSite=Strict,
-// and Secure iff h.Cfg.CookieSecure is true (gaka-b5x.1). Path is scoped to
+// and Secure iff h.Cfg.CookieSecure is true (boom-b5x.1). Path is scoped to
 // the app root (prefix + "/") rather than "/auth" so the cookie is also sent
 // on the cookie-authenticated import WebSocket handshake
 // (/import/jobs/:id/ws), which the browser can't send an Authorization header on.
@@ -70,7 +70,7 @@ func loginResponse(td db.TokenData, now time.Time) model.LoginResponse {
 
 // Login: POST /auth/login.
 //
-// gaka-imm: constant-time user enumeration defence. Prior to this fix, the
+// boom-imm: constant-time user enumeration defence. Prior to this fix, the
 // "no such user" branch short-circuited BEFORE Argon2id ran, so the response
 // took ~1ms (network + SELECT) whereas the "user exists / wrong password"
 // branch took ~10ms (argon2 dominates). Attackers observed that ~10x delta
@@ -82,7 +82,7 @@ func loginResponse(td db.TokenData, now time.Time) model.LoginResponse {
 // whose result is discarded. Both branches now burn the same ~10ms of CPU
 // and return the identical InvalidCredentials envelope.
 func (h *Handler) Login(c *echo.Context) error {
-	// gaka-93f.11.4: under BOOM_AUTH_PROVIDER=oidc, password login is disabled —
+	// boom-93f.11.4: under BOOM_AUTH_PROVIDER=oidc, password login is disabled —
 	// sign-in goes through Authentik (/auth/login/oidc). Reject early with a
 	// clear message so a stale password form can't mint a half-working local
 	// session (bearer resolves locally, but the cookie-authed paths expect an
@@ -92,7 +92,7 @@ func (h *Handler) Login(c *echo.Context) error {
 		return apihelpers.RespondErr(c, apierr.Forbidden("password login is disabled on this server — sign in with Authentik"))
 	}
 	var creds model.AuthRequest
-	// gaka-bi2: 4 KiB cap. Credentials are two short strings; a fat body here
+	// boom-bi2: 4 KiB cap. Credentials are two short strings; a fat body here
 	// would just amplify the argon2 verify below into a memory DoS.
 	if aerr := apihelpers.BindJSONWithLimit(c, &creds, apihelpers.BodyLimitSmall); aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
@@ -104,7 +104,7 @@ func (h *Handler) Login(c *echo.Context) error {
 		return apihelpers.InternalErr(h.Logger, c, "user lookup failed", err)
 	}
 	if user == nil {
-		// gaka-imm: burn the same ~10ms of argon2 the found-user branch
+		// boom-imm: burn the same ~10ms of argon2 the found-user branch
 		// spends in VerifyPassword. Result discarded — the point is to
 		// eliminate the timing gap, not to actually authenticate.
 		auth.BurnSentinelVerify(creds.Password)
@@ -114,7 +114,7 @@ func (h *Handler) Login(c *echo.Context) error {
 		return apihelpers.RespondErr(c, apierr.InvalidCredentials())
 	}
 
-	// gaka-93f.15: a disabled account fails closed on the password path
+	// boom-93f.15: a disabled account fails closed on the password path
 	// UNCONDITIONALLY — the disable kill-switch must work regardless of
 	// BOOM_FEATURE_USER_MODEL (previously this was gated behind the flag, so a
 	// disabled user could still log in under the default flag-off posture).
@@ -130,7 +130,7 @@ func (h *Handler) Login(c *echo.Context) error {
 		return apihelpers.RespondErr(c, apierr.InvalidCredentials())
 	}
 
-	// gaka-awh.6 (Bravo MEDIUM): transparent rehash-on-login. If the row is
+	// boom-awh.6 (Bravo MEDIUM): transparent rehash-on-login. If the row is
 	// still at a legacy argon generation (< current), we just verified the
 	// plaintext against the stored legacy hash — the ONLY moment we're
 	// allowed to derive a fresh current-generation hash without prompting
@@ -170,11 +170,11 @@ func (h *Handler) Register(c *echo.Context) error {
 		return apihelpers.RespondErr(c, apierr.DisabledRegistration())
 	}
 	var creds model.AuthRequest
-	// gaka-bi2: 4 KiB cap. Same rationale as Login — credentials are short.
+	// boom-bi2: 4 KiB cap. Same rationale as Login — credentials are short.
 	if aerr := apihelpers.BindJSONWithLimit(c, &creds, apihelpers.BodyLimitSmall); aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
-	// gaka-e5e: enforce the shared password policy BEFORE hashing +
+	// boom-e5e: enforce the shared password policy BEFORE hashing +
 	// inserting. Prior to this check, POST /auth/register accepted empty
 	// and toy passwords ("", "a", "1234") and minted a working session.
 	// auth.ValidatePassword's sentinel errors are user-safe by design —
@@ -182,7 +182,7 @@ func (h *Handler) Register(c *echo.Context) error {
 	if err := auth.ValidatePassword(creds.Password); err != nil {
 		return apihelpers.RespondErr(c, apierr.BadRequest(err.Error()))
 	}
-	// gaka-93f.18: validate the username before hashing/inserting. Prior to
+	// boom-93f.18: validate the username before hashing/inserting. Prior to
 	// this, register accepted arbitrary usernames (control chars, whitespace,
 	// the cache-key delimiter '|', unicode homoglyphs). ValidateUsername's
 	// message is user-safe.
@@ -219,7 +219,7 @@ func (h *Handler) RefreshToken(c *echo.Context) error {
 	}
 	ctx := c.Request().Context()
 
-	// gaka-93f.14: under OIDC the browser session IS the oidc_sessions cookie
+	// boom-93f.14: under OIDC the browser session IS the oidc_sessions cookie
 	// (already validated by IdentifyOwnerFromCookie above). Mint ONLY a short
 	// access bearer for the Authorization-header API surface — do NOT create a
 	// local refresh token and do NOT overwrite the session cookie. Doing either
@@ -228,7 +228,7 @@ func (h *Handler) RefreshToken(c *echo.Context) error {
 	// server-side revocation. The FE must re-present the (expiring, revocable)
 	// OIDC session cookie to obtain each subsequent bearer.
 	if auth.CurrentResolver().ProviderName() == "oidc" {
-		// gaka-93f.11.6: silently ROTATE the OIDC session so a short-lived
+		// boom-93f.11.6: silently ROTATE the OIDC session so a short-lived
 		// id_token can back a long-lived, revocable web session. Decrypt the
 		// stored provider refresh, refresh-grant against the IdP, and extend
 		// this session's id_token_expiry in place (same cookie). Best-effort:
@@ -254,7 +254,7 @@ func (h *Handler) RefreshToken(c *echo.Context) error {
 }
 
 // tryRotateOIDCSession best-effort extends the caller's OIDC web session
-// (gaka-93f.11.6): decrypt the stored provider refresh, refresh-grant against
+// (boom-93f.11.6): decrypt the stored provider refresh, refresh-grant against
 // the IdP, then rotate id_token_expiry + the (possibly new) refresh in place —
 // same cookie, no re-login. Every failure is swallowed (the session stays valid
 // until its current expiry), so a transient IdP hiccup never logs the user out.
@@ -293,7 +293,7 @@ func (h *Handler) tryRotateOIDCSession(c *echo.Context) {
 
 // Logout: POST /auth/logout.
 func (h *Handler) Logout(c *echo.Context) error {
-	// gaka-93f.13: OIDC-aware logout. Under provider=oidc the web session is a
+	// boom-93f.13: OIDC-aware logout. Under provider=oidc the web session is a
 	// server-side oidc_sessions row keyed by the opaque `refresh_token` cookie
 	// (no local bearer exists), so the local DeleteTokens path below can never
 	// revoke it — Logout was a silent no-op. Delete the OIDC session so the
@@ -306,7 +306,7 @@ func (h *Handler) Logout(c *echo.Context) error {
 			return apihelpers.RespondErr(c, apierr.MissingRefreshTokenCookie())
 		}
 		ctx := c.Request().Context()
-		// gaka-93f.14: revoke any bearers this user minted via /auth/refresh_token
+		// boom-93f.14: revoke any bearers this user minted via /auth/refresh_token
 		// so they die WITH the session, not up to 30 min later. Resolve the owner
 		// from the session before deleting it.
 		var owner string
@@ -338,7 +338,7 @@ func (h *Handler) Logout(c *echo.Context) error {
 	if n < 2 {
 		return apihelpers.RespondErr(c, apierr.InvalidCredentials())
 	}
-	// gaka-b5x.1: clear the client-side cookie with matching attributes
+	// boom-b5x.1: clear the client-side cookie with matching attributes
 	// (Path + Secure + SameSite) so browsers actually evict the entry.
 	h.clearRefreshCookie(c)
 	h.clearOIDCFlowCookies(c)
@@ -412,7 +412,7 @@ func (h *Handler) UpdateToken(c *echo.Context) error {
 		return apihelpers.RespondErr(c, aerr)
 	}
 	var meta model.TokenMetadata
-	// gaka-bi2: 4 KiB cap. Token metadata is a name string; no reason to
+	// boom-bi2: 4 KiB cap. Token metadata is a name string; no reason to
 	// accept a runaway body.
 	if aerr := apihelpers.BindJSONWithLimit(c, &meta, apihelpers.BodyLimitSmall); aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
@@ -425,7 +425,7 @@ func (h *Handler) UpdateToken(c *echo.Context) error {
 
 // CurrentUser: GET /auth/users/current (Users.hs).
 //
-// gaka-dg7: also emits `timezone` (raw stored) and `effective_timezone`
+// boom-dg7: also emits `timezone` (raw stored) and `effective_timezone`
 // (post-3-level-resolution). Wakatime editor plugins ignore unknown fields,
 // so this stays wire-safe with wakatime-compat callers.
 func (h *Handler) CurrentUser(c *echo.Context) error {

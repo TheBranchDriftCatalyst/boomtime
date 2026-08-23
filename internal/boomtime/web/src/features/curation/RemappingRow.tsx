@@ -34,13 +34,13 @@ export function RemappingRow({
 }: {
   rule: CurationRule;
   onRemove: (rule: CurationRule) => void;
-  // gaka-cr4: click handler for the destructive "apply mapping" button
+  // boom-cr4: click handler for the destructive "apply mapping" button
   // (rename rules only — Zap icon). Kept as a prop (not a hook here) so the
   // parent owns the modal state and a single modal instance is reused
   // across rows — plays nicely with the parent's query-invalidation-on-
   // success pattern.
   onApply?: (rule: CurationRule) => void;
-  // gaka-due: click handler for the destructive "purge" button (hide rules
+  // boom-due: click handler for the destructive "purge" button (hide rules
   // only — Trash2 icon). Same pattern as onApply; parent owns the modal.
   onPurge?: (rule: CurationRule) => void;
 }) {
@@ -53,7 +53,7 @@ export function RemappingRow({
   // gaka: rules flagged "Apply at ingest" also scrub newly-ingested heartbeats
   // (not just the reversible query-time view). Missing (pre-migration) = false.
   const isIngest = rule.applyAtIngest === true;
-  // gaka-dfd: an older backend may omit `enabled`; treat missing as `true`
+  // boom-dfd: an older backend may omit `enabled`; treat missing as `true`
   // (the pre-feature default) so pre-migration installs still render sane.
   const isEnabled = rule.enabled !== false;
   const [open, setOpen] = useState(false);
@@ -109,7 +109,7 @@ export function RemappingRow({
     <div
       className={
         "rounded-md border bg-secondary/40 text-sm transition-opacity " +
-        // gaka-dfd: dim the whole row when the rule is paused so the "this
+        // boom-dfd: dim the whole row when the rule is paused so the "this
         // isn't doing anything right now" signal is present peripherally.
         // Opacity beats a badge here — badges compete for attention with
         // the existing HIDDEN / capture tags.
@@ -170,7 +170,7 @@ export function RemappingRow({
           )}
         </button>
         {/*
-          gaka-dfd: pause / resume toggle. First icon in the action group so
+          boom-dfd: pause / resume toggle. First icon in the action group so
           the "is this rule live?" affordance is the leftmost decision.
           EyeOff = "currently active, click to pause" (an eye that stops
           watching); Eye = "currently paused, click to resume watching".
@@ -207,7 +207,7 @@ export function RemappingRow({
           <Pencil className="h-3.5 w-3.5" />
         </button>
         {/*
-          gaka-esv: add-to-space dropdown. Position: after edit, before the
+          boom-esv: add-to-space dropdown. Position: after edit, before the
           rename/hide-specific destructive icons. Always visible regardless
           of rule.action — spaces can scope on both hide and rename axes.
         */}

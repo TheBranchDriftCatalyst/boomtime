@@ -1,5 +1,5 @@
 // labels_http_test.go — end-to-end HTTP coverage for the labels cluster
-// (gaka-d6x.handler). Covers every handler in labels.go:
+// (boom-d6x.handler). Covers every handler in labels.go:
 //
 //	LabelsCatalog (public), AdminCreateLabel, AdminUpdateLabel,
 //	AdminDeleteLabel, AdminUpdateLabelGenConfig, AdminLabelsSeedSQL,
@@ -197,7 +197,7 @@ var _ = Describe("AdminCreateLabel guardrails", func() {
 	})
 })
 
-var _ = Describe("AdminCreateLabel + PATCH: server-side condition validation (gaka-6uf)", func() {
+var _ = Describe("AdminCreateLabel + PATCH: server-side condition validation (boom-6uf)", func() {
 	It("POST 400s a syntactically-decodable but semantically-invalid condition with a JSON pointer path", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
@@ -207,7 +207,7 @@ var _ = Describe("AdminCreateLabel + PATCH: server-side condition validation (ga
 		cleanupLabel(hz, id)
 
 		// Bad op (=== instead of >= / <=). Pre-refactor: silently accepted +
-		// evaluator always-false. Post gaka-6uf: rejected at write time.
+		// evaluator always-false. Post boom-6uf: rejected at write time.
 		body := mkLabelBody(id)
 		body["condition"] = json.RawMessage(`{"kind":"axis-time","axis":"languages","value":"go","op":"===","hours":5}`)
 

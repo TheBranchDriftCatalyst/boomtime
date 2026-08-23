@@ -1,4 +1,4 @@
-// AdminTab.tsx — Settings > Admin (gaka-364.3).
+// AdminTab.tsx — Settings > Admin (boom-364.3).
 //
 // v3 shape: the labels catalog itself is now editable from this tab. Each
 // row shows the current thumbnail + label + kind + status (has image y/n)
@@ -154,7 +154,7 @@ function ResizableSheetContent({
       // at the left edge. The inner scroll div re-adds it.
       className={cn("p-0", className)}
       // Cap to the viewport so the resizable sheet never exceeds a phone's
-      // width (gaka-k26n.4) — the clamped `width` has a 400px floor that would
+      // width (boom-k26n.4) — the clamped `width` has a 400px floor that would
       // otherwise overflow. min() keeps the user's chosen width on desktop.
       style={{ width: `min(${width}px, 100vw)`, maxWidth: "none", ...style }}
     >
@@ -290,7 +290,7 @@ export function AdminTab() {
 
   // Two independent fetches: catalog (labels + systemPrompt) drives the
   // rows; adminLabelImages drives the per-row IMAGE metadata (bytes /
-  // generated-at). Post gaka-8bz the aggressive 10s poll is dropped in
+  // generated-at). Post boom-8bz the aggressive 10s poll is dropped in
   // favor of a WS-driven queue view (useImageJobQueue). We keep this
   // query at a lazier 60s cadence as a safety net for cases where the
   // WS never fires an event (e.g. the operator opens the tab AFTER a
@@ -303,7 +303,7 @@ export function AdminTab() {
     staleTime: 30_000,
   });
 
-  // gaka-8bz: durable server-side job queue + WS. Replaces the previous
+  // boom-8bz: durable server-side job queue + WS. Replaces the previous
   // client-side inFlight Set + MAX_PARALLEL_REGENS pool. The hook owns
   // the WS + reconnect; the server pool caps concurrency.
   const queue = useImageJobQueue();
@@ -385,7 +385,7 @@ export function AdminTab() {
   }, [filteredRows]);
 
   // --- per-label regen ------------------------------------------------------
-  // Post gaka-8bz: enqueue is fire-and-forget; the WS drives all UI state.
+  // Post boom-8bz: enqueue is fire-and-forget; the WS drives all UI state.
   // Wrapping in a small callable keeps a stable identity for the row
   // Regen button + the Sheet's Save-and-regen call site.
   const enqueueOne = async (params: {
@@ -514,7 +514,7 @@ export function AdminTab() {
     <div className="space-y-6">
       {/* --- LABELS + IMAGES ------------------------------------------------ */}
       <section className="rounded-md border border-border bg-card p-4">
-        {/* gaka-9e9k: the "Labels catalog" heading and its blurb used to live
+        {/* boom-9e9k: the "Labels catalog" heading and its blurb used to live
             here and duplicated what the section shell already renders from the
             registry (title "Labels" + its description). Only the LIVE counters
             are genuinely this component's to report, and they ride the
@@ -573,7 +573,7 @@ export function AdminTab() {
             {queue.connected ? <Wifi size={10} /> : <WifiOff size={10} />}
             <span>{queue.connected ? "live" : "reconnecting"}</span>
           </span>
-          {/* worker-topology decoupling (gaka-8bz follow-up): which
+          {/* worker-topology decoupling (boom-8bz follow-up): which
               transport is actually running regens — the server's own
               in-process pool, or a separate boomtime-worker pod pulling
               off RabbitMQ. When it's the latter, also show the live
@@ -816,10 +816,10 @@ export function AdminTab() {
         </div>
       </section>
 
-      {/* --- LEDGER INSPECTOR (gaka-mwp-streaks) ---------------------------- */}
+      {/* --- LEDGER INSPECTOR (boom-mwp-streaks) ---------------------------- */}
       <AwardLedgerInspector />
 
-      {/* --- STREAK BACKFILL (gaka-mwp-streaks) ----------------------------- */}
+      {/* --- STREAK BACKFILL (boom-mwp-streaks) ----------------------------- */}
       <StreakBackfillSection />
 
       {/* --- GLOBAL GENERATION CONFIG --------------------------------------- */}
@@ -1210,7 +1210,7 @@ function LabelEditSheet({ row, onClose, onSaved, onRegen, canRegen, generatedAt 
               <div>
                 <UILabel>Condition</UILabel>
                 {(() => {
-                  // gaka-6uf: swap the raw JSONB textarea for the typed
+                  // boom-6uf: swap the raw JSONB textarea for the typed
                   // ConditionBuilder. The Builder still stores the tree
                   // via conditionJson (round-tripped via formatConditionJson)
                   // so the existing save mutation shape is unchanged. If
@@ -1367,7 +1367,7 @@ function LabelEditSheet({ row, onClose, onSaved, onRegen, canRegen, generatedAt 
   );
 }
 
-// ---- ledger inspector (gaka-mwp-streaks) ----------------------------------
+// ---- ledger inspector (boom-mwp-streaks) ----------------------------------
 //
 // Read-only debug view of the award_ledger table for the caller. Groups
 // rows by label (with count + current streak from the /streaks endpoint)
@@ -1545,12 +1545,12 @@ function AwardLedgerInspector() {
   );
 }
 
-// ---- streak backfill tool (gaka-mwp-streaks) ------------------------------
+// ---- streak backfill tool (boom-mwp-streaks) ------------------------------
 //
-// gaka-hc6.5.1: the per-day loop moved server-side. FE just POSTs
+// boom-hc6.5.1: the per-day loop moved server-side. FE just POSTs
 // {days: N}, server walks each historical day and writes ledger rows
 // with at=D. Result is a single summary. This unblocked the full
-// delete of the client-side evaluator (gaka-hc6.5) — no more
+// delete of the client-side evaluator (boom-hc6.5) — no more
 // per-day evaluate() in the browser.
 
 function StreakBackfillSection() {

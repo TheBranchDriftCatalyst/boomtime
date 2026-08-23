@@ -1,4 +1,4 @@
-// eval.go: server-side award evaluation (gaka-hc6.3).
+// eval.go: server-side award evaluation (boom-hc6.3).
 //
 // Two endpoints:
 //
@@ -15,7 +15,7 @@
 // The old POST /awards/log endpoint stays alive — the admin backfill tool
 // (StreakBackfillSection) uses it with an explicit `at` parameter to seed
 // historical periods. The JIT client-eval path is the caller that's going
-// away (see gaka-hc6.4).
+// away (see boom-hc6.4).
 
 package awards
 
@@ -53,7 +53,7 @@ func (h *Handler) OwnAwards(c *echo.Context) error {
 
 	// Server-authoritative ledger write. Idempotent inside a period via the
 	// existing (username, label_id, period_start) PK. Use the caller's
-	// resolved tz (gaka-dg7) so a user in Pacific gets their day-boundary
+	// resolved tz (boom-dg7) so a user in Pacific gets their day-boundary
 	// right even when the server clock is UTC.
 	tzName := apihelpers.ResolveUserTZ(h.DB, h.Logger, ctx, owner, h.Cfg.DefaultTimezone)
 	loc, terr := time.LoadLocation(tzName)
@@ -129,7 +129,7 @@ func (h *Handler) buildAwardsPayload(ctx echoContext, username string) (*labels.
 
 // buildAwardsPayloadAt is the historical variant — computes the payload
 // as if EndDate=at instead of Now(). Used by the /awards/backfill flow
-// (gaka-hc6.5.1) to walk N days back and evaluate each day's snapshot
+// (boom-hc6.5.1) to walk N days back and evaluate each day's snapshot
 // against the historical window that ended THAT day.
 func (h *Handler) buildAwardsPayloadAt(ctx echoContext, username string, at time.Time) (*labels.Payload, error) {
 	t1 := at.UTC()

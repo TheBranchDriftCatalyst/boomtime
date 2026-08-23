@@ -1,4 +1,4 @@
-// Tests for the pluggable IdentityResolver (gaka-0oe.2). The DB resolve paths
+// Tests for the pluggable IdentityResolver (boom-0oe.2). The DB resolve paths
 // (ResolveBearer/ResolveCookie) get their parity coverage from the full
 // handler suite, which now routes every identity resolution through
 // CurrentResolver(); these pin the provider-selection + not-supported surface.

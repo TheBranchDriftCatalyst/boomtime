@@ -1,4 +1,4 @@
-// color.test.ts — regression coverage for gaka-538 (theme-aware chart
+// color.test.ts — regression coverage for boom-538 (theme-aware chart
 // palette). Guards the contract that `colorAt(i)`:
 //   1. Reads `--chart-N` from the active theme first (N = (i % 12) + 1)
 //   2. Falls back to the legacy hardcoded hex when the token is missing
@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CHART_COLORS } from "@shared/lib/config";
 import { colorAt } from "./color";
 
-describe("colorAt — theme-aware chart palette (gaka-538)", () => {
+describe("colorAt — theme-aware chart palette (boom-538)", () => {
   const setChartToken = (n: number, value: string) => {
     document.documentElement.style.setProperty(`--chart-${n}`, value);
   };

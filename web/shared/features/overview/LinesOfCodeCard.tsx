@@ -1,4 +1,4 @@
-// LinesOfCodeCard (gaka-yfg) — the Lines-of-Code Overview widget. Self-fetches
+// LinesOfCodeCard (boom-yfg) — the Lines-of-Code Overview widget. Self-fetches
 // via useOverviewLoc (shared OverviewDataContext range/space), so it drops into
 // BOTH the legacy OverviewDashboard ChartCard stack and the composable widget
 // grid with no props. Renders a headline Total LOC numeral, a total-LOC-over-

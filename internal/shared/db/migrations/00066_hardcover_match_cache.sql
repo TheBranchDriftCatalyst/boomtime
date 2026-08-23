@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- GLOBAL, cross-user Hardcover match cache (gaka-wzgr). A resolved match
+-- GLOBAL, cross-user Hardcover match cache (boom-wzgr). A resolved match
 -- (ASIN or ISBN-13 → hardcover_book_id/edition_id) is an OBJECTIVE fact about a
 -- BOOK, not about the user who happened to trigger the sweep. Once ANY user
 -- resolves it via the exact-id ladder we cache it here so every future user (and

@@ -1,5 +1,5 @@
 // PinToggle — a small icon button that pins/unpins a single (axis, value) as a
-// canonical entity (gaka-canon). A pin forces that value to always get its own
+// canonical entity (boom-canon). A pin forces that value to always get its own
 // slice/bar and never fall into the bucket "Other"; the backend query engine
 // auto-applies pins, so on click we just create/remove the rule and let usePins
 // invalidate the grouped-query caches (the chart refetches and the value

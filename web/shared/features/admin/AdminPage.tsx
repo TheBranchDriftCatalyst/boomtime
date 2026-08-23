@@ -1,6 +1,6 @@
 // AdminPage — the /app/admin section shell.
 //
-// gaka-zp2s: reduced to a thin re-export of the shared AdminSectionPage, which
+// boom-zp2s: reduced to a thin re-export of the shared AdminSectionPage, which
 // composes its tab strip from the admin-registration seam (getAdminGroups) and
 // renders the domain-grouped strip + an <Outlet/> for the routed tab body. The
 // tabs + their grouping (Operations / CatalystBooks / Boomtime) are declared by

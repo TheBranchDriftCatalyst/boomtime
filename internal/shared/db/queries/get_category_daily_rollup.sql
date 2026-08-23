@@ -1,12 +1,12 @@
 -- Fast path for the CategoryDaily stats at the default 15-min limit: read the
 -- pre-aggregated hb_rollup_daily instead of scanning raw heartbeats. The
--- rollup stores category (gaka-6ci) with its `_missing` sentinel, so we can
+-- rollup stores category (boom-6ci) with its `_missing` sentinel, so we can
 -- filter out null-category rows (`AND NOT category_missing`) to mirror the
 -- raw path's `AND category IS NOT NULL` — a browser plugin or AI console tab
 -- whose category wasn't set shouldn't surface as a fake 'Other' category on
 -- the category pie.
 --
--- gaka-dg7: the rollup's `day` column is already computed in the sender's TZ
+-- boom-dg7: the rollup's `day` column is already computed in the sender's TZ
 -- at ingest, so the per-day category buckets align with what the raw path
 -- produces in user-local TZ (no $tz bind needed here).
 -- $1 sender, $2 start, $3 end.

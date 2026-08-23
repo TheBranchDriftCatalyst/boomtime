@@ -1,5 +1,5 @@
 // hardcover_match_cache.go: the GLOBAL, cross-user Hardcover match cache
-// (gaka-wzgr). Unlike reading_items.hardcover_* (which caches a match PER USER
+// (boom-wzgr). Unlike reading_items.hardcover_* (which caches a match PER USER
 // per row), this table caches the resolved identity ONCE for all of boomtime,
 // keyed by the objective book identifier (ASIN or ISBN-13). The match sweep
 // (internal/hardcover/match_sweep.go) reads it before spending a Hardcover API

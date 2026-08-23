@@ -1,5 +1,5 @@
 // routes.go — Echo route registrations for the stats domain
-// (gaka-8tn phase 6). Extracted from internal/server/server.go's
+// (boom-8tn phase 6). Extracted from internal/server/server.go's
 // registerStatsRoutes and the projects/active_files subset that lived
 // in registerMiscRoutes / registerStatsRoutes.
 //
@@ -61,10 +61,10 @@ func Register(e *echo.Echo, h *Handler) {
 	e.GET("/api/v1/users/current/stats/sessions", h.Sessions)
 	e.GET("/api/v1/users/current/stats/momentum", h.Momentum)
 
-	// gaka-1l9: wakatime.com AI-assistance metrics (heartbeats.ai_*).
+	// boom-1l9: wakatime.com AI-assistance metrics (heartbeats.ai_*).
 	e.GET("/api/v1/users/current/stats/ai", h.AIActivity)
 
-	// gaka-yfg: lines-of-code (total + per-project + over-time) from file_lines.
+	// boom-yfg: lines-of-code (total + per-project + over-time) from file_lines.
 	e.GET("/api/v1/users/current/stats/loc", h.Loc)
 
 	// HealthKit metrics feed (Wellness card + Wellness page).

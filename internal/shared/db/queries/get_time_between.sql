@@ -4,7 +4,7 @@
 -- required because Postgres reports `function pg_catalog.unnest(unknown) is
 -- not unique` (SQLSTATE 42725) when the arg types are inferred as `unknown`
 -- and multiple `unnest` overloads exist for the multi-array form. See
--- gaka-6yr for the failure history.
+-- boom-6yr for the failure history.
 WITH input_table AS (
     SELECT
         *

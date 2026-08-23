@@ -1,5 +1,5 @@
 // branch_padding_test.go — coverage for the small branches that separate
-// happy-path tests from complete branch coverage (gaka-d6x).
+// happy-path tests from complete branch coverage (boom-d6x).
 //
 // Each It documents ONE branch or ONE guard invariant. No happy-path repeats.
 package db
@@ -14,9 +14,9 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = ginkgo.Describe("branch coverage padding (gaka-d6x)", func() {
+var _ = ginkgo.Describe("branch coverage padding (boom-d6x)", func() {
 
-	// gaka-8tn phase 2b: goals itoaFast / ListGoals / GetGoal /
+	// boom-8tn phase 2b: goals itoaFast / ListGoals / GetGoal /
 	// InvalidateGoalsForOwner branch coverage moved to
 	// internal/goals/db_branches_test.go together with the goals
 	// package extraction. Byte-identical Its at the new location.
@@ -168,7 +168,7 @@ func (b *bytesBuffer) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-var _ = ginkgo.Describe("more branch padding (gaka-d6x)", func() {
+var _ = ginkgo.Describe("more branch padding (boom-d6x)", func() {
 
 	// ---- remap.RenameSets.Any: both branches ----
 
@@ -354,7 +354,7 @@ var _ = ginkgo.Describe("more branch padding (gaka-d6x)", func() {
 		Expect(MigrateURL(ctx, testDatabaseURL())).To(Succeed())
 	})
 
-	// gaka-8tn phase 2b: CreateGoal description-branch coverage moved
+	// boom-8tn phase 2b: CreateGoal description-branch coverage moved
 	// to internal/goals/db_branches_test.go together with the goals
 	// package extraction. Byte-identical It at the new location.
 })
@@ -368,7 +368,7 @@ func pgtypeNumericZero() pgtypeNum { return pgtypeNum{} }
 // struct; we build a zero value via a same-shape helper.
 type pgtypeNum = pgtype.Numeric
 
-var _ = ginkgo.Describe("spaces branch padding (gaka-d6x)", func() {
+var _ = ginkgo.Describe("spaces branch padding (boom-d6x)", func() {
 
 	ginkgo.It("RenameSpace / DeleteSpace on cross-owner id returns 0 rows-affected (owner scope invariant)", func() {
 		d := openTestDBG()
@@ -466,7 +466,7 @@ var _ = ginkgo.Describe("spaces branch padding (gaka-d6x)", func() {
 		r2, err := d.CreateCurationRule(ctx, u, "project", "hide", "exact", "SecretProj", &newVal)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(r2.ID).To(Equal(r.ID), "conflict path returns same id")
-		Expect(r2.Enabled).To(BeTrue(), "re-added rule MUST be re-enabled (gaka-dfd)")
+		Expect(r2.Enabled).To(BeTrue(), "re-added rule MUST be re-enabled (boom-dfd)")
 	})
 
 	ginkgo.It("DeleteCurationRule: unknown id returns 0 rows-affected, no error (idempotent nuke)", func() {
@@ -493,7 +493,7 @@ var _ = ginkgo.Describe("spaces branch padding (gaka-d6x)", func() {
 
 // insertFreshUser plants a user row at ArgonVersion=2 (current).
 // (Extracted from the db writer's auth_test.go which collided with
-// gaka-se2.6's auth_test.go on cherry-pick.)
+// boom-se2.6's auth_test.go on cherry-pick.)
 func insertFreshUser(d *DB, ctx context.Context, username string) error {
 	_, err := d.Pool.Exec(ctx,
 		`INSERT INTO users (username, hashed_password, salt_used, argon_version) VALUES ($1, '\x00', '\x00', 2) ON CONFLICT DO NOTHING`,
@@ -502,7 +502,7 @@ func insertFreshUser(d *DB, ctx context.Context, username string) error {
 }
 
 // cleanupAwardG deletes award_ledger + users rows for u via DeferCleanup.
-// (Extracted from the db writer's award_ledger_test.go which collided with gaka-se2.5.)
+// (Extracted from the db writer's award_ledger_test.go which collided with boom-se2.5.)
 func cleanupAwardG(d *DB, ctx context.Context, u string) {
 	ginkgo.DeferCleanup(func() {
 		_, _ = d.Pool.Exec(ctx, `DELETE FROM award_ledger WHERE username=$1`, u)

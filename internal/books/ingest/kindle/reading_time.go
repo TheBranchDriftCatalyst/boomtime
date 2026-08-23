@@ -1,4 +1,4 @@
-// reading_time.go — the FORWARD Kindle reading-TIME composition (gaka-books):
+// reading_time.go — the FORWARD Kindle reading-TIME composition (boom-books):
 // poll each in-progress book's last-page-read POSITION over time, gap-sum
 // consecutive samples into reading SESSIONS, and write reading-seconds into
 // reading_activity(source='kindle') so Kindle reading-time unifies with Audible
@@ -213,7 +213,7 @@ func (s *Service) PollReadingTime(ctx context.Context, owner string) (int, error
 // owner+source+bucket_date+granularity). Returns the number of day buckets
 // written.
 //
-// Method selection (PART 3, gaka-0gdp): it classifies the owner's observed advance
+// Method selection (PART 3, boom-0gdp): it classifies the owner's observed advance
 // cadence (RecommendIntervals) and SELECTS the composition method — session-boundary
 // ⇒ position-delta (Δlocation × reading-speed), else ⇒ the default temporal gap-sum.
 // Because classification stays 'unknown' until high-fidelity calibration data lands,

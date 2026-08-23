@@ -1,5 +1,5 @@
 // github_token.go: storage of the per-user encrypted GitHub OAuth access token
-// (gaka-2ip Phase 1). Modeled 1:1 on wakatime_key.go.
+// (boom-2ip Phase 1). Modeled 1:1 on wakatime_key.go.
 //
 // The plaintext token never touches this layer. Callers are expected to
 // encrypt with internal/auth.Encrypt before Set and decrypt with
@@ -153,7 +153,7 @@ func (d *DB) GetEncryptedGithubToken(ctx context.Context, username string) ([]by
 
 // ListUsersWithGithubToken returns the usernames of every user with a stored
 // GitHub token that isn't known-invalid — the working set for the periodic
-// github-stats refresh job (gaka-hney.1). Known-invalid tokens are skipped so
+// github-stats refresh job (boom-hney.1). Known-invalid tokens are skipped so
 // the scheduler doesn't hammer GitHub with credentials it already knows are
 // dead; a user re-connecting flips the status back and re-enters the set.
 func (d *DB) ListUsersWithGithubToken(ctx context.Context) ([]string, error) {
@@ -315,7 +315,7 @@ func rotateWakatimeRowsTx(ctx context.Context, tx pgx.Tx, rows []EncryptedWakati
 }
 
 // RotateEncryptedSecrets re-encrypts BOTH the wakatime keys and github tokens
-// in a SINGLE transaction (gaka-2ip Phase 1). This is what
+// in a SINGLE transaction (boom-2ip Phase 1). This is what
 // `boomtime rotate-encryption-key` calls so an interrupted rotation can never
 // leave one encrypted column on the new key and the other on the old — either
 // every ciphertext across both columns is rewritten or none is. Returns the

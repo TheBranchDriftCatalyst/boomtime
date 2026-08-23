@@ -1,5 +1,5 @@
 // rename_apply.go — the INGEST-TIME applier for apply_at_ingest rename rules
-// (gaka-scrub). A rename rule flagged apply_at_ingest rewrites the matching
+// (boom-scrub). A rename rule flagged apply_at_ingest rewrites the matching
 // heartbeat field AS THE ROW IS STORED (internal/ingest.storeAndRespond calls
 // LoadIngestRenameRules once per batch, then IngestRenameSet.Apply per row).
 //

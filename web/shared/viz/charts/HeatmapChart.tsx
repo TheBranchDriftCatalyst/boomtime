@@ -162,7 +162,7 @@ export function HeatmapChart({
               value: fmtPct(shareOfRowPeak),
               muted: true,
             });
-          // gaka-7m4: on the "Other" row, append a range-total breakdown of
+          // boom-7m4: on the "Other" row, append a range-total breakdown of
           // the collapsed members. Explicitly labelled so the user knows
           // those totals span the whole range, not just this day/bucket.
           let footer: string | undefined;

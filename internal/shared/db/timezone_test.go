@@ -1,4 +1,4 @@
-// timezone_ginkgo_test.go — ginkgo mirror of timezone_test.go (gaka-0vp.13).
+// timezone_ginkgo_test.go — ginkgo mirror of timezone_test.go (boom-0vp.13).
 // 1:1 case map (5 stdlib TestXxx → 4 Its + 1 DescribeTable(5)):
 //
 //	TestPunchcard_HourReflectsUserTZ           → It "Punchcard hour reflects user tz (PT vs UTC)"
@@ -126,7 +126,7 @@ var _ = ginkgo.Describe("timezone-aware queries", func() {
 	})
 })
 
-// -- helpers restored from internal/db/timezone_test.go (gaka-0vp.17) --
+// -- helpers restored from internal/db/timezone_test.go (boom-0vp.17) --
 func findCell(cells []PunchcardCell, dow, hour int) int64 {
 	for _, c := range cells {
 		if c.Dow == dow && c.Hour == hour {

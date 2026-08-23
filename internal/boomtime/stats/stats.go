@@ -49,10 +49,10 @@ func (h *Handler) Stats(c *echo.Context) error {
 		// Categories are fetched separately (get_user_activity_rollup collapses
 		// category back to the 5-axis output grain; a category-broken-down series
 		// still needs its own scan) and respect the same all-axis hide exclusion +
-		// rename remap + timeLimit + space. gaka-dg7: same tz as the activity
+		// rename remap + timeLimit + space. boom-dg7: same tz as the activity
 		// scan so both series bucket on the same day boundary.
 		//
-		// gaka-o4m: same rollup fast-path gate as the activity scan above — at
+		// boom-o4m: same rollup fast-path gate as the activity scan above — at
 		// the default 15-min limit with no hide / no Space rule outside
 		// RollupAxes, serve the pre-aggregated hb_rollup_daily instead of scanning
 		// raw heartbeats. Category IS a rollup axis so the pie's output shape is
@@ -69,7 +69,7 @@ func (h *Handler) Stats(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		// gaka-csx P3: OPTIONAL GitHub contribution overlay. A CHEAP local read
+		// boom-csx P3: OPTIONAL GitHub contribution overlay. A CHEAP local read
 		// of the owner's cached grid (no external GitHub call) — when absent
 		// (never connected / feature off / never synced) the grid is nil and
 		// GithubDailyTotal is omitted, so the payload is byte-identical to today.
@@ -116,7 +116,7 @@ func (h *Handler) StatusbarToday(c *echo.Context) error {
 	if err != nil {
 		return apihelpers.RespondErr(c, apierr.Generic())
 	}
-	// gaka-dg7: "today" bounded by the user's local midnight (per user tz +
+	// boom-dg7: "today" bounded by the user's local midnight (per user tz +
 	// server default resolver), not UTC midnight — a 23:59 PT status bar
 	// refresh previously showed the next UTC day's (empty) window.
 	tz := apihelpers.ResolveUserTZ(h.DB, h.Logger, ctx, owner, h.Cfg.DefaultTimezoneValue())

@@ -6,7 +6,7 @@ import { useBetaRegistration } from "@shared/features/onboarding/betaRegistratio
 import { getRoutes } from "@shared/shared/routing/registry";
 import type { RouteDef } from "@shared/shared/routing/types";
 
-// gaka-zp2s: the route table is now REGISTRATION-DRIVEN, mirroring the nav /
+// boom-zp2s: the route table is now REGISTRATION-DRIVEN, mirroring the nav /
 // settings / admin seams. App.tsx (the shell) imports NO domain page — every
 // route is pushed into @shared/shared/routing/registry by a domain's register module
 // (core owns the shell + auth/public routes + Overview/Settings/Admin;
@@ -46,7 +46,7 @@ function buildRouteElements(
     });
 }
 
-// BetaOnboardingGate (gaka-93f.1.2): the single global inspector for the
+// BetaOnboardingGate (boom-93f.1.2): the single global inspector for the
 // ?enable_beta_user_registration=true switch. Mounted in RootLayout — the one
 // place that sees EVERY path, logged-in or not — it captures the URL flag
 // (via useBetaRegistration) and, while the preview is active, redirects to
@@ -66,7 +66,7 @@ function BetaOnboardingGate() {
   return null;
 }
 
-// gaka-ie3: split into two exports for the data-router migration.
+// boom-ie3: split into two exports for the data-router migration.
 // `RootLayout` is the top-level route element mounted by createBrowserRouter —
 // it owns providers that historically lived in main.tsx (AuthProvider +
 // AnalyticsTracker) but need access to the router context. `AppRoutes` is the

@@ -1,4 +1,4 @@
-// EditableProfilePage.test.tsx (gaka-ie3) — verify that the /p/:slug route
+// EditableProfilePage.test.tsx (boom-ie3) — verify that the /p/:slug route
 // dispatches correctly between:
 //
 //   1. Anonymous visitor (no auth cookie): read-only PublicDashboard

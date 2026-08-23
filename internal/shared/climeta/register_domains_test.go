@@ -1,4 +1,4 @@
-// register_domains_test.go — test-only blank imports (gaka-zp2s). The domain-coupled
+// register_domains_test.go — test-only blank imports (boom-zp2s). The domain-coupled
 // web-run commands ("hardcover dedup-reads", "backfill github-stats") now live in the
 // books / github domains and register themselves into climeta's allowlist via their
 // packages' init(). climeta's own spec/registry tests assert the full command set, so

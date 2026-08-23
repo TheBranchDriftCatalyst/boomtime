@@ -1,5 +1,5 @@
 // Package comfyui is a thin HTTP client for the mac-sdlc-node comfyui-shim
-// (gaka-myv), the OpenAI-shaped image-generation endpoint fronting a local
+// (boom-myv), the OpenAI-shaped image-generation endpoint fronting a local
 // ComfyUI instance. See
 // /Users/panda/catalyst-devspace/workspace/mac-sdlc-node/services/comfyui-shim/README.md
 // for the shim's contract.

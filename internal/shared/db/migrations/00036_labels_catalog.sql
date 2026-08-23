@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- gaka-364.3: labels catalog moved from TypeScript to the DB. Previously the
+-- boom-364.3: labels catalog moved from TypeScript to the DB. Previously the
 -- 114-entry manifest lived in web/shared/features/publicprofile/labels/catalog.ts
 -- and every edit required a PR + deploy — painful for iterating on prompts +
 -- imagery. Post-pivot, the FE fetches /api/v1/labels/catalog and the admin
@@ -15,7 +15,7 @@
 --   label             — SHOUTY UPPERCASE display string.
 --   glyph             — optional 1-3 char icon (emoji or symbol).
 --   description       — rich narrative (2-3 sentences). Human-facing.
---                       Populated from the creative-writer manifest (gaka-364.2).
+--                       Populated from the creative-writer manifest (boom-364.2).
 --   optimized_prompt  — SDXL/Chroma tag-heavy string sent to comfyui at gen
 --                       time. Concatenated as `${systemPrompt}, ${optimizedPrompt}`.
 --   rank              — display priority; higher shows first in the hero top-N.
@@ -66,7 +66,7 @@ INSERT INTO public.label_gen_config (singleton, system_prompt) VALUES (true, '')
 
 -- Seed: 114 label rows. Derived byte-for-byte from
 -- web/shared/features/publicprofile/labels/catalog.ts (id, kind, label, glyph,
--- rank, tier, condition) + the creative-writer manifest (gaka-364.2) at
+-- rank, tier, condition) + the creative-writer manifest (boom-364.2) at
 -- web/shared/features/publicprofile/labels/prompts.manifest.json (description,
 -- optimizedPrompt, systemPrompt).
 --

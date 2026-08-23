@@ -1,4 +1,4 @@
-// Package books is the catalyst-books domain module (gaka-zp2s). It implements
+// Package books is the catalyst-books domain module (boom-zp2s). It implements
 // catalyst.Module end-to-end: the encrypted/backup column contract (so
 // key-rotation + backups are registry-driven), the HTTP surface (RegisterRoutes →
 // internal/books/api), the admin surface (RegisterAdminRoutes → internal/books/admin),

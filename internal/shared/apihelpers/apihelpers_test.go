@@ -1,6 +1,6 @@
 // apihelpers_test.go — ginkgo coverage for the shared HTTP-plumbing
 // helpers. Rehomes the coverage that used to live at
-// internal/handler/handler_helpers_test.go (pre gaka-8tn phase 8), which
+// internal/handler/handler_helpers_test.go (pre boom-8tn phase 8), which
 // tested the same code paths via the god-type shim methods
 // (h.resolveOwnerFromCookie / h.loadSpace / h.resolveUser / h.cachedJSON /
 // h.cachedBlob). Every assertion + Describe/Context/It string here is
@@ -342,7 +342,7 @@ var _ = Describe("apihelpers.CachedJSON compute + marshal error branches", func(
 		})
 		Expect(err).NotTo(HaveOccurred(), "cachedJSON writes the response and returns nil (echo convention)")
 
-		// gaka-d6x.handler critique fix: the previous spec only checked
+		// boom-d6x.handler critique fix: the previous spec only checked
 		// the cache miss — a regression that silently 200'd with an empty
 		// body while skipping the cache would pass. Assert the OBSERVABLE
 		// wire outcome: 500 status + Generic envelope body.

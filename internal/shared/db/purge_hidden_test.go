@@ -1,4 +1,4 @@
-// purge_hidden_ginkgo_test.go — ginkgo mirror of purge_hidden_test.go (gaka-0vp.13).
+// purge_hidden_ginkgo_test.go — ginkgo mirror of purge_hidden_test.go (boom-0vp.13).
 // 1:1 case map (7 stdlib TestXxx → 7 Its):
 //
 //	TestPurgeHiddenRuleExactHappyPath           → It "exact happy path: deletes matching rows + rule row"
@@ -189,5 +189,5 @@ var _ = ginkgo.Describe("PurgeHiddenRule", func() {
 	})
 })
 
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
+// -- helpers restored from stdlib partner (boom-0vp.17) --
 func ptrStr(s string) *string { return &s }

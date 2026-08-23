@@ -1,5 +1,5 @@
 // LabelImage.test.tsx — non-tautological coverage of the image-with-glyph-
-// fallback component (gaka-myv).
+// fallback component (boom-myv).
 //
 // Invariants under test:
 //   - src is built from the label id (URL-encoded)

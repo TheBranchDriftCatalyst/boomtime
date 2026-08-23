@@ -1,7 +1,7 @@
 -- Phase A: windowless conditional SUM over precomputed gap_seconds, grouped by
 -- project/language/sender. gap_seconds is per-sender by construction, which also
 -- fixes the previous cross-user lag() bug. $1 start, $2 end. (15-min limit.)
--- gaka-6ci: project_missing / language_missing carry the raw-NULL discriminator
+-- boom-6ci: project_missing / language_missing carry the raw-NULL discriminator
 -- so ToLeaderboardsPayload can build per-language sub-leaderboards WITHOUT the
 -- 'Other' bucket (browser tabs / AI console with no language). The GLOBAL
 -- leaderboard still sums over every row so total-time-per-user stays honest.

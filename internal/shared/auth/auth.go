@@ -16,7 +16,7 @@ import (
 
 // Argon2id parameters, versioned.
 //
-// gaka-awh.6 (Bravo MEDIUM): the original params (time=1, parallelism=4) were
+// boom-awh.6 (Bravo MEDIUM): the original params (time=1, parallelism=4) were
 // BELOW OWASP ASVS L1 2025's floor on time and ABOVE its recommendation on
 // parallelism (=1 keeps CPU-cache contention working against GPU crackers).
 // We can't force existing users to re-enter their password, so we keep the
@@ -79,7 +79,7 @@ func argonParamsFor(version int) (time uint32, memKiB uint32, parallelism uint8)
 // used by BurnSentinelVerify to make the "no such user" branch of Login take
 // the SAME wall-clock time as the "user exists / wrong password" branch.
 // Value is arbitrary (never accepted anywhere) — only the CPU cost matters.
-const sentinelPassword = "gaka-imm-constant-time-sentinel-do-not-accept"
+const sentinelPassword = "boom-imm-constant-time-sentinel-do-not-accept"
 
 var (
 	sentinelOnce sync.Once
@@ -117,7 +117,7 @@ func initSentinel() {
 // BurnSentinelVerify runs Argon2id against the sentinel hash+salt using the
 // caller-supplied password, discards the result, and returns. Callers hit this
 // on the "user does not exist" branch of Login so that path takes the same
-// ~10ms as the "user exists / wrong password" branch — closing gaka-imm's
+// ~10ms as the "user exists / wrong password" branch — closing boom-imm's
 // timing oracle. The return value is intentionally ignored; the compiler
 // cannot elide the argon2.IDKey call because subtle.ConstantTimeCompare has
 // observable side-effects on the sink argument. Callers MUST still return
@@ -134,7 +134,7 @@ func BurnSentinelVerify(password string) {
 }
 
 // SentinelVerifyCount returns how many times BurnSentinelVerify has run in
-// this process. Exposed for gaka-imm's spy test — production callers must not
+// this process. Exposed for boom-imm's spy test — production callers must not
 // depend on this value.
 func SentinelVerifyCount() uint64 {
 	sentinelCountMu.Lock()
@@ -143,7 +143,7 @@ func SentinelVerifyCount() uint64 {
 }
 
 // HashToken returns the SHA-256 digest of a raw session token as bytes.
-// gaka-b5x part 2: refresh_tokens.refresh_token and auth_tokens.token used to
+// boom-b5x part 2: refresh_tokens.refresh_token and auth_tokens.token used to
 // be stored verbatim as the base64(uuid) value the client presents; a DB read
 // yielded directly usable sessions. We now store SHA-256 of the token in a
 // new bytea column and compare on lookup. No salt: the raw tokens are already
@@ -167,7 +167,7 @@ func HashPassword(password string) (hash, salt []byte, err error) {
 // generation. version = ArgonVersionCurrent (2) is what every new user + every
 // rehash-on-login lands at. version = ArgonVersionLegacy (1) is only used by
 // tests planting a pre-Bravo hash so we can exercise the transparent upgrade
-// path (gaka-awh.6).
+// path (boom-awh.6).
 func HashPasswordWithVersion(password string, version int) (hash, salt []byte, err error) {
 	salt = make([]byte, saltLen)
 	if _, err = rand.Read(salt); err != nil {
@@ -192,7 +192,7 @@ func VerifyPassword(password string, storedHash, storedSalt []byte) bool {
 // with v1 params (and a v2 hash with v2 params). Cross-version verification
 // returns false — a v1 hash checked with v2 params does NOT authenticate.
 func VerifyPasswordWithVersion(password string, storedHash, storedSalt []byte, version int) bool {
-	// gaka-93f.19: explicit empty-hash reject. OIDC-provisioned users store an
+	// boom-93f.19: explicit empty-hash reject. OIDC-provisioned users store an
 	// empty hashed_password (they authenticate via the IdP, never a local
 	// password). Such a row must never authenticate via /auth/login. This is
 	// belt-and-suspenders: the ConstantTimeCompare below already fails because

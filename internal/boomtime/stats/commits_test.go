@@ -1,4 +1,4 @@
-// commits_test.go — gaka-d6x.handler: cover Commits guard paths.
+// commits_test.go — boom-d6x.handler: cover Commits guard paths.
 //
 // Named invariants:
 //
@@ -28,7 +28,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
-var _ = Describe("Commits endpoint (gaka-d6x.handler)", func() {
+var _ = Describe("Commits endpoint (boom-d6x.handler)", func() {
 	It("rejects unauth'd GET with 4xx", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
@@ -62,12 +62,12 @@ var _ = Describe("Commits endpoint (gaka-d6x.handler)", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		// Nonsense token; api.github.com will 401 → fetchCommits returns
 		// an error → handler surfaces a generic 500.
-		hz.Cfg.GithubToken = "definitely-not-a-real-token-gaka-d6x"
+		hz.Cfg.GithubToken = "definitely-not-a-real-token-boom-d6x"
 		e := hz.Router()
 		_, token := hz.MintUser("commits_upstream_fail")
 
 		rec := doJSONReqG(e, http.MethodGet,
-			"/api/v1/commits/alpha/report?repoName=nonexistent-repo-gaka-d6x&repoOwner=TheBranchDriftCatalyst&user=someuser",
+			"/api/v1/commits/alpha/report?repoName=nonexistent-repo-boom-d6x&repoOwner=TheBranchDriftCatalyst&user=someuser",
 			token, nil)
 		Expect(rec).To(testutil.HaveStatus(http.StatusInternalServerError),
 			"body=%s", rec.Body.String())

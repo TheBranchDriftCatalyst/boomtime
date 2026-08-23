@@ -27,7 +27,7 @@ interface GroupableExplorerProps<Row> {
 }
 
 /**
- * The whole public surface of the groupable explorer (gaka-02sh). Renders the
+ * The whole public surface of the groupable explorer (boom-02sh). Renders the
  * "Group by" bar + a server-driven drill-down table for any domain, driven
  * entirely by its DomainConfig. Zero group axes render leaf rows directly
  * unless the config supplies an `addAxisHint` (heartbeats requires an axis).

@@ -1,9 +1,9 @@
 -- Fast path for Momentum at the default 15-min limit: read the pre-aggregated
 -- hb_rollup_daily instead of scanning raw heartbeats. The rollup's `day` column
--- is already computed in the sender's TZ at ingest (gaka-dg7), so
+-- is already computed in the sender's TZ at ingest (boom-dg7), so
 -- date_trunc('week', day) yields the same ISO Monday the raw path would in
 -- user-local TZ. Rollup rows always have project = coalesce(raw project, 'Other')
--- so we filter null-project rows via the project_missing flag (gaka-6ci) to
+-- so we filter null-project rows via the project_missing flag (boom-6ci) to
 -- mirror the raw path's `AND project IS NOT NULL` — otherwise browsing time
 -- (null project) would surface as a fake "Other" project bump.
 --

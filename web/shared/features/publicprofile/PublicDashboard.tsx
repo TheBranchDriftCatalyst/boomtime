@@ -1,5 +1,5 @@
-// PublicDashboard — /p/:slug read-only public dashboard (gaka-6jm.1 +
-// gaka-keb).
+// PublicDashboard — /p/:slug read-only public dashboard (boom-6jm.1 +
+// boom-keb).
 //
 // Composes the isolated grid primitive (@shared/lib/grid) with boomtime-specific
 // pieces: the catalog-derived widget instances, the dbStorageAdapter, and
@@ -37,13 +37,13 @@ import "./hacker.css";
 // Arasaka overrides are scoped by .theme-arasaka .public-dashboard, so
 // this import is a no-op for every other theme. See ./arasaka.css.
 import "./arasaka.css";
-// Dossier foundation (gaka-174.1). Loaded LAST so its clean-mode classline
+// Dossier foundation (boom-174.1). Loaded LAST so its clean-mode classline
 // rule wins over arasaka.css's base `display:none`; arasaka's higher-
 // specificity `.theme-arasaka …` rules still win under that theme.
 import "./dossier.css";
 
 export interface PublicDashboardProps {
-  /** Explicit slug (gaka-4ng: the in-app owner view at /app/profile has no
+  /** Explicit slug (boom-4ng: the in-app owner view at /app/profile has no
    * :slug route param, so it injects the owner's resolved slug). Falls back to
    * the /p/:slug route param when omitted. */
   slug?: string;
@@ -53,7 +53,7 @@ export function PublicDashboard({ slug: slugProp }: PublicDashboardProps = {}) {
   const params = useParams<{ slug: string }>();
   const slug = slugProp ?? params.slug ?? "";
 
-  // gaka-174.7: the selected stats window drives the payload query. The
+  // boom-174.7: the selected stats window drives the payload query. The
   // query key carries `rangeDays` so switching windows refetches; the base
   // qk.publicDashboard(slug) stays a prefix so invalidations still match.
   const [rangeDays] = useProfileRange();
@@ -139,14 +139,14 @@ function DashboardBody({ data, slug }: { data: PublicDashboardPayload; slug: str
   // In-memory storage: the public page is read-only. View toggles + drag
   // are all client-side state and evaporate on refresh. The owner uses
   // the inline ProfileEditor (rendered by EditableProfilePage when the
-  // caller owns the profile) to persist changes; see gaka-ie3.
+  // caller owns the profile) to persist changes; see boom-ie3.
   const storage = useMemo(() => memoryAdapter(seed), [seed]);
 
   const version = window.location.host;
 
   return (
     <div className="public-dashboard">
-      {/* gaka-174.1: the whole page reads as one dossier "file". The frame
+      {/* boom-174.1: the whole page reads as one dossier "file". The frame
        * carries the spine hairlines + corner registration marks; the inner
        * column holds the classification strip, hero, grid, and footer. */}
       <div className="public-dashboard__frame mx-auto max-w-7xl">
@@ -155,16 +155,16 @@ function DashboardBody({ data, slug }: { data: PublicDashboardPayload; slug: str
         <span className="dossier-corner dossier-corner--bl" aria-hidden />
         <span className="dossier-corner dossier-corner--br" aria-hidden />
 
-        {/* gaka-k2p + gaka-174.1: dossier classification strip. Clean mode
+        {/* boom-k2p + boom-174.1: dossier classification strip. Clean mode
          * shows a restrained neutral line; the arasaka theme restores the
          * loud CLEARANCE/CLASSIFIED/katakana embellishments (dossier.css). */}
         <DossierClassLine username={data.username} slug={slug} />
         <header className="public-dashboard__hero">
-          {/* gaka-174.3: lazy WebGL ambient field behind the hero. Renders
+          {/* boom-174.3: lazy WebGL ambient field behind the hero. Renders
            * nothing on no-WebGL / reduced-motion clients — the hero stays
            * fully legible without it. */}
           <HeroBackdrop />
-          {/* gaka-174: the "> PROFILE · <user>@boomtime" meta line was
+          {/* boom-174: the "> PROFILE · <user>@boomtime" meta line was
            * redundant with the big title + the SERVICE RECORD strip and just
            * ate vertical space — removed. */}
           <h1 className="public-dashboard__hero-title" data-testid="public-username">
@@ -179,7 +179,7 @@ function DashboardBody({ data, slug }: { data: PublicDashboardPayload; slug: str
             </span>
           </div>
 
-          {/* gaka-174.1: labeled dossier field rail — the element that turns
+          {/* boom-174.1: labeled dossier field rail — the element that turns
            * the header into a service record instead of a page title. */}
           <dl className="public-dashboard__dossier-fields">
             <DossierField label="Subject" value={data.username} />
@@ -211,16 +211,16 @@ function DashboardBody({ data, slug }: { data: PublicDashboardPayload; slug: str
         </footer>
       </div>
 
-      {/* gaka-174.2: floating dossier controls + the reclassify sweep that
+      {/* boom-174.2: floating dossier controls + the reclassify sweep that
        * plays when the theme (dossier skin) changes. Available to any viewer;
-       * owner-canonical persistence is the follow-up half of gaka-174.2. */}
+       * owner-canonical persistence is the follow-up half of boom-174.2. */}
       <DossierControls />
       <ReclassifyOverlay />
     </div>
   );
 }
 
-// gaka-174.1: one labeled cell in the dossier field rail. Rendered as a
+// boom-174.1: one labeled cell in the dossier field rail. Rendered as a
 // <div> inside a <dl> is fine for our purposes — this is decorative chrome,
 // not a semantic definition list consumers depend on.
 function DossierField({
@@ -262,7 +262,7 @@ function fmtRange(startISO: string, endISO: string): string {
   return `${start.toLocaleDateString(undefined, opts)} — ${end.toLocaleDateString(undefined, opts)}`.toUpperCase();
 }
 
-// gaka-k2p: dossier classification banner.
+// boom-k2p: dossier classification banner.
 //
 // Only styled under the Arasaka theme (see arasaka.css
 // `.public-dashboard__classline`); every other theme keeps the element in
@@ -274,7 +274,7 @@ function DossierClassLine({ username, slug }: { username: string; slug: string }
   const fileId = shortHash(slug || username);
   const rev = new Date().toISOString().slice(0, 10).replace(/-/g, ".");
   const subject = username.toUpperCase();
-  // gaka-174.1: the strip renders a RESTRAINED neutral line in clean mode
+  // boom-174.1: the strip renders a RESTRAINED neutral line in clean mode
   // ("SERVICE RECORD · SUBJECT: … · FILE #… · REV …"). The arasaka-only spans
   // (hidden by dossier.css outside .theme-arasaka) restore the loud
   // CLEARANCE/CLASSIFIED/-ARASAKA-∞ embellishments — keeping the exact strings

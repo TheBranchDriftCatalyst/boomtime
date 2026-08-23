@@ -1,5 +1,5 @@
 // goals.go — composite predicate-tree evaluator for user-defined goals
-// (gaka-wpb).
+// (boom-wpb).
 //
 // The public surface:
 //
@@ -12,7 +12,7 @@
 //
 // The evaluator queries hb_rollup_daily directly, mirroring the fast-path
 // used by the Overview stats. Case-fold on the aggregation axis follows
-// the same `lower(col) = lower($n)` convention gaka-5db locked in for
+// the same `lower(col) = lower($n)` convention boom-5db locked in for
 // curation/rename queries — a leaf `time` predicate targeting
 // value="Python" MUST also count "python" / "PYTHON" rows, otherwise
 // goals silently under-count.
@@ -125,7 +125,7 @@ var validTimeSources = map[string]bool{
 }
 
 // validReadingAxes whitelists the optional reading DIMENSION a reading time
-// leaf may filter by (gaka-dvy9). It mirrors the reading domain's `runtime`
+// leaf may filter by (boom-dvy9). It mirrors the reading domain's `runtime`
 // measure Dims (internal/query/domains.go) — the only measure that carries
 // per-book attribution — restricted to the dimensions that make sense as a goal
 // filter:
@@ -139,7 +139,7 @@ var validTimeSources = map[string]bool{
 //     author-filtered runtime query), so we reject it here at validate time
 //     rather than let it fail deep in the evaluator.
 //
-// DATA REALITY (gaka-dvy9): listening TIME (reading_activity) is not
+// DATA REALITY (boom-dvy9): listening TIME (reading_activity) is not
 // attributable to a genre — reading_activity has no per-book columns. The
 // answerable metric is the RUNTIME of books in a genre FINISHED in the window
 // (reading_items.runtime_min, dated by finished_at). So an axis'd reading goal
@@ -231,7 +231,7 @@ func validateNode(p *Predicate, depth int) error {
 				return fmt.Errorf("unknown axis %q on time predicate", p.Axis)
 			}
 		case "reading":
-			// A reading leaf has two shapes (gaka-dvy9):
+			// A reading leaf has two shapes (boom-dvy9):
 			//   - NO axis  → total listening time over the window
 			//     (reading_activity.listening_seconds). A stray value with no
 			//     axis is meaningless — reject it.
@@ -425,7 +425,7 @@ func (e *evaluator) evalTime(ctx context.Context, p *Predicate) (bool, float64, 
 	}
 	start, end := windowRange(e.now, p.Window)
 
-	// Case-fold on the axis value (gaka-5db lesson). When Value is nil,
+	// Case-fold on the axis value (boom-5db lesson). When Value is nil,
 	// the axis filter is dropped entirely — we want the total on the
 	// axis regardless of value. When Value is "" we still lower-fold
 	// (empty matches empty; distinct from nil).
@@ -458,7 +458,7 @@ func (e *evaluator) evalTime(ctx context.Context, p *Predicate) (bool, float64, 
 }
 
 // evalTimeReading is the source=="reading" arm of a time leaf. It has two modes,
-// selected by whether the leaf carries a reading axis (gaka-dvy9):
+// selected by whether the leaf carries a reading axis (boom-dvy9):
 //
 //   - NO axis  → total listening time: sum(listening_seconds) from
 //     reading_activity over the window (the v1 path, unchanged). Result is

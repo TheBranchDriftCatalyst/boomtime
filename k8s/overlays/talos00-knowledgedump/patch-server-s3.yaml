@@ -1,6 +1,6 @@
 ---
 # Deliver the scoped MinIO credentials to the SERVER for the durable
-# social-card cache (gaka-fym5). Only the server renders og.png, so only it
+# social-card cache (boom-fym5). Only the server renders og.png, so only it
 # needs S3 — the worker (image-label jobs) is untouched.
 #
 # The secret `boomtime-cards-s3-scoped` is reflected into this namespace by the

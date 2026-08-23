@@ -1,5 +1,5 @@
 // ai_activity.go: AI-assistance aggregation on the AI heartbeat columns
-// captured in migration 00021 (gaka-1l9). Powers the "AI Assistance" card on
+// captured in migration 00021 (boom-1l9). Powers the "AI Assistance" card on
 // Overview — per-day AI/human line-change split, prompt token totals,
 // distinct AI-session count, and the latest subscription plan we've seen.
 //

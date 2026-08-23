@@ -1,4 +1,4 @@
-// usePins — react-query binding for canonical-entity PINS (gaka-canon).
+// usePins — react-query binding for canonical-entity PINS (boom-canon).
 //
 // A pin is a curation rule with action="pin" that forces its (axis, value) to
 // always get its own slice/bar and never fall into the bucket "Other" roll-up.

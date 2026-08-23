@@ -1,5 +1,5 @@
 // config_github_test.go — inert-safe invariant for the GitHub-connect gate
-// (gaka-2ip Phase 1). GithubConnectEnabled() must fail closed unless ALL of:
+// (boom-2ip Phase 1). GithubConnectEnabled() must fail closed unless ALL of:
 // the master gate, client id, client secret, and state signing key are present.
 package config
 

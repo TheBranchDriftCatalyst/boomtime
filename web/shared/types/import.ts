@@ -5,7 +5,7 @@ export interface ImportRequest {
   // Raw wakatime.com api_key exactly as pasted by the user (waka_<uuid> or a
   // bare UUID). The server does the single Basic base64-encode into the
   // Authorization header; any client-side btoa() here would double-encode
-  // and wakatime.com would 401 (gaka-f2l). Omitted entirely when the user
+  // and wakatime.com would 401 (boom-f2l). Omitted entirely when the user
   // leaves the token blank so the server falls back to its env-configured key.
   apiToken?: string;
   startDate: string; // ISO
@@ -49,13 +49,13 @@ export interface ImportJob {
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;
-  // gaka-unq.1: wakatime.com API schema-drift findings observed during the
+  // boom-unq.1: wakatime.com API schema-drift findings observed during the
   // run. Undefined/null when clean. Warning severity => banner; error severity
   // => banner + red tint.
   drift?: DriftFinding[] | null;
 }
 
-// gaka-unq.1: one wakatime.com API schema-drift finding. Mirrors the Go
+// boom-unq.1: one wakatime.com API schema-drift finding. Mirrors the Go
 // DriftFinding struct in internal/importer/drift.go.
 export interface DriftFinding {
   endpoint: string;

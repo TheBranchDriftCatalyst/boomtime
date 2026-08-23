@@ -1,4 +1,4 @@
-// LinesOfCodeCard.test.tsx (gaka-yfg) — the LOC widget's headline/empty/loading
+// LinesOfCodeCard.test.tsx (boom-yfg) — the LOC widget's headline/empty/loading
 // states. The self-fetch hook is mocked so the test exercises the presentation
 // (compact formatting, per-project rows, gentle empty state) without a network
 // or an OverviewDataProvider.

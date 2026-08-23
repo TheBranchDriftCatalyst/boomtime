@@ -5,7 +5,7 @@ export interface VersionResponse {
   version: string;
 }
 
-// Public client-config advertisement — GET /api/v1/config/public (gaka-93f.1.1).
+// Public client-config advertisement — GET /api/v1/config/public (boom-93f.1.1).
 // Mirrors internal/meta/config_public.go PublicConfigResponse. Non-sensitive:
 // only modes/flags the FE needs at boot to pick the auth + onboarding flow.
 export interface PublicConfig {
@@ -14,7 +14,7 @@ export interface PublicConfig {
   oidc_enabled: boolean;
   billing_enabled: boolean;
   beta_flags: Record<string, boolean>; // e.g. { user_registration: true }
-  // gaka-2ip Phase 1: per-user GitHub connect. true ONLY when the server gate
+  // boom-2ip Phase 1: per-user GitHub connect. true ONLY when the server gate
   // is on AND the OAuth-App creds + state signing key are configured. The
   // GitHubConnectCard renders nothing when false, so the surface is inert.
   github_connect_enabled: boolean;
@@ -37,7 +37,7 @@ export interface AmazonConnection {
 // The canonical reading-status vocabulary — EXACT strings, 1:1 with Hardcover's
 // enum (want=1 / reading=2 / read=3 / paused=4 / dnf=5). One shared set drives
 // the status pill, the editable dropdown, the group values, AND the filter, so
-// filter labels == group values == pill labels == Hardcover names (gaka-books).
+// filter labels == group values == pill labels == Hardcover names (boom-books).
 export const BOOK_STATUSES = [
   "want",
   "reading",
@@ -47,7 +47,7 @@ export const BOOK_STATUSES = [
 ] as const;
 export type BookStatus = (typeof BOOK_STATUSES)[number];
 
-// Body of PATCH /api/v1/books/items/:id/curation (gaka-books). Every field is
+// Body of PATCH /api/v1/books/items/:id/curation (boom-books). Every field is
 // optional: only present keys are written, so a rating edit never disturbs the
 // status override. `null` on rating/finishedAt CLEARS that override (revert to
 // the derived layer). status is always one of the 5 canonical values.
@@ -57,7 +57,7 @@ export interface CurationPatch {
   finishedAt?: string | null;
 }
 
-// gaka-books: state of the SERVER-side reading monitor (the persistent engine
+// boom-books: state of the SERVER-side reading monitor (the persistent engine
 // that polls each in-progress Kindle book's furthest-page-read and toasts on a
 // reading ping). The admin panel is a thin control over this: GET reads it, PUT
 // flips `enabled` / `mode`. `mode` picks toast frequency — debounced = one toast
@@ -66,7 +66,7 @@ export interface CurationPatch {
 // last observed a reading ping (null before the first).
 export type ReadingMonitorMode = "debounced" | "verbose";
 
-// Empirically-derived optimal poll intervals (gaka-books). Computed server-side
+// Empirically-derived optimal poll intervals (boom-books). Computed server-side
 // from observed whispersync advances so the admin panel can STATE the answer to
 // "what's the optimal polling timeframe" in plain English, not just link out.
 //   detectSecs        — how often to sweep ALL books for a new advance;
@@ -103,7 +103,7 @@ export interface ReadingMonitorState {
   mode: ReadingMonitorMode;
   activeBooks: number;
   lastPingAt: string | null;
-  // gaka-books: the optimal-interval answer, or null until enough data.
+  // boom-books: the optimal-interval answer, or null until enough data.
   recommendation: ReadingMonitorRecommendation | null;
   // rm2 · diagnostic (calibration) mode. When `calibrating` is true a temporary
   // HIGH-FIDELITY window (~10s polling) is running to measure the true sync
@@ -155,7 +155,7 @@ export interface ReadingItemDTO {
   title: string;
   authors: string;
   // EFFECTIVE status: override ?? Amazon-derived. One of the canonical 1:1
-  // Hardcover statuses — want | reading | read | paused | dnf (gaka-books).
+  // Hardcover statuses — want | reading | read | paused | dnf (boom-books).
   status: string;
   progressPercent: number;
   finished: boolean;
@@ -163,7 +163,7 @@ export interface ReadingItemDTO {
   finishedAt?: string;
   rating?: number;
   syncedAt: string;
-  // --- Curation override layer (gaka-books) --------------------------------
+  // --- Curation override layer (boom-books) --------------------------------
   // `status`/`rating`/`finishedAt` above are the EFFECTIVE values (override ??
   // derived). These expose the two layers so the FE can show provenance and
   // let a user curate the status/rating/finish that maps to Hardcover:
@@ -180,7 +180,7 @@ export interface ReadingItemDTO {
   statusIsOverride?: boolean;
   ratingOverride?: number | null;
   finishedAtOverride?: string | null;
-  // Richer metadata (gaka-books) — optional; a low-fidelity source omits them.
+  // Richer metadata (boom-books) — optional; a low-fidelity source omits them.
   // Powers the Books page covers + fuller rows.
   coverUrl?: string;
   subtitle?: string;
@@ -188,7 +188,7 @@ export interface ReadingItemDTO {
   narrators?: string;
   runtimeMin?: number;
   goodreadsRating?: number;
-  // Identifiers for precise external linking (gaka-qic0). external_id is the
+  // Identifiers for precise external linking (boom-qic0). external_id is the
   // ASIN; amazonAsin is the print/kindle sibling; isbn is NULL for audiobooks.
   isbn?: string;
   amazonAsin?: string;
@@ -199,7 +199,7 @@ export interface ReadingItemDTO {
   hardcoverStatus?: string | null;
   hardcoverMatchedAt?: string;
   // The book's Hardcover slug — the /books/<slug> deep-link segment. Preferred
-  // over the numeric id, which 404s on Hardcover's book pages (gaka-qic0). NULL
+  // over the numeric id, which 404s on Hardcover's book pages (boom-qic0). NULL
   // until a re-match / re-pull backfills it onto an already-matched row.
   hardcoverSlug?: string | null;
   // Hardcover LIST memberships (migration 00077) — a property of the book, many-to-
@@ -244,7 +244,7 @@ export interface ReadEvent {
 }
 
 // One ENRICHED reading-event row (leaf of the Reading Events explorer tab,
-// gaka-z5dz). Mirrors the `readingEvents` domain RowSource projection over the
+// boom-z5dz). Mirrors the `readingEvents` domain RowSource projection over the
 // reading_events_enriched view: the event fields (origin/source/finished) plus the
 // book metadata resolved by the LATERAL join to reading_items (title/authors/
 // series/status). Distinct from ReadEvent (the Book-panel history, no book meta):
@@ -276,7 +276,7 @@ export interface HardcoverCandidate {
   slug: string;
 }
 
-// Admin caps dashboard — GET /api/v1/admin/users (gaka-93f.6). Mirrors
+// Admin caps dashboard — GET /api/v1/admin/users (boom-93f.6). Mirrors
 // internal/admin/users.go adminUsersResponse.
 export interface AdminUserRow {
   username: string;
@@ -290,7 +290,7 @@ export interface AdminUsersPayload {
   users: AdminUserRow[];
 }
 
-// Admin jobs tab — GET /api/v1/admin/jobs + /schedules (gaka-hney). Mirrors
+// Admin jobs tab — GET /api/v1/admin/jobs + /schedules (boom-hney). Mirrors
 // internal/admin/jobs.go. Admin-gated (403 for non-admins); the tab is hidden
 // from the sidebar for non-admins just like the other admin sections.
 export type AdminJobStatus =
@@ -328,7 +328,7 @@ export interface AdminJobSchedulesPayload {
 }
 
 // One row of the per-kind queue overview — GET /api/v1/admin/jobs/queues
-// (gaka-hney). Mirrors internal/admin.queueKindDTO. queued/running are the live
+// (boom-hney). Mirrors internal/admin.queueKindDTO. queued/running are the live
 // depth; maxConcurrency (0 = unlimited) is the registry cap, so running/max is
 // the headroom bar and running >= max (with a backlog) is back-pressure.
 // doneLastHour/failedLastHour/avgDurationMs are the trailing-hour throughput
@@ -348,7 +348,7 @@ export interface AdminJobQueuesPayload {
   queues: AdminJobQueue[];
 }
 
-// Rate-metric registry — GET /api/v1/admin/metrics (gaka-metrics). Mirrors
+// Rate-metric registry — GET /api/v1/admin/metrics (boom-metrics). Mirrors
 // internal/metrics.Series. A generic rolling time-series: any backend call to
 // metrics.Inc(name)/Observe(name) appears here as a series, so the FE renders
 // it with zero per-metric wiring. `kind` is "counter" (a per-minute rate) or
@@ -369,7 +369,7 @@ export interface MetricsPayload {
   series: MetricSeries[];
 }
 
-// Prometheus gathered view — GET /api/v1/admin/metrics (gaka-metrics, pivoted
+// Prometheus gathered view — GET /api/v1/admin/metrics (boom-metrics, pivoted
 // to Prometheus). The endpoint Gather()s internal/metrics.Registry (the SAME
 // registry scraped at /metrics for Grafana) and flattens each family into
 // {name, help, type, samples}. `type` is the Prometheus metric type
@@ -398,7 +398,7 @@ export interface MetricsFamiliesPayload {
   families: MetricFamily[];
 }
 
-// Linked external identities — GET /api/v1/users/current/identities (gaka-b5n.4).
+// Linked external identities — GET /api/v1/users/current/identities (boom-b5n.4).
 export interface LinkedIdentity {
   provider: string;
   email: string;
@@ -411,7 +411,7 @@ export interface IdentitiesPayload {
   hasPassword: boolean; // does the caller still have a local password?
 }
 
-// GitHub connection status — GET /api/v1/users/current/github (gaka-2ip Phase 1).
+// GitHub connection status — GET /api/v1/users/current/github (boom-2ip Phase 1).
 // Mirrors internal/identity/github_oauth.go githubConnectionResponse. NEVER
 // carries the access token — only presence + the (safe) login + last status.
 export interface GithubConnection {

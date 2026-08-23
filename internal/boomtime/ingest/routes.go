@@ -1,5 +1,5 @@
 // routes.go — Echo route registrations for the ingest domain
-// (gaka-8tn phase 5a). Extracted from internal/server/server.go's
+// (boom-8tn phase 5a). Extracted from internal/server/server.go's
 // registerHeartbeatRoutes so that function collapses toward N domain-
 // Register calls.
 //
@@ -68,7 +68,7 @@ func Register(e *echo.Echo, h *Handler) {
 	e.GET("/api/v1/users/current/heartbeats/latest", h.HeartbeatsLatest)
 	e.GET("/api/v1/users/current/heartbeats", h.HeartbeatsList)
 
-	// Entity Explorer (gaka-90x): per-ty flat list + per-entity redact (blanks
+	// Entity Explorer (boom-90x): per-ty flat list + per-entity redact (blanks
 	// the entity column on matching heartbeat rows — row itself stays,
 	// contributing to project/language/machine totals). Redact requires
 	// ?confirm=redact-entities as an accident guard.

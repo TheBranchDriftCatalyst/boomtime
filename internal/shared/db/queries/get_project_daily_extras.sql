@@ -1,4 +1,4 @@
--- gaka-dg7: day boundary computed in user-local TZ ($6) so the extras series
+-- boom-dg7: day boundary computed in user-local TZ ($6) so the extras series
 -- lines up with get_project_branch_daily + get_projects_stats — the FE overlays
 -- write/read seconds on the same day axis as the daily-total shape.
 --

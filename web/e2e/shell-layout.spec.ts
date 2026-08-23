@@ -9,7 +9,7 @@ import {
   stackReachableFromEnv,
 } from "./helpers";
 
-// gaka-c26s — the shell must never push its own header out of the viewport.
+// boom-c26s — the shell must never push its own header out of the viewport.
 //
 // The bug this pins down: AppShellNoScroll's content column was a bare `1fr`,
 // i.e. minmax(AUTO, 1fr). An `auto` floor means the track cannot shrink below
@@ -66,7 +66,7 @@ async function measureShell(page: Page): Promise<ShellMetrics> {
   });
 }
 
-test.describe("gaka-c26s — shell never overflows its own viewport", () => {
+test.describe("boom-c26s — shell never overflows its own viewport", () => {
   test.skip(!stackReachableFromEnv(), NO_STACK_REASON);
 
   for (const vp of VIEWPORTS) {

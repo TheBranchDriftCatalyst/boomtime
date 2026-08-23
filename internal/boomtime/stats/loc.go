@@ -1,4 +1,4 @@
-// loc.go — HTTP surface for the Lines-of-Code dashboard (gaka-yfg).
+// loc.go — HTTP surface for the Lines-of-Code dashboard (boom-yfg).
 //
 // GET /api/v1/users/current/stats/loc returns total + per-project lines of
 // code (current snapshot) plus a bounded total-LOC-over-time growth curve, all

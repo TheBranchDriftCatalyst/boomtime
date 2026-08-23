@@ -1,4 +1,4 @@
-// GoalForm — the create/edit modal for a goal (gaka-wpb).
+// GoalForm — the create/edit modal for a goal (boom-wpb).
 //
 // Two-way binding pattern:
 //   - Local state = { name, description, spec } during the modal's
@@ -111,7 +111,7 @@ export function GoalForm({ open, onOpenChange, editing }: GoalFormProps) {
   const pending = create.isPending || update.isPending;
 
   // Which "Start from a metric" template the current spec matches, so the
-  // active one reads as selected (gaka-bs5l). A reading-source top-level time
+  // active one reads as selected (boom-bs5l). A reading-source top-level time
   // leaf → "reading"; any other top-level time leaf → "coding"; a composite
   // (group/streak/…) matches neither and leaves both un-highlighted.
   const activeMetric: "coding" | "reading" | null =

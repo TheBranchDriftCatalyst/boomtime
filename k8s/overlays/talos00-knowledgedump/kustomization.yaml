@@ -21,10 +21,10 @@ resources:
   - books-postgres-scheduledbackup.yaml
   - external-secret.yaml
   - ingressroute.yaml
-  - servicemonitor.yaml # scrape boomtime's own /metrics (gaka-metrics: RED + business counters)
+  - servicemonitor.yaml # scrape boomtime's own /metrics (boom-metrics: RED + business counters)
   - comfyui-shim-external.yaml
   - ollama-shim-external.yaml
-  # ── Worker-topology decoupling (gaka-8bz) — PROD CUTOVER DEFERRED ─────────
+  # ── Worker-topology decoupling (boom-8bz) — PROD CUTOVER DEFERRED ─────────
   # These + the queue-config / patch-server-rabbit / secretGenerator /
   # configMapGenerator blocks below ARE the prod cutover for the image-job
   # worker queue (+ its RabbitMQ mgmt UI, metrics scrape, and Grafana
@@ -50,7 +50,7 @@ resources:
   - rabbitmq-mgmt-ingressroute.yaml # LAN-only mgmt UI (boomtime-rabbit.talos00)
   - rabbitmq-podmonitor.yaml       # Prometheus scrape of the operator metrics
   - keda-servicemonitor.yaml       # scrape KEDA operator metrics (keda ns) for the dashboard
-  # ── CONSOLIDATED dashboards (4→2, gaka-metrics follow-up) ──────────────────
+  # ── CONSOLIDATED dashboards (4→2, boom-metrics follow-up) ──────────────────
   # The former per-concern boards (grafana-dashboard-{keda,worker-queue,
   # daily-review,domain-ingest}.yaml) were merged into two, rebuilt around the
   # app's now-scraped first-party Prometheus metrics (servicemonitor.yaml) while

@@ -84,7 +84,7 @@ export function mockImportWs(jobId: number): MockImportWs {
   };
 }
 
-// --- CLI runner stream (gaka-hney.5) ----------------------------------------
+// --- CLI runner stream (boom-hney.5) ----------------------------------------
 
 export function cliRunWsUrl(): string {
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";

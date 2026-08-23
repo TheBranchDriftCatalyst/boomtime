@@ -1,4 +1,4 @@
-// BooksTab — Admin › Books (gaka-books). A DIAGNOSTIC dump of everything the
+// BooksTab — Admin › Books (boom-books). A DIAGNOSTIC dump of everything the
 // Audible / Kindle sources return for the admin's connected Amazon account, so
 // we can inventory every available metric/field before committing the model.
 // Each "probe" is a raw signed request; we show its status + the verbatim body

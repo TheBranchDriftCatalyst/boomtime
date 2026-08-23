@@ -1,4 +1,4 @@
-// TimezoneCard (gaka-dg7) — Settings > Profile card that owns the per-user
+// TimezoneCard (boom-dg7) — Settings > Profile card that owns the per-user
 // IANA timezone pick.
 //
 // Contract:

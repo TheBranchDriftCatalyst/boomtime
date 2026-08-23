@@ -107,7 +107,7 @@ type ExploreGroup struct {
 // entitySubstr is an optional case-insensitive substring on the entity column
 // (ILIKE '%…%'); an empty string is a no-op. Same semantics as ListHeartbeats
 // so the Explorer search box narrows BOTH the group listing AND the drilled
-// leaf rows (previously it only narrowed leaves — gaka-90x sibling fix).
+// leaf rows (previously it only narrowed leaves — boom-90x sibling fix).
 //
 // seconds per group is SUM(gap_seconds) where gap_seconds <= limitMinutes*60,
 // matching the dashboards' attributed-time convention. This is the AUDIT view:

@@ -23,7 +23,7 @@ const hardcoverActivitySource = "hardcover"
 // and reconcile each entry onto the matching reading_item's minimal linkage
 // (UpdateHardcoverLinkFromPull). It creates NO local shelf mirror — books on
 // Hardcover with no local reading_item are only LOGGED (inbound-origin creation
-// is a documented follow-up, gaka-books).
+// is a documented follow-up, boom-books).
 
 // PullJobKind is the catalyst-go-jobs kind for the per-user inbound Hardcover
 // sync. Owner-scoped (needs the user's token); registered + concurrency-capped in
@@ -172,7 +172,7 @@ func (s *SyncService) SyncHardcoverPull(ctx context.Context, owner string) (Pull
 	// the primary job).
 	s.upsertReadActivity(ctx, owner, books)
 
-	// OUTBOUND half — the two-way sync (gaka-books). Now that the LWW pull above has
+	// OUTBOUND half — the two-way sync (boom-books). Now that the LWW pull above has
 	// adopted any Hardcover-newer edits, whatever is STILL diverged is where boomtime
 	// is newer → push those out (status/rating), batched. Reuses the same client
 	// (its rate limiter), and is dry-run-gated. Best-effort: a push miss never fails
@@ -220,7 +220,7 @@ const bulkPushChunk = 50
 // PushDivergedToHardcover mirrors every diverged matched row's effective status +
 // rating OUT to Hardcover in batched requests, then advances the local mirror
 // (hardcover_status) + echo-suppression stamp for each row that wrote. This is the
-// bulk outbound half of the two-way sync (gaka-books); the caller runs it AFTER the
+// bulk outbound half of the two-way sync (boom-books); the caller runs it AFTER the
 // LWW pull so only boomtime-newer rows remain diverged. Dry-run-gated (the client's
 // graphql gate blocks the batch; every result stays UserBookID 0 → no stamp).
 // Returns how many rows were successfully pushed. Best-effort per chunk.
@@ -444,7 +444,7 @@ func (s *SyncService) upsertReadActivity(ctx context.Context, owner string, book
 
 // aggregateReadActivity buckets the shelf's reads by UTC day, summing
 // progress_seconds. A read is bucketed when it carries progress_seconds>0 OR a
-// finished_at (per gaka-books B); its day is finished_at when present, else
+// finished_at (per boom-books B); its day is finished_at when present, else
 // started_at. Reads with neither a date nor time are skipped. Pure + deterministic
 // so it is unit-testable against a fixture without a live client or DB.
 func aggregateReadActivity(books []UserBook) map[time.Time]int64 {
@@ -502,7 +502,7 @@ func (s *SyncService) onError(ctx context.Context, owner, stage string, err erro
 // logInfo/logWarn resolve the job-scoped logger from ctx (logctx.FromContext),
 // falling back to s.Logger off a job. Threading ctx means every handler line
 // inherits the running job's job_id/kind/owner so the Admin viewer can filter to
-// one job's run (gaka-f0is).
+// one job's run (boom-f0is).
 func (s *SyncService) logInfo(ctx context.Context, msg string, args ...any) {
 	if l := logctx.FromContext(ctx, s.Logger); l != nil {
 		l.Info(msg, args...)

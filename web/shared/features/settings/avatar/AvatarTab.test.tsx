@@ -1,4 +1,4 @@
-// AvatarTab.test.tsx (gaka-9v4) — smoke + integration for the
+// AvatarTab.test.tsx (boom-9v4) — smoke + integration for the
 // PROFILE SYNTHESIS console. Non-tautological: mocks the LLM SSE endpoint
 // with a hand-crafted stream response and asserts that
 //   (a) the RENDER button is DISABLED until the textarea has content, and
@@ -109,7 +109,7 @@ describe("AvatarTab", () => {
   });
 
   it("streams the SSE prompt into the textarea when SYNTHESIZE is clicked", async () => {
-    // gaka-say: the previous MSW-proxied version tripped on a jsdom-vs-undici
+    // boom-say: the previous MSW-proxied version tripped on a jsdom-vs-undici
     // AbortController mismatch — MSW's `instanceof AbortSignal` check fires
     // against jsdom's shim, not Node's native class, so the fetch immediately
     // rejected with "Expected signal ("AbortSignal {}") to be an instance of

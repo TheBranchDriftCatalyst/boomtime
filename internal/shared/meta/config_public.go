@@ -1,4 +1,4 @@
-// Public, unauthenticated client-config endpoint (gaka-93f.1.1).
+// Public, unauthenticated client-config endpoint (boom-93f.1.1).
 //
 // Boomtime had no way for the frontend to learn which server-side flags are
 // active — registration open/closed was only discoverable by POSTing to
@@ -39,17 +39,17 @@ type PublicConfigResponse struct {
 
 	// BillingEnabled advertises whether the Stripe SaaS billing surface is
 	// live (pricing page, upgrade CTA, billing settings). Off until the
-	// billing subsystem ships (gaka-93f Phase 4).
+	// billing subsystem ships (boom-93f Phase 4).
 	BillingEnabled bool `json:"billing_enabled"`
 
 	// BetaFlags is a map of server-advertised beta-feature kill switches. The
 	// FE checks these before honoring the corresponding ?enable_beta_* URL
 	// flag, so an operator can disable a preview instance-wide. Currently:
-	//   user_registration — the beta onboarding preview flow (gaka-93f.1).
+	//   user_registration — the beta onboarding preview flow (boom-93f.1).
 	BetaFlags map[string]bool `json:"beta_flags"`
 
 	// GithubConnectEnabled advertises whether the per-user GitHub connect
-	// feature (gaka-2ip Phase 1) is live — true ONLY when the gate is on AND
+	// feature (boom-2ip Phase 1) is live — true ONLY when the gate is on AND
 	// the OAuth-App credentials + state signing key are configured. The FE
 	// GitHubConnectCard renders nothing when this is false, so the whole
 	// surface stays inert until an operator provisions the secrets.

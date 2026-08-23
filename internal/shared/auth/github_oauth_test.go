@@ -1,4 +1,4 @@
-// github_oauth_test.go — mock-GitHub coverage of GithubOAuthResolver (gaka-2ip
+// github_oauth_test.go — mock-GitHub coverage of GithubOAuthResolver (boom-2ip
 // Phase 1), modeled on oidc_callback_test.go's httptest-provider approach. A
 // local server plays github.com: it serves /login/oauth/access_token and
 // api.github.com's /user, so the whole exchange (code → token → login capture)

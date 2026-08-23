@@ -1,5 +1,5 @@
 // broker.go — transport-agnostic seams for the image-job pipeline
-// (worker-topology decoupling, gaka-8bz follow-up). *Registry satisfies
+// (worker-topology decoupling, boom-8bz follow-up). *Registry satisfies
 // both interfaces unchanged (the default, welded-in-process behavior is
 // preserved verbatim); *AMQPProducer satisfies Enqueuer and the rabbitmq
 // "mirror" Registry (see Apply, below) satisfies EventSource, letting

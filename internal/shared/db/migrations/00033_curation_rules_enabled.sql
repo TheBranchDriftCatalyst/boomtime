@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- gaka-dfd: add an "enabled" flag to curation_rules so users can pause a
+-- boom-dfd: add an "enabled" flag to curation_rules so users can pause a
 -- rename or hide rule without deleting it. A disabled rule keeps its
 -- definition but stops applying at query time (LoadRenameSets and
 -- LoadHiddenSets filter WHERE enabled = true). Reversible with one click

@@ -1,4 +1,4 @@
-// apply_rename_ginkgo_test.go — ginkgo mirror of apply_rename_test.go (gaka-0vp.13).
+// apply_rename_ginkgo_test.go — ginkgo mirror of apply_rename_test.go (boom-0vp.13).
 // 1:1 case map (9 stdlib TestXxx → 8 Its + 1 DescribeTable(4)):
 //
 //	TestApplyRenameRuleExactHappyPath              → It "exact happy path + preview==run SQL"

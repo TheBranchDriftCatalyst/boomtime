@@ -1,5 +1,5 @@
 // SectionRail — the vertical, domain-grouped sub-navigation for a section
-// shell (Admin, Settings) (gaka-4x33).
+// shell (Admin, Settings) (boom-4x33).
 //
 // It replaces the grouped tab strip those two sections used to hoist into the
 // app HeaderBar. That strip failed for two independent reasons:
@@ -7,7 +7,7 @@
 //   1. STRUCTURAL. Its intrinsic width stretched the shell's content grid
 //      column past the viewport, and the shell's overflow-hidden clipped the
 //      header's right-side controls (search, notifications, avatar, logout)
-//      permanently out of reach. See AppShellNoScroll's gaka-c26s note. That
+//      permanently out of reach. See AppShellNoScroll's boom-c26s note. That
 //      specific mechanism is fixed at the shell now, but the pressure that
 //      caused it — an unbounded, domain-extensible list competing with fixed
 //      chrome for one 64px row — is intrinsic to putting section nav up there.

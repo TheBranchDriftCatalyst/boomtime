@@ -1,7 +1,7 @@
 // auth_cluster_coverage_test.go — coverage-completeness suite for the auth
 // cluster of internal/handler (auth.go, password.go, wakatime_key.go).
 //
-// Goals (gaka-d6x.handler):
+// Goals (boom-d6x.handler):
 //   - Every user-scoped endpoint gets a NAMED INVARIANT test — no bare
 //     roundtrips.
 //   - Every user-scoped endpoint gets an explicit cross-user isolation check:
@@ -52,7 +52,7 @@ import (
 func routerWithAuthClusterAC(hz *testutil.Harness) http.Handler {
 	e := hz.Router()
 	h := hz.H
-	// gaka-8tn phase 4a: receivers moved from h.* to h.Identity.* — the
+	// boom-8tn phase 4a: receivers moved from h.* to h.Identity.* — the
 	// production server registers these under identity.Register too.
 	e.POST("/auth/logout", h.Identity.Logout)
 	e.POST("/auth/create_api_token", h.Identity.CreateAPIToken)
@@ -227,7 +227,7 @@ var _ = Describe("CurrentUser (GET /auth/users/current)", func() {
 		Expect(wrapped.Data.FullName).To(Equal(user))
 		Expect(wrapped.Data.Email).To(Equal(user + "@hakatime.dev"))
 		Expect(wrapped.Data.IsAdmin).To(BeFalse(), "user not on admin allowlist must NOT get is_admin=true")
-		// gaka-dg7: raw stored blank + BOOM_DEFAULT_TIMEZONE fallback resolves to America/New_York.
+		// boom-dg7: raw stored blank + BOOM_DEFAULT_TIMEZONE fallback resolves to America/New_York.
 		Expect(wrapped.Data.Timezone).To(BeEmpty(),
 			"user hasn't set a timezone — the raw column must stay '' so the FE picker doesn't lie")
 		Expect(wrapped.Data.EffectiveTimezone).To(Equal("America/New_York"),
@@ -588,7 +588,7 @@ var _ = Describe("API token CRUD", func() {
 			"owner's rename did NOT stick")
 	})
 
-	It("Update rejects a 5 KiB body with 413 (gaka-bi2)", func() {
+	It("Update rejects a 5 KiB body with 413 (boom-bi2)", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := routerWithAuthClusterAC(hz)
 		_, tokenA := hz.MintUser("apitok_up_413")
@@ -1595,8 +1595,8 @@ var _ = Describe("Auth cluster — internal-error branches (pool closed)", func(
 
 	It("Login with a dead pool → 500 generic (never reaches sentinel verify)", func() {
 		// COUPLING NOTE (cross-suite): this spec ACTIVELY DEPENDS on the
-		// gaka-imm constant-time invariant proved in
-		// auth_test.go > "Login constant-time (gaka-imm)" > TestLogin_ConstantTimeUserEnumeration.
+		// boom-imm constant-time invariant proved in
+		// auth_test.go > "Login constant-time (boom-imm)" > TestLogin_ConstantTimeUserEnumeration.
 		// That sibling test proves BurnSentinelVerify DOES run on the
 		// user-not-found branch (sentinel counter increments, timing
 		// delta < 3ms). Here we prove BurnSentinelVerify does NOT run

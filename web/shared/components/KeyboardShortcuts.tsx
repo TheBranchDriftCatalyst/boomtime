@@ -8,7 +8,7 @@ import {
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/dialog";
 import { openCommandPalette } from "@shared/components/CommandPalette";
 
-// "Go to" destinations: press `g` then one of these keys (gaka-gbbl.3).
+// "Go to" destinations: press `g` then one of these keys (boom-gbbl.3).
 const NAV_KEYS: Record<string, { to: string; label: string }> = {
   o: { to: "/app", label: "Overview" },
   p: { to: "/app/projects", label: "Projects" },
@@ -34,7 +34,7 @@ function isTypingTarget(el: EventTarget | null): boolean {
   );
 }
 
-/** Global keyboard shortcuts (gaka-gbbl.3): a Gmail-style `g`-then-key nav, `?`
+/** Global keyboard shortcuts (boom-gbbl.3): a Gmail-style `g`-then-key nav, `?`
  * for the cheatsheet, `/` to open the command palette. Mounted once in
  * AppShell; owns the help dialog. ⌘K is handled by the palette itself. */
 export function KeyboardShortcuts() {

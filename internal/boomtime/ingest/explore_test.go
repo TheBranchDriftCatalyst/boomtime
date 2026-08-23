@@ -48,7 +48,7 @@ var _ = Describe("collectExploreFilters", func() {
 	})
 })
 
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
+// -- helpers restored from stdlib partner (boom-0vp.17) --
 func ctxWithQuery(rawQuery string) *echo.Context {
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodGet, "/?"+rawQuery, nil)

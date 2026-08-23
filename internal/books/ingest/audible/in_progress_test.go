@@ -7,7 +7,7 @@ import (
 )
 
 // in_progress_test.go — pins which reading_items trigger a continuous-progress
-// Hardcover push (gaka-books A): only actively in-progress titles (status
+// Hardcover push (boom-books A): only actively in-progress titles (status
 // "reading", 0 < percent < 95). Finished/want/edge-percent rows are skipped, so
 // the forward sync never pushes progress for a book that isn't in progress. Pure
 // (inProgressPush) — no client, no DB.

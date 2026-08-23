@@ -1,6 +1,6 @@
 ---
 # Scrapes boomtime-rabbit's Prometheus metrics (worker-topology decoupling,
-# gaka-8bz follow-up) — feeds the Grafana dashboard in
+# boom-8bz follow-up) — feeds the Grafana dashboard in
 # grafana-dashboard-worker-queue.yaml. The RabbitMQ Cluster Operator
 # enables the `rabbitmq_prometheus` plugin and exposes a `prometheus` port
 # (15692) by default; the operator also labels every pod it creates with

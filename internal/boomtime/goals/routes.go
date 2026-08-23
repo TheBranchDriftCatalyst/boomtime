@@ -1,5 +1,5 @@
 // routes.go — Echo route registrations for the goals domain
-// (gaka-8tn phase 2b). Extracted from internal/server/server.go's
+// (boom-8tn phase 2b). Extracted from internal/server/server.go's
 // registerGoalRoutes so the server's route file collapses to N
 // domain-Register calls.
 //

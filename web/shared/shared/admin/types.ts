@@ -5,7 +5,7 @@
 // router boundary (App.tsx), mirroring the backend where each domain owns its
 // admin surface via a Module.RegisterAdminRoutes seam.
 //
-// ── WHAT A DOMAIN CAN CUSTOMIZE (gaka-9e9k) ─────────────────────────────────
+// ── WHAT A DOMAIN CAN CUSTOMIZE (boom-9e9k) ─────────────────────────────────
 // The division of labour is deliberate, and it's what keeps a domain from
 // breaking the shell the way the old header tab strip did:
 //

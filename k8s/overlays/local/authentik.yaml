@@ -1,6 +1,6 @@
 ---
 # ─────────────────────────────────────────────────────────────────────────────
-# Authentik dev stack for the LOCAL Tilt/k3d overlay (gaka-93f.8, Phase 2).
+# Authentik dev stack for the LOCAL Tilt/k3d overlay (boom-93f.8, Phase 2).
 #
 # Stands up a self-contained Authentik (server + worker + its own Postgres +
 # Redis) alongside boomtime so the OIDC login flow can be exercised end-to-end
@@ -17,7 +17,7 @@
 #     (see docs/design/user-model-and-oidc.md §6.7).
 #
 # boomtime itself still runs with BOOM_AUTH_PROVIDER=local — the OIDC resolver
-# that consumes this lands in gaka-0oe.11. This overlay just makes a working
+# that consumes this lands in boom-0oe.11. This overlay just makes a working
 # Authentik + declared boomtime app available at http://localhost:9000.
 # ─────────────────────────────────────────────────────────────────────────────
 

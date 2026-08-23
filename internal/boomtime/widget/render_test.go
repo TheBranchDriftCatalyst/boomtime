@@ -1,4 +1,4 @@
-// render_ginkgo_test.go — ginkgo mirror of render_test.go (gaka-0vp).
+// render_ginkgo_test.go — ginkgo mirror of render_test.go (boom-0vp).
 // 1:1 case map (12 stdlib TestXxx → 12 top-level nodes; some table-heavy tests
 // become DescribeTables to preserve per-case reporting):
 //
@@ -255,7 +255,7 @@ var _ = Describe("RenderSpec + IsKind reject unknown kinds", func() {
 	})
 })
 
-// Byte-identical render invariant (gaka-hsj). The public /widget/svg endpoint
+// Byte-identical render invariant (boom-hsj). The public /widget/svg endpoint
 // serves these bytes through GitHub camo and other aggressive HTTP caches; any
 // non-determinism inside RenderSpec (e.g. someone reaches for time.Now, a
 // map-range leak, or a rand.Float call in a primitive) silently invalidates
@@ -274,7 +274,7 @@ var _ = Describe("RenderSpec + IsKind reject unknown kinds", func() {
 // If you INTENTIONALLY change the SVG output for any of the three below,
 // update BOTH the hash AND this comment's date so the next reviewer knows
 // it's a deliberate re-baseline, not drift.
-var _ = Describe("RenderSpec bytes are stable for a fixed payload (gaka-hsj)", func() {
+var _ = Describe("RenderSpec bytes are stable for a fixed payload (boom-hsj)", func() {
 	// payloadFixture (defined at the bottom of this file) is intentionally
 	// small + deterministic — no time.Now, no random data. Adding TotalDaily
 	// series (as dataFixture does for the heatmap twins) would change the
@@ -407,7 +407,7 @@ var _ = Describe("Kinds() matches the FE catalog verbatim", func() {
 	})
 })
 
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
+// -- helpers restored from stdlib partner (boom-0vp.17) --
 func payloadFixture() *model.StatsPayload {
 	return &model.StatsPayload{
 		StartDate:    time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),

@@ -9,7 +9,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 )
 
-// Handler is the catalyst-books HTTP surface (gaka-zp2s Phase 2), extracted from
+// Handler is the catalyst-books HTTP surface (boom-zp2s Phase 2), extracted from
 // the core internal/identity god-handler. It owns the Amazon/Kindle/Audible connect
 // + ingest triggers, the reading-items/work/curation/match endpoints, and the
 // Hardcover connect/pull/search/push endpoints. Deps are the minimal set the book

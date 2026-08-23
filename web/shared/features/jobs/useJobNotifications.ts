@@ -21,7 +21,7 @@ function label(kind: string): string {
 }
 
 /**
- * useJobNotifications (gaka-hney.6): subscribes to the per-user catalyst-go-jobs
+ * useJobNotifications (boom-hney.6): subscribes to the per-user catalyst-go-jobs
  * event stream (/api/v1/jobs/ws, cookie-authed) and toasts when one of the
  * caller's jobs completes or fails. Mounted once in AppShell. Reconnects on a
  * dropped socket so the stream survives brief blips.

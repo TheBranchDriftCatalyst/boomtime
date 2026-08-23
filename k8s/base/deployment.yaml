@@ -23,7 +23,7 @@ spec:
         # auth.knowledgedump.space to the in-cluster Traefik ClusterIP, so this
         # pod's SERVER-SIDE OIDC calls (discovery/token/JWKS) never egress into
         # Cloudflare — where bot protection blocks them and SSO dies mid-flow.
-        # Replaces the hand-written oidc-hostaliases.yaml patch (gaka-93f.11.2).
+        # Replaces the hand-written oidc-hostaliases.yaml patch (boom-93f.11.2).
         catalyst.io/oidc: "true"
     spec:
       containers:

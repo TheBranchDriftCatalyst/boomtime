@@ -1,4 +1,4 @@
-// Package web embeds and serves the STANDALONE catalyst-books SPA (gaka-zp2s).
+// Package web embeds and serves the STANDALONE catalyst-books SPA (boom-zp2s).
 //
 // The books-only React build (web/dist-books, produced by `yarn build:books`)
 // is embedded here and served by cmd/catalyst-books ALONGSIDE the books API and

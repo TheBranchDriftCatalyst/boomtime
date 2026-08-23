@@ -1,5 +1,5 @@
 // adminhttp.go — the PORTABLE admin HTTP surface for the catalyst-go-jobs
-// subsystem (gaka-hney). This is the operator API behind the "Jobs" admin tab:
+// subsystem (boom-hney). This is the operator API behind the "Jobs" admin tab:
 // list job history, view the per-kind queue overview + periodic schedules,
 // trigger / retry / cancel a job, and read / clear a job's persisted logs.
 //
@@ -198,7 +198,7 @@ func (a *adminAPI) list(c *echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]any{"jobs": out})
 }
 
-// queues: GET /queues — the per-kind queue overview (gaka-hney). One GROUP BY
+// queues: GET /queues — the per-kind queue overview (boom-hney). One GROUP BY
 // scan of the jobs table (ListJobKindStats over the last hour) merged with the
 // registry's per-kind concurrency caps + the full set of registered kinds, so an
 // operator SEES the limiter working: queue depth, running/max headroom,

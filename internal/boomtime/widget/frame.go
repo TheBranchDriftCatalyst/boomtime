@@ -12,7 +12,7 @@ import (
 
 // frameStyleCSS is the shared <style> block (keyframes + class rules) that
 // every card frame emits inline. Extracted from a raw-string constant in the
-// package source (gaka-8tn.1) so an editor / diff viewer can highlight it
+// package source (boom-8tn.1) so an editor / diff viewer can highlight it
 // as CSS. The bytes are served verbatim inside each SVG — do NOT re-indent
 // or reformat this file or the golden-hash test in openapi will need to move
 // its widget cousin too.

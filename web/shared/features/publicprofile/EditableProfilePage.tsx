@@ -1,4 +1,4 @@
-// EditableProfilePage — top-level wrapper for /p/:slug (gaka-ie3).
+// EditableProfilePage — top-level wrapper for /p/:slug (boom-ie3).
 //
 // Decides between three render modes based on the caller's identity vs the
 // URL param:

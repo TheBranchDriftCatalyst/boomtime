@@ -1,4 +1,4 @@
-// openapi_ginkgo_test.go — ginkgo mirror of openapi_test.go (gaka-0vp).
+// openapi_ginkgo_test.go — ginkgo mirror of openapi_test.go (boom-0vp).
 // 1:1 case map (4 stdlib TestXxx; TestOpenAPIAuthSchemeMatchesHarness has 6
 // t.Run subtests — 3 paths × {with token, no token} — each becomes a
 // separate It):

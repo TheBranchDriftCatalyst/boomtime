@@ -4,7 +4,7 @@
 // server-side evaluate produces the same awards a browser-side evaluate
 // would produce for the same payload.
 //
-// Ticket: gaka-hc6.1 (part of the "move evaluator server-side" epic).
+// Ticket: boom-hc6.1 (part of the "move evaluator server-side" epic).
 package labels
 
 import (

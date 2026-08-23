@@ -1,4 +1,4 @@
-// handler.go: the embeddable-widget endpoints (gaka-hsj). Auth'd link CRUD
+// handler.go: the embeddable-widget endpoints (boom-hsj). Auth'd link CRUD
 // (mint/list/delete) plus the PUBLIC SVG renderer. The public endpoint is the
 // privacy-sensitive one: it must apply the owner's hide/rename curation so
 // curated-away data never leaks into a README embed.
@@ -78,7 +78,7 @@ func (h *Handler) WidgetLink(c *echo.Context) error {
 			return apihelpers.InternalErr(h.Logger, c, "widget link project check failed", err)
 		}
 		if !ok {
-			// gaka-xuc: the FE gets remapped project names from ProjectList
+			// boom-xuc: the FE gets remapped project names from ProjectList
 			// (which applies loadRenames), but the raw projects table only
 			// carries source names. Accept scopeRef when it is the target of
 			// an exact rename rule — the widget renderer expands the
@@ -171,7 +171,7 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 		return apihelpers.RespondErr(c, apierr.BadRequest("Invalid widget link id"))
 	}
 	kind := c.Param("kind")
-	// gaka-567: "custom" is the builder-composed kind — spec is inline in the
+	// boom-567: "custom" is the builder-composed kind — spec is inline in the
 	// URL as ?spec=<base64>. Every other kind must be a target:"both" spec
 	// (widget.IsKind — Part B Stage 5: this now covers every renderable
 	// kind, including the goal-* kinds, since renderSpec is the only path).
@@ -195,7 +195,7 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 		return apihelpers.RespondErr(c, apierr.NotFound("Widget link not found"))
 	}
 
-	// gaka-6jm.5: for project-scoped widgets, the pinned project name is baked
+	// boom-6jm.5: for project-scoped widgets, the pinned project name is baked
 	// into the widget's identity (URL + title/subtitle) — if it has been curated
 	// away, ANY response leaks either the name (via chrome) or its activity
 	// (via top-N rows on a single-project scope, which the DB predicate won't
@@ -264,7 +264,7 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		// gaka-dg7: widget uses the OWNER's tz (the widget shows the owner's
+		// boom-dg7: widget uses the OWNER's tz (the widget shows the owner's
 		// data in the owner's timeframe — a public embed of a Pacific dev's
 		// punchcard should reflect Pacific dow/hour buckets even when a UTC
 		// requester loads the SVG). The cache key does NOT need tz appended
@@ -274,7 +274,7 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 		// Scope: project reuses the Space inclusion path via a synthesized
 		// single-project member set; space loads its rules by id (ownership was
 		// validated at mint time and spaces cannot change owner). For project
-		// scopes the member set is EXPANDED via the rename map (gaka-xuc) so
+		// scopes the member set is EXPANDED via the rename map (boom-xuc) so
 		// scopeRef="B" (a rename target) also matches raw heartbeats stored
 		// under the original name "A" that maps A -> B.
 		var members db.MemberSets
@@ -338,7 +338,7 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 		}
 
 		payload := stats.ToStatsPayload(t0, t1, rows, catRows, nil)
-		// gaka-6jm.3: enforce the public-safe contract before ANY renderer sees
+		// boom-6jm.3: enforce the public-safe contract before ANY renderer sees
 		// the payload. The DB queries above already excluded hidden values
 		// from top-N segments; Scrub additionally strips hidden names from
 		// the OtherMembers tail that capWithOther collapses in application
@@ -364,7 +364,7 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 				return nil, err
 			}
 			mp := stats.ToMomentumPayload(t0, t1, mrows, 6)
-			// gaka-6jm.6: enforce the public-safe contract on momentum too. The
+			// boom-6jm.6: enforce the public-safe contract on momentum too. The
 			// DB predicate above already excluded hidden projects at query time;
 			// ScrubMomentum is the belt-and-braces guard against any drift
 			// between the DB hide set and the render pipeline (mirrors the

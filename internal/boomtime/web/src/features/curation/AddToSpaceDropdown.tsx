@@ -1,4 +1,4 @@
-// gaka-esv: dropdown that adds a curation rule's matchValue to a Space's
+// boom-esv: dropdown that adds a curation rule's matchValue to a Space's
 // membership. Reuses the existing POST /spaces/:id/rules endpoint — this
 // feature is pure FE composition; nothing new on the backend.
 //

@@ -1,5 +1,5 @@
 // booksExplorerConfig.tsx — the reading-domain DomainConfig for the shared
-// <GroupableExplorer> (gaka-02sh Track C). This is what merges the old Books
+// <GroupableExplorer> (boom-02sh Track C). This is what merges the old Books
 // "Table" + "Explore" tabs into ONE groupable table:
 //   - groupBy [] (default) → the flat leaf-rows table users see today (the 8/9
 //     book columns), fetched via the query DSL rows mode (NOT api.getBooksItems).
@@ -11,7 +11,7 @@
 // page's search / source / status filters ALL fold into each query's `where` (so
 // they constrain BOTH the group aggregates and the leaf rows, fully server-side)
 // — see buildWhere. Search compiles to an OR of case-insensitive ILIKE substring
-// matches on title + author (gaka-02sh P2 follow-up).
+// matches on title + author (boom-02sh P2 follow-up).
 import type { ReactNode } from "react";
 import { ExternalLink } from "lucide-react";
 import { Library } from "lucide-react";
@@ -49,7 +49,7 @@ import type { ReadingItemDTO } from "@shared/types/meta";
 // `hardcover` = books shelved on Hardcover but not owned on Kindle/Audible
 // (source='hardcover' reading_items, ingested by the Hardcover backfill).
 export type SourceFilter = "all" | "audible" | "kindle" | "hardcover";
-// gaka-books: the status filter now speaks the ONE canonical vocabulary (1:1
+// boom-books: the status filter now speaks the ONE canonical vocabulary (1:1
 // with Hardcover) so filter value == group value == pill key. Was the
 // mismatched all|reading|finished|want, where "finished" was a mislabel of the
 // `read` column value — the filter and the group-by axis disagreed.
@@ -265,7 +265,7 @@ export function pathToPredicate(path: DrillPath): PredicateNode | undefined {
 /**
  * Map the page's source/status/search selections to `where` leaves.
  * status folds directly onto the EFFECTIVE `status` dimension using the ONE
- * canonical value (gaka-books) — the filter value IS the column/group value now
+ * canonical value (boom-books) — the filter value IS the column/group value now
  * (no more "finished" → "read" remap), so filter and group-by can't disagree.
  * `search` folds to an ILIKE OR on title/author (searchToPredicate) — the DSL
  * has a substring op, so free-text search is a real server predicate that
@@ -347,7 +347,7 @@ export function makeBooksExplorerConfig(
         where: buildWhere(path, filters),
         rollups,
         // No "Other" catch-all for Books: an aggregate 'Other' bucket isn't a real
-        // dimension value, so it drills into nothing (gaka-a6nc). We return every
+        // dimension value, so it drills into nothing (boom-a6nc). We return every
         // real group sorted by count desc; the legitimate null group renders as
         // "(none)". (High-cardinality axes like author just return more real rows.)
         sort: { field: "value", desc: true },

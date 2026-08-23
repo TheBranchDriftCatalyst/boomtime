@@ -33,7 +33,7 @@ package labelcatalog
 // (scene) so the diffusion model sees style-then-narrative-then-scene
 // (see buildFinalPrompt in internal/worker/labelimages/worker.go for the
 // full composition). The compiled baseline slice below leaves it empty —
-// descriptions are DB-only post gaka-364.3, and the baseline is only a
+// descriptions are DB-only post boom-364.3, and the baseline is only a
 // fallback for the "brand new DB before migrations apply" case.
 type Entry struct {
 	ID          string

@@ -10,7 +10,7 @@ export function cn(...inputs: ClassValue[]) {
  * "45m", "9s". Keeps the value narrow enough for the stat-card row so it
  * never wraps to a second line and blows out the row height. Prefer this
  * over `secondsToHms` when you need a fixed-width numeric readout (dossier /
- * corpo aesthetic — gaka-k2p).
+ * corpo aesthetic — boom-k2p).
  */
 export function secondsToCompact(input: number | null | undefined): string {
   const d = Number(input ?? 0);

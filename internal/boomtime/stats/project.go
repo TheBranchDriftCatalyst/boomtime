@@ -22,7 +22,7 @@ func ToProjectStatistics(t0, t1 time.Time, xs []db.ProjectStatRow, extras *db.Pr
 		allSecs += x.TotalSeconds
 	}
 	dailyTotal := dailyTotals(byDate, func(r db.ProjectStatRow) int64 { return r.TotalSeconds })
-	// gaka-6ci: language segment excludes rows whose source heartbeat had
+	// boom-6ci: language segment excludes rows whose source heartbeat had
 	// NULL language (browser tabs / AI console sessions). A per-project
 	// language pie shouldn't count "browsing this repo on GitHub" as a
 	// language — same rule as the global stats endpoint. Total-time /
@@ -37,7 +37,7 @@ func ToProjectStatistics(t0, t1 time.Time, xs []db.ProjectStatRow, extras *db.Pr
 	cappedLanguages := capWithOther(languages)
 	// "Most active files" must contain only real file entities — exclude browsing
 	// domains/apps (ty='domain'/'app'/'url') AND rows whose source heartbeat had
-	// NULL entity (gaka-6ci; a "file breakdown" of un-tagged sessions isn't
+	// NULL entity (boom-6ci; a "file breakdown" of un-tagged sessions isn't
 	// meaningful). Other segments still aggregate over every entity so the
 	// total-time card is unaffected.
 	files := segmentProjWhere(byDate,

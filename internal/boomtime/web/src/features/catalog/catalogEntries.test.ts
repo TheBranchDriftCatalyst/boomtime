@@ -62,7 +62,7 @@ describe("CATALOG_WIDGETS", () => {
   });
 });
 
-// gaka-qcxg — reading-domain registration + feature gate.
+// boom-qcxg — reading-domain registration + feature gate.
 describe("reading-domain catalog widgets", () => {
   const byKind = new Map(CATALOG_WIDGETS.map((e) => [e.kind, e]));
 

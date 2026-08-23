@@ -1,4 +1,4 @@
-// GithubCharts.test.tsx (gaka-v1k P4) — the three GH-only chart widgets, each
+// GithubCharts.test.tsx (boom-v1k P4) — the three GH-only chart widgets, each
 // exercised across the additive invariant (bd memories github-stats):
 //
 //   1. Feature off (github_connect_enabled === false)  → renders NOTHING.
@@ -101,7 +101,7 @@ const CARDS: Array<[string, () => ReactElement]> = [
   ["GithubLanguagesCard", () => <GithubLanguagesCard />],
 ];
 
-describe.each(CARDS)("%s (gaka-v1k P4) — invariant states", (_name, Card) => {
+describe.each(CARDS)("%s (boom-v1k P4) — invariant states", (_name, Card) => {
   it("renders nothing when the feature is disabled server-side", async () => {
     enableFeature(false);
     const { container } = renderWithProviders(<Card />, { withRouter: true });

@@ -95,7 +95,7 @@ export function TimelineChart({ timeline, height = 350 }: TimelineChartProps) {
         .append("title")
         .text((d) => String(d));
 
-      // gaka-9pt: precompute per-lane totals + per-segment rank within lane so
+      // boom-9pt: precompute per-lane totals + per-segment rank within lane so
       // hovering a range-bar tells "how big a chunk of this lang's work is
       // this segment, and where does it rank against sibling segments".
       const laneTotal = new Map<string, number>();

@@ -1,4 +1,4 @@
-// GithubCard.test.tsx (gaka-2ud P5) — the PUBLIC-profile GitHub tile, exercised
+// GithubCard.test.tsx (boom-2ud P5) — the PUBLIC-profile GitHub tile, exercised
 // across the PUBLIC additive invariant (critical difference from the in-app
 // widgets: there is NEVER a CTA and NEVER an error on the public page):
 //
@@ -101,7 +101,7 @@ function servePublic(status: number, body: unknown) {
 
 afterEach(() => server.resetHandlers());
 
-describe("GithubCard (gaka-2ud P5) — public hide-on-empty invariant", () => {
+describe("GithubCard (boom-2ud P5) — public hide-on-empty invariant", () => {
   it("renders NOTHING when the feature is disabled server-side", async () => {
     enableFeature(false);
     // Even if the endpoint would return data, the disabled feature short-circuits.

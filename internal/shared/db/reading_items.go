@@ -1,5 +1,5 @@
 // reading_items.go: siloed storage for catalyst-books/audiobooks synced reading
-// state (gaka-books). This is the ONLY place book/audiobook data lives — it does
+// state (boom-books). This is the ONLY place book/audiobook data lives — it does
 // not write into heartbeats/stats/any core model. A user can view it
 // (ListReadingItems) and wipe it on request (DeleteReadingItems); it also
 // cascade-deletes with the user. See migrations/00058.

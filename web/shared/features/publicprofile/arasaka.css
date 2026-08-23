@@ -1,9 +1,9 @@
 /* arasaka.css — Arasaka Corp variant of the public dashboard chrome
- * (gaka-res). Only applies when the Arasaka theme is selected via the
+ * (boom-res). Only applies when the Arasaka theme is selected via the
  * catalyst-ui theme switcher; boomtime + all other themes continue to
  * use the sibling hacker.css unchanged.
  *
- * gaka-k2p charter: this file is now the "Arasaka Corporate Intelligence
+ * boom-k2p charter: this file is now the "Arasaka Corporate Intelligence
  * Dossier" pass. The subject's coding profile reads as a classified file:
  *  - crimson (--primary) on jet black
  *  - ONE amber accent (#f5a623) reserved for CLASSIFIED stamps
@@ -361,7 +361,7 @@
 }
 
 /* Denser tile bodies + tabular-nums for column alignment.
- * gaka-k2p: py reduced 12→8px (~30% tighter) per charter density target;
+ * boom-k2p: py reduced 12→8px (~30% tighter) per charter density target;
  * px stays for horizontal breathing room around glyphs. */
 .theme-arasaka .catalyst-grid-tile__body {
   padding: 8px 12px;
@@ -438,7 +438,7 @@
 }
 
 /* --------------------------------------------------------------------- *
- * DOSSIER FOUNDATION amp (gaka-174.1).                                  *
+ * DOSSIER FOUNDATION amp (boom-174.1).                                  *
  * The frame + labeled field rail (base look in dossier.css) get the     *
  * full corpo-file treatment under Arasaka: brighter crimson spine,      *
  * amber field labels, a live STATUS pulse.                              *

@@ -1,5 +1,5 @@
 // backfill_github_stats.go: `boomtime backfill github-stats [--user X]` —
-// server-side refresh of the per-user GitHub stats cache (gaka-anh Phase 2).
+// server-side refresh of the per-user GitHub stats cache (boom-anh Phase 2).
 // Relocated from cmd/boomtime so the admin CLI-runner can introspect the
 // command def and call the same body in-process.
 //
@@ -34,7 +34,7 @@ import (
 )
 
 // init registers the `backfill github-stats` command into the climeta web-run
-// allowlist (gaka-zp2s) — the CLI framework stays domain-free; the github domain
+// allowlist (boom-zp2s) — the CLI framework stays domain-free; the github domain
 // contributes its own vetted command here. Fires whenever package github loads (the
 // composition root pulls it in via internal/domainreg; test binaries blank-import it).
 func init() {

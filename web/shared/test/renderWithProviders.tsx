@@ -47,7 +47,7 @@ export function Providers({
   );
 
   if (withRouter) {
-    // gaka-ie3: build a data router via createMemoryRouter so tests can
+    // boom-ie3: build a data router via createMemoryRouter so tests can
     // exercise data-router-only APIs (unstable_usePrompt in ProfileEditor
     // + any future useBlocker use). A catchall route wraps `wrapped` so
     // useParams-consuming components can be tested by passing initial

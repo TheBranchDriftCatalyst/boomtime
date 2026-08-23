@@ -1,5 +1,5 @@
 // github_token_test.go — stdlib coverage of the encrypted GitHub token storage
-// layer (gaka-2ip Phase 1). Mirrors wakatime_key_test.go: every subtest names a
+// layer (boom-2ip Phase 1). Mirrors wakatime_key_test.go: every subtest names a
 // security invariant and, where we care whether encryption ACTUALLY happened,
 // pins it end-to-end (seal → store → SELECT raw bytes → assert bytes !=
 // plaintext AND decrypt-back == plaintext).

@@ -1,4 +1,4 @@
-// overviewWidgets (gaka-38v) — per-widget self-fetch hooks for the Overview
+// overviewWidgets (boom-38v) — per-widget self-fetch hooks for the Overview
 // dashboard. Each reads the shared OverviewDataContext and runs EXACTLY the
 // query (same qk.* key + params) the legacy inline OverviewDashboard runs, so
 // when Phase 3 swaps the static ChartCard grid for a draggable widget grid,
@@ -141,7 +141,7 @@ export function useOverviewMomentum() {
   });
 }
 
-// gaka-yfg: lines-of-code (total + per-project + over-time). Same range/space
+// boom-yfg: lines-of-code (total + per-project + over-time). Same range/space
 // scoping as the other Overview widgets so a scoped/renamed dashboard's LOC
 // tile refetches with the rest.
 export function useOverviewLoc() {

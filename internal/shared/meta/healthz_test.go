@@ -1,4 +1,4 @@
-// healthz_test.go — gaka-d6x.handler: cover the public /healthz endpoint.
+// healthz_test.go — boom-d6x.handler: cover the public /healthz endpoint.
 // Named invariants:
 //
 //	"reports version + schemaVersion + uptime + DB reachable" — the JSON
@@ -25,7 +25,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
-var _ = Describe("Healthz endpoint (gaka-d6x.handler)", func() {
+var _ = Describe("Healthz endpoint (boom-d6x.handler)", func() {
 	It("returns 200 + populated JSON without any Authorization header", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		// Stamp the Cfg with values that would be omitted on a bare `go run`

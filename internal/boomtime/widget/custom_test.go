@@ -1,4 +1,4 @@
-// custom_ginkgo_test.go — ginkgo mirror of custom_test.go (gaka-0vp).
+// custom_ginkgo_test.go — ginkgo mirror of custom_test.go (boom-0vp).
 // 1:1 case map (5 stdlib TestXxx → 1 It + 3 DescribeTables + 2 Its):
 //
 //	TestEncodeDecodeDefRoundTrip           → "encode/decode Def" > It "round-trips + accepts std base64"
@@ -161,7 +161,7 @@ var _ = Describe("RenderCustom", func() {
 	)
 })
 
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
+// -- helpers restored from stdlib partner (boom-0vp.17) --
 func mustJSON(v any) string {
 	b, _ := json.Marshal(v)
 	return string(b)

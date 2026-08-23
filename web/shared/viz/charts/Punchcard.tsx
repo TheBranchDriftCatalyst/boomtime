@@ -17,7 +17,7 @@ interface PunchcardProps {
 
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-// gaka-k2p: right margin bumped to 18 so the rightmost 23:00 column's
+// boom-k2p: right margin bumped to 18 so the rightmost 23:00 column's
 // circle radius doesn't clip past the card's inner edge on narrower
 // widget footprints. Left/bottom axis space unchanged.
 const MARGIN = { top: 8, right: 18, bottom: 22, left: 34 };
@@ -64,7 +64,7 @@ export function Punchcard({ data, height = 260 }: PunchcardProps) {
       const total = d3.sum(data.cells, (c) => c.seconds) || 1;
       const color = colorAt(0);
 
-      // gaka-9pt: rank across ACTIVE cells only. On the 7×24 grid most cells
+      // boom-9pt: rank across ACTIVE cells only. On the 7×24 grid most cells
       // are 0; ranking against all 168 would make even a top-3 cell look
       // unimportant ("#3 of 168"). Rank map by `${dow}-${hour}` key.
       const activeCells = data.cells.filter((c) => c.seconds > 0);
@@ -130,7 +130,7 @@ export function Punchcard({ data, height = 260 }: PunchcardProps) {
     );
   }
 
-  // gaka-k2p: pull the "UTC" note out of the ChartSurface's fixed-height
+  // boom-k2p: pull the "UTC" note out of the ChartSurface's fixed-height
   // container (was overflowing bottom on tight tiles) and pin it as a small
   // absolute badge in the corner. Still visible; no longer competes for
   // vertical space against the svg.

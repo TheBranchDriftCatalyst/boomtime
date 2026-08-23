@@ -1,4 +1,4 @@
-// HeroBackdrop — the lazy WebGL boundary for the dossier hero (gaka-174.3).
+// HeroBackdrop — the lazy WebGL boundary for the dossier hero (boom-174.3).
 //
 // Wraps catalyst-ui's <DossierHeroBackdrop> (the actual R3F scene) so that:
 //   - three + R3F only download when a profile is opened AND the client can

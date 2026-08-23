@@ -1,4 +1,4 @@
-// widget_defs_test.go — stdlib tests for widget_defs.go (gaka-se2.7).
+// widget_defs_test.go — stdlib tests for widget_defs.go (boom-se2.7).
 // Every t.Run pins ONE named invariant. The load-bearing checks are
 // cross-owner isolation, the UNIQUE(username,name) constraint, and the
 // REPLACE-ALL semantics of UpdateWidgetDef.

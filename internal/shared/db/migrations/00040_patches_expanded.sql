@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- Memewarfare protocols wave 2 (gaka-mwp / gaka-0dw): expand the `patch`
+-- Memewarfare protocols wave 2 (boom-mwp / boom-0dw): expand the `patch`
 -- catalog from 6 seed awards to 30 total.
 --
 -- ADDITIVE — the 114 existing labels stay put, the 6 seed patches from

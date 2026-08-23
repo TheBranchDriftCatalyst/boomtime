@@ -1,4 +1,4 @@
-// GoalsTab — the Settings > Goals tab body (gaka-wpb).
+// GoalsTab — the Settings > Goals tab body (boom-wpb).
 //
 // Renders the "New goal" button (opens the create form) + the list
 // of existing goals. The GoalForm modal (which houses the recursive

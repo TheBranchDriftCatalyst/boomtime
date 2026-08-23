@@ -1,13 +1,13 @@
 /* dossier.css — "operative dossier / character-sheet" visual foundation for
- * the public profile (gaka-174.1, epic gaka-174).
+ * the public profile (boom-174.1, epic boom-174).
  *
  * Additive layer that loads AFTER hacker.css + arasaka.css. Base rules target
  * ALL non-Arasaka themes ("clean mode") at a RESTRAINED intensity — a quiet
  * premium document. The louder .theme-arasaka overrides keep living in
- * arasaka.css and get amped further in the propagate pass (still gaka-174.1).
+ * arasaka.css and get amped further in the propagate pass (still boom-174.1).
  *
  * Everything is driven off theme CSS vars (--primary / --border / --card / …),
- * so the theme switcher (gaka-174.2) reskins the whole dossier for free.
+ * so the theme switcher (boom-174.2) reskins the whole dossier for free.
  */
 
 /* ---------------------------------------------------------------------------
@@ -101,7 +101,7 @@
  * ------------------------------------------------------------------------- */
 .public-dashboard__hero { padding-top: 26px; }
 
-/* gaka-174.3: ambient WebGL backdrop layer. Bleeds slightly past the hero box
+/* boom-174.3: ambient WebGL backdrop layer. Bleeds slightly past the hero box
  * and fades out at the bottom so it dissolves into the page rather than
  * ending on a hard edge. Sits behind the hero content (which is lifted to
  * z-index:1 below). */
@@ -208,8 +208,8 @@
 }
 
 /* ---------------------------------------------------------------------------
- * Floating dossier control cluster (gaka-174.2) — theme switcher today, the
- * date-range control (gaka-174.7) joins it later. Bottom-right so it never
+ * Floating dossier control cluster (boom-174.2) — theme switcher today, the
+ * date-range control (boom-174.7) joins it later. Bottom-right so it never
  * collides with the owner's top-right Edit/Preview toggle.
  * ------------------------------------------------------------------------- */
 .dossier-control {
@@ -249,7 +249,7 @@
 .dossier-control__btn-label { opacity: 0.85; }
 
 /* ---------------------------------------------------------------------------
- * Reclassify sweep (gaka-174.1 mode transition) — a crimson light bar wipes
+ * Reclassify sweep (boom-174.1 mode transition) — a crimson light bar wipes
  * across on theme change, with a brief "RECLASSIFYING" stamp. Decorative and
  * pointer-events:none. Entirely gated behind prefers-reduced-motion: with
  * reduced motion the overlay renders nothing visible.

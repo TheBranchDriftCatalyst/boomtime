@@ -1,4 +1,4 @@
-// widget_defs_more_test.go — extra coverage for widget_defs.go (gaka-d6x.handler).
+// widget_defs_more_test.go — extra coverage for widget_defs.go (boom-d6x.handler).
 //
 // Focus: the CRUD-error branches + cross-user isolation that widget_defs_test.go
 // (the scrubber regression file) does not exercise. Every test pins a NAMED
@@ -45,7 +45,7 @@ func mkValidDefBytes() json.RawMessage {
 	return b
 }
 
-var _ = Describe("widget-defs CRUD extras (gaka-d6x.handler)", func() {
+var _ = Describe("widget-defs CRUD extras (boom-d6x.handler)", func() {
 	Describe("CreateWidgetDef reject-before-insert branches", func() {
 		It("rejects an EMPTY name with 400 (server-side, before the DB unique check runs)", func() {
 			hz := testutil.NewHarness(GinkgoT())
@@ -601,7 +601,7 @@ var _ = Describe("widget-defs CRUD extras (gaka-d6x.handler)", func() {
 		)
 	})
 
-	Describe("WidgetDefSvg error branches (gaka-d6x.handler)", func() {
+	Describe("WidgetDefSvg error branches (boom-d6x.handler)", func() {
 		It("rejects a MALFORMED uuid with 400 (before any DB call)", func() {
 			hz := testutil.NewHarness(GinkgoT())
 			e := hz.Router()
@@ -609,7 +609,7 @@ var _ = Describe("widget-defs CRUD extras (gaka-d6x.handler)", func() {
 			rec := doJSONReqG(e, http.MethodGet, "/widget/svg/not-a-uuid/named", "", nil)
 			Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest),
 				"non-uuid path segment must 400: body=%s", rec.Body.String())
-			// gaka-d6x.handler security: error response must not leak internals
+			// boom-d6x.handler security: error response must not leak internals
 			// (owner name, def spec, stack trace). This endpoint is public.
 			Expect(rec.Body.String()).NotTo(ContainSubstring("wd_"),
 				"error body leaked test user prefix: %s", rec.Body.String())
@@ -669,7 +669,7 @@ var _ = Describe("widget-defs CRUD extras (gaka-d6x.handler)", func() {
 				"500 body leaked owner username; body=%s", rec.Body.String())
 		})
 
-		// clamp SEMANTICS test (gaka-d6x.handler critique): the previous version
+		// clamp SEMANTICS test (boom-d6x.handler critique): the previous version
 		// only asserted 200 + SVG prefix, which a regression that dropped the
 		// clamp entirely would still pass. We now verify the SUBTITLE substring
 		// ("last N days") — the subtitle is derived from the CLAMPED `days` and

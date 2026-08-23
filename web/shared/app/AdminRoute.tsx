@@ -1,4 +1,4 @@
-// AdminRoute — route-level guard for /app/admin/* (gaka-ebq).
+// AdminRoute — route-level guard for /app/admin/* (boom-ebq).
 //
 // The per-endpoint admin gate on the server is the actual security
 // boundary; this component only exists so a non-admin who follows a

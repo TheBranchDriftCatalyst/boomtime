@@ -1,4 +1,4 @@
-// widgets_ginkgo_test.go — ginkgo mirror of widgets_test.go (gaka-0vp.13).
+// widgets_ginkgo_test.go — ginkgo mirror of widgets_test.go (boom-0vp.13).
 // 1:1 case map (2 stdlib TestXxx → 2 Its):
 //
 //	TestExactSourcesFor                       → "ExactSourcesFor > reverse-lookup"
@@ -56,7 +56,7 @@ var _ = ginkgo.Describe("widgets curation helpers", func() {
 	})
 })
 
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
+// -- helpers restored from stdlib partner (boom-0vp.17) --
 func mkRenames(axis string, exact map[string]string) RenameSets {
 	rs := RenameSets{byAxis: map[string]axisRenames{}}
 	a := rs.byAxis[axis]

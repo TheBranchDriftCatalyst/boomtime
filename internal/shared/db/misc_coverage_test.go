@@ -1,5 +1,5 @@
 // misc_coverage_test.go — coverage-focused invariant tests for the remaining
-// uncovered surfaces after auth/health/award_ledger/wakatime_key (gaka-d6x).
+// uncovered surfaces after auth/health/award_ledger/wakatime_key (boom-d6x).
 //
 // Files touched:
 //   - dashboard_layouts.go (Get/Set/Delete)
@@ -30,7 +30,7 @@ import (
 
 // ---- dashboard_layouts ----
 
-var _ = ginkgo.Describe("dashboard_layouts (gaka-d6x)", func() {
+var _ = ginkgo.Describe("dashboard_layouts (boom-d6x)", func() {
 	ginkgo.It("Set + Get: layout round-trips as JSONB, Delete drops the row so subsequent Get is (nil,false,nil)", func() {
 		d := openTestDBG()
 		ctx := context.Background()
@@ -91,7 +91,7 @@ var _ = ginkgo.Describe("dashboard_layouts (gaka-d6x)", func() {
 
 // ---- public_profile ----
 
-var _ = ginkgo.Describe("public_profile (gaka-d6x)", func() {
+var _ = ginkgo.Describe("public_profile (boom-d6x)", func() {
 	ginkgo.It("SetPublicProfile: enabled=true with slug writes both; toggle off with empty slug PRESERVES slug", func() {
 		d := openTestDBG()
 		ctx := context.Background()
@@ -159,7 +159,7 @@ var _ = ginkgo.Describe("public_profile (gaka-d6x)", func() {
 
 // ---- migrate ----
 
-var _ = ginkgo.Describe("migrate (gaka-d6x)", func() {
+var _ = ginkgo.Describe("migrate (boom-d6x)", func() {
 	ginkgo.It("SchemaVersion returns the highest applied migration version (>= 44 for this suite)", func() {
 		d := openTestDBG()
 		ctx := context.Background()
@@ -178,7 +178,7 @@ var _ = ginkgo.Describe("migrate (gaka-d6x)", func() {
 
 // ---- label_images ----
 
-var _ = ginkgo.Describe("label_images (gaka-d6x)", func() {
+var _ = ginkgo.Describe("label_images (boom-d6x)", func() {
 	ginkgo.It("Truncate wipes every row; ListMeta after Truncate is empty; ListMeta populated after Save", func() {
 		d := openTestDBG()
 		ctx := context.Background()
@@ -233,7 +233,7 @@ var _ = ginkgo.Describe("label_images (gaka-d6x)", func() {
 
 // ---- widget_defs ----
 
-var _ = ginkgo.Describe("widget_defs (gaka-d6x)", func() {
+var _ = ginkgo.Describe("widget_defs (boom-d6x)", func() {
 	ginkgo.It("CRUD: Create + GetByName + Get(byID) + Update + List + Delete round-trip a WidgetDef", func() {
 		d := openTestDBG()
 		ctx := context.Background()
@@ -314,7 +314,7 @@ var _ = ginkgo.Describe("widget_defs (gaka-d6x)", func() {
 
 // ---- widgets ----
 
-var _ = ginkgo.Describe("widgets (gaka-d6x)", func() {
+var _ = ginkgo.Describe("widgets (boom-d6x)", func() {
 	ginkgo.It("CreateWidgetLink is idempotent: same (user, scope) returns the SAME uuid on re-mint", func() {
 		d := openTestDBG()
 		ctx := context.Background()
@@ -448,7 +448,7 @@ var _ = ginkgo.Describe("widgets (gaka-d6x)", func() {
 
 // ---- projects.GetBadgeLinkInfo ----
 
-var _ = ginkgo.Describe("badge_link (gaka-d6x)", func() {
+var _ = ginkgo.Describe("badge_link (boom-d6x)", func() {
 	ginkgo.It("GetBadgeLinkInfo: known id round-trips (user, project); unknown returns (\"\",\"\",false,nil)", func() {
 		d := openTestDBG()
 		ctx := context.Background()
@@ -479,7 +479,7 @@ var _ = ginkgo.Describe("badge_link (gaka-d6x)", func() {
 
 // ---- importjobs: extra branches ----
 
-var _ = ginkgo.Describe("import_jobs extra (gaka-d6x)", func() {
+var _ = ginkgo.Describe("import_jobs extra (boom-d6x)", func() {
 	ginkgo.It("GetJobByID unknown returns (nil, nil); CancelJob only cancels queued/running; second cancel is (nil, nil)", func() {
 		d := openTestDBG()
 		ctx := context.Background()
@@ -574,7 +574,7 @@ var _ = ginkgo.Describe("import_jobs extra (gaka-d6x)", func() {
 
 // ---- dump: helpers + probes ----
 
-var _ = ginkgo.Describe("dump misc (gaka-d6x)", func() {
+var _ = ginkgo.Describe("dump misc (boom-d6x)", func() {
 	ginkgo.It("RestoreValidationError.Error / RestoreVersionError.Error carry the caller's diagnostic message", func() {
 		e1 := &RestoreValidationError{Msg: "manifest missing app_id"}
 		Expect(e1.Error()).To(Equal("manifest missing app_id"))
@@ -633,7 +633,7 @@ var _ = ginkgo.Describe("dump misc (gaka-d6x)", func() {
 
 // ---- ingest.ResyncDerived ----
 
-var _ = ginkgo.Describe("ingest ResyncDerived (gaka-d6x)", func() {
+var _ = ginkgo.Describe("ingest ResyncDerived (boom-d6x)", func() {
 	ginkgo.It("ResyncDerived: RecomputeGaps + RefreshRollup for epoch — rollup row appears after rebuild", func() {
 		d := openTestDBG()
 		ctx := context.Background()
@@ -667,7 +667,7 @@ var _ = ginkgo.Describe("ingest ResyncDerived (gaka-d6x)", func() {
 
 // ---- activity.GetTotalActivityTime ----
 
-var _ = ginkgo.Describe("activity GetTotalActivityTime (gaka-d6x)", func() {
+var _ = ginkgo.Describe("activity GetTotalActivityTime (boom-d6x)", func() {
 	ginkgo.It("GetTotalActivityTime: 0 for a fresh user with no heartbeats (no-oracle sanity)", func() {
 		d := openTestDBG()
 		ctx := context.Background()
@@ -683,7 +683,7 @@ var _ = ginkgo.Describe("activity GetTotalActivityTime (gaka-d6x)", func() {
 
 // ---- predicates: pure helpers ----
 
-var _ = ginkgo.Describe("predicates helpers (gaka-d6x)", func() {
+var _ = ginkgo.Describe("predicates helpers (boom-d6x)", func() {
 	ginkgo.It("HiddenSets.Values + HiddenSets.Projects: axis-scoped read-through", func() {
 		hs := mkHiddenSets(map[string][]string{
 			"project":  {"secret-proj"},
@@ -698,7 +698,7 @@ var _ = ginkgo.Describe("predicates helpers (gaka-d6x)", func() {
 
 // ---- observability: planTracer + n1Tracer.TraceQueryEnd ----
 
-var _ = ginkgo.Describe("observability plan tracer (gaka-d6x)", func() {
+var _ = ginkgo.Describe("observability plan tracer (boom-d6x)", func() {
 	ginkgo.It("planTracer.TraceQueryStart/End: fast query (< threshold) does NOT trigger explain (no pool call)", func() {
 		p := &planTracer{slow: 1 * time.Hour} // absurdly high threshold
 		ctx := p.TraceQueryStart(context.Background(), nil, pgx.TraceQueryStartData{SQL: "SELECT 1"})

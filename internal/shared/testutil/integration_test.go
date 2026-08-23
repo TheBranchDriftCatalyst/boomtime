@@ -1,4 +1,4 @@
-// integration_ginkgo_test.go — ginkgo mirror of integration_test.go (gaka-0vp).
+// integration_ginkgo_test.go — ginkgo mirror of integration_test.go (boom-0vp).
 // 1:1 case map (9 stdlib TestXxx; each becomes one It):
 //
 //	TestStatsRollupFastPath                     → Stats HTTP > "GET /stats fast path"

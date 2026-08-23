@@ -1,4 +1,4 @@
-// goals_integration_ginkgo_test.go — ginkgo mirror of goals_integration_test.go (gaka-tst-ginkgo).
+// goals_integration_ginkgo_test.go — ginkgo mirror of goals_integration_test.go (boom-tst-ginkgo).
 // 1:1 case map (14 stdlib TestXxx, all DB-backed via testutil.Harness):
 //
 //	TestEvaluate_LeafTimeCaseFold          → Evaluate leaf > "sums mixed-case axis values via lower(col)=lower($n)"
@@ -47,7 +47,7 @@ func seedRollupRowG(hz *testutil.Harness, owner string, day time.Time, project, 
 	Expect(err).NotTo(HaveOccurred(), "seed rollup")
 }
 
-var _ = Describe("Evaluate (DB integration, gaka-tst-ginkgo)", func() {
+var _ = Describe("Evaluate (DB integration, boom-tst-ginkgo)", func() {
 	// TestEvaluate_LeafTimeCaseFold
 	It("leaf sums mixed-case axis values via lower(col)=lower($n)", func() {
 		hz := testutil.NewHarness(GinkgoTB())

@@ -5,12 +5,12 @@
 // stay lazy-loaded at the router boundary and the grouping is driven entirely
 // by what each domain registered.
 //
-// gaka-4x33: the grouped tab strip this used to hoist into the app HeaderBar
+// boom-4x33: the grouped tab strip this used to hoist into the app HeaderBar
 // (via useHeaderSlot) is gone — it now renders as a vertical rail inside the
 // content column, and the app header falls back to its own "// Admin" title,
 // which it already had a mapping for. Two reasons it had to move: the strip's
 // intrinsic width stretched the shell's grid column and clipped the header's
-// right-side controls off-viewport (gaka-c26s), and nine tabs under three
+// right-side controls off-viewport (boom-c26s), and nine tabs under three
 // group labels is a list, not a tab strip.
 import { useMemo } from "react";
 import { Outlet, useLocation } from "react-router";

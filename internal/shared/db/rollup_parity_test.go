@@ -1,4 +1,4 @@
-// rollup_parity_test.go (gaka-o4m): parity guarantees for the rollup fast-path
+// rollup_parity_test.go (boom-o4m): parity guarantees for the rollup fast-path
 // variants of Momentum, Leaderboards, and CategoryDaily. Every parity test
 // seeds the SAME heartbeats + refreshes the rollup, then asserts:
 //
@@ -22,7 +22,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = ginkgo.Describe("rollup fast-path parity (gaka-o4m)", func() {
+var _ = ginkgo.Describe("rollup fast-path parity (boom-o4m)", func() {
 	// One-day mid-UTC block seeded across three projects + two languages +
 	// two categories so every rollup-eligible axis has at least two values
 	// (a hide/scope predicate that filters one leaves the other in place —

@@ -1,12 +1,12 @@
 # Reconcile wakatime.com schema drift
 
 **Purpose.** Take the JSON payload produced by the DriftBanner's *"Copy JSON (with instructions)"* button
-(`web/src/features/import/DriftBanner.tsx`, gaka-rl6) and land a full backend +
+(`web/src/features/import/DriftBanner.tsx`, boom-rl6) and land a full backend +
 frontend reconciliation: swallow the noise, persist the useful fields, unlock
 the graphs those fields enable. This document is the runbook — paste the drift
 JSON below it in a coding-agent session and follow the sections in order.
 
-The canonical reference implementation is commit `6b4724c` (gaka-1l9), which
+The canonical reference implementation is commit `6b4724c` (boom-1l9), which
 absorbed 15 fields (7 heartbeat AI metrics + 8 lookup metadata) and shipped an
 Overview `AIAssistanceCard` in a single change. Everything below mirrors that
 shape.
@@ -68,7 +68,7 @@ For every `unknown_field` finding, decide one of three tiers:
    the sender's environment, not per-row data); OR the field lives on
    `heartbeats` but is essentially display-only and we don't have a plan
    for it. Examples: `cli_version`, `go_version`, `ai_subscription_plan` (arguable —
-   we persisted it in gaka-1l9 so the AI card can show the plan chip; had
+   we persisted it in boom-1l9 so the AI card can show the plan chip; had
    we no such use it would go here).
 
 3. **`missing_required` action** — see the table above; not part of the
@@ -97,7 +97,7 @@ For every tier-2 finding, add a single line to the right `baseline` map in
 - **`all_time_since_today`** → `allTimeSpec.baseline` (anchor: `"writes_only"`).
 
 Format each line with a trailing comment noting the source endpoint when it's
-not obvious (gaka-1l9's `lookupSpec.baseline` uses `// user_agents` /
+not obvious (boom-1l9's `lookupSpec.baseline` uses `// user_agents` /
 `// machine_names` to disambiguate — mirror that).
 
 Rebuild + rerun the failed import — the tier-2 warnings should disappear.
@@ -128,7 +128,7 @@ Template (mirror `00021_heartbeats_ai_fields.sql`):
 
 ```sql
 -- +goose Up
--- gaka-<id>: <one-liner about what was captured>. Persisting them here
+-- boom-<id>: <one-liner about what was captured>. Persisting them here
 -- unlocks <named surface>. All columns are nullable; heartbeats from a
 -- plugin that doesn't emit these fields simply bind NULL, and every
 -- aggregation COALESCEs to 0 / ignores nulls. Rollup unaffected — these
@@ -148,7 +148,7 @@ ALTER TABLE heartbeats
 In `internal/importer/drift.go`, extend `heartbeatSpec.known` with the new
 fields, using the correct `jsonType` (see the file for the enum:
 `jtNumberOrNull`, `jtStringOrNull`, `jtBoolOrNull`, `jtArrayOrNull`, etc.).
-Group under a comment tagged with the bead id (gaka-1l9 uses `// gaka-1l9:
+Group under a comment tagged with the bead id (boom-1l9 uses `// boom-1l9:
 wakatime.com's AI-assistance heartbeat fields (first seen 2026-07-03).
 Persisted to matching heartbeats columns.`).
 
@@ -294,7 +294,7 @@ Reference implementation added no new tests for the AI capture (the
 persist path was covered by the existing `TestSaveHeartbeats*` suite, and
 the aggregation is a straight-line SQL). Add tests when:
 
-- **The rewrite is non-trivial** (e.g. rename expansion in gaka-xuc got a
+- **The rewrite is non-trivial** (e.g. rename expansion in boom-xuc got a
   dedicated `widgets_test.go`). Add a pure-Go unit test in
   `internal/db/<theme>_activity_test.go` locking the summary math on a
   fixture.
@@ -318,7 +318,7 @@ line in the output to confirm the migration is syntactically valid.
 
 ## Ship checklist
 
-1. Commit the whole capture as one feat: `feat(<domain>): capture <fields> + <chart-name> (gaka-<id>)`.
+1. Commit the whole capture as one feat: `feat(<domain>): capture <fields> + <chart-name> (boom-<id>)`.
    Reference implementation: `6b4724c`.
 2. Push to `gakatime`.
 3. Cut a patch release: `task release VERSION=v0.5.<next>` then

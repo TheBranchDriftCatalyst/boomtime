@@ -64,7 +64,7 @@ describe("mergeLayouts", () => {
   });
 });
 
-// gaka-lzr: applyPositions is the drag/resize merge — RGL's onLayoutChange
+// boom-lzr: applyPositions is the drag/resize merge — RGL's onLayoutChange
 // only carries geometry, so this MUST preserve view/hidden/config or every
 // drag would wipe a widget's chart-toggle view + its config blob.
 describe("applyPositions", () => {

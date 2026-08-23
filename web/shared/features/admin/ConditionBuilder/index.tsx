@@ -1,5 +1,5 @@
 // ConditionBuilder — top-level entry point for the smart label condition
-// form (gaka-6uf). Renders one of {PrimitiveEditor, ComposerEditor} based
+// form (boom-6uf). Renders one of {PrimitiveEditor, ComposerEditor} based
 // on value.kind and cascades onChange upward. Also drives a kind picker
 // that lets the user swap between the 10 primitives + 3 composers, and
 // hosts the tabbed Builder | Raw-JSON layout with a live human preview.

@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- catalyst-books curation override layer (gaka-books). reading_items.status /
+-- catalyst-books curation override layer (boom-books). reading_items.status /
 -- finished_at / rating are the DERIVED layer: Amazon-owned, recomputed every
 -- sync. These four columns are the OVERRIDE layer: written ONLY by the user (the
 -- PATCH /books/items/:id/curation endpoint) or by the Hardcover pull's

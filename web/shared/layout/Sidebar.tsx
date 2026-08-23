@@ -251,7 +251,7 @@ function SpacesNavGroup({
   );
 }
 
-/** ProfileNavLink — the single Profile entry (gaka-4ng), living in the Spaces
+/** ProfileNavLink — the single Profile entry (boom-4ng), living in the Spaces
  * group because a profile is semantically a "space" too: a scoped, publishable
  * view of your data. Points at the IN-APP owner view (/app/profile), which
  * hosts both the dossier preview and the editor; the shareable public /p/:slug
@@ -308,7 +308,7 @@ export function SidebarBody({
   // — so a disabled feature's nav is fully inert. Flags default false while the
   // config request is in flight.
   const { config } = usePublicConfig();
-  // gaka-dr5w: Admin is a REGISTERED nav item now (in the System section) with
+  // boom-dr5w: Admin is a REGISTERED nav item now (in the System section) with
   // `adminOnly: true`, rather than a bespoke component rendered outside the
   // section loop. Treating "still loading" as not-admin preserves the old
   // behavior of rendering nothing during the first-paint auth check, so an
@@ -434,7 +434,7 @@ export function Sidebar({
   onLogout,
   onCreateSpace,
 }: SidebarProps) {
-  // Hover-to-peek (gaka-k26n.11): when collapsed, hovering the rail expands it
+  // Hover-to-peek (boom-k26n.11): when collapsed, hovering the rail expands it
   // to full labels. The OUTER wrapper keeps the collapsed column width, and the
   // <aside> overlays (absolute + z-50) so page content never shifts during the
   // peek — it slides back the moment the pointer leaves.

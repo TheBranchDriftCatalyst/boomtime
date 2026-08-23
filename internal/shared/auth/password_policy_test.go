@@ -1,4 +1,4 @@
-// password_policy_ginkgo_test.go — ginkgo mirror of password_policy_test.go (gaka-0vp).
+// password_policy_ginkgo_test.go — ginkgo mirror of password_policy_test.go (boom-0vp).
 // 1:1 case map (2 stdlib TestXxx):
 //
 //	TestValidatePassword                       → ValidatePassword > DescribeTable of 7 named cases
@@ -29,7 +29,7 @@ var _ = Describe("ValidatePassword (rune-aware, unicode-letter)", func() {
 		Entry("7 ASCII digits → too short", "1234567", ErrPasswordTooShort),
 		Entry("8 ASCII letters → no digit", "aaaaaaaa", ErrPasswordNoDigit),
 		Entry("8 ASCII digits → no letter", "12345678", ErrPasswordNoLetter),
-		Entry("4 runes / 8 bytes CJK — must reject (gaka-e5e regression)",
+		Entry("4 runes / 8 bytes CJK — must reject (boom-e5e regression)",
 			"日本1a", ErrPasswordTooShort),
 		// accepts
 		Entry("7 letters + 1 digit (minimum viable)", "aaaaaaa1", nil),

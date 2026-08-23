@@ -1,5 +1,5 @@
 // admin_ws_integration_test.go — real WebSocket handshake coverage for
-// AdminLabelImagesWS (gaka-d6x.handler). Uses httptest.NewServer so the
+// AdminLabelImagesWS (boom-d6x.handler). Uses httptest.NewServer so the
 // coder/websocket client can Dial + receive the initial snapshot frame —
 // this covers the post-Accept branches of the handler (subscribe + snapshot
 // write + reader-goroutine cleanup) that the httptest.NewRecorder path

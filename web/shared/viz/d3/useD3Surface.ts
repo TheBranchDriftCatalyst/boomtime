@@ -34,7 +34,7 @@ export interface D3SurfaceCtx {
 }
 
 export interface D3Surface {
-  /** Callback ref (gaka-3nw) — attaches the ResizeObserver even when the host
+  /** Callback ref (boom-3nw) — attaches the ResizeObserver even when the host
    *  div mounts later than the first render (post-load ChartSurface swap-in). */
   ref: (node: HTMLDivElement | null) => void;
   svgRef: React.RefObject<SVGSVGElement | null>;
@@ -88,7 +88,7 @@ export function useD3Surface(
   useEffect(() => {
     const svgEl = svgRef.current;
     d3.select(svgEl).selectAll("*").remove();
-    // gaka-3nw: `container` is the frame node tracked via a callback ref, so it
+    // boom-3nw: `container` is the frame node tracked via a callback ref, so it
     // is present the moment the host div mounts (even post-load). Kept in the
     // deps below so the draw re-runs when the node finally attaches.
     if (!svgEl || !container) return;
@@ -131,7 +131,7 @@ export function useD3Surface(
       tip?.remove();
     };
     // Chart data deps are spread in; size/theme deps appended (frame.width
-    // only when the svg tracks the frame). `container` (gaka-3nw) re-runs the
+    // only when the svg tracks the frame). `container` (boom-3nw) re-runs the
     // draw when the host node attaches after a load-gated render — the trigger
     // for sizeToFrame:false charts, whose width slot is a constant 0. `svgRef`
     // is stable.

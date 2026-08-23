@@ -1,4 +1,4 @@
-// spaces_ginkgo_test.go — ginkgo mirror of spaces_test.go (gaka-0vp.13).
+// spaces_ginkgo_test.go — ginkgo mirror of spaces_test.go (boom-0vp.13).
 // 1:1 case map (9 stdlib TestXxx → 7 Its + 1 DescribeTable(19)):
 //
 //	TestInclusionPredicateShape        → It "inclusionPredicate SQL/arg shape"
@@ -261,7 +261,7 @@ var _ = ginkgo.Describe("spaces (inclusion predicate)", func() {
 	})
 })
 
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
+// -- helpers restored from stdlib partner (boom-0vp.17) --
 func mkMembers(exact map[string][]string, regex map[string][]string) MemberSets {
 	ms := MemberSets{byAxis: map[string]axisMembers{}}
 	for axis, vals := range exact {

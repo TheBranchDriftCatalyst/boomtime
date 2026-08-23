@@ -1,7 +1,7 @@
 package db
 
 // auth_test.go pins the SECURITY-CRITICAL invariants of the API-token layer
-// (gaka-se2.6). Every test names ONE invariant that would be a real vuln if
+// (boom-se2.6). Every test names ONE invariant that would be a real vuln if
 // violated. Tests deliberately seed TWO owners with overlapping requests so
 // a "trivially return the row we just wrote" implementation would fail:
 //

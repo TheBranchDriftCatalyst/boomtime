@@ -1,6 +1,6 @@
 package db
 
-// Integration coverage for github_stats_cache.go (gaka-anh Phase 2). The
+// Integration coverage for github_stats_cache.go (boom-anh Phase 2). The
 // load-bearing property is IDEMPOTENCY: the table is one row per user and every
 // write is an upsert-replace, so a re-sync can never accrue duplicate stats.
 // These tests pin that (row count stays 1, values REPLACE not accumulate) plus

@@ -32,7 +32,7 @@ export function useProjectCharts(stats: ProjectStatistics | undefined) {
     const colorByName = paletteByName(stats?.languages ?? [], {
       minSeconds: MIN_SLICE_SECONDS,
     });
-    // gaka-7m4: languagesDaily doesn't carry otherMembers (Name+Daily only),
+    // boom-7m4: languagesDaily doesn't carry otherMembers (Name+Daily only),
     // but stats.languages (the capped ResourceStats list) does. Look each
     // name up so the "Other (N more)" stacked segment can render a breakdown.
     const langByName = new Map(

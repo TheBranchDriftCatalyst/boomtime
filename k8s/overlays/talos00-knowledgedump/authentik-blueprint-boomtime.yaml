@@ -26,9 +26,9 @@
 # oidc-external-secret.yaml (BOOM_OIDC_CLIENT_SECRET from the same 1Password
 # property). See OIDC-PROD-WIRING.md.
 #
-# PLANNED — bring the blueprint HERE (gaka-93f.21):
+# PLANNED — bring the blueprint HERE (boom-93f.21):
 # The blueprint currently lives in talos-homelab only because Authentik's
-# file-mount ingestion needs a helmrelease volumeMount. gaka-93f.21 tracks
+# file-mount ingestion needs a helmrelease volumeMount. boom-93f.21 tracks
 # relocating it into THIS repo, delivered by an ArgoCD-synced apply-Job that
 # POSTs it to Authentik's API (POST /api/v3/managed/blueprints/), so boomtime
 # owns its full Authentik wiring with zero infra-repo edits. When that lands,

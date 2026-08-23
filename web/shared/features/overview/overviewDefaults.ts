@@ -1,4 +1,4 @@
-// overviewDefaults (gaka-7uc, Phase 3) — the default widget layout for the
+// overviewDefaults (boom-7uc, Phase 3) — the default widget layout for the
 // composable Overview dashboard grid. Reproduces OverviewDashboard.tsx's
 // CURRENT vertical arrangement + relative sizes on a 12-col grid so that when
 // Phase 4 swaps the static ChartCard stack for a draggable widget grid, a user
@@ -24,7 +24,7 @@ export const OVERVIEW_DEFAULT_LAYOUT: GridLayoutItem[] = [
   // Flagship contribution calendar (full width).
   { i: "activity-heatmap", x: 0, y: 13, w: 12, h: 3 },
 
-  // gaka-v1k: GitHub-only chart row — grouped right after the contribution
+  // boom-v1k: GitHub-only chart row — grouped right after the contribution
   // calendar so all GitHub surfaces read together. Each self-fetches from the
   // cached P2 payload and self-hides when the feature is off / user unlinked.
   { i: "github-commits", x: 0, y: 16, w: 12, h: 3 },

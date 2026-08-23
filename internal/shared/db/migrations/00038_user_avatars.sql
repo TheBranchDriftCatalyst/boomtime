@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- user_avatars (gaka-9v4): per-user AI-generated CHIBI portrait rendered
+-- user_avatars (boom-9v4): per-user AI-generated CHIBI portrait rendered
 -- via the ComfyUI shim from an LLM-authored prompt derived from the user's
 -- top labels + activity synopsis. One row per user (PK on username), lazy-
 -- populated when the user hits the Settings > Avatar tab and clicks

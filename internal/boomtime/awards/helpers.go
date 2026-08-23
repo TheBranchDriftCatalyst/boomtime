@@ -3,7 +3,7 @@
 // now live in shared homes (internal/identity for the profile-shape
 // constants — canonical because /p/:slug is the endpoint that
 // RENDERS this window; internal/apihelpers for ResolveUserTZ) so a
-// drift here vs. there can never happen (gaka-hc6.3 / gaka-dg7).
+// drift here vs. there can never happen (boom-hc6.3 / boom-dg7).
 //
 // The local unexported aliases below keep eval.go / backfill.go reading
 // as it did pre-collapse — a call site that says

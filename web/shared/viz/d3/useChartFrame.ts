@@ -28,7 +28,7 @@ export function useChartFrame(height: number): {
   const [width, setWidth] = useState(0);
   const [themeKey, setThemeKey] = useState(0);
 
-  // gaka-3nw: a CALLBACK ref (not useRef) so the ResizeObserver attaches
+  // boom-3nw: a CALLBACK ref (not useRef) so the ResizeObserver attaches
   // whenever the measured node mounts — crucially INCLUDING later than the
   // first render. A chart renders <EmptyChart> (which mounts no ChartSurface,
   // so this ref never attaches) while its query is loading, then swaps in

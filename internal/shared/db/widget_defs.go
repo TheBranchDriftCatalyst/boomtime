@@ -1,4 +1,4 @@
-// widget_defs.go holds the persistence layer for gaka-3nu: named/saved custom
+// widget_defs.go holds the persistence layer for boom-3nu: named/saved custom
 // widget compositions. Sibling to widget_links but a distinct concept —
 // widget_defs stores WHAT the widget renders (the composition spec), while
 // widget_links stores WHERE it's scoped and how it's shared. v1 keeps defs

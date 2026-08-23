@@ -1,4 +1,4 @@
-// GithubConnectCard.test.tsx (gaka-2ip Phase 1) — non-tautological tests for the
+// GithubConnectCard.test.tsx (boom-2ip Phase 1) — non-tautological tests for the
 // Settings > Profile "Connect GitHub" card.
 //
 // Coverage:
@@ -45,7 +45,7 @@ afterEach(() => {
   authStore.clear();
 });
 
-describe("GithubConnectCard (gaka-2ip)", () => {
+describe("GithubConnectCard (boom-2ip)", () => {
   it("renders nothing when the feature is disabled server-side", async () => {
     enableFeature(false);
     const { container } = renderWithProviders(<GithubConnectCard />, {

@@ -53,7 +53,7 @@ test.describe("admin CLI runner — Commands tab", () => {
     page,
   }) => {
     await page.goto("/app/admin/labels");
-    // gaka-4x33: vertical rail (a navigation landmark of links), not a tablist.
+    // boom-4x33: vertical rail (a navigation landmark of links), not a tablist.
     const rail = page.getByRole("navigation", { name: "Admin sections" });
     await expect(rail).toBeVisible({ timeout: 10_000 });
     await expect(
@@ -79,7 +79,7 @@ test.describe("admin CLI runner — Commands tab", () => {
     await page.getByRole("button", { name: /^user list/ }).click();
     await page.getByRole("button", { name: /^Run$/ }).click();
 
-    // The run now streams into a live terminal viewer (gaka-hney.5); the
+    // The run now streams into a live terminal viewer (boom-hney.5); the
     // output tails in over the WS, and toContainText retries until it lands.
     const panel = page.getByTestId("terminal-log-viewer");
     await expect(panel).toBeVisible({ timeout: 15_000 });

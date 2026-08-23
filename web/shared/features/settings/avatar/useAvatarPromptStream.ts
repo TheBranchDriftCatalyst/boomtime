@@ -1,4 +1,4 @@
-// useAvatarPromptStream (gaka-9v4) — a small hook that reads the
+// useAvatarPromptStream (boom-9v4) — a small hook that reads the
 // OpenAI-compat SSE stream from
 //   POST /api/v1/admin/avatar/synthesize-prompt
 // and appends every delta.content chunk to an accumulating `text` string.

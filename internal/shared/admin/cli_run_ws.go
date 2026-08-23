@@ -1,4 +1,4 @@
-// cli_run_ws.go — GET /api/v1/admin/cli/run/ws (gaka-hney.5): the STREAMING
+// cli_run_ws.go — GET /api/v1/admin/cli/run/ws (boom-hney.5): the STREAMING
 // twin of CLIRun. The client opens the socket, sends ONE cliRunRequest frame,
 // and receives live "output" frames as the command runs, then a terminal
 // "done" — so the operator watches a run (e.g. backfill github-stats across N

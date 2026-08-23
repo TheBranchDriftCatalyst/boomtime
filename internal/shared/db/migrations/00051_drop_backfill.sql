@@ -3,7 +3,7 @@
 
 -- Remove the git-history backfill experiment (reverses 00037_backfill.sql).
 --
--- The experiment (gaka-vh8) synthesized fake WakaTime heartbeats tagged
+-- The experiment (boom-vh8) synthesized fake WakaTime heartbeats tagged
 -- source='backfill:git' and stored per-user tunables in backfill_config. It
 -- never graduated past an experiment and its whole apparatus (CLI `backfill
 -- git`, the admin plane, the in-memory job registry, the db layer) has been

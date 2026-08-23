@@ -72,7 +72,7 @@ export function useCurationMutations() {
     },
   });
 
-  // gaka-dfd: pause / resume a curation rule without deleting it. When
+  // boom-dfd: pause / resume a curation rule without deleting it. When
   // `enabled` is passed, sets the exact value (protects against double-click
   // races where the client thinks the rule is on but the server disagrees).
   // Invalidates every curation-dependent query — a paused rule stops

@@ -1,5 +1,5 @@
 // useBookCuration — the react-query binding for per-book curation overrides
-// (gaka-books Stage 5). A "curation" write is a user (or Hardcover-adopted)
+// (boom-books Stage 5). A "curation" write is a user (or Hardcover-adopted)
 // override of the status / rating / finished-date that maps to Hardcover, sent
 // to PATCH /api/v1/books/items/:id/curation. The endpoint returns the updated
 // EFFECTIVE reading row (override ?? derived), which the caller folds back into

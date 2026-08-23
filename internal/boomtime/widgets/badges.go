@@ -31,7 +31,7 @@ func (h *Handler) BadgeLink(c *echo.Context) error {
 }
 
 // applyBadgeCuration is the badge-endpoint half of the public-safe contract
-// (bd gaka-6jm.3). Badges are cardinality-1: a badge whose subject is a hidden
+// (bd boom-6jm.3). Badges are cardinality-1: a badge whose subject is a hidden
 // project has no partially-scrubbed representation — the caller MUST 404
 // instead of leaking the project name (which is echoed as the shields.io
 // label) or its total time.
@@ -74,7 +74,7 @@ func (h *Handler) BadgeSvg(c *echo.Context) error {
 		return apihelpers.RespondErr(c, apierr.NotFound("Badge not found"))
 	}
 
-	// gaka-6jm.3: apply the owner's hide rules before hitting the DB for
+	// boom-6jm.3: apply the owner's hide rules before hitting the DB for
 	// activity totals. If the badge's subject project has been curated away,
 	// the badge itself must 404 — otherwise the shields.io label leaks the
 	// project name and the total leaks per-day activity.

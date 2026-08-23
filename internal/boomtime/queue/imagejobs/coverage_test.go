@@ -1,6 +1,6 @@
 // coverage_test.go — additional ginkgo specs targeting uncovered branches in
 // the imagejobs package. Each It pins a named invariant that would fail if the
-// specific branch it exercises were regressed. See gaka-d6x.
+// specific branch it exercises were regressed. See boom-d6x.
 //
 // Every spec here targets a branch that the pre-existing pool_test.go and
 // registry_test.go do NOT cover:

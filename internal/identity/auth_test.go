@@ -3,16 +3,16 @@
 //
 //	TestRegister_RejectsWeakPassword                          → Register > 5 DescribeTable entries (empty/short/7-char/no-digit/no-letter)
 //	TestRegister_AcceptsStrongPassword                        → Register > "strong password → 200 and login round-trips"
-//	TestLogin_BodySizeCap_413                                 → Login body-size cap (gaka-bi2) > "5 KiB → 413 before BurnSentinelVerify"
-//	TestRegister_BodySizeCap_413                              → Register body-size cap (gaka-bi2) > "5 KiB → 413 before argon2 CreateUser"
-//	TestLogin_ConstantTimeUserEnumeration                     → Login constant-time (gaka-imm) > "sentinel counter + body identity + timing delta<3ms"
-//	TestLogin_CookieHasSecureFlagInProd                       → Login cookies (gaka-b5x.1) > "prod → Set-Cookie carries Secure+HttpOnly"
+//	TestLogin_BodySizeCap_413                                 → Login body-size cap (boom-bi2) > "5 KiB → 413 before BurnSentinelVerify"
+//	TestRegister_BodySizeCap_413                              → Register body-size cap (boom-bi2) > "5 KiB → 413 before argon2 CreateUser"
+//	TestLogin_ConstantTimeUserEnumeration                     → Login constant-time (boom-imm) > "sentinel counter + body identity + timing delta<3ms"
+//	TestLogin_CookieHasSecureFlagInProd                       → Login cookies (boom-b5x.1) > "prod → Set-Cookie carries Secure+HttpOnly"
 //	TestLogin_CookieOmitsSecureFlagInDev                      → Login cookies > "dev → Set-Cookie omits Secure (localhost)"
 //	TestRefresh_CookieCarriesSecureFlag                       → Refresh cookies > "prod → refresh Set-Cookie carries Secure"
-//	TestRefreshTokenLookup_UsesHash                           → Refresh token storage (gaka-b5x.2) > "hashed lookup + hashed_refresh_token column match"
-//	TestAPITokenLookup_UsesHash                               → API token storage (gaka-b5x.2) > "hashed at rest + GetUserByToken works"
+//	TestRefreshTokenLookup_UsesHash                           → Refresh token storage (boom-b5x.2) > "hashed lookup + hashed_refresh_token column match"
+//	TestAPITokenLookup_UsesHash                               → API token storage (boom-b5x.2) > "hashed at rest + GetUserByToken works"
 //	TestLogout_ClearsRefreshCookie                            → Logout > "clears refresh cookie with Secure+expiry marker"
-//	TestLogin_RehashesLegacyHash_BravoRegression              → Login argon2 rehash (gaka-awh.6) > "v1 row → v2 after login; second login idempotent"
+//	TestLogin_RehashesLegacyHash_BravoRegression              → Login argon2 rehash (boom-awh.6) > "v1 row → v2 after login; second login idempotent"
 //	TestLogin_WrongPasswordDoesNotUpgrade                     → Login argon2 rehash > "wrong password does NOT rehash the v1 row"
 //	TestCreateUser_StartsAtV2_BravoRegression                 → Register argon2 > "new users land at ArgonVersionCurrent"
 //	TestChangePassword_StoresAtV2                             → ChangePassword argon2 > "v1 user changes pw → row is v2"
@@ -80,7 +80,7 @@ func readUserRowG(hz *testutil.Harness, username string) ([]byte, int) {
 	return hp, ver
 }
 
-var _ = Describe("Register weak-password guard (gaka-e5e)", func() {
+var _ = Describe("Register weak-password guard (boom-e5e)", func() {
 	DescribeTable("weak password → 400, no users row leaked, no internal strings in body",
 		func(usernamePrefix, password string) {
 			hz := testutil.NewHarness(GinkgoT())
@@ -138,7 +138,7 @@ var _ = Describe("Register strong-password path", func() {
 	})
 })
 
-var _ = Describe("Login body-size cap (gaka-bi2)", func() {
+var _ = Describe("Login body-size cap (boom-bi2)", func() {
 	It("rejects a 5 KiB body with 413 before BurnSentinelVerify runs", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
@@ -156,7 +156,7 @@ var _ = Describe("Login body-size cap (gaka-bi2)", func() {
 	})
 })
 
-var _ = Describe("Register body-size cap (gaka-bi2)", func() {
+var _ = Describe("Register body-size cap (boom-bi2)", func() {
 	It("rejects a 5 KiB body with 413 before argon2 CreateUser runs", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
@@ -173,7 +173,7 @@ var _ = Describe("Register body-size cap (gaka-bi2)", func() {
 	})
 })
 
-var _ = Describe("Login constant-time (gaka-imm)", func() {
+var _ = Describe("Login constant-time (boom-imm)", func() {
 	It("closes the user-enumeration oracle: sentinel counter fires, body identical, timing delta < 3ms", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
@@ -223,16 +223,16 @@ var _ = Describe("Login constant-time (gaka-imm)", func() {
 		meanInvalid := meanDurationG(invalidUserTimes)
 		meanWrong := meanDurationG(wrongPwTimes)
 		delta := time.Duration(math.Abs(float64(meanInvalid - meanWrong)))
-		GinkgoWriter.Printf("gaka-imm timing: invalid-user=%s wrong-pw=%s delta=%s\n",
+		GinkgoWriter.Printf("boom-imm timing: invalid-user=%s wrong-pw=%s delta=%s\n",
 			meanInvalid, meanWrong, delta)
 		// Timing test intentionally tolerant — some CI environments trip 3ms.
 		// The counter+body checks are the strong non-tautological signals.
 		Expect(delta).To(BeNumerically("<", 15*time.Millisecond),
-			"gaka-imm regression: timing delta = %s (>>3ms) — enumeration oracle is back", delta)
+			"boom-imm regression: timing delta = %s (>>3ms) — enumeration oracle is back", delta)
 	})
 })
 
-var _ = Describe("Login cookies (gaka-b5x.1)", func() {
+var _ = Describe("Login cookies (boom-b5x.1)", func() {
 	It("prod: refresh Set-Cookie carries Secure + HttpOnly", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		hz.Cfg.CookieSecure = true
@@ -274,7 +274,7 @@ var _ = Describe("Login cookies (gaka-b5x.1)", func() {
 	})
 })
 
-var _ = Describe("Refresh cookies (gaka-b5x.1)", func() {
+var _ = Describe("Refresh cookies (boom-b5x.1)", func() {
 	It("prod: refresh_token endpoint also emits Secure Set-Cookie", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		hz.Cfg.CookieSecure = true
@@ -310,7 +310,7 @@ var _ = Describe("Refresh cookies (gaka-b5x.1)", func() {
 	})
 })
 
-var _ = Describe("Refresh token storage (gaka-b5x.2)", func() {
+var _ = Describe("Refresh token storage (boom-b5x.2)", func() {
 	It("stores refresh tokens hashed; hashed lookup works end-to-end", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
@@ -354,7 +354,7 @@ var _ = Describe("Refresh token storage (gaka-b5x.2)", func() {
 	})
 })
 
-var _ = Describe("API token storage (gaka-b5x.2)", func() {
+var _ = Describe("API token storage (boom-b5x.2)", func() {
 	It("stores API tokens hashed at rest; GetUserByToken hashed-path works", func() {
 		hz := testutil.NewHarness(GinkgoT())
 
@@ -421,7 +421,7 @@ var _ = Describe("Logout clears refresh cookie", func() {
 	})
 })
 
-var _ = Describe("Login argon2 transparent rehash (gaka-awh.6)", func() {
+var _ = Describe("Login argon2 transparent rehash (boom-awh.6)", func() {
 	It("bumps v1 rows to v2 on successful login; second login is idempotent (no rehash)", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
@@ -476,7 +476,7 @@ var _ = Describe("Login argon2 transparent rehash (gaka-awh.6)", func() {
 	})
 })
 
-var _ = Describe("Register argon2 version (gaka-awh.6)", func() {
+var _ = Describe("Register argon2 version (boom-awh.6)", func() {
 	It("new users land at ArgonVersionCurrent immediately (never v1)", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
@@ -496,7 +496,7 @@ var _ = Describe("Register argon2 version (gaka-awh.6)", func() {
 	})
 })
 
-var _ = Describe("ChangePassword argon2 version (gaka-awh.6)", func() {
+var _ = Describe("ChangePassword argon2 version (boom-awh.6)", func() {
 	It("a v1 user changing password → row is at ArgonVersionCurrent afterward", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()

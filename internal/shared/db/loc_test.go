@@ -1,4 +1,4 @@
-// loc_test.go — ginkgo specs for the lines-of-code aggregations (gaka-yfg).
+// loc_test.go — ginkgo specs for the lines-of-code aggregations (boom-yfg).
 // Covers: the generated/vendored ignore filter DE-INFLATES the per-project sum
 // (node_modules excluded), DISTINCT-ON picks each file's LATEST line count,
 // a file shared across projects counts in both, the over-time curve grows

@@ -1,6 +1,6 @@
 // useReadingAxisValues — distinct-value autocomplete for a reading goal's
 // dimension (genre / series / status), mirroring useAxisValues on the coding
-// path (gaka-wpb). Where the coding path groups heartbeats over
+// path (boom-wpb). Where the coding path groups heartbeats over
 // /api/v1/heartbeats/group, the reading path has no such endpoint — it goes
 // through the cross-domain query DSL (`runQuery`, POST /api/v1/query), grouping
 // the reading domain's "books" measure by the axis.

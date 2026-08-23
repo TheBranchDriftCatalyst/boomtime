@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- Memewarfare wave 3 (gaka-mwp): reinstate TERMINAL PURIST + FIELD MEDIC
+-- Memewarfare wave 3 (boom-mwp): reinstate TERMINAL PURIST + FIELD MEDIC
 -- now that the axis-time-sum evaluator kind exists.
 --
 -- Wave 2 agent dropped these two during expansion because the evaluator

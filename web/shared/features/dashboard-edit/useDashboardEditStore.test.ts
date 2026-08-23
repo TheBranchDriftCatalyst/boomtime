@@ -1,4 +1,4 @@
-// useDashboardEditStore.test.ts (gaka-lzr, Phase 4) — the edit store's history
+// useDashboardEditStore.test.ts (boom-lzr, Phase 4) — the edit store's history
 // contract: undo/redo pointer math, moveResize drag-coalescing, select being a
 // non-history / non-dirtying present mutation, the bounded past stack, and
 // isDirty vs markSaved.

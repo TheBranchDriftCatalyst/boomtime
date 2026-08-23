@@ -1,5 +1,5 @@
 // standalone_identify_test.go — unit coverage for the STANDALONE catalyst-books
-// single-owner short-circuit in apihelpers.Identify (gaka-zp2s).
+// single-owner short-circuit in apihelpers.Identify (boom-zp2s).
 //
 // These specs pin the exact seam cmd/catalyst-books relies on: with
 // auth.SetStandaloneOwner pinned, Identify resolves EVERY caller to that one
@@ -24,7 +24,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
 )
 
-var _ = Describe("Identify — standalone single-owner short-circuit (gaka-zp2s)", func() {
+var _ = Describe("Identify — standalone single-owner short-circuit (boom-zp2s)", func() {
 	newCtx := func() *echo.Context {
 		e := echo.New()
 		// Deliberately NO Authorization header — the whole point is that the

@@ -32,7 +32,7 @@ describe("secondsToHms", () => {
 });
 
 describe("secondsToCompact", () => {
-  it("compacts large durations to a single-line h/m readout (gaka-k2p)", () => {
+  it("compacts large durations to a single-line h/m readout (boom-k2p)", () => {
     // 366h 47m — the exact case from the profile-page bug report where the
     // long `secondsToHms` string ("366 hrs 47 mins") wrapped to 3 lines.
     expect(secondsToCompact(366 * 3600 + 47 * 60)).toBe("366h 47m");

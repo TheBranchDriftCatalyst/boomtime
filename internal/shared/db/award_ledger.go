@@ -1,5 +1,5 @@
 // award_ledger.go: persistence layer for the label-award streak system
-// (gaka-mwp-streaks). The evaluator itself stays JIT client-side; this
+// (boom-mwp-streaks). The evaluator itself stays JIT client-side; this
 // file just records WHICH labels fired per period so the FE can render
 // "3x NIGHT WATCH" streak badges.
 
@@ -63,7 +63,7 @@ func ResolvePeriod(kind, perLabel string) PeriodType {
 
 // PeriodBounds returns the [start, end) window a given `at` timestamp
 // falls into, in the caller-supplied timezone. The timezone MUST come
-// from the gaka-dg7 resolver (never assume UTC — a "day" streak in
+// from the boom-dg7 resolver (never assume UTC — a "day" streak in
 // Pacific must not break on a UTC day-flip).
 //
 // - daily:   local midnight → next local midnight

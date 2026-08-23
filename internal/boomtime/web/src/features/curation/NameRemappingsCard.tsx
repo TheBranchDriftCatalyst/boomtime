@@ -15,9 +15,9 @@ export function NameRemappingsCard({
 }: {
   rules: CurationRule[];
   onRemove: (rule: CurationRule) => void;
-  // gaka-cr4: opens the destructive-apply modal (rename rules only).
+  // boom-cr4: opens the destructive-apply modal (rename rules only).
   onApply?: (rule: CurationRule) => void;
-  // gaka-due: opens the destructive-purge modal (hide rules only).
+  // boom-due: opens the destructive-purge modal (hide rules only).
   onPurge?: (rule: CurationRule) => void;
 }) {
   // Group rename rules by axis (project/language/editor/branch/…).

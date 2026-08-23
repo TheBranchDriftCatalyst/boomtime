@@ -1,10 +1,10 @@
-// apierr_ginkgo_test.go — ginkgo mirror of apierr_test.go (gaka-0vp).
+// apierr_ginkgo_test.go — ginkgo mirror of apierr_test.go (boom-0vp).
 // 1:1 case map (2 stdlib TestXxx → 12 DescribeTable Entries + 1 It):
 //
 //	TestPredefinedErrorStatuses → predefined constructor > table of 12
 //	TestNewAndError             → New + Error() > "New + Error()"
 //
-// gaka-d6x extension: coverage floor 90% for apierr package. Adds specs for:
+// boom-d6x extension: coverage floor 90% for apierr package. Adds specs for:
 //   - Write() envelope contract (status / Content-Type / JSON body / message omission)
 //   - BadRequest / NotFound / GenericHTTP constructor invariants
 //   - message-interpolation constructors (MissingQueryParam, InvalidRelation,
@@ -58,7 +58,7 @@ var _ = Describe("New + Error()", func() {
 		Expect(e.Error()).To(Equal("bad thing"))
 	})
 
-	// gaka-d6x critique fix: pin the empty-message construction path. The
+	// boom-d6x critique fix: pin the empty-message construction path. The
 	// original suite never exercised New(status, "", nil), so a refactor that
 	// added a nil/empty guard could silently swallow the entire message
 	// without any test failing. Empty message MUST still render as
@@ -78,7 +78,7 @@ var _ = Describe("New + Error()", func() {
 	})
 })
 
-// gaka-d6x critique fix: pin the standard `error` interface satisfaction at
+// boom-d6x critique fix: pin the standard `error` interface satisfaction at
 // compile time. This is trivially true today but is the single most
 // load-bearing property of Error() string at apierr.go:20 — if a refactor
 // ever renames the receiver method or changes its signature, *Error stops
@@ -86,7 +86,7 @@ var _ = Describe("New + Error()", func() {
 // var declaration is the cheapest possible drift guard.
 var _ error = (*Error)(nil)
 
-// --- gaka-d6x additions -----------------------------------------------------
+// --- boom-d6x additions -----------------------------------------------------
 
 // newCtx builds a fresh (*echo.Context, *httptest.ResponseRecorder) pair with
 // no cookies / no headers so we can observe exactly what Write() sets.
@@ -191,7 +191,7 @@ var _ = Describe("uncovered constructors (BadRequest / NotFound / GenericHTTP)",
 		// on pointer semantics. If a refactor accidentally stores a copy, the
 		// test catches it.
 		//
-		// gaka-d6x critique fix: previously used Equal(&extra) which delegates
+		// boom-d6x critique fix: previously used Equal(&extra) which delegates
 		// to reflect.DeepEqual on pointers — that compares the pointed-to
 		// values, NOT pointer identity, so a cloning impl would pass. Use
 		// BeIdenticalTo (== on pointers) to actually pin the invariant, and
@@ -256,7 +256,7 @@ var _ = Describe("message interpolation constructors do not cross-contaminate fi
 				"user must appear before project — copy the format exactly from hakatime Errors.hs")
 	})
 
-	// gaka-d6x critique fix: exercise empty-string interpolation for
+	// boom-d6x critique fix: exercise empty-string interpolation for
 	// InvalidRelation. A refactor that added `if user == "" { return ... }`
 	// would swallow the whole message; only this test would catch that.
 	It("InvalidRelation(\"\", \"\") preserves the exact template with empty splices — no nil guard swallows the message", func() {
@@ -267,7 +267,7 @@ var _ = Describe("message interpolation constructors do not cross-contaminate fi
 		Expect(e.Extra).To(BeNil())
 	})
 
-	// gaka-d6x critique fix: exercise empty-string interpolation for
+	// boom-d6x critique fix: exercise empty-string interpolation for
 	// UsernameExists — same rationale as InvalidRelation above.
 	It("UsernameExists(\"\") preserves the exact template with empty splice — no nil guard swallows the message", func() {
 		e := UsernameExists("")
@@ -298,7 +298,7 @@ var _ = Describe("message interpolation constructors do not cross-contaminate fi
 		Expect(decoded.Error).To(ContainSubstring(`bob"; DROP TABLE users;--`),
 			"decoded value must equal the original string once JSON un-escapes it")
 
-		// gaka-d6x critique fix: also pin the RAW WIRE BYTES so a hand-rolled
+		// boom-d6x critique fix: also pin the RAW WIRE BYTES so a hand-rolled
 		// body impl that bypasses encoding/json can't sneak past by producing
 		// something that happens to json.Unmarshal successfully. The wire MUST
 		// contain the escaped `bob\"` sequence and MUST NOT contain the
@@ -355,7 +355,7 @@ var _ = Describe("predefined constructor message-text drift guard (hakatime Erro
 		Entry("Generic",
 			Generic(),
 			"An internal error occurred"),
-		// gaka-d6x critique fix: co-locate the interpolation constructors'
+		// boom-d6x critique fix: co-locate the interpolation constructors'
 		// exact strings with the no-arg drift guards. Previously their text
 		// was only asserted in individual It blocks, which made cross-audits
 		// of "which constructors are text-pinned" easy to miss. Using

@@ -1,4 +1,4 @@
-// useAwards.ts — server-side awards hooks (gaka-hc6.4).
+// useAwards.ts — server-side awards hooks (boom-hc6.4).
 //
 // Replaces the client-side evaluate() pipeline that used to run in
 // LabelsShowcase + HeroIdentity. The server now:

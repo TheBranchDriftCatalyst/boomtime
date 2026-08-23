@@ -1,5 +1,5 @@
 // label_images.go: GET /api/v1/labels/:id/image — the PUBLIC image bytes
-// endpoint (gaka-myv). Mirrors the WidgetSvg shape (see widgets.go):
+// endpoint (boom-myv). Mirrors the WidgetSvg shape (see widgets.go):
 // resolve id, serve bytes with an aggressive Cache-Control, 404 when
 // absent.
 //

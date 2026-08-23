@@ -2,7 +2,7 @@ package auth
 
 import "sync/atomic"
 
-// Process-global standalone-owner switch (gaka-zp2s books-standalone).
+// Process-global standalone-owner switch (boom-zp2s books-standalone).
 //
 // The STANDALONE catalyst-books binary (cmd/catalyst-books) is a self-hosted,
 // single-tenant deployment with a books-only database and NO auth surface — no

@@ -1,4 +1,4 @@
-// MetricsTab.test.tsx — the Prometheus gathered-view dashboard (gaka-metrics).
+// MetricsTab.test.tsx — the Prometheus gathered-view dashboard (boom-metrics).
 // Non-tautological invariants:
 //   1. Families from the mocked /admin/metrics fetch are GROUPED by name prefix
 //      into Router / Outbound / Rate-limiters / External APIs / Runtime, and an

@@ -1,10 +1,10 @@
--- gaka-dg7: day/dow/hour buckets computed in user-local TZ ($6) so the
+-- boom-dg7: day/dow/hour buckets computed in user-local TZ ($6) so the
 -- per-project stats page's dayofweek/hourofday drilldowns reflect the user's
 -- clock, not UTC. Same fix as get_punchcard for badge misfires.
 --
 -- Phase A: windowless conditional SUM over precomputed gap_seconds for one
 -- project. $1 sender, $2 project, $3 start, $4 end, $5 limit, $6 IANA tz name.
--- gaka-6ci: language_missing + entity_missing flags propagate the raw
+-- boom-6ci: language_missing + entity_missing flags propagate the raw
 -- NULL discriminator through the aggregation. The GROUP BY uses raw
 -- columns (not COALESCE), so every row in a group shares the same
 -- NULL-ness on each axis — the SELECT can then read (col IS NULL)

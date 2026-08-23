@@ -1,4 +1,4 @@
-// AppShellNoScroll — structural guard for the grid track floors (gaka-c26s).
+// AppShellNoScroll — structural guard for the grid track floors (boom-c26s).
 //
 // WHY A CLASS ASSERTION AND NOT A LAYOUT ASSERTION: jsdom does not implement
 // CSS grid, so every element here measures 0x0 and a width-based test would

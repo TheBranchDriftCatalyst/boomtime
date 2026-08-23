@@ -17,7 +17,7 @@ WITH stats AS (
         machine,
         'Other'::text AS entity,
         CAST(sum(total_seconds) AS int8) AS total_seconds,
-        -- gaka-6ci: propagate the axis-missing flags. bool_and here is
+        -- boom-6ci: propagate the axis-missing flags. bool_and here is
         -- collapsing the same-axis-value rows down to the 5-axis output
         -- grain (get_user_activity_rollup drops branch/entity); the flag
         -- for a row is TRUE only if every underlying rollup row had it

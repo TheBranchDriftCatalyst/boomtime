@@ -97,7 +97,7 @@ func runCmd() *cobra.Command {
 			cfg.Branch = branch
 			cfg.Commit = commit
 			cfg.BuildTime = buildTime
-			// gaka-worker-topology: --role overrides BOOM_ROLE when passed;
+			// boom-worker-topology: --role overrides BOOM_ROLE when passed;
 			// empty (the default) leaves cfg.Role exactly as Load() read it
 			// from the env, which itself defaults to "all" — today's
 			// single-process behavior, unchanged.
@@ -108,7 +108,7 @@ func runCmd() *cobra.Command {
 			// stats.Grade() picks up the operator's calibration without threading
 			// cfg through every renderer.
 			stats.ApplyGradeConfigFromEnv()
-			// gaka-0oe: publish the user-model switch to the process-global the
+			// boom-0oe: publish the user-model switch to the process-global the
 			// Identify seam reads (avoids threading the flag through every
 			// handler's config). Default-off preserves today's behavior.
 			auth.SetUserModelEnabled(cfg.FeatureUserModel)
@@ -137,13 +137,13 @@ func runCmd() *cobra.Command {
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()
 
-			// gaka-0oe.11: when BOOM_AUTH_PROVIDER=oidc, run OIDC discovery
+			// boom-0oe.11: when BOOM_AUTH_PROVIDER=oidc, run OIDC discovery
 			// against the issuer and install the OIDCResolver as the active
 			// provider (apihelpers.Identify* delegates to it; the /auth/*/oidc
 			// handlers type-assert it). Default "local" skips this entirely —
 			// no boot-time network dependency, behavior byte-identical.
 			// Construct the OIDC resolver whenever OIDC is CONFIGURED (issuer
-			// set), so the account-LINK flow (gaka-b5n.4) works even under
+			// set), so the account-LINK flow (boom-b5n.4) works even under
 			// provider=local. Only make it the ACTIVE login provider when
 			// provider=oidc. Discovery failure is fatal only when oidc is
 			// active; under local it's a warn (linking just unavailable).
@@ -168,7 +168,7 @@ func runCmd() *cobra.Command {
 				}
 			}
 
-			// gaka-2ip Phase 1: per-user GitHub connect. Construct + install the
+			// boom-2ip Phase 1: per-user GitHub connect. Construct + install the
 			// OAuth resolver ONLY when the feature is fully configured (gate on +
 			// client id/secret + state signing key). Default-off = this whole
 			// block is skipped and the /auth/github/* routes never register —
@@ -176,7 +176,7 @@ func runCmd() *cobra.Command {
 			if cfg.GithubConnectEnabled() {
 				gh := auth.NewGithubOAuthResolver(cfg.GithubOAuthClientID, cfg.GithubOAuthClientSecret, cfg.GithubOAuthRedirectURL)
 				auth.SetGithubOAuthResolver(gh)
-				logger.Info("GitHub connect enabled (gaka-2ip)", "redirect_url", cfg.GithubOAuthRedirectURL)
+				logger.Info("GitHub connect enabled (boom-2ip)", "redirect_url", cfg.GithubOAuthRedirectURL)
 			}
 
 			if err := db.MigrateURL(ctx, cfg.DatabaseURL()); err != nil {
@@ -184,7 +184,7 @@ func runCmd() *cobra.Command {
 			}
 			logger.Info("migrations applied", "version", cfg.Version)
 
-			// Domain registry (gaka-zp2s): the pluggable-app framework's composition
+			// Domain registry (boom-zp2s): the pluggable-app framework's composition
 			// root. ONE registry (built by internal/domainreg) drives key-rotation/backup
 			// column aggregation, the server's route + admin wiring, and (below) the job
 			// wiring — with typed handles to the modules the host late-wires. domainSet.
@@ -198,13 +198,13 @@ func runCmd() *cobra.Command {
 			}
 			logger.Info("domain registry ready", "enabled", enabledDomains, "registered", len(domainReg.Modules()))
 
-			// gaka-6jm.2: probe the at-rest encryption key at boot. We
+			// boom-6jm.2: probe the at-rest encryption key at boot. We
 			// deliberately do NOT fail startup on a missing/invalid key in
 			// dev/test so existing dev stacks still run — the check is a
 			// WARNING and any downstream Encrypt/Decrypt call surfaces the
 			// real error when the feature is exercised.
 			//
-			// gaka-6jm.9: production is different. If BOOM_ENV=prod|production
+			// boom-6jm.9: production is different. If BOOM_ENV=prod|production
 			// and the key is missing/invalid, exit(1) with a clear log — a
 			// silent WARN in prod is how you ship a "never persisted a single
 			// Wakatime key and nobody noticed for a month" incident.
@@ -222,7 +222,7 @@ func runCmd() *cobra.Command {
 				logger.Info("BOOM_ENCRYPTION_KEY loaded — AES-256-GCM ready")
 			}
 
-			// gaka-n5r: refuse to start in prod without a CORS allowlist. In dev
+			// boom-n5r: refuse to start in prod without a CORS allowlist. In dev
 			// we fall through — server.New() logs a WARN and defaults to
 			// localhost origins so local flows keep working. In prod, an unset
 			// allowlist means either (a) the operator forgot and every attacker
@@ -250,7 +250,7 @@ func runCmd() *cobra.Command {
 			}
 			defer database.Close()
 
-			// Observability wiring (gaka-metrics): publish build metadata and a
+			// Observability wiring (boom-metrics): publish build metadata and a
 			// scrape-time reader of the pgx pool's Stat() into the Prometheus registry
 			// served at /metrics. Registered here (not in db.New) so the unit-test
 			// suite — which opens + closes many isolated pools — never scrapes a
@@ -271,7 +271,7 @@ func runCmd() *cobra.Command {
 				}
 			})
 
-			// gaka-93f.27: reap avatar renders orphaned by a restart. The render
+			// boom-93f.27: reap avatar renders orphaned by a restart. The render
 			// runs as an in-process goroutine (identity.RegenerateAvatar), so any
 			// row still 'running' at boot is stale (its goroutine died with the
 			// old process) and the FE would poll it forever. Best-effort — a
@@ -282,7 +282,7 @@ func runCmd() *cobra.Command {
 				logger.Info("reaped orphaned avatar renders", "count", n)
 			}
 
-			// gaka-awh.5: legacy raw-token backfill now lives in migration
+			// boom-awh.5: legacy raw-token backfill now lives in migration
 			// 00030_backfill_hashed_tokens.sql (SQL via pgcrypto.digest).
 			// No boot-time step required.
 
@@ -292,7 +292,7 @@ func runCmd() *cobra.Command {
 			worker := importer.NewWorker(ctx, database, logger, hub)
 			worker.RecoverInterrupted(ctx)
 
-			// gaka-myv: label-images generation worker. NewWorker returns nil
+			// boom-myv: label-images generation worker. NewWorker returns nil
 			// when the feature is off (flag unset OR shim URL unset); a
 			// non-nil worker generates any missing images in a detached
 			// goroutine so the HTTP server binds immediately. If the flag is
@@ -310,7 +310,7 @@ func runCmd() *cobra.Command {
 			if liWorker != nil {
 				logger.Info("labelimages worker enabled",
 					"shim_url", cfg.ComfyUIShimURL, "model", cfg.ComfyUIModel)
-				// gaka-worker-topology: the startup reconcile (fill in any
+				// boom-worker-topology: the startup reconcile (fill in any
 				// missing images) is generation work, so it belongs to the
 				// worker role only. It ALSO must not run alongside the AMQP
 				// consumer (broker=rabbitmq) — the consumer already generates,
@@ -330,7 +330,7 @@ func runCmd() *cobra.Command {
 				logger.Info("admin users configured", "count", len(cfg.AdminUsers))
 			}
 
-			// gaka-worker-topology: role/broker-aware wiring. Default
+			// boom-worker-topology: role/broker-aware wiring. Default
 			// (role=all, broker=inprocess) reproduces today's single-
 			// process behavior exactly — see the `default:` arm below,
 			// byte-identical to the pre-decoupling pool wiring. See
@@ -356,7 +356,7 @@ func runCmd() *cobra.Command {
 			})
 			if cfg.IsServerRole() {
 				e, h = server.NewWithHandler(database, cfg, logger, logHub, domainReg)
-				// gaka-zp2s: the label-images regen + wakatime.com import admin
+				// boom-zp2s: the label-images regen + wakatime.com import admin
 				// surfaces are owned by boomtime.Module (its admin handler, mounted
 				// by RegisterRoutes during NewWithHandler). Late-wire them onto that
 				// SAME instance: the import worker/hub, and the label-images worker
@@ -367,7 +367,7 @@ func runCmd() *cobra.Command {
 				h.SetNotify(notifyHub)
 			}
 
-			// gaka-8bz / worker-topology: image-job queue wiring. Only
+			// boom-8bz / worker-topology: image-job queue wiring. Only
 			// wire when the feature is enabled — a nil pool/producer keeps
 			// the admin handler + WS returning 503, the same behavior as a
 			// nil labelimages worker (they gate on both).
@@ -472,7 +472,7 @@ func runCmd() *cobra.Command {
 				}
 			}
 
-			// catalyst-go-jobs (gaka-hney): ALWAYS wired — the jobs table exists
+			// catalyst-go-jobs (boom-hney): ALWAYS wired — the jobs table exists
 			// (migration 00054), so the admin Jobs tab + trigger/retry work
 			// regardless of the schedule. Additive + independent of the image-job
 			// path above; DB-backed queue by default (BOOM_JOBS_PROVIDER=local) or
@@ -484,7 +484,7 @@ func runCmd() *cobra.Command {
 				jobReg := jobs.NewRegistry()
 
 				// Per-domain job KINDS + fleet caps are registered through the Module
-				// contract (Module.RegisterJobs) instead of inline here (gaka-zp2s):
+				// contract (Module.RegisterJobs) instead of inline here (boom-zp2s):
 				// github registers github-stats-refresh (internal/boomtime/github), books
 				// registers its whole kind set (internal/books/jobs). Driven off the SAME
 				// registry the server route-wires from; the jobs package stays domain-free.
@@ -499,7 +499,7 @@ func runCmd() *cobra.Command {
 					}
 				}
 
-				// avatar-render kind (gaka-hney.7): render a user's avatar on the
+				// avatar-render kind (boom-hney.7): render a user's avatar on the
 				// worker + toast them on completion. Registered when the shim is
 				// configured (same gate as the synchronous path).
 				if cfg.LabelImagesEnabled() {
@@ -517,7 +517,7 @@ func runCmd() *cobra.Command {
 					}
 				}
 
-				// label-image kind (gaka-hney.3): proves catalyst-go-jobs can run
+				// label-image kind (boom-hney.3): proves catalyst-go-jobs can run
 				// the image-regen path (liWorker.RegenerateOne — the same
 				// entrypoint the imagejobs executor funnels into). Behind
 				// BOOM_JOBS_UNIFIED (default off) so prod stays on the imagejobs
@@ -550,7 +550,7 @@ func runCmd() *cobra.Command {
 				// in-process fallback when there's no redis). Unset kinds stay
 				// unlimited. Only kinds that actually exist as registered handler
 				// kinds are set here. (The books caps moved into internal/books/jobs
-				// with their kinds — gaka-zp2s.)
+				// with their kinds — boom-zp2s.)
 				jobReg.SetConcurrency(identity.AvatarRenderKind, 1) // avatar-render
 				jobReg.SetConcurrency(labelimages.RegenJobKind, 1)  // label-image
 				// Offload routing: these two are the HEAVY kinds drained by the
@@ -559,10 +559,10 @@ func runCmd() *cobra.Command {
 				// are both derived from this set (jobs.DeriveKindFilter), so every
 				// other kind (scheduled reading-monitor, hardcover/audible syncs, …)
 				// is server-resident by default and can't be orphaned by a worker
-				// scaling down mid-run (gaka-caxl).
+				// scaling down mid-run (boom-caxl).
 				jobReg.SetOffload(identity.AvatarRenderKind) // avatar-render
 				jobReg.SetOffload(labelimages.RegenJobKind)  // label-image
-				// gaka-zp2s: the books per-kind caps (audible sync/backfill + the
+				// boom-zp2s: the books per-kind caps (audible sync/backfill + the
 				// hardcover/kindle/pipeline kinds) moved into internal/books/jobs,
 				// applied by books.Module.RegisterJobs above. Github/avatar/label caps
 				// stay here until their seam extraction.
@@ -590,7 +590,7 @@ func runCmd() *cobra.Command {
 					}
 					provider = amqpProv
 				}
-				// Kind-routing (gaka-hney / gaka-caxl): DERIVED from the registry's
+				// Kind-routing (boom-hney / boom-caxl): DERIVED from the registry's
 				// offload set + this pod's role so it can't drift — a worker claims
 				// only offload kinds, the server excludes them, "all" claims
 				// everything. Explicit BOOM_JOBS_KINDS / _EXCLUDE_KINDS still override
@@ -615,13 +615,13 @@ func runCmd() *cobra.Command {
 				}
 				provider.SetLimiter(jobs.NewKindLimiter(jobsRedis))
 
-				// Push hub for job-completion toasts (gaka-hney.6): the provider
+				// Push hub for job-completion toasts (boom-hney.6): the provider
 				// notifies it on terminal events; /api/v1/jobs/ws fans them to the
 				// owning user's browser.
 				jobHub := jobsevents.NewHub()
 				provider.SetNotifier(jobHub)
 
-				// Durable per-job log persistence (gaka-hney): flush each FINISHED
+				// Durable per-job log persistence (boom-hney): flush each FINISHED
 				// job's log stream to object storage so the Admin Jobs viewer can
 				// still show a completed job's logs after the in-memory LogHub ring
 				// rolls over. objstore.New returns nil when S3 is unconfigured, so
@@ -638,7 +638,7 @@ func runCmd() *cobra.Command {
 					logger.Info("jobs: log persistence enabled", "bucket", cfg.S3Bucket)
 				}
 
-				// gaka-zp2s: wire the jobs provider (a jobs.Enqueuer) onto the books
+				// boom-zp2s: wire the jobs provider (a jobs.Enqueuer) onto the books
 				// domain NOW that `provider` exists — onto the audiobooks service
 				// (finished-book Hardcover pushes route to the capped queue) on every
 				// role, and onto the books HTTP handler (server role only, nil-safe
@@ -654,7 +654,7 @@ func runCmd() *cobra.Command {
 				if h != nil {
 					h.SetJobs(jobStore, provider, jobReg) // admin Jobs tab (list/trigger/retry + queue overview)
 					h.SetJobEvents(jobHub)                // /api/v1/jobs/ws push stream
-					// gaka-zp2s: the boomtime label-images admin handler reads the jobs
+					// boom-zp2s: the boomtime label-images admin handler reads the jobs
 					// store/enqueuer for its per-label BOOM_JOBS_UNIFIED status poll.
 					domainSet.Boomtime.SetJobs(jobStore, provider)
 				}
@@ -663,7 +663,7 @@ func runCmd() *cobra.Command {
 					"githubRefreshEnabled", cfg.GithubStatsRefreshEnabled(),
 					"githubRefreshInterval", cfg.GithubStatsRefreshInterval.String())
 
-				// ScaledJob one-shot mode (gaka-hney): a KEDA ScaledJob pod sets
+				// ScaledJob one-shot mode (boom-hney): a KEDA ScaledJob pod sets
 				// BOOM_JOBS_DRAIN=true — build the registry (done above), drain
 				// every due job to completion, then EXIT. Long jobs run fully (a
 				// ScaledJob Job is never killed on scale-down), so no mid-job kill
@@ -690,7 +690,7 @@ func runCmd() *cobra.Command {
 							logger.Warn("jobs: schedule register failed", "err", serr)
 						}
 					}
-					// gaka-zp2s: the books leader-singleton schedules (audible forward
+					// boom-zp2s: the books leader-singleton schedules (audible forward
 					// sync + persistent reading-monitor + periodic Hardcover pull/match)
 					// are registered by books.Module → internal/books/jobs, each gated
 					// exactly as before. The host still owns the outer "build a scheduler
@@ -741,7 +741,7 @@ func runCmd() *cobra.Command {
 			// chance to observe context cancellation and exit. ComfyUI
 			// calls that ignore ctx will time out this Stop — that's
 			// fine, in-flight state is not durable across restarts by
-			// design (gaka-8bz).
+			// design (boom-8bz).
 			if imgPool != nil {
 				imgPool.Stop(30 * time.Second)
 			}
@@ -813,7 +813,7 @@ func createUserCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg := config.Load()
 			ctx := context.Background()
-			// gaka-e5e: the CLI previously skipped strength validation
+			// boom-e5e: the CLI previously skipped strength validation
 			// entirely, so `boomtime create-user -u foo` with an empty or
 			// toy password minted a functional-but-trivially-compromised
 			// account. Prompt in a loop on an interactive TTY until we
@@ -926,7 +926,7 @@ func promptPassword(prompt string) (string, error) {
 		}
 		return string(b), nil
 	}
-	// Non-interactive fallback: read one line via bufio (gaka-0tb). fmt.Scanln
+	// Non-interactive fallback: read one line via bufio (boom-0tb). fmt.Scanln
 	// splits on whitespace, so a piped password with spaces was silently
 	// truncated at the first space and login/create-token failed with a
 	// wrong-password error the user couldn't debug.
@@ -943,7 +943,7 @@ func promptPassword(prompt string) (string, error) {
 // typo without restarting the command. On non-interactive input (piped
 // stdin, heredoc, CI) it returns the policy error verbatim after ONE attempt
 // — re-prompting a pipe would loop forever consuming EOF. Used by
-// `boomtime create-user` (gaka-e5e).
+// `boomtime create-user` (boom-e5e).
 func promptStrongPassword(prompt string) (string, error) {
 	interactive := term.IsTerminal(int(syscall.Stdin))
 	const maxPasswordAttempts = 3

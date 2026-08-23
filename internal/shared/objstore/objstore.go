@@ -1,6 +1,6 @@
 // Package objstore is a thin S3/MinIO object-storage wrapper for boomtime's
 // durable byte blobs — currently the persisted background-job log streams
-// (gaka-hney): a FINISHED job's logs live in the in-memory LogHub ring only
+// (boom-hney): a FINISHED job's logs live in the in-memory LogHub ring only
 // until it rolls over, so we flush them to `job-logs/<id>.jsonl` on completion
 // and serve them back to the Admin Jobs viewer.
 //

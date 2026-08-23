@@ -1,4 +1,4 @@
-// drift_ginkgo_test.go — ginkgo mirror of drift_test.go (gaka-0vp).
+// drift_ginkgo_test.go — ginkgo mirror of drift_test.go (boom-0vp).
 // 1:1 case map (9 stdlib TestXxx):
 //
 //	TestDriftCurrentSchemaNoFindings                              → driftCollector > "baseline heartbeats payload yields zero findings"
@@ -159,7 +159,7 @@ var _ = Describe("driftCollector lookup spec (user_agents)", func() {
 			"missing 'value' on user_agents should be error-severity, got %+v", c.findings())
 	})
 
-	// Regression pin: gaka-awh's report — user_agents entries with the three
+	// Regression pin: boom-awh's report — user_agents entries with the three
 	// ai_model_* fields must NOT raise unknown_field drift. Removing them
 	// from lookupSpec.baseline would produce warning noise on every import.
 	It("baseline knows ai_model_* fields (wakatime 2026-07-23 regression)", func() {
@@ -218,7 +218,7 @@ var _ = Describe("driftCollector cap", func() {
 	})
 })
 
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
+// -- helpers restored from stdlib partner (boom-0vp.17) --
 const heartbeatsBaselineJSON = `{
   "data": [
     {

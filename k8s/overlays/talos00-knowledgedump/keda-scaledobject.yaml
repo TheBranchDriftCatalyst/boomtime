@@ -1,6 +1,6 @@
 ---
 # KEDA autoscaling for boomtime-worker on RabbitMQ queue depth, with
-# scale-to-zero (worker-topology decoupling, gaka-8bz follow-up). Real
+# scale-to-zero (worker-topology decoupling, boom-8bz follow-up). Real
 # `rabbitmq` trigger (protocol: amqp, mode: QueueLength) — the homelab
 # demo's scaledobject.yaml carries this same trigger commented out because
 # it needed a TriggerAuthentication; keda-triggerauth.yaml supplies that.

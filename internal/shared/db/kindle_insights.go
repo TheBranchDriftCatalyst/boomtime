@@ -1,5 +1,5 @@
 // kindle_insights.go: siloed storage for the raw Kindle Reading-Insights
-// snapshot (gaka-books). ONE row per user (owner PK) holding the whole
+// snapshot (boom-books). ONE row per user (owner PK) holding the whole
 // /kindle/reading/insights/data payload as JSONB, so streaks/goals/achievements
 // are retained for a future surface without a schema churn now. Like
 // reading_items / reading_activity it does NOT write into heartbeats/stats/any

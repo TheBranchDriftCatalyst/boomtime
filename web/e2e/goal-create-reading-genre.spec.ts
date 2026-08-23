@@ -12,7 +12,7 @@ import {
   setTarget,
 } from "./goals-helpers";
 
-// goal-create-reading-genre — the reading leaf's second shape (gaka-dvy9): a
+// goal-create-reading-genre — the reading leaf's second shape (boom-dvy9): a
 // reading dimension goal. Pick the "Listening time (Audible)" metric, switch its
 // Filter dropdown to Genre, set the value to "Fiction", save → it persists as a
 // reading-source, genre-dimensioned time leaf (runtime of finished books by

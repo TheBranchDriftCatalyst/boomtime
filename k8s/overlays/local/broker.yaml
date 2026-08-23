@@ -1,6 +1,6 @@
 ---
 # Local stand-ins for the homelab's operator-provisioned RabbitMQ +
-# Dragonfly (worker-topology decoupling, gaka-8bz follow-up, §9.1). Local
+# Dragonfly (worker-topology decoupling, boom-8bz follow-up, §9.1). Local
 # k3s doesn't run the RabbitMQ Cluster / Dragonfly operators, so this
 # overlay supplies its own broker as plain Deployments — base/ stays
 # operator-agnostic; only this overlay knows it's not talking to a real

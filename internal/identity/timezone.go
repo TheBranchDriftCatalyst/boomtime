@@ -1,6 +1,6 @@
 package identity
 
-// timezone.go (gaka-dg7): per-user IANA timezone endpoints + shared resolver.
+// timezone.go (boom-dg7): per-user IANA timezone endpoints + shared resolver.
 //
 // The resolver (resolveUserTZ) is the ONLY place handlers should derive the
 // effective TZ for a query. Every SQL that extracts dow/hour/date from
@@ -81,7 +81,7 @@ func (h *Handler) UpdateTimezone(c *echo.Context) error {
 		return apihelpers.RespondErr(c, aerr)
 	}
 	var req timezoneUpdateRequest
-	// gaka-bi2: 4 KiB cap. IANA names top out at ~40 chars; a fat body here
+	// boom-bi2: 4 KiB cap. IANA names top out at ~40 chars; a fat body here
 	// is just a client bug or an attacker probing.
 	if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitSmall); aerr != nil {
 		return apihelpers.RespondErr(c, aerr)

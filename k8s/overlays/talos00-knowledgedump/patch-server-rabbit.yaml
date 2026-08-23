@@ -1,5 +1,5 @@
 ---
-# The server role PUBLISHES enqueues (worker-topology decoupling, gaka-8bz
+# The server role PUBLISHES enqueues (worker-topology decoupling, boom-8bz
 # follow-up), so it needs the same amqp URL the worker gets. This is the
 # ONLY change to the server Deployment — purely additive: a --role flag
 # (prod's Dockerfile has a real ENTRYPOINT ["boomtime"], so args cleanly

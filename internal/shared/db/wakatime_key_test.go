@@ -1,5 +1,5 @@
 // wakatime_key_test.go — stdlib (testing.T) coverage of the encrypted
-// Wakatime key storage layer (gaka-se2.9). Every subtest names one
+// Wakatime key storage layer (boom-se2.9). Every subtest names one
 // security invariant and, wherever we care whether encryption ACTUALLY
 // happened, pins it end-to-end: seal plaintext under an AES-256-GCM AEAD
 // (built from a locally-generated 32-byte key), write the ciphertext,

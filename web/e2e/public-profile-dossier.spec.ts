@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { NO_STACK_REASON, stackReachableFromEnv } from "./helpers";
 
-// gaka-k2p + oklch fix — public dossier visual pass.
+// boom-k2p + oklch fix — public dossier visual pass.
 //
 // The /p/:slug route is UNAUTHENTICATED and renders the corpo-dossier
 // visual layer. This spec targets `pandax` as the default fixture user
@@ -32,7 +32,7 @@ import { NO_STACK_REASON, stackReachableFromEnv } from "./helpers";
 
 const PUBLIC_SLUG = process.env.BOOMTIME_E2E_PUBLIC_SLUG ?? "pandax";
 
-test.describe("gaka-k2p — public dossier at /p/:slug", () => {
+test.describe("boom-k2p — public dossier at /p/:slug", () => {
   test.skip(!stackReachableFromEnv(), NO_STACK_REASON);
 
   let profileExists = false;

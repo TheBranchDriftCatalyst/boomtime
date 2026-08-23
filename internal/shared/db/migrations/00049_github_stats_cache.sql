@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- Per-user GitHub stats cache (gaka-anh Phase 2). ONE ROW PER USER — the
+-- Per-user GitHub stats cache (boom-anh Phase 2). ONE ROW PER USER — the
 -- `username` PRIMARY KEY is the idempotency backbone: every sync does an
 -- INSERT ... ON CONFLICT (username) DO UPDATE (see
 -- internal/db/github_stats_cache.go UpsertGithubStatsCache), so re-running a

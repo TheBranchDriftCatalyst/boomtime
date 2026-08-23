@@ -1,4 +1,4 @@
-// Shared constants for the goals feature (gaka-wpb). Kept in a
+// Shared constants for the goals feature (boom-wpb). Kept in a
 // dedicated file so hooks, renderers, and the (rare) test file can
 // all import without pulling the whole feature module in.
 

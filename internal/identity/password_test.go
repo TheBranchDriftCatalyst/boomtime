@@ -6,9 +6,9 @@
 //	TestChangePasswordWrongCurrentPassword            → ChangePassword > "wrong current password → 401"
 //	TestChangePasswordWeakNewPassword                 → ChangePassword > "weak new password → 400 (short/letters-only/digits-only)"
 //	TestChangePassword_UsesSharedValidator_Gaka0guRegression
-//	  → ChangePassword shared validator (gaka-0gu) > "multibyte reject (marquee)" + "sentinel text surfaces (no-digit)"
+//	  → ChangePassword shared validator (boom-0gu) > "multibyte reject (marquee)" + "sentinel text surfaces (no-digit)"
 //	TestChangePasswordHappyPath                       → ChangePassword > "happy path: old dead, new works, refresh tokens revoked"
-//	TestChangePassword_RevokesOtherAccessTokens       → ChangePassword revocation (gaka-abo) > "other access token revoked, own survives, other refresh dead"
+//	TestChangePassword_RevokesOtherAccessTokens       → ChangePassword revocation (boom-abo) > "other access token revoked, own survives, other refresh dead"
 //	TestChangePassword_AtomicOnDBError                → ChangePassword atomicity > "fault-injected tx rolls back password AND refresh-token revoke"
 package identity_test
 
@@ -40,7 +40,7 @@ func mintAccessTokenPairG(hz *testutil.Harness, user string) (accessToken, refre
 	return accessToken, refreshToken
 }
 
-var _ = Describe("ChangePassword body-size cap (gaka-bi2)", func() {
+var _ = Describe("ChangePassword body-size cap (boom-bi2)", func() {
 	It("returns 413 on a 5 KiB body — argon2 never runs on the payload", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
@@ -103,7 +103,7 @@ var _ = Describe("ChangePassword happy paths + validation", func() {
 	})
 })
 
-var _ = Describe("ChangePassword shared validator (gaka-0gu regression)", func() {
+var _ = Describe("ChangePassword shared validator (boom-0gu regression)", func() {
 	It("marquee multibyte reject: 日本1a (4 runes, 8 bytes) → 400 with shared sentinel text", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
@@ -165,7 +165,7 @@ var _ = Describe("ChangePassword happy-path invariants", func() {
 	})
 })
 
-var _ = Describe("ChangePassword access-token revocation (gaka-abo)", func() {
+var _ = Describe("ChangePassword access-token revocation (boom-abo)", func() {
 	It("kills OTHER browsers' access + refresh tokens, keeps caller's OWN access token alive", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()

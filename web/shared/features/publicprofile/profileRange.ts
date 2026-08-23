@@ -1,4 +1,4 @@
-// profileRange.ts — the selected stats window for /p/:slug (gaka-174.7).
+// profileRange.ts — the selected stats window for /p/:slug (boom-174.7).
 //
 // Module-level store (same pattern as featureFlags) so the range control in
 // the floating dossier cluster and the data-fetchers (PublicDashboard /

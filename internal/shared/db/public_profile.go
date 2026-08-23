@@ -1,5 +1,5 @@
 // public_profile.go: DB accessors for the opt-in public read-only profile
-// (gaka-6jm.1).
+// (boom-6jm.1).
 //
 // Storage lives on the `users` table (migrations/00025): a boolean
 // `public_profile_enabled` and a nullable `public_slug`. A partial UNIQUE

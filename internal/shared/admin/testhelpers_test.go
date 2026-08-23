@@ -24,7 +24,7 @@ import (
 // installEncryptionKeyForTest sets BOOM_ENCRYPTION_KEY to a deterministic 32 bytes and
 // resets the auth singleton so auth.Encrypt/Decrypt work for the spec's duration.
 // Kept here for the admin cli_http suite after the import cluster's copy moved to
-// internal/boomtime/admin with the import tests (gaka-zp2s).
+// internal/boomtime/admin with the import tests (boom-zp2s).
 func installEncryptionKeyForTest() {
 	const key = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
 	prev, hadPrev := os.LookupEnv(auth.EncryptionKeyEnv)

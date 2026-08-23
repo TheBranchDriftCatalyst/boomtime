@@ -1,5 +1,5 @@
 // dashboard_layout_more_test.go — extra coverage for dashboard_layout.go
-// (gaka-d6x.handler). Focus: the DELETE endpoint (0% coverage on baseline),
+// (boom-d6x.handler). Focus: the DELETE endpoint (0% coverage on baseline),
 // the malformed-JSON reject branch on PUT, the missing-layout-field 400
 // branch, and cross-user isolation on both PUT and DELETE (a layout row is
 // keyed on (username, scope) — a leak would let user B stomp A's layout).
@@ -17,7 +17,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
-var _ = Describe("dashboard layout extras (gaka-d6x.handler)", func() {
+var _ = Describe("dashboard layout extras (boom-d6x.handler)", func() {
 	Describe("DeleteDashboardLayout", func() {
 		It("is IDEMPOTENT: DELETE with no row returns 204 (docstring guarantee)", func() {
 			hz := testutil.NewHarness(GinkgoT())
@@ -79,7 +79,7 @@ var _ = Describe("dashboard layout extras (gaka-d6x.handler)", func() {
 			e := hz.Router()
 			_, token := hz.MintUser("dash_del_scope")
 
-			// gaka-lzr: "overview" is now an admitted scope, so exercise the
+			// boom-lzr: "overview" is now an admitted scope, so exercise the
 			// reject branch with a scope that stays off the allowlist.
 			req := httptest.NewRequest(http.MethodDelete,
 				"/api/v1/users/current/dashboard/not_a_real_scope", nil)
@@ -140,7 +140,7 @@ var _ = Describe("dashboard layout extras (gaka-d6x.handler)", func() {
 			// typo) would slip through if we only exercise DELETE's branch.
 			// Also proves PUT does NOT touch the DB when the scope check fails
 			// — the body must NEVER get materialized.
-			// gaka-lzr: "overview" is now admitted; use an off-allowlist scope
+			// boom-lzr: "overview" is now admitted; use an off-allowlist scope
 			// to pin the reject branch.
 			req := httptest.NewRequest(http.MethodPut,
 				"/api/v1/users/current/dashboard/not_a_real_scope",
@@ -155,7 +155,7 @@ var _ = Describe("dashboard layout extras (gaka-d6x.handler)", func() {
 				"expected scope-related error, got %s", rec.Body.String())
 		})
 
-		It("ADMITS the 'overview' scope (gaka-lzr Phase 4): PUT then GET round-trips, unknown still 400s", func() {
+		It("ADMITS the 'overview' scope (boom-lzr Phase 4): PUT then GET round-trips, unknown still 400s", func() {
 			hz := testutil.NewHarness(GinkgoT())
 			e := hz.Router()
 			_, token := hz.MintUser("dash_put_overview")

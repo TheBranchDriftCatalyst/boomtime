@@ -1,7 +1,7 @@
 // Package meta owns the tiny, cross-cutting HTTP surface: build/version
 // disclosure, the embedded changelog, the public /healthz probe, and the
 // server-log stream endpoints. All routes are extracted from the god-type
-// handler.Handler as part of gaka-8tn phase 1 so a domain (meta) owns its
+// handler.Handler as part of boom-8tn phase 1 so a domain (meta) owns its
 // handler struct + routes + tests as one folder.
 //
 // Both /api/v1/version and /api/v1/changelog are intentionally unauthenticated.
@@ -71,5 +71,5 @@ func (h *Handler) Changelog(c *echo.Context) error {
 // Shared helpers (RespondErr / TokenFromHeader / ResolveUser /
 // ResolveOwnerFromCookie / QueryInt64 / BindJSONWithLimit) live in
 // internal/apihelpers/ — every domain package imports that instead of
-// carrying a local shim. See gaka-8tn shared-helpers extraction commit
+// carrying a local shim. See boom-8tn shared-helpers extraction commit
 // following phase 1.

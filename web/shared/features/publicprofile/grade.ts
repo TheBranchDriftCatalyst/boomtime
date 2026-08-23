@@ -1,4 +1,4 @@
-// grade.ts — client-side port of internal/stats/grade.go (gaka-hsj port).
+// grade.ts — client-side port of internal/stats/grade.go (boom-hsj port).
 //
 // Faithful port of github-readme-stats' rank algorithm: same two CDFs, same
 // weighted blend, same percentile thresholds and level ladder. The metric

@@ -1,4 +1,4 @@
-// goals_auth_test.go — gaka-d6x.handler: hit every goals-endpoint
+// goals_auth_test.go — boom-d6x.handler: hit every goals-endpoint
 // auth-failure branch. All goals routes gate on resolveUser first; each
 // endpoint's `if aerr != nil { return respondErr(c, aerr) }` block is
 // covered here in one go by iterating the endpoint list.
@@ -19,7 +19,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
-var _ = Describe("goals endpoints all fail-closed on unauth (gaka-d6x.handler)", func() {
+var _ = Describe("goals endpoints all fail-closed on unauth (boom-d6x.handler)", func() {
 	It("every route returns 4xx without a token", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()

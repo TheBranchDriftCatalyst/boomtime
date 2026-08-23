@@ -1,4 +1,4 @@
-// OverviewDataContext (gaka-38v) — the shared inputs every Overview widget
+// OverviewDataContext (boom-38v) — the shared inputs every Overview widget
 // needs: the stats window (tr), the "Recent timeline" hours, and the optional
 // Space scope. Provided once by OverviewDashboard; consumed by the per-widget
 // self-fetch hooks in overviewWidgets.ts.

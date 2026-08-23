@@ -1,14 +1,14 @@
 // HeroIdentity.test.tsx — hero-identity now derives its tagline from
-// the server-side label evaluator (gaka-hc6.3). The old hard-coded
+// the server-side label evaluator (boom-hc6.3). The old hard-coded
 // "{TOP_LANG}-CLASS · {TOP_EDITOR}-ADEPT" template is gone.
 //
-// gaka-hc6.5: post client-eval delete, tests prime qk.awards("own")
+// boom-hc6.5: post client-eval delete, tests prime qk.awards("own")
 // directly with LabelAward fixtures — no evaluator call in this file.
 //
 // Invariants under test:
 //   - EMPTY AWARDS: tagline reads "NEW OPERATOR"
 //   - RICH AWARDS: tagline shows the top-3 awards as LabelChips in
-//     rank-desc order (gaka-mem-chip made each award its own chip)
+//     rank-desc order (boom-mem-chip made each award its own chip)
 //   - USERNAME still renders regardless
 //   - Every chip's <img> src points at /api/v1/labels/<id>/image
 import { describe, expect, it } from "vitest";
@@ -71,7 +71,7 @@ describe("HeroIdentity tagline", () => {
   });
 
   it("shows top-3 awards as LabelChips on a rich payload", () => {
-    // gaka-364.1: memecore labels (kind:"meme") outrank tame archetypes so
+    // boom-364.1: memecore labels (kind:"meme") outrank tame archetypes so
     // the hero surfaces the OP names first. Same chip-count expectation as
     // before — the widget slices the first 3 out of the awards array.
     renderHero(p({}), [
@@ -97,7 +97,7 @@ describe("HeroIdentity tagline", () => {
     expect(screen.getAllByText(/zorak/i).length).toBeGreaterThanOrEqual(1);
   });
 
-  // gaka-mem-chip: chips carry their own <img> via LabelImage. In tests
+  // boom-mem-chip: chips carry their own <img> via LabelImage. In tests
   // the images 404 (no backend), but the <img> elements are in the DOM
   // before onError triggers, so we can assert src is wired to
   // /api/v1/labels/{id}/image.

@@ -43,18 +43,18 @@ export const handlers = [
   http.get("/api/v1/users/current/spaces/preview", () =>
     HttpResponse.json({ values: [], truncated: false }),
   ),
-  // gaka-6jm.2: encrypted-at-rest Wakatime key presence probe. Default =
+  // boom-6jm.2: encrypted-at-rest Wakatime key presence probe. Default =
   // no saved key so the import form's fallback UX is exercised. Tests can
   // override with server.use to flip hasSavedKey.
   http.get("/api/v1/users/current/wakatime_key", () =>
     HttpResponse.json({ hasSavedKey: false }),
   ),
-  // gaka-2ip Phase 1: GitHub connection status. Default = not connected. Tests
+  // boom-2ip Phase 1: GitHub connection status. Default = not connected. Tests
   // override with server.use to flip `connected`/`login`.
   http.get("/api/v1/users/current/github", () =>
     HttpResponse.json({ connected: false }),
   ),
-  // gaka-anh Phase 2: GitHub stats. Default = an empty-but-shaped payload so
+  // boom-anh Phase 2: GitHub stats. Default = an empty-but-shaped payload so
   // components render without a 404; tests override with server.use to supply
   // a populated grid/totals or to exercise the 404 (not-connected) branch.
   http.get("/api/v1/users/current/github/stats", () =>
@@ -81,7 +81,7 @@ export const handlers = [
       fetchedAt: "2026-01-01T00:00:00Z",
     }),
   ),
-  // gaka-93f.1.1: boot-time client config. Default mirrors
+  // boom-93f.1.1: boot-time client config. Default mirrors
   // usePublicConfig.ts's FALLBACK (every flag off) so any component that
   // reads usePublicConfig() can mount under renderWithProviders without
   // every test needing its own mock. Tests exercising a specific flag
@@ -96,7 +96,7 @@ export const handlers = [
       github_connect_enabled: false,
     }),
   ),
-  // gaka-hney: admin Jobs queue overview. Default = empty so any tab that
+  // boom-hney: admin Jobs queue overview. Default = empty so any tab that
   // mounts the JobsTab (which polls it) renders without an unhandled request;
   // tests that assert on the queue cards override with server.use.
   http.get("/api/v1/admin/jobs/queues", () =>

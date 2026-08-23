@@ -1,5 +1,5 @@
 // ProfileModeToggle — floating pill switch (Edit | Preview) rendered above
-// the public profile shell for the owner only (gaka-ie3).
+// the public profile shell for the owner only (boom-ie3).
 //
 // Positioning: fixed top-right so it stays reachable even when the user
 // scrolls a long profile. z-index sits above the grid tiles but below

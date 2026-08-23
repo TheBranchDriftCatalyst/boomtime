@@ -1,8 +1,8 @@
 // useImageJobQueue — per-label-image regen status hook.
 //
-// History: originally a client-side Set + hand-rolled pool (gaka-8bz predecessor);
+// History: originally a client-side Set + hand-rolled pool (boom-8bz predecessor);
 // then a server-owned queue streamed over `/api/v1/admin/label-images/ws`
-// (internal/queue/imagejobs). As of gaka-hney Stage 3 the regen path is folded
+// (internal/queue/imagejobs). As of boom-hney Stage 3 the regen path is folded
 // onto the generic catalyst-go-jobs DB queue + a KEDA ScaledJob, so this hook
 // now POLLS `/api/v1/admin/label-images/status` (latest job per label) instead
 // of holding a WebSocket. The public shape is unchanged — `byLabel`, `enqueue`,

@@ -1,4 +1,4 @@
-// owner_scoping_ginkgo_test.go — ginkgo mirror of owner_scoping_test.go (gaka-0vp.13).
+// owner_scoping_ginkgo_test.go — ginkgo mirror of owner_scoping_test.go (boom-0vp.13).
 // 1:1 case map (1 stdlib TestXxx wrapping 17 subtests → 17 Its inside a Describe):
 //
 //	TestOwnerScopingAcrossAggregations/{Xxx} → It "GetXxx: A's query doesn't include B's rows"

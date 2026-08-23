@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 
-// The "Why boomtime, not Wakatime?" step (gaka-93f.1.2). Grounded in WHY.md +
+// The "Why boomtime, not Wakatime?" step (boom-93f.1.2). Grounded in WHY.md +
 // QUERY_ENGINE.md + the gamification doc — real differentiators, not marketing
 // fluff: the gap_seconds-at-ingest query engine, the reversible 3-strategy
 // curation DSL, the earned-gamification layer, the one-button importer, and the

@@ -1,4 +1,4 @@
-// worker_more_test.go — additional coverage (gaka-d6x) targeting branches
+// worker_more_test.go — additional coverage (boom-d6x) targeting branches
 // not exercised by the baseline suite. Every case pins a NAMED invariant
 // rather than a bare roundtrip.
 //
@@ -19,7 +19,7 @@
 //	  - A closed pool → ListLabels returns err → fallback to baseline
 //	    (transient DB blip does NOT abort a regen)
 //
-//	RegenerateEntry (gaka-8bz Executor path):
+//	RegenerateEntry (boom-8bz Executor path):
 //	  - happy path saves a fresh row with per-entry Model override taking
 //	    precedence over worker's env-configured default
 //	  - empty ID / empty Prompt reject BEFORE any DB write (no ciphertext,
@@ -27,7 +27,7 @@
 //	  - closed-pool → wrapped "delete old row" error (delete-before-save
 //	    contract cannot be bypassed by a caller with a stale worker)
 //
-//	RegenerateOne (DB-source-of-truth path, post gaka-364.3):
+//	RegenerateOne (DB-source-of-truth path, post boom-364.3):
 //	  - id present in DB with non-empty optimized_prompt is regenerated
 //	    using DB's Description + OptimizedPrompt (NOT the compiled baseline,
 //	    even if the id ALSO exists in labelcatalog.Entries)
@@ -134,7 +134,7 @@ func errorShim() *httptest.Server {
 
 // ------- NewWorker branches -------
 
-var _ = Describe("NewWorker feature gate (gaka-d6x)", func() {
+var _ = Describe("NewWorker feature gate (boom-d6x)", func() {
 	It("returns (nil, nil) when feature flag is off — feature-off is not an error", func() {
 		cfg := &config.Config{FeatureLabelImages: false, ComfyUIShimURL: "http://example.invalid"}
 		w, err := NewWorker(cfg, nil, silentLogger())
@@ -174,7 +174,7 @@ var _ = Describe("NewWorker feature gate (gaka-d6x)", func() {
 
 // ------- catalog() branches -------
 
-var _ = Describe("Worker.catalog() DB-first source-of-truth (gaka-d6x)", func() {
+var _ = Describe("Worker.catalog() DB-first source-of-truth (boom-d6x)", func() {
 	It("prefers DB rows over compiled baseline and skips rows with empty optimized_prompt", func() {
 		d := openTestDBGinkgo()
 		DeferCleanup(func() { d.Close() })
@@ -271,9 +271,9 @@ var _ = Describe("Worker.catalog() DB-first source-of-truth (gaka-d6x)", func() 
 	})
 })
 
-// ------- RegenerateEntry (gaka-8bz path) -------
+// ------- RegenerateEntry (boom-8bz path) -------
 
-var _ = Describe("Worker.RegenerateEntry (gaka-d6x)", func() {
+var _ = Describe("Worker.RegenerateEntry (boom-d6x)", func() {
 	It("nil receiver returns a feature-disabled error — no panic, no silent success", func() {
 		var w *Worker
 		err := w.RegenerateEntry(context.Background(), labelcatalog.Entry{ID: "x", Prompt: "y"})
@@ -366,8 +366,8 @@ var _ = Describe("Worker.RegenerateEntry (gaka-d6x)", func() {
 
 // ------- RegenerateOne DB source-of-truth branches -------
 
-var _ = Describe("Worker.RegenerateOne DB-first (gaka-d6x)", func() {
-	It("uses the DB's OptimizedPrompt over the compiled baseline (post gaka-364.3)", func() {
+var _ = Describe("Worker.RegenerateOne DB-first (boom-d6x)", func() {
+	It("uses the DB's OptimizedPrompt over the compiled baseline (post boom-364.3)", func() {
 		d := openTestDBGinkgo()
 		DeferCleanup(func() { d.Close() })
 		ctx := context.Background()
@@ -435,7 +435,7 @@ var _ = Describe("Worker.RegenerateOne DB-first (gaka-d6x)", func() {
 
 // ------- RegenerateList branches -------
 
-var _ = Describe("Worker.RegenerateList (gaka-d6x)", func() {
+var _ = Describe("Worker.RegenerateList (boom-d6x)", func() {
 	It("nil receiver returns feature-disabled — no panic", func() {
 		var w *Worker
 		gen, failed, err := w.RegenerateList(context.Background(), nil)
@@ -494,7 +494,7 @@ var _ = Describe("Worker.RegenerateList (gaka-d6x)", func() {
 
 // ------- systemPrompt cache TTL -------
 
-var _ = Describe("Worker.systemPrompt cache (gaka-d6x)", func() {
+var _ = Describe("Worker.systemPrompt cache (boom-d6x)", func() {
 	It("caches within TTL so a second call in the same regen batch does NOT re-hit the DB", func() {
 		d := openTestDBGinkgo()
 		DeferCleanup(func() { d.Close() })
@@ -534,7 +534,7 @@ var _ = Describe("Worker.systemPrompt cache (gaka-d6x)", func() {
 
 // ------- Run branches (mid-loop cancel + per-label failure) -------
 
-var _ = Describe("Worker.Run error branches (gaka-d6x)", func() {
+var _ = Describe("Worker.Run error branches (boom-d6x)", func() {
 	It("with a closed pool, has-check errors are recorded as failed and the loop CONTINUES", func() {
 		d := openTestDBGinkgo()
 		d.Close() // HasLabelImage will error immediately
@@ -607,7 +607,7 @@ var _ = Describe("Worker.Run error branches (gaka-d6x)", func() {
 
 // ------- RegenerateOne fallback + delete-error branches -------
 
-var _ = Describe("Worker.RegenerateOne fallback (gaka-d6x)", func() {
+var _ = Describe("Worker.RegenerateOne fallback (boom-d6x)", func() {
 	It("falls back to compiled baseline when id is NOT in DB but IS in baseline", func() {
 		d := openTestDBGinkgo()
 		DeferCleanup(func() { d.Close() })
@@ -667,7 +667,7 @@ var _ = Describe("Worker.RegenerateOne fallback (gaka-d6x)", func() {
 
 // ------- RegenerateAll truncate-error branch -------
 
-var _ = Describe("Worker.RegenerateAll error paths (gaka-d6x)", func() {
+var _ = Describe("Worker.RegenerateAll error paths (boom-d6x)", func() {
 	It("wraps a truncate failure with the 'truncate:' prefix", func() {
 		d := openTestDBGinkgo()
 		d.Close() // TruncateLabelImages now errors
@@ -689,7 +689,7 @@ var _ = Describe("Worker.RegenerateAll error paths (gaka-d6x)", func() {
 
 // ------- RegenerateList generateAndSave-failure branch -------
 
-var _ = Describe("Worker.RegenerateList per-entry failure (gaka-d6x)", func() {
+var _ = Describe("Worker.RegenerateList per-entry failure (boom-d6x)", func() {
 	It("counts a shim 500 as failed and continues to the next entry", func() {
 		d := openTestDBGinkgo()
 		DeferCleanup(func() { d.Close() })
@@ -714,7 +714,7 @@ var _ = Describe("Worker.RegenerateList per-entry failure (gaka-d6x)", func() {
 
 // ------- generateAndSave error paths + seed override -------
 
-var _ = Describe("generateAndSave (gaka-d6x)", func() {
+var _ = Describe("generateAndSave (boom-d6x)", func() {
 	It("wraps shim failure as 'shim:' error and writes NO DB row", func() {
 		d := openTestDBGinkgo()
 		DeferCleanup(func() { d.Close() })
@@ -934,7 +934,7 @@ var _ = Describe("generateAndSave (gaka-d6x)", func() {
 
 // ------- RegenerateEntry model-fallback branch -------
 
-var _ = Describe("Worker.RegenerateEntry Model fallback (gaka-d6x)", func() {
+var _ = Describe("Worker.RegenerateEntry Model fallback (boom-d6x)", func() {
 	It("falls back to worker.model when entry.Model is empty (parity with Run-loop path)", func() {
 		// The override-wins path is covered at line 270 with an entry that
 		// SETS Model. This spec pins the OTHER branch: `if model == ""
@@ -974,7 +974,7 @@ var _ = Describe("Worker.RegenerateEntry Model fallback (gaka-d6x)", func() {
 
 // ------- systemPrompt TTL-refresh + mutex serialization -------
 
-var _ = Describe("Worker.systemPrompt cache refresh + mutex (gaka-d6x)", func() {
+var _ = Describe("Worker.systemPrompt cache refresh + mutex (boom-d6x)", func() {
 	It("re-reads the DB after TTL expiry so admin edits become visible on the next batch", func() {
 		// Complements the within-TTL cache-hit spec at line 457. Simulates
 		// TTL expiry by resetting w.sysFetched to the zero-time (which makes

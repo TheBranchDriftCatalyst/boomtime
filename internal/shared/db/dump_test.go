@@ -1,4 +1,4 @@
-// dump_ginkgo_test.go — ginkgo mirror of dump_test.go (gaka-0vp.13).
+// dump_ginkgo_test.go — ginkgo mirror of dump_test.go (boom-0vp.13).
 // 1:1 case map (6 stdlib TestXxx incl 6 subtests → 5 Its + 1 DescribeTable(6)):
 //
 //	TestDumpRestoreRoundTrip                        → It "seed → dump → mutate → restore round trip"
@@ -8,7 +8,7 @@
 //	TestRestoreRefusesWhenEncryptionKeyMissing      → It "restore refused when BOOM_ENCRYPTION_KEY missing (gate)"
 //	TestDumpUsersRowHasCiphertextColumn             → It "dump users COPY payload contains ciphertext bytes"
 //
-// gaka-se2.9: this file also carries stdlib (testing.T) security tests for
+// boom-se2.9: this file also carries stdlib (testing.T) security tests for
 // the backup contract — see TestDumpAllSecurity + TestDumpRestoreRoundtripWithEncryption
 // at the bottom of the file. The ginkgo tests exercise round-trip byte-equality
 // with a FAKE fixture ciphertext; the stdlib tests EXTEND that with a real
@@ -169,7 +169,7 @@ func newSenderInDump(d *DB, prefix string) *SenderFixtureG {
 }
 
 var _ = ginkgo.Describe("dump + restore", func() {
-	ginkgo.It("seed → dump → mutate → restore round trip preserves every table byte-for-byte (gaka-awh.3)", func() {
+	ginkgo.It("seed → dump → mutate → restore round trip preserves every table byte-for-byte (boom-awh.3)", func() {
 		setEnvG(encryptionKeyEnvName, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa=")
 		d := openIsolatedDumpDBG()
 		ctx := context.Background()
@@ -302,7 +302,7 @@ var _ = ginkgo.Describe("dump + restore", func() {
 		ginkgo.Entry("missing tables", map[string]string{manifestName: "__CURRENT_GOOSE__"}, false, "missing tables"),
 	)
 
-	ginkgo.It("dumpTables[users] includes every encrypted-secret column so restore doesn't silently drop it (gaka-awh.3)", func() {
+	ginkgo.It("dumpTables[users] includes every encrypted-secret column so restore doesn't silently drop it (boom-awh.3)", func() {
 		var users dumpTable
 		for _, dt := range dumpTables {
 			if dt.Name == "users" {
@@ -351,7 +351,7 @@ var _ = ginkgo.Describe("dump + restore", func() {
 		}
 	})
 
-	ginkgo.It("restore refused BEFORE any TRUNCATE when ciphertext present + BOOM_ENCRYPTION_KEY unset (gaka-awh.3 gate)", func() {
+	ginkgo.It("restore refused BEFORE any TRUNCATE when ciphertext present + BOOM_ENCRYPTION_KEY unset (boom-awh.3 gate)", func() {
 		d := openIsolatedDumpDBG()
 		ctx := context.Background()
 
@@ -467,7 +467,7 @@ func bytesToHex(b []byte) string {
 }
 
 // -----------------------------------------------------------------------------
-// gaka-se2.9 stdlib coverage of dump.go — backup security invariants.
+// boom-se2.9 stdlib coverage of dump.go — backup security invariants.
 //
 // The ginkgo tests already cover: round-trip byte-equality with a FAKE fixture
 // ciphertext, .env exclusion, restore-without-key rejection, ciphertext
@@ -590,7 +590,7 @@ func (s *securityAEAD) Open(ciphertext []byte) ([]byte, error) {
 
 // -----------------------------------------------------------------------------
 // TestDumpRestoreRoundtripWithEncryption — the top-line security contract from
-// CLAUDE.md gaka-awh.3: a plaintext Wakatime key sealed under
+// CLAUDE.md boom-awh.3: a plaintext Wakatime key sealed under
 // BOOM_ENCRYPTION_KEY MUST survive a DumpAll -> wipe -> RestoreAll cycle such
 // that the plaintext still recovers after Decrypt under the SAME key.
 // -----------------------------------------------------------------------------

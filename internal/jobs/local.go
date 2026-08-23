@@ -20,7 +20,7 @@ type LocalProvider struct {
 	id       string
 	poll     time.Duration
 	notifier Notifier
-	// Kind-routing (gaka-hney): include = only these kinds (empty = any);
+	// Kind-routing (boom-hney): include = only these kinds (empty = any);
 	// exclude = skip these kinds. Lets the always-on server drain light kinds
 	// and a ScaledJob drain the heavy ones off the same queue.
 	include []string
@@ -30,7 +30,7 @@ type LocalProvider struct {
 	// Acquired around each run. nil = no throttling (every kind unbounded).
 	limiter KindLimiter
 	// logCapture persists each job's log stream to object storage on completion
-	// (gaka-hney). nil = persistence off (no S3 configured).
+	// (boom-hney). nil = persistence off (no S3 configured).
 	logCapture *LogCapture
 
 	// cancelMu guards cancels: the per-job CancelFunc of every job CURRENTLY
@@ -41,7 +41,7 @@ type LocalProvider struct {
 	cancels  map[int64]context.CancelFunc
 }
 
-// SetKindFilter restricts which kinds this provider claims (gaka-hney).
+// SetKindFilter restricts which kinds this provider claims (boom-hney).
 func (p *LocalProvider) SetKindFilter(include, exclude []string) {
 	p.include = include
 	p.exclude = exclude
@@ -50,7 +50,7 @@ func (p *LocalProvider) SetKindFilter(include, exclude []string) {
 // SetLimiter wires the per-kind concurrency throttle. nil = unbounded.
 func (p *LocalProvider) SetLimiter(l KindLimiter) { p.limiter = l }
 
-// SetLogCapture wires durable per-job log persistence (gaka-hney). nil = off.
+// SetLogCapture wires durable per-job log persistence (boom-hney). nil = off.
 func (p *LocalProvider) SetLogCapture(lc *LogCapture) { p.logCapture = lc }
 
 // claimExclude merges the static exclude list with the kinds the limiter reports
@@ -221,7 +221,7 @@ func (p *LocalProvider) Enqueue(ctx context.Context, kind string, payload []byte
 }
 
 // Drain claims + runs every currently-due job, then returns (ScaledJob mode,
-// gaka-hney). A KEDA ScaledJob creates one pod per pending job; each pod drains
+// boom-hney). A KEDA ScaledJob creates one pod per pending job; each pod drains
 // what it can and exits. A long job runs to completion — a ScaledJob Job is
 // never killed on scale-down, which removes the mid-job-kill + redelivery
 // amplification at the root. Any extra pod that finds the queue already emptied

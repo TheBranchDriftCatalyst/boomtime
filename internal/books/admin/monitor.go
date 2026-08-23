@@ -1,5 +1,5 @@
 // books_monitor.go — the admin-only LIVE Kindle reading-monitor
-// (gaka-books). A WebSocket that, while a client is connected, polls each
+// (boom-books). A WebSocket that, while a client is connected, polls each
 // in-progress Kindle book's last-page-read POSITION at a HIGH sample rate
 // (default ~6s) via the Fiona CDE sidecar and streams every advance to the
 // Admin › Books › Reading-monitor tab. The operator opens a book on their

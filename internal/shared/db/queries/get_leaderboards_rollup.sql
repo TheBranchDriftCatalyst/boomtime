@@ -4,7 +4,7 @@
 -- (workout_duration_s OR gap_seconds <= 900), so summing rollup total_seconds
 -- reproduces the raw sum byte-for-byte at the 15-min limit.
 --
--- gaka-6ci: project_missing / language_missing propagate the raw-NULL
+-- boom-6ci: project_missing / language_missing propagate the raw-NULL
 -- discriminator so ToLeaderboardsPayload can build per-language sub-
 -- leaderboards WITHOUT the 'Other' bucket (browser tabs / AI console with no
 -- language). The GLOBAL leaderboard still sums over every row so

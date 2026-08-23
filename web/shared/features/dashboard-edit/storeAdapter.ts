@@ -1,4 +1,4 @@
-// storeAdapter (gaka-lzr, Phase 4) — a StorageAdapter bridging the isolated
+// storeAdapter (boom-lzr, Phase 4) — a StorageAdapter bridging the isolated
 // grid primitive to the local edit store.
 //
 // The grid calls `storage.save(layout)` on every drag / resize / view-toggle /

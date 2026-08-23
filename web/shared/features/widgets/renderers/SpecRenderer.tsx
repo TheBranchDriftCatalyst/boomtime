@@ -1,4 +1,4 @@
-// SpecRenderer (Part B Stage 3, gaka-174.x) — the FE twin of
+// SpecRenderer (Part B Stage 3, boom-174.x) — the FE twin of
 // internal/widget/spec.go's renderSpec/renderSpecPanel. Looks up a kind's
 // canonical spec (specs.ts, the SAME internal/widget/specs.json the backend
 // embeds) and dispatches each panel's `primitive` to a FE viz component via

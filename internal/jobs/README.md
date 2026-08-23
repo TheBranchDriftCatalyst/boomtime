@@ -61,7 +61,7 @@ package's own migration set.
 
 ## Roadmap
 
-- **Fold `internal/queue/imagejobs`** in as a `label-image` kind (gaka-hney.3),
+- **Fold `internal/queue/imagejobs`** in as a `label-image` kind (boom-hney.3),
   behind `BOOM_JOBS_UNIFIED`, parity-tested before deleting the bespoke
   producer/consumer.
 - **Cross-pod push relay** (Redis/Dragonfly) for the split worker topology, so

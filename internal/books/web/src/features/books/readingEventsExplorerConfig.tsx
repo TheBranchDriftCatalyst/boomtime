@@ -1,5 +1,5 @@
 // readingEventsExplorerConfig.tsx — the readingEvents-domain DomainConfig for the
-// shared <GroupableExplorer> (gaka-z5dz). Sibling to booksExplorerConfig, but over
+// shared <GroupableExplorer> (boom-z5dz). Sibling to booksExplorerConfig, but over
 // the `reads` measure (count of discrete reads) on the reading_events_enriched view
 // instead of the `books` measure on reading_items:
 //   - groupBy [] (default) → the flat event table (one row per READ: title, origin,

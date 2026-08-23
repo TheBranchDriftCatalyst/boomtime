@@ -2,7 +2,7 @@ package auth
 
 import "testing"
 
-// gaka-93f.19: OIDC-provisioned users store an empty hashed_password (they
+// boom-93f.19: OIDC-provisioned users store an empty hashed_password (they
 // authenticate via the IdP, never a local password). VerifyPasswordWithVersion
 // must NEVER authenticate against an empty stored hash — for any input,
 // including the empty string. Red-team confirmed this already fails closed via

@@ -4,7 +4,7 @@
 //
 // It exists so the per-domain packages under internal/<domain>/ (ingest,
 // curation, stats, ...) don't each re-declare a local copy of the same 8
-// functions — a DRY violation the meta phase surfaced (gaka-8tn phase 1
+// functions — a DRY violation the meta phase surfaced (boom-8tn phase 1
 // shipped with byte-identical local shims of resolveUser / respondErr /
 // queryInt64 in internal/meta/handler.go).
 //
@@ -32,7 +32,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 )
 
-// ---- Body-size caps for authed JSON writes (gaka-bi2) --------------------
+// ---- Body-size caps for authed JSON writes (boom-bi2) --------------------
 //
 // Three buckets so a hostile client can't force the server to materialize a
 // huge blob and then run an expensive verify step (argon2 on change-password
@@ -191,12 +191,12 @@ func ResolveUser(database *db.DB, c *echo.Context) (string, string, *apierr.Erro
 }
 
 // Identify resolves the caller's *auth.Identity from the bearer token — the
-// user-model seam (gaka-0oe.1). With BOOM_FEATURE_USER_MODEL OFF it returns an
+// user-model seam (boom-0oe.1). With BOOM_FEATURE_USER_MODEL OFF it returns an
 // all-capability Identity, so no gate ever fires and behavior is identical to
 // the pre-substrate ResolveUser path. With the flag ON it loads the user's
 // role + capabilities and fails closed on a disabled account.
 //
-// This is the shape the 70-site handler refactor (gaka-0oe.4–.9) migrates onto;
+// This is the shape the 70-site handler refactor (boom-0oe.4–.9) migrates onto;
 // it is intentionally additive — ResolveUser stays for callers not yet
 // converted. The user-model switch is read from the process-global
 // auth.UserModelEnabled() (set once at boot from cfg.FeatureUserModel) rather
@@ -204,7 +204,7 @@ func ResolveUser(database *db.DB, c *echo.Context) (string, string, *apierr.Erro
 // call sites don't have to thread the flag through three different handler
 // config shapes.
 func Identify(database *db.DB, c *echo.Context) (*auth.Identity, *apierr.Error) {
-	// Standalone single-tenant short-circuit (gaka-zp2s books-standalone). When the
+	// Standalone single-tenant short-circuit (boom-zp2s books-standalone). When the
 	// STANDALONE catalyst-books binary pins a fixed owner (auth.SetStandaloneOwner,
 	// from BOOM_STANDALONE_OWNER), there is NO auth stack — no tokens, cookies, or
 	// users-model to resolve against — so every caller IS that one owner. Return a
@@ -226,7 +226,7 @@ func Identify(database *db.DB, c *echo.Context) (*auth.Identity, *apierr.Error) 
 	// or the credential was absent/invalid — the middleware only stashes a
 	// SUCCESSFUL resolution, so the MissingAuth / InvalidToken envelope is
 	// (re)produced here. apihelpers owns header parsing (it has the echo
-	// context); the active auth provider (gaka-0oe.2) owns token→Identity.
+	// context); the active auth provider (boom-0oe.2) owns token→Identity.
 	token, aerr := TokenFromHeader(c)
 	if aerr != nil {
 		return nil, aerr
@@ -305,7 +305,7 @@ func RequireCap(database *db.DB, capability auth.Capability, action string) echo
 	}
 }
 
-// IdentifyOwner is the owner-only convenience over Identify (gaka-0oe.4–.9).
+// IdentifyOwner is the owner-only convenience over Identify (boom-0oe.4–.9).
 // For the many account/settings/read handlers that need the caller's username
 // + the disabled-fail-closed guarantee but have NO tier-specific capability
 // gate (every non-disabled identity may use them), this is a one-line swap for
@@ -441,7 +441,7 @@ func CacheKey(owner, name string, parts ...any) string {
 //
 // Collapsed from per-domain copies that used to live on *handler.Handler,
 // *stats.Handler, *widgets.Handler, and *awards.Handler — all four were
-// byte-identical (gaka-dg7).
+// byte-identical (boom-dg7).
 func ResolveUserTZ(database *db.DB, logger *slog.Logger, ctx context.Context, owner, defaultTZ string) string {
 	userTZ, err := database.GetUserTimezone(ctx, owner)
 	if err != nil {

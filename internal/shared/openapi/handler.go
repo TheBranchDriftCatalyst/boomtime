@@ -44,7 +44,7 @@ func DocsHandler(prefix string) echo.HandlerFunc {
 // internal/server/server.go's registerMetaRoutes so the existing route
 // bookkeeping stays in one place.
 func Register(e *echo.Echo) {
-	// Record this router as the source for the spec's auto-derive pass (gaka-lfc
+	// Record this router as the source for the spec's auto-derive pass (boom-lfc
 	// option A). Register runs mid-registration, so we store the pointer and
 	// read e.Router().Routes() lazily at build time — by then every domain's
 	// routes are wired. Invalidates any cached spec (see setRouterEcho).

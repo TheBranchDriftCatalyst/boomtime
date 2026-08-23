@@ -1,6 +1,6 @@
 ---
 # Dragonfly (Redis-compatible) for cross-pod image-job progress fan-out +
-# the per-label dedup lock (worker-topology decoupling, gaka-8bz follow-up).
+# the per-label dedup lock (worker-topology decoupling, boom-8bz follow-up).
 # Provisioned via the homelab's Dragonfly operator (already installed
 # cluster-wide — see talos-homelab/applications/crossplane-demo/
 # dragonfly.yaml, mirrored here). Creates Service `boomtime-cache` on

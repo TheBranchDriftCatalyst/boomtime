@@ -1,5 +1,5 @@
 // profile_range_test.go — the ?days stats-window override on the public
-// profile payload (gaka-174.7). Asserts parsing + clamping against the real
+// profile payload (boom-174.7). Asserts parsing + clamping against the real
 // handler; the awards endpoint is unaffected (separate route, canonical
 // window) so re-scoping never desyncs labels.
 package identity_test
@@ -17,7 +17,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
-var _ = Describe("public profile ?days window (gaka-174.7)", func() {
+var _ = Describe("public profile ?days window (boom-174.7)", func() {
 	// setup mints a user, enables their public profile, and returns the router
 	// + slug for hitting the public route.
 	setup := func() (http.Handler, string) {

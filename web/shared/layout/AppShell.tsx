@@ -25,7 +25,7 @@ export function AppShell() {
   const navigate = useNavigate();
   const [createSpaceOpen, setCreateSpaceOpen] = useState(false);
   const { collapsed, toggleCollapsed } = useCollapsedSidebar();
-  // Push toasts when one of the caller's jobs completes/fails (gaka-hney.6).
+  // Push toasts when one of the caller's jobs completes/fails (boom-hney.6).
   useJobNotifications();
 
   async function handleLogout() {

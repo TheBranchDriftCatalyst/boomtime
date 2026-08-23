@@ -30,7 +30,7 @@ export function DateRangePicker({
   const [open, setOpen] = useState(false);
   const [range, setRange] = useState<DateRange | undefined>();
   // Two side-by-side months (~500px) overflow a phone popover — show one
-  // below the sm breakpoint (gaka-k26n.6).
+  // below the sm breakpoint (boom-k26n.6).
   const [twoMonths, setTwoMonths] = useState(true);
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 640px)");

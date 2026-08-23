@@ -1,5 +1,5 @@
 // SpecRenderer.test.tsx — non-tautological coverage for the Part B Stage 3
-// spec-driven renderer (gaka-174.x). Three concerns:
+// spec-driven renderer (boom-174.x). Three concerns:
 //
 //   1. Binding correctness: a panel bound to (say) "editors" must show
 //      EDITOR names, never language/project/platform/category names — the

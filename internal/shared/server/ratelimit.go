@@ -1,4 +1,4 @@
-// Package server: rate-limit middleware (gaka-jk6 / gaka-ddp / gaka-awh.1).
+// Package server: rate-limit middleware (boom-jk6 / boom-ddp / boom-awh.1).
 //
 // Universal token-bucket middleware. Each request is routed to an endpoint
 // group whose bucket parameters (rate + burst) come from tunable env vars
@@ -20,7 +20,7 @@
 //   - Storage: in-memory sync.Map of *rate.Limiter with a lastSeen atomic
 //     stamp for lazy TTL eviction. A background goroutine sweeps every 5m and
 //     drops entries idle >15m. This does NOT scale horizontally — a follow-up
-//     bead tracks redis-backed limiter work (see gaka-awh.2 or its successor
+//     bead tracks redis-backed limiter work (see boom-awh.2 or its successor
 //     recorded at commit time).
 //
 //   - The middleware short-circuits (never touches the limiter map) for:
@@ -327,7 +327,7 @@ func userLookupFromDB(database *db.DB) func(c *echo.Context) string {
 // static files. These are cheap file reads fetched in bursts on every page
 // load; they must never be rate-limited. It matches ONLY these paths (never the
 // /api, /auth, /badge, /import surfaces), so the abuse-facing endpoints stay
-// bucketed. gaka-93f.23 tracks reducing the chunk count itself.
+// bucketed. boom-93f.23 tracks reducing the chunk count itself.
 func isStaticAssetPath(p string) bool {
 	return strings.HasPrefix(p, "/assets/") ||
 		p == "/favicon.ico" ||
@@ -348,7 +348,7 @@ func (s *rateLimitStore) middleware() echo.MiddlewareFunc {
 			if req.Method == http.MethodGet && (req.URL.Path == "/healthz" || req.URL.Path == "/metrics") {
 				return next(c)
 			}
-			// gaka-93f.11.5: never rate-limit static SPA assets. A single page load
+			// boom-93f.11.5: never rate-limit static SPA assets. A single page load
 			// fetches dozens of immutable hashed chunks (/assets/*.js|css) in one
 			// burst; counting them drains the default IP bucket and 429s the app's
 			// OWN JavaScript, breaking the load (and feeding the stale-chunk

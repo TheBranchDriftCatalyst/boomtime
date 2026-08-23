@@ -1,4 +1,4 @@
-// reading_item_dto_test.go — the reading_items view payload (gaka-qic0). Pins
+// reading_item_dto_test.go — the reading_items view payload (boom-qic0). Pins
 // the Hardcover match-state + identifier fields onto the JSON contract the Books
 // table depends on: a MATCHED row serializes hardcoverBookId/status/matchedAt;
 // an UNMATCHED row omits every hardcover_* key (the honest "not matched" state);
@@ -45,7 +45,7 @@ func TestReadingItemDTO_MatchedRowSerializesHardcoverFields(t *testing.T) {
 	} else if int64(got.(float64)) != bookID {
 		t.Fatalf("hardcoverBookId = %v, want %d", got, bookID)
 	}
-	// hardcoverSlug is the deep-link segment the FE prefers (gaka-qic0).
+	// hardcoverSlug is the deep-link segment the FE prefers (boom-qic0).
 	if m["hardcoverSlug"] != "dune" {
 		t.Fatalf("hardcoverSlug = %v, want dune", m["hardcoverSlug"])
 	}

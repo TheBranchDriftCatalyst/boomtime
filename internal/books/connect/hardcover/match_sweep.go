@@ -74,7 +74,7 @@ type MatchSweepResult struct {
 	NoMatch   int // ladder returned no confident hit (left for manual review)
 	Skipped   int // a per-row error (match call or link write) — best-effort, sweep continues
 	Enriched  int // kindle bare-ASIN rows whose title/author/cover were backfilled via LookupByASIN
-	CacheHits int // rows resolved from the GLOBAL match cache (gaka-wzgr) — zero Hardcover API calls
+	CacheHits int // rows resolved from the GLOBAL match cache (boom-wzgr) — zero Hardcover API calls
 	BatchHits int // rows resolved by the BATCHED exact-id rung (editions _in) — many rows per request
 	ShelfHits int // rows resolved by the LOCAL shelf-match rung (owner's own Hardcover shelf) — zero API
 }
@@ -169,7 +169,7 @@ func (s *SyncService) matchWith(ctx context.Context, owner string, client matche
 		})
 	}
 
-	// Phase 1 — GLOBAL cache (gaka-wzgr), zero Hardcover API calls. A match is an
+	// Phase 1 — GLOBAL cache (boom-wzgr), zero Hardcover API calls. A match is an
 	// objective fact about a BOOK, so once ANY user resolved an ASIN/ISBN13 we serve
 	// it from our own DB. Everything not served here falls to the batch rung.
 	var misses []*matchRow
@@ -252,7 +252,7 @@ func (s *SyncService) matchWith(ctx context.Context, owner string, client matche
 			continue
 		}
 		// Fuzzy resolution links the per-user row but is NEVER written to the global
-		// cache (gaka-wzgr caveat).
+		// cache (boom-wzgr caveat).
 		s.linkAndEnrich(ctx, owner, r, m, client, &res)
 	}
 

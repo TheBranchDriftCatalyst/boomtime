@@ -1,5 +1,5 @@
 // dashboard_layouts.go: DB accessors for the composable dashboard layout
-// persistence layer (gaka-keb).
+// persistence layer (boom-keb).
 //
 // One row per (owner, scope). Scope is a caller-controlled string ("public_profile"
 // today; "overview", "projects" as we grow); the accessors intentionally do NOT
@@ -45,7 +45,7 @@ func (d *DB) GetDashboardLayout(ctx context.Context, owner, scope string) (json.
 // SetDashboardLayout upserts the layout for (owner, scope). The stored bytes
 // are byte-preserving relative to the caller's input (JSONB is not order-
 // preserving by default in Postgres, but we store as `jsonb` here — the
-// anti-tautology test (gaka-25r) covers the round-trip semantics; if you
+// anti-tautology test (boom-25r) covers the round-trip semantics; if you
 // swap to a normalized storage in the future, that test will catch it).
 func (d *DB) SetDashboardLayout(ctx context.Context, owner, scope string, layout json.RawMessage) error {
 	if owner == "" || scope == "" {

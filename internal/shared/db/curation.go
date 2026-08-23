@@ -64,7 +64,7 @@ func NormalizeTemplate(tmpl string) string {
 // Postgres regex applied to the raw column via ~), or "template" (MatchValue is a
 // regex and NewValue is a regexp_replace template referencing capture groups).
 //
-// Enabled (gaka-dfd) reports whether the rule is currently applied at query
+// Enabled (boom-dfd) reports whether the rule is currently applied at query
 // time. A disabled rule stays in the list (so the UI can surface it) but is
 // filtered out of LoadHiddenSets / LoadRenameSets — its definition survives,
 // its effect is paused. The apply and purge destructive paths reject
@@ -77,7 +77,7 @@ type CurationRule struct {
 	MatchValue string  `json:"matchValue"`
 	NewValue   *string `json:"newValue"`
 	Enabled    bool    `json:"enabled"`
-	// ApplyAtIngest (gaka-scrub) marks a RENAME rule that also rewrites newly-
+	// ApplyAtIngest (boom-scrub) marks a RENAME rule that also rewrites newly-
 	// ingested heartbeats (the "scrubber"). Such rules are EXCLUDED from the
 	// query-time remap (LoadRenameSets) — the row is baked at ingest, so a
 	// second read-time transform would double-apply. Always false for hide rules.
@@ -87,7 +87,7 @@ type CurationRule struct {
 
 // ListCurationRules returns a user's rules, newest first.
 //
-// gaka-dfd: disabled rules are still returned so the UI can show them (with
+// boom-dfd: disabled rules are still returned so the UI can show them (with
 // the "paused" eyeball). Query-time consumers (LoadHiddenSets /
 // LoadRenameSets) do their own enabled=true filtering.
 func (d *DB) ListCurationRules(ctx context.Context, sender string) ([]CurationRule, error) {
@@ -117,7 +117,7 @@ func (d *DB) ListCurationRules(ctx context.Context, sender string) ([]CurationRu
 // per-axis because the queryapi auto-apply loads exactly the group dimension
 // it is about to run.
 //
-// gaka-dfd parity: a disabled pin is excluded — a paused pin stops taking
+// boom-dfd parity: a disabled pin is excluded — a paused pin stops taking
 // effect, its rule row survives so the UI can flip it back on. Values are
 // returned as stored (case preserved); the DSL's BucketPolicy matches them
 // case-insensitively, so case never has to be normalized here.
@@ -144,7 +144,7 @@ func (d *DB) LoadPinnedSet(ctx context.Context, owner, axis string) ([]string, e
 
 // CreateCurationRule inserts a rule (deduped on sender,axis,action,match_type,
 // match_value) and returns it. On an existing duplicate it updates new_value
-// AND re-enables the rule (gaka-dfd) — re-adding a rule you previously paused
+// AND re-enables the rule (boom-dfd) — re-adding a rule you previously paused
 // clearly expresses "I want this on again"; the alternative (silent
 // no-toggle) is confusing.
 func (d *DB) CreateCurationRule(ctx context.Context, sender, axis, action, matchType, matchValue string, newValue *string) (*CurationRule, error) {
@@ -152,7 +152,7 @@ func (d *DB) CreateCurationRule(ctx context.Context, sender, axis, action, match
 }
 
 // CreateCurationRuleWithIngest is CreateCurationRule plus the apply_at_ingest
-// flag (gaka-scrub). Only the CreateCuration handler needs it (rename rules that
+// flag (boom-scrub). Only the CreateCuration handler needs it (rename rules that
 // also scrub at ingest); every other caller uses the false-defaulting wrapper.
 func (d *DB) CreateCurationRuleWithIngest(ctx context.Context, sender, axis, action, matchType, matchValue string, newValue *string, applyAtIngest bool) (*CurationRule, error) {
 	if matchType == "" {
@@ -196,7 +196,7 @@ func (d *DB) GetCurationRule(ctx context.Context, id int) (*CurationRule, string
 // enabled flag. Owner-scoped. Idempotent — if the current value already
 // equals the requested value, still returns (enabled, true).
 //
-// gaka-dfd: rules default enabled=true. Toggling produces a paused rule that
+// boom-dfd: rules default enabled=true. Toggling produces a paused rule that
 // the query-time consumers (LoadHiddenSets / LoadRenameSets) exclude. The
 // rule row itself stays in the list so the UI can flip it back on.
 //

@@ -5,7 +5,7 @@ import type { OtherMember } from "@shared/types/stats";
 // swatches, muted footer) and every user-controlled string (project / branch /
 // file / language name) is HTML-escaped before it lands in innerHTML.
 //
-// SIBLING BEAD gaka-7m4 (Other-breakdown expansion) consumes `TooltipSpec.rows`
+// SIBLING BEAD boom-7m4 (Other-breakdown expansion) consumes `TooltipSpec.rows`
 // directly: it feeds a list of member rows (each `{ label: name, value: Hms +
 // %, swatch: colorAt(i) }`) with an overflow `footer` like "+3 more". The row
 // list already renders with the swatch/muted styling this file emits, so 7m4
@@ -128,7 +128,7 @@ export function fmtPct(x: number): string {
 }
 
 /**
- * gaka-7m4: build the tooltip rows + footer for a synthesized "Other (N more)"
+ * boom-7m4: build the tooltip rows + footer for a synthesized "Other (N more)"
  * entry — a per-member breakdown of what "Other" contains. Every member row
  * shows its label (escaped by tooltipHtml) with a `time (share%)` value and an
  * optional swatch color. If the backend truncated the tail (OtherCount >
@@ -248,7 +248,7 @@ function shortDuration(seconds: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Row-builders (gaka-9pt)
+// Row-builders (boom-9pt)
 //
 // Shared "shape" helpers so charts don't repeat the same 2-3 rows verbatim.
 // Every helper returns `TooltipRow[]` — callers still assemble the final

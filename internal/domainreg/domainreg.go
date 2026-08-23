@@ -1,5 +1,5 @@
 // Package domainreg is the ONE place the boomtime host's domain set is instantiated
-// (gaka-zp2s). It builds the catalyst.Registry the composition root threads into the
+// (boom-zp2s). It builds the catalyst.Registry the composition root threads into the
 // server (route + admin wiring) and the jobs block (kind + schedule wiring), plus typed
 // handles to the domain Modules the host late-wires after the jobs subsystem is up.
 //

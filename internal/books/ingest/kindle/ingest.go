@@ -110,7 +110,7 @@ func (s *Service) sweep(ctx context.Context, cred *amazon.DeviceCredential, owne
 		// thousands of rate-limited Hardcover calls (hours) AND bypasses the
 		// cache-first match step. The hardcover-match job fills linkage for
 		// unmatched rows cache-first (per-user link → global hardcover_match_cache →
-		// Hardcover only for a book new to all of boomtime). gaka-wzgr.
+		// Hardcover only for a book new to all of boomtime). boom-wzgr.
 		items = append(items, buildReadingItem(owner, lib, nil))
 	}
 	return items, res != nil, nil
@@ -278,7 +278,7 @@ func rawMeta(lib amazon.CloudLibraryItem) []byte {
 // logInfo/logWarn resolve the job-scoped logger from ctx (logctx.FromContext),
 // falling back to s.Logger off a job. Threading ctx means every handler line
 // inherits the running job's job_id/kind/owner so the Admin viewer can filter to
-// one job's run (gaka-f0is).
+// one job's run (boom-f0is).
 func (s *Service) logInfo(ctx context.Context, msg string, args ...any) {
 	if l := logctx.FromContext(ctx, s.Logger); l != nil {
 		l.Info(msg, args...)

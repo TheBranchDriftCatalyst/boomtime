@@ -20,7 +20,7 @@ import (
 // Heartbeat ingests a single heartbeat: POST /api/v1/users/current/heartbeats.
 // Body is capped at apihelpers.BodyLimitLarge (8 MiB) — a single heartbeat is ~500 bytes so
 // the cap is generous, but bounded so an authenticated hostile client can't OOM
-// the process with a multi-GB body (gaka-d6x.handler critique fix).
+// the process with a multi-GB body (boom-d6x.handler critique fix).
 func (h *Handler) Heartbeat(c *echo.Context) error {
 	var hb model.HeartbeatPayload
 	if aerr := apihelpers.BindJSONWithLimit(c, &hb, apihelpers.BodyLimitLarge); aerr != nil {
@@ -31,7 +31,7 @@ func (h *Handler) Heartbeat(c *echo.Context) error {
 
 // HeartbeatBulk ingests many heartbeats: POST /api/v1/users/current/heartbeats.bulk.
 // Body is capped at apihelpers.BodyLimitLarge (8 MiB) — enough for ~10K-20K batched
-// heartbeats but bounded to prevent DoS via oversized ingest (gaka-d6x.handler).
+// heartbeats but bounded to prevent DoS via oversized ingest (boom-d6x.handler).
 func (h *Handler) HeartbeatBulk(c *echo.Context) error {
 	var hbs []model.HeartbeatPayload
 	if aerr := apihelpers.BindJSONWithLimit(c, &hbs, apihelpers.BodyLimitLarge); aerr != nil {
@@ -94,7 +94,7 @@ func (h *Handler) storeAndRespond(c *echo.Context, hbs []model.HeartbeatPayload)
 		substituteLastContext(enriched, seedProject, seedLanguage, seedBranch)
 	}
 
-	// gaka-scrub: apply-at-ingest rename rules run LAST — after enrichment AND
+	// boom-scrub: apply-at-ingest rename rules run LAST — after enrichment AND
 	// placeholder substitution, right before Save — so every field is final
 	// (nothing downstream clobbers the rewrite) and no axis needs an allowlist.
 	// A scrubber is just a rename rule flagged apply_at_ingest (e.g. strip a
@@ -110,7 +110,7 @@ func (h *Handler) storeAndRespond(c *echo.Context, hbs []model.HeartbeatPayload)
 		}
 	}
 
-	// gaka-0oe.3: skip the expensive phase-3 rollup/gap maintenance for
+	// boom-0oe.3: skip the expensive phase-3 rollup/gap maintenance for
 	// identities denied CapGenerateRollups when BOOM_FEATURE_ROLLUP_SKIP is on
 	// (e.g. an ingest-only service tier). Flag off => full caps => always the
 	// full path, so today's behavior is unchanged.
@@ -135,7 +135,7 @@ func (h *Handler) storeAndRespond(c *echo.Context, hbs []model.HeartbeatPayload)
 	// path. Silent between samples; see sampler.go.
 	h.logIngestSampled(owner, enriched)
 
-	// gaka-wpb: new activity might have flipped a goal — clear the cache
+	// boom-wpb: new activity might have flipped a goal — clear the cache
 	// so the next GET /goals/:id/progress recomputes under the fresh
 	// data. Best-effort (non-fatal): a failure here shouldn't sink the
 	// ingest response. The eager invalidation complements the 60s TTL

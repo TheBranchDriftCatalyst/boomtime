@@ -1,4 +1,4 @@
-// backup_413_test.go — gaka-d6x.handler: exercise the DBImport oversize
+// backup_413_test.go — boom-d6x.handler: exercise the DBImport oversize
 // upload branch (>BOOM_RESTORE_MAX_BYTES) → 413 + env-var hint. Kept as
 // its own file (external package) so os.Setenv shenanigans stay isolated.
 //
@@ -21,7 +21,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
-var _ = Describe("DBImport oversize upload (gaka-d6x.handler)", func() {
+var _ = Describe("DBImport oversize upload (boom-d6x.handler)", func() {
 	It("upload > BOOM_RESTORE_MAX_BYTES → 413 with env-var hint", func() {
 		prev, had := os.LookupEnv("BOOM_RESTORE_MAX_BYTES")
 		Expect(os.Setenv("BOOM_RESTORE_MAX_BYTES", "16")).To(Succeed())

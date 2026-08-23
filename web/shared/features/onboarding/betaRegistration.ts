@@ -3,7 +3,7 @@ import { useSyncExternalStore } from "react";
 import { useSearchParams } from "react-router";
 import { usePublicConfig } from "@shared/lib/usePublicConfig";
 
-// Beta user-registration preview flag (gaka-93f.1.2).
+// Beta user-registration preview flag (boom-93f.1.2).
 //
 // A global URL param — ?enable_beta_user_registration=true on ANY path —
 // forces the new /onboarding flow so we can walk the new registration/

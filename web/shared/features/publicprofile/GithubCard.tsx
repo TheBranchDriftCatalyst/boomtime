@@ -1,4 +1,4 @@
-// GithubCard.tsx (gaka-2ud Phase 5) — the GitHub stats surface for the PUBLIC
+// GithubCard.tsx (boom-2ud Phase 5) — the GitHub stats surface for the PUBLIC
 // profile (/p/:slug). It fetches the UNAUTH public mirror
 // (GET /api/public/profile/:slug/github/stats via api.getPublicGithubStats) and
 // renders the SAME shared chart bodies the in-app P3/P4 widgets use

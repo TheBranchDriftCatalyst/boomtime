@@ -1,4 +1,4 @@
-// gaka-ebq: shared hook for BOOM_ADMIN_USERS membership. Extracted so the
+// boom-ebq: shared hook for BOOM_ADMIN_USERS membership. Extracted so the
 // Settings + Sidebar + AdminRoute all agree on ONE query key + selector for
 // the current-user is_admin bit. Keeps the sidebar from flashing an Admin
 // link on the first paint of a fresh page load: the hook returns

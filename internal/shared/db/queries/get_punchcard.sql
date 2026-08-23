@@ -1,4 +1,4 @@
--- gaka-dg7: hour/dow extracted in user-local TZ (from users.timezone +
+-- boom-dg7: hour/dow extracted in user-local TZ (from users.timezone +
 -- BOOM_DEFAULT_TIMEZONE resolver — see internal/handler/timezone.go). Before
 -- this fix, a Pacific user's 22:00 local (06:00 UTC) never triggered
 -- late-night-coder / NIGHT WATCH archetypes because the bucket said 06.

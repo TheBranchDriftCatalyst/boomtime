@@ -108,7 +108,7 @@ func (d *DB) LoadMemberSets(ctx context.Context, spaceID int) (MemberSets, error
 // each regex becomes a `col ~ $n` arm — except that anchored-literal patterns
 // (^lit, ^lit$) are rewritten to indexable `col LIKE 'lit%'` / `col = 'lit'`
 // so a text_pattern_ops btree or the pg_trgm GIN can serve them (see
-// migrations/00019_heartbeats_regex_perf.sql, gaka-o4m). Axes are iterated in
+// migrations/00019_heartbeats_regex_perf.sql, boom-o4m). Axes are iterated in
 // the deterministic hiddenAxes order. All values are bound params
 // (injection-safe); the axis -> column mapping comes only from cols. passCond,
 // if non-empty, is a bypass condition ORed in as the first arm (mirrors

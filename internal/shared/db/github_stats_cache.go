@@ -1,5 +1,5 @@
 // github_stats_cache.go — storage for the per-user GitHub stats cache
-// (gaka-anh Phase 2). See migrations/00049_github_stats_cache.sql for the
+// (boom-anh Phase 2). See migrations/00049_github_stats_cache.sql for the
 // columns + the idempotency rationale.
 //
 // IDEMPOTENCY BY CONSTRUCTION: the table is ONE ROW PER USER (username PRIMARY

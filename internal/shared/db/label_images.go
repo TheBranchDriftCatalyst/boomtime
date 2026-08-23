@@ -1,5 +1,5 @@
 // label_images.go: DB accessors for the shared per-archetype label image
-// blobs (gaka-myv). One row per label id — the same image is served to every
+// blobs (boom-myv). One row per label id — the same image is served to every
 // user who earns that label.
 //
 // The endpoint that fronts this table is public (no auth), so accessors here
@@ -127,7 +127,7 @@ type LabelImageMeta struct {
 }
 
 // ListLabelImagesMeta returns metadata for every row in label_images —
-// no image bytes. Powers the Admin tab's per-label status table (gaka-myv).
+// no image bytes. Powers the Admin tab's per-label status table (boom-myv).
 // Ordered by generated_at DESC so the newest lands first (irrelevant to
 // the FE which keys by id, but stable-order helps snapshot tests).
 func (d *DB) ListLabelImagesMeta(ctx context.Context) ([]LabelImageMeta, error) {
@@ -152,7 +152,7 @@ func (d *DB) ListLabelImagesMeta(ctx context.Context) ([]LabelImageMeta, error) 
 
 // DeleteLabelImages batches DeleteLabelImage over a slice. One round trip
 // instead of len(ids) — the per-id loop tripped the N+1 detector on the
-// admin regenerate path (gaka-myv) where ~70 ids come in per click.
+// admin regenerate path (boom-myv) where ~70 ids come in per click.
 // Empty slice is a no-op. Nil-safe.
 func (d *DB) DeleteLabelImages(ctx context.Context, ids []string) error {
 	if len(ids) == 0 {

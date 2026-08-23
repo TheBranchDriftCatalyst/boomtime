@@ -1,4 +1,4 @@
-// Package jobs is the catalyst-books job wiring (gaka-zp2s), lifted verbatim out of
+// Package jobs is the catalyst-books job wiring (boom-zp2s), lifted verbatim out of
 // cmd/boomtime/main.go so the books domain owns its own kinds, fleet caps, and
 // schedules — driven by books.Module.RegisterJobs instead of hand-wired in the host.
 //
@@ -120,7 +120,7 @@ func Register(reg *corejobs.Registry, database *db.DB, cfg *config.Config, notif
 		return audioSvc.RunHardcoverPush(jctx, p)
 	}))
 
-	// hardcover-pull kind (gaka-books): the INBOUND half of the
+	// hardcover-pull kind (boom-books): the INBOUND half of the
 	// bidirectional Hardcover sync. Owner-scoped (needs the user's
 	// token) — reads the shelf + reconciles each entry's status /
 	// updated_at onto the matching reading_item's minimal linkage. No
@@ -149,7 +149,7 @@ func Register(reg *corejobs.Registry, database *db.DB, cfg *config.Config, notif
 		return nil
 	}))
 
-	// hardcover-push-curation kind (gaka-books, migration 00069): the
+	// hardcover-push-curation kind (boom-books, migration 00069): the
 	// OUTBOUND half of a per-item curation edit. Enqueued by PATCH
 	// /api/v1/books/items/:id/curation — mirrors the row's EFFECTIVE
 	// status/rating/finish onto the user's Hardcover shelf (dry-run-gated).
@@ -303,7 +303,7 @@ func Register(reg *corejobs.Registry, database *db.DB, cfg *config.Config, notif
 		return kindleSvc.RunMonitorLoop(jctx, rmCfg)
 	}))
 
-	// hardcover-match kind (gaka-books): the EXPLICIT match stage of
+	// hardcover-match kind (boom-books): the EXPLICIT match stage of
 	// the pipeline (backfill → match → sync). Owner-scoped — resolve
 	// every still-unmatched reading_item to a Hardcover
 	// book_id/edition_id via the read-only ladder and cache the
@@ -412,7 +412,7 @@ func Register(reg *corejobs.Registry, database *db.DB, cfg *config.Config, notif
 // persistent reading-monitor / periodic Hardcover pull + match). The host owns the
 // outer "build the scheduler at all" condition + go sched.Run.
 func RegisterSchedules(ctx context.Context, sched *corejobs.Scheduler, cfg *config.Config, logger *slog.Logger) {
-	// Audible forward sync (gaka-books): leader-singleton via the DB,
+	// Audible forward sync (boom-books): leader-singleton via the DB,
 	// so running the schedule on every server is safe. The backfill
 	// kind is NOT scheduled — it's enqueued on demand.
 	if cfg.AudibleSyncEnabled() {

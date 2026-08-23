@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- Persistent server-side Kindle reading-monitor (gaka-books §5.1). Two additions:
+-- Persistent server-side Kindle reading-monitor (boom-books §5.1). Two additions:
 --
 -- (1) Per-user toggle + mode on the users row. reading_monitor_enabled drives the
 --     leader-singleton two-level engine (books-reading-monitor kind) whether or

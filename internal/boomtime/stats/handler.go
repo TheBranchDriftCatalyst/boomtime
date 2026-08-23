@@ -1,5 +1,5 @@
 // Package stats also owns the HTTP surface for boomtime's dashboard
-// aggregations (gaka-8tn phase 6): the /stats + /timeline + /statusbar/today
+// aggregations (boom-8tn phase 6): the /stats + /timeline + /statusbar/today
 // triad, /derived/status + /derived/resync (rollup health), /stats/{punchcard,
 // sessions, momentum, ai, health}, /workouts (event list), /files (cross-project
 // active files), /projects + /projects/:project (project scope + list),
@@ -15,7 +15,7 @@
 //
 // SHARED HELPERS live in internal/apihelpers/ — cache-key semantics, tz
 // resolution, JSON caching, body-limit bucketing, etc. This package
-// imports that instead of carrying per-file shims (gaka-8tn phase 8
+// imports that instead of carrying per-file shims (boom-8tn phase 8
 // collapse). The bytes produced by apihelpers.CacheKey for a given
 // input match the pre-refactor per-domain cacheKey byte-for-byte, so
 // cross-phase cache warm-up is preserved.

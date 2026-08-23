@@ -558,7 +558,7 @@ function CommandPanel({ spec }: { spec: CliCommandSpec }) {
 
   // No reset-on-command-change effect needed: CliTab renders this panel with
   // key={spec.command}, so switching commands remounts with fresh state.
-  // Live-streaming run (gaka-hney.5): output tails into a TerminalLogViewer as
+  // Live-streaming run (boom-hney.5): output tails into a TerminalLogViewer as
   // the command executes, over /cli/run/ws — no more waiting on a synchronous
   // captured buffer.
   const stream = useCliRunStream();

@@ -1,4 +1,4 @@
-// Package admin is the catalyst-books ADMIN HTTP surface (gaka-zp2s), extracted
+// Package admin is the catalyst-books ADMIN HTTP surface (boom-zp2s), extracted
 // from the central internal/admin god-package so the books domain owns its own
 // operator endpoints (Django-app-style per-domain admin/ seam folder). It is
 // mounted through books.Module.RegisterAdminRoutes — the peer of the portable
@@ -66,14 +66,14 @@ func (h *Handler) requireAdmin(c *echo.Context) (string, *apierr.Error) {
 // Cfg), so the BooksEnabled branch is skipped and only diagnostics enumerates —
 // exactly as before the move.
 func Register(g *echo.Group, h *Handler) {
-	// gaka-books: admin diagnostic — dump raw Audible/Kindle source data.
+	// boom-books: admin diagnostic — dump raw Audible/Kindle source data.
 	g.GET("/books/diagnostics", h.AdminBooksDiagnostics)
 
 	if h != nil && h.Cfg != nil && h.Cfg.BooksEnabled() {
-		// gaka-books: admin LIVE Kindle reading-monitor WS (cookie-authed +
+		// boom-books: admin LIVE Kindle reading-monitor WS (cookie-authed +
 		// admin-gated in-handler). Read-only; never persists positions.
 		g.GET("/books/reading-monitor/ws", h.AdminBooksReadingMonitorWS)
-		// gaka-books §5.1: the PERSISTENT server-side monitor's view+toggle.
+		// boom-books §5.1: the PERSISTENT server-side monitor's view+toggle.
 		g.GET("/books/reading-monitor", h.AdminBooksReadingMonitorGet)
 		g.PUT("/books/reading-monitor", h.AdminBooksReadingMonitorPut)
 		// Raw diagnostic stream: recent raw samples for BOTH reading sources.

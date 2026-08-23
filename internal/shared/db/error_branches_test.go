@@ -1,5 +1,5 @@
 // error_branches_test.go — small targeted tests that pin the input-validation
-// error branches of methods across the package (gaka-d6x).
+// error branches of methods across the package (boom-d6x).
 //
 // Every case pins the invariant: empty/malformed input MUST NOT reach the SQL
 // layer — callers get a clear Go error, and no rows change. This closes the
@@ -26,9 +26,9 @@ var (
 	tracelogLevelTrace = tracelog.LogLevelTrace
 )
 
-var _ = ginkgo.Describe("input-validation error branches (gaka-d6x)", func() {
+var _ = ginkgo.Describe("input-validation error branches (boom-d6x)", func() {
 
-	// gaka-8tn phase 2b: goals.CreateGoal / UpdateGoal / DeleteGoal /
+	// boom-8tn phase 2b: goals.CreateGoal / UpdateGoal / DeleteGoal /
 	// ToggleGoal input-validation branches moved to
 	// internal/goals/db_branches_test.go together with the goals package
 	// extraction. Byte-identical Its at the new location.
@@ -99,7 +99,7 @@ var _ = ginkgo.Describe("input-validation error branches (gaka-d6x)", func() {
 	ginkgo.It("mapLevel: Error/Warn/Info/Debug branches (Info -> Debug is the load-bearing quirk)", func() {
 		Expect(mapLevel(tracelogLevelError).String()).To(Equal("ERROR"))
 		Expect(mapLevel(tracelogLevelWarn).String()).To(Equal("WARN"))
-		Expect(mapLevel(tracelogLevelInfo).String()).To(Equal("DEBUG"), "Info MUST map to Debug (per gaka-ar7 policy)")
+		Expect(mapLevel(tracelogLevelInfo).String()).To(Equal("DEBUG"), "Info MUST map to Debug (per boom-ar7 policy)")
 		Expect(mapLevel(tracelogLevelDebug).String()).To(Equal("DEBUG"))
 		Expect(mapLevel(tracelogLevelTrace).String()).To(Equal("DEBUG"), "trace/unknown falls through to Debug")
 	})

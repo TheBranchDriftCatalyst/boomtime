@@ -1,5 +1,5 @@
 ---
-# Scrape boomtime's OWN Prometheus metrics (gaka-metrics). The server exposes
+# Scrape boomtime's OWN Prometheus metrics (boom-metrics). The server exposes
 # GET /metrics on the main HTTP port (8080, service port name `http`) —
 # unauthenticated + off the rate-limit/request-log paths, standard for an
 # intra-cluster scrape. This is the app's FIRST first-party metrics surface:

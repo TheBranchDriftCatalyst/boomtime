@@ -143,7 +143,7 @@ describe('CatalogWidgetRenderer(source="sample") — targeted content assertions
 });
 
 // ---------------------------------------------------------------------------
-// gaka-qcxg — reading-domain kinds. These are dispatched (by CatalogWidget
+// boom-qcxg — reading-domain kinds. These are dispatched (by CatalogWidget
 // Renderer's READING_KINDS map) to the existing Reading dashboard tiles, which
 // SELF-FETCH via useReadingQuery. In sample mode the seeded sample QueryClient
 // (CatalogDataSource.seedReadingSample) satisfies every ["reading-query", spec]

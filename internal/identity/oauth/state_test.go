@@ -1,4 +1,4 @@
-// state_test.go — the signed OAuth state primitive (gaka-2ip Phase 1). Covers
+// state_test.go — the signed OAuth state primitive (boom-2ip Phase 1). Covers
 // the happy path plus every rejection the CSRF/owner-binding guard MUST make:
 // tampered payload, tampered signature, wrong signing key, expired, future, and
 // malformed.

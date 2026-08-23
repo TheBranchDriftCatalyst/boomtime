@@ -1,6 +1,6 @@
 # Test coverage audit — 2026-07-28
 
-Scope: last ~40 commits, focused on the 7 areas the recent gaka-* work concentrated in.
+Scope: last ~40 commits, focused on the 7 areas the recent boom-* work concentrated in.
 Method: enumerated the source files, grepped for co-located `*_test.go` / `*.test.ts(x)` /
 `web/e2e/*.spec.ts`, and inspected the branches each covers vs. the branches the source
 actually has. Read-only audit; no code changed.
@@ -86,7 +86,7 @@ Unit story on the pure evaluator is a 5; ledger/streak backend + hooks are a 1. 
 where the risk is: the persistence + wire layer that everything else feeds into is the
 weakest link.
 
-### 2. Timezone chain (gaka-dg7)
+### 2. Timezone chain (boom-dg7)
 
 **Source files**
 - `internal/handler/timezone.go` (156 LOC — `resolveUserTZ`, GET/PATCH endpoints,
@@ -250,7 +250,7 @@ most attack-adjacent code) and the CLI (the most user-facing) are close to zero.
 **Coverage gaps**
 1. **Prod hard-fail on missing `BOOM_ENCRYPTION_KEY` is untested.** `cmd/boomtime/main.go`
    lines 101-112: `BOOM_ENV=prod` + missing key MUST return the fatal error. No `cmd`
-   integration test exercises this control-flow — the one thing that makes gaka-6jm.9
+   integration test exercises this control-flow — the one thing that makes boom-6jm.9
    different from silent-miss.
 2. **`SaveWakatimeKey` happy-path with encryption in effect** isn't tested at the HTTP
    layer (413 is the only test). No test that GET returns `{"hasSavedKey": true}` after
@@ -287,7 +287,7 @@ production startup gate + the DELETE endpoint are the notable gaps.
 2. Missing tests for the "unknown periodType silently dropped" batch behavior — one bad
    item shouldn't 400 the whole batch (documented) but there's no test proving it.
 3. Retro-log tz-bucketing: an `at` at 03:00 UTC = 20:00 previous-day PT MUST log to
-   yesterday's daily period in PT. This is the exact class of bug gaka-dg7 tried to fix
+   yesterday's daily period in PT. This is the exact class of bug boom-dg7 tried to fix
    for stats; no test proves it holds for awards.
 
 **Rating: 1/5**
@@ -373,17 +373,17 @@ Ranked by impact × risk (defect probability × blast radius).
 ## Follow-up beads to file
 
 ```bash
-bd create --title "gaka-audit-1: unit-test PeriodBounds tz + DST"
-bd create --title "gaka-audit-2: integration-test AwardsLog rejects future at (+1h grace)"
-bd create --title "gaka-audit-3: integration-test AwardsLog idempotent within period"
-bd create --title "gaka-audit-4: unit-test GetLabelStreaks gap detection + current-period gate"
-bd create --title "gaka-audit-5: integration-test PATCH /timezone triggers rollup + cache invalidate"
-bd create --title "gaka-audit-6: unit-test useAwardStreaks / useLogAwards public-slug guard + dedupe"
-bd create --title "gaka-audit-7: unit-test formatCondition per-primitive rendering"
-bd create --title "gaka-audit-8: unit-test PredicateBuilder autocomplete filters chart-Other buckets"
-bd create --title "gaka-audit-9: integration-test admin backfill job cross-owner isolation (404)"
-bd create --title "gaka-audit-10: e2e streak badge appears after evaluator writes + reload"
-bd create --title "gaka-audit-11: unit-test prod BOOM_ENV requires BOOM_ENCRYPTION_KEY"
-bd create --title "gaka-audit-12: integration-test DELETE /wakatime_key nulls column + flips status"
-bd create --title "gaka-audit-13: backfill CLI: skipMatch + auth header shape + emails-required guard"
+bd create --title "boom-audit-1: unit-test PeriodBounds tz + DST"
+bd create --title "boom-audit-2: integration-test AwardsLog rejects future at (+1h grace)"
+bd create --title "boom-audit-3: integration-test AwardsLog idempotent within period"
+bd create --title "boom-audit-4: unit-test GetLabelStreaks gap detection + current-period gate"
+bd create --title "boom-audit-5: integration-test PATCH /timezone triggers rollup + cache invalidate"
+bd create --title "boom-audit-6: unit-test useAwardStreaks / useLogAwards public-slug guard + dedupe"
+bd create --title "boom-audit-7: unit-test formatCondition per-primitive rendering"
+bd create --title "boom-audit-8: unit-test PredicateBuilder autocomplete filters chart-Other buckets"
+bd create --title "boom-audit-9: integration-test admin backfill job cross-owner isolation (404)"
+bd create --title "boom-audit-10: e2e streak badge appears after evaluator writes + reload"
+bd create --title "boom-audit-11: unit-test prod BOOM_ENV requires BOOM_ENCRYPTION_KEY"
+bd create --title "boom-audit-12: integration-test DELETE /wakatime_key nulls column + flips status"
+bd create --title "boom-audit-13: backfill CLI: skipMatch + auth header shape + emails-required guard"
 ```

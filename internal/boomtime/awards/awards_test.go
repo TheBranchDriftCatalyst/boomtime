@@ -1,4 +1,4 @@
-// awards_test.go — gaka-d6x.handler
+// awards_test.go — boom-d6x.handler
 //
 // Coverage suite for the awards cluster (awards.go): AwardsLog,
 // AwardsStreaks, PublicAwardsStreaks, AwardsLedger, parsePositiveInt,
@@ -37,7 +37,7 @@ import (
 // paths and Echo panics on duplicate registration.
 func awardsAuxRouter(hz *testutil.Harness) *echo.Echo {
 	e := echo.New()
-	// gaka-zp2s: the awards bag lives on the harness now (moved off *handler.Handler
+	// boom-zp2s: the awards bag lives on the harness now (moved off *handler.Handler
 	// when the boomtime data domains folded onto boomtime.Module).
 	e.POST("/api/v1/users/current/awards/log", hz.Awards.AwardsLog)
 	e.GET("/api/public/profile/:slug/awards/streaks", hz.Awards.PublicAwardsStreaks)
@@ -70,7 +70,7 @@ func ensureLabels(hz *testutil.Harness, ids ...string) {
 	}
 }
 
-var _ = Describe("AwardsLog (gaka-mwp-streaks)", func() {
+var _ = Describe("AwardsLog (boom-mwp-streaks)", func() {
 	It("writes exactly one ledger row per (label, current period) — idempotent replay is a no-op", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "awardsloggen"))
 		e := awardsAuxRouter(hz)
@@ -164,7 +164,7 @@ var _ = Describe("AwardsLog (gaka-mwp-streaks)", func() {
 			"future `at` should 400 (streak-walker poison guard); got %d body=%s", rec.Code, rec.Body.String())
 	})
 
-	// gaka-d6x.handler critique: missing invariant — the 1-hour grace
+	// boom-d6x.handler critique: missing invariant — the 1-hour grace
 	// window has only its REJECT path pinned above. This spec walks the
 	// ACCEPT edge at t=now+30min so a regression that narrows the grace
 	// (e.g., "if parsed.After(time.Now())" without the +time.Hour) trips
@@ -188,7 +188,7 @@ var _ = Describe("AwardsLog (gaka-mwp-streaks)", func() {
 			"grace-window write must land in the ledger, not be dropped")
 	})
 
-	// gaka-d6x.handler critique: BindJSONWithLimit has TWO failure branches
+	// boom-d6x.handler critique: BindJSONWithLimit has TWO failure branches
 	// (oversize + json-decode-failure). Only the oversize path was covered;
 	// this spec pins the decode-failure branch — a raw non-JSON body under
 	// the size cap must 400 "Invalid request body", never 500 or 200.
@@ -279,7 +279,7 @@ var _ = Describe("AwardsLog (gaka-mwp-streaks)", func() {
 			"error body echoed user-controlled bytes from the oversize payload; body=%s", rec.Body.String())
 	})
 
-	// gaka-d6x.handler critique: the "requires auth" spec was `>=400 && <500`.
+	// boom-d6x.handler critique: the "requires auth" spec was `>=400 && <500`.
 	// That would silently pass on a 404 (route missing) or a 405
 	// (misconfigured method) while auth is bypassed elsewhere. Pin the exact
 	// contract: apierr.MissingAuth() → 400 for absent header, apierr.
@@ -296,7 +296,7 @@ var _ = Describe("AwardsLog (gaka-mwp-streaks)", func() {
 			rec.Code, rec.Body.String())
 	})
 
-	// gaka-d6x.handler critique: cover the InvalidToken (401) branch that
+	// boom-d6x.handler critique: cover the InvalidToken (401) branch that
 	// no test in the suite exercises. A made-up token reaches
 	// GetUserByToken → ok=false → apierr.InvalidToken() → 401.
 	It("rejects a syntactically-valid but unknown token with exactly 401 (InvalidToken)", func() {
@@ -311,7 +311,7 @@ var _ = Describe("AwardsLog (gaka-mwp-streaks)", func() {
 			rec.Code, rec.Body.String())
 	})
 
-	// gaka-d6x.handler critique (security): only the missing-header case
+	// boom-d6x.handler critique (security): only the missing-header case
 	// was covered. ParseAuthHeader requires the "Basic" prefix — a "Bearer"
 	// header (or any non-Basic scheme) fails the prefix strip and yields
 	// MissingAuth → 400. A garbled "Basic" body reaches GetUserByToken
@@ -363,7 +363,7 @@ var _ = Describe("AwardsLog (gaka-mwp-streaks)", func() {
 	})
 })
 
-var _ = Describe("AwardsStreaks (gaka-mwp-streaks)", func() {
+var _ = Describe("AwardsStreaks (boom-mwp-streaks)", func() {
 	It("returns a flat {labelId: n} map with Cache-Control: private,max-age=60", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "awardsstreaks"))
 		eAux := awardsAuxRouter(hz)
@@ -399,7 +399,7 @@ var _ = Describe("AwardsStreaks (gaka-mwp-streaks)", func() {
 		_ = user
 	})
 
-	// gaka-d6x.handler critique: the previous isolation spec only proved
+	// boom-d6x.handler critique: the previous isolation spec only proved
 	// "B doesn't see onlyA" — a bug that emptied ALL users' streaks would
 	// still pass. This version uses DISTINCT labels per user and asserts
 	// BOTH directions: A sees onlyA (proves streak walker actually works)
@@ -445,7 +445,7 @@ var _ = Describe("AwardsStreaks (gaka-mwp-streaks)", func() {
 			"cross-user leak: B saw A's streak; got %v", streaksB)
 	})
 
-	// gaka-d6x.handler critique: pin the exact contract, not a 4xx range.
+	// boom-d6x.handler critique: pin the exact contract, not a 4xx range.
 	// GET without header → apierr.MissingAuth() → 400.
 	It("unauthenticated GET /awards/streaks returns exactly 400 (MissingAuth)", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "awardsstreaks"))
@@ -457,7 +457,7 @@ var _ = Describe("AwardsStreaks (gaka-mwp-streaks)", func() {
 			rec.Code, rec.Body.String())
 	})
 
-	// gaka-d6x.handler critique: cover the InvalidToken branch on
+	// boom-d6x.handler critique: cover the InvalidToken branch on
 	// /awards/streaks specifically. Every previous spec used a valid or
 	// empty token; a made-up token exercises the resolveUser → 401 path.
 	It("rejects unknown-token GET /awards/streaks with exactly 401 (InvalidToken)", func() {
@@ -471,7 +471,7 @@ var _ = Describe("AwardsStreaks (gaka-mwp-streaks)", func() {
 	})
 })
 
-var _ = Describe("PublicAwardsStreaks (gaka-mwp-streaks)", func() {
+var _ = Describe("PublicAwardsStreaks (boom-mwp-streaks)", func() {
 	It("returns the owner's streaks under Cache-Control: private,max-age=60 (60s window)", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "publicstreaks"))
 		e := awardsAuxRouter(hz)
@@ -508,7 +508,7 @@ var _ = Describe("PublicAwardsStreaks (gaka-mwp-streaks)", func() {
 		Expect(rec).To(testutil.HaveStatus(http.StatusNotFound))
 	})
 
-	// gaka-d6x.handler critique (security): the public streaks response
+	// boom-d6x.handler critique (security): the public streaks response
 	// MUST NOT leak the owner's username or any PII beyond the label ids.
 	// The current shape is a flat {labelId: streakCount} map; if a
 	// refactor ever added "owner" or "username" to the payload, that would
@@ -541,7 +541,7 @@ var _ = Describe("PublicAwardsStreaks (gaka-mwp-streaks)", func() {
 			"public streaks body must not include an `owner` field; body=%s", body)
 	})
 
-	// gaka-d6x.handler critique: PublicAwardsStreaks has no test for the
+	// boom-d6x.handler critique: PublicAwardsStreaks has no test for the
 	// `enabled=false` disabled-profile branch, unlike PublicAwards (line
 	// 536-553). The current handler does NOT check enabled (unlike
 	// PublicAwards which does — see awards_eval.go:96-102); this spec
@@ -572,7 +572,7 @@ var _ = Describe("PublicAwardsStreaks (gaka-mwp-streaks)", func() {
 	})
 })
 
-var _ = Describe("AwardsLedger (gaka-mwp-streaks)", func() {
+var _ = Describe("AwardsLedger (boom-mwp-streaks)", func() {
 	It("returns rows for the caller ONLY, honors ?label filter, ?limit clamp, private cache header", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "awardsledger"))
 		eAux := awardsAuxRouter(hz)
@@ -655,7 +655,7 @@ var _ = Describe("AwardsLedger (gaka-mwp-streaks)", func() {
 		_ = userB
 	})
 
-	// gaka-d6x.handler critique: pin the exact contract. GET without
+	// boom-d6x.handler critique: pin the exact contract. GET without
 	// header → apierr.MissingAuth() → 400 (never 401/404/405).
 	It("unauth /awards/ledger returns exactly 400 (MissingAuth) before DB touch", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "awardsledger"))
@@ -667,7 +667,7 @@ var _ = Describe("AwardsLedger (gaka-mwp-streaks)", func() {
 			rec.Code, rec.Body.String())
 	})
 
-	// gaka-d6x.handler critique: cover the InvalidToken (401) branch on
+	// boom-d6x.handler critique: cover the InvalidToken (401) branch on
 	// this endpoint too — no test in the suite exercised /ledger with a
 	// made-up token.
 	It("rejects unknown-token GET /awards/ledger with exactly 401 (InvalidToken)", func() {
@@ -680,7 +680,7 @@ var _ = Describe("AwardsLedger (gaka-mwp-streaks)", func() {
 			rec.Code, rec.Body.String())
 	})
 
-	// gaka-d6x.handler critique: ?label=<nonexistent> should return an
+	// boom-d6x.handler critique: ?label=<nonexistent> should return an
 	// empty rows array (not error). ListAwardLedger uses a parameterized
 	// query so SQL metacharacters are inert; this spec pins BOTH: no
 	// error path + no SQL injection oracle.
@@ -810,8 +810,8 @@ var _ = Describe("awardsStreaksFor tz fallback", func() {
 	})
 })
 
-var _ = Describe("OwnAwards auth gate (gaka-hc6.3)", func() {
-	// gaka-d6x.handler critique: pin exact code, not a 4xx range.
+var _ = Describe("OwnAwards auth gate (boom-hc6.3)", func() {
+	// boom-d6x.handler critique: pin exact code, not a 4xx range.
 	// A loose bound would silently accept 404 (route missing) which is a
 	// documentation smell — auth is silently bypassed on the actual route.
 	It("unauthenticated GET /awards returns exactly 400 (MissingAuth) before touching the DB", func() {
@@ -836,7 +836,7 @@ var _ = Describe("OwnAwards auth gate (gaka-hc6.3)", func() {
 	})
 })
 
-var _ = Describe("PublicAwards disabled-profile gate (gaka-hc6.3)", func() {
+var _ = Describe("PublicAwards disabled-profile gate (boom-hc6.3)", func() {
 	It("returns 404 'This profile isn't public' when the slug exists but is disabled", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "publicawardsdisabled"))
 		e := hz.Router()

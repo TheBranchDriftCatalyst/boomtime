@@ -3,7 +3,7 @@
 // through a handler call chain WITHOUT every function growing a *slog.Logger
 // parameter. Domain log helpers pull the logger back out via FromContext, so
 // every line they emit inherits the job's structured attrs and the Admin log
-// viewer can filter the stream down to a single job's run (gaka-f0is).
+// viewer can filter the stream down to a single job's run (boom-f0is).
 //
 // This is a LEAF package on purpose: it imports only the standard library
 // (context + log/slog), so any boomtime package can import it with zero

@@ -1,4 +1,4 @@
-// dashboard_layout_ginkgo_test.go — ginkgo mirror of dashboard_layout_test.go (gaka-keb).
+// dashboard_layout_ginkgo_test.go — ginkgo mirror of dashboard_layout_test.go (boom-keb).
 // 1:1 case map (6 stdlib TestXxx):
 //
 //	TestDashboardLayoutPersistence_Gaka6jmXRegression → dashboard layout > "PUT/GET semantic round-trip; overwrite replaces"
@@ -40,7 +40,7 @@ func semanticJSONDiffG(a, b string) string {
 	return ""
 }
 
-var _ = Describe("dashboard layout (gaka-keb)", func() {
+var _ = Describe("dashboard layout (boom-keb)", func() {
 	It("PUT / GET semantic round-trip; overwrite replaces", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
@@ -96,7 +96,7 @@ var _ = Describe("dashboard layout (gaka-keb)", func() {
 		e := hz.Router()
 		_, token := hz.MintUser("dash_scope_g")
 
-		// NOTE: "overview" is now an ALLOWED scope (gaka-lzr Phase 4 admitted it),
+		// NOTE: "overview" is now an ALLOWED scope (boom-lzr Phase 4 admitted it),
 		// so use a genuinely-unknown scope to exercise the reject path.
 		body := []byte(`{"layout":{"widgets":[]}}`)
 		req := httptest.NewRequest(http.MethodPut, "/api/v1/users/current/dashboard/no-such-scope", bytes.NewReader(body))

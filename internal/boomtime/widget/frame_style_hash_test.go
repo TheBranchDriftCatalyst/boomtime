@@ -1,7 +1,7 @@
 // frame_style_hash_test.go — byte-identity pin for the extracted frame CSS
-// (gaka-8tn.1).
+// (boom-8tn.1).
 //
-// Before gaka-8tn.1 the shared <style> block lived inline in frame.go as a
+// Before boom-8tn.1 the shared <style> block lived inline in frame.go as a
 // raw-string. This test asserts the bytes served by every OpenFrame call are
 // byte-identical to the pre-refactor literal, so that:
 //
@@ -29,7 +29,7 @@ import (
 // raw-literal `<style>...</style>` inside OpenFrame and running shasum -a 256.
 const frameStyleSHA256 = "3511857b64ade67717207ee34d871bb81fefa41fa7b3aa78dfb0c967aba6c281"
 
-var _ = Describe("widget.frameStyleCSS bytes (gaka-8tn.1)", func() {
+var _ = Describe("widget.frameStyleCSS bytes (boom-8tn.1)", func() {
 	It("has SHA-256 matching the pre-refactor pin", func() {
 		sum := sha256.Sum256(frameStyleCSS)
 		Expect(hex.EncodeToString(sum[:])).To(Equal(frameStyleSHA256),

@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- dashboard_layouts (gaka-keb): persisted per-user, per-scope layout JSON
+-- dashboard_layouts (boom-keb): persisted per-user, per-scope layout JSON
 -- for the composable dashboard grid. v1 scope = "public_profile" only; the
 -- schema is deliberately future-proofed with a `scope` column so the same
 -- table can back the authed Overview and per-page dashboards later without

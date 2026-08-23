@@ -1,4 +1,4 @@
-// profile.go — endpoints for the opt-in public read-only profile (gaka-6jm.1).
+// profile.go — endpoints for the opt-in public read-only profile (boom-6jm.1).
 //
 // SECURITY POSTURE:
 //
@@ -113,7 +113,7 @@ var validCardThemes = map[string]struct{}{"": {}, "dark": {}, "light": {}}
 // username label. The dashboard is DERIVED from a scrubbed StatsPayload —
 // see the field-by-field copy below.
 //
-// gaka-keb: the optional `Layout` field carries the owner's persisted
+// boom-keb: the optional `Layout` field carries the owner's persisted
 // dashboard-layout JSON when present. Absent when the owner has never
 // customized their layout — the FE falls back to a default. Keeping this on
 // the same payload means the public dashboard is still a single fetch (no
@@ -169,7 +169,7 @@ func (h *Handler) PutPublicProfile(c *echo.Context) error {
 		return apihelpers.RespondErr(c, aerr)
 	}
 	var req putProfileRequest
-	// gaka-bi2: 4 KiB cap — the body is a bool + a slug bounded by
+	// boom-bi2: 4 KiB cap — the body is a bool + a slug bounded by
 	// publicProfileSlugRe (≤30 chars).
 	if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitSmall); aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
@@ -244,7 +244,7 @@ func (h *Handler) PutPublicProfile(c *echo.Context) error {
 	}
 	// The card image may have changed (theme/tagline/enable/slug) — drop the
 	// cached PNG so the next unfurl re-renders instead of waiting out the S3
-	// TTL (gaka-fym5). Best-effort: a stale/missing object next request is
+	// TTL (boom-fym5). Best-effort: a stale/missing object next request is
 	// harmless, so a Delete failure never fails the save.
 	if h.Cards != nil {
 		if derr := h.Cards.Delete(c.Request().Context(), owner); derr != nil {
@@ -294,12 +294,12 @@ func (h *Handler) PublicProfile(c *echo.Context) error {
 	}
 
 	// Build the payload. Range defaults to the canonical window (60d, 15-min
-	// gap) but a visitor may re-scope the STATS via ?days=N (gaka-174.7).
+	// gap) but a visitor may re-scope the STATS via ?days=N (boom-174.7).
 	//
 	// This rescopes ONLY the dashboard stats. Labels/awards are computed by a
 	// SEPARATE endpoint (/api/public/profile/:slug/awards) that keeps reading
 	// the canonical publicProfilePayloadDays constant — so a re-scoped view
-	// never desyncs the award ledger / streaks (the gaka-hc6.3 invariant is on
+	// never desyncs the award ledger / streaks (the boom-hc6.3 invariant is on
 	// the canonical computation, which is unchanged here).
 	days := publicProfilePayloadDays
 	if q := c.QueryParam("days"); q != "" {
@@ -329,7 +329,7 @@ func (h *Handler) PublicProfile(c *echo.Context) error {
 		return apihelpers.InternalErr(h.Logger, c, "public profile punchcard query failed", err)
 	}
 
-	// gaka-keb: read the owner's persisted layout for the public_profile
+	// boom-keb: read the owner's persisted layout for the public_profile
 	// scope. Errors here are logged and swallowed — the FE has a default
 	// layout to fall back to, and a broken layout row shouldn't 500 a
 	// public read that would otherwise succeed.
@@ -367,7 +367,7 @@ func (h *Handler) PublicProfile(c *echo.Context) error {
 	if hasLayout {
 		resp.Layout = layoutRaw
 	}
-	// gaka-6jm.12: Cache leak fix.
+	// boom-6jm.12: Cache leak fix.
 	//
 	// Previously we sent `public, max-age=300, s-maxage=300`, which meant a
 	// disabled profile could keep serving from a downstream cache (CDN, Camo,
@@ -429,7 +429,7 @@ func (h *Handler) loadPublicActivity(ctx context.Context, username string, t0, t
 	if err != nil {
 		return nil, hidden, "", members, err
 	}
-	// gaka-dg7: public profile shows the OWNER's data in the OWNER's timeframe.
+	// boom-dg7: public profile shows the OWNER's data in the OWNER's timeframe.
 	tz := apihelpers.ResolveUserTZ(h.DB, h.Logger, ctx, username, h.Cfg.DefaultTimezone)
 
 	// No Space scoping for public profile — it's an account-level view.
@@ -447,7 +447,7 @@ func (h *Handler) loadPublicActivity(ctx context.Context, username string, t0, t
 		return nil, hidden, "", members, err
 	}
 	payload := stats.ToStatsPayload(t0, t1, rows, categories, nil)
-	// gaka-6jm.1: enforce the public-safe contract before any field leaves.
+	// boom-6jm.1: enforce the public-safe contract before any field leaves.
 	scrubbed := widget.Scrub(&payload, hidden)
 	return scrubbed, hidden, tz, members, nil
 }
@@ -509,7 +509,7 @@ func (h *Handler) PublicProfileOGImage(c *echo.Context) error {
 	ctx := c.Request().Context()
 	username, isUser := h.resolvePublicSlug(ctx, c.Param("slug"))
 
-	// Real public users pass through the durable S3 cache (gaka-fym5): one
+	// Real public users pass through the durable S3 cache (boom-fym5): one
 	// object per user, refreshed ~daily off its LastModified. MinIO stays
 	// private — the app is the only S3 client (passthrough, not a redirect) —
 	// and the ETag/Cache-Control below still lets repeat crawler/browser hits
@@ -544,7 +544,7 @@ func (h *Handler) PublicProfileOGImage(c *echo.Context) error {
 
 // renderCardPNG builds the 1200×630 card PNG for a real public user (isUser) or
 // the generic boomtime brand card (!isUser). Extracted so the cache-fill path
-// and the live-render path share one implementation (gaka-fym5).
+// and the live-render path share one implementation (boom-fym5).
 func (h *Handler) renderCardPNG(ctx context.Context, username string, isUser bool) ([]byte, error) {
 	theme := "dark"
 	var svg []byte
@@ -573,7 +573,7 @@ func (h *Handler) renderCardPNG(ctx context.Context, username string, isUser boo
 // serveCardPNG writes the PNG with a content-hash ETag + a browser/CDN cache
 // window, answering If-None-Match with 304. Shared by the cache-hit,
 // cache-miss, and live-render paths so every response is byte-for-byte
-// consistent (gaka-fym5).
+// consistent (boom-fym5).
 func serveCardPNG(c *echo.Context, png []byte) error {
 	sum := sha256.Sum256(png)
 	etag := `"` + hex.EncodeToString(sum[:8]) + `"`

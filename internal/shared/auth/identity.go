@@ -1,4 +1,4 @@
-// identity.go — the Identity value that handlers gate on (gaka-0oe / gaka-93f).
+// identity.go — the Identity value that handlers gate on (boom-0oe / boom-93f).
 //
 // An Identity is the resolved caller: a username + its effective capability
 // set + a disabled flag. Handlers ask ident.Can(<cap>) instead of reasoning
@@ -51,7 +51,7 @@ func (i *Identity) Capabilities() map[string]bool {
 // granted, never disabled. Preserves today's behavior when the user-model
 // feature flag is off.
 //
-// SECURITY GUARDRAIL (gaka-93f.19): under BOOM_FEATURE_USER_MODEL=off this is
+// SECURITY GUARDRAIL (boom-93f.19): under BOOM_FEATURE_USER_MODEL=off this is
 // what resolveIdentity returns for EVERY caller, so IsAdmin()/Can(CapAdmin) is
 // true for EVERYONE. Capability gating is therefore inert with the flag off by
 // design (byte-identical to pre-substrate). Consequently NO handler may gate an

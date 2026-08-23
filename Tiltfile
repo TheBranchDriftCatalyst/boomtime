@@ -61,7 +61,7 @@ k8s_resource(
     port_forwards=['8080:8080'],
     labels=['app'],
     # broker/cache deps added alongside the worker-topology decoupling
-    # (gaka-8bz follow-up): under BOOM_QUEUE_BROKER=rabbitmq the server
+    # (boom-8bz follow-up): under BOOM_QUEUE_BROKER=rabbitmq the server
     # dials RabbitMQ at boot and treats a failed connect as fatal (fail
     # fast, matching k8s' restart-and-retry pattern) — sequencing it after
     # the broker avoids an avoidable crash-loop on first `tilt up`.
@@ -74,7 +74,7 @@ k8s_resource(
     labels=['db'],
 )
 
-# ── Image-job worker tier (worker-topology decoupling, gaka-8bz follow-up) ───
+# ── Image-job worker tier (worker-topology decoupling, boom-8bz follow-up) ───
 # Same image as boomtime (docker_build above), run with --role=worker.
 # Consumes the RabbitMQ queue; DOES NOT serve the API. resource_deps ensures
 # broker+cache are up first so the consumer connects on boot.
@@ -102,11 +102,11 @@ k8s_resource(
     labels=['broker'],
 )
 
-# ── Authentik dev stack (gaka-93f.8) ─────────────────────────────────────────
+# ── Authentik dev stack (boom-93f.8) ─────────────────────────────────────────
 # Self-contained OIDC provider for exercising the boomtime login flow. Heavy +
 # slow to boot (DB migrate → blueprint apply); give it a minute after `tilt up`.
 # boomtime still runs BOOM_AUTH_PROVIDER=local — this is here so the OIDC
-# resolver (gaka-0oe.11) has a real Authentik + declared boomtime app to hit.
+# resolver (boom-0oe.11) has a real Authentik + declared boomtime app to hit.
 # UI + issuer at http://localhost:9000 (akadmin / see authentik-secrets).
 k8s_resource(
     'authentik-postgres',

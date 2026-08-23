@@ -210,7 +210,7 @@ describe("fmtDelta", () => {
   });
 });
 
-describe("otherBreakdownContent (gaka-7m4)", () => {
+describe("otherBreakdownContent (boom-7m4)", () => {
   const hms = (s: number) => `${s}s`;
 
   it("returns one row per member with a time + intra-Other share", () => {
@@ -288,9 +288,9 @@ describe("otherBreakdownContent (gaka-7m4)", () => {
   });
 });
 
-// gaka-9pt: shared row-builder helpers so charts don't reimplement the same
+// boom-9pt: shared row-builder helpers so charts don't reimplement the same
 // "Time + Share" / "…+ rank" / "…+ delta" shapes over and over.
-describe("timeValueContent (gaka-9pt)", () => {
+describe("timeValueContent (boom-9pt)", () => {
   const hms = (s: number) => `${s}s`;
 
   it("returns Time + Share rows when value > 0", () => {
@@ -323,7 +323,7 @@ describe("timeValueContent (gaka-9pt)", () => {
   });
 });
 
-describe("rankedContent (gaka-9pt)", () => {
+describe("rankedContent (boom-9pt)", () => {
   const hms = (s: number) => `${s}s`;
 
   it("bundles timeValueContent rows + a #R of N footer", () => {
@@ -345,7 +345,7 @@ describe("rankedContent (gaka-9pt)", () => {
   });
 });
 
-describe("deltaContent (gaka-9pt)", () => {
+describe("deltaContent (boom-9pt)", () => {
   const hms = (s: number) => `${s}s`;
 
   it("bundles timeValueContent rows + a fmtDelta footer with the arrow", () => {

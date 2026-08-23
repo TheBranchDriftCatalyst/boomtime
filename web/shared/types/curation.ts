@@ -1,6 +1,6 @@
 // Data curation (non-destructive hides + persistent rename rules).
 
-// "pin" is the canonical-entities action (gaka-canon): it forces its
+// "pin" is the canonical-entities action (boom-canon): it forces its
 // (axis, matchValue) to always get its own slice/bar and never fall into the
 // bucket "Other" roll-up. Unlike hide/rename it has no newValue and the query
 // engine auto-applies it at group time.
@@ -22,7 +22,7 @@ export interface CurationRule {
   newValue: string | null;
   // Defaults to "exact" when the backend omits it (older rules / hide rules).
   matchType?: CurationMatchType;
-  // gaka-dfd: pause / resume flag. A disabled rule stays in the list (so the
+  // boom-dfd: pause / resume flag. A disabled rule stays in the list (so the
   // UI can surface it) but is filtered out of the query-time paths. Optional
   // in the type so responses from a pre-migration backend still parse; the
   // FE treats missing as `true` (the pre-feature default).
@@ -66,7 +66,7 @@ export interface CurationAffectedPayload {
   truncated?: boolean;
 }
 
-// gaka-cr4 + gaka-due: destructive curation action payloads (apply for rename
+// boom-cr4 + boom-due: destructive curation action payloads (apply for rename
 // rules, purge for hide rules). ONE preview endpoint dispatches on
 // rule.action; per-action verbs run the actual mutation.
 //

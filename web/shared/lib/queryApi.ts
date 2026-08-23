@@ -1,4 +1,4 @@
-// queryApi.ts — typed client for the cross-domain query DSL (gaka-174.q).
+// queryApi.ts — typed client for the cross-domain query DSL (boom-174.q).
 //
 // One endpoint: POST /api/v1/query. The request is a QuerySpec that mirrors the
 // backend grammar (from(domain)·where·group·measure·over·bucket·having·sort·

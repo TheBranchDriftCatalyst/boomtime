@@ -1,4 +1,4 @@
-// Package domain is the pluggable-app framework core (gaka-zp2s, "Django for Go").
+// Package domain is the pluggable-app framework core (boom-zp2s, "Django for Go").
 // A domain (catalyst-books, boomtime/wakatime, github, health) implements Module
 // and registers itself once; the host (or a standalone image) iterates the Registry
 // to mount routes, schedule jobs, drive key-rotation + backups, and gate on the

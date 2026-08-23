@@ -1,5 +1,5 @@
-// Books — top-level page (gaka-books, merged onto <GroupableExplorer> in
-// gaka-02sh Track C). A read-only window onto the siloed reading_items table:
+// Books — top-level page (boom-books, merged onto <GroupableExplorer> in
+// boom-02sh Track C). A read-only window onto the siloed reading_items table:
 // every tracked book + audiobook (Audible today, Kindle later), fused into one
 // synthwave dashboard. No edit/delete here — the Amazon connect + sync/backfill
 // controls live in Settings › Connections.
@@ -56,7 +56,7 @@ import {
 import { ReadingEventsTab } from "@books/features/books/ReadingEventsTab";
 
 // The two Books-page views. "library" is the existing groupable book table;
-// "events" is the reading-events table (gaka-z5dz). Persisted in the URL as ?view.
+// "events" is the reading-events table (boom-z5dz). Persisted in the URL as ?view.
 type BooksView = "library" | "events";
 
 // ── hero + stats ─────────────────────────────────────────────────────────────
@@ -397,7 +397,7 @@ export function BooksPage() {
             ) : (
               <>
                 {/* Tab strip: Library (the existing groupable book table) |
-                    Reading Events (the reads-over-events table, gaka-z5dz). The
+                    Reading Events (the reads-over-events table, boom-z5dz). The
                     active tab persists in the URL as ?view. */}
                 <TabNav ariaLabel="Books views" variant="page">
                   <button

@@ -1,4 +1,4 @@
-// user_avatar.go (gaka-9v4): per-user CHIBI avatar endpoints.
+// user_avatar.go (boom-9v4): per-user CHIBI avatar endpoints.
 //
 // Three surface areas:
 //
@@ -247,7 +247,7 @@ type avatarRegenReq struct {
 const avatarRegenTimeout = 50 * time.Minute
 
 // AvatarRenderKind is the catalyst-go-jobs kind for a user's avatar render
-// (gaka-hney.7). Owner-scoped, so completion toasts that user.
+// (boom-hney.7). Owner-scoped, so completion toasts that user.
 const AvatarRenderKind = "avatar-render"
 
 // AvatarRenderPayload is the avatar-render job payload (the owner rides the
@@ -283,7 +283,7 @@ func RunAvatarRender(ctx context.Context, database *db.DB, shim *comfyui.Client,
 }
 
 // RegenerateAvatar: POST /api/v1/users/current/avatar/regenerate. Reserves the
-// status row 'running' and enqueues an owner-scoped avatar-render job (gaka-
+// status row 'running' and enqueues an owner-scoped avatar-render job (boom-
 // hney.7) — the worker renders it and toasts the user on completion (falling
 // back to an inline goroutine when the jobs subsystem isn't wired). Returns 202;
 // the FE also watches /avatar/status for the terminal ready/error transition.
@@ -345,7 +345,7 @@ func (h *Handler) RegenerateAvatar(c *echo.Context) error {
 		return apihelpers.InternalErr(h.Logger, c, "avatar shim init failed", cerr)
 	}
 
-	// gaka-hney.7: enqueue an owner-scoped avatar-render job (single attempt —
+	// boom-hney.7: enqueue an owner-scoped avatar-render job (single attempt —
 	// a shim failure is terminal, matching the old goroutine's behavior) so it
 	// runs on the worker + toasts on completion. When jobs aren't wired (tests
 	// / disabled), fall back to the inline goroutine so behavior is unchanged.

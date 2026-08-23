@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- Kindle Reading-Insights snapshot (gaka-books): ONE row per user holding the
+-- Kindle Reading-Insights snapshot (boom-books): ONE row per user holding the
 -- raw /kindle/reading/insights/data response verbatim. SILOED like
 -- reading_items / reading_activity — ON DELETE CASCADE with the user, never
 -- writes into heartbeats/stats. The finish-DATE half of the payload

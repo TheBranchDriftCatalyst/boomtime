@@ -10,7 +10,7 @@ This post is the map: what the system does, how the pieces fit,
 where the extension points are, and where a language model could add
 value without breaking the shape.
 
-> **Updated 2026-07-29 (gaka-hc6).** The evaluator moved server-side.
+> **Updated 2026-07-29 (boom-hc6).** The evaluator moved server-side.
 > The DSL is unchanged (all 13 primitives + 3 composers) — same tables,
 > same JSON shapes on disk — but the runtime moved from a browser
 > TypeScript switch to a Go switch behind two endpoints. Layer 2 and

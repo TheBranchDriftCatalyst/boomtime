@@ -1,7 +1,7 @@
 package climeta
 
 // `boomtime user list` / `boomtime user show` — the READ-ONLY half of the
-// offline user administration commands (gaka-0oe.10), relocated from
+// offline user administration commands (boom-0oe.10), relocated from
 // cmd/boomtime/user.go so the admin CLI-runner can introspect the command
 // defs and call the same bodies in-process. The state-changing siblings
 // (set-role / disable / enable) deliberately stay in cmd/boomtime — they are

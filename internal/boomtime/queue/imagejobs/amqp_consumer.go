@@ -1,5 +1,5 @@
 // amqp_consumer.go — worker-side execution loop for the worker-topology
-// decoupling (gaka-8bz follow-up). Consumes jobMessage deliveries off the
+// decoupling (boom-8bz follow-up). Consumes jobMessage deliveries off the
 // RabbitMQ queue and runs the SAME Executor the in-process Pool used
 // (labelimages.Worker.RegenerateEntry, wired by cmd/boomtime — the ComfyUI
 // orchestration itself is untouched), publishing lifecycle events to the

@@ -1,4 +1,4 @@
-// drift_integration_ginkgo_test.go — ginkgo mirror of drift_integration_test.go (gaka-0vp).
+// drift_integration_ginkgo_test.go — ginkgo mirror of drift_integration_test.go (boom-0vp).
 // 1:1 case map (2 stdlib TestXxx):
 //
 //	TestDriftEndToEndUnknownFieldPersisted → drift end-to-end > "unknown field on heartbeats is persisted to import_jobs.drift with a warn log"
@@ -87,7 +87,7 @@ func startMockWakatimeGinkgo(m *mockWakatime) *httptest.Server {
 	return srv
 }
 
-var _ = Describe("drift end-to-end (gaka-unq.1)", func() {
+var _ = Describe("drift end-to-end (boom-unq.1)", func() {
 	It("unknown field on heartbeats is persisted to import_jobs.drift with a warn log", func() {
 		database := openDriftDBGinkgo()
 		ctx := context.Background()
@@ -210,7 +210,7 @@ var _ = Describe("drift end-to-end (gaka-unq.1)", func() {
 	})
 })
 
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
+// -- helpers restored from stdlib partner (boom-0vp.17) --
 const (
 	defaultDriftDSN     = "postgres://test:test@localhost:5432/boomtime_test?sslmode=disable"
 	dedicatedDriftDBSfx = "_drift"

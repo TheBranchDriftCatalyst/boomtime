@@ -1,5 +1,5 @@
 // hardcover_pull_test.go — pins the INBOUND reconcile write
-// (UpdateHardcoverLinkFromPull, gaka-books): the Hardcover PULL updates ONLY the
+// (UpdateHardcoverLinkFromPull, boom-books): the Hardcover PULL updates ONLY the
 // minimal linkage (hardcover_status + hardcover_remote_updated_at) on a
 // reading_item already matched by hardcover_book_id, and leaves an unmatched book
 // untouched (rows=0 → the caller's inbound-origin follow-up). Runs against the

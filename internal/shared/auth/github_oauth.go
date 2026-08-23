@@ -1,4 +1,4 @@
-// github_oauth.go — the GitHub OAuth-App code-exchange client (gaka-2ip Phase 1).
+// github_oauth.go — the GitHub OAuth-App code-exchange client (boom-2ip Phase 1).
 //
 // Mirrors the OIDCResolver split: this concrete type lives in internal/auth and
 // is constructed at boot (stored as a package instance for the handler to reach
@@ -13,7 +13,7 @@
 //   - The client_secret + the OAuth `code` are likewise never logged. Errors
 //     from the exchange are deliberately generic ("github token exchange
 //     failed") so a code/secret can't slip into a log line.
-//   - Outbound calls go through the benign-UA client (gaka-93f.23) so a
+//   - Outbound calls go through the benign-UA client (boom-93f.23) so a
 //     Cloudflare-proxied edge doesn't 403 the default "Go-http-client" UA.
 package auth
 
@@ -75,7 +75,7 @@ func NewGithubOAuthResolver(clientID, clientSecret, redirectURL string) *GithubO
 		authorizeURL: githubDefaultAuthorizeURL,
 		tokenURL:     githubDefaultTokenURL,
 		userAPIURL:   githubDefaultUserAPIURL,
-		// gaka-93f.23: benign UA so a Cloudflare edge doesn't 403 the exchange.
+		// boom-93f.23: benign UA so a Cloudflare edge doesn't 403 the exchange.
 		httpClient: &http.Client{
 			Timeout:   githubExchangeTimeout,
 			Transport: &uaRoundTripper{ua: oidcUserAgent, base: http.DefaultTransport},

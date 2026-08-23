@@ -7,7 +7,7 @@ import { api } from "@shared/lib/api";
 import { qk } from "@shared/lib/queryKeys";
 import { usePublicConfig } from "@shared/lib/usePublicConfig";
 
-// Settings › Profile › Connect GitHub (gaka-2ip Phase 1). Mirrors the OIDC
+// Settings › Profile › Connect GitHub (boom-2ip Phase 1). Mirrors the OIDC
 // LinkedIdentitiesCard / Wakatime-key card shape.
 //
 // GATING: renders NOTHING unless the server advertises

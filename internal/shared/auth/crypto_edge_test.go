@@ -1,4 +1,4 @@
-// crypto_edge_test.go — gaka-se2.4 SECURITY-CRITICAL coverage.
+// crypto_edge_test.go — boom-se2.4 SECURITY-CRITICAL coverage.
 //
 // Pins load-bearing invariants NOT covered by the existing crypto_test.go
 // happy-path roundtrip:
@@ -40,7 +40,7 @@ const (
 	edgeKeyBBase64 = "ZmVkY2JhOTg3NjU0MzIxMGZlZGNiYTk4NzY1NDMyMTA=" // "fedcba9876543210fedcba9876543210"
 )
 
-var _ = Describe("IsEncryptionKeyConfigured (gaka-se2.4)", func() {
+var _ = Describe("IsEncryptionKeyConfigured (boom-se2.4)", func() {
 	AfterEach(func() {
 		// Restore singleton so following specs are not poisoned.
 		resetEncryptionStateForTest()
@@ -71,7 +71,7 @@ var _ = Describe("IsEncryptionKeyConfigured (gaka-se2.4)", func() {
 	})
 })
 
-var _ = Describe("NewAEADFromBase64 (gaka-se2.4 rotation constructor)", func() {
+var _ = Describe("NewAEADFromBase64 (boom-se2.4 rotation constructor)", func() {
 	It("returns a usable AEAD for a valid base64 32-byte key", func() {
 		aead, err := NewAEADFromBase64(edgeKeyABase64)
 		Expect(err).NotTo(HaveOccurred())
@@ -104,7 +104,7 @@ var _ = Describe("NewAEADFromBase64 (gaka-se2.4 rotation constructor)", func() {
 	})
 })
 
-var _ = Describe("EncryptWith (gaka-se2.4 rotation-writer)", func() {
+var _ = Describe("EncryptWith (boom-se2.4 rotation-writer)", func() {
 	It("uses a fresh nonce every call — same plaintext + same AEAD produces different ciphertexts", func() {
 		aead, err := NewAEADFromBase64(edgeKeyABase64)
 		Expect(err).NotTo(HaveOccurred())
@@ -134,7 +134,7 @@ var _ = Describe("EncryptWith (gaka-se2.4 rotation-writer)", func() {
 	})
 })
 
-var _ = Describe("DecryptWith (gaka-se2.4 authenticity contract)", func() {
+var _ = Describe("DecryptWith (boom-se2.4 authenticity contract)", func() {
 	It("DecryptWith on ciphertext encrypted under a DIFFERENT key returns error and NEVER garbage plaintext", func() {
 		// THE load-bearing security test. If this passes with a non-nil
 		// plaintext or a nil error, rotation is silently broken and every
@@ -202,7 +202,7 @@ var _ = Describe("DecryptWith (gaka-se2.4 authenticity contract)", func() {
 	})
 })
 
-var _ = Describe("ResetForTest (gaka-se2.4 cross-package test hook)", func() {
+var _ = Describe("ResetForTest (boom-se2.4 cross-package test hook)", func() {
 	// ResetForTest is the EXPORTED variant of resetEncryptionStateForTest so
 	// importer / handler tests can bust the sync.Once cache after they swap
 	// BOOM_ENCRYPTION_KEY. Cover it here so a rename / refactor of the
@@ -227,7 +227,7 @@ var _ = Describe("ResetForTest (gaka-se2.4 cross-package test hook)", func() {
 	})
 })
 
-var _ = Describe("NewRawToken (gaka-se2.4 API-token entropy)", func() {
+var _ = Describe("NewRawToken (boom-se2.4 API-token entropy)", func() {
 	// UUIDv4 pattern: 8-4-4-4-12 hex, with version nibble = 4 in the 3rd
 	// group and variant nibble in {8,9,a,b} at the start of the 4th group.
 	// Anchored so accidental drift to a longer/shorter format is caught.

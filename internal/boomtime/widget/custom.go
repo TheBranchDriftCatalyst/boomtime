@@ -1,4 +1,4 @@
-// custom.go: the "build your own widget" renderer (gaka-567). Takes a Def
+// custom.go: the "build your own widget" renderer (boom-567). Takes a Def
 // (composition of primitives + layout) that the caller passes inline via URL
 // query param — no saved-defs table for v1; a user-mints-a-def endpoint can
 // be added later without touching this file. Layouts do the panel-origin

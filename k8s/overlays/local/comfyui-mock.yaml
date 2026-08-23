@@ -1,6 +1,6 @@
 ---
 # Mock ComfyUI shim for local `tilt up` — no GPU required (worker-topology
-# decoupling, gaka-8bz follow-up, §9.2).
+# decoupling, boom-8bz follow-up, §9.2).
 #
 # The worker calls comfyui.Client.Generate -> POST /v1/images/generations
 # and expects {"created":N,"data":[{"b64_json":"…"}]}; the boot/CLI health

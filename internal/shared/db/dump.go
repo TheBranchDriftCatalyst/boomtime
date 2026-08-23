@@ -54,7 +54,7 @@ type dumpTable struct {
 // is deliberately absent — schema is owned by the running binary's migrations;
 // the manifest records the version for compatibility checking instead.
 var dumpTables = []dumpTable{
-	// gaka-awh.3: the users dump MUST include every user-owned column so a
+	// boom-awh.3: the users dump MUST include every user-owned column so a
 	// backup → restore round-trip preserves the whole user state. Omitting a
 	// column silently drops it on restore (TRUNCATE + COPY of a subset). The
 	// encrypted_wakatime_key ciphertext is safe to export: it's AES-256-GCM
@@ -69,13 +69,13 @@ var dumpTables = []dumpTable{
 		"encrypted_wakatime_key", "wakatime_key_status", "wakatime_key_checked_at",
 		"public_profile_enabled", "public_slug",
 		"public_card_theme", "public_card_tagline",
-		// gaka-2ip: encrypted_github_token is intentionally NOT dumped here (see
+		// boom-2ip: encrypted_github_token is intentionally NOT dumped here (see
 		// the domains registry follow-up). New DOMAIN-owned user columns append
 		// from internal/domains so a fresh domain (amazon → books/audiobooks) is
 		// never silently dropped from backups.
 	}, domaincols.UserBackupColumns()...)},
 	{"projects", []string{"name", "description", "owner", "dependencies", "repository"}},
-	// gaka-b5x.2: hashed_token / hashed_refresh_token columns are dumped so
+	// boom-b5x.2: hashed_token / hashed_refresh_token columns are dumped so
 	// hashed-only rows (new sessions minted after migration 00026) survive an
 	// export → import round-trip. Post-v31 only the hashed_* columns exist.
 	{"auth_tokens", []string{"owner", "token_expiry", "last_usage", "token_name", "token_description", "hashed_token"}},
@@ -336,7 +336,7 @@ func (d *DB) RestoreAll(ctx context.Context, zr *zip.Reader) (RestoreSummary, er
 	if err := validateManifest(m, zr, currentGoose); err != nil {
 		return summary, err
 	}
-	// gaka-awh.3: refuse to restore a dump that carries wakatime ciphertext
+	// boom-awh.3: refuse to restore a dump that carries wakatime ciphertext
 	// when this process has no BOOM_ENCRYPTION_KEY configured — the restored
 	// blobs would be undecryptable forever, wiping every user's saved key on
 	// the next read attempt. Better to fail loudly here than after TRUNCATE.

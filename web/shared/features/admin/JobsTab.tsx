@@ -1,4 +1,4 @@
-// JobsTab — Admin > Jobs (gaka-hney). Operator view of the background-job
+// JobsTab — Admin > Jobs (boom-hney). Operator view of the background-job
 // subsystem. The queue overview and the durable job history are FUSED into a
 // single grouped-by-kind table: each kind is one collapsible header row carrying
 // its live aggregate stats inline (state dot + running/max headroom, queue depth,
@@ -565,7 +565,7 @@ function GroupedJobs() {
     }
   }, [clearAll]);
 
-  // gaka-9e9k: "Clear all logs" belongs to the TAB, not to this panel — it is
+  // boom-9e9k: "Clear all logs" belongs to the TAB, not to this panel — it is
   // the tab-level destructive action. It rides the page-actions slot up into
   // the header the section shell already renders, so this panel no longer
   // hand-rolls a title row (the shell titles the page "Jobs" from the registry,
@@ -870,7 +870,7 @@ function JobDetailSheet({
 // ── tab ─────────────────────────────────────────────────────────────────────
 
 export function JobsTab() {
-  // Renders through the shared AdminTabShell base (gaka-zp2s). Each sub-panel
+  // Renders through the shared AdminTabShell base (boom-zp2s). Each sub-panel
   // owns its own load/error state, so the shell here provides the consistent
   // admin-tab wrapper only.
   return (

@@ -1,4 +1,4 @@
-// Zod schema for the label Condition DSL (gaka-6uf). Mirrors the Go
+// Zod schema for the label Condition DSL (boom-6uf). Mirrors the Go
 // validator at internal/labels/validate.go — every enum, every required
 // field, every numeric range is duplicated here so the FE surfaces
 // mistakes before the round-trip. If you touch one, touch the other.

@@ -9,7 +9,7 @@ import { http, HttpResponse } from "@shared/test/msw/handlers";
 // The double-base64 bug that motivates this file:
 //   FE btoa(token) -> BE base64(base64(token)) -> Basic header decodes to
 //   base64 garbage -> wakatime.com returns 401 on the very first
-//   /user_agents fetch. See gaka-f2l. These tests lock the contract that
+//   /user_agents fetch. See boom-f2l. These tests lock the contract that
 //   the wakatime api_key is sent OVER THE WIRE VERBATIM.
 
 const toastError = vi.fn();
@@ -66,7 +66,7 @@ function captureDetect() {
   return body;
 }
 
-describe("StartImportForm — wakatime api_key wire contract (gaka-f2l)", () => {
+describe("StartImportForm — wakatime api_key wire contract (boom-f2l)", () => {
   it("submits the raw api_key verbatim (no client-side base64)", async () => {
     stubConfig({ hasServerKey: false });
     const captured = captureSubmit();

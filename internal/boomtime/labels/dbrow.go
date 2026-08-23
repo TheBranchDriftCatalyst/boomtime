@@ -4,7 +4,7 @@
 //   - condition JSON → decoded via UnmarshalCondition
 //   - tierKey → derived from id ("{axis}-{value}-{tier}" convention)
 //
-// Isolated so gaka-hc6.3 (server endpoints) and gaka-hc6.6 (coverage test)
+// Isolated so boom-hc6.3 (server endpoints) and boom-hc6.6 (coverage test)
 // share the same conversion instead of each writing its own.
 
 package labels

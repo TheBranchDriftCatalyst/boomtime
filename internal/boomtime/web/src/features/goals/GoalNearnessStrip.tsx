@@ -1,9 +1,9 @@
 // GoalNearnessStrip — an at-a-glance "punchcard" of every goal's nearness to
-// completion (gaka-cl9). One cell per goal, filled by the 0..1 progress scalar
+// completion (boom-cl9). One cell per goal, filled by the 0..1 progress scalar
 // (the evaluator's min-over-AND / max-over-OR rollup); goals that are HIT are
 // accented emerald. PAUSED (disabled) goals are shown dimmed — the batch
 // progress endpoint skips them, so they render "—" unless a lastProgress
-// snapshot exists (gaka-* fix: previously the strip filtered to enabled goals,
+// snapshot exists (boom-* fix: previously the strip filtered to enabled goals,
 // so a user whose only goal was paused saw NO card at all). Slots at the top of
 // the Goals page so you can see which goals are hot (near done) vs cold in one
 // dense row, before scanning the list.

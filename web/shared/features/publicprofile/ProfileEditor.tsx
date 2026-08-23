@@ -1,6 +1,6 @@
 // ProfileEditor — inline editor rendered on top of /p/:slug when the
 // caller owns the profile and has flipped the mode toggle to "Edit"
-// (gaka-ie3).
+// (boom-ie3).
 //
 // Design goals:
 //   - Reuse the same widget catalog + renderers + grid primitive the public
@@ -58,7 +58,7 @@ export function ProfileEditor({ slug }: ProfileEditorProps) {
   // data (not a synthetic PREVIEW). Shares qk.publicDashboard(slug) with
   // the PublicDashboard route so preview<->edit toggling reuses the same
   // network round-trip.
-  // gaka-174.7: match the read view — the selected window drives the editor's
+  // boom-174.7: match the read view — the selected window drives the editor's
   // preview payload too, so an owner sees the layout against the same range.
   const [rangeDays] = useProfileRange();
   const { data: payload, isLoading: payloadLoading } = useQuery({
@@ -265,7 +265,7 @@ export function ProfileEditor({ slug }: ProfileEditorProps) {
   // the draft is dirty and the user is trying to move to a different
   // pathname, we prompt via window.confirm. Deny -> stay put; accept
   // -> proceed. Requires the data router — see main.tsx (the app was
-  // migrated to createBrowserRouter + RouterProvider in gaka-ie3 to
+  // migrated to createBrowserRouter + RouterProvider in boom-ie3 to
   // unlock this API).
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
@@ -450,7 +450,7 @@ export function ProfileEditor({ slug }: ProfileEditorProps) {
         </Button>
       </div>
 
-      {/* gaka-174.2: theme control (bottom-left so it clears the Save chrome)
+      {/* boom-174.2: theme control (bottom-left so it clears the Save chrome)
        * + reclassify sweep, so owners can preview dossier skins while editing. */}
       <DossierControls placement="bl" />
       <ReclassifyOverlay />

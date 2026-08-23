@@ -115,7 +115,7 @@ func NewWithObservability(ctx context.Context, url string, opts Options) (*DB, e
 // resolved username is stashed by an upstream middleware. The pgx tracer reads
 // it in newSlogTraceLogger below and, when present, emits it as the `"user"`
 // slog attribute so LogHub's FilterForUser (internal/logging) can gate the
-// resulting DEBUG SQL records to the acting user only — the fix for gaka-ar7
+// resulting DEBUG SQL records to the acting user only — the fix for boom-ar7
 // (LogHub SQL-tracer records leaking cross-tenant activity narration).
 //
 // Server-scope queries (migrations, healthz, N+1 counter probes, background
@@ -153,11 +153,11 @@ func UserFrom(ctx context.Context) string {
 //
 // Every emitted record additionally carries the request-scope username (when
 // present in ctx via WithUser) under the `"user"` attribute — the tee handler
-// flattens that into LogEntry.Attrs["user"], and logging.FilterForUser (gaka-
+// flattens that into LogEntry.Attrs["user"], and logging.FilterForUser (boom-
 // awh.2) drops the record for any other tenant's Logs viewer. Without this
 // hook the DEBUG SQL narration ("UPDATE users SET encrypted_wakatime_key = NULL
 // WHERE username = $1") leaks activity metadata cross-tenant even though the
-// bind args are redacted (gaka-ar7).
+// bind args are redacted (boom-ar7).
 func newSlogTraceLogger(logArgs bool) tracelog.Logger {
 	return tracelog.LoggerFunc(func(ctx context.Context, level tracelog.LogLevel, msg string, data map[string]any) {
 		attrs := make([]any, 0, len(data)*2+2)

@@ -1,4 +1,4 @@
--- gaka-dg7: session_day bucket computed in user-local TZ ($5). A late-evening
+-- boom-dg7: session_day bucket computed in user-local TZ ($5). A late-evening
 -- Pacific session that ran 21:30–00:30 PT would have been split across two
 -- session_day rows in UTC (dates 04:30 -> 07:30 UTC = same UTC day, but a
 -- session ending 23:59 UTC / bumping into +1 day in UTC only was one case).

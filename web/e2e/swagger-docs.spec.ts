@@ -9,7 +9,7 @@ import {
   stackReachableFromEnv,
 } from "./helpers";
 
-// gaka-swagger — 33d8c52, 15268da, 8712fa0, 13c0309, dbd7d22, 35b3153
+// boom-swagger — 33d8c52, 15268da, 8712fa0, 13c0309, dbd7d22, 35b3153
 //
 // The self-hosted Swagger UI at /api/docs/ ships with:
 //   * Arasaka dark theme (crimson + amber + jet-black).
@@ -27,7 +27,7 @@ import {
 //   * Token mint flow (auth'd): GENERATE → modal with #boom-token-value
 //     UUID → AUTHORIZE HERE authorizes Swagger's own auth state.
 
-test.describe("gaka-swagger — /api/docs/ UI upgrades", () => {
+test.describe("boom-swagger — /api/docs/ UI upgrades", () => {
   test.skip(!stackReachableFromEnv(), NO_STACK_REASON);
 
   // Small helper: wait for the Swagger UI to actually mount. The bundled

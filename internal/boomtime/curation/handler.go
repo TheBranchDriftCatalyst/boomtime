@@ -4,7 +4,7 @@
 // labels catalog admin (public GET + admin CRUD + gen-config PATCH +
 // seed.sql dumper).
 //
-// Extracted from internal/handler/ as part of gaka-8tn phase 5b. Domain
+// Extracted from internal/handler/ as part of boom-8tn phase 5b. Domain
 // scope covers ONLY the curation write/read surface and the labels
 // catalog admin surface. Anything that reads LoadHiddenSets/LoadRenameSets
 // downstream (dashboards, projects, awards, widgets, identity, spaces)
@@ -18,10 +18,10 @@
 // h.requireAdmin BEFORE reading the body so a non-admin request never
 // costs a body allocation. Destructive paths (/apply, /purge) reject a
 // disabled rule with 400 so accidentally-applying a paused rule stays
-// impossible — gaka-dfd guard preserved verbatim.
+// impossible — boom-dfd guard preserved verbatim.
 //
 // Shared helpers live in internal/apihelpers/ — this package imports
-// that instead of carrying per-file shims (gaka-8tn phase 8 collapse).
+// that instead of carrying per-file shims (boom-8tn phase 8 collapse).
 package curation
 
 import (

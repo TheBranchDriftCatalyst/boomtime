@@ -1,5 +1,5 @@
 // curation_http_test.go — end-to-end HTTP coverage for the curation
-// cluster (gaka-d6x.handler). Complements the small in-package
+// cluster (boom-d6x.handler). Complements the small in-package
 // curation_test.go (which pins whitelist + wire constants) with full
 // request/response paths for every handler in curation.go:
 //
@@ -23,7 +23,7 @@
 //   - "cross-user isolation on Preview"       → security
 //   - "cross-user isolation on Apply/Purge"   → security
 //   - "toggle body flip vs explicit"          → ToggleCuration
-//   - "disabled rule blocks Apply/Purge"      → gaka-dfd guards
+//   - "disabled rule blocks Apply/Purge"      → boom-dfd guards
 //   - "purge requires hide, apply requires rename"→ action gates
 //   - "hide preview shape != rename preview"  → payload shape
 //   - "affected exposes matched values"       → CurationAffected
@@ -87,7 +87,7 @@ func seedRenameableHeartbeats(hz *testutil.Harness, user string) {
 	}, start, 5, 60)
 }
 
-var _ = Describe("CreateCuration input validation (gaka-d6x.handler)", func() {
+var _ = Describe("CreateCuration input validation (boom-d6x.handler)", func() {
 	It("rejects unknown axis with 400 (whitelist gate)", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
@@ -299,7 +299,7 @@ var _ = Describe("ListCuration + DeleteCuration cross-user isolation", func() {
 	})
 })
 
-var _ = Describe("ToggleCuration (gaka-dfd) - flip, set, isolation", func() {
+var _ = Describe("ToggleCuration (boom-dfd) - flip, set, isolation", func() {
 	It("flips enabled with an empty body and returns the new value", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
@@ -559,7 +559,7 @@ var _ = Describe("ApplyRename destructive path", func() {
 		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest))
 	})
 
-	It("400s when the rule is disabled (gaka-dfd guard)", func() {
+	It("400s when the rule is disabled (boom-dfd guard)", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
 		_, token := hz.MintUser("cur_apl_disabled")
@@ -661,7 +661,7 @@ var _ = Describe("PurgeHidden destructive path", func() {
 		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest))
 	})
 
-	It("400s when the hide rule is disabled (gaka-dfd guard)", func() {
+	It("400s when the hide rule is disabled (boom-dfd guard)", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
 		_, token := hz.MintUser("cur_pge_disabled")
@@ -699,7 +699,7 @@ var _ = Describe("PurgeHidden destructive path", func() {
 })
 
 var _ = Describe("CreateCuration re-insert reactivates a disabled rule (dedup ON CONFLICT)", func() {
-	It("re-POSTing the same rule flips enabled back to true (gaka-dfd)", func() {
+	It("re-POSTing the same rule flips enabled back to true (boom-dfd)", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
 		_, token := hz.MintUser("cur_re_ins")
@@ -732,5 +732,5 @@ var _ = Describe("CreateCuration re-insert reactivates a disabled rule (dedup ON
 
 // mapKeys is defined in internal/handler/bigbets_test.go — same package,
 // shared. Kept here as a comment to note the intentional single source
-// of truth (this test file used to redeclare it before gaka-d6x.handler
+// of truth (this test file used to redeclare it before boom-d6x.handler
 // cherry-pick).

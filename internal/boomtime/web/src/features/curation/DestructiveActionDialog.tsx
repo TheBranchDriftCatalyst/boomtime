@@ -25,7 +25,7 @@ import { qk } from "@shared/lib/queryKeys";
 import type { CurationRule } from "@shared/types/api";
 
 /**
- * gaka-cr4 + gaka-due: shared destructive-confirm modal for BOTH curation
+ * boom-cr4 + boom-due: shared destructive-confirm modal for BOTH curation
  * destructive actions:
  *   - variant="apply": rewrite raw heartbeat rows via a rename rule, then
  *     delete the rule. UPDATE + DELETE, one transaction.

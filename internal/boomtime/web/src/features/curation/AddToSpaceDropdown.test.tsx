@@ -7,7 +7,7 @@ import { server } from "@shared/test/msw/server";
 import { http, HttpResponse } from "@shared/test/msw/handlers";
 import type { CurationRule } from "@shared/types/api";
 
-// gaka-esv: the AddToSpaceDropdown is FE-only composition on top of the
+// boom-esv: the AddToSpaceDropdown is FE-only composition on top of the
 // existing spaces endpoints. Tests focus on:
 //   1. matchType translation (template → regex when quick-adding to a Space)
 //   2. POST body shape hitting /spaces/:id/rules
@@ -39,7 +39,7 @@ function makeRule(overrides: Partial<CurationRule> = {}): CurationRule {
   };
 }
 
-describe("AddToSpaceDropdown (gaka-esv)", () => {
+describe("AddToSpaceDropdown (boom-esv)", () => {
   it("posts the rule to /spaces/:id/rules with the exact axis+matchValue", async () => {
     const captured: { body: unknown; spaceId: string | null } = {
       body: undefined,

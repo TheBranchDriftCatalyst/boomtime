@@ -14,7 +14,7 @@ interface EmbedLinkButtonProps {
   theme?: string;
 }
 
-// The live-embed half of the per-chart hover cluster (gaka-hsj). Plugs into
+// The live-embed half of the per-chart hover cluster (boom-hsj). Plugs into
 // ChartCard's `embedAction` slot on charts whose data has a server-rendered
 // widget twin. Clicking mints the scope's widget link (idempotent upsert) and
 // copies a Markdown snippet whose URL renders live — the thing you paste into

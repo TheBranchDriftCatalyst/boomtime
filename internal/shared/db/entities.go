@@ -1,4 +1,4 @@
-// entities.go: read + redact for the Entity Explorer (gaka-90x). Powers a
+// entities.go: read + redact for the Entity Explorer (boom-90x). Powers a
 // per-type flat view of every entity value (heartbeats.entity) the user's
 // heartbeats reference, plus a REDACT that blanks the entity column on the
 // selected rows — the heartbeat rows themselves stay (project/language/time

@@ -1,5 +1,5 @@
 // booksExplorerConfig tests — the reading-domain adapter for <GroupableExplorer>
-// (gaka-02sh Track C). runQuery is mocked so we assert the adapter's mapping in
+// (boom-02sh Track C). runQuery is mocked so we assert the adapter's mapping in
 // isolation:
 //   - fetchGroup issues a grouped `books` query and maps GroupRow → {value,stats}
 //     (count + runtime + finished; "" → null; "Other" preserved).
@@ -59,7 +59,7 @@ describe("pathToPredicate / filtersToPredicate / buildWhere", () => {
 
   it("folds source + status filters onto the canonical status value (1:1)", () => {
     expect(filtersToPredicate(NO_FILTERS)).toEqual([]);
-    // gaka-books: the filter value IS the canonical column value now — `read`
+    // boom-books: the filter value IS the canonical column value now — `read`
     // filters on status='read' directly (no more "finished" → "read" remap).
     expect(
       filtersToPredicate({ source: "audible", status: "read",
@@ -231,7 +231,7 @@ describe("source.fetchGroup", () => {
 
     // The spec carried the axis, the requested rollups, and the folded where
     // (drill series + source filter). No bucket: Books returns all real groups —
-    // no synthetic 'Other' catch-all (gaka-a6nc).
+    // no synthetic 'Other' catch-all (boom-a6nc).
     const spec = runQueryMock.mock.calls[0][0] as QuerySpec;
     expect(spec).toMatchObject({
       domain: "reading",

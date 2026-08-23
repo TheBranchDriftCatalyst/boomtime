@@ -1,10 +1,10 @@
-// auth_ginkgo_test.go — ginkgo mirror of auth_test.go (gaka-0vp).
+// auth_ginkgo_test.go — ginkgo mirror of auth_test.go (boom-0vp).
 // 1:1 case map (7 stdlib TestXxx):
 //
 //	TestPasswordRoundTrip                        → HashPassword+VerifyPassword > "round trip"
 //	TestParseAuthHeader                          → ParseAuthHeader > "table of 3 cases"
 //	TestParseRefreshCookie                       → ParseRefreshCookie > "hit / miss"
-//	TestBurnSentinelVerify_Counter               → BurnSentinelVerify > "increments counter (gaka-imm)"
+//	TestBurnSentinelVerify_Counter               → BurnSentinelVerify > "increments counter (boom-imm)"
 //	TestHashToken_SHA256_Matches_stdlib          → HashToken > "matches stdlib SHA-256"
 //	TestHashToken_Deterministic                  → HashToken > "deterministic (no random salt)"
 //	TestArgon2Params_LockedToOWASPFloor_BravoRegression
@@ -65,7 +65,7 @@ var _ = Describe("ParseRefreshCookie", func() {
 	})
 })
 
-var _ = Describe("BurnSentinelVerify (gaka-imm)", func() {
+var _ = Describe("BurnSentinelVerify (boom-imm)", func() {
 	It("increments SentinelVerifyCount and runs safely before HashPassword", func() {
 		before := SentinelVerifyCount()
 		BurnSentinelVerify("any-plaintext")
@@ -75,7 +75,7 @@ var _ = Describe("BurnSentinelVerify (gaka-imm)", func() {
 	})
 })
 
-var _ = Describe("HashToken (gaka-b5x.2)", func() {
+var _ = Describe("HashToken (boom-b5x.2)", func() {
 	It("matches stdlib SHA-256 exactly for every fixture", func() {
 		for _, s := range []string{"", "a", "abcdefg", "the quick brown fox"} {
 			want := sha256.Sum256([]byte(s))
@@ -87,13 +87,13 @@ var _ = Describe("HashToken (gaka-b5x.2)", func() {
 	})
 
 	It("is deterministic — no random salt (would break DB lookup)", func() {
-		a := HashToken("gaka-b5x-token")
-		b := HashToken("gaka-b5x-token")
+		a := HashToken("boom-b5x-token")
+		b := HashToken("boom-b5x-token")
 		Expect(bytes.Equal(a, b)).To(BeTrue())
 	})
 })
 
-var _ = Describe("argon2 params (gaka-awh.6 OWASP ASVS L1 2025 floor)", func() {
+var _ = Describe("argon2 params (boom-awh.6 OWASP ASVS L1 2025 floor)", func() {
 	It("pins current-generation constants", func() {
 		Expect(argonTime).To(BeEquivalentTo(2),
 			"argonTime must stay at OWASP floor")
@@ -132,7 +132,7 @@ var _ = Describe("HashPassword generation", func() {
 })
 
 var _ = Describe("VerifyPasswordWithVersion", func() {
-	pw := "gaka-awh-6-crossver"
+	pw := "boom-awh-6-crossver"
 
 	It("v1 and v2 both round-trip under their own version; cross-version fails", func() {
 		v1Hash, v1Salt, err := HashPasswordWithVersion(pw, ArgonVersionLegacy)

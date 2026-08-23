@@ -1,4 +1,4 @@
-// widget_defs_ginkgo_test.go — ginkgo mirror of widget_defs_test.go (gaka-6jm.13).
+// widget_defs_ginkgo_test.go — ginkgo mirror of widget_defs_test.go (boom-6jm.13).
 // 1:1 case map (4 stdlib TestXxx):
 //
 //	TestRenderCustomWidget_ScrubberFiltersHiddenLang_Gaka6jm13Regression
@@ -81,7 +81,7 @@ func fetchDefSvgG(e http.Handler, defID string, params string) string {
 	return rec.Body.String()
 }
 
-var _ = Describe("RenderCustomWidget scrubber (gaka-6jm.13 regression)", func() {
+var _ = Describe("RenderCustomWidget scrubber (boom-6jm.13 regression)", func() {
 	It("filters hidden language from the top-langs SVG anywhere in body", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
@@ -109,7 +109,7 @@ var _ = Describe("RenderCustomWidget scrubber (gaka-6jm.13 regression)", func() 
 
 		body = fetchDefSvgG(e, def.DefID, "days=30")
 		Expect(body).NotTo(ContainSubstring("TypeScript"),
-			"PRIVACY LEAK (gaka-6jm.13): WidgetDefSvg missed widget.Scrub — body=\n%s", body)
+			"PRIVACY LEAK (boom-6jm.13): WidgetDefSvg missed widget.Scrub — body=\n%s", body)
 		Expect(body).To(ContainSubstring(">Go<"),
 			"positive control: 'Go' should still render — body=\n%s", body)
 	})
@@ -138,7 +138,7 @@ var _ = Describe("RenderCustomWidget scrubber (gaka-6jm.13 regression)", func() 
 
 		body = fetchDefSvgG(e, def.DefID, "days=30")
 		Expect(body).NotTo(ContainSubstring("hakatime"),
-			"PRIVACY LEAK (gaka-6jm.13): WidgetDefSvg missed widget.ScrubMomentum — body=\n%s", body)
+			"PRIVACY LEAK (boom-6jm.13): WidgetDefSvg missed widget.ScrubMomentum — body=\n%s", body)
 	})
 
 	It("filters hidden language from the top-langs bar rows (stricter >Label< scan)", func() {
@@ -161,7 +161,7 @@ var _ = Describe("RenderCustomWidget scrubber (gaka-6jm.13 regression)", func() 
 		def := mintTopLangsDefG(e, token, "langs-rows-g")
 		body := fetchDefSvgG(e, def.DefID, "days=30")
 		Expect(body).NotTo(ContainSubstring(">TypeScript<"),
-			"PRIVACY LEAK (gaka-6jm.13): TypeScript rendered as a bar row — body=\n%s", body)
+			"PRIVACY LEAK (boom-6jm.13): TypeScript rendered as a bar row — body=\n%s", body)
 		Expect(body).To(ContainSubstring(">Go<"),
 			"positive control: 'Go' should render as a bar row — body=\n%s", body)
 	})
@@ -197,7 +197,7 @@ var _ = Describe("RenderCustomWidget scope gate (v1 invariants)", func() {
 	})
 })
 
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
+// -- helpers restored from stdlib partner (boom-0vp.17) --
 type createDefResp struct {
 	DefID string `json:"defId"`
 	URL   string `json:"url"`

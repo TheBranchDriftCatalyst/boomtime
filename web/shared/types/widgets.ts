@@ -1,4 +1,4 @@
-// Embeddable-widget types (gaka-hsj), mirroring internal/handler/widgets.go.
+// Embeddable-widget types (boom-hsj), mirroring internal/handler/widgets.go.
 
 export type WidgetScope = "user" | "project" | "space";
 

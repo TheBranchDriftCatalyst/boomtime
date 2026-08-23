@@ -21,22 +21,22 @@ metadata:
   labels:
     app.kubernetes.io/name: boomtime
 data:
-  # ── label-images feature (gaka-myv) — comfyui-shim-external.yaml Service ────
+  # ── label-images feature (boom-myv) — comfyui-shim-external.yaml Service ────
   BOOM_FEATURE_LABEL_IMAGES: "on"
   BOOM_COMFYUI_SHIM_URL: "http://comfyui-shim:8012"
   BOOM_COMFYUI_MODEL: "chroma-hd"
   # admin allowlist — comma-separated usernames who see Settings > Admin tab.
   BOOM_ADMIN_USERS: "panda"
 
-  # ── chibi-avatar LLM (gaka-9v4) — ollama-shim-external.yaml → operator Mac ──
+  # ── chibi-avatar LLM (boom-9v4) — ollama-shim-external.yaml → operator Mac ──
   BOOM_LLM_BASE_URL: "http://ollama-shim:11434/v1"
   BOOM_LLM_API_KEY: "ollama"
   BOOM_LLM_MODEL: "hf.co/TheDrummer/Cydonia-24B-v4.3-GGUF:Q8_0"
 
-  # ── server-wide default timezone (gaka-tz), IANA name; user choice wins ─────
+  # ── server-wide default timezone (boom-tz), IANA name; user choice wins ─────
   BOOM_DEFAULT_TIMEZONE: "America/Los_Angeles"
 
-  # ── per-user GitHub connect (gaka-2ip) — NON-SECRET keys only ───────────────
+  # ── per-user GitHub connect (boom-2ip) — NON-SECRET keys only ───────────────
   # Master gate; inert until the OAuth-App creds + state signing key (Secrets,
   # oidc-external-secret.yaml) are also present.
   BOOM_FEATURE_GITHUB_STATS: "true"
@@ -52,16 +52,16 @@ data:
   BOOM_OIDC_REDIRECT_URL: "https://boomtime.knowledgedump.space/auth/callback/oidc"
   BOOM_AUTHENTIK_GROUP_TO_ROLE: "boomtime-admin:admin,boomtime-full:full,boomtime-light:light"
   BOOM_OIDC_AUTOPROVISION: "false"
-  # Keep autolink-by-email OFF (account-takeover footgun, gaka-93f.12).
+  # Keep autolink-by-email OFF (account-takeover footgun, boom-93f.12).
   BOOM_OIDC_AUTOLINK_EMAIL: "false"
 
-  # ── RBAC user-model substrate (gaka-93f) ────────────────────────────────────
+  # ── RBAC user-model substrate (boom-93f) ────────────────────────────────────
   BOOM_FEATURE_USER_MODEL: "true"
 
   # ── admin CLI-runner (gaka Part C) — double-gated (admin allowlist + cap) ────
   BOOM_FEATURE_ADMIN_CLI: "true"
 
-  # ── worker-topology decoupling (gaka-8bz) — RabbitMQ cutover switch ─────────
+  # ── worker-topology decoupling (boom-8bz) — RabbitMQ cutover switch ─────────
   # BOOM_RABBITMQ_URL is assembled per-Deployment from the operator secret (see
   # patch-server-rabbit.yaml) — deliberately NOT here.
   BOOM_QUEUE_BROKER: "rabbitmq"
@@ -70,17 +70,17 @@ data:
   # LAN-gated mgmt UI (rabbitmq-mgmt-ingressroute.yaml).
   BOOM_RABBITMQ_MGMT_URL: "http://boomtime-rabbit.talos00"
 
-  # ── durable S3/MinIO social-card cache (gaka-fym5) — NON-SECRET keys only ────
+  # ── durable S3/MinIO social-card cache (boom-fym5) — NON-SECRET keys only ────
   # AWS_* creds ride patch-server-s3.yaml; inert until all four S3 vars present.
   BOOM_S3_ENDPOINT: "minio-hl.minio.svc.cluster.local:9000"
   BOOM_S3_BUCKET: "boomtime-cards"
   BOOM_S3_USE_SSL: "false"
 
-  # ── kind-routing (gaka-hney): heavy kinds fall through to the KEDA ScaledJob ─
+  # ── kind-routing (boom-hney): heavy kinds fall through to the KEDA ScaledJob ─
   BOOM_JOBS_EXCLUDE_KINDS: "avatar-render,label-image"
   BOOM_JOBS_UNIFIED: "true"
 
-  # ── catalyst-books / catalyst-audiobooks master gate (gaka-books) ───────────
+  # ── catalyst-books / catalyst-audiobooks master gate (boom-books) ───────────
   BOOM_FEATURE_BOOKS: "true"
   # Audible library forward-sync cadence (finish detection: is_finished / ≥95% →
   # "read"). Code default is 6h; dropped to 1h so a finished audiobook promotes

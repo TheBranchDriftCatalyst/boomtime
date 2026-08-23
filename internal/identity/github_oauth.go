@@ -1,4 +1,4 @@
-// github_oauth.go — the per-user GitHub OAuth connect handlers (gaka-2ip
+// github_oauth.go — the per-user GitHub OAuth connect handlers (boom-2ip
 // Phase 1) plus the status/disconnect API.
 //
 //	GET    /auth/github/connect          → 302 to GitHub authorize (authed via cookie)
@@ -177,7 +177,7 @@ func (h *Handler) DisconnectGithub(c *echo.Context) error {
 	if err := h.DB.ClearEncryptedGithubToken(c.Request().Context(), owner); err != nil {
 		return apihelpers.InternalErr(h.Logger, c, "github disconnect failed", err)
 	}
-	// gaka-anh Phase 2: also drop the stats cache so a stale row can't outlive
+	// boom-anh Phase 2: also drop the stats cache so a stale row can't outlive
 	// the token that produced it (and so a re-connect starts clean).
 	if err := h.DB.ClearGithubStatsCache(c.Request().Context(), owner); err != nil {
 		return apihelpers.InternalErr(h.Logger, c, "github stats cache clear failed", err)

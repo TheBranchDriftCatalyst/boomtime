@@ -14,7 +14,7 @@ import type { MomentumPayload } from "@shared/types/api";
 interface MomentumGridProps {
   data: MomentumPayload | undefined;
   rowHeight?: number;
-  // gaka-nmk: render each active cell's value (compact hrs/min) centered in the
+  // boom-nmk: render each active cell's value (compact hrs/min) centered in the
   // rect. Self-suppressing — a cell only gets a label when it's big enough for
   // the number to read (see MIN_CELL_W/H), so narrow week columns stay clean.
   // Defaults on; pass false to force the plain heatmap.
@@ -23,7 +23,7 @@ interface MomentumGridProps {
 
 const MARGIN = { top: 6, right: 8, bottom: 26, left: 110 };
 
-// gaka-nmk: min cell footprint for an in-cell value label. Below either bound
+// boom-nmk: min cell footprint for an in-cell value label. Below either bound
 // the compact duration ("2h 5m") would clip or crowd, so we skip it and leave
 // the tooltip to carry the exact value.
 const MIN_CELL_W = 40;
@@ -167,7 +167,7 @@ export function MomentumGrid({ data, rowHeight = 26, showValues = true }: Moment
         })
         .on("mouseleave", hideTip);
 
-      // gaka-nmk: in-cell value labels. Only when opted in AND the cell is large
+      // boom-nmk: in-cell value labels. Only when opted in AND the cell is large
       // enough for the compact duration to read — narrow week columns get no
       // label (the tooltip still carries the exact value). Light glyph + dark
       // halo so it reads over the full primary-opacity ramp underneath.

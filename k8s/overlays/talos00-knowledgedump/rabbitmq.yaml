@@ -1,5 +1,5 @@
 ---
-# RabbitMQ broker for the worker-topology decoupling (gaka-8bz follow-up).
+# RabbitMQ broker for the worker-topology decoupling (boom-8bz follow-up).
 # Provisioned via the homelab's RabbitMQ Cluster Operator + Messaging
 # Topology Operator (already installed cluster-wide — see
 # talos-homelab/applications/crossplane-demo/rabbitmq.yaml, mirrored here).

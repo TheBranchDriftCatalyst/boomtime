@@ -46,7 +46,7 @@ interface ProjectDetailProps {
   timeLimit: number;
   /** Whether the parent project list is still loading — distinguishes the
    *  "no project selected yet" skeleton from the genuine "no projects" empty
-   *  state (gaka-gbbl.2). */
+   *  state (boom-gbbl.2). */
   projectsLoading?: boolean;
   /** Scroll anchor so the page can scroll the detail into view on select. */
   ref?: Ref<HTMLDivElement>;

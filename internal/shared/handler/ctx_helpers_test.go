@@ -1,5 +1,5 @@
 // ctx_helpers_test.go — external (package handler_test) test helpers
-// used by date_defaults_test.go. gaka-8tn phase 8 flipped date_defaults
+// used by date_defaults_test.go. boom-8tn phase 8 flipped date_defaults
 // to the external package so it could import internal/apihelpers via
 // the qualified name; ctxWithQuery moves with it.
 package handler_test

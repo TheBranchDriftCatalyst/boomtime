@@ -1,10 +1,10 @@
-// importjobs_ginkgo_test.go — ginkgo mirror of importjobs_test.go (gaka-0vp.13).
+// importjobs_ginkgo_test.go — ginkgo mirror of importjobs_test.go (boom-0vp.13).
 // 1:1 case map (2 stdlib TestXxx → 2 Its):
 //
 //	TestOneRunningJobPerOwner  → "GetRunningJobByOwner: one active per owner"
 //	TestJobProgressAndLogs     → "UpdateJobProgress + InsertJobLog + GetJobLogs"
 //
-// gaka-se2.9: this file ALSO carries the stdlib (testing.T) security-invariant
+// boom-se2.9: this file ALSO carries the stdlib (testing.T) security-invariant
 // tests for internal/db/importjobs.go (state-machine coherence, cross-user
 // scoping, no-secret-leakage). See TestImportJobs below.
 package db
@@ -89,7 +89,7 @@ var _ = ginkgo.Describe("import_jobs", func() {
 })
 
 // -----------------------------------------------------------------------------
-// gaka-se2.9 stdlib coverage of importjobs.go (state machine + isolation + no
+// boom-se2.9 stdlib coverage of importjobs.go (state machine + isolation + no
 // secret leakage). Every t.Run names ONE security invariant.
 // -----------------------------------------------------------------------------
 

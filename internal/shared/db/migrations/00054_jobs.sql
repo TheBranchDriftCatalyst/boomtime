@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- catalyst-go-jobs (gaka-hney.1): a generic, DB-backed job queue + periodic
+-- catalyst-go-jobs (boom-hney.1): a generic, DB-backed job queue + periodic
 -- scheduler, additive alongside the RabbitMQ image path (nothing here touches
 -- imagejobs). `jobs` is the work queue — one row per unit of work, claimed by
 -- workers via FOR UPDATE SKIP LOCKED so many workers never grab the same row.

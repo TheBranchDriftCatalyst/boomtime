@@ -238,12 +238,12 @@ tasks:
     cmds:
       - task: db:up
       # -p 1 serializes packages so they don't race on the single shared
-      # boomtime_test DB (gaka-93f.5): some tests use global counts / mutate
+      # boomtime_test DB (boom-93f.5): some tests use global counts / mutate
       # shared catalog rows and flake under parallel package execution.
       - 'BOOM_TEST_DATABASE_URL="{{.TEST_DB_URL}}" go test -p 1 ./...'
 
   test:domain:
-    desc: 'Run tests for a single domain package (gaka-8tn refactor). Usage: task test:domain -- meta'
+    desc: 'Run tests for a single domain package (boom-8tn refactor). Usage: task test:domain -- meta'
     cmds:
       - task: db:up
       - 'BOOM_TEST_DATABASE_URL="{{.TEST_DB_URL}}" go test ./internal/{{.CLI_ARGS}}/...'
@@ -264,7 +264,7 @@ tasks:
       - 'go tool cover -func=/tmp/boomtime_cov.out | awk ''$1 ~ /^github/ { split($1,a,"/"); pkg=a[5]; gsub(/%/,"",$NF); sum[pkg]+=$NF; n[pkg]++ } END { for (p in sum) printf "%-25s %.1f%%\n", p, sum[p]/n[p] }'' | sort -k2 -n'
 
   test:domain:
-    desc: 'Run tests for one domain (gaka-arch phase gates). Vars: DOMAIN (e.g. meta, ingest, curation)'
+    desc: 'Run tests for one domain (boom-arch phase gates). Vars: DOMAIN (e.g. meta, ingest, curation)'
     cmds:
       - task: db:up
       - 'BOOM_TEST_DATABASE_URL="{{.TEST_DB_URL}}" go test -count=1 -race ./internal/{{.DOMAIN}}/...'

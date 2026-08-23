@@ -34,12 +34,12 @@ const prefix = {
   derivedStatus: ["derived-status"] as const,
   axisValues: ["axis-values"] as const,
   curationAffected: ["curation-affected"] as const,
-  // gaka-cr4 + gaka-due: shared preview key for /curation/:id/preview.
+  // boom-cr4 + boom-due: shared preview key for /curation/:id/preview.
   // ONE key covers both variants (apply for rename, purge for hide) — the
   // backend dispatches on rule.action and the FE modal renders accordingly.
   curationActionPreview: ["curation-action-preview"] as const,
   entitiesByType: ["entities-by-type"] as const,
-  // gaka-wpb: goals list + per-goal + batched progress.
+  // boom-wpb: goals list + per-goal + batched progress.
   goals: ["goals"] as const,
   goalProgress: ["goal-progress"] as const,
   goalsProgress: ["goals-progress"] as const,
@@ -79,9 +79,9 @@ export const qk = {
   // --- Auth / tokens ---------------------------------------------------------
   tokens: () => ["tokens"] as const,
 
-  // --- GitHub stats (gaka-anh Phase 2) ---------------------------------------
+  // --- GitHub stats (boom-anh Phase 2) ---------------------------------------
   githubStats: () => ["github-stats"] as const,
-  // gaka-2ud Phase 5: the PUBLIC mirror, keyed by slug. Distinct from the authed
+  // boom-2ud Phase 5: the PUBLIC mirror, keyed by slug. Distinct from the authed
   // `githubStats()` key so the /p/:slug page's unauth cache never collides with
   // an owner's authed self-view cache.
   publicGithubStats: (slug: string) => ["public-github-stats", slug] as const,
@@ -140,7 +140,7 @@ export const qk = {
   // --- Curation ----------------------------------------------------------------
   curation: () => ["curation"] as const,
   curationAffected: (id: number) => ["curation-affected", id] as const,
-  // gaka-cr4 + gaka-due: destructive-action preview key (fetched once per
+  // boom-cr4 + boom-due: destructive-action preview key (fetched once per
   // modal open). Same key for both apply (rename) and purge (hide) variants
   // — the backend dispatches on rule.action; ONE cache entry per rule id.
   curationActionPreview: (id: number) =>
@@ -173,36 +173,36 @@ export const qk = {
   importJobs: () => ["import-jobs"] as const,
   importJob: (id: number) => ["import-job", id] as const,
   importConfig: () => ["import-config"] as const,
-  // Per-user encrypted Wakatime key presence (gaka-6jm.2). Value is
+  // Per-user encrypted Wakatime key presence (boom-6jm.2). Value is
   // {hasSavedKey}; invalidated after save/delete so UI affordances update.
   wakatimeKey: () => ["wakatime-key"] as const,
-  // Per-user IANA timezone (gaka-dg7). Value is {timezone, effectiveTimezone};
+  // Per-user IANA timezone (boom-dg7). Value is {timezone, effectiveTimezone};
   // invalidated after PATCH so the Settings picker + any downstream FE
   // decision (e.g. the "Using X (from server default)" hint) re-renders.
   timezone: () => ["timezone"] as const,
-  // Public profile (gaka-6jm.1): the caller's enable-toggle + slug. Used by
+  // Public profile (boom-6jm.1): the caller's enable-toggle + slug. Used by
   // the Settings card AND the Sidebar (to conditionally show the "Public
   // profile" nav link when enabled). Invalidated after PUT so both consumers
   // re-fetch atomically.
   publicProfile: () => ["public-profile"] as const,
   publicDashboard: (slug: string) => ["public-dashboard", slug] as const,
-  // gaka-93f.1.1: public client-config (auth provider, registration/billing/
+  // boom-93f.1.1: public client-config (auth provider, registration/billing/
   // beta switches). Fetched once at boot; long staleTime — it only changes on
   // a server restart.
   publicConfig: () => ["public-config"] as const,
-  // gaka-keb: per-user, per-scope dashboard layout. Scope key held loose
+  // boom-keb: per-user, per-scope dashboard layout. Scope key held loose
   // (string) so future scopes ("overview", "space:12") land without a
   // signature widening.
   dashboardLayout: (scope: string) => ["dashboard-layout", scope] as const,
 
-  // gaka-myv: admin label-images status (row count / feature flags).
+  // boom-myv: admin label-images status (row count / feature flags).
   // Refetched after a regenerate to update the "N / M generated" tally.
   adminLabelImages: () => ["admin", "label-images"] as const,
 
-  // gaka-93f.6: admin caps dashboard (users + roles/tiers + effective caps).
+  // boom-93f.6: admin caps dashboard (users + roles/tiers + effective caps).
   adminUsers: () => ["admin", "users"] as const,
 
-  // gaka-hney: admin background-jobs tab. The jobs list is keyed by its
+  // boom-hney: admin background-jobs tab. The jobs list is keyed by its
   // filters (status/kind/limit) so each filter combination caches
   // independently; schedules are filter-less. Both sit under the shared
   // ["admin", "jobs"] prefix so a trigger/retry can invalidate every jobs
@@ -211,14 +211,14 @@ export const qk = {
   adminJobs: (status?: string, kind?: string, limit?: number) =>
     ["admin", "jobs", "list", status ?? "", kind ?? "", limit ?? 0] as const,
   adminJobSchedules: () => ["admin", "jobs", "schedules"] as const,
-  // gaka-hney: per-kind queue overview. Under the shared ["admin","jobs"]
+  // boom-hney: per-kind queue overview. Under the shared ["admin","jobs"]
   // prefix so a trigger/retry invalidation refreshes the queue cards too.
   adminJobQueues: () => ["admin", "jobs", "queues"] as const,
-  // gaka-hney: a finished job's persisted (S3-backed) log stream. Under the
+  // boom-hney: a finished job's persisted (S3-backed) log stream. Under the
   // shared ["admin","jobs"] prefix so trigger/retry invalidations sweep it too.
   adminJobLogs: (id: number) => ["admin", "jobs", "logs", id] as const,
 
-  // gaka-metrics: the rate-metric registry snapshot for the admin Metrics tab.
+  // boom-metrics: the rate-metric registry snapshot for the admin Metrics tab.
   // Polled on a short interval; no filters (the FE groups client-side).
   adminMetrics: () => ["admin", "metrics"] as const,
 
@@ -227,22 +227,22 @@ export const qk = {
   // complete are mutations/imperative calls, so no keys for them.
   adminCliSpec: () => ["admin", "cli", "spec"] as const,
 
-  // gaka-b5n.4: the caller's linked external identities (OIDC linking).
+  // boom-b5n.4: the caller's linked external identities (OIDC linking).
   identities: () => ["identities"] as const,
 
-  // gaka-2ip Phase 1: the caller's GitHub connection status ({connected, login,
+  // boom-2ip Phase 1: the caller's GitHub connection status ({connected, login,
   // status}). Invalidated after connect (redirect back) / disconnect so the
   // Settings card re-renders.
   githubConnection: () => ["github-connection"] as const,
 
-  // gaka-books: the Books page's siloed reading_items list. `source` is held in
+  // boom-books: the Books page's siloed reading_items list. `source` is held in
   // the key so an all-sources view and a per-source view cache independently
   // (the Books page fetches all; the Amazon card fetches "audible" under its own
   // ad-hoc key). Invalidated after a sync/backfill so the count/table refresh.
   readingItems: (source?: string) =>
     ["reading-items", source ?? ""] as const,
 
-  // gaka-books: SERVER-side reading-monitor state (enabled/mode/activeBooks/
+  // boom-books: SERVER-side reading-monitor state (enabled/mode/activeBooks/
   // lastPingAt). Polled lightly for the admin control panel's status display;
   // invalidated after a PUT toggle so the switch reflects the server truth.
   readingMonitor: () => ["admin", "reading-monitor"] as const,
@@ -257,23 +257,23 @@ export const qk = {
   readingMonitorRaw: () =>
     ["admin", "reading-monitor", "raw"] as const,
 
-  // gaka-364.3: DB-backed labels catalog. Public (no owner scoping) —
+  // boom-364.3: DB-backed labels catalog. Public (no owner scoping) —
   // one key shared by every consumer (evaluator, hero widget, admin
   // table). Invalidated after PATCH/POST/DELETE on /admin/labels.
   labelsCatalog: () => ["labels", "catalog"] as const,
 
-  // gaka-mwp-streaks: award-ledger streak counts. Own vs public share
+  // boom-mwp-streaks: award-ledger streak counts. Own vs public share
   // a prefix so a bulk invalidation clears both cleanly.
   awardStreaks: (slug?: string) =>
     slug
       ? (["awards", "streaks", "public", slug] as const)
       : (["awards", "streaks", "own"] as const),
-  // Ledger inspector on the admin labels tab (gaka-mwp-streaks). Own only.
+  // Ledger inspector on the admin labels tab (boom-mwp-streaks). Own only.
   awardLedger: (label?: string) =>
     label
       ? (["awards", "ledger", "own", label] as const)
       : (["awards", "ledger", "own"] as const),
-  // gaka-hc6.4: server-evaluated awards. Distinct from streaks/ledger so
+  // boom-hc6.4: server-evaluated awards. Distinct from streaks/ledger so
   // the /awards endpoint's cache doesn't get invalidated when a streak
   // POST bumps the streaks cache.
   awards: (scope: "own" | "public", slug?: string) =>
@@ -281,7 +281,7 @@ export const qk = {
       ? (["awards", "eval", "public", slug ?? ""] as const)
       : (["awards", "eval", "own"] as const),
 
-  // gaka-9v4: per-user chibi avatar status (polled while a render is
+  // boom-9v4: per-user chibi avatar status (polled while a render is
   // in flight). Public-image consumers don't need a query key — the
   // <img src> URL is stable + cache-busted with the generatedAt hint.
   avatarStatus: () => ["user-avatar", "status"] as const,
@@ -297,7 +297,7 @@ export const qk = {
     ["widget-link", scopeType, scopeRef] as const,
   widgetLinks: () => ["widget-links"] as const,
 
-  // --- Goals (gaka-wpb) --------------------------------------------------------
+  // --- Goals (boom-wpb) --------------------------------------------------------
   // Full list (fetch once, hydrate the Settings > Goals table). Per-id
   // isn't a separate key — the FE reads the list to render, and the
   // list already carries the row shape.
@@ -308,7 +308,7 @@ export const qk = {
   goalProgress: (id: string) => ["goal-progress", id] as const,
   goalsProgress: () => ["goals-progress"] as const,
 
-  // --- Books (gaka-books) ------------------------------------------------------
+  // --- Books (boom-books) ------------------------------------------------------
   // Library hero summary (one source-grouped query → Tracked/Finished/…). A
   // curation override (a book leaving the "reading" set, a fresh finish)
   // invalidates this so the header counts refetch.

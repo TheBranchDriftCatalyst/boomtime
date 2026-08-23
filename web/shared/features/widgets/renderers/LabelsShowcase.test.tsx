@@ -1,6 +1,6 @@
 // LabelsShowcase.test.tsx — the labels-showcase dashboard widget.
 //
-// gaka-hc6.5: post evaluator delete, this file no longer runs the client
+// boom-hc6.5: post evaluator delete, this file no longer runs the client
 // evaluator. Tests prime the qk.awards("own") cache directly with fixed
 // LabelAward[] arrays and assert the rendering. Evaluator correctness is
 // tested in Go (internal/labels/evaluator_test.go); this suite is purely
@@ -40,7 +40,7 @@ function renderShowcase(awards: LabelAward[]) {
   );
 }
 
-// LabelsShowcase's `data` prop is unused post gaka-hc6.4 (awards come
+// LabelsShowcase's `data` prop is unused post boom-hc6.4 (awards come
 // from useAwards()) but the widget renderer contract still passes one.
 const emptyPayload: PublicDashboardPayload = {
   username: "test",
@@ -107,7 +107,7 @@ describe("LabelsShowcase", () => {
   });
 
   it("each awarded chip opens a Radix tooltip with the label description on focus", async () => {
-    // gaka-mem-chip: previously used the native `title` attribute; now uses
+    // boom-mem-chip: previously used the native `title` attribute; now uses
     // catalyst-ui Tooltip (Radix). Focus the chip to trigger tooltip mount.
     renderShowcase([
       archetype("machine", "MACHINE", "for daily average grinders"),
@@ -131,7 +131,7 @@ describe("LabelsShowcase", () => {
     expect(within(tribes[0]).getByText("MAC NATIVE")).toBeInTheDocument();
   });
 
-  // gaka-myv: every chip now includes a <LabelImage> that resolves to
+  // boom-myv: every chip now includes a <LabelImage> that resolves to
   // /api/v1/labels/<id>/image with a glyph fallback on 404. The test can't
   // hit a live backend, so we assert the <img> element exists inside each
   // chip and its src is wired correctly.

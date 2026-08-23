@@ -42,14 +42,14 @@ type Config struct {
 	Env                string // "dev" or "prod"
 	HTTPLog            bool
 
-	// AuthProvider selects the identity backend (gaka-93f / gaka-0oe.11).
+	// AuthProvider selects the identity backend (boom-93f / boom-0oe.11).
 	// "local" = today's username+password + refresh cookie. "oidc" =
 	// Authentik (the OIDCResolver, landing in a later bead). Read here now so
 	// the public config endpoint and FE can branch the signup CTA before the
 	// resolver swap lands. Default "local" preserves today's behavior.
 	AuthProvider string
 
-	// OIDC (Authentik) config (gaka-0oe.11). Consumed only when
+	// OIDC (Authentik) config (boom-0oe.11). Consumed only when
 	// AuthProvider=="oidc"; staged otherwise. See docs/design/user-model-and-
 	// oidc.md §6.
 	OIDCIssuer string // discovery base, trailing slash required
@@ -64,9 +64,9 @@ type Config struct {
 	OIDCRedirectURL   string            // {origin}/auth/callback/oidc
 	OIDCGroupToRole   map[string]string // Authentik group name → boomtime role
 	OIDCAutoprovision bool              // mint a boomtime user on first login
-	OIDCAutolinkEmail bool              // DEPRECATED no-op (gaka-93f.12): username-based autolink was removed as an account-takeover vector. Parsed for env compat only; nothing reads it. Use the authenticated link flow (HandleLink).
+	OIDCAutolinkEmail bool              // DEPRECATED no-op (boom-93f.12): username-based autolink was removed as an account-takeover vector. Parsed for env compat only; nothing reads it. Use the authenticated link flow (HandleLink).
 
-	// GitHub stats (gaka-2ip Phase 1): per-user GitHub OAuth-App connect +
+	// GitHub stats (boom-2ip Phase 1): per-user GitHub OAuth-App connect +
 	// encrypted token storage. STRICTLY default-off and inert until BOTH the
 	// gate is flipped AND the OAuth-App credentials + state signing key are
 	// configured. See GithubConnectEnabled() for the exact predicate the
@@ -95,20 +95,20 @@ type Config struct {
 	OAuthStateSigningKey    string
 
 	// FeatureBilling advertises whether the Stripe SaaS billing surface
-	// (checkout / webhooks / tier flips, gaka-93f Phase 4) is live. Default
+	// (checkout / webhooks / tier flips, boom-93f Phase 4) is live. Default
 	// off; flipped on once the billing subsystem ships. Surfaced by
 	// /api/v1/config/public so the FE can show/hide pricing + upgrade UI.
 	FeatureBilling bool
 
 	// BetaUserRegistration is the server-side kill switch for the beta
 	// onboarding preview (the FE ?enable_beta_user_registration=true flow,
-	// gaka-93f.1). Default true so the preview works in dev; set false in a
+	// boom-93f.1). Default true so the preview works in dev; set false in a
 	// shared/prod instance to disable the preview flow entirely regardless of
 	// the URL flag. The URL flag is client-driven; this gates it server-side.
 	BetaUserRegistration bool
 
 	// FeatureUserModel is the master switch for the user-demarcation substrate
-	// (gaka-0oe.1). Default OFF: apihelpers.Identify returns an all-capability
+	// (boom-0oe.1). Default OFF: apihelpers.Identify returns an all-capability
 	// Identity so no gate ever fires and behavior is byte-identical to
 	// pre-substrate. When ON, the resolver reads the real role/capabilities
 	// and fails closed on disabled accounts. The migration + columns exist
@@ -116,7 +116,7 @@ type Config struct {
 	FeatureUserModel bool
 
 	// FeatureRollupSkip lets ingest skip the expensive rollup/gap machinery
-	// for identities that lack CapGenerateRollups (gaka-0oe.3). No effect
+	// for identities that lack CapGenerateRollups (boom-0oe.3). No effect
 	// unless FeatureUserModel is also on. Surfaced by /healthz for ops.
 	FeatureRollupSkip bool
 
@@ -129,7 +129,7 @@ type Config struct {
 	FeatureAdminCLI bool
 
 	// CookieSecure controls the Secure attribute on the refresh_token cookie
-	// (gaka-b5x part 1). Defaults to true when BOOM_ENV names a production
+	// (boom-b5x part 1). Defaults to true when BOOM_ENV names a production
 	// environment ("prod" / "production") so a prod deploy behind TLS never
 	// forgets the flag. In dev the default is false so browsers accept the
 	// cookie on http://localhost. Explicit override via BOOM_COOKIE_SECURE
@@ -161,7 +161,7 @@ type Config struct {
 	GithubToken string
 
 	// FeatureLabelImages is the master switch for the ComfyUI-generated label
-	// archetype images (gaka-myv). Requires BOTH FeatureLabelImages=on AND a
+	// archetype images (boom-myv). Requires BOTH FeatureLabelImages=on AND a
 	// non-empty ComfyUIShimURL — either missing means the feature is off,
 	// including the startup image-generation worker and any regenerate CLI
 	// probes. Public /api/v1/labels/:id/image still serves any rows already
@@ -200,7 +200,7 @@ type Config struct {
 	// default than "all users are admins".
 	AdminUsers map[string]struct{}
 
-	// gaka-9v4: OpenAI-shaped chat completion endpoint used by the
+	// boom-9v4: OpenAI-shaped chat completion endpoint used by the
 	// avatar prompt-synthesis SSE endpoint (POST /api/v1/admin/avatar/
 	// synthesize-prompt). The FE never talks to a third-party LLM
 	// directly — every stream flows through the boomtime server so the
@@ -228,9 +228,9 @@ type Config struct {
 	// NOTE: the stats-card grade calibration (BOOM_GRADE_*) is NO LONGER held here.
 	// It moved to the stats domain (stats.ApplyGradeConfigFromEnv, called at boot)
 	// so this config package stays domain-neutral — a standalone books binary that
-	// imports config must not drag in the code domain (gaka-zp2s decoupling).
+	// imports config must not drag in the code domain (boom-zp2s decoupling).
 
-	// DefaultTimezone (gaka-dg7) is the IANA name applied by db.ResolveTimezone
+	// DefaultTimezone (boom-dg7) is the IANA name applied by db.ResolveTimezone
 	// when a user has NOT picked an explicit timezone yet
 	// (users.timezone = ''). Sourced from BOOM_DEFAULT_TIMEZONE; validated at
 	// Load-time with time.LoadLocation — an invalid value logs a WARN and
@@ -249,7 +249,7 @@ type Config struct {
 	Role string
 
 	// QueueBroker selects the image-job transport (worker-topology
-	// decoupling, gaka-8bz follow-up): "inprocess" (today's in-memory
+	// decoupling, boom-8bz follow-up): "inprocess" (today's in-memory
 	// Registry+Pool, welded enqueue->execute in one process) or "rabbitmq"
 	// (AMQP producer/consumer + Dragonfly/Redis cross-pod progress bus).
 	// Default "inprocess" so nothing changes until a deliberate cutover —
@@ -271,7 +271,7 @@ type Config struct {
 	// port-forward), prod -> the LAN-gated IngressRoute host.
 	RabbitMgmtURL string
 
-	// S3 / MinIO object storage for the durable social-card cache (gaka-fym5).
+	// S3 / MinIO object storage for the durable social-card cache (boom-fym5).
 	// When endpoint + bucket + both credentials are set, the og.png handler
 	// serves each user's rendered card from S3 (one object per user, refreshed
 	// daily) instead of rasterizing on every request. Unset = disabled: the
@@ -283,10 +283,10 @@ type Config struct {
 	S3UseSSL    bool // TLS to the S3 endpoint (in-cluster MinIO: false)
 	// S3Region is the bucket region (BOOM_S3_REGION, default us-east-1). MinIO
 	// ignores it, but the AWS SigV4 signer wants a non-empty value. Shared by the
-	// social-card cache (gaka-fym5) and the durable job-log store (gaka-hney).
+	// social-card cache (boom-fym5) and the durable job-log store (boom-hney).
 	S3Region string
 
-	// catalyst-go-jobs (gaka-hney): the job provider + the periodic github-stats
+	// catalyst-go-jobs (boom-hney): the job provider + the periodic github-stats
 	// refresh cadence.
 	//   JobsProvider — "local" (Postgres broker, default) or "rabbitmq"/"celery"
 	//                  (reuses the image-queue's RabbitMQ connection). See
@@ -307,17 +307,17 @@ type Config struct {
 	// local shelf-match rung can then link) back into boomtime automatically.
 	HardcoverSyncInterval time.Duration
 	// JobsUnified (BOOM_JOBS_UNIFIED, default false) registers the label-image
-	// kind on catalyst-go-jobs (gaka-hney.3) — proving the fold. Prod stays on
+	// kind on catalyst-go-jobs (boom-hney.3) — proving the fold. Prod stays on
 	// the imagejobs pipeline + its dedicated admin UI; the live cutover (reroute
 	// enqueue + migrate the label-images WS/UI, then delete imagejobs) is a
 	// deliberate future flip, not this flag.
 	JobsUnified bool
 	// JobsDrain (BOOM_JOBS_DRAIN, default false): run as a one-shot ScaledJob
 	// worker — build the registry, drain all due jobs to completion, then exit
-	// (gaka-hney). The always-on server keeps it false (scheduler + API); KEDA
+	// (boom-hney). The always-on server keeps it false (scheduler + API); KEDA
 	// ScaledJob pods set it true.
 	JobsDrain bool
-	// Kind-routing (gaka-hney): JobsKinds (BOOM_JOBS_KINDS) = claim ONLY these
+	// Kind-routing (boom-hney): JobsKinds (BOOM_JOBS_KINDS) = claim ONLY these
 	// kinds (empty = any) — set on ScaledJob heavy workers. JobsExcludeKinds
 	// (BOOM_JOBS_EXCLUDE_KINDS) = skip these kinds — set on the always-on server
 	// so heavy kinds fall through to the ScaledJob.
@@ -409,7 +409,7 @@ func Load() *Config {
 		Env:                env,
 		HTTPLog:            getEnvBool("BOOM_HTTP_LOG", true),
 
-		// gaka-93f: user-model / OIDC / billing advertisement flags. All
+		// boom-93f: user-model / OIDC / billing advertisement flags. All
 		// default to today's behavior (local auth, no billing) and are
 		// surfaced read-only via GET /api/v1/config/public.
 		AuthProvider:      getEnv("BOOM_AUTH_PROVIDER", "local"),
@@ -421,7 +421,7 @@ func Load() *Config {
 		OIDCGroupToRole:   parseGroupToRole(getEnv("BOOM_AUTHENTIK_GROUP_TO_ROLE", "")),
 		OIDCAutoprovision: getEnvBool("BOOM_OIDC_AUTOPROVISION", false),
 		OIDCAutolinkEmail: getEnvBool("BOOM_OIDC_AUTOLINK_EMAIL", false),
-		// gaka-2ip Phase 1: per-user GitHub connect. Gate default OFF; the
+		// boom-2ip Phase 1: per-user GitHub connect. Gate default OFF; the
 		// three OAuth values + the state signing key stay empty until an
 		// operator provisions them, and GithubConnectEnabled() stays false
 		// until ALL are present — so this is inert on a default boot.
@@ -455,7 +455,7 @@ func Load() *Config {
 
 		GithubToken: getEnv("GITHUB_TOKEN", ""),
 
-		// gaka-myv: ComfyUI-generated label archetype images. Feature gate
+		// boom-myv: ComfyUI-generated label archetype images. Feature gate
 		// requires BOTH flag-on AND a non-empty shim URL. See docs on the
 		// FeatureLabelImages / ComfyUIShimURL / ComfyUIModel fields above.
 		FeatureLabelImages:   getEnvBool("BOOM_FEATURE_LABEL_IMAGES", false),
@@ -464,17 +464,17 @@ func Load() *Config {
 		LabelImagesReconcile: getEnv("BOOM_LABEL_IMAGES_RECONCILE", "auto"),
 		AdminUsers:           parseAdminUsers(getEnv("BOOM_ADMIN_USERS", "")),
 
-		// gaka-9v4: LLM (OpenAI-compat) for avatar prompt synthesis SSE.
+		// boom-9v4: LLM (OpenAI-compat) for avatar prompt synthesis SSE.
 		LLMAPIKey:  getEnv("BOOM_LLM_API_KEY", ""),
 		LLMBaseURL: strings.TrimRight(getEnv("BOOM_LLM_BASE_URL", "https://api.openai.com/v1"), "/"),
 		LLMModel:   getEnv("BOOM_LLM_MODEL", "gpt-4o-mini"),
 
-		// gaka-b5x.1: cookie Secure flag. Default = "true in prod, false in
+		// boom-b5x.1: cookie Secure flag. Default = "true in prod, false in
 		// dev". BOOM_COOKIE_SECURE=true|false forces either mode explicitly.
 		CookieSecure: getEnvBool("BOOM_COOKIE_SECURE", isProdEnvName(env)),
 	}
 
-	// gaka-93f.19: in a production env the refresh cookie MUST carry Secure
+	// boom-93f.19: in a production env the refresh cookie MUST carry Secure
 	// (it only travels over TLS). An explicit BOOM_COOKIE_SECURE=false there is
 	// almost certainly a copied-from-dev misconfig that would expose the cookie
 	// over plain HTTP — ignore it, force Secure=true, and WARN so the operator
@@ -498,7 +498,7 @@ func Load() *Config {
 		c.WakatimeAPIKey = rwToken
 	}
 
-	// gaka-worker-topology: role/broker gate for the image-job pipeline.
+	// boom-worker-topology: role/broker gate for the image-job pipeline.
 	// Both default to today's single-process, in-memory behavior — see the
 	// Role / QueueBroker doc comments above.
 	c.Role = getEnv("BOOM_ROLE", "all")
@@ -509,7 +509,7 @@ func Load() *Config {
 	c.RedisPassword = getEnv("BOOM_REDIS_PASSWORD", "")
 	c.RabbitMgmtURL = getEnv("BOOM_RABBITMQ_MGMT_URL", "")
 
-	// S3 / MinIO durable social-card cache (gaka-fym5). All-or-nothing:
+	// S3 / MinIO durable social-card cache (boom-fym5). All-or-nothing:
 	// S3Enabled() gates the handler on all four being present.
 	c.S3Endpoint = getEnv("BOOM_S3_ENDPOINT", "")
 	c.S3Bucket = getEnv("BOOM_S3_BUCKET", "")
@@ -518,7 +518,7 @@ func Load() *Config {
 	c.S3UseSSL = strings.EqualFold(getEnv("BOOM_S3_USE_SSL", "false"), "true")
 	c.S3Region = getEnv("BOOM_S3_REGION", "us-east-1")
 
-	// catalyst-go-jobs (gaka-hney).
+	// catalyst-go-jobs (boom-hney).
 	c.JobsProvider = getEnv("BOOM_JOBS_PROVIDER", "local")
 	c.GithubStatsRefreshInterval = parseJobInterval(getEnv("BOOM_GITHUB_STATS_REFRESH_INTERVAL", "8h"))
 	c.AudibleSyncInterval = parseJobInterval(getEnv("BOOM_AUDIBLE_SYNC_INTERVAL", "6h"))
@@ -529,7 +529,7 @@ func Load() *Config {
 	c.JobsExcludeKinds = splitCSV(getEnv("BOOM_JOBS_EXCLUDE_KINDS", ""))
 	c.JobsLeaseTTL = time.Duration(getEnvInt("BOOM_JOBS_LEASE_TTL_SECS", 120)) * time.Second
 
-	// gaka-dg7: operator-wide default TZ for users with no explicit pick.
+	// boom-dg7: operator-wide default TZ for users with no explicit pick.
 	// Validate here so an invalid IANA name never lands into the resolver —
 	// a bogus value from the env would cause every subsequent AT TIME ZONE
 	// query to error at PG time. Silent fall-through to "UTC" plus a WARN.
@@ -643,7 +643,7 @@ func (c *Config) IsAdmin(username string) bool {
 	return ok
 }
 
-// LabelImagesEnabled reports whether the label-images feature (gaka-myv) is
+// LabelImagesEnabled reports whether the label-images feature (boom-myv) is
 // operationally on: BOTH the master flag must be set AND a shim URL must be
 // configured. Callers can key any generation-side branch off this single
 // method — reads (GET /api/v1/labels/:id/image) do NOT check this so already-
@@ -738,7 +738,7 @@ func (c *Config) LabelImagesReconcileEnabled() bool {
 }
 
 // LLMEnabled reports whether an LLM API key is configured for the avatar
-// prompt-synthesis endpoint (gaka-9v4). Handlers gate on this and return
+// prompt-synthesis endpoint (boom-9v4). Handlers gate on this and return
 // 503 when off so the FE renders a clear "server not configured" state
 // instead of a mystery 500. BaseURL + Model always have defaults, so only
 // the key gates the feature.
@@ -747,7 +747,7 @@ func (c *Config) LLMEnabled() bool {
 }
 
 // GithubConnectEnabled reports whether the per-user GitHub connect feature
-// (gaka-2ip Phase 1) is operationally live. INERT-SAFE by construction: it
+// (boom-2ip Phase 1) is operationally live. INERT-SAFE by construction: it
 // requires the master gate AND a full OAuth-App credential set AND the state
 // signing key. Any one missing → false, so the /auth/github/* routes don't
 // register, the /api/v1/config/public flag stays false, and the FE card renders
@@ -781,7 +781,7 @@ func (c *Config) HardcoverSyncEnabled() bool {
 }
 
 // OIDCEnabled reports whether the OIDC (Authentik) auth provider is selected
-// (gaka-93f / gaka-0oe.11). Derived from BOOM_AUTH_PROVIDER. The FE reads this
+// (boom-93f / boom-0oe.11). Derived from BOOM_AUTH_PROVIDER. The FE reads this
 // via /api/v1/config/public to swap the signup CTA to "Continue with
 // Authentik" and to hide the local password form when appropriate.
 func (c *Config) OIDCEnabled() bool {

@@ -9,7 +9,7 @@ export interface ResourceStats {
   totalPct: number;
   totalDaily: number[];
   pctDaily: number[];
-  // gaka-7m4: populated only on the synthesized "Other (N more)" entry —
+  // boom-7m4: populated only on the synthesized "Other (N more)" entry —
   // top otherMembersCap tail members so tooltips can break down what "Other"
   // contains. Non-Other rows serialize without these keys.
   otherMembers?: OtherMember[];
@@ -24,7 +24,7 @@ export interface OtherMember {
   totalPct: number;
 }
 
-// gaka-1l9: wakatime.com AI-assistance metrics aggregated per day + summary.
+// boom-1l9: wakatime.com AI-assistance metrics aggregated per day + summary.
 // hasData=false when the user has no AI-tagged heartbeats in the range so the
 // FE card can skip render.
 export interface AIActivityDay {
@@ -109,7 +109,7 @@ export interface StatsPayload {
   totalSeconds: number;
   dailyAvg: number;
   dailyTotal: number[];
-  // gaka-csx P3: OPTIONAL per-day GitHub contribution-count series, aligned
+  // boom-csx P3: OPTIONAL per-day GitHub contribution-count series, aligned
   // index-for-index to `dailyTotal`. Present ONLY when the owner has a cached
   // GitHub grid (omitempty on the wire); absent for every non-GitHub payload,
   // so consumers must treat it as optional and degrade to the base render.
@@ -149,7 +149,7 @@ export interface PunchcardPayload {
 }
 
 // GET /api/public/profile/:slug — scrubbed, no-auth read of a user's
-// dashboard aggregates (gaka-6jm.1). Deliberately narrower than StatsPayload:
+// dashboard aggregates (boom-6jm.1). Deliberately narrower than StatsPayload:
 // no machines segment (identifying), no *Count fields (would leak a distinct
 // count for hidden values on short-list axes). Backend guarantees every field
 // here has been passed through internal/widget.Scrub before serialization.
@@ -169,12 +169,12 @@ export interface PublicDashboardPayload {
   // gaka social-card: the owner's optional social-card tagline. Feeds the
   // "hero" primitive's second line + the og:description. Absent when unset.
   tagline?: string;
-  // gaka-keb: optional persisted dashboard layout. Absent when the owner
+  // boom-keb: optional persisted dashboard layout. Absent when the owner
   // never saved one — FE falls back to the default layout for the scope.
   layout?: DashboardLayout;
 }
 
-// gaka-keb: layout payload persisted per-user, per-scope in dashboard_layouts.
+// boom-keb: layout payload persisted per-user, per-scope in dashboard_layouts.
 // Widget `i` values are catalog kind ids (see web/src/features/widgets/
 // catalog.ts). The renderer silently drops unknown kinds so a stale saved
 // layout doesn't break the page after a catalog rename.
@@ -309,7 +309,7 @@ export type RangeParams = {
   space?: string | number;
 };
 
-// --- Lines of code (gaka-yfg) ------------------------------------------------
+// --- Lines of code (boom-yfg) ------------------------------------------------
 // Derived from heartbeats.file_lines (NO GitHub dependency); the backend applies
 // a mandatory generated/vendored ignore filter so the numbers reflect
 // hand-written code, not node_modules / build output.

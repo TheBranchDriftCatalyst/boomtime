@@ -1,4 +1,4 @@
-# User Model & OIDC Readiness (gaka-0oe scoping)
+# User Model & OIDC Readiness (boom-0oe scoping)
 
 Status: **PLAN — not committed, awaiting review.** This document scopes the
 substrate for (A) user tiers / RBAC and (B) OIDC-via-Authentik migration.
@@ -18,12 +18,12 @@ CREATE TABLE public.users (
     username text NOT NULL,             -- PK
     hashed_password bytea NOT NULL,
     salt_used bytea NOT NULL,
-    encrypted_wakatime_key bytea,       -- gaka-6jm.2 (AES-256-GCM)
-    wakatime_key_status text,           -- gaka-6jm.10 (valid|invalid|null)
+    encrypted_wakatime_key bytea,       -- boom-6jm.2 (AES-256-GCM)
+    wakatime_key_status text,           -- boom-6jm.10 (valid|invalid|null)
     wakatime_key_checked_at timestamptz,
-    public_profile_enabled boolean DEFAULT false NOT NULL,  -- gaka-6jm.1
-    public_slug text,                                       -- gaka-6jm.1
-    argon_version integer DEFAULT 1 NOT NULL                -- gaka-awh.6
+    public_profile_enabled boolean DEFAULT false NOT NULL,  -- boom-6jm.1
+    public_slug text,                                       -- boom-6jm.1
+    argon_version integer DEFAULT 1 NOT NULL                -- boom-awh.6
 );
 ```
 
@@ -127,7 +127,7 @@ Two migrations from this month show the shape the team already lives with:
 
 `curation_rules.action` is an unchecked TEXT enum-string (`CurationHide` /
 `CurationRename` constants live in Go; DB doesn't enforce). The `spec` field
-on `widget_defs`, `goals` (parallel bead gaka-wpb), and `dashboard_layouts`
+on `widget_defs`, `goals` (parallel bead boom-wpb), and `dashboard_layouts`
 is JSONB with handler-side validation.
 
 **Conclusion:** the codebase has settled on a hybrid pattern —
@@ -207,15 +207,15 @@ one Authentik group to a JSONB capability override). See §5.
 ## 3. Schema sketch
 
 New migration **`00034_user_model_substrate.sql`** (numbering sequential
-after 00033_curation_rules_enabled and the parallel goals bead gaka-wpb,
+after 00033_curation_rules_enabled and the parallel goals bead boom-wpb,
 which is planned as 00034 — coordinate ordering on merge; this bead may need
-to become 00035 or 00036 depending on gaka-wpb landing order):
+to become 00035 or 00036 depending on boom-wpb landing order):
 
 ```sql
 -- +goose Up
 -- +goose StatementBegin
 
--- User-model substrate (gaka-0oe). Adds:
+-- User-model substrate (boom-0oe). Adds:
 --   role         TEXT    NOT NULL DEFAULT 'full'
 --   capabilities JSONB   NOT NULL DEFAULT '{}'::jsonb
 --   disabled_at  TIMESTAMPTZ NULL
@@ -237,7 +237,7 @@ to become 00035 or 00036 depending on gaka-wpb landing order):
 -- disabled_at NULL = active. When set, every auth resolver path
 -- (GetUserByToken, GetUserByRefreshToken, VerifyUserCredentials) MUST
 -- fail-closed. See internal/db/auth.go handler wrapping in the bead
--- "gaka-0oe.1 substrate: schema + disabled_at fail-closed."
+-- "boom-0oe.1 substrate: schema + disabled_at fail-closed."
 ALTER TABLE public.users
     ADD COLUMN role         TEXT        NOT NULL DEFAULT 'full',
     ADD COLUMN capabilities JSONB       NOT NULL DEFAULT '{}'::jsonb,
@@ -262,7 +262,7 @@ CREATE INDEX users_disabled_at_idx ON public.users (disabled_at)
 -- (email, preferred_username, groups) for audit + admin UI. Never contains
 -- id_token / access_token / refresh_token — those stay in refresh_tokens /
 -- auth_tokens (which already have the hashed-at-rest treatment from
--- gaka-b5x.2). See "identity resolver interface" §5.
+-- boom-b5x.2). See "identity resolver interface" §5.
 CREATE TABLE public.user_external_identities (
     id           UUID        PRIMARY KEY DEFAULT public.uuid_generate_v4(),
     username     TEXT        NOT NULL REFERENCES public.users(username) ON DELETE CASCADE,
@@ -618,7 +618,7 @@ Two implementations:
   `GetUserByToken` / `GetUserByRefreshToken` / `VerifyUserCredentials`.
   Behavior identical to today.
 - **`OIDCResolver`** — deferred to a later bead
-  (`gaka-0oe.oidc-resolver`, marked `--defer`). Uses `github.com/coreos/
+  (`boom-0oe.oidc-resolver`, marked `--defer`). Uses `github.com/coreos/
   go-oidc/v3/oidc` for discovery/verification and the stdlib
   `golang.org/x/oauth2` for the code-exchange flow. Not landing in this
   scoping; the interface goes in now so the compat shim `h.identify(c)`
@@ -832,23 +832,23 @@ today's behavior:
 
 ### 7.3 Prod deploy sequence
 
-1. **Land the schema-only bead** (`gaka-0oe.substrate-schema`): migration
+1. **Land the schema-only bead** (`boom-0oe.substrate-schema`): migration
    00034 ships. Columns are NOT NULL DEFAULT populated for existing rows.
    Feature flag off. Zero code path reads new columns. Full test suite
    passes. Deploy. Prod is byte-for-byte identical.
-2. **Land the identity-shim bead** (`gaka-0oe.identity-shim`): `Identity`
+2. **Land the identity-shim bead** (`boom-0oe.identity-shim`): `Identity`
    struct + `h.identify(c)` compat shim + 70-site refactor (bundled across
    4-6 sub-beads, each ~10-15 sites). Feature flag STILL OFF; every
    `identify` returns all-caps-true. Full test suite passes AND a new
    feature-flag-off regression test runs the existing integration suite
    against the shim path. Deploy. Prod still byte-for-byte identical.
-3. **Land the capability-gate bead** (`gaka-0oe.capability-gates`): each
+3. **Land the capability-gate bead** (`boom-0oe.capability-gates`): each
    handler adds its `ident.Can(…)` check. Feature flag STILL OFF; every
    check still passes. Deploy. Prod still identical.
-4. **Land the rollup-skip bead** (`gaka-0oe.rollup-skip`): ingest
+4. **Land the rollup-skip bead** (`boom-0oe.rollup-skip`): ingest
    dispatches to `SaveHeartbeatsRaw` when capability denies. Feature flag
    still off. Deploy. Prod still identical.
-5. **Land the admin CLI bead** (`gaka-0oe.admin-cli`): `boomtime user
+5. **Land the admin CLI bead** (`boom-0oe.admin-cli`): `boomtime user
    set-role --user X --role light` operator command. No API exposure yet.
 6. **Flip flag in dev**: `BOOM_FEATURE_USER_MODEL=on` +
    `BOOM_FEATURE_ROLLUP_SKIP=on` in local dev. Manually test tier
@@ -901,7 +901,7 @@ flag-off-no-change regression.
 ## 8. First-slice execution boundary
 
 The single first-slice bead to pick up is
-**`gaka-0oe.1 substrate: schema + identity struct + flag-off compat shim`**
+**`boom-0oe.1 substrate: schema + identity struct + flag-off compat shim`**
 (exact bead ID assigned when filed via `bd create`).
 
 **Scope**:
@@ -956,7 +956,7 @@ Explicitly OUT of scope for the first slice:
 
 ### 9.1 Real risks
 
-- **Migration ordering with gaka-wpb (Goals)**: the goals bead is planning
+- **Migration ordering with boom-wpb (Goals)**: the goals bead is planning
   migration 00034. This bead ALSO tentatively references 00034. Whichever
   lands first keeps the number; the second renumbers. Coordinate in the
   bead ordering — probably just note in the sub-bead acceptance that the
@@ -1014,7 +1014,7 @@ Explicitly OUT of scope for the first slice:
 
 ---
 
-## 10. Sub-bead plan (files as `bd create --parent=gaka-0oe`)
+## 10. Sub-bead plan (files as `bd create --parent=boom-0oe`)
 
 Filed as separate `bd create` calls in the scoping-agent output — see the
 scoping-agent report for the concrete IDs and titles. Rough shape below;

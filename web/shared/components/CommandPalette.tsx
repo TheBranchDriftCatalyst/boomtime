@@ -62,7 +62,7 @@ interface CommandPaletteProps {
   onLogout: () => void;
 }
 
-/** ⌘K command palette (gaka-gbbl.1): fuzzy jump to any page / space + quick
+/** ⌘K command palette (boom-gbbl.1): fuzzy jump to any page / space + quick
  * actions. Built on cmdk (keyboard nav + a11y + filtering) inside the app
  * Dialog. Mounted once in AppShell; opens on ⌘K/Ctrl-K or via
  * openCommandPalette(). */

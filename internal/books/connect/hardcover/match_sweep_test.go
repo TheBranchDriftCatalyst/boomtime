@@ -204,7 +204,7 @@ func TestMatchWith_LinksEnrichesAndStampsCursor(t *testing.T) {
 	}
 }
 
-// TestMatchWith_CacheHitSkipsAPI (gaka-wzgr) — a row whose ASIN is already in the
+// TestMatchWith_CacheHitSkipsAPI (boom-wzgr) — a row whose ASIN is already in the
 // GLOBAL cache is linked WITHOUT a single client.Match call. The fake's Match
 // counter must stay 0 and res.CacheHits must count the row.
 func TestMatchWith_CacheHitSkipsAPI(t *testing.T) {
@@ -267,7 +267,7 @@ func TestMatchWith_CacheHitSkipsAPI(t *testing.T) {
 	}
 }
 
-// TestMatchWith_CacheMissPopulates (gaka-wzgr) — an exact-id (asin) cache miss is
+// TestMatchWith_CacheMissPopulates (boom-wzgr) — an exact-id (asin) cache miss is
 // resolved by the BATCH rung (editionsByField, not per-row Match) AND writes the
 // resolved identity + slug into the global cache for the next user.
 func TestMatchWith_CacheMissPopulates(t *testing.T) {
@@ -314,7 +314,7 @@ func TestMatchWith_CacheMissPopulates(t *testing.T) {
 	}
 }
 
-// TestMatchWith_FuzzyNotCached (gaka-wzgr) — a fuzzy (MatchBySearch) resolution
+// TestMatchWith_FuzzyNotCached (boom-wzgr) — a fuzzy (MatchBySearch) resolution
 // links the per-user row but must NEVER poison the global cache: a wrong edition
 // picked by fuzzy would then be served to every user.
 func TestMatchWith_FuzzyNotCached(t *testing.T) {

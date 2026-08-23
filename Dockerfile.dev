@@ -4,7 +4,7 @@ FROM golang:1.25-alpine
 
 RUN apk add --no-cache git ca-certificates curl bash bash-completion
 
-# Dev shell completion (gaka-0oe.10): the binary is built at runtime by air
+# Dev shell completion (boom-0oe.10): the binary is built at runtime by air
 # (./tmp/boomtime), so we can't bake completions at image-build time like the
 # prod Dockerfile does. Instead, source them live from the air-built binary
 # when an interactive bash shell opens (e.g. `kubectl exec -it ... -- bash`).

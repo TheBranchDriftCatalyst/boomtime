@@ -18,7 +18,7 @@ type curationRequest struct {
 	MatchType  string  `json:"matchType"` // "exact" (default) | "regex" | "template"
 	MatchValue string  `json:"matchValue"`
 	NewValue   *string `json:"newValue"`
-	// ApplyAtIngest (gaka-scrub) marks a rename rule that also rewrites newly-
+	// ApplyAtIngest (boom-scrub) marks a rename rule that also rewrites newly-
 	// ingested heartbeats (the "scrubber"). Rename-only; validated to compile
 	// under Go RE2 (the ingest apply engine) below.
 	ApplyAtIngest bool `json:"applyAtIngest"`
@@ -46,7 +46,7 @@ func (h *Handler) CreateCuration(c *echo.Context) error {
 		return apihelpers.RespondErr(c, aerr)
 	}
 	var req curationRequest
-	// gaka-bi2: 64 KiB cap — curation rules are compact JSON (axis, action,
+	// boom-bi2: 64 KiB cap — curation rules are compact JSON (axis, action,
 	// matchType, matchValue, optional newValue); pattern strings should never
 	// approach this bound.
 	if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitMedium); aerr != nil {
@@ -111,7 +111,7 @@ func (h *Handler) CreateCuration(c *echo.Context) error {
 		}
 	}
 
-	// gaka-scrub: apply_at_ingest is a rename-only flag (a hide rule has nothing
+	// boom-scrub: apply_at_ingest is a rename-only flag (a hide rule has nothing
 	// to rewrite). Because the ingest applier uses Go RE2 — stricter than the
 	// Postgres regex the checks above use (no pattern backrefs / lookaround) —
 	// validate the pattern compiles under Go too, else the rule would save but
@@ -174,7 +174,7 @@ type toggleCurationRequest struct {
 }
 
 // ToggleCuration: POST /api/v1/users/current/curation/:id/toggle → {enabled:bool}.
-// gaka-dfd. Pauses / resumes a curation rule without deleting it. Owner-
+// boom-dfd. Pauses / resumes a curation rule without deleting it. Owner-
 // scoped. Body is optional: omit to flip, or pass {"enabled":true|false} to
 // set an exact state. Both flip and set are idempotent — sending the same
 // state twice still returns 200 with the current value.
@@ -371,7 +371,7 @@ func (h *Handler) ApplyRename(c *echo.Context) error {
 	if rule.Action != db.CurationRename {
 		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "only rename rules can be applied", nil))
 	}
-	// gaka-dfd: refuse to run a destructive action against a paused rule —
+	// boom-dfd: refuse to run a destructive action against a paused rule —
 	// applying-a-rule-you-just-paused is confusing and probably a mistake.
 	// The user should re-enable, verify it still matches what they expect,
 	// and then apply.
@@ -428,7 +428,7 @@ func (h *Handler) PurgeHidden(c *echo.Context) error {
 	if rule.Action != db.CurationHide {
 		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "only hide rules can be purged", nil))
 	}
-	// gaka-dfd: refuse to purge against a paused rule — the same reasoning
+	// boom-dfd: refuse to purge against a paused rule — the same reasoning
 	// as the apply guard, and purge is the more dangerous of the two.
 	if !rule.Enabled {
 		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "cannot purge a disabled rule; enable it first", nil))

@@ -1,7 +1,7 @@
 // db_branches_test.go — byte-identical branch-padding + input-validation
 // Its lifted out of internal/db/branch_padding_test.go and
 // internal/db/error_branches_test.go when the goals domain moved to
-// internal/goals/ (gaka-8tn phase 2b).
+// internal/goals/ (boom-8tn phase 2b).
 //
 // The Describe/It strings, Expect assertions, table data, and seeded
 // values are preserved verbatim so grep against the original coverage
@@ -20,7 +20,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/goals"
 )
 
-var _ = ginkgo.Describe("branch coverage padding (gaka-d6x)", func() {
+var _ = ginkgo.Describe("branch coverage padding (boom-d6x)", func() {
 
 	// ---- goals.itoaFast: zero + negative + multi-digit ----
 
@@ -83,7 +83,7 @@ var _ = ginkgo.Describe("branch coverage padding (gaka-d6x)", func() {
 	})
 })
 
-var _ = ginkgo.Describe("input-validation error branches (gaka-d6x)", func() {
+var _ = ginkgo.Describe("input-validation error branches (boom-d6x)", func() {
 
 	// ---- goals.go ----
 

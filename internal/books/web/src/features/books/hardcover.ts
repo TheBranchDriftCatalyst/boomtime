@@ -1,5 +1,5 @@
 // hardcover.ts — build a Hardcover (hardcover.app) deep-link for a tracked book
-// (gaka-qic0). Clicking a book in the Now-reading tile or the Books-page table
+// (boom-qic0). Clicking a book in the Now-reading tile or the Books-page table
 // should land as close to that book's Hardcover page as we can resolve.
 //
 // Resolution order, most precise first:

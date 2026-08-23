@@ -1,4 +1,4 @@
-// catalog_lookup_test.go — direct coverage for ByID/IDs (gaka-se2.1).
+// catalog_lookup_test.go — direct coverage for ByID/IDs (boom-se2.1).
 //
 // The pyramid these tests implement:
 //   - Bidirectional consistency: every id in IDs() resolves via ByID
@@ -25,7 +25,7 @@ var (
 	It       = ginkgo.It
 )
 
-var _ = Describe("catalog lookup (gaka-se2.1)", func() {
+var _ = Describe("catalog lookup (boom-se2.1)", func() {
 	Describe("ByID", func() {
 		It("returns (Entry{}, false) for an unknown id", func() {
 			e, ok := ByID("does-not-exist-xyz-123")

@@ -42,7 +42,7 @@ FROM (
             sender = $1
             AND time_sent > $2
             AND time_sent < $3
-            -- gaka-6ci: timeline is a "what were you coding when" view. Null-
+            -- boom-6ci: timeline is a "what were you coding when" view. Null-
             -- language + null-project heartbeats (browsing, AI console) would
             -- render as long 'Other/Other' segments that swallow the timeline;
             -- browsing time surfaces on the category pie instead.

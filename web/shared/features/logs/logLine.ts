@@ -1,4 +1,4 @@
-// Shared mapping + per-job filtering for the server log stream (gaka-f0is).
+// Shared mapping + per-job filtering for the server log stream (boom-f0is).
 //
 // Both surfaces that render the stream — the full-screen Logs viewer and the
 // per-job side panel in Admin > Jobs — go through this module so the line

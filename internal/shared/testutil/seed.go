@@ -47,7 +47,7 @@ func (hz *Harness) Seeder(sender string) *Seeder {
 //	ginkgo:  Expect(hz.SeedRollup(...)).To(Succeed())
 //
 // Was: seedRollupForOwner (goals_test.go) + seedRollupForOwnerG
-// (goals_ginkgo_test.go). Both were removed as part of gaka-0vp.18.
+// (goals_ginkgo_test.go). Both were removed as part of boom-0vp.18.
 func (hz *Harness) SeedRollup(owner string, day time.Time, language string, seconds int64) error {
 	_, err := hz.DB.Pool.Exec(context.Background(), `
 		INSERT INTO hb_rollup_daily (sender, day, project, language, editor,

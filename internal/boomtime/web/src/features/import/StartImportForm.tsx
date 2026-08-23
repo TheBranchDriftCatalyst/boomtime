@@ -124,7 +124,7 @@ export function StartImportForm({ disabled, onStarted }: StartImportFormProps) {
   });
   const hasServerKey = config?.hasServerKey ?? false;
 
-  // gaka-6jm.2: per-user encrypted Wakatime key state. Plaintext never comes
+  // boom-6jm.2: per-user encrypted Wakatime key state. Plaintext never comes
   // over the wire — only presence + last-known validity + timestamp so the
   // FE can render a status dot.
   const { data: savedKeyInfo } = useQuery({
@@ -168,7 +168,7 @@ export function StartImportForm({ disabled, onStarted }: StartImportFormProps) {
     try {
       // Send the raw wakatime api_key — the server does the single Basic
       // base64-encode into Authorization. Any client-side btoa() here would
-      // double-encode and wakatime.com would reject with 401 (gaka-f2l).
+      // double-encode and wakatime.com would reject with 401 (boom-f2l).
       const body = apiToken ? { apiToken } : {};
       const res = await api.detectWakatimeRange(body);
       if (res.hasData) {
@@ -251,7 +251,7 @@ export function StartImportForm({ disabled, onStarted }: StartImportFormProps) {
     // Only send a token when typed. Blank body means "use the saved
     // encrypted key if any, else the server env key" (server-side fallback
     // chain — plaintext never leaves the server for the saved path).
-    // Send raw — server does the single Basic base64-encode (gaka-f2l).
+    // Send raw — server does the single Basic base64-encode (boom-f2l).
     if (apiToken) req.apiToken = apiToken;
 
     setSubmitting(true);
@@ -291,7 +291,7 @@ export function StartImportForm({ disabled, onStarted }: StartImportFormProps) {
                   Wakatime API token{tokenOptional ? " (optional)" : ""}
                 </Label>
                 <div className="flex items-center gap-2">
-                  {/* gaka-6jm.2: status dot INSIDE the input's leading edge
+                  {/* boom-6jm.2: status dot INSIDE the input's leading edge
                       so it reads as the input's own status LED. Tabbable so
                       keyboard users can focus the tooltip trigger. */}
                   <div className="relative flex-1">
@@ -338,7 +338,7 @@ export function StartImportForm({ disabled, onStarted }: StartImportFormProps) {
                       )}
                     </button>
                   </div>
-                  {/* gaka-6jm.2: three inline icon actions in order save · delete · import.
+                  {/* boom-6jm.2: three inline icon actions in order save · delete · import.
                       - save (outline): probe wakatime.com then persist under AES-256-GCM.
                       - delete (outline): clear saved key; disabled when no key on file.
                       - import (primary): the existing Start import action, iconified. */}

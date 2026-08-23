@@ -1,4 +1,4 @@
-// scrub_ginkgo_test.go — ginkgo mirror of scrub_test.go (gaka-0vp).
+// scrub_ginkgo_test.go — ginkgo mirror of scrub_test.go (boom-0vp).
 // 1:1 case map (10 stdlib TestXxx → 10 Its across 4 Describe groups):
 //
 //	TestScrub_HiddenProjectNeverAppears           → "Scrub" > It "strips a hidden project everywhere and does not mutate input"
@@ -94,7 +94,7 @@ var _ = Describe("Scrub", func() {
 var _ = Describe("ScrubMomentum", func() {
 	// TestScrubMomentum_HiddenProjectNeverAppears: MomentumPayload carries per-
 	// project rows keyed by project name; a hidden project must not appear in
-	// the scrubbed momentum payload (bd gaka-6jm.6).
+	// the scrubbed momentum payload (bd boom-6jm.6).
 	It("drops hidden project rows, keeps Weeks axis, preserves visible projects", func() {
 		mp := &model.MomentumPayload{
 			Weeks: []string{"2026-01-05", "2026-01-12"},
@@ -248,7 +248,7 @@ var _ = Describe("public-safe payload contracts", func() {
 	})
 })
 
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
+// -- helpers restored from stdlib partner (boom-0vp.17) --
 func mkPayload() *model.StatsPayload {
 	return &model.StatsPayload{
 		Projects: []model.ResourceStats{

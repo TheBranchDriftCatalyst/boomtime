@@ -223,7 +223,7 @@ Reuse boomtime's own substrate:
 
 - **Audible/Kindle (medium-durable):** one encrypted Amazon device auth. Register once
   per marketplace; add to the DB backup export set + `rotate-encryption-key` (per the
-  `gaka-6jm`/`gaka-awh` patterns). Break mode: password change / deregister → re-auth.
+  `boom-6jm`/`boom-awh` patterns). Break mode: password change / deregister → re-auth.
 - **Hardcover (rotatable):** user-pasted bearer; expires yearly + Jan-1 reset → build a
   re-prompt into the UX; distinguish 401 (bad token) from 403 (query not allowed).
 - **Goodreads / Amazon-export:** user-initiated file uploads → zero live auth, zero

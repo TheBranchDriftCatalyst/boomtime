@@ -3,7 +3,7 @@
 // Non-tautological invariants pinned here:
 //   - a curation_rule created with action="pin" round-trips through
 //     LoadPinnedSet (the read path the queryapi auto-apply relies on);
-//   - a DISABLED pin is excluded from the set (gaka-dfd parity with hides —
+//   - a DISABLED pin is excluded from the set (boom-dfd parity with hides —
 //     the row survives, its query-time effect pauses);
 //   - the set is owner+axis scoped: another user's pin, and a pin on a
 //     different axis, never bleed into this owner+axis's set.

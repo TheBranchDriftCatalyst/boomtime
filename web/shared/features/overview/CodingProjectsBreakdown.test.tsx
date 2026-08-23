@@ -1,5 +1,5 @@
 // CodingProjectsBreakdown.test.tsx — the Overview "Project breakdown" tile,
-// migrated onto the query DSL so it honors canonical PINS (gaka-canon).
+// migrated onto the query DSL so it honors canonical PINS (boom-canon).
 //
 // Non-tautological anchors:
 //   - The tile issues the EXACT coding DSL spec (coding·project·seconds, a

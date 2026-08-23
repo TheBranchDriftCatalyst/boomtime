@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- label_images (gaka-myv): one distinctive image per memeification label
+-- label_images (boom-myv): one distinctive image per memeification label
 -- archetype/tribe, shared across ALL users. Label ids are the same catalog
 -- for everyone — so the same emblem shows up on every user's profile who
 -- has earned "Late Night Coder" (etc.). Primary key is `label_id` alone

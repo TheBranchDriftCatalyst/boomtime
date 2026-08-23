@@ -7,7 +7,7 @@
 //	TestQueryInt64                → apihelpers.QueryInt64 > 3 Its (absent, valid, invalid)
 //	TestTimeLimitDefault          → apihelpers.TimeLimit > 2 Its (default, override)
 //
-// gaka-8tn phase 8: the tested functions moved from per-domain package-
+// boom-8tn phase 8: the tested functions moved from per-domain package-
 // local shims to internal/apihelpers exports. The It bodies + Expect
 // assertions are byte-identical to the pre-phase-8 originals.
 package handler_test

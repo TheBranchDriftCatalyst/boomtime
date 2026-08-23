@@ -8,7 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("ValidateCondition (gaka-6uf)", func() {
+var _ = Describe("ValidateCondition (boom-6uf)", func() {
 	Describe("accepts every well-formed primitive", func() {
 		DescribeTable("valid primitives round-trip",
 			func(raw string) {

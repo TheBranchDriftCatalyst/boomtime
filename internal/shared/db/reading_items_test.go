@@ -1,5 +1,5 @@
 // reading_items_test.go — pins the ListReadingItems SELECT/Scan alignment
-// (gaka-qic0). A column-list ↔ Scan-dest mismatch is a runtime pgx error, not a
+// (boom-qic0). A column-list ↔ Scan-dest mismatch is a runtime pgx error, not a
 // compile error, so this seeds a row (incl. the isbn/amazon_asin metadata AND
 // the migration-00063 hardcover_* linkage) and asserts every field round-trips.
 // Also pins the honest pre-match reality: a row with NULL hardcover columns
@@ -95,7 +95,7 @@ func TestListReadingItems_ScansAllFields(t *testing.T) {
 	}
 }
 
-// TestSetReadingItemHardcoverLink_PersistsSlug pins the deep-link fix (gaka-qic0):
+// TestSetReadingItemHardcoverLink_PersistsSlug pins the deep-link fix (boom-qic0):
 // the linkage writer persists hardcover_slug (round-trips through ListReadingItems),
 // and a later link with an EMPTY slug is COALESCE-guarded so it never blanks a good
 // slug written earlier — while a non-empty slug DOES overwrite.

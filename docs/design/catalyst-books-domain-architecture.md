@@ -276,7 +276,7 @@ Hardcover. Building it is the main open item (§8): grab a real token, verify th
 > status, rating, or finished-date sync. It documents the model implemented across
 > migration `00069`, `internal/db/reading_items.go`, `internal/query/domains.go`,
 > and `internal/hardcover/{push,pull}.go`. The plan of record is
-> `gaka-books` (Hardcover status/curation override + bidirectional LWW).
+> `boom-books` (Hardcover status/curation override + bidirectional LWW).
 
 **The problem.** Three systems disagree about a book's status. **Amazon (Kindle +
 Audible) is a read-only device source — we NEVER sync TO it.** It is also too

@@ -4,7 +4,7 @@ import { api } from "@shared/lib/api";
 import { qk } from "@shared/lib/queryKeys";
 import { cn } from "@shared/lib/utils";
 
-// Admin caps dashboard (gaka-93f.6): who's on which tier, what each tier
+// Admin caps dashboard (boom-93f.6): who's on which tier, what each tier
 // grants, and every user's effective capabilities. Read-only v1 — set-role /
 // disable stay in the `boomtime user` CLI. Admin-gated server-side (403 for
 // non-admins); the tab is also hidden from the sidebar for non-admins.

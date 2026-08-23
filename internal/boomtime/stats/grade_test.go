@@ -1,4 +1,4 @@
-// grade_ginkgo_test.go — ginkgo mirror of grade_test.go (gaka-tst-ginkgo).
+// grade_ginkgo_test.go — ginkgo mirror of grade_test.go (boom-tst-ginkgo).
 // 1:1 case map (6 stdlib TestXxx; TestGradePersonas has 3 subtests →
 // DescribeTable of 3 Entries; TestLongestStreak has 5 subtests → DescribeTable
 // of 5 Entries; TestGradeThresholdLadder has 11 subtests → DescribeTable of 11 Entries):
@@ -132,7 +132,7 @@ var _ = Describe("Grade CDFs match upstream", func() {
 	})
 })
 
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
+// -- helpers restored from stdlib partner (boom-0vp.17) --
 func mkPayload(rangeDays int, pattern []bool, secondsPerActiveDay int64, langs, projects int) *model.StatsPayload {
 	daily := make([]int64, rangeDays)
 	var total int64

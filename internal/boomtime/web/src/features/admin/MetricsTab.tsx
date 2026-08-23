@@ -1,4 +1,4 @@
-// MetricsTab — Admin > Metrics (gaka-metrics, pivoted to Prometheus). The
+// MetricsTab — Admin > Metrics (boom-metrics, pivoted to Prometheus). The
 // backend now exports Prometheus at /metrics (scraped by the cluster Prometheus
 // → Grafana); this tab is the lightweight IN-APP view over the SAME registry.
 // It fetches GET /api/v1/admin/metrics (Registry.Gather() flattened to

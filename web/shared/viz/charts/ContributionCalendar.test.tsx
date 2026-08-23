@@ -1,11 +1,11 @@
-// ContributionCalendar.test.tsx (gaka-csx P3 / gaka-nmk) — the additive-invariant
+// ContributionCalendar.test.tsx (boom-csx P3 / boom-nmk) — the additive-invariant
 // guard for the GitHub commit overlay.
 //
 // Invariant (A): when NO `ghValues` prop is supplied, the calendar renders
 // BYTE-IDENTICAL to the coding-time-only calendar — no overlay DOM, no message.
 // When `ghValues` IS supplied, the commit COUNT is drawn as a text label
 // (`text.gh-count`) on each day with commits, layered over the unchanged base
-// cells. (gaka-nmk replaced the old low-contrast `path.gh-corner` triangle.)
+// cells. (boom-nmk replaced the old low-contrast `path.gh-corner` triangle.)
 //
 // jsdom has no layout; ContributionCalendar draws with sizeToFrame:false so the
 // D3 draw runs on mount regardless of a measured width — the cells + overlay are
@@ -25,7 +25,7 @@ function baseStructure(svg: SVGSVGElement): string {
   return clone.innerHTML;
 }
 
-describe("ContributionCalendar GitHub overlay (gaka-csx P3)", () => {
+describe("ContributionCalendar GitHub overlay (boom-csx P3)", () => {
   it("renders NO overlay elements and identical base structure when ghValues is absent", async () => {
     const { container } = render(
       <ContributionCalendar dates={dates} values={values} />,

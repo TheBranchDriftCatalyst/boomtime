@@ -1,5 +1,5 @@
 // user_admin.go — offline user-administration reads/writes backing the
-// `boomtime user ...` CLI (gaka-0oe.10). These touch the user-model substrate
+// `boomtime user ...` CLI (boom-0oe.10). These touch the user-model substrate
 // columns (role, disabled_at — migration 00046). They are operator tools with
 // no HTTP surface; the flag-gated Identity path is what enforces them at
 // request time.
@@ -57,7 +57,7 @@ func (d *DB) SetUserRole(ctx context.Context, username, role string) (bool, erro
 // such user. Disabling is idempotent (re-disabling just refreshes the
 // timestamp), so RowsAffected==0 unambiguously means "no such user".
 //
-// gaka-93f.15: disabling is a KILL SWITCH, effective regardless of
+// boom-93f.15: disabling is a KILL SWITCH, effective regardless of
 // BOOM_FEATURE_USER_MODEL. Setting disabled_at alone was inert under the
 // default flag-off posture (the flag-gated Identity path skipped the check and
 // the Login path only checked when the flag was on), so a "disabled" account

@@ -1,4 +1,4 @@
-// DashboardEditor (gaka-lzr, Phase 4) — the reusable edit shell, exposed as a
+// DashboardEditor (boom-lzr, Phase 4) — the reusable edit shell, exposed as a
 // hook so a page (OverviewDashboard) can slot its three pieces into the POM
 // shell independently: `chrome` → Page.Header, `sidebar` → Page.Body aside,
 // `content` → Page.Content.

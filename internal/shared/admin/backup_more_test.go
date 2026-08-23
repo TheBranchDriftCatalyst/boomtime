@@ -1,4 +1,4 @@
-// backup_more_test.go — gaka-d6x.handler: coverage helpers for backup.go —
+// backup_more_test.go — boom-d6x.handler: coverage helpers for backup.go —
 // oversize upload + validation error branches + restoreMaxBytes env override.
 //
 // Named invariants:

@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- OIDC browser sessions (gaka-0oe.11). When BOOM_AUTH_PROVIDER=oidc the web
+-- OIDC browser sessions (boom-0oe.11). When BOOM_AUTH_PROVIDER=oidc the web
 -- session is NOT a boomtime refresh_token — it's an opaque cookie mapping to
 -- this server-side record holding the id_token expiry (session validity) and
 -- the provider refresh_token (hashed at rest, same posture as auth_tokens).

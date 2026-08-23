@@ -1,4 +1,4 @@
-// ProfileEditor.test.tsx (gaka-ie3) — non-tautological tests for the inline
+// ProfileEditor.test.tsx (boom-ie3) — non-tautological tests for the inline
 // editor's draft-save model.
 //
 // Focus: the dirty-state gate and its guards. Draft mutation is exercised

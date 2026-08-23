@@ -1,5 +1,5 @@
 // specs.ts — the FE's read of the canonical widget spec registry (Part B
-// Stage 2, gaka-174.x). ONE committed file, internal/widget/specs.json:
+// Stage 2, boom-174.x). ONE committed file, internal/widget/specs.json:
 // the Go renderer embeds it via //go:embed (internal/widget/spec.go) and
 // this module imports the EXACT same bytes through the "@widget-specs"
 // alias (vite.config.ts resolve.alias + tsconfig.app.json paths) — no

@@ -30,7 +30,7 @@ func (d *DB) GetLeaderboards(ctx context.Context, start, end time.Time, requeste
 }
 
 // GetLeaderboardsRollup mirrors GetLeaderboards but reads the pre-aggregated
-// hb_rollup_daily (gaka-o4m). The raw query uses a hardcoded gap_seconds <=
+// hb_rollup_daily (boom-o4m). The raw query uses a hardcoded gap_seconds <=
 // (15 * 60) filter which is exactly what the rollup captured at ingest, so
 // summing rollup total_seconds reproduces the raw sum at the 15-min limit.
 // Callers must guard with the requester-scoped rollup-axes gate (no hide / no
@@ -101,7 +101,7 @@ func (d *DB) leaderboards(ctx context.Context, baseQuery, anchor string, cols ma
 	var projExpr, langExpr string
 	projExpr, args, next = rs.remapExpr("project", "project", reqCond, next, args)
 	langExpr, args, next = rs.remapExpr("language", "language", reqCond, next, args)
-	// gaka-6ci: bool_and preserves the missing-flag semantics across the
+	// boom-6ci: bool_and preserves the missing-flag semantics across the
 	// rename regroup — a canonical name is missing iff EVERY contributing
 	// base row was null on that axis.
 	query = fmt.Sprintf(`SELECT %s AS project, %s AS language, sender, CAST(SUM(total_seconds) AS int8) AS total_seconds,

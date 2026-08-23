@@ -10,7 +10,7 @@ resources:
   - ../../base/worker
   - postgres.yaml
   - secrets.yaml
-  # Worker-topology decoupling (gaka-8bz follow-up, §9): plain RabbitMQ +
+  # Worker-topology decoupling (boom-8bz follow-up, §9): plain RabbitMQ +
   # Redis (Dragonfly stand-in) + a no-GPU mock ComfyUI backend, so
   # `boomtime-worker` can execute image-generation jobs end-to-end on a
   # laptop. See docs/design/worker-topology-decoupling.md §9.
@@ -18,7 +18,7 @@ resources:
   - comfyui-mock.yaml
   # Dev-only Authentik stack (server+worker+pg+redis) + boomtime OIDC
   # blueprints. See authentik.yaml. boomtime still runs BOOM_AUTH_PROVIDER=local
-  # until the OIDC resolver lands (gaka-0oe.11).
+  # until the OIDC resolver lands (boom-0oe.11).
   - authentik.yaml
 
 patches:

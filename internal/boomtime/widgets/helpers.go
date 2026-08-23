@@ -1,5 +1,5 @@
 // Package widgets holds the widget + widget-def + badge HTTP endpoints
-// (gaka-8tn phase 3). Split off from internal/handler as a self-contained
+// (boom-8tn phase 3). Split off from internal/handler as a self-contained
 // domain package: its own Handler struct, its own route registrar, and its
 // own tests.
 //
@@ -10,7 +10,7 @@
 // Shared HTTP helpers (RespondErr / ResolveUser / QueryInt64 /
 // BindJSONWithLimit / CachedBlob / CacheKey / ResolveUserTZ / ...) live
 // in internal/apihelpers/ — this package imports that instead of
-// carrying per-file shims (gaka-8tn phase 8 collapse).
+// carrying per-file shims (boom-8tn phase 8 collapse).
 package widgets
 
 import (

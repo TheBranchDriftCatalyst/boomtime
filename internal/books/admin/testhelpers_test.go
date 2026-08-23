@@ -1,6 +1,6 @@
 // testhelpers_test.go — books-admin copy of the external ginkgo test helpers
 // (dialAdminWS / testutilTokenData / doJSONReqG). These moved here with the
-// books-admin handlers (gaka-zp2s); the internal/admin copies stay put for the
+// books-admin handlers (boom-zp2s); the internal/admin copies stay put for the
 // admin-package tests that remain there. Each file is private to its _test
 // package, so a shared testutil-side location would need to lift the gomega
 // dependency into the harness — deferred to the same follow-up as the other

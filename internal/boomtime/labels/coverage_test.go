@@ -1,5 +1,5 @@
 // coverage_test.go — gap-fill specs targeting the surfaces the two existing
-// test files leave uncovered (gaka-d6x):
+// test files leave uncovered (boom-d6x):
 //
 //   - marker methods: every Condition's Kind() + isCondition() (stringer/tag
 //     methods that carry the discriminator identity; if any drift, JSON round

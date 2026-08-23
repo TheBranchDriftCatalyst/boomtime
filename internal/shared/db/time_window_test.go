@@ -1,4 +1,4 @@
-// time_window_ginkgo_test.go — ginkgo mirror of time_window_test.go (gaka-0vp.13).
+// time_window_ginkgo_test.go — ginkgo mirror of time_window_test.go (boom-0vp.13).
 // 1:1 case map (3 stdlib TestXxx → 3 Its):
 //
 //	TestTimeWindowInclusiveBothEdges   → "inclusive [start,end] on 5 aggregations"

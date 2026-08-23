@@ -1,4 +1,4 @@
-// ratelimit_ginkgo_test.go — ginkgo mirror of ratelimit_test.go (gaka-0vp).
+// ratelimit_ginkgo_test.go — ginkgo mirror of ratelimit_test.go (boom-0vp).
 //
 // 1:1 case map (11 stdlib TestXxx):
 //

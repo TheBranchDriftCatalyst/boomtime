@@ -55,7 +55,7 @@ export function Logs({ embedded = false }: { embedded?: boolean }) {
     );
     // Shared mapping with the per-job panel: folds source (+ host) into the
     // dim attrs tail. We keep every attr here — including `job_id` — so a
-    // job-tagged line surfaces its id inline in the full viewer (gaka-f0is);
+    // job-tagged line surfaces its id inline in the full viewer (boom-f0is);
     // the per-job panel omits job_id/kind/owner since its header implies them.
     return matching.map((l) => toLogViewerLine(l));
   }, [logs, filter, sourceFilter]);

@@ -1,4 +1,4 @@
-// user_avatar_more_test.go — gaka-d6x.handler: fill remaining coverage gaps
+// user_avatar_more_test.go — boom-d6x.handler: fill remaining coverage gaps
 // for user_avatar.go beyond user_avatar_test.go.
 //
 // Named invariants (extending user_avatar_test.go):
@@ -63,7 +63,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
-var _ = Describe("Avatar Status extra branches (gaka-d6x.handler)", func() {
+var _ = Describe("Avatar Status extra branches (boom-d6x.handler)", func() {
 	It("returns status=running when a running row exists", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
@@ -101,7 +101,7 @@ var _ = Describe("Avatar Status extra branches (gaka-d6x.handler)", func() {
 	})
 })
 
-var _ = Describe("Avatar Regenerate extra branches (gaka-d6x.handler)", func() {
+var _ = Describe("Avatar Regenerate extra branches (boom-d6x.handler)", func() {
 	It("returns 409 when a regen is already running for the same user", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		hz.Cfg.FeatureLabelImages = true
@@ -119,7 +119,7 @@ var _ = Describe("Avatar Regenerate extra branches (gaka-d6x.handler)", func() {
 	})
 })
 
-var _ = Describe("RegenerateAvatar happy path (gaka-d6x.handler)", func() {
+var _ = Describe("RegenerateAvatar happy path (boom-d6x.handler)", func() {
 	It("dispatches the async goroutine (202 immediate) AND eventually persists the shim bytes", func() {
 		// Distinctive payload so we can assert on the saved bytes AFTER the
 		// goroutine finishes — plain "hello" b64 = "aGVsbG8=" is easy to
@@ -194,7 +194,7 @@ var _ = Describe("RegenerateAvatar happy path (gaka-d6x.handler)", func() {
 	})
 })
 
-var _ = Describe("UserAvatar public GET input guards (gaka-d6x.handler)", func() {
+var _ = Describe("UserAvatar public GET input guards (boom-d6x.handler)", func() {
 	It("returns 404 for a nonexistent username (row absent)", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
@@ -207,7 +207,7 @@ var _ = Describe("UserAvatar public GET input guards (gaka-d6x.handler)", func()
 	})
 })
 
-var _ = Describe("SynthesizePrompt success path w/ mock LLM (gaka-d6x.handler)", func() {
+var _ = Describe("SynthesizePrompt success path w/ mock LLM (boom-d6x.handler)", func() {
 	It("proxies the upstream SSE stream 1:1 with text/event-stream headers", func() {
 		// Fake OpenAI-compat upstream — a couple of `data:` lines then done.
 		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -272,7 +272,7 @@ var _ = Describe("SynthesizePrompt success path w/ mock LLM (gaka-d6x.handler)",
 	It("non-admin caller → 403 (LLM cost gate is the tightest security guard on this route)", func() {
 		// AdminUsers is empty by default in the harness — an authenticated
 		// non-admin token must be rejected with 403 by requireAdmin BEFORE
-		// any LLM upstream call happens. This is the "gaka-9v4 admin-only"
+		// any LLM upstream call happens. This is the "boom-9v4 admin-only"
 		// invariant called out in user_avatar.go's comments: LLM cost is
 		// per-token and unbounded per user in the wrong hands. If this
 		// endpoint ever becomes open to any authed user, DROP requireAdmin
@@ -297,7 +297,7 @@ var _ = Describe("SynthesizePrompt success path w/ mock LLM (gaka-d6x.handler)",
 	})
 })
 
-var _ = Describe("SynthesizePrompt body-size cap (gaka-d6x.handler)", func() {
+var _ = Describe("SynthesizePrompt body-size cap (boom-d6x.handler)", func() {
 	It("admin caller with LLM configured but a 5 KiB body → 413", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		user, token := hz.MintUser("avsp_413")

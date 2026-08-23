@@ -1,5 +1,5 @@
 // kindle_positions.go: siloed Kindle last-page-read POSITION samples
-// (gaka-books). The raw time-series the forward reading-TIME composition
+// (boom-books). The raw time-series the forward reading-TIME composition
 // (internal/domains/books/reading_time.go) gap-sums into reading_activity
 // (source='kindle') day buckets. Like reading_items / reading_activity it does
 // NOT write into heartbeats/stats/any core model; it cascade-deletes with the

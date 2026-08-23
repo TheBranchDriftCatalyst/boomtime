@@ -1,4 +1,4 @@
-// cache_ginkgo_test.go — ginkgo mirror of cache_test.go (gaka-0vp).
+// cache_ginkgo_test.go — ginkgo mirror of cache_test.go (boom-0vp).
 // 1:1 case map (8 stdlib TestXxx):
 //
 //	TestGetSetHit                     → TTL cache > "hits and increments Len"

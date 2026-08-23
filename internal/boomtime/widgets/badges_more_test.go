@@ -1,4 +1,4 @@
-// badges_more_test.go — gaka-d6x.handler: cover BadgeLink + BadgeSvg (the
+// badges_more_test.go — boom-d6x.handler: cover BadgeLink + BadgeSvg (the
 // public shields.io proxy path). Applied here (not badges_test.go, which is
 // an in-package unit test of applyBadgeCuration) so the external harness
 // can mock the shields.io upstream via net/http/httptest.
@@ -41,7 +41,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
-var _ = Describe("BadgeLink (gaka-d6x.handler)", func() {
+var _ = Describe("BadgeLink (boom-d6x.handler)", func() {
 	It("rejects unauth'd GET with 4xx", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
@@ -70,7 +70,7 @@ var _ = Describe("BadgeLink (gaka-d6x.handler)", func() {
 	})
 })
 
-var _ = Describe("BadgeSvg (gaka-d6x.handler)", func() {
+var _ = Describe("BadgeSvg (boom-d6x.handler)", func() {
 	It("returns 400 for an unparseable UUID (fail-fast, no DB read)", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
@@ -134,7 +134,7 @@ var _ = Describe("BadgeSvg (gaka-d6x.handler)", func() {
 		Expect(string(got)).To(Equal("<svg>ok</svg>"))
 	})
 
-	It("hidden project → 404 with NO shields.io call AND no project-name leak (gaka-6jm.3)", func() {
+	It("hidden project → 404 with NO shields.io call AND no project-name leak (boom-6jm.3)", func() {
 		// Sentinel counter: the shields.io stub must NEVER be hit on the
 		// hidden-project path. If it were, the SVG label would leak the
 		// project name — which is precisely what applyBadgeCuration is

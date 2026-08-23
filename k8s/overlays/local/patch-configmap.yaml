@@ -12,7 +12,7 @@ data:
   BOOM_BADGE_URL: "http://boomtime.local"
   # ── OIDC (Authentik) dev wiring — matches authentik.yaml blueprints ─────────
   # boomtime STILL runs BOOM_AUTH_PROVIDER=local; these vars are staged so the
-  # OIDC resolver (gaka-0oe.11) can be flipped on without re-plumbing. The
+  # OIDC resolver (boom-0oe.11) can be flipped on without re-plumbing. The
   # client_secret is NOT here — it lives in the boomtime-secrets Secret
   # (secrets.yaml), mirroring the prod split (§6.7).
   #
@@ -24,7 +24,7 @@ data:
   # an issuer-mismatch on token validation — the lead may need to set an
   # AUTHENTIK base URL or align both sides at bring-up. Flagged, not solved here.
   # Default LOCAL (push-safe; password login works). OIDC is still fully
-  # configured below, so the account-LINK flow (/auth/link/oidc, gaka-b5n.4)
+  # configured below, so the account-LINK flow (/auth/link/oidc, boom-b5n.4)
   # works — link your password account to Authentik, THEN flip this to "oidc"
   # for full OIDC login. Split-horizon: the pod discovers/exchanges via the
   # cluster-internal issuer (authentik-server:9000); the browser is redirected
@@ -38,9 +38,9 @@ data:
   BOOM_OIDC_AUTOPROVISION: "true"
   BOOM_OIDC_AUTOLINK_EMAIL: "false"
   # dev demo: make 'admin' an operator so the Admin > Users caps dashboard is
-  # viewable (requireAdmin gates on this allowlist). gaka-93f.6.
+  # viewable (requireAdmin gates on this allowlist). boom-93f.6.
   BOOM_ADMIN_USERS: "admin,dev"
-  # ── Worker-topology decoupling (gaka-8bz follow-up) — local demo ────────
+  # ── Worker-topology decoupling (boom-8bz follow-up) — local demo ────────
   # Cuts image-job enqueue/execute over to the RabbitMQ+Redis path so
   # `boomtime-worker` (a SEPARATE pod, see ../../base/worker/deployment.yaml)
   # does the regen instead of the server's in-process pool. See

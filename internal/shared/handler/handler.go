@@ -7,7 +7,7 @@
 // so a cache invalidation from any domain reaches every reader.
 //
 // Shared HTTP helpers live in internal/apihelpers/ — every domain
-// imports that instead of carrying per-file shims (gaka-8tn phase 8
+// imports that instead of carrying per-file shims (boom-8tn phase 8
 // collapse). This package holds NO route handlers of its own — just the
 // composition struct, its constructor, and the post-construction setters
 // that propagate to h.Admin.
@@ -46,7 +46,7 @@ type Handler struct {
 	// StartTime is set at handler construction; /healthz reports uptime from it.
 	StartTime time.Time
 
-	// Remaining per-domain handler bags. After gaka-zp2s all the boomtime DATA-domain
+	// Remaining per-domain handler bags. After boom-zp2s all the boomtime DATA-domain
 	// bags (ingest/curation/stats/widgets/goals/spaces/awards) moved onto
 	// boomtime.Module (built in Module.RegisterRoutes off catalyst.Deps.Cache), and the
 	// boomtime import/label-images worker wiring moved onto boomtime.Module's admin
@@ -56,8 +56,8 @@ type Handler struct {
 	Meta     *meta.Handler     // phase 1 (shared)
 	Identity *identity.Handler // phase 4a (infra peer)
 	Admin    *admin.Handler    // phase 7 (shared)
-	Query    *queryapi.Handler // gaka-174.q: cross-domain query DSL over HTTP
-	// gaka-zp2s: the catalyst-books HTTP surface is owned by books.Module; the boomtime
+	Query    *queryapi.Handler // boom-174.q: cross-domain query DSL over HTTP
+	// boom-zp2s: the catalyst-books HTTP surface is owned by books.Module; the boomtime
 	// data-domain surfaces are owned by boomtime.Module. This god-type no longer holds
 	// or imports either.
 }
@@ -66,7 +66,7 @@ type Handler struct {
 // Logs tab; pass nil to disable (Logs endpoints handle a nil hub — see
 // internal/meta/logs.go).
 //
-// gaka-zp2s: the wakatime.com import worker + hub are no longer parameters — that
+// boom-zp2s: the wakatime.com import worker + hub are no longer parameters — that
 // worker is late-wired onto boomtime.Module (SetImportWorker) by the composition root,
 // not stashed on this god-type. New builds the ONE shared stats cache (h.Cache) that
 // the composition root threads to boomtime.Module via catalyst.Deps.Cache so every
@@ -99,12 +99,12 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, logHub *loggi
 	}
 }
 
-// gaka-zp2s: SetLabelImagesWorker / SetImageJobQueue / SetImageJobEvents moved off this
+// boom-zp2s: SetLabelImagesWorker / SetImageJobQueue / SetImageJobEvents moved off this
 // god-type — the label-images regen surface is owned by boomtime.Module (its admin
 // handler), which cmd/boomtime late-wires directly via domainSet.Boomtime.
 
 // SetJobs propagates the catalyst-go-jobs Store + Enqueuer + Registry to h.Admin
-// (gaka-hney.2) so the admin Jobs tab can list + trigger/retry and render the
+// (boom-hney.2) so the admin Jobs tab can list + trigger/retry and render the
 // per-kind queue overview (the registry supplies the concurrency caps + the
 // full set of known kinds).
 func (h *Handler) SetJobs(store *jobs.Store, enq jobs.Enqueuer, reg *jobs.Registry) {
@@ -112,14 +112,14 @@ func (h *Handler) SetJobs(store *jobs.Store, enq jobs.Enqueuer, reg *jobs.Regist
 		h.Admin.SetJobs(store, enq, reg)
 	}
 	if h.Identity != nil {
-		h.Identity.SetJobEnqueuer(enq) // gaka-hney.7: avatar-render enqueue
+		h.Identity.SetJobEnqueuer(enq) // boom-hney.7: avatar-render enqueue
 	}
-	// gaka-zp2s: the books enqueuer is wired onto books.Module directly by the
+	// boom-zp2s: the books enqueuer is wired onto books.Module directly by the
 	// composition root (cmd/boomtime), not through this god-type.
 }
 
 // SetJobLogStore propagates the object store the per-job log endpoints read +
-// delete a finished job's persisted logs from (gaka-hney) to h.Admin. Nil = S3
+// delete a finished job's persisted logs from (boom-hney) to h.Admin. Nil = S3
 // not configured; the endpoints degrade to 404 / no-op.
 func (h *Handler) SetJobLogStore(s objstore.Store) {
 	if h.Admin != nil {
@@ -128,7 +128,7 @@ func (h *Handler) SetJobLogStore(s objstore.Store) {
 }
 
 // SetJobEvents propagates the job-events push hub to h.Identity so the
-// /api/v1/jobs/ws stream can subscribe (gaka-hney.6).
+// /api/v1/jobs/ws stream can subscribe (boom-hney.6).
 func (h *Handler) SetJobEvents(hub *jobsevents.Hub) {
 	if h.Identity != nil {
 		h.Identity.SetJobEvents(hub)

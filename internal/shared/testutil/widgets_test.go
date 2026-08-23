@@ -1,4 +1,4 @@
-// widgets_ginkgo_test.go — ginkgo mirror of widgets_test.go (gaka-0vp).
+// widgets_ginkgo_test.go — ginkgo mirror of widgets_test.go (boom-0vp).
 // 1:1 case map (8 stdlib TestXxx; the SVG public-render test's 5 kind
 // subtests each become an Entry in a DescribeTable):
 //
@@ -326,7 +326,7 @@ var _ = Describe("Widget SVG", func() {
 			"non-hidden language should still render")
 	})
 
-	// gaka-hsj privacy guard: heartbeats carry a `entity` field (the source
+	// boom-hsj privacy guard: heartbeats carry a `entity` field (the source
 	// filename — e.g. /secret/customer-list.sql). The public embeddable SVG
 	// aggregates by project/language/editor and MUST NEVER leak that string
 	// into rendered chrome. Today the StatsPayload never includes filenames,
@@ -365,13 +365,13 @@ var _ = Describe("Widget SVG", func() {
 			Expect(rec).To(testutil.HaveStatus(http.StatusOK),
 				"kind=%s render failed: body=%s", kind, rec.Body.String())
 			Expect(rec.Body.String()).NotTo(ContainSubstring(sensitive),
-				"PRIVACY LEAK (gaka-hsj): heartbeat entity %q surfaced in kind=%s SVG body",
+				"PRIVACY LEAK (boom-hsj): heartbeat entity %q surfaced in kind=%s SVG body",
 				sensitive, kind)
 			// Also assert the file extension stem alone doesn't leak — a
 			// half-scrub that keeps the tail could still expose enough to
 			// identify the resource.
 			Expect(rec.Body.String()).NotTo(ContainSubstring("pii-export"),
-				"PRIVACY LEAK (gaka-hsj): entity stem 'pii-export' leaked in kind=%s SVG body", kind)
+				"PRIVACY LEAK (boom-hsj): entity stem 'pii-export' leaked in kind=%s SVG body", kind)
 		}
 	})
 
@@ -393,7 +393,7 @@ var _ = Describe("Widget SVG", func() {
 // silence unused-import when trimming
 var _ = strings.Contains
 
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
+// -- helpers restored from stdlib partner (boom-0vp.17) --
 type widgetLinkResp struct {
 	WidgetBaseURL string `json:"widgetBaseUrl"`
 	LinkID        string `json:"linkId"`

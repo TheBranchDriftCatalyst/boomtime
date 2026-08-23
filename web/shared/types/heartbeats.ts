@@ -97,7 +97,7 @@ export interface DerivedStatus {
   dbBytes: number;
   // Per-index sizes for the heartbeats table, largest first. Surfaced so the
   // operator can see the storage cost of the trigram / text_pattern_ops
-  // indexes shipped for gaka-o4m alongside the older sender/time btrees.
+  // indexes shipped for boom-o4m alongside the older sender/time btrees.
   heartbeatsIndexes: IndexSize[];
 }
 
@@ -106,7 +106,7 @@ export interface IndexSize {
   bytes: number;
 }
 
-// gaka-90x — Entity Explorer.
+// boom-90x — Entity Explorer.
 export type EntityType = "file" | "app" | "domain" | "url";
 
 export interface EntitySummary {

@@ -1,6 +1,6 @@
 package db
 
-// Tests for internal/db/health.go — gaka-se2.8.
+// Tests for internal/db/health.go — boom-se2.8.
 //
 // Two layers, both in `package db` (follows every sibling *_test.go in this
 // package; the external-test path is not viable because the harness helpers

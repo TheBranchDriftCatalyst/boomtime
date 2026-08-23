@@ -3,7 +3,7 @@
 #
 # CONSOLIDATION (4→2): replaces the former grafana-dashboard-keda.yaml +
 # grafana-dashboard-worker-queue.yaml. Rebuilt around boomtime's first-party
-# Prometheus metrics (gaka-metrics) now scraped by servicemonitor.yaml — the
+# Prometheus metrics (boom-metrics) now scraped by servicemonitor.yaml — the
 # generic RED decorators (incoming router http_requests_total /
 # http_request_duration_seconds + outbound http_client_* per host), the Go/
 # process runtime collectors, the pgx DB pool + go-redis pool collectors, the

@@ -1,5 +1,5 @@
 // useImageJobQueue.test.ts — the hook polls the DB-jobs status endpoint
-// (gaka-hney Stage 3; it previously held a WebSocket). We mock
+// (boom-hney Stage 3; it previously held a WebSocket). We mock
 // api.getLabelImageStatus / api.regenerateLabelImages and assert the public
 // state (jobs map keyed by labelId, byLabel, connected/reconnectAttempt,
 // enqueue) converges correctly.

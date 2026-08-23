@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import "@boomtime/features/onboarding/onboarding.css";
 
-// Decorative floating chart-widgets behind the onboarding card (gaka-93f.1.2).
+// Decorative floating chart-widgets behind the onboarding card (boom-93f.1.2).
 //
 // A first-time visitor should SEE what boomtime is before reading a word:
 // askew, softly-drifting mini dashboards — bars, a momentum area, a punchcard,

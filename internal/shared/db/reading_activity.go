@@ -1,5 +1,5 @@
 // reading_activity.go: siloed daily/monthly reading/listening time-series
-// (gaka-books). This is the grain the fusion layer overlays on the coding
+// (boom-books). This is the grain the fusion layer overlays on the coding
 // calendar. Like reading_items it does NOT write into heartbeats/stats/any core
 // model; it cascade-deletes with the user and has a per-user wipe path. See
 // migrations/00061.

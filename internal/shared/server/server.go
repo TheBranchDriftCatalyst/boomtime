@@ -55,7 +55,7 @@ func NewWithHandler(database *db.DB, cfg *config.Config, logger *slog.Logger, lo
 	// request is traced and the span context is available to CORS/auth/
 	// handlers downstream. No-op unless OTEL_EXPORTER_OTLP_ENDPOINT is set.
 	e.Use(tracing.Middleware())
-	// gaka-n5r: CORS is credentialed (AllowCredentials=true is required so the
+	// boom-n5r: CORS is credentialed (AllowCredentials=true is required so the
 	// refresh_token cookie flows behind the Vite proxy), which means the
 	// Access-Control-Allow-Origin value MUST be a checked allowlist entry — the
 	// previous reflect-any-origin behaviour let attacker pages read the login
@@ -99,7 +99,7 @@ func NewWithHandler(database *db.DB, cfg *config.Config, logger *slog.Logger, lo
 	if cfg.DBN1Threshold > 0 || cfg.DBN1DupThresh > 0 {
 		e.Use(n1Middleware(logger, cfg.DBN1Threshold, cfg.DBN1DupThresh))
 	}
-	// Universal rate limit (gaka-jk6 / gaka-ddp / gaka-awh.1). Installed
+	// Universal rate limit (boom-jk6 / boom-ddp / boom-awh.1). Installed
 	// AFTER CORS (so preflight can short-circuit inside the middleware
 	// without ever counting against a bucket) and BEFORE the handler
 	// registration (so it wraps every route, including auth writes and
@@ -107,7 +107,7 @@ func NewWithHandler(database *db.DB, cfg *config.Config, logger *slog.Logger, lo
 	// bucket sizing, testing hook (BOOM_DISABLE_RATE_LIMIT=1), and TTL /
 	// cleanup notes.
 	installRateLimit(e, logger, database)
-	// gaka-ar7: stash resolved owner in ctx so the pgx tracer can tag its DEBUG
+	// boom-ar7: stash resolved owner in ctx so the pgx tracer can tag its DEBUG
 	// SQL records with "user" — LogHub's FilterForUser then gates them per tenant.
 	e.Use(userCtxMiddleware(database))
 
@@ -132,20 +132,20 @@ func NewWithHandler(database *db.DB, cfg *config.Config, logger *slog.Logger, lo
 // call order (and the order within each func) preserves the original flat
 // registration sequence.
 func registerRoutes(e *echo.Echo, h *handler.Handler, reg *catalyst.Registry) {
-	// gaka-zp2s: the composition root threads ONE catalyst.Registry (built in
+	// boom-zp2s: the composition root threads ONE catalyst.Registry (built in
 	// internal/domainreg) through here so per-domain wiring flows via the Module
 	// contract instead of this package naming each domain. deps carries the core
 	// deps a Module needs to build its handlers; the OpenAPI drift router passes a
 	// zero-value handler, so these are nil there and each Module's nil-guards keep
 	// the enumerated route set identical.
 	deps := catalyst.Deps{DB: h.DB, Cfg: h.Cfg, Logger: h.Logger, Cache: h.Cache}
-	// gaka-zp2s: the boomtime data-domain HTTP surface (ingest / curation / stats /
+	// boom-zp2s: the boomtime data-domain HTTP surface (ingest / curation / stats /
 	// widgets / goals / spaces / awards) is no longer named here — it moved onto
 	// boomtime.Module.RegisterRoutes (driven by the reg.Modules() loop below), so this
 	// package imports no boomtime data domain. Route strings + order are byte-identical;
 	// the module registers them at the module-loop slot and the domains don't overlap,
 	// so the routing tree (and the drift-guard route set) is unchanged.
-	// gaka-8tn phase 7: admin domain (label-images admin + git-history
+	// boom-8tn phase 7: admin domain (label-images admin + git-history
 	// backfill + whole-DB backup export/import + wakatime.com import
 	// cluster + source-health observability + the public label-image GET
 	// that is the read-only face of the same subsystem). `admin.Register`
@@ -154,7 +154,7 @@ func registerRoutes(e *echo.Echo, h *handler.Handler, reg *catalyst.Registry) {
 	// registerHeartbeatRoutes (source-health). Route strings + order
 	// preserved verbatim.
 	admin.Register(e, h.Admin)
-	// gaka-zp2s: per-domain ADMIN surfaces are mounted through the Module
+	// boom-zp2s: per-domain ADMIN surfaces are mounted through the Module
 	// contract (Module.RegisterAdminRoutes) — the peer of the portable
 	// jobs.RegisterAdminRoutes seam — instead of being hand-wired into
 	// internal/admin. Anchored at /api/v1/admin; each domain sub-registers its
@@ -168,17 +168,17 @@ func registerRoutes(e *echo.Echo, h *handler.Handler, reg *catalyst.Registry) {
 	for _, m := range reg.Modules() {
 		m.RegisterAdminRoutes(adminGroup, deps)
 	}
-	// gaka-8tn phase 1: meta + logs registration is now owned by the meta
+	// boom-8tn phase 1: meta + logs registration is now owned by the meta
 	// domain package. `meta.Register` fans out /api/v1/version,
 	// /api/v1/changelog, /healthz, the OpenAPI spec + Swagger UI, and the
 	// /api/v1/logs REST + WS endpoints. Order preserved: same effective
 	// route set as pre-refactor registerLogRoutes + registerMetaRoutes.
 	meta.Register(e, h.Meta)
-	// gaka-8tn phase 4a: identity (auth + password + profile + timezone +
+	// boom-8tn phase 4a: identity (auth + password + profile + timezone +
 	// wakatime_key + avatar) extracted into internal/identity. Identity is an
 	// intentional infra peer (not a boomtime data domain), so it stays wired here.
 	identity.Register(e, h.Identity)
-	// gaka-zp2s: per-domain HTTP surfaces are mounted through the Module contract
+	// boom-zp2s: per-domain HTTP surfaces are mounted through the Module contract
 	// (Module.RegisterRoutes) instead of being named here. Today books mounts its
 	// Amazon/Kindle/Audible + Hardcover + reading-items surface (into internal/books/api)
 	// and stashes its handler for late-wiring; boomtime/github contribute no-op
@@ -187,14 +187,14 @@ func registerRoutes(e *echo.Echo, h *handler.Handler, reg *catalyst.Registry) {
 	for _, m := range reg.Modules() {
 		m.RegisterRoutes(e, deps)
 	}
-	// gaka-174.q: the cross-domain query DSL HTTP surface (POST /api/v1/query).
+	// boom-174.q: the cross-domain query DSL HTTP surface (POST /api/v1/query).
 	// Auth-required + owner-scoped; the reading domain is gated behind
 	// Cfg.BooksEnabled() inside the handler (runtime, since the domain is a
 	// body field). coding is always available.
 	queryapi.Register(e, h.Query)
 }
 
-// gaka-zp2s: the phase-8 no-op route stubs (registerGoalRoutes /
+// boom-zp2s: the phase-8 no-op route stubs (registerGoalRoutes /
 // registerHeartbeatRoutes / registerCurationRoutes / registerStatsRoutes /
 // registerMiscRoutes / registerImportRoutes) are gone — every boomtime data-domain
 // route now registers via boomtime.Module.RegisterRoutes, so this package names no

@@ -1,4 +1,4 @@
-// ingest_ginkgo_test.go — ginkgo mirror of ingest_test.go (gaka-0vp.13).
+// ingest_ginkgo_test.go — ginkgo mirror of ingest_test.go (boom-0vp.13).
 // 1:1 case map (2 stdlib TestXxx → 2 Its):
 //
 //	TestSaveHeartbeatsAtomicity   → "SaveHeartbeats atomicity"
@@ -15,7 +15,7 @@ import (
 )
 
 var _ = ginkgo.Describe("SaveHeartbeats", func() {
-	ginkgo.It("is atomic: an FK-failing batch leaves NO trace behind (gaka-4sq)", func() {
+	ginkgo.It("is atomic: an FK-failing batch leaves NO trace behind (boom-4sq)", func() {
 		d := openTestDBG()
 		ctx := context.Background()
 

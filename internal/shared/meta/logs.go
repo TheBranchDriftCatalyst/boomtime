@@ -17,7 +17,7 @@ import (
 // own log records (from the in-memory LogHub ring buffer). Owner-gated via the
 // standard Authorization header.
 //
-// Per gaka-awh.2, the raw LogHub tail is filtered through
+// Per boom-awh.2, the raw LogHub tail is filtered through
 // logging.FilterForUser so records tagged with a different owner (via slog's
 // "user" attribute) are dropped BEFORE the response is built. Server-scope
 // records (no owner tag) still fan out to every authenticated viewer.
@@ -45,7 +45,7 @@ func (h *Handler) ServerLogs(c *echo.Context) error {
 // server/proxy logs). On connect the server backfills the ring buffer after
 // afterId (making reload/resume seamless), then tails live entries.
 //
-// Per gaka-awh.2, both the initial snapshot AND every live entry are filtered
+// Per boom-awh.2, both the initial snapshot AND every live entry are filtered
 // through logging.FilterForUser: records tagged with a different owner via the
 // slog "user" attribute are dropped before they reach this viewer. Server-scope
 // records (no owner tag) still stream to every authenticated viewer. The same

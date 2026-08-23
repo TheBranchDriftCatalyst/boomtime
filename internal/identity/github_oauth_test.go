@@ -1,5 +1,5 @@
 // github_oauth_test.go — end-to-end coverage of the GitHub connect callback
-// (gaka-2ip Phase 1). A mock-GitHub httptest server stands in for github.com /
+// (boom-2ip Phase 1). A mock-GitHub httptest server stands in for github.com /
 // api.github.com (mirrors oidc_callback_test.go's approach); the resolver is
 // installed via the auth test seam and the handler is driven through the real
 // Echo router. Asserts the token is stored ENCRYPTED (decrypts back to the
@@ -62,7 +62,7 @@ func routerWithGithubGH(hz *testutil.Harness, srv *httptest.Server) http.Handler
 	return e
 }
 
-var _ = Describe("GitHub connect callback (gaka-2ip)", func() {
+var _ = Describe("GitHub connect callback (boom-2ip)", func() {
 	It("exchanges the code, captures the login, and stores the token ENCRYPTED — never leaking it", func() {
 		installEncryptionKeyAC()
 		hz := testutil.NewHarness(GinkgoT())

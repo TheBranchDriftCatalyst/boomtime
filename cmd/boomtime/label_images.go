@@ -1,5 +1,5 @@
 // label_images.go: `boomtime label-images regenerate` — on-demand image
-// generation via the ComfyUI shim (gaka-myv).
+// generation via the ComfyUI shim (boom-myv).
 //
 // Two modes:
 //

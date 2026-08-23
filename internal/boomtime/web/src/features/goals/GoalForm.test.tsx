@@ -1,4 +1,4 @@
-// GoalForm.test.tsx — the "Public" toggle (Part B Stage 4, gaka-wpb). Two
+// GoalForm.test.tsx — the "Public" toggle (Part B Stage 4, boom-wpb). Two
 // invariants:
 //
 //   - Create: the toggle defaults OFF (private) and the submitted body
@@ -101,7 +101,7 @@ describe("GoalForm Public toggle (Part B Stage 4)", () => {
     expect(spec.axis).toBeUndefined();
   });
 
-  it("create: the metric picker highlights the active source (gaka-bs5l)", async () => {
+  it("create: the metric picker highlights the active source (boom-bs5l)", async () => {
     renderWithProviders(<GoalForm open onOpenChange={() => {}} editing={null} />);
     const coding = screen.getByTestId("metric-coding");
     const listening = screen.getByTestId("metric-listening");

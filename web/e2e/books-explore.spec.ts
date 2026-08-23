@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// books-explore — /app/books, the MERGED groupable Books view (gaka-02sh Track C).
+// books-explore — /app/books, the MERGED groupable Books view (boom-02sh Track C).
 //
 // The old "Explore" toggle + measure buttons + `explore-groups` testid were
 // retired when the flat Table and the Explore breakdown collapsed onto ONE

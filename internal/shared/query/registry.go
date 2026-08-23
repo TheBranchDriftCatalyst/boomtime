@@ -1,4 +1,4 @@
-// Package query is boomtime's tight, typed cross-domain query DSL (gaka-174.q).
+// Package query is boomtime's tight, typed cross-domain query DSL (boom-174.q).
 //
 // One grammar — from(domain)·where·group·measure·over·bucket·having·sort·limit —
 // compiles to owner-scoped SQL over ANY registered domain (coding, reading, …)

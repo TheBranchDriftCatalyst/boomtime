@@ -4,7 +4,7 @@
 // heartbeats latest / group / list (audit views for the Explorer) and the
 // Entity Explorer (list + REDACT).
 //
-// Extracted from internal/handler/ as part of gaka-8tn phase 5a. Domain
+// Extracted from internal/handler/ as part of boom-8tn phase 5a. Domain
 // scope covers ONLY the ingest write surface and its adjacent explorer
 // reads; broader dashboard / stats / rollup rebuild helpers stay put.
 //
@@ -17,7 +17,7 @@
 // used by the DB restore endpoint — so a stray fetch cannot scrub rows.
 //
 // Shared helpers live in internal/apihelpers/ — this package imports
-// that instead of carrying per-file shims (gaka-8tn phase 8 collapse).
+// that instead of carrying per-file shims (boom-8tn phase 8 collapse).
 package ingest
 
 import (

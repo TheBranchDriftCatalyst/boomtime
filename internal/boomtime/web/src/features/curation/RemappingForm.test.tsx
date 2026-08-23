@@ -174,7 +174,7 @@ describe("RemappingForm (P0/P1)", () => {
   });
 });
 
-describe("RemappingForm edit mode (gaka-cn1)", () => {
+describe("RemappingForm edit mode (boom-cn1)", () => {
   it("pre-fills from the rule and upserts (create only) when only the target changes", async () => {
     const body = capturePost();
     let deleted = false;

@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 // books-standalone — end-to-end proof that the STANDALONE catalyst-books app
-// (cmd/catalyst-books + `yarn build:books`) runs FULLY in isolation (gaka-zp2s).
+// (cmd/catalyst-books + `yarn build:books`) runs FULLY in isolation (boom-zp2s).
 //
 // Unlike the other specs in this suite (which drive the host stack at :5173 with
 // a seeded, authenticated user), this one targets a running STANDALONE books

@@ -1,4 +1,4 @@
-// scrub.go: the unified "public-safe" widget-payload scrubber (bd gaka-6jm.3).
+// scrub.go: the unified "public-safe" widget-payload scrubber (bd boom-6jm.3).
 //
 // # Public-safe contract
 //
@@ -90,7 +90,7 @@ func Scrub(payload *model.StatsPayload, hidden model.HiddenSets) *model.StatsPay
 }
 
 // ScrubMomentum enforces the public-safe contract on the momentum widget's
-// payload (bd gaka-6jm.6). MomentumPayload carries per-project rows keyed by
+// payload (bd boom-6jm.6). MomentumPayload carries per-project rows keyed by
 // project name; the DB predicate (db.GetMomentum) already excludes hidden
 // projects at query time, but this scrubber is the belt to that brace — if a
 // hide rule was authored AFTER a widget snapshot was cached, or if there is any

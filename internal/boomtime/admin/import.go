@@ -44,7 +44,7 @@ func (h *Handler) ImportRequest(c *echo.Context) error {
 		return apihelpers.RespondErr(c, apierr.BadRequest("Invalid request body"))
 	}
 
-	// gaka-6jm.8: save-on-success. Rather than persist the typed key eagerly
+	// boom-6jm.8: save-on-success. Rather than persist the typed key eagerly
 	// (the old behavior — see the pre-6jm.8 comment block), we defer the
 	// save to the worker's terminal-success path. This way a user who typed a
 	// wrong key gets a failed import job WITHOUT their bad key being written
@@ -189,7 +189,7 @@ func (h *Handler) ImportJobCancel(c *echo.Context) error {
 
 	// Signal the in-process worker. Cancel returns a done channel that closes
 	// AFTER the worker goroutine's terminal DB write (finishCancelled) — no
-	// race, no sleep (gaka-al6). If the job isn't running here (queued or
+	// race, no sleep (boom-al6). If the job isn't running here (queued or
 	// already terminal), we cancel durably in the DB and skip the wait.
 	done, running := h.Worker.Cancel(id)
 	if !running {
@@ -245,7 +245,7 @@ func (h *Handler) WakatimeRange(c *echo.Context) error {
 
 	rng, err := importer.FetchAllTimeRange(ctx, token)
 	if err != nil {
-		// gaka-awh.2: tag with "user" so this stays user-scoped in the Logs tab.
+		// boom-awh.2: tag with "user" so this stays user-scoped in the Logs tab.
 		h.Logger.Warn("wakatime range lookup failed", "user", owner, "err", err)
 		return c.JSON(http.StatusOK, map[string]any{"hasData": false})
 	}

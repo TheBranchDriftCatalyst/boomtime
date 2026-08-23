@@ -1,5 +1,5 @@
 // jobs_queues_http_test.go — HTTP auth-gate coverage for GET
-// /api/v1/admin/jobs/queues (gaka-hney queue overview). Mirrors the metrics
+// /api/v1/admin/jobs/queues (boom-hney queue overview). Mirrors the metrics
 // endpoint's gate test: unauth'd ⇒ 4xx, non-admin ⇒ 403 with no allowlist leak.
 // The 200-with-data path is covered end-to-end by the store-level
 // TestListJobKindStats (a wired JobStore needs a live pool); here we only assert

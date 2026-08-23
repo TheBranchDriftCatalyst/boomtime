@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- gaka-scrub: an "apply at ingest" flag on rename rules. A curation rename rule
+-- boom-scrub: an "apply at ingest" flag on rename rules. A curation rename rule
 -- already applies at query-time (remapExpr, reversible view) and on-demand
 -- destructively (ApplyRename). This flag adds a FOURTH application point: the
 -- ingest path (internal/ingest.storeAndRespond) rewrites newly-stored heartbeat

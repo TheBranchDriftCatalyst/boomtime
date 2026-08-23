@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- gaka-vh8: git-history backfill support.
+-- boom-vh8: git-history backfill support.
 --
 -- DEVIATION FROM PLAN: the plan said "tag via sender='backfill:git'" but
 -- heartbeats.sender has an FK to users(username) that must not point at a

@@ -76,7 +76,7 @@ func TestParseAggregates_FloatMillisecondsSum(t *testing.T) {
 	}
 }
 
-// gaka-vvij: a near-100% title with is_finished=false must classify as completed.
+// boom-vvij: a near-100% title with is_finished=false must classify as completed.
 func TestToReadingItem_NearComplete_CountsAsFinished(t *testing.T) {
 	li := LibraryItem{ASIN: "B0N95", Title: "Almost Done", IsFinished: false, PercentComplete: 99}
 	ri := li.toReadingItem("tester")

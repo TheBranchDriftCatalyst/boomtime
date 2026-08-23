@@ -34,7 +34,7 @@ type dashboardScope struct {
 	t0, t1     time.Time
 	limit      int64
 	spaceParam string
-	// tz (gaka-dg7) is the resolved IANA name for the owner (never ""): a
+	// tz (boom-dg7) is the resolved IANA name for the owner (never ""): a
 	// SINGLE lookup at scope-construction time then threaded through every
 	// SQL that extracts dow/hour/date from time_sent. If a handler talks to
 	// multiple TZ-sensitive queries in one request (Stats -> activity +
@@ -60,7 +60,7 @@ func (h *Handler) dashboardScope(c *echo.Context, days int) (*dashboardScope, *a
 		t1:         t1,
 		limit:      apihelpers.TimeLimit(c),
 		spaceParam: c.QueryParam("space"),
-		// gaka-dg7: single lookup, one place per request. resolveUserTZ never
+		// boom-dg7: single lookup, one place per request. resolveUserTZ never
 		// returns "" so all downstream $tz bindings are safe.
 		tz: apihelpers.ResolveUserTZ(h.DB, h.Logger, ctx, owner, h.Cfg.DefaultTimezoneValue()),
 	}, nil
@@ -70,7 +70,7 @@ func (h *Handler) dashboardScope(c *echo.Context, days int) (*dashboardScope, *a
 // terminated with the "space:<param>" and "tz:<name>" components. The key
 // format (same parts, same order) is behavior — keep it stable.
 //
-// gaka-dg7: tz is part of the key so a TZ change flips buckets to a distinct
+// boom-dg7: tz is part of the key so a TZ change flips buckets to a distinct
 // cache slot instead of serving pre-change UTC buckets under a hot key. The
 // PATCH endpoint also fires invalidateOwnerCache, so this is defense-in-depth.
 func (s *dashboardScope) cacheKey(name string, parts ...any) string {

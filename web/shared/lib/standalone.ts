@@ -1,4 +1,4 @@
-// Books-standalone build flag (gaka-zp2s).
+// Books-standalone build flag (boom-zp2s).
 //
 // `VITE_BOOKS_STANDALONE` is set to "true" ONLY by web/vite.books.config.ts via
 // `define` — the host build never sets it. So in the host bundle this constant

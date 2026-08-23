@@ -1,4 +1,4 @@
-// UserAvatarImage (gaka-9v4) — a tiny <img> keyed to a username that
+// UserAvatarImage (boom-9v4) — a tiny <img> keyed to a username that
 // gracefully falls back to an amber-bordered initials square when the
 // server hasn't generated a chibi for that user yet.
 //

@@ -28,7 +28,7 @@ export interface CatalogWidgetEntry {
   category: string;
   primitives?: WidgetPrimitive[];
   embeddable: boolean;
-  /** gaka-qcxg: when set, the gallery only lists this entry when the named
+  /** boom-qcxg: when set, the gallery only lists this entry when the named
    * PublicConfig flag is on (see CatalogPage's usePublicConfig gate). Undefined
    * = always listed (every pre-existing kind). */
   flag?: CatalogFeatureFlag;
@@ -55,7 +55,7 @@ export const CATALOG_CATEGORIES: string[] = [
 const OTHER_CATEGORY = "Other";
 
 // One entry per WIDGET_CATALOG kind. Grouped to read like the catalog's own
-// section comments (catalog.ts's gaka-* banners) — see that file for what
+// section comments (catalog.ts's boom-* banners) — see that file for what
 // each kind actually renders.
 const CATEGORY_BY_KIND: Record<string, string> = {
   // Identity chrome — hero tile, grade poster, awarded-labels showcase,
@@ -113,7 +113,7 @@ const CATEGORY_BY_KIND: Record<string, string> = {
   "github-languages": "GitHub",
   "github-stats": "GitHub",
 
-  // Reading domain (gaka-qcxg) — books_enabled-gated fe-only tiles.
+  // Reading domain (boom-qcxg) — books_enabled-gated fe-only tiles.
   "reading-listening-trend": "Reading",
   "reading-books-by-genre": "Reading",
   "reading-top-series": "Reading",
@@ -126,7 +126,7 @@ const CATEGORY_BY_KIND: Record<string, string> = {
   wellness: "Overview",
 };
 
-// gaka-qcxg: kinds the gallery only lists when a boot-config feature flag is
+// boom-qcxg: kinds the gallery only lists when a boot-config feature flag is
 // on. Guarded by catalogEntries.test.ts (the reading kinds must map to
 // books_enabled) so a new domain-gated kind can't silently ship ungated.
 const FLAG_BY_KIND: Record<string, CatalogFeatureFlag> = {

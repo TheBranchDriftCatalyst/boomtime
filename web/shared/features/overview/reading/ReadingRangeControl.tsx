@@ -1,5 +1,5 @@
 // ReadingRangeControl — the segmented time-window switcher in the Reading
-// dashboard header (gaka-h2pg). Drives the windowed tiles (listening in range,
+// dashboard header (boom-h2pg). Drives the windowed tiles (listening in range,
 // trend, finished-per-bucket) through the shared `readingRange` store. Styled
 // as a neon pill group to match the house synthwave chrome and the Books-page
 // Table/Explore toggle; theme-aware (uses the primary token, so it re-tints per

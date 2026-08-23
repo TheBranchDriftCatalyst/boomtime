@@ -1,4 +1,4 @@
-// AvatarTab (gaka-9v4) — the "PROFILE SYNTHESIS · BIOMETRIC RENDER"
+// AvatarTab (boom-9v4) — the "PROFILE SYNTHESIS · BIOMETRIC RENDER"
 // console in Settings. Three columns:
 //
 //   LEFT  (INPUT CONTEXT):  top-3 dominant traits + one-line activity
@@ -104,7 +104,7 @@ export function AvatarTab() {
     staleTime: 60_000,
   });
   const username = current?.data?.full_name ?? "";
-  // gaka-9v4: SYNTHESIZE endpoint is under /api/v1/admin/... so it's
+  // boom-9v4: SYNTHESIZE endpoint is under /api/v1/admin/... so it's
   // gated on the admin allowlist. Non-admin users can still type their
   // own prompt in the textarea and hit RENDER — only the "auto-author
   // from labels" convenience is admin-gated (see the design note about
@@ -222,7 +222,7 @@ export function AvatarTab() {
         </div>
       </CardHeader>
       <CardContent>
-        {/* Stacks to one column on mobile (gaka-k26n.3); the fixed 3-track
+        {/* Stacks to one column on mobile (boom-k26n.3); the fixed 3-track
             dossier layout (with the 340px preview column) only kicks in at lg. */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(200px,1fr)_minmax(280px,2fr)_340px]">
           {/* LEFT — INPUT CONTEXT */}

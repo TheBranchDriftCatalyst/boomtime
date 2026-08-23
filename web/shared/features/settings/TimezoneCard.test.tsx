@@ -1,4 +1,4 @@
-// TimezoneCard.test.tsx (gaka-dg7) — non-tautological tests for the Settings
+// TimezoneCard.test.tsx (boom-dg7) — non-tautological tests for the Settings
 // > Profile timezone card.
 //
 // Coverage:
@@ -100,7 +100,7 @@ afterEach(() => {
   }
 });
 
-describe("TimezoneCard (gaka-dg7)", () => {
+describe("TimezoneCard (boom-dg7)", () => {
   it("renders the effective timezone from the server payload", async () => {
     // Fresh account: no explicit pick, server default resolves to PT.
     server.use(

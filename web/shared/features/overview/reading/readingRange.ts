@@ -1,4 +1,4 @@
-// readingRange — the selected time window for the Reading dashboard (gaka-h2pg).
+// readingRange — the selected time window for the Reading dashboard (boom-h2pg).
 //
 // A module-level store (same pattern as the public-profile `profileRange` and
 // the feature-flags store) so the segmented control in the dashboard header and

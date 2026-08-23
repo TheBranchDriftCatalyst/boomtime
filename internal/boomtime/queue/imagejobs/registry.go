@@ -1,7 +1,7 @@
 // Package imagejobs is an in-memory job registry + worker pool for the label-
-// image regeneration flow (gaka-8bz).
+// image regeneration flow (boom-8bz).
 //
-// Prior to gaka-8bz the FE owned the concurrency pool: it POSTed each label to
+// Prior to boom-8bz the FE owned the concurrency pool: it POSTed each label to
 // /admin/label-images/regenerate, tracked in-flight IDs in a client-side Set,
 // throttled parallel requests at MAX_PARALLEL_REGENS=2, and polled the info
 // endpoint every 10s to see completion. Reload/close/tab-switch dropped the
@@ -55,7 +55,7 @@ const (
 // Description holds the label's rich narrative; the labelimages Executor
 // slots it between the systemPrompt and the optimizedPrompt when composing
 // the final tag-list (see labelimages.buildFinalPrompt). Empty description
-// preserves the pre-gaka-8bz {system, prompt} shape.
+// preserves the pre-boom-8bz {system, prompt} shape.
 type Job struct {
 	ID          string     `json:"id"`
 	LabelID     string     `json:"labelId"`
@@ -77,7 +77,7 @@ type Job struct {
 // SINGLE place the Job -> Entry mapping happens: cmd/boomtime's Executor
 // closure (shared verbatim by both the in-process Pool and the AMQP
 // consumer — see main.go) calls this instead of duplicating the struct
-// literal per transport. (gaka-8bz — shared DRY core.)
+// literal per transport. (boom-8bz — shared DRY core.)
 func (j Job) ToLabelEntry() labelcatalog.Entry {
 	return labelcatalog.Entry{
 		ID:          j.LabelID,

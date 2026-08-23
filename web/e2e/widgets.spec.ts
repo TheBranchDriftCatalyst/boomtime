@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * gaka-hsj — embeddable widgets happy path against the live dev stack.
+ * boom-hsj — embeddable widgets happy path against the live dev stack.
  * Auth comes from the storageState captured in global-setup (same as
  * add-to-space.spec.ts); heartbeats are seeded there too.
  */
@@ -56,11 +56,11 @@ test("settings rail lists the registered tabs incl. widgets and changelog", asyn
   page,
 }) => {
   await page.goto("/app/settings");
-  // gaka-4x33: Settings' nav is a vertical rail now. Its entries switch on
+  // boom-4x33: Settings' nav is a vertical rail now. Its entries switch on
   // ?tab= rather than routing, so they are buttons, not links.
   const rail = page.getByRole("navigation", { name: "Settings sections" });
   await expect(rail).toBeVisible();
-  // "Logs" is deliberately absent: it moved to /app/admin/logs (gaka-ebq) and
+  // "Logs" is deliberately absent: it moved to /app/admin/logs (boom-ebq) and
   // admin-sidebar.spec.ts asserts Settings no longer surfaces it. This list
   // still named it, so the expectation contradicted that spec.
   for (const label of ["Hidden data", "Remappings", "Widgets", "Changelog"]) {
@@ -76,7 +76,7 @@ test("settings rail lists the registered tabs incl. widgets and changelog", asyn
   ).toBeVisible();
 
   // The legacy /app/logs redirect used to be asserted here as landing on
-  // /app/settings?tab=logs. Logs moved to /app/admin/logs (gaka-ebq), so that
+  // /app/settings?tab=logs. Logs moved to /app/admin/logs (boom-ebq), so that
   // expectation had been wrong ever since — and it can't live here anyway now:
   // this spec runs as the non-admin e2e user, for whom AdminRoute correctly
   // bounces /app/admin/* back to /app. admin-sidebar.spec.ts owns the legacy

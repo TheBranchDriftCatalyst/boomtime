@@ -51,7 +51,7 @@ function relative(iso: string): string {
 }
 
 /**
- * Entity Explorer (gaka-90x): pick an entity ty (file/app/domain/url), see
+ * Entity Explorer (boom-90x): pick an entity ty (file/app/domain/url), see
  * the flat list of every distinct non-empty entity the owner has under that
  * type with heartbeat counts + first/last seen, then REDACT individual or
  * bulk-selected entities. Redact blanks the entity column on matching rows

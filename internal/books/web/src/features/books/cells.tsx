@@ -1,4 +1,4 @@
-// cells.tsx — the shared Books cell renderers (gaka-02sh). Extracted verbatim
+// cells.tsx — the shared Books cell renderers (boom-02sh). Extracted verbatim
 // from the old hand-rolled BooksTable so the groupable-explorer config
 // (booksExplorerConfig.tsx) can reuse the exact same cover / badge / pill /
 // progress / rating cells the flat table always rendered. No behavior change —
@@ -144,7 +144,7 @@ export function StatusPill({
 
 // --- Curation provenance ------------------------------------------------------
 //
-// Three provenance states for a book's effective status (gaka-books):
+// Three provenance states for a book's effective status (boom-books):
 //   auto      — plain Amazon-derived; the device layer, no override. No dot.
 //   curated   — a user override you set (or just set optimistically). A filled
 //               dot in the pill's own hue (currentColor) — "you curated this".

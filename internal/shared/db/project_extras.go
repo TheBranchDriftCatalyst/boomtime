@@ -49,7 +49,7 @@ func (d *DB) GetProjectExtras(ctx context.Context, user, project string, start, 
 	ex := &ProjectExtras{}
 
 	// --- Daily authoring/reading/breadth (project-match remap + case-fold) ---
-	// gaka-dg7: $6 = IANA tz for the day bucket in both extras queries; the
+	// boom-dg7: $6 = IANA tz for the day bucket in both extras queries; the
 	// project remap splice starts at $7 to leave room.
 	// Always splice a case-insensitive match on the (possibly remapped) project
 	// so "MyProject" matches rows stored as "myproject"; when no rename is
@@ -83,7 +83,7 @@ func (d *DB) GetProjectExtras(ctx context.Context, user, project string, start, 
 	// Always wrap: fold branch casing and pick a canonical display GLOBALLY per
 	// lower-key (highest-total variant wins; alphabetical ASC tie-break), applying
 	// the rename remap first (identity when no rule). "main" and "Main" merge into
-	// one row and both days pick the same display casing (gaka-5db — prior MODE()
+	// one row and both days pick the same display casing (boom-5db — prior MODE()
 	// per (day, lower(branch)) group produced different casings per day).
 	var bexpr string
 	bexpr, branchArgs, next = rs.remapExpr("branch", "branch", "", next, branchArgs)

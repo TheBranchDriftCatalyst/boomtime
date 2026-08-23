@@ -1,5 +1,5 @@
 // achievement_evaluator_ginkgo_test.go — ginkgo mirror of
-// achievement_evaluator_test.go (gaka-0vp.1). Parallel migration:
+// achievement_evaluator_test.go (boom-0vp.1). Parallel migration:
 // both files run until the kill switch drops the stdlib variant.
 //
 // 1:1 case map (22 stdlib TestXxx → 22 ginkgo Its / entries):

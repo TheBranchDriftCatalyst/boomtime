@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- gaka-93f.11.6: store the provider refresh_token RECOVERABLY (AES-256-GCM,
+-- boom-93f.11.6: store the provider refresh_token RECOVERABLY (AES-256-GCM,
 -- BOOM_ENCRYPTION_KEY) instead of hashed, so /auth/refresh_token can silently
 -- do a refresh-grant against the IdP and rotate the OIDC web session. The old
 -- hashed_refresh column could only VERIFY a presented token, never USE one, so

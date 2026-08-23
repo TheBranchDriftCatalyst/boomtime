@@ -1,6 +1,6 @@
 package db
 
-// gaka-93f.14: OIDC web users get a SHORT access bearer with NO local refresh
+// boom-93f.14: OIDC web users get a SHORT access bearer with NO local refresh
 // token, and those bearers are revoked wholesale on logout — so a federated
 // session can't be converted into a standalone, unrevocable local credential.
 

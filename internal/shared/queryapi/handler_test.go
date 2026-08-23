@@ -1,4 +1,4 @@
-// handler_test.go — HTTP integration tests for POST /api/v1/query (gaka-174.q).
+// handler_test.go — HTTP integration tests for POST /api/v1/query (boom-174.q).
 //
 // Non-tautological invariants each case pins:
 //   - a valid coding group query returns real Groups computed from seeded rows
@@ -83,7 +83,7 @@ func statusFor(finished bool) string {
 	return "reading"
 }
 
-var _ = Describe("POST /api/v1/query (gaka-174.q)", func() {
+var _ = Describe("POST /api/v1/query (boom-174.q)", func() {
 	It("runs a valid coding group query and returns real aggregated groups", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()

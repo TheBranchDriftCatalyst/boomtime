@@ -1,6 +1,6 @@
 // LabelImage — a tiny <img> that gracefully falls back to a glyph span
 // (or the provided fallback node) when the backend hasn't generated an
-// image for this label (gaka-myv).
+// image for this label (boom-myv).
 //
 // The image URL is /api/v1/labels/{id}/image; the server responds 404
 // when no row is present, which triggers onError -> fallback state.

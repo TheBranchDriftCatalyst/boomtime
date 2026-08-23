@@ -1,4 +1,4 @@
-// user_avatars.go (gaka-9v4): DB accessors for the per-user AI-generated
+// user_avatars.go (boom-9v4): DB accessors for the per-user AI-generated
 // CHIBI portrait. One row per user, PK on username, lazy-populated by the
 // Settings > Avatar tab. Read path serves the raw bytes; write path is
 // two-phase (SetAvatarStatus running → SaveUserAvatar ready) so a long-
@@ -126,7 +126,7 @@ func (d *DB) SetAvatarStatus(ctx context.Context, username string, status UserAv
 }
 
 // ReapOrphanedAvatarRenders flips every 'running' avatar row to 'error' at
-// startup (gaka-93f.27). The render is an in-process goroutine (see
+// startup (boom-93f.27). The render is an in-process goroutine (see
 // identity.RegenerateAvatar) that cannot survive a process restart — so any row
 // still 'running' when the server boots is definitionally orphaned (its
 // goroutine died with the previous process). Without this, a pod restart mid-

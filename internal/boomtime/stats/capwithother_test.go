@@ -1,11 +1,11 @@
-// capwithother_ginkgo_test.go — ginkgo mirror of capwithother_test.go (gaka-tst-ginkgo).
+// capwithother_ginkgo_test.go — ginkgo mirror of capwithother_test.go (boom-tst-ginkgo).
 // 1:1 case map (7 stdlib TestXxx):
 //
 //	TestCapWithOtherSmallListUnchanged                → capWithOther > "small list (<= topN) is unchanged"
 //	TestCapWithOtherCollapsesTail                     → capWithOther > "collapses tail into Other with element-wise sums"
-//	TestCapWithOtherCarriesOtherMembers               → capWithOther > "Other carries members for tooltip breakdown (gaka-7m4)"
-//	TestCapWithOtherRespectsMembersCap                → capWithOther > "respects otherMembersCap (post gaka-mwp-other)"
-//	TestCapWithOtherGrowsToKeepOtherBelowCeiling      → capWithOther > "grows topN to keep Other <= 25% ceiling (gaka-mwp-other)"
+//	TestCapWithOtherCarriesOtherMembers               → capWithOther > "Other carries members for tooltip breakdown (boom-7m4)"
+//	TestCapWithOtherRespectsMembersCap                → capWithOther > "respects otherMembersCap (post boom-mwp-other)"
+//	TestCapWithOtherGrowsToKeepOtherBelowCeiling      → capWithOther > "grows topN to keep Other <= 25% ceiling (boom-mwp-other)"
 //	TestCapWithOtherHonorsDefaultNWhenOtherIsSmall    → capWithOther > "honors default N when Other is already small"
 //	TestCapWithOtherSmallListHasNoOtherMembers        → capWithOther > "small list rows carry no Other* fields"
 //	TestCapWithOtherDoesNotMutateInput                → capWithOther > "does not mutate caller's input slice or backing array"
@@ -68,9 +68,9 @@ var _ = Describe("capWithOther", func() {
 		Expect(other.PctDaily[1]).To(Equal(float64(12.5)))
 	})
 
-	// gaka-7m4: the synthesized "Other" entry must carry the tail members so
+	// boom-7m4: the synthesized "Other" entry must carry the tail members so
 	// tooltips can render a breakdown.
-	It("Other carries OtherMembers for tooltip breakdown (gaka-7m4)", func() {
+	It("Other carries OtherMembers for tooltip breakdown (boom-7m4)", func() {
 		var in []model.ResourceStats
 		for i := 0; i < 14; i++ {
 			in = append(in, model.ResourceStats{
@@ -119,9 +119,9 @@ var _ = Describe("capWithOther", func() {
 		Expect(other.OtherMembers[0].TotalSeconds).To(Equal(expectedFirst))
 	})
 
-	// gaka-mwp-other: Other shouldn't dominate — if the default top-12 would leave
+	// boom-mwp-other: Other shouldn't dominate — if the default top-12 would leave
 	// Other above the ceiling, grow topN until it drops below OR we hit resourceMaxN.
-	It("grows topN to keep Other share <= 25% ceiling (gaka-mwp-other)", func() {
+	It("grows topN to keep Other share <= 25% ceiling (boom-mwp-other)", func() {
 		// 40 entries, each 100s → grand total 4000. Default-N would give 70% Other.
 		var in []model.ResourceStats
 		for i := 0; i < 40; i++ {

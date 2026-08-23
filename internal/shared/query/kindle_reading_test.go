@@ -1,4 +1,4 @@
-// kindle_reading_test.go — the unification contract (gaka-books): once the
+// kindle_reading_test.go — the unification contract (boom-books): once the
 // forward Kindle reading-time composition writes reading_activity(source='kindle'),
 // the reading `seconds` measure sums Kindle reading-time ALONGSIDE Audible
 // listening-time, grouped by source. This pins that a kindle row shows up in the

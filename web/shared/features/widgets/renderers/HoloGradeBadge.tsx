@@ -1,5 +1,5 @@
 // HoloGradeBadge — the RANK grade badge with a holographic-foil sheen
-// (gaka-174.6). Pointer-reactive: the badge tilts toward the cursor and an
+// (boom-174.6). Pointer-reactive: the badge tilts toward the cursor and an
 // iridescent foil + glare track the pointer. A faint idle shimmer keeps it
 // alive without a cursor (skipped under prefers-reduced-motion via CSS).
 //

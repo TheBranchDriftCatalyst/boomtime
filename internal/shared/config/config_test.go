@@ -1,4 +1,4 @@
-// config_ginkgo_test.go — ginkgo mirror of config_test.go (gaka-0vp).
+// config_ginkgo_test.go — ginkgo mirror of config_test.go (boom-0vp).
 // 1:1 case map (5 top-level TestXxx, several with subtests):
 //
 //	TestLoadDefaults              → Load > "defaults"
@@ -117,7 +117,7 @@ var _ = Describe("getEnvInt", func() {
 	})
 })
 
-var _ = Describe("CookieSecure derivation (gaka-b5x.1)", func() {
+var _ = Describe("CookieSecure derivation (boom-b5x.1)", func() {
 	DescribeTable("env + explicit → Secure flag",
 		func(env, explicit string, want bool) {
 			clearEnv()
@@ -132,7 +132,7 @@ var _ = Describe("CookieSecure derivation (gaka-b5x.1)", func() {
 		Entry("production default → Secure", "production", "", true),
 		Entry("PROD (case-insensitive) default → Secure", "PROD", "", true),
 		Entry("dev default → not Secure", "dev", "", false),
-		// gaka-93f.19: prod IGNORES an explicit false (forced Secure); dev honors
+		// boom-93f.19: prod IGNORES an explicit false (forced Secure); dev honors
 		// an explicit override in either direction.
 		Entry("prod + explicit false → forced Secure (prod-force)", "prod", "false", true),
 		Entry("production + explicit false → forced Secure", "production", "false", true),
@@ -140,7 +140,7 @@ var _ = Describe("CookieSecure derivation (gaka-b5x.1)", func() {
 		Entry("dev + explicit false stays not Secure", "dev", "false", false),
 	)
 
-	// gaka-93f.19: the prod-force is a security floor — a prod deploy that copied
+	// boom-93f.19: the prod-force is a security floor — a prod deploy that copied
 	// BOOM_COOKIE_SECURE=false from a dev env must NOT ship a non-Secure refresh
 	// cookie over TLS. dev keeps its explicit-override freedom.
 	It("prod + BOOM_COOKIE_SECURE=false is forced back to Secure=true", func() {

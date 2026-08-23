@@ -1,4 +1,4 @@
-// project_extras_ginkgo_test.go — ginkgo mirror of project_extras_test.go (gaka-tst-ginkgo).
+// project_extras_ginkgo_test.go — ginkgo mirror of project_extras_test.go (boom-tst-ginkgo).
 // 1:1 case map (7 stdlib TestXxx):
 //
 //	TestProjectExtrasWriteReadSplit             → ToProjectStatistics extras > "writeSeconds/readSeconds totals + aligned dailyWriteRatio"
@@ -265,7 +265,7 @@ var _ = Describe("ToProjectStatistics languagesDaily", func() {
 	})
 })
 
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
+// -- helpers restored from stdlib partner (boom-0vp.17) --
 func day(y int, m time.Month, d int) time.Time {
 	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
 }

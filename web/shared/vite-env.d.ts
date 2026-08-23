@@ -5,7 +5,7 @@ interface ImportMetaEnv {
   readonly VITE_GA_MEASUREMENT_ID?: string;
   /**
    * Base URL of the Grafana instance that hosts the reading-monitor cadence
-   * board (gaka-books). Unset = fall back to the deploy default in
+   * board (boom-books). Unset = fall back to the deploy default in
    * ReadingMonitorPanel (a same-host /grafana reverse-proxy path). Set this to
    * an absolute origin (e.g. https://grafana.example.com) when Grafana lives
    * elsewhere.

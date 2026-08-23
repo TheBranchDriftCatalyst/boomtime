@@ -1,5 +1,5 @@
 // awards_coverage_ginkgo_test.go — ginkgo mirror of awards_coverage_test.go
-// (gaka-hc6.6).
+// (boom-hc6.6).
 //
 // The stdlib version uses a runtime-driven `for _, row := range dbRows { t.Run
 // (row.ID, ...) }`, which reads the label catalog from Postgres. Ginkgo
@@ -32,7 +32,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
-var _ = Describe("label coverage sweep (gaka-hc6.6)", func() {
+var _ = Describe("label coverage sweep (boom-hc6.6)", func() {
 	It("every catalog label fires against its minimum-viable seed", func() {
 		if testing.Short() {
 			Skip("coverage sweep is expensive; -short skips it")

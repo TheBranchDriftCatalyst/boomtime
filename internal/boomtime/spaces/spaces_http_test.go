@@ -1,5 +1,5 @@
 // spaces_http_test.go — end-to-end HTTP coverage for the spaces cluster
-// (gaka-d6x.handler). Covers every handler in spaces.go:
+// (boom-d6x.handler). Covers every handler in spaces.go:
 //
 //	ListSpaces, CreateSpace, UpdateSpace, DeleteSpace,
 //	GetSpace, AddSpaceRule, DeleteSpaceRule, SpacePreview

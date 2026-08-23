@@ -1,4 +1,4 @@
-// Standalone catalyst-books entry (gaka-zp2s). BYTE-FOR-BYTE identical to
+// Standalone catalyst-books entry (boom-zp2s). BYTE-FOR-BYTE identical to
 // main.tsx — same providers (QueryClient, CatalystProvider, TooltipProvider,
 // DevProviders, Toaster), same RootLayout, same createBrowserRouter shape, same
 // theme ("boomtime" default + legacy migration) — EXCEPT it composes only the

@@ -1,6 +1,6 @@
 package db
 
-// Integration tests for the offline user-admin methods (gaka-0oe.10) backing
+// Integration tests for the offline user-admin methods (boom-0oe.10) backing
 // `boomtime user set-role / disable / enable / list`. Runs against the isolated
 // boomtime_test DB (skips when no DB — see harness_test.go).
 
@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// gaka-93f.15: disabling an account is a KILL SWITCH — it must revoke every
+// boom-93f.15: disabling an account is a KILL SWITCH — it must revoke every
 // live credential (local access + refresh tokens, OIDC sessions) in the same
 // transaction, so existing sessions die immediately regardless of the feature
 // flag. This is the non-tautological half: the previous behavior set only

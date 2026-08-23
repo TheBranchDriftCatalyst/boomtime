@@ -1,5 +1,5 @@
 // importer_coverage_test.go — additional Ginkgo specs to lift importer
-// coverage from ~66% to >= 90% (gaka-d6x). Each block pins a named invariant
+// coverage from ~66% to >= 90% (boom-d6x). Each block pins a named invariant
 // and, wherever possible, favors adversarial payloads / cross-key /
 // no-oracle style over trivial roundtrips.
 //
@@ -61,7 +61,7 @@ type bytesBuffer = bytes.Buffer
 // bucket 1 — pure helpers (no DB, no network)
 // ---------------------------------------------------------------------------
 
-var _ = Describe("checkJSONType predicate matrix (gaka-d6x)", func() {
+var _ = Describe("checkJSONType predicate matrix (boom-d6x)", func() {
 	// Named invariant: EVERY jsonType constant either accepts or rejects a
 	// given raw fragment deterministically — no partial coverage of the
 	// switch means no silent behavior drift when the enum grows.
@@ -158,7 +158,7 @@ var _ = Describe("checkJSONType predicate matrix (gaka-d6x)", func() {
 	})
 })
 
-var _ = Describe("typeName / rawTypeName exhaustive labels (gaka-d6x)", func() {
+var _ = Describe("typeName / rawTypeName exhaustive labels (boom-d6x)", func() {
 	// Named invariant: every jsonType has a stable human label — silently
 	// returning "any" for a real enum entry would corrupt drift detail
 	// messages the FE shows to users.
@@ -200,7 +200,7 @@ var _ = Describe("typeName / rawTypeName exhaustive labels (gaka-d6x)", func() {
 	})
 })
 
-var _ = Describe("driftCollector.checkObject + knownKeys (gaka-d6x)", func() {
+var _ = Describe("driftCollector.checkObject + knownKeys (boom-d6x)", func() {
 	// Named invariant: checkObject applied to a stripped, malformed all_time
 	// data object surfaces both `missing_required` and `type_changed` for
 	// the same call — one payload, multiple flavors, deterministic order.
@@ -242,7 +242,7 @@ var _ = Describe("driftCollector.checkObject + knownKeys (gaka-d6x)", func() {
 	})
 })
 
-var _ = Describe("driftCollector.checkList envelope-defense (gaka-d6x)", func() {
+var _ = Describe("driftCollector.checkList envelope-defense (boom-d6x)", func() {
 	// Named invariant: checkList's inner json.Unmarshal is a belt-and-
 	// suspenders guard; if a caller feeds it a non-array raw fragment
 	// (bypassing checkEnvelope), it MUST still emit an error-severity
@@ -258,7 +258,7 @@ var _ = Describe("driftCollector.checkList envelope-defense (gaka-d6x)", func() 
 	})
 
 	It("sample=-1 (unlimited) visits every item — drift on item[1] surfaces", func() {
-		// gaka-d6x critique-fix: prior version fed [clean, clean] and asserted
+		// boom-d6x critique-fix: prior version fed [clean, clean] and asserted
 		// findings==nil, which would ALSO pass under `if sample < 0 { limit = 1 }`.
 		// The new payload puts drift ONLY at item[1] (missing required `id`) so
 		// a finding is proof the loop reached index 1.
@@ -310,7 +310,7 @@ var _ = Describe("driftCollector.checkList envelope-defense (gaka-d6x)", func() 
 	})
 })
 
-var _ = Describe("checkEnvelope non-object raw (gaka-d6x)", func() {
+var _ = Describe("checkEnvelope non-object raw (boom-d6x)", func() {
 	// Named invariant: a top-level JSON scalar (array/string/number/null)
 	// as the wakatime response is envelope_changed at error severity —
 	// otherwise a wakatime.com regression that returned a raw list would
@@ -324,7 +324,7 @@ var _ = Describe("checkEnvelope non-object raw (gaka-d6x)", func() {
 	})
 })
 
-var _ = Describe("convertForDB machine + ua fallbacks (gaka-d6x)", func() {
+var _ = Describe("convertForDB machine + ua fallbacks (boom-d6x)", func() {
 	// Named invariant: a heartbeat with unknown machine_name_id / user_agent_id
 	// must not blank out those fields — machine falls back to the literal
 	// "wakatime-import" sentinel (so operators can tell an unresolved row
@@ -357,7 +357,7 @@ var _ = Describe("convertForDB machine + ua fallbacks (gaka-d6x)", func() {
 		Expect(out).ToNot(BeNil()) // allocated slice, not nil
 	})
 
-	It("AI-assistance fields (gaka-1l9) pass through byte-for-byte", func() {
+	It("AI-assistance fields (boom-1l9) pass through byte-for-byte", func() {
 		inTok, outTok := int64(100), int64(200)
 		sess := "sess-abc"
 		hbs := []importHeartbeat{{
@@ -376,7 +376,7 @@ var _ = Describe("convertForDB machine + ua fallbacks (gaka-d6x)", func() {
 // bucket 2 — getRawJSON HTTP contract
 // ---------------------------------------------------------------------------
 
-var _ = Describe("getRawJSON HTTP contract (gaka-d6x)", func() {
+var _ = Describe("getRawJSON HTTP contract (boom-d6x)", func() {
 	// Named invariant: 401 from wakatime.com must produce an error that
 	// wraps ErrWakatimeUnauthorized — the worker distinguishes bad-key from
 	// network-failure precisely via errors.Is on this sentinel for
@@ -391,7 +391,7 @@ var _ = Describe("getRawJSON HTTP contract (gaka-d6x)", func() {
 		_, err := getRawJSON(context.Background(), srv.URL, "Basic zzz", nil)
 		Expect(err).To(HaveOccurred())
 		Expect(errors.Is(err, ErrWakatimeUnauthorized)).To(BeTrue(),
-			"401 must wrap ErrWakatimeUnauthorized (save-on-success key gaka-6jm.8)")
+			"401 must wrap ErrWakatimeUnauthorized (save-on-success key boom-6jm.8)")
 		Expect(err.Error()).To(ContainSubstring("bad api key"),
 			"upstream body must be preserved for operator debugging")
 	})
@@ -428,7 +428,7 @@ var _ = Describe("getRawJSON HTTP contract (gaka-d6x)", func() {
 	})
 
 	It("malformed URL → error without doing any network I/O (never leaks a request)", func() {
-		// gaka-d6x critique-fix: swap the shared httpClient's transport for a
+		// boom-d6x critique-fix: swap the shared httpClient's transport for a
 		// counting RoundTripper. Prior version only asserted err — a refactor
 		// that hits the network *then* errors would still pass. The counter
 		// pins the 'no request leaked' invariant.
@@ -538,7 +538,7 @@ func startWaka(h wakaHandler) *httptest.Server {
 	return httptest.NewServer(mux)
 }
 
-var _ = Describe("Worker.RecoverInterrupted (gaka-d6x)", func() {
+var _ = Describe("Worker.RecoverInterrupted (boom-d6x)", func() {
 	// Named invariant: any queued/running rows left over from a crash MUST
 	// be flipped to failed with the given reason — otherwise a restart
 	// silently orphans a zombie job that never runs.
@@ -573,7 +573,7 @@ var _ = Describe("Worker.RecoverInterrupted (gaka-d6x)", func() {
 	})
 })
 
-var _ = Describe("Worker.StartJob happy-path (gaka-d6x)", func() {
+var _ = Describe("Worker.StartJob happy-path (boom-d6x)", func() {
 	// Named invariant: StartJob spawns a goroutine that drives the job to
 	// completed AND removes itself from the running registry after the
 	// terminal DB write lands. Cancel on a since-completed job returns a
@@ -637,7 +637,7 @@ var _ = Describe("Worker.StartJob happy-path (gaka-d6x)", func() {
 	})
 })
 
-var _ = Describe("Worker.run 401-on-lookups (gaka-d6x)", func() {
+var _ = Describe("Worker.run 401-on-lookups (boom-d6x)", func() {
 	// Named invariant: when the very first upstream call (user_agents)
 	// returns 401, the run terminates as failed AND (given a previously
 	// saved key) applyKeyOutcome flips wakatime_key_status to 'invalid'.
@@ -683,14 +683,14 @@ var _ = Describe("Worker.run 401-on-lookups (gaka-d6x)", func() {
 		Expect(len(info.Blob)).To(Equal(len(priorCT)))
 		for i := range priorCT {
 			Expect(info.Blob[i]).To(Equal(priorCT[i]),
-				"typed-token ciphertext overwrote prior blob at byte %d — save-on-success (gaka-6jm.8) violated on 401", i)
+				"typed-token ciphertext overwrote prior blob at byte %d — save-on-success (boom-6jm.8) violated on 401", i)
 		}
 		Expect(info.Status).ToNot(BeNil())
 		Expect(*info.Status).To(Equal(string(db.WakatimeKeyStatusInvalid)))
 	})
 })
 
-var _ = Describe("Worker.run schema-drift-skips-day (gaka-d6x)", func() {
+var _ = Describe("Worker.run schema-drift-skips-day (boom-d6x)", func() {
 	// Named invariant: a NEW error-severity finding on a day's heartbeats
 	// (missing required field) causes THAT day's insert to skip while the
 	// job continues running — resiliency contract. Also proves drift
@@ -759,7 +759,7 @@ var _ = Describe("Worker.run schema-drift-skips-day (gaka-d6x)", func() {
 	})
 })
 
-var _ = Describe("Worker.applyKeyOutcome typed-token-absent-refresh (gaka-d6x)", func() {
+var _ = Describe("Worker.applyKeyOutcome typed-token-absent-refresh (boom-d6x)", func() {
 	// Named invariant: a completed run with NO typed token still refreshes
 	// wakatime_key_status → 'valid' on the users row (a clean run just
 	// re-proved a previously-saved key works). Complements the .8 typed
@@ -791,7 +791,7 @@ var _ = Describe("Worker.applyKeyOutcome typed-token-absent-refresh (gaka-d6x)",
 	})
 
 	It("applyKeyOutcome default branch (failed + no 401 + empty typed token) is byte-identical no-op", func() {
-		// gaka-d6x critique-fix: previously seeded a no-key user and asserted
+		// boom-d6x critique-fix: previously seeded a no-key user and asserted
 		// !HasSavedKey (already true before call — proves nothing). Now seed
 		// a prior key + prior status + prior checked_at and assert ALL three
 		// are byte-for-byte unchanged after the default branch runs.
@@ -828,12 +828,12 @@ var _ = Describe("Worker.applyKeyOutcome typed-token-absent-refresh (gaka-d6x)",
 	})
 })
 
-var _ = Describe("Worker.applyKeyOutcome encrypt-failure survives (gaka-d6x)", func() {
+var _ = Describe("Worker.applyKeyOutcome encrypt-failure survives (boom-d6x)", func() {
 	// Named invariant: if auth.Encrypt fails (env-key unset), the import is
 	// still considered a success from the user's perspective — no panic,
 	// no write to encrypted_wakatime_key, and prior blob (if any) untouched.
 	It("no BOOM_ENCRYPTION_KEY → encrypt fails (precondition proved), warn log emitted, no ciphertext, no panic", func() {
-		// gaka-d6x critique-fix: previously asserted !HasSavedKey + NotTo(Panic),
+		// boom-d6x critique-fix: previously asserted !HasSavedKey + NotTo(Panic),
 		// which stays green even if a prior spec's DeferCleanup left the env key
 		// installed (Encrypt would silently succeed but SetEncryptedWakatimeKey
 		// wasn't called for unrelated reasons). Now:
@@ -894,7 +894,7 @@ var _ = Describe("Worker.applyKeyOutcome encrypt-failure survives (gaka-d6x)", f
 // bucket 4 — finishCancelled + withBackgroundTimeout + StartJob cancel-race
 // ---------------------------------------------------------------------------
 
-var _ = Describe("Worker.finishCancelled (gaka-d6x)", func() {
+var _ = Describe("Worker.finishCancelled (boom-d6x)", func() {
 	// Named invariant: finishCancelled uses a bounded BACKGROUND context so
 	// even when the caller's context is already done, the terminal DB write
 	// AND the "cancelled by user" log line both persist. Otherwise a user
@@ -965,7 +965,7 @@ var _ = Describe("Worker.finishCancelled (gaka-d6x)", func() {
 	})
 })
 
-var _ = Describe("withBackgroundTimeout (gaka-d6x)", func() {
+var _ = Describe("withBackgroundTimeout (boom-d6x)", func() {
 	// Named invariant: fn always receives a NON-nil context with a deadline
 	// and the cancel is always called — no leaked contexts.
 	It("passes a context with a deadline and calls cancel exactly once", func() {
@@ -1012,11 +1012,11 @@ func (f *fakeRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 	}, nil
 }
 
-var _ = Describe("FetchAllTimeRange (gaka-d6x)", func() {
+var _ = Describe("FetchAllTimeRange (boom-d6x)", func() {
 	// Named invariant: the transport-level Authorization header must be
 	// Basic <base64(apiToken)> — the caller provides a RAW apiToken and
 	// FetchAllTimeRange does the single base64 wrap. Double-base64 would
-	// 401 per gaka-f2l.
+	// 401 per boom-f2l.
 	It("happy-path: parses total_seconds + text + range + HasData=true", func() {
 		prev := httpClient
 		fake := &fakeRoundTripper{
@@ -1089,7 +1089,7 @@ var _ = Describe("FetchAllTimeRange (gaka-d6x)", func() {
 // bucket 6 — fetchLookups error branches (decode failure)
 // ---------------------------------------------------------------------------
 
-var _ = Describe("Worker.fetchLookups decode failure (gaka-d6x)", func() {
+var _ = Describe("Worker.fetchLookups decode failure (boom-d6x)", func() {
 	// Named invariant: a wakatime response that is 200 OK but not valid
 	// JSON causes fetchLookups to return an error mentioning "decode
 	// user_agents" — the drift subsystem cannot mask this because the
@@ -1143,7 +1143,7 @@ var _ = Describe("Worker.fetchLookups decode failure (gaka-d6x)", func() {
 // bucket 7 — Worker.baseURL default branch
 // ---------------------------------------------------------------------------
 
-var _ = Describe("Worker.run cancellation-mid-import (gaka-d6x)", func() {
+var _ = Describe("Worker.run cancellation-mid-import (boom-d6x)", func() {
 	// Named invariant: cancellation during a day's HTTP call causes the run
 	// to reach the ctx-Err branch of the day loop → finishCancelled path.
 	// The persisted terminal state is 'cancelled' (not 'failed'), even
@@ -1193,7 +1193,7 @@ var _ = Describe("Worker.run cancellation-mid-import (gaka-d6x)", func() {
 	})
 })
 
-var _ = Describe("Worker.baseURL default (gaka-d6x)", func() {
+var _ = Describe("Worker.baseURL default (boom-d6x)", func() {
 	// Named invariant: an unset BaseURL falls back to the wakatime.com
 	// constant — otherwise production callers would silently hit the
 	// empty string.
@@ -1209,7 +1209,7 @@ var _ = Describe("Worker.baseURL default (gaka-d6x)", func() {
 })
 
 // ---------------------------------------------------------------------------
-// bucket 8 — critique gap-fills (gaka-d6x round 2)
+// bucket 8 — critique gap-fills (boom-d6x round 2)
 //
 // New coverage for invariants the reviewer flagged as unproven:
 //   - fetchLookups schema-drift fast-fail (200 OK + malformed body)
@@ -1221,7 +1221,7 @@ var _ = Describe("Worker.baseURL default (gaka-d6x)", func() {
 //   - cross-key negative (encrypt-with-wrong-key ≠ encrypt-with-real-key)
 // ---------------------------------------------------------------------------
 
-var _ = Describe("Worker.fetchLookups schema-drift fast-fail (gaka-d6x, missing invariant #1)", func() {
+var _ = Describe("Worker.fetchLookups schema-drift fast-fail (boom-d6x, missing invariant #1)", func() {
 	// Named invariant: even a 200-OK wakatime response that parses into the
 	// typed struct MUST fail the fetch when the drift-check turns up an
 	// error-severity finding on required fields (lookupSpec.required = [id,
@@ -1269,7 +1269,7 @@ var _ = Describe("Worker.fetchLookups schema-drift fast-fail (gaka-d6x, missing 
 	})
 })
 
-var _ = Describe("Worker.run UpdateJobProgress failure → logged, loop continues (gaka-d6x, missing invariant #2)", func() {
+var _ = Describe("Worker.run UpdateJobProgress failure → logged, loop continues (boom-d6x, missing invariant #2)", func() {
 	// Named invariant (importer.go:274-283): if the day-loop's UpdateJobProgress
 	// call returns an error mid-run, the code logs+continues rather than
 	// failing the whole job. Previously untested. Simulate by DELETE-ing the
@@ -1344,7 +1344,7 @@ var _ = Describe("Worker.run UpdateJobProgress failure → logged, loop continue
 	})
 })
 
-var _ = Describe("getRawJSON 32MB body cap (gaka-d6x, missing invariant #3)", func() {
+var _ = Describe("getRawJSON 32MB body cap (boom-d6x, missing invariant #3)", func() {
 	// Named invariant: getRawJSON reads at most 32MB from the response body.
 	// A malicious/broken upstream that streams 100MB must be truncated so the
 	// importer's memory footprint stays bounded (importer.go:698).
@@ -1379,7 +1379,7 @@ var _ = Describe("getRawJSON 32MB body cap (gaka-d6x, missing invariant #3)", fu
 	})
 })
 
-var _ = Describe("Worker.Cancel on currently-running (not terminal) job (gaka-d6x, missing invariant #4)", func() {
+var _ = Describe("Worker.Cancel on currently-running (not terminal) job (boom-d6x, missing invariant #4)", func() {
 	// Named invariant: Cancel on a job that is CURRENTLY RUNNING (blocked in
 	// mid-fetch) returns running=true AND the returned done channel blocks
 	// until the terminal DB write lands (JobStateCancelled). This is stronger
@@ -1444,7 +1444,7 @@ var _ = Describe("Worker.Cancel on currently-running (not terminal) job (gaka-d6
 	})
 })
 
-var _ = Describe("Worker StartJob concurrency: same jobID (gaka-d6x, missing invariant #5)", func() {
+var _ = Describe("Worker StartJob concurrency: same jobID (boom-d6x, missing invariant #5)", func() {
 	// Named invariant: the running-registry map access at importer.go:80-83
 	// is mu-protected. N concurrent StartJob calls (all with the same jobID)
 	// MUST NOT race the map or panic. The registry must drain to empty after
@@ -1501,7 +1501,7 @@ var _ = Describe("Worker StartJob concurrency: same jobID (gaka-d6x, missing inv
 	})
 })
 
-var _ = Describe("Cross-user isolation (gaka-d6x, security gap #1)", func() {
+var _ = Describe("Cross-user isolation (boom-d6x, security gap #1)", func() {
 	// Named invariant: applyKeyOutcome uses item.Requester as the target
 	// username. A crafted QueueItem where Requester != true job.Owner (a
 	// spoof attempt) must NOT touch any OTHER user's row. We verify by
@@ -1583,7 +1583,7 @@ var _ = Describe("Cross-user isolation (gaka-d6x, security gap #1)", func() {
 	})
 })
 
-var _ = Describe("Cross-key ciphertext negative (gaka-d6x, security gap #2)", func() {
+var _ = Describe("Cross-key ciphertext negative (boom-d6x, security gap #2)", func() {
 	// Named invariant: an accidentally-shipped "fallback" or "default" key
 	// would produce different ciphertext than the intended key. Any test that
 	// relies on "encrypt something and decrypt it" is a tautology if the SAME

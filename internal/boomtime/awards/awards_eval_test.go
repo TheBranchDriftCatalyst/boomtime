@@ -1,5 +1,5 @@
 // awards_eval_ginkgo_test.go — ginkgo mirror of awards_eval_test.go
-// (gaka-hc6.3 / gaka-hc6.3.1).
+// (boom-hc6.3 / boom-hc6.3.1).
 // 1:1 case map (5 stdlib TestXxx):
 //
 //	TestOwnAwards_ReturnsAwardAndWritesLedger    → OwnAwards > "returns python-novice + Cache-Control: private,max-age=30; ledger doesn't shrink"
@@ -100,7 +100,7 @@ func awardIDsG(awards []map[string]any) []string {
 	return out
 }
 
-var _ = Describe("OwnAwards (gaka-hc6.3)", func() {
+var _ = Describe("OwnAwards (boom-hc6.3)", func() {
 	It("returns python-novice, Cache-Control: private,max-age=30, ledger does not shrink", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "awardsg"))
 		e := hz.Router()
@@ -133,7 +133,7 @@ var _ = Describe("OwnAwards (gaka-hc6.3)", func() {
 	})
 })
 
-var _ = Describe("PublicAwards (gaka-hc6.3)", func() {
+var _ = Describe("PublicAwards (boom-hc6.3)", func() {
 	It("returns award, does NOT write ledger, Cache-Control: public,max-age=180", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "awardsg"))
 		e := hz.Router()
@@ -172,7 +172,7 @@ var _ = Describe("PublicAwards (gaka-hc6.3)", func() {
 	})
 })
 
-var _ = Describe("AwardsBackfill (gaka-hc6.5.1)", func() {
+var _ = Describe("AwardsBackfill (boom-hc6.5.1)", func() {
 	It("walks 5 historical days and is idempotent on a second call", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "awardsg"))
 		e := hz.Router()
@@ -241,7 +241,7 @@ var _ = Describe("AwardsBackfill (gaka-hc6.5.1)", func() {
 	})
 })
 
-// -- helpers restored from stdlib partner (gaka-0vp.17) --
+// -- helpers restored from stdlib partner (boom-0vp.17) --
 func getJSON(t *testing.T, e http.Handler, path, token string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, path, nil)

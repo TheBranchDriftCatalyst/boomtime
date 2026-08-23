@@ -1,4 +1,4 @@
-// logs_ginkgo_test.go — ginkgo mirror of logs_test.go (gaka-awh.2).
+// logs_ginkgo_test.go — ginkgo mirror of logs_test.go (boom-awh.2).
 // 1:1 case map (3 stdlib TestXxx):
 //
 //	TestServerLogs_OwnerFilterIsWired       → ServerLogs > "owner filter is wired (A sees own+server, B messages absent)"
@@ -49,7 +49,7 @@ func decodeLogsResponseG(body []byte) []string {
 	return out
 }
 
-var _ = Describe("ServerLogs owner-scope filter (gaka-awh.2)", func() {
+var _ = Describe("ServerLogs owner-scope filter (boom-awh.2)", func() {
 	It("filters cross-tenant records: A sees own+server-scope, never B's", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		hub := logging.NewLogHub(64)

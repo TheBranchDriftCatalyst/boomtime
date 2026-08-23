@@ -52,7 +52,7 @@ func n1Middleware(logger *slog.Logger, n1Threshold, dupThreshold int) echo.Middl
 // emits it as slog attr "user" on every query event; logging.FilterForUser (in
 // internal/logging) drops those events for cross-tenant Logs viewers.
 //
-// Fixes gaka-ar7: without this hook, the DB tracer's DEBUG SQL narration (e.g.
+// Fixes boom-ar7: without this hook, the DB tracer's DEBUG SQL narration (e.g.
 // "UPDATE users SET encrypted_wakatime_key = NULL WHERE username = $1") fans out
 // to every authenticated Logs viewer because the record carries no owner attr,
 // leaking activity metadata cross-tenant even though bind args are already

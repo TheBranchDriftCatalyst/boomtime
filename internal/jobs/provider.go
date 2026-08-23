@@ -44,13 +44,13 @@ type Provider interface {
 	Canceller
 	// Name identifies the backend ("local", "rabbitmq") for logs + admin.
 	Name() string
-	// SetNotifier wires an optional terminal-event sink (gaka-hney.6). nil-safe.
+	// SetNotifier wires an optional terminal-event sink (boom-hney.6). nil-safe.
 	SetNotifier(Notifier)
 	// SetLimiter wires the job-layer concurrency throttle (fleet-wide per-kind
 	// caps). nil disables throttling — every kind runs unbounded.
 	SetLimiter(KindLimiter)
 	// SetLogCapture wires durable per-job log persistence to object storage
-	// (gaka-hney). nil disables it — logs live only in the in-memory LogHub.
+	// (boom-hney). nil disables it — logs live only in the in-memory LogHub.
 	SetLogCapture(*LogCapture)
 }
 

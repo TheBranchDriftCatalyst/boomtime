@@ -52,7 +52,7 @@ function greetingFor(hour: number): string {
 }
 
 // Route → header title, keyed by the first path segment under /app, so the
-// header always says where you are (gaka-gbbl.3). Pages that hoist a tab strip
+// header always says where you are (boom-gbbl.3). Pages that hoist a tab strip
 // (settings/admin) render the slot instead and never fall back to this.
 const PAGE_TITLES: Record<string, string> = {
   "": "Overview",
@@ -83,7 +83,7 @@ function pageTitleFromPath(pathname: string): string {
 }
 
 /**
- * Top header — a single consolidated user menu (gaka-lzr). The previous bar had
+ * Top header — a single consolidated user menu (boom-lzr). The previous bar had
  * TWO overlapping theme controls (a full ThemeSwitcher + a redundant sun/moon
  * ThemeToggle) plus a bare avatar. Everything now lives in one avatar dropdown:
  * account nav, a Theme submenu (theme / variant / effects), a quick dark-mode
@@ -95,14 +95,14 @@ export function HeaderBar({ username, onLogout, onCreateSpace }: HeaderBarProps)
   const pageTitle = pageTitleFromPath(pathname);
   const { theme, setTheme, variant, setVariant, effects, updateEffect } =
     useTheme();
-  // gaka-1im: admin-only devtools (annotation subsystem + component inspector).
+  // boom-1im: admin-only devtools (annotation subsystem + component inspector).
   // Invisible to normal users — the toggle renders nothing unless the current
   // user is an admin.
   const { isAdmin } = useIsAdmin();
   const isDark = variant === "dark";
   const greeting = greetingFor(new Date().getHours());
 
-  // gaka-5jp: a page (settings/admin) may hoist its tab strip up here via
+  // boom-5jp: a page (settings/admin) may hoist its tab strip up here via
   // useHeaderSlot. When present it takes the header's left/center space in
   // place of the greeting; the right-side controls are untouched.
   const slot = useHeaderSlotNode();
@@ -142,7 +142,7 @@ export function HeaderBar({ username, onLogout, onCreateSpace }: HeaderBarProps)
       {/* Left/center: hoisted page chrome when a page set one, else a
           time-aware greeting with a refined terminal treatment.
           flex-1 min-w-0 lets the slot shrink, which — together with the shell's
-          minmax(0,…) column floor (gaka-c26s) — is what keeps an oversized
+          minmax(0,…) column floor (boom-c26s) — is what keeps an oversized
           hoisted node from displacing the control cluster to its right. Admin
           and Settings no longer hoist anything wide (their nav is a rail in the
           content column now), but the guarantee has to hold for whatever gets

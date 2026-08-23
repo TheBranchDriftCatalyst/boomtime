@@ -1,4 +1,4 @@
-// GoalProgress — one goal, horizontal bar with % + name (gaka-wpb).
+// GoalProgress — one goal, horizontal bar with % + name (boom-wpb).
 //
 // Fetches from the batched /goals/progress endpoint (single HTTP
 // round trip serves every goal tile on the dashboard). Picks the

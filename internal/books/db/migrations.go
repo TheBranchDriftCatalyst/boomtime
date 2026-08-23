@@ -1,4 +1,4 @@
-// Package db carries the STANDALONE catalyst-books migration set (gaka-zp2s
+// Package db carries the STANDALONE catalyst-books migration set (boom-zp2s
 // books-standalone). It is DELIBERATELY separate from the host's
 // internal/shared/db migration FS: the standalone binary (cmd/catalyst-books)
 // runs against its own fresh, books-only Postgres database — no wakatime /

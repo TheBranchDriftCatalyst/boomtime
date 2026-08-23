@@ -9,7 +9,7 @@ import {
   stackReachableFromEnv,
 } from "./helpers";
 
-// gaka-ebq — Admin sidebar section + /app/admin/* route tree.
+// boom-ebq — Admin sidebar section + /app/admin/* route tree.
 //
 // Verifies:
 //   - Non-admins: no "Admin" entry in the sidebar; direct /app/admin/*
@@ -20,7 +20,7 @@ import {
 //     /app/settings?tab=admin each land on the equivalent /app/admin/* URL.
 //   - Settings page no longer surfaces the Admin/Logs tabs.
 
-test.describe("gaka-ebq — Admin sidebar section", () => {
+test.describe("boom-ebq — Admin sidebar section", () => {
   test.skip(!stackReachableFromEnv(), NO_STACK_REASON);
 
   test.describe("as a non-admin user", () => {
@@ -78,7 +78,7 @@ test.describe("gaka-ebq — Admin sidebar section", () => {
       page,
     }) => {
       await page.goto("/app/admin/labels");
-      // gaka-4x33: the section nav is a vertical RAIL inside the content
+      // boom-4x33: the section nav is a vertical RAIL inside the content
       // column now, not a tab strip hoisted into the app header — so it's a
       // navigation landmark of links rather than a tablist of tabs.
       const rail = page.getByRole("navigation", { name: "Admin sections" });
@@ -95,7 +95,7 @@ test.describe("gaka-ebq — Admin sidebar section", () => {
 
       // The shell titles the page from the ACTIVE entry's registry metadata,
       // so the heading must track the rail selection — that binding is the
-      // whole point of the registry-driven header (gaka-9e9k).
+      // whole point of the registry-driven header (boom-9e9k).
       await expect(
         page.getByRole("heading", { name: "Logs", level: 1 }),
       ).toBeVisible();

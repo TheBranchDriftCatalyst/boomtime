@@ -1,7 +1,7 @@
 // auth.go holds user and token storage: credentials, access/refresh tokens,
 // and API-token management.
 //
-// gaka-b5x.2 + gaka-uj7: session tokens are stored ONLY as SHA-256 hashes
+// boom-b5x.2 + boom-uj7: session tokens are stored ONLY as SHA-256 hashes
 // at rest (hashed_token / hashed_refresh_token bytea columns). The legacy
 // raw `token` / `refresh_token` columns were dropped in migration 00031.
 // A DB read never yields a usable session token — the hash is one-way and
@@ -32,12 +32,12 @@ func hashSessionToken(raw string) []byte {
 
 // GetUserByName returns the stored user credentials or (nil,nil) if absent.
 //
-// gaka-awh.6: argon_version comes back on the same round-trip so callers can
+// boom-awh.6: argon_version comes back on the same round-trip so callers can
 // dispatch to VerifyPasswordWithVersion (and the Login handler can decide
 // whether to bump the row to the current generation).
 func (d *DB) GetUserByName(ctx context.Context, name string) (*StoredUser, error) {
 	row := d.Pool.QueryRow(ctx,
-		// gaka-dg7: timezone comes back on the same round-trip so the TZ
+		// boom-dg7: timezone comes back on the same round-trip so the TZ
 		// resolver used by every dow/hour/date SQL is a single row read.
 		`SELECT username, hashed_password, salt_used, argon_version, timezone
 		 FROM users WHERE username = $1`, name)
@@ -76,7 +76,7 @@ func (d *DB) GetUserFullByName(ctx context.Context, name string) (*StoredUserFul
 
 // InsertUser inserts a new user; returns false if the username already exists.
 //
-// gaka-awh.6: argon_version is passed EXPLICITLY (from u.ArgonVersion) so a
+// boom-awh.6: argon_version is passed EXPLICITLY (from u.ArgonVersion) so a
 // caller that forgets to set it lands the row at 0 — which reads as "unknown
 // version" downstream and gets caught by tests. Callers should pass
 // auth.ArgonVersionCurrent (2) for every fresh user; only tests planting
@@ -166,7 +166,7 @@ func (d *DB) GetUserByRefreshToken(ctx context.Context, token string) (string, b
 // CreateAccessTokens inserts an access token (30 min) and a refresh token
 // (expiry hours) then deletes any expired tokens for the owner.
 //
-// gaka-b5x.2: new rows store only the SHA-256 of the raw token in
+// boom-b5x.2: new rows store only the SHA-256 of the raw token in
 // hashed_token / hashed_refresh_token. The legacy `token` / `refresh_token`
 // columns are left NULL for new rows; the DB no longer holds a usable
 // session token for any session minted post-migration 00026.
@@ -199,7 +199,7 @@ func (d *DB) CreateAccessTokens(ctx context.Context, td TokenData, expiryHours i
 }
 
 // CreateOIDCAccessToken mints ONLY a short-lived (30 min) access bearer for an
-// OIDC web user (gaka-93f.14) — NO local refresh_token row. Under
+// OIDC web user (boom-93f.14) — NO local refresh_token row. Under
 // BOOM_AUTH_PROVIDER=oidc the browser session IS the oidc_sessions cookie; the
 // FE calls /auth/refresh_token only to obtain a bearer for the Authorization-
 // header API surface. Minting a local refresh token there (as CreateAccessTokens
@@ -217,7 +217,7 @@ func (d *DB) CreateOIDCAccessToken(ctx context.Context, owner, rawToken string) 
 }
 
 // DeleteUserAccessTokens revokes every access + refresh token for a user
-// (gaka-93f.14). Called on OIDC logout so any bearers the FE minted via
+// (boom-93f.14). Called on OIDC logout so any bearers the FE minted via
 // /auth/refresh_token die immediately with the session, not 30 min later.
 func (d *DB) DeleteUserAccessTokens(ctx context.Context, owner string) error {
 	tx, err := d.Pool.Begin(ctx)
@@ -237,7 +237,7 @@ func (d *DB) DeleteUserAccessTokens(ctx context.Context, owner string) error {
 // InsertAPIToken stores the SHA-256 of a base64(uuid) token with a null
 // expiry (never expires). The raw token value is thrown away at the
 // boundary — a DB read no longer yields a usable API token
-// (gaka-b5x.2). Optional name is persisted to token_name so the tokens
+// (boom-b5x.2). Optional name is persisted to token_name so the tokens
 // list can show something more meaningful than an 8-char hash prefix.
 func (d *DB) InsertAPIToken(ctx context.Context, owner, token, name string) error {
 	var namePtr *string
@@ -328,7 +328,7 @@ func (d *DB) UpdateTokenMetadata(ctx context.Context, owner string, m model.Toke
 // (POST /api/v1/users/current/password). Callers are responsible for
 // verifying the current password before calling.
 //
-// gaka-awh.6: this path always writes at the CURRENT generation — anyone
+// boom-awh.6: this path always writes at the CURRENT generation — anyone
 // calling UpdatePassword is producing a fresh hash from a plaintext they
 // just verified, so there is no reason NOT to bump the version.
 func (d *DB) UpdatePassword(ctx context.Context, username string, hashedPassword, salt []byte) error {
@@ -387,7 +387,7 @@ func (d *DB) ChangePasswordAndRevoke(ctx context.Context, username string, hashe
 	}
 	defer tx.Rollback(ctx)
 
-	// gaka-awh.6: password rotation always writes at the CURRENT argon
+	// boom-awh.6: password rotation always writes at the CURRENT argon
 	// generation (v2) — we just produced a fresh hash from a verified
 	// plaintext, no reason to persist a legacy-params hash.
 	if _, err = tx.Exec(ctx,
@@ -410,7 +410,7 @@ func (d *DB) ChangePasswordAndRevoke(ctx context.Context, username string, hashe
 	// The `token_expiry IS NOT NULL` guard preserves non-expiring API tokens
 	// (which have NULL expiry) so password rotation doesn't nuke CLI keys.
 	//
-	// gaka-b5x.2: post-hashing, the "skip me" predicate must match against
+	// boom-b5x.2: post-hashing, the "skip me" predicate must match against
 	// the caller's token via hashed_token (new rows) OR raw token (legacy).
 	// Post-v31 hashed-only lookup — the caller's exception is identified by
 	// hashed_token alone.

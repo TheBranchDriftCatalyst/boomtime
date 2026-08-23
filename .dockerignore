@@ -2,7 +2,7 @@
 # `docker build` context can land in builder-stage layers or the build cache,
 # which is leakable via `--target server` or `docker buildx build --cache-to`.
 # Anything remotely secret MUST be listed here (secrets stay as RUNTIME env,
-# never build args). See gaka-o5k for the full rationale.
+# never build args). See boom-o5k for the full rationale.
 
 # ── VCS / build outputs ─────────────────────────────────────────────────────
 .git

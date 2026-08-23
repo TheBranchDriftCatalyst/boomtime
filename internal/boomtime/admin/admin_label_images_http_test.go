@@ -1,5 +1,5 @@
 // admin_label_images_http_test.go — HTTP-level ginkgo coverage for the
-// admin label-images cluster (gaka-d6x.handler). Complements the wire
+// admin label-images cluster (boom-d6x.handler). Complements the wire
 // unit suite in admin_label_images_test.go by hitting the routes
 // through Router() and asserting NAMED INVARIANTS: admin-gate before
 // feature-gate; feature-off returns 503 with a hint; empty entries →
@@ -61,7 +61,7 @@ func buildLiWorker(cfg *config.Config, hz *testutil.Harness) *labelimages.Worker
 	return w
 }
 
-var _ = Describe("AdminLabelImagesInfo (gaka-myv): admin gate + shape", func() {
+var _ = Describe("AdminLabelImagesInfo (boom-myv): admin gate + shape", func() {
 	It("returns 401/400 for unauth'd, 403 for non-admin, 200 with envelope for admin", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "alili"))
 		e := boomtimeRouter(hz)
@@ -128,7 +128,7 @@ var _ = Describe("AdminLabelImagesInfo (gaka-myv): admin gate + shape", func() {
 	})
 })
 
-var _ = Describe("AdminLabelImagesRegenerate (gaka-myv/gaka-8bz): feature gate + validation + idempotency", func() {
+var _ = Describe("AdminLabelImagesRegenerate (boom-myv/boom-8bz): feature gate + validation + idempotency", func() {
 	It("returns 503 when either Worker or ImageJobQueue is nil (feature disabled)", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "aliregen"))
 		e := boomtimeRouter(hz)
@@ -310,7 +310,7 @@ var _ = Describe("AdminLabelImagesRegenerate: malformed body branch", func() {
 	})
 })
 
-var _ = Describe("AdminLabelImagesWS (gaka-8bz): cookie-auth + admin-gate + feature-gate", func() {
+var _ = Describe("AdminLabelImagesWS (boom-8bz): cookie-auth + admin-gate + feature-gate", func() {
 	It("rejects a request with no refresh_token cookie", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "aliws"))
 		e := boomtimeRouter(hz)

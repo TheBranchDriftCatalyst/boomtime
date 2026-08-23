@@ -63,7 +63,7 @@ describe("useCurationMutations invalidation (P0)", () => {
     expect(spy).toHaveBeenCalledTimes(EXPECTED_KEYS.length);
   });
 
-  it("invalidates the same keys on toggle (gaka-dfd)", async () => {
+  it("invalidates the same keys on toggle (boom-dfd)", async () => {
     server.use(
       http.post("/api/v1/users/current/curation/:id/toggle", () =>
         HttpResponse.json({ enabled: false }),

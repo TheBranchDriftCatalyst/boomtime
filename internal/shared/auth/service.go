@@ -1,6 +1,6 @@
 // service.go: composed account-lifecycle operations that BOTH the CLI
 // (cmd/boomtime create-user / create-token) and the HTTP handler
-// (Register / CreateAPIToken) share (gaka-0tb). The pure auth primitives
+// (Register / CreateAPIToken) share (boom-0tb). The pure auth primitives
 // (HashPassword, VerifyPassword, NewRawToken, ToBase64) still live in
 // auth.go; this file glues them to the db package so callers don't
 // re-implement the hash+insert / verify+mint dance and drift over time.
@@ -25,7 +25,7 @@ var ErrInvalidCredentials = errors.New("wrong username or password")
 // users row. Returns ErrUserExists when the row already exists; any other
 // error is a real infra failure.
 //
-// gaka-awh.6: HashPassword produces an ArgonVersionCurrent (v2) hash, and the
+// boom-awh.6: HashPassword produces an ArgonVersionCurrent (v2) hash, and the
 // row is tagged as such via StoredUser.ArgonVersion. New users therefore
 // NEVER land at v1 — only pre-migration rows carry v1.
 func CreateUser(ctx context.Context, database *db.DB, username, password string) error {

@@ -1,4 +1,4 @@
-// Public barrel for the isolated grid primitive (gaka-6qg extraction target).
+// Public barrel for the isolated grid primitive (boom-6qg extraction target).
 // This is the ONLY import surface consumers should use — anything not
 // re-exported here is internal to the folder.
 export { DraggableGridLayout } from "./DraggableGridLayout";

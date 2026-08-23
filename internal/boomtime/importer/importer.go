@@ -27,18 +27,18 @@ import (
 // ErrWakatimeUnauthorized is returned by fetch helpers when wakatime.com
 // answers with 401. Handlers and the worker use errors.Is to distinguish a
 // "your key is bad" outcome from a transient network / rate-limit failure —
-// gaka-6jm.8 (save-on-success) and gaka-6jm.10 (key_status wiring) both key
+// boom-6jm.8 (save-on-success) and boom-6jm.10 (key_status wiring) both key
 // off this sentinel.
 var ErrWakatimeUnauthorized = errors.New("wakatime returned 401")
 
 // JobSubmitted is the sole remaining legacy status label still used by the
 // submit endpoint's response envelope. MapState + JobPending/Failed/Finished
-// were audit-dead (gaka-al6) and were removed.
+// were audit-dead (boom-al6) and were removed.
 const JobSubmitted = "JobSubmitted"
 
 // QueueItem is the JSON stored in import_jobs.value (the request + requester).
 //
-// TypedToken (gaka-6jm.8) is the plaintext key the user typed on submit —
+// TypedToken (boom-6jm.8) is the plaintext key the user typed on submit —
 // distinct from ReqPayload.APIToken which, after the handler resolves it, may
 // be a fallback (already-saved encrypted key OR server env key). We only
 // persist TypedToken to users.encrypted_wakatime_key on END-TO-END success
@@ -54,7 +54,7 @@ const wakatimeAPI = "https://wakatime.com"
 
 // httpClient is the shared client for outbound wakatime.com fetches. A hung
 // upstream read would otherwise stall an entire import job goroutine forever
-// (gaka-al6). 60s is generous — wakatime's biggest response (heartbeats for
+// (boom-al6). 60s is generous — wakatime's biggest response (heartbeats for
 // one day) rarely exceeds a few hundred KB — while still bounded.
 var httpClient = &http.Client{Timeout: 60 * time.Second, Transport: metrics.InstrumentTransport(nil)}
 
@@ -145,7 +145,7 @@ func (w *Worker) StartJob(job *db.Job, item QueueItem) {
 // closes AFTER the worker goroutine's terminal DB write lands (finishCancelled
 // / finishError), and ok=true if the job was running in this process. When
 // ok=false, done is a pre-closed channel (immediate) so callers can wait
-// uniformly. The old 150ms sleep in the handler is now `<-done` (gaka-al6).
+// uniformly. The old 150ms sleep in the handler is now `<-done` (boom-al6).
 func (w *Worker) Cancel(jobID int) (<-chan struct{}, bool) {
 	w.mu.Lock()
 	rj, ok := w.running[jobID]
@@ -176,7 +176,7 @@ func (w *Worker) run(ctx context.Context, jobID int, item QueueItem) {
 		}
 	}
 
-	// gaka-unq.1: per-job schema-drift collector. Emits a "warn" log on first
+	// boom-unq.1: per-job schema-drift collector. Emits a "warn" log on first
 	// occurrence of each finding (dedupe by endpoint+kind+field so repeated
 	// drift across many days produces one finding with count). Persisted onto
 	// the job row before every terminal transition so historical runs show the
@@ -215,7 +215,7 @@ func (w *Worker) run(ctx context.Context, jobID int, item QueueItem) {
 	log("info", fmt.Sprintf("starting import for %d day(s): %s .. %s",
 		len(days), p.StartDate.Format("2006-01-02"), p.EndDate.Format("2006-01-02")))
 
-	// gaka-6jm.8/.10: track whether wakatime.com issued a 401 at any point in
+	// boom-6jm.8/.10: track whether wakatime.com issued a 401 at any point in
 	// the run. Drives (a) save-on-success — a typed token is only persisted
 	// when saw401 stays false end-to-end — and (b) key_status — a 401 flips
 	// the row to 'invalid', a clean run to 'valid'. saw401 is only meaningful
@@ -299,7 +299,7 @@ func (w *Worker) run(ctx context.Context, jobID int, item QueueItem) {
 	w.applyKeyOutcome(item, db.JobStateCompleted, saw401)
 }
 
-// applyKeyOutcome writes the gaka-6jm.8/.10 outcome for a terminal job:
+// applyKeyOutcome writes the boom-6jm.8/.10 outcome for a terminal job:
 //
 //	saw401 && terminal=failed  → status='invalid' (never persists typed token)
 //	!saw401 && terminal=completed && typedToken != ""
@@ -321,7 +321,7 @@ func (w *Worker) applyKeyOutcome(item QueueItem, state string, saw401 bool) {
 
 	switch {
 	case saw401:
-		// gaka-6jm.10: any 401 during the run means the key is bad. Update
+		// boom-6jm.10: any 401 during the run means the key is bad. Update
 		// the status regardless of terminal state (failed / cancelled with a
 		// prior 401 both count). Do NOT persist the typed token — the whole
 		// point of save-on-success is to not save known-bad keys.
@@ -334,7 +334,7 @@ func (w *Worker) applyKeyOutcome(item QueueItem, state string, saw401 bool) {
 		}
 		return
 	case state == db.JobStateCompleted && item.TypedToken != "":
-		// gaka-6jm.8: end-to-end success with a fresh typed token — this is
+		// boom-6jm.8: end-to-end success with a fresh typed token — this is
 		// the moment to persist encrypted at rest. Encryption failure logs a
 		// warning but does not block; the import already succeeded.
 		ct, err := auth.Encrypt([]byte(item.TypedToken))
@@ -361,7 +361,7 @@ func (w *Worker) applyKeyOutcome(item QueueItem, state string, saw401 bool) {
 		}
 	default:
 		// Failed/cancelled without a 401 (network, rate limit, user
-		// cancel) — leave status untouched per gaka-6jm.10 spec.
+		// cancel) — leave status untouched per boom-6jm.10 spec.
 		w.logger.Debug("import outcome inconclusive; leaving key_status untouched",
 			"user", item.Requester, "state", state)
 	}
@@ -396,7 +396,7 @@ func (w *Worker) finishCancelled(jobID int, publishJob func(string, *db.Job)) {
 
 // fetchLookups resolves the user_agent and machine-name id maps.
 //
-// gaka-unq.1: raw body is decoded twice — once into the typed struct (existing
+// boom-unq.1: raw body is decoded twice — once into the typed struct (existing
 // behavior) and once against the schemaSpec for drift checks. The typed decode
 // is deliberately independent of the drift check so a benign new field never
 // interferes with importer functionality. If the drift check turns up any
@@ -449,7 +449,7 @@ func (w *Worker) fetchLookups(ctx context.Context, authHeader string, drift *dri
 // Re-importing an overlapping range does not duplicate: SaveHeartbeats upserts on
 // the unique_heartbeats constraint.
 //
-// gaka-unq.1: raw body is decoded twice (typed struct + envelope map) so we
+// boom-unq.1: raw body is decoded twice (typed struct + envelope map) so we
 // can warn on unknown/missing/type-changed fields without breaking the import
 // on benign additions. Per the design, a missing_required finding on
 // heartbeats surfaces as an error-severity finding + skipped day insert
@@ -507,7 +507,7 @@ type importHeartbeat struct {
 	Project       *string  `json:"project"`
 	Type          string   `json:"type"`
 	Time          float64  `json:"time"`
-	// gaka-1l9: AI-assistance fields wakatime.com started sending on 2026-07-03.
+	// boom-1l9: AI-assistance fields wakatime.com started sending on 2026-07-03.
 	// All nullable — plugins that don't emit them (older / non-AI) simply omit.
 	AIInputTokens      *int64  `json:"ai_input_tokens"`
 	AIOutputTokens     *int64  `json:"ai_output_tokens"`
@@ -573,7 +573,7 @@ func convertForDB(user string, machines, agents map[string]string, hbs []importH
 			Sender:       &u,
 			TimeSent:     hb.Time,
 			Type:         model.EntityType(hb.Type),
-			// gaka-1l9: AI-assistance fields — pass through as-is (nullable).
+			// boom-1l9: AI-assistance fields — pass through as-is (nullable).
 			AIInputTokens:      hb.AIInputTokens,
 			AIOutputTokens:     hb.AIOutputTokens,
 			AILineChanges:      hb.AILineChanges,
@@ -630,10 +630,10 @@ type allTimeResponse struct {
 // apiToken is the RAW wakatime.com api_key as the user copied it from
 // wakatime.com (e.g. "waka_<uuid>" or a bare UUID) — this function does the
 // single Basic base64-encode into Authorization. Any caller that base64-
-// encodes it first would double-encode and wakatime would 401 (gaka-f2l).
+// encodes it first would double-encode and wakatime would 401 (boom-f2l).
 // Identical convention to how the import worker auths (fetchLookups).
 //
-// gaka-unq.1: this call runs standalone (from a handler, not a job), so drift
+// boom-unq.1: this call runs standalone (from a handler, not a job), so drift
 // findings are logged at slog "warn" but not persisted anywhere. That's fine
 // — the primary drift surface is the import run; this endpoint is only a UX
 // helper for auto-populating the date range.
@@ -685,7 +685,7 @@ func getRawJSON(ctx context.Context, endpoint, authHeader string, query url.Valu
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		// gaka-6jm.8/.10: wrap 401 with a sentinel so the worker can
+		// boom-6jm.8/.10: wrap 401 with a sentinel so the worker can
 		// distinguish "bad key" from other failures for save-on-success and
 		// key_status updates. The status code + response body are still
 		// preserved via %w-anchored fmt so operator debugging is unchanged.

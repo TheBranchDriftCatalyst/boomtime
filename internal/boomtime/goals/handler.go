@@ -1,4 +1,4 @@
-// handler.go — HTTP handlers for user-defined composite goals (gaka-wpb).
+// handler.go — HTTP handlers for user-defined composite goals (boom-wpb).
 //
 // All routes are owner-scoped via apihelpers.IdentifyOwner(h.DB, c). Cross-owner id
 // access returns 404 — never 403 — so an attacker can't distinguish
@@ -32,7 +32,7 @@ import (
 	"github.com/labstack/echo/v5"
 )
 
-// Handler bundles the per-domain HTTP handler dependencies (gaka-8tn
+// Handler bundles the per-domain HTTP handler dependencies (boom-8tn
 // phase 2b). Only holds the fields the goals domain actually reads.
 type Handler struct {
 	DB     *db.DB

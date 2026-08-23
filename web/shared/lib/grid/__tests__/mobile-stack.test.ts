@@ -10,7 +10,7 @@ type Item = {
 };
 
 // stackForMobile collapses a multi-column layout into a single-column stack for
-// phone breakpoints (gaka-k26n.2): the public /p/:slug dashboard was illegible
+// phone breakpoints (boom-k26n.2): the public /p/:slug dashboard was illegible
 // because the 12-col layout never collapsed. These lock the contract the
 // read-only wiring depends on.
 describe("stackForMobile", () => {

@@ -1,9 +1,9 @@
-// resolver.go — the pluggable auth-provider boundary (gaka-0oe.2).
+// resolver.go — the pluggable auth-provider boundary (boom-0oe.2).
 //
 // IdentityResolver abstracts "how do we turn a request credential into an
 // Identity". LocalPasswordResolver (today) wraps the username+password + API
 // token + refresh cookie world with ZERO behavior change; a future
-// OIDCResolver (gaka-0oe.11) is the second implementation, selected at boot via
+// OIDCResolver (boom-0oe.11) is the second implementation, selected at boot via
 // BOOM_AUTH_PROVIDER. apihelpers.Identify* delegates to CurrentResolver(), so
 // the eventual OIDC swap is a one-line SetResolver at boot — no handler touched.
 //

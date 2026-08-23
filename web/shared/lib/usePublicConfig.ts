@@ -4,7 +4,7 @@ import { qk } from "@shared/lib/queryKeys";
 import type { PublicConfig } from "@shared/types/api";
 import { IS_BOOKS_STANDALONE } from "@shared/lib/standalone";
 
-// Boot-time client config (gaka-93f.1.1). GET /api/v1/config/public tells the
+// Boot-time client config (boom-93f.1.1). GET /api/v1/config/public tells the
 // FE which auth provider is active, whether registration/billing are on, and
 // which beta previews the server allows. It only changes on a server restart,
 // so the query is cached hard (staleTime Infinity) and never refetched on

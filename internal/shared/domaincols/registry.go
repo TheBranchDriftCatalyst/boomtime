@@ -7,7 +7,7 @@
 // (internal/db/dump.go) iterate a LIST instead of hardcoding each domain by
 // name. Hardcoding is exactly what would silently STRAND a new domain's
 // encrypted secret on the next key rotation and DROP its table from backups —
-// the incident class internal/auth's encryption docs and gaka-awh warn about.
+// the incident class internal/auth's encryption docs and boom-awh warn about.
 // A new domain adds one entry here and is picked up by both paths automatically.
 //
 // This package is intentionally DEPENDENCY-FREE (it imports no other internal/*

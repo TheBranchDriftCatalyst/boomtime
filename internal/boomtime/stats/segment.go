@@ -154,7 +154,7 @@ func segmentStat(byDate [][]db.StatRow, field func(db.StatRow) string) []model.R
 
 // segmentStatWhere is segmentStat restricted to rows matching keep. Used by
 // per-axis pies (Languages, Editors, ...) to filter out rows whose axis was
-// NULL on the source heartbeat (gaka-6ci) — those shouldn't appear in a chart
+// NULL on the source heartbeat (boom-6ci) — those shouldn't appear in a chart
 // titled "Languages" or "Editors" because they aren't a language / editor.
 // Days that go empty after filtering are preserved as empty slices so the
 // per-day arrays remain aligned across all segments.
@@ -263,7 +263,7 @@ const resourceMaxN = 40
 // When the default top-12 leaves Other above this, we grow N until Other
 // drops below the threshold (or we hit resourceMaxN). Prevents "Other"
 // from visually overshadowing every real entry in a pie/bar chart when
-// the user has a long tail of small-but-real values. gaka-mwp-other.
+// the user has a long tail of small-but-real values. boom-mwp-other.
 //
 // Tightened from 30% → 25%: a quarter-of-the-pie Other still reads as
 // the biggest slice on distributions where the true top entry is
@@ -298,7 +298,7 @@ func loadOtherMaxShare() float64 {
 func otherMaxShare() float64 { return otherMaxShareVal }
 
 // otherMembersCap is the max number of tail members carried on the synthesized
-// "Other" entry for FE tooltip breakdown (gaka-7m4). Sized to comfortably
+// "Other" entry for FE tooltip breakdown (boom-7m4). Sized to comfortably
 // cover typical long-tail cardinality (a dozen editors, a few dozen languages)
 // while keeping the payload bounded.
 const otherMembersCap = 20

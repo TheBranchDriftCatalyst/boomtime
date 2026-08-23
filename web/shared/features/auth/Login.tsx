@@ -22,7 +22,7 @@ export function Login() {
   const navigate = useNavigate();
   const [error, setError] = useState("");
 
-  // gaka-93f.11.4: when the server runs Authentik-only (auth_provider=oidc),
+  // boom-93f.11.4: when the server runs Authentik-only (auth_provider=oidc),
   // password sign-in is disabled server-side — offer ONLY "Continue with
   // Authentik". When local but OIDC is configured, offer both. The button is a
   // full-page navigation (not fetch) so the browser follows the 302 to the

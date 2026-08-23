@@ -1,4 +1,4 @@
-// user_avatars_ginkgo_test.go — ginkgo mirror of user_avatars_test.go (gaka-0vp.13).
+// user_avatars_ginkgo_test.go — ginkgo mirror of user_avatars_test.go (boom-0vp.13).
 // 1:1 case map (5 stdlib TestXxx → 5 Its):
 //
 //	TestUserAvatars_SaveRoundtrip       → "SaveUserAvatar > round-trips ready row"

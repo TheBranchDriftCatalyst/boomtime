@@ -32,7 +32,7 @@ export function buildDefaultLayout(
 /** Merge fresh RGL positions (`x/y/w/h`) onto the existing layout while
  * preserving each item's per-widget metadata (`view`/`hidden`/`config`).
  * RGL's onLayoutChange only carries geometry, so a naive rebuild would drop
- * the chart-toggle view and the config blob (gaka-lzr) on every drag. Items in
+ * the chart-toggle view and the config blob (boom-lzr) on every drag. Items in
  * `next` with no prior entry keep default (null view, undefined config).
  * Pure + RGL-free so the metadata-preservation contract is unit-testable. */
 export function applyPositions(

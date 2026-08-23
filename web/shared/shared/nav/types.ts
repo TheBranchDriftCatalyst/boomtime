@@ -22,7 +22,7 @@ export interface NavItem {
   /** when set, the entry only renders if this public-config flag is on. */
   flag?: NavFlag;
   /**
-   * When true the entry renders only for admins (gaka-dr5w). Admin used to be
+   * When true the entry renders only for admins (boom-dr5w). Admin used to be
    * rendered by a bespoke component OUTSIDE the section loop, which is half of
    * why it appeared to belong to whichever group happened to precede it. As a
    * registered item it sits in a real section and inherits that section's

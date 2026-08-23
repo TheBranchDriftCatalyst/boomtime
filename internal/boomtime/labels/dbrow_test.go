@@ -1,4 +1,4 @@
-// dbrow_ginkgo_test.go — ginkgo mirror of dbrow_test.go (gaka-tst-ginkgo).
+// dbrow_ginkgo_test.go — ginkgo mirror of dbrow_test.go (boom-tst-ginkgo).
 //
 // PARALLEL migration: both this file and dbrow_test.go run under
 // `go test ./internal/labels/...`. Once every stdlib TestXxx has a

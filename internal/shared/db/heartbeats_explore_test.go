@@ -1,4 +1,4 @@
-// heartbeats_explore_ginkgo_test.go — ginkgo mirror of heartbeats_explore_test.go (gaka-0vp.13).
+// heartbeats_explore_ginkgo_test.go — ginkgo mirror of heartbeats_explore_test.go (boom-0vp.13).
 // 1:1 case map (4 stdlib TestXxx → 4 Its):
 //
 //	TestExploreColumnWhitelist    → "ExploreColumn > whitelist + rejects"

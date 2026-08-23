@@ -5,14 +5,14 @@ import type { WidgetScope } from "@shared/types/api";
 // composes, so users can eventually assemble graph+badge+label+grade combos.
 export type WidgetPrimitive = "graph" | "badge" | "label" | "grade" | "chip";
 
-// gaka-keb: dashboard page-scope markers used by the composable dashboard
+// boom-keb: dashboard page-scope markers used by the composable dashboard
 // grid. Widgets can appear on multiple dashboard scopes; `profile` means the
 // widget is rendered on the public /p/:slug page (in-page React render, NOT
 // as an SVG embed). Existing catalog entries carry `profile` alongside the
 // SVG scopes when their kind renders on the public dashboard.
 export type DashboardScope = "profile" | "overview" | "projects";
 
-// gaka-keb: catalog entries that render in-page under the composable
+// boom-keb: catalog entries that render in-page under the composable
 // dashboard grid can declare per-widget `views` — the chart-toggle pill flips
 // between them (e.g. pie ↔ bar). The view name is opaque to the catalog
 // (renderer handles it); the layout entry's `view` field carries the user's
@@ -36,22 +36,22 @@ export interface WidgetCatalogEntry {
   /** Which page scopes offer this widget in the panel. */
   scopes: WidgetScope[];
   primitives: WidgetPrimitive[];
-  /** gaka-keb: dashboard scopes this widget is offered on. Empty/undefined =
+  /** boom-keb: dashboard scopes this widget is offered on. Empty/undefined =
    * not offered on any dashboard page (widget is embed-only via /widget/svg).
    * A widget can be `profile`-scope without being SVG-renderable (e.g., chip
    * lists that only make sense in HTML). */
   dashboardScopes?: DashboardScope[];
-  /** gaka-keb: default layout footprint for the composable grid (12-col grid,
+  /** boom-keb: default layout footprint for the composable grid (12-col grid,
    * row-height units). Absent = the DashboardGrid falls back to (w=6,h=3). */
   defaultLayout?: { w: number; h: number };
-  /** gaka-keb: dual (or triple)-view swap targets for the ChartToggle pill.
+  /** boom-keb: dual (or triple)-view swap targets for the ChartToggle pill.
    * When present, the widget renders a floating segmented control in its
    * header to switch views. */
   views?: WidgetView[];
-  /** gaka-keb: which of `views` to render when the layout entry doesn't pin
+  /** boom-keb: which of `views` to render when the layout entry doesn't pin
    * a view. */
   defaultView?: string;
-  /** gaka-keb: SVG-only kinds (renderable via /widget/svg only, NOT via the
+  /** boom-keb: SVG-only kinds (renderable via /widget/svg only, NOT via the
    * in-page composable dashboard) can flag themselves to keep the backend
    * SVG endpoint from advertising them. Purely informational for now — the
    * backend keeps its own `kinds` map. Default undefined. */
@@ -110,7 +110,7 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
     scopes: ["user", "project", "space"],
     primitives: ["badge", "label"],
   },
-  // gaka-unq.2 — new twins + composite:
+  // boom-unq.2 — new twins + composite:
   {
     kind: "activity-heatmap",
     title: "Contribution Calendar",
@@ -151,7 +151,7 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
     scopes: ["user"],
     primitives: ["graph", "graph", "grade", "label"],
   },
-  // gaka-unq.3 — remaining chart twins:
+  // boom-unq.3 — remaining chart twins:
   {
     kind: "cumulative-area",
     title: "Cumulative Coding Time",
@@ -161,7 +161,7 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
     dashboardScopes: ["overview"],
     defaultLayout: { w: 6, h: 4 },
   },
-  // gaka-yfg — lines of code. Overview-only, in-page + self-fetching (like the
+  // boom-yfg — lines of code. Overview-only, in-page + self-fetching (like the
   // overview-stats / ai-assistance kinds); NO backend SVG variant, so it is
   // intentionally absent from internal/widget/render.go's Kinds() and the
   // drift-guard test (which only pins the SVG-renderable subset).
@@ -201,7 +201,7 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
     dashboardScopes: ["overview"],
     defaultLayout: { w: 6, h: 3 },
   },
-  // gaka-keb — profile-scoped kinds for the composable dashboard grid.
+  // boom-keb — profile-scoped kinds for the composable dashboard grid.
   // grade-badge + hero-identity stay in-page-only (interactive/identity
   // chrome; the backend SVG endpoint 404s for them). The stat tiles + chip
   // lists below ALSO have backend SVG twins since Part B Stage 1 (see
@@ -301,7 +301,7 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
     dashboardScopes: ["profile"],
     defaultLayout: { w: 6, h: 2 },
   },
-  // gaka-wpb — goal tile widgets. All three render in-page only
+  // boom-wpb — goal tile widgets. All three render in-page only
   // (svgOnly: not set; the backend SVG endpoint doesn't know these
   // kinds and returns 404). Goals are private-by-default; users can
   // still surface progress publicly by adding one of these tiles to
@@ -348,7 +348,7 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
     dashboardScopes: ["profile"],
     defaultLayout: { w: 12, h: 6 },
   },
-  // gaka-364: labels/memeification showcase — renders all evaluated
+  // boom-364: labels/memeification showcase — renders all evaluated
   // labels grouped by category (tier / archetype / tribe). FE-only
   // widget, not registered in internal/widget/render.go's SVG kinds
   // (like the other profile-only tiles: grade-badge, hero-identity,
@@ -363,7 +363,7 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
     dashboardScopes: ["profile"],
     defaultLayout: { w: 6, h: 4 },
   },
-  // gaka-7uc (Phase 3): Overview-only kinds. Like the goal-*/hero-identity/
+  // boom-7uc (Phase 3): Overview-only kinds. Like the goal-*/hero-identity/
   // *-stat profile kinds, these render ONLY in-page (via
   // OverviewWidgetRenderer, self-fetching from OverviewDataContext) — they have
   // no backend SVG variant, so they are deliberately absent from
@@ -441,7 +441,7 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
     dashboardScopes: ["overview"],
     defaultLayout: { w: 12, h: 4 },
   },
-  // gaka-v1k (Phase 4): GitHub-ONLY chart widgets. Like the other overview-only
+  // boom-v1k (Phase 4): GitHub-ONLY chart widgets. Like the other overview-only
   // FE kinds (loc / ai-assistance / overview-stats) these render ONLY in-page
   // via OverviewWidgetRenderer, SELF-FETCHING from the cached P2
   // GithubStatsPayload (qk.githubStats) — NOT from OverviewDataContext. They
@@ -477,7 +477,7 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
     dashboardScopes: ["overview"],
     defaultLayout: { w: 6, h: 4 },
   },
-  // gaka-2ud (Phase 5): the COMBINED GitHub stats card for the PUBLIC profile.
+  // boom-2ud (Phase 5): the COMBINED GitHub stats card for the PUBLIC profile.
   // One `profile`-scoped kind (rather than three separate profile kinds) so the
   // page shows a single cohesive GitHub tile: key stat tiles + a commits area +
   // top repos + language breakdown, all from the ONE public mirror fetch
@@ -497,7 +497,7 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
     dashboardScopes: ["profile"],
     defaultLayout: { w: 12, h: 8 },
   },
-  // gaka-qcxg — READING-DOMAIN widgets. These surface the existing Reading
+  // boom-qcxg — READING-DOMAIN widgets. These surface the existing Reading
   // dashboard tiles (web/src/features/overview/reading/ReadingTiles.tsx) as
   // first-class catalog kinds so the /catalog gallery showcases the reading
   // vizes alongside the coding ones. Like the overview-*/github-* fe-only
@@ -554,7 +554,7 @@ export function catalogFor(scope: WidgetScope): WidgetCatalogEntry[] {
   return WIDGET_CATALOG.filter((e) => e.scopes.includes(scope));
 }
 
-/** gaka-keb: catalog entries offered for a composable-dashboard scope
+/** boom-keb: catalog entries offered for a composable-dashboard scope
  * (`profile`, `overview`, ...). Distinct from `catalogFor(scope)` because
  * widgets can be embed-scoped without being dashboard-scoped, and vice versa.
  */
@@ -612,7 +612,7 @@ export function embeddableCatalogFor(scope: WidgetScope): WidgetCatalogEntry[] {
   return catalogFor(scope).filter((e) => SVG_RENDERABLE_KINDS.has(e.kind));
 }
 
-/** gaka-keb: lookup a catalog entry by kind id. Returns undefined for
+/** boom-keb: lookup a catalog entry by kind id. Returns undefined for
  * unknown kinds; the renderer silently drops missing kinds so a stale saved
  * layout doesn't break the page. */
 export function widgetByKind(kind: string): WidgetCatalogEntry | undefined {

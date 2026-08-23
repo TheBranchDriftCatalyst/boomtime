@@ -1,7 +1,7 @@
 // admin_label_images.go: authed regeneration endpoints for the FE Admin
-// tab (gaka-myv, evolved by gaka-8bz).
+// tab (boom-myv, evolved by boom-8bz).
 //
-// Post-gaka-8bz architecture: the FE no longer runs its own concurrency
+// Post-boom-8bz architecture: the FE no longer runs its own concurrency
 // pool. Instead the server owns an in-memory imagejobs.Registry (queue) +
 // worker pool; the FE POSTs an enqueue request that returns 202 with the
 // jobIDs, and a durable WebSocket at /admin/label-images/ws streams the
@@ -62,7 +62,7 @@ import (
 // Returns feature status + shim config + current row count so the Admin
 // tab can render a "regenerate" button plus a small dashboard.
 //
-// Post gaka-364.3 the response also carries `baseline` = every id from the
+// Post boom-364.3 the response also carries `baseline` = every id from the
 // DB labels catalog. The admin table renders one row per catalog id
 // (present-or-missing image), and the compiled labelcatalog baseline is
 // kept as a fallback for the "brand new DB before migrations apply" case.
@@ -84,7 +84,7 @@ func (h *Handler) AdminLabelImagesInfo(c *echo.Context) error {
 		}
 		baseline = ids
 	}
-	// gaka-8bz worker-topology follow-up: surface which transport is
+	// boom-8bz worker-topology follow-up: surface which transport is
 	// actually running regens so the Admin tab can distinguish "the local
 	// in-process pool" from "the decoupled boomtime-worker pod via
 	// RabbitMQ" — and, when it's the latter, how deep the broker queue
@@ -155,7 +155,7 @@ func (h *Handler) AdminLabelImagesRegenerate(c *echo.Context) error {
 	if _, aerr := h.requireAdmin(c); aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
-	// Unified (gaka-hney Stage 3): route regen through catalyst-go-jobs (the DB
+	// Unified (boom-hney Stage 3): route regen through catalyst-go-jobs (the DB
 	// queue + KEDA ScaledJob) instead of the in-memory imagejobs registry. Needs
 	// the worker + the DB-jobs enqueuer/store; falls back to imagejobs when off.
 	unified := h.Cfg != nil && h.Cfg.JobsUnified && h.JobEnqueuer != nil && h.JobStore != nil
@@ -211,7 +211,7 @@ func (h *Handler) AdminLabelImagesRegenerate(c *echo.Context) error {
 		return apihelpers.RespondErr(c, apierr.BadRequest("nothing to regenerate — verify `ids` match the `entries` you sent"))
 	}
 
-	// Truncate is a destructive DB op — preserve the pre-gaka-8bz
+	// Truncate is a destructive DB op — preserve the pre-boom-8bz
 	// behavior where `all=true` + `truncate=true` wipes label_images
 	// first so deleted-in-FE labels also fall out of the DB. The
 	// individual per-entry delete (previous batch delete) is dropped
@@ -232,7 +232,7 @@ func (h *Handler) AdminLabelImagesRegenerate(c *echo.Context) error {
 		// prompt reflects any narrative edit the operator just saved via
 		// the Sheet editor's "Save + regen" flow. A missing row (unknown
 		// id) or DB blip is not fatal — we log and fall back to an empty
-		// description, which produces the pre-gaka-8bz {sys, prompt}
+		// description, which produces the pre-boom-8bz {sys, prompt}
 		// composition.
 		desc := ""
 		if row, err := h.DB.GetLabel(reqCtx, e.ID); err != nil {
@@ -296,7 +296,7 @@ type labelJobStatus struct {
 }
 
 // AdminLabelImagesStatus: GET /api/v1/admin/label-images/status — the latest
-// label-image job per label from the DB queue (gaka-hney Stage 3). Under
+// label-image job per label from the DB queue (boom-hney Stage 3). Under
 // BOOM_JOBS_UNIFIED this replaces the imagejobs WS as the FE's per-label status
 // source; the admin tab polls it. Returns [] when the jobs subsystem isn't
 // wired (feature off) so the FE degrades to "no in-flight jobs" rather than

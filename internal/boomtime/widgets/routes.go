@@ -13,12 +13,12 @@ func Register(e *echo.Echo, h *Handler) {
 	e.GET("/badge/link/:project", h.BadgeLink)
 	e.GET("/badge/svg/:svg", h.BadgeSvg)
 
-	// Embeddable widgets (gaka-hsj)
+	// Embeddable widgets (boom-hsj)
 	e.GET("/api/v1/users/current/widgets/link", h.WidgetLink)
 	e.GET("/api/v1/users/current/widgets/links", h.WidgetLinkList)
 	e.POST("/api/v1/users/current/widgets/link/:id/roll", h.WidgetLinkRoll)
 
-	// Named/saved custom widget defs (gaka-3nu) — /named MUST come before /:kind.
+	// Named/saved custom widget defs (boom-3nu) — /named MUST come before /:kind.
 	e.GET("/widget/svg/:uuid/named", h.WidgetDefSvg)
 	e.GET("/widget/svg/:uuid/:kind", h.WidgetSvg)
 

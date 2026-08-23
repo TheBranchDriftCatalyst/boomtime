@@ -35,7 +35,7 @@ func doJSONReqG(e http.Handler, method, target, token string, body any) *httptes
 }
 
 // getJSONG mirrors the same-named helper that lived in
-// internal/handler/testhelpers_test.go before gaka-8tn phase 6 moved the
+// internal/handler/testhelpers_test.go before boom-8tn phase 6 moved the
 // stats-owned tests into internal/stats/. Kept as a stats-package copy so
 // bigbets_handler_test.go's call sites (`getJSONG(e, url, tok)`) stay
 // byte-identical. Follow-up (phase 8): promote to

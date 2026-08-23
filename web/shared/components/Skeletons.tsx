@@ -7,7 +7,7 @@ import { LoadingSkeleton } from "@thebranchdriftcatalyst/catalyst-ui/ui/loading-
 import { cn } from "@shared/lib/utils";
 
 /**
- * Content-shaped loading skeletons (gaka-gbbl.2).
+ * Content-shaped loading skeletons (boom-gbbl.2).
  *
  * Built on catalyst-ui's `LoadingSkeleton` pulse primitive (motion-safe
  * `animate-pulse`, `prefers-reduced-motion`-aware) composed into the shape of

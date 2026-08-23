@@ -1,5 +1,5 @@
 // widgets.go holds the widget-link CRUD for the public embeddable SVG widgets
-// (gaka-hsj). Mirrors the badge-link pattern in projects.go: an auth'd upsert
+// (boom-hsj). Mirrors the badge-link pattern in projects.go: an auth'd upsert
 // mints a stable uuid per (user, scope); the public render endpoint resolves
 // the uuid back to its scope. Widget kind/range/theme are URL params, not rows.
 package db
@@ -236,7 +236,7 @@ func ProjectMemberSet(project string) MemberSets {
 
 // ProjectMemberSetWithRenames is ProjectMemberSet expanded via the owner's
 // rename map so a scope pinned to a renamed/merged project name matches raw
-// heartbeats stored under the source name(s) (gaka-xuc). The `project` arm
+// heartbeats stored under the source name(s) (boom-xuc). The `project` arm
 // becomes `[project] ∪ ExactSourcesFor("project", project)` — the display
 // name plus every raw name that renames to it (all lowercased so the SQL side
 // compares case-insensitively). Regex/template renames are intentionally left

@@ -6,7 +6,7 @@ import "fmt"
 // the value well clear of any column/index limits.
 const MaxUsernameLen = 64
 
-// ValidateUsername enforces a conservative username policy (gaka-93f.18).
+// ValidateUsername enforces a conservative username policy (boom-93f.18).
 //
 // Both the local /auth/register path and OIDC autoprovisioning previously
 // inserted a username VERBATIM with zero validation — so an IdP-supplied

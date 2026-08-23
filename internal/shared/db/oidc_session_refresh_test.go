@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// gaka-93f.11.6: the OIDC session must store the provider refresh RECOVERABLY
+// boom-93f.11.6: the OIDC session must store the provider refresh RECOVERABLY
 // (encrypted ciphertext round-trips byte-for-byte — unlike the old SHA-256 hash,
 // which could never be USED for a refresh-grant) and rotate in place so
 // /auth/refresh_token can silently extend the session. Runs against the isolated

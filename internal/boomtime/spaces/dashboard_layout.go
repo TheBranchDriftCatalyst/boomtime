@@ -1,4 +1,4 @@
-// dashboard_layout.go — CRUD for per-user dashboard layout JSON (gaka-keb).
+// dashboard_layout.go — CRUD for per-user dashboard layout JSON (boom-keb).
 //
 // The layout is placement metadata for widget-catalog kinds. Storage is
 // intentionally opaque JSONB — the handler validates only:
@@ -30,7 +30,7 @@ import (
 // accept. Extend when adding a new dashboard target. The map value is unused —
 // set membership only.
 //
-// gaka-lzr Phase 4: "overview" is admitted so a future PUT of the in-app
+// boom-lzr Phase 4: "overview" is admitted so a future PUT of the in-app
 // Overview dashboard layout to /api/v1/users/current/dashboard/overview is
 // accepted. FE persistence isn't wired yet (Phase 6) — accepting the scope now
 // is harmless: rows are owner-keyed (UNIQUE(owner, scope)), so a user can only
@@ -80,7 +80,7 @@ func (h *Handler) GetDashboardLayout(c *echo.Context) error {
 // Response is the persisted envelope {"layout": ...} so the FE can settle
 // its react-query cache with the same shape it will read on subsequent
 // GETs. The layout bytes are preserved verbatim through Set/Get — see the
-// gaka-25r round-trip regression test.
+// boom-25r round-trip regression test.
 func (h *Handler) PutDashboardLayout(c *echo.Context) error {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {

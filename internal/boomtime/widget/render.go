@@ -1,5 +1,5 @@
-// Package widget renders the public embeddable SVG stats widgets (gaka-hsj +
-// gaka-unq.2). Every kind renders through spec.go's renderSpec engine, driven
+// Package widget renders the public embeddable SVG stats widgets (boom-hsj +
+// boom-unq.2). Every kind renders through spec.go's renderSpec engine, driven
 // by the canonical internal/widget/specs.json — see spec.go's package doc for
 // the engine itself (Part B Stage 5 cutover: renderSpec is now the ONLY
 // render path; the hand-written per-kind renderers this file used to hold
@@ -120,7 +120,7 @@ func Needs(kind string) Requirements {
 	return NeedsForSpec(spec)
 }
 
-// RenderCustom dispatches the builder-composed "custom" widget (gaka-567).
+// RenderCustom dispatches the builder-composed "custom" widget (boom-567).
 // The Def is passed inline in the URL — no saved-def table for v1. Kept
 // separate from RenderSpec so a caller can't mint a custom widget without
 // providing the spec.

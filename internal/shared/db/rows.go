@@ -9,7 +9,7 @@ import "time"
 // console tabs, plugin-less clients). Callers building per-axis pies
 // (languages, projects, editors, ...) filter WHERE NOT <axis>Missing so
 // null-axis time doesn't get collapsed into a synthetic 'Other' bucket
-// that reads like the capWithOther aggregation cap. See gaka-6ci.
+// that reads like the capWithOther aggregation cap. See boom-6ci.
 type StatRow struct {
 	Day             time.Time
 	Project         string
@@ -41,7 +41,7 @@ type ProjectStatRow struct {
 	TotalSeconds    int64
 	Pct             float64
 	DailyPct        float64
-	LanguageMissing bool // gaka-6ci: TRUE when the source heartbeat had NULL language
+	LanguageMissing bool // boom-6ci: TRUE when the source heartbeat had NULL language
 	EntityMissing   bool
 }
 
@@ -59,13 +59,13 @@ type LeaderboardRow struct {
 	Language        string
 	Sender          string
 	TotalSeconds    int64
-	ProjectMissing  bool // gaka-6ci
+	ProjectMissing  bool // boom-6ci
 	LanguageMissing bool
 }
 
 // StoredUser is a validated username with password material (users table).
 //
-// gaka-awh.6: ArgonVersion tags the row with the Argon2id parameter generation
+// boom-awh.6: ArgonVersion tags the row with the Argon2id parameter generation
 // its hashed_password was produced under. 1 = legacy (pre-Bravo params),
 // 2 = current (OWASP ASVS L1 2025 floor). Verify with
 // auth.VerifyPasswordWithVersion so a v1 hash is checked against v1 params.
@@ -76,7 +76,7 @@ type StoredUser struct {
 	HashedPassword []byte
 	SaltUsed       []byte
 	ArgonVersion   int
-	// Timezone (gaka-dg7) is the user's explicit IANA name choice or the
+	// Timezone (boom-dg7) is the user's explicit IANA name choice or the
 	// empty-string sentinel meaning "no explicit pick — use BOOM_DEFAULT_TIMEZONE
 	// (else UTC)". Callers that need the effective zone for a query MUST use
 	// the 3-level resolver (handler.resolveUserTZ / db.ResolveTimezone) rather
@@ -85,7 +85,7 @@ type StoredUser struct {
 }
 
 // StoredUserFull is StoredUser plus the user-model substrate columns added in
-// migration 00046 (gaka-0oe.1): role, the capabilities override blob (raw
+// migration 00046 (boom-0oe.1): role, the capabilities override blob (raw
 // JSONB bytes — parsed by auth.BuildIdentity), and disabled_at. Read via
 // GetUserFullByName ONLY on the Identity path when BOOM_FEATURE_USER_MODEL is
 // on; the today StoredUser + GetUserByName are left untouched so unmigrated

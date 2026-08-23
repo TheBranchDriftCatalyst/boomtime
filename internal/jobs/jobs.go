@@ -1,4 +1,4 @@
-// Package jobs is catalyst-go-jobs (gaka-hney): a small, generic, DB-backed job
+// Package jobs is catalyst-go-jobs (boom-hney): a small, generic, DB-backed job
 // queue + periodic scheduler. It is transport-agnostic and domain-agnostic —
 // callers register a Handler per job kind, enqueue work (or a Scheduler enqueues
 // it periodically), and Workers claim + run it with retry/backoff.
@@ -38,7 +38,7 @@ type Job struct {
 	ID   int64
 	Kind string
 	// Owner is the user a job belongs to ("" = a system job). Terminal events
-	// for owned jobs route to that user's push notifications (gaka-hney.6).
+	// for owned jobs route to that user's push notifications (boom-hney.6).
 	Owner       string
 	Payload     json.RawMessage
 	Status      Status
@@ -52,7 +52,7 @@ type Job struct {
 }
 
 // JobEvent is a terminal status transition (done/failed) delivered to a
-// Notifier for push notifications (gaka-hney.6).
+// Notifier for push notifications (boom-hney.6).
 type JobEvent struct {
 	ID     int64  `json:"id"`
 	Kind   string `json:"kind"`
@@ -186,7 +186,7 @@ func (r *Registry) OffloadKinds() []string {
 // Otherwise the filter is DERIVED so routing can't drift:
 //   - role "worker" (a dedicated, KEDA-scaled pod): claim ONLY offload kinds, so
 //     a worker scaling to zero can never grab — and orphan — a server-resident or
-//     scheduled kind (the reading-monitor-orphan bug, gaka-caxl);
+//     scheduled kind (the reading-monitor-orphan bug, boom-caxl);
 //   - role "server" (always-on): claim everything EXCEPT offload kinds (those are
 //     drained by the worker);
 //   - any other role ("all" / single-pod dev): no filter, claim everything.

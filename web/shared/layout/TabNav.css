@@ -115,7 +115,7 @@
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none; /* Firefox */
-  /* gaka-k0q: magnetize the overflow scroll to tab boundaries. `proximity`,
+  /* boom-k0q: magnetize the overflow scroll to tab boundaries. `proximity`,
    * not `mandatory` — a nav strip must never trap a mid-fling scroll; it only
    * tidies the rest position to a tab edge when you land near one. Inert on
    * wide viewports where every tab already fits (nothing to scroll). */
@@ -157,7 +157,7 @@
 .catalyst-tabnav--header .catalyst-tab {
   height: 100%;
   padding: 0 0.85rem;
-  /* gaka-k0q: each tab is a snap point for the proximity x-snap above. */
+  /* boom-k0q: each tab is a snap point for the proximity x-snap above. */
   scroll-snap-align: start;
 }
 .catalyst-tabnav--page .catalyst-tab {

@@ -6,7 +6,7 @@ import { Card, CardContent } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { api } from "@shared/lib/api";
 import { qk } from "@shared/lib/queryKeys";
 
-// Settings › Account › Linked identities (gaka-b5n.4). Lists the caller's
+// Settings › Account › Linked identities (boom-b5n.4). Lists the caller's
 // linked external identities (Authentik/OIDC) and lets them link a new one or
 // unlink an existing one. "Link Authentik" navigates to the backend
 // /auth/link/oidc, which binds the resolved identity to the CURRENT account

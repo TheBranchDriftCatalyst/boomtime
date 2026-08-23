@@ -1,4 +1,4 @@
-// sidecar.go — the FORWARD Kindle reading-TIME position source (gaka-books). It
+// sidecar.go — the FORWARD Kindle reading-TIME position source (boom-books). It
 // device-signs a GET against the Fiona CDE sidecar for one book and returns its
 // current last-page-read POSITION so the books domain can append a sample and
 // gap-sum consecutive samples into reading SESSIONS (the heartbeat model, applied

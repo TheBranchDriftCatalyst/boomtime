@@ -1,4 +1,4 @@
--- gaka-dg7: day boundary computed in user-local TZ ($5) so a 23:59 PT commit
+-- boom-dg7: day boundary computed in user-local TZ ($5) so a 23:59 PT commit
 -- (07:59 UTC next day) is credited to the right day. Streak / rollup / daily
 -- percentage calculations all downstream of this — before the fix a Pacific
 -- user's evening work bled forward to "tomorrow".
@@ -18,7 +18,7 @@ WITH stats AS (
         coalesce(machine, 'Other') AS machine,
         entity,
         CAST(sum(CASE WHEN gap_seconds <= ($4 * 60) THEN gap_seconds ELSE 0 END) AS int8) AS total_seconds,
-        -- gaka-6ci: NULL-axis discriminator. Well-defined here because the
+        -- boom-6ci: NULL-axis discriminator. Well-defined here because the
         -- GROUP BY uses raw columns (not COALESCE'd), so every row in a
         -- group shares the same NULL-ness on each axis.
         (project IS NULL) AS project_missing,

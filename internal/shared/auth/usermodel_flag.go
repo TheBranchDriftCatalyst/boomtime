@@ -2,7 +2,7 @@ package auth
 
 import "sync/atomic"
 
-// Process-global user-model switch (gaka-0oe). The substrate feature flag is
+// Process-global user-model switch (boom-0oe). The substrate feature flag is
 // env-driven and immutable after boot, so it lives as one process-global here
 // rather than being threaded through every domain Handler's config — the
 // handlers have three different config shapes (*config.Config, a narrow

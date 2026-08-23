@@ -1,5 +1,5 @@
 // labels_suite_test.go — ginkgo entry point for the `labels` package
-// (gaka-tst-ginkgo). Every _test.go file in this package is a spec file
+// (boom-tst-ginkgo). Every _test.go file in this package is a spec file
 // (`var _ = Describe(...)` at package init) — this file is the single
 // `func TestXxx(t *testing.T)` handoff into the ginkgo runner.
 //
@@ -9,7 +9,7 @@
 //   go test ./internal/labels/... -ginkgo.focus="axis-time"  # filter
 //
 // See docs/testing/ginkgo.md for the migration guide and the epic
-// tracking the stdlib → ginkgo conversion (gaka-tst-ginkgo).
+// tracking the stdlib → ginkgo conversion (boom-tst-ginkgo).
 
 package labels
 

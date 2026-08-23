@@ -1,5 +1,5 @@
 // Package oauth provides the CSRF `state` primitive shared by the per-user
-// third-party OAuth connect flows (gaka-2ip Phase 1: GitHub). The state binds
+// third-party OAuth connect flows (boom-2ip Phase 1: GitHub). The state binds
 // the OAuth round-trip to the boomtime user who initiated it and is signed with
 // an HMAC so the callback can trust the owner without any server-side session
 // store — the whole trust chain lives in the signature.
