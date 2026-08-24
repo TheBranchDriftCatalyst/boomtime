@@ -34,7 +34,10 @@ var ErrLicenseDenied = errors.New("liberate: Audible denied the content license"
 //     file, which is not what a backup tool wants.
 //   - chapter_titles_type "Tree" returns NESTED chapters (parts containing
 //     chapters). chapters.go flattens them; asking for Flat instead would lose
-//     the part titles that make a long book navigable.
+//     the part titles that make a long book navigable. NOTE (live-verified
+//     2026-08-24): Tree does NOT guarantee nesting — a 37-chapter title came
+//     back entirely flat. The flatten must handle both shapes and must not
+//     assume any depth.
 type licenseRequestBody struct {
 	SupportedMediaFeatures struct {
 		ChapterTitlesType string   `json:"chapter_titles_type"`

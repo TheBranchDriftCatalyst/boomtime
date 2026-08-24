@@ -248,11 +248,19 @@ func voucherOrderProbe(cred *amazon.DeviceCredential, asin, sealed string) Probe
 	return p
 }
 
-// offlineURLProbe answers whether the CDN URL is self-authorizing. It issues a
-// Range request for the first byte rather than a HEAD (some CDN edges answer
-// HEAD differently from GET) and never downloads the book.
+// offlineURLProbe determines what the CDN download actually requires.
+//
+// LIVE RESULT (2026-08-24, B09GCYRZRQ): a bare GET returns 403. The presigned
+// URL is NOT self-authorizing — the ADP headers are mandatory on the download,
+// not merely harmless. fetch.go must sign it.
+//
+// So the probe now does two passes: bare first (that is the actual question),
+// then signed if the bare attempt was rejected. Without the second pass a 403
+// ends the probe knowing only "not self-authorizing", and never learns whether
+// the CDN honours Range — which is what decides if epic B's resumable download
+// is viable. It requests a single byte and never downloads the book.
 func offlineURLProbe(ctx context.Context, cred *amazon.DeviceCredential, lr *LicenseResponse) Probe {
-	p := Probe{Name: "3 · CDN offline_url (is it self-authorizing?)"}
+	p := Probe{Name: "3 · CDN offline_url (auth requirement + range support)"}
 	raw := lr.ContentLicense.ContentMetadata.ContentURL.OfflineURL
 	if raw == "" {
 		p.Verdict, p.Error = VerdictFail, "license granted but no offline_url in the response"
@@ -267,30 +275,101 @@ func offlineURLProbe(ctx context.Context, cred *amazon.DeviceCredential, lr *Lic
 	// admin page download the book. Host only.
 	p.Endpoint = u.Scheme + "://" + u.Host + "/… (presigned, redacted)"
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
-	if err != nil {
-		p.Verdict, p.Error = VerdictFail, err.Error()
+	bare, bareErr := rangeProbe(ctx, raw, nil)
+	if bareErr != nil {
+		p.Verdict, p.Error = VerdictFail, bareErr.Error()
 		return p
+	}
+	if okStatus(bare.status) {
+		p.OK, p.Verdict, p.Status = true, VerdictPass, bare.status
+		p.Detail = "self-authorizing (no ADP headers needed) · " + describeRange(bare)
+		return p
+	}
+
+	// Bare rejected → does signing fix it?
+	signed, signedErr := rangeProbe(ctx, raw, func(r *http.Request) error {
+		h, serr := amazon.Sign(cred, "GET", u.RequestURI(), nil, time.Now())
+		if serr != nil {
+			return serr
+		}
+		r.Header.Set("x-adp-token", h.AdpToken)
+		r.Header.Set("x-adp-alg", h.AdpAlg)
+		r.Header.Set("x-adp-signature", h.Signature)
+		return nil
+	})
+	if signedErr != nil {
+		p.Verdict = VerdictWarn
+		p.Status = bare.status
+		p.Detail = fmt.Sprintf("HTTP %d bare; signed retry failed: %v", bare.status, signedErr)
+		return p
+	}
+	p.Status = signed.status
+	if okStatus(signed.status) {
+		p.OK, p.Verdict = true, VerdictWarn
+		p.Detail = fmt.Sprintf("NOT self-authorizing — bare GET was HTTP %d, ADP-signed GET was HTTP %d. "+
+			"fetch.go MUST sign the download. · %s", bare.status, signed.status, describeRange(signed))
+		return p
+	}
+	p.Verdict = VerdictFail
+	p.Detail = fmt.Sprintf("bare GET HTTP %d AND ADP-signed GET HTTP %d — neither works; "+
+		"the download may need cookies or a different header set than the API calls",
+		bare.status, signed.status)
+	return p
+}
+
+// rangeResult is one conditional-GET outcome.
+type rangeResult struct {
+	status       int
+	contentType  string
+	acceptRanges string
+	contentRange string
+}
+
+func okStatus(code int) bool {
+	return code == http.StatusPartialContent || code == http.StatusOK
+}
+
+// describeRange reports whether the CDN honoured the one-byte Range request.
+// A 206 with a Content-Range is the strong signal that resumable download works;
+// a 200 means the server ignored Range and would stream the whole file.
+func describeRange(r rangeResult) string {
+	switch {
+	case r.status == http.StatusPartialContent:
+		return fmt.Sprintf("RANGE SUPPORTED (206, content-range=%q) — epic B resumable download is viable · content-type=%s",
+			r.contentRange, r.contentType)
+	case r.acceptRanges != "" && r.acceptRanges != "none":
+		return fmt.Sprintf("range likely supported (accept-ranges=%q, got %d) · content-type=%s",
+			r.acceptRanges, r.status, r.contentType)
+	default:
+		return fmt.Sprintf("range NOT honoured (got %d, accept-ranges=%q) — resume would need a full refetch · content-type=%s",
+			r.status, r.acceptRanges, r.contentType)
+	}
+}
+
+// rangeProbe issues a one-byte Range GET, optionally decorating the request.
+// The body is closed immediately — this must never pull the audiobook.
+func rangeProbe(ctx context.Context, rawURL string, decorate func(*http.Request) error) (rangeResult, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return rangeResult{}, err
 	}
 	req.Header.Set("Range", "bytes=0-0")
+	if decorate != nil {
+		if derr := decorate(req); derr != nil {
+			return rangeResult{}, derr
+		}
+	}
 	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
 	if err != nil {
-		p.Verdict, p.Error = VerdictFail, err.Error()
-		return p
+		return rangeResult{}, err
 	}
 	defer resp.Body.Close()
-	p.Status = resp.StatusCode
-	switch {
-	case resp.StatusCode == http.StatusPartialContent || resp.StatusCode == http.StatusOK:
-		p.OK, p.Verdict = true, VerdictPass
-		p.Detail = fmt.Sprintf("self-authorizing (no ADP headers needed) · content-type=%s · accept-ranges=%q "+
-			"— range support means epic B's resumable download is viable",
-			resp.Header.Get("Content-Type"), resp.Header.Get("Accept-Ranges"))
-	default:
-		p.Verdict = VerdictWarn
-		p.Detail = fmt.Sprintf("HTTP %d without ADP headers — fetch.go must attach them", resp.StatusCode)
-	}
-	return p
+	return rangeResult{
+		status:       resp.StatusCode,
+		contentType:  resp.Header.Get("Content-Type"),
+		acceptRanges: resp.Header.Get("Accept-Ranges"),
+		contentRange: resp.Header.Get("Content-Range"),
+	}, nil
 }
 
 // contentFormatProbe records the codec/DRM flavour we were handed. This is the

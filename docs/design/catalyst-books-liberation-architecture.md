@@ -9,6 +9,11 @@
 > model + job wiring this extends) and `book-tracking-research.md` §10/Resources (the
 > unofficial-device-API posture). This doc GUIDES the liberation epic's beads.
 
+> **LIVE-VERIFIED 2026-08-24** against the real account (ASIN `B09GCYRZRQ`,
+> "The Gate of the Feral Gods", marketplace `us`). Four of the five
+> NEEDS-LIVE-VERIFY items in §2 are now RESOLVED — see §2.6 for the results and
+> what changed because of them. The remaining unknowns are noted inline.
+>
 > **Implementation status (2026-08-24).** Built and green: `SignedPost` +
 > licensing (§2.1), voucher decrypt (§2.2), naming template + FS sink (§6),
 > config gate (§7), prod storage (§7.1), and the live-verification harness
@@ -124,11 +129,12 @@ Content-Type: application/json
 }
 ```
 
-**NEEDS-LIVE-VERIFY:** the canonical string for a POST. `Sign()` builds
-`method\npath\ndate\nbody\nadp_token` — the `body` element is currently only ever
-`""` in practice (every caller is `SignedGet`). Confirm Amazon expects the raw JSON
-bytes there, byte-for-byte identical to what goes on the wire (no re-marshal between
-signing and sending — sign the exact `[]byte` you post).
+**RESOLVED 2026-08-24 — the canonical string is CORRECT as built.** `Sign()`
+produces `method\npath\ndate\nbody\nadp_token` with the raw JSON bytes in the
+body element, and Amazon accepted it first try (HTTP 200, `status_code: Granted`).
+No change needed. The "sign the exact `[]byte` you post" rule stands and is
+enforced by `SignedPost`'s signature taking `[]byte` rather than a struct;
+`TestSignBodySensitivity` proves a re-marshal would change the signature.
 
 Response fields we consume, all under `content_license`:
 
@@ -166,25 +172,33 @@ Every input is on hand: `deviceType` is the const at `register.go:44`
 (`amazon.go`). Pure stdlib (`crypto/aes`, `crypto/sha256`, `encoding/base64`) — no new
 dependency.
 
-**NEEDS-LIVE-VERIFY:** the trailing-bytes handling. Upstream strips trailing `\x00`
-rather than doing PKCS#7 unpad; the robust implementation is to decrypt, then trim to
-the last `}` before `json.Unmarshal`. Also confirm the concat ORDER of the four
-values — a wrong order yields a clean AES decrypt of garbage, which is a confusing
-failure mode. **Write the unit test against a fixture captured from a real response**
-so the order is pinned once and never re-guessed.
+**RESOLVED 2026-08-24 — the CANONICAL order is correct.** The admin probe swept
+all four candidates in `AllKeyOrders` and exactly one unsealed the voucher:
+`device_type + device_serial + customer_id + asin` — i.e. `OrderCanonical`, which
+is what `DecryptVoucher` already uses. No change to `keyMaterial`. The
+brace-trimming parse (first `{` to last `}`) handled the real plaintext without
+complaint, so the padding question is moot in practice.
 
-**Concatenation order note:** `device_type + device_serial + customer_id + asin` is
-what audible-cli uses. Libation's `AudibleApi` derives the same digest. If the first
-live attempt produces non-JSON, permute before assuming the endpoint changed.
+**On fixtures: do NOT commit a real voucher.** The original plan said to capture
+one from a live response and pin the test against it. That was wrong, and the
+reason is worth recording: a real `license_response` plus the four derivation
+inputs IS the content key for a real book — committing it would put a decryption
+secret in git forever. The synthetic round-trip in `voucher_test.go` already
+pins the order (it derives key material independently of `keyMaterial`, verified
+by mutation), and the live probe is what confirms the order against reality.
+Re-run the probe rather than trusting a checked-in secret.
 
 ### 2.3 Download
 
 `GET` the `offline_url` and stream it to a temp file under
 `BOOM_BOOKS_WORK_PATH` (default `os.TempDir()`). Notes:
 
-- It is a pre-signed CloudFront URL. **NEEDS-LIVE-VERIFY** whether the ADP headers
-  are required on it (audible-cli attaches auth; the URL may be self-authorizing).
-  Attach them — harmless if ignored.
+- It is a pre-signed CloudFront URL, and **RESOLVED 2026-08-24: the ADP headers
+  are MANDATORY, not optional.** A bare `GET` returns **HTTP 403**. The earlier
+  wording here ("attach them — harmless if ignored") understated it: attaching
+  them is a hard requirement, and `fetch.go` signing the download is load-bearing
+  rather than defensive. Sign over the URL's `RequestURI()` (path + query), not
+  the API path.
 - **Do not** route this through `SignedGet`: its 64 MiB `io.LimitReader` cap
   (`client.go`) would silently truncate a 500 MB audiobook. Liberation downloads get
   their own unbounded streaming path with an explicit `Content-Length` check.
@@ -243,6 +257,11 @@ type Decryptor interface {
    the container. Mitigation: record `content_format` per book, and let a failure here
    set `liberation_status='unsupported_codec'` with the format captured — that turns
    an unknown into a queryable count, and it is the trigger that justifies epic D.
+
+   **First live sample (2026-08-24): `AAX_44_128`** — 44.1 kHz / 128 kbps AAC-LC,
+   the classic family ffmpeg handles. One title is not a survey, but it is the
+   evidence that the ffmpeg-first decision is sound for at least the bulk of an
+   older library. Epic D stays data-triggered.
 3. **Legacy AAX (activation_bytes).** Pre-AAXC titles use the activation-bytes
    scheme (`ffmpeg -activation_bytes ...`). Out of scope for v1; detect via
    `content_format` and mark `unsupported_format`. Epic C picks it up.
@@ -270,6 +289,41 @@ type Decryptor interface {
   ALREADY in `reading_items.raw_meta` from the library sweep — **no extra Amazon call
   is needed for tagging.** That is a meaningful simplification over Libation, which
   re-fetches.
+
+### 2.6 Live verification results (2026-08-24)
+
+Run via Admin › Books › Source diagnostics › **Liberation**. Account: `us`,
+`device_type=A2CZJZGLK2JJVM`. Title: "The Gate of the Feral Gods" (`B09GCYRZRQ`),
+an ~18h audiobook — a useful worst case for the download path.
+
+| Probe | Result | Consequence |
+|---|---|---|
+| 0 · credential | PASS — serial + customer_id present | — |
+| 1 · signed POST | **PASS (200, Granted)** | canonical string correct, no change |
+| 2 · voucher derivation | **PASS — `device_type+device_serial+customer_id+asin`** | canonical order confirmed, no change |
+| 3 · CDN offline_url | **WARN — 403 without ADP headers** | **`fetch.go` MUST sign the download** |
+| 4 · content format | PASS — `AAX_44_128`, sku `BK_ACX0_274157` | ffmpeg-first decision holds |
+| 5 · chapter tree | PASS — 37 chapters, **0 nested**, `is_accurate=true`, brand intro/outro **3924/4945 ms** | see below |
+
+Two findings changed the plan:
+
+**The download must be signed.** §2.3 originally treated the ADP headers on the
+CDN as belt-and-braces. They are mandatory (403 without). This also meant the
+first probe run could not answer whether the CDN honours `Range` — it never got
+a successful response to inspect. `offlineURLProbe` now does a bare pass followed
+by a signed pass and reports `Accept-Ranges`/`Content-Range` from whichever
+succeeds, so the epic-B resumability question gets answered on the next run.
+
+**`chapter_titles_type: Tree` returned a FLAT list here** — 37 top-level chapters,
+none with children. So the nesting is optional in practice and `chapters.go` must
+handle both shapes; the flatten must not assume depth. The branding offsets are
+NOT zero (3924 ms intro, 4945 ms outro), which confirms they are real and that
+chapter offsets are measured from the start of the file including the Audible
+intro — exactly the case §2.5 flags.
+
+**Still unknown:** whether the CDN supports `Range` (re-run probe 3), and what
+`content_format` values appear across the *rest* of the library rather than this
+one title.
 
 ---
 
