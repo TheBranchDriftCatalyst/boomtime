@@ -1,6 +1,7 @@
 package amazon
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -56,4 +57,56 @@ func SignedGet(ctx context.Context, cred *DeviceCredential, apiHost, pathAndQuer
 	// cap truncated it mid-JSON ("unexpected end of JSON input").
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 	return body, resp.StatusCode, nil
+}
+
+// DeviceType exposes the Audible-iOS device_type constant used at registration.
+// It is one of the four inputs to the AAXC license-voucher key derivation
+// (internal/books/liberate/voucher.go), which lives in a different package — so
+// rather than duplicate the literal there (and risk the two drifting if Amazon
+// ever forces a bump), the liberation path reads it from here.
+func DeviceType() string { return deviceType }
+
+// SignedPost performs a device-signed POST against an Amazon/Audible API host.
+// It is the twin of SignedGet and shares its client, metrics, and read cap.
+//
+// The Audible content-licensing endpoint (POST /1.0/content/{asin}/licenserequest)
+// is the only caller today. Two things about it are load-bearing:
+//
+//   - The body is signed AND sent as the SAME []byte. Sign() folds the body into
+//     the canonical string, so re-marshalling between signing and sending — even
+//     a semantically identical re-marshal with different key order or spacing —
+//     produces a signature Amazon rejects. Callers pass bytes, not a struct, for
+//     exactly this reason.
+//   - Every prior caller of Sign() passed a nil body, so the body element of the
+//     canonical string is exercised here for the first time. A format mismatch
+//     surfaces as an Amazon-side auth error, never a local one; the admin
+//     liberation probe checks it live.
+func SignedPost(ctx context.Context, cred *DeviceCredential, apiHost, pathAndQuery string, body []byte) ([]byte, int, error) {
+	if cred == nil {
+		return nil, 0, ErrNotRegistered
+	}
+	metrics.AmazonCallsTotal.WithLabelValues("signed").Inc()
+	h, err := Sign(cred, "POST", pathAndQuery, body, time.Now())
+	if err != nil {
+		return nil, 0, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://"+apiHost+pathAndQuery, bytes.NewReader(body))
+	if err != nil {
+		return nil, 0, err
+	}
+	req.Header.Set("x-adp-token", h.AdpToken)
+	req.Header.Set("x-adp-alg", h.AdpAlg)
+	req.Header.Set("x-adp-signature", h.Signature)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+	// Same 64 MiB cap as SignedGet. A license response is a few KB; the cap is
+	// here as a uniform safety bound, NOT as a content-sized limit — the AAXC
+	// download deliberately does not go through this path (see fetch.go).
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+	return respBody, resp.StatusCode, nil
 }

@@ -39,17 +39,35 @@ interface Probe {
   error?: string;
   body?: unknown;
   bodyText?: string;
+  // Liberation probes only (boom-w20s.19): the Audible/Kindle sources are raw
+  // response dumps, whereas each liberation probe answers a specific protocol
+  // question and carries an explicit judgement.
+  verdict?: "pass" | "warn" | "fail" | "skip";
+  detail?: string;
 }
 interface DiagResult {
   source: string;
   marketplace: string;
+  asin?: string;
   probes: Probe[];
 }
 
 const SOURCES = [
   { id: "audible", label: "Audible" },
   { id: "kindle", label: "Kindle" },
+  { id: "liberation", label: "Liberation" },
 ] as const;
+
+// Verdict chip styling. Liberation probes are pass/warn/fail rather than just
+// ok/not-ok, because "Amazon answered but this title is Denied" is a SUCCESS for
+// the thing being verified (the signature worked) and a failure for the title —
+// collapsing that into a red X would mislead.
+const VERDICT_STYLES: Record<string, string> = {
+  pass: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+  warn: "bg-amber-500/15 text-amber-400 border-amber-500/30",
+  fail: "bg-destructive/15 text-destructive border-destructive/30",
+  skip: "bg-muted text-muted-foreground border-border",
+};
 
 // Pull the array of records a probe returned, if any (Audible → body.items,
 // whispersync → body.datasets, else the body itself if it's an array).
@@ -94,7 +112,9 @@ function ProbeView({ probe }: { probe: Probe }) {
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center justify-between gap-2 text-sm">
           <span className="flex items-center gap-2">
-            {probe.error || !probe.ok ? (
+            {probe.verdict === "warn" ? (
+              <AlertTriangle className="h-4 w-4 text-amber-400" />
+            ) : probe.error || !probe.ok ? (
               <AlertTriangle className="h-4 w-4 text-destructive" />
             ) : (
               <CheckCircle2 className="h-4 w-4 text-emerald-400" />
@@ -108,8 +128,18 @@ function ProbeView({ probe }: { probe: Probe }) {
                   : "bg-destructive/15 text-destructive")
               }
             >
-              {probe.status || "ERR"}
+              {probe.status || (probe.verdict ? probe.verdict.toUpperCase() : "ERR")}
             </span>
+            {probe.verdict && (
+              <span
+                className={
+                  "rounded border px-1.5 py-0.5 font-mono text-[11px] uppercase " +
+                  (VERDICT_STYLES[probe.verdict] ?? VERDICT_STYLES.skip)
+                }
+              >
+                {probe.verdict}
+              </span>
+            )}
           </span>
           {records && <span className="text-xs text-muted-foreground">{records.length} records</span>}
         </CardTitle>
@@ -117,6 +147,9 @@ function ProbeView({ probe }: { probe: Probe }) {
       </CardHeader>
       <CardContent className="space-y-3">
         {probe.error && <p className="text-sm text-destructive">{probe.error}</p>}
+        {probe.detail && (
+          <p className="text-sm text-muted-foreground">{probe.detail}</p>
+        )}
 
         {records && records.length > 0 && (
           <div className="overflow-x-auto rounded-md border border-border">
@@ -162,8 +195,16 @@ function ProbeView({ probe }: { probe: Probe }) {
 
 function SourceDiagnosticsPanel() {
   const [source, setSource] = useState<string>("audible");
+  // Liberation only: pin the sweep to one title. Left blank, the server picks
+  // the first item in the library so an operator never has to go hunt an ASIN.
+  const [asin, setAsin] = useState("");
   const run = useMutation<DiagResult, Error, string>({
-    mutationFn: (s) => api.getBooksDiagnostics({ source: s }),
+    mutationFn: (s) =>
+      api.getBooksDiagnostics(
+        s === "liberation" && asin.trim()
+          ? { source: s, asin: asin.trim() }
+          : { source: s },
+      ),
   });
   const result = run.data;
   const banner = useMemo(() => (run.error ? run.error.message : null), [run.error]);
@@ -175,7 +216,16 @@ function SourceDiagnosticsPanel() {
           <BookOpen className="h-5 w-5 text-primary" />
           <h2 className="text-lg font-semibold">Books · source diagnostics</h2>
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {source === "liberation" && (
+            <input
+              value={asin}
+              onChange={(e) => setAsin(e.target.value)}
+              placeholder="ASIN (optional)"
+              aria-label="ASIN to probe"
+              className="w-40 rounded-md border border-border bg-transparent px-2 py-1 font-mono text-sm placeholder:text-muted-foreground"
+            />
+          )}
           <div className="flex rounded-md border border-border p-0.5">
             {SOURCES.map((s) => (
               <button
@@ -203,9 +253,20 @@ function SourceDiagnosticsPanel() {
       </div>
 
       <p className="text-sm text-muted-foreground">
-        Fires raw signed requests at the {source} endpoints using your connected Amazon credential
-        and dumps everything they return — for deciding which metrics to track. Connect Amazon in
-        Settings first.
+        {source === "liberation" ? (
+          <>
+            Verifies the liberation protocol against your real account: the signed-POST canonical
+            string, which voucher key derivation actually works, whether the CDN URL is
+            self-authorizing, and what codec your titles are served in. Nothing is downloaded and
+            no secrets are shown — the voucher and the presigned URL are redacted server-side.
+          </>
+        ) : (
+          <>
+            Fires raw signed requests at the {source} endpoints using your connected Amazon
+            credential and dumps everything they return — for deciding which metrics to track.
+            Connect Amazon in Settings first.
+          </>
+        )}
       </p>
 
       {banner && (
@@ -219,6 +280,12 @@ function SourceDiagnosticsPanel() {
           <div className="text-xs text-muted-foreground">
             source: <span className="font-mono">{result.source}</span> · marketplace:{" "}
             <span className="font-mono">{result.marketplace}</span>
+            {result.asin && (
+              <>
+                {" "}
+                · asin: <span className="font-mono">{result.asin}</span>
+              </>
+            )}
           </div>
           {result.probes.map((p) => (
             <ProbeView key={p.name} probe={p} />

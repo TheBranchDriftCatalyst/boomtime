@@ -398,3 +398,57 @@ var _ = Describe("HasServerWakatimeKey", func() {
 		Expect(Load().HasServerWakatimeKey()).To(BeTrue())
 	})
 })
+
+// ============================================================================
+// State-machine gate: liberation (boom-w20s)
+// ============================================================================
+
+var _ = Describe("LiberationEnabled (boom-w20s three-term gate)", func() {
+	It("books off → disabled even with the liberation flag and a library path", func() {
+		clearEnv()
+		setenv("BOOM_FEATURE_BOOKS_LIBERATION", "true")
+		setenv("BOOM_BOOKS_LIBRARY_PATH", "/media/audiobooks/liberated")
+		// Invariant: liberation is NESTED under books. Turning it on without
+		// the parent domain must not half-enable a pipeline whose Amazon
+		// credential plumbing is itself gated on BOOM_FEATURE_BOOKS.
+		Expect(Load().LiberationEnabled()).To(BeFalse())
+	})
+
+	It("books on + liberation flag off → disabled (ships dark by default)", func() {
+		clearEnv()
+		setenv("BOOM_FEATURE_BOOKS", "true")
+		setenv("BOOM_BOOKS_LIBRARY_PATH", "/media/audiobooks/liberated")
+		Expect(Load().LiberationEnabled()).To(BeFalse())
+	})
+
+	It("flags ON but NO library path → STILL disabled (path is a hard requirement)", func() {
+		clearEnv()
+		setenv("BOOM_FEATURE_BOOKS", "true")
+		setenv("BOOM_FEATURE_BOOKS_LIBERATION", "true")
+		// Invariant, and the reason this gate has three terms rather than two:
+		// enabling liberation without a mounted library writes hundreds of GB
+		// of audiobooks to the pod's ephemeral layer, where they disappear on
+		// the next deploy. "Configured" and "enabled" are the same question.
+		Expect(Load().LiberationEnabled()).To(BeFalse())
+	})
+
+	It("all three set → enabled", func() {
+		clearEnv()
+		setenv("BOOM_FEATURE_BOOKS", "true")
+		setenv("BOOM_FEATURE_BOOKS_LIBERATION", "true")
+		setenv("BOOM_BOOKS_LIBRARY_PATH", "/media/audiobooks/liberated")
+		Expect(Load().LiberationEnabled()).To(BeTrue())
+	})
+
+	It("defaults keep work path, ffmpeg and concurrency usable without config", func() {
+		clearEnv()
+		c := Load()
+		// The library path has NO default on purpose (empty = off), but the
+		// remaining knobs must be usable out of the box so that setting one
+		// variable is enough to turn the feature on.
+		Expect(c.BooksLibraryPath).To(BeEmpty())
+		Expect(c.BooksWorkPath).NotTo(BeEmpty())
+		Expect(c.BooksFfmpegPath).To(Equal("ffmpeg"))
+		Expect(c.BooksLiberateConcurrency).To(Equal(2))
+	})
+})

@@ -1,0 +1,37 @@
+---
+# Mounts the audiobook library into the boomtime server for catalyst-books
+# liberation (boom-w20s). Strategic-merge patch, peer of patch-server-s3.yaml.
+#
+# WHY subPath: audiobooks/liberated
+# The PV mounts the /volume1/media export root (the only media path the Synology
+# actually serves — verified with `showmount -e 192.168.1.36`). That share holds
+# every media library, so boomtime is scoped by subPath into
+# audiobooks/liberated: its output stays separable from everything else, and a
+# bug in the naming template can never scribble across the rest of the share.
+# kubelet creates the subPath directory on first mount if it is absent, which is
+# what makes the container path exist without an initContainer.
+# (liberate.NewFSSink deliberately refuses to MkdirAll its root: an unmounted
+# volume must fail loudly rather than silently fill the pod's ephemeral layer
+# with audiobooks that vanish on the next deploy.)
+#
+# WHY the worker does NOT get this mount
+# Liberation jobs run on the server role today. When they move to the worker
+# fleet, copy this volume/volumeMount pair into patch-worker-* as well — the
+# job cannot write to a library it has not mounted.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: boomtime
+spec:
+  template:
+    spec:
+      containers:
+        - name: boomtime
+          volumeMounts:
+            - name: audiobook-library
+              mountPath: /media/audiobooks/liberated
+              subPath: audiobooks/liberated
+      volumes:
+        - name: audiobook-library
+          persistentVolumeClaim:
+            claimName: boomtime-audiobook-library

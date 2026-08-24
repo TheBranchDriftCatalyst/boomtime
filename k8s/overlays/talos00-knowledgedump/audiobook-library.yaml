@@ -1,0 +1,70 @@
+---
+# Audiobook library storage for catalyst-books LIBERATION (boom-w20s).
+#
+# This is the filesystem sink Libation-style liberation writes M4Bs into. It is
+# a MEDIA share, not appdata: the whole point is that Audiobookshelf / Plex /
+# Jellyfin can scan the same directory boomtime writes to, so it must live on
+# the Synology media volume rather than on the fatboy-nfs-appdata provisioner
+# the small per-app config PVCs use.
+#
+# Pattern follows arr-stack-private/base/storage/synology-private-storage.yaml:
+# a STATIC PV pinned to a known NFS export + a PVC bound to it by volumeName.
+# Static (rather than a dynamic provisioner) because the export already exists
+# and is shared with other consumers — a provisioner would create a new empty
+# directory instead of binding the library everyone else already reads.
+#
+# ReadWriteMany: boomtime writes, the media servers read, concurrently.
+# Retain: an accidental `kubectl delete pvc` must never take the library with it.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: boomtime-audiobook-library
+  labels:
+    type: synology-nfs
+    media-type: audiobooks
+    app.kubernetes.io/part-of: boomtime
+spec:
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: synology-nfs
+  capacity:
+    storage: 2Ti
+  mountOptions:
+    - hard
+    - nfsvers=4
+    - noatime
+    - nodiratime
+    - nolock
+    - rsize=1048576
+    - wsize=1048576
+  nfs:
+    # Same Synology as the arr stack (cluster-config SYNOLOGY_IP). Hard-coded
+    # here rather than templated because this overlay has no cluster-config
+    # ConfigMap to replace from — boomtime's overlay is not part of the arr
+    # stack's kustomize tree.
+    server: 192.168.1.36
+    # The EXPORT root, verified with `showmount -e 192.168.1.36`:
+    #   /volume1/media  /volume1/appdata  /volume1/downloads  /volume1/666
+    # An earlier draft pointed at /volume1/media/audiobooks, which is NOT an
+    # export — the deployment's subPath scopes us into audiobooks/liberated
+    # instead, so the PV only ever names a path the NAS actually serves.
+    path: /volume1/media
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: boomtime-audiobook-library
+  namespace: boomtime
+  labels:
+    app.kubernetes.io/part-of: boomtime
+    app.kubernetes.io/component: audiobook-library
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: synology-nfs
+  volumeName: boomtime-audiobook-library
+  resources:
+    requests:
+      storage: 2Ti

@@ -87,6 +87,19 @@ data:
   # reading→read within the hour without a manual "Sync now". Trade: more Audible
   # API calls. The near-real-time reading monitor (30s) is separate (live sessions).
   BOOM_AUDIBLE_SYNC_INTERVAL: "1h"
+
+  # ── catalyst-books liberation (boom-w20s) ─────────────────────────────────
+  # Ships OFF. The storage (audiobook-library.yaml + patch-server-audiobook-
+  # library.yaml) is wired so that turning this on is a one-line change here,
+  # but the pipeline itself is still being built — and a first sweep of a large
+  # library is hundreds of GB, so enabling it must be a deliberate act.
+  BOOM_FEATURE_BOOKS_LIBERATION: "false"
+  # Library root INSIDE the container; backed by the NFS subPath mount.
+  BOOM_BOOKS_LIBRARY_PATH: "/media/audiobooks/liberated"
+  # Scratch for download + ffmpeg convert. Deliberately NOT on the NFS mount:
+  # remuxing against NFS is slow and would expose half-written files on the
+  # share that media scanners could index.
+  BOOM_BOOKS_WORK_PATH: "/tmp/boomtime-liberate"
   # Hardcover as the terminal sink (project_hardcover_terminal_sink): with dry-run
   # OFF, boomtime WRITES to the user's real Hardcover — status/finish/rating pushes
   # (curation edits, the per-row sync button, and the audible finished-book sweep)

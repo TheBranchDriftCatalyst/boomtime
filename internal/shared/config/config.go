@@ -85,6 +85,38 @@ type Config struct {
 	// the domains are dark. See docs/design/catalyst-domains-spike.md.
 	FeatureBooks bool
 
+	// FeatureBooksLiberation (BOOM_FEATURE_BOOKS_LIBERATION, default false) gates
+	// the Libation rebuild (boom-w20s): Audible content licensing, AAXC download,
+	// DRM strip, and the M4B library sink. NESTED under FeatureBooks — see
+	// LiberationEnabled(), which is the only predicate callers should use.
+	// Ships off: a first sweep of a large library is hundreds of GB, so it must
+	// be a deliberate act rather than a side effect of enabling books.
+	FeatureBooksLiberation bool
+	// BooksLibraryPath (BOOM_BOOKS_LIBRARY_PATH) is the library ROOT liberated
+	// M4Bs are written under — a PVC or NFS mount that a media scanner
+	// (Audiobookshelf/Plex/Jellyfin) also reads. Empty disables liberation even
+	// when the flag is on, so a missing mount can never be mistaken for a
+	// working one. The directory must already exist; liberate.NewFSSink refuses
+	// to create it.
+	BooksLibraryPath string
+	// BooksWorkPath (BOOM_BOOKS_WORK_PATH, default os.TempDir()) is scratch for
+	// download + ffmpeg convert. Deliberately separable from the library so the
+	// remux does not run against NFS and so half-written files are never visible
+	// to a scanner. A cross-filesystem commit is the expected case and is
+	// handled (liberate/sink.go).
+	BooksWorkPath string
+	// BooksNamingTemplate (BOOM_BOOKS_NAMING_TEMPLATE) overrides the library
+	// layout. Empty = liberate.DefaultTemplate.
+	BooksNamingTemplate string
+	// BooksFfmpegPath (BOOM_BOOKS_FFMPEG_PATH, default "ffmpeg") locates the
+	// binary that performs the DRM strip + remux.
+	BooksFfmpegPath string
+	// BooksLiberateConcurrency (BOOM_BOOKS_LIBERATE_CONCURRENCY, default 2) caps
+	// concurrent book liberations. Unlike the Hardcover kinds (capped at 1
+	// because Hardcover's rate limit is a GLOBAL resource), this is bounded by
+	// disk and CDN throughput, so a small fan-out is safe.
+	BooksLiberateConcurrency int
+
 	// HardcoverDryRun (BOOM_HARDCOVER_DRYRUN, default TRUE) blocks + logs every
 	// Hardcover WRITE (mutation) instead of executing it. Fail-safe on: nothing
 	// touches a user's real Hardcover library until this is explicitly disabled.
@@ -427,6 +459,7 @@ func Load() *Config {
 		// until ALL are present — so this is inert on a default boot.
 		FeatureGithubStats:      getEnvBool("BOOM_FEATURE_GITHUB_STATS", false),
 		FeatureBooks:            getEnvBool("BOOM_FEATURE_BOOKS", false),
+		FeatureBooksLiberation:  getEnvBool("BOOM_FEATURE_BOOKS_LIBERATION", false),
 		HardcoverDryRun:         getEnvBool("BOOM_HARDCOVER_DRYRUN", true),
 		GithubOAuthClientID:     getEnv("BOOM_GITHUB_OAUTH_CLIENT_ID", ""),
 		GithubOAuthClientSecret: getEnv("BOOM_GITHUB_OAUTH_CLIENT_SECRET", ""),
@@ -522,6 +555,13 @@ func Load() *Config {
 	c.JobsProvider = getEnv("BOOM_JOBS_PROVIDER", "local")
 	c.GithubStatsRefreshInterval = parseJobInterval(getEnv("BOOM_GITHUB_STATS_REFRESH_INTERVAL", "8h"))
 	c.AudibleSyncInterval = parseJobInterval(getEnv("BOOM_AUDIBLE_SYNC_INTERVAL", "6h"))
+	// catalyst-books liberation (boom-w20s). No default library path: an empty
+	// value means "not configured", which LiberationEnabled() treats as off.
+	c.BooksLibraryPath = strings.TrimSpace(getEnv("BOOM_BOOKS_LIBRARY_PATH", ""))
+	c.BooksWorkPath = strings.TrimSpace(getEnv("BOOM_BOOKS_WORK_PATH", os.TempDir()))
+	c.BooksNamingTemplate = strings.TrimSpace(getEnv("BOOM_BOOKS_NAMING_TEMPLATE", ""))
+	c.BooksFfmpegPath = strings.TrimSpace(getEnv("BOOM_BOOKS_FFMPEG_PATH", "ffmpeg"))
+	c.BooksLiberateConcurrency = getEnvInt("BOOM_BOOKS_LIBERATE_CONCURRENCY", 2)
 	c.HardcoverSyncInterval = parseJobInterval(getEnv("BOOM_HARDCOVER_SYNC_INTERVAL", "8h"))
 	c.JobsUnified = getEnvBool("BOOM_JOBS_UNIFIED", false)
 	c.JobsDrain = getEnvBool("BOOM_JOBS_DRAIN", false)
@@ -765,6 +805,18 @@ func (c *Config) GithubConnectEnabled() bool {
 // credential itself needs no extra config — the OAuth is reverse-engineered
 // against Amazon, not an app we register — so the flag alone gates it.
 func (c *Config) BooksEnabled() bool { return c.FeatureBooks }
+
+// LiberationEnabled reports whether the catalyst-books liberation pipeline
+// (boom-w20s) may run: books on, the liberation flag on, AND a library root
+// configured. ONE predicate, checked everywhere — mirroring AudibleSyncEnabled().
+//
+// The library-path term is not redundant with the flag. Turning the feature on
+// without a mounted library is the single most damaging misconfiguration
+// available here (audiobooks written to a pod's ephemeral layer, gone on the
+// next deploy), so "configured" and "enabled" are deliberately the same question.
+func (c *Config) LiberationEnabled() bool {
+	return c.FeatureBooks && c.FeatureBooksLiberation && c.BooksLibraryPath != ""
+}
 
 // AudibleSyncEnabled reports whether the periodic catalyst-audiobooks forward
 // sync schedule should run: the books feature is on AND a positive interval is

@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/amazon"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/liberate"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
 	"github.com/labstack/echo/v5"
@@ -26,6 +27,15 @@ type diagProbe struct {
 	Error    string          `json:"error,omitempty"`
 	Body     json.RawMessage `json:"body,omitempty"`     // parsed JSON when valid
 	BodyText string          `json:"bodyText,omitempty"` // raw text (XML / error pages)
+
+	// Verdict + Detail are set only by the LIBERATION source (boom-w20s.19).
+	// The Audible/Kindle probes are raw response dumps — "here is what came
+	// back, eyeball it" — whereas liberation probes answer a specific yes/no
+	// question about a protocol assumption, so they carry an explicit judgement
+	// and a human-readable explanation. Empty on the dump-style probes, which is
+	// why both are omitempty and why the FE renders them conditionally.
+	Verdict string `json:"verdict,omitempty"` // pass | warn | fail | skip
+	Detail  string `json:"detail,omitempty"`
 }
 
 // runProbe signs + GETs one endpoint and captures the response verbatim.
@@ -64,18 +74,31 @@ func (h *Handler) AdminBooksDiagnostics(c *echo.Context) error {
 		return apihelpers.RespondErr(c, apierr.BadRequest("no Amazon credential — connect Amazon in Settings first ("+err.Error()+")"))
 	}
 
-	var probes []diagProbe
+	var (
+		probes []diagProbe
+		report liberate.Report
+	)
 	switch c.QueryParam("source") {
 	case "kindle":
 		probes = kindleProbes(ctx, cred)
+	case "liberation":
+		// boom-w20s.19. Verifies the liberation protocol assumptions live and
+		// reports which voucher key derivation actually works. Optionally scoped
+		// to one title via ?asin=; otherwise it picks the first library item.
+		report = liberate.RunProbes(ctx, cred, strings.TrimSpace(c.QueryParam("asin")))
+		probes = liberationProbes(report)
 	default: // audible
 		probes = audibleProbes(ctx, cred)
 	}
-	return c.JSON(http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"source":      firstNonEmpty(c.QueryParam("source"), "audible"),
 		"marketplace": cred.Marketplace,
 		"probes":      probes,
-	})
+	}
+	if report.ASIN != "" {
+		resp["asin"] = report.ASIN
+	}
+	return c.JSON(http.StatusOK, resp)
 }
 
 // audibleProbes hits the Audible API with the WIDEST response_groups so every
@@ -115,6 +138,31 @@ func kindleProbes(ctx context.Context, cred *amazon.DeviceCredential) []diagProb
 		})
 	}
 	return probes
+}
+
+// liberationProbes adapts the liberate package's verification results onto the
+// shared diagProbe shape, so the liberation sweep renders through the SAME admin
+// UI component as the Audible/Kindle dumps instead of needing its own panel.
+//
+// liberate.Report is deliberately not reused as the wire type: the admin surface
+// owns its response contract, and keeping the adapter here means the liberate
+// package has no opinion about HTTP.
+func liberationProbes(r liberate.Report) []diagProbe {
+	out := make([]diagProbe, 0, len(r.Probes))
+	for _, p := range r.Probes {
+		out = append(out, diagProbe{
+			Name:     p.Name,
+			Endpoint: p.Endpoint,
+			Status:   p.Status,
+			OK:       p.OK,
+			Error:    p.Error,
+			Body:     p.Body,
+			BodyText: p.BodyText,
+			Verdict:  string(p.Verdict),
+			Detail:   p.Detail,
+		})
+	}
+	return out
 }
 
 func firstNonEmpty(a, b string) string {

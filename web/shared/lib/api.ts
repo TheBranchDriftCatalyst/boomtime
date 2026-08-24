@@ -1085,10 +1085,14 @@ export const api = {
   // the bare array so the Jobs tab consumes a flat list. trigger/retry both
   // return the affected job id.
   // Admin › Books diagnostics (boom-books): raw source dump for Audible/Kindle.
-  getBooksDiagnostics: (params: { source: string }) =>
+  // source=liberation (boom-w20s.19) additionally accepts `asin` to pin the
+  // sweep to one title, and its probes carry verdict/detail — they answer a
+  // protocol question rather than dumping a response.
+  getBooksDiagnostics: (params: { source: string; asin?: string }) =>
     request<{
       source: string;
       marketplace: string;
+      asin?: string;
       probes: Array<{
         name: string;
         endpoint: string;
@@ -1097,6 +1101,8 @@ export const api = {
         error?: string;
         body?: unknown;
         bodyText?: string;
+        verdict?: "pass" | "warn" | "fail" | "skip";
+        detail?: string;
       }>;
     }>(buildUrl("/api/v1/admin/books/diagnostics", params)),
 

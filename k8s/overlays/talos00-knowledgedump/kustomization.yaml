@@ -19,6 +19,13 @@ resources:
   - books-postgres-cluster.yaml
   - books-postgres-objectstore.yaml
   - books-postgres-scheduledbackup.yaml
+  # ── catalyst-books liberation library (boom-w20s) ──────────────────────────
+  # Static NFS PV/PVC for the audiobook library the liberation pipeline writes
+  # M4Bs into, mounted by patch-server-audiobook-library.yaml. Inert until
+  # BOOM_FEATURE_BOOKS_LIBERATION is flipped on in app-config.yaml — the mount
+  # existing costs nothing, and having it in place first means enabling the
+  # feature is a one-line ConfigMap change rather than a storage rollout.
+  - audiobook-library.yaml
   - external-secret.yaml
   - ingressroute.yaml
   - servicemonitor.yaml # scrape boomtime's own /metrics (boom-metrics: RED + business counters)
@@ -94,6 +101,7 @@ patchesStrategicMerge:
   - oidc-external-secret.yaml # BOOM_OIDC_CLIENT_SECRET (+ github/remote-write) from 1Password
   - patch-server-rabbit.yaml  # server: --role=server + amqp URL
   - patch-server-s3.yaml      # BOOM_S3_ACCESS_KEY/SECRET_KEY (optional secretKeyRef)
+  - patch-server-audiobook-library.yaml  # /media/audiobooks/liberated NFS mount (boom-w20s)
   # NOTE: authentik-blueprint-boomtime.yaml is an Authentik blueprint, NOT a k8s
   # manifest — it is intentionally never added here (applied to Authentik itself).
 
