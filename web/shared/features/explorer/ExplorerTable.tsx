@@ -145,6 +145,7 @@ export function ExplorerTable<TRow>({ ctrl, config, leafMode, sort, onSortChange
       renderJson: config.renderJson ?? defaultRenderJson,
       rowActions: config.rowActions as ExplorerRowContextValue["rowActions"],
       onRowSelect: config.onRowSelect as ExplorerRowContextValue["onRowSelect"],
+      onRowContextMenu: config.onRowContextMenu as ExplorerRowContextValue["onRowContextMenu"],
       labelForAxis,
     }),
     [
@@ -154,6 +155,7 @@ export function ExplorerTable<TRow>({ ctrl, config, leafMode, sort, onSortChange
       config.renderJson,
       config.rowActions,
       config.onRowSelect,
+      config.onRowContextMenu,
       supportsJson,
       jsonMode,
       labelForAxis,

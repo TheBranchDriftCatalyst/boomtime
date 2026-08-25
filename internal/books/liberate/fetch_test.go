@@ -40,11 +40,12 @@ func fetchCred(t *testing.T) *amazon.DeviceCredential {
 	}
 }
 
-func TestFetchWritesFileAndSignsRequest(t *testing.T) {
+func TestFetchWritesFileAndSendsOnlyUserAgent(t *testing.T) {
 	payload := strings.Repeat("AAXC", 300000) // ~1.2 MB, spans multiple chunks
-	var gotToken, gotAlg, gotSig string
+	var gotUA, gotToken, gotAlg, gotSig string
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUA = r.Header.Get("User-Agent")
 		gotToken = r.Header.Get("x-adp-token")
 		gotAlg = r.Header.Get("x-adp-alg")
 		gotSig = r.Header.Get("x-adp-signature")
@@ -68,11 +69,26 @@ func TestFetchWritesFileAndSignsRequest(t *testing.T) {
 		t.Errorf("wrote %d bytes, want %d", n, len(payload))
 	}
 
-	// The 403-without-headers finding is the reason this assertion exists: if
-	// the signing headers stop being attached, the real CDN rejects every
-	// download and nothing else in the pipeline runs.
-	if gotToken != "adp-tok" || gotAlg != "SHA256withRSA:1.0" || gotSig == "" {
-		t.Errorf("download was not ADP-signed: token=%q alg=%q sig-empty=%v", gotToken, gotAlg, gotSig == "")
+	// THIS IS THE INCIDENT TEST. An earlier version asserted the opposite — that
+	// the download carried ADP signing headers — on an inference from the probe
+	// that a bare GET 403s. That was wrong and every download in production got
+	// a CloudFront WAF block.
+	//
+	// Libation sends exactly one header on the download
+	// (AaxDecrypter/AudiobookDownloadBase.cs: `new() { { "User-Agent", … } }`)
+	// and no device auth at all, because the presigned URL authorizes itself.
+	// Both halves are asserted: the UA must be the one PAIRED with our registered
+	// device type, and the auth headers must be ABSENT.
+	if gotUA != amazon.DownloadUserAgent {
+		t.Errorf("User-Agent = %q, want %q (paired with the registered device type)", gotUA, amazon.DownloadUserAgent)
+	}
+	if strings.Contains(gotUA, "Go-http-client") || gotUA == "" {
+		t.Errorf("User-Agent is Go's default (%q) — that is what the CDN WAF blocks", gotUA)
+	}
+	if gotToken != "" || gotAlg != "" || gotSig != "" {
+		t.Errorf("download carried device-auth headers (token=%q alg=%q sig-set=%v); "+
+			"they are a WAF anomaly on a presigned CDN URL and Libation sends none",
+			gotToken, gotAlg, gotSig != "")
 	}
 
 	body, err := os.ReadFile(dest)

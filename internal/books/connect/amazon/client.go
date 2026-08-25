@@ -59,6 +59,27 @@ func SignedGet(ctx context.Context, cred *DeviceCredential, apiHost, pathAndQuer
 	return body, resp.StatusCode, nil
 }
 
+// DownloadUserAgent is the User-Agent the Audible CDN expects on a content
+// download. It is PAIRED WITH deviceType and must not drift from it.
+//
+// Verified against Libation's source (rmcrackan/AudibleApi,
+// AudibleApi/Resources.cs), which keys the two together:
+//
+//	// iOS  — the block we match
+//	Download_User_Agent = "Audible/671 CFNetwork/1240.0.4 Darwin/20.6.0"
+//	DeviceType          = "A2CZJZGLK2JJVM"
+//	OsVersion = "15.0.0"  SoftwareVersion = "35602678"  AppVersion = "3.56.2"
+//
+//	// Android — a DIFFERENT UA for a DIFFERENT device type
+//	Download_User_Agent = "com.audible.playersdk.player/3.96.1 (Linux;Android 14) …"
+//	DeviceType          = "A10KISP2GWF0E4"
+//
+// register.go registers as the iOS device type with those exact os/software/app
+// versions, so the iOS UA is the correct one here. If deviceType is ever bumped,
+// this must be bumped to the matching value — a UA that disagrees with the
+// registered device type is precisely the sort of anomaly a CDN WAF blocks.
+const DownloadUserAgent = "Audible/671 CFNetwork/1240.0.4 Darwin/20.6.0"
+
 // DeviceType exposes the Audible-iOS device_type constant used at registration.
 // It is one of the four inputs to the AAXC license-voucher key derivation
 // (internal/books/liberate/voucher.go), which lives in a different package — so

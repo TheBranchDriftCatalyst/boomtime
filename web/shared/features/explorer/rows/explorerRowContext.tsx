@@ -21,6 +21,7 @@ export interface ExplorerRowContextValue {
   rowActions?: RowAction<unknown>;
   // Optional leaf-row click handler (open a detail panel); undefined = not clickable.
   onRowSelect?: (row: unknown) => void;
+  onRowContextMenu?: (row: unknown, e: React.MouseEvent) => void;
   labelForAxis: (id: string) => string;
 }
 

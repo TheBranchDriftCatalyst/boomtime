@@ -16,8 +16,14 @@ interface LeafRowProps {
 
 /** A single domain row (table mode) with an optional expandable raw-JSON drawer. */
 export function LeafRow({ node: n, expanded, onToggleExpanded }: LeafRowProps) {
-  const { columns, supportsJson, renderJson, rowActions, onRowSelect } =
-    useExplorerRowContext();
+  const {
+    columns,
+    supportsJson,
+    renderJson,
+    rowActions,
+    onRowSelect,
+    onRowContextMenu,
+  } = useExplorerRowContext();
   const row = n.row;
   const clickable = !!onRowSelect;
   return (
@@ -28,6 +34,16 @@ export function LeafRow({ node: n, expanded, onToggleExpanded }: LeafRowProps) {
           clickable && "cursor-pointer",
         )}
         onClick={clickable ? () => onRowSelect!(row) : undefined}
+        // Right-click. preventDefault only when a handler exists, so explorers
+        // without row actions keep the browser's native menu.
+        onContextMenu={
+          onRowContextMenu
+            ? (e) => {
+                e.preventDefault();
+                onRowContextMenu(row, e);
+              }
+            : undefined
+        }
       >
         <td className="px-2 py-1" style={{ paddingLeft: n.depth * INDENT + 8 }}>
           <div className="flex items-center gap-2">

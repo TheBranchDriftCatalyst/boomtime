@@ -7,9 +7,28 @@
 // something that looks like a successful download. Liberation gets its own
 // unbounded streaming path with an explicit length check instead.
 //
-// LIVE-VERIFIED 2026-08-24: the presigned CloudFront URL is NOT self-authorizing.
-// A bare GET returns 403. The ADP headers are MANDATORY here, signed over the
-// URL's RequestURI() (path + query) rather than an API path.
+// WHAT THE 403 ACTUALLY WAS — corrected 2026-08-25 after a production incident.
+//
+// The probe established that a bare GET returns 403, and the first version of
+// this file INFERRED from that that the ADP headers were the missing ingredient.
+// That inference was wrong. With ADP headers attached, every download still
+// returned CloudFront's "403 ERROR / Request blocked" page — an AWS WAF block,
+// not an auth failure (an Audible auth failure is a JSON error body, not a
+// CloudFront interstitial).
+//
+// Checking what Libation actually does settled it (rmcrackan/Libation,
+// Source/AaxDecrypter/AudiobookDownloadBase.cs):
+//
+//	new NetworkFileStream(tempFilePath, new Uri(DownloadOptions.DownloadUrl), 0,
+//	    new() { { "User-Agent", DownloadOptions.UserAgent } });
+//
+// It sets ONE header — User-Agent — and NO device-auth headers whatsoever. The
+// presigned URL carries its own authorization in its query string; attaching ADP
+// signing headers to a CDN request is an anomaly a WAF flags, and Go's default
+// "Go-http-client/1.1" User-Agent is one it blocks outright.
+//
+// So this now does exactly what Libation does: the paired Audible-iOS
+// User-Agent (amazon.DownloadUserAgent) and nothing else.
 package liberate
 
 import (
@@ -20,6 +39,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/amazon"
@@ -65,8 +85,9 @@ func Fetch(ctx context.Context, cred *amazon.DeviceCredential, rawURL, destPath 
 	if rawURL == "" {
 		return 0, errors.New("liberate: empty download url")
 	}
-	u, err := url.Parse(rawURL)
-	if err != nil {
+	// Parsed purely to reject junk before we open a connection — nothing else
+	// needs the components now that the request carries no signature over them.
+	if _, err := url.Parse(rawURL); err != nil {
 		return 0, fmt.Errorf("liberate: download url: %w", err)
 	}
 
@@ -74,14 +95,11 @@ func Fetch(ctx context.Context, cred *amazon.DeviceCredential, rawURL, destPath 
 	if err != nil {
 		return 0, err
 	}
-	// Mandatory — see the package note. Signed over the CDN URL's own path+query.
-	h, err := amazon.Sign(cred, "GET", u.RequestURI(), nil, time.Now())
-	if err != nil {
-		return 0, err
-	}
-	req.Header.Set("x-adp-token", h.AdpToken)
-	req.Header.Set("x-adp-alg", h.AdpAlg)
-	req.Header.Set("x-adp-signature", h.Signature)
+	// The ONLY header Libation sets, and the only one we set. See the package
+	// note for why the ADP headers were removed rather than kept "just in case":
+	// they are an anomaly on a presigned CDN URL, and keeping them would leave
+	// the incident's actual cause ambiguous.
+	req.Header.Set("User-Agent", amazon.DownloadUserAgent)
 
 	resp, err := fetchClient.Do(req)
 	if err != nil {
@@ -92,6 +110,13 @@ func Fetch(ctx context.Context, cred *amazon.DeviceCredential, rawURL, destPath 
 		// Read a little of the body for the error message, but never the whole
 		// thing — an error response from a CDN edge can still be large.
 		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		// Name a WAF block for what it is. Dumping 500 characters of CloudFront
+		// HTML into every job error is how the last incident stayed ambiguous for
+		// as long as it did.
+		if resp.StatusCode == http.StatusForbidden && strings.Contains(string(snippet), "Request blocked") {
+			return 0, fmt.Errorf("liberate: download: HTTP 403 CloudFront WAF block, NOT an auth failure "+
+				"(sending User-Agent=%q, no auth headers, matching Libation)", amazon.DownloadUserAgent)
+		}
 		return 0, fmt.Errorf("liberate: download: HTTP %d: %s", resp.StatusCode, truncate(string(snippet), 512))
 	}
 

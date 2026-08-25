@@ -366,6 +366,7 @@ const EMPTY_STATE = (
 export function makeBooksExplorerConfig(
   filters: BooksFilters,
   onRowSelect?: (row: ReadingItemDTO) => void,
+  onRowContextMenu?: (row: ReadingItemDTO, e: React.MouseEvent) => void,
 ): DomainConfig<ReadingItemDTO> {
   const source = {
     fetchGroup: async (
@@ -436,6 +437,7 @@ export function makeBooksExplorerConfig(
     rowKey: (r) => `${r.source}:${r.externalId}`,
     // Clicking a row opens the Book detail panel (the Work across all providers).
     onRowSelect,
+    onRowContextMenu,
     leafPageSize: LEAF_PAGE_SIZE,
     labels: {
       leafGroup: "Books",

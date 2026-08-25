@@ -36,6 +36,10 @@ import { usePublicConfig } from "@shared/lib/usePublicConfig";
 import { GroupableExplorer } from "@shared/features/explorer/GroupableExplorer";
 import { GroupByBar } from "@shared/features/explorer/GroupByBar";
 import { BookDetailSheet } from "@books/features/books/BookDetailSheet";
+import {
+  BookContextMenu,
+  useBookContextMenu,
+} from "@books/features/books/BookContextMenu";
 import type { ReadingItemDTO } from "@shared/types/meta";
 import {
   deriveHeroStats,
@@ -371,9 +375,14 @@ export function BooksPage() {
 
   // The reading DomainConfig, closed over the live filters; the resetKey folds
   // the same inputs so the explorer drops its caches on any filter change.
+  // Right-click a book row → liberate / re-liberate / delete file / open.
+  const bookMenu = useBookContextMenu();
+
   const explorerConfig = useMemo(
-    () => makeBooksExplorerConfig(filters, setSelectedBook),
-    [filters],
+    () => makeBooksExplorerConfig(filters, setSelectedBook, bookMenu.onRowContextMenu),
+    // onRowContextMenu is useCallback'd with no deps, so it is referentially
+    // stable and adding it here cannot cause the config to churn.
+    [filters, bookMenu.onRowContextMenu],
   );
   const resetKey = `${sourceFilter}|${statusFilter}|${matchedFilter}|${debouncedSearch}`;
 
@@ -505,6 +514,12 @@ export function BooksPage() {
           </div>
         </Page.Content>
       </Page.Body>
+      <BookContextMenu
+        menu={bookMenu.menu}
+        onClose={bookMenu.close}
+        onOpenDetails={setSelectedBook}
+      />
+
       <BookDetailSheet
         item={selectedBook}
         onOpenChange={(open) => !open && setSelectedBook(null)}

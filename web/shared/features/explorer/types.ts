@@ -121,6 +121,11 @@ export interface DomainConfig<Row> {
   // → rows are not clickable (default). The JSON toggle + rowActions stop
   // propagation so they don't also trigger a select.
   onRowSelect?: (row: Row) => void;
+  // Optional: right-clicking a leaf row calls this with the row and the event
+  // (so the caller can position a menu at the cursor). Undefined → the browser's
+  // native context menu is left alone, which is the default and the right
+  // behaviour for explorers that have no row actions to offer.
+  onRowContextMenu?: (row: Row, e: React.MouseEvent) => void;
   // A hook (called once inside the table body) yielding the per-group-node
   // decorator. It's a hook so the domain can pull in its own data via React
   // hooks (its own data sources + dialog state). A pluggable layer (e.g.
