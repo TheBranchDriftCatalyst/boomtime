@@ -14,7 +14,6 @@ spec:
           imagePullPolicy: Never
           # boom-8bz follow-up (worker-topology decoupling): flips the
           # server off the in-process image-job pool now that
-          # BOOM_QUEUE_BROKER=rabbitmq (patch-configmap.yaml) routes regens
           # to the separate boomtime-worker Deployment instead. BOOM_ROLE
           # is set as an explicit env var (not a --role flag) because the
           # local dev image runs via `air` (Dockerfile.dev has no

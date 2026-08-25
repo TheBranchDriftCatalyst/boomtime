@@ -41,16 +41,3 @@ func TestGithubStatsRefreshEnabled(t *testing.T) {
 		}
 	}
 }
-
-func TestJobsBrokerRabbit(t *testing.T) {
-	for _, p := range []string{"rabbitmq", "celery", "RabbitMQ"} {
-		if !(&Config{JobsProvider: p}).JobsBrokerRabbit() {
-			t.Errorf("%q should select the rabbit provider", p)
-		}
-	}
-	for _, p := range []string{"local", "", "postgres"} {
-		if (&Config{JobsProvider: p}).JobsBrokerRabbit() {
-			t.Errorf("%q should NOT select the rabbit provider", p)
-		}
-	}
-}

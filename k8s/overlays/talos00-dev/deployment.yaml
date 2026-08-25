@@ -103,18 +103,6 @@ spec:
                   name: boomtime-cards-s3-scoped
                   key: AWS_SECRET_ACCESS_KEY
                   optional: true
-            - name: RABBIT_USER
-              valueFrom:
-                secretKeyRef:
-                  name: boomtime-rabbit-default-user
-                  key: username
-            - name: RABBIT_PASS
-              valueFrom:
-                secretKeyRef:
-                  name: boomtime-rabbit-default-user
-                  key: password
-            - name: BOOM_RABBITMQ_URL
-              value: amqp://$(RABBIT_USER):$(RABBIT_PASS)@boomtime-rabbit.boomtime.svc.cluster.local:5672/
             # *** THIS POINTS AT THE PRODUCTION DATABASE. ***
             # boomtime-postgres-app is the prod boomtime cluster's app secret —
             # this preview env reads and writes prod data. Captured as-is

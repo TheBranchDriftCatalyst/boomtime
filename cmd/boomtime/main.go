@@ -42,7 +42,6 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/server"
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v5"
-	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -423,7 +422,7 @@ func runCmd() *cobra.Command {
 				// pipeline + its dedicated admin UI; the live cutover (reroute
 				// enqueue + migrate that UI, then delete imagejobs) is a deliberate
 				// future flip.
-				if cfg.JobsUnified && liWorker != nil {
+				if liWorker != nil {
 					jobReg.Register(labelimages.RegenJobKind, jobs.HandlerFunc(func(jctx context.Context, job jobs.Job) error {
 						var p labelimages.RegenJobPayload
 						if uerr := json.Unmarshal(job.Payload, &p); uerr != nil {
@@ -477,24 +476,13 @@ func runCmd() *cobra.Command {
 				// run blocked every other kind on the pod and no per-kind cap
 				// could ever bind in-process.
 				localProv.SetWorkers(cfg.JobsWorkers)
+				// ONE runner. The RabbitMQ arm was deleted in boom-piig phase 3: it
+				// added a failure mode (a publish that fails leaves a durable row
+				// nothing delivers), removed in-flight cancel, and bought only ~5s
+				// of pickup latency on jobs that run for minutes. Postgres was
+				// always the source of truth — even the AMQP path wrote the row
+				// first and published the id second.
 				var provider jobs.Provider = localProv
-				if cfg.JobsBrokerRabbit() {
-					jconn, jerr := amqp.Dial(cfg.RabbitURL)
-					if jerr != nil {
-						return fmt.Errorf("jobs rabbitmq connect: %w", jerr)
-					}
-					defer jconn.Close()
-					jch, jcherr := jconn.Channel()
-					if jcherr != nil {
-						return fmt.Errorf("jobs rabbitmq channel: %w", jcherr)
-					}
-					defer jch.Close()
-					amqpProv, aperr := jobs.NewAMQPProvider(jch, cfg.RabbitQueue+".jobs", jobStore, logger, hostID, 4)
-					if aperr != nil {
-						return fmt.Errorf("jobs rabbitmq provider: %w", aperr)
-					}
-					provider = amqpProv
-				}
 				// Kind-routing (boom-hney / boom-caxl): DERIVED from the registry's
 				// offload set + this pod's role so it can't drift — a worker claims
 				// only offload kinds, the server excludes them, "all" claims

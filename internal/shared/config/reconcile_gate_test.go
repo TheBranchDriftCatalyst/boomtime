@@ -1,28 +1,27 @@
+// reconcile_gate_test.go — LabelImagesReconcileEnabled.
+//
+// The broker axis this used to sweep (QueueBroker inprocess vs rabbitmq) is gone
+// with RabbitMQ (boom-piig phase 3). "auto" previously meant "only when there is
+// no separate AMQP worker", because both would generate and double-fire; regen is
+// now a catalyst-go-jobs kind with per-label dedup, so auto is unconditionally on
+// and only the explicit on/off overrides remain meaningful.
 package config
 
 import "testing"
 
-// TestLabelImagesReconcileEnabled locks the one-or-the-other gate: under the
-// rabbitmq broker the worker's AMQP consumer already generates, so the startup
-// reconcile pass must NOT also run by default (that double-generated every
-// regen — one image via the job, one via the reconcile).
 func TestLabelImagesReconcileEnabled(t *testing.T) {
 	cases := []struct {
-		mode, broker string
-		want         bool
+		mode string
+		want bool
 	}{
-		{"auto", "inprocess", true}, // default single-process: reconcile runs (unchanged)
-		{"", "inprocess", true},     // empty == auto
-		{"auto", "rabbitmq", false}, // THE FIX: consumer generates, reconcile off
-		{"", "rabbitmq", false},     // empty == auto
-		{"on", "rabbitmq", true},    // force on (e.g. a dedicated fill-in run)
-		{"off", "inprocess", false}, // force off
-		{"OFF", "rabbitmq", false},  // case-insensitive
+		{"on", true}, {"true", true}, {"1", true}, {"yes", true},
+		{"off", false}, {"false", false}, {"0", false}, {"no", false},
+		{"auto", true}, {"", true}, {"garbage", true}, {"  AUTO  ", true},
 	}
 	for _, c := range cases {
-		cfg := &Config{LabelImagesReconcile: c.mode, QueueBroker: c.broker}
+		cfg := &Config{LabelImagesReconcile: c.mode}
 		if got := cfg.LabelImagesReconcileEnabled(); got != c.want {
-			t.Errorf("LabelImagesReconcile=%q QueueBroker=%q: got %v, want %v", c.mode, c.broker, got, c.want)
+			t.Errorf("LabelImagesReconcile=%q: got %v, want %v", c.mode, got, c.want)
 		}
 	}
 }

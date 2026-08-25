@@ -61,14 +61,12 @@ data:
   # ── admin CLI-runner (gaka Part C) — double-gated (admin allowlist + cap) ────
   BOOM_FEATURE_ADMIN_CLI: "true"
 
-  # ── worker-topology decoupling (boom-8bz) — RabbitMQ cutover switch ─────────
-  # BOOM_RABBITMQ_URL is assembled per-Deployment from the operator secret (see
-  # patch-server-rabbit.yaml) — deliberately NOT here.
-  BOOM_QUEUE_BROKER: "rabbitmq"
-  BOOM_RABBITMQ_QUEUE: "boomtime.image-jobs"
+  # ── Dragonfly (Redis-wire) ─────────────────────────────────────────────────
+  # NOT a broker. It backs the fleet-wide per-kind concurrency semaphore and the
+  # cross-pod log relay. Without it every pod falls back to an in-process counter
+  # and a per-kind cap of N becomes N-per-pod — which for liberation would mean
+  # N times the concurrent Amazon downloads.
   BOOM_REDIS_ADDR: "boomtime-cache.boomtime.svc.cluster.local:6379"
-  # LAN-gated mgmt UI (rabbitmq-mgmt-ingressroute.yaml).
-  BOOM_RABBITMQ_MGMT_URL: "http://boomtime-rabbit.talos00"
 
   # ── durable S3/MinIO social-card cache (boom-fym5) — NON-SECRET keys only ────
   # AWS_* creds ride patch-server-s3.yaml; inert until all four S3 vars present.
@@ -92,7 +90,6 @@ data:
   # a domain calling SetOffload is sufficient and routing lives in one place.
   # The variable remains an operator escape hatch for incident response — set it
   # temporarily, not permanently.
-  BOOM_JOBS_UNIFIED: "true"
 
   # ── catalyst-books / catalyst-audiobooks master gate (boom-books) ───────────
   BOOM_FEATURE_BOOKS: "true"

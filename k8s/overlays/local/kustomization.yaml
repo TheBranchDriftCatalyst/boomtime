@@ -7,14 +7,15 @@ namespace: boomtime
 
 resources:
   - ../../base
-  - ../../base/worker
   - postgres.yaml
   - secrets.yaml
-  # Worker-topology decoupling (boom-8bz follow-up, §9): plain RabbitMQ +
-  # Redis (Dragonfly stand-in) + a no-GPU mock ComfyUI backend, so
-  # `boomtime-worker` can execute image-generation jobs end-to-end on a
-  # laptop. See docs/design/worker-topology-decoupling.md §9.
-  - broker.yaml
+  # The boomtime-worker Deployment and the local RabbitMQ stand-in went with the
+  # broker (boom-piig phase 3). Local now matches prod: one job system on the
+  # Postgres queue, run in-process by the server (role=all), which is simpler to
+  # reason about on a laptop than the old two-transport split.
+  #
+  # A no-GPU mock ComfyUI backend so label-image regen still works end-to-end
+  # locally — that part was never broker-specific.
   - comfyui-mock.yaml
   # Dev-only Authentik stack (server+worker+pg+redis) + boomtime OIDC
   # blueprints. See authentik.yaml. boomtime still runs BOOM_AUTH_PROVIDER=local
@@ -24,4 +25,3 @@ resources:
 patches:
   - path: patch-configmap.yaml
   - path: patch-deployment.yaml
-  - path: patch-worker-deployment.yaml

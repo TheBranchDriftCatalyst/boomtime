@@ -56,13 +56,3 @@ func TestLocalProviderCancelRunningJob(t *testing.T) {
 		t.Fatal("Cancel(999) = true for an unknown job, want false")
 	}
 }
-
-// TestAMQPProviderCancelAlwaysFalse documents the out-of-scope AMQP path: it
-// satisfies Canceller but can't interrupt an in-flight delivery, so it reports
-// false (the durable MarkCancelled still stops a queued job on that transport).
-func TestAMQPProviderCancelAlwaysFalse(t *testing.T) {
-	var p Canceller = &AMQPProvider{}
-	if p.Cancel(1) {
-		t.Fatal("AMQPProvider.Cancel = true, want false (in-flight cancel unsupported)")
-	}
-}

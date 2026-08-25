@@ -218,7 +218,7 @@ type Config struct {
 	// LabelImagesReconcile controls the startup "fill any missing label images"
 	// reconcile pass (labelimages.Worker.Run). Values: "auto" (default), "on",
 	// "off". Under the queue broker (BOOM_QUEUE_BROKER=rabbitmq) the worker pod
-	// ALSO runs the AMQP consumer, so running the direct reconcile there
+	// used to ALSO run the AMQP consumer, so running the direct reconcile there
 	// double-generates every regen (one image via the job, one via the
 	// reconcile). "auto" therefore runs the reconcile ONLY under the in-process
 	// broker; "on" forces it (e.g. a dedicated fill-in run), "off" disables it.
@@ -273,7 +273,7 @@ type Config struct {
 	DefaultTimezone string
 
 	// Role selects which loops this process runs: "server" (HTTP API +
-	// cross-pod progress relay, no image Pool/AMQP consumer), "worker"
+	// cross-pod progress relay), "worker"
 	// (image-job execution — AMQP consumer or, historically, the in-process
 	// Pool — no HTTP API), or "all" (today's single-process behavior).
 	// Default "all". BOOM_ROLE, overridable via `boomtime run --role`.
@@ -286,11 +286,8 @@ type Config struct {
 	// (AMQP producer/consumer + Dragonfly/Redis cross-pod progress bus).
 	// Default "inprocess" so nothing changes until a deliberate cutover —
 	// see BrokerRabbit and docs/design/worker-topology-decoupling.md.
-	QueueBroker string
 
 	// RabbitMQ + Dragonfly wiring — only read when QueueBroker=="rabbitmq".
-	RabbitURL     string // assembled amqp:// URL (see overlay $(VAR) interpolation)
-	RabbitQueue   string // default "boomtime.image-jobs"
 	RedisAddr     string // Dragonfly/Redis host:port, e.g. boomtime-cache:6379
 	RedisPassword string // usually empty in-cluster
 
@@ -301,7 +298,6 @@ type Config struct {
 	// correct value under broker=inprocess, where there's no broker to
 	// link to). Set per-overlay: local -> http://localhost:15672 (Tilt
 	// port-forward), prod -> the LAN-gated IngressRoute host.
-	RabbitMgmtURL string
 
 	// S3 / MinIO object storage for the durable social-card cache (boom-fym5).
 	// When endpoint + bucket + both credentials are set, the og.png handler
@@ -326,7 +322,6 @@ type Config struct {
 	//   GithubStatsRefreshInterval — how often to refresh every connected user's
 	//                  GitHub stats; 0 = off. Additionally gated behind
 	//                  FeatureGithubStats (GithubStatsRefreshEnabled()).
-	JobsProvider               string
 	GithubStatsRefreshInterval time.Duration
 	// AudibleSyncInterval — how often the periodic catalyst-audiobooks forward
 	// sync runs; 0 = off. Additionally gated behind FeatureBooks
@@ -343,7 +338,6 @@ type Config struct {
 	// the imagejobs pipeline + its dedicated admin UI; the live cutover (reroute
 	// enqueue + migrate the label-images WS/UI, then delete imagejobs) is a
 	// deliberate future flip, not this flag.
-	JobsUnified bool
 	// JobsWorkers (BOOM_JOBS_WORKERS, default 4) is how many jobs ONE process
 	// runs concurrently (boom-jokv). Before the worker pool the executor was
 	// strictly sequential, so a long job blocked every other kind on the pod and
@@ -546,12 +540,8 @@ func Load() *Config {
 	// Both default to today's single-process, in-memory behavior — see the
 	// Role / QueueBroker doc comments above.
 	c.Role = getEnv("BOOM_ROLE", "all")
-	c.QueueBroker = getEnv("BOOM_QUEUE_BROKER", "inprocess")
-	c.RabbitURL = getEnv("BOOM_RABBITMQ_URL", "")
-	c.RabbitQueue = getEnv("BOOM_RABBITMQ_QUEUE", "boomtime.image-jobs")
 	c.RedisAddr = getEnv("BOOM_REDIS_ADDR", "")
 	c.RedisPassword = getEnv("BOOM_REDIS_PASSWORD", "")
-	c.RabbitMgmtURL = getEnv("BOOM_RABBITMQ_MGMT_URL", "")
 
 	// S3 / MinIO durable social-card cache (boom-fym5). All-or-nothing:
 	// S3Enabled() gates the handler on all four being present.
@@ -563,7 +553,6 @@ func Load() *Config {
 	c.S3Region = getEnv("BOOM_S3_REGION", "us-east-1")
 
 	// catalyst-go-jobs (boom-hney).
-	c.JobsProvider = getEnv("BOOM_JOBS_PROVIDER", "local")
 	c.GithubStatsRefreshInterval = parseJobInterval(getEnv("BOOM_GITHUB_STATS_REFRESH_INTERVAL", "8h"))
 	c.AudibleSyncInterval = parseJobInterval(getEnv("BOOM_AUDIBLE_SYNC_INTERVAL", "6h"))
 	// catalyst-books liberation (boom-w20s). No default library path: an empty
@@ -574,7 +563,6 @@ func Load() *Config {
 	c.BooksFfmpegPath = strings.TrimSpace(getEnv("BOOM_BOOKS_FFMPEG_PATH", "ffmpeg"))
 	c.BooksLiberateConcurrency = getEnvInt("BOOM_BOOKS_LIBERATE_CONCURRENCY", 2)
 	c.HardcoverSyncInterval = parseJobInterval(getEnv("BOOM_HARDCOVER_SYNC_INTERVAL", "8h"))
-	c.JobsUnified = getEnvBool("BOOM_JOBS_UNIFIED", false)
 	c.JobsWorkers = getEnvInt("BOOM_JOBS_WORKERS", 4)
 	c.JobsDrain = getEnvBool("BOOM_JOBS_DRAIN", false)
 	c.JobsKinds = splitCSV(getEnv("BOOM_JOBS_KINDS", ""))
@@ -719,13 +707,6 @@ func (c *Config) IsWorkerRole() bool {
 	return c.Role == "worker" || c.Role == "all"
 }
 
-// BrokerRabbit reports whether the image-job transport is RabbitMQ+Dragonfly
-// rather than the default in-process Registry+Pool. Case-insensitive so a
-// stray BOOM_QUEUE_BROKER=RabbitMQ doesn't silently fall through to inprocess.
-func (c *Config) BrokerRabbit() bool {
-	return strings.EqualFold(c.QueueBroker, "rabbitmq")
-}
-
 // S3Enabled reports whether the durable social-card cache is configured — all
 // of endpoint + bucket + both credentials must be present. When false the
 // og.png handler renders live on every request (the unconfigured / local-dev
@@ -733,12 +714,6 @@ func (c *Config) BrokerRabbit() bool {
 func (c *Config) S3Enabled() bool {
 	return c.S3Endpoint != "" && c.S3Bucket != "" &&
 		c.S3AccessKey != "" && c.S3SecretKey != ""
-}
-
-// JobsBrokerRabbit reports whether the jobs subsystem uses the RabbitMQ provider
-// (vs the default local Postgres broker). Reuses the image-queue's connection.
-func (c *Config) JobsBrokerRabbit() bool {
-	return strings.EqualFold(c.JobsProvider, "rabbitmq") || strings.EqualFold(c.JobsProvider, "celery")
 }
 
 // GithubStatsRefreshEnabled reports whether the periodic github-stats refresh
@@ -775,17 +750,21 @@ func parseJobInterval(s string) time.Duration {
 }
 
 // LabelImagesReconcileEnabled reports whether the startup "fill missing images"
-// reconcile pass should run. "on"/"off" force it; "auto" (the default) runs it
-// ONLY under the in-process broker — under rabbitmq the worker's AMQP consumer
-// already generates, so running the reconcile too double-generates every job.
+// reconcile pass should run. "on"/"off" force it; "auto" (the default) runs it.
+//
+// "auto" used to mean "only under the in-process broker", because the RabbitMQ
+// worker's AMQP consumer would also generate and the two together
+// double-generated every job. With one job system that ambiguity is gone: regen
+// is a catalyst-go-jobs kind and its own per-label dedup (Store.PendingID)
+// prevents a double-fire, so auto simply runs.
 func (c *Config) LabelImagesReconcileEnabled() bool {
 	switch strings.ToLower(strings.TrimSpace(c.LabelImagesReconcile)) {
 	case "on", "true", "1", "yes":
 		return true
 	case "off", "false", "0", "no":
 		return false
-	default: // "auto" / "" — reconcile only when there is no separate queue worker
-		return !c.BrokerRabbit()
+	default: // "auto" / "" — always on; dedup handles what the broker check used to
+		return true
 	}
 }
 

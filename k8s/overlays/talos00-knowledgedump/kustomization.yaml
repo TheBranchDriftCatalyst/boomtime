@@ -31,31 +31,24 @@ resources:
   - servicemonitor.yaml # scrape boomtime's own /metrics (boom-metrics: RED + business counters)
   - comfyui-shim-external.yaml
   - ollama-shim-external.yaml
-  # ── Worker-topology decoupling (boom-8bz) — PROD CUTOVER DEFERRED ─────────
-  # These + the queue-config / patch-server-rabbit / secretGenerator /
-  # configMapGenerator blocks below ARE the prod cutover for the image-job
-  # worker queue (+ its RabbitMQ mgmt UI, metrics scrape, and Grafana
-  # dashboard). They reached main before the local `tilt up` demo was
-  # verified, so they are UN-WIRED here to keep prod on the safe in-process
-  # image worker (BOOM_QUEUE_BROKER unset = inprocess default; server
-  # behavior byte-identical to today). RE-ENABLE all blocks TOGETHER as the
-  # deliberate cutover once the local demo passes — the ops-visibility
-  # additions (mgmt UI route, PodMonitor, dashboard) are only meaningful
-  # once boomtime-rabbit actually exists. See docs/design/worker-topology-
-  # decoupling.md §8.
-  # CUTOVER PHASE 1 (2026-08-09): provision the broker infra via the operators
-  # FIRST and let it reach Ready before flipping BOOM_QUEUE_BROKER (phase 2) —
-  # so the server connects on first boot instead of crash-looping while
-  # RabbitMQ provisions. rabbitmq-cluster + messaging-topology + dragonfly ops.
-  - rabbitmq.yaml   # RabbitmqCluster boomtime-rabbit + Queue boomtime.image-jobs
+  # ── One job system (boom-piig phases 2-3) ─────────────────────────────────
+  # RabbitMQ is gone. It was only ever a wake-up mechanism — Postgres was the
+  # source of truth on both paths — and it was the ONLY path with a delivery
+  # hole (a failed publish left a durable row nothing delivered) and no
+  # in-flight cancel. Multi-node fan-out comes from the KEDA ScaledJob below
+  # plus FOR UPDATE SKIP LOCKED, not from a broker.
+  #
+  # Removed with it: rabbitmq.yaml (RabbitmqCluster + the image-jobs Queue),
+  # rabbitmq-mgmt-ingressroute.yaml, rabbitmq-podmonitor.yaml,
+  # patch-server-rabbit.yaml, keda-scaledobject.yaml (it scaled boomtime-worker
+  # on RabbitMQ queue depth), and ../../base/worker itself — the worker consumed
+  # AMQP and had already been sitting at replicas=0.
+  #
+  # Dragonfly STAYS: it backs the fleet-wide per-kind concurrency semaphore and
+  # the cross-pod log relay, neither of which involve RabbitMQ.
   - dragonfly.yaml  # Dragonfly boomtime-cache (redis-compatible)
-  # ── CUTOVER PHASE 2 (2026-08-09): RabbitMQ+Dragonfly Ready → flip the switch ──
-  - ../../base/worker              # boomtime-worker Deployment (--role=worker, consumes AMQP)
-  - keda-scaledobject.yaml         # KEDA queue-length autoscaling + scale-to-zero (image jobs)
-  - keda-triggerauth.yaml          # scaler auth (rabbit + the postgres jobs scaler)
-  - keda-scaledjob-jobs.yaml       # KEDA ScaledJob — heavy catalyst-go-jobs kinds (avatar-render)
-  - rabbitmq-mgmt-ingressroute.yaml # LAN-only mgmt UI (boomtime-rabbit.talos00)
-  - rabbitmq-podmonitor.yaml       # Prometheus scrape of the operator metrics
+  - keda-scaledjob-jobs.yaml       # KEDA ScaledJob — heavy catalyst-go-jobs kinds (postgres scaler)
+  - keda-triggerauth.yaml          # scaler auth (the postgres jobs scaler)
   - keda-servicemonitor.yaml       # scrape KEDA operator metrics (keda ns) for the dashboard
   # ── CONSOLIDATED dashboards (4→2, boom-metrics follow-up) ──────────────────
   # The former per-concern boards (grafana-dashboard-{keda,worker-queue,
@@ -99,7 +92,6 @@ resources:
 patchesStrategicMerge:
   - app-config.yaml           # consolidated non-secret BOOM_* keys on boomtime-config
   - oidc-external-secret.yaml # BOOM_OIDC_CLIENT_SECRET (+ github/remote-write) from 1Password
-  - patch-server-rabbit.yaml  # server: --role=server + amqp URL
   - patch-server-s3.yaml      # BOOM_S3_ACCESS_KEY/SECRET_KEY (optional secretKeyRef)
   - patch-server-audiobook-library.yaml  # /media/audiobooks/liberated NFS mount (boom-w20s)
   # NOTE: authentik-blueprint-boomtime.yaml is an Authentik blueprint, NOT a k8s

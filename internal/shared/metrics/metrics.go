@@ -163,17 +163,6 @@ var (
 		Name: "ws_active_connections",
 		Help: "Currently-open websocket connections, by stream type.",
 	}, []string{"stream"})
-
-	// AMQPDeliveriesTotal counts RabbitMQ job deliveries handled by the AMQP
-	// provider's consume loop, by queue and outcome (processed|requeued). Only
-	// bumped when the rabbitmq jobs provider is active — absent (no series) on
-	// the default local provider. Live queue DEPTH is already exported by the
-	// RabbitMQ operator's own scrape (rabbitmq PodMonitor); this is the
-	// app-side consume signal on top of it.
-	AMQPDeliveriesTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "boomtime_amqp_deliveries_total",
-		Help: "RabbitMQ job deliveries handled by the AMQP provider, by queue and outcome (processed|requeued).",
-	}, []string{"queue", "outcome"})
 )
 
 // ── Persistent reading-monitor (catalyst-books §5.1) ─────────────────────────
@@ -242,7 +231,7 @@ func init() {
 		HeartbeatsIngestedTotal, JobsRunTotal,
 		JobLimiterInflight, JobLimiterMax, JobDurationSeconds,
 		HTTPRatelimitDecisionsTotal, CacheRequestsTotal,
-		WSActiveConnections, AMQPDeliveriesTotal,
+		WSActiveConnections,
 		ReadingMonitorAdvancesTotal, ReadingMonitorAdvanceInterval,
 		ReadingMonitorActiveBooks, ReadingMonitorSecPerLocation,
 		ReadingActivitySecondsTotal,
@@ -255,7 +244,7 @@ func init() {
 	// Scrape-time pool collectors (DB + Redis). Unchecked collectors: they emit
 	// nothing until a provider is wired via RegisterDBPool / RegisterRedisPool
 	// (done from cmd at boot), so they're inert in tests that never register.
-	Registry.MustRegister(&dbPoolCollector{}, &redisPoolCollector{}, &amqpQueueCollector{}, &jobQueueCollector{}, &jobOutcomeCollector{})
+	Registry.MustRegister(&dbPoolCollector{}, &redisPoolCollector{}, &jobQueueCollector{}, &jobOutcomeCollector{})
 }
 
 // RegisterBuildInfo publishes a boomtime_build_info{version,commit,go_version}
@@ -418,67 +407,9 @@ func (*redisPoolCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 }
 
-// ── RabbitMQ queue collector (AMQP, conditional) ─────────────────────────────
 //
-// AMQPQueueSample is one queue's live depth + consumer count, read at scrape
-// time via QueueDeclarePassive. Registered ONLY when the rabbitmq jobs provider
-// is wired (broker=rabbitmq); the deployed default local provider never
-// registers, so these series are simply absent — a clean no-op, not an error.
-//
-// The provider func returns ok=false on any transient failure (connection
-// closed mid-shutdown, passive-declare error) so a scrape degrades to "no
-// sample" instead of panicking Gather. Note QueueDeclarePassive exposes the
-// READY message count + consumers; the ready/unacked split is only in the
-// RabbitMQ management API, already scraped via the operator's own PodMonitor —
-// so state is fixed to "ready" here.
-type AMQPQueueSample struct {
-	Messages  int
-	Consumers int
-}
 
-var (
-	amqpMu        sync.RWMutex
-	amqpProviders = map[string]func() (AMQPQueueSample, bool){}
-)
-
-// RegisterAMQPQueue wires a scrape-time reader of one queue's depth/consumers.
-// Pass nil to remove it. Guard the provider to return ok=false when the broker
-// is unreachable so scrapes never fail.
-func RegisterAMQPQueue(queue string, sample func() (AMQPQueueSample, bool)) {
-	amqpMu.Lock()
-	if sample == nil {
-		delete(amqpProviders, queue)
-	} else {
-		amqpProviders[queue] = sample
-	}
-	amqpMu.Unlock()
-}
-
-var (
-	amqpMessagesDesc  = prometheus.NewDesc("rabbitmq_queue_messages", "Messages in the queue by state (ready via passive declare).", []string{"queue", "state"}, nil)
-	amqpConsumersDesc = prometheus.NewDesc("rabbitmq_queue_consumers", "Consumers currently attached to the queue.", []string{"queue"}, nil)
-)
-
-type amqpQueueCollector struct{}
-
-func (*amqpQueueCollector) Describe(chan<- *prometheus.Desc) {}
-
-func (*amqpQueueCollector) Collect(ch chan<- prometheus.Metric) {
-	amqpMu.RLock()
-	providers := make(map[string]func() (AMQPQueueSample, bool), len(amqpProviders))
-	for k, v := range amqpProviders {
-		providers[k] = v
-	}
-	amqpMu.RUnlock()
-	for queue, p := range providers {
-		s, ok := p()
-		if !ok {
-			continue // broker unreachable this scrape — skip, don't fail Gather
-		}
-		ch <- prometheus.MustNewConstMetric(amqpMessagesDesc, prometheus.GaugeValue, float64(s.Messages), queue, "ready")
-		ch <- prometheus.MustNewConstMetric(amqpConsumersDesc, prometheus.GaugeValue, float64(s.Consumers), queue)
-	}
-}
+var ()
 
 // --- job queue depth (boom-piig) -------------------------------------------
 //
@@ -489,7 +420,7 @@ func (*amqpQueueCollector) Collect(ch chan<- prometheus.Metric) {
 // alertable property of a job system, so it gets a first-class metric.
 //
 // Scrape-time rather than event-counted, for the same reason the DB-pool and
-// AMQP collectors are: depth is a LEVEL, not a rate. Counting enqueues and
+// pool collectors are: depth is a LEVEL, not a rate. Counting enqueues and
 // dequeues and subtracting would drift on every crash, reap and manual delete.
 
 // JobQueueSample is the queue's live state for one kind, read at scrape time.

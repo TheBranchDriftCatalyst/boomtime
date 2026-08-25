@@ -60,12 +60,10 @@ k8s_resource(
     'boomtime',
     port_forwards=['8080:8080'],
     labels=['app'],
-    # broker/cache deps added alongside the worker-topology decoupling
-    # (boom-8bz follow-up): under BOOM_QUEUE_BROKER=rabbitmq the server
-    # dials RabbitMQ at boot and treats a failed connect as fatal (fail
-    # fast, matching k8s' restart-and-retry pattern) — sequencing it after
-    # the broker avoids an avoidable crash-loop on first `tilt up`.
-    resource_deps=['boomtime-postgres', 'boomtime-rabbit', 'boomtime-cache'],
+    # RabbitMQ is gone (boom-piig phase 3) — one job system on the Postgres
+    # queue. Cache stays: the per-kind concurrency limiter and the log relay use
+    # it, and sequencing after it avoids a needless reconnect churn at boot.
+    resource_deps=['boomtime-postgres', 'boomtime-cache'],
 )
 
 k8s_resource(
@@ -75,25 +73,16 @@ k8s_resource(
 )
 
 # ── Image-job worker tier (worker-topology decoupling, boom-8bz follow-up) ───
-# Same image as boomtime (docker_build above), run with --role=worker.
-# Consumes the RabbitMQ queue; DOES NOT serve the API. resource_deps ensures
-# broker+cache are up first so the consumer connects on boot.
-k8s_resource(
-    'boomtime-worker',
-    labels=['worker'],
-    resource_deps=['boomtime-postgres', 'boomtime-rabbit', 'boomtime-cache'],
-)
-
-# ── Local broker: plain RabbitMQ (mgmt UI) + Redis (Dragonfly stand-in) ──────
-k8s_resource(
-    'boomtime-rabbit',
-    port_forwards=['15672:15672', '5672:5672'],  # mgmt UI at http://localhost:15672 (boomtime/boomtime)
-    labels=['broker'],
-)
+# ── Cache: Redis-wire (Dragonfly stand-in) ──────────────────────────────────
+# NOT a broker. It backs the fleet-wide per-kind concurrency semaphore and the
+# cross-pod log relay. The boomtime-worker resource and the local RabbitMQ that
+# used to sit here went with the broker (boom-piig phase 3) — local now runs the
+# same single job system as prod: the Postgres queue, executed in-process by the
+# server at role=all.
 k8s_resource(
     'boomtime-cache',
     port_forwards=['6379:6379'],  # redis-cli -p 6379 for MONITOR
-    labels=['broker'],
+    labels=['cache'],
 )
 
 # ── Mock image backend (no GPU/ComfyUI) ──────────────────────────────────────
