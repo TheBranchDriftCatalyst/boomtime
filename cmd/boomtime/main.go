@@ -572,7 +572,13 @@ func runCmd() *cobra.Command {
 					hostID = "boomtime-jobs"
 				}
 
-				var provider jobs.Provider = jobs.NewLocalProvider(jobStore, logger, hostID)
+				localProv := jobs.NewLocalProvider(jobStore, logger, hostID)
+				// Concurrency WITHIN this process (boom-jokv). Without it the
+				// executor ran one job at a time, so a ~3-minute reading-monitor
+				// run blocked every other kind on the pod and no per-kind cap
+				// could ever bind in-process.
+				localProv.SetWorkers(cfg.JobsWorkers)
+				var provider jobs.Provider = localProv
 				if cfg.JobsBrokerRabbit() {
 					jconn, jerr := amqp.Dial(cfg.RabbitURL)
 					if jerr != nil {

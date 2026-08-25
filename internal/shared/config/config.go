@@ -344,6 +344,17 @@ type Config struct {
 	// enqueue + migrate the label-images WS/UI, then delete imagejobs) is a
 	// deliberate future flip, not this flag.
 	JobsUnified bool
+	// JobsWorkers (BOOM_JOBS_WORKERS, default 4) is how many jobs ONE process
+	// runs concurrently (boom-jokv). Before the worker pool the executor was
+	// strictly sequential, so a long job blocked every other kind on the pod and
+	// per-kind concurrency caps could only bind across pods — a cap of 5 admitted
+	// 1. Safe to raise: ClaimNext uses FOR UPDATE SKIP LOCKED, so N in-process
+	// claimers behave like N pods.
+	//
+	// This is NOT the same dial as a per-kind cap. This bounds the pod; the
+	// KindLimiter bounds a kind fleet-wide. A kind stays capped no matter how
+	// many workers exist.
+	JobsWorkers int
 	// JobsDrain (BOOM_JOBS_DRAIN, default false): run as a one-shot ScaledJob
 	// worker — build the registry, drain all due jobs to completion, then exit
 	// (boom-hney). The always-on server keeps it false (scheduler + API); KEDA
@@ -564,6 +575,7 @@ func Load() *Config {
 	c.BooksLiberateConcurrency = getEnvInt("BOOM_BOOKS_LIBERATE_CONCURRENCY", 2)
 	c.HardcoverSyncInterval = parseJobInterval(getEnv("BOOM_HARDCOVER_SYNC_INTERVAL", "8h"))
 	c.JobsUnified = getEnvBool("BOOM_JOBS_UNIFIED", false)
+	c.JobsWorkers = getEnvInt("BOOM_JOBS_WORKERS", 4)
 	c.JobsDrain = getEnvBool("BOOM_JOBS_DRAIN", false)
 	c.JobsKinds = splitCSV(getEnv("BOOM_JOBS_KINDS", ""))
 	c.JobsExcludeKinds = splitCSV(getEnv("BOOM_JOBS_EXCLUDE_KINDS", ""))

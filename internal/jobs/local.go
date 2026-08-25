@@ -33,6 +33,18 @@ type LocalProvider struct {
 	// (boom-hney). nil = persistence off (no S3 configured).
 	logCapture *LogCapture
 
+	// workers is how many jobs this process runs CONCURRENTLY. Before boom-jokv
+	// the claim/execute loop was strictly sequential, so one long job
+	// head-of-line blocked every other kind on the pod — books-reading-monitor
+	// averages ~185s per run and blocked the always-on server roughly 41% of
+	// wall-clock, claiming nothing else the whole time. It also made every
+	// per-kind concurrency cap unreachable in-process: SetConcurrency could only
+	// bind ACROSS pods, so a configured cap of 5 admitted 1.
+	//
+	// Safe because ClaimNext uses FOR UPDATE SKIP LOCKED — N in-process claimers
+	// behave exactly like N pods, which the queue was already designed for.
+	workers int
+
 	// cancelMu guards cancels: the per-job CancelFunc of every job CURRENTLY
 	// executing on this provider, keyed by job id (admin-cancel support). A job's
 	// entry lives only for the duration of its handler run — registered in
@@ -45,6 +57,27 @@ type LocalProvider struct {
 func (p *LocalProvider) SetKindFilter(include, exclude []string) {
 	p.include = include
 	p.exclude = exclude
+}
+
+// SetWorkers sets how many jobs this process runs concurrently. n < 1 clamps to
+// 1. Must be called before Run/Drain — the count is read once when the pool
+// starts, not per iteration.
+func (p *LocalProvider) SetWorkers(n int) {
+	if n < 1 {
+		n = 1
+	}
+	p.workers = n
+}
+
+// workerID stamps locked_by per SLOT rather than per pod. Without it every
+// worker in a process would share one id and the column would stop identifying
+// a single claimant, which is the thing it exists for. Single-worker processes
+// keep the bare id so existing rows and dashboards read unchanged.
+func (p *LocalProvider) workerID(slot int) string {
+	if p.workers <= 1 {
+		return p.id
+	}
+	return p.id + "#" + strconv.Itoa(slot)
 }
 
 // SetLimiter wires the per-kind concurrency throttle. nil = unbounded.
@@ -204,6 +237,7 @@ func NewLocalProvider(store *Store, log *slog.Logger, workerID string) *LocalPro
 		log:     log,
 		id:      workerID,
 		poll:    5 * time.Second,
+		workers: 1, // conservative default; SetWorkers raises it from config
 		cancels: map[int64]context.CancelFunc{},
 	}
 }
@@ -227,20 +261,59 @@ func (p *LocalProvider) Enqueue(ctx context.Context, kind string, payload []byte
 // amplification at the root. Any extra pod that finds the queue already emptied
 // simply exits. Per-job errors are recorded by execute() and don't stop the
 // drain. Retries (future run_at) are left for a later pod once they come due.
+// Runs p.workers concurrent drain loops (boom-jokv). EXIT SEMANTICS are the
+// subtle part: an individual worker stops as soon as IT finds the queue empty,
+// but Drain does not return until every worker has stopped. A ScaledJob pod must
+// never terminate while a sibling worker is still mid-handler — that would
+// reintroduce exactly the mid-job-kill this mode exists to avoid.
 func (p *LocalProvider) Drain(ctx context.Context, reg *Registry) error {
-	p.log.Info("jobs: draining due queue", "worker", p.id)
+	p.log.Info("jobs: draining due queue", "worker", p.id, "workers", p.workers)
+
+	var (
+		wg       sync.WaitGroup
+		mu       sync.Mutex
+		total    int
+		firstErr error
+	)
+	for i := 0; i < p.workers; i++ {
+		wg.Add(1)
+		go func(slot int) {
+			defer wg.Done()
+			n, err := p.drainLoop(ctx, reg, slot)
+			mu.Lock()
+			total += n
+			// Report the FIRST error but let siblings finish their current job;
+			// killing them on a peer's claim failure would abandon running work.
+			if err != nil && firstErr == nil {
+				firstErr = err
+			}
+			mu.Unlock()
+		}(i)
+	}
+	wg.Wait()
+
+	if firstErr != nil {
+		return firstErr
+	}
+	p.log.Info("jobs: drain complete", "worker", p.id, "processed", total)
+	return nil
+}
+
+// drainLoop is one worker's drain cycle; returns how many jobs it ran.
+func (p *LocalProvider) drainLoop(ctx context.Context, reg *Registry, slot int) (int, error) {
 	n := 0
 	for {
 		if ctx.Err() != nil {
-			return ctx.Err()
+			return n, ctx.Err()
 		}
-		job, ok, err := p.store.ClaimNext(ctx, p.id, p.include, p.claimExclude(ctx, reg))
+		job, ok, err := p.store.ClaimNext(ctx, p.workerID(slot), p.include, p.claimExclude(ctx, reg))
 		if err != nil {
-			return err
+			return n, err
 		}
 		if !ok {
-			p.log.Info("jobs: drain complete", "worker", p.id, "processed", n)
-			return nil
+			// Nothing left for THIS worker. Siblings may still be running; Drain
+			// waits for them. Retries (future run_at) are left for a later pod.
+			return n, nil
 		}
 		if p.runJob(ctx, reg, *job) {
 			n++
@@ -249,15 +322,37 @@ func (p *LocalProvider) Drain(ctx context.Context, reg *Registry) error {
 }
 
 // Run drains due work then polls, until ctx is cancelled.
+//
+// Runs p.workers concurrent claim loops (boom-jokv). Each loop is the same
+// sequential claim/execute cycle as before; the POOL is what stops one long job
+// from blocking every other kind on the pod. Returns only once every worker has
+// stopped, so in-flight handlers finish rather than being abandoned mid-run on
+// shutdown.
 func (p *LocalProvider) Run(ctx context.Context, reg *Registry) error {
-	p.log.Info("jobs: local provider running", "worker", p.id, "poll", p.poll.String())
+	p.log.Info("jobs: local provider running",
+		"worker", p.id, "poll", p.poll.String(), "workers", p.workers)
+	var wg sync.WaitGroup
+	for i := 0; i < p.workers; i++ {
+		wg.Add(1)
+		go func(slot int) {
+			defer wg.Done()
+			p.runLoop(ctx, reg, slot)
+		}(i)
+	}
+	wg.Wait()
+	return ctx.Err()
+}
+
+// runLoop is one worker's claim/execute cycle, identical in shape to the
+// pre-pool Run body.
+func (p *LocalProvider) runLoop(ctx context.Context, reg *Registry, slot int) {
 	for {
 		if ctx.Err() != nil {
-			return ctx.Err()
+			return
 		}
-		job, ok, err := p.store.ClaimNext(ctx, p.id, p.include, p.claimExclude(ctx, reg))
+		job, ok, err := p.store.ClaimNext(ctx, p.workerID(slot), p.include, p.claimExclude(ctx, reg))
 		if err != nil {
-			p.log.Warn("jobs: claim error", "err", err)
+			p.log.Warn("jobs: claim error", "err", err, "slot", slot)
 		}
 		if ok {
 			// LocalProvider ignores the outcome: a retry is a re-queued row the
@@ -268,7 +363,7 @@ func (p *LocalProvider) Run(ctx context.Context, reg *Registry) error {
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return
 		case <-time.After(p.poll):
 		}
 	}
