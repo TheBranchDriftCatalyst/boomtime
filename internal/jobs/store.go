@@ -425,6 +425,30 @@ func (s *Store) HasPending(ctx context.Context, kind, owner string) (bool, error
 	return n > 0, err
 }
 
+// PendingID returns the id of the newest queued-or-running job for a kind+owner,
+// or ok=false when there is none. It is HasPending that also tells you WHICH job.
+//
+// The label-image regen path needs the id, not just the boolean: on a duplicate
+// request it reports the EXISTING job back to the caller, and a response field
+// called jobId should contain a job id. Before this it returned the label id
+// there, which happened to be harmless (the FE keys its poll on labelId) but was
+// a lie in the payload.
+func (s *Store) PendingID(ctx context.Context, kind, owner string) (int64, bool, error) {
+	var id int64
+	err := s.pool.QueryRow(ctx,
+		`SELECT id FROM jobs
+		  WHERE kind = $1 AND owner = $2 AND status IN ('queued','running')
+		  ORDER BY id DESC LIMIT 1`,
+		kind, owner).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return id, true, nil
+}
+
 // HasPendingKind reports whether ANY queued or running job of a kind already
 // exists (owner-agnostic). The scheduler consults it before a periodic enqueue so
 // a transient hang can't stack the queue — e.g. books-reading-monitor fires every

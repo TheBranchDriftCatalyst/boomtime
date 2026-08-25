@@ -40,21 +40,15 @@
 package admin
 
 import (
-	"context"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/labelcatalog"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/queue/imagejobs"
 	labelimages "github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/worker/labelimages"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/metrics"
-	"github.com/coder/websocket"
-	"github.com/coder/websocket/wsjson"
 	"github.com/labstack/echo/v5"
 )
 
@@ -84,14 +78,12 @@ func (h *Handler) AdminLabelImagesInfo(c *echo.Context) error {
 		}
 		baseline = ids
 	}
-	// boom-8bz worker-topology follow-up: surface which transport is
-	// actually running regens so the Admin tab can distinguish "the local
-	// in-process pool" from "the decoupled boomtime-worker pod via
-	// RabbitMQ" — and, when it's the latter, how deep the broker queue
-	// currently is + a link to its management UI. Both extra fields are
-	// best-effort: a depth-check failure is logged and simply omitted
-	// rather than failing the whole info request.
-	broker := "inprocess"
+	// `broker` is retained as a stable field for the Admin tab but is now always
+	// "jobs": regens run on catalyst-go-jobs, and the RabbitMQ transport (with
+	// its queue-depth probe and management-UI link) was retired along with the
+	// imagejobs pipeline (boom-piig phases 2-3). Queue depth is now a first-class
+	// metric — jobs_queue_depth{kind="label-image"} — rather than an ad-hoc
+	// field on this endpoint.
 	resp := map[string]any{
 		"enabled":  h.Cfg.LabelImagesEnabled(),
 		"model":    h.Cfg.ComfyUIModel,
@@ -100,20 +92,7 @@ func (h *Handler) AdminLabelImagesInfo(c *echo.Context) error {
 		"items":    items,
 		"baseline": baseline,
 	}
-	if h.Cfg.BrokerRabbit() {
-		broker = "rabbitmq"
-		if mgmtURL := strings.TrimSpace(h.Cfg.RabbitMgmtURL); mgmtURL != "" {
-			resp["mgmtUrl"] = mgmtURL
-		}
-		if qi, ok := h.ImageJobQueue.(imagejobs.QueueInspector); ok {
-			if n, derr := qi.QueueDepth(); derr != nil {
-				h.Logger.Warn("admin label-images: queue depth check failed", "err", derr)
-			} else {
-				resp["queueDepth"] = n
-			}
-		}
-	}
-	resp["broker"] = broker
+	resp["broker"] = "jobs"
 	return c.JSON(http.StatusOK, resp)
 }
 
@@ -155,11 +134,10 @@ func (h *Handler) AdminLabelImagesRegenerate(c *echo.Context) error {
 	if _, aerr := h.requireAdmin(c); aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
-	// Unified (boom-hney Stage 3): route regen through catalyst-go-jobs (the DB
-	// queue + KEDA ScaledJob) instead of the in-memory imagejobs registry. Needs
-	// the worker + the DB-jobs enqueuer/store; falls back to imagejobs when off.
-	unified := h.Cfg != nil && h.Cfg.JobsUnified && h.JobEnqueuer != nil && h.JobStore != nil
-	if h.LabelImagesWorker == nil || (!unified && h.ImageJobQueue == nil) {
+	// Regen runs on catalyst-go-jobs (the DB queue + KEDA ScaledJob). The
+	// in-memory imagejobs registry it used to fall back to is gone — one job
+	// system, one queue (boom-piig phase 2).
+	if h.LabelImagesWorker == nil || h.JobEnqueuer == nil || h.JobStore == nil {
 		return apihelpers.RespondErr(c, apierr.New(http.StatusServiceUnavailable,
 			"label-images feature is disabled — set BOOM_FEATURE_LABEL_IMAGES=on and BOOM_COMFYUI_SHIM_URL, then restart", nil))
 	}
@@ -241,42 +219,32 @@ func (h *Handler) AdminLabelImagesRegenerate(c *echo.Context) error {
 		} else if row != nil {
 			desc = row.Description
 		}
-		if unified {
-			// Dedup per label (owner==labelID) so a double "regen all" doesn't
-			// double-fire ComfyUI — mirrors the imagejobs registry idempotency.
-			if pending, derr := h.JobStore.HasPending(reqCtx, labelimages.RegenJobKind, e.ID); derr == nil && pending {
-				out = append(out, regenResponseJob{JobID: e.ID, LabelID: e.ID, Existing: true})
-				continue
-			}
-			payload, merr := labelimages.RegenJobPayload{
-				LabelID: e.ID, Description: desc, Prompt: e.Prompt,
-				Model: e.Model, Size: e.Size, Seed: e.Seed,
-			}.JSON()
-			if merr != nil {
-				return apihelpers.InternalErr(h.Logger, c, "label-image payload marshal failed", merr)
-			}
-			id, eerr := h.JobEnqueuer.Enqueue(reqCtx, labelimages.RegenJobKind, payload,
-				jobs.Owner(e.ID), jobs.MaxAttempts(1))
-			if eerr != nil {
-				return apihelpers.InternalErr(h.Logger, c, "label-image enqueue failed", eerr)
-			}
-			out = append(out, regenResponseJob{JobID: strconv.FormatInt(id, 10), LabelID: e.ID, Existing: false})
+		// Dedup per label (owner==labelID) so a double "regen all" doesn't
+		// double-fire ComfyUI — carried over from the imagejobs registry's
+		// idempotency, which was one of the few things it did that the DB queue
+		// does not give for free.
+		if pendingID, pending, derr := h.JobStore.PendingID(reqCtx, labelimages.RegenJobKind, e.ID); derr == nil && pending {
+			// Report the EXISTING job's real id. This used to return e.ID (the
+			// label id) in a field called jobId — harmless in practice because
+			// the FE keys its status poll on labelId, but a lie in the payload.
+			out = append(out, regenResponseJob{
+				JobID: strconv.FormatInt(pendingID, 10), LabelID: e.ID, Existing: true,
+			})
 			continue
 		}
-
-		job, existing := h.ImageJobQueue.Enqueue(imagejobs.EnqueueInput{
-			LabelID:     e.ID,
-			Description: desc,
-			Prompt:      e.Prompt,
-			Model:       e.Model,
-			Size:        e.Size,
-			Seed:        e.Seed,
-		})
-		out = append(out, regenResponseJob{
-			JobID:    job.ID,
-			LabelID:  job.LabelID,
-			Existing: existing,
-		})
+		payload, merr := labelimages.RegenJobPayload{
+			LabelID: e.ID, Description: desc, Prompt: e.Prompt,
+			Model: e.Model, Size: e.Size, Seed: e.Seed,
+		}.JSON()
+		if merr != nil {
+			return apihelpers.InternalErr(h.Logger, c, "label-image payload marshal failed", merr)
+		}
+		id, eerr := h.JobEnqueuer.Enqueue(reqCtx, labelimages.RegenJobKind, payload,
+			jobs.Owner(e.ID), jobs.MaxAttempts(1))
+		if eerr != nil {
+			return apihelpers.InternalErr(h.Logger, c, "label-image enqueue failed", eerr)
+		}
+		out = append(out, regenResponseJob{JobID: strconv.FormatInt(id, 10), LabelID: e.ID, Existing: false})
 	}
 
 	return c.JSON(http.StatusAccepted, map[string]any{
@@ -356,100 +324,4 @@ func rfcPtr(t *time.Time) *string {
 	}
 	s := t.UTC().Format(time.RFC3339)
 	return &s
-}
-
-// AdminLabelImagesWS: GET /api/v1/admin/label-images/ws — durable stream of
-// registry events to the Admin tab.
-//
-// Auth uses the HttpOnly refresh_token cookie because WS handshakes cannot
-// set the Authorization header; the resolved owner is then checked against
-// the admin allowlist. Non-admin cookies get 403 pre-upgrade.
-//
-// Wire protocol (JSON per frame):
-//   - initial: {"kind":"snapshot","jobs":[...Job]}
-//   - live:    {"kind":"added"|"updated"|"removed","job":{...Job}}
-//
-// The reader goroutine consumes pings + close frames and cancels the write
-// loop on the first read error, so a dropped client tears the WS down
-// promptly. A subscriber that can't keep up drops OLDEST events (see
-// Registry.broadcastLocked) so a wedged FE never blocks the emitter — the
-// FE reconnect + snapshot recovers the true state.
-func (h *Handler) AdminLabelImagesWS(c *echo.Context) error {
-	// Cookie auth first — a bad cookie should never even trigger the
-	// upgrade handshake.
-	owner, aerr := apihelpers.IdentifyOwnerFromCookie(h.DB, h.Logger, c, apierr.ExpiredRefreshToken())
-	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
-	}
-	if !h.Cfg.IsAdmin(owner) {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusForbidden, "admin only", nil))
-	}
-	if h.ImageJobEvents == nil {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusServiceUnavailable,
-			"label-images feature is disabled", nil))
-	}
-
-	conn, err := websocket.Accept(c.Response(), c.Request(), &websocket.AcceptOptions{
-		InsecureSkipVerify: true, // same-origin; CORS is handled elsewhere
-	})
-	if err != nil {
-		return nil
-	}
-	defer conn.CloseNow()
-	metrics.WSActiveConnections.WithLabelValues("label-images").Inc()
-	defer metrics.WSActiveConnections.WithLabelValues("label-images").Dec()
-
-	// Background context so the stream survives after the HTTP handler
-	// returns (echo tears down the request context on return).
-	ctx := context.Background()
-
-	// Subscribe BEFORE the snapshot: an event fired between snapshot and
-	// subscribe would otherwise be missed. Duplicates are cheap (the FE
-	// map keyed by jobId absorbs them).
-	sub, unsub := h.ImageJobEvents.Subscribe()
-	defer unsub()
-
-	if err := wsjson.Write(ctx, conn, map[string]any{
-		"kind": "snapshot",
-		"jobs": h.ImageJobEvents.Snapshot(),
-	}); err != nil {
-		return nil
-	}
-
-	// Client-disconnect detector: a reader goroutine watches for close /
-	// error, and cancels streamCtx so the write loop bails.
-	streamCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	go func() {
-		for {
-			if _, _, rerr := conn.Read(streamCtx); rerr != nil {
-				cancel()
-				return
-			}
-		}
-	}()
-
-	for {
-		select {
-		case <-streamCtx.Done():
-			return nil
-		case ev, alive := <-sub:
-			if !alive {
-				return nil
-			}
-			if err := wsjson.Write(streamCtx, conn, event2json(ev)); err != nil {
-				return nil
-			}
-		}
-	}
-}
-
-// event2json unwraps an imagejobs.Event into the wire shape the FE hook
-// expects. Kept separate from Event so the internal type can evolve
-// without breaking the FE contract.
-func event2json(ev imagejobs.Event) map[string]any {
-	return map[string]any{
-		"kind": string(ev.Kind),
-		"job":  ev.Job,
-	}
 }

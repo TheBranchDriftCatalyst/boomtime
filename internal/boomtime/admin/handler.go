@@ -18,7 +18,6 @@ import (
 	"github.com/labstack/echo/v5"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/importer"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/queue/imagejobs"
 	labelimages "github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/worker/labelimages"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
@@ -42,8 +41,6 @@ type Handler struct {
 	Hub    *importer.Hub
 	// label-images regeneration.
 	LabelImagesWorker *labelimages.Worker
-	ImageJobQueue     imagejobs.Enqueuer
-	ImageJobEvents    imagejobs.EventSource
 	// catalyst-go-jobs store + enqueuer — read by AdminLabelImagesStatus (the
 	// BOOM_JOBS_UNIFIED per-label status poll). nil = jobs subsystem not wired.
 	JobStore    *jobs.Store
@@ -64,20 +61,6 @@ func (h *Handler) SetImportWorker(w *importer.Worker, hub *importer.Hub) {
 // SetLabelImagesWorker wires the label-images worker after construction. nil is fine
 // when the feature is disabled — handlers detect the nil worker and return 503.
 func (h *Handler) SetLabelImagesWorker(w *labelimages.Worker) { h.LabelImagesWorker = w }
-
-// SetImageJobQueue wires the image-job Enqueuer after construction; also wires
-// ImageJobEvents when e satisfies EventSource (broker=inprocess). See the matching
-// doc on the god-handler's setter for the rationale.
-func (h *Handler) SetImageJobQueue(e imagejobs.Enqueuer) {
-	h.ImageJobQueue = e
-	if es, ok := e.(imagejobs.EventSource); ok {
-		h.ImageJobEvents = es
-	}
-}
-
-// SetImageJobEvents wires the image-job EventSource after construction (only needed
-// when it differs from ImageJobQueue — the broker=rabbitmq producer+mirror split).
-func (h *Handler) SetImageJobEvents(ev imagejobs.EventSource) { h.ImageJobEvents = ev }
 
 // SetJobs wires the catalyst-go-jobs Store + Enqueuer (read by the per-label
 // BOOM_JOBS_UNIFIED status poll). Nil = jobs not wired; the poll degrades.
@@ -115,7 +98,6 @@ func Register(e *echo.Echo, h *Handler) {
 	e.GET("/api/v1/admin/label-images", h.AdminLabelImagesInfo)
 	e.POST("/api/v1/admin/label-images/regenerate", h.AdminLabelImagesRegenerate)
 	e.GET("/api/v1/admin/label-images/status", h.AdminLabelImagesStatus)
-	e.GET("/api/v1/admin/label-images/ws", h.AdminLabelImagesWS)
 
 	// Durable, resumable wakatime.com import jobs. auth-dry Phase 2: starting an import
 	// is gated by CapImport route middleware (importCap); the other endpoints use the

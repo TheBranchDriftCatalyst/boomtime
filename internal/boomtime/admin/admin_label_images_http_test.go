@@ -12,18 +12,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/queue/imagejobs"
+	boomtimeadmin "github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/admin"
 	labelimages "github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/worker/labelimages"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
@@ -129,7 +128,7 @@ var _ = Describe("AdminLabelImagesInfo (boom-myv): admin gate + shape", func() {
 })
 
 var _ = Describe("AdminLabelImagesRegenerate (boom-myv/boom-8bz): feature gate + validation + idempotency", func() {
-	It("returns 503 when either Worker or ImageJobQueue is nil (feature disabled)", func() {
+	It("returns 503 when either the Worker or the job queue is nil (feature disabled)", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "aliregen"))
 		e := boomtimeRouter(hz)
 		user, token := hz.MintUser("li_regen_off")
@@ -150,7 +149,7 @@ var _ = Describe("AdminLabelImagesRegenerate (boom-myv/boom-8bz): feature gate +
 		user, token := hz.MintUser("li_regen_validate")
 		hz.Cfg.AdminUsers = map[string]struct{}{user: {}}
 		bh.SetLabelImagesWorker(buildLiWorker(hz.Cfg, hz))
-		bh.SetImageJobQueue(imagejobs.NewRegistry(nil))
+		wireJobs(hz, bh)
 
 		// (1) empty entries.
 		rec := liDo(e, http.MethodPost, "/api/v1/admin/label-images/regenerate", token,
@@ -189,7 +188,7 @@ var _ = Describe("AdminLabelImagesRegenerate (boom-myv/boom-8bz): feature gate +
 		user, token := hz.MintUser("li_regen_ok")
 		hz.Cfg.AdminUsers = map[string]struct{}{user: {}}
 		bh.SetLabelImagesWorker(buildLiWorker(hz.Cfg, hz))
-		bh.SetImageJobQueue(imagejobs.NewRegistry(nil))
+		wireJobs(hz, bh)
 
 		body := map[string]any{
 			"entries": []map[string]any{{"id": "polyglot", "prompt": "cyber oracle"}},
@@ -225,7 +224,7 @@ var _ = Describe("AdminLabelImagesRegenerate (boom-myv/boom-8bz): feature gate +
 		user, token := hz.MintUser("li_regen_all")
 		hz.Cfg.AdminUsers = map[string]struct{}{user: {}}
 		bh.SetLabelImagesWorker(buildLiWorker(hz.Cfg, hz))
-		bh.SetImageJobQueue(imagejobs.NewRegistry(nil))
+		wireJobs(hz, bh)
 		ctx := context.Background()
 
 		// Seed a fake label_images row so we can prove `truncate=true` wiped it.
@@ -262,8 +261,7 @@ var _ = Describe("AdminLabelImagesRegenerate (boom-myv/boom-8bz): feature gate +
 		user, token := hz.MintUser("li_regen_desc")
 		hz.Cfg.AdminUsers = map[string]struct{}{user: {}}
 		bh.SetLabelImagesWorker(buildLiWorker(hz.Cfg, hz))
-		reg := imagejobs.NewRegistry(nil)
-		bh.SetImageJobQueue(reg)
+		wireJobs(hz, bh)
 
 		// Enqueue against a real label id from the migrated catalog. Any id in
 		// the labels table works; the handler pulls the DB Description.
@@ -280,11 +278,20 @@ var _ = Describe("AdminLabelImagesRegenerate (boom-myv/boom-8bz): feature gate +
 		rec := liDo(e, http.MethodPost, "/api/v1/admin/label-images/regenerate", token, body)
 		Expect(rec).To(testutil.HaveStatus(http.StatusAccepted))
 
-		// Inspect the enqueued job's Description via Snapshot.
-		snap := reg.Snapshot()
-		Expect(snap).To(HaveLen(1))
-		Expect(snap[0].LabelID).To(Equal(id))
-		Expect(snap[0].Description).To(Equal(wantDesc),
+		// Inspect the ENQUEUED JOB'S PAYLOAD. This used to read the in-memory
+		// imagejobs registry via reg.Snapshot(); regen now lands as a row on the
+		// DB queue (boom-piig phase 2), so the same contract is asserted against
+		// the payload that actually ships to the worker.
+		var payloadJSON []byte
+		Expect(hz.DB.Pool.QueryRow(context.Background(),
+			`SELECT payload FROM jobs WHERE kind = $1 AND owner = $2 ORDER BY id DESC LIMIT 1`,
+			labelimages.RegenJobKind, id).Scan(&payloadJSON)).To(Succeed(),
+			"expected a label-image job row for the regenerated label")
+
+		var got labelimages.RegenJobPayload
+		Expect(json.Unmarshal(payloadJSON, &got)).To(Succeed())
+		Expect(got.LabelID).To(Equal(id))
+		Expect(got.Description).To(Equal(wantDesc),
 			"handler must pull description from DB (Save+regen contract), not wire body")
 	})
 })
@@ -298,7 +305,7 @@ var _ = Describe("AdminLabelImagesRegenerate: malformed body branch", func() {
 		user, token := hz.MintUser("li_regen_mal")
 		hz.Cfg.AdminUsers = map[string]struct{}{user: {}}
 		bh.SetLabelImagesWorker(buildLiWorker(hz.Cfg, hz))
-		bh.SetImageJobQueue(imagejobs.NewRegistry(nil))
+		wireJobs(hz, bh)
 
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/label-images/regenerate",
 			bytes.NewReader([]byte(`{not-json`)))
@@ -310,57 +317,15 @@ var _ = Describe("AdminLabelImagesRegenerate: malformed body branch", func() {
 	})
 })
 
-var _ = Describe("AdminLabelImagesWS (boom-8bz): cookie-auth + admin-gate + feature-gate", func() {
-	It("rejects a request with no refresh_token cookie", func() {
-		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "aliws"))
-		e := boomtimeRouter(hz)
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/label-images/ws", nil)
-		req.Header.Set("Connection", "Upgrade")
-		req.Header.Set("Upgrade", "websocket")
-		req.Header.Set("Sec-WebSocket-Key", "dGVzdC1rZXktMS0yLTMtNC01LTY=")
-		req.Header.Set("Sec-WebSocket-Version", "13")
-		rec := httptest.NewRecorder()
-		e.ServeHTTP(rec, req)
-		Expect(rec.Code).NotTo(Equal(http.StatusSwitchingProtocols))
-		Expect(rec.Code).To(BeNumerically(">=", 400))
-	})
+func wireJobs(hz *testutil.Harness, bh *boomtimeadmin.Handler) {
+	// Each spec needs an EMPTY queue. The old in-memory registry gave that away
+	// for free — imagejobs.NewRegistry(nil) was fresh every time — but specs in
+	// this file share one isolated database, so a prior spec's pending row makes
+	// a later spec's FIRST enqueue report existing=true and fail the dedup
+	// assertion for the wrong reason.
+	_, err := hz.DB.Pool.Exec(context.Background(), `TRUNCATE jobs`)
+	Expect(err).NotTo(HaveOccurred(), "could not reset the jobs queue between specs")
 
-	It("rejects a non-admin with a valid cookie (403 pre-upgrade)", func() {
-		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "aliws"))
-		e := boomtimeRouter(hz)
-		ctx := context.Background()
-		user, _ := hz.MintUser("liws_nonadmin")
-		refresh := fmt.Sprintf("refresh-li-%d", time.Now().UnixNano())
-		Expect(hz.DB.CreateAccessTokens(ctx, testutilTokenData(user, refresh), 24)).To(Succeed())
-
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/label-images/ws", nil)
-		req.Header.Set("Cookie", "refresh_token="+refresh)
-		req.Header.Set("Connection", "Upgrade")
-		req.Header.Set("Upgrade", "websocket")
-		req.Header.Set("Sec-WebSocket-Key", "dGVzdC1rZXktMS0yLTMtNC01LTY=")
-		req.Header.Set("Sec-WebSocket-Version", "13")
-		rec := httptest.NewRecorder()
-		e.ServeHTTP(rec, req)
-		Expect(rec.Code).To(Equal(http.StatusForbidden))
-	})
-
-	It("admin cookie + no ImageJobQueue → 503 (feature disabled after admin-gate)", func() {
-		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "aliws"))
-		e := boomtimeRouter(hz)
-		ctx := context.Background()
-		user, _ := hz.MintUser("liws_admin_noqueue")
-		hz.Cfg.AdminUsers = map[string]struct{}{user: {}}
-		refresh := fmt.Sprintf("refresh-li-%d", time.Now().UnixNano())
-		Expect(hz.DB.CreateAccessTokens(ctx, testutilTokenData(user, refresh), 24)).To(Succeed())
-
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/label-images/ws", nil)
-		req.Header.Set("Cookie", "refresh_token="+refresh)
-		req.Header.Set("Connection", "Upgrade")
-		req.Header.Set("Upgrade", "websocket")
-		req.Header.Set("Sec-WebSocket-Key", "dGVzdC1rZXktMS0yLTMtNC01LTY=")
-		req.Header.Set("Sec-WebSocket-Version", "13")
-		rec := httptest.NewRecorder()
-		e.ServeHTTP(rec, req)
-		Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
-	})
-})
+	store := jobs.NewStore(hz.DB.Pool)
+	bh.SetJobs(store, jobs.NewLocalProvider(store, discardLogger(), "test"))
+}

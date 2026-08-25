@@ -15,7 +15,6 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/goals"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/ingest"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/queue/imagejobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/spaces"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/stats"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/widgets"
@@ -106,21 +105,6 @@ func (m *Module) SetImportWorker(w *importer.Worker, hub *importer.Hub) {
 func (m *Module) SetLabelImagesWorker(w *labelimages.Worker) {
 	if m.admin != nil {
 		m.admin.SetLabelImagesWorker(w)
-	}
-}
-
-// SetImageJobQueue late-binds the image-job Enqueuer (also wires ImageJobEvents when it
-// satisfies EventSource — broker=inprocess).
-func (m *Module) SetImageJobQueue(e imagejobs.Enqueuer) {
-	if m.admin != nil {
-		m.admin.SetImageJobQueue(e)
-	}
-}
-
-// SetImageJobEvents late-binds the image-job EventSource (broker=rabbitmq split).
-func (m *Module) SetImageJobEvents(ev imagejobs.EventSource) {
-	if m.admin != nil {
-		m.admin.SetImageJobEvents(ev)
 	}
 }
 

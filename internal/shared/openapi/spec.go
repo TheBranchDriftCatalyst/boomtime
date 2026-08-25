@@ -1646,38 +1646,6 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 		return op
 	}())
 
-	// boom-myv: Admin tab endpoints. Both require auth + admin allowlist
-	// (BOOM_ADMIN_USERS). Non-admins get 403.
-	doc.AddOperation("/api/v1/admin/label-images", "GET", func() *openapi3.Operation {
-		op := &openapi3.Operation{Tags: []string{tagProfile}, Summary: "Admin: label-images feature status",
-			Description: "Returns {enabled, model, shimUrl, count, baseline}. Admin-only (BOOM_ADMIN_USERS)."}
-		setStatus(op, http.StatusOK, rInline("Feature status + row count.", mapObject()))
-		stdErrors(op, "401", "403", "500")
-		return op
-	}())
-	doc.AddOperation("/api/v1/admin/label-images/regenerate", "POST", func() *openapi3.Operation {
-		op := &openapi3.Operation{Tags: []string{tagProfile}, Summary: "Admin: regenerate label images via the ComfyUI shim",
-			Description: "Body: {entries: [{id, prompt}, ...], ids?: [...], all?: bool, truncate?: bool}. The FE POSTs the full label catalog snapshot; the Go side does NOT need to mirror it. `all: true` regenerates every entry sent (optionally truncating first). `ids: [...]` regenerates a named subset. Returns {generated, failed, requested}."}
-		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{
-			Required: true, Description: "Regeneration request.",
-			Content: openapi3.NewContentWithJSONSchema(openapi3.NewObjectSchema()),
-		}}
-		setStatus(op, http.StatusOK, rInline("{generated, failed, requested}.", mapObject()))
-		stdErrors(op, "400", "401", "403", "500")
-		return op
-	}())
-	// boom-8bz: durable WS stream of the in-memory image-job queue. On
-	// connect the server emits {kind:"snapshot", jobs:[...]} then every
-	// lifecycle event (added/updated/removed) forever. Cookie auth
-	// (refresh_token) — WS handshakes cannot carry Authorization.
-	doc.AddOperation("/api/v1/admin/label-images/ws", "GET", func() *openapi3.Operation {
-		op := &openapi3.Operation{Tags: []string{tagProfile}, Summary: "Admin: label-image job queue live stream (WebSocket)",
-			Description: "WebSocket. Auths via the refresh_token cookie; non-admin owners get 403 pre-upgrade. On connect emits {kind:\"snapshot\", jobs:[Job]}, then a stream of {kind:\"added\"|\"updated\"|\"removed\", job:Job} events for every registry transition. In-memory only — restart of boomtime drops in-flight state (ComfyUI's own queue runs independently)."}
-		setStatus(op, http.StatusSwitchingProtocols, rInline("Upgrade to WebSocket.", mapObject()))
-		stdErrors(op, "401", "403", "503")
-		return op
-	}())
-
 	// boom-364.3: DB-backed labels catalog + admin CRUD.
 	doc.AddOperation("/api/v1/labels/catalog", "GET", func() *openapi3.Operation {
 		op := &openapi3.Operation{Tags: []string{tagProfile}, Summary: "Public labels catalog + global generation systemPrompt",

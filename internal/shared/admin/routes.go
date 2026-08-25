@@ -37,7 +37,6 @@ import (
 //	GET    /api/v1/labels/:id/image                                 (h.LabelImage)               PUBLIC
 //	GET    /api/v1/admin/label-images                               (h.AdminLabelImagesInfo)
 //	POST   /api/v1/admin/label-images/regenerate                    (h.AdminLabelImagesRegenerate)
-//	GET    /api/v1/admin/label-images/ws                            (h.AdminLabelImagesWS)
 //	POST   /import                                                  (h.ImportRequest)
 //	GET    /import/config                                           (h.ImportConfig)
 //	POST   /import/wakatime-range                                   (h.WakatimeRange)

@@ -24,7 +24,6 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/comfyui"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/github"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/importer"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/queue/imagejobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/stats"
 	labelimages "github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/worker/labelimages"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/domainreg"
@@ -330,15 +329,13 @@ func runCmd() *cobra.Command {
 				logger.Info("admin users configured", "count", len(cfg.AdminUsers))
 			}
 
-			// boom-worker-topology: role/broker-aware wiring. Default
-			// (role=all, broker=inprocess) reproduces today's single-
-			// process behavior exactly — see the `default:` arm below,
-			// byte-identical to the pre-decoupling pool wiring. See
-			// docs/design/worker-topology-decoupling.md.
+			// Role-aware wiring. The broker arm of this (the imagejobs pool and
+			// its RabbitMQ producer/consumer) was deleted in boom-piig phases
+			// 2-3 — there is one job system now, and label-image regen runs on it
+			// like every other kind.
 			var (
-				e       *echo.Echo
-				h       *handler.Handler
-				imgPool *imagejobs.Pool
+				e *echo.Echo
+				h *handler.Handler
 			)
 			// Domain-agnostic per-user notification hub. Constructed once per
 			// process (before the role split) so BOTH the server WS handler and
@@ -367,110 +364,12 @@ func runCmd() *cobra.Command {
 				h.SetNotify(notifyHub)
 			}
 
-			// boom-8bz / worker-topology: image-job queue wiring. Only
-			// wire when the feature is enabled — a nil pool/producer keeps
-			// the admin handler + WS returning 503, the same behavior as a
-			// nil labelimages worker (they gate on both).
-			if liWorker != nil {
-				concurrency := labelImageConcurrency()
-				// The ONE shared regeneration core: this same ExecutorFunc
-				// value is handed to BOTH the in-process Pool (inprocess
-				// broker) and the AMQPConsumer (rabbitmq broker) below — no
-				// per-transport copy. j.ToLabelEntry() is the single named
-				// Job->Entry mapping (imagejobs.Job.ToLabelEntry), and
-				// RegenerateEntry is the same entrypoint the CLI's
-				// RegenerateOne/RegenerateAll ultimately funnel into via
-				// Worker.generateAndSave — see internal/worker/labelimages.
-				exec := imagejobs.ExecutorFunc(func(execCtx context.Context, j imagejobs.Job) error {
-					return liWorker.RegenerateEntry(execCtx, j.ToLabelEntry())
-				})
-
-				switch {
-				case cfg.BrokerRabbit():
-					amqpConn, aerr := amqp.Dial(cfg.RabbitURL)
-					if aerr != nil {
-						return fmt.Errorf("rabbitmq connect: %w", aerr)
-					}
-					defer amqpConn.Close()
-					rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPassword})
-					defer rdb.Close()
-					// Scrape-time redis pool stats for the cross-pod log-relay client.
-					metrics.RegisterRedisPool("logs", func() metrics.RedisPoolSample { return redisPoolSample(rdb) })
-					bus := imagejobs.NewRedisEventBus(rdb)
-
-					// Cross-pod Admin Logs relay ("worker logs in Admin Logs
-					// viewer"): a boomtime-worker pod's own LogHub collects
-					// its slog records but nothing reads it (role=worker
-					// binds no HTTP API). Relay them over Dragonfly/Redis so
-					// the server pod can inject them into ITS hub and the
-					// existing /api/v1/logs/ws stream picks them up.
-					//
-					// Strict role equality (== "worker" / == "server"), NOT
-					// IsWorkerRole()/IsServerRole() — those also match
-					// role="all", where server and worker are the SAME
-					// process sharing ONE hub already; relaying on top of
-					// that would inject every record a second time.
-					if cfg.Role == "server" {
-						go logging.SubscribeRedisIntoHub(ctx, logHub, rdb)
-						logger.Info("logging: subscribed to worker log relay", "channel", logging.LogsChannel)
-					}
-					if cfg.Role == "worker" {
-						hostID, herr := os.Hostname()
-						if herr != nil || hostID == "" {
-							hostID = "unknown-worker-host"
-						}
-						go logging.RelayHubToRedis(ctx, logHub, rdb, hostID)
-						logger.Info("logging: relaying logs to server via redis", "channel", logging.LogsChannel, "host", hostID)
-					}
-
-					if cfg.IsServerRole() {
-						producerCh, cherr := amqpConn.Channel()
-						if cherr != nil {
-							return fmt.Errorf("rabbitmq producer channel: %w", cherr)
-						}
-						defer producerCh.Close()
-						producer, perr := imagejobs.NewAMQPProducer(amqpConn, producerCh, cfg.RabbitQueue, rdb, bus, logger)
-						if perr != nil {
-							return fmt.Errorf("rabbitmq producer: %w", perr)
-						}
-						// The mirror has no Pool — it exists purely to keep
-						// AdminLabelImagesWS truthful by relaying the
-						// worker pod's events (see Registry.Apply).
-						mirror := imagejobs.NewRegistry(logger)
-						go imagejobs.PumpBusIntoRegistry(ctx, bus, mirror)
-						domainSet.Boomtime.SetImageJobQueue(producer)
-						domainSet.Boomtime.SetImageJobEvents(mirror)
-						logger.Info("imagejobs: amqp producer wired", "queue", cfg.RabbitQueue)
-					}
-					if cfg.IsWorkerRole() {
-						consumerCh, cherr := amqpConn.Channel()
-						if cherr != nil {
-							return fmt.Errorf("rabbitmq consumer channel: %w", cherr)
-						}
-						defer consumerCh.Close()
-						consumer := imagejobs.NewAMQPConsumer(consumerCh, cfg.RabbitQueue, exec, bus, rdb, concurrency, logger)
-						go func() {
-							if rerr := consumer.Run(ctx); rerr != nil {
-								logger.Error("imagejobs: amqp consumer stopped", "err", rerr)
-							}
-						}()
-					}
-				default: // "inprocess" — TODAY'S CODE, unchanged. server role only.
-					if cfg.IsServerRole() {
-						registry := imagejobs.NewRegistry(logger)
-						imgPool = imagejobs.NewPool(imagejobs.PoolConfig{
-							Concurrency: concurrency,
-							Registry:    registry,
-							Executor:    exec,
-							Logger:      logger,
-						})
-						imgPool.Start(ctx)
-						domainSet.Boomtime.SetImageJobQueue(registry)
-						domainSet.Boomtime.SetImageJobEvents(registry)
-						logger.Info("imagejobs pool wired", "concurrency", concurrency)
-					}
-				}
-			}
+			// The imagejobs pipeline (its own RabbitMQ queue, Redis event bus,
+			// in-process pool and WebSocket) was deleted in boom-piig phases 2-3.
+			// Label-image regeneration now runs on catalyst-go-jobs like every other
+			// kind: enqueued by the admin handler, executed by labelimages.RegenJobKind,
+			// and observed through the same jobs table, admin Jobs tab and
+			// jobs_queue_depth metric as everything else. One job system.
 
 			// catalyst-go-jobs (boom-hney): ALWAYS wired — the jobs table exists
 			// (migration 00054), so the admin Jobs tab + trigger/retry work
@@ -782,14 +681,11 @@ func runCmd() *cobra.Command {
 				return err
 			}
 			// After echo returns (either shutdown signal or an error above)
-			// stop the imagejobs pool so in-flight generations get a
-			// chance to observe context cancellation and exit. ComfyUI
-			// calls that ignore ctx will time out this Stop — that's
-			// fine, in-flight state is not durable across restarts by
-			// design (boom-8bz).
-			if imgPool != nil {
-				imgPool.Stop(30 * time.Second)
-			}
+			// The imagejobs pool's shutdown hook used to live here. It is gone
+			// with the pool: label-image regen is a catalyst-go-jobs kind now, so
+			// in-flight work is a claimed DB row that the reaper reclaims and a
+			// later worker re-runs — durable across restarts, which the
+			// in-memory pool never was.
 			return nil
 		},
 	}
