@@ -15,6 +15,7 @@ import {
   SheetDescription,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/sheet";
 import { api } from "@shared/lib/api";
+import { LiberationPanel } from "./LiberationPanel";
 import { qk } from "@shared/lib/queryKeys";
 import {
   SourceBadge,
@@ -148,6 +149,21 @@ export function BookDetailSheet({
                 </div>
               ))}
             </div>
+
+            {/* Liberation (boom-w20s.16) — Audible only, and renders nothing at
+                all when the feature is off. NOTE: liberationStatus/Error/audioPath
+                are not yet carried on the row payload (the Books page reads via
+                the query DSL, which does not expose the migration-00082 columns
+                yet — see boom-w20s.16), so the panel currently shows the action
+                and its queue feedback rather than live per-book state. Progress
+                arrives as a toast and in Admin > Jobs meanwhile. */}
+            <LiberationPanel
+              externalId={head.externalId}
+              source={head.source}
+              liberationStatus={(head as { liberationStatus?: string }).liberationStatus}
+              liberationError={(head as { liberationError?: string }).liberationError}
+              audioPath={(head as { audioPath?: string }).audioPath}
+            />
 
             {/* Read history — a book can be read more than once (migration 00078). */}
             {work.data?.reads && work.data.reads.length > 0 && (

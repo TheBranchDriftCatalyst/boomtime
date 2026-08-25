@@ -1106,6 +1106,47 @@ export const api = {
       }>;
     }>(buildUrl("/api/v1/admin/books/diagnostics", params)),
 
+  // --- catalyst-books liberation (boom-w20s) --------------------------------
+  // The Libation rebuild. All mutations ENQUEUE a background job — a liberation
+  // is minutes of download plus minutes of remux, so none of these block on the
+  // work itself. Every route 404s when BOOM_FEATURE_BOOKS_LIBERATION is off (or
+  // no library path is configured), which is how the UI decides whether to show
+  // the controls at all.
+  getLiberationStatus: () =>
+    request<{
+      counts: Record<string, number>;
+      pending: number;
+      libraryPath: string;
+    }>("/api/v1/books/liberation/status"),
+
+  // force=true re-liberates a book the idempotency check would otherwise skip.
+  liberateBook: (externalId: string, force = false) =>
+    request<{ enqueued: boolean; jobId: number; asin: string }>(
+      buildUrl(
+        `/api/v1/books/items/${encodeURIComponent(externalId)}/liberate`,
+        force ? { force: "true" } : {},
+      ),
+      { method: "POST" },
+    ),
+
+  // deleteFile defaults to FALSE: forgetting the state is cheap, deleting a
+  // 600MB file the user has to re-download is not.
+  forgetLiberation: (externalId: string, deleteFile = false) =>
+    request<{ forgotten: boolean; fileDeleted: boolean }>(
+      buildUrl(
+        `/api/v1/books/items/${encodeURIComponent(externalId)}/liberate`,
+        deleteFile ? { deleteFile: "true" } : {},
+      ),
+      { method: "DELETE" },
+    ),
+
+  // `pending` comes back so the UI can say how many books were just queued.
+  sweepLiberation: (body: { limit?: number; force?: boolean } = {}) =>
+    request<{ enqueued: boolean; jobId: number; pending: number }>(
+      "/api/v1/books/liberate/sweep",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
   // Admin › Books › reading monitor (boom-books): thin control over the
   // SERVER-side persistent engine. GET reads its live state; PUT flips the
   // on/off switch and/or the toast mode. The panel polls GET lightly for status

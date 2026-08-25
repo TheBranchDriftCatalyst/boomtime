@@ -25,6 +25,7 @@ import {
 import type { LeafSort } from "@shared/features/explorer/useLeafSort";
 import { Card, CardContent } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
+import { LiberateAllButton } from "./LiberationPanel";
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
 import { Page } from "@shared/layout/Page";
 import { TabNav, tabClass } from "@shared/layout/PageTabs";
@@ -475,12 +476,17 @@ export function BooksPage() {
                     groupBy={groupBy}
                     onChange={setGroupBy}
                   />
-                  <Button asChild size="sm" variant="outline" className="ml-auto">
-                    <Link to="/app/settings?tab=connections">
-                      <Library className="mr-1.5 h-4 w-4" />
-                      Connect Amazon
-                    </Link>
-                  </Button>
+                  {/* Liberation sweep (boom-w20s.16). Renders nothing when the
+                      feature is off — it probes the status endpoint, which 404s. */}
+                  <div className="ml-auto flex items-center gap-2">
+                    <LiberateAllButton />
+                    <Button asChild size="sm" variant="outline">
+                      <Link to="/app/settings?tab=connections">
+                        <Library className="mr-1.5 h-4 w-4" />
+                        Connect Amazon
+                      </Link>
+                    </Button>
+                  </div>
                 </div>
 
                 <GroupableExplorer

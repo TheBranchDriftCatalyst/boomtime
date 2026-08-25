@@ -47,6 +47,18 @@ func Register(e *echo.Echo, h *Handler) {
 		e.GET("/api/v1/hardcover/search", h.HardcoverSearch)
 		// Orchestrator: chain the whole reading-sync pipeline behind ONE enqueue.
 		e.POST("/api/v1/books/sync-all", h.SyncAllBooks)
+
+		// ── Liberation (boom-w20s.15) — the Libation rebuild ─────────────────
+		// Nested under BooksEnabled AND gated on LiberationEnabled() (which also
+		// requires a configured library path), so with the feature off these
+		// paths 404 rather than existing and erroring. Same 404-when-off
+		// convention the e2e specs rely on elsewhere.
+		if h.Cfg.LiberationEnabled() {
+			e.POST("/api/v1/books/items/:externalId/liberate", h.LiberateBook)
+			e.DELETE("/api/v1/books/items/:externalId/liberate", h.ForgetLiberation)
+			e.POST("/api/v1/books/liberate/sweep", h.SweepLiberation)
+			e.GET("/api/v1/books/liberation/status", h.LiberationStatus)
+		}
 	}
 
 	// Hardcover connect (catalyst-books PUSH target). GET/DELETE status ALWAYS

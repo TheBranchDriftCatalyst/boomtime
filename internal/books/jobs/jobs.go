@@ -21,6 +21,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/hardcover"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/ingest/audible"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/ingest/kindle"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/liberate"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/pipeline"
 	corejobs "github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
@@ -34,6 +35,21 @@ import (
 type Services struct {
 	audio      *audible.Service
 	hcCuration *hardcover.PushService
+	liberation *liberate.Service
+	// libEnq is late-bound by WireEnqueuer: the SWEEP handler needs to enqueue a
+	// per-book job, but the provider does not exist yet when Register runs.
+	libEnq corejobs.Enqueuer
+}
+
+// Liberation returns the liberation service (nil when books or the liberation
+// flag is off, or when no library path is configured). The HTTP handler shares
+// this SAME instance so a manual "liberate this book" and a swept one run
+// identical code.
+func (s *Services) Liberation() *liberate.Service {
+	if s == nil {
+		return nil
+	}
+	return s.liberation
 }
 
 // CurationPush returns the inline Hardcover curation-push service (the per-row sync
@@ -50,7 +66,15 @@ func (s *Services) CurationPush() *hardcover.PushService {
 // (a corejobs.Enqueuer) exists. No-op when Books is disabled. Byte-identical to the old
 // `if audioSvc != nil { audioSvc.SetEnqueuer(provider) }`.
 func (s *Services) WireEnqueuer(enq corejobs.Enqueuer) {
-	if s == nil || s.audio == nil {
+	if s == nil {
+		return
+	}
+	// The liberation sweep enqueues one job per book, so it needs the provider
+	// too. Stored rather than pushed onto the service because liberate.Service
+	// deliberately knows nothing about the jobs subsystem — LiberateAll returns
+	// a list of ASINs and the HANDLER decides what to do with them.
+	s.libEnq = enq
+	if s.audio == nil {
 		return
 	}
 	s.audio.SetEnqueuer(enq)
@@ -391,7 +415,94 @@ func Register(reg *corejobs.Registry, database *db.DB, cfg *config.Config, notif
 
 	// Per-kind fleet-wide concurrency caps (books subset). Each external-API kind
 	// shares ONE throttled queue across pods+users — Hardcover's rate limit is global.
-	reg.SetConcurrency(audible.HardcoverPushKind, 1)        // hardcover-push (global Hardcover rate limit)
+	reg.SetConcurrency(audible.HardcoverPushKind, 1) // hardcover-push (global Hardcover rate limit)
+	// ── catalyst-books LIBERATION (boom-w20s.14) ─────────────────────────────
+	// Gated on LiberationEnabled(): books on AND the liberation flag on AND a
+	// library path configured. When it is off, libSvc stays nil and NEITHER kind
+	// registers — so an operator who flips only the flag, without a mounted
+	// library, gets a dark feature rather than audiobooks written to the pod's
+	// ephemeral layer.
+	//
+	// NOTE on heartbeating: no manual heartbeat is needed in the handlers. The
+	// jobs executor runs a background ticker for the whole duration of a handler
+	// (internal/jobs/exec.go startHeartbeat), which is what keeps a 20-minute
+	// download from being reaped. The service's Progress callback is for
+	// reporting, not for staying alive.
+	svcs := &Services{audio: audioSvc, hcCuration: hcCurationPush}
+	if libSvc := buildLiberation(cfg, database, notifyHub, logger); libSvc != nil {
+		svcs.liberation = libSvc
+
+		// One book, end to end.
+		reg.Register(liberate.LiberateBookKind, corejobs.HandlerFunc(func(jctx context.Context, job corejobs.Job) error {
+			var p liberate.BookPayload
+			if len(job.Payload) > 0 {
+				if err := json.Unmarshal(job.Payload, &p); err != nil {
+					return fmt.Errorf("books-liberate-book: bad payload: %w", err)
+				}
+			}
+			if p.Owner == "" {
+				p.Owner = job.Owner
+			}
+			if p.Owner == "" || p.ASIN == "" {
+				return fmt.Errorf("books-liberate-book: owner and asin are required")
+			}
+			_, err := libSvc.LiberateBook(jctx, p.Owner, p.ASIN, liberate.Options{Force: p.Force})
+			return err
+		}))
+
+		// The sweep: fan the owner's pending library out into per-book jobs.
+		reg.Register(liberate.LiberateSweepKind, corejobs.HandlerFunc(func(jctx context.Context, job corejobs.Job) error {
+			var p liberate.SweepPayload
+			if len(job.Payload) > 0 {
+				if err := json.Unmarshal(job.Payload, &p); err != nil {
+					return fmt.Errorf("books-liberate-sweep: bad payload: %w", err)
+				}
+			}
+			if p.Owner == "" {
+				p.Owner = job.Owner
+			}
+			if p.Owner == "" {
+				return fmt.Errorf("books-liberate-sweep: missing owner")
+			}
+			pending, err := libSvc.LiberateAll(jctx, p.Owner, p.Limit)
+			if err != nil {
+				return err
+			}
+			if svcs.libEnq == nil {
+				return fmt.Errorf("books-liberate-sweep: no job enqueuer wired")
+			}
+			var enqueued int
+			for _, asin := range pending {
+				payload, merr := json.Marshal(liberate.BookPayload{Owner: p.Owner, ASIN: asin, Force: p.Force})
+				if merr != nil {
+					continue
+				}
+				if _, eerr := svcs.libEnq.Enqueue(jctx, liberate.LiberateBookKind, payload, corejobs.Owner(p.Owner)); eerr != nil {
+					// One book failing to enqueue must not abandon the rest of
+					// the library; the next sweep picks it up again.
+					logger.Warn("liberate sweep: enqueue failed", "owner", p.Owner, "asin", asin, "err", eerr)
+					continue
+				}
+				enqueued++
+			}
+			logger.Info("liberate sweep: complete", "owner", p.Owner, "pending", len(pending), "enqueued", enqueued)
+			return nil
+		}))
+
+		// Cap 2 by default, NOT 1. Unlike the Hardcover kinds — capped at 1
+		// because Hardcover's rate limit is a GLOBAL resource — liberation is
+		// bounded by disk and CDN throughput, so a small fan-out is safe and
+		// meaningfully faster. Configurable via BOOM_BOOKS_LIBERATE_CONCURRENCY.
+		conc := cfg.BooksLiberateConcurrency
+		if conc < 1 {
+			conc = 1
+		}
+		reg.SetConcurrency(liberate.LiberateBookKind, conc)
+		reg.SetConcurrency(liberate.LiberateSweepKind, 1)
+		logger.Info("jobs: liberation handlers registered",
+			"libraryPath", cfg.BooksLibraryPath, "concurrency", conc)
+	}
+
 	reg.SetConcurrency(hardcover.CurationPushKind, 1)       // hardcover-push-curation (global Hardcover rate limit)
 	reg.SetConcurrency(hardcover.PullJobKind, 1)            // hardcover-pull (global Hardcover rate limit)
 	reg.SetConcurrency(kindle.KindleSyncKind, 1)            // books-kindle-sync
@@ -404,7 +515,47 @@ func Register(reg *corejobs.Registry, database *db.DB, cfg *config.Config, notif
 	reg.SetConcurrency(pipeline.BooksSyncAllKind, 1)        // books-sync-all orchestrator (chains the rate-limited stages)
 
 	logger.Info("jobs: audiobooks handlers registered", "audibleSyncEnabled", cfg.AudibleSyncEnabled())
-	return &Services{audio: audioSvc, hcCuration: hcCurationPush}
+	return svcs
+}
+
+// buildLiberation constructs the liberation service, or returns nil when the
+// feature is off or its storage cannot be opened.
+//
+// A BAD LIBRARY PATH RETURNS NIL rather than panicking or registering a kind
+// that fails on every job: liberate.NewFSSink deliberately refuses a root that
+// does not exist (an unmounted volume), and the right response at wiring time is
+// a loud log plus a dark feature, exactly as an absent ffmpeg is handled.
+func buildLiberation(cfg *config.Config, database *db.DB, notifyHub *notify.Hub, logger *slog.Logger) *liberate.Service {
+	if !cfg.LiberationEnabled() {
+		return nil
+	}
+	sink, err := liberate.NewFSSink(cfg.BooksLibraryPath)
+	if err != nil {
+		logger.Error("jobs: liberation DISABLED — library path unusable",
+			"path", cfg.BooksLibraryPath, "err", err)
+		return nil
+	}
+	dec := liberate.NewFFmpegDecryptor(cfg.BooksFfmpegPath)
+	// Probe at wiring time so a missing ffmpeg is a startup ERROR rather than a
+	// surprise on the first book. Non-fatal: the kinds still register, because
+	// an operator who installs ffmpeg and restarts should not also have to
+	// rediscover why liberation vanished.
+	if perr := dec.Available(context.Background()); perr != nil {
+		logger.Error("jobs: ffmpeg is NOT usable — liberation jobs will fail until it is installed",
+			"ffmpegPath", cfg.BooksFfmpegPath, "err", perr)
+	}
+	return &liberate.Service{
+		Store:     liberate.NewStore(database.Pool),
+		Amazon:    amazon.NewStore(database),
+		Sink:      sink,
+		Decryptor: dec,
+		Logger:    logger,
+		WorkDir:   cfg.BooksWorkPath,
+		Template:  cfg.BooksNamingTemplate,
+		// nil-safe: a nil hub means no toast, exactly as the audiobooks service
+		// treats it.
+		Notify: notifyHub,
+	}
 }
 
 // RegisterSchedules registers the catalyst-books leader-singleton schedules on sched,

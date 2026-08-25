@@ -4,6 +4,7 @@ import (
 	"log/slog"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/hardcover"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/liberate"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
@@ -24,6 +25,11 @@ type Handler struct {
 	// HardcoverPush runs a per-item Hardcover curation push INLINE (the per-row sync
 	// button); nil falls back to enqueuing.
 	HardcoverPush *hardcover.PushService
+	// Liberation is the SAME service instance the liberation job handlers use, so
+	// a book liberated from the UI and one liberated by the sweep run identical
+	// code. nil when liberation is not configured, which is what makes the
+	// liberation routes 404 rather than 500.
+	Liberation *liberate.Service
 }
 
 // New constructs a books.Handler with the shared core deps. Job enqueuer + Hardcover
@@ -37,3 +43,7 @@ func (h *Handler) SetJobEnqueuer(e jobs.Enqueuer) { h.JobEnqueuer = e }
 
 // SetHardcoverPush wires the inline curation-push service after construction.
 func (h *Handler) SetHardcoverPush(p *hardcover.PushService) { h.HardcoverPush = p }
+
+// SetLiberation wires the shared liberation service after construction. nil is a
+// valid value meaning "liberation is off".
+func (h *Handler) SetLiberation(s *liberate.Service) { h.Liberation = s }

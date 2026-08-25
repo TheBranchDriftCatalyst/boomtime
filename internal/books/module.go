@@ -17,6 +17,7 @@ import (
 	booksapi "github.com/TheBranchDriftCatalyst/boomtime/internal/books/api"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/hardcover"
 	booksjobs "github.com/TheBranchDriftCatalyst/boomtime/internal/books/jobs"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/liberate"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/catalyst"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
@@ -100,7 +101,20 @@ func (*Module) RegisterAdminRoutes(g *echo.Group, d catalyst.Deps) {
 func (m *Module) RegisterJobs(ctx context.Context, d catalyst.Deps) error {
 	m.svc = booksjobs.Register(d.Jobs, d.DB, d.Cfg, d.Notify, d.Logger)
 	m.SetHardcoverPush(m.svc.CurationPush())
+	// Hand the HTTP handler the SAME liberation service the job handlers use, so
+	// a book liberated from the UI and one liberated by the sweep run identical
+	// code. nil when liberation is off, which is what the routes check.
+	m.SetLiberation(m.svc.Liberation())
 	return nil
+}
+
+// SetLiberation forwards the shared liberation service onto the stashed handler.
+// No-op until RegisterRoutes has run — worker/drain roles register no routes, so
+// h stays nil and this is a safe no-op (mirrors SetHardcoverPush).
+func (m *Module) SetLiberation(s *liberate.Service) {
+	if m.h != nil {
+		m.h.SetLiberation(s)
+	}
 }
 
 // WireJobEnqueuer late-binds the jobs provider (a jobs.Enqueuer) once it exists:
