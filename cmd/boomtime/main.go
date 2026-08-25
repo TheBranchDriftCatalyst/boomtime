@@ -596,9 +596,24 @@ func runCmd() *cobra.Command {
 				// everything. Explicit BOOM_JOBS_KINDS / _EXCLUDE_KINDS still override
 				// (operator escape hatch). Only the local provider filters.
 				if lp, ok := provider.(*jobs.LocalProvider); ok {
-					include, exclude := jobs.DeriveKindFilter(cfg.Role, jobReg.OffloadKinds(), cfg.JobsKinds, cfg.JobsExcludeKinds)
+					offloadKinds := jobReg.OffloadKinds()
+					include, exclude := jobs.DeriveKindFilter(cfg.Role, offloadKinds, cfg.JobsKinds, cfg.JobsExcludeKinds)
 					lp.SetKindFilter(include, exclude)
 					logger.Info("jobs: kind filter", "role", cfg.Role, "include", include, "exclude", exclude)
+					// An env override silently DISCARDS the derived offload set, which
+					// makes Registry.SetOffload a no-op. That failed quietly once
+					// already: liberation was marked offload, the override masked it,
+					// and every job kept running on the server. If both are present,
+					// say so loudly — the derived set is the intended source of truth
+					// and the override is meant to be a temporary escape hatch.
+					if len(offloadKinds) > 0 && (len(cfg.JobsKinds) > 0 || len(cfg.JobsExcludeKinds) > 0) {
+						logger.Warn("jobs: env kind-filter OVERRIDE is masking the derived offload set — SetOffload has no effect",
+							"offloadKinds", offloadKinds,
+							"envInclude", cfg.JobsKinds,
+							"envExclude", cfg.JobsExcludeKinds,
+							"effectiveInclude", include,
+							"effectiveExclude", exclude)
+					}
 				}
 
 				// Job-layer concurrency throttle (fleet-wide per-kind caps set on

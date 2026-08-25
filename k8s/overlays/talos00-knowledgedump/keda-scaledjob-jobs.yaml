@@ -70,9 +70,12 @@ spec:
               # doing no work. Change both or neither.
               - name: BOOM_JOBS_KINDS
                 value: "avatar-render,label-image,books-liberate-book"
-              # boomtime-config (envFrom) sets BOOM_JOBS_EXCLUDE_KINDS=avatar-render
-              # for the server; clear it here (env overrides envFrom) or this pod
-              # would both include AND exclude avatar-render and claim nothing.
+              # Belt-and-braces: boomtime-config no longer sets
+              # BOOM_JOBS_EXCLUDE_KINDS (it made SetOffload dead code — see the
+              # comment there), so this clear is now a no-op. Kept so that if
+              # anyone re-adds the var to boomtime-config for an incident, this
+              # pod does not end up both including AND excluding its own kinds
+              # and claiming nothing.
               - name: BOOM_JOBS_EXCLUDE_KINDS
                 value: ""
               - name: BOOM_DB_USER

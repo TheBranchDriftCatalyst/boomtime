@@ -76,8 +76,22 @@ data:
   BOOM_S3_BUCKET: "boomtime-cards"
   BOOM_S3_USE_SSL: "false"
 
-  # ── kind-routing (boom-hney): heavy kinds fall through to the KEDA ScaledJob ─
-  BOOM_JOBS_EXCLUDE_KINDS: "avatar-render,label-image"
+  # ── kind-routing (boom-hney / boom-piig) ──────────────────────────────────
+  # BOOM_JOBS_EXCLUDE_KINDS is deliberately NOT set here any more.
+  #
+  # It used to pin "avatar-render,label-image". That looked harmless but was
+  # actively harmful: DeriveKindFilter treats ANY non-empty env include/exclude
+  # as a total override and skips the derived offload set entirely
+  # (internal/jobs/jobs.go). So the moment this var was set, Registry.SetOffload
+  # became dead code — marking a new kind offload silently did nothing, and the
+  # server kept claiming it. That is exactly what happened when liberation was
+  # offloaded: the kind was marked, the server ignored it, and every job still
+  # ran on the server pod.
+  #
+  # With it unset, the server's exclude list is DERIVED from the offload set, so
+  # a domain calling SetOffload is sufficient and routing lives in one place.
+  # The variable remains an operator escape hatch for incident response — set it
+  # temporarily, not permanently.
   BOOM_JOBS_UNIFIED: "true"
 
   # ── catalyst-books / catalyst-audiobooks master gate (boom-books) ───────────
