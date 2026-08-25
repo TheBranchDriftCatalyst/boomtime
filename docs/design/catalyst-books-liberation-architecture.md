@@ -573,6 +573,25 @@ ConfigMap change rather than a storage rollout.
 must be copied into the worker patch** — a job cannot write to a library it has
 not mounted.
 
+**Audiobookshelf already scans this directory — VERIFIED 2026-08-25.** In
+talos-homelab, `applications/media-experimental/base/storage.yaml` declares
+`synology-media-audiobooks-exp` at `${SYNOLOGY_VOLUME}/media/audiobooks`, and
+`applications/media-experimental/base/audiobookshelf/patch-deployment.yaml`
+mounts that claim at `/audiobooks`. With `SYNOLOGY_VOLUME=/volume1`
+(`clusters/catalyst-cluster/cluster-settings.yaml`), that is the SAME underlying
+directory boomtime writes into via `/volume1/media` + `subPath:
+audiobooks/liberated`.
+
+So liberated M4Bs surface in Audiobookshelf as a `liberated/` folder inside its
+existing library, with no further wiring. This is the payoff the filesystem-sink
+decision (§6) was made for, and it is why the atomic-commit rule is not
+theoretical: Audiobookshelf indexes on file appearance and will happily cache
+the duration and chapter data of a half-written file.
+
+There is also `${SYNOLOGY_VOLUME}/media/books` (`synology-media-books-exp`,
+mounted by `readarr` at `/data/synology/books`) — the natural sink if ebook
+liberation is ever built (see the Kindle spike).
+
 ---
 
 ## 8. Surfaces
