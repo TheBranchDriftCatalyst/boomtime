@@ -113,6 +113,17 @@ data:
   # remuxing against NFS is slow and would expose half-written files on the
   # share that media scanners could index.
   BOOM_BOOKS_WORK_PATH: "/tmp/boomtime-liberate"
+  # 5 concurrent liberations. NOTE this is per-PROCESS parallelism, not fan-out:
+  # liberation runs on the catalyst-go-jobs (Postgres) queue inside the SERVER
+  # pod, so all five run on one node. The KEDA ScaledObject scales
+  # boomtime-worker on the RabbitMQ image-jobs queue and does not see this work
+  # at all. Spreading liberation across nodes is a separate change (see boom-piig).
+  #
+  # SIZED AGAINST THE SCRATCH VOLUME: each in-flight book holds the AAXC plus the
+  # remuxed M4B, ~2GB for a long title, so 5 concurrent is ~10GB. The emptyDir in
+  # patch-server-audiobook-library.yaml was raised to 20Gi to keep headroom over
+  # that — raising this number without raising that one evicts the pod.
+  BOOM_BOOKS_LIBERATE_CONCURRENCY: "5"
   # Hardcover as the terminal sink (project_hardcover_terminal_sink): with dry-run
   # OFF, boomtime WRITES to the user's real Hardcover — status/finish/rating pushes
   # (curation edits, the per-row sync button, and the audible finished-book sweep)

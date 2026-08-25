@@ -20,15 +20,18 @@
 # job cannot write to a library it has not mounted.
 # WHY THE WORK DIR IS AN emptyDir WITH A sizeLimit
 # Liberation holds BOTH the encrypted AAXC and the remuxed M4B on disk at the
-# same time, so one long audiobook is ~2GB of scratch and the default
-# concurrency of 2 makes that ~4GB. Left on the container's writable layer that
-# is unbounded node ephemeral storage: exceed what the node has spare and
-# kubelet evicts pods — potentially OTHER pods on talos06, not just this one.
+# same time, so one long audiobook is ~2GB of scratch. At
+# BOOM_BOOKS_LIBERATE_CONCURRENCY=5 that is ~10GB in flight. Left on the
+# container's writable layer that is unbounded node ephemeral storage: exceed
+# what the node has spare and kubelet evicts pods — potentially OTHER pods on
+# talos06, not just this one.
 #
 # An emptyDir with sizeLimit turns that into a bounded, attributable failure:
 # only this pod is affected, and only if it genuinely exceeds the budget.
-# 12Gi is generous headroom over the ~4GB steady state, so normal operation
-# never approaches it.
+# 20Gi leaves real headroom over the ~10GB steady state.
+#
+# THESE TWO NUMBERS ARE COUPLED. Raising the concurrency without raising this
+# limit is how you turn "slow" into "evicted mid-download".
 #
 # emptyDir rather than a PVC on purpose — the scratch is fully re-derivable and
 # per-run, so persisting it across restarts would only preserve garbage. The
@@ -52,13 +55,13 @@ spec:
             requests:
               # Reserve scratch so the scheduler accounts for it rather than
               # discovering it under pressure.
-              ephemeral-storage: 2Gi
+              ephemeral-storage: 4Gi
             limits:
-              ephemeral-storage: 14Gi
+              ephemeral-storage: 22Gi
       volumes:
         - name: audiobook-library
           persistentVolumeClaim:
             claimName: boomtime-audiobook-library
         - name: liberate-work
           emptyDir:
-            sizeLimit: 12Gi
+            sizeLimit: 20Gi
