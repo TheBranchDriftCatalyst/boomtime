@@ -1,0 +1,25 @@
+---
+# Pins the always-on Deployment to --role=server.
+#
+# This is the surviving half of the old patch-server-rabbit.yaml, which set the
+# role AND the AMQP credentials in one file. Deleting that file for RabbitMQ
+# (boom-piig phase 3) silently dropped the role too, and the pod came up as
+# role=all — which derives an EMPTY kind filter, so the server started claiming
+# books-liberate-book again and quietly undid the fan-out from phase 1.
+#
+# The role is what makes DeriveKindFilter exclude offloaded kinds on the server
+# and include them on the KEDA drain pods. Without it the ScaledJob still spawns,
+# but the server races it for the same rows.
+#
+# Kept as its own file precisely so the next deletion is unambiguous: nothing
+# here is about a transport.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: boomtime
+spec:
+  template:
+    spec:
+      containers:
+        - name: boomtime
+          args: ["run", "--role=server"]

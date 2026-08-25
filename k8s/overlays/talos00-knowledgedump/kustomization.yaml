@@ -92,6 +92,7 @@ resources:
 patchesStrategicMerge:
   - app-config.yaml           # consolidated non-secret BOOM_* keys on boomtime-config
   - oidc-external-secret.yaml # BOOM_OIDC_CLIENT_SECRET (+ github/remote-write) from 1Password
+  - patch-server-role.yaml    # --role=server (drives the offload kind filter)
   - patch-server-s3.yaml      # BOOM_S3_ACCESS_KEY/SECRET_KEY (optional secretKeyRef)
   - patch-server-audiobook-library.yaml  # /media/audiobooks/liberated NFS mount (boom-w20s)
   # NOTE: authentik-blueprint-boomtime.yaml is an Authentik blueprint, NOT a k8s
