@@ -52,3 +52,45 @@ func TestJobQueueDepthUnreachableDBDoesNotFailGather(t *testing.T) {
 		t.Fatalf("a failing provider broke Gather: %v", err)
 	}
 }
+
+// The outcome gauges exist because ephemeral drain pods serve no metrics
+// endpoint, so per-process counters miss most execution. Pin the exposition.
+func TestJobOutcomesEmit(t *testing.T) {
+	RegisterJobOutcomes(func() (map[string]JobOutcomeSample, bool) {
+		return map[string]JobOutcomeSample{
+			"books-liberate-book": {
+				ByStatus: map[string]int{"done": 40, "failed": 2},
+				P50:      9 * time.Second,
+				P95:      45 * time.Second,
+			},
+		}, true
+	})
+	t.Cleanup(func() { RegisterJobOutcomes(nil) })
+
+	want := `
+# HELP jobs_recent_duration_seconds Duration percentile over jobs completed in the recent window, by kind. A WINDOWED GAUGE — do not use histogram_quantile on it.
+# TYPE jobs_recent_duration_seconds gauge
+jobs_recent_duration_seconds{kind="books-liberate-book",quantile="0.5"} 9
+jobs_recent_duration_seconds{kind="books-liberate-book",quantile="0.95"} 45
+`
+	if err := testutil.CollectAndCompare(&jobOutcomeCollector{}, strings.NewReader(want), "jobs_recent_duration_seconds"); err != nil {
+		t.Errorf("duration percentiles wrong: %v", err)
+	}
+
+	n, err := testutil.GatherAndCount(Registry, "jobs_recent_completions")
+	if err != nil {
+		t.Fatalf("gather: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("gathered %d completion series, want 2 (done + failed)", n)
+	}
+}
+
+func TestJobOutcomesUnreachableDBDoesNotFailGather(t *testing.T) {
+	RegisterJobOutcomes(func() (map[string]JobOutcomeSample, bool) { return nil, false })
+	t.Cleanup(func() { RegisterJobOutcomes(nil) })
+
+	if _, err := testutil.GatherAndCount(Registry, "jobs_recent_completions"); err != nil {
+		t.Fatalf("a failing provider broke Gather: %v", err)
+	}
+}

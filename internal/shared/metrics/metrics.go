@@ -255,7 +255,7 @@ func init() {
 	// Scrape-time pool collectors (DB + Redis). Unchecked collectors: they emit
 	// nothing until a provider is wired via RegisterDBPool / RegisterRedisPool
 	// (done from cmd at boot), so they're inert in tests that never register.
-	Registry.MustRegister(&dbPoolCollector{}, &redisPoolCollector{}, &amqpQueueCollector{}, &jobQueueCollector{})
+	Registry.MustRegister(&dbPoolCollector{}, &redisPoolCollector{}, &amqpQueueCollector{}, &jobQueueCollector{}, &jobOutcomeCollector{})
 }
 
 // RegisterBuildInfo publishes a boomtime_build_info{version,commit,go_version}
@@ -550,6 +550,72 @@ func (*jobQueueCollector) Collect(ch chan<- prometheus.Metric) {
 		ch <- prometheus.MustNewConstMetric(jobQueueDepthDesc, prometheus.GaugeValue, float64(s.Scheduled), kind, "scheduled")
 		ch <- prometheus.MustNewConstMetric(jobQueueDepthDesc, prometheus.GaugeValue, float64(s.Running), kind, "running")
 		ch <- prometheus.MustNewConstMetric(jobQueueOldestDesc, prometheus.GaugeValue, s.OldestQueuedAge.Seconds(), kind)
+	}
+}
+
+// JobOutcomeSample is one kind's recent terminal activity, read at scrape time.
+type JobOutcomeSample struct {
+	// ByStatus counts jobs that reached each terminal status in the window.
+	ByStatus map[string]int
+	// P50 / P95 are duration percentiles over completed jobs in the window.
+	P50, P95 time.Duration
+}
+
+var (
+	jobOutcomeMu       sync.RWMutex
+	jobOutcomeProvider func() (map[string]JobOutcomeSample, bool)
+)
+
+// RegisterJobOutcomes wires a scrape-time reader of recent per-kind terminal
+// outcomes and durations, derived from the jobs table.
+//
+// WHY FROM SQL RATHER THAN IN-PROCESS COUNTERS. Most job execution now happens
+// on KEDA ScaledJob drain pods, which deliberately run no HTTP server (see the
+// drain branch in cmd/boomtime) and are short-lived — a pod that lives 90
+// seconds may never be scraped at all. So jobs_run_total and
+// jobs_duration_seconds, which are per-process, systematically undercount
+// exactly the work that matters most.
+//
+// Reading the jobs table instead gives COMPLETE coverage regardless of which pod
+// ran the job, from the always-up server. The tradeoff is honest and worth
+// stating: these are WINDOWED GAUGES, not counters and histograms. Do not
+// rate() them. They answer "what happened recently" rather than "how much ever".
+func RegisterJobOutcomes(sample func() (map[string]JobOutcomeSample, bool)) {
+	jobOutcomeMu.Lock()
+	jobOutcomeProvider = sample
+	jobOutcomeMu.Unlock()
+}
+
+var (
+	jobRecentDesc = prometheus.NewDesc("jobs_recent_completions",
+		"Jobs reaching a terminal status in the recent window, by kind and status. A WINDOWED GAUGE derived from the jobs table — do not rate() it.",
+		[]string{"kind", "status"}, nil)
+	jobRecentDurDesc = prometheus.NewDesc("jobs_recent_duration_seconds",
+		"Duration percentile over jobs completed in the recent window, by kind. A WINDOWED GAUGE — do not use histogram_quantile on it.",
+		[]string{"kind", "quantile"}, nil)
+)
+
+type jobOutcomeCollector struct{}
+
+func (*jobOutcomeCollector) Describe(chan<- *prometheus.Desc) {}
+
+func (*jobOutcomeCollector) Collect(ch chan<- prometheus.Metric) {
+	jobOutcomeMu.RLock()
+	p := jobOutcomeProvider
+	jobOutcomeMu.RUnlock()
+	if p == nil {
+		return
+	}
+	byKind, ok := p()
+	if !ok {
+		return // DB unreachable this scrape — skip, don't fail Gather
+	}
+	for kind, s := range byKind {
+		for status, n := range s.ByStatus {
+			ch <- prometheus.MustNewConstMetric(jobRecentDesc, prometheus.GaugeValue, float64(n), kind, status)
+		}
+		ch <- prometheus.MustNewConstMetric(jobRecentDurDesc, prometheus.GaugeValue, s.P50.Seconds(), kind, "0.5")
+		ch <- prometheus.MustNewConstMetric(jobRecentDurDesc, prometheus.GaugeValue, s.P95.Seconds(), kind, "0.95")
 	}
 }
 

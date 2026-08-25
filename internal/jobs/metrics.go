@@ -85,3 +85,63 @@ func (s *Store) QueueDepth(ctx context.Context) (map[string]metrics.JobQueueSamp
 	}
 	return out, true
 }
+
+// outcomeWindow is how far back RecentOutcomes looks. 15 minutes is long enough
+// that a low-frequency kind still shows something between scrapes, and short
+// enough that the numbers describe "now" rather than the last deploy.
+const outcomeWindow = 15 * time.Minute
+
+// RecentOutcomes reads terminal counts + duration percentiles per kind for the
+// scrape-time gauges (metrics.RegisterJobOutcomes).
+//
+// This exists because most execution happens on ephemeral drain pods that serve
+// no metrics endpoint, so the per-process counters miss it. Reading the table
+// covers every pod. See the RegisterJobOutcomes doc for the counter-vs-gauge
+// tradeoff this accepts.
+func (s *Store) RecentOutcomes(ctx context.Context) (map[string]metrics.JobOutcomeSample, bool) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT kind, status, count(*) AS n,
+		       COALESCE(percentile_cont(0.5)  WITHIN GROUP (
+		                ORDER BY EXTRACT(EPOCH FROM (finished_at - started_at))), 0) AS p50,
+		       COALESCE(percentile_cont(0.95) WITHIN GROUP (
+		                ORDER BY EXTRACT(EPOCH FROM (finished_at - started_at))), 0) AS p95
+		  FROM jobs
+		 WHERE finished_at IS NOT NULL
+		   AND finished_at > now() - $1::interval
+		 GROUP BY kind, status`,
+		outcomeWindow.String())
+	if err != nil {
+		return nil, false
+	}
+	defer rows.Close()
+
+	out := map[string]metrics.JobOutcomeSample{}
+	for rows.Next() {
+		var kind, status string
+		var n int
+		var p50, p95 float64
+		if err := rows.Scan(&kind, &status, &n, &p50, &p95); err != nil {
+			return nil, false
+		}
+		e, ok := out[kind]
+		if !ok {
+			e = metrics.JobOutcomeSample{ByStatus: map[string]int{}}
+		}
+		e.ByStatus[status] = n
+		// Percentiles come back per (kind,status); keep the widest observed for
+		// the kind. A kind's p95 should reflect its slowest real work, and a
+		// failure that took four minutes before erroring is exactly the kind of
+		// slow run an operator wants surfaced, not averaged away.
+		if d := time.Duration(p50 * float64(time.Second)); d > e.P50 {
+			e.P50 = d
+		}
+		if d := time.Duration(p95 * float64(time.Second)); d > e.P95 {
+			e.P95 = d
+		}
+		out[kind] = e
+	}
+	if rows.Err() != nil {
+		return nil, false
+	}
+	return out, true
+}

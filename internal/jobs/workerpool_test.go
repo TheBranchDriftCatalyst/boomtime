@@ -172,3 +172,54 @@ func TestWorkerIDDisambiguatesSlots(t *testing.T) {
 		seen[id] = true
 	}
 }
+
+// The SQL behind the outcome gauges is the part that can be silently wrong —
+// percentile_cont syntax, the interval cast, the NULL handling. Exercise it
+// against a real database rather than trusting it compiles.
+func TestRecentOutcomesReadsRealRows(t *testing.T) {
+	s, ctx := newTestStore(t)
+
+	reg := NewRegistry()
+	reg.Register("fast", HandlerFunc(func(context.Context, Job) error { return nil }))
+	reg.Register("broken", HandlerFunc(func(context.Context, Job) error {
+		return context.DeadlineExceeded // any error → terminal failure at 1 attempt
+	}))
+
+	for i := 0; i < 3; i++ {
+		if _, err := s.Enqueue(ctx, "fast", "", nil, 1, time.Time{}); err != nil {
+			t.Fatalf("enqueue: %v", err)
+		}
+	}
+	if _, err := s.Enqueue(ctx, "broken", "", nil, 1, time.Time{}); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+
+	p := NewLocalProvider(s, quietLogger(), "outcomes-test")
+	p.SetWorkers(2)
+	if err := p.Drain(ctx, reg); err != nil {
+		t.Fatalf("Drain: %v", err)
+	}
+
+	out, ok := s.RecentOutcomes(ctx)
+	if !ok {
+		t.Fatal("RecentOutcomes reported not-ok against a live DB")
+	}
+
+	fast, hasFast := out["fast"]
+	if !hasFast {
+		t.Fatalf("no outcomes for kind 'fast'; got %v", out)
+	}
+	if fast.ByStatus["done"] != 3 {
+		t.Errorf("fast done = %d, want 3 (ByStatus = %v)", fast.ByStatus["done"], fast.ByStatus)
+	}
+	// Percentiles must be real numbers, not NULL-collapsed to something absurd.
+	if fast.P50 < 0 || fast.P95 < 0 {
+		t.Errorf("negative percentiles: p50=%v p95=%v", fast.P50, fast.P95)
+	}
+
+	if broken, hasBroken := out["broken"]; !hasBroken {
+		t.Error("no outcomes for the failing kind — failures must be visible, they are the point")
+	} else if broken.ByStatus["failed"] != 1 {
+		t.Errorf("broken failed = %d, want 1 (ByStatus = %v)", broken.ByStatus["failed"], broken.ByStatus)
+	}
+}

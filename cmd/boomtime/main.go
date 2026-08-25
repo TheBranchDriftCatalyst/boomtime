@@ -639,6 +639,18 @@ func runCmd() *cobra.Command {
 					return jobStore.QueueDepth(qctx)
 				})
 
+				// Recent terminal outcomes + duration percentiles, also read from the
+				// jobs table (boom-jokv follow-up). The per-process counters
+				// (jobs_run_total / jobs_duration_seconds) systematically undercount
+				// now that most execution happens on ephemeral drain pods that serve
+				// no metrics endpoint — this covers every pod from the always-up
+				// server.
+				metrics.RegisterJobOutcomes(func() (map[string]metrics.JobOutcomeSample, bool) {
+					octx, ocancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer ocancel()
+					return jobStore.RecentOutcomes(octx)
+				})
+
 				var jobsRedis *redis.Client
 				if cfg.RedisAddr != "" {
 					jobsRedis = redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPassword})
