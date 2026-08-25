@@ -636,7 +636,7 @@ func runCmd() *cobra.Command {
 				metrics.RegisterJobQueue(func() (map[string]metrics.JobQueueSample, bool) {
 					qctx, qcancel := context.WithTimeout(context.Background(), 3*time.Second)
 					defer qcancel()
-					return jobStore.QueueDepth(qctx)
+					return jobStore.QueueDepth(qctx, cfg.JobsLeaseTTL)
 				})
 
 				// Recent terminal outcomes + duration percentiles, also read from the

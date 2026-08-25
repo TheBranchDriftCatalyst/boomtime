@@ -47,12 +47,20 @@ func recordRun(kind, status string, started time.Time) {
 // Split queued (due now) from scheduled (run_at in the future) deliberately: a
 // backlog alert must not fire on work that is merely scheduled for later, which
 // is the normal steady state for every periodic kind.
-func (s *Store) QueueDepth(ctx context.Context) (map[string]metrics.JobQueueSample, bool) {
+func (s *Store) QueueDepth(ctx context.Context, leaseTTL time.Duration) (map[string]metrics.JobQueueSample, bool) {
+	if leaseTTL <= 0 {
+		leaseTTL = 2 * time.Minute
+	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT kind,
 		       count(*) FILTER (WHERE status = 'queued' AND run_at <= now())        AS queued,
 		       count(*) FILTER (WHERE status = 'queued' AND run_at >  now())        AS scheduled,
-		       count(*) FILTER (WHERE status = 'running')                           AS running,
+		       -- Heartbeating vs lease-lapsed. COALESCE mirrors ReapStaleRunning:
+		       -- pre-heartbeat rows fall back to locked_at/started_at.
+		       count(*) FILTER (WHERE status = 'running'
+		                AND COALESCE(heartbeat_at, locked_at, started_at) > now() - $1::interval) AS running,
+		       count(*) FILTER (WHERE status = 'running'
+		                AND COALESCE(heartbeat_at, locked_at, started_at) <= now() - $1::interval) AS stale,
 		       -- FILTER binds to the AGGREGATE, so it goes inside min(...), not
 		       -- outside the EXTRACT. Written the other way round this is a
 		       -- syntax error, the query returns ok=false, and the collector
@@ -61,7 +69,7 @@ func (s *Store) QueueDepth(ctx context.Context) (map[string]metrics.JobQueueSamp
 		                FILTER (WHERE status = 'queued' AND run_at <= now()))), 0) AS oldest_secs
 		  FROM jobs
 		 WHERE status IN ('queued', 'running')
-		 GROUP BY kind`)
+		 GROUP BY kind`, leaseTTL.String())
 	if err != nil {
 		// ok=false: degrade the scrape rather than failing Gather for every
 		// other metric on the endpoint.
@@ -72,15 +80,16 @@ func (s *Store) QueueDepth(ctx context.Context) (map[string]metrics.JobQueueSamp
 	out := map[string]metrics.JobQueueSample{}
 	for rows.Next() {
 		var kind string
-		var queued, scheduled, running int
+		var queued, scheduled, running, stale int
 		var oldestSecs float64
-		if err := rows.Scan(&kind, &queued, &scheduled, &running, &oldestSecs); err != nil {
+		if err := rows.Scan(&kind, &queued, &scheduled, &running, &stale, &oldestSecs); err != nil {
 			return nil, false
 		}
 		out[kind] = metrics.JobQueueSample{
 			Queued:          queued,
 			Scheduled:       scheduled,
 			Running:         running,
+			Stale:           stale,
 			OldestQueuedAge: time.Duration(oldestSecs * float64(time.Second)),
 		}
 	}

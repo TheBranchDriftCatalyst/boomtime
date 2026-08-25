@@ -499,8 +499,18 @@ type JobQueueSample struct {
 	// Scheduled is rows queued for the FUTURE (run_at > now()). Split out so a
 	// backlog alert is not tripped by work that is merely scheduled.
 	Scheduled int
-	// Running is rows currently claimed.
+	// Running is rows claimed AND heartbeating — i.e. actually executing
+	// somewhere right now.
 	Running int
+	// Stale is rows still marked running whose heartbeat has lapsed past the
+	// lease: their pod died and the reaper has not reclaimed them yet.
+	//
+	// Split out because lumping these into Running makes the gauge lie. After a
+	// deploy that restarts pods mid-job, DB status='running' overcounts live
+	// execution — observed at 10 while the fleet semaphore held a correct 5. A
+	// standing non-zero Stale also means something real: pods are dying, or the
+	// reaper is not keeping up.
+	Stale int
 	// OldestQueuedAge is how long the oldest DUE row has waited. This is the
 	// staleness signal — depth alone cannot distinguish "1000 jobs draining
 	// briskly" from "3 jobs wedged for an hour", and the second is the outage.
@@ -523,7 +533,7 @@ func RegisterJobQueue(sample func() (map[string]JobQueueSample, bool)) {
 
 var (
 	jobQueueDepthDesc = prometheus.NewDesc("jobs_queue_depth",
-		"Jobs in the Postgres queue by kind and state (queued=due now, scheduled=future, running).",
+		"Jobs in the Postgres queue by kind and state (queued=due now, scheduled=future, running=heartbeating, stale=lease lapsed, awaiting reap).",
 		[]string{"kind", "state"}, nil)
 	jobQueueOldestDesc = prometheus.NewDesc("jobs_queue_oldest_seconds",
 		"Age of the oldest DUE queued job, by kind. The staleness signal — depth alone cannot distinguish a brisk backlog from a wedged one.",
@@ -549,6 +559,7 @@ func (*jobQueueCollector) Collect(ch chan<- prometheus.Metric) {
 		ch <- prometheus.MustNewConstMetric(jobQueueDepthDesc, prometheus.GaugeValue, float64(s.Queued), kind, "queued")
 		ch <- prometheus.MustNewConstMetric(jobQueueDepthDesc, prometheus.GaugeValue, float64(s.Scheduled), kind, "scheduled")
 		ch <- prometheus.MustNewConstMetric(jobQueueDepthDesc, prometheus.GaugeValue, float64(s.Running), kind, "running")
+		ch <- prometheus.MustNewConstMetric(jobQueueDepthDesc, prometheus.GaugeValue, float64(s.Stale), kind, "stale")
 		ch <- prometheus.MustNewConstMetric(jobQueueOldestDesc, prometheus.GaugeValue, s.OldestQueuedAge.Seconds(), kind)
 	}
 }

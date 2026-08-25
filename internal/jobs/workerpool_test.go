@@ -250,7 +250,7 @@ func TestQueueDepthReadsRealRows(t *testing.T) {
 		}
 	}
 
-	out, ok := s.QueueDepth(ctx)
+	out, ok := s.QueueDepth(ctx, 2*time.Minute)
 	if !ok {
 		t.Fatal("QueueDepth reported not-ok against a live DB — the query is broken")
 	}
@@ -284,5 +284,41 @@ func TestQueueDepthReadsRealRows(t *testing.T) {
 	}
 	if later.OldestQueuedAge != 0 {
 		t.Errorf("oldest age = %v, want 0 when nothing is due", later.OldestQueuedAge)
+	}
+}
+
+// A row still marked running whose heartbeat has lapsed is STALE, not running.
+// Counting it as running makes the gauge overcount live execution after any
+// deploy that restarts pods mid-job — observed at 10 while the fleet semaphore
+// correctly held 5.
+func TestQueueDepthSeparatesStaleFromRunning(t *testing.T) {
+	s, ctx := newTestStore(t)
+
+	id, err := s.Enqueue(ctx, "stale-kind", "", nil, 1, time.Time{})
+	if err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	if _, _, err := s.ClaimNext(ctx, "dead-pod", nil, nil); err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	// Simulate the pod dying: the row stays running, the heartbeat stops.
+	if _, err := s.pool.Exec(ctx,
+		`UPDATE jobs SET heartbeat_at = now() - interval '10 minutes',
+		                 locked_at    = now() - interval '10 minutes',
+		                 started_at   = now() - interval '10 minutes'
+		  WHERE id = $1`, id); err != nil {
+		t.Fatalf("age the row: %v", err)
+	}
+
+	out, ok := s.QueueDepth(ctx, 2*time.Minute)
+	if !ok {
+		t.Fatal("QueueDepth not-ok")
+	}
+	got := out["stale-kind"]
+	if got.Stale != 1 {
+		t.Errorf("stale = %d, want 1 — a dead pod's row must not be counted as live", got.Stale)
+	}
+	if got.Running != 0 {
+		t.Errorf("running = %d, want 0 — the heartbeat lapsed well past the lease", got.Running)
 	}
 }
