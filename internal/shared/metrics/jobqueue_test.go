@@ -14,7 +14,7 @@ import (
 func TestJobQueueDepthEmits(t *testing.T) {
 	RegisterJobQueue(func() (map[string]JobQueueSample, bool) {
 		return map[string]JobQueueSample{
-			"books-liberate-book": {Queued: 319, Scheduled: 0, Running: 3, OldestQueuedAge: 90 * time.Minute},
+			"books-liberate-book": {Queued: 319, Scheduled: 0, Running: 3, Stale: 2, OldestQueuedAge: 90 * time.Minute},
 		}, true
 	})
 	t.Cleanup(func() { RegisterJobQueue(nil) })
@@ -23,20 +23,21 @@ func TestJobQueueDepthEmits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("gather: %v", err)
 	}
-	// 3 states + 1 oldest-age series.
-	if got != 4 {
-		t.Errorf("gathered %d series, want 4 (queued/scheduled/running + oldest)", got)
+	// 4 states + 1 oldest-age series.
+	if got != 5 {
+		t.Errorf("gathered %d series, want 5 (queued/scheduled/running/stale + oldest)", got)
 	}
 
 	// Assert the actual exposition text, not just the series count — a gauge
 	// with the right cardinality but the wrong value is the failure that would
 	// make a dashboard lie.
 	want := `
-# HELP jobs_queue_depth Jobs in the Postgres queue by kind and state (queued=due now, scheduled=future, running).
+# HELP jobs_queue_depth Jobs in the Postgres queue by kind and state (queued=due now, scheduled=future, running=heartbeating, stale=lease lapsed, awaiting reap).
 # TYPE jobs_queue_depth gauge
 jobs_queue_depth{kind="books-liberate-book",state="queued"} 319
 jobs_queue_depth{kind="books-liberate-book",state="running"} 3
 jobs_queue_depth{kind="books-liberate-book",state="scheduled"} 0
+jobs_queue_depth{kind="books-liberate-book",state="stale"} 2
 `
 	if err := testutil.CollectAndCompare(&jobQueueCollector{}, strings.NewReader(want), "jobs_queue_depth"); err != nil {
 		t.Errorf("depth exposition wrong: %v", err)
