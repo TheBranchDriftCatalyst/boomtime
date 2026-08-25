@@ -89,23 +89,24 @@ data:
   BOOM_AUDIBLE_SYNC_INTERVAL: "1h"
 
   # ── catalyst-books liberation (boom-w20s) ─────────────────────────────────
-  # DISABLED AGAIN 2026-08-25, deliberately — this is a KILL SWITCH, not a
-  # rollback of the feature.
+  # RE-ENABLED 2026-08-25 after the 403 incident was root-caused and fixed.
   #
-  # The first real sweep enqueued ~1040 books-liberate-book jobs and EVERY
-  # download returned CloudFront "403 Request blocked" — a WAF/bot block, not an
-  # auth failure. With the kinds registered, the queue drained at ~3 jobs/second
-  # straight into Amazon. Turning the flag off unregisters the job kinds, so the
-  # queued backlog sits inert instead of executing.
+  # WHAT HAPPENED: the first sweep enqueued ~1040 jobs and every download got a
+  # CloudFront "403 Request blocked" WAF page. fetch.go was attaching ADP device-
+  # auth headers to the presigned CDN URL on an inference that was never
+  # verified, and sending Go's default User-Agent. Libation sends exactly one
+  # header — the Audible-iOS User-Agent paired with our device type — and no
+  # device auth at all. fetch.go now does the same (commit aaac0fe).
   #
-  # ROOT CAUSE (see boom-w20s follow-up): fetch.go attaches the ADP headers on
-  # the assumption that they are what the CDN wants. That assumption came from
-  # the probe establishing a BARE GET 403s — it was never confirmed that the
-  # SIGNED request succeeds. The probe was extended to test exactly that
-  # (bare-then-signed), but the extended probe has not been run.
+  # SAFE TO RE-ENABLE: the failed backlog has fully drained (0 queued, 0
+  # running), and there is still NO schedule on books-liberate-sweep, so nothing
+  # runs unless someone clicks or invokes the CLI.
   #
-  # DO NOT re-enable until the liberation probe reports probe 3 as a PASS.
-  BOOM_FEATURE_BOOKS_LIBERATION: "false"
+  # BEFORE SWEEPING AGAIN: run Admin > Books > Source diagnostics > Liberation.
+  # Probe 3 now sweeps all four header combinations and names the one the CDN
+  # accepts. It requests a single byte and downloads nothing. Confirm it PASSES
+  # on "User-Agent only" before liberating more than one book.
+  BOOM_FEATURE_BOOKS_LIBERATION: "true"
   # Library root INSIDE the container; backed by the NFS subPath mount.
   BOOM_BOOKS_LIBRARY_PATH: "/media/audiobooks/liberated"
   # Scratch for download + ffmpeg convert. Deliberately NOT on the NFS mount:
