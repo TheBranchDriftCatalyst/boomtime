@@ -32,6 +32,7 @@ import {
 } from "@books/features/books/cells";
 import { BOOK_STATUSES, type BookStatus } from "@shared/types/meta";
 import { openHardcover } from "@books/features/books/hardcover";
+import { LiberationBadge } from "@books/features/books/LiberationPanel";
 import type {
   Axis,
   Column,
@@ -112,7 +113,28 @@ export const READING_AXES: Axis[] = [
   // Hardcover list membership (Guilty Pleasures, Owned, …) — a book property
   // (migration 00077). v1 groups by the first list; the panel shows all chips.
   { id: "list", label: "List" },
+  // Liberation state (boom-w20s, migration 00082): grouping by this answers
+  // "what is left to liberate" in one click. Books never attempted land in the
+  // 'none' bucket, COALESCEd server-side so the axis and the leaf column agree.
+  { id: "liberationStatus", label: "Liberation" },
 ];
+
+// LIBERATION_SORT ranks liberation states for column sorting. Higher sorts
+// first. Deliberately not alphabetical: the useful reading of this column is
+// triage, so done > in-flight > broken > untouched.
+const LIBERATION_SORT: Record<string, number> = {
+  liberated: 5,
+  converting: 4,
+  downloading: 4,
+  licensing: 4,
+  pending: 3,
+  failed: 2,
+  unsupported_codec: 2,
+  unsupported_format: 2,
+  denied: 1,
+  skipped: 1,
+  none: 0,
+};
 
 // --- Leaf columns ------------------------------------------------------------
 
@@ -190,6 +212,17 @@ export const BOOK_COLUMNS: Column<ReadingItemDTO>[] = [
     render: (r) => guardClick(<FinishedEditor item={r} />),
     cellClassName: "whitespace-nowrap",
     defaultVisible: true,
+  },
+  {
+    id: "liberation",
+    header: "Liberation",
+    // Sort liberated first, then in-flight, then problems, then untouched — the
+    // order someone scanning for "what still needs doing" actually wants.
+    get: (r) => LIBERATION_SORT[r.liberationStatus ?? "none"] ?? 0,
+    render: (r) => <LiberationBadge status={r.liberationStatus} />,
+    // Hidden by default: liberation is off unless explicitly enabled, and an
+    // always-on column would be permanently empty for everyone else.
+    defaultVisible: false,
   },
   {
     id: "rating",

@@ -182,6 +182,21 @@ export interface ReadingItemDTO {
   finishedAtOverride?: string | null;
   // Richer metadata (boom-books) — optional; a low-fidelity source omits them.
   // Powers the Books page covers + fuller rows.
+  // --- Liberation state (boom-w20s, migration 00082) -----------------------
+  // Carried on the query-DSL leaf projection (internal/shared/query/domains.go),
+  // so a rows response renders per-book liberation state without a second fetch.
+  //   liberationStatus — 'none' when never attempted (COALESCEd server-side, so
+  //                      it matches the group-by axis of the same name); else
+  //                      pending|licensing|downloading|converting|liberated|
+  //                      failed|denied|unsupported_codec|unsupported_format|skipped
+  //   audioPath        — path RELATIVE to BOOM_BOOKS_LIBRARY_PATH
+  //   contentFormat    — Audible's AAX_44_128 etc; what the remuxer was handed
+  liberationStatus?: string;
+  liberationError?: string | null;
+  liberatedAt?: string | null;
+  audioPath?: string | null;
+  audioBytes?: number | null;
+  contentFormat?: string | null;
   coverUrl?: string;
   subtitle?: string;
   series?: string;

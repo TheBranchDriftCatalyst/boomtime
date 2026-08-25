@@ -151,18 +151,15 @@ export function BookDetailSheet({
             </div>
 
             {/* Liberation (boom-w20s.16) — Audible only, and renders nothing at
-                all when the feature is off. NOTE: liberationStatus/Error/audioPath
-                are not yet carried on the row payload (the Books page reads via
-                the query DSL, which does not expose the migration-00082 columns
-                yet — see boom-w20s.16), so the panel currently shows the action
-                and its queue feedback rather than live per-book state. Progress
-                arrives as a toast and in Admin > Jobs meanwhile. */}
+                all when the feature is off. State comes straight off the row: the
+                query-DSL leaf projection carries the migration-00082 columns. */}
             <LiberationPanel
               externalId={head.externalId}
               source={head.source}
-              liberationStatus={(head as { liberationStatus?: string }).liberationStatus}
-              liberationError={(head as { liberationError?: string }).liberationError}
-              audioPath={(head as { audioPath?: string }).audioPath}
+              liberationStatus={head.liberationStatus}
+              liberationError={head.liberationError}
+              audioPath={head.audioPath}
+              audioBytes={head.audioBytes}
             />
 
             {/* Read history — a book can be read more than once (migration 00078). */}

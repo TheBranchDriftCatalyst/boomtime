@@ -46,7 +46,7 @@ type LogHub struct {
 
 // DefaultLogHubCapacity is the number of recent log entries retained for
 // reload/backfill.
-const DefaultLogHubCapacity = 1000
+const DefaultLogHubCapacity = 10000
 
 // NewLogHub creates a hub with the given ring-buffer capacity (<=0 uses the
 // default).

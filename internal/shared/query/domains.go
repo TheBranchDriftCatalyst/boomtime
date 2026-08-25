@@ -99,6 +99,13 @@ func registerReading() {
 		// it is in the reading_items measures' Dims whitelist so it can filter, but
 		// the FE offers no title group axis (grouping by a near-unique key is moot).
 		"title": {Name: "title", Table: items, Expr: "title"},
+		// liberationStatus is the catalyst-books LIBERATION axis (boom-w20s,
+		// migration 00082): has this title been downloaded + DRM-stripped into the
+		// local library, and if not, why. Rows never attempted are NULL in the
+		// column, which would silently vanish from a group-by, so they are folded
+		// into an explicit 'none' bucket — "how many have I not liberated" is the
+		// question this axis mostly gets asked.
+		"liberationStatus": {Name: "liberationStatus", Table: items, Expr: "COALESCE(liberation_status, 'none')"},
 	}
 
 	Register(Domain{
@@ -118,7 +125,7 @@ func registerReading() {
 				Expr:     "count(*)",
 				DateCol:  "finished_at",
 				OwnerCol: "owner",
-				Dims:     []string{"source", "status", "statusDerived", "isMatched", "syncState", "series", "author", "genre", "list", "title"},
+				Dims:     []string{"source", "status", "statusDerived", "isMatched", "syncState", "series", "author", "genre", "list", "title", "liberationStatus"},
 			},
 			"runtime": {
 				Name:     "runtime",
@@ -126,7 +133,7 @@ func registerReading() {
 				Expr:     "sum(runtime_min)",
 				DateCol:  "finished_at",
 				OwnerCol: "owner",
-				Dims:     []string{"source", "status", "statusDerived", "isMatched", "syncState", "series", "author", "genre", "list", "title"},
+				Dims:     []string{"source", "status", "statusDerived", "isMatched", "syncState", "series", "author", "genre", "list", "title", "liberationStatus"},
 			},
 			// finished is a rollup-oriented measure: how many rows in a group are
 			// finished — counted off EFFECTIVE status='read' (migration 00069), so a
@@ -139,7 +146,7 @@ func registerReading() {
 				Expr:     "sum(case when COALESCE(status_override, status) = 'read' then 1 else 0 end)",
 				DateCol:  "finished_at",
 				OwnerCol: "owner",
-				Dims:     []string{"source", "status", "statusDerived", "isMatched", "syncState", "series", "author", "genre", "list", "title"},
+				Dims:     []string{"source", "status", "statusDerived", "isMatched", "syncState", "series", "author", "genre", "list", "title", "liberationStatus"},
 			},
 		},
 		Dimensions: dims,
@@ -187,6 +194,18 @@ func registerReading() {
 				// Hardcover list names (jsonb array) — a book property (migration 00077).
 				{Name: "hardcoverLists", Expr: "hardcover_lists"},
 				{Name: "syncedAt", Expr: "synced_at"},
+				// Liberation state (boom-w20s, migration 00082). Carried on the leaf
+				// projection so the Books explorer can show + facet it and the detail
+				// sheet can render live per-book state, rather than the FE having to
+				// fetch it per row. liberationStatus is COALESCEd to 'none' to match
+				// the dimension above — the column and the axis must not disagree
+				// about what an un-attempted book is called.
+				{Name: "liberationStatus", Expr: "COALESCE(liberation_status, 'none')"},
+				{Name: "liberationError", Expr: "liberation_error"},
+				{Name: "liberatedAt", Expr: "liberated_at"},
+				{Name: "audioPath", Expr: "audio_path"},
+				{Name: "audioBytes", Expr: "audio_bytes"},
+				{Name: "contentFormat", Expr: "content_format"},
 			},
 		},
 	})

@@ -37,7 +37,9 @@ const STATUS_STYLE: Record<string, string> = {
 };
 
 export function LiberationBadge({ status }: { status?: string | null }) {
-  if (!status) return null;
+  // 'none' is the server-side COALESCE for a book never attempted (it exists so
+  // the group-by axis has a bucket). There is nothing to badge.
+  if (!status || status === "none") return null;
   const style = STATUS_STYLE[status] ?? "bg-muted text-muted-foreground border-border";
   return (
     <span className={"rounded border px-1.5 py-0.5 font-mono text-[11px] " + style}>
@@ -66,12 +68,14 @@ export function LiberationPanel({
   liberationStatus,
   liberationError,
   audioPath,
+  audioBytes,
 }: {
   externalId: string;
   source: string;
   liberationStatus?: string | null;
   liberationError?: string | null;
   audioPath?: string | null;
+  audioBytes?: number | null;
 }) {
   const { available } = useLiberationAvailable();
   const qc = useQueryClient();
@@ -100,6 +104,9 @@ export function LiberationPanel({
 
   const inFlight = IN_FLIGHT.has(liberationStatus ?? "");
   const done = liberationStatus === "liberated";
+  // Denied is TERMINAL — Amazon refused the license, and retrying is how an
+  // account gets flagged. Offer no button for it.
+  const denied = liberationStatus === "denied";
   const busy = liberate.isPending || forget.isPending;
 
   return (
@@ -112,7 +119,10 @@ export function LiberationPanel({
       </div>
 
       {audioPath && (
-        <p className="break-all font-mono text-[11px] text-muted-foreground">{audioPath}</p>
+        <p className="break-all font-mono text-[11px] text-muted-foreground">
+          {audioPath}
+          {audioBytes ? ` · ${fmtBytes(audioBytes)}` : ""}
+        </p>
       )}
 
       {liberationError && (
@@ -126,7 +136,8 @@ export function LiberationPanel({
         <Button
           size="sm"
           variant={done ? "outline" : "default"}
-          disabled={busy || inFlight}
+          disabled={busy || inFlight || denied}
+          title={denied ? "Audible refused a license for this title" : undefined}
           onClick={() => liberate.mutate(done)}
         >
           {busy ? (
@@ -224,6 +235,19 @@ export function LiberateAllButton() {
  * at 128kbps runs ~400MB; the point is order-of-magnitude honesty before a user
  * commits a NAS to it, not accuracy we cannot have without licensing every book.
  */
+/** fmtBytes renders a stored file size. */
+function fmtBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let v = n / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v.toFixed(1)} ${units[i]}`;
+}
+
 function estimateGB(books: number): string {
   const gb = (books * 0.4).toFixed(books * 0.4 < 10 ? 1 : 0);
   return `${gb} GB`;

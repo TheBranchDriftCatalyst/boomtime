@@ -16,6 +16,7 @@ vi.mock("@shared/lib/queryApi", () => ({ runQuery: runQueryMock }));
 
 // Imported AFTER the mock is registered.
 import {
+  BOOK_COLUMNS,
   buildWhere,
   deriveHeroStats,
   deriveMatchStats,
@@ -415,5 +416,60 @@ describe("makeHeroSpec", () => {
       makeHeroSpec({ source: "hardcover", status: "all",
       matched: "all", search: "" }).where,
     ).toEqual({ kind: "leaf", dim: "source", op: "eq", values: ["hardcover"] });
+  });
+});
+
+// --- Liberation column + axis (boom-w20s.16) --------------------------------
+//
+// The DSL COALESCEs a never-attempted book's liberation_status to 'none' so the
+// group-by axis has a bucket. Column and axis therefore have to agree about that
+// spelling, and the column's sort has to be useful for triage rather than
+// alphabetical — those are the two things worth pinning.
+describe("liberation column", () => {
+  const col = () => {
+    const c = BOOK_COLUMNS.find((c) => c.id === "liberation");
+    if (!c) throw new Error("liberation column is missing from BOOK_COLUMNS");
+    return c;
+  };
+
+  const row = (liberationStatus?: string) =>
+    ({ externalId: "B0", source: "audible", liberationStatus }) as unknown as ReadingItemDTO;
+
+  it("is offered as a group-by axis", () => {
+    const axis = READING_AXES.find((a) => a.id === "liberationStatus");
+    expect(axis, "liberationStatus should be groupable").toBeTruthy();
+    expect(axis?.label).toBe("Liberation");
+  });
+
+  it("is hidden by default — liberation is off for most installs", () => {
+    // An always-visible column would be permanently empty for anyone who has not
+    // enabled the feature.
+    expect(col().defaultVisible).toBe(false);
+  });
+
+  it("sorts for triage: done > in-flight > broken > untouched", () => {
+    const rank = (s?: string) => col().get?.(row(s)) as number;
+
+    expect(rank("liberated")).toBeGreaterThan(rank("downloading"));
+    expect(rank("downloading")).toBeGreaterThan(rank("pending"));
+    expect(rank("pending")).toBeGreaterThan(rank("failed"));
+    expect(rank("failed")).toBeGreaterThan(rank("denied"));
+    expect(rank("denied")).toBeGreaterThan(rank("none"));
+    // A book never attempted must rank lowest, not vanish or sort oddly.
+    expect(rank("none")).toBe(0);
+    expect(rank(undefined)).toBe(0);
+  });
+
+  it("ranks all three failure states together, below in-flight", () => {
+    const rank = (s: string) => col().get?.(row(s)) as number;
+    expect(rank("unsupported_codec")).toBe(rank("failed"));
+    expect(rank("unsupported_format")).toBe(rank("failed"));
+    expect(rank("failed")).toBeLessThan(rank("licensing"));
+  });
+
+  it("ranks an unknown future status without throwing", () => {
+    // A new server-side status must not break the column before the FE knows it.
+    expect(() => col().get?.(row("some_new_status"))).not.toThrow();
+    expect(col().get?.(row("some_new_status"))).toBe(0);
   });
 });
