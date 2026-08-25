@@ -72,7 +72,12 @@ LABEL org.opencontainers.image.title="boomtime" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.source="https://github.com/TheBranchDriftCatalyst/boomtime" \
       org.opencontainers.image.licenses="Unlicense"
-RUN apk add --no-cache ca-certificates tzdata bash bash-completion && adduser -D -u 10001 boomtime
+# ffmpeg: the catalyst-books liberation remux (boom-w20s.9) shells out to it to
+# strip AAXC DRM and mux the M4B (-c:a copy, no re-encode). ~80MB on the runtime
+# layer. It is only invoked when BOOM_FEATURE_BOOKS_LIBERATION is on, and the
+# server probes `ffmpeg -version` at startup in that case — so an image WITHOUT
+# it still boots fine with the feature off.
+RUN apk add --no-cache ca-certificates tzdata bash bash-completion ffmpeg && adduser -D -u 10001 boomtime
 COPY --from=server /out/boomtime /usr/local/bin/boomtime
 # Bake shell completions into the image at build time (boom-0oe.10). Generation
 # is offline (no DB) and runs in THIS stage so the binary executes on the target

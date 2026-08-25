@@ -14,12 +14,19 @@
 > NEEDS-LIVE-VERIFY items in §2 are now RESOLVED — see §2.6 for the results and
 > what changed because of them. The remaining unknowns are noted inline.
 >
-> **Implementation status (2026-08-24).** Built and green: `SignedPost` +
-> licensing (§2.1), voucher decrypt (§2.2), naming template + FS sink (§6),
-> config gate (§7), prod storage (§7.1), and the live-verification harness
-> (§9.1). Not yet built: streaming download (§2.3), the ffmpeg decryptor (§2.4),
-> chapters/tags (§2.5), the migration (§3), the service (§4), jobs (§5), and the
-> HTTP/FE/CLI surfaces (§8).
+> **Implementation status (2026-08-24).** The whole PIPELINE is built and green —
+> `SignedPost` + licensing (§2.1), voucher decrypt (§2.2), streaming download
+> (§2.3), the ffmpeg decryptor (§2.4), chapters + tags (§2.5), the migration
+> (§3), naming template + FS sink (§6), config gate (§7), prod storage (§7.1),
+> and the live-verification harness (§9.1). What remains is ORCHESTRATION and
+> SURFACES: the service that sequences these steps (§4), the job kinds (§5), and
+> the HTTP/FE/CLI endpoints (§8).
+>
+> **Schema note.** Books schema changes land in TWO migration trees:
+> `internal/shared/db/migrations/` (host, `owner` FK to `public.users`) and
+> `internal/books/db/migrations/` (standalone catalyst-books, plain `owner`
+> column — that database has no users table). See
+> `internal/books/db/migrations.go`.
 
 **Reading conventions.** Everything in `code font` (`amazon.Sign`, `reading_items`,
 `AudibleSyncKind`, …) is a real symbol on the current tree — verify the exact
@@ -226,6 +233,15 @@ ffmpeg -nostdin -y \
 
 `-c copy` means no re-encode: this is a remux, so it is I/O-bound and fast, and the
 audio is bit-identical to what Audible served.
+
+**Gotcha worth an hour of someone's life:** `-audible_key` / `-audible_iv` are
+options of the **`mov`** demuxer, not of the demuxer named `aax`. An AAXC file is
+an MP4/ISO-BMFF container. ffmpeg does ship an `aax` demuxer, but it is *CRI
+AAX*, an unrelated Criware game-audio format, and `ffmpeg -h demuxer=aax` will
+describe that instead while appearing to answer the question. Check with
+`ffmpeg -h demuxer=mov | grep audible`. Confirmed present in alpine 3.20's
+ffmpeg 6.1.1 — the runtime image — which also exposes `-activation_bytes`, so
+epic C's legacy-AAX support needs no new dependency.
 
 **Why an interface, not a bare exec:**
 
