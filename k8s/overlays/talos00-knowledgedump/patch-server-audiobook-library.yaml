@@ -18,6 +18,21 @@
 # Liberation jobs run on the server role today. When they move to the worker
 # fleet, copy this volume/volumeMount pair into patch-worker-* as well — the
 # job cannot write to a library it has not mounted.
+# WHY THE WORK DIR IS AN emptyDir WITH A sizeLimit
+# Liberation holds BOTH the encrypted AAXC and the remuxed M4B on disk at the
+# same time, so one long audiobook is ~2GB of scratch and the default
+# concurrency of 2 makes that ~4GB. Left on the container's writable layer that
+# is unbounded node ephemeral storage: exceed what the node has spare and
+# kubelet evicts pods — potentially OTHER pods on talos06, not just this one.
+#
+# An emptyDir with sizeLimit turns that into a bounded, attributable failure:
+# only this pod is affected, and only if it genuinely exceeds the budget.
+# 12Gi is generous headroom over the ~4GB steady state, so normal operation
+# never approaches it.
+#
+# emptyDir rather than a PVC on purpose — the scratch is fully re-derivable and
+# per-run, so persisting it across restarts would only preserve garbage. The
+# service already removes its per-ASIN work directory on every exit path.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -31,7 +46,19 @@ spec:
             - name: audiobook-library
               mountPath: /media/audiobooks/liberated
               subPath: audiobooks/liberated
+            - name: liberate-work
+              mountPath: /tmp/boomtime-liberate
+          resources:
+            requests:
+              # Reserve scratch so the scheduler accounts for it rather than
+              # discovering it under pressure.
+              ephemeral-storage: 2Gi
+            limits:
+              ephemeral-storage: 14Gi
       volumes:
         - name: audiobook-library
           persistentVolumeClaim:
             claimName: boomtime-audiobook-library
+        - name: liberate-work
+          emptyDir:
+            sizeLimit: 12Gi

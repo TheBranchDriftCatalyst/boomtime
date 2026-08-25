@@ -89,11 +89,15 @@ data:
   BOOM_AUDIBLE_SYNC_INTERVAL: "1h"
 
   # ── catalyst-books liberation (boom-w20s) ─────────────────────────────────
-  # Ships OFF. The storage (audiobook-library.yaml + patch-server-audiobook-
-  # library.yaml) is wired so that turning this on is a one-line change here,
-  # but the pipeline itself is still being built — and a first sweep of a large
-  # library is hundreds of GB, so enabling it must be a deliberate act.
-  BOOM_FEATURE_BOOKS_LIBERATION: "false"
+  # ENABLED 2026-08-25. Verified before flipping: the NFS mount is attached and
+  # writable at /media/audiobooks/liberated (kubelet created the subPath), and
+  # ffmpeg 6.1.1 with the mov-demuxer audible_key options is in the image.
+  #
+  # Turning this on registers the liberation job kinds and un-404s the HTTP
+  # routes. It does NOT start downloading anything: there is deliberately NO
+  # schedule on books-liberate-sweep, so nothing moves until someone presses a
+  # button or runs the CLI. A first full sweep is hundreds of GB.
+  BOOM_FEATURE_BOOKS_LIBERATION: "true"
   # Library root INSIDE the container; backed by the NFS subPath mount.
   BOOM_BOOKS_LIBRARY_PATH: "/media/audiobooks/liberated"
   # Scratch for download + ffmpeg convert. Deliberately NOT on the NFS mount:
