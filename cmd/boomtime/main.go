@@ -621,6 +621,18 @@ func runCmd() *cobra.Command {
 				// shared across pods+users; with no BOOM_REDIS_ADDR the limiter
 				// falls back to an in-process counter (correct for a single pod —
 				// local dev / broker=local). Wired on BOTH provider paths.
+				// Scrape-time queue-depth gauge (boom-piig). Registered before the
+				// provider so the backlog is observable even on a pod that claims
+				// nothing — the server excludes offloaded kinds but still serves
+				// /metrics, and "how deep is the liberation queue" must be
+				// answerable from any pod, not only from whichever one happens to
+				// be draining it.
+				metrics.RegisterJobQueue(func() (map[string]metrics.JobQueueSample, bool) {
+					qctx, qcancel := context.WithTimeout(context.Background(), 3*time.Second)
+					defer qcancel()
+					return jobStore.QueueDepth(qctx)
+				})
+
 				var jobsRedis *redis.Client
 				if cfg.RedisAddr != "" {
 					jobsRedis = redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, Password: cfg.RedisPassword})

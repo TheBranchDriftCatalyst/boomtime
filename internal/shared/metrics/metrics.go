@@ -240,7 +240,7 @@ func init() {
 		HTTPClientRequestsTotal, HTTPClientRequestDuration,
 		JobLimiterTotal, HardcoverCallsTotal, AmazonCallsTotal,
 		HeartbeatsIngestedTotal, JobsRunTotal,
-		JobLimiterInflight, JobLimiterMax,
+		JobLimiterInflight, JobLimiterMax, JobDurationSeconds,
 		HTTPRatelimitDecisionsTotal, CacheRequestsTotal,
 		WSActiveConnections, AMQPDeliveriesTotal,
 		ReadingMonitorAdvancesTotal, ReadingMonitorAdvanceInterval,
@@ -255,7 +255,7 @@ func init() {
 	// Scrape-time pool collectors (DB + Redis). Unchecked collectors: they emit
 	// nothing until a provider is wired via RegisterDBPool / RegisterRedisPool
 	// (done from cmd at boot), so they're inert in tests that never register.
-	Registry.MustRegister(&dbPoolCollector{}, &redisPoolCollector{}, &amqpQueueCollector{})
+	Registry.MustRegister(&dbPoolCollector{}, &redisPoolCollector{}, &amqpQueueCollector{}, &jobQueueCollector{})
 }
 
 // RegisterBuildInfo publishes a boomtime_build_info{version,commit,go_version}
@@ -479,6 +479,91 @@ func (*amqpQueueCollector) Collect(ch chan<- prometheus.Metric) {
 		ch <- prometheus.MustNewConstMetric(amqpConsumersDesc, prometheus.GaugeValue, float64(s.Consumers), queue)
 	}
 }
+
+// --- job queue depth (boom-piig) -------------------------------------------
+//
+// The gap this closes: there was a scrape-time depth reader for the RabbitMQ
+// queue but NONE for the Postgres `jobs` table — which is the queue actually in
+// use. A 300-deep liberation backlog was completely invisible in Grafana while
+// the queue we are deleting had a depth gauge. Backlog is the single most
+// alertable property of a job system, so it gets a first-class metric.
+//
+// Scrape-time rather than event-counted, for the same reason the DB-pool and
+// AMQP collectors are: depth is a LEVEL, not a rate. Counting enqueues and
+// dequeues and subtracting would drift on every crash, reap and manual delete.
+
+// JobQueueSample is the queue's live state for one kind, read at scrape time.
+type JobQueueSample struct {
+	// Queued is rows due to run now (status='queued' AND run_at <= now()).
+	Queued int
+	// Scheduled is rows queued for the FUTURE (run_at > now()). Split out so a
+	// backlog alert is not tripped by work that is merely scheduled.
+	Scheduled int
+	// Running is rows currently claimed.
+	Running int
+	// OldestQueuedAge is how long the oldest DUE row has waited. This is the
+	// staleness signal — depth alone cannot distinguish "1000 jobs draining
+	// briskly" from "3 jobs wedged for an hour", and the second is the outage.
+	OldestQueuedAge time.Duration
+}
+
+var (
+	jobQueueMu       sync.RWMutex
+	jobQueueProvider func() (map[string]JobQueueSample, bool)
+)
+
+// RegisterJobQueue wires a scrape-time reader of per-kind queue depth. Pass nil
+// to remove it. The provider must return ok=false when the DB is unreachable so
+// a scrape degrades rather than failing Gather.
+func RegisterJobQueue(sample func() (map[string]JobQueueSample, bool)) {
+	jobQueueMu.Lock()
+	jobQueueProvider = sample
+	jobQueueMu.Unlock()
+}
+
+var (
+	jobQueueDepthDesc = prometheus.NewDesc("jobs_queue_depth",
+		"Jobs in the Postgres queue by kind and state (queued=due now, scheduled=future, running).",
+		[]string{"kind", "state"}, nil)
+	jobQueueOldestDesc = prometheus.NewDesc("jobs_queue_oldest_seconds",
+		"Age of the oldest DUE queued job, by kind. The staleness signal — depth alone cannot distinguish a brisk backlog from a wedged one.",
+		[]string{"kind"}, nil)
+)
+
+type jobQueueCollector struct{}
+
+func (*jobQueueCollector) Describe(chan<- *prometheus.Desc) {}
+
+func (*jobQueueCollector) Collect(ch chan<- prometheus.Metric) {
+	jobQueueMu.RLock()
+	p := jobQueueProvider
+	jobQueueMu.RUnlock()
+	if p == nil {
+		return
+	}
+	byKind, ok := p()
+	if !ok {
+		return // DB unreachable this scrape — skip, don't fail Gather
+	}
+	for kind, s := range byKind {
+		ch <- prometheus.MustNewConstMetric(jobQueueDepthDesc, prometheus.GaugeValue, float64(s.Queued), kind, "queued")
+		ch <- prometheus.MustNewConstMetric(jobQueueDepthDesc, prometheus.GaugeValue, float64(s.Scheduled), kind, "scheduled")
+		ch <- prometheus.MustNewConstMetric(jobQueueDepthDesc, prometheus.GaugeValue, float64(s.Running), kind, "running")
+		ch <- prometheus.MustNewConstMetric(jobQueueOldestDesc, prometheus.GaugeValue, s.OldestQueuedAge.Seconds(), kind)
+	}
+}
+
+// JobDurationSeconds observes how long each job took. dur_ms was already in the
+// structured log but never exported, so there was no p50/p95 — and "jobs are
+// slow" is not answerable from a counter.
+var JobDurationSeconds = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+	Name: "jobs_duration_seconds",
+	Help: "Wall-clock duration of a job run, by kind and terminal status.",
+	// Buckets span the real range: a books-liberate-sweep finishes in
+	// milliseconds, a liberation download+remux takes minutes. Default buckets
+	// top out at 10s and would put every liberation in +Inf.
+	Buckets: []float64{0.1, 0.5, 1, 5, 15, 60, 180, 600, 1800},
+}, []string{"kind", "status"})
 
 // Handler returns the promhttp handler that serves Registry in the Prometheus
 // text exposition format. Mount it at GET /metrics (unauthenticated, off the

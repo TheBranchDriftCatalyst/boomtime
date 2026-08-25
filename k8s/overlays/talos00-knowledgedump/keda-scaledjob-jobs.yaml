@@ -18,7 +18,17 @@ metadata:
 spec:
   # KEDA polls the DB queue; when avatar-render jobs are pending it creates Jobs.
   pollingInterval: 20
-  maxReplicaCount: 3
+  # REPLICAS ARE THE CONCURRENCY. LocalProvider.Drain is a sequential loop
+  # (ClaimNext -> runJob -> repeat, internal/jobs/local.go), so each drain pod
+  # runs exactly ONE job at a time. Fleet concurrency is therefore replicas, not
+  # BOOM_BOOKS_LIBERATE_CONCURRENCY — at maxReplicaCount 3 that cap of 5 was
+  # unreachable and liberation sat at 3-wide with 300+ queued.
+  #
+  # Matched to the liberation cap deliberately. Going higher would not increase
+  # throughput: the fleet-wide Redis semaphore still admits only 5 of that kind,
+  # so extra pods would spawn, fail to acquire a slot, and exit. Raise BOTH or
+  # neither.
+  maxReplicaCount: 5
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 5
   # `default` accounts for already-running Jobs when deciding how many to add.
