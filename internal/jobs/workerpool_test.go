@@ -223,3 +223,66 @@ func TestRecentOutcomesReadsRealRows(t *testing.T) {
 		t.Errorf("broken failed = %d, want 1 (ByStatus = %v)", broken.ByStatus["failed"], broken.ByStatus)
 	}
 }
+
+// THIS TEST EXISTS BECAUSE THE SQL SHIPPED BROKEN. QueueDepth's original query
+// put FILTER outside the EXTRACT rather than inside min(), which Postgres
+// rejects as a syntax error. QueueDepth then returned ok=false, the collector
+// emitted nothing, and jobs_queue_depth was silently absent in production while
+// 604 jobs sat queued.
+//
+// The unit test at the metrics layer stubbed the provider, so it never ran a
+// query — it asserted the collector's plumbing and proved nothing about the SQL.
+// Anything whose failure mode is "returns ok=false and emits no series" needs to
+// touch a real database, because that failure is indistinguishable from an idle
+// queue.
+func TestQueueDepthReadsRealRows(t *testing.T) {
+	s, ctx := newTestStore(t)
+
+	// 3 due now, 2 scheduled for the future.
+	for i := 0; i < 3; i++ {
+		if _, err := s.Enqueue(ctx, "depth-due", "", nil, 1, time.Time{}); err != nil {
+			t.Fatalf("enqueue: %v", err)
+		}
+	}
+	for i := 0; i < 2; i++ {
+		if _, err := s.Enqueue(ctx, "depth-later", "", nil, 1, time.Now().Add(time.Hour)); err != nil {
+			t.Fatalf("enqueue future: %v", err)
+		}
+	}
+
+	out, ok := s.QueueDepth(ctx)
+	if !ok {
+		t.Fatal("QueueDepth reported not-ok against a live DB — the query is broken")
+	}
+
+	due, hasDue := out["depth-due"]
+	if !hasDue {
+		t.Fatalf("no depth for 'depth-due'; got %v", out)
+	}
+	if due.Queued != 3 {
+		t.Errorf("queued = %d, want 3", due.Queued)
+	}
+	if due.Scheduled != 0 {
+		t.Errorf("scheduled = %d, want 0 — due work must not be counted as scheduled", due.Scheduled)
+	}
+	// The staleness signal must be a real, non-negative number.
+	if due.OldestQueuedAge < 0 {
+		t.Errorf("oldest age = %v, want >= 0", due.OldestQueuedAge)
+	}
+
+	// Future-dated work is 'scheduled', NOT 'queued'. Conflating them would fire
+	// a backlog alert on every periodic kind's normal steady state.
+	later, hasLater := out["depth-later"]
+	if !hasLater {
+		t.Fatalf("no depth for 'depth-later'; got %v", out)
+	}
+	if later.Scheduled != 2 {
+		t.Errorf("scheduled = %d, want 2", later.Scheduled)
+	}
+	if later.Queued != 0 {
+		t.Errorf("queued = %d, want 0 — future run_at is scheduled, not due", later.Queued)
+	}
+	if later.OldestQueuedAge != 0 {
+		t.Errorf("oldest age = %v, want 0 when nothing is due", later.OldestQueuedAge)
+	}
+}

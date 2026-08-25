@@ -53,8 +53,12 @@ func (s *Store) QueueDepth(ctx context.Context) (map[string]metrics.JobQueueSamp
 		       count(*) FILTER (WHERE status = 'queued' AND run_at <= now())        AS queued,
 		       count(*) FILTER (WHERE status = 'queued' AND run_at >  now())        AS scheduled,
 		       count(*) FILTER (WHERE status = 'running')                           AS running,
-		       COALESCE(EXTRACT(EPOCH FROM (now() - min(run_at))
-		                FILTER (WHERE status = 'queued' AND run_at <= now())), 0)   AS oldest_secs
+		       -- FILTER binds to the AGGREGATE, so it goes inside min(...), not
+		       -- outside the EXTRACT. Written the other way round this is a
+		       -- syntax error, the query returns ok=false, and the collector
+		       -- silently emits nothing — which is exactly what shipped once.
+		       COALESCE(EXTRACT(EPOCH FROM (now() - min(run_at)
+		                FILTER (WHERE status = 'queued' AND run_at <= now()))), 0) AS oldest_secs
 		  FROM jobs
 		 WHERE status IN ('queued', 'running')
 		 GROUP BY kind`)
