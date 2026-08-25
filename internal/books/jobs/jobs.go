@@ -499,6 +499,25 @@ func Register(reg *corejobs.Registry, database *db.DB, cfg *config.Config, notif
 		}
 		reg.SetConcurrency(liberate.LiberateBookKind, conc)
 		reg.SetConcurrency(liberate.LiberateSweepKind, 1)
+
+		// OFFLOAD the per-book kind to the scale-to-zero worker fleet (boom-piig).
+		// DeriveKindFilter reads this: the always-on server stops claiming the
+		// kind automatically, and the KEDA ScaledJob's drain pods claim it. That
+		// is what turns BOOM_BOOKS_LIBERATE_CONCURRENCY from "5 goroutines in one
+		// pod on one node" into work spread across the cluster.
+		//
+		// Declared HERE rather than in cmd/boomtime/main.go (where avatar-render
+		// and label-image still are) because execution policy belongs to the
+		// domain that owns the kind.
+		//
+		// The SWEEP kind is deliberately NOT offloaded: it only enqueues rows,
+		// finishes in milliseconds, and needs neither the library mount nor the
+		// scratch volume that make a drain pod expensive to schedule.
+		//
+		// PAIRED WITH keda-scaledjob-jobs.yaml — the kind must ALSO appear in that
+		// file's BOOM_JOBS_KINDS and in its postgres trigger query, or the server
+		// stops claiming it and nothing else starts. See the plan's §1.3.
+		reg.SetOffload(liberate.LiberateBookKind)
 		logger.Info("jobs: liberation handlers registered",
 			"libraryPath", cfg.BooksLibraryPath, "concurrency", conc)
 	}

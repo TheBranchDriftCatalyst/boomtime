@@ -64,8 +64,12 @@ spec:
               # One-shot drain + exit; claim ONLY the heavy kind(s).
               - name: BOOM_JOBS_DRAIN
                 value: "true"
+              # LOCKSTEP WITH THE TRIGGER QUERY at the bottom of this file. Add a
+              # kind here but not there and pods never spawn; add it there but not
+              # here and pods spawn, claim nothing, and exit — a scale-up loop
+              # doing no work. Change both or neither.
               - name: BOOM_JOBS_KINDS
-                value: "avatar-render,label-image"
+                value: "avatar-render,label-image,books-liberate-book"
               # boomtime-config (envFrom) sets BOOM_JOBS_EXCLUDE_KINDS=avatar-render
               # for the server; clear it here (env overrides envFrom) or this pod
               # would both include AND exclude avatar-render and claim nothing.
@@ -81,13 +85,48 @@ spec:
                   secretKeyRef:
                     name: boomtime-postgres-app
                     key: password
+            # catalyst-books liberation (boom-w20s) needs the library it writes
+            # into and scratch to work in. A drain pod cannot liberate into a
+            # volume it has not mounted, and without the emptyDir the AAXC + M4B
+            # land on the node's unbounded ephemeral storage.
+            volumeMounts:
+              - name: audiobook-library
+                mountPath: /media/audiobooks/liberated
+                subPath: audiobooks/liberated
+              - name: liberate-work
+                mountPath: /tmp/boomtime-liberate
             resources:
               requests:
                 cpu: 250m
                 memory: 512Mi
+                ephemeral-storage: 2Gi
               limits:
                 cpu: "2"
                 memory: 2Gi
+                ephemeral-storage: 14Gi
+        volumes:
+          - name: audiobook-library
+            persistentVolumeClaim:
+              claimName: boomtime-audiobook-library
+          # Sized for ONE pod, not the fleet: the per-kind concurrency cap is
+          # enforced fleet-wide through the Redis semaphore (envFrom
+          # boomtime-config supplies BOOM_REDIS_ADDR), so a single drain pod holds
+          # only its share. ~2GB per in-flight book; 12Gi is generous headroom.
+          - name: liberate-work
+            emptyDir:
+              sizeLimit: 12Gi
+        # Spread drain pods across nodes instead of stacking them on talos06.
+        # ScheduleAnyway, NOT DoNotSchedule: only talos02-gpu and talos06 are
+        # untainted (talos01/talos03 are PreferNoSchedule, talos00 is a
+        # NoSchedule control-plane), so a hard constraint would leave the third
+        # pod permanently Pending.
+        topologySpreadConstraints:
+          - maxSkew: 1
+            topologyKey: kubernetes.io/hostname
+            whenUnsatisfiable: ScheduleAnyway
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: boomtime-jobs
   triggers:
     - type: postgresql
       metadata:
@@ -99,7 +138,7 @@ spec:
         dbName: boomtime
         sslmode: disable
         # Pending, DUE heavy jobs. count>0 ⇒ schedule a Job to drain them.
-        query: "SELECT count(*) FROM jobs WHERE status = 'queued' AND run_at <= now() AND kind IN ('avatar-render','label-image')"
+        query: "SELECT count(*) FROM jobs WHERE status = 'queued' AND run_at <= now() AND kind IN ('avatar-render','label-image','books-liberate-book')"
         targetQueryValue: "1"
       authenticationRef:
         name: boomtime-jobs-pg-auth
