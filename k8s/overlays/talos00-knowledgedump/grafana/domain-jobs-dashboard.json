@@ -1,7 +1,7 @@
 {
   "uid": "boomtime-domain-jobs",
-  "title": "boomtime · Domain & Jobs",
-  "description": "Consolidated domain view (replaces boomtime-daily-review + boomtime-domain-ingest). Top row is boomtime's own Prometheus counters (heartbeats, job runs, limiter events, Hardcover/Amazon calls); the rest is the validated Loki slog narrative — what ran, what domain outcomes landed, what to read in the daily review, and the read-path/ingest failures. Dual datasource (Prometheus mimir + Loki loki-v2) is intentional.",
+  "title": "boomtime \u00b7 Domain & Jobs",
+  "description": "Consolidated domain view (replaces boomtime-daily-review + boomtime-domain-ingest). Top row is boomtime's own Prometheus counters (heartbeats, job runs, limiter events, Hardcover/Amazon calls); the rest is the validated Loki slog narrative \u2014 what ran, what domain outcomes landed, what to read in the daily review, and the read-path/ingest failures. Dual datasource (Prometheus mimir + Loki loki-v2) is intentional.",
   "tags": [
     "apps",
     "boomtime",
@@ -25,17 +25,12 @@
         "name": "proc",
         "type": "custom",
         "label": "Process",
-        "description": "Which boomtime process to read logs from: the always-on server, the always-on AMQP image worker, or the KEDA ScaledJob drain pods that run the heavy DB job kinds. Default All covers every one of them and excludes the co-located postgres/rabbit/dragonfly pods.",
-        "query": "boomtime,boomtime-worker,boomtime-jobs",
+        "description": "Which boomtime process to read logs from: the always-on server, or the KEDA ScaledJob drain pods that run the offloaded job kinds. The always-on AMQP image worker is gone \u2014 RabbitMQ and the imagejobs pipeline were retired (boom-piig), so there is one job system now. Default All covers both and excludes the co-located postgres/dragonfly pods.",
+        "query": "boomtime,boomtime-jobs",
         "options": [
           {
             "text": "boomtime",
             "value": "boomtime",
-            "selected": false
-          },
-          {
-            "text": "boomtime-worker",
-            "value": "boomtime-worker",
             "selected": false
           },
           {
@@ -50,7 +45,7 @@
         },
         "multi": true,
         "includeAll": true,
-        "allValue": "boomtime|boomtime-worker|boomtime-jobs",
+        "allValue": "boomtime|boomtime-jobs",
         "hide": 0,
         "skipUrlSync": false
       },
@@ -58,8 +53,8 @@
         "name": "kind",
         "type": "custom",
         "label": "Job kind",
-        "description": "catalyst-go-jobs kind (the registry key a handler is registered under). Default All is the regex .+, so a NEW kind shows up here without editing the dashboard — it just won't be in the picker until it is added to this variable's list.",
-        "query": "audiobooks-audible-backfill,audiobooks-audible-sync,avatar-render,books-kindle-sync,github-stats-refresh,hardcover-push,label-image",
+        "description": "catalyst-go-jobs kind (the registry key a handler is registered under). Default All is the regex .+, so a NEW kind shows up in the DATA without editing this dashboard \u2014 it just will not appear in this picker until added here. Refreshed 2026-08-25 against the kinds actually present in the jobs table; the previous list predated the books liberation, reading-monitor and hardcover pull/match kinds.",
+        "query": "audiobooks-audible-backfill,audiobooks-audible-sync,avatar-render,books-kindle-backfill,books-kindle-insights,books-kindle-reading-time,books-kindle-status-reconcile,books-kindle-sync,books-liberate-book,books-liberate-sweep,books-reading-monitor,books-sync-all,github-stats-refresh,hardcover-match,hardcover-pull,hardcover-push,hardcover-push-curation,label-image",
         "options": [
           {
             "text": "audiobooks-audible-backfill",
@@ -77,8 +72,48 @@
             "selected": false
           },
           {
+            "text": "books-kindle-backfill",
+            "value": "books-kindle-backfill",
+            "selected": false
+          },
+          {
+            "text": "books-kindle-insights",
+            "value": "books-kindle-insights",
+            "selected": false
+          },
+          {
+            "text": "books-kindle-reading-time",
+            "value": "books-kindle-reading-time",
+            "selected": false
+          },
+          {
+            "text": "books-kindle-status-reconcile",
+            "value": "books-kindle-status-reconcile",
+            "selected": false
+          },
+          {
             "text": "books-kindle-sync",
             "value": "books-kindle-sync",
+            "selected": false
+          },
+          {
+            "text": "books-liberate-book",
+            "value": "books-liberate-book",
+            "selected": false
+          },
+          {
+            "text": "books-liberate-sweep",
+            "value": "books-liberate-sweep",
+            "selected": false
+          },
+          {
+            "text": "books-reading-monitor",
+            "value": "books-reading-monitor",
+            "selected": false
+          },
+          {
+            "text": "books-sync-all",
+            "value": "books-sync-all",
             "selected": false
           },
           {
@@ -87,8 +122,23 @@
             "selected": false
           },
           {
+            "text": "hardcover-match",
+            "value": "hardcover-match",
+            "selected": false
+          },
+          {
+            "text": "hardcover-pull",
+            "value": "hardcover-pull",
+            "selected": false
+          },
+          {
             "text": "hardcover-push",
             "value": "hardcover-push",
+            "selected": false
+          },
+          {
+            "text": "hardcover-push-curation",
+            "value": "hardcover-push-curation",
             "selected": false
           },
           {
@@ -200,7 +250,7 @@
     {
       "id": 1,
       "type": "row",
-      "title": "Ingest & jobs — first-party metrics",
+      "title": "Ingest & jobs \u2014 first-party metrics",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -209,7 +259,7 @@
         "y": 0
       },
       "panels": [],
-      "description": "boomtime's own Prometheus counters (scraped via the ServiceMonitor) — exact, unlike the Loki request-count proxies below."
+      "description": "boomtime's own Prometheus counters (scraped via the ServiceMonitor) \u2014 exact, unlike the Loki request-count proxies below."
     },
     {
       "id": 2,
@@ -522,7 +572,7 @@
           "sort": "desc"
         }
       },
-      "description": "First-party ingest throughput — the replacement for the Loki '.bulk request count' proxy the old Domain Ingest board was forced to use."
+      "description": "First-party ingest throughput \u2014 the replacement for the Loki '.bulk request count' proxy the old Domain Ingest board was forced to use."
     },
     {
       "id": 8,
@@ -546,7 +596,7 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "legendFormat": "{{kind}} · {{status}}"
+          "legendFormat": "{{kind}} \u00b7 {{status}}"
         }
       ],
       "fieldConfig": {
@@ -598,7 +648,7 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "legendFormat": "{{kind}} · {{outcome}}"
+          "legendFormat": "{{kind}} \u00b7 {{outcome}}"
         }
       ],
       "fieldConfig": {
@@ -631,7 +681,7 @@
     {
       "id": 10,
       "type": "timeseries",
-      "title": "External call rates — Hardcover & Amazon",
+      "title": "External call rates \u2014 Hardcover & Amazon",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
@@ -711,7 +761,7 @@
             "type": "prometheus",
             "uid": "mimir"
           },
-          "legendFormat": "{{queue}} · {{outcome}}"
+          "legendFormat": "{{queue}} \u00b7 {{outcome}}"
         }
       ],
       "fieldConfig": {
@@ -800,7 +850,7 @@
         "showThresholdLabels": false,
         "showThresholdMarkers": true
       },
-      "description": "Books the two-level monitor currently has in fine-capture (L2) — i.e. actively being read right now, per source. Driven by the persistent leader-singleton engine, not the admin tab."
+      "description": "Books the two-level monitor currently has in fine-capture (L2) \u2014 i.e. actively being read right now, per source. Driven by the persistent leader-singleton engine, not the admin tab."
     },
     {
       "id": 33,
@@ -852,12 +902,12 @@
           "sort": "desc"
         }
       },
-      "description": "Whispersync location advances detected per second, per source — the raw signal the dedicated cadence board (uid boomtime-reading-monitor) turns into recommended poll intervals."
+      "description": "Whispersync location advances detected per second, per source \u2014 the raw signal the dedicated cadence board (uid boomtime-reading-monitor) turns into recommended poll intervals."
     },
     {
       "id": 12,
       "type": "row",
-      "title": "Job runs — what ran, and how it went",
+      "title": "Job runs \u2014 what ran, and how it went",
       "collapsed": false,
       "panels": [],
       "gridPos": {
@@ -1053,7 +1103,7 @@
     {
       "type": "table",
       "title": "Job kinds over the range",
-      "description": "Per-kind tally of completed / retried / failed runs across the whole range. The table is also the colorblind-safe reading of the stacked chart beside it — identity by name, not by hue.",
+      "description": "Per-kind tally of completed / retried / failed runs across the whole range. The table is also the colorblind-safe reading of the stacked chart beside it \u2014 identity by name, not by hue.",
       "datasource": {
         "type": "loki",
         "uid": "loki-v2"
@@ -1304,7 +1354,7 @@
     },
     {
       "type": "logs",
-      "title": "Job failures and retries — with the reason",
+      "title": "Job failures and retries \u2014 with the reason",
       "description": "Every terminal failure and scheduled retry, newest first, reformatted to kind / job id / attempt / error. This is the panel to read when the failed-runs stat above is non-zero.",
       "datasource": {
         "type": "loki",
@@ -1341,7 +1391,7 @@
     {
       "id": 17,
       "type": "row",
-      "title": "Domain outcomes — what actually landed",
+      "title": "Domain outcomes \u2014 what actually landed",
       "collapsed": false,
       "panels": [],
       "gridPos": {
@@ -1354,7 +1404,7 @@
     {
       "type": "stat",
       "title": "Wakatime heartbeats imported",
-      "description": "Heartbeats pulled in by a completed catalyst-waka bulk import (the \"imported\" total on each \"import completed\" record), summed over the range. Empty when no import ran — imports are user-triggered, not periodic.",
+      "description": "Heartbeats pulled in by a completed catalyst-waka bulk import (the \"imported\" total on each \"import completed\" record), summed over the range. Empty when no import ran \u2014 imports are user-triggered, not periodic.",
       "datasource": {
         "type": "loki",
         "uid": "loki-v2"
@@ -1478,7 +1528,7 @@
     {
       "type": "stat",
       "title": "Books newly finished",
-      "description": "Titles the Audible forward sync saw flip to finished in the range — the domain event that drives a Hardcover push.",
+      "description": "Titles the Audible forward sync saw flip to finished in the range \u2014 the domain event that drives a Hardcover push.",
       "datasource": {
         "type": "loki",
         "uid": "loki-v2"
@@ -1540,7 +1590,7 @@
     {
       "type": "stat",
       "title": "Pushed to Hardcover",
-      "description": "Finished books successfully written out to Hardcover. Note the deployment may be in DRY-RUN (BOOM_HARDCOVER_DRYRUN) — check the warning feed at the bottom, where the dry-run banner is logged on every boot.",
+      "description": "Finished books successfully written out to Hardcover. Note the deployment may be in DRY-RUN (BOOM_HARDCOVER_DRYRUN) \u2014 check the warning feed at the bottom, where the dry-run banner is logged on every boot.",
       "datasource": {
         "type": "loki",
         "uid": "loki-v2"
@@ -1831,7 +1881,7 @@
         "colorMode": "value",
         "graphMode": "area"
       },
-      "description": "Reconstructed Kindle reading time that LANDED as reading_activity over the range (seconds counter → minutes). Empty during the diagnostic-only phase — the monitor measures + toasts but writes no reading_activity until the cadence is trusted."
+      "description": "Reconstructed Kindle reading time that LANDED as reading_activity over the range (seconds counter \u2192 minutes). Empty during the diagnostic-only phase \u2014 the monitor measures + toasts but writes no reading_activity until the cadence is trusted."
     },
     {
       "id": 35,
@@ -1883,12 +1933,12 @@
           "sort": "desc"
         }
       },
-      "description": "reading_activity seconds accruing per wall-second, per source — the forward-composition signal into the fusion layer, once the monitor emits it."
+      "description": "reading_activity seconds accruing per wall-second, per source \u2014 the forward-composition signal into the fusion layer, once the monitor emits it."
     },
     {
       "id": 24,
       "type": "row",
-      "title": "Consumption — what is the data being asked for?",
+      "title": "Consumption \u2014 what is the data being asked for?",
       "collapsed": false,
       "panels": [],
       "gridPos": {

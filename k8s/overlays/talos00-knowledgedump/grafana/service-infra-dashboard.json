@@ -1,14 +1,13 @@
 {
   "uid": "boomtime-service-infra",
-  "title": "boomtime · Service & Infra",
-  "description": "Consolidated Ops view (replaces boomtime-keda-scaling + boomtime-worker-queue). First-party Prometheus RED (incoming router + outbound clients), Go/process runtime, DB & Redis pools, cache hit-rate, the concurrency + HTTP rate limiters, and the KEDA/RabbitMQ image-job autoscaling. Scrape: boomtime ServiceMonitor /metrics (server role only).",
+  "title": "boomtime \u00b7 Service & Infra",
+  "description": "Consolidated Ops view. First-party Prometheus RED (incoming router + outbound clients), Go/process runtime, DB & Redis pools, cache hit-rate, the concurrency + HTTP rate limiters, and the catalyst-go-jobs queue (depth, staleness, outcomes, durations, concurrency headroom). Scrape: boomtime ServiceMonitor /metrics (server role only). The RabbitMQ/imagejobs panels were removed with that pipeline \u2014 there is one job system now.",
   "tags": [
     "app-ops",
     "boomtime",
     "red",
     "runtime",
-    "keda",
-    "rabbitmq"
+    "jobs"
   ],
   "schemaVersion": 39,
   "version": 1,
@@ -83,7 +82,7 @@
         "colorMode": "background",
         "graphMode": "none"
       },
-      "description": "boomtime_build_info — running version (commit/go_version in tooltip)."
+      "description": "boomtime_build_info \u2014 running version (commit/go_version in tooltip)."
     },
     {
       "id": 3,
@@ -306,54 +305,9 @@
       "description": "Currently-open websocket streams (all stream types)."
     },
     {
-      "id": 7,
-      "type": "stat",
-      "title": "Worker replicas",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "mimir"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 20,
-        "y": 1
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum(kube_deployment_status_replicas{namespace=\"boomtime\", deployment=\"boomtime-worker\"})",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "mimir"
-          },
-          "legendFormat": "replicas"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "values": false,
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "orientation": "auto",
-        "textMode": "auto",
-        "colorMode": "value",
-        "graphMode": "area"
-      },
-      "description": "Live boomtime-worker replica count (KEDA-scaled 0..4)."
-    },
-    {
       "id": 8,
       "type": "row",
-      "title": "Incoming RED — server router",
+      "title": "Incoming RED \u2014 server router",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -600,7 +554,7 @@
     {
       "id": 13,
       "type": "row",
-      "title": "Outgoing RED — external HTTP clients",
+      "title": "Outgoing RED \u2014 external HTTP clients",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -1022,7 +976,7 @@
           "sort": "desc"
         }
       },
-      "description": "API per-user/per-IP limiter — throttled vs allowed decisions."
+      "description": "API per-user/per-IP limiter \u2014 throttled vs allowed decisions."
     },
     {
       "id": 22,
@@ -1214,7 +1168,7 @@
     {
       "id": 26,
       "type": "timeseries",
-      "title": "DB pool — connections vs max",
+      "title": "DB pool \u2014 connections vs max",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
@@ -1302,7 +1256,7 @@
     {
       "id": 27,
       "type": "timeseries",
-      "title": "DB pool — acquire pressure",
+      "title": "DB pool \u2014 acquire pressure",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
@@ -1372,7 +1326,7 @@
     {
       "id": 28,
       "type": "timeseries",
-      "title": "Redis pool — hit ratio by purpose",
+      "title": "Redis pool \u2014 hit ratio by purpose",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
@@ -1424,7 +1378,7 @@
     {
       "id": 29,
       "type": "timeseries",
-      "title": "Redis pool — conns & timeouts",
+      "title": "Redis pool \u2014 conns & timeouts",
       "datasource": {
         "type": "prometheus",
         "uid": "mimir"
@@ -1544,6 +1498,9 @@
       "description": "In-memory TTL cache effectiveness per named cache."
     },
     {
+      "id": 900,
+      "type": "row",
+      "title": "Job queue (catalyst-go-jobs)",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -1551,15 +1508,13 @@
         "x": 0,
         "y": 71
       },
-      "id": 31,
-      "title": "Broker — boomtime.image-jobs",
-      "type": "row"
+      "panels": []
     },
     {
-      "id": 32,
+      "id": 901,
       "type": "stat",
-      "title": "Queue depth (ready)",
-      "description": "Messages published but not yet picked up by a consumer. Sustained >0 with 0 consumers means the worker is scaled to zero (KEDA cold start) or down.",
+      "title": "Backlog (due now)",
+      "description": "jobs_queue_depth{state=\"queued\"} \u2014 rows due to run RIGHT NOW, summed across kinds. Future-dated work is counted as 'scheduled' instead, so a periodic kind's normal steady state does not look like a backlog.",
       "gridPos": {
         "h": 6,
         "w": 6,
@@ -1572,8 +1527,8 @@
       },
       "targets": [
         {
-          "expr": "sum(rabbitmq_queue_messages_ready{namespace=\"boomtime\", queue=\"boomtime.image-jobs\"})",
-          "legendFormat": "ready",
+          "expr": "sum(jobs_queue_depth{state=\"queued\"})",
+          "legendFormat": "queued",
           "datasource": {
             "type": "prometheus",
             "uid": "mimir"
@@ -1591,11 +1546,11 @@
                 "color": "green"
               },
               {
-                "value": 5,
+                "value": 50,
                 "color": "yellow"
               },
               {
-                "value": 20,
+                "value": 500,
                 "color": "red"
               }
             ]
@@ -1615,10 +1570,10 @@
       }
     },
     {
-      "id": 33,
+      "id": 902,
       "type": "stat",
-      "title": "Consumers",
-      "description": "AMQP consumers currently subscribed — should track the worker replica count 1:1 (concurrency=1 per consumer prefetch-qos slot per worker pod, see BOOM_LABEL_IMAGE_CONCURRENCY).",
+      "title": "Running",
+      "description": "Jobs claimed AND heartbeating \u2014 actually executing somewhere right now. Excludes rows whose pod died; those are counted as 'stale'.",
       "gridPos": {
         "h": 6,
         "w": 6,
@@ -1631,8 +1586,8 @@
       },
       "targets": [
         {
-          "expr": "sum(rabbitmq_queue_consumers{namespace=\"boomtime\", queue=\"boomtime.image-jobs\"})",
-          "legendFormat": "consumers",
+          "expr": "sum(jobs_queue_depth{state=\"running\"})",
+          "legendFormat": "running",
           "datasource": {
             "type": "prometheus",
             "uid": "mimir"
@@ -1641,7 +1596,16 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short"
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "green"
+              }
+            ]
+          }
         }
       },
       "options": {
@@ -1657,10 +1621,10 @@
       }
     },
     {
-      "id": 34,
+      "id": 903,
       "type": "stat",
-      "title": "boomtime-worker replicas",
-      "description": "Current replica count of the Deployment KEDA scales (min 0 / max 4, see keda-scaledobject.yaml).",
+      "title": "Stale (awaiting reap)",
+      "description": "Rows still marked running whose heartbeat lapsed past the lease: the pod died and the reaper has not reclaimed them yet. A standing non-zero value means pods are dying or the reaper is behind \u2014 it is not merely cosmetic.",
       "gridPos": {
         "h": 6,
         "w": 6,
@@ -1673,8 +1637,8 @@
       },
       "targets": [
         {
-          "expr": "sum(kube_deployment_status_replicas{namespace=\"boomtime\", deployment=\"boomtime-worker\"})",
-          "legendFormat": "replicas",
+          "expr": "sum(jobs_queue_depth{state=\"stale\"})",
+          "legendFormat": "stale",
           "datasource": {
             "type": "prometheus",
             "uid": "mimir"
@@ -1683,7 +1647,24 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short"
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 1,
+                "color": "yellow"
+              },
+              {
+                "value": 10,
+                "color": "red"
+              }
+            ]
+          }
         }
       },
       "options": {
@@ -1699,10 +1680,10 @@
       }
     },
     {
-      "id": 35,
+      "id": 904,
       "type": "stat",
-      "title": "Unacked (in-flight)",
-      "description": "Delivered to a worker but not yet ack'd — a job actively regenerating (or stuck mid-crash awaiting redelivery).",
+      "title": "Oldest queued",
+      "description": "Age of the oldest DUE job. THE staleness signal: depth alone cannot tell '1000 jobs draining briskly' from '3 jobs wedged for an hour', and the second one is the outage.",
       "gridPos": {
         "h": 6,
         "w": 6,
@@ -1715,8 +1696,8 @@
       },
       "targets": [
         {
-          "expr": "sum(rabbitmq_queue_messages_unacked{namespace=\"boomtime\", queue=\"boomtime.image-jobs\"})",
-          "legendFormat": "unacked",
+          "expr": "max(jobs_queue_oldest_seconds)",
+          "legendFormat": "oldest",
           "datasource": {
             "type": "prometheus",
             "uid": "mimir"
@@ -1725,7 +1706,24 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short"
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 300,
+                "color": "yellow"
+              },
+              {
+                "value": 1800,
+                "color": "red"
+              }
+            ]
+          }
         }
       },
       "options": {
@@ -1741,9 +1739,10 @@
       }
     },
     {
-      "id": 36,
+      "id": 905,
       "type": "timeseries",
-      "title": "Queue depth over time",
+      "title": "Queue depth by kind",
+      "description": "Per-kind backlog over time. The one panel to look at when 'is anything stuck' \u2014 a kind whose queued line climbs while running stays flat is either at its concurrency cap or has no worker claiming it.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -1756,16 +1755,16 @@
       },
       "targets": [
         {
-          "expr": "sum(rabbitmq_queue_messages_ready{namespace=\"boomtime\", queue=\"boomtime.image-jobs\"})",
-          "legendFormat": "ready",
+          "expr": "sum by (kind) (jobs_queue_depth{state=\"queued\"})",
+          "legendFormat": "{{kind}} queued",
           "datasource": {
             "type": "prometheus",
             "uid": "mimir"
           }
         },
         {
-          "expr": "sum(rabbitmq_queue_messages_unacked{namespace=\"boomtime\", queue=\"boomtime.image-jobs\"})",
-          "legendFormat": "unacked",
+          "expr": "sum by (kind) (jobs_queue_depth{state=\"running\"})",
+          "legendFormat": "{{kind}} running",
           "datasource": {
             "type": "prometheus",
             "uid": "mimir"
@@ -1774,15 +1773,28 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short"
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
         }
       }
     },
     {
-      "id": 37,
+      "id": 906,
       "type": "timeseries",
-      "title": "boomtime-worker replicas (KEDA scaling activity)",
-      "description": "The observable effect of the ScaledObject reacting to queue depth — should rise shortly after a burst of enqueues and fall back to 0 after the cooldownPeriod (120s) once the queue drains.",
+      "title": "Oldest queued age by kind",
+      "description": "How long the oldest due job of each kind has waited. Rising while depth is flat means that kind is starved \u2014 claimed by nobody, or excluded by a kind filter that should not exclude it.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -1795,16 +1807,8 @@
       },
       "targets": [
         {
-          "expr": "sum(kube_deployment_status_replicas{namespace=\"boomtime\", deployment=\"boomtime-worker\"})",
-          "legendFormat": "current",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "mimir"
-          }
-        },
-        {
-          "expr": "sum(kube_deployment_spec_replicas{namespace=\"boomtime\", deployment=\"boomtime-worker\"})",
-          "legendFormat": "desired",
+          "expr": "jobs_queue_oldest_seconds",
+          "legendFormat": "{{kind}}",
           "datasource": {
             "type": "prometheus",
             "uid": "mimir"
@@ -1813,18 +1817,31 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short"
+          "unit": "s",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
         }
       }
     },
     {
-      "id": 38,
+      "id": 907,
       "type": "timeseries",
-      "title": "Publish / deliver rate",
-      "description": "Enqueue rate (server publishes) vs. delivery rate (worker consumes). A widening gap between the two means the queue is growing faster than the worker(s) can drain it.",
+      "title": "Recent completions by kind + status",
+      "description": "jobs_recent_completions \u2014 terminal outcomes over a rolling 15m window, derived from the jobs table so it covers work done on ephemeral KEDA drain pods that export no metrics of their own. A WINDOWED GAUGE: do not rate() it.",
       "gridPos": {
         "h": 8,
-        "w": 24,
+        "w": 12,
         "x": 0,
         "y": 86
       },
@@ -1834,16 +1851,8 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(rabbitmq_queue_messages_published_total{namespace=\"boomtime\", queue=\"boomtime.image-jobs\"}[5m]))",
-          "legendFormat": "published/s",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "mimir"
-          }
-        },
-        {
-          "expr": "sum(rate(rabbitmq_queue_messages_delivered_total{namespace=\"boomtime\", queue=\"boomtime.image-jobs\"}[5m]))",
-          "legendFormat": "delivered/s",
+          "expr": "sum by (kind, status) (jobs_recent_completions)",
+          "legendFormat": "{{kind}} {{status}}",
           "datasource": {
             "type": "prometheus",
             "uid": "mimir"
@@ -1852,207 +1861,85 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "ops"
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
         }
       }
     },
     {
-      "type": "row",
-      "title": "boomtime-worker — scale-from-zero",
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 94
-      },
-      "collapsed": false,
-      "panels": [],
-      "id": 39
-    },
-    {
-      "type": "stat",
-      "title": "Scaler active (queue has work)",
-      "description": "keda_scaler_active = 1 when the trigger has messages → KEDA scales the worker up from 0.",
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 0,
-        "y": 95
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "mimir"
-      },
-      "targets": [
-        {
-          "expr": "max(keda_scaler_active{scaledObject=\"boomtime-worker\"})",
-          "legendFormat": "active",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "mimir"
-          }
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "background",
-        "graphMode": "none"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "0": {
-                  "text": "idle",
-                  "color": "blue"
-                },
-                "1": {
-                  "text": "ACTIVE",
-                  "color": "green"
-                }
-              }
-            }
-          ],
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          }
-        }
-      },
-      "id": 40
-    },
-    {
-      "type": "stat",
-      "title": "ScaledObject paused",
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 12,
-        "y": 95
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "mimir"
-      },
-      "targets": [
-        {
-          "expr": "max(keda_scaled_object_paused{scaledObject=\"boomtime-worker\"})",
-          "legendFormat": "paused",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "mimir"
-          }
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "background",
-        "graphMode": "none"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "0": {
-                  "text": "no",
-                  "color": "green"
-                },
-                "1": {
-                  "text": "PAUSED",
-                  "color": "orange"
-                }
-              }
-            }
-          ]
-        }
-      },
-      "id": 41
-    },
-    {
-      "type": "stat",
-      "title": "Scaler errors (5m rate)",
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 18,
-        "y": 95
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "mimir"
-      },
-      "targets": [
-        {
-          "expr": "sum(rate(keda_scaled_object_errors_total{scaledObject=\"boomtime-worker\"}[5m]))",
-          "legendFormat": "errors/s",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "mimir"
-          }
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "area"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 0.001
-              }
-            ]
-          }
-        }
-      },
-      "id": 42
-    },
-    {
+      "id": 908,
       "type": "timeseries",
-      "title": "Trigger metric value (queue depth KEDA reads) vs threshold",
-      "description": "keda_scaler_metrics_value is the RabbitMQ queue length the scaler polls; the ScaledObject scales on it (target 5).",
+      "title": "Job duration p50 / p95 by kind",
+      "description": "jobs_recent_duration_seconds over the same 15m window. Also a windowed gauge \u2014 do NOT run histogram_quantile on it; the percentiles are computed in Postgres. Use it to spot a kind whose runtime is drifting up.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 86
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "targets": [
+        {
+          "expr": "jobs_recent_duration_seconds{quantile=\"0.5\"}",
+          "legendFormat": "{{kind}} p50",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        },
+        {
+          "expr": "jobs_recent_duration_seconds{quantile=\"0.95\"}",
+          "legendFormat": "{{kind}} p95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 909,
+      "type": "timeseries",
+      "title": "Concurrency headroom (fleet-wide cap vs in-flight)",
+      "description": "jobs_limiter_in_flight against jobs_limiter_max. The cap is enforced across ALL pods via the Dragonfly semaphore, so in-flight riding at max means the kind is throughput-limited by policy, not by capacity \u2014 raise the cap, not the replica count.",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 100
+        "y": 94
       },
       "datasource": {
         "type": "prometheus",
@@ -2060,16 +1947,16 @@
       },
       "targets": [
         {
-          "expr": "max(keda_scaler_metrics_value{scaledObject=\"boomtime-worker\"})",
-          "legendFormat": "queue depth (scaler)",
+          "expr": "sum by (kind) (jobs_limiter_in_flight)",
+          "legendFormat": "{{kind}} in-flight",
           "datasource": {
             "type": "prometheus",
             "uid": "mimir"
           }
         },
         {
-          "expr": "vector(5)",
-          "legendFormat": "threshold",
+          "expr": "max by (kind) (jobs_limiter_max)",
+          "legendFormat": "{{kind}} cap",
           "datasource": {
             "type": "prometheus",
             "uid": "mimir"
@@ -2078,25 +1965,33 @@
       ],
       "fieldConfig": {
         "defaults": {
+          "unit": "short",
           "custom": {
-            "drawStyle": "line",
-            "fillOpacity": 12,
-            "lineWidth": 2
-          },
-          "min": 0
+            "lineWidth": 1,
+            "fillOpacity": 10
+          }
         }
       },
-      "id": 43
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
     },
     {
+      "id": 910,
       "type": "timeseries",
-      "title": "All ScaledObjects — active state (cluster)",
-      "description": "Every KEDA ScaledObject's active flag across the cluster — quick health glance.",
+      "title": "Limiter outcomes (throughput vs back-pressure)",
+      "description": "jobs_limiter_events_total. outcome=acquired is throughput; outcome=atlimit is back-pressure \u2014 the kind was at its cap and the job was left queued for a later slot. Sustained atlimit is the limiter working, not an error.",
       "gridPos": {
-        "h": 7,
-        "w": 24,
-        "x": 0,
-        "y": 108
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 94
       },
       "datasource": {
         "type": "prometheus",
@@ -2104,8 +1999,8 @@
       },
       "targets": [
         {
-          "expr": "max by (scaledObject, namespace) (keda_scaler_active)",
-          "legendFormat": "{{namespace}}/{{scaledObject}}",
+          "expr": "sum by (kind, outcome) (rate(jobs_limiter_events_total[5m]))",
+          "legendFormat": "{{kind}} {{outcome}}",
           "datasource": {
             "type": "prometheus",
             "uid": "mimir"
@@ -2114,16 +2009,66 @@
       ],
       "fieldConfig": {
         "defaults": {
+          "unit": "reqps",
           "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "stepAfter",
+            "lineWidth": 1,
             "fillOpacity": 10
-          },
-          "min": 0,
-          "max": 1
+          }
         }
       },
-      "id": 44
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 911,
+      "type": "timeseries",
+      "title": "KEDA drain pods (boomtime-jobs ScaledJob)",
+      "description": "Ephemeral one-shot pods KEDA spawns from queue depth (postgres scaler). Each runs BOOM_JOBS_WORKERS jobs concurrently, so fleet concurrency is pods x workers \u2014 bounded above by the per-kind semaphore.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 102
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "targets": [
+        {
+          "expr": "sum(kube_job_status_active{namespace=\"boomtime\", job_name=~\"boomtime-jobs-.*\"})",
+          "legendFormat": "active drain pods",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
     }
   ]
 }

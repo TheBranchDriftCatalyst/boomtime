@@ -7,10 +7,14 @@
 # generic RED decorators (incoming router http_requests_total /
 # http_request_duration_seconds + outbound http_client_* per host), the Go/
 # process runtime collectors, the pgx DB pool + go-redis pool collectors, the
-# cache hit-rate counter, and the concurrency + HTTP rate limiters. The
-# still-relevant KEDA scaler + RabbitMQ queue panels from the two old boards are
-# carried forward verbatim (KEDA/queue metrics from keda-servicemonitor.yaml +
-# rabbitmq-podmonitor.yaml in this overlay).
+# cache hit-rate counter, and the concurrency + HTTP rate limiters.
+#
+# The RabbitMQ queue + KEDA ScaledObject panels carried over from the old boards
+# were REMOVED (boom-piig): that pipeline is gone, so they rendered "No data" and
+# quietly implied an idle broker rather than an absent one. In their place is a
+# "Job queue (catalyst-go-jobs)" row built on the first-party metrics — depth by
+# state (queued/running/stale), oldest-queued age, recent completions and
+# duration percentiles, and concurrency headroom against the fleet-wide cap.
 #
 # Same reconcile pattern as every other boomtime dashboard CR: grafana-operator
 # runs cluster-wide (namespaceScope:false) so this lands in the shared Grafana
