@@ -1527,7 +1527,7 @@
       },
       "targets": [
         {
-          "expr": "sum(jobs_queue_depth{state=\"queued\"})",
+          "expr": "sum(jobs_queue_depth{namespace=\"boomtime\",state=\"queued\"})",
           "legendFormat": "queued",
           "datasource": {
             "type": "prometheus",
@@ -1586,7 +1586,7 @@
       },
       "targets": [
         {
-          "expr": "sum(jobs_queue_depth{state=\"running\"})",
+          "expr": "sum(jobs_queue_depth{namespace=\"boomtime\",state=\"running\"})",
           "legendFormat": "running",
           "datasource": {
             "type": "prometheus",
@@ -1637,7 +1637,7 @@
       },
       "targets": [
         {
-          "expr": "sum(jobs_queue_depth{state=\"stale\"})",
+          "expr": "sum(jobs_queue_depth{namespace=\"boomtime\",state=\"stale\"})",
           "legendFormat": "stale",
           "datasource": {
             "type": "prometheus",
@@ -1696,7 +1696,7 @@
       },
       "targets": [
         {
-          "expr": "max(jobs_queue_oldest_seconds)",
+          "expr": "max(jobs_queue_oldest_seconds{namespace=\"boomtime\"})",
           "legendFormat": "oldest",
           "datasource": {
             "type": "prometheus",
@@ -1755,7 +1755,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (kind) (jobs_queue_depth{state=\"queued\"})",
+          "expr": "sum by (kind) (jobs_queue_depth{namespace=\"boomtime\",state=\"queued\"})",
           "legendFormat": "{{kind}} queued",
           "datasource": {
             "type": "prometheus",
@@ -1763,7 +1763,7 @@
           }
         },
         {
-          "expr": "sum by (kind) (jobs_queue_depth{state=\"running\"})",
+          "expr": "sum by (kind) (jobs_queue_depth{namespace=\"boomtime\",state=\"running\"})",
           "legendFormat": "{{kind}} running",
           "datasource": {
             "type": "prometheus",
@@ -1807,7 +1807,7 @@
       },
       "targets": [
         {
-          "expr": "jobs_queue_oldest_seconds",
+          "expr": "jobs_queue_oldest_seconds{namespace=\"boomtime\"}",
           "legendFormat": "{{kind}}",
           "datasource": {
             "type": "prometheus",
@@ -1851,7 +1851,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (kind, status) (jobs_recent_completions)",
+          "expr": "sum by (kind, status) (jobs_recent_completions{namespace=\"boomtime\"})",
           "legendFormat": "{{kind}} {{status}}",
           "datasource": {
             "type": "prometheus",
@@ -1895,7 +1895,7 @@
       },
       "targets": [
         {
-          "expr": "jobs_recent_duration_seconds{quantile=\"0.5\"}",
+          "expr": "jobs_recent_duration_seconds{namespace=\"boomtime\",quantile=\"0.5\"}",
           "legendFormat": "{{kind}} p50",
           "datasource": {
             "type": "prometheus",
@@ -1903,7 +1903,7 @@
           }
         },
         {
-          "expr": "jobs_recent_duration_seconds{quantile=\"0.95\"}",
+          "expr": "jobs_recent_duration_seconds{namespace=\"boomtime\",quantile=\"0.95\"}",
           "legendFormat": "{{kind}} p95",
           "datasource": {
             "type": "prometheus",
@@ -1931,102 +1931,6 @@
       }
     },
     {
-      "id": 909,
-      "type": "timeseries",
-      "title": "Concurrency headroom (fleet-wide cap vs in-flight)",
-      "description": "jobs_limiter_in_flight against jobs_limiter_max. The cap is enforced across ALL pods via the Dragonfly semaphore, so in-flight riding at max means the kind is throughput-limited by policy, not by capacity \u2014 raise the cap, not the replica count.",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 94
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "mimir"
-      },
-      "targets": [
-        {
-          "expr": "sum by (kind) (jobs_limiter_in_flight)",
-          "legendFormat": "{{kind}} in-flight",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "mimir"
-          }
-        },
-        {
-          "expr": "max by (kind) (jobs_limiter_max)",
-          "legendFormat": "{{kind}} cap",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "mimir"
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "custom": {
-            "lineWidth": 1,
-            "fillOpacity": 10
-          }
-        }
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "multi"
-        }
-      }
-    },
-    {
-      "id": 910,
-      "type": "timeseries",
-      "title": "Limiter outcomes (throughput vs back-pressure)",
-      "description": "jobs_limiter_events_total. outcome=acquired is throughput; outcome=atlimit is back-pressure \u2014 the kind was at its cap and the job was left queued for a later slot. Sustained atlimit is the limiter working, not an error.",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 94
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "mimir"
-      },
-      "targets": [
-        {
-          "expr": "sum by (kind, outcome) (rate(jobs_limiter_events_total[5m]))",
-          "legendFormat": "{{kind}} {{outcome}}",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "mimir"
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "reqps",
-          "custom": {
-            "lineWidth": 1,
-            "fillOpacity": 10
-          }
-        }
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "multi"
-        }
-      }
-    },
-    {
       "id": 911,
       "type": "timeseries",
       "title": "KEDA drain pods (boomtime-jobs ScaledJob)",
@@ -2035,7 +1939,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 102
+        "y": 94
       },
       "datasource": {
         "type": "prometheus",
