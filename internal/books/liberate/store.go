@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -40,6 +41,29 @@ const (
 	StatusUnsupportedFormat = "unsupported_format"
 	StatusSkipped           = "skipped"
 )
+
+// MaxAutoAttempts is how many CONSECUTIVE failures the unattended sweep tolerates
+// before it stops picking a title up on its own.
+//
+// 3, because the failures worth retrying are transient (a dropped CDN
+// connection, a pod evicted mid-convert) and those clear well inside three
+// tries; anything still failing on the fourth is a property of the title, not
+// the weather. Before this existed a permanently-failing title was re-licensed
+// on EVERY sweep forever — which is how three podcasts came to be re-requested
+// from Amazon indefinitely.
+//
+// This bounds the SWEEP only. An explicit single-title liberate (the context
+// menu, the CLI) ignores it completely: giving up is the unattended path being
+// careful, never the server refusing a direct instruction.
+const MaxAutoAttempts = 3
+
+// terminalStatuses are the outcomes the sweep never retries on its own.
+// Kept as one list because it is needed in three places (the sweep's exclusion,
+// the excluded-set query, and the status rollup) and three hand-copied SQL
+// literals is how they drift.
+var terminalStatuses = []string{
+	StatusDenied, StatusUnsupportedFormat, StatusUnsupportedCodec, StatusSkipped,
+}
 
 // ErrItemNotFound means no reading_items row matched owner+asin.
 var ErrItemNotFound = errors.New("liberate: no library item for that owner and asin")
@@ -91,15 +115,24 @@ func (s *Store) LoadItem(ctx context.Context, owner, asin string) (Item, error) 
 // ListUnliberated returns the ASINs for one owner that still need work, oldest
 // purchases first. Backs the sweep. limit <= 0 means no limit.
 func (s *Store) ListUnliberated(ctx context.Context, owner string, limit int) ([]string, error) {
+	// Two independent exclusions, and they are not the same thing:
+	//   - a TERMINAL status is a verdict about the title (Amazon denied it, the
+	//     asset is a podcast, the codec is one we cannot remux)
+	//   - MaxAutoAttempts is a verdict about the ATTEMPTS (it keeps failing for
+	//     reasons we never managed to classify)
+	// Both mean "the sweep stops", but only the first is a statement about the
+	// book, which is why the UI reports them separately.
 	q := `
 		SELECT external_id
 		FROM public.reading_items
 		WHERE owner = $1 AND source = 'audible'
-		  AND (liberation_status IS NULL OR liberation_status NOT IN ('liberated', 'denied', 'unsupported_format', 'skipped'))
+		  AND liberation_status IS DISTINCT FROM $2
+		  AND (liberation_status IS NULL OR NOT (liberation_status = ANY($3)))
+		  AND liberation_attempts < $4
 		ORDER BY synced_at ASC`
-	args := []any{owner}
+	args := []any{owner, StatusLiberated, terminalStatuses, MaxAutoAttempts}
 	if limit > 0 {
-		q += ` LIMIT $2`
+		q += ` LIMIT $5`
 		args = append(args, limit)
 	}
 	rows, err := s.Pool.Query(ctx, q, args...)
@@ -142,7 +175,8 @@ func (s *Store) MarkLiberated(ctx context.Context, owner, asin, relPath string, 
 		    audio_bytes       = $4,
 		    audio_format      = 'm4b',
 		    content_format    = $5,
-		    liberation_error  = NULL
+		    liberation_error  = NULL,
+		    liberation_attempts = 0
 		WHERE owner = $1 AND external_id = $2 AND source = 'audible'`
 	_, err := s.Pool.Exec(ctx, q, owner, asin, relPath, bytes, contentFormat)
 	if err != nil {
@@ -160,7 +194,11 @@ func (s *Store) MarkFailed(ctx context.Context, owner, asin, status, reason, con
 		UPDATE public.reading_items
 		SET liberation_status = $3,
 		    liberation_error  = $4,
-		    content_format    = COALESCE(NULLIF($5, ''), content_format)
+		    content_format    = COALESCE(NULLIF($5, ''), content_format),
+		    -- Counts CONSECUTIVE failures: every success path resets it to 0, so
+		    -- a title that fails twice, succeeds, then fails again starts over
+		    -- rather than inching toward a give-up it never earned.
+		    liberation_attempts = liberation_attempts + 1
 		WHERE owner = $1 AND external_id = $2 AND source = 'audible'`
 	_, err := s.Pool.Exec(ctx, q, owner, asin, status, truncate(reason, 2000), contentFormat)
 	if err != nil {
@@ -171,11 +209,17 @@ func (s *Store) MarkFailed(ctx context.Context, owner, asin, status, reason, con
 
 // ClearLiberation forgets a local file (the "forget" endpoint), returning the
 // row to an unliberated state so a later sweep picks it up again.
+//
+// This is ALSO the un-give-up path: it resets liberation_attempts, so a title
+// the sweep abandoned after MaxAutoAttempts (or classified terminal) becomes
+// eligible again. Without that reset "retry" would appear to work, run once,
+// and then be silently dropped by the sweep forever after.
 func (s *Store) ClearLiberation(ctx context.Context, owner, asin string) (string, error) {
 	const q = `
 		UPDATE public.reading_items
 		SET liberation_status = NULL, liberated_at = NULL, audio_path = NULL,
-		    audio_bytes = NULL, audio_format = NULL, liberation_error = NULL
+		    audio_bytes = NULL, audio_format = NULL, liberation_error = NULL,
+		    liberation_attempts = 0
 		WHERE owner = $1 AND external_id = $2 AND source = 'audible'
 		RETURNING COALESCE($3, '')`
 	var prev string
@@ -210,6 +254,60 @@ func (s *Store) StatusCounts(ctx context.Context, owner string) (map[string]int,
 			return nil, err
 		}
 		out[status] = n
+	}
+	return out, rows.Err()
+}
+
+// ExcludedItem is one title the sweep will not pick up on its own, with enough
+// context to judge whether that is right.
+type ExcludedItem struct {
+	ASIN     string `json:"asin"`
+	Title    string `json:"title"`
+	Author   string `json:"author,omitempty"`
+	Status   string `json:"status"`
+	Error    string `json:"error,omitempty"`
+	Attempts int    `json:"attempts"`
+	// Retryable distinguishes "we gave up counting failures" (true — a retry is
+	// plausible) from a verdict about the title itself (false — a retry will
+	// reproduce the same refusal). The UI leads with this because it is the
+	// difference between a button worth pressing and one that just burns a
+	// request against Amazon.
+	Retryable bool `json:"retryable"`
+}
+
+// ListExcluded returns every title the sweep skips, newest failure first.
+//
+// This is the answer to "what did liberation quietly give up on" — a question
+// that had no answer before: the rows were correctly excluded from the sweep and
+// then invisible, so a permanently-failing title looked identical to one that
+// had simply never been queued.
+func (s *Store) ListExcluded(ctx context.Context, owner string) ([]ExcludedItem, error) {
+	const q = `
+		SELECT external_id,
+		       COALESCE(title, ''),
+		       COALESCE(authors, ''),
+		       COALESCE(liberation_status, ''),
+		       COALESCE(liberation_error, ''),
+		       liberation_attempts
+		FROM public.reading_items
+		WHERE owner = $1 AND source = 'audible'
+		  AND (liberation_status = ANY($2) OR
+		       (liberation_attempts >= $3 AND liberation_status IS DISTINCT FROM $4))
+		ORDER BY liberation_attempts DESC, title ASC`
+	rows, err := s.Pool.Query(ctx, q, owner, terminalStatuses, MaxAutoAttempts, StatusLiberated)
+	if err != nil {
+		return nil, fmt.Errorf("liberate: list excluded: %w", err)
+	}
+	defer rows.Close()
+	out := []ExcludedItem{}
+	for rows.Next() {
+		var it ExcludedItem
+		if err := rows.Scan(&it.ASIN, &it.Title, &it.Author, &it.Status, &it.Error, &it.Attempts); err != nil {
+			return nil, err
+		}
+		// Terminal is a verdict about the title; exhausted attempts is not.
+		it.Retryable = !slices.Contains(terminalStatuses, it.Status)
+		out = append(out, it)
 	}
 	return out, rows.Err()
 }

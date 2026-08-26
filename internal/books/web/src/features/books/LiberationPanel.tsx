@@ -7,7 +7,7 @@
 // anyone who has not enabled liberation, with no config plumbing.
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, Loader2, RotateCw, Trash2, TriangleAlert } from "lucide-react";
+import { ChevronDown, ChevronRight, Download, Loader2, RotateCw, Trash2, TriangleAlert } from "lucide-react";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { api } from "@shared/lib/api";
 
@@ -225,7 +225,97 @@ export function LiberateAllButton() {
         <Download className="mr-1.5 h-4 w-4" />
         Liberate all{pending > 0 ? ` (${pending})` : ""}
       </Button>
+      <SkippedList count={status?.excluded ?? 0} />
       {banner && <span className="text-xs text-muted-foreground">{banner}</span>}
+    </div>
+  );
+}
+
+/**
+ * SkippedList — the give-up set: titles the sweep will no longer pick up, with
+ * the reason it stopped.
+ *
+ * WHY THIS EXISTS. Excluding a hopeless title from the sweep is correct, but
+ * before this the excluded rows were also INVISIBLE — a title Amazon refuses
+ * every time looked exactly like one that had simply never been queued. Three
+ * podcasts sat in that blind spot being re-requested indefinitely.
+ *
+ * The list is fetched only when opened. It is a small set by nature, and on a
+ * healthy library it is empty, so paying for it on every Books page load would
+ * be a request that almost always returns nothing.
+ */
+function SkippedList({ count }: { count: number }) {
+  const [open, setOpen] = useState(false);
+  const qc = useQueryClient();
+
+  const q = useQuery({
+    queryKey: ["liberation", "excluded"],
+    queryFn: () => api.getLiberationExcluded(),
+    enabled: open,
+  });
+
+  // Retrying clears the row's liberation state, which also resets the
+  // consecutive-failure counter — without that reset the title would run once
+  // and be dropped by every sweep after, so the button would appear to work and
+  // quietly not.
+  const retry = useMutation({
+    mutationFn: (asin: string) => api.forgetLiberation(asin, false),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["liberation"] }),
+  });
+
+  if (count === 0) return null;
+
+  return (
+    <div className="text-xs">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1 text-muted-foreground hover:text-foreground"
+        aria-expanded={open}
+      >
+        {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+        {count} skipped
+      </button>
+
+      {open && (
+        <div className="mt-2 space-y-1.5 border-l border-border pl-3">
+          {q.isPending && <p className="text-muted-foreground">Loading…</p>}
+          {q.isError && <p className="text-destructive">Could not load the skipped list.</p>}
+          {q.data?.items.map((it) => (
+            <div key={it.asin} className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate font-medium">{it.title || it.asin}</p>
+                <p className="text-muted-foreground">
+                  {STATUS_LABEL[it.status] ?? it.status}
+                  {/* Attempt count only means something for the give-up case; on
+                      a terminal verdict it is always 1 and reads as noise. */}
+                  {it.retryable && it.attempts > 0 && ` · ${it.attempts} attempts`}
+                  {it.error && ` · ${it.error.slice(0, 120)}`}
+                </p>
+              </div>
+              {it.retryable ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={retry.isPending}
+                  onClick={() => retry.mutate(it.asin)}
+                >
+                  <RotateCw className="mr-1 h-3 w-3" />
+                  Retry
+                </Button>
+              ) : (
+                // No button on a terminal verdict: pressing it would re-earn the
+                // identical refusal from Amazon. Saying why is more useful than
+                // offering an action that cannot work.
+                <span className="shrink-0 pt-1 text-muted-foreground">won’t retry</span>
+              )}
+            </div>
+          ))}
+          {q.data?.items.length === 0 && (
+            <p className="text-muted-foreground">Nothing skipped.</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

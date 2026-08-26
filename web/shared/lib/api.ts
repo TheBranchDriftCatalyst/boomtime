@@ -1116,8 +1116,28 @@ export const api = {
     request<{
       counts: Record<string, number>;
       pending: number;
+      // Titles the sweep will no longer pick up on its own. Count only — the
+      // rows come from getLiberationExcluded when someone opens the list.
+      excluded: number;
       libraryPath: string;
     }>("/api/v1/books/liberation/status"),
+
+  // The give-up set: what liberation stopped trying, and why. `retryable`
+  // separates "we ran out of attempts" (worth another go) from a verdict about
+  // the title itself — a denied or non-audio asset will refuse identically
+  // every time, so retrying it only spends another request against Amazon.
+  getLiberationExcluded: () =>
+    request<{
+      items: Array<{
+        asin: string;
+        title: string;
+        author?: string;
+        status: string;
+        error?: string;
+        attempts: number;
+        retryable: boolean;
+      }>;
+    }>("/api/v1/books/liberation/excluded"),
 
   // force=true re-liberates a book the idempotency check would otherwise skip.
   liberateBook: (externalId: string, force = false) =>

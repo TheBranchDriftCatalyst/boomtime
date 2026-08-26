@@ -58,6 +58,7 @@ func Register(e *echo.Echo, h *Handler) {
 			e.DELETE("/api/v1/books/items/:externalId/liberate", h.ForgetLiberation)
 			e.POST("/api/v1/books/liberate/sweep", h.SweepLiberation)
 			e.GET("/api/v1/books/liberation/status", h.LiberationStatus)
+			e.GET("/api/v1/books/liberation/excluded", h.LiberationExcluded)
 		}
 	}
 

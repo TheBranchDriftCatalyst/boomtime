@@ -21,7 +21,8 @@ import (
 //	POST   /api/v1/books/items/:externalId/liberate  → 202 { enqueued, jobId }
 //	DELETE /api/v1/books/items/:externalId/liberate  → 200 { forgotten }
 //	POST   /api/v1/books/liberate/sweep              → 202 { enqueued, jobId, pending }
-//	GET    /api/v1/books/liberation/status           → 200 { counts, pending, libraryPath }
+//	GET    /api/v1/books/liberation/status           → 200 { counts, pending, excluded, libraryPath }
+//	GET    /api/v1/books/liberation/excluded         → 200 { items: [...] }
 //
 // Every mutation is ENQUEUED rather than run inline. A liberation is minutes of
 // download plus minutes of remux; doing it in the request would hold an HTTP
@@ -185,13 +186,44 @@ func (h *Handler) LiberationStatus(c *echo.Context) error {
 	if perr != nil {
 		return apihelpers.InternalErr(h.Logger, c, "liberation: list pending failed", perr)
 	}
+	excluded, eerr := svc.Store.ListExcluded(ctx, owner)
+	if eerr != nil {
+		return apihelpers.InternalErr(h.Logger, c, "liberation: list excluded failed", eerr)
+	}
 	return c.JSON(http.StatusOK, map[string]any{
 		"counts":  counts,
 		"pending": len(pending),
+		// Count only — the list itself is one request away. The toolbar needs to
+		// know WHETHER to offer the affordance on every load; it needs the rows
+		// only once someone opens it.
+		"excluded": len(excluded),
 		// The library path is operator information, not a secret, and seeing it
 		// is how you diagnose "it says liberated but I can't find the file".
 		"libraryPath": h.Cfg.BooksLibraryPath,
 	})
+}
+
+// LiberationExcluded lists the titles the sweep will not pick up on its own.
+//
+// Counts alone cannot answer "should it have given up on that one?" — that needs
+// the title, the status and the error side by side. Before this endpoint the
+// excluded rows were correctly skipped and completely invisible, which is how
+// three podcasts spent a week being re-requested from Amazon without anyone
+// being able to see them in the UI.
+func (h *Handler) LiberationExcluded(c *echo.Context) error {
+	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
+	if aerr != nil {
+		return apihelpers.RespondErr(c, aerr)
+	}
+	svc := h.liberation()
+	if svc == nil {
+		return apihelpers.RespondErr(c, apierr.BadRequest("liberation is not configured on this server"))
+	}
+	items, err := svc.Store.ListExcluded(c.Request().Context(), owner)
+	if err != nil {
+		return apihelpers.InternalErr(h.Logger, c, "liberation: list excluded failed", err)
+	}
+	return c.JSON(http.StatusOK, map[string]any{"items": items})
 }
 
 // liberation returns the shared liberation service, or nil when unavailable.
