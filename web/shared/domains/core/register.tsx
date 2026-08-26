@@ -18,6 +18,7 @@ import { Navigate } from "react-router";
 import {
   Database,
   FileJson,
+  FlaskConical,
   KeyRound,
   LayoutDashboard,
   ListChecks,
@@ -49,6 +50,11 @@ const PluginAndTokensTab = lazy(() =>
 const Changelog = lazy(() =>
   import("@shared/features/changelog/Changelog").then((m) => ({
     default: m.Changelog,
+  })),
+);
+const LabsTab = lazy(() =>
+  import("@shared/features/settings/LabsTab").then((m) => ({
+    default: m.LabsTab,
   })),
 );
 
@@ -394,6 +400,18 @@ export function registerCoreDomain(): void {
         icon: ScrollText,
         description: "What shipped, newest first.",
         render: () => <Changelog embedded />,
+      },
+      {
+        // boom-lzr: reachability home for the experimental FEATURE_FLAGS
+        // registry (overviewEditor, labels3D, ...) — previously only
+        // discoverable from the public-profile dossier's flags-flipper menu.
+        // Last tab: it's opt-in tinkering, not a first-run destination.
+        id: "labs",
+        label: "Labs",
+        order: 3,
+        icon: FlaskConical,
+        description: "Experimental features, off by default.",
+        render: () => <LabsTab />,
       },
     ],
   });

@@ -86,7 +86,11 @@ export function OverviewDashboard({
   // its output is only RENDERED when the flag is on — so the flag-off path
   // below is the untouched legacy JSX, byte-identical to what ships today.
   const [editorOn] = useFeatureFlag("overviewEditor");
-  const editor = useDashboardEditor("overview");
+  // gaka-lzr Phase 6: the editor hook is called unconditionally (see the
+  // comment above) but its DB persistence must NOT fire for users who never
+  // see the editor — `enabled` gates the GET/PUT to exactly when the flag
+  // is on.
+  const editor = useDashboardEditor("overview", { enabled: editorOn });
 
   const statsQuery = useQuery({
     queryKey: qk.stats(tr.startISO, tr.endISO, tr.timeLimit, space),

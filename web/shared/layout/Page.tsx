@@ -22,6 +22,12 @@
 import type { ReactNode } from "react";
 import { PageToolbar } from "@thebranchdriftcatalyst/catalyst-ui/components/PageToolbar";
 import { cn } from "@shared/lib/utils";
+// boom-lzr: app-wide --grid-tile-* CSS vars for the isolated grid primitive
+// (web/shared/lib/grid), sourced from catalyst-ui theme tokens. `<Page>` is the
+// shared shell every in-app dashboard renders through, so importing it here
+// (rather than per-page) is the one place that reaches every consumer of
+// the grid primitive inside the authed app.
+import "./gridTheme.css";
 
 export interface PageProps {
   children: ReactNode;
