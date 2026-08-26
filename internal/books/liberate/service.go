@@ -151,10 +151,17 @@ func (s *Service) LiberateBook(ctx context.Context, owner, asin string, opts Opt
 	lic, _, lerr := s.licenser()(ctx, cred, asin)
 	if lerr != nil {
 		status := StatusFailed
-		if errors.Is(lerr, ErrLicenseDenied) {
+		switch {
+		case errors.Is(lerr, ErrLicenseDenied):
 			// TERMINAL. Retrying a Denied title in a loop is how an account gets
 			// flagged, so this must never look like a transient failure.
 			status = StatusDenied
+		case errors.Is(lerr, ErrNotAudiobook):
+			// TERMINAL for a different reason: podcasts and other non-audio
+			// assets live in the same library but can never be licensed as
+			// audiobooks. Marked unsupported_format so ListUnliberated skips
+			// them and a re-sweep stops re-requesting them forever.
+			status = StatusUnsupportedFormat
 		}
 		_ = s.Store.MarkFailed(ctx, owner, asin, status, lerr.Error(), "")
 		finish(status, lerr.Error())

@@ -178,3 +178,42 @@ func contains(hay []string, needle string) bool {
 	}
 	return false
 }
+
+// Podcasts live in the same Audible library as audiobooks and cannot be
+// licensed as one. Amazon reports this as a 400 carrying contentDeliveryType —
+// NOT as a Denied status_code — so without sniffing the body it falls into the
+// generic retryable-400 path and every future sweep re-requests a title Amazon
+// will refuse forever. Observed on 3 of 1035 real titles.
+func TestIsNonAudioAsset(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{
+			name: "the real PodcastParent body",
+			body: `{"message":"Requested asin:B08K56VS1G is a non_audio asset with contentDeliveryType:PodcastParent"}`,
+			want: true,
+		},
+		{"non_audio marker alone", `{"message":"non_audio asset"}`, true},
+		{"PodcastParent marker alone", `{"message":"contentDeliveryType:PodcastParent"}`, true},
+		// A genuine transient 400 must stay RETRYABLE — misclassifying it as
+		// terminal would silently drop a real audiobook from every future sweep.
+		{"generic 400", `{"message":"Bad request"}`, false},
+		{"empty", ``, false},
+		{"unrelated error", `{"message":"Requested asin:B0X is not owned"}`, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isNonAudioAsset([]byte(tc.body)); got != tc.want {
+				t.Errorf("isNonAudioAsset(%q) = %v, want %v", tc.body, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestErrNotAudiobookSurvivesWrapping(t *testing.T) {
+	if !errors.Is(wrapf(ErrNotAudiobook, "B0X"), ErrNotAudiobook) {
+		t.Fatal("wrapped ErrNotAudiobook is not errors.Is-comparable")
+	}
+}

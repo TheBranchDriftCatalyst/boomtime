@@ -9,7 +9,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/amazon"
 )
@@ -21,6 +23,17 @@ import (
 // failure is the whole point of it being its own error: a retry loop on Denied
 // is how you get an account flagged.
 var ErrLicenseDenied = errors.New("liberate: Audible denied the content license")
+
+// ErrNotAudiobook is the TERMINAL "this is not an audiobook" outcome. Audible's
+// library includes podcasts and other non_audio assets, and licensing one
+// returns HTTP 400 with contentDeliveryType:PodcastParent (or similar) rather
+// than a Denied status_code.
+//
+// It must be distinguished from a generic 400, because generic failures are
+// RETRYABLE and this is not: a podcast will never become licensable, so
+// retrying it means every future sweep re-requests a title Amazon will refuse
+// forever. Observed on 3 titles in a 1035-title library.
+var ErrNotAudiobook = errors.New("liberate: not an audiobook (non-audio asset)")
 
 // licenseRequestBody is the POST payload. It is marshalled ONCE and the exact
 // bytes are both signed and sent (see amazon.SignedPost) — never re-marshalled.
@@ -171,6 +184,12 @@ func RequestLicense(ctx context.Context, cred *amazon.DeviceCredential, asin str
 		return nil, raw, fmt.Errorf("liberate: licenserequest %s: %w", asin, err)
 	}
 	if status < 200 || status >= 300 {
+		// Amazon reports a non-audiobook asset as a 400 carrying
+		// contentDeliveryType, not as a Denied status_code — so it has to be
+		// sniffed out of the body before the generic (retryable) 400 path.
+		if status == http.StatusBadRequest && isNonAudioAsset(raw) {
+			return nil, raw, fmt.Errorf("%w: %s: %s", ErrNotAudiobook, asin, truncate(string(raw), 200))
+		}
 		return nil, raw, fmt.Errorf("liberate: licenserequest %s: HTTP %d: %s", asin, status, truncate(string(raw), 512))
 	}
 	var lr LicenseResponse
@@ -199,3 +218,13 @@ func truncate(s string, n int) string {
 // wrapf wraps err with a message, preserving errors.Is/As so a Denied outcome
 // stays identifiable after annotation.
 func wrapf(err error, msg string) error { return fmt.Errorf("%w: %s", err, msg) }
+
+// isNonAudioAsset reports whether a licenserequest error body says the ASIN is
+// not an audiobook. Matches on the two markers Amazon actually returns rather
+// than the whole message, which carries the ASIN and so is never constant:
+//
+//	{"message":"Requested asin:B08K56VS1G is a non_audio asset with contentDeliveryType:PodcastParent"}
+func isNonAudioAsset(body []byte) bool {
+	s := string(body)
+	return strings.Contains(s, "non_audio") || strings.Contains(s, "PodcastParent")
+}
