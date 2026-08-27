@@ -1943,10 +1943,17 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 				if typed.Status != 0 {
 					status = typed.Status
 				}
-				if sch := schemaForType(gen, comps.Schemas, typed.Resp); sch != nil {
-					setStatus(op, status, rInlineRef("OK.", sch))
-				} else {
-					setStatus(op, status, rInline("OK.", respSchema))
+				switch {
+				case status == http.StatusNoContent:
+					// A 204 body is empty BY DEFINITION. Emitting the generic
+					// object here would document a body that can never arrive.
+					setStatus(op, status, noContentRef())
+				default:
+					if sch := schemaForType(gen, comps.Schemas, typed.Resp); sch != nil {
+						setStatus(op, status, rInlineRef("OK.", sch))
+					} else {
+						setStatus(op, status, rInline("OK.", respSchema))
+					}
 				}
 				if sch := schemaForType(gen, comps.Schemas, typed.Req); sch != nil {
 					op.RequestBody = &openapi3.RequestBodyRef{Value: openapi3.NewRequestBody().

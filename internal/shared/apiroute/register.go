@@ -57,6 +57,44 @@ func Accepted[Resp any](e *echo.Echo, method, path string, h Handler[Resp], mw .
 	register(e, method, path, http.StatusAccepted, nil, h, mw...)
 }
 
+// AcceptedBody registers a typed write that binds a JSON body AND answers 202.
+// Separate from POST because 22 routes enqueue rather than act inline, and a
+// spec claiming 200 for them would misstate the contract.
+func AcceptedBody[Req, Resp any](e *echo.Echo, method, path string, h BodyHandler[Req, Resp], mw ...echo.MiddlewareFunc) {
+	registerBody(e, method, path, http.StatusAccepted, h, mw...)
+}
+
+// NoContent registers a route that answers 204 with an empty body. 27 routes do
+// this; without a dedicated form they would either stay off the seam entirely or
+// be forced to invent a response type that the handler never writes.
+//
+// The spec records no response schema for these, which is the truth: a 204 body
+// is empty by definition.
+func NoContent(e *echo.Echo, method, path string, h func(c *echo.Context) error, mw ...echo.MiddlewareFunc) {
+	record(Op{Method: method, Path: path, Status: http.StatusNoContent})
+	e.Add(method, path, func(c *echo.Context) error {
+		if err := h(c); err != nil {
+			return respond(c, err)
+		}
+		return c.NoContent(http.StatusNoContent)
+	}, mw...)
+}
+
+// NoContentBody is NoContent for a route that binds a JSON body first.
+func NoContentBody[Req any](e *echo.Echo, method, path string, h func(c *echo.Context, req Req) error, mw ...echo.MiddlewareFunc) {
+	record(Op{Method: method, Path: path, Req: typeOf[Req](), Status: http.StatusNoContent})
+	e.Add(method, path, func(c *echo.Context) error {
+		var req Req
+		if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitSmall); aerr != nil {
+			return apihelpers.RespondErr(c, aerr)
+		}
+		if err := h(c, req); err != nil {
+			return respond(c, err)
+		}
+		return c.NoContent(http.StatusNoContent)
+	}, mw...)
+}
+
 func register[Resp any](e *echo.Echo, method, path string, status int, reqType any, h Handler[Resp], mw ...echo.MiddlewareFunc) {
 	_ = reqType
 	record(Op{Method: method, Path: path, Resp: typeOf[Resp](), Status: status})
