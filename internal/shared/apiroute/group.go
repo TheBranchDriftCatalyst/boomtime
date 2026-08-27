@@ -89,9 +89,29 @@ func groupJSON[Resp any](g *echo.Group, method, path string, status int, h Handl
 }
 
 func groupJSONBody[Req, Resp any](g *echo.Group, method, path string, status int, h BodyHandler[Req, Resp], mw ...echo.MiddlewareFunc) *Route {
+	return groupJSONBodyLimit[Req, Resp](g, method, path, status, defaultBodyLimit, h, mw...)
+}
+
+// GPOSTLimit and GPUTLimit are the group forms with an explicit body cap.
+//
+// Added because the books admin agent hit exactly the regression this session
+// already shipped once: PUT /api/v1/admin/books/reading-monitor bound with plain
+// c.Bind (uncapped), and GPUT would have silently shrunk it to 4 KiB. It reached
+// for GWritesJSON to avoid that, which was the right call with what existed —
+// but it costs the request schema. With these, such a route keeps its cap AND
+// gets documented.
+func GPOSTLimit[Req, Resp any](g *echo.Group, path string, limit int64, h BodyHandler[Req, Resp], mw ...echo.MiddlewareFunc) *Route {
+	return groupJSONBodyLimit[Req, Resp](g, http.MethodPost, path, http.StatusOK, limit, h, mw...)
+}
+
+func GPUTLimit[Req, Resp any](g *echo.Group, path string, limit int64, h BodyHandler[Req, Resp], mw ...echo.MiddlewareFunc) *Route {
+	return groupJSONBodyLimit[Req, Resp](g, http.MethodPut, path, http.StatusOK, limit, h, mw...)
+}
+
+func groupJSONBodyLimit[Req, Resp any](g *echo.Group, method, path string, status int, limit int64, h BodyHandler[Req, Resp], mw ...echo.MiddlewareFunc) *Route {
 	ri := g.Add(method, path, func(c *echo.Context) error {
 		var req Req
-		if aerr := bindBody(c, &req, defaultBodyLimit); aerr != nil {
+		if aerr := bindBody(c, &req, limit); aerr != nil {
 			return apihelpers.RespondErr(c, aerr)
 		}
 		v, err := h(c, req)

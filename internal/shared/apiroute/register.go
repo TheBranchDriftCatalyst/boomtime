@@ -269,3 +269,13 @@ func WritesJSON[Resp any](e *echo.Echo, method, path string, h func(c *echo.Cont
 	e.Add(method, path, h, mw...)
 	return &Route{method: method, path: path}
 }
+
+// PUTLimit is PUT with an explicit request-body cap.
+func PUTLimit[Req, Resp any](e *echo.Echo, path string, limit int64, h BodyHandler[Req, Resp], mw ...echo.MiddlewareFunc) *Route {
+	return registerBody(e, http.MethodPut, path, http.StatusOK, limit, h, mw...)
+}
+
+// PATCHLimit is PATCH with an explicit request-body cap.
+func PATCHLimit[Req, Resp any](e *echo.Echo, path string, limit int64, h BodyHandler[Req, Resp], mw ...echo.MiddlewareFunc) *Route {
+	return registerBody(e, http.MethodPatch, path, http.StatusOK, limit, h, mw...)
+}
