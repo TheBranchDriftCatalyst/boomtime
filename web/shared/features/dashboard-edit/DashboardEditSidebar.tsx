@@ -220,7 +220,7 @@ function TileConfigForm({ item, entry, onSetView, onSetConfig, onSetHidden }: Ti
       {hasViews && (
         <div className="flex flex-col gap-1.5">
           <Label className="text-[10px] uppercase tracking-wide">View</Label>
-          <Select value={currentView} onValueChange={(v) => onSetView(item.i, v)}>
+          <Select value={currentView} onValueChange={(v: string) => onSetView(item.i, v)}>
             <SelectTrigger data-testid="dashboard-edit-config-view">
               <SelectValue placeholder="View" />
             </SelectTrigger>
