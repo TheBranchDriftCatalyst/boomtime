@@ -1934,11 +1934,23 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 			// are the same call, so neither can outlive the other.
 			typed, isTyped := apiroute.Lookup(method, rt.Path)
 
+			tag := inferAutoTag(p)
+			if isTyped && typed.Tag != "" {
+				tag = typed.Tag
+			}
 			op := &openapi3.Operation{
-				Tags:    []string{inferAutoTag(p)},
+				Tags:    []string{tag},
 				Summary: strings.ToUpper(method[:1]) + strings.ToLower(method[1:]) + " " + p,
 			}
-			if !isTyped {
+			// Prose declared at the registration call wins over the derived
+			// placeholder — that is the whole point of putting it there.
+			if isTyped && typed.Summary != "" {
+				op.Summary = typed.Summary
+			}
+			switch {
+			case isTyped && typed.Description != "":
+				op.Description = typed.Description
+			case !isTyped:
 				op.Description = "Auto-derived stub: this route is registered but is not on the typed " +
 					"route seam, so its request/response bodies are undocumented. Register it via " +
 					"internal/shared/apiroute to generate real schemas from the Go types."
@@ -1958,6 +1970,19 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 					// A 204 body is empty BY DEFINITION. Emitting the generic
 					// object here would document a body that can never arrive.
 					setStatus(op, status, noContentRef())
+				case typed.NoBodyResponse:
+					// A 101 handshake or a 3xx redirect. Saying "no body" is both
+					// true and more useful than implying an undocumented object.
+					desc := "No response body."
+					if status == http.StatusSwitchingProtocols {
+						desc = "WebSocket handshake accepted; the connection is upgraded and carries no HTTP body."
+					} else if status >= 300 && status < 400 {
+						desc = "Redirect. The target is in the Location header."
+					}
+					setStatus(op, status, &openapi3.ResponseRef{Value: &openapi3.Response{Description: &desc}})
+				case typed.ContentType != "":
+					// A declared non-JSON body (image, svg, zip, markdown).
+					setStatus(op, status, rBlob("Binary or non-JSON response body.", typed.ContentType))
 				default:
 					if sch := schemaForType(gen, comps.Schemas, typed.Resp); sch != nil {
 						setStatus(op, status, rInlineRef("OK.", sch))
@@ -2097,6 +2122,15 @@ func enrichFromTypedSeam(gen *openapi3gen.Generator, schemas openapi3.Schemas, o
 	typed, ok := apiroute.Lookup(method, echoPath)
 	if !ok {
 		return
+	}
+	// Prose declared at the registration fills a hand-authored entry's GAPS but
+	// never overwrites prose someone actually wrote — the hand-written text is
+	// usually the more considered of the two.
+	if op.Summary == "" && typed.Summary != "" {
+		op.Summary = typed.Summary
+	}
+	if op.Description == "" && typed.Description != "" {
+		op.Description = typed.Description
 	}
 	isPlaceholder := func(ref *openapi3.SchemaRef) bool {
 		return ref != nil && ref.Ref == "" && ref.Value != nil && len(ref.Value.Properties) == 0 &&

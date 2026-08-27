@@ -33,6 +33,78 @@ type Op struct {
 	Resp reflect.Type
 	// Status is the success code written on a nil error.
 	Status int
+
+	// Summary and Description are the human documentation. They live HERE, at
+	// the registration, rather than in a spec file, for the same reason the
+	// types do: a description that sits next to the route cannot outlive it, and
+	// deleting the route deletes its prose. A separate doc file is exactly the
+	// parallel document this package exists to abolish.
+	Summary     string
+	Description string
+	// Tag overrides the tag inferred from the path prefix.
+	Tag string
+	// ContentType declares a non-JSON success body (image/png, image/svg+xml,
+	// text/markdown, application/zip). Empty means application/json.
+	ContentType string
+	// NoBodyResponse marks a success that carries no body at all — a 204, a 302
+	// redirect, or a 101 WebSocket handshake. Distinct from "body we did not
+	// document": the spec must say there is nothing rather than imply an
+	// undocumented object.
+	NoBodyResponse bool
+}
+
+// Route is the handle a registrar returns so documentation can be attached at
+// the call site:
+//
+//	apiroute.GET(e, "/api/v1/thing", h.GetThing).
+//		Doc("Get a thing", "Returns the caller's thing, or 404 when absent.")
+//
+// Ignoring the return value is valid — the route is already registered.
+type Route struct {
+	method string
+	path   string
+}
+
+// Doc attaches the summary and description shown in Swagger UI.
+func (r *Route) Doc(summary, description string) *Route {
+	if r == nil {
+		return r
+	}
+	mu.Lock()
+	if op, ok := ops[key(r.method, r.path)]; ok {
+		op.Summary, op.Description = summary, description
+		ops[key(r.method, r.path)] = op
+	}
+	mu.Unlock()
+	return r
+}
+
+// Tag overrides the tag the spec would otherwise infer from the path.
+func (r *Route) Tag(tag string) *Route {
+	if r == nil {
+		return r
+	}
+	mu.Lock()
+	if op, ok := ops[key(r.method, r.path)]; ok {
+		op.Tag = tag
+		ops[key(r.method, r.path)] = op
+	}
+	mu.Unlock()
+	return r
+}
+
+// Produces declares a non-JSON success media type (e.g. "image/svg+xml").
+func (r *Route) Produces(contentType string) *Route {
+	if r == nil {
+		return r
+	}
+	mu.Lock()
+	if op, ok := ops[key(r.method, r.path)]; ok {
+		op.ContentType = contentType
+		ops[key(r.method, r.path)] = op
+	}
+	mu.Unlock()
+	return r
 }
 
 var (

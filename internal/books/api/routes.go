@@ -75,7 +75,11 @@ func Register(e *echo.Echo, h *Handler) {
 			// captured here, so the OpenAPI schema is generated from Go rather
 			// than hand-written. Registering these with plain e.GET no longer
 			// compiles — which is the point.
-			apiroute.GET(e, "/api/v1/books/liberation/status", h.LiberationStatus)
+			apiroute.GET(e, "/api/v1/books/liberation/status", h.LiberationStatus).
+				Doc("Liberation rollup",
+					"Per-status counts across the owner's Audible library, how many titles a sweep "+
+						"would queue right now, how many the sweep has given up on, and the library "+
+						"path files are written to.")
 			apiroute.GET(e, "/api/v1/books/liberation/excluded", h.LiberationExcluded)
 		}
 	}
