@@ -240,6 +240,25 @@ type avatarRegenReq struct {
 	Seed   *int64 `json:"seed,omitempty"`
 }
 
+// avatarRegenerateResponse is the 202 body of
+// POST /api/v1/users/current/avatar/regenerate. One key, always present.
+type avatarRegenerateResponse struct {
+	Status string `json:"status"`
+}
+
+// avatarStatusResponse is GET /api/v1/users/current/avatar/status.
+//
+// Every field after Status is omitempty, reproducing the conditional keys the
+// pre-typed map[string]any built:
+//   - no user_avatars row at all → ONLY {"status":"none"}
+//   - a row → status + updatedAt, plus error/generatedAt when non-empty/non-nil
+type avatarStatusResponse struct {
+	Status      string `json:"status"`
+	UpdatedAt   string `json:"updatedAt,omitempty"`
+	Error       string `json:"error,omitempty"`
+	GeneratedAt string `json:"generatedAt,omitempty"`
+}
+
 // avatarRegenTimeout bounds the async goroutine. Matches the comfyui
 // shim's ~45min per-request ceiling (chroma-hd end-to-end). A wedged shim
 // call will eventually fail out and flip status to 'error' rather than
@@ -287,25 +306,30 @@ func RunAvatarRender(ctx context.Context, database *db.DB, shim *comfyui.Client,
 // hney.7) — the worker renders it and toasts the user on completion (falling
 // back to an inline goroutine when the jobs subsystem isn't wired). Returns 202;
 // the FE also watches /avatar/status for the terminal ready/error transition.
-func (h *Handler) RegenerateAvatar(c *echo.Context) error {
+func (h *Handler) RegenerateAvatar(c *echo.Context) (avatarRegenerateResponse, error) {
+	var out avatarRegenerateResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	if !h.Cfg.LabelImagesEnabled() {
 		// Reuses the label-images gate: same shim, same operator toggle.
 		// Different message so the operator knows this feature is the
 		// affected caller when the shim is missing.
-		return apihelpers.RespondErr(c, apierr.New(http.StatusServiceUnavailable,
-			"avatar rendering unavailable — set BOOM_FEATURE_LABEL_IMAGES=on and BOOM_COMFYUI_SHIM_URL, then restart", nil))
+		return out, apierr.New(http.StatusServiceUnavailable,
+			"avatar rendering unavailable — set BOOM_FEATURE_LABEL_IMAGES=on and BOOM_COMFYUI_SHIM_URL, then restart", nil)
 	}
 
 	var req avatarRegenReq
+	// The bind stays INSIDE the handler (route registered via
+	// apiroute.Accepted, which reads no body) because this endpoint uses the
+	// MEDIUM 64 KiB cap — a hand-tuned avatar prompt is far bigger than the
+	// 4 KiB the seam's binder would allow.
 	if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitMedium); aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	if strings.TrimSpace(req.Prompt) == "" {
-		return apihelpers.RespondErr(c, apierr.BadRequest("prompt is required"))
+		return out, apierr.BadRequest("prompt is required")
 	}
 
 	ctx := c.Request().Context()
@@ -313,16 +337,16 @@ func (h *Handler) RegenerateAvatar(c *echo.Context) error {
 	// job is already running, refuse cleanly instead of spawning a
 	// duplicate goroutine that would race with itself on the write path.
 	if info, ok, err := h.DB.GetUserAvatarStatus(ctx, owner); err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "avatar status lookup failed", err)
+		return out, fmt.Errorf("avatar status lookup failed: %w", err)
 	} else if ok && info.Status == db.UserAvatarStatusRunning {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusConflict,
-			"avatar render already in flight — wait for it to finish or fail", nil))
+		return out, apierr.New(http.StatusConflict,
+			"avatar render already in flight — wait for it to finish or fail", nil)
 	}
 
 	// Reserve the row up front so a poll immediately after the 202 sees
 	// 'running' — no gap where the poll reads the old 'ready' state.
 	if err := h.DB.SetAvatarStatus(ctx, owner, db.UserAvatarStatusRunning, ""); err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "avatar reserve failed", err)
+		return out, fmt.Errorf("avatar reserve failed: %w", err)
 	}
 
 	// Detach from the request context so the goroutine survives the
@@ -342,7 +366,7 @@ func (h *Handler) RegenerateAvatar(c *echo.Context) error {
 		// isn't stuck on 'running' forever.
 		_ = h.DB.SetAvatarStatus(ctx, owner, db.UserAvatarStatusError,
 			fmt.Sprintf("comfyui client init failed: %v", cerr))
-		return apihelpers.InternalErr(h.Logger, c, "avatar shim init failed", cerr)
+		return out, fmt.Errorf("avatar shim init failed: %w", cerr)
 	}
 
 	// boom-hney.7: enqueue an owner-scoped avatar-render job (single attempt —
@@ -355,7 +379,7 @@ func (h *Handler) RegenerateAvatar(c *echo.Context) error {
 			jobs.Owner(owner), jobs.MaxAttempts(1)); eerr != nil {
 			_ = h.DB.SetAvatarStatus(ctx, owner, db.UserAvatarStatusError,
 				fmt.Sprintf("enqueue failed: %v", eerr))
-			return apihelpers.InternalErr(h.Logger, c, "avatar render enqueue failed", eerr)
+			return out, fmt.Errorf("avatar render enqueue failed: %w", eerr)
 		}
 	} else {
 		go func() {
@@ -365,40 +389,41 @@ func (h *Handler) RegenerateAvatar(c *echo.Context) error {
 		}()
 	}
 
-	return c.JSON(http.StatusAccepted, map[string]any{
-		"status": string(db.UserAvatarStatusRunning),
-	})
+	return avatarRegenerateResponse{
+		Status: string(db.UserAvatarStatusRunning),
+	}, nil
 }
 
 // GetAvatarStatus: GET /api/v1/users/current/avatar/status. Cheap poll.
 // Returns {status, error?, generatedAt?} — no bytes. When there's no row
 // at all, returns status="none" (not "pending") so the FE renders the
 // empty-state distinctly from a reserved-but-not-yet-running state.
-func (h *Handler) GetAvatarStatus(c *echo.Context) error {
+func (h *Handler) GetAvatarStatus(c *echo.Context) (avatarStatusResponse, error) {
+	var out avatarStatusResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	info, ok, err := h.DB.GetUserAvatarStatus(c.Request().Context(), owner)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "avatar status failed", err)
+		return out, fmt.Errorf("avatar status failed: %w", err)
 	}
 	if !ok {
-		return c.JSON(http.StatusOK, map[string]any{
-			"status": "none",
-		})
+		// No row at all: the pre-typed map carried ONLY {"status":"none"} —
+		// every other key is omitempty so this stays byte-identical.
+		return avatarStatusResponse{Status: "none"}, nil
 	}
-	out := map[string]any{
-		"status":    string(info.Status),
-		"updatedAt": info.UpdatedAt.UTC().Format(time.RFC3339),
+	out = avatarStatusResponse{
+		Status:    string(info.Status),
+		UpdatedAt: info.UpdatedAt.UTC().Format(time.RFC3339),
 	}
 	if info.ErrorMessage != "" {
-		out["error"] = info.ErrorMessage
+		out.Error = info.ErrorMessage
 	}
 	if info.GeneratedAt != nil {
-		out["generatedAt"] = info.GeneratedAt.UTC().Format(time.RFC3339)
+		out.GeneratedAt = info.GeneratedAt.UTC().Format(time.RFC3339)
 	}
-	return c.JSON(http.StatusOK, out)
+	return out, nil
 }
 
 // UserAvatar: GET /api/v1/users/:username/avatar (PUBLIC).

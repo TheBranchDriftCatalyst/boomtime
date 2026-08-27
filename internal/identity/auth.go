@@ -2,6 +2,7 @@ package identity
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -81,7 +82,8 @@ func loginResponse(td db.TokenData, now time.Time) model.LoginResponse {
 // a wrapper around argon2.IDKey against a per-process sentinel hash+salt
 // whose result is discarded. Both branches now burn the same ~10ms of CPU
 // and return the identical InvalidCredentials envelope.
-func (h *Handler) Login(c *echo.Context) error {
+func (h *Handler) Login(c *echo.Context) (model.LoginResponse, error) {
+	var out model.LoginResponse
 	// boom-93f.11.4: under BOOM_AUTH_PROVIDER=oidc, password login is disabled —
 	// sign-in goes through Authentik (/auth/login/oidc). Reject early with a
 	// clear message so a stale password form can't mint a half-working local
@@ -89,29 +91,34 @@ func (h *Handler) Login(c *echo.Context) error {
 	// oidc_session). The FE hides the password form under oidc; this is the
 	// server-side backstop.
 	if auth.CurrentResolver().ProviderName() == "oidc" {
-		return apihelpers.RespondErr(c, apierr.Forbidden("password login is disabled on this server — sign in with Authentik"))
+		return out, apierr.Forbidden("password login is disabled on this server — sign in with Authentik")
 	}
 	var creds model.AuthRequest
 	// boom-bi2: 4 KiB cap. Credentials are two short strings; a fat body here
 	// would just amplify the argon2 verify below into a memory DoS.
+	//
+	// NOTE (typed-seam migration): the bind stays INSIDE the handler
+	// (registered via apiroute.POSTNoBody) so the provider guard above keeps
+	// running BEFORE any request body is read — the same ordering invariant
+	// Register asserts explicitly in auth_cluster_coverage_test.go.
 	if aerr := apihelpers.BindJSONWithLimit(c, &creds, apihelpers.BodyLimitSmall); aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	ctx := c.Request().Context()
 
 	user, err := h.DB.GetUserByName(ctx, creds.Username)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "user lookup failed", err)
+		return out, fmt.Errorf("user lookup failed: %w", err)
 	}
 	if user == nil {
 		// boom-imm: burn the same ~10ms of argon2 the found-user branch
 		// spends in VerifyPassword. Result discarded — the point is to
 		// eliminate the timing gap, not to actually authenticate.
 		auth.BurnSentinelVerify(creds.Password)
-		return apihelpers.RespondErr(c, apierr.InvalidCredentials())
+		return out, apierr.InvalidCredentials()
 	}
 	if !auth.VerifyPasswordWithVersion(creds.Password, user.HashedPassword, user.SaltUsed, user.ArgonVersion) {
-		return apihelpers.RespondErr(c, apierr.InvalidCredentials())
+		return out, apierr.InvalidCredentials()
 	}
 
 	// boom-93f.15: a disabled account fails closed on the password path
@@ -124,10 +131,10 @@ func (h *Handler) Login(c *echo.Context) error {
 	// that the account exists-but-disabled.
 	full, ferr := h.DB.GetUserFullByName(ctx, creds.Username)
 	if ferr != nil {
-		return apihelpers.InternalErr(h.Logger, c, "user lookup failed", ferr)
+		return out, fmt.Errorf("user lookup failed: %w", ferr)
 	}
 	if full == nil || full.DisabledAt != nil {
-		return apihelpers.RespondErr(c, apierr.InvalidCredentials())
+		return out, apierr.InvalidCredentials()
 	}
 
 	// boom-awh.6 (Bravo MEDIUM): transparent rehash-on-login. If the row is
@@ -157,22 +164,29 @@ func (h *Handler) Login(c *echo.Context) error {
 
 	td := mkTokenData(creds.Username)
 	if err := h.DB.CreateAccessTokens(ctx, td, h.Cfg.SessionExpiry); err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "access token creation failed", err)
+		return out, fmt.Errorf("access token creation failed: %w", err)
 	}
 	h.setRefreshCookie(c, td)
 	h.Logger.Info("login", "user", creds.Username)
-	return c.JSON(http.StatusOK, loginResponse(td, time.Now().UTC()))
+	return loginResponse(td, time.Now().UTC()), nil
 }
 
 // Register: POST /auth/register.
-func (h *Handler) Register(c *echo.Context) error {
+func (h *Handler) Register(c *echo.Context) (model.LoginResponse, error) {
+	var out model.LoginResponse
 	if !h.Cfg.EnableRegistration {
-		return apihelpers.RespondErr(c, apierr.DisabledRegistration())
+		return out, apierr.DisabledRegistration()
 	}
 	var creds model.AuthRequest
 	// boom-bi2: 4 KiB cap. Same rationale as Login — credentials are short.
+	//
+	// NAMED INVARIANT (auth_cluster_coverage_test.go): the
+	// EnableRegistration guard above MUST short-circuit BEFORE
+	// BindJSONWithLimit — an over-cap body on a disabled-registration server
+	// answers 403, never 413. That is why this route is on
+	// apiroute.POSTNoBody (bind stays here) rather than apiroute.POST.
 	if aerr := apihelpers.BindJSONWithLimit(c, &creds, apihelpers.BodyLimitSmall); aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	// boom-e5e: enforce the shared password policy BEFORE hashing +
 	// inserting. Prior to this check, POST /auth/register accepted empty
@@ -180,42 +194,43 @@ func (h *Handler) Register(c *echo.Context) error {
 	// auth.ValidatePassword's sentinel errors are user-safe by design —
 	// surface .Error() directly (no internal state leaked).
 	if err := auth.ValidatePassword(creds.Password); err != nil {
-		return apihelpers.RespondErr(c, apierr.BadRequest(err.Error()))
+		return out, apierr.BadRequest(err.Error())
 	}
 	// boom-93f.18: validate the username before hashing/inserting. Prior to
 	// this, register accepted arbitrary usernames (control chars, whitespace,
 	// the cache-key delimiter '|', unicode homoglyphs). ValidateUsername's
 	// message is user-safe.
 	if err := auth.ValidateUsername(creds.Username); err != nil {
-		return apihelpers.RespondErr(c, apierr.BadRequest(err.Error()))
+		return out, apierr.BadRequest(err.Error())
 	}
 	ctx := c.Request().Context()
 
 	if err := auth.CreateUser(ctx, h.DB, creds.Username, creds.Password); err != nil {
 		if errors.Is(err, auth.ErrUserExists) {
-			return apihelpers.RespondErr(c, apierr.UsernameExists(creds.Username))
+			return out, apierr.UsernameExists(creds.Username)
 		}
 		if errors.Is(err, auth.ErrInvalidCredentials) {
 			// unreachable via CreateUser; kept for symmetry with Login flow.
-			return apihelpers.RespondErr(c, apierr.InvalidCredentials())
+			return out, apierr.InvalidCredentials()
 		}
-		return apihelpers.InternalErr(h.Logger, c, "user creation failed", err)
+		return out, fmt.Errorf("user creation failed: %w", err)
 	}
 
 	td := mkTokenData(creds.Username)
 	if err := h.DB.CreateAccessTokens(ctx, td, h.Cfg.SessionExpiry); err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "access token creation failed", err)
+		return out, fmt.Errorf("access token creation failed: %w", err)
 	}
 	h.setRefreshCookie(c, td)
 	h.Logger.Info("user registered", "user", creds.Username)
-	return c.JSON(http.StatusOK, loginResponse(td, time.Now().UTC()))
+	return loginResponse(td, time.Now().UTC()), nil
 }
 
 // RefreshToken: POST /auth/refresh_token (reads refresh_token cookie).
-func (h *Handler) RefreshToken(c *echo.Context) error {
+func (h *Handler) RefreshToken(c *echo.Context) (model.LoginResponse, error) {
+	var out model.LoginResponse
 	owner, aerr := apihelpers.IdentifyOwnerFromCookie(h.DB, h.Logger, c, apierr.MissingRefreshTokenCookie())
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	ctx := c.Request().Context()
 
@@ -240,17 +255,17 @@ func (h *Handler) RefreshToken(c *echo.Context) error {
 
 		td := mkTokenData(owner)
 		if err := h.DB.CreateOIDCAccessToken(ctx, owner, td.Token); err != nil {
-			return apihelpers.InternalErr(h.Logger, c, "access token creation failed", err)
+			return out, fmt.Errorf("access token creation failed: %w", err)
 		}
-		return c.JSON(http.StatusOK, loginResponse(td, time.Now().UTC()))
+		return loginResponse(td, time.Now().UTC()), nil
 	}
 
 	td := mkTokenData(owner)
 	if err := h.DB.CreateAccessTokens(ctx, td, h.Cfg.SessionExpiry); err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "access token creation failed", err)
+		return out, fmt.Errorf("access token creation failed: %w", err)
 	}
 	h.setRefreshCookie(c, td)
-	return c.JSON(http.StatusOK, loginResponse(td, time.Now().UTC()))
+	return loginResponse(td, time.Now().UTC()), nil
 }
 
 // tryRotateOIDCSession best-effort extends the caller's OIDC web session
@@ -303,7 +318,7 @@ func (h *Handler) Logout(c *echo.Context) error {
 	if auth.CurrentResolver().ProviderName() == "oidc" {
 		refresh, ok := auth.ParseRefreshCookie(c.Request().Header.Get("Cookie"))
 		if !ok {
-			return apihelpers.RespondErr(c, apierr.MissingRefreshTokenCookie())
+			return apierr.MissingRefreshTokenCookie()
 		}
 		ctx := c.Request().Context()
 		// boom-93f.14: revoke any bearers this user minted via /auth/refresh_token
@@ -315,28 +330,28 @@ func (h *Handler) Logout(c *echo.Context) error {
 			_ = h.DB.DeleteUserAccessTokens(ctx, owner)
 		}
 		if err := h.DB.DeleteOIDCSession(ctx, refresh); err != nil {
-			return apihelpers.InternalErr(h.Logger, c, "oidc session deletion failed", err)
+			return fmt.Errorf("oidc session deletion failed: %w", err)
 		}
 		h.clearRefreshCookie(c)
 		h.clearOIDCFlowCookies(c)
 		h.Logger.Info("logout", "user", owner)
-		return apihelpers.NoContent(c)
+		return nil
 	}
 
 	tkn, aerr := apihelpers.TokenFromHeader(c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return aerr
 	}
 	refresh, ok := auth.ParseRefreshCookie(c.Request().Header.Get("Cookie"))
 	if !ok {
-		return apihelpers.RespondErr(c, apierr.MissingRefreshTokenCookie())
+		return apierr.MissingRefreshTokenCookie()
 	}
 	n, err := h.DB.DeleteTokens(c.Request().Context(), tkn, refresh)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "token deletion failed", err)
+		return fmt.Errorf("token deletion failed: %w", err)
 	}
 	if n < 2 {
-		return apihelpers.RespondErr(c, apierr.InvalidCredentials())
+		return apierr.InvalidCredentials()
 	}
 	// boom-b5x.1: clear the client-side cookie with matching attributes
 	// (Path + Secure + SameSite) so browsers actually evict the entry.
@@ -345,23 +360,26 @@ func (h *Handler) Logout(c *echo.Context) error {
 	// The local path revokes by token, not username — the owner isn't resolved
 	// here (an extra lookup would be a behavior change), so log the fact only.
 	h.Logger.Info("logout")
-	return apihelpers.NoContent(c)
+	return nil
 }
 
 // CreateAPIToken: POST /auth/create_api_token. Body is optional; when present
 // it may carry a `name` field (<= 42 chars, trimmed) which is stored as the
 // human-readable label for the minted token. Empty/missing name is fine —
 // the tokens list will just show an em-dash until renamed.
-func (h *Handler) CreateAPIToken(c *echo.Context) error {
+func (h *Handler) CreateAPIToken(c *echo.Context) (model.TokenResponse, error) {
+	var out model.TokenResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	var body struct {
 		Name string `json:"name"`
 	}
 	// Ignore decode errors — the endpoint has always been callable without a
-	// body, and the shape is documented as optional.
+	// body, and the shape is documented as optional. That tolerance is why the
+	// route is on apiroute.POSTNoBody rather than apiroute.POST: the seam's
+	// bind would turn a malformed/absent-content-type body into a hard 400.
 	_ = c.Bind(&body)
 	name := strings.TrimSpace(body.Name)
 	if len(name) > 42 {
@@ -369,24 +387,24 @@ func (h *Handler) CreateAPIToken(c *echo.Context) error {
 	}
 	raw, err := auth.CreateAPIToken(c.Request().Context(), h.DB, owner, name)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "api token insert failed", err)
+		return out, fmt.Errorf("api token insert failed: %w", err)
 	}
 	// Log the fact + safe identifiers only — never the token value in `raw`.
 	h.Logger.Info("api token created", "user", owner, "name", name)
-	return c.JSON(http.StatusOK, model.TokenResponse{APIToken: raw})
+	return model.TokenResponse{APIToken: raw}, nil
 }
 
 // ListAPITokens: GET /auth/tokens.
-func (h *Handler) ListAPITokens(c *echo.Context) error {
+func (h *Handler) ListAPITokens(c *echo.Context) ([]model.StoredApiToken, error) {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return nil, aerr
 	}
 	tokens, err := h.DB.ListApiTokens(c.Request().Context(), owner)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "api token list failed", err)
+		return nil, fmt.Errorf("api token list failed: %w", err)
 	}
-	return c.JSON(http.StatusOK, tokens)
+	return tokens, nil
 }
 
 // DeleteToken: DELETE /auth/token/:id. Deletion is scoped to the requesting
@@ -395,32 +413,29 @@ func (h *Handler) ListAPITokens(c *echo.Context) error {
 func (h *Handler) DeleteToken(c *echo.Context) error {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return aerr
 	}
 	id := c.Param("id")
 	if err := h.DB.DeleteAuthToken(c.Request().Context(), id, owner); err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "api token deletion failed", err)
+		return fmt.Errorf("api token deletion failed: %w", err)
 	}
 	h.Logger.Info("api token deleted", "user", owner, "id", id)
-	return apihelpers.NoContent(c)
+	return nil
 }
 
 // UpdateToken: POST /auth/token (rename).
-func (h *Handler) UpdateToken(c *echo.Context) error {
+// boom-bi2: 4 KiB cap. Token metadata is a name string; no reason to accept a
+// runaway body — apiroute.NoContentBody applies the same BodyLimitSmall cap the
+// hand-rolled BindJSONWithLimit call used to.
+func (h *Handler) UpdateToken(c *echo.Context, meta model.TokenMetadata) error {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
-	}
-	var meta model.TokenMetadata
-	// boom-bi2: 4 KiB cap. Token metadata is a name string; no reason to
-	// accept a runaway body.
-	if aerr := apihelpers.BindJSONWithLimit(c, &meta, apihelpers.BodyLimitSmall); aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return aerr
 	}
 	if err := h.DB.UpdateTokenMetadata(c.Request().Context(), owner, meta); err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "token metadata update failed", err)
+		return fmt.Errorf("token metadata update failed: %w", err)
 	}
-	return apihelpers.NoContent(c)
+	return nil
 }
 
 // CurrentUser: GET /auth/users/current (Users.hs).
@@ -428,10 +443,11 @@ func (h *Handler) UpdateToken(c *echo.Context) error {
 // boom-dg7: also emits `timezone` (raw stored) and `effective_timezone`
 // (post-3-level-resolution). Wakatime editor plugins ignore unknown fields,
 // so this stays wire-safe with wakatime-compat callers.
-func (h *Handler) CurrentUser(c *echo.Context) error {
+func (h *Handler) CurrentUser(c *echo.Context) (model.UserStatusResponse, error) {
+	var out model.UserStatusResponse
 	owner, aerr := apihelpers.IdentifyOwnerFromCookie(h.DB, h.Logger, c, apierr.MissingRefreshTokenCookie())
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	ctx := c.Request().Context()
 	// Best-effort read: on a lookup failure log and fall through to "", so
@@ -445,7 +461,7 @@ func (h *Handler) CurrentUser(c *echo.Context) error {
 		rawTZ = ""
 	}
 	effective := db.ResolveTimezone(rawTZ, h.Cfg.DefaultTimezone)
-	return c.JSON(http.StatusOK, model.UserStatusResponse{
+	return model.UserStatusResponse{
 		Data: model.UserStatus{
 			FullName:          owner,
 			Email:             owner + "@hakatime.dev",
@@ -454,5 +470,5 @@ func (h *Handler) CurrentUser(c *echo.Context) error {
 			Timezone:          rawTZ,
 			EffectiveTimezone: effective,
 		},
-	})
+	}, nil
 }

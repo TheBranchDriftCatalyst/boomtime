@@ -1,7 +1,7 @@
 package api
 
 import (
-	"net/http"
+	"fmt"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/amazon"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/pipeline"
@@ -24,26 +24,27 @@ import (
 // id immediately rather than blocking on the full pipeline. BooksEnabled-gated.
 // Idempotent to enqueue — every constituent stage is itself re-runnable, so a
 // duplicate run is harmless. Mirrors BackfillKindle / PullHardcover.
-func (h *Handler) SyncAllBooks(c *echo.Context) error {
+func (h *Handler) SyncAllBooks(c *echo.Context) (enqueuedJobResponse, error) {
+	var out enqueuedJobResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	if h.JobEnqueuer == nil {
-		return apihelpers.RespondErr(c, apierr.BadRequest("background jobs are not available on this server"))
+		return out, apierr.BadRequest("background jobs are not available on this server")
 	}
 	// Confirm the user actually has an Amazon credential before enqueueing, so the
 	// UI gets an immediate, clear error instead of a job that no-ops later. (The
 	// pipeline's ingest stages need it; Hardcover match/pull are no-ops without a
 	// Hardcover token, which is fine — the ingests still run.)
 	if _, lerr := amazon.NewStore(h.DB).Load(c.Request().Context(), owner); lerr != nil {
-		return apihelpers.RespondErr(c, apierr.BadRequest("connect Amazon before running a full sync"))
+		return out, apierr.BadRequest("connect Amazon before running a full sync")
 	}
 	id, eerr := h.JobEnqueuer.Enqueue(c.Request().Context(), pipeline.BooksSyncAllKind, nil,
 		jobs.Owner(owner), jobs.MaxAttempts(1))
 	if eerr != nil {
-		return apihelpers.InternalErr(h.Logger, c, "books sync-all enqueue failed", eerr)
+		return out, fmt.Errorf("books sync-all enqueue failed: %w", eerr)
 	}
 	h.Logger.Info("books sync-all enqueued", "user", owner, "jobId", id)
-	return c.JSON(http.StatusAccepted, map[string]any{"enqueued": true, "jobId": id})
+	return enqueuedJobResponse{Enqueued: true, JobID: id}, nil
 }

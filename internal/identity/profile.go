@@ -140,22 +140,23 @@ type publicProfileResponse struct {
 
 // GetPublicProfile: GET /api/v1/users/current/profile (auth). Returns the
 // caller's public-profile toggle + slug.
-func (h *Handler) GetPublicProfile(c *echo.Context) error {
+func (h *Handler) GetPublicProfile(c *echo.Context) (getProfileResponse, error) {
+	var out getProfileResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	enabled, slug, err := h.DB.GetPublicProfile(c.Request().Context(), owner)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "public profile lookup failed", err)
+		return out, fmt.Errorf("public profile lookup failed: %w", err)
 	}
 	theme, tagline, err := h.DB.GetPublicProfileCard(c.Request().Context(), owner)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "public profile card lookup failed", err)
+		return out, fmt.Errorf("public profile card lookup failed: %w", err)
 	}
-	return c.JSON(http.StatusOK, getProfileResponse{
+	return getProfileResponse{
 		Enabled: enabled, Slug: slug, CardTheme: theme, CardTagline: tagline,
-	})
+	}, nil
 }
 
 // PutPublicProfile: PUT /api/v1/users/current/profile (auth). Saves the
@@ -163,16 +164,15 @@ func (h *Handler) GetPublicProfile(c *echo.Context) error {
 // required and validated. Returns 409 on slug conflict, 400 on format /
 // reservation violation. On success, returns the persisted shape so the FE
 // can settle its local state without a follow-up GET.
-func (h *Handler) PutPublicProfile(c *echo.Context) error {
+//
+// boom-bi2: 4 KiB cap — the body is a bool + a slug bounded by
+// publicProfileSlugRe (≤30 chars). apiroute.PUT binds under the same
+// BodyLimitSmall cap the hand-rolled BindJSONWithLimit call used to.
+func (h *Handler) PutPublicProfile(c *echo.Context, req putProfileRequest) (getProfileResponse, error) {
+	var out getProfileResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
-	}
-	var req putProfileRequest
-	// boom-bi2: 4 KiB cap — the body is a bool + a slug bounded by
-	// publicProfileSlugRe (≤30 chars).
-	if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitSmall); aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	req.Slug = strings.TrimSpace(strings.ToLower(req.Slug))
 
@@ -180,15 +180,15 @@ func (h *Handler) PutPublicProfile(c *echo.Context) error {
 	// the slug (leave DB as-is) or supply a valid one (write it too).
 	if req.Enabled {
 		if req.Slug == "" {
-			return apihelpers.RespondErr(c, apierr.BadRequest("slug is required when enabling the public profile"))
+			return out, apierr.BadRequest("slug is required when enabling the public profile")
 		}
 	}
 	if req.Slug != "" {
 		if !publicProfileSlugRe.MatchString(req.Slug) {
-			return apihelpers.RespondErr(c, apierr.BadRequest("slug must be 3-30 characters, lowercase letters, digits, and hyphens (no leading/trailing hyphen)"))
+			return out, apierr.BadRequest("slug must be 3-30 characters, lowercase letters, digits, and hyphens (no leading/trailing hyphen)")
 		}
 		if _, hit := reservedSlugs[req.Slug]; hit {
-			return apihelpers.RespondErr(c, apierr.BadRequest("that slug is reserved — please pick another"))
+			return out, apierr.BadRequest("that slug is reserved — please pick another")
 		}
 	}
 
@@ -196,11 +196,11 @@ func (h *Handler) PutPublicProfile(c *echo.Context) error {
 	// bad theme/tagline is a clean 400, not a partial save.
 	if req.CardTheme != nil {
 		if _, ok := validCardThemes[strings.TrimSpace(*req.CardTheme)]; !ok {
-			return apihelpers.RespondErr(c, apierr.BadRequest("cardTheme must be 'dark', 'light', or empty"))
+			return out, apierr.BadRequest("cardTheme must be 'dark', 'light', or empty")
 		}
 	}
 	if req.CardTagline != nil && len([]rune(*req.CardTagline)) > cardTaglineMaxLen {
-		return apihelpers.RespondErr(c, apierr.BadRequest(fmt.Sprintf("cardTagline must be at most %d characters", cardTaglineMaxLen)))
+		return out, apierr.BadRequest(fmt.Sprintf("cardTagline must be at most %d characters", cardTaglineMaxLen))
 	}
 
 	if err := h.DB.SetPublicProfile(c.Request().Context(), owner, req.Enabled, req.Slug); err != nil {
@@ -208,9 +208,9 @@ func (h *Handler) PutPublicProfile(c *echo.Context) error {
 		// the FE surfaces this as an inline field error.
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" { // unique_violation
-			return apihelpers.RespondErr(c, apierr.New(http.StatusConflict, "that slug is already taken", nil))
+			return out, apierr.New(http.StatusConflict, "that slug is already taken", nil)
 		}
-		return apihelpers.InternalErr(h.Logger, c, "public profile save failed", err)
+		return out, fmt.Errorf("public profile save failed: %w", err)
 	}
 
 	// Persist the card knobs only when the request carried them (nil = leave
@@ -219,7 +219,7 @@ func (h *Handler) PutPublicProfile(c *echo.Context) error {
 	if req.CardTheme != nil || req.CardTagline != nil {
 		curTheme, curTagline, err := h.DB.GetPublicProfileCard(c.Request().Context(), owner)
 		if err != nil {
-			return apihelpers.InternalErr(h.Logger, c, "public profile card readback failed", err)
+			return out, fmt.Errorf("public profile card readback failed: %w", err)
 		}
 		if req.CardTheme != nil {
 			curTheme = strings.TrimSpace(*req.CardTheme)
@@ -228,7 +228,7 @@ func (h *Handler) PutPublicProfile(c *echo.Context) error {
 			curTagline = strings.TrimSpace(*req.CardTagline)
 		}
 		if err := h.DB.SetPublicProfileCard(c.Request().Context(), owner, curTheme, curTagline); err != nil {
-			return apihelpers.InternalErr(h.Logger, c, "public profile card save failed", err)
+			return out, fmt.Errorf("public profile card save failed: %w", err)
 		}
 	}
 
@@ -236,11 +236,11 @@ func (h *Handler) PutPublicProfile(c *echo.Context) error {
 	// alone on the off-with-no-slug path, so read is the source of truth).
 	enabled, slug, err := h.DB.GetPublicProfile(c.Request().Context(), owner)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "public profile readback failed", err)
+		return out, fmt.Errorf("public profile readback failed: %w", err)
 	}
 	theme, tagline, err := h.DB.GetPublicProfileCard(c.Request().Context(), owner)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "public profile card readback failed", err)
+		return out, fmt.Errorf("public profile card readback failed: %w", err)
 	}
 	// The card image may have changed (theme/tagline/enable/slug) — drop the
 	// cached PNG so the next unfurl re-renders instead of waiting out the S3
@@ -253,9 +253,9 @@ func (h *Handler) PutPublicProfile(c *echo.Context) error {
 	}
 
 	h.Logger.Info("public profile updated", "user", owner, "enabled", enabled)
-	return c.JSON(http.StatusOK, getProfileResponse{
+	return getProfileResponse{
 		Enabled: enabled, Slug: slug, CardTheme: theme, CardTagline: tagline,
-	})
+	}, nil
 }
 
 // PublicProfile: GET /api/public/profile/:slug (NO auth). Resolves slug ->

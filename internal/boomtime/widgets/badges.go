@@ -1,6 +1,7 @@
 package widgets
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -15,19 +16,20 @@ import (
 )
 
 // BadgeLink: GET /badge/link/:project (auth) -> {"badgeUrl": "<BOOM_BADGE_URL>/badge/svg/<uuid>"}.
-func (h *Handler) BadgeLink(c *echo.Context) error {
+func (h *Handler) BadgeLink(c *echo.Context) (model.BadgeResponse, error) {
+	var out model.BadgeResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	project := c.Param("project")
 	id, err := h.DB.CreateBadgeLink(c.Request().Context(), owner, project)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "badge link creation failed", err)
+		return out, fmt.Errorf("badge link creation failed: %w", err)
 	}
-	return c.JSON(http.StatusOK, model.BadgeResponse{
+	return model.BadgeResponse{
 		BadgeURL: h.Cfg.BadgeURL + "/badge/svg/" + id.String(),
-	})
+	}, nil
 }
 
 // applyBadgeCuration is the badge-endpoint half of the public-safe contract

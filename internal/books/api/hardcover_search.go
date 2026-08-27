@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/jackc/pgx/v5"
@@ -24,37 +25,44 @@ import (
 // write only touches the per-row linkage (never the global match cache — a human's
 // pick is authoritative for THEIR row, not necessarily correct for every user).
 
+// hardcoverSearchResponse is GET /api/v1/hardcover/search. candidates is ALWAYS
+// an array (never null) — the autocomplete iterates it unguarded.
+type hardcoverSearchResponse struct {
+	Candidates []hardcover.Candidate `json:"candidates"`
+}
+
 // HardcoverSearch handles GET /api/v1/hardcover/search?q=<text>&limit=<n>.
-func (h *Handler) HardcoverSearch(c *echo.Context) error {
+func (h *Handler) HardcoverSearch(c *echo.Context) (hardcoverSearchResponse, error) {
+	var out hardcoverSearchResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	q := c.QueryParam("q")
 	if len(q) < 2 {
 		// Too short to search meaningfully — return an empty set, not an error, so
 		// the autocomplete stays quiet until the user has typed something.
-		return c.JSON(http.StatusOK, map[string]any{"candidates": []hardcover.Candidate{}})
+		return hardcoverSearchResponse{Candidates: []hardcover.Candidate{}}, nil
 	}
 
 	svc := hardcover.NewSyncService(h.DB, hardcover.NewStore(h.DB), h.Logger)
 	cands, connected, err := svc.SearchForOwner(c.Request().Context(), owner, q, 8)
 	if err != nil {
 		if errors.Is(err, hardcover.ErrBadToken) {
-			return apierr.New(http.StatusBadGateway, "hardcover token rejected — reconnect Hardcover", nil).Write(c)
+			return out, apierr.New(http.StatusBadGateway, "hardcover token rejected — reconnect Hardcover", nil)
 		}
 		if errors.Is(err, hardcover.ErrRateLimited) {
-			return apierr.New(http.StatusTooManyRequests, "hardcover rate limit — try again shortly", nil).Write(c)
+			return out, apierr.New(http.StatusTooManyRequests, "hardcover rate limit — try again shortly", nil)
 		}
-		return apihelpers.InternalErr(h.Logger, c, "hardcover search failed", err)
+		return out, fmt.Errorf("hardcover search failed: %w", err)
 	}
 	if !connected {
-		return apierr.New(http.StatusPreconditionFailed, "connect Hardcover first to search its catalog", nil).Write(c)
+		return out, apierr.New(http.StatusPreconditionFailed, "connect Hardcover first to search its catalog", nil)
 	}
 	if cands == nil {
 		cands = []hardcover.Candidate{}
 	}
-	return c.JSON(http.StatusOK, map[string]any{"candidates": cands})
+	return hardcoverSearchResponse{Candidates: cands}, nil
 }
 
 // manualMatchBody is the POST body: the chosen Hardcover book. editionId + slug are
@@ -67,6 +75,12 @@ type manualMatchBody struct {
 }
 
 // SetBookManualMatch handles POST /api/v1/books/items/:externalId/match?source=.
+//
+// NOT on the typed seam (internal/shared/apiroute), deliberately: on success it
+// answers 200 with the full readingItemDTO, but when the post-write read-back
+// misses it answers 200 with the minimal ack {"matched":true,"hardcoverBookId":N}
+// instead. One response struct cannot express both without documenting fields the
+// handler does not always write, so this stays on plain e.POST.
 func (h *Handler) SetBookManualMatch(c *echo.Context) error {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {

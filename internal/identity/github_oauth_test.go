@@ -19,6 +19,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/identity/oauth"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apiroute"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
@@ -57,8 +58,8 @@ func routerWithGithubGH(hz *testutil.Harness, srv *httptest.Server) http.Handler
 	e := hz.Router()
 	h := hz.H
 	e.GET("/auth/github/callback", h.Identity.CallbackGithub)
-	e.GET("/api/v1/users/current/github", h.Identity.GetGithubConnection)
-	e.DELETE("/api/v1/users/current/github", h.Identity.DisconnectGithub)
+	apiroute.GET(e, "/api/v1/users/current/github", h.Identity.GetGithubConnection)
+	apiroute.NoContent(e, http.MethodDelete, "/api/v1/users/current/github", h.Identity.DisconnectGithub)
 	return e
 }
 

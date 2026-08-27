@@ -21,10 +21,14 @@ import (
 // Body is capped at apihelpers.BodyLimitLarge (8 MiB) — a single heartbeat is ~500 bytes so
 // the cap is generous, but bounded so an authenticated hostile client can't OOM
 // the process with a multi-GB body (boom-d6x.handler critique fix).
-func (h *Handler) Heartbeat(c *echo.Context) error {
+func (h *Handler) Heartbeat(c *echo.Context) (model.BulkHeartbeatData, error) {
+	var out model.BulkHeartbeatData
 	var hb model.HeartbeatPayload
+	// NOT bound by the apiroute seam: the seam binds at apihelpers.BodyLimitSmall
+	// (4 KiB) and this endpoint must keep its 8 MiB cap, so the body is bound
+	// here and the route registers through the no-body form.
 	if aerr := apihelpers.BindJSONWithLimit(c, &hb, apihelpers.BodyLimitLarge); aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	return h.storeAndRespond(c, []model.HeartbeatPayload{hb})
 }
@@ -32,22 +36,25 @@ func (h *Handler) Heartbeat(c *echo.Context) error {
 // HeartbeatBulk ingests many heartbeats: POST /api/v1/users/current/heartbeats.bulk.
 // Body is capped at apihelpers.BodyLimitLarge (8 MiB) — enough for ~10K-20K batched
 // heartbeats but bounded to prevent DoS via oversized ingest (boom-d6x.handler).
-func (h *Handler) HeartbeatBulk(c *echo.Context) error {
+func (h *Handler) HeartbeatBulk(c *echo.Context) (model.BulkHeartbeatData, error) {
+	var out model.BulkHeartbeatData
 	var hbs []model.HeartbeatPayload
+	// See Heartbeat: bound here, not by the seam, to keep the 8 MiB cap.
 	if aerr := apihelpers.BindJSONWithLimit(c, &hbs, apihelpers.BodyLimitLarge); aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	return h.storeAndRespond(c, hbs)
 }
 
-func (h *Handler) storeAndRespond(c *echo.Context, hbs []model.HeartbeatPayload) error {
+func (h *Handler) storeAndRespond(c *echo.Context, hbs []model.HeartbeatPayload) (model.BulkHeartbeatData, error) {
+	var out model.BulkHeartbeatData
 	// auth-dry Phase 2: CapIngestHeartbeats is enforced by RequireCap route
 	// middleware (see ingest/routes.go) before this handler runs. We still
 	// resolve the identity here for the owner + the CapGenerateRollups check
 	// below; it's a cheap cached read (Phase 1), not a second DB resolution.
 	ident, aerr := apihelpers.Identify(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	owner := ident.Username
 	ctx := c.Request().Context()
@@ -89,7 +96,7 @@ func (h *Handler) storeAndRespond(c *echo.Context, hbs []model.HeartbeatPayload)
 		seedProject, seedLanguage, seedBranch, err := h.DB.GetLastKnownContext(ctx, owner)
 		if err != nil {
 			h.Logger.Error("failed to seed last-known context for placeholder substitution", "owner", owner, "err", err)
-			return apihelpers.RespondErr(c, apierr.Generic())
+			return out, apierr.Generic()
 		}
 		substituteLastContext(enriched, seedProject, seedLanguage, seedBranch)
 	}
@@ -123,7 +130,7 @@ func (h *Handler) storeAndRespond(c *echo.Context, hbs []model.HeartbeatPayload)
 	}
 	if err != nil {
 		h.Logger.Error("failed to store heartbeats", "err", err)
-		return apihelpers.RespondErr(c, apierr.Generic())
+		return out, apierr.Generic()
 	}
 
 	// Core throughput metric: every persisted heartbeat (Prometheus counts the
@@ -153,7 +160,7 @@ func (h *Handler) storeAndRespond(c *echo.Context, hbs []model.HeartbeatPayload)
 			201,
 		}
 	}
-	return c.JSON(http.StatusAccepted, model.BulkHeartbeatData{Responses: responses})
+	return model.BulkHeartbeatData{Responses: responses}, nil
 }
 
 func headerPtr(c *echo.Context, name string) *string {

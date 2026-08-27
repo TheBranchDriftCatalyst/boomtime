@@ -15,10 +15,14 @@
 package ingest
 
 import (
+	"net/http"
+
 	"github.com/labstack/echo/v5"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apiroute"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/model"
 )
 
 // Register wires the ingest domain endpoints onto e. Handler must be
@@ -51,29 +55,36 @@ func Register(e *echo.Echo, h *Handler) {
 	// dereferences a nil handler's DB.
 	ingestCap := ingestWriteCap(h)
 
-	// Heartbeats (ingest)
-	e.POST("/api/v1/users/current/heartbeats", h.Heartbeat, ingestCap...)
-	e.POST("/api/v1/users/current/heartbeats.bulk", h.HeartbeatBulk, ingestCap...)
+	// Heartbeats (ingest). Registered through apiroute so the OpenAPI spec
+	// gets the real 202 envelope schema (model.BulkHeartbeatData) instead of a
+	// bare {"type":"object"} stub. The NO-BODY form is deliberate: the seam
+	// binds request bodies at apihelpers.BodyLimitSmall (4 KiB) and every
+	// ingest write must keep its 8 MiB cap, so each handler still binds its
+	// own body (see heartbeats.go / workouts.go / health_samples.go).
+	apiroute.Accepted[model.BulkHeartbeatData](e, http.MethodPost, "/api/v1/users/current/heartbeats", h.Heartbeat, ingestCap...)
+	apiroute.Accepted[model.BulkHeartbeatData](e, http.MethodPost, "/api/v1/users/current/heartbeats.bulk", h.HeartbeatBulk, ingestCap...)
 
 	// HealthKit / Apple Watch ingest (extensions/boomtime-watch/).
 	// Workouts flow through the heartbeats table (ty='workout') so existing
 	// time-spent aggregations pick them up; raw samples land in health_samples.
-	e.POST("/api/v1/users/current/workouts", h.Workouts, ingestCap...)
-	e.POST("/api/v1/users/current/workouts.bulk", h.WorkoutsBulk, ingestCap...)
-	e.POST("/api/v1/users/current/health_samples", h.HealthSamples, ingestCap...)
-	e.POST("/api/v1/users/current/health_samples.bulk", h.HealthSamplesBulk, ingestCap...)
+	apiroute.Accepted[model.BulkHeartbeatData](e, http.MethodPost, "/api/v1/users/current/workouts", h.Workouts, ingestCap...)
+	apiroute.Accepted[model.BulkHeartbeatData](e, http.MethodPost, "/api/v1/users/current/workouts.bulk", h.WorkoutsBulk, ingestCap...)
+	apiroute.Accepted[healthSamplesResponse](e, http.MethodPost, "/api/v1/users/current/health_samples", h.HealthSamples, ingestCap...)
+	apiroute.Accepted[healthSamplesResponse](e, http.MethodPost, "/api/v1/users/current/health_samples.bulk", h.HealthSamplesBulk, ingestCap...)
 
 	// Heartbeats Explorer (read-only audit views)
-	e.GET("/api/v1/users/current/heartbeats/group", h.HeartbeatsGroup)
-	e.GET("/api/v1/users/current/heartbeats/latest", h.HeartbeatsLatest)
-	e.GET("/api/v1/users/current/heartbeats", h.HeartbeatsList)
+	apiroute.GET(e, "/api/v1/users/current/heartbeats/group", h.HeartbeatsGroup)
+	apiroute.GET(e, "/api/v1/users/current/heartbeats/latest", h.HeartbeatsLatest)
+	apiroute.GET(e, "/api/v1/users/current/heartbeats", h.HeartbeatsList)
 
 	// Entity Explorer (boom-90x): per-ty flat list + per-entity redact (blanks
 	// the entity column on matching heartbeat rows — row itself stays,
 	// contributing to project/language/machine totals). Redact requires
 	// ?confirm=redact-entities as an accident guard.
-	e.GET("/api/v1/users/current/heartbeats/entities", h.ListEntitiesByType)
-	e.POST("/api/v1/users/current/heartbeats/entities/redact", h.RedactEntities)
+	apiroute.GET(e, "/api/v1/users/current/heartbeats/entities", h.ListEntitiesByType)
+	// POSTNoBody: RedactEntities binds its own body at BodyLimitMedium (64 KiB)
+	// because a 500-entity batch does not fit the seam's 4 KiB bind.
+	apiroute.POSTNoBody(e, "/api/v1/users/current/heartbeats/entities/redact", h.RedactEntities)
 }
 
 // ingestWriteCap returns the CapIngestHeartbeats route middleware for the write

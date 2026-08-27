@@ -12,6 +12,19 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
 )
 
+// BodyLimitNone disables the seam's request-body cap for one route, matching a
+// handler that used plain c.Bind. Capping such an endpoint is a real behaviour
+// change and must be a deliberate decision, not a side effect of moving it onto
+// the seam — internal/boomtime/admin has a test that exists solely to make that
+// choice explicit.
+const BodyLimitNone int64 = 0
+
+// defaultBodyLimit is what the plain POST/PUT/PATCH forms bind at. Small (4 KiB)
+// suits the majority — a JSON control payload — but NOT every route: ingest
+// takes 8 MiB of heartbeats and imports were historically unbounded. Those must
+// use the *Limit forms, or the seam silently shrinks their contract.
+var defaultBodyLimit = apihelpers.BodyLimitSmall
+
 // Handler is a route that reads no request body.
 type Handler[Resp any] func(c *echo.Context) (Resp, error)
 
@@ -30,17 +43,23 @@ func DELETE[Resp any](e *echo.Echo, path string, h Handler[Resp], mw ...echo.Mid
 
 // POST registers a typed write that binds a JSON body.
 func POST[Req, Resp any](e *echo.Echo, path string, h BodyHandler[Req, Resp], mw ...echo.MiddlewareFunc) {
-	registerBody(e, http.MethodPost, path, http.StatusOK, h, mw...)
+	registerBody(e, http.MethodPost, path, http.StatusOK, defaultBodyLimit, h, mw...)
+}
+
+// POSTLimit is POST with an explicit request-body cap. Use BodyLimitNone to
+// preserve an endpoint that previously bound without one.
+func POSTLimit[Req, Resp any](e *echo.Echo, path string, limit int64, h BodyHandler[Req, Resp], mw ...echo.MiddlewareFunc) {
+	registerBody(e, http.MethodPost, path, http.StatusOK, limit, h, mw...)
 }
 
 // PUT registers a typed replace that binds a JSON body.
 func PUT[Req, Resp any](e *echo.Echo, path string, h BodyHandler[Req, Resp], mw ...echo.MiddlewareFunc) {
-	registerBody(e, http.MethodPut, path, http.StatusOK, h, mw...)
+	registerBody(e, http.MethodPut, path, http.StatusOK, defaultBodyLimit, h, mw...)
 }
 
 // PATCH registers a typed partial update that binds a JSON body.
 func PATCH[Req, Resp any](e *echo.Echo, path string, h BodyHandler[Req, Resp], mw ...echo.MiddlewareFunc) {
-	registerBody(e, http.MethodPatch, path, http.StatusOK, h, mw...)
+	registerBody(e, http.MethodPatch, path, http.StatusOK, defaultBodyLimit, h, mw...)
 }
 
 // POSTNoBody registers a typed write that takes no request body — a trigger or
@@ -61,7 +80,7 @@ func Accepted[Resp any](e *echo.Echo, method, path string, h Handler[Resp], mw .
 // Separate from POST because 22 routes enqueue rather than act inline, and a
 // spec claiming 200 for them would misstate the contract.
 func AcceptedBody[Req, Resp any](e *echo.Echo, method, path string, h BodyHandler[Req, Resp], mw ...echo.MiddlewareFunc) {
-	registerBody(e, method, path, http.StatusAccepted, h, mw...)
+	registerBody(e, method, path, http.StatusAccepted, defaultBodyLimit, h, mw...)
 }
 
 // NoContent registers a route that answers 204 with an empty body. 27 routes do
@@ -82,10 +101,19 @@ func NoContent(e *echo.Echo, method, path string, h func(c *echo.Context) error,
 
 // NoContentBody is NoContent for a route that binds a JSON body first.
 func NoContentBody[Req any](e *echo.Echo, method, path string, h func(c *echo.Context, req Req) error, mw ...echo.MiddlewareFunc) {
+	noContentBody(e, method, path, defaultBodyLimit, h, mw...)
+}
+
+// NoContentBodyLimit is NoContentBody with an explicit cap.
+func NoContentBodyLimit[Req any](e *echo.Echo, method, path string, limit int64, h func(c *echo.Context, req Req) error, mw ...echo.MiddlewareFunc) {
+	noContentBody(e, method, path, limit, h, mw...)
+}
+
+func noContentBody[Req any](e *echo.Echo, method, path string, limit int64, h func(c *echo.Context, req Req) error, mw ...echo.MiddlewareFunc) {
 	record(Op{Method: method, Path: path, Req: typeOf[Req](), Status: http.StatusNoContent})
 	e.Add(method, path, func(c *echo.Context) error {
 		var req Req
-		if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitSmall); aerr != nil {
+		if aerr := bindBody(c, &req, limit); aerr != nil {
 			return apihelpers.RespondErr(c, aerr)
 		}
 		if err := h(c, req); err != nil {
@@ -107,14 +135,11 @@ func register[Resp any](e *echo.Echo, method, path string, status int, reqType a
 	}, mw...)
 }
 
-func registerBody[Req, Resp any](e *echo.Echo, method, path string, status int, h BodyHandler[Req, Resp], mw ...echo.MiddlewareFunc) {
+func registerBody[Req, Resp any](e *echo.Echo, method, path string, status int, limit int64, h BodyHandler[Req, Resp], mw ...echo.MiddlewareFunc) {
 	record(Op{Method: method, Path: path, Req: typeOf[Req](), Resp: typeOf[Resp](), Status: status})
 	e.Add(method, path, func(c *echo.Context) error {
 		var req Req
-		// Same body cap every hand-written handler applies. Binding here rather
-		// than in each handler is half the point: the type is visible to the
-		// spec AND the limit cannot be forgotten.
-		if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitSmall); aerr != nil {
+		if aerr := bindBody(c, &req, limit); aerr != nil {
 			return apihelpers.RespondErr(c, aerr)
 		}
 		v, err := h(c, req)
@@ -161,4 +186,17 @@ func logger() *slog.Logger {
 		return l
 	}
 	return slog.Default()
+}
+
+// bindBody applies the route's cap, or binds uncapped when limit is
+// BodyLimitNone. Uncapped is only correct where the endpoint was already
+// uncapped; the seam must not quietly tighten a contract.
+func bindBody(c *echo.Context, dst any, limit int64) *apierr.Error {
+	if limit == BodyLimitNone {
+		if err := c.Bind(dst); err != nil {
+			return apierr.BadRequest("Invalid request body")
+		}
+		return nil
+	}
+	return apihelpers.BindJSONWithLimit(c, dst, limit)
 }

@@ -23,6 +23,8 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/handler"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 	"github.com/labstack/echo/v5"
+
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apiroute"
 )
 
 var _ = Describe("ImportRequest (boom-6jm.8)", func() {
@@ -44,8 +46,8 @@ var _ = Describe("ImportRequest (boom-6jm.8)", func() {
 		bh.SetImportWorker(worker, hub)
 
 		e := echo.New()
-		e.POST("/auth/login", h.Identity.Login) // route table shim so echo doesn't 404 on middleware (boom-8tn phase 4a)
-		e.POST("/api/v1/users/current/import", bh.ImportRequest)
+		apiroute.POSTNoBody(e, "/auth/login", h.Identity.Login) // route table shim so echo doesn't 404 on middleware (boom-8tn phase 4a)
+		apiroute.POSTLimit(e, "/api/v1/users/current/import", apiroute.BodyLimitNone, bh.ImportRequest)
 
 		// Baseline: no saved key.
 		_, has, err := hz.DB.GetEncryptedWakatimeKey(context.Background(), user)

@@ -25,7 +25,9 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/ingest"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apiroute"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/model"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 	"github.com/labstack/echo/v5"
 )
@@ -382,7 +384,7 @@ var _ = Describe("Heartbeat ingest (boom-d6x.handler)", func() {
 			// reuse the harness's default-cfg hz.Ingest.
 			ing := ingest.New(hz.DB, cfg, silent, nil)
 			e := echo.New()
-			e.POST("/api/v1/users/current/heartbeats.bulk", ing.HeartbeatBulk)
+			apiroute.Accepted[model.BulkHeartbeatData](e, http.MethodPost, "/api/v1/users/current/heartbeats.bulk", ing.HeartbeatBulk)
 
 			body := []map[string]any{{
 				"time":       float64(time.Now().Unix()),

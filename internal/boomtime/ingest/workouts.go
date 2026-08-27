@@ -16,10 +16,13 @@ import (
 // Wraps the same singleton-vs-bulk split as heartbeats so the companion app
 // can start with one-off POSTs before batching. Body capped at apihelpers.BodyLimitLarge
 // (boom-d6x.handler critique fix).
-func (h *Handler) Workouts(c *echo.Context) error {
+func (h *Handler) Workouts(c *echo.Context) (model.BulkHeartbeatData, error) {
+	var out model.BulkHeartbeatData
 	var w model.WorkoutPayload
+	// Bound here rather than by the apiroute seam: the seam binds at
+	// apihelpers.BodyLimitSmall (4 KiB) and this endpoint keeps its 8 MiB cap.
 	if aerr := apihelpers.BindJSONWithLimit(c, &w, apihelpers.BodyLimitLarge); aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	return h.storeWorkouts(c, []model.WorkoutPayload{w})
 }
@@ -35,7 +38,8 @@ func (h *Handler) Workouts(c *echo.Context) error {
 // otherwise see an empty reader and 400 on any bare-array payload
 // (boom-d6x.handler critique). The MaxBytesReader also prevents OOM via
 // oversized ingest.
-func (h *Handler) WorkoutsBulk(c *echo.Context) error {
+func (h *Handler) WorkoutsBulk(c *echo.Context) (model.BulkHeartbeatData, error) {
+	var out model.BulkHeartbeatData
 	r := c.Request()
 	r.Body = http.MaxBytesReader(c.Response(), r.Body, apihelpers.BodyLimitLarge)
 	body, err := io.ReadAll(r.Body)
@@ -43,9 +47,9 @@ func (h *Handler) WorkoutsBulk(c *echo.Context) error {
 		// http.MaxBytesReader signals oversize via "http: request body too
 		// large"; render 413 rather than 400 so the client can distinguish.
 		if err.Error() == "http: request body too large" {
-			return apihelpers.RespondErr(c, apierr.New(http.StatusRequestEntityTooLarge, "payload too large", nil))
+			return out, apierr.New(http.StatusRequestEntityTooLarge, "payload too large", nil)
 		}
-		return apihelpers.RespondErr(c, apierr.BadRequest("Invalid request body"))
+		return out, apierr.BadRequest("Invalid request body")
 	}
 	var env model.WorkoutBulkRequest
 	if err := json.Unmarshal(body, &env); err != nil || env.Data == nil {
@@ -53,27 +57,28 @@ func (h *Handler) WorkoutsBulk(c *echo.Context) error {
 		// wrap in {"data":...} and there's no reason to reject them.
 		var arr []model.WorkoutPayload
 		if err2 := json.Unmarshal(body, &arr); err2 != nil {
-			return apihelpers.RespondErr(c, apierr.BadRequest("Invalid request body"))
+			return out, apierr.BadRequest("Invalid request body")
 		}
 		env.Data = arr
 	}
 	return h.storeWorkouts(c, env.Data)
 }
 
-func (h *Handler) storeWorkouts(c *echo.Context, ws []model.WorkoutPayload) error {
+func (h *Handler) storeWorkouts(c *echo.Context, ws []model.WorkoutPayload) (model.BulkHeartbeatData, error) {
+	var out model.BulkHeartbeatData
 	// auth-dry Phase 2: CapIngestHeartbeats is enforced by RequireCap route
 	// middleware (ingest/routes.go) before this runs — the handler just needs
 	// the owner. IdentifyOwner is a cached read (Phase 1).
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	ctx := c.Request().Context()
 
 	ids, err := h.DB.SaveWorkouts(ctx, owner, ws)
 	if err != nil {
 		h.Logger.Error("failed to store workouts", "err", err)
-		return apihelpers.RespondErr(c, apierr.Generic())
+		return out, apierr.Generic()
 	}
 
 	// Bust cached dashboard payloads so the Wellness card / Overview picks up
@@ -87,5 +92,5 @@ func (h *Handler) storeWorkouts(c *echo.Context, ws []model.WorkoutPayload) erro
 			201,
 		}
 	}
-	return c.JSON(http.StatusAccepted, model.BulkHeartbeatData{Responses: responses})
+	return model.BulkHeartbeatData{Responses: responses}, nil
 }

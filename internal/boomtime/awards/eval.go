@@ -21,7 +21,7 @@ package awards
 
 import (
 	"errors"
-	"net/http"
+	"fmt"
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/labels"
@@ -35,19 +35,20 @@ import (
 )
 
 // OwnAwards: GET /api/v1/users/current/awards
-func (h *Handler) OwnAwards(c *echo.Context) error {
+func (h *Handler) OwnAwards(c *echo.Context) ([]labels.LabelAward, error) {
+	var out []labels.LabelAward
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	ctx := c.Request().Context()
 	payload, err := h.buildAwardsPayload(ctx, owner)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "awards payload build failed", err)
+		return out, fmt.Errorf("awards payload build failed: %w", err)
 	}
 	catalog, err := h.loadEvaluatorCatalog(ctx)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "awards catalog load failed", err)
+		return out, fmt.Errorf("awards catalog load failed: %w", err)
 	}
 	awards := labels.EvaluateAll(payload, catalog)
 
@@ -77,43 +78,44 @@ func (h *Handler) OwnAwards(c *echo.Context) error {
 	}
 
 	c.Response().Header().Set("Cache-Control", "private, max-age=30")
-	return c.JSON(http.StatusOK, awards)
+	return awards, nil
 }
 
 // PublicAwards: GET /api/public/profile/:slug/awards
-func (h *Handler) PublicAwards(c *echo.Context) error {
+func (h *Handler) PublicAwards(c *echo.Context) ([]labels.LabelAward, error) {
+	var out []labels.LabelAward
 	slug := c.Param("slug")
 	if slug == "" {
-		return apihelpers.RespondErr(c, apierr.BadRequest("slug is required"))
+		return out, apierr.BadRequest("slug is required")
 	}
 	ctx := c.Request().Context()
 	username, err := h.DB.LookupUsernameBySlug(ctx, slug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return apihelpers.RespondErr(c, apierr.NotFound("This profile isn't public"))
+			return out, apierr.NotFound("This profile isn't public")
 		}
-		return apihelpers.InternalErr(h.Logger, c, "public awards slug lookup failed", err)
+		return out, fmt.Errorf("public awards slug lookup failed: %w", err)
 	}
 	enabled, _, err := h.DB.GetPublicProfile(ctx, username)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "public awards enabled check failed", err)
+		return out, fmt.Errorf("public awards enabled check failed: %w", err)
 	}
 	if !enabled {
-		return apihelpers.RespondErr(c, apierr.NotFound("This profile isn't public"))
+		return out, apierr.NotFound("This profile isn't public")
 	}
 	payload, err := h.buildAwardsPayload(ctx, username)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "public awards payload build failed", err)
+		return out, fmt.Errorf("public awards payload build failed: %w", err)
 	}
 	catalog, err := h.loadEvaluatorCatalog(ctx)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "public awards catalog load failed", err)
+		return out, fmt.Errorf("public awards catalog load failed: %w", err)
 	}
 	awards := labels.EvaluateAll(payload, catalog)
 	// Deliberately NO ledger write here — a public visit must not pollute
 	// the profile owner's streaks. Their own /awards call is the write path.
 	c.Response().Header().Set("Cache-Control", "public, max-age=180")
-	return c.JSON(http.StatusOK, awards)
+	return awards, nil
 }
 
 // buildAwardsPayload runs the same query chain the public-profile handler

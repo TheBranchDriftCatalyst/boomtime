@@ -27,6 +27,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apiroute"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 	"github.com/labstack/echo/v5"
 )
@@ -40,7 +41,7 @@ func awardsAuxRouter(hz *testutil.Harness) *echo.Echo {
 	// boom-zp2s: the awards bag lives on the harness now (moved off *handler.Handler
 	// when the boomtime data domains folded onto boomtime.Module).
 	e.POST("/api/v1/users/current/awards/log", hz.Awards.AwardsLog)
-	e.GET("/api/public/profile/:slug/awards/streaks", hz.Awards.PublicAwardsStreaks)
+	apiroute.GET(e, "/api/public/profile/:slug/awards/streaks", hz.Awards.PublicAwardsStreaks)
 	return e
 }
 

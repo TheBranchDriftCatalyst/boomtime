@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -18,28 +19,37 @@ import (
 // for the owner (Audible / Kindle / Hardcover rows that share a Hardcover book id,
 // or — for unmatched books — an amazon_asin). The panel groups editions of the
 // same book so duplicates collapse into one view. Owner-scoped, read-only.
-func (h *Handler) GetBookWork(c *echo.Context) error {
+
+// bookWorkResponse is GET /api/v1/books/work: every edition of one canonical
+// Work, plus that Work's read history.
+type bookWorkResponse struct {
+	Editions []readingItemDTO `json:"editions"`
+	Reads    []readEventDTO   `json:"reads"`
+}
+
+func (h *Handler) GetBookWork(c *echo.Context) (bookWorkResponse, error) {
+	var out bookWorkResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 
 	var bookID *int64
 	if raw := strings.TrimSpace(c.QueryParam("bookId")); raw != "" {
 		id, err := strconv.ParseInt(raw, 10, 64)
 		if err != nil || id <= 0 {
-			return apierr.New(http.StatusBadRequest, "bookId must be a positive integer", nil).Write(c)
+			return out, apierr.New(http.StatusBadRequest, "bookId must be a positive integer", nil)
 		}
 		bookID = &id
 	}
 	asin := strings.TrimSpace(c.QueryParam("asin"))
 	if bookID == nil && asin == "" {
-		return apierr.New(http.StatusBadRequest, "one of bookId or asin is required", nil).Write(c)
+		return out, apierr.New(http.StatusBadRequest, "one of bookId or asin is required", nil)
 	}
 
 	items, err := h.DB.ListReadingItemsForWork(c.Request().Context(), owner, bookID, asin)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "load book work failed", err)
+		return out, fmt.Errorf("load book work failed: %w", err)
 	}
 
 	editions := make([]readingItemDTO, 0, len(items))
@@ -58,7 +68,7 @@ func (h *Handler) GetBookWork(c *echo.Context) error {
 		h.Logger.Warn("load reading events failed", "user", owner, "err", rerr)
 	}
 
-	return c.JSON(http.StatusOK, map[string]any{"editions": editions, "reads": reads})
+	return bookWorkResponse{Editions: editions, Reads: reads}, nil
 }
 
 // readEventDTO is one discrete read in the Book panel's history.

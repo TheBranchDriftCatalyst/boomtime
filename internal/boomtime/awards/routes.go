@@ -2,6 +2,8 @@ package awards
 
 import (
 	"github.com/labstack/echo/v5"
+
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apiroute"
 )
 
 // Register wires the awards domain's routes onto e. Called from
@@ -25,15 +27,21 @@ func Register(e *echo.Echo, h *Handler) {
 	// per (user, label, period_start) so the streak walker can render
 	// "3x NIGHT WATCH" badges on the LabelChip. Public variant so
 	// profile viewers see the same badges.
+	//
+	// /awards/log stays on plain e.POST: it binds its body at 128 KiB
+	// deliberately (a historical batch carries one item per firing label
+	// per replayed day), and apiroute.POST hardcodes the 4 KiB
+	// apihelpers.BodyLimitSmall. Moving it would shrink the accepted body
+	// 32x — a wire-behaviour change, not a typing refactor.
 	e.POST("/api/v1/users/current/awards/log", h.AwardsLog)
-	e.GET("/api/v1/users/current/awards/streaks", h.AwardsStreaks)
-	e.GET("/api/v1/users/current/awards/ledger", h.AwardsLedger)
-	e.GET("/api/public/profile/:slug/awards/streaks", h.PublicAwardsStreaks)
+	apiroute.GET(e, "/api/v1/users/current/awards/streaks", h.AwardsStreaks)
+	apiroute.GET(e, "/api/v1/users/current/awards/ledger", h.AwardsLedger)
+	apiroute.GET(e, "/api/public/profile/:slug/awards/streaks", h.PublicAwardsStreaks)
 	// boom-hc6.3: server-side award evaluation. Replaces the client-side
 	// evaluate() call. Own variant WRITES the ledger; public variant does not.
-	e.GET("/api/v1/users/current/awards", h.OwnAwards)
-	e.GET("/api/public/profile/:slug/awards", h.PublicAwards)
+	apiroute.GET(e, "/api/v1/users/current/awards", h.OwnAwards)
+	apiroute.GET(e, "/api/public/profile/:slug/awards", h.PublicAwards)
 	// boom-hc6.5.1: historical replay. Unblocks the full delete of the
 	// client-side evaluator (which was the AdminTab backfill's last use).
-	e.POST("/api/v1/users/current/awards/backfill", h.AwardsBackfill)
+	apiroute.POST(e, "/api/v1/users/current/awards/backfill", h.AwardsBackfill)
 }

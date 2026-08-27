@@ -23,6 +23,7 @@ import (
 	"github.com/labstack/echo/v5"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/curation"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apiroute"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
@@ -93,8 +94,10 @@ func TestApplyRename_LogsSuccessWithRuleIDAndRowCount(t *testing.T) {
 	logger, cap := newCapLog()
 	ch := curation.New(hz.DB, hz.Cfg, logger, nil)
 	e := echo.New()
-	e.POST("/api/v1/users/current/curation", ch.CreateCuration)
-	e.POST("/api/v1/users/current/curation/:id/apply", ch.ApplyRename)
+	// Both handlers now live on the typed apiroute seam, so this hand-rolled
+	// mini-router registers through it too rather than through plain e.POST.
+	apiroute.POST(e, "/api/v1/users/current/curation", ch.CreateCuration)
+	apiroute.POSTNoBody(e, "/api/v1/users/current/curation/:id/apply", ch.ApplyRename)
 
 	// Create a rename rule Python → python.
 	crRec := doReq(e, http.MethodPost, "/api/v1/users/current/curation", token, map[string]any{

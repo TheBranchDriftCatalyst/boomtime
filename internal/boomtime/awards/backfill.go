@@ -24,7 +24,7 @@
 package awards
 
 import (
-	"net/http"
+	"fmt"
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/labels"
@@ -48,17 +48,14 @@ type awardsBackfillResp struct {
 // AwardsBackfill: POST /api/v1/users/current/awards/backfill
 // Body: {days: N}. Server walks N days back to today, computing each
 // day's payload snapshot + writing ledger rows at that day.
-func (h *Handler) AwardsBackfill(c *echo.Context) error {
+func (h *Handler) AwardsBackfill(c *echo.Context, req awardsBackfillReq) (awardsBackfillResp, error) {
+	var out awardsBackfillResp
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
-	}
-	var req awardsBackfillReq
-	if aerr := apihelpers.BindJSONWithLimit(c, &req, 4*1024); aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	if req.Days < 1 {
-		return apihelpers.RespondErr(c, apierr.BadRequest("days must be ≥ 1"))
+		return out, apierr.BadRequest("days must be ≥ 1")
 	}
 	if req.Days > 365 {
 		req.Days = 365 // hard clamp; message-less silent floor is fine
@@ -76,7 +73,7 @@ func (h *Handler) AwardsBackfill(c *echo.Context) error {
 	// (safer than partially backfilling a corrupt catalog snapshot).
 	catalog, err := h.loadEvaluatorCatalog(ctx)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "awards backfill catalog load failed", err)
+		return out, fmt.Errorf("awards backfill catalog load failed: %w", err)
 	}
 
 	start := time.Now()
@@ -123,5 +120,5 @@ func (h *Handler) AwardsBackfill(c *echo.Context) error {
 		resp.RowsWritten += wrote
 	}
 	resp.TookMs = time.Since(start).Milliseconds()
-	return c.JSON(http.StatusOK, resp)
+	return resp, nil
 }

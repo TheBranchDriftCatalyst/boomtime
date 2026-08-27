@@ -4,13 +4,13 @@
 // (no HTTP, no seed, no server). It proves three things the composition tests
 // can't isolate:
 //
-//   1. the books-only tables are created (reading_items, reading_activity, …);
-//   2. the owner→users FK on reading_items is RESTORED — asserted at the catalog
-//      level AND behaviorally (a bogus-owner INSERT is rejected). If the FK were
-//      re-stripped, the behavioral half fails;
-//   3. the schema is genuinely books-ONLY — host tables (heartbeats) and the
-//      full users model (encrypted_wakatime_key) are ABSENT. If the standalone
-//      accidentally applied the host migration set, these negatives fail.
+//  1. the books-only tables are created (reading_items, reading_activity, …);
+//  2. the owner→users FK on reading_items is RESTORED — asserted at the catalog
+//     level AND behaviorally (a bogus-owner INSERT is rejected). If the FK were
+//     re-stripped, the behavioral half fails;
+//  3. the schema is genuinely books-ONLY — host tables (heartbeats) and the
+//     full users model (encrypted_wakatime_key) are ABSENT. If the standalone
+//     accidentally applied the host migration set, these negatives fail.
 //
 // DB-backed: it provisions its own isolated `boomtime_books_schema_test`
 // database (DROP + CREATE for a pristine schema each run) via a maintenance

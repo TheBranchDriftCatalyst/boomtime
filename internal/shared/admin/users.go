@@ -6,9 +6,8 @@ package admin
 // each tier grants. Admin-gated. Read-only v1 (set-role/disable stay in the
 // `boomtime user` CLI for now).
 import (
-	"net/http"
+	"fmt"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
 	"github.com/labstack/echo/v5"
 )
@@ -32,13 +31,14 @@ type adminUsersResponse struct {
 }
 
 // ListUsers: GET /api/v1/admin/users (admin-gated).
-func (h *Handler) ListUsers(c *echo.Context) error {
+func (h *Handler) ListUsers(c *echo.Context) (adminUsersResponse, error) {
+	var out adminUsersResponse
 	if _, aerr := h.requireAdmin(c); aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	rows, err := h.DB.ListUsersAdmin(c.Request().Context())
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "admin list users failed", err)
+		return out, fmt.Errorf("admin list users failed: %w", err)
 	}
 	users := make([]adminUserRow, 0, len(rows))
 	for _, r := range rows {
@@ -53,9 +53,9 @@ func (h *Handler) ListUsers(c *echo.Context) error {
 			Capabilities: ident.Capabilities(),
 		})
 	}
-	return c.JSON(http.StatusOK, adminUsersResponse{
+	return adminUsersResponse{
 		Capabilities: auth.CapabilityStrings(),
 		Roles:        auth.RoleCapabilityMatrix(),
 		Users:        users,
-	})
+	}, nil
 }

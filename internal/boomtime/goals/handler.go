@@ -15,11 +15,20 @@
 // The batched progress endpoint (/goals/progress) is what dashboard
 // widgets hit — one HTTP round trip per dashboard render, not N per
 // goal tile.
+//
+// Every route is registered through internal/shared/apiroute (see
+// routes.go), which is what lets the OpenAPI spec carry a real schema:
+// the request/response types are captured at the registration call
+// site, so the docs cannot drift from the handler. That is also why the
+// response envelopes below are named types rather than the
+// map[string]any literals they used to be — a map has no shape to
+// reflect.
 package goals
 
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -42,6 +51,11 @@ type Handler struct {
 // createGoalRequest is the POST body. Description is optional; empty
 // string means "no description" (server stores NULL). Spec is a raw
 // JSONB blob; the validator parses it before any DB touch.
+//
+// Bound by the apiroute seam under apihelpers.BodyLimitSmall — the same
+// cap this handler applied by hand. Small cap: name + description + a
+// modest spec tree. The MEDIUM cap would work but SMALL is a tighter
+// honest ceiling — a spec that needs 4 KiB has too many predicates.
 type createGoalRequest struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
@@ -70,61 +84,87 @@ type toggleGoalRequest struct {
 	Enabled *bool `json:"enabled"`
 }
 
+// Response envelopes. These were map[string]any literals; the json tags
+// below reproduce the old map keys EXACTLY, so the wire format is
+// unchanged.
+
+// listGoalsResponse is GET /api/v1/users/current/goals.
+type listGoalsResponse struct {
+	// Goals is every goal owned by the caller, newest first.
+	Goals []Goal `json:"goals"`
+}
+
+// goalResponse is the single-goal envelope shared by
+// GET/POST/PATCH on /api/v1/users/current/goals[/:id].
+type goalResponse struct {
+	Goal *Goal `json:"goal"`
+}
+
+// toggleGoalResponse is POST /api/v1/users/current/goals/:id/toggle —
+// the goal's enabled state AFTER the flip/set.
+type toggleGoalResponse struct {
+	Enabled bool `json:"enabled"`
+}
+
+// allGoalProgressResponse is GET /api/v1/users/current/goals/progress.
+type allGoalProgressResponse struct {
+	// Progress is goal id -> evaluated progress. Disabled goals and
+	// goals whose spec failed to evaluate are absent from the map; the
+	// tile renderer treats a missing entry as "unknown/no data".
+	Progress map[string]*Progress `json:"progress"`
+}
+
 // ListGoals: GET /api/v1/users/current/goals → {goals:[Goal]}.
-func (h *Handler) ListGoals(c *echo.Context) error {
+func (h *Handler) ListGoals(c *echo.Context) (listGoalsResponse, error) {
+	var out listGoalsResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	goals, err := ListGoals(h.DB, c.Request().Context(), owner)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "list goals failed", err)
+		return out, fmt.Errorf("list goals failed: %w", err)
 	}
-	return c.JSON(http.StatusOK, map[string]any{"goals": goals})
+	return listGoalsResponse{Goals: goals}, nil
 }
 
 // GetGoal: GET /api/v1/users/current/goals/:id → {goal:Goal}.
 // Owner-scoped: cross-owner id returns 404 (no oracle).
-func (h *Handler) GetGoal(c *echo.Context) error {
+func (h *Handler) GetGoal(c *echo.Context) (goalResponse, error) {
+	var out goalResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	id := c.Param("id")
 	g, err := GetGoal(h.DB, c.Request().Context(), owner, id)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "get goal failed", err)
+		return out, fmt.Errorf("get goal failed: %w", err)
 	}
 	if g == nil {
-		return apihelpers.RespondErr(c, apierr.NotFound("goal not found"))
+		return out, apierr.NotFound("goal not found")
 	}
-	return c.JSON(http.StatusOK, map[string]any{"goal": g})
+	return goalResponse{Goal: g}, nil
 }
 
 // CreateGoal: POST /api/v1/users/current/goals → {goal:Goal}.
 // Body: {name, description?, spec}. Validates spec strictly; a bad
 // spec is 400 with the error text so the author can fix it. Duplicate
 // (owner, name) is 409.
-func (h *Handler) CreateGoal(c *echo.Context) error {
+func (h *Handler) CreateGoal(c *echo.Context, req createGoalRequest) (goalResponse, error) {
+	var out goalResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
-	}
-	var req createGoalRequest
-	// Small cap: name + description + a modest spec tree. The MEDIUM
-	// cap would work but SMALL is a tighter honest ceiling — a spec
-	// that needs 4 KiB has too many predicates.
-	if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitSmall); aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	if strings.TrimSpace(req.Name) == "" {
-		return apihelpers.RespondErr(c, apierr.BadRequest("name is required"))
+		return out, apierr.BadRequest("name is required")
 	}
 	if len(req.Spec) == 0 {
-		return apihelpers.RespondErr(c, apierr.BadRequest("spec is required"))
+		return out, apierr.BadRequest("spec is required")
 	}
 	if _, err := ValidateSpec(req.Spec); err != nil {
-		return apihelpers.RespondErr(c, apierr.BadRequest(err.Error()))
+		return out, apierr.BadRequest(err.Error())
 	}
 	var descPtr *string
 	if req.Description != "" {
@@ -133,12 +173,12 @@ func (h *Handler) CreateGoal(c *echo.Context) error {
 	g, err := CreateGoal(h.DB, c.Request().Context(), owner, req.Name, descPtr, req.Spec, req.Public)
 	if err != nil {
 		if isUniqueViolation(err) {
-			return apihelpers.RespondErr(c, apierr.New(http.StatusConflict, "a goal named "+req.Name+" already exists", nil))
+			return out, apierr.New(http.StatusConflict, "a goal named "+req.Name+" already exists", nil)
 		}
-		return apihelpers.InternalErr(h.Logger, c, "create goal failed", err)
+		return out, fmt.Errorf("create goal failed: %w", err)
 	}
 	h.Logger.Info("goal created", "user", owner, "goal", g.ID)
-	return c.JSON(http.StatusOK, map[string]any{"goal": g})
+	return goalResponse{Goal: g}, nil
 }
 
 // UpdateGoal: PATCH /api/v1/users/current/goals/:id → {goal:Goal}.
@@ -146,26 +186,23 @@ func (h *Handler) CreateGoal(c *echo.Context) error {
 // progress (invariant enforced by db.UpdateGoal). Cross-owner id
 // returns 404 (indistinguishable from "no such id"). Duplicate
 // (owner, name) on rename is 409.
-func (h *Handler) UpdateGoal(c *echo.Context) error {
+func (h *Handler) UpdateGoal(c *echo.Context, req updateGoalRequest) (goalResponse, error) {
+	var out goalResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	id := c.Param("id")
-	var req updateGoalRequest
-	if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitSmall); aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
-	}
 	if req.Spec != nil {
 		if len(*req.Spec) == 0 {
-			return apihelpers.RespondErr(c, apierr.BadRequest("spec cannot be empty"))
+			return out, apierr.BadRequest("spec cannot be empty")
 		}
 		if _, err := ValidateSpec(*req.Spec); err != nil {
-			return apihelpers.RespondErr(c, apierr.BadRequest(err.Error()))
+			return out, apierr.BadRequest(err.Error())
 		}
 	}
 	if req.Name != nil && strings.TrimSpace(*req.Name) == "" {
-		return apihelpers.RespondErr(c, apierr.BadRequest("name cannot be empty"))
+		return out, apierr.BadRequest("name cannot be empty")
 	}
 	patch := GoalPatch{
 		Name:        req.Name,
@@ -177,61 +214,63 @@ func (h *Handler) UpdateGoal(c *echo.Context) error {
 	g, err := UpdateGoal(h.DB, c.Request().Context(), owner, id, patch)
 	if err != nil {
 		if isUniqueViolation(err) {
-			return apihelpers.RespondErr(c, apierr.New(http.StatusConflict, "a goal with that name already exists", nil))
+			return out, apierr.New(http.StatusConflict, "a goal with that name already exists", nil)
 		}
-		return apihelpers.InternalErr(h.Logger, c, "update goal failed", err)
+		return out, fmt.Errorf("update goal failed: %w", err)
 	}
 	if g == nil {
-		return apihelpers.RespondErr(c, apierr.NotFound("goal not found"))
+		return out, apierr.NotFound("goal not found")
 	}
 	h.Logger.Info("goal updated", "user", owner, "goal", g.ID)
-	return c.JSON(http.StatusOK, map[string]any{"goal": g})
+	return goalResponse{Goal: g}, nil
 }
 
 // DeleteGoal: DELETE /api/v1/users/current/goals/:id → 204.
 // Idempotent-in-effect for cross-owner or already-deleted ids: still
 // 404, no distinguisher, no oracle.
+//
+// Registered via apiroute.NoContent, which writes the 204 — a nil
+// return here IS the success case.
 func (h *Handler) DeleteGoal(c *echo.Context) error {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return aerr
 	}
 	id := c.Param("id")
 	ok, err := DeleteGoal(h.DB, c.Request().Context(), owner, id)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "delete goal failed", err)
+		return fmt.Errorf("delete goal failed: %w", err)
 	}
 	if !ok {
-		return apihelpers.RespondErr(c, apierr.NotFound("goal not found"))
+		return apierr.NotFound("goal not found")
 	}
 	h.Logger.Info("goal deleted", "user", owner, "goal", id)
-	return c.NoContent(http.StatusNoContent)
+	return nil
 }
 
 // ToggleGoal: POST /api/v1/users/current/goals/:id/toggle → {enabled:bool}.
 // Body optional: omit to flip, {"enabled":bool} to set exactly.
 // Idempotent — an exact-set matching the current value returns 200.
-func (h *Handler) ToggleGoal(c *echo.Context) error {
+//
+// The seam binds the body before this runs; echo's binder is a no-op on
+// a zero-length body, so an absent body still leaves req.Enabled nil
+// (the flip case) exactly as the hand-rolled ContentLength check did.
+func (h *Handler) ToggleGoal(c *echo.Context, req toggleGoalRequest) (toggleGoalResponse, error) {
+	var out toggleGoalResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	id := c.Param("id")
-	var req toggleGoalRequest
-	if c.Request().ContentLength > 0 {
-		if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitSmall); aerr != nil {
-			return apihelpers.RespondErr(c, aerr)
-		}
-	}
 	enabled, found, err := ToggleGoal(h.DB, c.Request().Context(), owner, id, req.Enabled)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "toggle goal failed", err)
+		return out, fmt.Errorf("toggle goal failed: %w", err)
 	}
 	if !found {
-		return apihelpers.RespondErr(c, apierr.NotFound("goal not found"))
+		return out, apierr.NotFound("goal not found")
 	}
 	h.Logger.Info("goal toggled", "user", owner, "goal", id, "enabled", enabled)
-	return c.JSON(http.StatusOK, map[string]any{"enabled": enabled})
+	return toggleGoalResponse{Enabled: enabled}, nil
 }
 
 // GetGoalProgress: GET /api/v1/users/current/goals/:id/progress → Progress.
@@ -239,24 +278,28 @@ func (h *Handler) ToggleGoal(c *echo.Context) error {
 // now; otherwise recompute and cache. Explicit invalidation (spec
 // PATCH, heartbeat ingest) sets last_evaluated_at NULL so the next
 // read always recomputes.
-func (h *Handler) GetGoalProgress(c *echo.Context) error {
+//
+// The body is a bare Progress — no envelope — which is why this returns
+// *Progress rather than a wrapper type.
+func (h *Handler) GetGoalProgress(c *echo.Context) (*Progress, error) {
+	var out *Progress
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	id := c.Param("id")
 	g, err := GetGoal(h.DB, c.Request().Context(), owner, id)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "get goal (for progress) failed", err)
+		return out, fmt.Errorf("get goal (for progress) failed: %w", err)
 	}
 	if g == nil {
-		return apihelpers.RespondErr(c, apierr.NotFound("goal not found"))
+		return out, apierr.NotFound("goal not found")
 	}
 	prog, err := h.evalGoal(c, g)
 	if err != nil {
-		return apihelpers.RespondErr(c, apierr.BadRequest(err.Error()))
+		return out, apierr.BadRequest(err.Error())
 	}
-	return c.JSON(http.StatusOK, prog)
+	return prog, nil
 }
 
 // GetAllGoalProgress: GET /api/v1/users/current/goals/progress
@@ -271,14 +314,15 @@ func (h *Handler) GetGoalProgress(c *echo.Context) error {
 //
 // Disabled goals are skipped — the tile renderer treats a missing
 // entry as "unknown/no data".
-func (h *Handler) GetAllGoalProgress(c *echo.Context) error {
+func (h *Handler) GetAllGoalProgress(c *echo.Context) (allGoalProgressResponse, error) {
+	var resp allGoalProgressResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return resp, aerr
 	}
 	goals, err := ListGoals(h.DB, c.Request().Context(), owner)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "list goals (for batch progress) failed", err)
+		return resp, fmt.Errorf("list goals (for batch progress) failed: %w", err)
 	}
 	out := map[string]*Progress{}
 	for i := range goals {
@@ -296,7 +340,7 @@ func (h *Handler) GetAllGoalProgress(c *echo.Context) error {
 		}
 		out[g.ID] = p
 	}
-	return c.JSON(http.StatusOK, map[string]any{"progress": out})
+	return allGoalProgressResponse{Progress: out}, nil
 }
 
 // evalGoal encapsulates the cache-freshness decision + eval + cache

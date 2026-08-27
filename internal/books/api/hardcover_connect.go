@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net/http"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -51,18 +51,16 @@ const hardcoverValidateTimeout = 15 * time.Second
 // ConnectHardcover validates a pasted bearer token against Hardcover's me{}
 // query and, if accepted, stores it encrypted. BooksEnabled-gated. Returns 400
 // on a rejected/blank token, 204 on success.
-func (h *Handler) ConnectHardcover(c *echo.Context) error {
+// The body is bound by the typed seam (apiroute.NoContentBody) under the SAME
+// apihelpers.BodyLimitSmall cap this handler applied itself — the body is a
+// single opaque bearer token.
+func (h *Handler) ConnectHardcover(c *echo.Context, req hardcoverConnectReq) error {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
-	}
-	var req hardcoverConnectReq
-	// Small cap — the body is a single opaque bearer token.
-	if berr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitSmall); berr != nil {
-		return apihelpers.RespondErr(c, berr)
+		return aerr
 	}
 	if req.Token == "" {
-		return apihelpers.RespondErr(c, apierr.BadRequest("token is required (use DELETE to clear)"))
+		return apierr.BadRequest("token is required (use DELETE to clear)")
 	}
 
 	ctx, cancel := context.WithTimeout(c.Request().Context(), hardcoverValidateTimeout)
@@ -70,31 +68,32 @@ func (h *Handler) ConnectHardcover(c *echo.Context) error {
 	client := hardcover.NewClient(req.Token)
 	if _, err := client.Validate(ctx); err != nil {
 		if errors.Is(err, hardcover.ErrBadToken) {
-			return apihelpers.RespondErr(c, apierr.BadRequest("Hardcover rejected this token — check it and try again."))
+			return apierr.BadRequest("Hardcover rejected this token — check it and try again.")
 		}
 		if errors.Is(err, hardcover.ErrRateLimited) {
-			return apihelpers.RespondErr(c, apierr.BadRequest("Hardcover is rate-limiting right now — please try again in a minute."))
+			return apierr.BadRequest("Hardcover is rate-limiting right now — please try again in a minute.")
 		}
 		// Network / timeout / unexpected — don't persist an unverified token.
-		return apihelpers.InternalErr(h.Logger, c, "hardcover token validation failed", err)
+		return fmt.Errorf("hardcover token validation failed: %w", err)
 	}
 
 	if err := hardcover.NewStore(h.DB).Save(c.Request().Context(), owner, req.Token, db.HardcoverKeyStatusValid); err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "hardcover token persist failed", err)
+		return fmt.Errorf("hardcover token persist failed: %w", err)
 	}
 	h.Logger.Info("hardcover connected", "user", owner, "hardcoverConnected", true)
-	return apihelpers.NoContent(c)
+	return nil
 }
 
 // GetHardcoverConnection reports presence/status (never returns the token).
-func (h *Handler) GetHardcoverConnection(c *echo.Context) error {
+func (h *Handler) GetHardcoverConnection(c *echo.Context) (hardcoverConnectionResp, error) {
+	var out hardcoverConnectionResp
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	info, err := hardcover.NewStore(h.DB).Info(c.Request().Context(), owner)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "hardcover connection lookup failed", err)
+		return out, fmt.Errorf("hardcover connection lookup failed: %w", err)
 	}
 	resp := hardcoverConnectionResp{Connected: info.Connected}
 	if info.Connected {
@@ -104,7 +103,7 @@ func (h *Handler) GetHardcoverConnection(c *echo.Context) error {
 			resp.CheckedAt = &ts
 		}
 	}
-	return c.JSON(http.StatusOK, resp)
+	return resp, nil
 }
 
 // PullHardcover enqueues the inbound Hardcover sync (the PULL half of the
@@ -114,30 +113,31 @@ func (h *Handler) GetHardcoverConnection(c *echo.Context) error {
 // payload) and returns the enqueued job id immediately rather than blocking on a
 // paginated shelf sweep. BooksEnabled-gated. Idempotent to enqueue: the pull only
 // updates linkage columns, so a duplicate run is harmless.
-func (h *Handler) PullHardcover(c *echo.Context) error {
+func (h *Handler) PullHardcover(c *echo.Context) (enqueuedJobResponse, error) {
+	var out enqueuedJobResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	if h.JobEnqueuer == nil {
-		return apihelpers.RespondErr(c, apierr.BadRequest("background jobs are not available on this server"))
+		return out, apierr.BadRequest("background jobs are not available on this server")
 	}
 	// Confirm Hardcover is actually connected before enqueueing, so the UI gets an
 	// immediate, clear error instead of a job that no-ops later.
 	info, ierr := hardcover.NewStore(h.DB).Info(c.Request().Context(), owner)
 	if ierr != nil {
-		return apihelpers.InternalErr(h.Logger, c, "hardcover connection lookup failed", ierr)
+		return out, fmt.Errorf("hardcover connection lookup failed: %w", ierr)
 	}
 	if !info.Connected {
-		return apihelpers.RespondErr(c, apierr.BadRequest("connect Hardcover before running a pull"))
+		return out, apierr.BadRequest("connect Hardcover before running a pull")
 	}
 	id, eerr := h.JobEnqueuer.Enqueue(c.Request().Context(), hardcover.PullJobKind, nil,
 		jobs.Owner(owner), jobs.MaxAttempts(3))
 	if eerr != nil {
-		return apihelpers.InternalErr(h.Logger, c, "hardcover pull enqueue failed", eerr)
+		return out, fmt.Errorf("hardcover pull enqueue failed: %w", eerr)
 	}
 	h.Logger.Info("hardcover pull enqueued", "user", owner, "jobId", id)
-	return c.JSON(http.StatusAccepted, map[string]any{"enqueued": true, "jobId": id})
+	return enqueuedJobResponse{Enqueued: true, JobID: id}, nil
 }
 
 // MatchHardcover enqueues the explicit `hardcover-match` pipeline stage (the
@@ -147,22 +147,23 @@ func (h *Handler) PullHardcover(c *echo.Context) error {
 // payload) and returns the enqueued job id immediately rather than blocking on the
 // ladder. BooksEnabled-gated. Idempotent to enqueue: an already-matched row drops
 // out of the worklist, so a duplicate run is harmless. Mirrors PullHardcover.
-func (h *Handler) MatchHardcover(c *echo.Context) error {
+func (h *Handler) MatchHardcover(c *echo.Context) (enqueuedJobResponse, error) {
+	var out enqueuedJobResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	if h.JobEnqueuer == nil {
-		return apihelpers.RespondErr(c, apierr.BadRequest("background jobs are not available on this server"))
+		return out, apierr.BadRequest("background jobs are not available on this server")
 	}
 	// Confirm Hardcover is actually connected before enqueueing, so the UI gets an
 	// immediate, clear error instead of a job that no-ops later.
 	info, ierr := hardcover.NewStore(h.DB).Info(c.Request().Context(), owner)
 	if ierr != nil {
-		return apihelpers.InternalErr(h.Logger, c, "hardcover connection lookup failed", ierr)
+		return out, fmt.Errorf("hardcover connection lookup failed: %w", ierr)
 	}
 	if !info.Connected {
-		return apihelpers.RespondErr(c, apierr.BadRequest("connect Hardcover before running a match"))
+		return out, apierr.BadRequest("connect Hardcover before running a match")
 	}
 	// ?force=1 requests a full re-check that ignores the 30d negative-cache window
 	// (a row the ladder previously proved unmatchable is retried now). Carried in the
@@ -177,21 +178,21 @@ func (h *Handler) MatchHardcover(c *echo.Context) error {
 	id, eerr := h.JobEnqueuer.Enqueue(c.Request().Context(), hardcover.HardcoverMatchKind, payload,
 		jobs.Owner(owner), jobs.MaxAttempts(3))
 	if eerr != nil {
-		return apihelpers.InternalErr(h.Logger, c, "hardcover match enqueue failed", eerr)
+		return out, fmt.Errorf("hardcover match enqueue failed: %w", eerr)
 	}
 	h.Logger.Info("hardcover match enqueued", "user", owner, "jobId", id, "force", force)
-	return c.JSON(http.StatusAccepted, map[string]any{"enqueued": true, "jobId": id})
+	return enqueuedJobResponse{Enqueued: true, JobID: id}, nil
 }
 
 // DisconnectHardcover clears the stored token (idempotent).
 func (h *Handler) DisconnectHardcover(c *echo.Context) error {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return aerr
 	}
 	if err := hardcover.NewStore(h.DB).Clear(c.Request().Context(), owner); err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "hardcover disconnect failed", err)
+		return fmt.Errorf("hardcover disconnect failed: %w", err)
 	}
 	h.Logger.Info("hardcover disconnected", "user", owner)
-	return apihelpers.NoContent(c)
+	return nil
 }

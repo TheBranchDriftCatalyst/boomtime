@@ -29,19 +29,30 @@ func (h *Handler) effectiveImportToken(bodyToken string) string {
 	return h.Cfg.WakatimeAPIKey
 }
 
+// importRequestResponse is POST /import — the durable job handle the FE binds
+// its WebSocket to. Identical on both paths (freshly created job, or the
+// already-running job returned by the one-active-job-per-owner short circuit).
+type importRequestResponse struct {
+	JobID int `json:"jobId"`
+	// JobStatus is the sole remaining legacy status label the FE still reads
+	// (importer.JobSubmitted); job lifecycle itself lives on Job.State.
+	JobStatus string  `json:"jobStatus"`
+	Job       *db.Job `json:"job"`
+}
+
 // ImportRequest: POST /import — create + start a durable import job.
 // If a job is already queued/running for this user, returns that job instead of
 // starting a second one (one active job per owner).
-func (h *Handler) ImportRequest(c *echo.Context) error {
+//
+// The JSON body is bound by the apiroute seam (same c.Bind underneath, same
+// 400 "Invalid request body" on a parse failure).
+func (h *Handler) ImportRequest(c *echo.Context, payload model.ImportRequestPayload) (importRequestResponse, error) {
+	var out importRequestResponse
 	// auth-dry Phase 2: CapImport is enforced by RequireCap route middleware
 	// (see admin/routes.go) before this runs; the handler just needs the owner.
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
-	}
-	var payload model.ImportRequestPayload
-	if err := c.Bind(&payload); err != nil {
-		return apihelpers.RespondErr(c, apierr.BadRequest("Invalid request body"))
+		return out, aerr
 	}
 
 	// boom-6jm.8: save-on-success. Rather than persist the typed key eagerly
@@ -74,13 +85,13 @@ func (h *Handler) ImportRequest(c *echo.Context) error {
 
 	// One active job per owner: return the existing running/queued job if any.
 	if existing, err := h.DB.GetRunningJobByOwner(ctx, owner); err != nil {
-		return apihelpers.RespondErr(c, apierr.Generic())
+		return out, apierr.Generic()
 	} else if existing != nil {
-		return c.JSON(http.StatusOK, map[string]any{
-			"jobId":     existing.ID,
-			"jobStatus": importer.JobSubmitted,
-			"job":       existing,
-		})
+		return importRequestResponse{
+			JobID:     existing.ID,
+			JobStatus: importer.JobSubmitted,
+			Job:       existing,
+		}, nil
 	}
 
 	// TypedToken carries the ORIGINAL user-typed token (may be "") separate
@@ -91,35 +102,41 @@ func (h *Handler) ImportRequest(c *echo.Context) error {
 	item := importer.QueueItem{Requester: owner, ReqPayload: payload, TypedToken: typedToken}
 	raw, err := json.Marshal(item)
 	if err != nil {
-		return apihelpers.RespondErr(c, apierr.Generic())
+		return out, apierr.Generic()
 	}
 
 	total := importer.TotalDays(payload.StartDate, payload.EndDate)
 	job, err := h.DB.CreateImportJob(ctx, owner, raw, payload.StartDate, payload.EndDate, total)
 	if err != nil {
-		return apihelpers.RespondErr(c, apierr.Generic())
+		return out, apierr.Generic()
 	}
 
 	h.Worker.StartJob(job, item)
 
-	return c.JSON(http.StatusOK, map[string]any{
-		"jobId":     job.ID,
-		"jobStatus": importer.JobSubmitted,
-		"job":       job,
-	})
+	return importRequestResponse{
+		JobID:     job.ID,
+		JobStatus: importer.JobSubmitted,
+		Job:       job,
+	}, nil
+}
+
+// importJobsResponse is GET /import/jobs.
+type importJobsResponse struct {
+	Jobs []db.Job `json:"jobs"`
 }
 
 // ImportJobs: GET /import/jobs — list this user's jobs, newest first.
-func (h *Handler) ImportJobs(c *echo.Context) error {
+func (h *Handler) ImportJobs(c *echo.Context) (importJobsResponse, error) {
+	var out importJobsResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	jobs, err := h.DB.GetJobsByOwner(c.Request().Context(), owner)
 	if err != nil {
-		return apihelpers.RespondErr(c, apierr.Generic())
+		return out, apierr.Generic()
 	}
-	return c.JSON(http.StatusOK, map[string]any{"jobs": jobs})
+	return importJobsResponse{Jobs: jobs}, nil
 }
 
 // jobForOwner parses the :id param and loads the job, enforcing that it
@@ -151,38 +168,58 @@ func (h *Handler) ownedJob(c *echo.Context) (*db.Job, *apierr.Error) {
 	return h.jobForOwner(c, owner)
 }
 
+// importJobResponse is GET /import/jobs/:id — the job plus its log snapshot.
+type importJobResponse struct {
+	Job  *db.Job      `json:"job"`
+	Logs []db.LogLine `json:"logs"`
+}
+
 // ImportJob: GET /import/jobs/:id — one job plus its logs (owner-scoped).
-func (h *Handler) ImportJob(c *echo.Context) error {
+func (h *Handler) ImportJob(c *echo.Context) (importJobResponse, error) {
+	var out importJobResponse
 	job, aerr := h.ownedJob(c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	logs, err := h.DB.GetJobLogs(c.Request().Context(), job.ID, 0, 1000)
 	if err != nil {
-		return apihelpers.RespondErr(c, apierr.Generic())
+		return out, apierr.Generic()
 	}
-	return c.JSON(http.StatusOK, map[string]any{"job": job, "logs": logs})
+	return importJobResponse{Job: job, Logs: logs}, nil
+}
+
+// importJobLogsResponse is GET /import/jobs/:id/logs.
+type importJobLogsResponse struct {
+	Logs []db.LogLine `json:"logs"`
 }
 
 // ImportJobLogs: GET /import/jobs/:id/logs?afterId=<n> — REST fallback tail.
-func (h *Handler) ImportJobLogs(c *echo.Context) error {
+func (h *Handler) ImportJobLogs(c *echo.Context) (importJobLogsResponse, error) {
+	var out importJobLogsResponse
 	job, aerr := h.ownedJob(c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	afterID := apihelpers.QueryInt64(c, "afterId", 0)
 	logs, err := h.DB.GetJobLogs(c.Request().Context(), job.ID, afterID, 1000)
 	if err != nil {
-		return apihelpers.RespondErr(c, apierr.Generic())
+		return out, apierr.Generic()
 	}
-	return c.JSON(http.StatusOK, map[string]any{"logs": logs})
+	return importJobLogsResponse{Logs: logs}, nil
+}
+
+// importJobCancelResponse is POST /import/jobs/:id/cancel — the job as it
+// stands after the cancel lands.
+type importJobCancelResponse struct {
+	Job *db.Job `json:"job"`
 }
 
 // ImportJobCancel: POST /import/jobs/:id/cancel — cancel a running job.
-func (h *Handler) ImportJobCancel(c *echo.Context) error {
+func (h *Handler) ImportJobCancel(c *echo.Context) (importJobCancelResponse, error) {
+	var out importJobCancelResponse
 	job, aerr := h.ownedJob(c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	id := job.ID
 	ctx := c.Request().Context()
@@ -195,7 +232,7 @@ func (h *Handler) ImportJobCancel(c *echo.Context) error {
 	if !running {
 		updated, err := h.DB.CancelJob(ctx, id)
 		if err != nil {
-			return apihelpers.RespondErr(c, apierr.Generic())
+			return out, apierr.Generic()
 		}
 		if updated != nil {
 			job = updated
@@ -212,12 +249,17 @@ func (h *Handler) ImportJobCancel(c *echo.Context) error {
 			job = fresh
 		}
 	}
-	return c.JSON(http.StatusOK, map[string]any{"job": job})
+	return importJobCancelResponse{Job: job}, nil
+}
+
+// importConfigResponse is GET /import/config.
+type importConfigResponse struct {
+	HasServerKey bool `json:"hasServerKey"`
 }
 
 // ImportConfig: GET /import/config — reports whether a server key is configured.
-func (h *Handler) ImportConfig(c *echo.Context) error {
-	return c.JSON(http.StatusOK, map[string]bool{"hasServerKey": h.Cfg.HasServerWakatimeKey()})
+func (h *Handler) ImportConfig(c *echo.Context) (importConfigResponse, error) {
+	return importConfigResponse{HasServerKey: h.Cfg.HasServerWakatimeKey()}, nil
 }
 
 // WakatimeRange: POST /import/wakatime-range — discover how far back the user's

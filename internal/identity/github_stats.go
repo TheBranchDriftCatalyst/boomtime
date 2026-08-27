@@ -26,6 +26,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -56,35 +57,36 @@ const staleHeader = "X-Boom-Stats-Stale"
 //   - Stale/absent cache → SyncUser, then return the fresh row.
 //   - Rate-limited sync with a prior cache → return the stale cache + the
 //     X-Boom-Stats-Stale header. With no prior cache → 503.
-func (h *Handler) GetGithubStats(c *echo.Context) error {
+func (h *Handler) GetGithubStats(c *echo.Context) (model.GithubStatsPayload, error) {
+	var out model.GithubStatsPayload
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	ctx := c.Request().Context()
 
 	cached, hasCache, err := h.DB.GetGithubStatsCache(ctx, owner)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "github stats cache lookup failed", err)
+		return out, fmt.Errorf("github stats cache lookup failed: %w", err)
 	}
 	// Fresh cache short-circuits — no token touch, no GitHub call.
 	if hasCache && time.Since(cached.FetchedAt) < githubStatsTTL {
-		return c.JSON(http.StatusOK, toGithubStatsPayload(cached, false))
+		return toGithubStatsPayload(cached, false), nil
 	}
 
 	// Cache is stale or absent — we need to sync, which requires a linked token.
 	info, err := h.DB.GetGithubTokenInfo(ctx, owner)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "github connection lookup failed", err)
+		return out, fmt.Errorf("github connection lookup failed: %w", err)
 	}
 	if !info.Connected {
 		// No token to sync with. Even if a stale cache lingers, report 404 —
 		// disconnect clears the cache, so this is the "never connected" case.
-		return apihelpers.RespondErr(c, apierr.NotFound("GitHub is not connected"))
+		return out, apierr.NotFound("GitHub is not connected")
 	}
 
 	if h.GithubStats == nil {
-		return apihelpers.InternalErr(h.Logger, c, "github stats service not wired", errors.New("nil GithubStats service"))
+		return out, fmt.Errorf("github stats service not wired: %w", errors.New("nil GithubStats service"))
 	}
 	fresh, serr := h.GithubStats.SyncUser(ctx, owner)
 	if serr != nil {
@@ -93,29 +95,29 @@ func (h *Handler) GetGithubStats(c *echo.Context) error {
 			// Serve the last-good cache marked stale; 503 when we have none.
 			if hasCache {
 				c.Response().Header().Set(staleHeader, "true")
-				return c.JSON(http.StatusOK, toGithubStatsPayload(cached, true))
+				return toGithubStatsPayload(cached, true), nil
 			}
-			return apihelpers.RespondErr(c, apierr.New(http.StatusServiceUnavailable, "GitHub rate limited and no cached stats yet", nil))
+			return out, apierr.New(http.StatusServiceUnavailable, "GitHub rate limited and no cached stats yet", nil)
 		case errors.Is(serr, github.ErrNoToken):
-			return apihelpers.RespondErr(c, apierr.NotFound("GitHub is not connected"))
+			return out, apierr.NotFound("GitHub is not connected")
 		case errors.Is(serr, github.ErrUnauthorized):
 			// Token was rejected (SyncUser already flipped status to invalid).
 			// Serve a stale cache if we have one; otherwise surface a 502.
 			if hasCache {
 				c.Response().Header().Set(staleHeader, "true")
-				return c.JSON(http.StatusOK, toGithubStatsPayload(cached, true))
+				return toGithubStatsPayload(cached, true), nil
 			}
-			return apihelpers.RespondErr(c, apierr.New(http.StatusBadGateway, "GitHub rejected the stored token", nil))
+			return out, apierr.New(http.StatusBadGateway, "GitHub rejected the stored token", nil)
 		default:
 			// Any other fetch/DB failure: serve stale if possible, else 502.
 			if hasCache {
 				c.Response().Header().Set(staleHeader, "true")
-				return c.JSON(http.StatusOK, toGithubStatsPayload(cached, true))
+				return toGithubStatsPayload(cached, true), nil
 			}
-			return apihelpers.InternalErr(h.Logger, c, "github stats sync failed", serr)
+			return out, fmt.Errorf("github stats sync failed: %w", serr)
 		}
 	}
-	return c.JSON(http.StatusOK, toGithubStatsPayload(fresh, false))
+	return toGithubStatsPayload(fresh, false), nil
 }
 
 // PublicGithubStats: GET /api/public/profile/:slug/github/stats (NO auth).

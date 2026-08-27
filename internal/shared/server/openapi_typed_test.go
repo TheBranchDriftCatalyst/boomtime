@@ -112,3 +112,35 @@ func keysOf(m openapi3.Schemas) []string {
 	}
 	return out
 }
+
+// Enrichment replaces PLACEHOLDER schemas only. Some hand-built schemas differ
+// from the Go type on purpose, and the public profile payload is the one where
+// that difference is security-relevant: it is a hand-tuned subset that omits the
+// fields widget.Scrub strips before the response leaves the server.
+//
+// Overwriting it with the full reflected StatsPayload would advertise fields the
+// endpoint deliberately withholds — documenting a leak that does not exist, and
+// inviting one that does.
+func TestEnrichmentDoesNotClobberHandTunedPublicProfile(t *testing.T) {
+	doc := specForDocs(t)
+	item := doc.Paths.Value("/api/public/profile/{slug}")
+	if item == nil || item.Get == nil {
+		t.Fatal("public profile route missing from the spec")
+	}
+	mt := item.Get.Responses.Value("200").Value.Content["application/json"]
+	sch := resolve(doc, mt.Schema)
+	if sch == nil || len(sch.Properties) == 0 {
+		t.Fatal("public profile schema is empty — the hand-built schema was lost")
+	}
+	for _, scrubbed := range []string{"machines", "machineCount", "editorCount", "languageCount", "projectCount"} {
+		if _, present := sch.Properties[scrubbed]; present {
+			t.Errorf("scrubbed field %q is advertised in the spec — enrichment overwrote the hand-tuned subset", scrubbed)
+		}
+	}
+	// And it must still describe something real, not have been emptied.
+	for _, want := range []string{"username", "totalSeconds", "projects"} {
+		if _, ok := sch.Properties[want]; !ok {
+			t.Errorf("public profile schema lost %q", want)
+		}
+	}
+}

@@ -1,7 +1,7 @@
 package stats
 
 import (
-	"net/http"
+	"fmt"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
@@ -106,15 +106,17 @@ func (h *Handler) Timeline(c *echo.Context) error {
 }
 
 // StatusbarToday: GET /api/v1/users/current/statusbar/today.
-func (h *Handler) StatusbarToday(c *echo.Context) error {
+func (h *Handler) StatusbarToday(c *echo.Context) (model.StatusBarPayload, error) {
+	var out model.StatusBarPayload
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	ctx := c.Request().Context()
 	hidden, err := h.DB.LoadHiddenSets(ctx, owner)
 	if err != nil {
-		return apihelpers.RespondErr(c, apierr.Generic())
+		// Deliberately unlogged (matches the pre-seam handler).
+		return out, apierr.Generic()
 	}
 	// boom-dg7: "today" bounded by the user's local midnight (per user tz +
 	// server default resolver), not UTC midnight — a 23:59 PT status bar
@@ -122,13 +124,12 @@ func (h *Handler) StatusbarToday(c *echo.Context) error {
 	tz := apihelpers.ResolveUserTZ(h.DB, h.Logger, ctx, owner, h.Cfg.DefaultTimezoneValue())
 	total, err := h.DB.GetTotalTimeToday(ctx, owner, tz, hidden)
 	if err != nil {
-		h.Logger.Error("statusbar query failed", "err", err)
-		return apihelpers.RespondErr(c, apierr.Generic())
+		return out, fmt.Errorf("statusbar query failed: %w", err)
 	}
-	return c.JSON(http.StatusOK, model.StatusBarPayload{
+	return model.StatusBarPayload{
 		Data: model.DayGrandTotal{
 			Categories: []string{},
 			GrandTotal: model.DayTextValue{Text: CompoundDuration(&total)},
 		},
-	})
+	}, nil
 }

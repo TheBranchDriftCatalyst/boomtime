@@ -34,6 +34,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/identity"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apiroute"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
@@ -54,14 +55,14 @@ func routerWithAuthClusterAC(hz *testutil.Harness) http.Handler {
 	h := hz.H
 	// boom-8tn phase 4a: receivers moved from h.* to h.Identity.* — the
 	// production server registers these under identity.Register too.
-	e.POST("/auth/logout", h.Identity.Logout)
-	e.POST("/auth/create_api_token", h.Identity.CreateAPIToken)
-	e.GET("/auth/tokens", h.Identity.ListAPITokens)
-	e.DELETE("/auth/token/:id", h.Identity.DeleteToken)
-	e.POST("/auth/token", h.Identity.UpdateToken)
-	e.GET("/auth/users/current", h.Identity.CurrentUser)
-	e.GET("/api/v1/users/current/wakatime_key", h.Identity.GetWakatimeKey)
-	e.DELETE("/api/v1/users/current/wakatime_key", h.Identity.DeleteWakatimeKey)
+	apiroute.NoContent(e, http.MethodPost, "/auth/logout", h.Identity.Logout)
+	apiroute.POSTNoBody(e, "/auth/create_api_token", h.Identity.CreateAPIToken)
+	apiroute.GET(e, "/auth/tokens", h.Identity.ListAPITokens)
+	apiroute.NoContent(e, http.MethodDelete, "/auth/token/:id", h.Identity.DeleteToken)
+	apiroute.NoContentBody(e, http.MethodPost, "/auth/token", h.Identity.UpdateToken)
+	apiroute.GET(e, "/auth/users/current", h.Identity.CurrentUser)
+	apiroute.GET(e, "/api/v1/users/current/wakatime_key", h.Identity.GetWakatimeKey)
+	apiroute.NoContent(e, http.MethodDelete, "/api/v1/users/current/wakatime_key", h.Identity.DeleteWakatimeKey)
 	return e
 }
 

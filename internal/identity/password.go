@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
@@ -32,34 +33,33 @@ type changePasswordRequest struct {
 //   - LOW: UPDATE users + DELETE refresh_tokens were two separate exec calls,
 //     so a process crash between them could leave the password rotated with
 //     stale sessions still valid.
-func (h *Handler) ChangePassword(c *echo.Context) error {
+//
+// boom-bi2: 4 KiB cap on the body. It is two short strings; anything larger is
+// an attempt to amplify the argon2 verify below into a memory DoS —
+// apiroute.NoContentBody binds under the same BodyLimitSmall cap the
+// hand-rolled BindJSONWithLimit call used to.
+func (h *Handler) ChangePassword(c *echo.Context, req changePasswordRequest) error {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return aerr
 	}
 	// ChangePassword revokes every OTHER session but keeps the caller's live —
 	// so it still needs the raw bearer token. Identify already validated it;
 	// re-parse the header for the token value.
 	callerToken, _ := apihelpers.TokenFromHeader(c)
-	var req changePasswordRequest
-	// boom-bi2: 4 KiB cap. The body is two short strings; anything larger is
-	// an attempt to amplify the argon2 verify below into a memory DoS.
-	if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitSmall); aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
-	}
 	if req.CurrentPassword == "" || req.NewPassword == "" {
-		return apihelpers.RespondErr(c, apierr.BadRequest("currentPassword and newPassword are required"))
+		return apierr.BadRequest("currentPassword and newPassword are required")
 	}
 
 	ctx := c.Request().Context()
 	user, err := h.DB.GetUserByName(ctx, owner)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "user lookup failed", err)
+		return fmt.Errorf("user lookup failed: %w", err)
 	}
 	if user == nil || !auth.VerifyPasswordWithVersion(req.CurrentPassword, user.HashedPassword, user.SaltUsed, user.ArgonVersion) {
 		// 401 per the requirements: distinguishes a wrong current-password
 		// from the generic 403 "your access token is bad".
-		return apihelpers.RespondErr(c, apierr.New(http.StatusUnauthorized, "Current password is incorrect", nil))
+		return apierr.New(http.StatusUnauthorized, "Current password is incorrect", nil)
 	}
 	// boom-0gu: delegate to the shared auth.ValidatePassword extracted during
 	// boom-e5e. This kills the duplicate inline validator that used a
@@ -69,23 +69,23 @@ func (h *Handler) ChangePassword(c *echo.Context) error {
 	// multibyte scripts and identical policy across Register + ChangePassword.
 	// Sentinel error text is already user-safe by design (see password_policy.go).
 	if err := auth.ValidatePassword(req.NewPassword); err != nil {
-		return apihelpers.RespondErr(c, apierr.BadRequest(err.Error()))
+		return apierr.BadRequest(err.Error())
 	}
 
 	newHash, newSalt, err := auth.HashPassword(req.NewPassword)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "password hash failed", err)
+		return fmt.Errorf("password hash failed: %w", err)
 	}
 	// Atomic: UPDATE users + DELETE refresh_tokens (all) + DELETE auth_tokens
 	// (all except the caller's own, and preserving never-expiring API tokens)
 	// in ONE transaction. See db.ChangePasswordAndRevoke for the exact SQL.
 	if err := h.DB.ChangePasswordAndRevoke(ctx, owner, newHash, newSalt, callerToken); err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "password change failed", err)
+		return fmt.Errorf("password change failed: %w", err)
 	}
 	// boom-awh.2: tag the record with "user" so the LogHub owner-filter
 	// (logging.FilterForUser) hides it from other authenticated Logs viewers.
 	// Never log the password, hash, or salt — the fact of a change is all
 	// that's needed for operator visibility.
 	h.Logger.Info("password changed", "user", owner)
-	return apihelpers.NoContent(c)
+	return nil
 }

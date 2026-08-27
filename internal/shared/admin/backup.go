@@ -75,31 +75,38 @@ func (h *Handler) DBExport(c *echo.Context) error {
 // and fully validated before anything is truncated; the restore itself is one
 // transaction. Afterwards the derived tables are rebuilt per sender and every
 // cached aggregate is dropped.
-func (h *Handler) DBImport(c *echo.Context) error {
+//
+// TYPED SEAM NOTE (routes.go registers this via apiroute.POSTNoBody): the
+// request body is a raw ZIP archive read straight off c.Request().Body, not
+// JSON, so there is no Req type for the seam to bind or document — the
+// POSTNoBody form captures the RESPONSE type (db.RestoreSummary) and leaves the
+// binary upload undescribed, exactly as the pre-seam stub did.
+func (h *Handler) DBImport(c *echo.Context) (db.RestoreSummary, error) {
+	var out db.RestoreSummary
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	if c.QueryParam("confirm") != restoreConfirmValue {
-		return apihelpers.RespondErr(c, apierr.BadRequest("missing confirm=replace-all-data — this endpoint erases the entire database"))
+		return out, apierr.BadRequest("missing confirm=replace-all-data — this endpoint erases the entire database")
 	}
 	if !backupMu.TryLock() {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusConflict, "another backup or restore is in progress", nil))
+		return out, apierr.New(http.StatusConflict, "another backup or restore is in progress", nil)
 	}
 	defer backupMu.Unlock()
 
 	ctx := c.Request().Context()
 	if active, err := h.DB.HasActiveImportJobs(ctx); err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "restore: active-import check failed", err)
+		return out, fmt.Errorf("restore: active-import check failed: %w", err)
 	} else if active {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusConflict, "an import job is running — wait for it to finish or cancel it first", nil))
+		return out, apierr.New(http.StatusConflict, "an import job is running — wait for it to finish or cancel it first", nil)
 	}
 
 	// Spool the upload to a temp file: zip.NewReader needs a ReaderAt+size,
 	// and full validation must happen before any destructive step.
 	tmp, err := os.CreateTemp("", "boomtime-restore-*.zip")
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "restore: temp file failed", err)
+		return out, fmt.Errorf("restore: temp file failed: %w", err)
 	}
 	defer func() {
 		tmp.Close()
@@ -110,27 +117,27 @@ func (h *Handler) DBImport(c *echo.Context) error {
 	if err != nil {
 		var tooBig *http.MaxBytesError
 		if errors.As(err, &tooBig) {
-			return apihelpers.RespondErr(c, apierr.New(http.StatusRequestEntityTooLarge,
-				fmt.Sprintf("backup exceeds the %d-byte upload limit (BOOM_RESTORE_MAX_BYTES)", tooBig.Limit), nil))
+			return out, apierr.New(http.StatusRequestEntityTooLarge,
+				fmt.Sprintf("backup exceeds the %d-byte upload limit (BOOM_RESTORE_MAX_BYTES)", tooBig.Limit), nil)
 		}
-		return apihelpers.InternalErr(h.Logger, c, "restore: reading upload failed", err)
+		return out, fmt.Errorf("restore: reading upload failed: %w", err)
 	}
 	zr, err := zip.NewReader(tmp, size)
 	if err != nil {
-		return apihelpers.RespondErr(c, apierr.BadRequest("uploaded file is not a valid backup archive (zip)"))
+		return out, apierr.BadRequest("uploaded file is not a valid backup archive (zip)")
 	}
 
 	summary, err := h.DB.RestoreAll(ctx, zr)
 	if err != nil {
 		var verr *db.RestoreValidationError
 		if errors.As(err, &verr) {
-			return apihelpers.RespondErr(c, apierr.BadRequest(verr.Msg))
+			return out, apierr.BadRequest(verr.Msg)
 		}
 		var sverr *db.RestoreVersionError
 		if errors.As(err, &sverr) {
-			return apihelpers.RespondErr(c, apierr.New(http.StatusConflict, sverr.Error(), nil))
+			return out, apierr.New(http.StatusConflict, sverr.Error(), nil)
 		}
-		return apihelpers.InternalErr(h.Logger, c, "restore failed", err)
+		return out, fmt.Errorf("restore failed: %w", err)
 	}
 
 	// Safety-net rebuild of gap_seconds + the rollup for every restored sender
@@ -139,11 +146,11 @@ func (h *Handler) DBImport(c *echo.Context) error {
 	// empty prefix clears everything.
 	senders, err := h.DB.Senders(ctx)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "restore: listing senders failed", err)
+		return out, fmt.Errorf("restore: listing senders failed: %w", err)
 	}
 	for _, s := range senders {
 		if err := h.DB.ResyncDerived(ctx, s); err != nil {
-			return apihelpers.InternalErr(h.Logger, c, "restore: derived resync failed", err)
+			return out, fmt.Errorf("restore: derived resync failed: %w", err)
 		}
 	}
 	if h.Cache != nil {
@@ -152,5 +159,5 @@ func (h *Handler) DBImport(c *echo.Context) error {
 
 	h.Logger.Info("database restored from backup",
 		"requested_by", owner, "rows", summary.TotalRows, "gooseVersion", summary.GooseVersion)
-	return c.JSON(http.StatusOK, summary)
+	return summary, nil
 }

@@ -35,7 +35,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"time"
 
 	"github.com/labstack/echo/v5"
@@ -110,20 +109,32 @@ type cliRunResponse struct {
 
 // CLIRun executes one allowlisted command in-process and returns its
 // captured output.
-func (h *Handler) CLIRun(c *echo.Context) error {
+//
+// TYPED SEAM NOTE (routes.go registers this via apiroute.POSTNoBody): the body
+// is bound HERE rather than by the seam's POST form, deliberately. Guard-stack
+// step 3 above requires requireAdmin to run BEFORE the body is read, and the
+// seam's binder runs before the handler; the seam also hard-codes
+// BodyLimitSmall (4 KiB), which would silently shrink cliRunBodyLimit (64 KiB)
+// and start 413-ing runs that work today. So the response type is captured for
+// the spec and the request type stays local until the seam can carry a
+// per-route body limit + a bind-after-guard option.
+func (h *Handler) CLIRun(c *echo.Context) (cliRunResponse, error) {
+	// zero is the empty envelope every error return hands back; the local `out`
+	// below is the run's OUTPUT SINK and keeps its original name.
+	var zero cliRunResponse
 	owner, aerr := h.requireAdmin(c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return zero, aerr
 	}
 
 	var req cliRunRequest
-	if aerr := apihelpers.BindJSONWithLimit(c, &req, cliRunBodyLimit); aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+	if berr := apihelpers.BindJSONWithLimit(c, &req, cliRunBodyLimit); berr != nil {
+		return zero, berr
 	}
 
 	spec, entry, args, dryRun, aerr := h.cliResolve(owner, req)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return zero, aerr
 	}
 
 	ctx, cancel := context.WithTimeout(c.Request().Context(), cliRunTimeout)
@@ -156,13 +167,13 @@ func (h *Handler) CLIRun(c *echo.Context) error {
 		"durationMs", duration.Milliseconds(),
 	)
 
-	return c.JSON(http.StatusOK, cliRunResponse{
+	return cliRunResponse{
 		OK:         runErr == nil,
 		Output:     output,
 		ExitError:  exitError,
 		DryRun:     dryRun,
 		DurationMs: duration.Milliseconds(),
-	})
+	}, nil
 }
 
 // cliResolve runs the full allowlist → bind → dry-run/confirm gate shared by

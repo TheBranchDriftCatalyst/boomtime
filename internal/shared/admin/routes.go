@@ -15,6 +15,7 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apiroute"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/objstore"
 )
@@ -61,12 +62,18 @@ func Register(e *echo.Echo, h *Handler) {
 	// restore (requires ?confirm=replace-all-data; see backup.go). Was
 	// previously registered inside registerStatsRoutes with a comment
 	// pointing at phase 7.
+	//
+	// DBExport stays on plain e.GET: it streams a ZIP straight onto the
+	// response writer, so there is no JSON response type for the seam to carry.
+	// DBImport goes on the typed seam via POSTNoBody — its RESPONSE
+	// (db.RestoreSummary) is typed, while its REQUEST is a raw ZIP upload the
+	// seam's JSON binder must not touch.
 	e.GET("/api/v1/users/current/db/export", h.DBExport)
-	e.POST("/api/v1/users/current/db/import", h.DBImport)
+	apiroute.POSTNoBody(e, "/api/v1/users/current/db/import", h.DBImport)
 
 	// boom-93f.6: admin caps dashboard — users + roles/tiers + effective
 	// capabilities. Admin-gated in the handler (requireAdmin).
-	e.GET("/api/v1/admin/users", h.ListUsers)
+	apiroute.GET(e, "/api/v1/admin/users", h.ListUsers)
 
 	// boom-zp2s: the per-DOMAIN admin surfaces moved OUT of this god-package —
 	// catalyst-books (/api/v1/admin/books/*) to internal/books/admin (mounted via
@@ -113,7 +120,7 @@ func Register(e *echo.Echo, h *Handler) {
 	// same posture as the jobs cluster. Nil-safe for the OpenAPI drift router.
 	if h != nil && h.DB != nil {
 		metricsCap := apihelpers.RequireCap(h.DB, auth.CapAdmin, "view admin metrics")
-		e.GET("/api/v1/admin/metrics", h.AdminMetrics, metricsCap)
+		apiroute.GET(e, "/api/v1/admin/metrics", h.AdminMetrics, metricsCap)
 	}
 
 	// Admin CLI-runner (BOOM_FEATURE_ADMIN_CLI, default off): flag off ⇒
@@ -126,9 +133,13 @@ func Register(e *echo.Echo, h *Handler) {
 	// with a nil handler to enumerate paths and must not dereference h.
 	if h != nil && h.Cfg != nil && h.Cfg.FeatureAdminCLI {
 		cliCap := apihelpers.RequireCap(h.DB, auth.CapAdmin, "use the admin CLI runner")
-		e.GET("/api/v1/admin/cli/spec", h.CLISpec, cliCap)
-		e.POST("/api/v1/admin/cli/run", h.CLIRun, cliCap)
-		e.POST("/api/v1/admin/cli/complete", h.CLIComplete, cliCap)
+		// Typed seam. run + complete use POSTNoBody, not POST: each keeps its own
+		// larger body cap (64 KiB / 16 KiB vs the seam's fixed 4 KiB) AND binds
+		// only AFTER requireAdmin, which is guard-stack step 3 above. See the
+		// TYPED SEAM NOTE on each handler.
+		apiroute.GET(e, "/api/v1/admin/cli/spec", h.CLISpec, cliCap)
+		apiroute.POSTNoBody(e, "/api/v1/admin/cli/run", h.CLIRun, cliCap)
+		apiroute.POSTNoBody(e, "/api/v1/admin/cli/complete", h.CLIComplete, cliCap)
 		// Streaming twin of /cli/run (boom-hney.5). Cookie-authed + admin-gated
 		// in-handler like the other WS routes (a WS handshake can't carry the
 		// cap middleware's header), so no cliCap here.

@@ -61,17 +61,24 @@ func isUniqueViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
+// widgetDefListResponse is GET /api/v1/users/current/widget-defs. The wire
+// shape is the unchanged {"defs": [...]} envelope.
+type widgetDefListResponse struct {
+	Defs []db.WidgetDef `json:"defs"`
+}
+
 // ListWidgetDefs: GET /api/v1/users/current/widget-defs (auth).
-func (h *Handler) ListWidgetDefs(c *echo.Context) error {
+func (h *Handler) ListWidgetDefs(c *echo.Context) (widgetDefListResponse, error) {
+	var out widgetDefListResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	defs, err := h.DB.ListWidgetDefs(c.Request().Context(), owner)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "widget def list failed", err)
+		return out, fmt.Errorf("widget def list failed: %w", err)
 	}
-	return c.JSON(http.StatusOK, map[string]any{"defs": defs})
+	return widgetDefListResponse{Defs: defs}, nil
 }
 
 // CreateWidgetDef: POST /api/v1/users/current/widget-defs (auth).
@@ -146,21 +153,21 @@ func (h *Handler) UpdateWidgetDef(c *echo.Context) error {
 func (h *Handler) DeleteWidgetDef(c *echo.Context) error {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return aerr
 	}
 	name := c.Param("name")
 	if name == "" {
-		return apihelpers.RespondErr(c, apierr.BadRequest("name is required"))
+		return apierr.BadRequest("name is required")
 	}
 	ok, err := h.DB.DeleteWidgetDef(c.Request().Context(), owner, name)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "widget def delete failed", err)
+		return fmt.Errorf("widget def delete failed: %w", err)
 	}
 	if !ok {
-		return apihelpers.RespondErr(c, apierr.NotFound("Widget def not found"))
+		return apierr.NotFound("Widget def not found")
 	}
 	apihelpers.InvalidateOwnerCache(h.Cache, owner)
-	return c.NoContent(http.StatusNoContent)
+	return nil
 }
 
 // WidgetDefSvg: GET /widget/svg/:uuid/named (PUBLIC). Resolves the def uuid to

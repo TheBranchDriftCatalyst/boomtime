@@ -49,48 +49,68 @@ const (
 	exploreRowsMaxLimit = 500
 )
 
+type heartbeatsLatestResponse struct {
+	// LastHeartbeat is the owner's most recent heartbeat timestamp (RFC3339
+	// UTC), or null when they have never ingested one. NOT omitempty: the FE
+	// distinguishes "no heartbeats yet" from a missing field.
+	LastHeartbeat *string `json:"lastHeartbeat"`
+	// Count is the owner's total heartbeat count.
+	Count int64 `json:"count"`
+}
+
 // HeartbeatsLatest: GET /api/v1/users/current/heartbeats/latest
 // Returns the owner's most recent heartbeat timestamp (RFC3339 UTC, or null) and
 // total count. Powers the import "backfill from last heartbeat" button.
-func (h *Handler) HeartbeatsLatest(c *echo.Context) error {
+func (h *Handler) HeartbeatsLatest(c *echo.Context) (heartbeatsLatestResponse, error) {
+	var out heartbeatsLatestResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	last, count, err := h.DB.LatestHeartbeat(c.Request().Context(), owner)
 	if err != nil {
 		h.Logger.Error("latest heartbeat query failed", "err", err)
-		return apihelpers.RespondErr(c, apierr.Generic())
+		return out, apierr.Generic()
 	}
 	var lastStr *string
 	if last != nil {
 		s := last.Format(time.RFC3339)
 		lastStr = &s
 	}
-	return c.JSON(http.StatusOK, map[string]any{
-		"lastHeartbeat": lastStr,
-		"count":         count,
-	})
+	return heartbeatsLatestResponse{
+		LastHeartbeat: lastStr,
+		Count:         count,
+	}, nil
+}
+
+type heartbeatsGroupResponse struct {
+	// GroupBy echoes the requested axis.
+	GroupBy string `json:"groupBy"`
+	// Groups is one row per distinct value on that axis, count desc.
+	Groups []db.ExploreGroup `json:"groups"`
+	// Truncated reports that the result hit exploreGroupLimit.
+	Truncated bool `json:"truncated"`
 }
 
 // HeartbeatsGroup: GET /api/v1/users/current/heartbeats/group
 // Groups the user's heartbeats by one whitelisted axis with accumulated equality
 // filters. Read-only, owner-scoped.
-func (h *Handler) HeartbeatsGroup(c *echo.Context) error {
+func (h *Handler) HeartbeatsGroup(c *echo.Context) (heartbeatsGroupResponse, error) {
+	var out heartbeatsGroupResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 
 	groupBy := c.QueryParam("groupBy")
 	groupCol, ok := db.ExploreColumn(groupBy)
 	if !ok {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "Unknown groupBy axis: "+groupBy, nil))
+		return out, apierr.New(http.StatusBadRequest, "Unknown groupBy axis: "+groupBy, nil)
 	}
 
 	filters, ferr := collectExploreFilters(c)
 	if ferr != nil {
-		return apihelpers.RespondErr(c, ferr)
+		return out, ferr
 	}
 
 	t0, t1 := apihelpers.DefaultWeekRange(c)
@@ -102,27 +122,38 @@ func (h *Handler) HeartbeatsGroup(c *echo.Context) error {
 	groups, truncated, err := h.DB.GroupHeartbeats(c.Request().Context(), owner, groupCol, t0, t1, filters, entity, exploreGroupLimit, apihelpers.TimeLimit(c))
 	if err != nil {
 		h.Logger.Error("heartbeats group query failed", "err", err)
-		return apihelpers.RespondErr(c, apierr.Generic())
+		return out, apierr.Generic()
 	}
-	return c.JSON(http.StatusOK, map[string]any{
-		"groupBy":   groupBy,
-		"groups":    groups,
-		"truncated": truncated,
-	})
+	return heartbeatsGroupResponse{
+		GroupBy:   groupBy,
+		Groups:    groups,
+		Truncated: truncated,
+	}, nil
+}
+
+type heartbeatsListResponse struct {
+	// Items is the requested page of raw heartbeat rows.
+	Items []db.ExploreRow `json:"items"`
+	// Total is the unpaged match count.
+	Total int64 `json:"total"`
+	// Page and Limit echo the clamped pagination actually applied.
+	Page  int `json:"page"`
+	Limit int `json:"limit"`
 }
 
 // HeartbeatsList: GET /api/v1/users/current/heartbeats
 // Returns a page of raw heartbeat records for the given whitelist filters,
 // optional entity substring, and time range. Read-only, owner-scoped.
-func (h *Handler) HeartbeatsList(c *echo.Context) error {
+func (h *Handler) HeartbeatsList(c *echo.Context) (heartbeatsListResponse, error) {
+	var out heartbeatsListResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 
 	filters, ferr := collectExploreFilters(c)
 	if ferr != nil {
-		return apihelpers.RespondErr(c, ferr)
+		return out, ferr
 	}
 
 	page := int(apihelpers.QueryInt64(c, "page", 1))
@@ -142,12 +173,12 @@ func (h *Handler) HeartbeatsList(c *echo.Context) error {
 	items, total, err := h.DB.ListHeartbeats(c.Request().Context(), owner, t0, t1, filters, entity, page, limit)
 	if err != nil {
 		h.Logger.Error("heartbeats list query failed", "err", err)
-		return apihelpers.RespondErr(c, apierr.Generic())
+		return out, apierr.Generic()
 	}
-	return c.JSON(http.StatusOK, map[string]any{
-		"items": items,
-		"total": total,
-		"page":  page,
-		"limit": limit,
-	})
+	return heartbeatsListResponse{
+		Items: items,
+		Total: total,
+		Page:  page,
+		Limit: limit,
+	}, nil
 }

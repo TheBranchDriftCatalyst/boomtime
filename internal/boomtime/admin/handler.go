@@ -22,6 +22,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apiroute"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
@@ -86,6 +87,16 @@ func (h *Handler) requireAdmin(c *echo.Context) (string, *apierr.Error) {
 // Register mounts the boomtime admin/operator endpoints onto e (the full echo — the
 // prefixes are mixed). Route strings + middleware are byte-identical to the pre-move
 // registrations in internal/admin/routes.go.
+//
+// Most routes go through the typed apiroute seam so their request/response Go types
+// land in the OpenAPI spec. Four stay on plain echo, deliberately:
+//   - GET /api/v1/labels/:id/image      — c.Blob (raw image bytes, not JSON).
+//   - POST /api/v1/admin/label-images/regenerate — binds at a 256 KiB limit; the seam
+//     binds at BodyLimitSmall (4 KiB), which would 413 the FE's catalog snapshot.
+//   - POST /import/wakatime-range       — answers {hasData:false} on the no-key/lookup
+//     -failure paths and the full 5-field AllTimeRange on success; one struct cannot
+//     express both without changing the bytes on one of them.
+//   - GET /import/jobs/:id/ws           — WebSocket upgrade.
 func Register(e *echo.Echo, h *Handler) {
 	// boom-myv: PUBLIC label image bytes (no auth) — label content is fixed catalog
 	// data, not per-user data. Reads do NOT check the feature flag so already-generated
@@ -95,20 +106,23 @@ func Register(e *echo.Echo, h *Handler) {
 	// boom-myv / boom-8bz: label-images admin cluster — authed AND admin-gated
 	// (requireAdmin, in-handler). Info + Regenerate + the per-label DB-queue status
 	// poll (BOOM_JOBS_UNIFIED). The WS auths via the refresh_token cookie in-handler.
-	e.GET("/api/v1/admin/label-images", h.AdminLabelImagesInfo)
+	apiroute.GET(e, "/api/v1/admin/label-images", h.AdminLabelImagesInfo)
 	e.POST("/api/v1/admin/label-images/regenerate", h.AdminLabelImagesRegenerate)
-	e.GET("/api/v1/admin/label-images/status", h.AdminLabelImagesStatus)
+	apiroute.GET(e, "/api/v1/admin/label-images/status", h.AdminLabelImagesStatus)
 
 	// Durable, resumable wakatime.com import jobs. auth-dry Phase 2: starting an import
 	// is gated by CapImport route middleware (importCap); the other endpoints use the
 	// shared bearer-token flow, and the WS uses the refresh_token cookie.
-	e.POST("/import", h.ImportRequest, importCap(h)...)
-	e.GET("/import/config", h.ImportConfig)
+	// BodyLimitNone: this bound with plain c.Bind before the seam, and
+	// import_cluster_test pins that deliberately so adding a cap stays an
+	// explicit decision with its own test, not a refactor side effect.
+	apiroute.POSTLimit(e, "/import", apiroute.BodyLimitNone, h.ImportRequest, importCap(h)...)
+	apiroute.GET(e, "/import/config", h.ImportConfig)
 	e.POST("/import/wakatime-range", h.WakatimeRange)
-	e.GET("/import/jobs", h.ImportJobs)
-	e.GET("/import/jobs/:id", h.ImportJob)
-	e.POST("/import/jobs/:id/cancel", h.ImportJobCancel)
-	e.GET("/import/jobs/:id/logs", h.ImportJobLogs)
+	apiroute.GET(e, "/import/jobs", h.ImportJobs)
+	apiroute.GET(e, "/import/jobs/:id", h.ImportJob)
+	apiroute.POSTNoBody(e, "/import/jobs/:id/cancel", h.ImportJobCancel)
+	apiroute.GET(e, "/import/jobs/:id/logs", h.ImportJobLogs)
 	e.GET("/import/jobs/:id/ws", h.ImportJobWS)
 }
 

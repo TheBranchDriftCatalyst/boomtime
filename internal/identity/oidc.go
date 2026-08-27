@@ -10,6 +10,7 @@
 package identity
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -234,26 +235,37 @@ type identityResponse struct {
 	LinkedAt  string `json:"linkedAt"`
 }
 
+// listIdentitiesResponse is GET /api/v1/users/current/identities.
+type listIdentitiesResponse struct {
+	Identities []identityResponse `json:"identities"`
+	// OIDCAvailable reports whether an OIDC resolver is constructed at all, so
+	// the Settings card can offer "Link Authentik" under provider=local too.
+	OIDCAvailable bool `json:"oidcAvailable"`
+	// HasPassword drives the "you cannot unlink your only sign-in method" copy.
+	HasPassword bool `json:"hasPassword"`
+}
+
 // ListIdentities: GET /api/v1/users/current/identities — the caller's linked
 // identities + whether OIDC linking is available + whether they have a password
 // (drives the Settings > Account "Linked identities" card, boom-b5n.4/.7).
-func (h *Handler) ListIdentities(c *echo.Context) error {
+func (h *Handler) ListIdentities(c *echo.Context) (listIdentitiesResponse, error) {
+	var out listIdentitiesResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	ctx := c.Request().Context()
 	rows, err := h.DB.ListExternalIdentities(ctx, owner)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "list identities failed", err)
+		return out, fmt.Errorf("list identities failed: %w", err)
 	}
-	out := make([]identityResponse, 0, len(rows))
+	identities := make([]identityResponse, 0, len(rows))
 	for _, r := range rows {
 		prefix := r.Sub
 		if len(prefix) > 12 {
 			prefix = prefix[:12]
 		}
-		out = append(out, identityResponse{
+		identities = append(identities, identityResponse{
 			Provider:  r.Provider,
 			Email:     r.Email,
 			SubPrefix: prefix,
@@ -261,11 +273,11 @@ func (h *Handler) ListIdentities(c *echo.Context) error {
 		})
 	}
 	hasPw, _ := h.DB.HasUsablePassword(ctx, owner)
-	return c.JSON(http.StatusOK, map[string]any{
-		"identities":    out,
-		"oidcAvailable": oidcResolver() != nil,
-		"hasPassword":   hasPw,
-	})
+	return listIdentitiesResponse{
+		Identities:    identities,
+		OIDCAvailable: oidcResolver() != nil,
+		HasPassword:   hasPw,
+	}, nil
 }
 
 // UnlinkIdentity: DELETE /api/v1/users/current/identities/:provider — remove a
@@ -274,27 +286,27 @@ func (h *Handler) ListIdentities(c *echo.Context) error {
 func (h *Handler) UnlinkIdentity(c *echo.Context) error {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return aerr
 	}
 	ctx := c.Request().Context()
 	hasPw, err := h.DB.HasUsablePassword(ctx, owner)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "unlink guard failed", err)
+		return fmt.Errorf("unlink guard failed: %w", err)
 	}
 	count, err := h.DB.CountExternalIdentities(ctx, owner)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "unlink guard failed", err)
+		return fmt.Errorf("unlink guard failed: %w", err)
 	}
 	if !hasPw && count <= 1 {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusConflict,
-			"cannot unlink your only sign-in method — set a password first", nil))
+		return apierr.New(http.StatusConflict,
+			"cannot unlink your only sign-in method — set a password first", nil)
 	}
 	ok, err := h.DB.DeleteExternalIdentity(ctx, owner, c.Param("provider"))
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "unlink failed", err)
+		return fmt.Errorf("unlink failed: %w", err)
 	}
 	if !ok {
-		return apihelpers.RespondErr(c, apierr.NotFound("no linked identity for that provider"))
+		return apierr.NotFound("no linked identity for that provider")
 	}
-	return apihelpers.NoContent(c)
+	return nil
 }

@@ -19,6 +19,7 @@ package spaces
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
@@ -40,6 +41,16 @@ var dashboardLayoutScopes = map[string]struct{}{
 	"overview":       {},
 }
 
+// dashboardLayoutResponse is the {"layout": <opaque JSON>} envelope returned by
+// GET and PUT /api/v1/users/current/dashboard/:scope.
+//
+// json.RawMessage (not `any`) so the persisted bytes go back out verbatim —
+// exactly what the map[string]json.RawMessage literal it replaces did, and what
+// the boom-25r round-trip regression test depends on.
+type dashboardLayoutResponse struct {
+	Layout json.RawMessage `json:"layout"`
+}
+
 // GetDashboardLayout: GET /api/v1/users/current/dashboard/:scope (auth).
 // Returns the caller's persisted layout for scope wrapped as
 // {"layout": <persisted JSON>}, or 404 when unset so the FE knows to fall
@@ -48,26 +59,27 @@ var dashboardLayoutScopes = map[string]struct{}{
 // The envelope shape lets us extend the response later (e.g., an
 // `updatedAt` timestamp for optimistic-concurrency) without a breaking
 // change on the wire.
-func (h *Handler) GetDashboardLayout(c *echo.Context) error {
+func (h *Handler) GetDashboardLayout(c *echo.Context) (dashboardLayoutResponse, error) {
+	var out dashboardLayoutResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	scope := c.Param("scope")
 	if _, ok := dashboardLayoutScopes[scope]; !ok {
-		return apihelpers.RespondErr(c, apierr.BadRequest("unknown dashboard scope"))
+		return out, apierr.BadRequest("unknown dashboard scope")
 	}
 	raw, found, err := h.DB.GetDashboardLayout(c.Request().Context(), owner, scope)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "dashboard layout lookup failed", err)
+		return out, fmt.Errorf("dashboard layout lookup failed: %w", err)
 	}
 	if !found {
-		return apihelpers.RespondErr(c, apierr.NotFound("no layout saved"))
+		return out, apierr.NotFound("no layout saved")
 	}
-	// Envelope manually so `layout` field stays byte-identical to what was
-	// persisted (json.Marshal on a struct with a RawMessage does honor the
+	// Envelope via a RawMessage field so `layout` stays byte-identical to what
+	// was persisted (json.Marshal on a struct with a RawMessage does honor the
 	// bytes verbatim).
-	return c.JSON(http.StatusOK, map[string]json.RawMessage{"layout": raw})
+	return dashboardLayoutResponse{Layout: raw}, nil
 }
 
 // PutDashboardLayout: PUT /api/v1/users/current/dashboard/:scope (auth).
@@ -81,6 +93,14 @@ func (h *Handler) GetDashboardLayout(c *echo.Context) error {
 // its react-query cache with the same shape it will read on subsequent
 // GETs. The layout bytes are preserved verbatim through Set/Get — see the
 // boom-25r round-trip regression test.
+//
+// NOT on the apiroute seam: the seam binds through apihelpers.BindJSONWithLimit
+// (echo's binder), which rejects a body whose Content-Type is not
+// application/json and answers "Invalid request body" — where this hand-rolled
+// decode accepts any Content-Type and answers "invalid JSON body". Moving it
+// would change both the 400 envelope text and the outcome of a
+// correctly-formed PUT sent without a JSON Content-Type, so it keeps its own
+// decode. The 413 path is already identical to BindJSONWithLimit's.
 func (h *Handler) PutDashboardLayout(c *echo.Context) error {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
@@ -124,7 +144,7 @@ func (h *Handler) PutDashboardLayout(c *echo.Context) error {
 	if err != nil {
 		return apihelpers.InternalErr(h.Logger, c, "dashboard layout readback failed", err)
 	}
-	return c.JSON(http.StatusOK, map[string]json.RawMessage{"layout": raw})
+	return c.JSON(http.StatusOK, dashboardLayoutResponse{Layout: raw})
 }
 
 // DeleteDashboardLayout: DELETE /api/v1/users/current/dashboard/:scope
@@ -133,14 +153,15 @@ func (h *Handler) PutDashboardLayout(c *echo.Context) error {
 func (h *Handler) DeleteDashboardLayout(c *echo.Context) error {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return aerr
 	}
 	scope := c.Param("scope")
 	if _, ok := dashboardLayoutScopes[scope]; !ok {
-		return apihelpers.RespondErr(c, apierr.BadRequest("unknown dashboard scope"))
+		return apierr.BadRequest("unknown dashboard scope")
 	}
 	if err := h.DB.DeleteDashboardLayout(c.Request().Context(), owner, scope); err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "dashboard layout delete failed", err)
+		return fmt.Errorf("dashboard layout delete failed: %w", err)
 	}
-	return c.NoContent(http.StatusNoContent)
+	// 204 is written by the apiroute.NoContent registrar on a nil error.
+	return nil
 }

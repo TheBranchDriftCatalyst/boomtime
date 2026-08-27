@@ -21,6 +21,7 @@ import (
 	"github.com/labstack/echo/v5"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/goals"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apiroute"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
 
@@ -78,7 +79,11 @@ func TestCreateGoal_LogsSuccessWithOwnerAndGoalID(t *testing.T) {
 	logger, cap := newCapLog()
 	gh := &goals.Handler{DB: hz.DB, Logger: logger}
 	e := echo.New()
-	e.POST("/api/v1/users/current/goals", gh.CreateGoal)
+	// CreateGoal now lives on the typed apiroute seam (its request/response
+	// types are captured for the OpenAPI spec), so it registers through
+	// apiroute.POST rather than e.POST. The types are unexported inside
+	// package goals — inference resolves them here without naming them.
+	apiroute.POST(e, "/api/v1/users/current/goals", gh.CreateGoal)
 
 	body, _ := json.Marshal(map[string]any{
 		"name": "log-goal",

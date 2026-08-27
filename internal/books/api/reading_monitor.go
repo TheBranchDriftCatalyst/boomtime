@@ -6,7 +6,7 @@
 package api
 
 import (
-	"net/http"
+	"fmt"
 	"time"
 
 	"github.com/labstack/echo/v5"
@@ -25,20 +25,21 @@ type readingMonitorStatusResponse struct {
 // ReadingMonitorStatus: GET /api/v1/books/reading-monitor/status — the caller's
 // own persistent-monitor enable + calibration status. Auth'd (self-only via
 // IdentifyOwner); registered only when BOOM_FEATURE_BOOKS is on.
-func (h *Handler) ReadingMonitorStatus(c *echo.Context) error {
+func (h *Handler) ReadingMonitorStatus(c *echo.Context) (readingMonitorStatusResponse, error) {
+	var out readingMonitorStatusResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	ctx := c.Request().Context()
 
 	enabled, _, err := h.DB.GetReadingMonitorSettings(ctx, owner)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "reading-monitor status lookup failed", err)
+		return out, fmt.Errorf("reading-monitor status lookup failed: %w", err)
 	}
 	calUntil, err := h.DB.GetReadingMonitorCalibration(ctx, owner)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "reading-monitor calibration lookup failed", err)
+		return out, fmt.Errorf("reading-monitor calibration lookup failed: %w", err)
 	}
 
 	resp := readingMonitorStatusResponse{Enabled: enabled}
@@ -47,5 +48,5 @@ func (h *Handler) ReadingMonitorStatus(c *echo.Context) error {
 		s := calUntil.UTC().Format(time.RFC3339)
 		resp.CalibratingUntil = &s
 	}
-	return c.JSON(http.StatusOK, resp)
+	return resp, nil
 }

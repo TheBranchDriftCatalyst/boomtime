@@ -21,6 +21,8 @@ import (
 
 	"github.com/labstack/echo/v5"
 
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apiroute"
+
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/identity"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 )
@@ -79,7 +81,7 @@ func TestLogin_LogsSuccessWithUsernameNeverPassword(t *testing.T) {
 	logger, cap := newCapLog()
 	h := identity.New(hz.DB, hz.Cfg, logger, nil)
 	e := echo.New()
-	e.POST("/auth/login", h.Login)
+	apiroute.POSTNoBody(e, "/auth/login", h.Login)
 
 	body, _ := json.Marshal(map[string]any{"username": username, "password": password})
 	req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewReader(body))

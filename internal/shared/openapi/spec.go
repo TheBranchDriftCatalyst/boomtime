@@ -1916,7 +1916,17 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 			}
 			method := rt.Method
 			if item := doc.Paths.Value(p); item != nil && item.GetOperation(method) != nil {
-				continue // hand-authored entry wins
+				// A hand-authored entry wins on PROSE — its summary, description,
+				// query parameters, curated status-code set and security overrides
+				// are all things no generator can recover.
+				//
+				// But it must NOT win on an empty SCHEMA. ~60 hand-written entries
+				// document their body as a bare {"type":"object"} with the real
+				// shape described only in English, and a generated schema is
+				// strictly better than that. So enrich in place: keep every word,
+				// replace the placeholder.
+				enrichFromTypedSeam(gen, comps.Schemas, item.GetOperation(method), method, rt.Path)
+				continue
 			}
 			// A route registered through the TYPED SEAM carries its request and
 			// response Go types, so the schema is generated rather than stubbed.
@@ -2069,4 +2079,48 @@ func schemaForType(gen *openapi3gen.Generator, schemas openapi3.Schemas, t refle
 		return nil
 	}
 	return ref
+}
+
+// enrichFromTypedSeam upgrades a hand-authored operation's placeholder schemas
+// with ones generated from the handler's Go types.
+//
+// Only ever REPLACES A PLACEHOLDER — a schema with no properties. A hand-built
+// schema is left alone: several were written deliberately to differ from the Go
+// type, most importantly the public profile payload, which is a hand-tuned
+// subset that omits the fields widget.Scrub removes. Overwriting that with the
+// full reflected type would document a leak that does not exist, and invite one
+// that does.
+func enrichFromTypedSeam(gen *openapi3gen.Generator, schemas openapi3.Schemas, op *openapi3.Operation, method, echoPath string) {
+	if op == nil {
+		return
+	}
+	typed, ok := apiroute.Lookup(method, echoPath)
+	if !ok {
+		return
+	}
+	isPlaceholder := func(ref *openapi3.SchemaRef) bool {
+		return ref != nil && ref.Ref == "" && ref.Value != nil && len(ref.Value.Properties) == 0 &&
+			ref.Value.Items == nil && len(ref.Value.OneOf) == 0 && len(ref.Value.AnyOf) == 0
+	}
+	if op.Responses != nil {
+		for code, r := range op.Responses.Map() {
+			if len(code) == 0 || code[0] != '2' || r == nil || r.Value == nil {
+				continue
+			}
+			mt := r.Value.Content["application/json"]
+			if mt == nil || !isPlaceholder(mt.Schema) {
+				continue
+			}
+			if sch := schemaForType(gen, schemas, typed.Resp); sch != nil {
+				mt.Schema = sch
+			}
+		}
+	}
+	if op.RequestBody != nil && op.RequestBody.Value != nil {
+		if mt := op.RequestBody.Value.Content["application/json"]; mt != nil && isPlaceholder(mt.Schema) {
+			if sch := schemaForType(gen, schemas, typed.Req); sch != nil {
+				mt.Schema = sch
+			}
+		}
+	}
 }

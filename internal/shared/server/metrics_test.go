@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/labstack/echo/v5"
+
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/metrics"

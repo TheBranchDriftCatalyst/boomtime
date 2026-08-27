@@ -29,45 +29,53 @@ import (
 // download plus minutes of remux; doing it in the request would hold an HTTP
 // connection open past any sane proxy timeout and lose the work on a deploy.
 
+// liberateBookResponse is POST /api/v1/books/items/:externalId/liberate (202).
+type liberateBookResponse struct {
+	Enqueued bool   `json:"enqueued"`
+	JobID    int64  `json:"jobId"`
+	ASIN     string `json:"asin"`
+}
+
 // LiberateBook enqueues one title for liberation.
-func (h *Handler) LiberateBook(c *echo.Context) error {
+func (h *Handler) LiberateBook(c *echo.Context) (liberateBookResponse, error) {
+	var out liberateBookResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	asin := c.Param("externalId")
 	if asin == "" {
-		return apihelpers.RespondErr(c, apierr.BadRequest("missing book id"))
+		return out, apierr.BadRequest("missing book id")
 	}
 	if h.JobEnqueuer == nil {
-		return apihelpers.RespondErr(c, apierr.BadRequest("background jobs are not available on this server"))
+		return out, apierr.BadRequest("background jobs are not available on this server")
 	}
 	svc := h.liberation()
 	if svc == nil {
-		return apihelpers.RespondErr(c, apierr.BadRequest("liberation is not configured on this server"))
+		return out, apierr.BadRequest("liberation is not configured on this server")
 	}
 
 	// Confirm ownership BEFORE enqueuing, so a bad id is an immediate 404 rather
 	// than a job that fails minutes later in a log nobody is watching.
 	item, lerr := svc.Store.LoadItem(c.Request().Context(), owner, asin)
 	if errors.Is(lerr, liberate.ErrItemNotFound) {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusNotFound, "no Audible title with that id in your library", nil))
+		return out, apierr.New(http.StatusNotFound, "no Audible title with that id in your library", nil)
 	}
 	if lerr != nil {
-		return apihelpers.InternalErr(h.Logger, c, "liberation: load item failed", lerr)
+		return out, fmt.Errorf("liberation: load item failed: %w", lerr)
 	}
 
 	force := c.QueryParam("force") == "true"
 	// 409 on an in-flight run. Without this, double-clicking the button starts a
 	// second download of the same 600 MB file.
 	if !force && isInFlight(item.LiberationStatus) {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusConflict,
-			"this book is already being liberated ("+item.LiberationStatus+")", nil))
+		return out, apierr.New(http.StatusConflict,
+			"this book is already being liberated ("+item.LiberationStatus+")", nil)
 	}
 
 	payload, merr := json.Marshal(liberate.BookPayload{Owner: owner, ASIN: asin, Force: force})
 	if merr != nil {
-		return apihelpers.InternalErr(h.Logger, c, "liberation: marshal payload", merr)
+		return out, fmt.Errorf("liberation: marshal payload: %w", merr)
 	}
 	// MaxAttempts(1): a retry re-downloads the whole book, so an automatic retry
 	// is expensive and rarely the right call. Failures are visible in the UI and
@@ -75,10 +83,17 @@ func (h *Handler) LiberateBook(c *echo.Context) error {
 	id, eerr := h.JobEnqueuer.Enqueue(c.Request().Context(), liberate.LiberateBookKind, payload,
 		jobs.Owner(owner), jobs.MaxAttempts(1))
 	if eerr != nil {
-		return apihelpers.InternalErr(h.Logger, c, "liberation: enqueue failed", eerr)
+		return out, fmt.Errorf("liberation: enqueue failed: %w", eerr)
 	}
 	h.Logger.Info("liberation enqueued", "user", owner, "asin", asin, "jobId", id, "force", force)
-	return c.JSON(http.StatusAccepted, map[string]any{"enqueued": true, "jobId": id, "asin": asin})
+	return liberateBookResponse{Enqueued: true, JobID: id, ASIN: asin}, nil
+}
+
+// forgetLiberationResponse is DELETE /api/v1/books/items/:externalId/liberate.
+type forgetLiberationResponse struct {
+	Forgotten bool `json:"forgotten"`
+	// FileDeleted is true only when ?deleteFile=true actually removed the audio.
+	FileDeleted bool `json:"fileDeleted"`
 }
 
 // ForgetLiberation clears the liberation state for one title, optionally
@@ -87,55 +102,74 @@ func (h *Handler) LiberateBook(c *echo.Context) error {
 //
 // The file is deleted ONLY when ?deleteFile=true. Defaulting to keeping it means
 // a mis-click costs a database row rather than a 600 MB download.
-func (h *Handler) ForgetLiberation(c *echo.Context) error {
+func (h *Handler) ForgetLiberation(c *echo.Context) (forgetLiberationResponse, error) {
+	var out forgetLiberationResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	asin := c.Param("externalId")
 	if asin == "" {
-		return apihelpers.RespondErr(c, apierr.BadRequest("missing book id"))
+		return out, apierr.BadRequest("missing book id")
 	}
 	svc := h.liberation()
 	if svc == nil {
-		return apihelpers.RespondErr(c, apierr.BadRequest("liberation is not configured on this server"))
+		return out, apierr.BadRequest("liberation is not configured on this server")
 	}
 	ctx := c.Request().Context()
 
 	item, lerr := svc.Store.LoadItem(ctx, owner, asin)
 	if errors.Is(lerr, liberate.ErrItemNotFound) {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusNotFound, "no Audible title with that id in your library", nil))
+		return out, apierr.New(http.StatusNotFound, "no Audible title with that id in your library", nil)
 	}
 	if lerr != nil {
-		return apihelpers.InternalErr(h.Logger, c, "liberation: load item failed", lerr)
+		return out, fmt.Errorf("liberation: load item failed: %w", lerr)
 	}
 
 	deleted := false
 	if c.QueryParam("deleteFile") == "true" && item.AudioPath != "" {
 		if rerr := svc.Sink.Remove(ctx, item.AudioPath); rerr != nil {
-			return apihelpers.InternalErr(h.Logger, c, "liberation: remove file failed", rerr)
+			return out, fmt.Errorf("liberation: remove file failed: %w", rerr)
 		}
 		deleted = true
 	}
 	if _, cerr := svc.Store.ClearLiberation(ctx, owner, asin); cerr != nil {
-		return apihelpers.InternalErr(h.Logger, c, "liberation: clear state failed", cerr)
+		return out, fmt.Errorf("liberation: clear state failed: %w", cerr)
 	}
 	h.Logger.Info("liberation forgotten", "user", owner, "asin", asin, "fileDeleted", deleted)
-	return c.JSON(http.StatusOK, map[string]any{"forgotten": true, "fileDeleted": deleted})
+	return forgetLiberationResponse{Forgotten: true, FileDeleted: deleted}, nil
+}
+
+// sweepLiberationResponse is POST /api/v1/books/liberate/sweep (202).
+type sweepLiberationResponse struct {
+	Enqueued bool  `json:"enqueued"`
+	JobID    int64 `json:"jobId"`
+	// Pending is returned so the UI can state how many books (and therefore
+	// roughly how many GB) the user just committed to.
+	Pending int `json:"pending"`
 }
 
 // SweepLiberation enqueues the whole-library sweep.
-func (h *Handler) SweepLiberation(c *echo.Context) error {
+//
+// The optional {limit, force} body is bound HERE, not by apiroute.AcceptedBody:
+// a malformed/absent body MUST stay a no-op ("everything, unforced"), and the
+// seam's binding registrars turn any bind failure into a hard 400. The web
+// client double-encodes this body (JSON.stringify of an already-stringified
+// object), so it arrives as a JSON *string* that fails to bind — moving it onto
+// the seam would 400 every sweep. Registered through apiroute.Accepted instead,
+// which captures the 202 + response type and leaves the body alone.
+func (h *Handler) SweepLiberation(c *echo.Context) (sweepLiberationResponse, error) {
+	var out sweepLiberationResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	if h.JobEnqueuer == nil {
-		return apihelpers.RespondErr(c, apierr.BadRequest("background jobs are not available on this server"))
+		return out, apierr.BadRequest("background jobs are not available on this server")
 	}
 	svc := h.liberation()
 	if svc == nil {
-		return apihelpers.RespondErr(c, apierr.BadRequest("liberation is not configured on this server"))
+		return out, apierr.BadRequest("liberation is not configured on this server")
 	}
 	ctx := c.Request().Context()
 
@@ -148,23 +182,19 @@ func (h *Handler) SweepLiberation(c *echo.Context) error {
 
 	pending, perr := svc.LiberateAll(ctx, owner, body.Limit)
 	if perr != nil {
-		return apihelpers.InternalErr(h.Logger, c, "liberation: list pending failed", perr)
+		return out, fmt.Errorf("liberation: list pending failed: %w", perr)
 	}
 	payload, merr := json.Marshal(liberate.SweepPayload{Owner: owner, Limit: body.Limit, Force: body.Force})
 	if merr != nil {
-		return apihelpers.InternalErr(h.Logger, c, "liberation: marshal payload", merr)
+		return out, fmt.Errorf("liberation: marshal payload: %w", merr)
 	}
 	id, eerr := h.JobEnqueuer.Enqueue(ctx, liberate.LiberateSweepKind, payload,
 		jobs.Owner(owner), jobs.MaxAttempts(1))
 	if eerr != nil {
-		return apihelpers.InternalErr(h.Logger, c, "liberation: sweep enqueue failed", eerr)
+		return out, fmt.Errorf("liberation: sweep enqueue failed: %w", eerr)
 	}
 	h.Logger.Info("liberation sweep enqueued", "user", owner, "jobId", id, "pending", len(pending))
-	// pending is returned so the UI can state how many books (and therefore
-	// roughly how many GB) the user just committed to.
-	return c.JSON(http.StatusAccepted, map[string]any{
-		"enqueued": true, "jobId": id, "pending": len(pending),
-	})
+	return sweepLiberationResponse{Enqueued: true, JobID: id, Pending: len(pending)}, nil
 }
 
 // Response types for the liberation endpoints.

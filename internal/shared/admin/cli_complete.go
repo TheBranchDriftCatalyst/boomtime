@@ -10,8 +10,6 @@
 package admin
 
 import (
-	"net/http"
-
 	"github.com/labstack/echo/v5"
 	"github.com/spf13/cobra"
 
@@ -41,21 +39,27 @@ type cliCompleteResponse struct {
 
 // CLIComplete serves autocomplete suggestions for one allowlisted command's
 // positional argument or flag value.
-func (h *Handler) CLIComplete(c *echo.Context) error {
+//
+// TYPED SEAM NOTE (routes.go registers this via apiroute.POSTNoBody): the body
+// is bound HERE, not by the seam's POST form — same reasoning as CLIRun.
+// requireAdmin must precede the body read, and the seam's fixed BodyLimitSmall
+// (4 KiB) would shrink cliCompleteBodyLimit (16 KiB).
+func (h *Handler) CLIComplete(c *echo.Context) (cliCompleteResponse, error) {
+	var out cliCompleteResponse
 	owner, aerr := h.requireAdmin(c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 
 	var req cliCompleteRequest
-	if aerr := apihelpers.BindJSONWithLimit(c, &req, cliCompleteBodyLimit); aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+	if berr := apihelpers.BindJSONWithLimit(c, &req, cliCompleteBodyLimit); berr != nil {
+		return out, berr
 	}
 
 	_, entry, aerr := h.cliLookup(req.Command)
 	if aerr != nil {
 		h.cliAuditDenial(owner, req.Command, "complete: unknown or unavailable command")
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 
 	// Pick the completion source: named flag's, else the positional one.
@@ -86,5 +90,5 @@ func (h *Handler) CLIComplete(c *echo.Context) error {
 	} else {
 		suggestions, directive = climeta.InvokeCompleter(fn, req.Args, req.ToComplete)
 	}
-	return c.JSON(http.StatusOK, cliCompleteResponse{Suggestions: suggestions, Directive: directive})
+	return cliCompleteResponse{Suggestions: suggestions, Directive: directive}, nil
 }

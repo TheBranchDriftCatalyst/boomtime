@@ -7,7 +7,6 @@ package widgets
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -60,10 +59,11 @@ const widgetTimeLimit int64 = 15
 
 // WidgetLink: GET /api/v1/users/current/widgets/link?scopeType=&scopeRef= (auth).
 // Upserts the (owner, scope) link after validating the requester owns the scope.
-func (h *Handler) WidgetLink(c *echo.Context) error {
+func (h *Handler) WidgetLink(c *echo.Context) (model.WidgetLinkResponse, error) {
+	var out model.WidgetLinkResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	ctx := c.Request().Context()
 	scopeType := c.QueryParam("scopeType")
@@ -75,7 +75,7 @@ func (h *Handler) WidgetLink(c *echo.Context) error {
 	case db.WidgetScopeProject:
 		ok, err := h.DB.ProjectExists(ctx, owner, scopeRef)
 		if err != nil {
-			return apihelpers.InternalErr(h.Logger, c, "widget link project check failed", err)
+			return out, fmt.Errorf("widget link project check failed: %w", err)
 		}
 		if !ok {
 			// boom-xuc: the FE gets remapped project names from ProjectList
@@ -85,79 +85,88 @@ func (h *Handler) WidgetLink(c *echo.Context) error {
 			// scope-ref back to the source project(s) at query time.
 			rs, err := h.DB.LoadRenameSets(ctx, owner)
 			if err != nil {
-				return apihelpers.InternalErr(h.Logger, c, "widget link rename load failed", err)
+				return out, fmt.Errorf("widget link rename load failed: %w", err)
 			}
 			if len(rs.ExactSourcesFor("project", scopeRef)) == 0 {
-				return apihelpers.RespondErr(c, apierr.NotFound("Unknown project"))
+				return out, apierr.NotFound("Unknown project")
 			}
 		}
 	case db.WidgetScopeSpace:
 		id, err := strconv.Atoi(scopeRef)
 		if err != nil {
-			return apihelpers.RespondErr(c, apierr.BadRequest("Invalid space id"))
+			return out, apierr.BadRequest("Invalid space id")
 		}
 		sp, _, err := h.DB.GetSpace(ctx, owner, id)
 		if err != nil {
-			return apihelpers.InternalErr(h.Logger, c, "widget link space check failed", err)
+			return out, fmt.Errorf("widget link space check failed: %w", err)
 		}
 		if sp == nil {
-			return apihelpers.RespondErr(c, apierr.NotFound("Unknown space"))
+			return out, apierr.NotFound("Unknown space")
 		}
 	default:
-		return apihelpers.RespondErr(c, apierr.BadRequest("scopeType must be user, project or space"))
+		return out, apierr.BadRequest("scopeType must be user, project or space")
 	}
 
 	id, err := h.DB.CreateWidgetLink(ctx, owner, scopeType, scopeRef)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "widget link creation failed", err)
+		return out, fmt.Errorf("widget link creation failed: %w", err)
 	}
-	return c.JSON(http.StatusOK, model.WidgetLinkResponse{
+	return model.WidgetLinkResponse{
 		WidgetBaseURL: h.Cfg.BadgeURL + "/widget/svg/" + id.String(),
 		LinkID:        id.String(),
-	})
+	}, nil
+}
+
+// widgetLinkListResponse is GET /api/v1/users/current/widgets/links. Named so
+// the spec can describe the envelope the Settings UI reads; the wire shape is
+// the unchanged {"links": [...]} object.
+type widgetLinkListResponse struct {
+	Links []db.WidgetLink `json:"links"`
 }
 
 // WidgetLinkList: GET /api/v1/users/current/widgets/links (auth) — Settings UI.
-func (h *Handler) WidgetLinkList(c *echo.Context) error {
+func (h *Handler) WidgetLinkList(c *echo.Context) (widgetLinkListResponse, error) {
+	var out widgetLinkListResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	links, err := h.DB.ListWidgetLinks(c.Request().Context(), owner)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "widget link list failed", err)
+		return out, fmt.Errorf("widget link list failed: %w", err)
 	}
-	return c.JSON(http.StatusOK, map[string]any{"links": links})
+	return widgetLinkListResponse{Links: links}, nil
 }
 
 // WidgetLinkRoll: POST /api/v1/users/current/widgets/link/:id/roll (auth).
 // Mints a new uuid for the same (user, scope). Returns the new URL — old id
 // immediately 404s (existing embeds break; the point is exactly to break
 // them). Owner-scoped: cross-owner ids 404.
-func (h *Handler) WidgetLinkRoll(c *echo.Context) error {
+func (h *Handler) WidgetLinkRoll(c *echo.Context) (model.WidgetLinkResponse, error) {
+	var out model.WidgetLinkResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	oldID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		return apihelpers.RespondErr(c, apierr.BadRequest("Invalid widget link id"))
+		return out, apierr.BadRequest("Invalid widget link id")
 	}
 	newID, ok, err := h.DB.RollWidgetLink(c.Request().Context(), owner, oldID)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "widget link roll failed", err)
+		return out, fmt.Errorf("widget link roll failed: %w", err)
 	}
 	if !ok {
-		return apihelpers.RespondErr(c, apierr.NotFound("Widget link not found"))
+		return out, apierr.NotFound("Widget link not found")
 	}
 	// Any previously-cached bytes lived under the old id in the cache key, so
 	// they can't accidentally be served post-roll — but invalidate defensively
 	// (cheap; owner-prefixed sweep).
 	apihelpers.InvalidateOwnerCache(h.Cache, owner)
-	return c.JSON(http.StatusOK, model.WidgetLinkResponse{
+	return model.WidgetLinkResponse{
 		WidgetBaseURL: h.Cfg.BadgeURL + "/widget/svg/" + newID.String(),
 		LinkID:        newID.String(),
-	})
+	}, nil
 }
 
 // WidgetSvg: GET /widget/svg/:uuid/:kind?days=30&theme=dark (PUBLIC).

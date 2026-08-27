@@ -14,6 +14,7 @@
 package spaces
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -40,11 +41,18 @@ type Handler struct {
 }
 
 // spaceRequest is the POST body for creating a Space.
+//
+// boom-bi2: 4 KiB cap — space create body is a single short name string. The
+// cap now lives in the apiroute seam (apihelpers.BodyLimitSmall), which binds
+// this type before the handler runs.
 type spaceRequest struct {
 	Name string `json:"name"`
 }
 
 // spacePatchRequest is the PATCH body for renaming/reordering a Space.
+//
+// boom-bi2: 4 KiB cap — patch body is optional name + position int. Applied by
+// the apiroute seam (apihelpers.BodyLimitSmall) at bind time.
 type spacePatchRequest struct {
 	Name     *string `json:"name"`
 	Position *int    `json:"position"`
@@ -57,117 +65,148 @@ type spaceRuleRequest struct {
 	MatchType  string `json:"matchType"` // "exact" (default) | "regex"
 }
 
+// listSpacesResponse is GET /api/v1/users/current/spaces.
+type listSpacesResponse struct {
+	Spaces []db.Space `json:"spaces"`
+}
+
+// createSpaceResponse is POST /api/v1/users/current/spaces.
+type createSpaceResponse struct {
+	Space *db.Space `json:"space"`
+}
+
+// getSpaceResponse is GET /api/v1/users/current/spaces/:id — the Space's own
+// columns inlined (NOT nested under a "space" key, unlike create) plus its
+// membership rules.
+type getSpaceResponse struct {
+	ID       int            `json:"id"`
+	Name     string         `json:"name"`
+	Position int            `json:"position"`
+	Rules    []db.SpaceRule `json:"rules"`
+}
+
+// addSpaceRuleResponse is POST /api/v1/users/current/spaces/:id/rules.
+type addSpaceRuleResponse struct {
+	Rule *db.SpaceRule `json:"rule"`
+}
+
+// spacePreviewResponse is GET /api/v1/users/current/spaces/preview.
+type spacePreviewResponse struct {
+	// Values are the RAW matched values with their heartbeat counts.
+	Values []db.AffectedValue `json:"values"`
+	// Truncated reports that the 200-row preview limit clipped the result.
+	Truncated bool `json:"truncated"`
+}
+
 // ListSpaces: GET /api/v1/users/current/spaces → {spaces:[Space]}.
-func (h *Handler) ListSpaces(c *echo.Context) error {
+func (h *Handler) ListSpaces(c *echo.Context) (listSpacesResponse, error) {
+	var out listSpacesResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	spaces, err := h.DB.ListSpaces(c.Request().Context(), owner)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "list spaces failed", err)
+		return out, fmt.Errorf("list spaces failed: %w", err)
 	}
-	return c.JSON(http.StatusOK, map[string]any{"spaces": spaces})
+	return listSpacesResponse{Spaces: spaces}, nil
 }
 
 // CreateSpace: POST /api/v1/users/current/spaces body {"name":...} → {space:Space}.
-func (h *Handler) CreateSpace(c *echo.Context) error {
+func (h *Handler) CreateSpace(c *echo.Context, req spaceRequest) (createSpaceResponse, error) {
+	var out createSpaceResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
-	}
-	var req spaceRequest
-	// boom-bi2: 4 KiB cap — space create body is a single short name string.
-	if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitSmall); aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	if req.Name == "" {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "name is required", nil))
+		return out, apierr.New(http.StatusBadRequest, "name is required", nil)
 	}
 	space, err := h.DB.CreateSpace(c.Request().Context(), owner, req.Name)
 	if err != nil {
 		h.Logger.Error("create space failed", "err", err)
-		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "Could not create space (name may already exist)", nil))
+		return out, apierr.New(http.StatusBadRequest, "Could not create space (name may already exist)", nil)
 	}
 	apihelpers.InvalidateOwnerCache(h.Cache, owner)
-	return c.JSON(http.StatusOK, map[string]any{"space": space})
+	return createSpaceResponse{Space: space}, nil
 }
 
 // UpdateSpace: PATCH /api/v1/users/current/spaces/:id body {"name"?,"position"?}.
-func (h *Handler) UpdateSpace(c *echo.Context) error {
+func (h *Handler) UpdateSpace(c *echo.Context, req spacePatchRequest) error {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return aerr
 	}
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "Invalid space id", nil))
-	}
-	var req spacePatchRequest
-	// boom-bi2: 4 KiB cap — patch body is optional name + position int.
-	if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitSmall); aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return apierr.New(http.StatusBadRequest, "Invalid space id", nil)
 	}
 	n, err := h.DB.RenameSpace(c.Request().Context(), owner, id, req.Name, req.Position)
 	if err != nil {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "Could not update space", nil))
+		return apierr.New(http.StatusBadRequest, "Could not update space", nil)
 	}
 	if n == 0 {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusNotFound, "Space not found", nil))
+		return apierr.New(http.StatusNotFound, "Space not found", nil)
 	}
 	apihelpers.InvalidateOwnerCache(h.Cache, owner)
-	return apihelpers.NoContent(c)
+	return nil
 }
 
 // DeleteSpace: DELETE /api/v1/users/current/spaces/:id → 204.
 func (h *Handler) DeleteSpace(c *echo.Context) error {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return aerr
 	}
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "Invalid space id", nil))
+		return apierr.New(http.StatusBadRequest, "Invalid space id", nil)
 	}
 	n, err := h.DB.DeleteSpace(c.Request().Context(), owner, id)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "delete space failed", err)
+		return fmt.Errorf("delete space failed: %w", err)
 	}
 	if n == 0 {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusNotFound, "Space not found", nil))
+		return apierr.New(http.StatusNotFound, "Space not found", nil)
 	}
 	apihelpers.InvalidateOwnerCache(h.Cache, owner)
-	return apihelpers.NoContent(c)
+	return nil
 }
 
 // GetSpace: GET /api/v1/users/current/spaces/:id →
 // {id,name,position,rules:[{id,axis,matchValue,matchType}]}.
-func (h *Handler) GetSpace(c *echo.Context) error {
+func (h *Handler) GetSpace(c *echo.Context) (getSpaceResponse, error) {
+	var out getSpaceResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "Invalid space id", nil))
+		return out, apierr.New(http.StatusBadRequest, "Invalid space id", nil)
 	}
 	space, rules, err := h.DB.GetSpace(c.Request().Context(), owner, id)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "get space failed", err)
+		return out, fmt.Errorf("get space failed: %w", err)
 	}
 	if space == nil {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusNotFound, "Space not found", nil))
+		return out, apierr.New(http.StatusNotFound, "Space not found", nil)
 	}
-	return c.JSON(http.StatusOK, map[string]any{
-		"id":       space.ID,
-		"name":     space.Name,
-		"position": space.Position,
-		"rules":    rules,
-	})
+	return getSpaceResponse{
+		ID:       space.ID,
+		Name:     space.Name,
+		Position: space.Position,
+		Rules:    rules,
+	}, nil
 }
 
 // AddSpaceRule: POST /api/v1/users/current/spaces/:id/rules
 // body {"axis","matchValue","matchType"} → {rule:SpaceRule}.
+//
+// NOT on the apiroute seam: this route binds under apihelpers.BodyLimitMedium
+// (64 KiB) and the seam's body registrars hard-code BodyLimitSmall (4 KiB).
+// Moving it would silently narrow the cap and turn today's 200s on bodies
+// between 4 and 64 KiB into 413s, so it keeps its hand-rolled bind.
 func (h *Handler) AddSpaceRule(c *echo.Context) error {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
@@ -209,67 +248,68 @@ func (h *Handler) AddSpaceRule(c *echo.Context) error {
 		return apihelpers.RespondErr(c, apierr.New(http.StatusNotFound, "Space not found", nil))
 	}
 	apihelpers.InvalidateOwnerCache(h.Cache, owner)
-	return c.JSON(http.StatusOK, map[string]any{"rule": rule})
+	return c.JSON(http.StatusOK, addSpaceRuleResponse{Rule: rule})
 }
 
 // DeleteSpaceRule: DELETE /api/v1/users/current/spaces/:id/rules/:rid → 204.
 func (h *Handler) DeleteSpaceRule(c *echo.Context) error {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return aerr
 	}
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "Invalid space id", nil))
+		return apierr.New(http.StatusBadRequest, "Invalid space id", nil)
 	}
 	rid, err := strconv.Atoi(c.Param("rid"))
 	if err != nil {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "Invalid rule id", nil))
+		return apierr.New(http.StatusBadRequest, "Invalid rule id", nil)
 	}
 	n, err := h.DB.DeleteSpaceRule(c.Request().Context(), owner, id, rid)
 	if err != nil {
-		return apihelpers.RespondErr(c, apierr.Generic())
+		return apierr.Generic()
 	}
 	if n == 0 {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusNotFound, "Space rule not found", nil))
+		return apierr.New(http.StatusNotFound, "Space rule not found", nil)
 	}
 	apihelpers.InvalidateOwnerCache(h.Cache, owner)
-	return apihelpers.NoContent(c)
+	return nil
 }
 
 // SpacePreview: GET /api/v1/users/current/spaces/preview?axis=&matchValue=&matchType=
 // → {"values":[{"value","count"}],"truncated":bool}. Live preview of the RAW values
 // (with heartbeat counts) an unsaved membership rule would match. Owner-scoped.
-func (h *Handler) SpacePreview(c *echo.Context) error {
+func (h *Handler) SpacePreview(c *echo.Context) (spacePreviewResponse, error) {
+	var out spacePreviewResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	axis := c.QueryParam("axis")
 	matchValue := c.QueryParam("matchValue")
 	matchType := c.QueryParam("matchType")
 	if _, ok := db.ExploreColumn(axis); !ok {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "Unknown axis: "+axis, nil))
+		return out, apierr.New(http.StatusBadRequest, "Unknown axis: "+axis, nil)
 	}
 	if matchValue == "" {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "matchValue is required", nil))
+		return out, apierr.New(http.StatusBadRequest, "matchValue is required", nil)
 	}
 	if matchType == "" {
 		matchType = db.MatchExact
 	}
 	if matchType != db.MatchExact && matchType != db.MatchRegex {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "matchType must be 'exact' or 'regex'", nil))
+		return out, apierr.New(http.StatusBadRequest, "matchType must be 'exact' or 'regex'", nil)
 	}
 	ctx := c.Request().Context()
 	if matchType == db.MatchRegex {
 		if err := h.DB.ValidateRegex(ctx, matchValue); err != nil {
-			return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "invalid regex pattern", nil))
+			return out, apierr.New(http.StatusBadRequest, "invalid regex pattern", nil)
 		}
 	}
 	values, truncated, err := h.DB.SpacePreviewValues(ctx, owner, axis, matchValue, matchType, 200)
 	if err != nil {
 		h.Logger.Error("space preview failed", "err", err)
-		return apihelpers.RespondErr(c, apierr.Generic())
+		return out, apierr.Generic()
 	}
-	return c.JSON(http.StatusOK, map[string]any{"values": values, "truncated": truncated})
+	return spacePreviewResponse{Values: values, Truncated: truncated}, nil
 }

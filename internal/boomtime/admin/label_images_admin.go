@@ -40,6 +40,7 @@
 package admin
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -49,8 +50,30 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 	"github.com/labstack/echo/v5"
 )
+
+// adminLabelImagesInfoResponse is GET /api/v1/admin/label-images.
+type adminLabelImagesInfoResponse struct {
+	Enabled bool   `json:"enabled"`
+	Model   string `json:"model"`
+	ShimURL string `json:"shimUrl"`
+	Count   int    `json:"count"`
+	// Items is the per-label metadata for the Admin table — no image bytes; the
+	// FE fetches those on demand from /api/v1/labels/:id/image.
+	Items []db.LabelImageMeta `json:"items"`
+	// Baseline is every id from the DB labels catalog (boom-364.3), falling back
+	// to the compiled labelcatalog set for a brand-new DB.
+	Baseline []string `json:"baseline"`
+	// Broker is retained as a stable field for the Admin tab but is now always
+	// "jobs": regens run on catalyst-go-jobs, and the RabbitMQ transport (with
+	// its queue-depth probe and management-UI link) was retired along with the
+	// imagejobs pipeline (boom-piig phases 2-3). Queue depth is now a first-class
+	// metric — jobs_queue_depth{kind="label-image"} — rather than an ad-hoc
+	// field on this endpoint.
+	Broker string `json:"broker"`
+}
 
 // AdminLabelImagesInfo: GET /api/v1/admin/label-images.
 // Returns feature status + shim config + current row count so the Admin
@@ -60,15 +83,16 @@ import (
 // DB labels catalog. The admin table renders one row per catalog id
 // (present-or-missing image), and the compiled labelcatalog baseline is
 // kept as a fallback for the "brand new DB before migrations apply" case.
-func (h *Handler) AdminLabelImagesInfo(c *echo.Context) error {
+func (h *Handler) AdminLabelImagesInfo(c *echo.Context) (adminLabelImagesInfoResponse, error) {
+	var out adminLabelImagesInfoResponse
 	_, aerr := h.requireAdmin(c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	ctx := c.Request().Context()
 	items, err := h.DB.ListLabelImagesMeta(ctx)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "list label images failed", err)
+		return out, fmt.Errorf("list label images failed: %w", err)
 	}
 	baseline := labelcatalog.IDs()
 	if labels, lerr := h.DB.ListLabels(ctx); lerr == nil && len(labels) > 0 {
@@ -78,22 +102,15 @@ func (h *Handler) AdminLabelImagesInfo(c *echo.Context) error {
 		}
 		baseline = ids
 	}
-	// `broker` is retained as a stable field for the Admin tab but is now always
-	// "jobs": regens run on catalyst-go-jobs, and the RabbitMQ transport (with
-	// its queue-depth probe and management-UI link) was retired along with the
-	// imagejobs pipeline (boom-piig phases 2-3). Queue depth is now a first-class
-	// metric — jobs_queue_depth{kind="label-image"} — rather than an ad-hoc
-	// field on this endpoint.
-	resp := map[string]any{
-		"enabled":  h.Cfg.LabelImagesEnabled(),
-		"model":    h.Cfg.ComfyUIModel,
-		"shimUrl":  h.Cfg.ComfyUIShimURL,
-		"count":    len(items),
-		"items":    items,
-		"baseline": baseline,
-	}
-	resp["broker"] = "jobs"
-	return c.JSON(http.StatusOK, resp)
+	return adminLabelImagesInfoResponse{
+		Enabled:  h.Cfg.LabelImagesEnabled(),
+		Model:    h.Cfg.ComfyUIModel,
+		ShimURL:  h.Cfg.ComfyUIShimURL,
+		Count:    len(items),
+		Items:    items,
+		Baseline: baseline,
+		Broker:   "jobs",
+	}, nil
 }
 
 // regenReq is the POST body shape. The FE sends BOTH `entries` (the full
@@ -263,21 +280,27 @@ type labelJobStatus struct {
 	FinishedAt *string `json:"finishedAt,omitempty"`
 }
 
+// adminLabelImagesStatusResponse is GET /api/v1/admin/label-images/status.
+type adminLabelImagesStatusResponse struct {
+	Jobs []labelJobStatus `json:"jobs"`
+}
+
 // AdminLabelImagesStatus: GET /api/v1/admin/label-images/status — the latest
 // label-image job per label from the DB queue (boom-hney Stage 3). Under
 // BOOM_JOBS_UNIFIED this replaces the imagejobs WS as the FE's per-label status
 // source; the admin tab polls it. Returns [] when the jobs subsystem isn't
 // wired (feature off) so the FE degrades to "no in-flight jobs" rather than
 // erroring.
-func (h *Handler) AdminLabelImagesStatus(c *echo.Context) error {
+func (h *Handler) AdminLabelImagesStatus(c *echo.Context) (adminLabelImagesStatusResponse, error) {
+	var res adminLabelImagesStatusResponse
 	if _, aerr := h.requireAdmin(c); aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return res, aerr
 	}
 	out := []labelJobStatus{}
 	if h.JobStore != nil {
 		rows, err := h.JobStore.ListLatestPerOwner(c.Request().Context(), labelimages.RegenJobKind)
 		if err != nil {
-			return apihelpers.InternalErr(h.Logger, c, "label-image status query failed", err)
+			return res, fmt.Errorf("label-image status query failed: %w", err)
 		}
 		for _, j := range rows {
 			// Match the imagejobs registry's retention so a done/error badge
@@ -302,7 +325,7 @@ func (h *Handler) AdminLabelImagesStatus(c *echo.Context) error {
 			})
 		}
 	}
-	return c.JSON(http.StatusOK, map[string]any{"jobs": out})
+	return adminLabelImagesStatusResponse{Jobs: out}, nil
 }
 
 // mapJobStatus maps a catalyst-go-jobs status to the imagejobs vocab the FE

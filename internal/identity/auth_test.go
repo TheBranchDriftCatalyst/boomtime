@@ -32,6 +32,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apiroute"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
@@ -380,7 +381,7 @@ var _ = Describe("Logout clears refresh cookie", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		hz.Cfg.CookieSecure = true
 		e := hz.Router()
-		e.POST("/auth/logout", hz.H.Identity.Logout)
+		apiroute.NoContent(e, http.MethodPost, "/auth/logout", hz.H.Identity.Logout)
 
 		user := "logout_clears_g"
 		pw := "test1234"

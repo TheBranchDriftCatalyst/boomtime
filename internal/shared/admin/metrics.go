@@ -1,14 +1,13 @@
 package admin
 
 import (
-	"net/http"
 	"sort"
 	"strings"
 
 	"github.com/labstack/echo/v5"
 	dto "github.com/prometheus/client_model/go"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/metrics"
 )
 
@@ -31,33 +30,44 @@ import (
 //     separated PREFIXES (e.g. names=http_,jobs_). Empty = all families.
 //
 // Response: {"families": [ {name, help, type, samples:[{labels, value|count|sum}]} ]}.
-func (h *Handler) AdminMetrics(c *echo.Context) error {
+func (h *Handler) AdminMetrics(c *echo.Context) (adminMetricsResponse, error) {
+	var out adminMetricsResponse
 	if _, aerr := h.requireAdmin(c); aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 
 	families, err := metrics.Registry.Gather()
 	if err != nil {
 		// Gather only errors on a malformed collector (a programming bug); surface
-		// it rather than silently returning a partial view.
-		return c.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		// it rather than silently returning a partial view. GenericHTTP carries the
+		// raw text at 500, which renders the SAME {"error": "<text>"} envelope the
+		// pre-seam c.JSON literal wrote.
+		return out, apierr.GenericHTTP(err.Error(), nil)
 	}
 
 	prefixes := splitCSV(c.QueryParam("names"))
 
-	out := make([]metricFamilyView, 0, len(families))
+	views := make([]metricFamilyView, 0, len(families))
 	for _, mf := range families {
 		name := mf.GetName()
 		if len(prefixes) > 0 && !hasAnyPrefix(name, prefixes) {
 			continue
 		}
-		out = append(out, toFamilyView(mf))
+		views = append(views, toFamilyView(mf))
 	}
 	// Gather already returns families sorted by name, but pin it so the FE order
 	// is stable regardless of the filter.
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	sort.Slice(views, func(i, j int) bool { return views[i].Name < views[j].Name })
 
-	return c.JSON(http.StatusOK, map[string]any{"families": out})
+	return adminMetricsResponse{Families: views}, nil
+}
+
+// adminMetricsResponse is GET /api/v1/admin/metrics. Was a
+// map[string]any{"families": ...} literal; naming it is what lets the OpenAPI
+// spec carry a real schema for the Metrics tab payload.
+type adminMetricsResponse struct {
+	// Families is one entry per Prometheus metric family, name-sorted.
+	Families []metricFamilyView `json:"families"`
 }
 
 // metricFamilyView is one metric family flattened for the FE: its name, help,

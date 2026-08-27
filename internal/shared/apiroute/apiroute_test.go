@@ -170,3 +170,81 @@ func (errNotAPIError) Error() string { return "raw internal detail" }
 func jsonBody(s string) io.Reader { return strings.NewReader(s) }
 
 func contains(h, n string) bool { return strings.Contains(h, n) }
+
+// The seam's DEFAULT body cap is small, and that default silently shrank two
+// endpoints' contracts during the first bulk migration: an import route that had
+// bound with plain c.Bind (unbounded) started answering 413 at 4 KiB, and a
+// curation route that bound at 64 KiB did the same. A test in another package
+// caught the first; nothing would have caught the second.
+//
+// These pin both halves of the fix, because "the limit is configurable" is only
+// useful if the default is also known and stable.
+func TestBodyLimitDefaultApplies(t *testing.T) {
+	apiroute.Reset()
+	e := echo.New()
+	apiroute.POST(e, "/capped", func(c *echo.Context, req probeReq) (probeResp, error) {
+		return probeResp{Name: req.Query}, nil
+	})
+
+	big := `{"query":"` + strings.Repeat("x", 8*1024) + `"}`
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/capped", jsonBody(big))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("default cap: status = %d, want 413 — the default is no longer BodyLimitSmall", rec.Code)
+	}
+}
+
+func TestBodyLimitNoneLeavesEndpointUncapped(t *testing.T) {
+	apiroute.Reset()
+	e := echo.New()
+	apiroute.POSTLimit(e, "/uncapped", apiroute.BodyLimitNone,
+		func(c *echo.Context, req probeReq) (probeResp, error) {
+			return probeResp{Count: len(req.Query)}, nil
+		})
+
+	body := `{"query":"` + strings.Repeat("x", 512*1024) + `"}`
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/uncapped", jsonBody(body))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("BodyLimitNone: status = %d, want 200 — a route that was uncapped before the seam is now capped", rec.Code)
+	}
+	var got probeResp
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	if got.Count != 512*1024 {
+		t.Errorf("body truncated: got %d bytes, want %d", got.Count, 512*1024)
+	}
+}
+
+func TestExplicitBodyLimitIsHonoured(t *testing.T) {
+	apiroute.Reset()
+	e := echo.New()
+	apiroute.POSTLimit(e, "/medium", 64*1024,
+		func(c *echo.Context, req probeReq) (probeResp, error) {
+			return probeResp{Count: len(req.Query)}, nil
+		})
+
+	// Comfortably inside 64 KiB but far outside the 4 KiB default: this is the
+	// case that distinguishes "limit is configurable" from "limit is ignored".
+	ok := `{"query":"` + strings.Repeat("x", 16*1024) + `"}`
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/medium", jsonBody(ok))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("16 KiB under a 64 KiB cap: status = %d, want 200", rec.Code)
+	}
+
+	// And the explicit cap must still BE a cap.
+	rec = httptest.NewRecorder()
+	tooBig := `{"query":"` + strings.Repeat("x", 128*1024) + `"}`
+	req = httptest.NewRequest(http.MethodPost, "/medium", jsonBody(tooBig))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("128 KiB over a 64 KiB cap: status = %d, want 413", rec.Code)
+	}
+}

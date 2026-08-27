@@ -1,7 +1,7 @@
 package stats
 
 import (
-	"net/http"
+	"fmt"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
@@ -52,21 +52,22 @@ func (h *Handler) ProjectStats(c *echo.Context) error {
 }
 
 // ProjectList: GET /api/v1/projects?start&end.
-func (h *Handler) ProjectList(c *echo.Context) error {
+func (h *Handler) ProjectList(c *echo.Context) (model.ProjectListPayload, error) {
+	var out model.ProjectListPayload
 	s, aerr := h.dashboardScope(c, 30)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	// Not cached, so the sets load eagerly. Exclude hidden values (a project
 	// surfaces only if it has non-hidden heartbeats) and relabel renamed projects
 	// (merged names collapse to one), both reversible query-time transforms.
 	l, err := s.load(loadHidden | loadRenames)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "project list curation load failed", err)
+		return out, fmt.Errorf("project list curation load failed: %w", err)
 	}
 	projects, err := h.DB.GetAllProjects(s.ctx, s.owner, s.t0, s.t1, l.hidden, l.renames, l.members, l.spaceRequested)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "project list query failed", err)
+		return out, fmt.Errorf("project list query failed: %w", err)
 	}
-	return c.JSON(http.StatusOK, model.ProjectListPayload{Projects: projects})
+	return model.ProjectListPayload{Projects: projects}, nil
 }

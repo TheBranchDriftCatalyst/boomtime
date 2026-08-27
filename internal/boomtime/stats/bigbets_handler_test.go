@@ -25,6 +25,8 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
 	"github.com/labstack/echo/v5"
+
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apiroute"
 )
 
 // mapKeys returns the sorted key list of a JSON-decoded map — used in
@@ -47,7 +49,7 @@ func bigbetsRouter(hz *testutil.Harness) *echo.Echo {
 	h := hz.H
 	// Auth-shim so unauth requests get a normal 4xx rather than 404.
 	// boom-8tn phase 4a: Login moved to h.Identity.
-	e.POST("/auth/login", h.Identity.Login)
+	apiroute.POSTNoBody(e, "/auth/login", h.Identity.Login)
 	e.GET("/api/v1/users/current/stats/punchcard", hz.Stats.Punchcard)
 	e.GET("/api/v1/users/current/stats/sessions", hz.Stats.Sessions)
 	e.GET("/api/v1/users/current/stats/ai", hz.Stats.AIActivity)

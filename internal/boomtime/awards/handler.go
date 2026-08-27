@@ -24,6 +24,7 @@
 package awards
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -127,24 +128,24 @@ func (h *Handler) AwardsLog(c *echo.Context) error {
 }
 
 // AwardsStreaks: GET /api/v1/users/current/awards/streaks
-func (h *Handler) AwardsStreaks(c *echo.Context) error {
+func (h *Handler) AwardsStreaks(c *echo.Context) (map[string]int, error) {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return nil, aerr
 	}
 	return h.awardsStreaksFor(c, owner)
 }
 
 // PublicAwardsStreaks: GET /api/public/profile/:slug/awards/streaks
 // — same shape, target user derived from the public slug.
-func (h *Handler) PublicAwardsStreaks(c *echo.Context) error {
+func (h *Handler) PublicAwardsStreaks(c *echo.Context) (map[string]int, error) {
 	slug := c.Param("slug")
 	if slug == "" {
-		return apihelpers.RespondErr(c, apierr.BadRequest("slug is required"))
+		return nil, apierr.BadRequest("slug is required")
 	}
 	owner, err := h.DB.LookupUsernameBySlug(c.Request().Context(), slug)
 	if err != nil || owner == "" {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusNotFound, "profile not found", nil))
+		return nil, apierr.New(http.StatusNotFound, "profile not found", nil)
 	}
 	return h.awardsStreaksFor(c, owner)
 }
@@ -152,10 +153,11 @@ func (h *Handler) PublicAwardsStreaks(c *echo.Context) error {
 // AwardsLedger: GET /api/v1/users/current/awards/ledger?label=<id>&limit=<n>
 // — inspector endpoint that returns the raw ledger rows (with label
 // name + kind joined in) for debug/admin viewing on the AdminTab.
-func (h *Handler) AwardsLedger(c *echo.Context) error {
+func (h *Handler) AwardsLedger(c *echo.Context) (awardsLedgerResponse, error) {
+	var out awardsLedgerResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	label := c.QueryParam("label")
 	limit := 500
@@ -166,13 +168,24 @@ func (h *Handler) AwardsLedger(c *echo.Context) error {
 	}
 	rows, err := h.DB.ListAwardLedger(c.Request().Context(), owner, label, limit)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "ledger query failed", err)
+		return out, fmt.Errorf("ledger query failed: %w", err)
 	}
 	c.Response().Header().Set("Cache-Control", "private, max-age=30")
-	return c.JSON(http.StatusOK, map[string]any{
-		"rows":  rows,
-		"limit": limit,
-	})
+	return awardsLedgerResponse{
+		Rows:  rows,
+		Limit: limit,
+	}, nil
+}
+
+// awardsLedgerResponse is GET /api/v1/users/current/awards/ledger. Field
+// names mirror the map keys this handler used to build by hand ("rows",
+// "limit") — the AdminTab inspector reads both.
+type awardsLedgerResponse struct {
+	// Rows are the raw ledger rows with the label name + kind joined in.
+	Rows []db.LedgerRow `json:"rows"`
+	// Limit echoes the effective row cap after clamping, so the caller can
+	// tell "that is all of it" from "there is more behind a bigger limit".
+	Limit int `json:"limit"`
 }
 
 // parsePositiveInt is a tiny query-param helper — parses `s` as a
@@ -195,7 +208,7 @@ func parsePositiveInt(s string, max int) (int, error) {
 	return n, nil
 }
 
-func (h *Handler) awardsStreaksFor(c *echo.Context, owner string) error {
+func (h *Handler) awardsStreaksFor(c *echo.Context, owner string) (map[string]int, error) {
 	tzName := apihelpers.ResolveUserTZ(h.DB, h.Logger, c.Request().Context(), owner, h.Cfg.DefaultTimezone)
 	loc, err := time.LoadLocation(tzName)
 	if err != nil {
@@ -203,7 +216,7 @@ func (h *Handler) awardsStreaksFor(c *echo.Context, owner string) error {
 	}
 	streaks, err := h.DB.GetLabelStreaks(c.Request().Context(), owner, loc, time.Now())
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "streak query failed", err)
+		return nil, fmt.Errorf("streak query failed: %w", err)
 	}
 	// Response is a flat map keyed by label id — small payload, easiest
 	// for the FE to look up by chip.
@@ -215,5 +228,5 @@ func (h *Handler) awardsStreaksFor(c *echo.Context, owner string) error {
 	// browser cache is safe. 60s balances "reload after evaluate" with
 	// "don't hammer the DB from every mount".
 	c.Response().Header().Set("Cache-Control", "private, max-age=60")
-	return c.JSON(http.StatusOK, out)
+	return out, nil
 }

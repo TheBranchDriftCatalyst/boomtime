@@ -3,7 +3,7 @@ package api
 import (
 	"encoding/base64"
 	"encoding/json"
-	"net/http"
+	"fmt"
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/amazon"
@@ -29,6 +29,7 @@ import (
 //	DELETE /api/v1/amazon                                          → 204 (disconnect)
 
 type amazonStartReq struct {
+	// Marketplace is optional → US default.
 	Marketplace string `json:"marketplace"`
 }
 type amazonStartResp struct {
@@ -49,85 +50,98 @@ type amazonConnectionResp struct {
 }
 
 // ConnectAmazonStart builds the Amazon authorize URL + seals the PKCE session.
-func (h *Handler) ConnectAmazonStart(c *echo.Context) error {
+// The body is bound by the typed seam under the SAME 4 KiB cap this handler
+// applied itself.
+func (h *Handler) ConnectAmazonStart(c *echo.Context, req amazonStartReq) (amazonStartResp, error) {
+	var out amazonStartResp
 	if _, aerr := apihelpers.IdentifyOwner(h.DB, c); aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
-	var req amazonStartReq
-	_ = apihelpers.BindJSONWithLimit(c, &req, 4*1024) // marketplace optional → US default
 	authURL, sess, err := amazon.BuildAuthorizeURL(amazon.Marketplace(req.Marketplace))
 	if err != nil {
-		return apihelpers.RespondErr(c, apierr.BadRequest(err.Error()))
+		return out, apierr.BadRequest(err.Error())
 	}
 	sealed, serr := sealAmazonSession(sess)
 	if serr != nil {
-		return apihelpers.InternalErr(h.Logger, c, "amazon session seal failed", serr)
+		return out, fmt.Errorf("amazon session seal failed: %w", serr)
 	}
-	return c.JSON(http.StatusOK, amazonStartResp{AuthorizeURL: authURL, Session: sealed})
+	return amazonStartResp{AuthorizeURL: authURL, Session: sealed}, nil
 }
 
 // ConnectAmazonComplete exchanges the pasted maplanding URL for the device
 // credential and stores it encrypted.
+//
+// The body is bound HERE rather than by the typed seam: the maplanding redirect
+// URL needs the 16 KiB cap this handler has always applied, and the seam's
+// body-binding registrars are hard-wired to apihelpers.BodyLimitSmall (4 KiB).
+// Trading a working connect flow for a request schema is not a trade worth
+// making, so this route registers through apiroute.NoContent (204, no body).
 func (h *Handler) ConnectAmazonComplete(c *echo.Context) error {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return aerr
 	}
 	var req amazonCompleteReq
 	if berr := apihelpers.BindJSONWithLimit(c, &req, 16*1024); berr != nil {
-		return apihelpers.RespondErr(c, berr)
+		return berr
 	}
 	if req.Session == "" || req.RedirectURL == "" {
-		return apihelpers.RespondErr(c, apierr.BadRequest("`session` and `redirectUrl` are required"))
+		return apierr.BadRequest("`session` and `redirectUrl` are required")
 	}
 	sess, oerr := openAmazonSession(req.Session)
 	if oerr != nil {
-		return apihelpers.RespondErr(c, apierr.BadRequest("invalid or expired session — restart Connect Amazon"))
+		return apierr.BadRequest("invalid or expired session — restart Connect Amazon")
 	}
 	cred, rerr := amazon.CompleteRegistration(c.Request().Context(), sess, req.RedirectURL, time.Now())
 	if rerr != nil {
-		return apihelpers.RespondErr(c, apierr.BadRequest(rerr.Error()))
+		return apierr.BadRequest(rerr.Error())
 	}
 	if serr := amazon.NewStore(h.DB).Save(c.Request().Context(), owner, cred); serr != nil {
-		return apihelpers.InternalErr(h.Logger, c, "amazon credential save failed", serr)
+		return fmt.Errorf("amazon credential save failed: %w", serr)
 	}
 	h.Logger.Info("amazon connected", "user", owner, "marketplace", cred.Marketplace)
-	return apihelpers.NoContent(c)
+	return nil
 }
 
 // ImportAmazonAuth stores a device credential parsed from a .audible auth file.
+//
+// Body bound HERE, not by the seam: a .audible auth file carries a PEM device
+// private key + adp_token + website cookies and routinely exceeds the seam's
+// fixed 4 KiB BodyLimitSmall — binding it through apiroute would turn every
+// import into a 413. Registered through apiroute.NoContent (204, no body).
 func (h *Handler) ImportAmazonAuth(c *echo.Context) error {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return aerr
 	}
 	var req amazonImportReq
 	if berr := apihelpers.BindJSONWithLimit(c, &req, 64*1024); berr != nil {
-		return apihelpers.RespondErr(c, berr)
+		return berr
 	}
 	if len(req.AuthFile) == 0 {
-		return apihelpers.RespondErr(c, apierr.BadRequest("`authFile` (the .audible JSON) is required"))
+		return apierr.BadRequest("`authFile` (the .audible JSON) is required")
 	}
 	cred, perr := amazon.ImportAuthFile(req.AuthFile, time.Now())
 	if perr != nil {
-		return apihelpers.RespondErr(c, apierr.BadRequest(perr.Error()))
+		return apierr.BadRequest(perr.Error())
 	}
 	if serr := amazon.NewStore(h.DB).Save(c.Request().Context(), owner, cred); serr != nil {
-		return apihelpers.InternalErr(h.Logger, c, "amazon credential save failed", serr)
+		return fmt.Errorf("amazon credential save failed: %w", serr)
 	}
 	h.Logger.Info("amazon connected (import)", "user", owner, "marketplace", cred.Marketplace)
-	return apihelpers.NoContent(c)
+	return nil
 }
 
 // GetAmazonConnection reports presence/status (never returns the credential).
-func (h *Handler) GetAmazonConnection(c *echo.Context) error {
+func (h *Handler) GetAmazonConnection(c *echo.Context) (amazonConnectionResp, error) {
+	var out amazonConnectionResp
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	info, err := amazon.NewStore(h.DB).Info(c.Request().Context(), owner)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "amazon connection lookup failed", err)
+		return out, fmt.Errorf("amazon connection lookup failed: %w", err)
 	}
 	resp := amazonConnectionResp{Connected: info.Connected}
 	if info.Connected {
@@ -137,39 +151,56 @@ func (h *Handler) GetAmazonConnection(c *echo.Context) error {
 			resp.CheckedAt = &ts
 		}
 	}
-	return c.JSON(http.StatusOK, resp)
+	return resp, nil
 }
 
 // DisconnectAmazon clears the stored credential (idempotent).
 func (h *Handler) DisconnectAmazon(c *echo.Context) error {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return aerr
 	}
 	if err := amazon.NewStore(h.DB).Disconnect(c.Request().Context(), owner); err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "amazon disconnect failed", err)
+		return fmt.Errorf("amazon disconnect failed: %w", err)
 	}
 	h.Logger.Info("amazon disconnected", "user", owner)
-	return apihelpers.NoContent(c)
+	return nil
+}
+
+// ingestSyncResponse is the inline ingest-trigger payload shared by the Audible
+// and Kindle library syncs: how many rows the sweep touched, and which source
+// they came from.
+type ingestSyncResponse struct {
+	Synced int    `json:"synced"`
+	Source string `json:"source"`
+}
+
+// enqueuedJobResponse is the shared 202 payload of every enqueue-style trigger
+// in this package (audible/kindle backfill, kindle reconcile, hardcover
+// pull/match, books sync-all): the job id the UI polls.
+type enqueuedJobResponse struct {
+	Enqueued bool  `json:"enqueued"`
+	JobID    int64 `json:"jobId"`
 }
 
 // SyncAudible triggers an Audible library sync into the siloed reading_items
 // table and returns how many items were synced. This is where the ADP request
 // signing gets verified against real Audible.
-func (h *Handler) SyncAudible(c *echo.Context) error {
+func (h *Handler) SyncAudible(c *echo.Context) (ingestSyncResponse, error) {
+	var out ingestSyncResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	svc := audible.New(h.DB, amazon.NewStore(h.DB), h.Logger)
 	n, err := svc.SyncUser(c.Request().Context(), owner)
 	if err != nil {
 		// Surface the Amazon-side error (status + snippet) so a signing/format
 		// mismatch is debuggable from the UI, exactly like the connect flow.
-		return apihelpers.RespondErr(c, apierr.BadRequest(err.Error()))
+		return out, apierr.BadRequest(err.Error())
 	}
 	h.Logger.Info("audible synced", "user", owner, "items", n)
-	return c.JSON(http.StatusOK, map[string]any{"synced": n, "source": "audible"})
+	return ingestSyncResponse{Synced: n, Source: "audible"}, nil
 }
 
 // BackfillAudible enqueues the one-shot, all-time Audible backfill for the
@@ -177,26 +208,27 @@ func (h *Handler) SyncAudible(c *echo.Context) error {
 // It runs on the jobs worker — the endpoint returns the enqueued job id
 // immediately rather than blocking on a multi-page sweep. Idempotent to enqueue:
 // the backfill itself upserts, so a duplicate run is harmless.
-func (h *Handler) BackfillAudible(c *echo.Context) error {
+func (h *Handler) BackfillAudible(c *echo.Context) (enqueuedJobResponse, error) {
+	var out enqueuedJobResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	if h.JobEnqueuer == nil {
-		return apihelpers.RespondErr(c, apierr.BadRequest("background jobs are not available on this server"))
+		return out, apierr.BadRequest("background jobs are not available on this server")
 	}
 	// Confirm the user actually has an Amazon credential before enqueueing, so
 	// the UI gets an immediate, clear error instead of a job that fails later.
 	if _, lerr := amazon.NewStore(h.DB).Load(c.Request().Context(), owner); lerr != nil {
-		return apihelpers.RespondErr(c, apierr.BadRequest("connect Amazon before running a backfill"))
+		return out, apierr.BadRequest("connect Amazon before running a backfill")
 	}
 	id, eerr := h.JobEnqueuer.Enqueue(c.Request().Context(), audible.AudibleBackfillKind, nil,
 		jobs.Owner(owner), jobs.MaxAttempts(1))
 	if eerr != nil {
-		return apihelpers.InternalErr(h.Logger, c, "audible backfill enqueue failed", eerr)
+		return out, fmt.Errorf("audible backfill enqueue failed: %w", eerr)
 	}
 	h.Logger.Info("audible backfill enqueued", "user", owner, "jobId", id)
-	return c.JSON(http.StatusAccepted, map[string]any{"enqueued": true, "jobId": id})
+	return enqueuedJobResponse{Enqueued: true, JobID: id}, nil
 }
 
 // readingItemDTO is the view payload (never the raw source blob). The richer
@@ -293,35 +325,49 @@ func toReadingItemDTO(it db.ReadingItem) readingItemDTO {
 	return d
 }
 
+// readingItemsResponse is GET /api/v1/books/items. items is ALWAYS an array
+// (never null) — the Books table renders it directly.
+type readingItemsResponse struct {
+	Items []readingItemDTO `json:"items"`
+}
+
+// deleteReadingItemsResponse is DELETE /api/v1/books/items: how many rows the
+// wipe removed.
+type deleteReadingItemsResponse struct {
+	Deleted int64 `json:"deleted"`
+}
+
 // GetReadingItems lets the user SEE exactly what book/audiobook data is synced
 // (siloed — one table, never the core models). ?source= filters to audible/kindle.
-func (h *Handler) GetReadingItems(c *echo.Context) error {
+func (h *Handler) GetReadingItems(c *echo.Context) (readingItemsResponse, error) {
+	var resp readingItemsResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return resp, aerr
 	}
 	items, err := h.DB.ListReadingItems(c.Request().Context(), owner, c.QueryParam("source"))
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "reading items list failed", err)
+		return resp, fmt.Errorf("reading items list failed: %w", err)
 	}
 	out := make([]readingItemDTO, 0, len(items))
 	for _, it := range items {
 		out = append(out, toReadingItemDTO(it))
 	}
-	return c.JSON(http.StatusOK, map[string]any{"items": out})
+	return readingItemsResponse{Items: out}, nil
 }
 
 // DeleteReadingItemsHandler wipes the user's synced book data on request
 // (delete-on-request; ?source= scopes to one source, else all). Idempotent.
-func (h *Handler) DeleteReadingItemsHandler(c *echo.Context) error {
+func (h *Handler) DeleteReadingItemsHandler(c *echo.Context) (deleteReadingItemsResponse, error) {
+	var out deleteReadingItemsResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	source := c.QueryParam("source")
 	n, err := h.DB.DeleteReadingItems(c.Request().Context(), owner, source)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "reading items delete failed", err)
+		return out, fmt.Errorf("reading items delete failed: %w", err)
 	}
 	// The Kindle insights snapshot is kindle-scoped, so wipe it too when the
 	// delete covers all sources or Kindle specifically (a best-effort companion —
@@ -332,7 +378,7 @@ func (h *Handler) DeleteReadingItemsHandler(c *echo.Context) error {
 		}
 	}
 	h.Logger.Info("reading items deleted", "user", owner, "source", source, "rows", n)
-	return c.JSON(http.StatusOK, map[string]any{"deleted": n})
+	return deleteReadingItemsResponse{Deleted: n}, nil
 }
 
 // sealAmazonSession encrypts the RegistrationSession into an opaque token so the

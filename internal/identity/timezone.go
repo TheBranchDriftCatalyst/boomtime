@@ -10,7 +10,7 @@ package identity
 
 import (
 	"context"
-	"net/http"
+	"fmt"
 	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
@@ -53,20 +53,21 @@ type timezoneGetResponse struct {
 }
 
 // GetTimezone: GET /api/v1/users/current/timezone.
-func (h *Handler) GetTimezone(c *echo.Context) error {
+func (h *Handler) GetTimezone(c *echo.Context) (timezoneGetResponse, error) {
+	var out timezoneGetResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	raw, err := h.DB.GetUserTimezone(c.Request().Context(), owner)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "timezone lookup failed", err)
+		return out, fmt.Errorf("timezone lookup failed: %w", err)
 	}
 	effective := db.ResolveTimezone(raw, h.Cfg.DefaultTimezone)
-	return c.JSON(http.StatusOK, timezoneGetResponse{
+	return timezoneGetResponse{
 		Timezone:          raw,
 		EffectiveTimezone: effective,
-	})
+	}, nil
 }
 
 // UpdateTimezone: PATCH /api/v1/users/current/timezone.
@@ -75,16 +76,15 @@ func (h *Handler) GetTimezone(c *echo.Context) error {
 // time.LoadLocation (Go's IANA-name gate). A blank/missing value clears the
 // explicit pick, which is the "revert to server default" affordance for the
 // Settings picker.
-func (h *Handler) UpdateTimezone(c *echo.Context) error {
+//
+// boom-bi2: 4 KiB cap. IANA names top out at ~40 chars; a fat body here is just
+// a client bug or an attacker probing — apiroute.PATCH binds under the same
+// BodyLimitSmall cap the hand-rolled BindJSONWithLimit call used to.
+func (h *Handler) UpdateTimezone(c *echo.Context, req timezoneUpdateRequest) (timezoneGetResponse, error) {
+	var out timezoneGetResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
-	}
-	var req timezoneUpdateRequest
-	// boom-bi2: 4 KiB cap. IANA names top out at ~40 chars; a fat body here
-	// is just a client bug or an attacker probing.
-	if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitSmall); aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	// Trim whitespace on the way in — pasted values from the picker can pick
 	// up trailing spaces that break LoadLocation with a "unknown time zone"
@@ -92,11 +92,11 @@ func (h *Handler) UpdateTimezone(c *echo.Context) error {
 	tz := trimTimezoneName(req.Timezone)
 	if tz != "" {
 		if _, err := time.LoadLocation(tz); err != nil {
-			return apihelpers.RespondErr(c, apierr.BadRequest("invalid IANA timezone name"))
+			return out, apierr.BadRequest("invalid IANA timezone name")
 		}
 	}
 	if err := h.DB.SetUserTimezone(c.Request().Context(), owner, tz); err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "timezone update failed", err)
+		return out, fmt.Errorf("timezone update failed: %w", err)
 	}
 	// Rebuilding hb_rollup_daily under the new TZ is required for the fast
 	// path (get_user_activity_rollup.sql) to report user-local buckets — the
@@ -114,10 +114,10 @@ func (h *Handler) UpdateTimezone(c *echo.Context) error {
 	apihelpers.InvalidateOwnerCache(h.Cache, owner)
 	h.Logger.Info("user timezone updated", "user", owner, "timezone", tz)
 	effective := db.ResolveTimezone(tz, h.Cfg.DefaultTimezone)
-	return c.JSON(http.StatusOK, timezoneGetResponse{
+	return timezoneGetResponse{
 		Timezone:          tz,
 		EffectiveTimezone: effective,
-	})
+	}, nil
 }
 
 // trimTimezoneName strips ASCII whitespace only; IANA names never contain

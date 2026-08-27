@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -22,6 +23,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/labstack/echo/v5"
+
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apiroute"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/awards"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/curation"
@@ -210,133 +213,133 @@ func (hz *Harness) Router() *echo.Echo {
 	e := echo.New()
 	h := hz.H
 	// auth — boom-8tn phase 4a: receivers moved to h.Identity (internal/identity).
-	e.POST("/auth/login", h.Identity.Login)
-	e.POST("/auth/register", h.Identity.Register)
-	e.POST("/auth/refresh_token", h.Identity.RefreshToken)
+	apiroute.POSTNoBody(e, "/auth/login", h.Identity.Login)
+	apiroute.POSTNoBody(e, "/auth/register", h.Identity.Register)
+	apiroute.POSTNoBody(e, "/auth/refresh_token", h.Identity.RefreshToken)
 	// curation — boom-8tn phase 5b: receivers moved to h.Curation (internal/curation).
-	e.GET("/api/v1/users/current/curation", hz.Curation.ListCuration)
-	e.POST("/api/v1/users/current/curation", hz.Curation.CreateCuration)
-	e.DELETE("/api/v1/users/current/curation/:id", hz.Curation.DeleteCuration)
-	e.GET("/api/v1/users/current/curation/:id/affected", hz.Curation.CurationAffected)
+	apiroute.GET(e, "/api/v1/users/current/curation", hz.Curation.ListCuration)
+	apiroute.POST(e, "/api/v1/users/current/curation", hz.Curation.CreateCuration)
+	apiroute.NoContent(e, http.MethodDelete, "/api/v1/users/current/curation/:id", hz.Curation.DeleteCuration)
+	apiroute.GET(e, "/api/v1/users/current/curation/:id/affected", hz.Curation.CurationAffected)
 	// boom-d6x.handler: extra curation routes (preview/apply/purge/toggle)
 	// so the full curation cluster is testable via testutil.Router without
 	// per-file re-wiring (which would duplicate + panic).
 	e.GET("/api/v1/users/current/curation/:id/preview", hz.Curation.ApplyRenamePreview)
-	e.POST("/api/v1/users/current/curation/:id/apply", hz.Curation.ApplyRename)
-	e.POST("/api/v1/users/current/curation/:id/purge", hz.Curation.PurgeHidden)
-	e.POST("/api/v1/users/current/curation/:id/toggle", hz.Curation.ToggleCuration)
+	apiroute.POSTNoBody(e, "/api/v1/users/current/curation/:id/apply", hz.Curation.ApplyRename)
+	apiroute.POSTNoBody(e, "/api/v1/users/current/curation/:id/purge", hz.Curation.PurgeHidden)
+	apiroute.POST(e, "/api/v1/users/current/curation/:id/toggle", hz.Curation.ToggleCuration)
 	// labels catalog (public GET + admin CRUD) — boom-8tn phase 5b: hz.Curation.
-	e.GET("/api/v1/labels/catalog", hz.Curation.LabelsCatalog)
+	apiroute.GET(e, "/api/v1/labels/catalog", hz.Curation.LabelsCatalog)
 	e.POST("/api/v1/admin/labels", hz.Curation.AdminCreateLabel)
 	e.PATCH("/api/v1/admin/labels/:id", hz.Curation.AdminUpdateLabel)
-	e.DELETE("/api/v1/admin/labels/:id", hz.Curation.AdminDeleteLabel)
+	apiroute.NoContent(e, http.MethodDelete, "/api/v1/admin/labels/:id", hz.Curation.AdminDeleteLabel)
 	e.PATCH("/api/v1/admin/label-gen-config", hz.Curation.AdminUpdateLabelGenConfig)
 	e.GET("/api/v1/admin/labels/seed.sql", hz.Curation.AdminLabelsSeedSQL)
 	// spaces — boom-8tn phase 2a: receivers moved to h.Spaces (internal/spaces).
-	e.GET("/api/v1/users/current/spaces", hz.Spaces.ListSpaces)
-	e.POST("/api/v1/users/current/spaces", hz.Spaces.CreateSpace)
-	e.GET("/api/v1/users/current/spaces/preview", hz.Spaces.SpacePreview)
-	e.GET("/api/v1/users/current/spaces/:id", hz.Spaces.GetSpace)
-	e.PATCH("/api/v1/users/current/spaces/:id", hz.Spaces.UpdateSpace)
-	e.DELETE("/api/v1/users/current/spaces/:id", hz.Spaces.DeleteSpace)
+	apiroute.GET(e, "/api/v1/users/current/spaces", hz.Spaces.ListSpaces)
+	apiroute.POST(e, "/api/v1/users/current/spaces", hz.Spaces.CreateSpace)
+	apiroute.GET(e, "/api/v1/users/current/spaces/preview", hz.Spaces.SpacePreview)
+	apiroute.GET(e, "/api/v1/users/current/spaces/:id", hz.Spaces.GetSpace)
+	apiroute.NoContentBody(e, http.MethodPatch, "/api/v1/users/current/spaces/:id", hz.Spaces.UpdateSpace)
+	apiroute.NoContent(e, http.MethodDelete, "/api/v1/users/current/spaces/:id", hz.Spaces.DeleteSpace)
 	e.POST("/api/v1/users/current/spaces/:id/rules", hz.Spaces.AddSpaceRule)
-	e.DELETE("/api/v1/users/current/spaces/:id/rules/:rid", hz.Spaces.DeleteSpaceRule)
+	apiroute.NoContent(e, http.MethodDelete, "/api/v1/users/current/spaces/:id/rules/:rid", hz.Spaces.DeleteSpaceRule)
 	// whole-database backup (dump download + destructive restore).
 	// boom-8tn phase 7: receivers moved to h.Admin (internal/admin).
 	e.GET("/api/v1/users/current/db/export", h.Admin.DBExport)
-	e.POST("/api/v1/users/current/db/import", h.Admin.DBImport)
+	apiroute.POSTNoBody(e, "/api/v1/users/current/db/import", h.Admin.DBImport)
 	// stats / aggregations — boom-8tn phase 6: receivers moved to h.Stats
 	// (internal/stats).
 	e.GET("/api/v1/users/current/stats", hz.Stats.Stats)
 	e.GET("/api/v1/users/current/stats/momentum", hz.Stats.Momentum)
 	e.GET("/api/v1/users/current/files", hz.Stats.ActiveFiles)
 	e.GET("/api/v1/users/current/projects/:project", hz.Stats.ProjectStats)
-	e.GET("/api/v1/projects", hz.Stats.ProjectList)
+	apiroute.GET(e, "/api/v1/projects", hz.Stats.ProjectList)
 	// embeddable widgets (auth'd link CRUD + public SVG) — boom-8tn phase 3:
 	// domain lives at internal/widgets; test harness re-points to hz.Widgets.X.
-	e.GET("/api/v1/users/current/widgets/link", hz.Widgets.WidgetLink)
-	e.GET("/api/v1/users/current/widgets/links", hz.Widgets.WidgetLinkList)
-	e.POST("/api/v1/users/current/widgets/link/:id/roll", hz.Widgets.WidgetLinkRoll)
+	apiroute.GET(e, "/api/v1/users/current/widgets/link", hz.Widgets.WidgetLink)
+	apiroute.GET(e, "/api/v1/users/current/widgets/links", hz.Widgets.WidgetLinkList)
+	apiroute.POSTNoBody(e, "/api/v1/users/current/widgets/link/:id/roll", hz.Widgets.WidgetLinkRoll)
 	e.GET("/widget/svg/:uuid/:kind", hz.Widgets.WidgetSvg)
 	// boom-wpb: goals CRUD + toggle + progress (per-goal + batched).
 	// /goals/progress registered BEFORE /goals/:id to win path matching
 	// (Echo picks the first registered match for overlapping patterns).
 	// boom-8tn phase 2b: repointed to the goals-domain handler bag.
-	e.GET("/api/v1/users/current/goals", hz.Goals.ListGoals)
-	e.POST("/api/v1/users/current/goals", hz.Goals.CreateGoal)
-	e.GET("/api/v1/users/current/goals/progress", hz.Goals.GetAllGoalProgress)
-	e.GET("/api/v1/users/current/goals/:id", hz.Goals.GetGoal)
-	e.PATCH("/api/v1/users/current/goals/:id", hz.Goals.UpdateGoal)
-	e.DELETE("/api/v1/users/current/goals/:id", hz.Goals.DeleteGoal)
-	e.POST("/api/v1/users/current/goals/:id/toggle", hz.Goals.ToggleGoal)
-	e.GET("/api/v1/users/current/goals/:id/progress", hz.Goals.GetGoalProgress)
+	apiroute.GET(e, "/api/v1/users/current/goals", hz.Goals.ListGoals)
+	apiroute.POST(e, "/api/v1/users/current/goals", hz.Goals.CreateGoal)
+	apiroute.GET(e, "/api/v1/users/current/goals/progress", hz.Goals.GetAllGoalProgress)
+	apiroute.GET(e, "/api/v1/users/current/goals/:id", hz.Goals.GetGoal)
+	apiroute.PATCH(e, "/api/v1/users/current/goals/:id", hz.Goals.UpdateGoal)
+	apiroute.NoContent(e, http.MethodDelete, "/api/v1/users/current/goals/:id", hz.Goals.DeleteGoal)
+	apiroute.POST(e, "/api/v1/users/current/goals/:id/toggle", hz.Goals.ToggleGoal)
+	apiroute.GET(e, "/api/v1/users/current/goals/:id/progress", hz.Goals.GetGoalProgress)
 	// boom-wpb: heartbeat ingest so we can prove the invalidation hook
 	// (SaveHeartbeats → InvalidateGoalsForOwner) clears cached
 	// progress. Just the bulk endpoint — single- and bulk-shaped
 	// requests go through the same storeAndRespond path.
-	e.POST("/api/v1/users/current/heartbeats.bulk", hz.Ingest.HeartbeatBulk)
+	apiroute.Accepted(e, http.MethodPost, "/api/v1/users/current/heartbeats.bulk", hz.Ingest.HeartbeatBulk)
 	// boom-d6x.handler: full ingest cluster (heartbeat single, workouts,
 	// health samples, explore reads). Wired so the ingest cluster tests
 	// exercise the real HTTP paths without re-registering routes.
-	e.POST("/api/v1/users/current/heartbeats", hz.Ingest.Heartbeat)
-	e.GET("/api/v1/users/current/heartbeats", hz.Ingest.HeartbeatsList)
-	e.GET("/api/v1/users/current/heartbeats/latest", hz.Ingest.HeartbeatsLatest)
-	e.GET("/api/v1/users/current/heartbeats/group", hz.Ingest.HeartbeatsGroup)
-	e.POST("/api/v1/users/current/workouts", hz.Ingest.Workouts)
-	e.POST("/api/v1/users/current/workouts.bulk", hz.Ingest.WorkoutsBulk)
-	e.POST("/api/v1/users/current/health_samples", hz.Ingest.HealthSamples)
-	e.POST("/api/v1/users/current/health_samples.bulk", hz.Ingest.HealthSamplesBulk)
+	apiroute.Accepted(e, http.MethodPost, "/api/v1/users/current/heartbeats", hz.Ingest.Heartbeat)
+	apiroute.GET(e, "/api/v1/users/current/heartbeats", hz.Ingest.HeartbeatsList)
+	apiroute.GET(e, "/api/v1/users/current/heartbeats/latest", hz.Ingest.HeartbeatsLatest)
+	apiroute.GET(e, "/api/v1/users/current/heartbeats/group", hz.Ingest.HeartbeatsGroup)
+	apiroute.Accepted(e, http.MethodPost, "/api/v1/users/current/workouts", hz.Ingest.Workouts)
+	apiroute.Accepted(e, http.MethodPost, "/api/v1/users/current/workouts.bulk", hz.Ingest.WorkoutsBulk)
+	apiroute.Accepted(e, http.MethodPost, "/api/v1/users/current/health_samples", hz.Ingest.HealthSamples)
+	apiroute.Accepted(e, http.MethodPost, "/api/v1/users/current/health_samples.bulk", hz.Ingest.HealthSamplesBulk)
 	// boom-9v4: per-user chibi avatar. Regenerate/status are auth'd
 	// self-only, UserAvatar is public — the harness registers all three
 	// so a single handler test covers the full surface.
 	// boom-8tn phase 4a: receivers moved to h.Identity (internal/identity).
-	e.POST("/api/v1/users/current/avatar/regenerate", h.Identity.RegenerateAvatar)
-	e.GET("/api/v1/users/current/avatar/status", h.Identity.GetAvatarStatus)
+	apiroute.Accepted(e, http.MethodPost, "/api/v1/users/current/avatar/regenerate", h.Identity.RegenerateAvatar)
+	apiroute.GET(e, "/api/v1/users/current/avatar/status", h.Identity.GetAvatarStatus)
 	e.GET("/api/v1/users/:username/avatar", h.Identity.UserAvatar)
 	e.POST("/api/v1/admin/avatar/synthesize-prompt", h.Identity.SynthesizeAvatarPrompt)
 	// boom-hc6.3 + boom-hc6.5.1: server-side award evaluation + historical
 	// backfill. Public/own variants + the backfill entry point.
 	// boom-8tn phase 4b: receivers moved to hz.Awards.* (awards extracted).
-	e.GET("/api/v1/users/current/awards", hz.Awards.OwnAwards)
-	e.GET("/api/public/profile/:slug/awards", hz.Awards.PublicAwards)
-	e.POST("/api/v1/users/current/awards/backfill", hz.Awards.AwardsBackfill)
+	apiroute.GET(e, "/api/v1/users/current/awards", hz.Awards.OwnAwards)
+	apiroute.GET(e, "/api/public/profile/:slug/awards", hz.Awards.PublicAwards)
+	apiroute.POST(e, "/api/v1/users/current/awards/backfill", hz.Awards.AwardsBackfill)
 	// boom-mwp-streaks: streak walker + ledger inspector — needed for the
 	// integration test's ledger-write assertion.
-	e.GET("/api/v1/users/current/awards/streaks", hz.Awards.AwardsStreaks)
-	e.GET("/api/v1/users/current/awards/ledger", hz.Awards.AwardsLedger)
+	apiroute.GET(e, "/api/v1/users/current/awards/streaks", hz.Awards.AwardsStreaks)
+	apiroute.GET(e, "/api/v1/users/current/awards/ledger", hz.Awards.AwardsLedger)
 	// boom-0vp.18 (DRY audit): folded 8 per-file routerWithXxx helpers into
 	// the central Router() below. The per-file builders were 5-11 LOC each,
 	// existed in stdlib + ginkgo pairs (byte-identical), and were the
 	// biggest single source of test-code duplication before this fold.
 	// Every one is now a single route line here.
-	e.POST("/api/v1/users/current/password", h.Identity.ChangePassword) // boom-8tn phase 4a: h.Identity
+	apiroute.NoContentBody(e, http.MethodPost, "/api/v1/users/current/password", h.Identity.ChangePassword) // boom-8tn phase 4a: h.Identity
 	// boom-zp2s: the label-images admin cluster + public label-image GET moved to
 	// internal/boomtime/admin; those suites build their own boomtime-admin router.
 	// boom-8tn phase 3: widget-def CRUD extracted to internal/widgets.
-	e.GET("/api/v1/users/current/widget-defs", hz.Widgets.ListWidgetDefs)
+	apiroute.GET(e, "/api/v1/users/current/widget-defs", hz.Widgets.ListWidgetDefs)
 	e.POST("/api/v1/users/current/widget-defs", hz.Widgets.CreateWidgetDef)
 	e.PATCH("/api/v1/users/current/widget-defs/:name", hz.Widgets.UpdateWidgetDef)
-	e.DELETE("/api/v1/users/current/widget-defs/:name", hz.Widgets.DeleteWidgetDef)
+	apiroute.NoContent(e, http.MethodDelete, "/api/v1/users/current/widget-defs/:name", hz.Widgets.DeleteWidgetDef)
 	e.GET("/widget/svg/:uuid/named", hz.Widgets.WidgetDefSvg)
-	e.GET("/api/v1/logs", h.Meta.ServerLogs)                                   // boom-8tn phase 1: meta domain
-	e.GET("/api/v1/users/current/timezone", h.Identity.GetTimezone)            // boom-8tn phase 4a: h.Identity
-	e.PATCH("/api/v1/users/current/timezone", h.Identity.UpdateTimezone)       // boom-8tn phase 4a: h.Identity
-	e.GET("/api/v1/users/current/profile", h.Identity.GetPublicProfile)        // boom-8tn phase 4a: h.Identity
-	e.PUT("/api/v1/users/current/profile", h.Identity.PutPublicProfile)        // boom-8tn phase 4a: h.Identity
-	e.GET("/api/public/profile/:slug", h.Identity.PublicProfile)               // boom-8tn phase 4a: h.Identity
-	e.GET("/api/public/profile/:slug/og.png", h.Identity.PublicProfileOGImage) // gaka social-card: OG image
+	e.GET("/api/v1/logs", h.Meta.ServerLogs)                                       // boom-8tn phase 1: meta domain
+	apiroute.GET(e, "/api/v1/users/current/timezone", h.Identity.GetTimezone)      // boom-8tn phase 4a: h.Identity
+	apiroute.PATCH(e, "/api/v1/users/current/timezone", h.Identity.UpdateTimezone) // boom-8tn phase 4a: h.Identity
+	apiroute.GET(e, "/api/v1/users/current/profile", h.Identity.GetPublicProfile)  // boom-8tn phase 4a: h.Identity
+	apiroute.PUT(e, "/api/v1/users/current/profile", h.Identity.PutPublicProfile)  // boom-8tn phase 4a: h.Identity
+	e.GET("/api/public/profile/:slug", h.Identity.PublicProfile)                   // boom-8tn phase 4a: h.Identity
+	e.GET("/api/public/profile/:slug/og.png", h.Identity.PublicProfileOGImage)     // gaka social-card: OG image
 	// boom-anh Phase 2: GitHub stats endpoints (authed cache-or-sync + public
 	// cache-only). Registered unconditionally in the test router so the suites
 	// can drive them; production gates them behind Cfg.GithubConnectEnabled().
 	// (The /github connection + disconnect routes are registered by the
 	// github_oauth_test suite itself, so they are NOT registered here to avoid
 	// Echo's duplicate-route panic.)
-	e.GET("/api/v1/users/current/github/stats", h.Identity.GetGithubStats)
+	apiroute.GET(e, "/api/v1/users/current/github/stats", h.Identity.GetGithubStats)
 	e.GET("/api/public/profile/:slug/github/stats", h.Identity.PublicGithubStats)
-	e.GET("/api/v1/users/current/dashboard/:scope", hz.Spaces.GetDashboardLayout)       // boom-8tn phase 2a: moved to h.Spaces
-	e.PUT("/api/v1/users/current/dashboard/:scope", hz.Spaces.PutDashboardLayout)       // boom-8tn phase 2a
-	e.DELETE("/api/v1/users/current/dashboard/:scope", hz.Spaces.DeleteDashboardLayout) // boom-8tn phase 2a
-	e.POST("/api/v1/users/current/wakatime_key", h.Identity.SaveWakatimeKey)            // boom-8tn phase 4a: h.Identity
+	apiroute.GET(e, "/api/v1/users/current/dashboard/:scope", hz.Spaces.GetDashboardLayout)                             // boom-8tn phase 2a: moved to h.Spaces
+	e.PUT("/api/v1/users/current/dashboard/:scope", hz.Spaces.PutDashboardLayout)                                       // boom-8tn phase 2a
+	apiroute.NoContent(e, http.MethodDelete, "/api/v1/users/current/dashboard/:scope", hz.Spaces.DeleteDashboardLayout) // boom-8tn phase 2a
+	apiroute.NoContentBody(e, http.MethodPost, "/api/v1/users/current/wakatime_key", h.Identity.SaveWakatimeKey)        // boom-8tn phase 4a: h.Identity
 	// boom-zp2s: label-images admin cluster moved to internal/boomtime/admin; its
 	// suites build their own boomtime-admin router (no longer mirrored here).
 	// boom-d6x.handler misc cluster: routes previously only in the production
@@ -347,21 +350,21 @@ func (hz *Harness) Router() *echo.Echo {
 	e.GET("/healthz", h.Meta.Healthz)
 	e.GET("/api/v1/version", h.Meta.Version)
 	e.GET("/api/v1/changelog", h.Meta.Changelog)
-	e.GET("/api/v1/users/current/heartbeats/entities", hz.Ingest.ListEntitiesByType)
-	e.POST("/api/v1/users/current/heartbeats/entities/redact", hz.Ingest.RedactEntities)
+	apiroute.GET(e, "/api/v1/users/current/heartbeats/entities", hz.Ingest.ListEntitiesByType)
+	apiroute.POSTNoBody(e, "/api/v1/users/current/heartbeats/entities/redact", hz.Ingest.RedactEntities)
 	// boom-8tn phase 7: receivers moved to h.Admin (internal/admin).
 	e.GET("/api/v1/users/current/sources/health", h.Admin.SourceHealth)
 	// boom-8tn phase 6: receivers moved to h.Stats (internal/stats).
 	e.GET("/api/v1/users/current/timeline", hz.Stats.Timeline)
-	e.GET("/api/v1/users/current/statusbar/today", hz.Stats.StatusbarToday)
-	e.GET("/api/v1/users/current/derived/status", hz.Stats.DerivedStatus)
-	e.POST("/api/v1/users/current/derived/resync", hz.Stats.DerivedResync)
+	apiroute.GET(e, "/api/v1/users/current/statusbar/today", hz.Stats.StatusbarToday)
+	apiroute.GET(e, "/api/v1/users/current/derived/status", hz.Stats.DerivedStatus)
+	apiroute.POSTNoBody(e, "/api/v1/users/current/derived/resync", hz.Stats.DerivedResync)
 	// boom-8tn phase 3: badges extracted to internal/widgets.
-	e.GET("/badge/link/:project", hz.Widgets.BadgeLink)
+	apiroute.GET(e, "/badge/link/:project", hz.Widgets.BadgeLink)
 	e.GET("/badge/svg/:svg", hz.Widgets.BadgeSvg)
 	// boom-8tn phase 6: leaderboards + commits moved to hz.Stats.
 	e.GET("/api/v1/leaderboards", hz.Stats.Leaderboards)
-	e.GET("/api/v1/commits/:project/report", hz.Stats.Commits)
+	apiroute.GET(e, "/api/v1/commits/:project/report", hz.Stats.Commits)
 	// boom-174.q: cross-domain query DSL endpoint. Mirrors the production
 	// registration (queryapi.Register) so the HTTP suites can drive it.
 	e.POST("/api/v1/query", h.Query.RunQuery)

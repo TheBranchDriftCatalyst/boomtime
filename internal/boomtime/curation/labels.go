@@ -37,27 +37,37 @@ import (
 	"github.com/labstack/echo/v5"
 )
 
+// labelsCatalogResponse is GET /api/v1/labels/catalog.
+type labelsCatalogResponse struct {
+	// SystemPrompt is the global authored prompt fragment — the admin editor
+	// uses it for the "preview effective prompt" hint.
+	SystemPrompt string `json:"systemPrompt"`
+	// Labels is what the FE's evaluator consumes.
+	Labels []db.Label `json:"labels"`
+}
+
 // LabelsCatalog: GET /api/v1/labels/catalog (PUBLIC).
 // Response: {systemPrompt: string, labels: [Label]}. The FE's evaluator
 // consumes labels; the admin editor also uses systemPrompt for the
 // "preview effective prompt" hint.
-func (h *Handler) LabelsCatalog(c *echo.Context) error {
+func (h *Handler) LabelsCatalog(c *echo.Context) (labelsCatalogResponse, error) {
+	var out labelsCatalogResponse
 	ctx := c.Request().Context()
 	labels, err := h.DB.ListLabels(ctx)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "labels list failed", err)
+		return out, fmt.Errorf("labels list failed: %w", err)
 	}
 	systemPrompt, err := h.DB.GetGenConfig(ctx)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "label gen-config load failed", err)
+		return out, fmt.Errorf("label gen-config load failed: %w", err)
 	}
 	// Short TTL — the catalog changes rarely but when the admin does edit
 	// a row we want the change visible within a minute.
 	c.Response().Header().Set("Cache-Control", "public, max-age=60")
-	return c.JSON(http.StatusOK, map[string]any{
-		"systemPrompt": systemPrompt,
-		"labels":       labels,
-	})
+	return labelsCatalogResponse{
+		SystemPrompt: systemPrompt,
+		Labels:       labels,
+	}, nil
 }
 
 // labelBody is the request shape for PATCH/POST admin/labels. Fields default
@@ -213,15 +223,15 @@ func (h *Handler) AdminUpdateLabel(c *echo.Context) error {
 // out-live their catalog entry.
 func (h *Handler) AdminDeleteLabel(c *echo.Context) error {
 	if _, aerr := h.requireAdmin(c); aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return aerr
 	}
 	id := c.Param("id")
 	if id == "" {
-		return apihelpers.RespondErr(c, apierr.BadRequest("missing label id in URL"))
+		return apierr.BadRequest("missing label id in URL")
 	}
 	ctx := c.Request().Context()
 	if err := h.DB.DeleteLabel(ctx, id); err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "label delete failed", err)
+		return fmt.Errorf("label delete failed: %w", err)
 	}
 	// Best-effort: cascade the image row. A failure here doesn't block
 	// the DELETE — the catalog row is already gone and orphan image bytes
@@ -230,7 +240,8 @@ func (h *Handler) AdminDeleteLabel(c *echo.Context) error {
 		h.Logger.Warn("label image cascade delete failed",
 			"id", id, "err", err)
 	}
-	return c.NoContent(http.StatusNoContent)
+	// 204 is written by the apiroute seam (apiroute.NoContent).
+	return nil
 }
 
 // genConfigBody is the request shape for PATCH admin/label-gen-config.

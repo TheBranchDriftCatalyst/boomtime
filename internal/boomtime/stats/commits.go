@@ -18,10 +18,11 @@ import (
 const defaultNumOfCommits int64 = 40
 
 // Commits: GET /api/v1/commits/:project/report?repoName&repoOwner&user&limit.
-func (h *Handler) Commits(c *echo.Context) error {
+func (h *Handler) Commits(c *echo.Context) (model.CommitReport, error) {
+	var out model.CommitReport
 	username, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	project := c.Param("project")
 	repoName := c.QueryParam("repoName")
@@ -29,17 +30,17 @@ func (h *Handler) Commits(c *echo.Context) error {
 	user := c.QueryParam("user")
 
 	if repoName == "" {
-		return apihelpers.RespondErr(c, apierr.MissingQueryParam("repoName"))
+		return out, apierr.MissingQueryParam("repoName")
 	}
 	if repoOwner == "" {
-		return apihelpers.RespondErr(c, apierr.MissingQueryParam("repoOwner"))
+		return out, apierr.MissingQueryParam("repoOwner")
 	}
 	if user == "" {
-		return apihelpers.RespondErr(c, apierr.MissingQueryParam("user"))
+		return out, apierr.MissingQueryParam("user")
 	}
 
 	if h.Cfg.GithubTokenValue() == "" {
-		return apihelpers.RespondErr(c, apierr.MissingGithubToken())
+		return out, apierr.MissingGithubToken()
 	}
 
 	numCommits := apihelpers.QueryInt64(c, "limit", defaultNumOfCommits)
@@ -47,9 +48,11 @@ func (h *Handler) Commits(c *echo.Context) error {
 	// Fetch one extra commit: the last commit's time cannot be computed.
 	repoCommits, err := h.fetchCommits(repoOwner, repoName, numCommits+1)
 	if err != nil {
+		// Kept explicit: GenericHTTP is an *apierr.Error, so the seam renders it
+		// without logging — dropping this Warn would lose the upstream cause.
 		h.Logger.Warn("github commit fetch failed", "err", err)
 		msg := "HTTP call to api.github.com failed"
-		return apihelpers.RespondErr(c, apierr.GenericHTTP(msg, nil))
+		return out, apierr.GenericHTTP(msg, nil)
 	}
 
 	// Filter to the user's non-merge commits.
@@ -77,7 +80,7 @@ func (h *Handler) Commits(c *echo.Context) error {
 	if len(users) > 0 {
 		timeSpent, err = h.DB.GetTotalTimeBetween(ctx, users, projects, mins, maxs)
 		if err != nil {
-			return apihelpers.InternalErr(h.Logger, c, "commit time aggregation failed", err)
+			return out, fmt.Errorf("commit time aggregation failed: %w", err)
 		}
 	}
 
@@ -103,7 +106,7 @@ func (h *Handler) Commits(c *echo.Context) error {
 		result = result[:numCommits]
 	}
 
-	return c.JSON(http.StatusOK, model.CommitReport{Commits: result})
+	return model.CommitReport{Commits: result}, nil
 }
 
 // fetchCommits queries the GitHub commits API for a repo.

@@ -9,7 +9,7 @@ package ingest
 
 import (
 	"errors"
-	"net/http"
+	"fmt"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
@@ -43,15 +43,25 @@ var validEntityTypes = map[string]bool{
 	db.EntityTypeURL:    true,
 }
 
+// listEntitiesResponse is the 200 body for ListEntitiesByType.
+type listEntitiesResponse struct {
+	// Entities is one row per distinct non-empty entity value, count desc.
+	Entities []db.EntitySummary `json:"entities"`
+	// Truncated reports that the result hit the limit — the FE prompts the
+	// user to filter rather than silently showing a partial list.
+	Truncated bool `json:"truncated"`
+}
+
 // ListEntitiesByType: GET /api/v1/users/current/heartbeats/entities?type=file&limit=500.
-func (h *Handler) ListEntitiesByType(c *echo.Context) error {
+func (h *Handler) ListEntitiesByType(c *echo.Context) (listEntitiesResponse, error) {
+	var out listEntitiesResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	ty := c.QueryParam("type")
 	if !validEntityTypes[ty] {
-		return apihelpers.RespondErr(c, apierr.BadRequest("type must be one of file/app/domain/url"))
+		return out, apierr.BadRequest("type must be one of file/app/domain/url")
 	}
 	limit := int(apihelpers.QueryInt64(c, "limit", entityListDefaultLimit))
 	if limit < 1 {
@@ -63,12 +73,12 @@ func (h *Handler) ListEntitiesByType(c *echo.Context) error {
 
 	entities, truncated, err := h.DB.ListEntitiesByType(c.Request().Context(), owner, ty, limit)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "list entities failed", err)
+		return out, fmt.Errorf("list entities failed: %w", err)
 	}
-	return c.JSON(http.StatusOK, map[string]any{
-		"entities":  entities,
-		"truncated": truncated,
-	})
+	return listEntitiesResponse{
+		Entities:  entities,
+		Truncated: truncated,
+	}, nil
 }
 
 // redactEntitiesBody is the JSON payload for the redact endpoint.
@@ -77,32 +87,41 @@ type redactEntitiesBody struct {
 	Entities []string `json:"entities"`
 }
 
+// redactEntitiesResponse is the 200 body for RedactEntities.
+type redactEntitiesResponse struct {
+	// Redacted is the number of heartbeat rows whose entity column was blanked.
+	Redacted int64 `json:"redacted"`
+}
+
 // RedactEntities: POST /api/v1/users/current/heartbeats/entities/redact?confirm=redact-entities.
 // Body: {ty, entities[]}. Blanks the entity column (”) on every matching row,
 // owner-scoped. The heartbeat still counts toward every other axis; only the
 // entity value is scrubbed. Rollup unaffected (entity isn't a rollup axis).
-func (h *Handler) RedactEntities(c *echo.Context) error {
+func (h *Handler) RedactEntities(c *echo.Context) (redactEntitiesResponse, error) {
+	var out redactEntitiesResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	if c.QueryParam("confirm") != entityRedactConfirm {
-		return apihelpers.RespondErr(c, apierr.BadRequest("missing confirm=redact-entities — this endpoint scrubs the entity column on heartbeat rows"))
+		return out, apierr.BadRequest("missing confirm=redact-entities — this endpoint scrubs the entity column on heartbeat rows")
 	}
 	var body redactEntitiesBody
 	// boom-bi2: 64 KiB cap — batches are bounded to 500 entities; each entity
 	// is a short URL/path/app name. Medium fits comfortably (500 * ~120 chars).
+	// Bound HERE and not by the apiroute seam, which binds at
+	// apihelpers.BodyLimitSmall (4 KiB) — too small for a 500-entity batch.
 	if aerr := apihelpers.BindJSONWithLimit(c, &body, apihelpers.BodyLimitMedium); aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	if !validEntityTypes[body.Ty] {
-		return apihelpers.RespondErr(c, apierr.BadRequest("ty must be one of file/app/domain/url"))
+		return out, apierr.BadRequest("ty must be one of file/app/domain/url")
 	}
 	if len(body.Entities) == 0 {
-		return apihelpers.RespondErr(c, apierr.BadRequest("entities is required and must be non-empty"))
+		return out, apierr.BadRequest("entities is required and must be non-empty")
 	}
 	if len(body.Entities) > entityRedactBatchMax {
-		return apihelpers.RespondErr(c, apierr.BadRequest("entities batch too large; redact in chunks of at most 500"))
+		return out, apierr.BadRequest("entities batch too large; redact in chunks of at most 500")
 	}
 
 	redacted, err := h.DB.RedactEntities(c.Request().Context(), owner, body.Ty, body.Entities)
@@ -113,11 +132,11 @@ func (h *Handler) RedactEntities(c *echo.Context) error {
 		// a time".
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return apihelpers.RespondErr(c, apierr.BadRequest("timestamp collision: two of the selected entities share the same (sender, time_sent). Try redacting one entity at a time."))
+			return out, apierr.BadRequest("timestamp collision: two of the selected entities share the same (sender, time_sent). Try redacting one entity at a time.")
 		}
-		return apihelpers.InternalErr(h.Logger, c, "redact entities failed", err)
+		return out, fmt.Errorf("redact entities failed: %w", err)
 	}
 	// Aggregations grouped by entity are stale; explore views need refresh.
 	apihelpers.InvalidateOwnerCache(h.Cache, owner)
-	return c.JSON(http.StatusOK, map[string]any{"redacted": redacted})
+	return redactEntitiesResponse{Redacted: redacted}, nil
 }

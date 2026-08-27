@@ -21,6 +21,7 @@
 package identity
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -145,14 +146,15 @@ type githubConnectionResponse struct {
 // GetGithubConnection: GET /api/v1/users/current/github — reports whether the
 // caller has connected GitHub, the captured login, and the last-known status.
 // Authed via the normal access token (XHR from the FE). Never returns the token.
-func (h *Handler) GetGithubConnection(c *echo.Context) error {
+func (h *Handler) GetGithubConnection(c *echo.Context) (githubConnectionResponse, error) {
+	var out githubConnectionResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	info, err := h.DB.GetGithubTokenInfo(c.Request().Context(), owner)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "github connection lookup failed", err)
+		return out, fmt.Errorf("github connection lookup failed: %w", err)
 	}
 	resp := githubConnectionResponse{Connected: info.Connected}
 	if info.Connected {
@@ -163,7 +165,7 @@ func (h *Handler) GetGithubConnection(c *echo.Context) error {
 			resp.CheckedAt = &ts
 		}
 	}
-	return c.JSON(http.StatusOK, resp)
+	return resp, nil
 }
 
 // DisconnectGithub: DELETE /api/v1/users/current/github — clear any stored
@@ -172,16 +174,16 @@ func (h *Handler) GetGithubConnection(c *echo.Context) error {
 func (h *Handler) DisconnectGithub(c *echo.Context) error {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return aerr
 	}
 	if err := h.DB.ClearEncryptedGithubToken(c.Request().Context(), owner); err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "github disconnect failed", err)
+		return fmt.Errorf("github disconnect failed: %w", err)
 	}
 	// boom-anh Phase 2: also drop the stats cache so a stale row can't outlive
 	// the token that produced it (and so a re-connect starts clean).
 	if err := h.DB.ClearGithubStatsCache(c.Request().Context(), owner); err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "github stats cache clear failed", err)
+		return fmt.Errorf("github stats cache clear failed: %w", err)
 	}
 	h.Logger.Info("github disconnected", "user", owner)
-	return apihelpers.NoContent(c)
+	return nil
 }

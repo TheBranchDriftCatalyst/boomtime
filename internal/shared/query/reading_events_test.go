@@ -45,7 +45,7 @@ func TestReadingEvents_GroupByDims_Compile(t *testing.T) {
 		"origin": "origin",
 		"source": "source",
 		"series": "series",
-		"author": "authors",                          // reading_items.authors
+		"author": "authors",                           // reading_items.authors
 		"genre":  "genres->>0",                        // first jsonb element
 		"status": "COALESCE(status_override, status)", // effective status
 		"title":  "title",

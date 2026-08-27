@@ -28,6 +28,7 @@ package identity
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -113,14 +114,15 @@ func (h *Handler) probeWakatimeKey(ctx context.Context, owner, plaintext string)
 // the caller has a saved encrypted Wakatime key on file and the last-known
 // validity + check timestamp. Deliberately does NOT include the key or any
 // prefix of the plaintext.
-func (h *Handler) GetWakatimeKey(c *echo.Context) error {
+func (h *Handler) GetWakatimeKey(c *echo.Context) (wakatimeKeyGetResponse, error) {
+	var out wakatimeKeyGetResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	info, err := h.DB.GetWakatimeKeyInfo(c.Request().Context(), owner)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "wakatime key lookup failed", err)
+		return out, fmt.Errorf("wakatime key lookup failed: %w", err)
 	}
 	resp := wakatimeKeyGetResponse{HasSavedKey: info.HasSavedKey}
 	if info.HasSavedKey {
@@ -131,7 +133,7 @@ func (h *Handler) GetWakatimeKey(c *echo.Context) error {
 			resp.CheckedAt = &ts
 		}
 	}
-	return c.JSON(http.StatusOK, resp)
+	return resp, nil
 }
 
 // SaveWakatimeKey: POST /api/v1/users/current/wakatime_key — probe wakatime.com
@@ -143,20 +145,18 @@ func (h *Handler) GetWakatimeKey(c *echo.Context) error {
 // Body: {"key": "<raw wakatime api key>"}. A blank key is rejected as 400 so
 // clients don't accidentally clobber a saved key with an empty POST — use
 // DELETE for that.
-func (h *Handler) SaveWakatimeKey(c *echo.Context) error {
+//
+// boom-bi2: 4 KiB cap — the body is a single opaque key string; anything larger
+// cannot be a real Wakatime API key and just wastes memory before the encrypt
+// step. apiroute.NoContentBody binds under the same BodyLimitSmall cap the
+// hand-rolled BindJSONWithLimit call used to.
+func (h *Handler) SaveWakatimeKey(c *echo.Context, req wakatimeKeySaveRequest) error {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
-	}
-	var req wakatimeKeySaveRequest
-	// boom-bi2: 4 KiB cap — the body is a single opaque key string; anything
-	// larger cannot be a real Wakatime API key and just wastes memory before
-	// the encrypt step.
-	if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitSmall); aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return aerr
 	}
 	if req.Key == "" {
-		return apihelpers.RespondErr(c, apierr.BadRequest("key is required (use DELETE to clear)"))
+		return apierr.BadRequest("key is required (use DELETE to clear)")
 	}
 
 	// Validate against wakatime.com BEFORE writing. Rejecting an invalid key
@@ -165,19 +165,19 @@ func (h *Handler) SaveWakatimeKey(c *echo.Context) error {
 	// value.
 	status := h.probeWakatimeKey(c.Request().Context(), owner, req.Key)
 	if status == db.WakatimeKeyStatusInvalid {
-		return apihelpers.RespondErr(c, apierr.BadRequest("Wakatime rejected this key — check it and try again."))
+		return apierr.BadRequest("Wakatime rejected this key — check it and try again.")
 	}
 
 	ct, err := auth.Encrypt([]byte(req.Key))
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "wakatime key encrypt failed", err)
+		return fmt.Errorf("wakatime key encrypt failed: %w", err)
 	}
 	if err := h.DB.SetEncryptedWakatimeKey(c.Request().Context(), owner, ct, status); err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "wakatime key persist failed", err)
+		return fmt.Errorf("wakatime key persist failed: %w", err)
 	}
 	// Log the fact of a save (no value, no length). Status stays high-level.
 	h.Logger.Info("wakatime key saved", "user", owner, "hasSavedWakatimeKey", true, "status", string(status))
-	return apihelpers.NoContent(c)
+	return nil
 }
 
 // DeleteWakatimeKey: DELETE /api/v1/users/current/wakatime_key — clear any
@@ -186,11 +186,11 @@ func (h *Handler) SaveWakatimeKey(c *echo.Context) error {
 func (h *Handler) DeleteWakatimeKey(c *echo.Context) error {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return aerr
 	}
 	if err := h.DB.ClearEncryptedWakatimeKey(c.Request().Context(), owner); err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "wakatime key clear failed", err)
+		return fmt.Errorf("wakatime key clear failed: %w", err)
 	}
 	h.Logger.Info("wakatime key cleared", "user", owner)
-	return apihelpers.NoContent(c)
+	return nil
 }

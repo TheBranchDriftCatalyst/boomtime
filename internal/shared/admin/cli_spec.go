@@ -12,11 +12,8 @@
 package admin
 
 import (
-	"net/http"
-
 	"github.com/labstack/echo/v5"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/climeta"
 )
 
@@ -26,9 +23,10 @@ type cliSpecResponse struct {
 }
 
 // CLISpec returns the runnable-command catalog for the admin CLI-runner.
-func (h *Handler) CLISpec(c *echo.Context) error {
+func (h *Handler) CLISpec(c *echo.Context) (cliSpecResponse, error) {
+	var out cliSpecResponse
 	if _, aerr := h.requireAdmin(c); aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
-	return c.JSON(http.StatusOK, cliSpecResponse{Commands: climeta.BuildSpecs(h.Cfg)})
+	return cliSpecResponse{Commands: climeta.BuildSpecs(h.Cfg)}, nil
 }

@@ -10,7 +10,14 @@
 // changing any of them is out of scope for phase 5b.
 package curation
 
-import "github.com/labstack/echo/v5"
+import (
+	"net/http"
+
+	"github.com/labstack/echo/v5"
+
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apiroute"
+)
 
 // Register wires the curation-domain endpoints onto e. Handler must be
 // non-nil. Registration order preserves the pre-refactor sequence inside
@@ -41,24 +48,43 @@ func Register(e *echo.Echo, h *Handler) {
 	// Curation rules (owner-scoped CRUD + destructive path triplet + toggle).
 	// /preview registered BEFORE /:id so the static suffix wins against
 	// Echo's param matcher.
-	e.GET("/api/v1/users/current/curation", h.ListCuration)
-	e.POST("/api/v1/users/current/curation", h.CreateCuration)
-	e.DELETE("/api/v1/users/current/curation/:id", h.DeleteCuration)
-	e.GET("/api/v1/users/current/curation/:id/affected", h.CurationAffected)
+	apiroute.GET(e, "/api/v1/users/current/curation", h.ListCuration)
+	// BodyLimitMedium (64 KiB): a curation rule can carry a long condition blob,
+	// and this endpoint bound at Medium before the seam.
+	apiroute.POSTLimit(e, "/api/v1/users/current/curation", apihelpers.BodyLimitMedium, h.CreateCuration)
+	apiroute.NoContent(e, http.MethodDelete, "/api/v1/users/current/curation/:id", h.DeleteCuration)
+	apiroute.GET(e, "/api/v1/users/current/curation/:id/affected", h.CurationAffected)
+	// NOT on the typed seam: /preview answers two DIFFERENT payload shapes
+	// discriminated on `action` — the rename branch carries
+	// sqlUpdate/sqlDelete with []db.AffectedRowDiff rows, the hide branch
+	// carries sqlDeleteRows/sqlDeleteRule with []db.PurgeRowDiff rows. One
+	// Go struct cannot express both honestly (`affectedRows` has a different
+	// element TYPE per branch), so it stays on plain echo rather than being
+	// flattened into a type that lies.
 	e.GET("/api/v1/users/current/curation/:id/preview", h.ApplyRenamePreview)
-	e.POST("/api/v1/users/current/curation/:id/apply", h.ApplyRename)
-	e.POST("/api/v1/users/current/curation/:id/purge", h.PurgeHidden)
+	apiroute.POSTNoBody(e, "/api/v1/users/current/curation/:id/apply", h.ApplyRename)
+	apiroute.POSTNoBody(e, "/api/v1/users/current/curation/:id/purge", h.PurgeHidden)
 	// boom-dfd: pause/resume a rule without deleting it. Body optional —
 	// empty POST flips, {"enabled":true|false} sets an exact value.
-	e.POST("/api/v1/users/current/curation/:id/toggle", h.ToggleCuration)
+	apiroute.POST(e, "/api/v1/users/current/curation/:id/toggle", h.ToggleCuration)
 
 	// boom-364.3: DB-backed labels catalog. Public GET returns the whole
 	// catalog for the FE evaluator + admin table; admin CRUD lets a
 	// whitelisted operator edit labels + the global gen-config live.
-	e.GET("/api/v1/labels/catalog", h.LabelsCatalog)
+	apiroute.GET(e, "/api/v1/labels/catalog", h.LabelsCatalog)
+	// NOT on the typed seam — the three body-binding admin routes below keep
+	// h.requireAdmin BEFORE the body read (see the package doc in handler.go:
+	// "a non-admin request never costs a body allocation"). The seam binds
+	// first, which would turn a non-admin's malformed body from 403 into 400
+	// and an oversized one from 403 into 413. POST /admin/labels additionally
+	// answers 201 Created, which no registrar expresses (POST is 200,
+	// Accepted is 202).
 	e.POST("/api/v1/admin/labels", h.AdminCreateLabel)
 	e.PATCH("/api/v1/admin/labels/:id", h.AdminUpdateLabel)
-	e.DELETE("/api/v1/admin/labels/:id", h.AdminDeleteLabel)
+	// DELETE binds no body, so requireAdmin still runs first — it moves onto
+	// the seam.
+	apiroute.NoContent(e, http.MethodDelete, "/api/v1/admin/labels/:id", h.AdminDeleteLabel)
 	e.PATCH("/api/v1/admin/label-gen-config", h.AdminUpdateLabelGenConfig)
+	// text/plain via c.Blob — off the seam by rule.
 	e.GET("/api/v1/admin/labels/seed.sql", h.AdminLabelsSeedSQL)
 }

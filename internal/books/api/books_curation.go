@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -39,37 +40,35 @@ type curationBody struct {
 }
 
 // SetBookCuration handles PATCH /api/v1/books/items/:externalId/curation?source=.
-func (h *Handler) SetBookCuration(c *echo.Context) error {
+// The body is bound by the typed seam (apiroute.PATCH), which also caps it at
+// apihelpers.BodyLimitSmall — a curation patch is three optional scalars.
+func (h *Handler) SetBookCuration(c *echo.Context, body curationBody) (readingItemDTO, error) {
+	var out readingItemDTO
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 
 	externalID := c.Param("externalId")
 	if externalID == "" {
-		return apierr.New(http.StatusBadRequest, "missing item externalId", nil).Write(c)
+		return out, apierr.New(http.StatusBadRequest, "missing item externalId", nil)
 	}
 	source := c.QueryParam("source")
 	if source == "" {
-		return apierr.New(http.StatusBadRequest, "missing `source` query param (kindle|audible)", nil).Write(c)
-	}
-
-	var body curationBody
-	if err := json.NewDecoder(c.Request().Body).Decode(&body); err != nil {
-		return apierr.New(http.StatusBadRequest, "invalid request body", nil).Write(c)
+		return out, apierr.New(http.StatusBadRequest, "missing `source` query param (kindle|audible)", nil)
 	}
 
 	patch, verr := body.toPatch()
 	if verr != nil {
-		return apierr.New(http.StatusBadRequest, verr.Error(), nil).Write(c)
+		return out, apierr.New(http.StatusBadRequest, verr.Error(), nil)
 	}
 
 	it, err := h.DB.SetReadingItemCuration(c.Request().Context(), owner, source, externalID, patch)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return apierr.New(http.StatusNotFound, "reading item not found", nil).Write(c)
+			return out, apierr.New(http.StatusNotFound, "reading item not found", nil)
 		}
-		return apihelpers.InternalErr(h.Logger, c, "set book curation failed", err)
+		return out, fmt.Errorf("set book curation failed: %w", err)
 	}
 
 	// Enqueue the outbound Hardcover curation push (dry-run-gated). Best-effort: the
@@ -77,7 +76,7 @@ func (h *Handler) SetBookCuration(c *echo.Context) error {
 	// later sync reconciles); never fail the user's write on it.
 	h.enqueueCurationPush(c, owner, it.Source, it.ExternalID)
 
-	return c.JSON(http.StatusOK, toReadingItemDTO(it))
+	return toReadingItemDTO(it), nil
 }
 
 // PushBookToHardcover handles POST /api/v1/books/items/:externalId/push?source=.
@@ -87,6 +86,12 @@ func (h *Handler) SetBookCuration(c *echo.Context) error {
 // (status/finish/rating) mirrors out to Hardcover on demand. This is the per-row
 // "sync this book to Hardcover now" button. Owner-scoped; keyed by owner + ?source=
 // + :externalId. The push itself is dry-run-gated by BOOM_HARDCOVER_DRYRUN.
+//
+// NOT on the typed seam (internal/shared/apiroute), deliberately: this handler
+// answers 200 with the full readingItemDTO on the inline path and 202
+// {"enqueued":true} on the queue fallback. Two statuses AND two shapes cannot be
+// expressed by one (Resp, status) registration, and inventing a merged struct
+// would document a payload the handler never writes. Stays on plain e.POST.
 func (h *Handler) PushBookToHardcover(c *echo.Context) error {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
@@ -140,22 +145,32 @@ func (h *Handler) PushBookToHardcover(c *echo.Context) error {
 // corresponding user_book_read on the user's Hardcover account (dry-run-gated). This
 // is how a user prunes junk/empty reads (or a finish they undid) — the delete
 // propagates both ways. Owner-scoped.
-func (h *Handler) DeleteReadingEvent(c *echo.Context) error {
+
+// deleteReadingEventResponse is DELETE /api/v1/books/reads/:id. hardcoverDeleted
+// reports whether the Hardcover-side user_book_read was pruned too (false when
+// the read did not originate there, or the remote delete was a best-effort miss).
+type deleteReadingEventResponse struct {
+	Deleted          bool `json:"deleted"`
+	HardcoverDeleted bool `json:"hardcoverDeleted"`
+}
+
+func (h *Handler) DeleteReadingEvent(c *echo.Context) (deleteReadingEventResponse, error) {
+	var out deleteReadingEventResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	id, perr := strconv.ParseInt(c.Param("id"), 10, 64)
 	if perr != nil || id <= 0 {
-		return apierr.New(http.StatusBadRequest, "invalid read id", nil).Write(c)
+		return out, apierr.New(http.StatusBadRequest, "invalid read id", nil)
 	}
 
 	origin, externalReadID, ok, err := h.DB.DeleteReadingEvent(c.Request().Context(), owner, id)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "delete reading event failed", err)
+		return out, fmt.Errorf("delete reading event failed: %w", err)
 	}
 	if !ok {
-		return apierr.New(http.StatusNotFound, "read not found", nil).Write(c)
+		return out, apierr.New(http.StatusNotFound, "read not found", nil)
 	}
 
 	// Propagate to Hardcover when the read came from there. Best-effort: the local
@@ -170,7 +185,7 @@ func (h *Handler) DeleteReadingEvent(c *echo.Context) error {
 			}
 		}
 	}
-	return c.JSON(http.StatusOK, map[string]any{"deleted": true, "hardcoverDeleted": hardcoverDeleted})
+	return deleteReadingEventResponse{Deleted: true, HardcoverDeleted: hardcoverDeleted}, nil
 }
 
 // toPatch converts the request body into a db.ReadingItemCurationPatch, decoding

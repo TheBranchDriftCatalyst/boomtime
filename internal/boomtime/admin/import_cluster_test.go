@@ -38,6 +38,7 @@ import (
 
 	boomtimeadmin "github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/admin"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/importer"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apiroute"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
@@ -93,13 +94,13 @@ func newImportDeps(serverKey string) *importDeps {
 
 	e := echo.New()
 	// Full import route surface — one line per handler method under test.
-	e.POST("/api/v1/users/current/import", bh.ImportRequest)
-	e.GET("/api/v1/users/current/import/config", bh.ImportConfig)
+	apiroute.POSTLimit(e, "/api/v1/users/current/import", apiroute.BodyLimitNone, bh.ImportRequest)
+	apiroute.GET(e, "/api/v1/users/current/import/config", bh.ImportConfig)
 	e.POST("/api/v1/users/current/import/wakatime-range", bh.WakatimeRange)
-	e.GET("/api/v1/users/current/import/jobs", bh.ImportJobs)
-	e.GET("/api/v1/users/current/import/jobs/:id", bh.ImportJob)
-	e.POST("/api/v1/users/current/import/jobs/:id/cancel", bh.ImportJobCancel)
-	e.GET("/api/v1/users/current/import/jobs/:id/logs", bh.ImportJobLogs)
+	apiroute.GET(e, "/api/v1/users/current/import/jobs", bh.ImportJobs)
+	apiroute.GET(e, "/api/v1/users/current/import/jobs/:id", bh.ImportJob)
+	apiroute.POSTNoBody(e, "/api/v1/users/current/import/jobs/:id/cancel", bh.ImportJobCancel)
+	apiroute.GET(e, "/api/v1/users/current/import/jobs/:id/logs", bh.ImportJobLogs)
 	e.GET("/api/v1/users/current/import/jobs/:id/ws", bh.ImportJobWS)
 
 	deps := &importDeps{

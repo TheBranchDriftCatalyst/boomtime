@@ -15,7 +15,11 @@
 // registerMiscRoutes but owned by widgets/curation/admin domains.
 package stats
 
-import "github.com/labstack/echo/v5"
+import (
+	"github.com/labstack/echo/v5"
+
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apiroute"
+)
 
 // Register wires the stats-domain endpoints onto e. Handler must be
 // non-nil. Registration order preserves the pre-refactor sequence inside
@@ -47,14 +51,22 @@ import "github.com/labstack/echo/v5"
 //	GET    /api/v1/leaderboards                         (h.Leaderboards)
 //	GET    /api/v1/commits/:project/report              (h.Commits)
 func Register(e *echo.Echo, h *Handler) {
-	// Derived-data health (gap_seconds + rollup status / resync)
-	e.GET("/api/v1/users/current/derived/status", h.DerivedStatus)
-	e.POST("/api/v1/users/current/derived/resync", h.DerivedResync)
+	// Derived-data health (gap_seconds + rollup status / resync).
+	// Typed seam (internal/shared/apiroute): the response TYPE is captured at
+	// registration so the OpenAPI schema is generated from Go rather than
+	// hand-written. Resync takes no request body — its inputs are the caller's
+	// identity alone — hence POSTNoBody.
+	apiroute.GET(e, "/api/v1/users/current/derived/status", h.DerivedStatus)
+	apiroute.POSTNoBody(e, "/api/v1/users/current/derived/resync", h.DerivedResync)
 
 	// Stats
+	// Stats + Timeline stay on plain e.GET: both answer through
+	// apihelpers.CachedJSON, whose compute func() (any, error) erases the
+	// response type at the helper seam (and whose cache-hit path writes a
+	// c.JSONBlob). StatusbarToday answers with a direct c.JSON, so it types.
 	e.GET("/api/v1/users/current/stats", h.Stats)
 	e.GET("/api/v1/users/current/timeline", h.Timeline)
-	e.GET("/api/v1/users/current/statusbar/today", h.StatusbarToday)
+	apiroute.GET(e, "/api/v1/users/current/statusbar/today", h.StatusbarToday)
 
 	// Stats — big-bet aggregations (council visualizations)
 	e.GET("/api/v1/users/current/stats/punchcard", h.Punchcard)
@@ -78,11 +90,11 @@ func Register(e *echo.Echo, h *Handler) {
 
 	// Projects
 	e.GET("/api/v1/users/current/projects/:project", h.ProjectStats)
-	e.GET("/api/v1/projects", h.ProjectList)
+	apiroute.GET(e, "/api/v1/projects", h.ProjectList)
 
 	// Leaderboards
 	e.GET("/api/v1/leaderboards", h.Leaderboards)
 
 	// Commits
-	e.GET("/api/v1/commits/:project/report", h.Commits)
+	apiroute.GET(e, "/api/v1/commits/:project/report", h.Commits)
 }
