@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/labstack/echo/v5"
@@ -166,41 +167,66 @@ func (h *Handler) SweepLiberation(c *echo.Context) error {
 	})
 }
 
+// Response types for the liberation endpoints.
+//
+// These were map[string]any literals. Naming them is not cosmetic: it is what
+// lets the OpenAPI spec carry a real schema, because a map has no shape to
+// reflect. Registering through internal/shared/apiroute captures these types at
+// the call site, so the docs cannot drift from the handler — and the compiler,
+// not a reviewer, is what enforces it.
+
+// liberationStatusResponse is GET /api/v1/books/liberation/status.
+type liberationStatusResponse struct {
+	// Counts is liberation_status -> number of titles.
+	Counts map[string]int `json:"counts"`
+	// Pending is how many titles a sweep would queue right now.
+	Pending int `json:"pending"`
+	// Excluded is how many the sweep will never pick up on its own — a count
+	// only; the rows come from the excluded endpoint when someone opens the list.
+	Excluded int `json:"excluded"`
+	// LibraryPath is where liberated files land, for diagnosing "it says
+	// liberated but I cannot find the file".
+	LibraryPath string `json:"libraryPath"`
+}
+
+// liberationExcludedResponse is GET /api/v1/books/liberation/excluded.
+type liberationExcludedResponse struct {
+	Items []liberate.ExcludedItem `json:"items"`
+}
+
 // LiberationStatus reports the owner's liberation state.
-func (h *Handler) LiberationStatus(c *echo.Context) error {
+func (h *Handler) LiberationStatus(c *echo.Context) (liberationStatusResponse, error) {
+	var out liberationStatusResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	svc := h.liberation()
 	if svc == nil {
-		return apihelpers.RespondErr(c, apierr.BadRequest("liberation is not configured on this server"))
+		return out, apierr.BadRequest("liberation is not configured on this server")
 	}
 	ctx := c.Request().Context()
 
 	counts, cerr := svc.Store.StatusCounts(ctx, owner)
 	if cerr != nil {
-		return apihelpers.InternalErr(h.Logger, c, "liberation: status counts failed", cerr)
+		return out, fmt.Errorf("liberation: status counts failed: %w", cerr)
 	}
 	pending, perr := svc.LiberateAll(ctx, owner, 0)
 	if perr != nil {
-		return apihelpers.InternalErr(h.Logger, c, "liberation: list pending failed", perr)
+		return out, fmt.Errorf("liberation: list pending failed: %w", perr)
 	}
 	excluded, eerr := svc.Store.ListExcluded(ctx, owner)
 	if eerr != nil {
-		return apihelpers.InternalErr(h.Logger, c, "liberation: list excluded failed", eerr)
+		return out, fmt.Errorf("liberation: list excluded failed: %w", eerr)
 	}
-	return c.JSON(http.StatusOK, map[string]any{
-		"counts":  counts,
-		"pending": len(pending),
-		// Count only — the list itself is one request away. The toolbar needs to
-		// know WHETHER to offer the affordance on every load; it needs the rows
-		// only once someone opens it.
-		"excluded": len(excluded),
+	return liberationStatusResponse{
+		Counts:   counts,
+		Pending:  len(pending),
+		Excluded: len(excluded),
 		// The library path is operator information, not a secret, and seeing it
 		// is how you diagnose "it says liberated but I can't find the file".
-		"libraryPath": h.Cfg.BooksLibraryPath,
-	})
+		LibraryPath: h.Cfg.BooksLibraryPath,
+	}, nil
 }
 
 // LiberationExcluded lists the titles the sweep will not pick up on its own.
@@ -210,20 +236,21 @@ func (h *Handler) LiberationStatus(c *echo.Context) error {
 // excluded rows were correctly skipped and completely invisible, which is how
 // three podcasts spent a week being re-requested from Amazon without anyone
 // being able to see them in the UI.
-func (h *Handler) LiberationExcluded(c *echo.Context) error {
+func (h *Handler) LiberationExcluded(c *echo.Context) (liberationExcludedResponse, error) {
+	var out liberationExcludedResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	svc := h.liberation()
 	if svc == nil {
-		return apihelpers.RespondErr(c, apierr.BadRequest("liberation is not configured on this server"))
+		return out, apierr.BadRequest("liberation is not configured on this server")
 	}
 	items, err := svc.Store.ListExcluded(c.Request().Context(), owner)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "liberation: list excluded failed", err)
+		return out, fmt.Errorf("liberation: list excluded failed: %w", err)
 	}
-	return c.JSON(http.StatusOK, map[string]any{"items": items})
+	return liberationExcludedResponse{Items: items}, nil
 }
 
 // liberation returns the shared liberation service, or nil when unavailable.

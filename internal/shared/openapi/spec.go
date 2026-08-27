@@ -34,12 +34,15 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"regexp"
 	"strings"
 	"sync"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/model"
 	"github.com/getkin/kin-openapi/openapi3"
+
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apiroute"
 	"github.com/getkin/kin-openapi/openapi3gen"
 	"github.com/labstack/echo/v5"
 )
@@ -379,6 +382,13 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 	// handful of ad-hoc {"foo": ...} handlers that aren't a model.* type.
 	rInline := func(desc string, schema *openapi3.Schema) *openapi3.ResponseRef {
 		content := openapi3.NewContentWithJSONSchemaRef(&openapi3.SchemaRef{Value: schema})
+		return &openapi3.ResponseRef{Value: &openapi3.Response{Description: &desc, Content: content}}
+	}
+	// rInlineRef: response for an already-built SchemaRef. The typed route seam
+	// hands back refs (nested types are registered into components.schemas by
+	// openapi3gen), so this is the ref-taking sibling of rInline.
+	rInlineRef := func(desc string, ref *openapi3.SchemaRef) *openapi3.ResponseRef {
+		content := openapi3.NewContentWithJSONSchemaRef(ref)
 		return &openapi3.ResponseRef{Value: &openapi3.Response{Description: &desc, Content: content}}
 	}
 	// rBlob: response for a non-JSON media type (svg, changelog markdown, zip).
@@ -1908,17 +1918,45 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 			if item := doc.Paths.Value(p); item != nil && item.GetOperation(method) != nil {
 				continue // hand-authored entry wins
 			}
+			// A route registered through the TYPED SEAM carries its request and
+			// response Go types, so the schema is generated rather than stubbed.
+			// This is the no-drift-by-construction path: the doc and the route
+			// are the same call, so neither can outlive the other.
+			typed, isTyped := apiroute.Lookup(method, rt.Path)
+
 			op := &openapi3.Operation{
 				Tags:    []string{inferAutoTag(p)},
 				Summary: strings.ToUpper(method[:1]) + strings.ToLower(method[1:]) + " " + p,
-				Description: "Auto-derived stub (boom-lfc option A): this route is registered but " +
-					"has no hand-written spec entry, so request/response bodies are undocumented. " +
-					"Add an explicit doc.AddOperation entry in internal/openapi/spec.go to enrich it.",
+			}
+			if !isTyped {
+				op.Description = "Auto-derived stub: this route is registered but is not on the typed " +
+					"route seam, so its request/response bodies are undocumented. Register it via " +
+					"internal/shared/apiroute to generate real schemas from the Go types."
 			}
 			for _, name := range openAPIPathParams(p) {
 				op.Parameters = append(op.Parameters, pathParamStr(name, "Path parameter."))
 			}
-			setStatus(op, http.StatusOK, rInline("OK.", mapObject()))
+
+			status := http.StatusOK
+			respSchema := mapObject()
+			if isTyped {
+				if typed.Status != 0 {
+					status = typed.Status
+				}
+				if sch := schemaForType(gen, comps.Schemas, typed.Resp); sch != nil {
+					setStatus(op, status, rInlineRef("OK.", sch))
+				} else {
+					setStatus(op, status, rInline("OK.", respSchema))
+				}
+				if sch := schemaForType(gen, comps.Schemas, typed.Req); sch != nil {
+					op.RequestBody = &openapi3.RequestBodyRef{Value: openapi3.NewRequestBody().
+						WithDescription("Request body.").
+						WithRequired(true).
+						WithJSONSchemaRef(sch)}
+				}
+			} else {
+				setStatus(op, status, rInline("OK.", respSchema))
+			}
 			stdErrors(op, "400", "401", "403", "404", "500")
 			doc.AddOperation(p, method, op)
 		}
@@ -2003,4 +2041,25 @@ func itoa(n int) string {
 		n /= 10
 	}
 	return string(buf[i:])
+}
+
+// schemaForType turns a captured reflect.Type into a schema ref using the SAME
+// openapi3gen instance as the hand-registered models, so nested types land in
+// components.schemas once and are shared rather than duplicated inline.
+//
+// openapi3gen is VALUE-based, so a zero value is constructed via reflect.New —
+// `var zero T` would be a nil map/slice/pointer for those kinds and reflect
+// poorly. Returns nil for a nil type (no body), and on a generation failure,
+// so the caller falls back to the generic object rather than emitting a broken
+// schema that would fail doc.Validate.
+func schemaForType(gen *openapi3gen.Generator, schemas openapi3.Schemas, t reflect.Type) *openapi3.SchemaRef {
+	if t == nil {
+		return nil
+	}
+	sample := reflect.New(t).Elem().Interface()
+	ref, err := gen.NewSchemaRefForValue(sample, schemas)
+	if err != nil || ref == nil {
+		return nil
+	}
+	return ref
 }

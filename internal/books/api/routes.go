@@ -1,6 +1,10 @@
 package api
 
-import "github.com/labstack/echo/v5"
+import (
+	"github.com/labstack/echo/v5"
+
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apiroute"
+)
 
 // Register mounts the catalyst-books HTTP surface (boom-zp2s Phase 2). Extracted
 // verbatim from internal/identity/routes.go — same routes, same order, same
@@ -57,8 +61,12 @@ func Register(e *echo.Echo, h *Handler) {
 			e.POST("/api/v1/books/items/:externalId/liberate", h.LiberateBook)
 			e.DELETE("/api/v1/books/items/:externalId/liberate", h.ForgetLiberation)
 			e.POST("/api/v1/books/liberate/sweep", h.SweepLiberation)
-			e.GET("/api/v1/books/liberation/status", h.LiberationStatus)
-			e.GET("/api/v1/books/liberation/excluded", h.LiberationExcluded)
+			// Typed seam (internal/shared/apiroute): the response TYPE is
+			// captured here, so the OpenAPI schema is generated from Go rather
+			// than hand-written. Registering these with plain e.GET no longer
+			// compiles — which is the point.
+			apiroute.GET(e, "/api/v1/books/liberation/status", h.LiberationStatus)
+			apiroute.GET(e, "/api/v1/books/liberation/excluded", h.LiberationExcluded)
 		}
 	}
 
