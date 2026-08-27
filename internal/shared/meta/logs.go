@@ -2,7 +2,6 @@ package meta
 
 import (
 	"context"
-	"net/http"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
@@ -13,6 +12,14 @@ import (
 	"github.com/labstack/echo/v5"
 )
 
+// serverLogsResponse is the JSON shape returned by GET /api/v1/logs. The single
+// "logs" key matches the pre-seam map[string]any envelope byte for byte — the FE
+// log viewer reads response.logs, so the key is load-bearing. Logs is never null:
+// ServerLogs substitutes an empty slice so the client can iterate unconditionally.
+type serverLogsResponse struct {
+	Logs []logging.LogEntry `json:"logs"`
+}
+
 // ServerLogs: GET /api/v1/logs?afterId=<n> — REST tail fallback for the server's
 // own log records (from the in-memory LogHub ring buffer). Owner-gated via the
 // standard Authorization header.
@@ -21,10 +28,10 @@ import (
 // logging.FilterForUser so records tagged with a different owner (via slog's
 // "user" attribute) are dropped BEFORE the response is built. Server-scope
 // records (no owner tag) still fan out to every authenticated viewer.
-func (h *Handler) ServerLogs(c *echo.Context) error {
+func (h *Handler) ServerLogs(c *echo.Context) (serverLogsResponse, error) {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return serverLogsResponse{}, aerr
 	}
 	afterID := apihelpers.QueryInt64(c, "afterId", 0)
 	var logs []logging.LogEntry
@@ -34,7 +41,7 @@ func (h *Handler) ServerLogs(c *echo.Context) error {
 	if logs == nil {
 		logs = []logging.LogEntry{}
 	}
-	return c.JSON(http.StatusOK, map[string]any{"logs": logs})
+	return serverLogsResponse{Logs: logs}, nil
 }
 
 // ServerLogsWS: GET /api/v1/logs/ws?afterId=<n> — live, resumable stream of

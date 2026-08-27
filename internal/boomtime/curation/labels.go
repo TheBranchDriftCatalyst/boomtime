@@ -249,6 +249,13 @@ type genConfigBody struct {
 	SystemPrompt *string `json:"systemPrompt,omitempty"`
 }
 
+// genConfigResponse is the echo-back body of PATCH admin/label-gen-config.
+// Named (it was an inline map[string]any) so the OpenAPI spec can describe the
+// one key it carries; the encoded bytes are identical either way.
+type genConfigResponse struct {
+	SystemPrompt string `json:"systemPrompt"`
+}
+
 // AdminUpdateLabelGenConfig: PATCH /api/v1/admin/label-gen-config.
 // Body: {systemPrompt: string}. Empty string clears the prompt — the
 // worker treats "" as "no prefix" and sends only the per-label
@@ -267,9 +274,7 @@ func (h *Handler) AdminUpdateLabelGenConfig(c *echo.Context) error {
 	if err := h.DB.SetGenConfig(c.Request().Context(), *body.SystemPrompt); err != nil {
 		return apihelpers.InternalErr(h.Logger, c, "label gen-config update failed", err)
 	}
-	return c.JSON(http.StatusOK, map[string]any{
-		"systemPrompt": *body.SystemPrompt,
-	})
+	return c.JSON(http.StatusOK, genConfigResponse{SystemPrompt: *body.SystemPrompt})
 }
 
 // AdminLabelsSeedSQL: GET /api/v1/admin/labels/seed.sql.

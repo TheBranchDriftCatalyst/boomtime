@@ -46,17 +46,20 @@ type readingMonitorView struct {
 
 // AdminBooksReadingMonitorGet: GET /api/v1/admin/books/reading-monitor — report
 // the caller's persistent-monitor settings + current engine state.
-func (h *Handler) AdminBooksReadingMonitorGet(c *echo.Context) error {
+func (h *Handler) AdminBooksReadingMonitorGet(c *echo.Context) (readingMonitorView, error) {
+	var out readingMonitorView
 	owner, aerr := h.requireAdmin(c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	view, err := h.readingMonitorView(c, owner)
 	if err != nil {
+		// Logged HERE, not left to the seam's generic unhandled-error line, so the
+		// actor stays on the record and the response is the same envelope as before.
 		h.Logger.Error("admin reading-monitor: view failed", "actor", owner, "err", err)
-		return apihelpers.RespondErr(c, apierr.Generic())
+		return out, apierr.Generic()
 	}
-	return c.JSON(http.StatusOK, view)
+	return view, nil
 }
 
 // readingMonitorPutReq is the PUT body: all fields optional (pointers) so a client
@@ -70,6 +73,14 @@ type readingMonitorPutReq struct {
 // AdminBooksReadingMonitorPut: PUT /api/v1/admin/books/reading-monitor — update
 // enabled and/or mode and/or start/stop a calibration burst. Body
 // {enabled?:bool, mode?:'debounced'|'verbose', calibrate?:bool}.
+//
+// Registered through apiroute.GWritesJSON rather than GPUT: this handler binds
+// with plain c.Bind, i.e. UNCAPPED, and GPUT would silently cap it at the seam's
+// 4 KiB default. Shrinking a request contract is a behaviour change, not a
+// documentation change, so the handler keeps its own bind and its own write and
+// the seam only DECLARES the response type (readingMonitorView — the same view
+// the GET returns, which is exactly what this writes). Move it to GPUT only if a
+// GPUTLimit form lands that can express BodyLimitNone.
 func (h *Handler) AdminBooksReadingMonitorPut(c *echo.Context) error {
 	owner, aerr := h.requireAdmin(c)
 	if aerr != nil {
@@ -155,10 +166,11 @@ type rawView struct {
 // diagnostic page's raw heartbeat/position stream for BOTH reading sources. Kindle
 // = recent last-page-read position samples (with derived Δloc + interval); Audible
 // = recent per-day listening buckets. Admin-only.
-func (h *Handler) AdminBooksReadingMonitorRaw(c *echo.Context) error {
+func (h *Handler) AdminBooksReadingMonitorRaw(c *echo.Context) (rawView, error) {
+	var out rawView
 	owner, aerr := h.requireAdmin(c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	ctx := c.Request().Context()
 
@@ -166,7 +178,7 @@ func (h *Handler) AdminBooksReadingMonitorRaw(c *echo.Context) error {
 	positions, err := h.DB.ListRecentKindleReadingPositions(ctx, owner, rawCap)
 	if err != nil {
 		h.Logger.Error("admin reading-monitor raw: kindle positions failed", "actor", owner, "err", err)
-		return apihelpers.RespondErr(c, apierr.Generic())
+		return out, apierr.Generic()
 	}
 
 	// Derive per-book Δlocation + interval by walking each ASIN's samples oldest-
@@ -204,7 +216,7 @@ func (h *Handler) AdminBooksReadingMonitorRaw(c *echo.Context) error {
 	acts, err := h.DB.ListReadingActivity(ctx, owner, "audible", from, to)
 	if err != nil {
 		h.Logger.Error("admin reading-monitor raw: audible activity failed", "actor", owner, "err", err)
-		return apihelpers.RespondErr(c, apierr.Generic())
+		return out, apierr.Generic()
 	}
 	audible := make([]rawAudibleSample, 0, len(acts))
 	for _, a := range acts {
@@ -214,7 +226,7 @@ func (h *Handler) AdminBooksReadingMonitorRaw(c *echo.Context) error {
 		})
 	}
 
-	return c.JSON(http.StatusOK, rawView{Kindle: kindle, Audible: audible})
+	return rawView{Kindle: kindle, Audible: audible}, nil
 }
 
 // readingMonitorView assembles the response from the settings + engine state.

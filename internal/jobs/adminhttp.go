@@ -12,9 +12,13 @@
 // AFTER routes are registered, so Deps hands back live accessors rather than
 // captured values, and the handlers answer 503 until the subsystem is up.
 //
-// Host coupling to port alongside this file: internal/apierr + internal/apihelpers
-// (generic HTTP error/render/bind helpers) and internal/objstore (the blob store
-// interface). None reference the host's auth — that arrives only through Deps.Guard.
+// Host coupling to port alongside this file: internal/shared/apierr +
+// internal/shared/apihelpers (generic HTTP error/render/bind helpers),
+// internal/shared/objstore (the blob store interface), and
+// internal/shared/apiroute (the typed route seam the endpoints declare their
+// response types and prose to, so the OpenAPI spec documents them — see
+// declare). None reference the host's auth: that arrives only through
+// Deps.Guard.
 package jobs
 
 import (
@@ -29,6 +33,7 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apiroute"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/logging"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/objstore"
 )
@@ -85,17 +90,142 @@ type adminAPI struct{ d Deps }
 //	GET    /:id/logs     a finished job's persisted logs
 //	DELETE /:id/logs     wipe ONE job's stored logs
 //	DELETE /logs         bulk-wipe stored logs (?kind= or all)
+//
+// Each mount goes through declare, so registering a route and documenting it are
+// the same call — see declare for why that needs a second, throwaway router.
 func RegisterAdminRoutes(g *echo.Group, d Deps) {
 	a := &adminAPI{d: d}
-	g.GET("", a.list)
-	g.GET("/queues", a.queues)
-	g.GET("/schedules", a.schedules)
-	g.POST("/trigger", a.trigger)
-	g.POST("/:id/retry", a.retry)
-	g.POST("/:id/cancel", a.cancel)
-	g.GET("/:id/logs", a.logs)
-	g.DELETE("/:id/logs", a.logsDelete)
-	g.DELETE("/logs", a.logsClear)
+	s := &adminSpec{g: g, doc: echo.New()}
+
+	declare[jobListResponse](s, http.MethodGet, "", a.list).
+		Doc("Job history",
+			"Most-recent-first page of the jobs table (ORDER BY created_at DESC). "+
+				"?status= and ?kind= filter on exact values and are ignored when blank; "+
+				"?limit= defaults to 50 and is clamped to 500, so this endpoint can never "+
+				"stream the whole table. Each row carries the retry budget (attempts vs "+
+				"maxAttempts) and the last error, which is how an operator tells a job that "+
+				"is still retrying from one that has exhausted its budget. Timestamps are "+
+				"RFC3339 UTC; startedAt and finishedAt are null until the job reaches those "+
+				"stages. Answers 503 while the jobs subsystem is not wired.")
+
+	declare[queueOverviewResponse](s, http.MethodGet, "/queues", a.queues).
+		Doc("Per-kind queue overview",
+			"One row per job kind: live depth (queued, running), the registry's concurrency "+
+				"cap (maxConcurrency, 0 = unlimited), trailing-hour throughput (doneLastHour, "+
+				"failedLastHour, avgDurationMs) and the last run's time + status. Every kind "+
+				"REGISTERED with the worker appears even when it has never run, at zero depth, "+
+				"so an idle kind is still visible; kinds only present in the table also appear. "+
+				"Sorted most-active first — running desc, then queued desc, then trailing-hour "+
+				"volume desc, then kind for a stable order. Answers 503 while the jobs "+
+				"subsystem is not wired.")
+
+	declare[scheduleListResponse](s, http.MethodGet, "/schedules", a.schedules).
+		Doc("Recurring schedules",
+			"Every periodic kind the scheduler owns, ordered by kind, with its interval in "+
+				"whole seconds and its next / last run times (RFC3339 UTC; lastRun is null "+
+				"until the schedule has fired once). This reads the schedule table only — it "+
+				"does not report whether this process currently holds the scheduler's "+
+				"singleton lock. Answers 503 while the jobs subsystem is not wired.")
+
+	declare[enqueuedJobResponse](s, http.MethodPost, "/trigger", a.trigger).
+		Doc("Trigger a job kind",
+			"Enqueues one job of the requested kind and returns the NEW job's id. Body is "+
+				"{\"kind\": \"<registered kind>\"}, capped at 4 KiB; a missing or empty kind "+
+				"is a 400. The job is enqueued with no payload and no owner, so this is the "+
+				"operator's run-it-now button for global kinds — an owner-scoped kind "+
+				"triggered this way fails when it runs. Returns as soon as the row is "+
+				"inserted; it does not wait for execution. Answers 503 while the store or the "+
+				"enqueue provider is not wired. Audit-logged with the acting admin.")
+
+	declare[enqueuedJobResponse](s, http.MethodPost, "/:id/retry", a.retry).
+		Doc("Retry a job",
+			"Enqueues a FRESH job carrying the referenced job's kind, payload, owner and "+
+				"attempt budget, and returns the new job's id — not the id in the path. The "+
+				"original row is never mutated: it stays in the history with its failure, so "+
+				"retrying the same id twice produces two new jobs. 400 on a non-numeric id, "+
+				"404 when the id is unknown, 503 while the store or enqueue provider is not "+
+				"wired. Audit-logged with the acting admin.")
+
+	declare[cancelResponse](s, http.MethodPost, "/:id/cancel", a.cancel).
+		Doc("Cancel a job",
+			"Cooperatively cancels a queued or running job. The durable status flips to "+
+				"cancelled only while the row is still queued or running, and cancelled "+
+				"reports whether that update matched — cancelling an already-finished job "+
+				"answers {cancelled:false} rather than an error. On a successful flip the "+
+				"in-process context for that job is also cancelled, best effort, so a handler "+
+				"that honours ctx stops promptly; wasRunning says whether a live execution was "+
+				"interrupted. A handler that ignores ctx runs to completion regardless. 400 on "+
+				"a non-numeric id, 404 when unknown, 503 while unwired. Audit-logged.")
+
+	declare[jobLogsResponse](s, http.MethodGet, "/:id/logs", a.logs).
+		Doc("Stored job logs",
+			"The durable log copy flushed to object storage when the job finished, as the "+
+				"same entry shape the live log stream emits (id, time, level, msg, flattened "+
+				"attrs, source, host). Use it for a FINISHED job — a queued or running job is "+
+				"followed on the live stream instead. 404 when nothing is stored for that id, "+
+				"which includes the case where log persistence is switched off entirely, so "+
+				"the UI shows an empty state rather than an error. 400 on a non-numeric id. An "+
+				"empty stored blob answers entries: [] and never null.")
+
+	declare[logDeleteResponse](s, http.MethodDelete, "/:id/logs", a.logsDelete).
+		Doc("Clear one job's stored logs",
+			"Destructive, but narrowly: it deletes ONLY the stored log object for this job. "+
+				"The jobs table row and its history are untouched, so the job still appears in "+
+				"the history list afterwards. Idempotent — clearing logs that are not there "+
+				"succeeds. deleted is true when the delete ran against a live object store and "+
+				"false when log persistence is off, i.e. nothing was attempted. 400 on a "+
+				"non-numeric id. Audit-logged with the acting admin.")
+
+	declare[logsClearResponse](s, http.MethodDelete, "/logs", a.logsClear).
+		Doc("Bulk-clear stored job logs",
+			"Destructive: deletes the stored log objects of MANY jobs and returns deleted, "+
+				"the number of objects actually removed. With no query parameter it wipes "+
+				"every object under the job-log prefix. ?kind= narrows the wipe to one kind by "+
+				"resolving that kind's ids from the jobs table first — capped at that kind's "+
+				"500 most recent jobs, so a filtered clear deliberately leaves older log "+
+				"objects behind. Object storage only: no jobs-table row is ever mutated. "+
+				"Answers {deleted:0} when log persistence is off, and for a kind filter when "+
+				"the jobs subsystem is not wired. Audit-logged with the acting admin.")
+}
+
+// adminSpec pairs the host's group with the throwaway router the typed seam
+// needs. Built and discarded inside RegisterAdminRoutes; see declare.
+type adminSpec struct {
+	g   *echo.Group
+	doc *echo.Echo
+}
+
+// declare mounts ONE jobs-admin endpoint and documents it in the same call, so
+// the route and its documentation cannot drift apart:
+//
+//   - for real, onto the host's group at the RELATIVE sub-path. This is
+//     byte-identical to the previous g.<METHOD>(rel, h) — same handler value,
+//     same registration order, same group-level auth middleware, same URL.
+//   - onto internal/shared/apiroute's typed seam, at the ABSOLUTE path echo
+//     hands back from that registration, so the OpenAPI spec generates a real
+//     schema from Resp instead of the {"type":"object"} placeholder every
+//     group-registered route falls back to.
+//
+// WHY THERE IS A SECOND, THROWAWAY ROUTER. apiroute's registrars take an
+// *echo.Echo, and this plugin is deliberately handed an *echo.Group whose parent
+// echo and prefix are unexported — the host owns both, which is the whole point
+// of the seam. s.doc is a router that is never started and never serves a
+// request; it is only the vehicle that records the operation, and it is garbage
+// the moment RegisterAdminRoutes returns (apiroute keeps just the method, path,
+// type and prose). Taking the path from RouteInfo rather than hardcoding
+// "/api/v1/admin/jobs" keeps the plugin portable: a host that mounts it
+// elsewhere gets its own paths documented, with no edit here.
+//
+// WritesJSON is the right form rather than an encoding registrar: the handler
+// owns its own c.JSON write — it must, being mounted on the group and not on
+// s.doc — so Resp is DECLARED, not enforced. Every handler below has exactly one
+// success write, of exactly the type named at its declaration. The consequence
+// for POST /trigger is that its REQUEST body stays undocumented; moving it to a
+// binding registrar would bind before the admin guard runs, which is the order
+// this surface deliberately does not use.
+func declare[Resp any](s *adminSpec, method, rel string, h echo.HandlerFunc) *apiroute.Route {
+	ri := s.g.Add(method, rel, h)
+	return apiroute.WritesJSON[Resp](s.doc, method, ri.Path, h)
 }
 
 // ── DTOs ────────────────────────────────────────────────────────────────────
@@ -140,6 +270,66 @@ type scheduleDTO struct {
 // SAME shape the live LogHub stream (/api/v1/logs) serializes, so the FE renders
 // stored + live lines through one mapping.
 type jobLogEntryDTO = logging.LogEntry
+
+// ── response envelopes ──────────────────────────────────────────────────────
+//
+// One named type per endpoint response, replacing the map[string]any literals
+// the handlers used to write. The JSON KEYS ARE UNCHANGED — the admin FE reads
+// them — but a named type is what lets the typed seam generate a real OpenAPI
+// schema instead of a bare object.
+
+// jobListResponse is the GET "" envelope. jobs is always an array, never null.
+type jobListResponse struct {
+	Jobs []jobDTO `json:"jobs"`
+}
+
+// queueOverviewResponse is the GET /queues envelope, most-active kind first.
+type queueOverviewResponse struct {
+	Queues []queueKindDTO `json:"queues"`
+}
+
+// scheduleListResponse is the GET /schedules envelope, ordered by kind.
+type scheduleListResponse struct {
+	Schedules []scheduleDTO `json:"schedules"`
+}
+
+// enqueuedJobResponse is the shared answer of POST /trigger and POST /:id/retry:
+// the id of the job that was just ENQUEUED — for retry that is the new job, not
+// the one named in the path.
+type enqueuedJobResponse struct {
+	ID int64 `json:"id"`
+}
+
+// cancelResponse is POST /:id/cancel. cancelled is whether the durable status
+// actually flipped (false for a job that had already finished); wasRunning is
+// whether a live execution was interrupted.
+type cancelResponse struct {
+	Cancelled  bool `json:"cancelled"`
+	WasRunning bool `json:"wasRunning"`
+}
+
+// jobLogsResponse is GET /:id/logs. entries is [] for an empty stored blob.
+type jobLogsResponse struct {
+	Entries []jobLogEntryDTO `json:"entries"`
+}
+
+// logDeleteResponse is DELETE /:id/logs, where deleted is a BOOLEAN: whether the
+// wipe ran at all (false = log persistence is off, so it was a no-op). Distinct
+// from logsClearResponse, whose deleted is a count — same key, different type.
+type logDeleteResponse struct {
+	Deleted bool `json:"deleted"`
+}
+
+// logsClearResponse is DELETE /logs, where deleted is the COUNT of log objects
+// removed. See logDeleteResponse for why these are two types.
+type logsClearResponse struct {
+	Deleted int `json:"deleted"`
+}
+
+// triggerRequest is the POST /trigger body: the registered job kind to enqueue.
+type triggerRequest struct {
+	Kind string `json:"kind"`
+}
 
 func rfc(t time.Time) string { return t.UTC().Format(time.RFC3339) }
 
@@ -195,7 +385,7 @@ func (a *adminAPI) list(c *echo.Context) error {
 	for _, j := range rows {
 		out = append(out, toJobDTO(j))
 	}
-	return c.JSON(http.StatusOK, map[string]any{"jobs": out})
+	return c.JSON(http.StatusOK, jobListResponse{Jobs: out})
 }
 
 // queues: GET /queues — the per-kind queue overview (boom-hney). One GROUP BY
@@ -270,7 +460,7 @@ func (a *adminAPI) queues(c *echo.Context) error {
 		}
 		return x.Kind < y.Kind
 	})
-	return c.JSON(http.StatusOK, map[string]any{"queues": out})
+	return c.JSON(http.StatusOK, queueOverviewResponse{Queues: out})
 }
 
 // schedules: GET /schedules
@@ -295,7 +485,7 @@ func (a *adminAPI) schedules(c *echo.Context) error {
 			LastRun:         rfcPtr(s.LastRun),
 		})
 	}
-	return c.JSON(http.StatusOK, map[string]any{"schedules": out})
+	return c.JSON(http.StatusOK, scheduleListResponse{Schedules: out})
 }
 
 // trigger: POST /trigger {kind} — enqueue a job now.
@@ -308,9 +498,10 @@ func (a *adminAPI) trigger(c *echo.Context) error {
 	if a.d.Store() == nil || enq == nil {
 		return apihelpers.RespondErr(c, jobsUnavailable())
 	}
-	var req struct {
-		Kind string `json:"kind"`
-	}
+	// Binds AFTER the guard and the wiring check, deliberately: an unauthorized
+	// caller's body is never read. That ordering is why this route stays on the
+	// declaration-only seam form rather than a binding registrar (see declare).
+	var req triggerRequest
 	if berr := apihelpers.BindJSONWithLimit(c, &req, 4<<10); berr != nil {
 		return apihelpers.RespondErr(c, berr)
 	}
@@ -322,7 +513,7 @@ func (a *adminAPI) trigger(c *echo.Context) error {
 		return apihelpers.InternalErr(a.d.Logger, c, "jobs trigger failed", err)
 	}
 	a.d.Logger.Info("admin jobs trigger", "actor", owner, "kind", req.Kind, "id", id)
-	return c.JSON(http.StatusOK, map[string]any{"id": id})
+	return c.JSON(http.StatusOK, enqueuedJobResponse{ID: id})
 }
 
 // retry: POST /:id/retry — re-enqueue a FRESH attempt of the job's kind+payload
@@ -361,7 +552,7 @@ func (a *adminAPI) retry(c *echo.Context) error {
 		return apihelpers.InternalErr(a.d.Logger, c, "jobs retry failed", err)
 	}
 	a.d.Logger.Info("admin jobs retry", "actor", owner, "kind", job.Kind, "from", id, "id", newID)
-	return c.JSON(http.StatusOK, map[string]any{"id": newID})
+	return c.JSON(http.StatusOK, enqueuedJobResponse{ID: newID})
 }
 
 // cancel: POST /:id/cancel — cooperatively cancel a queued or running job.
@@ -403,7 +594,7 @@ func (a *adminAPI) cancel(c *echo.Context) error {
 	}
 	a.d.Logger.Info("admin jobs cancel", "actor", owner, "id", id, "kind", job.Kind,
 		"cancelled", cancelled, "wasRunning", wasRunning)
-	return c.JSON(http.StatusOK, map[string]any{"cancelled": cancelled, "wasRunning": wasRunning})
+	return c.JSON(http.StatusOK, cancelResponse{Cancelled: cancelled, WasRunning: wasRunning})
 }
 
 // logs: GET /:id/logs — the persisted log stream for a FINISHED job. A
@@ -440,7 +631,7 @@ func (a *adminAPI) logs(c *echo.Context) error {
 	if entries == nil {
 		entries = []jobLogEntryDTO{}
 	}
-	return c.JSON(http.StatusOK, map[string]any{"entries": entries})
+	return c.JSON(http.StatusOK, jobLogsResponse{Entries: entries})
 }
 
 // logsDelete: DELETE /:id/logs — wipe ONLY the stored log object for a job. The
@@ -458,13 +649,13 @@ func (a *adminAPI) logsDelete(c *echo.Context) error {
 	}
 	store := a.d.ObjStore()
 	if store == nil {
-		return c.JSON(http.StatusOK, map[string]any{"deleted": false})
+		return c.JSON(http.StatusOK, logDeleteResponse{Deleted: false})
 	}
 	if err := store.Delete(c.Request().Context(), JobLogKey(id)); err != nil {
 		return apihelpers.InternalErr(a.d.Logger, c, "job logs delete failed", err)
 	}
 	a.d.Logger.Info("admin jobs logs delete", "actor", owner, "id", id)
-	return c.JSON(http.StatusOK, map[string]any{"deleted": true})
+	return c.JSON(http.StatusOK, logDeleteResponse{Deleted: true})
 }
 
 // logsClear: DELETE /logs?kind=<kind> — bulk-wipe the STORED log objects for
@@ -482,7 +673,7 @@ func (a *adminAPI) logsClear(c *echo.Context) error {
 	}
 	store := a.d.ObjStore()
 	if store == nil {
-		return c.JSON(http.StatusOK, map[string]any{"deleted": 0})
+		return c.JSON(http.StatusOK, logsClearResponse{Deleted: 0})
 	}
 	ctx := c.Request().Context()
 	kind := c.QueryParam("kind")
@@ -498,7 +689,7 @@ func (a *adminAPI) logsClear(c *echo.Context) error {
 	if kind != "" {
 		js := a.d.Store()
 		if js == nil {
-			return c.JSON(http.StatusOK, map[string]any{"deleted": 0})
+			return c.JSON(http.StatusOK, logsClearResponse{Deleted: 0})
 		}
 		rows, lerr := js.List(ctx, "", kind, 500)
 		if lerr != nil {
@@ -525,5 +716,5 @@ func (a *adminAPI) logsClear(c *echo.Context) error {
 		deleted++
 	}
 	a.d.Logger.Info("admin jobs logs clear", "actor", owner, "kind", kind, "deleted", deleted)
-	return c.JSON(http.StatusOK, map[string]any{"deleted": deleted})
+	return c.JSON(http.StatusOK, logsClearResponse{Deleted: deleted})
 }

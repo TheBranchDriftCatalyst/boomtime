@@ -77,15 +77,36 @@ type awardLogReq struct {
 	At string `json:"at,omitempty"`
 }
 
+// AwardsLogBodyLimit is the request-body cap for POST /awards/log: 128 KiB,
+// 32x the API default. A historical replay batch carries one item per firing
+// label per replayed day, so the default 4 KiB would 413 the very payload this
+// endpoint exists to accept. Named so the registration in routes.go states the
+// cap it is preserving rather than repeating a bare literal.
+const AwardsLogBodyLimit int64 = 128 * 1024
+
+// awardsLogResponse is POST /api/v1/users/current/awards/log. The two json
+// tags reproduce EXACTLY the map[string]any keys this handler used to build by
+// hand ("received", "written") — the wire format is unchanged.
+type awardsLogResponse struct {
+	// Received is the number of items in the REQUEST, counted before the
+	// period-type/label filter runs — so it includes rows the server dropped.
+	Received int `json:"received"`
+	// Written is the number of ledger rows the upsert actually inserted.
+	// Lower than Received when items were filtered out, and zero on a replay
+	// whose rows already exist (the upsert is idempotent per period).
+	Written int `json:"written"`
+}
+
 // AwardsLog: POST /api/v1/users/current/awards/log
-func (h *Handler) AwardsLog(c *echo.Context) error {
+//
+// The body is bound by the apiroute seam under AwardsLogBodyLimit (128 KiB) —
+// the same cap the hand-rolled BindJSONWithLimit call applied here before the
+// route moved onto the seam.
+func (h *Handler) AwardsLog(c *echo.Context, req awardLogReq) (awardsLogResponse, error) {
+	var out awardsLogResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
-	}
-	var req awardLogReq
-	if aerr := apihelpers.BindJSONWithLimit(c, &req, 128*1024); aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	// Filter to known period types; drop lifetime (not ledger-eligible).
 	items := make([]db.AwardLogItem, 0, len(req.Items))
@@ -110,21 +131,21 @@ func (h *Handler) AwardsLog(c *echo.Context) error {
 	if req.At != "" {
 		parsed, perr := time.Parse(time.RFC3339, req.At)
 		if perr != nil {
-			return apihelpers.RespondErr(c, apierr.BadRequest("`at` must be RFC3339"))
+			return out, apierr.BadRequest("`at` must be RFC3339")
 		}
 		if parsed.After(time.Now().Add(time.Hour)) {
-			return apihelpers.RespondErr(c, apierr.BadRequest("`at` cannot be in the future"))
+			return out, apierr.BadRequest("`at` cannot be in the future")
 		}
 		at = parsed
 	}
 	written, err := h.DB.LogAwards(c.Request().Context(), owner, items, loc, at)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "award log write failed", err)
+		return out, fmt.Errorf("award log write failed: %w", err)
 	}
-	return c.JSON(http.StatusOK, map[string]any{
-		"received": len(req.Items),
-		"written":  written,
-	})
+	return awardsLogResponse{
+		Received: len(req.Items),
+		Written:  written,
+	}, nil
 }
 
 // AwardsStreaks: GET /api/v1/users/current/awards/streaks

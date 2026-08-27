@@ -8,7 +8,30 @@ import (
 	"net/http"
 
 	"github.com/labstack/echo/v5"
+
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apiroute"
 )
+
+// specDocument is the DECLARED shape of GET /api/openapi.json's success body:
+// the top level of the OpenAPI 3 document this server publishes. The field
+// names mirror openapi3.T's json tags exactly; the nested values are left open
+// because their shapes are the OpenAPI meta-schema, not boomtime's.
+//
+// It is DECLARED rather than encoded because SpecHandler writes pre-marshalled
+// bytes (the document is built once and cached, then served verbatim with a
+// Cache-Control header) — the same reason apiroute.WritesJSON exists for the
+// CachedJSON routes. Without it the spec documents its own endpoint as a bare
+// {"type":"object"}.
+type specDocument struct {
+	OpenAPI      string           `json:"openapi"`
+	Info         map[string]any   `json:"info"`
+	Paths        map[string]any   `json:"paths"`
+	Components   map[string]any   `json:"components,omitempty"`
+	Security     []map[string]any `json:"security,omitempty"`
+	Servers      []map[string]any `json:"servers,omitempty"`
+	Tags         []map[string]any `json:"tags,omitempty"`
+	ExternalDocs map[string]any   `json:"externalDocs,omitempty"`
+}
 
 // SpecHandler serves the built OpenAPI 3 spec as JSON. The spec is built
 // once (see Spec()) and cached; subsequent calls just write the same bytes.
@@ -49,7 +72,14 @@ func Register(e *echo.Echo) {
 	// read e.Router().Routes() lazily at build time — by then every domain's
 	// routes are wired. Invalidates any cached spec (see setRouterEcho).
 	setRouterEcho(e)
-	e.GET("/api/openapi.json", SpecHandler)
+	apiroute.WritesJSON[specDocument](e, http.MethodGet, "/api/openapi.json", SpecHandler).
+		Doc("This OpenAPI 3 document",
+			"The machine-readable description of every route on this server, and the document "+
+				"powering the explorer at /api/docs. Fully self-contained: no external $refs "+
+				"and no CDN URLs, so it can be saved and fed to a client generator offline. "+
+				"Built once per process from the live echo router — restart the server to pick "+
+				"up a route change — and served from cache with Cache-Control: public, "+
+				"max-age=300. Unauthenticated, like /api/docs itself.")
 	// Serve both /api/docs and /api/docs/* — the latter catches the static
 	// asset requests SwaggerUI makes for the CSS/JS/favicons.
 	docs := DocsHandler("/api/docs")

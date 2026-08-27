@@ -24,6 +24,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apiroute"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/awards"
@@ -242,7 +243,7 @@ func (hz *Harness) Router() *echo.Echo {
 	apiroute.GET(e, "/api/v1/users/current/spaces/:id", hz.Spaces.GetSpace)
 	apiroute.NoContentBody(e, http.MethodPatch, "/api/v1/users/current/spaces/:id", hz.Spaces.UpdateSpace)
 	apiroute.NoContent(e, http.MethodDelete, "/api/v1/users/current/spaces/:id", hz.Spaces.DeleteSpace)
-	e.POST("/api/v1/users/current/spaces/:id/rules", hz.Spaces.AddSpaceRule)
+	apiroute.POSTLimit(e, "/api/v1/users/current/spaces/:id/rules", apihelpers.BodyLimitMedium, hz.Spaces.AddSpaceRule)
 	apiroute.NoContent(e, http.MethodDelete, "/api/v1/users/current/spaces/:id/rules/:rid", hz.Spaces.DeleteSpaceRule)
 	// whole-database backup (dump download + destructive restore).
 	// boom-8tn phase 7: receivers moved to h.Admin (internal/admin).
@@ -317,11 +318,11 @@ func (hz *Harness) Router() *echo.Echo {
 	// internal/boomtime/admin; those suites build their own boomtime-admin router.
 	// boom-8tn phase 3: widget-def CRUD extracted to internal/widgets.
 	apiroute.GET(e, "/api/v1/users/current/widget-defs", hz.Widgets.ListWidgetDefs)
-	e.POST("/api/v1/users/current/widget-defs", hz.Widgets.CreateWidgetDef)
-	e.PATCH("/api/v1/users/current/widget-defs/:name", hz.Widgets.UpdateWidgetDef)
+	apiroute.POSTLimit(e, "/api/v1/users/current/widget-defs", apihelpers.BodyLimitMedium, hz.Widgets.CreateWidgetDef)
+	apiroute.NoContentBodyLimit(e, http.MethodPatch, "/api/v1/users/current/widget-defs/:name", apihelpers.BodyLimitMedium, hz.Widgets.UpdateWidgetDef)
 	apiroute.NoContent(e, http.MethodDelete, "/api/v1/users/current/widget-defs/:name", hz.Widgets.DeleteWidgetDef)
 	e.GET("/widget/svg/:uuid/named", hz.Widgets.WidgetDefSvg)
-	e.GET("/api/v1/logs", h.Meta.ServerLogs)                                       // boom-8tn phase 1: meta domain
+	apiroute.GET(e, "/api/v1/logs", h.Meta.ServerLogs)                             // boom-8tn phase 1: meta domain
 	apiroute.GET(e, "/api/v1/users/current/timezone", h.Identity.GetTimezone)      // boom-8tn phase 4a: h.Identity
 	apiroute.PATCH(e, "/api/v1/users/current/timezone", h.Identity.UpdateTimezone) // boom-8tn phase 4a: h.Identity
 	apiroute.GET(e, "/api/v1/users/current/profile", h.Identity.GetPublicProfile)  // boom-8tn phase 4a: h.Identity
@@ -347,8 +348,8 @@ func (hz *Harness) Router() *echo.Echo {
 	// and hit the duplicate-route panic.
 	// boom-8tn phase 1: meta domain endpoints. Router still mirrors the
 	// production route table but the receivers are now on h.Meta.
-	e.GET("/healthz", h.Meta.Healthz)
-	e.GET("/api/v1/version", h.Meta.Version)
+	apiroute.GET(e, "/healthz", h.Meta.Healthz)
+	apiroute.GET(e, "/api/v1/version", h.Meta.Version)
 	e.GET("/api/v1/changelog", h.Meta.Changelog)
 	apiroute.GET(e, "/api/v1/users/current/heartbeats/entities", hz.Ingest.ListEntitiesByType)
 	apiroute.POSTNoBody(e, "/api/v1/users/current/heartbeats/entities/redact", hz.Ingest.RedactEntities)

@@ -14,8 +14,6 @@
 package meta
 
 import (
-	"net/http"
-
 	"github.com/labstack/echo/v5"
 )
 
@@ -63,8 +61,8 @@ type PublicConfigResponse struct {
 
 // PublicConfig: GET /api/v1/config/public — unauthenticated, always JSON.
 // Reads only from Cfg; no DB access, so it stays fast and can't degrade.
-func (h *Handler) PublicConfig(c *echo.Context) error {
-	return c.JSON(http.StatusOK, PublicConfigResponse{
+func (h *Handler) PublicConfig(c *echo.Context) (PublicConfigResponse, error) {
+	return PublicConfigResponse{
 		RegistrationEnabled: h.Cfg.EnableRegistration,
 		AuthProvider:        h.Cfg.AuthProvider,
 		OIDCEnabled:         h.Cfg.OIDCEnabled(),
@@ -74,5 +72,5 @@ func (h *Handler) PublicConfig(c *echo.Context) error {
 		},
 		GithubConnectEnabled: h.Cfg.GithubConnectEnabled(),
 		BooksEnabled:         h.Cfg.BooksEnabled(),
-	})
+	}, nil
 }

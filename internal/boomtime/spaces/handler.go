@@ -203,52 +203,52 @@ func (h *Handler) GetSpace(c *echo.Context) (getSpaceResponse, error) {
 // AddSpaceRule: POST /api/v1/users/current/spaces/:id/rules
 // body {"axis","matchValue","matchType"} → {rule:SpaceRule}.
 //
-// NOT on the apiroute seam: this route binds under apihelpers.BodyLimitMedium
-// (64 KiB) and the seam's body registrars hard-code BodyLimitSmall (4 KiB).
-// Moving it would silently narrow the cap and turn today's 200s on bodies
-// between 4 and 64 KiB into 413s, so it keeps its hand-rolled bind.
-func (h *Handler) AddSpaceRule(c *echo.Context) error {
+// ON the apiroute seam via apiroute.POSTLimit with apihelpers.BodyLimitMedium
+// (64 KiB) — the SAME cap the hand-rolled BindJSONWithLimit applied here
+// before. The plain apiroute.POST form binds at BodyLimitSmall (4 KiB), which
+// would have turned today's 200s on bodies between 4 and 64 KiB into 413s;
+// POSTLimit carries the original ceiling across, so the wire contract is
+// unchanged while the request/response TYPES now reach the OpenAPI spec.
+//
+// The seam binds the body BEFORE this runs, so an oversized body is rejected
+// ahead of the owner lookup. Every other outcome — status codes, messages,
+// cache invalidation — is identical to the pre-seam flow.
+func (h *Handler) AddSpaceRule(c *echo.Context, req spaceRuleRequest) (addSpaceRuleResponse, error) {
+	var out addSpaceRuleResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "Invalid space id", nil))
-	}
-	var req spaceRuleRequest
-	// boom-bi2: 64 KiB cap — rule adds carry an axis + matchValue (regex or
-	// literal); Medium leaves headroom for template rules without allowing a
-	// runaway body.
-	if aerr := apihelpers.BindJSONWithLimit(c, &req, apihelpers.BodyLimitMedium); aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, apierr.New(http.StatusBadRequest, "Invalid space id", nil)
 	}
 	// Validate the axis whitelist up front for a clear 400 (AddSpaceRule also guards).
 	if _, ok := db.ExploreColumn(req.Axis); !ok {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "Unknown axis: "+req.Axis, nil))
+		return out, apierr.New(http.StatusBadRequest, "Unknown axis: "+req.Axis, nil)
 	}
 	if req.MatchValue == "" {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "matchValue is required", nil))
+		return out, apierr.New(http.StatusBadRequest, "matchValue is required", nil)
 	}
 	matchType := req.MatchType
 	if matchType == "" {
 		matchType = db.MatchExact
 	}
 	if matchType != db.MatchExact && matchType != db.MatchRegex {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusBadRequest, "matchType must be 'exact' or 'regex'", nil))
+		return out, apierr.New(http.StatusBadRequest, "matchType must be 'exact' or 'regex'", nil)
 	}
 	rule, err := h.DB.AddSpaceRule(c.Request().Context(), owner, id, req.Axis, req.MatchValue, matchType)
 	if err != nil {
 		// Fixed message only — the raw DB error (e.g. pg regex diagnostics) is
 		// logged, never sent to the client.
 		h.Logger.Error("add space rule failed", "err", err)
-		return apihelpers.RespondErr(c, apierr.BadRequest("Could not add space rule (invalid pattern?)"))
+		return out, apierr.BadRequest("Could not add space rule (invalid pattern?)")
 	}
 	if rule == nil {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusNotFound, "Space not found", nil))
+		return out, apierr.New(http.StatusNotFound, "Space not found", nil)
 	}
 	apihelpers.InvalidateOwnerCache(h.Cache, owner)
-	return c.JSON(http.StatusOK, addSpaceRuleResponse{Rule: rule})
+	return addSpaceRuleResponse{Rule: rule}, nil
 }
 
 // DeleteSpaceRule: DELETE /api/v1/users/current/spaces/:id/rules/:rid → 204.

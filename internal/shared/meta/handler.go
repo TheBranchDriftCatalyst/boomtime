@@ -51,12 +51,12 @@ type versionResponse struct {
 // Version returns the running app version (git-describe string stamped by
 // ldflags — see cmd/boomtime/main.go). Falls back to "dev" for un-stamped
 // dev builds.
-func (h *Handler) Version(c *echo.Context) error {
+func (h *Handler) Version(c *echo.Context) (versionResponse, error) {
 	v := h.Cfg.Version
 	if v == "" {
 		v = "dev"
 	}
-	return c.JSON(http.StatusOK, versionResponse{Version: v})
+	return versionResponse{Version: v}, nil
 }
 
 // Changelog serves the embedded CHANGELOG.md verbatim as text/markdown. The FE

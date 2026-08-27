@@ -18,16 +18,20 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apiroute"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/query"
 	"github.com/labstack/echo/v5"
 )
 
-// bodyLimit caps the query spec body. A spec is a small tree of names +
+// BodyLimit caps the query spec body. A spec is a small tree of names +
 // values; 16 KiB is a generous honest ceiling (a predicate tree that needs
 // more has too many nodes to be a legitimate dashboard query).
-const bodyLimit int64 = 16 * 1024
+// It is EXPORTED so any router that mirrors this registration (the test
+// harness) binds at the same ceiling instead of silently inheriting the seam's
+// 4 KiB default.
+const BodyLimit int64 = 16 * 1024
 
 // Handler serves the query endpoint. It holds only the deps it reads: the DB
 // (its pool is the query.Querier), the config (reading-domain gate), and a
@@ -39,8 +43,61 @@ type Handler struct {
 }
 
 // Register wires the query endpoint onto e. Handler must be non-nil.
+//
+// WHY WritesJSON RATHER THAN POSTLimit[Spec, response]. The obvious call is the
+// binding registrar — it would document the REQUEST schema too. It cannot be
+// used, and the reason is worth writing down because the failure is total
+// rather than cosmetic: Spec is RECURSIVE (PredicateNode.Of is
+// []*PredicateNode). openapi3gen answers a cycle with a component $ref whose
+// Value it then nils out, and the spec builder's schemaForType hands that ref
+// straight through without the Ref+Value dual-population that
+// internal/shared/openapi's own register() helper performs. doc.Validate then
+// rejects the WHOLE document — "schema PredicateNode: found unresolved ref" —
+// and GET /api/openapi.json 500s for every route on the server, not just this
+// one. Verified empirically before choosing this form.
+//
+// So the handler keeps its own bind (auth first, then BindJSONWithLimit at the
+// 16 KiB BodyLimit — the seam's binding forms would also have shrunk that to
+// 4 KiB and reordered auth behind the bind) and WritesJSON declares the
+// response type, which is the half of the contract that can be generated
+// safely. The request shape is described in prose below; lift it into a real
+// schema once schemaForType resolves cyclic component refs.
 func Register(e *echo.Echo, h *Handler) {
-	e.POST("/api/v1/query", h.RunQuery)
+	apiroute.WritesJSON[response](e, http.MethodPost, "/api/v1/query", h.RunQuery).
+		Doc("Run an analytics query",
+			"The single generic endpoint behind every dashboard chart: a JSON spec mirroring "+
+				"the internal query DSL (from·where·group·measure·over·bucket·having·sort·limit) "+
+				"is validated against the domain registry, compiled to SQL and run. Only domain "+
+				"and measure are required; everything else defaults to the DSL's zero behaviour "+
+				"(a lifetime scalar, unfiltered, unsorted).\n\n"+
+				"REQUEST BODY (not generated into a schema below — the predicate tree is "+
+				"recursive): {domain, measure, where?, group?, over?, bucket?, having?, sort?, "+
+				"limit?, rollups?, rows?, page?}. where is a tree of nodes "+
+				"{kind: \"leaf\"|\"and\"|\"or\"|\"not\", and for a leaf dim/op/values, for a "+
+				"combinator of:[...children]}, with op one of eq, neq, in, ilike. over is "+
+				"{granularity: none|day|week|month, range: {lastN} or {between:{start,end}} — "+
+				"the two are mutually exclusive and setting both is a 400; the unit of lastN is "+
+				"the granularity, days when granularity is none}. bucket is the top-N/pin/Other "+
+				"roll-up policy {topN, pin?, other?}, having is {op, value} with op one of "+
+				">= <= > < == !=, sort is {field, desc?} where field is \"measure\"/\"value\", "+
+				"\"bucket\", \"key\" or the group dimension, and page is {number, size} "+
+				"(1-based, rows mode only).\n\n"+
+				"The result is a DISCRIMINATED UNION: switch on \"kind\" and read exactly one "+
+				"arm — \"scalar\" (scalar), \"series\" (series, one point per RFC3339 UTC "+
+				"bucket), \"groups\" (groups; each carries count + stats when the spec asks for "+
+				"rollups), or \"rows\" (rows plus total, the unpaginated row count, when the "+
+				"spec sets rows:true). Missing array arms mean empty, not null.\n\n"+
+				"Owner scoping is total and implicit: the caller resolved from the "+
+				"Authorization header is the only owner a query can reach, and there is no "+
+				"cross-owner field in the spec. Any unknown domain, measure, dimension, "+
+				"operator or unsupported axis combination is rejected by the compiler as a 400 "+
+				"before a single byte of SQL is built — the endpoint constructs no SQL itself "+
+				"and every user value rides as a positional argument. The books-owned domains "+
+				"\"reading\" and \"readingEvents\" answer 404 \"unknown domain\" when the books "+
+				"feature is disabled, so a disabled domain leaks nothing. Grouped queries "+
+				"transparently union the caller's saved canonical pins into the bucket policy "+
+				"so pinned values always survive as their own group instead of collapsing into "+
+				"\"Other\". Request bodies are capped at 16 KiB.")
 }
 
 // pointDTO / groupDTO are the JSON shapes of a series point / grouped row.
@@ -70,7 +127,10 @@ type response struct {
 	Total  *int             `json:"total,omitempty"` // rows mode: unpaginated count
 }
 
-// RunQuery: POST /api/v1/query. Auth required + owner-scoped.
+// RunQuery: POST /api/v1/query. Auth required + owner-scoped. It owns its own
+// bind and its own write — see Register for why the binding registrars are not
+// usable here — so the `response` type it encodes is DECLARED at the
+// registration rather than enforced by the seam. Keep the two in step.
 func (h *Handler) RunQuery(c *echo.Context) error {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
@@ -78,7 +138,7 @@ func (h *Handler) RunQuery(c *echo.Context) error {
 	}
 
 	var spec Spec
-	if aerr := apihelpers.BindJSONWithLimit(c, &spec, bodyLimit); aerr != nil {
+	if aerr := apihelpers.BindJSONWithLimit(c, &spec, BodyLimit); aerr != nil {
 		return apihelpers.RespondErr(c, aerr)
 	}
 

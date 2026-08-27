@@ -143,28 +143,43 @@ type regenResponseJob struct {
 	Existing bool   `json:"existing"`
 }
 
+// adminLabelImagesRegenerateResponse is the 202 body of POST
+// /api/v1/admin/label-images/regenerate. Field names + order are pinned to the
+// map literal this replaced ({"queued": int, "jobs": [...]}) — the FE reads
+// resp.jobs to key its status poll, so a renamed tag is a silent break.
+type adminLabelImagesRegenerateResponse struct {
+	Queued int                `json:"queued"`
+	Jobs   []regenResponseJob `json:"jobs"`
+}
+
 // AdminLabelImagesRegenerate: POST /api/v1/admin/label-images/regenerate.
 // Enqueues each requested entry into the imagejobs registry and returns
 // 202 with the resulting jobIDs. The server's worker pool absorbs
 // concurrency; the FE just fires enqueues and watches the WS.
-func (h *Handler) AdminLabelImagesRegenerate(c *echo.Context) error {
+//
+// Registered with apiroute.Accepted (not AcceptedBody): the body must keep its
+// 256 KiB cap — the FE posts its whole catalog snapshot — and the seam's
+// binding registrars bind at BodyLimitSmall (4 KiB), which would 413 it. So the
+// handler keeps the BindJSONWithLimit call and the seam only owns the 202 write.
+func (h *Handler) AdminLabelImagesRegenerate(c *echo.Context) (adminLabelImagesRegenerateResponse, error) {
+	var res adminLabelImagesRegenerateResponse
 	if _, aerr := h.requireAdmin(c); aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return res, aerr
 	}
 	// Regen runs on catalyst-go-jobs (the DB queue + KEDA ScaledJob). The
 	// in-memory imagejobs registry it used to fall back to is gone — one job
 	// system, one queue (boom-piig phase 2).
 	if h.LabelImagesWorker == nil || h.JobEnqueuer == nil || h.JobStore == nil {
-		return apihelpers.RespondErr(c, apierr.New(http.StatusServiceUnavailable,
-			"label-images feature is disabled — set BOOM_FEATURE_LABEL_IMAGES=on and BOOM_COMFYUI_SHIM_URL, then restart", nil))
+		return res, apierr.New(http.StatusServiceUnavailable,
+			"label-images feature is disabled — set BOOM_FEATURE_LABEL_IMAGES=on and BOOM_COMFYUI_SHIM_URL, then restart", nil)
 	}
 
 	var req regenReq
 	if aerr := apihelpers.BindJSONWithLimit(c, &req, 256*1024); aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return res, aerr
 	}
 	if len(req.Entries) == 0 {
-		return apihelpers.RespondErr(c, apierr.BadRequest("`entries` is required (send [{id, prompt}, ...])"))
+		return res, apierr.BadRequest("`entries` is required (send [{id, prompt}, ...])")
 	}
 
 	// Build the id -> entry map, preserving per-entry overrides end-to-end
@@ -200,10 +215,10 @@ func (h *Handler) AdminLabelImagesRegenerate(c *echo.Context) error {
 			}
 		}
 	} else {
-		return apihelpers.RespondErr(c, apierr.BadRequest("either `all: true` or a non-empty `ids` array is required"))
+		return res, apierr.BadRequest("either `all: true` or a non-empty `ids` array is required")
 	}
 	if len(toRun) == 0 {
-		return apihelpers.RespondErr(c, apierr.BadRequest("nothing to regenerate — verify `ids` match the `entries` you sent"))
+		return res, apierr.BadRequest("nothing to regenerate — verify `ids` match the `entries` you sent")
 	}
 
 	// Truncate is a destructive DB op — preserve the pre-boom-8bz
@@ -217,7 +232,7 @@ func (h *Handler) AdminLabelImagesRegenerate(c *echo.Context) error {
 	reqCtx := c.Request().Context()
 	if req.All && req.Truncate {
 		if err := h.DB.TruncateLabelImages(reqCtx); err != nil {
-			return apihelpers.InternalErr(h.Logger, c, "label images truncate failed", err)
+			return res, fmt.Errorf("label images truncate failed: %w", err)
 		}
 	}
 
@@ -254,20 +269,17 @@ func (h *Handler) AdminLabelImagesRegenerate(c *echo.Context) error {
 			Model: e.Model, Size: e.Size, Seed: e.Seed,
 		}.JSON()
 		if merr != nil {
-			return apihelpers.InternalErr(h.Logger, c, "label-image payload marshal failed", merr)
+			return res, fmt.Errorf("label-image payload marshal failed: %w", merr)
 		}
 		id, eerr := h.JobEnqueuer.Enqueue(reqCtx, labelimages.RegenJobKind, payload,
 			jobs.Owner(e.ID), jobs.MaxAttempts(1))
 		if eerr != nil {
-			return apihelpers.InternalErr(h.Logger, c, "label-image enqueue failed", eerr)
+			return res, fmt.Errorf("label-image enqueue failed: %w", eerr)
 		}
 		out = append(out, regenResponseJob{JobID: strconv.FormatInt(id, 10), LabelID: e.ID, Existing: false})
 	}
 
-	return c.JSON(http.StatusAccepted, map[string]any{
-		"queued": len(out),
-		"jobs":   out,
-	})
+	return adminLabelImagesRegenerateResponse{Queued: len(out), Jobs: out}, nil
 }
 
 // labelJobStatus is one label's latest regen job, mapped to the imagejobs

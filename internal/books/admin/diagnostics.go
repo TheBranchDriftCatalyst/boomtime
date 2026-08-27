@@ -9,13 +9,11 @@ package admin
 import (
 	"context"
 	"encoding/json"
-	"net/http"
 	"strings"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/amazon"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/liberate"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
 	"github.com/labstack/echo/v5"
 )
 
@@ -60,18 +58,37 @@ func runProbe(ctx context.Context, cred *amazon.DeviceCredential, name, host, pa
 	return p
 }
 
+// diagnosticsResponse is GET /api/v1/admin/books/diagnostics.
+//
+// This was a map[string]any literal. Naming it is not cosmetic: a map has no
+// shape to reflect, so the OpenAPI spec could only ever emit a bare object for
+// it. Every json tag below is the map key it replaced, character for character,
+// and asin keeps omitempty because the map added that key only when the
+// liberation probe actually resolved a title.
+type diagnosticsResponse struct {
+	// Source echoes the ?source= that ran, defaulted to "audible".
+	Source string `json:"source"`
+	// Marketplace is the Amazon marketplace the caller's credential belongs to.
+	Marketplace string `json:"marketplace"`
+	// Probes is one entry per endpoint probed, in the order they ran.
+	Probes []diagProbe `json:"probes"`
+	// ASIN is set by the liberation source only, naming the title it verified.
+	ASIN string `json:"asin,omitempty"`
+}
+
 // AdminBooksDiagnostics: GET /api/v1/admin/books/diagnostics?source=audible|kindle
 // Admin-only. Loads the caller's Amazon credential and probes the source's raw
 // endpoints so we can inventory every available metric/field.
-func (h *Handler) AdminBooksDiagnostics(c *echo.Context) error {
+func (h *Handler) AdminBooksDiagnostics(c *echo.Context) (diagnosticsResponse, error) {
+	var out diagnosticsResponse
 	owner, aerr := h.requireAdmin(c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	ctx := c.Request().Context()
 	cred, err := amazon.NewStore(h.DB).Load(ctx, owner)
 	if err != nil {
-		return apihelpers.RespondErr(c, apierr.BadRequest("no Amazon credential — connect Amazon in Settings first ("+err.Error()+")"))
+		return out, apierr.BadRequest("no Amazon credential — connect Amazon in Settings first (" + err.Error() + ")")
 	}
 
 	var (
@@ -90,15 +107,15 @@ func (h *Handler) AdminBooksDiagnostics(c *echo.Context) error {
 	default: // audible
 		probes = audibleProbes(ctx, cred)
 	}
-	resp := map[string]any{
-		"source":      firstNonEmpty(c.QueryParam("source"), "audible"),
-		"marketplace": cred.Marketplace,
-		"probes":      probes,
+	resp := diagnosticsResponse{
+		Source:      firstNonEmpty(c.QueryParam("source"), "audible"),
+		Marketplace: string(cred.Marketplace),
+		Probes:      probes,
 	}
 	if report.ASIN != "" {
-		resp["asin"] = report.ASIN
+		resp.ASIN = report.ASIN
 	}
-	return c.JSON(http.StatusOK, resp)
+	return resp, nil
 }
 
 // audibleProbes hits the Audible API with the WIDEST response_groups so every

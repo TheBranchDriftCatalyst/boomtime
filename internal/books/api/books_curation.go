@@ -87,11 +87,14 @@ func (h *Handler) SetBookCuration(c *echo.Context, body curationBody) (readingIt
 // "sync this book to Hardcover now" button. Owner-scoped; keyed by owner + ?source=
 // + :externalId. The push itself is dry-run-gated by BOOM_HARDCOVER_DRYRUN.
 //
-// NOT on the typed seam (internal/shared/apiroute), deliberately: this handler
+// TYPED SEAM NOTE. This handler OWNS its write, so it registers through
+// apiroute.WritesJSON[readingItemDTO] rather than a (Resp, error) registrar: it
 // answers 200 with the full readingItemDTO on the inline path and 202
 // {"enqueued":true} on the queue fallback. Two statuses AND two shapes cannot be
 // expressed by one (Resp, status) registration, and inventing a merged struct
-// would document a payload the handler never writes. Stays on plain e.POST.
+// would document a payload the handler never writes. WritesJSON DECLARES the
+// dominant 200 shape — strictly better than the generic object this route used
+// to document — and the 202 fallback is spelled out in the route's .Doc prose.
 func (h *Handler) PushBookToHardcover(c *echo.Context) error {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {

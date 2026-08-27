@@ -1229,16 +1229,6 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 		stdErrors(op, "404", "500")
 		return op
 	}())
-	doc.AddOperation("/api/v1/admin/avatar/synthesize-prompt", "POST", func() *openapi3.Operation {
-		op := &openapi3.Operation{Tags: []string{tagAvatar, tagAdmin}, Summary: "Admin-only: synthesize an avatar prompt from stats",
-			Description: "Runs the LLM prompt-synthesis pass for a target user's stats snapshot. Admin-gated via BOOM_ADMIN_USERS."}
-		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{Required: true,
-			Description: "{username, ...stats fields}",
-			Content:     openapi3.NewContentWithJSONSchema(openapi3.NewObjectSchema())}}
-		setStatus(op, http.StatusOK, rInline("{prompt:string}.", mapObject()))
-		stdErrors(op, "400", "401", "403", "500")
-		return op
-	}())
 
 	// ==== WIDGET DEFS + NAMED SVG (boom-08m drift backfill) =================
 	//
@@ -1260,16 +1250,6 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 			Content:     openapi3.NewContentWithJSONSchema(openapi3.NewObjectSchema())}}
 		setStatus(op, http.StatusOK, rInline("Created def wrapped as {widgetDef:...}.", mapObject()))
 		stdErrors(op, "400", "401", "403", "409", "500")
-		return op
-	}())
-	doc.AddOperation("/api/v1/users/current/widget-defs/{name}", "PATCH", func() *openapi3.Operation {
-		op := &openapi3.Operation{Tags: []string{tagWidgets}, Summary: "Update a named widget definition",
-			Description: "Partial update of an existing widget def's spec. Body cap: 64 KiB.",
-			Parameters:  openapi3.Parameters{pathParamStr("name", "Widget-def name (owner-scoped).")}}
-		op.RequestBody = &openapi3.RequestBodyRef{Value: &openapi3.RequestBody{Required: true,
-			Content: openapi3.NewContentWithJSONSchema(openapi3.NewObjectSchema())}}
-		setStatus(op, http.StatusOK, rInline("Updated def wrapped as {widgetDef:...}.", mapObject()))
-		stdErrors(op, "400", "401", "403", "404", "500")
 		return op
 	}())
 	doc.AddOperation("/api/v1/users/current/widget-defs/{name}", "DELETE", func() *openapi3.Operation {
@@ -2001,6 +1981,31 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 			}
 			stdErrors(op, "400", "401", "403", "404", "500")
 			doc.AddOperation(p, method, op)
+		}
+	}
+
+	// A 1xx, 204 or 3xx response carries NO BODY, by the HTTP spec. Several
+	// hand-authored entries declare an application/json object on one anyway —
+	// a 204 delete, two 101 WebSocket handshakes — which documents a payload that
+	// can never arrive. Strip it centrally rather than fixing each by hand, so
+	// the rule holds for entries added later too.
+	for _, pth := range doc.Paths.InMatchingOrder() {
+		item := doc.Paths.Value(pth)
+		if item == nil {
+			continue
+		}
+		for _, op := range item.Operations() {
+			if op.Responses == nil {
+				continue
+			}
+			for code, r := range op.Responses.Map() {
+				if r == nil || r.Value == nil || len(code) == 0 {
+					continue
+				}
+				if code == "204" || code[0] == '1' || code[0] == '3' {
+					r.Value.Content = nil
+				}
+			}
 		}
 	}
 

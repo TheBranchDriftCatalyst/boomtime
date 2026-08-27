@@ -6,7 +6,6 @@
 package meta
 
 import (
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -39,11 +38,8 @@ var _ = Describe("Version endpoint", func() {
 		rec := httptest.NewRecorder()
 		c := e.NewContext(req, rec)
 
-		Expect(h.Version(c)).To(Succeed())
-		Expect(rec.Code).To(Equal(http.StatusOK))
-
-		var got versionResponse
-		Expect(json.NewDecoder(rec.Body).Decode(&got)).To(Succeed())
+		got, err := h.Version(c)
+		Expect(err).NotTo(HaveOccurred())
 		Expect(got.Version).To(Equal("v1.2.3"))
 	})
 
@@ -54,9 +50,8 @@ var _ = Describe("Version endpoint", func() {
 		rec := httptest.NewRecorder()
 		c := e.NewContext(req, rec)
 
-		Expect(h.Version(c)).To(Succeed())
-		var got versionResponse
-		Expect(json.NewDecoder(rec.Body).Decode(&got)).To(Succeed())
+		got, err := h.Version(c)
+		Expect(err).NotTo(HaveOccurred())
 		Expect(got.Version).To(Equal("dev"))
 	})
 })

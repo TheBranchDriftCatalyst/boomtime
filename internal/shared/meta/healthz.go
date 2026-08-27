@@ -8,7 +8,6 @@ package meta
 
 import (
 	"context"
-	"net/http"
 	"time"
 
 	"github.com/labstack/echo/v5"
@@ -49,7 +48,7 @@ func onOff(b bool) string {
 // when the DB is reachable, "degraded" otherwise (still HTTP 200 — k8s probes
 // treat the payload as diagnostic; use the standard non-2xx path if we ever
 // want the DB outage to fail readiness).
-func (h *Handler) Healthz(c *echo.Context) error {
+func (h *Handler) Healthz(c *echo.Context) (HealthzResponse, error) {
 	ctx, cancel := context.WithTimeout(c.Request().Context(), 2*time.Second)
 	defer cancel()
 
@@ -71,7 +70,7 @@ func (h *Handler) Healthz(c *echo.Context) error {
 		status = "degraded"
 	}
 
-	return c.JSON(http.StatusOK, HealthzResponse{
+	return HealthzResponse{
 		Status:        status,
 		Version:       h.Cfg.Version,
 		Branch:        h.Cfg.Branch,
@@ -86,5 +85,5 @@ func (h *Handler) Healthz(c *echo.Context) error {
 			"auth_provider": h.Cfg.AuthProvider,
 			"rollup_skip":   onOff(h.Cfg.FeatureRollupSkip),
 		},
-	})
+	}, nil
 }

@@ -295,6 +295,72 @@ func (h *Handler) resolveCurationRule(c *echo.Context, ctx context.Context, owne
 	return rule, nil
 }
 
+// --- preview payload, DECLARED for the spec only -----------------------------
+//
+// ApplyRenamePreview writes its own JSON because it answers two DIFFERENT
+// shapes discriminated on `action`, and one Go struct cannot be both. The types
+// below are therefore registered via apiroute.WritesJSON: they DECLARE the
+// payload for the OpenAPI schema without taking over the encoding, so the bytes
+// on the wire are still the maps the handler builds below. That is deliberate —
+// making the handler return a struct would put `omitempty` in charge of the
+// wire and silently drop a legitimately-empty `before`/`after` value.
+//
+// The declaration is a SUPERSET of the two branches: every field a branch does
+// not emit is optional, so both real payloads validate against it. It is not a
+// strict oneOf; the seam reflects exactly one Go type per route.
+//
+// If you change what the handler writes, change these tags in the same commit —
+// nothing enforces the pairing.
+
+// curationPreviewRule is the `rule` block echoed identically on both branches
+// so the FE only has to switch on `action`. A subset of db.CurationRule —
+// enabled / applyAtIngest / createdAt are deliberately not echoed.
+type curationPreviewRule struct {
+	ID         int     `json:"id"`
+	Axis       string  `json:"axis"`
+	Action     string  `json:"action"`
+	MatchType  string  `json:"matchType"`
+	MatchValue string  `json:"matchValue"`
+	NewValue   *string `json:"newValue"`
+}
+
+// curationPreviewRow is one entry of `affectedRows`. The rename branch emits
+// db.AffectedRowDiff ({id, before, after}); the hide branch emits
+// db.PurgeRowDiff ({id, deleted}). `id` is the only field common to both.
+type curationPreviewRow struct {
+	ID int64 `json:"id"`
+	// Before / After are the rename branch only: the value on the target
+	// column now and after the UPDATE.
+	Before string `json:"before,omitempty"`
+	After  string `json:"after,omitempty"`
+	// Deleted is the hide branch only: the raw column values on the row that
+	// the DELETE would remove, keyed by column.
+	Deleted map[string]string `json:"deleted,omitempty"`
+}
+
+// curationPreviewResponse is GET /api/v1/users/current/curation/:id/preview.
+type curationPreviewResponse struct {
+	// Action is the discriminator: "rename" or "hide".
+	Action string `json:"action"`
+	// SQLPlanned is both statements of the branch, semicolon-joined — what
+	// /apply or /purge would run verbatim.
+	SQLPlanned string `json:"sqlPlanned"`
+	// SQLUpdate / SQLDelete are the rename branch only.
+	SQLUpdate string `json:"sqlUpdate,omitempty"`
+	SQLDelete string `json:"sqlDelete,omitempty"`
+	// SQLDeleteRows / SQLDeleteRule are the hide branch only.
+	SQLDeleteRows string `json:"sqlDeleteRows,omitempty"`
+	SQLDeleteRule string `json:"sqlDeleteRule,omitempty"`
+	// AffectedRows is capped at applyPreviewRowsCap (100) rows.
+	AffectedRows []curationPreviewRow `json:"affectedRows"`
+	// TotalAffected is the EXACT count, uncapped — the modal renders
+	// "and N more…" from totalAffected - rowsShown.
+	TotalAffected int64 `json:"totalAffected"`
+	// RowsShown is len(affectedRows).
+	RowsShown int                 `json:"rowsShown"`
+	Rule      curationPreviewRule `json:"rule"`
+}
+
 // ApplyRenamePreview: GET /api/v1/users/current/curation/:id/preview.
 // Dispatches on rule.action — a rename rule preview returns the apply-shaped
 // payload (UPDATE + rule-delete SQL, before/after per row), a hide rule

@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 
@@ -67,6 +66,15 @@ type widgetDefListResponse struct {
 	Defs []db.WidgetDef `json:"defs"`
 }
 
+// widgetDefCreateResponse is POST /api/v1/users/current/widget-defs. Named so
+// the spec can describe it from the Go type; the tags are byte-identical to
+// the map keys this handler used to write ("defId", "url") — the builder UI
+// reads both, so renaming either is a wire break.
+type widgetDefCreateResponse struct {
+	DefID string `json:"defId"`
+	URL   string `json:"url"`
+}
+
 // ListWidgetDefs: GET /api/v1/users/current/widget-defs (auth).
 func (h *Handler) ListWidgetDefs(c *echo.Context) (widgetDefListResponse, error) {
 	var out widgetDefListResponse
@@ -82,71 +90,67 @@ func (h *Handler) ListWidgetDefs(c *echo.Context) (widgetDefListResponse, error)
 }
 
 // CreateWidgetDef: POST /api/v1/users/current/widget-defs (auth).
-func (h *Handler) CreateWidgetDef(c *echo.Context) error {
+//
+// The 64 KiB request cap (boom-bi2) now lives at the registration — see
+// apiroute.POSTLimit in routes.go. The inline spec is bounded to 32 KiB
+// (widgetDefMax) inside validateWidgetDefSpec; Medium leaves headroom for the
+// name + envelope without letting a hostile client force a huge decode.
+func (h *Handler) CreateWidgetDef(c *echo.Context, body widgetDefBody) (widgetDefCreateResponse, error) {
+	var out widgetDefCreateResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
-	}
-	var body widgetDefBody
-	// boom-bi2: 64 KiB cap — the inline spec is bounded to 32 KiB
-	// (widgetDefMax) inside validateWidgetDefSpec; Medium leaves headroom for
-	// the name + envelope without letting a hostile client force a huge decode.
-	if aerr := apihelpers.BindJSONWithLimit(c, &body, apihelpers.BodyLimitMedium); aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return out, aerr
 	}
 	body.Name = strings.TrimSpace(body.Name)
 	if body.Name == "" {
-		return apihelpers.RespondErr(c, apierr.BadRequest("name is required"))
+		return out, apierr.BadRequest("name is required")
 	}
 	if _, err := validateWidgetDefSpec(body.Spec); err != nil {
-		return apihelpers.RespondErr(c, apierr.BadRequest("Invalid spec: "+err.Error()))
+		return out, apierr.BadRequest("Invalid spec: " + err.Error())
 	}
 	id, err := h.DB.CreateWidgetDef(c.Request().Context(), owner, body.Name, body.Spec)
 	if err != nil {
 		// Unique-violation (username, name): report as 409 so the FE can
 		// prompt the user to rename or PATCH the existing def.
 		if isUniqueViolation(err) {
-			return apihelpers.RespondErr(c, apierr.BadRequest("A widget with this name already exists"))
+			return out, apierr.BadRequest("A widget with this name already exists")
 		}
-		return apihelpers.InternalErr(h.Logger, c, "widget def create failed", err)
+		return out, fmt.Errorf("widget def create failed: %w", err)
 	}
-	return c.JSON(http.StatusOK, map[string]any{
-		"defId": id.String(),
-		"url":   h.Cfg.BadgeURL + "/widget/svg/" + id.String() + "/named",
-	})
+	return widgetDefCreateResponse{
+		DefID: id.String(),
+		URL:   h.Cfg.BadgeURL + "/widget/svg/" + id.String() + "/named",
+	}, nil
 }
 
 // UpdateWidgetDef: PATCH /api/v1/users/current/widget-defs/:name (auth). Same
 // (owner, name) key as create — the URL name identifies the row to replace.
-func (h *Handler) UpdateWidgetDef(c *echo.Context) error {
+// Answers 204; the 64 KiB cap (boom-bi2, see CreateWidgetDef for the
+// reasoning) is declared at the registration via apiroute.NoContentBodyLimit.
+func (h *Handler) UpdateWidgetDef(c *echo.Context, body widgetDefBody) error {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return aerr
 	}
 	name := c.Param("name")
 	if name == "" {
-		return apihelpers.RespondErr(c, apierr.BadRequest("name is required"))
-	}
-	var body widgetDefBody
-	// boom-bi2: 64 KiB cap (see CreateWidgetDef for the reasoning).
-	if aerr := apihelpers.BindJSONWithLimit(c, &body, apihelpers.BodyLimitMedium); aerr != nil {
-		return apihelpers.RespondErr(c, aerr)
+		return apierr.BadRequest("name is required")
 	}
 	if _, err := validateWidgetDefSpec(body.Spec); err != nil {
-		return apihelpers.RespondErr(c, apierr.BadRequest("Invalid spec: "+err.Error()))
+		return apierr.BadRequest("Invalid spec: " + err.Error())
 	}
 	ok, err := h.DB.UpdateWidgetDef(c.Request().Context(), owner, name, body.Spec)
 	if err != nil {
-		return apihelpers.InternalErr(h.Logger, c, "widget def update failed", err)
+		return fmt.Errorf("widget def update failed: %w", err)
 	}
 	if !ok {
-		return apihelpers.RespondErr(c, apierr.NotFound("Widget def not found"))
+		return apierr.NotFound("Widget def not found")
 	}
 	// Cached SVG bytes for this def are keyed by def id — updating the spec
 	// doesn't invalidate them automatically. Sweep the owner's cache so a
 	// freshly-edited widget renders on the next fetch.
 	apihelpers.InvalidateOwnerCache(h.Cache, owner)
-	return c.NoContent(http.StatusNoContent)
+	return nil
 }
 
 // DeleteWidgetDef: DELETE /api/v1/users/current/widget-defs/:name (auth).

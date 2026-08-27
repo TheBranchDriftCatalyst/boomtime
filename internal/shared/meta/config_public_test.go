@@ -4,7 +4,6 @@
 package meta
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 
@@ -15,8 +14,10 @@ import (
 	"github.com/labstack/echo/v5"
 )
 
-// callPublicConfig invokes the handler with the given Config and decodes the
-// JSON body.
+// callPublicConfig invokes the handler with the given Config and returns the
+// typed response. The handler is on the apiroute seam, so it returns the value
+// rather than writing it — the recorder is still threaded through to prove the
+// handler itself touches neither the status code nor the body.
 func callPublicConfig(cfg *config.Config) (*httptest.ResponseRecorder, PublicConfigResponse) {
 	h := &Handler{Cfg: cfg}
 	e := echo.New()
@@ -24,10 +25,8 @@ func callPublicConfig(cfg *config.Config) (*httptest.ResponseRecorder, PublicCon
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 
-	Expect(h.PublicConfig(c)).To(Succeed())
-
-	var got PublicConfigResponse
-	Expect(json.NewDecoder(rec.Body).Decode(&got)).To(Succeed())
+	got, err := h.PublicConfig(c)
+	Expect(err).NotTo(HaveOccurred())
 	return rec, got
 }
 
@@ -36,7 +35,9 @@ var _ = Describe("PublicConfig endpoint", func() {
 		// config.Load() with an unset env is the production default path; this
 		// guards the Load() wiring, not just the handler mapping.
 		rec, got := callPublicConfig(config.Load())
-		Expect(rec.Code).To(Equal(http.StatusOK))
+		// The seam owns the write now: the handler must not have touched the
+		// response itself (a stray write would double-encode the body).
+		Expect(rec.Body.Len()).To(BeZero())
 		Expect(got.AuthProvider).To(Equal("local"))
 		Expect(got.OIDCEnabled).To(BeFalse())
 		Expect(got.RegistrationEnabled).To(BeTrue())

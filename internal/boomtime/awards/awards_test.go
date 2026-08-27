@@ -26,6 +26,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/awards"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apiroute"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/testutil"
@@ -36,11 +37,17 @@ import (
 // (POST /awards/log + public streaks). Uses a fresh echo.New() — never
 // touch hz.Router() from here, or the two routers race for the same
 // paths and Echo panics on duplicate registration.
+//
+// /awards/log is registered through apiroute.POSTLimit at
+// awards.AwardsLogBodyLimit — the SAME 128 KiB cap awards.Register uses in
+// production, so the oversize specs below exercise the real ceiling rather than
+// the seam's 4 KiB default. The Req/Resp type parameters are inferred from the
+// handler; they are unexported in package awards and cannot be written here.
 func awardsAuxRouter(hz *testutil.Harness) *echo.Echo {
 	e := echo.New()
 	// boom-zp2s: the awards bag lives on the harness now (moved off *handler.Handler
 	// when the boomtime data domains folded onto boomtime.Module).
-	e.POST("/api/v1/users/current/awards/log", hz.Awards.AwardsLog)
+	apiroute.POSTLimit(e, "/api/v1/users/current/awards/log", awards.AwardsLogBodyLimit, hz.Awards.AwardsLog)
 	apiroute.GET(e, "/api/public/profile/:slug/awards/streaks", hz.Awards.PublicAwardsStreaks)
 	return e
 }

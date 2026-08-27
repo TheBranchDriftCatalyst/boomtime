@@ -94,13 +94,16 @@ func (h *Handler) GetDashboardLayout(c *echo.Context) (dashboardLayoutResponse, 
 // GETs. The layout bytes are preserved verbatim through Set/Get — see the
 // boom-25r round-trip regression test.
 //
-// NOT on the apiroute seam: the seam binds through apihelpers.BindJSONWithLimit
-// (echo's binder), which rejects a body whose Content-Type is not
-// application/json and answers "Invalid request body" — where this hand-rolled
-// decode accepts any Content-Type and answers "invalid JSON body". Moving it
-// would change both the 400 envelope text and the outcome of a
-// correctly-formed PUT sent without a JSON Content-Type, so it keeps its own
-// decode. The 413 path is already identical to BindJSONWithLimit's.
+// Registered through apiroute.WritesJSON rather than apiroute.PUT: the seam's
+// binding forms go through apihelpers.BindJSONWithLimit (echo's binder), which
+// rejects a body whose Content-Type is not application/json and answers
+// "Invalid request body" — where this hand-rolled decode accepts any
+// Content-Type and answers "invalid JSON body". Binding through the seam would
+// change both the 400 envelope text and the outcome of a correctly-formed PUT
+// sent without a JSON Content-Type, so the decode (and the write) stay here.
+// WritesJSON still DECLARES dashboardLayoutResponse to the OpenAPI generator,
+// so the route is typed in the spec without the seam touching the request. The
+// 413 path is already identical to BindJSONWithLimit's.
 func (h *Handler) PutDashboardLayout(c *echo.Context) error {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {

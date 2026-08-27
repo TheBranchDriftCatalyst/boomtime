@@ -31,7 +31,8 @@ type hardcoverSearchResponse struct {
 	Candidates []hardcover.Candidate `json:"candidates"`
 }
 
-// HardcoverSearch handles GET /api/v1/hardcover/search?q=<text>&limit=<n>.
+// HardcoverSearch handles GET /api/v1/hardcover/search?q=<text>. The result count
+// is fixed at 8 server-side; there is no client-controlled limit.
 func (h *Handler) HardcoverSearch(c *echo.Context) (hardcoverSearchResponse, error) {
 	var out hardcoverSearchResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
@@ -76,11 +77,15 @@ type manualMatchBody struct {
 
 // SetBookManualMatch handles POST /api/v1/books/items/:externalId/match?source=.
 //
-// NOT on the typed seam (internal/shared/apiroute), deliberately: on success it
-// answers 200 with the full readingItemDTO, but when the post-write read-back
-// misses it answers 200 with the minimal ack {"matched":true,"hardcoverBookId":N}
-// instead. One response struct cannot express both without documenting fields the
-// handler does not always write, so this stays on plain e.POST.
+// TYPED SEAM NOTE. This handler OWNS its write, so it registers through
+// apiroute.WritesJSON[readingItemDTO] rather than a (Resp, error) registrar: on
+// success it answers 200 with the full readingItemDTO, but when the post-write
+// read-back misses it answers 200 with the minimal ack
+// {"matched":true,"hardcoverBookId":N} instead. One response struct cannot
+// express both without documenting fields the handler does not always write, so
+// WritesJSON DECLARES the dominant shape and the route's .Doc prose states the
+// ack branch. It also leaves the body read here — this endpoint has never capped
+// its request body, and moving it onto a binding registrar would impose one.
 func (h *Handler) SetBookManualMatch(c *echo.Context) error {
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
 	if aerr != nil {
