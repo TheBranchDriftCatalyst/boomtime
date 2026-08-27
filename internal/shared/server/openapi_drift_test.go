@@ -17,7 +17,6 @@ import (
 	"strings"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/domainreg"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/handler"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/openapi"
 	"github.com/labstack/echo/v5"
 
@@ -77,14 +76,19 @@ var _ = Describe("OpenAPI drift guard (boom-lfc)", func() {
 })
 
 // -- helpers restored from stdlib partner (boom-0vp.17) --
+//
+// Uses the DOCUMENTATION router (all features on), not a zero-value handler.
+// The old fixture left every Cfg nil, so every `if h.Cfg.BooksEnabled()` block
+// was false and ~51 routes never registered — meaning the guard checked the
+// spec against a router that omitted the entire books domain, GitHub connect,
+// the admin CLI and the jobs/metrics cluster. It reported success for months
+// while those were undocumented, because a route it cannot see cannot drift
+// (boom-i18f).
+//
+// registerStatic adds a "/*" catch-all; DocumentationRouter deliberately omits
+// it — the drift check skips that path anyway.
 func newRouterForDrift() *echo.Echo {
-	e := echo.New()
-	h := &handler.Handler{}
-	registerRoutes(e, h, domainreg.Build().Registry)
-	// registerStatic adds a "/*" catch-all; we DON'T include it here — the
-	// drift check specifically skips it, but building it also requires a
-	// working embed which the test binary has (the stub dist file).
-	return e
+	return DocumentationRouter(domainreg.Build().Registry)
 }
 
 var echoPathRe = regexp.MustCompile(`:([a-zA-Z_][a-zA-Z0-9_]*)`)

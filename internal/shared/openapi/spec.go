@@ -134,6 +134,30 @@ func setRouterEcho(e *echo.Echo) {
 	specMu.Unlock()
 }
 
+// SetDocumentationRouter overrides the router the spec is generated from,
+// replacing the LIVE router that Register captured.
+//
+// WHY OVERRIDE AT ALL. Routes are gated by `if` blocks, so the live router is
+// config-specific: whatever this deployment has switched off is simply absent,
+// and therefore undocumented. That is how the entire books domain (~26 routes),
+// GitHub connect, the admin CLI and the jobs/metrics cluster stayed out of the
+// spec while a bidirectional drift guard reported success — a gated route
+// cannot drift, because nothing ever sees it (boom-i18f).
+//
+// The composition root passes an all-features-on enumeration router
+// (server.DocumentationRouter) so the spec describes the API this BINARY
+// implements rather than the subset one instance happens to serve. Callers that
+// never call this keep the previous live-router behaviour.
+//
+// Accepts nil as a no-op so a caller can pass an optional router without
+// branching.
+func SetDocumentationRouter(e *echo.Echo) {
+	if e == nil {
+		return
+	}
+	setRouterEcho(e)
+}
+
 // build assembles the openapi3.T. Everything is inline here (paths + tags +
 // components) so a single sweep captures the shape of the whole API.
 //

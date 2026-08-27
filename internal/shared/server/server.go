@@ -24,6 +24,7 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/logging"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/meta"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/metrics"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/openapi"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/queryapi"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
@@ -125,6 +126,11 @@ func NewWithHandler(database *db.DB, cfg *config.Config, logger *slog.Logger, lo
 	h := handler.New(database, cfg, logger, logHub)
 	registerRoutes(e, h, reg)
 	registerStatic(e, h, cfg, logger)
+	// The spec is generated from an ALL-FEATURES-ON enumeration router, not from
+	// the live one above. openapi.Register (reached via meta during
+	// registerRoutes) captured the live router; override it here, once every
+	// domain has wired its routes. See SetDocumentationRouter for why.
+	openapi.SetDocumentationRouter(DocumentationRouter(reg))
 	return e, h
 }
 
