@@ -5,7 +5,6 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/domainreg"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/openapi"
 )
 
@@ -22,7 +21,7 @@ func resolve(doc *openapi3.T, ref *openapi3.SchemaRef) *openapi3.Schema {
 
 func specForDocs(t *testing.T) *openapi3.T {
 	t.Helper()
-	openapi.SetDocumentationRouter(DocumentationRouter(domainreg.Build().Registry))
+	openapi.SetDocumentationRouter(DocumentationRouter())
 	doc, _, err := openapi.Spec()
 	if err != nil {
 		t.Fatalf("Spec: %v", err)

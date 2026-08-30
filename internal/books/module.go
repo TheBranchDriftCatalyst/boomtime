@@ -77,6 +77,16 @@ func (m *Module) SetJobEnqueuer(enq jobs.Enqueuer) {
 	}
 }
 
+// HasJobEnqueuer reports whether the stashed HTTP handler currently holds a jobs
+// enqueuer. Exists so a test can prove that late-wired state SURVIVES a second
+// registration pass — building the OpenAPI documentation router used to run
+// RegisterRoutes again on the live registry and silently replace the handler this
+// wiring landed on, which took every background-job enqueue down in production
+// while the jobs page still looked healthy.
+func (m *Module) HasJobEnqueuer() bool {
+	return m.h != nil && m.h.JobEnqueuer != nil
+}
+
 // SetHardcoverPush forwards the inline curation-push service (the per-row sync button)
 // onto the stashed handler. No-op until RegisterRoutes has run.
 func (m *Module) SetHardcoverPush(p *hardcover.PushService) {

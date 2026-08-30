@@ -34,7 +34,7 @@ func TestDocumentationRouterIsStrictSuperset(t *testing.T) {
 	bare := echo.New()
 	registerRoutes(bare, &handler.Handler{}, domainreg.Build().Registry)
 	bareSet := routeKeys(bare)
-	docSet := routeKeys(DocumentationRouter(domainreg.Build().Registry))
+	docSet := routeKeys(DocumentationRouter())
 
 	var lost []string
 	for k := range bareSet {
@@ -61,7 +61,7 @@ func TestDocumentationRouterIsStrictSuperset(t *testing.T) {
 // one family vanished while another grew, and these are exactly the families
 // that were invisible for months.
 func TestDocumentationRouterCoversEveryGatedFamily(t *testing.T) {
-	docSet := routeKeys(DocumentationRouter(domainreg.Build().Registry))
+	docSet := routeKeys(DocumentationRouter())
 
 	for _, tc := range []struct{ family, route string }{
 		{"books (BooksEnabled)", "GET /api/v1/books/items"},

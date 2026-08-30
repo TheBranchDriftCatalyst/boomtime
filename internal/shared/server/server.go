@@ -131,7 +131,7 @@ func NewWithHandler(database *db.DB, cfg *config.Config, logger *slog.Logger, lo
 	// the live one above. openapi.Register (reached via meta during
 	// registerRoutes) captured the live router; override it here, once every
 	// domain has wired its routes. See SetDocumentationRouter for why.
-	openapi.SetDocumentationRouter(DocumentationRouter(reg))
+	openapi.SetDocumentationRouter(DocumentationRouter())
 	// Unexpected errors returned through the typed route seam log here rather
 	// than to slog.Default(), matching apihelpers.InternalErr.
 	apiroute.SetLogger(logger)

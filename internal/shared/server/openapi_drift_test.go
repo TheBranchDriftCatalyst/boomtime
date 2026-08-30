@@ -16,7 +16,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/domainreg"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/openapi"
 	"github.com/labstack/echo/v5"
 
@@ -88,7 +87,7 @@ var _ = Describe("OpenAPI drift guard (boom-lfc)", func() {
 // registerStatic adds a "/*" catch-all; DocumentationRouter deliberately omits
 // it — the drift check skips that path anyway.
 func newRouterForDrift() *echo.Echo {
-	return DocumentationRouter(domainreg.Build().Registry)
+	return DocumentationRouter()
 }
 
 var echoPathRe = regexp.MustCompile(`:([a-zA-Z_][a-zA-Z0-9_]*)`)

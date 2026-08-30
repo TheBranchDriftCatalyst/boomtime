@@ -3,9 +3,9 @@ package server
 import (
 	"github.com/labstack/echo/v5"
 
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/domainreg"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/identity"
 	sharedadmin "github.com/TheBranchDriftCatalyst/boomtime/internal/shared/admin"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/catalyst"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/handler"
@@ -28,9 +28,25 @@ import (
 // The tradeoff, stated plainly: Swagger UI may list a route that 404s on THIS
 // server. That is the better failure — a documented route that is off is
 // discoverable and explains itself, an undocumented route is invisible.
-func DocumentationRouter(reg *catalyst.Registry) *echo.Echo {
+// TAKES NO REGISTRY, DELIBERATELY. It builds its OWN via domainreg.Build(), and
+// that is a correctness requirement rather than a convenience.
+//
+// catalyst modules are STATEFUL across registration: books.Module.RegisterRoutes
+// does `m.h = booksapi.New(...)` and boomtime.Module does the same for m.admin,
+// stashing the handler so the composition root can late-wire a jobs enqueuer onto
+// it once the provider exists. Handing this function the LIVE registry therefore
+// runs RegisterRoutes a SECOND time on the same module instances and replaces
+// those stashed handlers with ones built from the documentation fixture. The
+// enqueuer then lands on the fixture handler while the live routes still hold
+// method values bound to the original — so every background-job enqueue answers
+// "background jobs are not available on this server" while the jobs page itself
+// looks perfectly healthy.
+//
+// That shipped (c638283) and reached production. Building the registry here means
+// the live one cannot be passed by mistake.
+func DocumentationRouter() *echo.Echo {
 	e := echo.New()
-	registerRoutes(e, documentationHandler(), reg)
+	registerRoutes(e, documentationHandler(), domainreg.Build().Registry)
 	return e
 }
 
