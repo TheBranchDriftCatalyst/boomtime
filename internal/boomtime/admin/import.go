@@ -10,7 +10,6 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/importer"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/metrics"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/model"
@@ -55,33 +54,58 @@ func (h *Handler) ImportRequest(c *echo.Context, payload model.ImportRequestPayl
 		return out, aerr
 	}
 
+	ctx := c.Request().Context()
+
 	// boom-6jm.8: save-on-success. Rather than persist the typed key eagerly
 	// (the old behavior — see the pre-6jm.8 comment block), we defer the
 	// save to the worker's terminal-success path. This way a user who typed a
 	// wrong key gets a failed import job WITHOUT their bad key being written
-	// to disk. The typed token still travels to the worker via QueueItem so
-	// the run has something to authenticate with; the worker only calls
-	// SetEncryptedWakatimeKey when the run finishes with no 401s from
+	// to disk. The typed token still travels to the worker IN MEMORY via
+	// QueueItem so the run has something to authenticate with; the worker only
+	// calls SetEncryptedWakatimeKey when the run finishes with no 401s from
 	// wakatime.com (see importer.applyKeyOutcome for the state machine).
 	//
-	// Fallback logic (unchanged): if the user did NOT type a token, try the
-	// previously-saved encrypted key before falling through to the server
-	// env key. This is the "save it once, click Import forever" ergonomic.
+	// boom-inih: this handler no longer resolves the fallback key into
+	// payload.APIToken. It used to decrypt users.encrypted_wakatime_key (or
+	// read the server-wide env key) into the payload, which was then
+	// json.Marshal'ed verbatim into import_jobs.value — a column
+	// internal/shared/db/dump.go ships in the user-downloadable whole-DB
+	// backup. Every import ever run left a plaintext key in the DB (and, on
+	// the no-typed-key path, the OPERATOR's server-wide key inside a
+	// user-scoped backup), nullifying the boom-6jm encryption-at-rest design.
+	//
+	// Instead we record only WHERE the key lives (a non-secret sentinel) and
+	// let importer.resolveToken fetch it at run time. Fallback ORDER is
+	// unchanged: typed → previously-saved encrypted → server env — the
+	// "save it once, click Import forever" ergonomic still holds.
 	typedToken := payload.APIToken
-	if typedToken == "" {
-		if blob, has, err := h.DB.GetEncryptedWakatimeKey(c.Request().Context(), owner); err != nil {
+	source := importer.TokenSourceNone
+	switch {
+	case typedToken != "":
+		source = importer.TokenSourceTyped
+	default:
+		if _, has, err := h.DB.GetEncryptedWakatimeKey(ctx, owner); err != nil {
 			h.Logger.Warn("wakatime key lookup failed", "user", owner, "err", err)
 		} else if has {
-			if pt, derr := auth.Decrypt(blob); derr != nil {
-				h.Logger.Warn("wakatime key decrypt failed (falling back to server key)", "user", owner, "err", derr)
-			} else {
-				payload.APIToken = string(pt)
-			}
+			source = importer.TokenSourceSaved
+		}
+		if source == importer.TokenSourceNone && h.Cfg.HasServerWakatimeKey() {
+			source = importer.TokenSourceServer
 		}
 	}
+	// Nothing downstream needs the request's copy of the key, and leaving it
+	// set would put it back on the marshalled row.
+	payload.APIToken = ""
 
-	payload.APIToken = h.effectiveImportToken(payload.APIToken)
-	ctx := c.Request().Context()
+	// boom-1vwl: reclaim THIS owner's expired-lease job before the
+	// one-active-job-per-owner check. Startup recovery is now lease-scoped and
+	// server-role-only, so a job whose process died can outlive the boot sweep
+	// that used to clear it; without this a zombie 'running' row would block
+	// the user from ever starting another import. Owner-scoped so a user
+	// action never writes to anyone else's rows. Best-effort.
+	if _, err := h.DB.MarkStaleJobsFailed(ctx, "interrupted by restart", db.ImportJobStaleAfter, owner); err != nil {
+		h.Logger.Warn("stale import job reclaim failed", "user", owner, "err", err)
+	}
 
 	// One active job per owner: return the existing running/queued job if any.
 	if existing, err := h.DB.GetRunningJobByOwner(ctx, owner); err != nil {
@@ -94,12 +118,18 @@ func (h *Handler) ImportRequest(c *echo.Context, payload model.ImportRequestPayl
 		}, nil
 	}
 
-	// TypedToken carries the ORIGINAL user-typed token (may be "") separate
-	// from payload.APIToken (which has already been resolved to typed OR
-	// saved-encrypted OR server-env). Only the typed value is a candidate
-	// for save-on-success persistence — a fallback token was either already
-	// saved or is not the user's to persist.
-	item := importer.QueueItem{Requester: owner, ReqPayload: payload, TypedToken: typedToken}
+	// TypedToken carries the ORIGINAL user-typed token (may be ""). It is
+	// json:"-" on QueueItem — in-memory handoff only — and is the sole
+	// candidate for save-on-success persistence; a fallback key was either
+	// already saved or is not the user's to persist.
+	item := importer.QueueItem{
+		Requester:   owner,
+		ReqPayload:  payload,
+		TokenSource: source,
+		TypedToken:  typedToken,
+	}
+	// QueueItem.MarshalJSON redacts every plaintext token, so `raw` is safe to
+	// persist and safe to appear in a backup.
 	raw, err := json.Marshal(item)
 	if err != nil {
 		return out, apierr.Generic()

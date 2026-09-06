@@ -179,14 +179,65 @@ func (d *DB) SetJobDrift(ctx context.Context, id int, drift []byte) error {
 	return err
 }
 
-// MarkRunningJobsFailed marks any leftover queued/running jobs as failed on
-// startup (durability across restarts). Returns affected job ids.
+// ImportJobStaleAfter is the lease TTL for an in-flight import job (boom-1vwl).
+//
+// A live run touches its row on EVERY processed day (UpdateJobProgress sets
+// updated_at = now()), and a single day is one wakatime.com request bounded by
+// the importer's 60s client timeout — so a healthy import refreshes the lease
+// well inside this window. Anything older than the TTL has no live goroutine
+// behind it and is safe to reclaim.
+const ImportJobStaleAfter = 10 * time.Minute
+
+// MarkRunningJobsFailed marks EVERY queued/running job as failed, fleet-wide,
+// with no staleness or ownership scoping.
+//
+// boom-1vwl: this is deliberately NOT the startup-recovery path any more. In
+// the split server/worker (+ KEDA drain-pod) topology every pod boot ran this
+// and killed the server pod's live import mid-run. Production recovery goes
+// through MarkStaleJobsFailed; this remains only as a blunt test/cleanup
+// helper (many suites call it to drain jobs before DB teardown).
+// Returns affected job ids.
 func (d *DB) MarkRunningJobsFailed(ctx context.Context, reason string) ([]int, error) {
+	return d.markJobsFailed(ctx, reason, 0, "")
+}
+
+// MarkStaleJobsFailed marks queued/running import jobs whose row has not been
+// touched for at least staleAfter as failed, returning the affected ids
+// (boom-1vwl). A job whose worker is alive keeps refreshing updated_at, so it
+// is never reclaimed by another process's boot sweep.
+//
+// owner == "" sweeps fleet-wide (startup recovery); a non-empty owner scopes
+// the sweep to that user's rows (the submit path reclaims only its own
+// caller's zombie so a user action never writes to other owners' jobs).
+func (d *DB) MarkStaleJobsFailed(ctx context.Context, reason string, staleAfter time.Duration, owner string) ([]int, error) {
+	if staleAfter <= 0 {
+		staleAfter = ImportJobStaleAfter
+	}
+	return d.markJobsFailed(ctx, reason, staleAfter, owner)
+}
+
+// markJobsFailed is the shared UPDATE. staleAfter <= 0 disables the lease
+// predicate entirely (MarkRunningJobsFailed's blunt behavior); owner == ""
+// disables the ownership predicate.
+func (d *DB) markJobsFailed(ctx context.Context, reason string, staleAfter time.Duration, owner string) ([]int, error) {
+	var (
+		staleSecs any
+		ownerArg  any
+	)
+	if staleAfter > 0 {
+		staleSecs = staleAfter.Seconds()
+	}
+	if owner != "" {
+		ownerArg = owner
+	}
 	rows, err := d.Pool.Query(ctx, `
 		UPDATE import_jobs
 		SET state = 'failed', error = $1, finished_at = now(), current_day = NULL, updated_at = now()
 		WHERE state IN ('queued','running')
-		RETURNING id`, reason)
+		  AND ($2::double precision IS NULL
+		       OR updated_at < now() - ($2::double precision * interval '1 second'))
+		  AND ($3::text IS NULL OR owner = $3)
+		RETURNING id`, reason, staleSecs, ownerArg)
 	if err != nil {
 		return nil, err
 	}

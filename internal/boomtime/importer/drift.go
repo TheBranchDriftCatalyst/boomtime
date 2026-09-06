@@ -388,7 +388,15 @@ func (c *driftCollector) checkItem(endpoint, day string, item json.RawMessage, s
 
 // checkList decodes an array envelope and applies checkItem to sample of items.
 // Sample of -1 checks all items (used for the small lookup lists).
-func (c *driftCollector) checkList(endpoint, day string, dataArray json.RawMessage, spec schemaSpec, sample int) {
+//
+// Returns whether every sampled item satisfied the spec's required fields FOR
+// THIS CALL. Callers MUST use this per-call verdict rather than diffing
+// hasError() around the call: findings dedupe by (endpoint, kind, field), so
+// once day 1 records `heartbeats|missing_required|time` the collector's
+// hasError() latches true and a before/after diff never fires again — every
+// later day would then insert mangled rows (TimeSent=0 → 1970-01-01) while the
+// job still reported 'completed'.
+func (c *driftCollector) checkList(endpoint, day string, dataArray json.RawMessage, spec schemaSpec, sample int) bool {
 	var items []json.RawMessage
 	if err := json.Unmarshal(dataArray, &items); err != nil {
 		// checkEnvelope should have gated this; belt-and-suspenders.
@@ -397,15 +405,19 @@ func (c *driftCollector) checkList(endpoint, day string, dataArray json.RawMessa
 			Detail:   "data is not a JSON array: " + err.Error(),
 			Severity: driftSeverityError, FirstSeenDay: day,
 		})
-		return
+		return false
 	}
 	limit := len(items)
 	if sample >= 0 && limit > sample {
 		limit = sample
 	}
+	allOK := true
 	for i := 0; i < limit; i++ {
-		c.checkItem(endpoint, day, items[i], spec)
+		if !c.checkItem(endpoint, day, items[i], spec) {
+			allOK = false
+		}
 	}
+	return allOK
 }
 
 // checkObject applies checkItem to a single object fragment (used for

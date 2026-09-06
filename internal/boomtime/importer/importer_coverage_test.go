@@ -542,6 +542,12 @@ var _ = Describe("Worker.RecoverInterrupted (boom-d6x)", func() {
 	// Named invariant: any queued/running rows left over from a crash MUST
 	// be flipped to failed with the given reason — otherwise a restart
 	// silently orphans a zombie job that never runs.
+	//
+	// boom-1vwl: the sweep is now lease-scoped (only rows whose updated_at is
+	// older than the TTL are reclaimed), so the leftovers are aged past the
+	// lease here to represent a process that actually died. The complementary
+	// half — a FRESH lease surviving another pod's boot sweep — is pinned in
+	// secrets_and_recovery_test.go.
 	It("marks queued + running leftover jobs failed with the given reason", func() {
 		database := openImportOutcomeDBGinkgo()
 		ctx := context.Background()
@@ -556,8 +562,12 @@ var _ = Describe("Worker.RecoverInterrupted (boom-d6x)", func() {
 		Expect(err).NotTo(HaveOccurred())
 		_, err = database.MarkJobRunning(ctx, running.ID)
 		Expect(err).NotTo(HaveOccurred())
+		_, err = database.Pool.Exec(ctx,
+			`UPDATE import_jobs SET updated_at = now() - interval '45 minutes' WHERE id = ANY($1)`,
+			[]int{queued.ID, running.ID})
+		Expect(err).NotTo(HaveOccurred())
 
-		w := &Worker{db: database, logger: silentLoggerCov(), hub: NewHub()}
+		w := &Worker{db: database, logger: silentLoggerCov(), hub: NewHub(), StaleAfter: 10 * time.Minute}
 		w.RecoverInterrupted(ctx)
 
 		q, err := database.GetJobByID(ctx, queued.ID)

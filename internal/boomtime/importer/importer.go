@@ -36,18 +36,65 @@ var ErrWakatimeUnauthorized = errors.New("wakatime returned 401")
 // were audit-dead (boom-al6) and were removed.
 const JobSubmitted = "JobSubmitted"
 
-// QueueItem is the JSON stored in import_jobs.value (the request + requester).
+// TokenSource is the non-secret sentinel persisted in import_jobs.value that
+// tells the worker WHERE to resolve this run's wakatime.com key from at run
+// time (boom-inih). It replaces the plaintext key that used to be marshalled
+// into the row.
+type TokenSource string
+
+// Token sources. The zero value (TokenSourceNone) means "the handler did not
+// record one" — the worker then falls back to whatever in-memory token the
+// QueueItem happens to carry (test callers) and finally the server env key.
+const (
+	TokenSourceNone   TokenSource = ""
+	TokenSourceTyped  TokenSource = "typed"  // the user typed a key on submit
+	TokenSourceSaved  TokenSource = "saved"  // users.encrypted_wakatime_key
+	TokenSourceServer TokenSource = "server" // the server-wide env key
+)
+
+// QueueItem is the in-memory job envelope AND — in redacted form — the JSON
+// stored in import_jobs.value (the request + requester).
+//
+// boom-inih: NO plaintext wakatime.com key is ever persisted here. The row
+// used to carry the fully-resolved key (typed key, DECRYPTED saved key, or the
+// server-wide env key) in reqPayload.apiToken / typedToken, and
+// internal/shared/db/dump.go ships import_jobs.value verbatim in the
+// user-downloadable whole-DB backup — which nullified the boom-6jm
+// encryption-at-rest threat model. Now only TokenSource (a sentinel) survives
+// marshalling; the worker resolves the real key at run time via resolveToken.
 //
 // TypedToken (boom-6jm.8) is the plaintext key the user typed on submit —
 // distinct from ReqPayload.APIToken which, after the handler resolves it, may
-// be a fallback (already-saved encrypted key OR server env key). We only
-// persist TypedToken to users.encrypted_wakatime_key on END-TO-END success
-// (no wakatime 401 seen during the run). When empty, there is no user-scoped
-// secret to persist and the save-on-success step is a no-op.
+// be a fallback (already-saved encrypted key OR server env key). It is
+// in-memory only (json:"-"): we persist it to users.encrypted_wakatime_key on
+// END-TO-END success (no wakatime 401 seen during the run). When empty, there
+// is no user-scoped secret to persist and save-on-success is a no-op.
 type QueueItem struct {
 	ReqPayload model.ImportRequestPayload `json:"reqPayload"`
 	Requester  string                     `json:"requester"`
-	TypedToken string                     `json:"typedToken,omitempty"`
+
+	// TokenSource is the only token-related field that survives marshalling.
+	TokenSource TokenSource `json:"tokenSource,omitempty"`
+
+	// TypedToken never crosses the process boundary — see MarshalJSON.
+	TypedToken string `json:"-"`
+}
+
+// MarshalJSON redacts every plaintext secret before the item is written to
+// import_jobs.value (boom-inih).
+//
+// ReqPayload keeps its own json tags because model.ImportRequestPayload IS the
+// POST /import request wire format the FE sends (apiToken); the redaction
+// therefore happens here, on a copy, rather than on the shared model. This is
+// belt-and-braces: the handler already blanks APIToken before constructing the
+// item, but making the marshal itself secret-free means no future caller can
+// reintroduce the leak by marshalling a QueueItem that still holds a key.
+func (q QueueItem) MarshalJSON() ([]byte, error) {
+	type persisted QueueItem // sheds MarshalJSON — no infinite recursion
+	redacted := persisted(q)
+	redacted.ReqPayload.APIToken = ""
+	redacted.TypedToken = ""
+	return json.Marshal(redacted)
 }
 
 const wakatimeAPI = "https://wakatime.com"
@@ -78,6 +125,18 @@ type Worker struct {
 	// integration tests without leaking into the public config.
 	BaseURL string
 
+	// ServerAPIKey is the server-wide wakatime.com key (cfg.WakatimeAPIKey).
+	// boom-inih: the worker holds it so a job whose TokenSource is "server"
+	// can be authenticated at run time WITHOUT the key ever being marshalled
+	// into import_jobs.value. Wired in cmd/boomtime; empty in tests that
+	// don't exercise the server-key fallback.
+	ServerAPIKey string
+
+	// StaleAfter overrides the import-job lease TTL used by
+	// RecoverInterrupted (0 = db.ImportJobStaleAfter). Test seam, same shape
+	// as BaseURL.
+	StaleAfter time.Duration
+
 	mu      sync.Mutex
 	running map[int]*runningJob // jobID -> cancel+done
 	base    context.Context     // parent context (server lifetime)
@@ -102,10 +161,34 @@ func NewWorker(base context.Context, database *db.DB, logger *slog.Logger, hub *
 	}
 }
 
-// RecoverInterrupted marks any queued/running jobs (from a previous process) as
-// failed. Called once at startup so a crash/restart never leaves a zombie job.
+// ShouldRecoverInterrupted reports whether THIS process may reclaim
+// interrupted import jobs at boot (boom-1vwl).
+//
+// Import runs are in-process goroutines started by the HTTP submit handler
+// (StartJob), so they only ever execute in a server-role process. A
+// worker-role pod — and above all a short-lived KEDA drain pod
+// (BOOM_JOBS_DRAIN=true, spawned by any pending avatar-render / label-image /
+// liberation job) — has no import jobs of its own and MUST NOT touch the
+// server pod's live run. The recovery sweep used to run unconditionally on
+// every pod boot, flipping the user's in-flight import to 'failed' while its
+// goroutine kept going on the server.
+//
+// Mirrors the gate the adjacent label-images reconcile already uses.
+func ShouldRecoverInterrupted(isServerRole, jobsDrain bool) bool {
+	return isServerRole && !jobsDrain
+}
+
+// RecoverInterrupted reclaims queued/running jobs left behind by a previous
+// process so a crash/restart never leaves a zombie job blocking the owner's
+// one-active-job-per-user slot.
+//
+// boom-1vwl: the sweep is LEASE-scoped, not a blanket state reset. A live run
+// refreshes updated_at on every processed day, so only rows whose lease has
+// expired (w.staleAfter) are reclaimed — a second server replica booting
+// during a rolling deploy can no longer kill the outgoing pod's in-flight
+// import. Callers must additionally gate on ShouldRecoverInterrupted.
 func (w *Worker) RecoverInterrupted(ctx context.Context) {
-	ids, err := w.db.MarkRunningJobsFailed(ctx, "interrupted by restart")
+	ids, err := w.db.MarkStaleJobsFailed(ctx, "interrupted by restart", w.staleAfter(), "")
 	if err != nil {
 		w.logger.Error("failed to recover interrupted import jobs", "err", err)
 		return
@@ -113,6 +196,14 @@ func (w *Worker) RecoverInterrupted(ctx context.Context) {
 	for _, id := range ids {
 		w.logger.Warn("marked interrupted import job as failed", "id", id)
 	}
+}
+
+// staleAfter is the effective import-job lease TTL for this worker.
+func (w *Worker) staleAfter() time.Duration {
+	if w.StaleAfter > 0 {
+		return w.StaleAfter
+	}
+	return db.ImportJobStaleAfter
 }
 
 // StartJob launches processing of an existing queued job in the background.
@@ -223,8 +314,15 @@ func (w *Worker) run(ctx context.Context, jobID int, item QueueItem) {
 	// server env key or a previously-saved key we don't want to disturb).
 	saw401 := false
 
+	// boom-inih: resolve the real wakatime.com key HERE, at run time. The
+	// durable job row only carries a TokenSource sentinel, so no plaintext
+	// key exists in import_jobs.value (and therefore none in the whole-DB
+	// backup ZIP). The resolved value is used for exactly one thing: the
+	// Authorization header below.
+	apiToken := w.resolveToken(ctx, item, log)
+
 	// Resolve user_agents and machine_names once up front.
-	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(p.APIToken))
+	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(apiToken))
 	uaByID, mnByID, err := w.fetchLookups(ctx, authHeader, drift)
 	flushDriftLogs()
 	if err != nil {
@@ -247,6 +345,9 @@ func (w *Worker) run(ctx context.Context, jobID int, item QueueItem) {
 	}
 
 	var importedTotal int64
+	// failedDays counts days that ended in an error (upstream 4xx/5xx, decode
+	// failure, drift-skip). Used for the all-days-failed terminal verdict.
+	var failedDays int
 	for i, day := range days {
 		if ctx.Err() != nil {
 			withBackgroundTimeout(5*time.Second, persistDrift)
@@ -263,6 +364,7 @@ func (w *Worker) run(ctx context.Context, jobID int, item QueueItem) {
 				return
 			}
 			// Resilient: log and continue to the next day.
+			failedDays++
 			log("error", fmt.Sprintf("failed to import %s: %s", day, dayErr.Error()))
 			if errors.Is(dayErr, ErrWakatimeUnauthorized) {
 				saw401 = true
@@ -289,14 +391,81 @@ func (w *Worker) run(ctx context.Context, jobID int, item QueueItem) {
 	// Persist drift BEFORE FinishImportJob so the returned terminal snapshot
 	// (and the "state" WS event) carries drift[].
 	persistDrift(ctx)
-	final, err := w.db.FinishImportJob(ctx, jobID, db.JobStateCompleted, nil)
+
+	// A run where EVERY day errored (sustained 429/5xx, upstream outage) is
+	// not a success. It used to fall through to state='completed' with
+	// importedCount=0 — the FE showed a green job the user believed had
+	// imported their history, and applyKeyOutcome re-stamped a saved key's
+	// status as 'valid' on the strength of zero successful days. Per-day
+	// resilience is preserved: a partial failure still completes.
+	terminal := db.JobStateCompleted
+	var termErr *string
+	if len(days) > 0 && failedDays == len(days) {
+		terminal = db.JobStateFailed
+		msg := fmt.Sprintf("all %d day(s) failed; no heartbeats were imported", len(days))
+		termErr = &msg
+		log("error", msg)
+	}
+
+	final, err := w.db.FinishImportJob(ctx, jobID, terminal, termErr)
 	if err != nil {
 		w.logger.Error("failed to finalize job", "job", jobID, "err", err)
 		return
 	}
 	publishJob("state", final)
-	w.logger.Info("import completed", "job", jobID, "user", item.Requester, "imported", importedTotal)
-	w.applyKeyOutcome(item, db.JobStateCompleted, saw401)
+	w.logger.Info("import finished", "job", jobID, "user", item.Requester,
+		"state", terminal, "imported", importedTotal, "failedDays", failedDays)
+	w.applyKeyOutcome(item, terminal, saw401)
+}
+
+// resolveToken produces the plaintext wakatime.com key for THIS run
+// (boom-inih). The durable job payload only carries a TokenSource sentinel, so
+// the worker re-resolves the real secret here from the same places the submit
+// handler chose between — decrypting users.encrypted_wakatime_key or reading
+// the server env key.
+//
+// The returned value is never logged, never persisted, and never returned via
+// the API: its single consumer is the Authorization header in run.
+func (w *Worker) resolveToken(ctx context.Context, item QueueItem, log func(level, msg string)) string {
+	switch item.TokenSource {
+	case TokenSourceTyped:
+		return item.TypedToken
+
+	case TokenSourceSaved:
+		blob, has, err := w.db.GetEncryptedWakatimeKey(ctx, item.Requester)
+		switch {
+		case err != nil:
+			w.logger.Warn("wakatime key lookup failed", "user", item.Requester, "err", err)
+		case !has:
+			w.logger.Warn("saved wakatime key disappeared before the run started",
+				"user", item.Requester)
+		default:
+			pt, derr := auth.Decrypt(blob)
+			if derr == nil {
+				return string(pt)
+			}
+			// Same fallback the handler used to do inline. The job log line
+			// carries no key material — only the fact of the failure.
+			log("warn", "saved wakatime key could not be decrypted; falling back to the server key")
+			w.logger.Warn("wakatime key decrypt failed (falling back to server key)",
+				"user", item.Requester, "err", derr)
+		}
+		return w.ServerAPIKey
+
+	case TokenSourceServer:
+		return w.ServerAPIKey
+	}
+
+	// TokenSourceNone — a job row written before boom-inih, or an in-process
+	// caller (tests) that hands the worker a token directly. Neither path can
+	// leak: MarshalJSON strips both fields before the row is written.
+	if item.ReqPayload.APIToken != "" {
+		return item.ReqPayload.APIToken
+	}
+	if item.TypedToken != "" {
+		return item.TypedToken
+	}
+	return w.ServerAPIKey
 }
 
 // applyKeyOutcome writes the boom-6jm.8/.10 outcome for a terminal job:
@@ -469,13 +638,14 @@ func (w *Worker) importDay(ctx context.Context, authHeader, user, day string, mn
 	// Envelope + sampled item drift check. Uniform per-day schema means we
 	// only need to sample the first N items (driftSampleSizeDay).
 	if data, ok := drift.checkEnvelope("heartbeats", body, jtArray); ok {
-		before := drift.hasError()
-		drift.checkList("heartbeats", day, data, heartbeatSpec, driftSampleSizeDay)
-		// If a NEW error-severity finding just appeared for heartbeats
-		// (required field missing/type-changed at the sampled items), skip
-		// this day's insert — the ingest would silently mangle rows.
-		if !before && drift.hasError() {
-			return 0, fmt.Errorf("skipping insert: required heartbeat field(s) missing or type-changed (see drift findings)")
+		// Per-DAY verdict. The old guard diffed drift.hasError() around the
+		// call (`!before && drift.hasError()`), which only ever fired on the
+		// FIRST offending day: findings dedupe by (endpoint, kind, field), so
+		// from day 2 on `before` was already true and every remaining day's
+		// mangled rows (e.g. missing "time" → TimeSent=0 → 1970-01-01) went
+		// straight into heartbeats while the job reported 'completed'.
+		if !drift.checkList("heartbeats", day, data, heartbeatSpec, driftSampleSizeDay) {
+			return 0, fmt.Errorf("skipping insert: required heartbeat field(s) missing or null (see drift findings)")
 		}
 	}
 

@@ -82,6 +82,9 @@ func newImportDeps(serverKey string) *importDeps {
 	logger := silentImportLogger()
 	hub := importer.NewHub()
 	worker := importer.NewWorker(workerCtx, hz.DB, logger, hub)
+	// boom-inih: the server-wide key now reaches the RUN via the worker (the
+	// job row carries only a TokenSource sentinel), mirroring cmd/boomtime.
+	worker.ServerAPIKey = serverKey
 	cfg := &config.Config{
 		Port:               8080,
 		EnableRegistration: true,
