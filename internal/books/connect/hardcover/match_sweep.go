@@ -332,7 +332,17 @@ func (s *SyncService) shelfMatchPhase(ctx context.Context, owner string, client 
 		// Promote to the GLOBAL cache under the row's exact-id key when it has one
 		// (method "shelf" — distinguishes it from an exact-id hit). Only keyed on a
 		// present asin/isbn; a title-only row has no cache key. Best-effort.
-		if idType, key := shelfCacheKey(r); key != "" {
+		//
+		// GUARD (audit boom-l827): the shelf rung is a FUZZY title match, and the
+		// global cache is cross-user and keyed by ASIN/ISBN. A title-only
+		// resolution — Jaccard 1.0 against an identically-titled but DIFFERENT book
+		// on this one user's shelf, with no author corroboration — would clear the
+		// 0.75 floor on its own and then serve the wrong book_id to every other user
+		// with that ASIN, forever, with zero API calls. That directly contradicts the
+		// fuzzy tail's own invariant ("a fuzzy hit is NEVER cached"). So only an
+		// AUTHOR-CORROBORATED shelf match earns global promotion; a title-only one
+		// still links this user's row (above), it just stays per-user.
+		if idType, key := shelfCacheKey(r); key != "" && shelfAuthorCorroborated(it, entry) {
 			if perr := s.DB.PutHardcoverMatch(ctx, idType, key, m.BookID, m.EditionID, string(MatchByShelf), m.Slug); perr != nil {
 				s.logWarn(ctx, "hardcover match: shelf cache put failed", "user", owner, "idtype", idType, "external", key, "err", perr)
 			}
@@ -342,6 +352,20 @@ func (s *SyncService) shelfMatchPhase(ctx context.Context, owner string, client 
 		s.logInfo(ctx, "hardcover match: shelf phase done", "user", owner, "shelfhits", res.ShelfHits, "shelfsize", len(shelf))
 	}
 	return resolved
+}
+
+// shelfAuthorCorroborated reports whether a shelf match was backed by the AUTHOR
+// as well as the title — i.e. whether scoreCandidate's author bonus fired for this
+// pair. It reuses the exact same predicate (author token-Jaccard >= 0.5) so the
+// gate can never drift from the score it is reasoning about. A row or shelf entry
+// with a blank author is never corroborated.
+func shelfAuthorCorroborated(it db.ReadingItem, entry db.ShelfEntry) bool {
+	a := strings.TrimSpace(it.Authors)
+	b := strings.TrimSpace(entry.Author)
+	if a == "" || b == "" {
+		return false
+	}
+	return tokenJaccard(a, b) >= authorBonusFloor
 }
 
 // shelfCacheKey returns the global-cache (id_type, external_id) a shelf-matched row

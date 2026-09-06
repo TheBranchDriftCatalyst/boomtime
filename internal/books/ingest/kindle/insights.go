@@ -22,8 +22,6 @@ package kindle
 
 import (
 	"context"
-
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 )
 
 // SyncInsights fetches the user's Kindle Reading-Insights, stores the raw
@@ -45,15 +43,15 @@ func (s *Service) SyncInsights(ctx context.Context, owner string) (int, error) {
 
 	cookies, err := s.kindle.ExchangeWebsiteCookies(ctx, cred)
 	if err != nil {
-		_ = s.Amazon.DB.UpdateAmazonDeviceStatus(ctx, owner, db.AmazonDeviceStatusInvalid)
+		s.noteCredentialOutcome(ctx, owner, err)
 		return 0, err
 	}
 	ins, err := s.kindle.FetchKindleInsights(ctx, cookies)
 	if err != nil {
-		_ = s.Amazon.DB.UpdateAmazonDeviceStatus(ctx, owner, db.AmazonDeviceStatusInvalid)
+		s.noteCredentialOutcome(ctx, owner, err)
 		return 0, err
 	}
-	_ = s.Amazon.DB.UpdateAmazonDeviceStatus(ctx, owner, db.AmazonDeviceStatusValid)
+	s.noteCredentialOutcome(ctx, owner, nil)
 
 	// Store the raw snapshot verbatim (streaks/goals/achievements retained for a
 	// future surface). A store failure is non-fatal — the finish-date backfill,

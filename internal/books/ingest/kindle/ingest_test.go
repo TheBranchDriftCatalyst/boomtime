@@ -52,17 +52,22 @@ func TestStatusFromPercent(t *testing.T) {
 		pct        int
 		wantStatus string
 		wantFin    bool
+		wantKnown  bool
 	}{
-		{0, "want", false},
-		{1, "reading", false},
-		{50, "reading", false},
-		{99, "reading", false},
-		{100, "read", true},
+		// pct 0 maps to want/false but carries NO information (the Cloud Reader feed
+		// reports 0 for every book) — the caller must not write it over an existing
+		// row's derived layer. See boom-o6q5.
+		{0, "want", false, false},
+		{1, "reading", false, true},
+		{50, "reading", false, true},
+		{99, "reading", false, true},
+		{100, "read", true, true},
 	}
 	for _, c := range cases {
-		gotStatus, gotFin := statusFromPercent(c.pct)
-		if gotStatus != c.wantStatus || gotFin != c.wantFin {
-			t.Fatalf("statusFromPercent(%d) = (%q,%v), want (%q,%v)", c.pct, gotStatus, gotFin, c.wantStatus, c.wantFin)
+		gotStatus, gotFin, gotKnown := statusFromPercent(c.pct)
+		if gotStatus != c.wantStatus || gotFin != c.wantFin || gotKnown != c.wantKnown {
+			t.Fatalf("statusFromPercent(%d) = (%q,%v,known=%v), want (%q,%v,known=%v)",
+				c.pct, gotStatus, gotFin, gotKnown, c.wantStatus, c.wantFin, c.wantKnown)
 		}
 	}
 }

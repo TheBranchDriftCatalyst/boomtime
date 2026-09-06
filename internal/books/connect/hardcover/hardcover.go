@@ -28,7 +28,15 @@ import (
 // Store loads/saves the per-user Hardcover bearer token, sealing it under
 // BOOM_ENCRYPTION_KEY via internal/auth.Encrypt/Decrypt. It is the only place
 // the plaintext token is (briefly) in memory outside a live request.
-type Store struct{ DB *db.DB }
+type Store struct {
+	DB *db.DB
+	// newClient builds the per-user client from a decrypted token. nil (production)
+	// means NewClient. Every service in this package takes its client from
+	// ClientForUser, so this is the single point where a test can substitute a
+	// fake-transport client — without it, service-level behaviour (does a push cache
+	// the match it resolved?) is only reachable over the real network.
+	newClient func(token string) *Client
+}
 
 // NewStore wires the token store to the DB.
 func NewStore(database *db.DB) *Store { return &Store{DB: database} }
@@ -89,6 +97,9 @@ func (s *Store) ClientForUser(ctx context.Context, username string) (*Client, bo
 	token, ok, err := s.Load(ctx, username)
 	if err != nil || !ok {
 		return nil, false, err
+	}
+	if s.newClient != nil {
+		return s.newClient(token), true, nil
 	}
 	return NewClient(token), true, nil
 }

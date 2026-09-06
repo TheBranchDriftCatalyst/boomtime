@@ -372,6 +372,12 @@ func parseSearchResults(raw json.RawMessage) []searchCandidate {
 	return out
 }
 
+// authorBonusFloor is the author token-Jaccard at or above which a candidate's
+// author is considered to CORROBORATE the title match (worth the +0.15 bonus).
+// The shelf rung reuses it to decide whether a resolution is safe to promote into
+// the cross-user global match cache — see shelfAuthorCorroborated.
+const authorBonusFloor = 0.5
+
 // scoreCandidate is a cheap local relevance score in [0,1]: title-token Jaccard
 // plus a small author-match bonus. It exists to keep a fuzzy Typesense hit from
 // being pushed on rank alone — a wrong push is worse than a miss.
@@ -380,7 +386,7 @@ func scoreCandidate(in MatchInput, c searchCandidate) float64 {
 	authorBonus := 0.0
 	if a := strings.TrimSpace(in.Author); a != "" {
 		for _, cand := range c.Authors {
-			if tokenJaccard(a, cand) >= 0.5 {
+			if tokenJaccard(a, cand) >= authorBonusFloor {
 				authorBonus = 0.15
 				break
 			}

@@ -295,6 +295,14 @@ func (s *SyncService) PushDivergedToHardcover(ctx context.Context, owner string,
 // list-name array onto its reading_items (all editions of the Work, keyed by
 // hardcover_book_id). Returns how many books got a non-empty list set. Read-only
 // against Hardcover; best-effort per book.
+//
+// It then CLEARS the rows that are on no list anymore. Writing only the books
+// present in the membership map is not a full sync: a book the user removed from
+// every Hardcover list simply stops appearing in the map, so without the clear
+// sweep its stale list chips persisted forever (SetReadingItemListsForBook
+// documents '[]' as the clear path, but nothing ever called it). The clear runs
+// only after a SUCCESSFUL UserLists fetch — a failed/partial pull returns early
+// above, so a transport blip can never wipe every user's list memberships.
 func (s *SyncService) attachListMemberships(ctx context.Context, owner string, client *Client, userID int) (int, error) {
 	lists, err := client.UserLists(ctx, userID)
 	if err != nil {
@@ -302,15 +310,28 @@ func (s *SyncService) attachListMemberships(ctx context.Context, owner string, c
 	}
 	membership := listMembershipByBook(lists)
 	listed := 0
+	keep := make([]int64, 0, len(membership))
 	for bookID, names := range membership {
 		if err := ctx.Err(); err != nil {
 			return listed, err
 		}
+		// keep is built from the MEMBERSHIP, not from the write outcome: a book is on
+		// a list whether or not our write for it landed, so a transient write failure
+		// must not make the clear sweep below blank a still-listed book.
+		keep = append(keep, bookID)
 		if werr := s.DB.SetReadingItemListsForBook(ctx, owner, bookID, marshalLists(names)); werr != nil {
 			s.logWarn(ctx, "hardcover pull: set lists failed", "user", owner, "bookId", bookID, "err", werr)
 			continue
 		}
 		listed++
+	}
+	// De-list everything the current membership map does not cover. Best-effort:
+	// the attach above is the primary job, and a miss just leaves the stale names
+	// for the next pull to clear.
+	if cleared, cerr := s.DB.ClearReadingItemListsExcept(ctx, owner, keep); cerr != nil {
+		s.logWarn(ctx, "hardcover pull: clear stale lists failed", "user", owner, "err", cerr)
+	} else if cleared > 0 {
+		s.logInfo(ctx, "hardcover pull: cleared stale list memberships", "user", owner, "rows", cleared)
 	}
 	return listed, nil
 }

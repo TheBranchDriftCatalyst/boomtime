@@ -95,8 +95,10 @@ type ReadingItem struct {
 
 	// HardcoverPushedStatus is the status string WE last pushed to Hardcover
 	// (migration 00069), paired with HardcoverPushedAt. The pull's LWW branch uses
-	// it to suppress our own echo — a remote status equal to our last push is not a
-	// genuine Hardcover edit and must not be adopted back into the override layer.
+	// the PAIR to suppress our own echo: a remote status equal to our last push
+	// AND landing within hardcoverEchoSkew of hardcover_pushed_at is our write
+	// coming back, not a genuine Hardcover edit. Equality alone is NOT enough —
+	// see the boom-m5kq note on UpdateHardcoverLinkFromPull.
 	HardcoverPushedStatus *string
 }
 
@@ -111,8 +113,55 @@ type ReadingItem struct {
 // only the derived layer, so a sync can NEVER clobber a user/Hardcover curation.
 // The override layer is touched only by SetReadingItemCuration, the finish
 // promotion, and UpdateHardcoverLinkFromPull. Do not add override columns here.
+//
+// This variant OVERWRITES the derived progress layer (status / progress_percent /
+// finished) — use it only for a source that actually knows the row's progress. A
+// source whose feed structurally reports "0%" for every book must call
+// UpsertReadingItemNoProgress instead (boom-o6q5).
 func (d *DB) UpsertReadingItem(ctx context.Context, it ReadingItem) error {
-	_, err := d.Pool.Exec(ctx,
+	return d.upsertReadingItem(ctx, it, false)
+}
+
+// UpsertReadingItemNoProgress is UpsertReadingItem for a sync that carries NO
+// progress information about the row — it upserts the identity + metadata layer
+// exactly the same way but leaves the DERIVED progress layer (status,
+// progress_percent, finished) untouched on an existing row.
+//
+// WHY (boom-o6q5): the Kindle Cloud Reader library feed reports percentageRead=0
+// for every book, so mapping it produces ("want", finished=false, 0%) for the
+// whole library on every sync. Writing that through was a destructive downgrade:
+// it reset rows the status-reconcile had promoted to 'reading' and, worse, it
+// re-armed the transition-only finish promotions in MarkReadingItemFinished /
+// SetReadingItemFinishedFromInsights (both keyed on prev.finished = false), so the
+// next insights run rewrote a user's 'dnf'/'paused' status_override back to 'read'
+// and restamped curation_updated_at — on EVERY pipeline cycle. A structural zero
+// is no information, not evidence the book was un-started, and must not be
+// written as one.
+//
+// A row that does not exist yet is still INSERTed with the caller's values (for a
+// zero-progress feed that is want/false/0 — the right starting point for a book we
+// have never seen); only the ON CONFLICT branch differs.
+func (d *DB) UpsertReadingItemNoProgress(ctx context.Context, it ReadingItem) error {
+	return d.upsertReadingItem(ctx, it, true)
+}
+
+// upsertReadingItem is the shared body. noProgress drops status/progress_percent/
+// finished from the ON CONFLICT SET (see UpsertReadingItemNoProgress). The two SET
+// fragments are compile-time constants — no user input reaches the SQL text.
+func (d *DB) upsertReadingItem(ctx context.Context, it ReadingItem, noProgress bool) error {
+	const derivedSet = `status           = EXCLUDED.status,
+		    progress_percent = EXCLUDED.progress_percent,
+		    finished         = EXCLUDED.finished,`
+	// Keep the row's own derived layer: a feed with no progress signal must not
+	// downgrade 'reading'/'read' back to 'want' or flip finished true→false.
+	const keepDerivedSet = `status           = reading_items.status,
+		    progress_percent = reading_items.progress_percent,
+		    finished         = reading_items.finished,`
+	setDerived := derivedSet
+	if noProgress {
+		setDerived = keepDerivedSet
+	}
+	_, err := d.Pool.Exec(ctx, fmt.Sprintf(
 		`INSERT INTO reading_items
 		   (owner, source, external_id, title, authors, cover_url, status,
 		    progress_percent, finished, started_at, finished_at, rating, raw_meta,
@@ -124,9 +173,7 @@ func (d *DB) UpsertReadingItem(ctx context.Context, it ReadingItem) error {
 		    title            = EXCLUDED.title,
 		    authors          = EXCLUDED.authors,
 		    cover_url        = EXCLUDED.cover_url,
-		    status           = EXCLUDED.status,
-		    progress_percent = EXCLUDED.progress_percent,
-		    finished         = EXCLUDED.finished,
+		    %s
 		    started_at       = COALESCE(EXCLUDED.started_at, reading_items.started_at),
 		    finished_at      = COALESCE(EXCLUDED.finished_at, reading_items.finished_at),
 		    rating           = COALESCE(EXCLUDED.rating, reading_items.rating),
@@ -140,7 +187,7 @@ func (d *DB) UpsertReadingItem(ctx context.Context, it ReadingItem) error {
 		    amazon_asin      = EXCLUDED.amazon_asin,
 		    genres           = COALESCE(EXCLUDED.genres, reading_items.genres),
 		    goodreads_rating = COALESCE(EXCLUDED.goodreads_rating, reading_items.goodreads_rating),
-		    synced_at        = now()`,
+		    synced_at        = now()`, setDerived),
 		it.Owner, it.Source, it.ExternalID, it.Title, it.Authors, it.CoverURL, it.Status,
 		it.ProgressPercent, it.Finished, it.StartedAt, it.FinishedAt, it.Rating, it.RawMeta,
 		it.Subtitle, it.Narrators, it.Series, it.RuntimeMin, it.PurchaseDate, it.ISBN,
@@ -486,11 +533,15 @@ func (it ReadingItem) EffectiveFinishedAt() *time.Time {
 	return it.FinishedAt
 }
 
-// SetReadingItemPushed records a successful (or dry-run-previewed) Hardcover push
-// of a curation: hardcover_pushed_at=now + hardcover_pushed_status=status. This is
-// the echo-suppression stamp — the pull's LWW branch skips adopting a remote status
-// equal to hardcover_pushed_status so our own write doesn't look like a Hardcover
-// edit. Keyed by owner+source+external_id; status "" leaves the status unchanged.
+// SetReadingItemPushed records a successful Hardcover push of a curation:
+// hardcover_pushed_at=now + hardcover_pushed_status=status. This is the
+// echo-suppression stamp — the pull's LWW branch refuses to adopt a remote status
+// that both EQUALS hardcover_pushed_status and lands within hardcoverEchoSkew of
+// hardcover_pushed_at, so our own write doesn't look like a Hardcover edit while a
+// genuine later edit (even back to the same value) still does. Callers stamp this
+// ONLY after a real write landed — a dry-run no-op must leave it untouched, since
+// nothing was pushed and therefore nothing can echo. Keyed by
+// owner+source+external_id; status "" leaves the status unchanged.
 func (d *DB) SetReadingItemPushed(ctx context.Context, owner, source, externalID, status string) error {
 	var st *string
 	if status != "" {
@@ -614,6 +665,34 @@ func (d *DB) SetReadingItemListsForBook(ctx context.Context, owner string, hardc
 		  WHERE owner = $1 AND hardcover_book_id = $2`,
 		owner, hardcoverBookID, lists)
 	return err
+}
+
+// ClearReadingItemListsExcept clears hardcover_lists (to the empty array) on every
+// one of the owner's rows whose hardcover_book_id is NOT in keep — the DELETE half
+// of the Hardcover list sync. SetReadingItemListsForBook only ever writes the books
+// PRESENT in the current membership map, so without this a book the user removed
+// from all of their Hardcover lists kept rendering its old list chips forever.
+//
+// Rows with no hardcover_book_id are untouched (they were never listed), and so are
+// rows already at '[]' / NULL, so a steady-state pull writes nothing. Passing an
+// empty keep set clears every listed row — the correct outcome when the user has no
+// lists at all. Returns the number of rows cleared.
+func (d *DB) ClearReadingItemListsExcept(ctx context.Context, owner string, keep []int64) (int64, error) {
+	if keep == nil {
+		keep = []int64{}
+	}
+	tag, err := d.Pool.Exec(ctx,
+		`UPDATE reading_items SET hardcover_lists = '[]'::jsonb
+		  WHERE owner = $1
+		    AND hardcover_book_id IS NOT NULL
+		    AND NOT (hardcover_book_id = ANY($2::bigint[]))
+		    AND hardcover_lists IS NOT NULL
+		    AND hardcover_lists <> '[]'::jsonb`,
+		owner, keep)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }
 
 // ListReadingItemsForWork returns every edition of ONE canonical Work for the
@@ -785,6 +864,31 @@ type HardcoverUserBookLink struct {
 	FinishedAt *time.Time
 }
 
+// hardcoverEchoSkew is how long after one of OUR pushes a same-valued remote
+// update is still assumed to be that push coming back (Hardcover stamps its own
+// updated_at, on its own clock, at some point after we hand it the write). It
+// absorbs round-trip latency plus modest clock skew between Hardcover and us.
+// Only same-valued updates inside the window are suppressed — a remote status we
+// never pushed is adopted immediately regardless of the window — so widening it
+// costs nothing but a short "re-set the value you already had" blind spot, while
+// narrowing it risks promoting our own derived push into the sticky override
+// layer.
+const hardcoverEchoSkew = "5 minutes"
+
+// hardcoverAdoptGate is the SQL boolean shared by every override CASE in
+// UpdateHardcoverLinkFromPull ($3 = remote status, $4 = remote updated_at). It is
+// interpolated, not parameterised, because it is a fixed fragment with no user
+// input — the only values it reads are bound params and the row's own columns.
+//
+//	remote carries a timestamp
+//	AND remote is strictly newer than our override stamp
+//	AND (remote is later than our last push + skew   ← time fence, expires
+//	     OR remote status ≠ the status we last pushed) ← obviously not our echo
+const hardcoverAdoptGate = `$4::timestamptz IS NOT NULL
+		                             AND $4::timestamptz > COALESCE(ri.curation_updated_at, 'epoch'::timestamptz)
+		                             AND ($4::timestamptz > COALESCE(ri.hardcover_pushed_at, 'epoch'::timestamptz) + interval '` + hardcoverEchoSkew + `'
+		                                  OR $3::text IS DISTINCT FROM ri.hardcover_pushed_status)`
+
 // UpdateHardcoverLinkFromPull reconciles a pulled Hardcover shelf entry onto the
 // local reading_item already linked to that Hardcover book (matched earlier by
 // the push/match ladder, so hardcover_book_id is set). It always refreshes the
@@ -800,9 +904,22 @@ type HardcoverUserBookLink struct {
 // (the user's PATCH is the first). When the remote change is newer than our
 // override stamp AND is not our own echo, adopt it into the OVERRIDE layer:
 //
-//	adopt ⇔ remote status present
-//	         AND remote_updated_at > curation_updated_at   (remote is newer)
-//	         AND remote status ≠ hardcover_pushed_status    (not the echo of our push)
+//	adopt ⇔ remote_updated_at > curation_updated_at        (remote is newer)
+//	         AND NOT echo(remote)                            (see hardcoverAdoptGate)
+//	         AND the remote carried the field being adopted
+//
+// ECHO SUPPRESSION IS TIME-FENCED, NOT VALUE-BASED (boom-m5kq). The old gate was
+// "remote status ≠ hardcover_pushed_status", which is PERMANENT: after we push
+// status X, a genuine later Hardcover edit BACK to X is forever misread as our own
+// echo, refused, and then reversed by PushDivergedToHardcover (which sees
+// hardcover_status=X vs a stale effective status and pushes the stale value over
+// the user's real edit). It also froze every rating / finish-date edit made while
+// the status stayed X, because those CASEs reused the same status-equality test.
+// The gate is now: adopt when the remote change is comfortably LATER than our own
+// last push (hardcover_pushed_at + hardcoverEchoSkew), OR when it carries a status
+// we never pushed. Only a same-valued remote landing inside the skew window —
+// which is exactly the shape of our own write coming back — is suppressed, and
+// that suppression expires with the window instead of lasting forever.
 //
 // On adopt: status_override←remote status, rating/finished_at overrides←remote
 // (when carried), curation_updated_at←remote time. Else keep local (the next push
@@ -825,30 +942,24 @@ func (d *DB) UpdateHardcoverLinkFromPull(ctx context.Context, owner string, link
 	if link.Slug != "" {
 		slug = &link.Slug
 	}
-	tag, err := d.Pool.Exec(ctx,
+	tag, err := d.Pool.Exec(ctx, fmt.Sprintf(
 		`UPDATE reading_items ri SET
 		    hardcover_status            = COALESCE($3, hardcover_status),
 		    hardcover_remote_updated_at = COALESCE($4, hardcover_remote_updated_at),
 		    hardcover_slug              = COALESCE($7, hardcover_slug),
-		    -- LWW adopt-gate (see doc): remote present + strictly newer than our
-		    -- override stamp + not the echo of our own last push.
-		    status_override = CASE WHEN $3::text IS NOT NULL AND $4::timestamptz IS NOT NULL
-		                             AND $4::timestamptz > COALESCE(ri.curation_updated_at, 'epoch'::timestamptz)
-		                             AND $3::text IS DISTINCT FROM ri.hardcover_pushed_status
+		    -- LWW adopt-gate (see doc + hardcoverAdoptGate): remote strictly newer
+		    -- than our override stamp and not the echo of our own last push. Each
+		    -- override additionally requires the remote to have CARRIED that field.
+		    status_override = CASE WHEN $3::text IS NOT NULL AND %[1]s
 		                           THEN $3::text ELSE ri.status_override END,
-		    rating_override = CASE WHEN $5::numeric IS NOT NULL AND $4::timestamptz IS NOT NULL
-		                             AND $4::timestamptz > COALESCE(ri.curation_updated_at, 'epoch'::timestamptz)
-		                             AND $3::text IS DISTINCT FROM ri.hardcover_pushed_status
+		    rating_override = CASE WHEN $5::numeric IS NOT NULL AND %[1]s
 		                           THEN $5::numeric ELSE ri.rating_override END,
-		    finished_at_override = CASE WHEN $6::timestamptz IS NOT NULL AND $4::timestamptz IS NOT NULL
-		                             AND $4::timestamptz > COALESCE(ri.curation_updated_at, 'epoch'::timestamptz)
-		                             AND $3::text IS DISTINCT FROM ri.hardcover_pushed_status
+		    finished_at_override = CASE WHEN $6::timestamptz IS NOT NULL AND %[1]s
 		                           THEN $6::timestamptz ELSE ri.finished_at_override END,
-		    curation_updated_at = CASE WHEN $3::text IS NOT NULL AND $4::timestamptz IS NOT NULL
-		                             AND $4::timestamptz > COALESCE(ri.curation_updated_at, 'epoch'::timestamptz)
-		                             AND $3::text IS DISTINCT FROM ri.hardcover_pushed_status
+		    curation_updated_at = CASE WHEN ($3::text IS NOT NULL OR $5::numeric IS NOT NULL
+		                                     OR $6::timestamptz IS NOT NULL) AND %[1]s
 		                           THEN $4::timestamptz ELSE ri.curation_updated_at END
-		  WHERE ri.owner = $1 AND ri.hardcover_book_id = $2`,
+		  WHERE ri.owner = $1 AND ri.hardcover_book_id = $2`, hardcoverAdoptGate),
 		owner, link.BookID, status, remote, link.Rating, link.FinishedAt, slug)
 	if err != nil {
 		return 0, err

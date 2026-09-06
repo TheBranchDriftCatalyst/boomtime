@@ -53,10 +53,24 @@ func NewPushService(database *db.DB, store *Store, logger *slog.Logger) *PushSer
 	return &PushService{DB: database, Store: store, Logger: logger}
 }
 
+// ErrDryRun reports that a write was NOT performed because the process-wide
+// Hardcover dry-run gate is on. It is an outcome, not a failure — callers that
+// report remote state to a user must not claim success on it.
+var ErrDryRun = errors.New("hardcover: dry-run — remote write not performed")
+
 // DeleteHardcoverRead removes a user_book_read on the owner's Hardcover account
 // (the outbound half of deleting a read in the bridge). No-op if the user hasn't
-// connected Hardcover. Dry-run-gated. Best-effort: the local delete already
-// happened; a Hardcover-side miss is logged, not fatal.
+// connected Hardcover. Best-effort: the local delete already happened; a
+// Hardcover-side miss is logged, not fatal.
+//
+// Under dry-run it returns ErrDryRun instead of nil. The client's mutation gate
+// swallows the delete and returns success, which used to travel all the way to the
+// API's hardcoverDeleted=true — telling the user the read was pruned on Hardcover
+// while it sat there untouched, ready to be re-ingested (identically keyed, so the
+// local row silently resurrected) on the very next pull. Reporting the truth is
+// the fix; the resurrection itself is correct dry-run behaviour, since nothing
+// remote changed. The caller's existing "err != nil → hardcoverDeleted=false, log
+// it" branch is exactly right for this, so the response SHAPE is unchanged.
 func (s *PushService) DeleteHardcoverRead(ctx context.Context, owner string, readID int64) error {
 	if s.Store == nil || readID <= 0 {
 		return nil
@@ -67,6 +81,10 @@ func (s *PushService) DeleteHardcoverRead(ctx context.Context, owner string, rea
 	}
 	if !ok {
 		return nil // Hardcover not connected — nothing to delete remotely
+	}
+	if client.DryRun() {
+		s.logInfo(ctx, "hardcover DRYRUN: would delete user_book_read", "user", owner, "readId", readID)
+		return ErrDryRun
 	}
 	return client.DeleteUserBookRead(ctx, readID)
 }
@@ -129,6 +147,17 @@ func (s *PushService) PushCuration(ctx context.Context, p CurationPushPayload) e
 			return nil
 		}
 		bookID, editionID = match.BookID, match.EditionID
+		// CACHE the resolution before pushing (mirrors match_sweep's linkAndEnrich).
+		// Without this every curation PATCH on an unmatched row re-ran the whole
+		// rate-limited match ladder — up to 3 throttled GraphQL calls at 1 req/s out
+		// of the shared Hardcover budget — and threw the answer away, contradicting
+		// this file's own "never re-fuzz" contract. It also left the link invisible
+		// to the match sweep and the pull reconcile, both of which key on
+		// hardcover_book_id. Best-effort: a cache miss only costs the next re-fuzz.
+		if lerr := s.DB.SetReadingItemHardcoverLink(ctx, p.Owner, it.Source, it.ExternalID,
+			bookID, editionID, string(match.Method), match.Slug); lerr != nil {
+			s.logWarn(ctx, "hardcover curation-push: link cache failed", "user", p.Owner, "externalId", it.ExternalID, "err", lerr)
+		}
 	}
 
 	// Dry-run preview: surface WHAT WOULD be pushed and stop before any mutation.

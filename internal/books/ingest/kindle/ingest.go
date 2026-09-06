@@ -23,6 +23,7 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/amazon"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/hardcover"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/ingest/credhealth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/logctx"
 )
@@ -52,6 +53,12 @@ type kindleItem struct {
 	EditionID int64
 	MatchConf string
 	Slug      string // the book's Hardcover slug (deep-link segment); "" when unresolved
+	// ProgressUnknown marks a row whose Cloud Reader entry carried NO progress
+	// signal (percentageRead == 0 — which the feed reports for every book,
+	// including ones the user is midway through). Such a row must be upserted
+	// through UpsertReadingItemNoProgress so the sync never downgrades the derived
+	// status/finished layer. See statusFromPercent + boom-o6q5.
+	ProgressUnknown bool
 }
 
 // statusFromPercent maps a Cloud Reader percentageRead (0..100) to a reading
@@ -59,18 +66,25 @@ type kindleItem struct {
 //
 //	100      -> "read"   (finished)
 //	1..99    -> "reading"
-//	0        -> "want"   (owned but not started)
+//	0        -> "want"   (owned but not started) — but see `known`
+//
+// known reports whether the percent carried any INFORMATION. The Cloud Reader
+// library feed reports percentageRead=0 for every book regardless of how far the
+// user has actually read (asserted by the codebase in SetReadingItemReading's doc
+// and by the existence of the status-reconcile job), so a 0 is structural silence,
+// not "un-started". Callers must not write a not-known status over an existing
+// row's derived layer — see kindleItem.ProgressUnknown and boom-o6q5.
 //
 // This is the single source of the reading state now that Amazon reports real
 // progress (the old shelf-label heuristic is gone).
-func statusFromPercent(pct int) (status string, finished bool) {
+func statusFromPercent(pct int) (status string, finished, known bool) {
 	switch {
 	case pct >= 100:
-		return "read", true
+		return "read", true, true
 	case pct <= 0:
-		return "want", false
+		return "want", false, false
 	default:
-		return "reading", false
+		return "reading", false, true
 	}
 }
 
@@ -132,14 +146,22 @@ func (s *Service) SyncUser(ctx context.Context, owner string) (int, error) {
 	res := s.resolverFor(ctx, owner)
 	items, hcConnected, err := s.sweep(ctx, cred, owner, res)
 	if err != nil {
-		_ = s.Amazon.DB.UpdateAmazonDeviceStatus(ctx, owner, db.AmazonDeviceStatusInvalid)
+		s.noteCredentialOutcome(ctx, owner, err)
 		return 0, err
 	}
-	_ = s.Amazon.DB.UpdateAmazonDeviceStatus(ctx, owner, db.AmazonDeviceStatusValid)
+	s.noteCredentialOutcome(ctx, owner, nil)
 
 	count := 0
 	for _, ki := range items {
-		if err := s.DB.UpsertReadingItem(ctx, ki.Item); err != nil {
+		// A percentageRead=0 row carries no progress signal, so it upserts through
+		// the no-progress path: identity/metadata refresh only, derived
+		// status/progress/finished left exactly as the reconcile, the insights
+		// backfill, or an earlier real percent left them (boom-o6q5).
+		upsert := s.DB.UpsertReadingItem
+		if ki.ProgressUnknown {
+			upsert = s.DB.UpsertReadingItemNoProgress
+		}
+		if err := upsert(ctx, ki.Item); err != nil {
 			return count, err
 		}
 		if ki.BookID > 0 {
@@ -197,7 +219,7 @@ func (s *Service) resolverFor(ctx context.Context, owner string) metaResolver {
 // mapping directly. Title/authors/cover come from Amazon; Hardcover only
 // supplies the linkage and fills any gap Amazon left blank.
 func buildReadingItem(owner string, lib amazon.CloudLibraryItem, meta *hardcover.BookMeta) kindleItem {
-	status, finished := statusFromPercent(lib.PercentageRead)
+	status, finished, known := statusFromPercent(lib.PercentageRead)
 
 	// Progress is the Cloud Reader percentageRead directly (0..100).
 	progress := lib.PercentageRead
@@ -222,7 +244,7 @@ func buildReadingItem(owner string, lib amazon.CloudLibraryItem, meta *hardcover
 		RawMeta:         rawMeta(lib),
 	}
 
-	out := kindleItem{Item: ri}
+	out := kindleItem{Item: ri, ProgressUnknown: !known}
 	if meta != nil {
 		// Amazon is the primary title source; only backfill fields Amazon left
 		// blank so a good Amazon value isn't clobbered by a weaker match.
@@ -269,6 +291,24 @@ func rawMeta(lib amazon.CloudLibraryItem) []byte {
 		return nil
 	}
 	return b
+}
+
+// noteCredentialOutcome records what a completed Amazon sweep implies about the
+// user's device credential. A success marks it valid; a failure marks it invalid
+// ONLY when the error is evidence about the credential — a transport blip or a
+// cancelled context (a deploy) leaves the status untouched rather than telling the
+// user to "reconnect Amazon" over a DNS hiccup. Mirrors the audible ingest; the
+// shared rule lives in internal/books/ingest/credhealth so the two can't drift.
+func (s *Service) noteCredentialOutcome(ctx context.Context, owner string, err error) {
+	if err == nil {
+		_ = s.Amazon.DB.UpdateAmazonDeviceStatus(ctx, owner, db.AmazonDeviceStatusValid)
+		return
+	}
+	if credhealth.Transient(err) {
+		s.logWarn(ctx, "kindle: transient sweep failure — leaving device status unchanged", "user", owner, "err", err)
+		return
+	}
+	_ = s.Amazon.DB.UpdateAmazonDeviceStatus(ctx, owner, db.AmazonDeviceStatusInvalid)
 }
 
 // ---------------------------------------------------------------------------

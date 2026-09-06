@@ -22,6 +22,7 @@ package audible
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -29,8 +30,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/amazon"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/hardcover"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/ingest/credhealth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/logctx"
@@ -584,10 +588,10 @@ func (s *Service) BackfillUser(ctx context.Context, owner string) error {
 
 	libCount, newestPurchase, err := s.sweepLibrary(ctx, cred, owner, nil)
 	if err != nil {
-		_ = s.Amazon.DB.UpdateAmazonDeviceStatus(ctx, owner, db.AmazonDeviceStatusInvalid)
+		s.noteCredentialOutcome(ctx, owner, err)
 		return err
 	}
-	_ = s.Amazon.DB.UpdateAmazonDeviceStatus(ctx, owner, db.AmazonDeviceStatusValid)
+	s.noteCredentialOutcome(ctx, owner, nil)
 
 	_, newestFinished, err := s.sweepFinished(ctx, cred, owner, nil, false)
 	if err != nil {
@@ -633,12 +637,25 @@ func (s *Service) SyncUser(ctx context.Context, owner string) (int, error) {
 		return 0, err
 	}
 
-	libCount, newestPurchase, err := s.sweepLibrary(ctx, cred, owner, st.LastLibraryCursor)
+	// The forward library sweep is normally cursored (purchased_after=<cursor>), so
+	// it only ever returns NEWLY PURCHASED titles. That means percent_complete /
+	// status for every already-owned book froze at backfill time: progress never
+	// moved, the >=95% stop-at-99 finish heuristic in toReadingItem could never fire
+	// for a pre-cursor row, and inProgressPushMatched skipped it forever as
+	// "unchanged". Once per UTC day we therefore drop the cursor and sweep the FULL
+	// library (the sweep is idempotent and pages at 300/item), which re-maps every
+	// owned title's current progress.
+	libCursor := st.LastLibraryCursor
+	if dueForFullLibrarySweep(st.LastForwardAt, time.Now().UTC()) {
+		libCursor = nil
+		s.logInfo(ctx, "audible forward: full (un-cursored) library sweep due", "user", owner)
+	}
+	libCount, newestPurchase, err := s.sweepLibrary(ctx, cred, owner, libCursor)
 	if err != nil {
-		_ = s.Amazon.DB.UpdateAmazonDeviceStatus(ctx, owner, db.AmazonDeviceStatusInvalid)
+		s.noteCredentialOutcome(ctx, owner, err)
 		return 0, err
 	}
-	_ = s.Amazon.DB.UpdateAmazonDeviceStatus(ctx, owner, db.AmazonDeviceStatusValid)
+	s.noteCredentialOutcome(ctx, owner, nil)
 
 	events, newestFinished, err := s.sweepFinished(ctx, cred, owner, st.LastFinishedCursor, true)
 	if err != nil {
@@ -678,6 +695,41 @@ func (s *Service) SyncUser(ctx context.Context, owner string) (int, error) {
 		s.logInfo(ctx, "audible forward: newly finished", "user", owner, "count", len(events))
 	}
 	return libCount, nil
+}
+
+// dueForFullLibrarySweep reports whether this forward run should sweep the whole
+// library instead of only post-cursor purchases: true on the first run ever (no
+// recorded forward run) and on the FIRST run of each new UTC calendar day.
+//
+// The cadence is a day CHANGE rather than "last sweep older than 24h" because
+// last_forward_at is rewritten by every forward run (hourly in prod), so a duration
+// threshold against it would never be reached. Pure — unit-testable without a DB or
+// a clock.
+func dueForFullLibrarySweep(lastForwardAt *time.Time, now time.Time) bool {
+	if lastForwardAt == nil {
+		return true
+	}
+	last := lastForwardAt.UTC()
+	n := now.UTC()
+	return last.Year() != n.Year() || last.YearDay() != n.YearDay()
+}
+
+// noteCredentialOutcome records what a completed Amazon sweep implies about the
+// user's device credential. A success marks it valid; a failure marks it invalid
+// ONLY when the error is evidence about the credential — a transport blip or a
+// cancelled context (a deploy) leaves the status exactly as it was, instead of
+// telling the user to "reconnect Amazon" for up to a full sync interval over a DNS
+// hiccup. See internal/books/ingest/credhealth.
+func (s *Service) noteCredentialOutcome(ctx context.Context, owner string, err error) {
+	if err == nil {
+		_ = s.Amazon.DB.UpdateAmazonDeviceStatus(ctx, owner, db.AmazonDeviceStatusValid)
+		return
+	}
+	if credhealth.Transient(err) {
+		s.logWarn(ctx, "audible: transient sweep failure — leaving device status unchanged", "user", owner, "err", err)
+		return
+	}
+	_ = s.Amazon.DB.UpdateAmazonDeviceStatus(ctx, owner, db.AmazonDeviceStatusInvalid)
 }
 
 // announceFinished publishes the BookFinished notification and mirrors the
@@ -811,17 +863,68 @@ func (s *Service) RunHardcoverPush(ctx context.Context, p HardcoverPushPayload) 
 		s.hardcoverError(ctx, p.Owner, "upsert user_book", err)
 		return err
 	}
+	existingReadID := s.cachedReadID(ctx, p.Owner, p.ASIN)
 	finishedAt := p.FinishedAt
-	if _, err := client.UpsertRead(ctx, userBookID, hardcover.ReadInput{
+	readID, err := client.UpsertRead(ctx, userBookID, hardcover.ReadInput{
 		FinishedAt:      &finishedAt,
 		EditionID:       match.EditionID,
 		ReadingFormatID: hardcover.FormatAudio,
-	}); err != nil {
+		UserBookReadID:  existingReadID,
+	})
+	if err != nil {
 		s.hardcoverError(ctx, p.Owner, "upsert user_book_read", err)
 		return err
 	}
+	s.recordFinishPush(ctx, p.Owner, p.ASIN, readID, existingReadID)
 	s.logInfo(ctx, "hardcover: pushed finished book", "user", p.Owner, "asin", p.ASIN, "bookId", match.BookID)
 	return nil
+}
+
+// cachedReadID returns the Hardcover user_book_read id we (or the curation push)
+// last created/updated for this audible row, or 0 when we have never pushed a read.
+// Passing it to UpsertRead makes the finish push UPDATE that read instead of
+// inserting another one; without it the finish push and a later curation push each
+// inserted their own read for the same finish — exactly the duplicate-reads
+// accumulation migration 00080 + hardcover_read_id exist to stop, previously fixed
+// only on the curation side. A lookup miss degrades to "insert a new read", never to
+// a failure.
+func (s *Service) cachedReadID(ctx context.Context, owner, asin string) int64 {
+	it, err := s.DB.GetReadingItem(ctx, owner, source, asin)
+	if err != nil {
+		// No row yet is the normal case when a finish arrives before its library row
+		// syncs — not worth a warning; anything else is.
+		if !errors.Is(err, pgx.ErrNoRows) {
+			s.logWarn(ctx, "hardcover: read-id lookup failed — pushing as a new read", "user", owner, "asin", asin, "err", err)
+		}
+		return 0
+	}
+	if it.HardcoverReadID == nil {
+		return 0
+	}
+	return *it.HardcoverReadID
+}
+
+// recordFinishPush is the post-push bookkeeping for a finished-book mirror:
+//
+//   - cache the read id so the NEXT push (from here or from the curation path)
+//     updates that same read instead of inserting a duplicate;
+//   - stamp the echo-suppression columns, because this push IS the reason
+//     Hardcover now says 'read'. Without the stamp the next pull read our own write
+//     as a fresh remote edit and adopted 'read' into the sticky OVERRIDE layer (see
+//     db.UpdateHardcoverLinkFromPull) — an ingest-driven write into a layer only the
+//     user or a genuine Hardcover edit may touch.
+//
+// Both are best-effort: the push already landed, so a bookkeeping miss must not fail
+// the job. Called ONLY after a real (non-dry-run) write.
+func (s *Service) recordFinishPush(ctx context.Context, owner, asin string, readID, existingReadID int64) {
+	if readID > 0 && readID != existingReadID {
+		if err := s.DB.SetReadingItemPushedReadID(ctx, owner, source, asin, readID); err != nil {
+			s.logWarn(ctx, "hardcover: cache read id failed", "user", owner, "asin", asin, "err", err)
+		}
+	}
+	if err := s.DB.SetReadingItemPushed(ctx, owner, source, asin, "read"); err != nil {
+		s.logWarn(ctx, "hardcover: echo-suppression stamp failed", "user", owner, "asin", asin, "err", err)
+	}
 }
 
 // syncInProgressToHardcover mirrors every currently-reading Audible title's
@@ -925,8 +1028,14 @@ func inProgressPushMatched(it db.ReadingItem) (bookID, editionID int64, pct, len
 // mirroring and, if so, builds its Hardcover MatchInput + the percent + the
 // audio length in seconds. ok is false for anything not actively in progress
 // (want, finished/read, 0% or >=95%). Pure — unit-testable without a client.
+//
+// The status test is on the EFFECTIVE status (curation override ?? Amazon-derived),
+// which is what the rest of the books surface treats as authoritative. Reading the
+// derived status alone meant a book the user had curated to dnf/paused was still
+// pushed as "reading" the next time its percent moved, flipping their Hardcover
+// shelf entry back out of DNF and into Currently Reading.
 func inProgressPush(it db.ReadingItem) (hardcover.MatchInput, float64, int, bool) {
-	if it.Status != "reading" {
+	if it.EffectiveStatus() != "reading" {
 		return hardcover.MatchInput{}, 0, 0, false
 	}
 	pct := float64(it.ProgressPercent)
