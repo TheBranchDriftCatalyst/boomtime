@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/goals"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/boomtime/wakatime"
@@ -58,6 +60,13 @@ func (h *Handler) storeAndRespond(c *echo.Context, hbs []model.HeartbeatPayload)
 	}
 	owner := ident.Username
 	ctx := c.Request().Context()
+
+	// Validate `time` BEFORE anything touches the DB or the remote-write
+	// forwarder. Runs after Identify so the auth ordering is unchanged: an
+	// unauth'd request still gets its 401 before we look at the body.
+	if aerr := validateHeartbeatTimes(hbs, time.Now()); aerr != nil {
+		return out, aerr
+	}
 
 	machine := headerPtr(c, "X-Machine-Name")
 
@@ -161,6 +170,52 @@ func (h *Handler) storeAndRespond(c *echo.Context, hbs []model.HeartbeatPayload)
 		}
 	}
 	return model.BulkHeartbeatData{Responses: responses}, nil
+}
+
+// Plausible bounds for a heartbeat's `time` (unix seconds).
+//
+// The floor is what actually matters. `time` is a plain float64, so an
+// omitted or explicitly-zero JSON key binds to 0 and used to be accepted
+// verbatim: the row landed at 1970-01-01, and db.saveHeartbeats then derived
+// its maintenance window from the batch MINIMUM — refreshRollup(since=1970)
+// DELETEs the sender's entire hb_rollup_daily and re-aggregates every raw
+// heartbeat they own, and a batch mixing a zero-time beat with live ones makes
+// recomputeGapsUntil span all of history too. Both run inside the ingest
+// transaction, so one malformed beat turns a ~10ms write into a full-history
+// rebuild (the TALOS-kvg1 pathology the bounded recompute was introduced to
+// fix). The 1970 row also survives to poison clampStartToData and every
+// "All time" chart until someone deletes it by hand.
+//
+// 2000-01-01 is comfortably below any real coding history (WakaTime itself
+// dates to 2013) and comfortably above the 1970 epoch trap.
+var heartbeatTimeFloor = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+
+// heartbeatTimeSkew is how far into the future a heartbeat may be dated. A
+// generous allowance for client clock skew — the point is to reject 5138-era
+// timestamps (a millisecond epoch sent as seconds), not to police a laptop
+// whose clock drifted.
+const heartbeatTimeSkew = 24 * time.Hour
+
+// validateHeartbeatTimes rejects a batch containing any heartbeat whose `time`
+// is outside [heartbeatTimeFloor, now+heartbeatTimeSkew]. The whole batch is
+// rejected rather than the offending element dropped: the response envelope is
+// positional ({"responses":[[{data},201],...]} indexed like the request), so
+// silently skipping an element would misalign every id the client correlates
+// against its offline queue.
+//
+// The importer is unaffected — it writes historical WakaTime exports through
+// db.SaveHeartbeats directly and never passes through this handler.
+func validateHeartbeatTimes(hbs []model.HeartbeatPayload, now time.Time) *apierr.Error {
+	ceiling := now.UTC().Add(heartbeatTimeSkew)
+	for i, hb := range hbs {
+		t := time.Unix(int64(hb.TimeSent), 0).UTC()
+		if hb.TimeSent <= 0 || t.Before(heartbeatTimeFloor) || t.After(ceiling) {
+			return apierr.BadRequest(fmt.Sprintf(
+				"heartbeat[%d]: 'time' must be a unix timestamp between %s and now+%s (got %g)",
+				i, heartbeatTimeFloor.Format("2006-01-02"), heartbeatTimeSkew, hb.TimeSent))
+		}
+	}
+	return nil
 }
 
 func headerPtr(c *echo.Context, name string) *string {

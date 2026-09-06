@@ -4,6 +4,7 @@ package db
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -183,15 +184,32 @@ func (d *DB) GetTotalActivityTime(ctx context.Context, user string, days int64, 
 }
 
 // GetTotalTimeBetween runs get_time_between.sql for a set of (user,project,min,max)
-// ranges. Returns results in ascending order (reverse of the DESC insert order),
-// matching hakatime's Database.getTotalTimeBetween.
+// windows and returns EXACTLY ONE total per input window, in input order:
+// out[i] is the attributed time inside windows[i]. A window matching zero
+// heartbeats yields 0, not a missing entry.
+//
+// boom-gsnv: this contract used to be a guess. The query inner-joined
+// heartbeats and grouped by (min_date, max_date), so an empty window emitted
+// no row at all, duplicate windows collapsed, and — with no ORDER BY — the
+// hash aggregate returned groups in a plan-dependent order. This function then
+// merely REVERSED whatever arrived, assuming one row per window in insert
+// order. The sole caller (boomtime/stats.Handler.Commits) zips the slice
+// positionally onto its commit gaps, so both defects silently attributed
+// coding time to the wrong commit. The query now carries WITH ORDINALITY +
+// LEFT JOIN + ORDER BY ordinality (see the .sql file), so alignment is a
+// property of the SQL rather than of row-arrival luck, and the Go-side reverse
+// is gone.
+//
+// The length check is a real invariant guard, not defensive noise: if a future
+// edit to the .sql reintroduces row-dropping, callers must not silently
+// mis-attribute — they must see an error.
 func (d *DB) GetTotalTimeBetween(ctx context.Context, users, projects []string, mins, maxs []time.Time) ([]int64, error) {
 	rows, err := d.Pool.Query(ctx, qGetTimeBetween, users, projects, mins, maxs)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []int64
+	out := make([]int64, 0, len(mins))
 	for rows.Next() {
 		var v int64
 		if err := rows.Scan(&v); err != nil {
@@ -202,9 +220,9 @@ func (d *DB) GetTotalTimeBetween(ctx context.Context, users, projects []string, 
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	// reverse
-	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
-		out[i], out[j] = out[j], out[i]
+	if len(out) != len(mins) {
+		return nil, fmt.Errorf("get_time_between: got %d rows for %d input windows "+
+			"(one row per window is required for positional attribution)", len(out), len(mins))
 	}
 	return out, nil
 }

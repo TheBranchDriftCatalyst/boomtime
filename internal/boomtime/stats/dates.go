@@ -18,6 +18,12 @@ func sameDay(a, b time.Time) bool {
 }
 
 // genDates returns midnight-UTC days from t0..t1 inclusive (Stats.genDates).
+//
+// The result is one element per calendar day, so its size is entirely the
+// caller's range. Every production caller receives its range from
+// dashboardScope, which clamps the span to maxDashboardSpan for exactly that
+// reason — see the comment there before handing this function an unvalidated
+// client range.
 func genDates(t0, t1 time.Time) []time.Time {
 	start := truncateDay(t0)
 	end := truncateDay(t1)
