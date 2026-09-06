@@ -192,6 +192,13 @@ var _ = Describe("Login constant-time (boom-imm)", func() {
 
 		before := auth.SentinelVerifyCount()
 
+		// INTERLEAVED on purpose. Run as two back-to-back loops, whichever
+		// branch went first absorbed the allocator/page-cache warm-up for the
+		// whole spec and its mean came out systematically higher — an artifact
+		// of sample ORDER, not of the branch, and one that grows with the cost
+		// of a login (each attempt now derives argon2 once per live generation,
+		// see argonLiveVersions). Alternating inside ONE loop makes both
+		// branches share the same warm-up and the same machine load.
 		for i := 0; i < N; i++ {
 			start := time.Now()
 			rec := doJSONReqG(e, http.MethodPost, "/auth/login", "", map[string]string{
@@ -201,10 +208,9 @@ var _ = Describe("Login constant-time (boom-imm)", func() {
 			invalidUserTimes[i] = time.Since(start)
 			Expect(rec).To(testutil.HaveStatus(http.StatusForbidden))
 			invalidBody = rec.Body.String()
-		}
-		for i := 0; i < N; i++ {
-			start := time.Now()
-			rec := doJSONReqG(e, http.MethodPost, "/auth/login", "", map[string]string{
+
+			start = time.Now()
+			rec = doJSONReqG(e, http.MethodPost, "/auth/login", "", map[string]string{
 				"username": user,
 				"password": "wrong-password-xyz",
 			})

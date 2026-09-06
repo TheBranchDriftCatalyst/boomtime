@@ -47,7 +47,11 @@ func (h *Handler) ChangePassword(c *echo.Context, req changePasswordRequest) err
 	// so it still needs the raw bearer token. Identify already validated it;
 	// re-parse the header for the token value.
 	callerToken, _ := apihelpers.TokenFromHeader(c)
-	if req.CurrentPassword == "" || req.NewPassword == "" {
+	// newPassword is required on every path. Checked BEFORE auth.ValidatePassword
+	// so an empty value answers the shared "required" envelope rather than
+	// ErrPasswordTooShort — a named ordering invariant, asserted by body content
+	// in auth_cluster_coverage_test.go.
+	if req.NewPassword == "" {
 		return apierr.BadRequest("currentPassword and newPassword are required")
 	}
 
@@ -56,9 +60,41 @@ func (h *Handler) ChangePassword(c *echo.Context, req changePasswordRequest) err
 	if err != nil {
 		return fmt.Errorf("user lookup failed: %w", err)
 	}
-	if user == nil || !auth.VerifyPasswordWithVersion(req.CurrentPassword, user.HashedPassword, user.SaltUsed, user.ArgonVersion) {
-		// 401 per the requirements: distinguishes a wrong current-password
-		// from the generic 403 "your access token is bad".
+	// SET-INITIAL-PASSWORD path. An OIDC-provisioned row stores ''::bytea
+	// password material (db.ProvisionOIDCUser), so there is no current password
+	// to prove — VerifyPasswordWithVersion rejects an empty stored hash by
+	// design (boom-93f.19). Requiring currentPassword unconditionally therefore
+	// wedged those accounts permanently: they could not obtain local login, and
+	// UnlinkIdentity refused to release their only sign-in method with "set a
+	// password first" — a remedy that existed nowhere (no other password
+	// surface, no CLI command). If the IdP were decommissioned the account was
+	// unrecoverable without manual SQL.
+	//
+	// Relaxing the check ONLY when the account provably has no password grants
+	// no new authority: the caller already holds a valid session for this exact
+	// account, and the write still goes through ChangePasswordAndRevoke (which
+	// kills every other session). Accounts that DO have a password are
+	// completely unchanged — currentPassword stays required and verified, so
+	// this is not a reset bypass.
+	hasPassword := user != nil && len(user.HashedPassword) > 0
+	switch {
+	case hasPassword:
+		// Empty-guard fires BEFORE argon2 so the body carries the "required"
+		// envelope exclusively, never the verify-side 401 text (named ordering
+		// invariant, auth_cluster_coverage_test.go).
+		if req.CurrentPassword == "" {
+			return apierr.BadRequest("currentPassword and newPassword are required")
+		}
+		if !auth.VerifyPasswordWithVersion(req.CurrentPassword, user.HashedPassword, user.SaltUsed, user.ArgonVersion) {
+			// 401 per the requirements: distinguishes a wrong current-password
+			// from the generic 403 "your access token is bad".
+			return apierr.New(http.StatusUnauthorized, "Current password is incorrect", nil)
+		}
+	case user == nil, req.CurrentPassword != "":
+		// Row vanished between Identify and here, or the caller supplied a
+		// current password for an account that has none — nothing it could ever
+		// match. Same 401 envelope as before, so neither case is newly
+		// distinguishable.
 		return apierr.New(http.StatusUnauthorized, "Current password is incorrect", nil)
 	}
 	// boom-0gu: delegate to the shared auth.ValidatePassword extracted during

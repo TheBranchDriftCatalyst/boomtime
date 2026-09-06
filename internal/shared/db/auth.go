@@ -219,6 +219,11 @@ func (d *DB) CreateOIDCAccessToken(ctx context.Context, owner, rawToken string) 
 // DeleteUserAccessTokens revokes every access + refresh token for a user
 // (boom-93f.14). Called on OIDC logout so any bearers the FE minted via
 // /auth/refresh_token die immediately with the session, not 30 min later.
+//
+// WARNING (boom-haz1): this revokes ALL auth_tokens rows, INCLUDING the
+// never-expiring API tokens editor plugins authenticate with. Logout must use
+// DeleteUserSessionTokens (below) instead — reach for this one only when you
+// genuinely mean "destroy every credential this user has".
 func (d *DB) DeleteUserAccessTokens(ctx context.Context, owner string) error {
 	tx, err := d.Pool.Begin(ctx)
 	if err != nil {
@@ -420,6 +425,39 @@ func (d *DB) ChangePasswordAndRevoke(ctx context.Context, username string, hashe
 		 AND   hashed_token <> $2
 		 AND   token_expiry IS NOT NULL`,
 		username, hashSessionToken(exceptToken)); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// DeleteUserSessionTokens revokes a user's SESSION credentials only: every
+// expiring auth_tokens bearer plus every refresh_tokens row. Non-expiring API
+// tokens (token_expiry IS NULL — the rows InsertAPIToken mints for editor
+// plugins / CLI) are deliberately PRESERVED.
+//
+// boom-haz1: OIDC Logout used DeleteUserAccessTokens, whose auth_tokens DELETE
+// has no expiry predicate, so a routine click on "Log out" in the web UI also
+// destroyed every wakatime/editor plugin token the user had ever minted and
+// heartbeat ingestion started 401ing until they noticed and re-created them.
+// API tokens remain a supported credential under BOOM_AUTH_PROVIDER=oidc
+// (OIDCResolver.ResolveBearer delegates to the local resolver), so logout must
+// not touch them. The predicate mirrors ChangePasswordAndRevoke, which has
+// carried the same `token_expiry IS NOT NULL` guard for the same reason.
+//
+// Both the 30-min local bearer (CreateAccessTokens) and the 30-min OIDC bearer
+// (CreateOIDCAccessToken) insert a non-NULL token_expiry, so both are caught.
+func (d *DB) DeleteUserSessionTokens(ctx context.Context, owner string) error {
+	tx, err := d.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx,
+		`DELETE FROM auth_tokens WHERE owner = $1 AND token_expiry IS NOT NULL`,
+		owner); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `DELETE FROM refresh_tokens WHERE owner = $1`, owner); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

@@ -17,10 +17,12 @@
 //	  Compact tri-state {status, error, generatedAt} — never ships bytes.
 //	  Cheap enough to poll every 5s during a render.
 //
-//	GET  /api/v1/users/:username/avatar            (PUBLIC)
+//	GET  /api/v1/users/:username/avatar            (PUBLIC, visibility-gated)
 //	  Serves the raw ready image bytes so the public dossier hero can drop
 //	  it into an <img>. 404s when status != 'ready' so an in-flight render
-//	  never leaks a stale byte-string down to a fresh viewer.
+//	  never leaks a stale byte-string down to a fresh viewer, and 404s the
+//	  SAME way when the named user has not opted into a public profile and
+//	  the caller is not that user — see avatarReadable.
 //
 // The "admin" path on synthesize-prompt is a temporary constraint from the
 // design: LLM cost is per-token and unbounded per user in the wrong hands,
@@ -426,17 +428,61 @@ func (h *Handler) GetAvatarStatus(c *echo.Context) (avatarStatusResponse, error)
 	return out, nil
 }
 
-// UserAvatar: GET /api/v1/users/:username/avatar (PUBLIC).
+// avatarReadable reports whether this request may read `username`'s avatar.
+//
+// The route is unauthenticated so the public dossier hero can use a plain
+// <img>, but it used to be keyed by the RAW username with no visibility check
+// at all: a user who never enabled a public profile still had their avatar
+// served to any anonymous caller who knew or guessed the name, and the
+// 200-for-ready / 404-for-everything-else split doubled as a username-existence
+// oracle. That contradicts the rest of the public surface, where the dossier is
+// reachable only through an opt-in slug and every negative case answers one
+// indistinguishable 404.
+//
+// The gate must stay narrow, because the app header and the settings avatar tab
+// render the SIGNED-IN user's own avatar through this same route while their
+// profile is private:
+//
+//   - public_profile_enabled → anyone, unchanged (this is the hero's case);
+//   - otherwise → the owner themselves, resolved from the bearer OR the session
+//     cookie (a browser <img> cannot set an Authorization header, so the cookie
+//     path is the one the header actually uses).
+//
+// Both misses fall through to the caller's existing "avatar not ready" 404, so
+// the refusal is byte-identical to a genuinely absent avatar and the gate does
+// not become an oracle of its own.
+//
+// `public` reports WHY it was allowed, because that decides cacheability: an
+// avatar served only because the CALLER is its owner must not be stored in a
+// shared cache under `Cache-Control: public`.
+func (h *Handler) avatarReadable(c *echo.Context, username string) (allowed, public bool) {
+	ctx := c.Request().Context()
+	if enabled, _, err := h.DB.GetPublicProfile(ctx, username); err == nil && enabled {
+		return true, true
+	}
+	if owner, aerr := apihelpers.IdentifyOwner(h.DB, c); aerr == nil && owner == username {
+		return true, false
+	}
+	owner, aerr := apihelpers.IdentifyOwnerFromCookie(h.DB, h.Logger, c, apierr.MissingRefreshTokenCookie())
+	return aerr == nil && owner == username, false
+}
+
+// UserAvatar: GET /api/v1/users/:username/avatar (PUBLIC, visibility-gated).
 // Serves the raw ready image bytes. Status != ready → 404 so an in-flight
-// render never leaks a stale byte-string to a fresh viewer. Cache-Control
-// is a modest 30s (not immutable): a user re-renders iteratively during
-// onboarding, and we want the new bytes to propagate promptly. The FE
+// render never leaks a stale byte-string to a fresh viewer, and a private
+// user's avatar gets that SAME 404 for everyone but the owner (avatarReadable).
+// Cache-Control is a modest 30s (not immutable): a user re-renders iteratively
+// during onboarding, and we want the new bytes to propagate promptly. The FE
 // hero can still cache-bust more aggressively via ?v=<generatedAt.epoch>
 // when it has the value.
 func (h *Handler) UserAvatar(c *echo.Context) error {
 	username := c.Param("username")
 	if username == "" {
 		return apihelpers.RespondErr(c, apierr.BadRequest("missing username"))
+	}
+	allowed, public := h.avatarReadable(c, username)
+	if !allowed {
+		return apihelpers.RespondErr(c, apierr.NotFound("avatar not ready"))
 	}
 	av, ok, err := h.DB.GetUserAvatar(c.Request().Context(), username)
 	if err != nil {
@@ -445,6 +491,13 @@ func (h *Handler) UserAvatar(c *echo.Context) error {
 	if !ok || av.Status != db.UserAvatarStatusReady || len(av.ImageBytes) == 0 {
 		return apihelpers.RespondErr(c, apierr.NotFound("avatar not ready"))
 	}
-	c.Response().Header().Set("Cache-Control", "public, max-age=30")
+	// `public` for the opt-in dossier hero (unchanged); `private` when the only
+	// reason this caller may see it is that they ARE the owner — a shared cache
+	// must never hand a private user's avatar to the next anonymous visitor.
+	cacheability := "public"
+	if !public {
+		cacheability = "private"
+	}
+	c.Response().Header().Set("Cache-Control", cacheability+", max-age=30")
 	return c.Blob(http.StatusOK, av.MimeType, av.ImageBytes)
 }

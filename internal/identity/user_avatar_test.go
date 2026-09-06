@@ -118,6 +118,14 @@ var _ = Describe("Avatar PublicGet (boom-9v4)", func() {
 		username, _ := hz.MintUser("avatar_public_get_g")
 		ctx := context.Background()
 
+		// This spec is about the STATUS gate (no-row / running / ready), so opt
+		// the user into a public profile and keep every request anonymous. The
+		// separate VISIBILITY gate — a private user's avatar is 404 to everyone
+		// but the owner — is pinned in user_avatar_visibility_test.go; without
+		// this line the two gates would be tangled in one spec and a visibility
+		// regression could hide behind a status assertion.
+		Expect(hz.DB.SetPublicProfile(ctx, username, true, "slug-"+username)).To(Succeed())
+
 		// (1) No row → 404.
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/users/"+username+"/avatar", nil)
 		rec := httptest.NewRecorder()

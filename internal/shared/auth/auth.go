@@ -75,6 +75,40 @@ func argonParamsFor(version int) (time uint32, memKiB uint32, parallelism uint8)
 	}
 }
 
+// argonLiveVersions is every generation a stored users row can legitimately be
+// at. Order is irrelevant to the result — what matters is that BOTH the
+// sentinel burn and a real verification walk the SAME list, so every branch of
+// Login costs one v1 derivation plus one v2 derivation, whatever it is doing.
+//
+// WHY (boom-imm follow-up): boom-imm equalised "no such user" against "wrong
+// password" by burning a sentinel — but at CURRENT-generation params only,
+// while a not-yet-rehashed row verifies at LEGACY params. v1 (t=1, m=64 MiB,
+// p=4) and v2 (t=2, m=64 MiB, p=1) are ~7x apart in wall clock (measured on a
+// dev box: ~9 ms vs ~65 ms), so an existing pre-migration account answered
+// ~55 ms FASTER than a nonexistent one and the enumeration oracle was still
+// wide open for every dormant account — exactly the accounts an attacker
+// probes, since a v1 row only becomes v2 by successfully logging in.
+//
+// Burning every live generation once makes the cost identical BY CONSTRUCTION
+// rather than by calibration: no sleeps, no per-machine tuning, and nothing to
+// re-tune when the params change. Adding a v3 here (and to argonParamsFor)
+// keeps the property automatically. The price is one extra legacy-cost
+// derivation per login attempt (~9 ms against the ~65 ms already spent).
+var argonLiveVersions = [...]int{ArgonVersionLegacy, ArgonVersionCurrent}
+
+// normalizeArgonVersion maps a stored version onto a live one, preserving
+// argonParamsFor's defensive "unknown ⇒ current generation" behaviour so a row
+// written by a newer binary is still ATTEMPTED against current params instead
+// of being rejected without a comparison.
+func normalizeArgonVersion(version int) int {
+	for _, v := range argonLiveVersions {
+		if v == version {
+			return v
+		}
+	}
+	return ArgonVersionCurrent
+}
+
 // sentinelPassword is the fixed dummy plaintext whose Argon2id hash+salt is
 // used by BurnSentinelVerify to make the "no such user" branch of Login take
 // the SAME wall-clock time as the "user exists / wrong password" branch.
@@ -127,11 +161,51 @@ func BurnSentinelVerify(password string) {
 	sentinelCountMu.Lock()
 	sentinelVerifyCount++
 	sentinelCountMu.Unlock()
-	computed := argon2.IDKey([]byte(password), sentinelSalt, argonTime, argonMem, argonPar, keyLen)
-	// ConstantTimeCompare's result is discarded — the side-effect we need
-	// is CPU time, not the boolean.
-	_ = subtle.ConstantTimeCompare(computed, sentinelHash)
+	// Burn EVERY live generation, not just the current one — see
+	// argonLiveVersions. VerifyPasswordWithVersion walks the identical list, so
+	// this branch and every found-user branch cost the same regardless of which
+	// generation the (possibly nonexistent) row is at.
+	for _, version := range argonLiveVersions {
+		t, m, p := argonParamsFor(version)
+		computed := argon2.IDKey([]byte(password), sentinelSalt, t, m, p, keyLen)
+		countArgonComputeForTest(version)
+		// ConstantTimeCompare's result is discarded — the side-effect we need
+		// is CPU time, not the boolean.
+		_ = subtle.ConstantTimeCompare(computed, sentinelHash)
+	}
 }
+
+// argonComputeCounts tallies argon2id derivations per generation. Its ONLY
+// consumer is the boom-imm follow-up spec, which asserts the equal-cost
+// invariant deterministically (every branch derives each live generation
+// exactly once) instead of relying on a wall-clock measurement that a loaded
+// machine can wash out. The mutex is irrelevant next to a 10-60 ms derivation.
+var (
+	argonComputeMu     sync.Mutex
+	argonComputeCounts = map[int]uint64{}
+)
+
+func countArgonComputeForTest(version int) {
+	argonComputeMu.Lock()
+	argonComputeCounts[version]++
+	argonComputeMu.Unlock()
+}
+
+// ArgonComputeCountsForTest returns a snapshot of the per-generation derivation
+// tally. Test-only: production code must never branch on it.
+func ArgonComputeCountsForTest() map[int]uint64 {
+	argonComputeMu.Lock()
+	defer argonComputeMu.Unlock()
+	out := make(map[int]uint64, len(argonComputeCounts))
+	for k, v := range argonComputeCounts {
+		out[k] = v
+	}
+	return out
+}
+
+// ArgonLiveVersionsForTest returns the generations every verify/burn walks.
+// Test-only.
+func ArgonLiveVersionsForTest() []int { return argonLiveVersions[:] }
 
 // SentinelVerifyCount returns how many times BurnSentinelVerify has run in
 // this process. Exposed for boom-imm's spy test — production callers must not
@@ -192,19 +266,36 @@ func VerifyPassword(password string, storedHash, storedSalt []byte) bool {
 // with v1 params (and a v2 hash with v2 params). Cross-version verification
 // returns false — a v1 hash checked with v2 params does NOT authenticate.
 func VerifyPasswordWithVersion(password string, storedHash, storedSalt []byte, version int) bool {
-	// boom-93f.19: explicit empty-hash reject. OIDC-provisioned users store an
-	// empty hashed_password (they authenticate via the IdP, never a local
-	// password). Such a row must never authenticate via /auth/login. This is
-	// belt-and-suspenders: the ConstantTimeCompare below already fails because
-	// argon2.IDKey always returns keyLen bytes vs a 0-byte stored hash, but an
-	// explicit guard hardens against any future keyLen/format change from
-	// silently making an empty hash verifiable.
-	if len(storedHash) == 0 {
-		return false
+	// Derive at EVERY live generation, comparing only the one this row was
+	// actually written under. The extra derivation is pure timing ballast: it
+	// makes a legacy row cost the same as a current one AND the same as the
+	// sentinel burn on the user-not-found branch (see argonLiveVersions), so
+	// wall clock no longer reveals which of the three happened.
+	//
+	// The comparison stays keyed to `version`: cross-version verification must
+	// still fail, so a v1 hash checked against a v2 derivation does NOT
+	// authenticate.
+	want := normalizeArgonVersion(version)
+	matched := false
+	for _, v := range argonLiveVersions {
+		t, m, p := argonParamsFor(v)
+		computed := argon2.IDKey([]byte(password), storedSalt, t, m, p, keyLen)
+		countArgonComputeForTest(v)
+		// boom-93f.19: explicit empty-hash reject. OIDC-provisioned users store
+		// an empty hashed_password (they authenticate via the IdP, never a
+		// local password). Such a row must never authenticate via /auth/login.
+		// This is belt-and-suspenders: ConstantTimeCompare already fails
+		// because argon2.IDKey always returns keyLen bytes vs a 0-byte stored
+		// hash, but an explicit guard hardens against any future keyLen/format
+		// change from silently making an empty hash verifiable. It lives INSIDE
+		// the loop (rather than as an early return) so an empty-hash row costs
+		// the same as every other branch — as a pre-loop return it answered
+		// instantly and re-opened the oracle for exactly those accounts.
+		if v == want && len(storedHash) > 0 && subtle.ConstantTimeCompare(computed, storedHash) == 1 {
+			matched = true
+		}
 	}
-	t, m, p := argonParamsFor(version)
-	computed := argon2.IDKey([]byte(password), storedSalt, t, m, p, keyLen)
-	return subtle.ConstantTimeCompare(computed, storedHash) == 1
+	return matched
 }
 
 // NewRawToken returns a random UUIDv4 string (the raw token handed to the user).

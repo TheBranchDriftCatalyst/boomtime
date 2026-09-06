@@ -82,7 +82,9 @@ func Register(e *echo.Echo, h *Handler) {
 				"deletes the access + refresh token pair named by the Authorization header and "+
 				"the cookie, and answers 403 when they do not both match. OIDC provider: deletes "+
 				"the server-side oidc_sessions row AND every bearer that session minted, so they "+
-				"die with it rather than up to 30 minutes later. Also clears the in-flight OIDC "+
+				"die with it rather than up to 30 minutes later. Never-expiring API tokens "+
+				"(created via /auth/create_api_token) are NOT revoked — signing out of the web "+
+				"UI must not break editor/plugin heartbeat ingestion. Also clears the in-flight OIDC "+
 				"state/nonce cookies so an abandoned link flow cannot be completed by the next "+
 				"user of a shared browser. 204 on success.").
 		Tag("Auth")

@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -268,6 +269,15 @@ func (h *Handler) RefreshToken(c *echo.Context) (model.LoginResponse, error) {
 	return loginResponse(td, time.Now().UTC()), nil
 }
 
+// oidcSessionRefresher is the ONE method tryRotateOIDCSession needs from the
+// active resolver. *auth.OIDCResolver satisfies it in production; asserting on
+// the behaviour instead of the concrete type lets the rotation path (including
+// the cookie re-emit below) be exercised without standing up a fake IdP with
+// discovery + JWKS + signed id_tokens.
+type oidcSessionRefresher interface {
+	RefreshSession(ctx context.Context, rawRefresh string) (time.Time, string, *apierr.Error)
+}
+
 // tryRotateOIDCSession best-effort extends the caller's OIDC web session
 // (boom-93f.11.6): decrypt the stored provider refresh, refresh-grant against
 // the IdP, then rotate id_token_expiry + the (possibly new) refresh in place —
@@ -279,7 +289,7 @@ func (h *Handler) tryRotateOIDCSession(c *echo.Context) {
 	if !ok {
 		return
 	}
-	oidcR, ok := auth.CurrentResolver().(*auth.OIDCResolver)
+	oidcR, ok := auth.CurrentResolver().(oidcSessionRefresher)
 	if !ok {
 		return
 	}
@@ -303,7 +313,20 @@ func (h *Handler) tryRotateOIDCSession(c *echo.Context) {
 	}
 	if err := h.DB.RotateOIDCSession(ctx, refresh, newExpiry, newEnc); err != nil {
 		h.Logger.Warn("oidc session rotate failed", "err", err)
+		return
 	}
+	// Move the BROWSER's copy too. CallbackOIDC pins the cookie's Expires to
+	// the FIRST id_token expiry, so extending only the server-side row left the
+	// browser deleting the cookie at the original instant: the next
+	// /auth/refresh_token arrived cookie-less and the user was logged out while
+	// a valid, freshly-rotated oidc_sessions row sat in the DB — the entire
+	// rotation (decrypt → IdP round-trip → UPDATE) could never extend anything.
+	//
+	// Same NAME/VALUE and the same attribute tuple, only Expires moves: the
+	// opaque session id must not change (a new value would orphan the row), and
+	// a differing Path/Secure/SameSite would have the browser store a SECOND
+	// cookie rather than replace the first.
+	h.setOIDCSessionCookie(c, refresh, newExpiry)
 }
 
 // Logout: POST /auth/logout.
@@ -324,10 +347,21 @@ func (h *Handler) Logout(c *echo.Context) error {
 		// boom-93f.14: revoke any bearers this user minted via /auth/refresh_token
 		// so they die WITH the session, not up to 30 min later. Resolve the owner
 		// from the session before deleting it.
+		//
+		// boom-haz1: scope the revoke to SESSION credentials. This used to call
+		// DeleteUserAccessTokens, which deletes every auth_tokens row for the
+		// owner — including the never-expiring API tokens minted via
+		// /auth/create_api_token, which stay a supported bearer under
+		// provider=oidc (OIDCResolver.ResolveBearer delegates to local). A
+		// routine web logout therefore killed every editor/wakatime plugin
+		// token and heartbeat ingestion 401'd until the user re-created them.
+		// DeleteUserSessionTokens preserves NULL-expiry API tokens, matching
+		// what ChangePasswordAndRevoke has always done, and matching the route
+		// doc's promise that logout kills only what the session minted.
 		var owner string
 		if o, found, _ := h.DB.GetOIDCSessionUser(ctx, refresh); found && o != "" {
 			owner = o
-			_ = h.DB.DeleteUserAccessTokens(ctx, owner)
+			_ = h.DB.DeleteUserSessionTokens(ctx, owner)
 		}
 		if err := h.DB.DeleteOIDCSession(ctx, refresh); err != nil {
 			return fmt.Errorf("oidc session deletion failed: %w", err)

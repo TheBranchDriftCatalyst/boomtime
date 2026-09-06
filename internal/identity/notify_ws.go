@@ -24,9 +24,7 @@ func (h *Handler) NotifyWS(c *echo.Context) error {
 		return apihelpers.RespondErr(c, aerr)
 	}
 
-	conn, err := websocket.Accept(c.Response(), c.Request(), &websocket.AcceptOptions{
-		InsecureSkipVerify: true, // same-origin
-	})
+	conn, err := websocket.Accept(c.Response(), c.Request(), wsAcceptOptions(h.Cfg.IsProd()))
 	if err != nil {
 		return nil
 	}

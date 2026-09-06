@@ -29,6 +29,19 @@ const oidcStateCookie = "oidc_state"
 // the id_token echoes it. Same lifetime/attrs as the state cookie.
 const oidcNonceCookie = "oidc_nonce"
 
+// oidcModeCookie records WHICH flow the browser started, so the callback can
+// tell a link attempt apart from a login attempt without depending on the
+// in-process linkIntents map surviving.
+//
+// It carries the MODE ONLY — never the target username. The username stays
+// server-side in linkIntents precisely so the browser cannot choose what it
+// gets linked to; this cookie can only ever cause a link to FAIL, never to
+// succeed against a different account.
+const oidcModeCookie = "oidc_mode"
+
+// oidcModeLink is the oidcModeCookie value written by /auth/link/oidc.
+const oidcModeLink = "link"
+
 // setOIDCFlowCookie writes one of the short-lived OIDC-flow CSRF cookies
 // (state/nonce). SameSite=Lax so it survives the top-level redirect back from
 // the provider; HttpOnly + optional Secure.
@@ -49,7 +62,7 @@ func (h *Handler) setOIDCFlowCookie(c *echo.Context, name, value string) {
 // user on the same (shared/kiosk) browser: without the oidc_state cookie the
 // callback's CSRF check fails, so the stale link intent can never be consumed.
 func (h *Handler) clearOIDCFlowCookies(c *echo.Context) {
-	for _, name := range []string{oidcStateCookie, oidcNonceCookie} {
+	for _, name := range []string{oidcStateCookie, oidcNonceCookie, oidcModeCookie} {
 		c.SetCookie(&http.Cookie{Name: name, Value: "", Path: "/", MaxAge: -1})
 	}
 }
@@ -58,6 +71,32 @@ func (h *Handler) clearOIDCFlowCookies(c *echo.Context) {
 // OIDC is CONFIGURED, so the link flow works under provider=local too), or nil.
 func oidcResolver() *auth.OIDCResolver {
 	return auth.OIDCResolverInstance()
+}
+
+// setOIDCSessionCookie writes the OIDC web-session cookie. Value is the opaque
+// oidc_sessions id; Expires mirrors the session's CURRENT server-side
+// id_token_expiry.
+//
+// SINGLE SOURCE OF TRUTH for the attribute tuple (boom-haz1 medium): the login
+// callback and the silent rotation in auth.go's tryRotateOIDCSession must emit
+// byte-identical Name/Path/HttpOnly/Secure/SameSite, or the browser stores a
+// SECOND cookie instead of replacing the first. Split across two call sites the
+// tuple drifts; here it cannot.
+func (h *Handler) setOIDCSessionCookie(c *echo.Context, sessionID string, expiry time.Time) {
+	c.SetCookie(&http.Cookie{
+		Name:     "refresh_token",
+		Value:    sessionID,
+		Path:     strings.TrimSuffix(h.Cfg.APIPrefix, "/") + "/",
+		HttpOnly: true,
+		Secure:   h.Cfg.CookieSecure,
+		// boom-93f.19: Strict, matching the local session cookie (auth.go
+		// setRefreshCookie). The `oidc_state` CSRF cookie must be Lax to
+		// survive the provider's cross-site redirect back, but this SESSION
+		// cookie is only ever set AFTER the callback completes, so Strict is
+		// both safe and consistent — no reason for it to be weaker than local.
+		SameSite: http.SameSiteStrictMode,
+		Expires:  expiry,
+	})
 }
 
 // linkIntents maps an in-flight OAuth `state` → the boomtime user who initiated
@@ -147,6 +186,10 @@ func (h *Handler) LinkOIDC(c *echo.Context) error {
 	putLinkIntent(state, owner)
 	h.setOIDCFlowCookie(c, oidcStateCookie, state)
 	h.setOIDCFlowCookie(c, oidcNonceCookie, nonce)
+	// Mark the flow as a LINK so the callback can fail closed when the
+	// in-process intent is gone (restart / second replica) instead of quietly
+	// switching to LOGIN mode. See CallbackOIDC.
+	h.setOIDCFlowCookie(c, oidcModeCookie, oidcModeLink)
 	return c.Redirect(http.StatusFound, resolver.AuthCodeURL(state, nonce))
 }
 
@@ -168,9 +211,15 @@ func (h *Handler) CallbackOIDC(c *echo.Context) error {
 	if nc, nerr := c.Cookie(oidcNonceCookie); nerr == nil {
 		nonce = nc.Value
 	}
-	// One-shot: clear both flow cookies.
+	// Which flow started this? Captured BEFORE the cookies are cleared.
+	linkFlow := false
+	if mc, merr := c.Cookie(oidcModeCookie); merr == nil && mc.Value == oidcModeLink {
+		linkFlow = true
+	}
+	// One-shot: clear every flow cookie.
 	c.SetCookie(&http.Cookie{Name: oidcStateCookie, Value: "", Path: "/", MaxAge: -1})
 	c.SetCookie(&http.Cookie{Name: oidcNonceCookie, Value: "", Path: "/", MaxAge: -1})
+	c.SetCookie(&http.Cookie{Name: oidcModeCookie, Value: "", Path: "/", MaxAge: -1})
 
 	if c.QueryParam("error") != "" {
 		return h.oidcErrorRedirect(c, "provider_error")
@@ -196,6 +245,21 @@ func (h *Handler) CallbackOIDC(c *echo.Context) error {
 		return c.Redirect(http.StatusFound, "/app/settings?tab=profile&link=success")
 	}
 
+	// The browser says this was a LINK flow but the intent is gone — boomtime
+	// restarted mid-flow, the callback landed on another replica, or the
+	// 10-minute TTL lapsed. Falling through to LOGIN mode here would mint a
+	// session for the OIDC identity and OVERWRITE the caller's refresh_token
+	// cookie: under provider=local that value no longer resolves (local
+	// ResolveCookie reads refresh_tokens), so they are silently signed out with
+	// nothing linked; under provider=oidc they are signed in as whatever
+	// account the sub maps to. Fail the LINK instead — same redirect the other
+	// link failures use, so the Settings banner already renders it — and do NOT
+	// exchange the code.
+	if linkFlow {
+		h.Logger.Warn("oidc link intent missing at callback (restart or second replica?) — refusing to fall through to login")
+		return c.Redirect(http.StatusFound, "/app/settings?tab=profile&link=error")
+	}
+
 	result, aerr := resolver.HandleCallback(c.Request().Context(), h.DB, code, nonce)
 	if aerr != nil {
 		h.Logger.Warn("oidc callback failed", "status", aerr.Status, "msg", aerr.Message)
@@ -205,20 +269,7 @@ func (h *Handler) CallbackOIDC(c *echo.Context) error {
 	// Boomtime session cookie — reuses `refresh_token` so IdentifyFromCookie
 	// resolves it via OIDCResolver.ResolveCookie. Value is the opaque session
 	// id (server-side oidc_sessions holds the id_token expiry + refresh).
-	c.SetCookie(&http.Cookie{
-		Name:     "refresh_token",
-		Value:    result.SessionID,
-		Path:     strings.TrimSuffix(h.Cfg.APIPrefix, "/") + "/",
-		HttpOnly: true,
-		Secure:   h.Cfg.CookieSecure,
-		// boom-93f.19: Strict, matching the local session cookie (auth.go
-		// setRefreshCookie). The `oidc_state` CSRF cookie must be Lax to
-		// survive the provider's cross-site redirect back, but this SESSION
-		// cookie is only ever set AFTER the callback completes, so Strict is
-		// both safe and consistent — no reason for it to be weaker than local.
-		SameSite: http.SameSiteStrictMode,
-		Expires:  result.Expiry,
-	})
+	h.setOIDCSessionCookie(c, result.SessionID, result.Expiry)
 	h.Logger.Info("oidc login", "user", result.Identity.Username, "role", result.Identity.Role)
 	return c.Redirect(http.StatusFound, "/app")
 }
