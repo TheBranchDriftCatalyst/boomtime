@@ -195,7 +195,14 @@ export function AmazonConnectCard() {
       setParams(next, { replace: true });
       return;
     }
-    captureComplete.mutate({ session: stored, redirectUrl: decodeURIComponent(captured) });
+    // `captured` is ALREADY decoded once: the bookmarklet appends
+    // encodeURIComponent(maplandingUrl) and URLSearchParams.get() decodes it on
+    // the way out. A second decodeURIComponent here would eat the escapes
+    // INSIDE the Amazon URL's own query values (openid.return_to / claimed_id),
+    // turning %26 into a live "&" that splits the query, %23 into a "#" that
+    // truncates it (dropping openid.oa2.authorization_code), and throwing
+    // URIError on any stray "%" — a crash inside this effect. Pass it through.
+    captureComplete.mutate({ session: stored, redirectUrl: captured });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [captured]);
 

@@ -148,3 +148,79 @@ describe("useTimeRange", () => {
     expect(result.current.numDays).toBe(5);
   });
 });
+
+// --- boom-28vm: hostile persisted / URL values ------------------------------
+// Every render calls start.toISOString(); on an Invalid Date that THROWS a
+// RangeError, so one junk number used to take down every page that shows a time
+// range — and because the initializer re-read the same stored value on every
+// mount, the app crash-looped to the route error boundary on each reload until
+// the user cleared storage by hand.
+describe("useTimeRange — junk stored/URL values fall back instead of crashing", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-10T12:00:00Z"));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    localStorage.clear();
+  });
+
+  it("survives a localStorage value from a foreign schema (ISO strings, not millis)", () => {
+    localStorage.setItem(
+      "boomtime-timerange",
+      JSON.stringify({ start: "2025-01-01", end: "2025-02-01", timeLimit: 15 }),
+    );
+    // Pre-fix: `stored.end - stored.start` is NaN -> state.start is NaN ->
+    // new Date(NaN).toISOString() throws RangeError inside renderHook.
+    const { result } = renderHook(() => useTimeRange(), { wrapper: wrapper() });
+    expect(Number.isNaN(result.current.start.getTime())).toBe(false);
+    expect(result.current.startISO).toMatch(/^\d{4}-/);
+    expect(result.current.numDays).toBe(15); // defaults()
+  });
+
+  it("survives a localStorage value with a NaN/missing bound", () => {
+    localStorage.setItem(
+      "boomtime-timerange",
+      JSON.stringify({ start: null, end: Date.now(), timeLimit: 15 }),
+    );
+    const { result } = renderHook(() => useTimeRange(), { wrapper: wrapper() });
+    expect(result.current.startISO).toMatch(/^\d{4}-/);
+    expect(result.current.numDays).toBe(15);
+  });
+
+  it("survives a stored span so wide that sliding it underflows Date's range", () => {
+    localStorage.setItem(
+      "boomtime-timerange",
+      JSON.stringify({ start: -8.64e15, end: 8.64e15, timeLimit: 15 }),
+    );
+    const { result } = renderHook(() => useTimeRange(), { wrapper: wrapper() });
+    expect(result.current.endISO).toMatch(/^\d{4}-/);
+    expect(result.current.numDays).toBe(15);
+  });
+
+  it("survives a shared URL whose epochs overflow Date's representable range", () => {
+    const { result } = renderHook(() => useTimeRange(), {
+      wrapper: wrapper(["/?start=99999999999999999999&end=99999999999999999999&limit=15"]),
+    });
+    expect(result.current.startISO).toMatch(/^\d{4}-/);
+    expect(result.current.numDays).toBe(15);
+  });
+
+  it("survives a non-numeric URL range (unchanged behavior, now pinned)", () => {
+    const { result } = renderHook(() => useTimeRange(), {
+      wrapper: wrapper(["/?start=yesterday&end=today"]),
+    });
+    expect(result.current.numDays).toBe(15);
+  });
+
+  it("repairs a junk timeLimit without discarding a valid range", () => {
+    const start = new Date("2026-06-01T00:00:00Z").getTime();
+    const end = new Date("2026-06-11T00:00:00Z").getTime();
+    const { result } = renderHook(() => useTimeRange(), {
+      wrapper: wrapper([`/?start=${start}&end=${end}&limit=NaN`]),
+    });
+    expect(result.current.numDays).toBe(10); // range kept
+    expect(result.current.timeLimit).toBe(15); // limit repaired to the default
+  });
+});

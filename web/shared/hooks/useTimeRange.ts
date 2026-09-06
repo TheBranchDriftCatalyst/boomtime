@@ -47,21 +47,48 @@ function defaults(): RangeState {
   };
 }
 
+// The widest instant a JS Date can represent: ±8.64e15 ms from the epoch.
+// Beyond it (or on NaN) `new Date(n)` is an Invalid Date whose .toISOString()
+// THROWS a RangeError — and this hook calls toISOString() on every render, so
+// one bad number crashes every page that uses a time range, on every reload,
+// until storage is cleared by hand. Hence: validate at every entry point.
+const MAX_EPOCH_MS = 8.64e15;
+
+function isRepresentableEpoch(n: unknown): n is number {
+  return typeof n === "number" && Number.isFinite(n) && Math.abs(n) <= MAX_EPOCH_MS;
+}
+
+// sanitize accepts a candidate RangeState from an untrusted source (URL params,
+// localStorage written by an older schema / an extension / a hand edit) and
+// returns it only when both bounds are real, representable epochs. Anything
+// else yields null so the caller falls back to defaults(). A junk timeLimit is
+// repaired in place (it can't crash a render, it just skews gap-splitting).
+function sanitize(candidate: Partial<RangeState> | null | undefined): RangeState | null {
+  if (!candidate || typeof candidate !== "object") return null;
+  const { start, end, timeLimit } = candidate;
+  if (!isRepresentableEpoch(start) || !isRepresentableEpoch(end)) return null;
+  return {
+    start,
+    end,
+    timeLimit:
+      typeof timeLimit === "number" && Number.isFinite(timeLimit) && timeLimit > 0
+        ? timeLimit
+        : DEFAULT_TIME_LIMIT,
+  };
+}
+
 // Parse ?start&end&limit (epoch millis) into a RangeState, or null if absent
 // or malformed — callers fall back to storage/defaults.
 function fromParams(sp: URLSearchParams): RangeState | null {
   const rawStart = sp.get("start");
   const rawEnd = sp.get("end");
   if (rawStart == null || rawEnd == null) return null;
-  const start = Number(rawStart);
-  const end = Number(rawEnd);
-  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
   const limit = Number(sp.get("limit"));
-  return {
-    start,
-    end,
-    timeLimit: Number.isFinite(limit) && limit > 0 ? limit : DEFAULT_TIME_LIMIT,
-  };
+  return sanitize({
+    start: Number(rawStart),
+    end: Number(rawEnd),
+    timeLimit: limit,
+  });
 }
 
 function sameRange(a: RangeState, b: RangeState): boolean {
@@ -83,7 +110,9 @@ export function useTimeRange(): TimeRangeControls {
   const [state, setState] = useState<RangeState>(() => {
     const fromURL = fromParams(searchParams);
     if (fromURL) return fromURL;
-    const stored = loadStored<RangeState | null>(STORAGE_KEY, null);
+    // Validated, not trusted: a corrupt/foreign stored value used to produce
+    // NaN bounds and crash-loop the app through the route error boundary.
+    const stored = sanitize(loadStored<Partial<RangeState> | null>(STORAGE_KEY, null));
     if (stored) {
       // Slide the window so end == now, preserving the chosen duration +
       // timeLimit. Persisted ranges are almost always rolling "last N days"
@@ -94,7 +123,10 @@ export function useTimeRange(): TimeRangeControls {
       // stays intact there.
       const duration = Math.max(0, stored.end - stored.start);
       const now = Date.now();
-      return { start: now - duration, end: now, timeLimit: stored.timeLimit };
+      // Sliding a legal-but-enormous stored window back from `now` can itself
+      // fall off the representable range, so re-validate the derived state.
+      const slid = sanitize({ start: now - duration, end: now, timeLimit: stored.timeLimit });
+      if (slid) return slid;
     }
     return defaults();
   });

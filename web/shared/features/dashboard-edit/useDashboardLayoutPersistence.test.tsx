@@ -119,3 +119,91 @@ describe("useDashboardLayoutPersistence", () => {
     expect(result.current.store.state.layout).toEqual(DEFAULT_LAYOUT);
   });
 });
+
+// --- boom-28vm: the debounce's three holes ----------------------------------
+// (1) an edit made <600ms before navigating away died with the cleared timer,
+// (2) a failed PUT sat dirty until the user happened to edit again, and
+// (3) two debounce cycles could race, letting a stalled OLDER PUT land after
+//     the newer one — server on layout A, editor showing "saved" layout B.
+describe("useDashboardLayoutPersistence — durability of the debounced save", () => {
+  const EDIT_A: GridLayoutItem[] = [{ i: "a", x: 1, y: 0, w: 6, h: 3 }];
+  const EDIT_B: GridLayoutItem[] = [{ i: "a", x: 5, y: 2, w: 4, h: 2 }];
+
+  it("flushes the pending edit on unmount instead of dropping it", async () => {
+    mockGet404();
+    const puts: GridLayoutItem[][] = [];
+    server.use(
+      http.put(DASHBOARD_URL, async ({ request }) => {
+        const body = (await request.json()) as { layout: { widgets: GridLayoutItem[] } };
+        puts.push(body.layout.widgets);
+        return HttpResponse.json(body);
+      }),
+    );
+    const { result, unmount } = renderHook(() => useHarness("overview"), {
+      wrapper: wrapper(makeQC()),
+    });
+    await waitFor(() => expect(result.current.persistence.isHydrating).toBe(false));
+
+    act(() => result.current.store.dispatch(moveResize(EDIT_A)));
+    // Navigate away INSIDE the 600ms debounce window — the user clicks a
+    // sidebar link right after dragging a tile.
+    unmount();
+
+    await waitFor(() => expect(puts).toHaveLength(1), { timeout: 3000 });
+    expect(puts[0]).toEqual(EDIT_A);
+  });
+
+  it("retries a failed autosave without waiting for another edit", async () => {
+    mockGet404();
+    let attempts = 0;
+    server.use(
+      http.put(DASHBOARD_URL, async ({ request }) => {
+        attempts += 1;
+        const body = (await request.json()) as { layout: { widgets: GridLayoutItem[] } };
+        // First attempt: transient 5xx. The store must not stay stuck dirty.
+        if (attempts === 1) return HttpResponse.json({ error: "boom" }, { status: 503 });
+        return HttpResponse.json(body);
+      }),
+    );
+    const { result } = renderHook(() => useHarness("overview"), {
+      wrapper: wrapper(makeQC()),
+    });
+    await waitFor(() => expect(result.current.persistence.isHydrating).toBe(false));
+
+    act(() => result.current.store.dispatch(moveResize(EDIT_A)));
+
+    await waitFor(() => expect(attempts).toBeGreaterThanOrEqual(2), { timeout: 5000 });
+    await waitFor(() => expect(result.current.store.isDirty).toBe(false), { timeout: 5000 });
+  }, 15000);
+
+  it("serializes PUTs so a stalled older write can never land after a newer one", async () => {
+    mockGet404();
+    const landed: GridLayoutItem[][] = [];
+    let seen = 0;
+    server.use(
+      http.put(DASHBOARD_URL, async ({ request }) => {
+        const body = (await request.json()) as { layout: { widgets: GridLayoutItem[] } };
+        seen += 1;
+        // The FIRST write stalls (slow connection / server GC) long enough
+        // that, unserialized, the second write would commit before it.
+        if (seen === 1) await new Promise((r) => setTimeout(r, 900));
+        landed.push(body.layout.widgets);
+        return HttpResponse.json(body);
+      }),
+    );
+    const { result } = renderHook(() => useHarness("overview"), {
+      wrapper: wrapper(makeQC()),
+    });
+    await waitFor(() => expect(result.current.persistence.isHydrating).toBe(false));
+
+    act(() => result.current.store.dispatch(moveResize(EDIT_A)));
+    // Let edit A's debounce fire, then make edit B while A is still in flight.
+    await new Promise((r) => setTimeout(r, 750));
+    act(() => result.current.store.dispatch(moveResize(EDIT_B)));
+
+    await waitFor(() => expect(landed).toHaveLength(2), { timeout: 8000 });
+    // The LAST thing the server committed must be the LAST thing the user did.
+    expect(landed[landed.length - 1]).toEqual(EDIT_B);
+    expect(landed).toEqual([EDIT_A, EDIT_B]);
+  }, 20000);
+});

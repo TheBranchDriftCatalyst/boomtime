@@ -124,6 +124,12 @@ interface RequestOpts {
   params?: Params;
   body?: unknown;
   auth?: boolean;
+  // Body contract for a 2xx. "json" (the default) means the response MUST
+  // parse as JSON — see the non-JSON guard in doRequest. Endpoints that
+  // legitimately serve a non-JSON 2xx (today only GET /api/v1/changelog,
+  // which the backend answers with text/markdown) opt into "text" and get
+  // the raw body back.
+  responseType?: "json" | "text";
 }
 
 // Single-flight refresh: concurrent 401s all await the same refresh call.
@@ -170,17 +176,25 @@ async function sharedRefresh(): Promise<boolean> {
   return refreshInFlight;
 }
 
-async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
-  const { method = "GET", params, body, auth = true } = opts;
-  return doRequest<T>(path, { method, params, body, auth }, /* retried */ false);
+// Exported for queryApi.ts (the query-DSL client), which must share this
+// module's auth-header / single-flight-refresh / non-JSON-body behavior
+// byte-for-byte instead of re-implementing a subset of it.
+export async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
+  const { method = "GET", params, body, auth = true, responseType = "json" } = opts;
+  return doRequest<T>(
+    path,
+    { method, params, body, auth, responseType },
+    /* retried */ false,
+  );
 }
 
 async function doRequest<T>(
   path: string,
-  opts: Required<Pick<RequestOpts, "method" | "auth">> & Pick<RequestOpts, "params" | "body">,
+  opts: Required<Pick<RequestOpts, "method" | "auth" | "responseType">> &
+    Pick<RequestOpts, "params" | "body">,
   retried: boolean,
 ): Promise<T> {
-  const { method, params, body, auth } = opts;
+  const { method, params, body, auth, responseType } = opts;
   const headers: Record<string, string> = {};
 
   if (body !== undefined) headers["Content-Type"] = "application/json";
@@ -197,11 +211,16 @@ async function doRequest<T>(
   });
 
   const text = await res.text();
+  const contentType = res.headers.get("content-type") ?? "";
   let data: unknown = undefined;
+  let parsedJson = false;
   if (text) {
     try {
       data = JSON.parse(text);
+      parsedJson = true;
     } catch {
+      // Keep the raw text so a non-2xx can still surface a useful message and
+      // the non-JSON guard below can report what actually came back.
       data = text;
     }
   }
@@ -223,6 +242,29 @@ async function doRequest<T>(
       res.statusText ||
       "Request failed";
     throw new ApiError(res.status, message, data);
+  }
+
+  // Opt-in raw-text endpoints (CHANGELOG.md) bypass the JSON contract.
+  if (responseType === "text") return text as T;
+
+  // boom-28vm: a 2xx whose body is NOT JSON is never a legitimate answer from
+  // this API — every endpoint answers with JSON (or an empty body). The Go
+  // server's SPA catch-all (GET "/*", internal/shared/server/server.go) has no
+  // /api exclusion, so an UNREGISTERED (feature-gated-off) GET /api/... returns
+  // 200 text/html with index.html in it. Returning that HTML as `data` made
+  // every "probe the endpoint to see if the feature is on" query succeed with a
+  // truthy string — the trap that shipped feature UI on installs where the
+  // feature is off (three separate sightings). Treat it as an error so probes
+  // see isError, callers see a real failure, and nobody renders a web page as a
+  // payload. An empty body still resolves as undefined (204/void endpoints).
+  if (text && (!parsedJson || /^\s*text\/html\b/i.test(contentType))) {
+    throw new ApiError(
+      res.status,
+      `Expected a JSON response from ${method} ${path} but received ${
+        contentType || "an unparseable body"
+      } (HTTP ${res.status}) — the endpoint is probably not registered`,
+      typeof data === "string" ? data.slice(0, 200) : data,
+    );
   }
 
   return data as T;
@@ -1001,10 +1043,11 @@ export const api = {
   getVersion: () =>
     request<VersionResponse>("/api/v1/version", { auth: false }),
 
-  // Raw CHANGELOG.md as text (request() falls through to raw text when the
-  // response isn't JSON, so this "just works").
+  // Raw CHANGELOG.md as text. The backend serves text/markdown here, so this is
+  // the one endpoint that opts OUT of the JSON contract (boom-28vm) — without
+  // responseType:"text" the non-JSON guard in doRequest would reject it.
   getChangelog: () =>
-    request<string>("/api/v1/changelog", { auth: false }),
+    request<string>("/api/v1/changelog", { auth: false, responseType: "text" }),
 
   // --- Admin: label images (boom-myv) ---------------------------------------
   // Admin-gated (403 for non-admins). Info returns feature status + row count.
@@ -1109,9 +1152,12 @@ export const api = {
   // --- catalyst-books liberation (boom-w20s) --------------------------------
   // The Libation rebuild. All mutations ENQUEUE a background job — a liberation
   // is minutes of download plus minutes of remux, so none of these block on the
-  // work itself. Every route 404s when BOOM_FEATURE_BOOKS_LIBERATION is off (or
-  // no library path is configured), which is how the UI decides whether to show
-  // the controls at all.
+  // work itself. Every route is UNREGISTERED when
+  // BOOM_FEATURE_BOOKS_LIBERATION is off (or no library path is configured),
+  // which is how the UI decides whether to show the controls at all. Note what
+  // "unregistered" looks like on the wire: a GET falls through to the Go SPA
+  // catch-all and comes back 200 text/html (index.html), NOT 404 — doRequest's
+  // non-JSON guard (boom-28vm) is what turns that into the error a probe needs.
   getLiberationStatus: () =>
     request<{
       counts: Record<string, number>;
@@ -1161,10 +1207,14 @@ export const api = {
     ),
 
   // `pending` comes back so the UI can say how many books were just queued.
+  // The body goes through as an OBJECT: request() does the single JSON.stringify.
+  // It used to be pre-stringified here, which double-encoded it into a JSON
+  // string literal the Go handler could not bind — {limit,force} were silently
+  // dropped and every sweep ran unlimited + unforced (boom-28vm audit).
   sweepLiberation: (body: { limit?: number; force?: boolean } = {}) =>
     request<{ enqueued: boolean; jobId: number; pending: number }>(
       "/api/v1/books/liberate/sweep",
-      { method: "POST", body: JSON.stringify(body) },
+      { method: "POST", body },
     ),
 
   // Admin › Books › reading monitor (boom-books): thin control over the

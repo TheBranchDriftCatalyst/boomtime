@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   DomainConfig,
   DrillPath,
@@ -89,6 +89,18 @@ export function useExplorerTree<Row>({
 
   // Reset caches whenever the query inputs change (axes/resetKey).
   const inputKey = `${axes.join(">")}|${resetKey}`;
+
+  // Generation token for in-flight fetches. Every async load captures the
+  // inputKey it started under and DROPS its response if the inputs changed
+  // meanwhile — otherwise a slow response from the previous range/axes lands
+  // after the reset and repaints the tree with the old query's rows (the
+  // caches are cleared, but nothing stopped the in-flight promises). Assigned
+  // during render so the effects below, which run after the render that
+  // changed inputKey, always compare against the current value.
+  const inputKeyRef = useRef(inputKey);
+  inputKeyRef.current = inputKey;
+  const isStale = useCallback((gen: string) => inputKeyRef.current !== gen, []);
+
   useEffect(() => {
     setChildCache({});
     setLeafPages({});
@@ -146,6 +158,7 @@ export function useExplorerTree<Row>({
   // first page of leaf rows as top-level nodes (the flat "Table" view — rows
   // render directly, no drill-down).
   const loadRoot = useCallback(async () => {
+    const gen = inputKeyRef.current;
     if (axes.length === 0) {
       // No axes and the consumer shows an "add an axis" hint: fetch nothing.
       if (!flatWhenEmpty) {
@@ -155,6 +168,7 @@ export function useExplorerTree<Row>({
       setRootState((s) => ({ ...s, loading: true, error: false }));
       try {
         const payload = await fetchLeaf([], 1);
+        if (isStale(gen)) return;
         // Empty range: no leaf group, so the consumer's empty state renders
         // instead of a stray "0 rows" header.
         if (payload.total === 0 && payload.rows.length === 0) {
@@ -193,6 +207,7 @@ export function useExplorerTree<Row>({
         }));
         setRootState({ loading: false, error: false, children: [leafGroup] });
       } catch {
+        if (isStale(gen)) return;
         setRootState({ loading: false, error: true });
       }
       return;
@@ -201,6 +216,7 @@ export function useExplorerTree<Row>({
     setRootState((s) => ({ ...s, loading: true, error: false }));
     try {
       const page = await fetchGroup(rootAxis, []);
+      if (isStale(gen)) return;
       const children = buildGroupChildren(page, 0, 0, []);
       setRootState({
         loading: false,
@@ -209,6 +225,7 @@ export function useExplorerTree<Row>({
         truncated: page.truncated,
       });
     } catch {
+      if (isStale(gen)) return;
       setRootState({ loading: false, error: true });
     }
   }, [
@@ -219,6 +236,7 @@ export function useExplorerTree<Row>({
     fetchLeaf,
     buildGroupChildren,
     rowKey,
+    isStale,
   ]);
 
   useEffect(() => {
@@ -230,6 +248,7 @@ export function useExplorerTree<Row>({
   // Expand handler: lazily load a node's children on first expand.
   const ensureLoaded = useCallback(
     async (node: ExplorerNode) => {
+      const gen = inputKeyRef.current;
       if (node.kind === "leafRow") return;
 
       if (node.kind === "group") {
@@ -244,6 +263,7 @@ export function useExplorerTree<Row>({
           setChildCache((c) => ({ ...c, [node.id]: { loading: true, error: false } }));
           try {
             const payload = await fetchLeaf(node.path, page);
+            if (isStale(gen)) return;
             const rows: LeafRowNode<Row>[] = payload.rows.map((r) => ({
               kind: "leafRow",
               id: `row:${node.id}:${rowKey(r)}`,
@@ -259,6 +279,7 @@ export function useExplorerTree<Row>({
               [node.id]: { loading: false, error: false, children: rows },
             }));
           } catch {
+            if (isStale(gen)) return;
             setChildCache((c) => ({ ...c, [node.id]: { loading: false, error: true } }));
           }
           return;
@@ -268,6 +289,7 @@ export function useExplorerTree<Row>({
         try {
           const axisIndex = axes.indexOf(node.nextAxis);
           const page = await fetchGroup(node.nextAxis, node.path);
+          if (isStale(gen)) return;
           const children = buildGroupChildren(
             page,
             node.depth + 1,
@@ -284,6 +306,7 @@ export function useExplorerTree<Row>({
             },
           }));
         } catch {
+          if (isStale(gen)) return;
           setChildCache((c) => ({ ...c, [node.id]: { loading: false, error: true } }));
         }
         return;
@@ -296,6 +319,7 @@ export function useExplorerTree<Row>({
         setChildCache((c) => ({ ...c, [node.id]: { loading: true, error: false } }));
         try {
           const payload = await fetchLeaf(node.path, page);
+          if (isStale(gen)) return;
           const rows: LeafRowNode<Row>[] = payload.rows.map((r) => ({
             kind: "leafRow",
             id: `row:${node.id}:${rowKey(r)}`,
@@ -311,20 +335,32 @@ export function useExplorerTree<Row>({
             [node.id]: { loading: false, error: false, children: rows },
           }));
         } catch {
+          if (isStale(gen)) return;
           setChildCache((c) => ({ ...c, [node.id]: { loading: false, error: true } }));
         }
       }
     },
-    [axes, childCache, leafPages, fetchGroup, fetchLeaf, buildGroupChildren, rowKey],
+    [
+      axes,
+      childCache,
+      leafPages,
+      fetchGroup,
+      fetchLeaf,
+      buildGroupChildren,
+      rowKey,
+      isStale,
+    ],
   );
 
   // Change the page for a leaf owner (a terminal group or the flat-root
   // leaf-group) and refetch. Both carry the id/path/depth this needs.
   const setLeafPage = useCallback(
     async (owner: LeafOwner, page: number) => {
+      const gen = inputKeyRef.current;
       setChildCache((c) => ({ ...c, [owner.id]: { loading: true, error: false } }));
       try {
         const payload = await fetchLeaf(owner.path, page);
+        if (isStale(gen)) return;
         const rows: LeafRowNode<Row>[] = payload.rows.map((r) => ({
           kind: "leafRow",
           id: `row:${owner.id}:${rowKey(r)}`,
@@ -340,10 +376,11 @@ export function useExplorerTree<Row>({
           [owner.id]: { loading: false, error: false, children: rows },
         }));
       } catch {
+        if (isStale(gen)) return;
         setChildCache((c) => ({ ...c, [owner.id]: { loading: false, error: true } }));
       }
     },
-    [fetchLeaf, rowKey],
+    [fetchLeaf, rowKey, isStale],
   );
 
   // Recursively attach loaded children to build the tree TanStack consumes.

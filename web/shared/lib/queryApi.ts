@@ -6,11 +6,13 @@
 // discriminated QueryResult union keyed by `kind`.
 //
 // This file deliberately does NOT live in api.ts (avoids merge churn on the big
-// shared module) but reuses its cleanly-exported primitives — `buildUrl` +
-// `ApiError` — and the shared `authStore` so the credential/auth-header/cookie
-// behavior is byte-identical to every other authenticated call.
-import { authStore } from "@shared/features/auth/auth";
-import { ApiError, buildUrl } from "./api";
+// shared module) but issues its one call through api.ts's exported `request()`
+// so the credential/auth-header/cookie behavior — and the single-flight
+// refresh + one-retry on 401 — is byte-identical to every other authenticated
+// call. It used to hand-roll its own fetch, which meant an expired access token
+// surfaced as a hard 401 to query-DSL widgets while the rest of the page
+// silently recovered (boom-28vm audit).
+import { ApiError, request } from "./api";
 
 // --- Request spec ------------------------------------------------------------
 
@@ -120,40 +122,16 @@ interface QueryResultWire {
  *
  * Throws ApiError on a non-2xx response (e.g. 400 for an unknown
  * domain/measure/dimension the backend registry rejects, 401 when
- * unauthenticated, 404 when the reading domain is feature-gated off).
+ * unauthenticated AND the refresh also fails, 404 when the reading domain is
+ * feature-gated off). A merely-expired access token is refreshed and retried
+ * once inside request(), exactly like every api.* call.
  */
 export async function runQuery(spec: QuerySpec): Promise<QueryResult> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  const authHeader = authStore.authHeader();
-  if (authHeader) headers["Authorization"] = authHeader;
-
-  const res = await fetch(buildUrl("/api/v1/query"), {
+  const wire = await request<QueryResultWire>("/api/v1/query", {
     method: "POST",
-    headers,
-    body: JSON.stringify(spec),
-    credentials: "include", // send/receive the HttpOnly refresh_token cookie
+    body: spec,
   });
-
-  const text = await res.text();
-  let data: unknown = undefined;
-  if (text) {
-    try {
-      data = JSON.parse(text);
-    } catch {
-      data = text;
-    }
-  }
-
-  if (!res.ok) {
-    const message =
-      (data as { message?: string; error?: string })?.message ||
-      (data as { error?: string })?.error ||
-      res.statusText ||
-      "Query failed";
-    throw new ApiError(res.status, message, data);
-  }
-
-  return normalizeResult(data as QueryResultWire);
+  return normalizeResult(wire);
 }
 
 // normalizeResult collapses the optional wire arms into the discriminated union,

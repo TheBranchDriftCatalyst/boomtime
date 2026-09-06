@@ -409,3 +409,133 @@ describe("admin CLI-runner api methods", () => {
     await expect(api.getCliSpec()).rejects.toBeInstanceOf(ApiError);
   });
 });
+
+// --- boom-28vm: a 2xx that isn't JSON is an ERROR ----------------------------
+// The Go server's SPA catch-all (GET "/*") has no /api exclusion, so an
+// UNREGISTERED (feature-gated-off) GET /api/... answers 200 text/html with
+// index.html. request() used to hand that HTML back as `data`, which made every
+// "probe the endpoint to see if the feature is on" query SUCCEED with a truthy
+// string and render feature UI on installs where the feature is off.
+
+const SPA_INDEX_HTML =
+  '<!doctype html><html lang="en"><head><title>boomtime</title></head>' +
+  '<body><div id="root"></div><script type="module" src="/assets/index.js"></script></body></html>';
+
+describe("non-JSON 2xx bodies (boom-28vm)", () => {
+  it("rejects the SPA catch-all HTML served for an unregistered /api route", async () => {
+    server.use(
+      http.get(
+        "/api/v1/books/liberation/status",
+        () =>
+          new HttpResponse(SPA_INDEX_HTML, {
+            status: 200,
+            headers: { "Content-Type": "text/html; charset=utf-8" },
+          }),
+      ),
+    );
+    // The trap: this used to RESOLVE with the HTML string, so
+    // `available: !isError && !!data` was true with the feature off.
+    await expect(api.getLiberationStatus()).rejects.toBeInstanceOf(ApiError);
+    await expect(api.getLiberationStatus()).rejects.toThrow(/text\/html/);
+  });
+
+  it("rejects an unparseable 2xx body even without a content-type header", async () => {
+    server.use(
+      http.get(
+        "/api/v1/books/liberation/status",
+        () => new HttpResponse("not json at all", { status: 200 }),
+      ),
+    );
+    await expect(api.getLiberationStatus()).rejects.toMatchObject({ status: 200 });
+  });
+
+  it("keeps the raw body (truncated) as the ApiError payload for debugging", async () => {
+    server.use(
+      http.get(
+        "/api/v1/books/liberation/status",
+        () =>
+          new HttpResponse(SPA_INDEX_HTML, {
+            status: 200,
+            headers: { "Content-Type": "text/html; charset=utf-8" },
+          }),
+      ),
+    );
+    const err = await api.getLiberationStatus().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(String((err as ApiError).payload)).toContain("<!doctype html>");
+    expect(String((err as ApiError).payload).length).toBeLessThanOrEqual(200);
+  });
+
+  it("still resolves a JSON 2xx normally (the guard is not trigger-happy)", async () => {
+    server.use(
+      http.get("/api/v1/books/liberation/status", () =>
+        HttpResponse.json({ counts: { done: 2 }, pending: 1, excluded: 0, libraryPath: "/l" }),
+      ),
+    );
+    await expect(api.getLiberationStatus()).resolves.toMatchObject({ pending: 1 });
+  });
+
+  it("still resolves an EMPTY 2xx body (204/void endpoints are unaffected)", async () => {
+    server.use(
+      http.post("/auth/logout", () => new HttpResponse(null, { status: 200 })),
+    );
+    await expect(api.logout()).resolves.toBeUndefined();
+  });
+
+  it("getChangelog opts into text and still returns the raw markdown", async () => {
+    server.use(
+      http.get(
+        "/api/v1/changelog",
+        () =>
+          new HttpResponse("# Changelog\n\n- did a thing\n", {
+            status: 200,
+            headers: { "Content-Type": "text/markdown; charset=utf-8" },
+          }),
+      ),
+    );
+    await expect(api.getChangelog()).resolves.toContain("# Changelog");
+  });
+
+  it("a non-2xx HTML error page still surfaces its real status (unchanged)", async () => {
+    server.use(
+      http.get(
+        "/api/v1/books/liberation/status",
+        () =>
+          new HttpResponse("<html>nope</html>", {
+            status: 502,
+            headers: { "Content-Type": "text/html" },
+          }),
+      ),
+    );
+    await expect(api.getLiberationStatus()).rejects.toMatchObject({ status: 502 });
+  });
+});
+
+describe("sweepLiberation body encoding (boom-28vm)", () => {
+  it("sends {limit,force} as a JSON OBJECT, not a double-encoded string", async () => {
+    let raw = "";
+    server.use(
+      http.post("/api/v1/books/liberate/sweep", async ({ request }) => {
+        raw = await request.text();
+        return HttpResponse.json({ enqueued: true, jobId: 1, pending: 3 });
+      }),
+    );
+    await api.sweepLiberation({ limit: 10, force: true });
+    // Pre-fix this was the string literal "\"{\\\"limit\\\":10...}\"", which the
+    // Go handler could not bind — limit/force were silently dropped and the
+    // sweep ran unlimited + unforced.
+    expect(JSON.parse(raw)).toEqual({ limit: 10, force: true });
+  });
+
+  it("still sends {} for the no-options call", async () => {
+    let raw = "";
+    server.use(
+      http.post("/api/v1/books/liberate/sweep", async ({ request }) => {
+        raw = await request.text();
+        return HttpResponse.json({ enqueued: true, jobId: 1, pending: 0 });
+      }),
+    );
+    await api.sweepLiberation();
+    expect(JSON.parse(raw)).toEqual({});
+  });
+});
