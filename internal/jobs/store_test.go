@@ -64,8 +64,8 @@ func TestStoreEnqueueClaimComplete(t *testing.T) {
 	if _, ok, _ := s.ClaimNext(ctx, "w2", nil, nil); ok {
 		t.Fatal("second ClaimNext should find nothing")
 	}
-	if err := s.Complete(ctx, id); err != nil {
-		t.Fatalf("Complete: %v", err)
+	if ok, err := s.Complete(ctx, id, "w1"); err != nil || !ok {
+		t.Fatalf("Complete: ok=%v err=%v", ok, err)
 	}
 }
 
@@ -76,8 +76,8 @@ func TestStoreRetryThenTerminal(t *testing.T) {
 	job, _, _ := s.ClaimNext(ctx, "w1", nil, nil)
 	// Fail with a past retryAt → immediately re-claimable, attempt preserved.
 	past := time.Now().Add(-time.Minute)
-	if err := s.Fail(ctx, job.ID, "boom", &past); err != nil {
-		t.Fatalf("Fail (retry): %v", err)
+	if ok, err := s.Fail(ctx, job.ID, job.LockedBy, "boom", &past); err != nil || !ok {
+		t.Fatalf("Fail (retry): ok=%v err=%v", ok, err)
 	}
 	job2, ok, _ := s.ClaimNext(ctx, "w1", nil, nil)
 	if !ok || job2.ID != id || job2.Attempts != 2 {
@@ -85,8 +85,8 @@ func TestStoreRetryThenTerminal(t *testing.T) {
 	}
 
 	// Terminal fail → never claimable again.
-	if err := s.Fail(ctx, job2.ID, "boom again", nil); err != nil {
-		t.Fatalf("Fail (terminal): %v", err)
+	if ok, err := s.Fail(ctx, job2.ID, job2.LockedBy, "boom again", nil); err != nil || !ok {
+		t.Fatalf("Fail (terminal): ok=%v err=%v", ok, err)
 	}
 	if _, ok, _ := s.ClaimNext(ctx, "w1", nil, nil); ok {
 		t.Fatal("terminal-failed job should not be claimable")
@@ -228,8 +228,8 @@ func TestMarkCancelled(t *testing.T) {
 	if _, claimed, _ := s.ClaimNext(ctx, "w1", nil, nil); !claimed {
 		t.Fatal("expected to claim the to-be-done job")
 	}
-	if err := s.Complete(ctx, did); err != nil {
-		t.Fatalf("Complete: %v", err)
+	if ok, err := s.Complete(ctx, did, "w1"); err != nil || !ok {
+		t.Fatalf("Complete: ok=%v err=%v", ok, err)
 	}
 	if ok, err := s.MarkCancelled(ctx, did); err != nil || ok {
 		t.Fatalf("MarkCancelled(done): ok=%v err=%v, want ok=false (no clobber)", ok, err)

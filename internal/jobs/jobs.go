@@ -49,6 +49,13 @@ type Job struct {
 	CreatedAt   time.Time
 	StartedAt   *time.Time
 	FinishedAt  *time.Time
+	// LockedBy is the worker id that holds this row's claim (Store.ClaimNext /
+	// ClaimByID stamp it; the terminal transitions clear it). It travels with the
+	// claimed Job so the executor's Complete/Fail/Requeue/Heartbeat writes can
+	// carry the compare-and-set "still mine" predicate without threading a worker
+	// id through every call — see the claim-owner guard note in store.go. Empty on rows read back
+	// through the admin list/get paths after they went terminal.
+	LockedBy string
 }
 
 // JobEvent is a terminal status transition (done/failed) delivered to a

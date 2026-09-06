@@ -328,7 +328,7 @@ func TestBucketKey_WakatimeProbeFallsBackToIPWhenUserLookupFails(t *testing.T) {
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 
-	key := s.bucketKey(c, groupWakatimeProbe)
+	key := s.bucketKey(c)
 	if !strings.HasPrefix(key, "ip:") {
 		t.Errorf("no user resolved → key should start with ip:, got %q", key)
 	}
@@ -353,36 +353,29 @@ func TestBucketKey_AuthenticatedRequestBucketsPerUserNotIP(t *testing.T) {
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 
-	key := s.bucketKey(c, groupDefault)
+	key := s.bucketKey(c)
 	if key != "user:panda" {
 		t.Errorf("authenticated request should bucket by user, got %q", key)
 	}
 }
 
-// TestBucketKey_WakatimeProbeChecksUserBeforeGenericFallback pins the
-// INVARIANT that the wakatime-probe group runs its OWN user-lookup branch
-// BEFORE falling through to the generic branch — deletion of the
-// `if group == groupWakatimeProbe` block MUST fail this test.
+// TestBucketKey_UnresolvableTokenCostsExactlyOneLookup pins the identity
+// resolution BUDGET on the wakatime-probe path.
 //
-// The trick: use a userLookup that returns "" on the FIRST call and
-// "alice" on the SECOND call. With the probe branch intact, the middleware
-// invokes userLookup twice (once from the probe branch, once from the
-// generic branch) so the second call wins and the key becomes "user:alice".
-// If the probe branch is deleted, only ONE call happens (generic branch),
-// which returns "" and falls back to "ip:...". This lets us distinguish
-// the two code paths with a single assertion, even though both paths would
-// produce the same key under any single-return stub.
-//
-// We ALSO assert callCount == 2 as a defensive independent signal: any
-// refactor that shorts a call still trips the count check.
-func TestBucketKey_WakatimeProbeChecksUserBeforeGenericFallback(t *testing.T) {
+// This test previously asserted the opposite (callCount == 2), codifying a
+// `if group == groupWakatimeProbe` branch that called s.userLookup and then
+// fell through to a generic branch calling the SAME function with the SAME
+// argument again. userLookup is a token→user DB round-trip keyed only on the
+// request's Authorization header, so the second call could never return
+// anything the first didn't — it was a duplicate query on the hottest path,
+// not a distinct code path worth pinning. The real invariant is the one below:
+// an unresolvable token still gets a bucket (IP fallback), for the price of one
+// lookup.
+func TestBucketKey_UnresolvableTokenCostsExactlyOneLookup(t *testing.T) {
 	var callCount int
 	lookup := func(*echo.Context) string {
 		callCount++
-		if callCount == 1 {
-			return "" // first call (from probe branch) misses → fall through
-		}
-		return "alice" // second call (from generic branch) hits
+		return "" // token doesn't resolve
 	}
 	s := &rateLimitStore{
 		buckets:    map[endpointGroup]*sync.Map{groupWakatimeProbe: {}, groupDefault: {}},
@@ -396,32 +389,20 @@ func TestBucketKey_WakatimeProbeChecksUserBeforeGenericFallback(t *testing.T) {
 	req.RemoteAddr = "203.0.113.9:12345"
 	c := e.NewContext(req, httptest.NewRecorder())
 
-	key := s.bucketKey(c, groupWakatimeProbe)
+	key := s.bucketKey(c)
 
-	// If the probe branch was deleted, callCount would be 1 (only the
-	// generic branch ran) and key would be "ip:203.0.113.9" (the generic
-	// branch got "" from call #1 and fell to IP). Both assertions below
-	// would fail.
-	if callCount != 2 {
-		t.Errorf("wakatime-probe MUST call userLookup twice (once from probe branch, once from generic) — got %d calls; deletion of the `if group == groupWakatimeProbe` block would drop this to 1",
-			callCount)
+	if callCount != 1 {
+		t.Errorf("bucketKey issued %d token→user lookups for one request, want 1 — the same query is being repeated per request", callCount)
 	}
-	if key != "user:alice" {
-		t.Errorf("wakatime-probe branch must delegate to generic branch on miss — got key %q, expected \"user:alice\"; if key is \"ip:...\" the probe branch was likely deleted",
-			key)
+	if key != "ip:203.0.113.9" {
+		t.Errorf("an unresolvable token must still be bucketed by IP (never unbucketed), got %q", key)
 	}
 }
 
 // TestBucketKey_WakatimeProbeUsesUserKeyOnFirstLookup pins the
-// COMPLEMENTARY INVARIANT: when userLookup succeeds on the FIRST call
-// (from within the probe branch), the middleware returns immediately —
-// the generic branch MUST NOT run. Combined with the test above, this
-// pins BOTH sides of the branch:
-//   - success path: 1 call from probe, generic never runs
-//   - miss path: 1 call from probe (miss) + 1 from generic (hit) = 2
-//
-// Any refactor that swaps the order or drops one branch trips at least
-// one of these tests.
+// COMPLEMENTARY INVARIANT: a resolvable token buckets by USER (so multi-IP
+// abuse from one account still shares a bucket), and costs exactly one
+// resolution to determine that.
 func TestBucketKey_WakatimeProbeUsesUserKeyOnFirstLookup(t *testing.T) {
 	var callCount int
 	lookup := func(*echo.Context) string {
@@ -440,16 +421,13 @@ func TestBucketKey_WakatimeProbeUsesUserKeyOnFirstLookup(t *testing.T) {
 	req.RemoteAddr = "203.0.113.9:12345"
 	c := e.NewContext(req, httptest.NewRecorder())
 
-	key := s.bucketKey(c, groupWakatimeProbe)
+	key := s.bucketKey(c)
 	if key != "user:alice" {
 		t.Errorf("wakatime-probe with auth should bucket by user, got %q", key)
 	}
-	// Success-in-probe-branch MUST early-return: exactly 1 call.
-	// A refactor that swaps probe/generic order or drops the early-return
-	// would produce 2 calls here.
+	// Exactly one resolution: a second call would be the same query again.
 	if callCount != 1 {
-		t.Errorf("wakatime-probe MUST early-return after probe-branch hit — expected 1 userLookup call, got %d",
-			callCount)
+		t.Errorf("bucketKey issued %d userLookup calls for one resolvable token, want 1", callCount)
 	}
 }
 

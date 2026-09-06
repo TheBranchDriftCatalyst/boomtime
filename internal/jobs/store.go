@@ -19,7 +19,7 @@ type Store struct {
 func NewStore(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
 
 const jobCols = `id, kind, owner, payload, status, attempts, max_attempts, error,
-	run_at, created_at, started_at, finished_at`
+	run_at, created_at, started_at, finished_at, locked_by`
 
 // Enqueue inserts a queued job. maxAttempts < 1 is clamped to 1; a zero runAt
 // means "now"; owner "" = a system job. Returns the new job id.
@@ -105,39 +105,88 @@ func (s *Store) ClaimByID(ctx context.Context, id int64, workerID string) (*Job,
 	return j, true, nil
 }
 
-// Requeue puts a just-claimed job back to 'queued' WITHOUT bumping attempts, so
-// a lost concurrency-slot race (Acquire returned ok=false after the row was
-// already claimed) costs nothing — the row simply becomes claimable again for a
-// later slot. Distinct from Fail's retry path, which advances run_at/error; here
+// --- claim-owner guard (compare-and-set on every executor-side write) --------
+//
+// Requeue / Complete / Fail / Heartbeat all carry the predicate
+// `status = 'running' AND locked_by = <the claiming worker>`. It is what makes
+// the reaper's and the admin-cancel's transitions authoritative.
+//
+// Without it a stale worker (one whose heartbeat lapsed past the lease while it
+// was still inside a handler) could land a terminal write on a row the reaper had
+// already reclaimed and a SECOND worker had already re-claimed — flipping a row
+// that is actively running back to 'queued' (a third claimer → two concurrent
+// executions of the same job) or stamping 'done' over a 'cancelled' the admin API
+// already reported. locked_by alone is not enough (the reaper clears it only on
+// the terminal branch), and status alone is not enough (the re-claimed row is
+// 'running' again) — the pair is. It is spelled out inline in each statement
+// below rather than concatenated from a const, so the SQL stays greppable and
+// the $N positions stay obvious.
+// ---------------------------------------------------------------------------
+
+// Requeue puts a just-claimed job back to 'queued', REFUNDING the attempt that
+// ClaimNext charged, so a lost concurrency-slot race (Acquire returned ok=false
+// after the row was already claimed) genuinely costs nothing — the row simply
+// becomes claimable again for a later slot with the same retry budget it had
+// before. Without the refund a job whose kind is saturated can burn through
+// MaxAttempts without ever executing, and then terminally fail on its FIRST real
+// error (and the reaper terminally fails it on the next deploy instead of
+// requeueing). Distinct from Fail's retry path, which advances run_at/error; here
 // the job is immediately eligible again with a cleared started_at/locked_by.
-func (s *Store) Requeue(ctx context.Context, id int64) error {
-	_, err := s.pool.Exec(ctx,
-		`UPDATE jobs SET status = 'queued', started_at = NULL,
-		        locked_by = '', locked_at = NULL WHERE id = $1`, id)
-	return err
+//
+// Guarded on (running, locked_by = this worker): a slot-race requeue must never
+// resurrect a row an admin cancelled or the reaper reclaimed in the meantime.
+// Returns whether a row actually changed.
+func (s *Store) Requeue(ctx context.Context, id int64, lockedBy string) (bool, error) {
+	tag, err := s.pool.Exec(ctx,
+		`UPDATE jobs SET status = 'queued', attempts = GREATEST(attempts - 1, 0),
+		        started_at = NULL, locked_by = '', locked_at = NULL
+		  WHERE id = $1 AND status = 'running' AND locked_by = $2`, id, lockedBy)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
 }
 
-// Complete marks a running job done.
-func (s *Store) Complete(ctx context.Context, id int64) error {
-	_, err := s.pool.Exec(ctx,
-		`UPDATE jobs SET status = 'done', finished_at = now(), error = '' WHERE id = $1`, id)
-	return err
+// Complete marks a running job done. Guarded on (running, locked_by = lockedBy)
+// — see the claim-owner guard note above. Returns whether a row actually changed; false means
+// something else (reaper / admin cancel / a re-claim) already owns this row's
+// outcome and THIS worker's result must be discarded, not written.
+func (s *Store) Complete(ctx context.Context, id int64, lockedBy string) (bool, error) {
+	tag, err := s.pool.Exec(ctx,
+		`UPDATE jobs SET status = 'done', finished_at = now(), error = ''
+		  WHERE id = $1 AND status = 'running' AND locked_by = $2`, id, lockedBy)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
 }
 
 // Fail records a failure. With a non-nil retryAt the job is re-queued to run
-// then (the incremented attempt stands); with nil it becomes terminal.
-func (s *Store) Fail(ctx context.Context, id int64, errMsg string, retryAt *time.Time) error {
+// then (the incremented attempt stands); with nil it becomes terminal. Guarded
+// on (running, locked_by = lockedBy) — see the claim-owner guard note above; the retry branch is
+// the dangerous one, since an unguarded 'queued' write is what resurrects a
+// cancelled job or hands a still-running row to a third claimer. Returns whether
+// a row actually changed.
+func (s *Store) Fail(ctx context.Context, id int64, lockedBy, errMsg string, retryAt *time.Time) (bool, error) {
 	if retryAt != nil {
-		_, err := s.pool.Exec(ctx,
+		tag, err := s.pool.Exec(ctx,
 			`UPDATE jobs SET status = 'queued', run_at = $2, error = $3,
-			        locked_by = '', locked_at = NULL WHERE id = $1`,
-			id, *retryAt, errMsg)
-		return err
+			        locked_by = '', locked_at = NULL
+			  WHERE id = $1 AND status = 'running' AND locked_by = $4`,
+			id, *retryAt, errMsg, lockedBy)
+		if err != nil {
+			return false, err
+		}
+		return tag.RowsAffected() > 0, nil
 	}
-	_, err := s.pool.Exec(ctx,
-		`UPDATE jobs SET status = 'failed', finished_at = now(), error = $2 WHERE id = $1`,
-		id, errMsg)
-	return err
+	tag, err := s.pool.Exec(ctx,
+		`UPDATE jobs SET status = 'failed', finished_at = now(), error = $2
+		  WHERE id = $1 AND status = 'running' AND locked_by = $3`,
+		id, errMsg, lockedBy)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
 }
 
 // MarkCancelled transitions a job to the terminal 'cancelled' status with a clear
@@ -165,11 +214,15 @@ func (s *Store) MarkCancelled(ctx context.Context, id int64) (bool, error) {
 // Heartbeat refreshes a running job's liveness stamp. The executing worker calls
 // it on a ~30s tick for the duration of a handler run (see execute), so a LONG but
 // LIVE job keeps a fresh heartbeat_at and is never mistaken for a dead one by
-// ReapStaleRunning. Guarded on status='running': a heartbeat that races the job's
-// own terminal transition (done/failed/cancelled) is a harmless no-op.
-func (s *Store) Heartbeat(ctx context.Context, id int64) error {
+// ReapStaleRunning. Guarded on (running, locked_by = lockedBy) — see the
+// claim-owner guard note above: a heartbeat that races the job's own terminal transition
+// (done/failed/cancelled) is a harmless no-op, AND a worker whose lease already
+// lapsed cannot keep the row that a SECOND worker re-claimed looking alive on its
+// behalf (that would hide the duplicate run from the reaper indefinitely).
+func (s *Store) Heartbeat(ctx context.Context, id int64, lockedBy string) error {
 	_, err := s.pool.Exec(ctx,
-		`UPDATE jobs SET heartbeat_at = now() WHERE id = $1 AND status = 'running'`, id)
+		`UPDATE jobs SET heartbeat_at = now()
+		  WHERE id = $1 AND status = 'running' AND locked_by = $2`, id, lockedBy)
 	return err
 }
 
@@ -214,6 +267,18 @@ func (s *Store) ReapStaleRunning(ctx context.Context, ttl time.Duration) (int, e
 
 // UpsertSchedule registers/updates a periodic schedule. On first insert the
 // next run is one interval out, so a restart doesn't fire the job immediately.
+//
+// On CONFLICT the stored next_run_at is PULLED IN to the new cadence via
+// LEAST(existing, now()+newInterval). Without that clamp, SHORTENING an interval
+// (the audible-sync 6h → 1h change is the real case) took effect only after the
+// old, possibly-hours-away next_run_at finally fired: the admin /schedules view
+// showed the new interval next to a next_run inconsistent with it, and the
+// operator observed "nothing changed" for up to a full old period. LEAST (never
+// GREATEST / never an unconditional overwrite) keeps the two properties that
+// matter: a schedule can only ever move EARLIER on a re-register, so a pod that
+// restart-loops can't push its own next run past the horizon; and LENGTHENING an
+// interval leaves the already-scheduled next run alone (it fires once on the old
+// cadence, then advances by the new interval).
 func (s *Store) UpsertSchedule(ctx context.Context, kind string, interval time.Duration) error {
 	secs := int(interval.Seconds())
 	if secs < 1 {
@@ -225,7 +290,9 @@ func (s *Store) UpsertSchedule(ctx context.Context, kind string, interval time.D
 	_, err := s.pool.Exec(ctx,
 		`INSERT INTO job_schedules (kind, interval_seconds, next_run_at)
 		 VALUES ($1, $2, $3)
-		 ON CONFLICT (kind) DO UPDATE SET interval_seconds = EXCLUDED.interval_seconds`,
+		 ON CONFLICT (kind) DO UPDATE SET
+		     interval_seconds = EXCLUDED.interval_seconds,
+		     next_run_at      = LEAST(job_schedules.next_run_at, EXCLUDED.next_run_at)`,
 		kind, secs, next)
 	return err
 }
@@ -473,7 +540,7 @@ func scanJob(row scanRow) (*Job, error) {
 	var j Job
 	if err := row.Scan(
 		&j.ID, &j.Kind, &j.Owner, &j.Payload, &j.Status, &j.Attempts, &j.MaxAttempts,
-		&j.Error, &j.RunAt, &j.CreatedAt, &j.StartedAt, &j.FinishedAt,
+		&j.Error, &j.RunAt, &j.CreatedAt, &j.StartedAt, &j.FinishedAt, &j.LockedBy,
 	); err != nil {
 		return nil, err
 	}

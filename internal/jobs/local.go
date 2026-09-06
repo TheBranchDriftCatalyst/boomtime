@@ -156,10 +156,18 @@ func (p *LocalProvider) runJob(ctx context.Context, reg *Registry, job Job) bool
 			if err != nil {
 				p.log.Warn("jobs: limiter Acquire failed; running unthrottled", "kind", job.Kind, "id", job.ID, "err", err)
 			} else if !ok {
-				// Lost the slot race — leave it queued (Requeue doesn't bump
-				// attempts) for a later slot instead of running over the cap.
-				if rerr := p.store.Requeue(ctx, job.ID); rerr != nil {
+				// Lost the slot race — put it back to 'queued' for a later slot
+				// instead of running over the cap. Requeue REFUNDS the attempt
+				// ClaimNext charged, so losing the race repeatedly (the same
+				// oldest row is the claim target every pass while a kind is
+				// saturated) can't silently exhaust MaxAttempts on a job that
+				// never executed. Guarded on this worker's claim: if an admin
+				// cancelled the row in the meantime, requeueing is refused.
+				requeued, rerr := p.store.Requeue(ctx, job.ID, job.LockedBy)
+				if rerr != nil {
 					p.log.Warn("jobs: requeue after slot-race failed", "id", job.ID, "err", rerr)
+				} else if !requeued {
+					p.log.Info("jobs: requeue after slot-race matched no row (cancelled or reclaimed)", "id", job.ID)
 				}
 				return false
 			} else if release != nil {
@@ -325,9 +333,19 @@ func (p *LocalProvider) drainLoop(ctx context.Context, reg *Registry, slot int) 
 //
 // Runs p.workers concurrent claim loops (boom-jokv). Each loop is the same
 // sequential claim/execute cycle as before; the POOL is what stops one long job
-// from blocking every other kind on the pod. Returns only once every worker has
-// stopped, so in-flight handlers finish rather than being abandoned mid-run on
-// shutdown.
+// from blocking every other kind on the pod.
+//
+// SHUTDOWN semantics, stated precisely (the previous wording — "in-flight
+// handlers finish rather than being abandoned mid-run" — was not what the code
+// does): the per-job context in execTracked is a CHILD of this ctx, so cancelling
+// ctx cancels every in-flight handler immediately. Run then waits for all workers
+// before returning, so it does not race the process exit, but a cancelled handler
+// is INTERRUPTED, not allowed to complete. execute deliberately writes no
+// terminal status on a cancelled ctx (that would clobber an admin cancel), so the
+// row stays 'running' with a stale heartbeat and RunReaper reclaims it on the next
+// pod — attempts permitting, it is re-queued and re-run there. That is the
+// intended deploy behaviour (boom-jokv / the heartbeat+reaper work); handlers must
+// therefore be interruption-safe, not assume they get to finish.
 func (p *LocalProvider) Run(ctx context.Context, reg *Registry) error {
 	p.log.Info("jobs: local provider running",
 		"worker", p.id, "poll", p.poll.String(), "workers", p.workers)

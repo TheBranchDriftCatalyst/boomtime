@@ -8,14 +8,16 @@
 //
 // Design notes:
 //
-//   - Bucketing preference: the middleware first tries to resolve the caller
-//     by their access token (auth.ParseAuthHeader → DB lookup). If that
-//     succeeds we key on `user:<owner>` so authenticated abuse follows the
-//     account, not the IP. When there is no token we fall back to
-//     `ip:<echo.RealIP()>` — echo's RealIP already does the right thing on
-//     RemoteAddr and only trusts X-Real-IP / X-Forwarded-For when the
-//     framework is configured with a trust extractor, so we don't need to
-//     re-implement header hardening here.
+//   - Bucketing preference: the caller's identity is resolved ONCE per request
+//     by userCtxMiddleware (installed just ahead of this one) and read back
+//     from the request store; on a miss the middleware falls back to its own
+//     token→DB lookup. If either succeeds we key on `user:<owner>` so
+//     authenticated abuse follows the account, not the IP. When there is no
+//     resolvable token we fall back to `ip:<echo.RealIP()>` — and RealIP is
+//     only meaningful because configureIPExtractor installs a trust-checked
+//     X-Forwarded-For extractor; with echo's default (no extractor) RealIP is
+//     the raw RemoteAddr, which behind the cluster ingress is the PROXY for
+//     every external client, collapsing every caller into one bucket.
 //
 //   - Storage: in-memory sync.Map of *rate.Limiter with a lastSeen atomic
 //     stamp for lazy TTL eviction. A background goroutine sweeps every 5m and
@@ -254,21 +256,79 @@ func classifyEndpoint(method, path string) endpointGroup {
 	return groupDefault
 }
 
-// bucketKey returns the identity string for the (group, request) pair. For
-// wakatime-probe we DEMAND a resolved user (auth is enforced by the handler
-// too, but we prefer to key on user so multi-IP abuse from one account still
-// hits the same bucket). If the lookup fails we fall back to IP so we never
-// silently disable the limit.
-func (s *rateLimitStore) bucketKey(c *echo.Context, group endpointGroup) string {
-	if group == groupWakatimeProbe {
-		if owner := s.userLookup(c); owner != "" {
-			return "user:" + owner
-		}
+// bucketKey returns the identity string for a request: `user:<owner>` whenever
+// the caller resolves to an account (so multi-IP abuse from one account still
+// hits one bucket — which is what the wakatime-probe group in particular needs),
+// else `ip:<RealIP>` so the limit is never silently disabled.
+//
+// Resolution order matters for load, not for the answer: userCtxMiddleware
+// already resolved the bearer token for this request and stashed the owner, so
+// the common authenticated case reads it back for free. s.userLookup (a
+// token→DB round-trip) runs only when nothing was stashed — an unresolvable
+// token, or a bare context in unit tests — which is exactly the set of requests
+// that used to pay it anyway. The group is deliberately NOT part of the
+// identity: the group already namespaces the bucket map, and the previous
+// per-group branch just repeated the same lookup a second time.
+func (s *rateLimitStore) bucketKey(c *echo.Context) string {
+	if owner, ok := stashedOwner(c); ok && owner != "" {
+		return "user:" + owner
 	}
 	if owner := s.userLookup(c); owner != "" {
 		return "user:" + owner
 	}
 	return "ip:" + c.RealIP()
+}
+
+// trustProxyHeadersEnv is the escape hatch for configureIPExtractor. Set it to
+// "0" (or "false"/"off") on a deployment where boomtime is reachable DIRECTLY
+// from clients whose source address is inside a private/loopback range AND you
+// do not want those clients able to choose their own rate-limit bucket. Unset
+// (the default) keeps the proxy-aware extraction described below.
+const trustProxyHeadersEnv = "BOOM_TRUST_PROXY_HEADERS"
+
+// configureIPExtractor decides what c.RealIP() means, which is the whole basis
+// of the limiter's `ip:` bucket key.
+//
+// Echo v5 with NO IPExtractor set falls back to the host of req.RemoteAddr —
+// the far end of the TCP connection. Behind boomtime's Traefik ingress that is
+// the PROXY for every external client, so every caller in the world shares one
+// `ip:<proxy>` bucket per group: groupAuthWrite (10 req/min) then means a single
+// credential-stuffing client — or one user fumbling a password twice on two
+// devices — 429s /auth/login for everybody, indefinitely, at 10 req/min. The
+// per-IP isolation the package doc promises simply does not exist in the
+// deployed topology.
+//
+// echo.ExtractIPFromXFFHeader walks the X-Forwarded-For chain RIGHT-to-LEFT
+// starting from RemoteAddr and returns the first hop it does not trust (default
+// trust = loopback + link-local + RFC1918/ULA private, which covers the pod and
+// node network). That gives the two properties we need:
+//
+//   - Proxied traffic buckets on the real client IP: RemoteAddr (the ingress,
+//     private → trusted) is skipped and the public client address Traefik
+//     appended is returned.
+//   - A client CANNOT spoof its bucket by sending its own X-Forwarded-For: the
+//     right-to-left walk reaches that client's own (public, untrusted) address
+//     first and stops there, so the values it injected further left are never
+//     read. Spoofing only works from a source address that is itself inside a
+//     trusted range — and those callers already shared one bucket before this.
+//   - With no X-Forwarded-For header at all (direct hit, every unit test,
+//     httptest) it returns RemoteAddr — byte-identical to the previous
+//     behaviour.
+//
+// Must be called before any middleware runs: echo reads e.IPExtractor on each
+// RealIP() call, and the limiter's first request would otherwise key on the
+// unextracted address.
+func configureIPExtractor(e *echo.Echo, logger *slog.Logger) {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(trustProxyHeadersEnv))) {
+	case "0", "false", "off", "no":
+		e.IPExtractor = echo.ExtractIPDirect()
+		if logger != nil {
+			logger.Info("client IP resolution: direct RemoteAddr (proxy headers distrusted)",
+				"env", trustProxyHeadersEnv)
+		}
+	default:
+		e.IPExtractor = echo.ExtractIPFromXFFHeader()
+	}
 }
 
 // installRateLimit installs the middleware on the echo instance and returns
@@ -359,7 +419,7 @@ func (s *rateLimitStore) middleware() echo.MiddlewareFunc {
 				return next(c)
 			}
 			group := classifyEndpoint(req.Method, req.URL.Path)
-			key := s.bucketKey(c, group)
+			key := s.bucketKey(c)
 			// scope = which bucket dimension keyed this decision (user vs IP);
 			// bucketKey returns "user:<owner>" or "ip:<addr>". Bounded 2-value
 			// label — makes throttling visible as a LIMITER metric, distinct

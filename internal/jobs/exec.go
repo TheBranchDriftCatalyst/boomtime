@@ -30,7 +30,11 @@ const heartbeatInterval = 30 * time.Second
 // 20-min hardcover-match) from being reaped. The returned stop() ends it; call it
 // when the handler returns. The ticker also exits if ctx is cancelled (shutdown /
 // admin-cancel), so no goroutine leaks past the run.
-func startHeartbeat(ctx context.Context, store *Store, id int64, log *slog.Logger) (stop func()) {
+//
+// lockedBy is the claim this heartbeat speaks for: once THIS worker's lease has
+// lapsed and the row was reclaimed + re-claimed by someone else, its heartbeats
+// become no-ops instead of keeping the other worker's row artificially fresh.
+func startHeartbeat(ctx context.Context, store *Store, id int64, lockedBy string, log *slog.Logger) (stop func()) {
 	done := make(chan struct{})
 	go func() {
 		t := time.NewTicker(heartbeatInterval)
@@ -42,7 +46,7 @@ func startHeartbeat(ctx context.Context, store *Store, id int64, log *slog.Logge
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				if err := store.Heartbeat(ctx, id); err != nil && ctx.Err() == nil {
+				if err := store.Heartbeat(ctx, id, lockedBy); err != nil && ctx.Err() == nil {
 					log.Warn("jobs: heartbeat write failed", "id", id, "err", err)
 				}
 			}
@@ -89,7 +93,7 @@ func execute(ctx context.Context, reg *Registry, store *Store, job Job, log *slo
 
 	h, ok := reg.Handler(job.Kind)
 	if !ok {
-		_ = store.Fail(ctx, job.ID, "no handler registered for kind "+job.Kind, nil)
+		_, _ = store.Fail(ctx, job.ID, job.LockedBy, "no handler registered for kind "+job.Kind, nil)
 		jl.Warn("jobs: no handler for kind")
 		notify(StatusFailed, "no handler for kind "+job.Kind)
 		recordRun(job.Kind, "failed", started)
@@ -107,7 +111,7 @@ func execute(ctx context.Context, reg *Registry, store *Store, job Job, log *slo
 
 	// Keep this row's heartbeat_at fresh for the whole handler run so the stale-job
 	// reaper never reclaims a long-but-live job; stop the ticker once Handle returns.
-	stopHeartbeat := startHeartbeat(hctx, store, job.ID, jl)
+	stopHeartbeat := startHeartbeat(hctx, store, job.ID, job.LockedBy, jl)
 	err := func() (e error) {
 		defer func() {
 			if r := recover(); r != nil {
@@ -129,9 +133,25 @@ func execute(ctx context.Context, reg *Registry, store *Store, job Job, log *slo
 		return outcomeFailed
 	}
 
+	// lostClaim reports a terminal write that matched NO row: between the claim
+	// and here, the reaper reclaimed this row (lease lapsed) or an admin cancelled
+	// it, and the guard in Store correctly refused to clobber that decision. The
+	// run's result is DISCARDED — logged loudly because a silent discard would
+	// look like a job that simply never finished. No notify: whoever owns the row
+	// now owns its terminal event.
+	lostClaim := func(what string) {
+		jl.Warn("jobs: terminal write matched no row — claim lost (reaped or cancelled); result discarded",
+			"write", what, "locked_by", job.LockedBy, "dur_ms", time.Since(started).Milliseconds())
+	}
+
 	if err == nil {
-		if cerr := store.Complete(ctx, job.ID); cerr != nil {
+		ok, cerr := store.Complete(ctx, job.ID, job.LockedBy)
+		if cerr != nil {
 			jl.Warn("jobs: complete failed", "err", cerr)
+		} else if !ok {
+			lostClaim("complete")
+			recordRun(job.Kind, "lost", started)
+			return outcomeFailed
 		}
 		jl.Info("jobs: done", "attempt", job.Attempts, "dur_ms", time.Since(started).Milliseconds())
 		notify(StatusDone, "")
@@ -141,16 +161,26 @@ func execute(ctx context.Context, reg *Registry, store *Store, job Job, log *slo
 
 	if job.Attempts < job.MaxAttempts {
 		retryAt := time.Now().Add(retryDelay(job.Attempts))
-		if ferr := store.Fail(ctx, job.ID, err.Error(), &retryAt); ferr != nil {
+		ok, ferr := store.Fail(ctx, job.ID, job.LockedBy, err.Error(), &retryAt)
+		if ferr != nil {
 			jl.Warn("jobs: fail-state write failed", "err", ferr)
+		} else if !ok {
+			lostClaim("retry")
+			recordRun(job.Kind, "lost", started)
+			return outcomeFailed
 		}
 		jl.Warn("jobs: retry scheduled",
 			"attempt", job.Attempts, "of", job.MaxAttempts, "dur_ms", time.Since(started).Milliseconds(), "err", err)
 		recordRun(job.Kind, "retry", started)
 		return outcomeRetry // not terminal — no notify
 	}
-	if ferr := store.Fail(ctx, job.ID, err.Error(), nil); ferr != nil {
+	ok, ferr := store.Fail(ctx, job.ID, job.LockedBy, err.Error(), nil)
+	if ferr != nil {
 		jl.Warn("jobs: fail-state write failed", "err", ferr)
+	} else if !ok {
+		lostClaim("fail")
+		recordRun(job.Kind, "lost", started)
+		return outcomeFailed
 	}
 	jl.Error("jobs: failed (attempts exhausted)",
 		"attempts", job.Attempts, "dur_ms", time.Since(started).Milliseconds(), "err", err)

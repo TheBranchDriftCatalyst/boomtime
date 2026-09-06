@@ -96,6 +96,42 @@ func TestInjectOGMeta_ReplacesBlockAndEscapes(t *testing.T) {
 	}
 }
 
+// TestInjectOGMeta_DollarInDescriptionIsNotExpanded pins the regexp-replacement
+// hazard: the block was substituted with ReplaceAll, which treats `$` in the
+// REPLACEMENT as a capture-group reference. meta.Description carries the owner's
+// free-text public-profile tagline (BuildOGMeta → buildStatsHeadline), and
+// htmlAttr escapes & < > " ' but not `$` — so a tagline of "$0" expanded to the
+// entire matched <!--OG_META…--> block, quotes and all, INSIDE the og:description
+// content attribute: the attribute breaks out, the <head> is malformed, and the
+// Discord/Slack/Twitter unfurl for /p/:slug renders garbage. "$1" silently deleted
+// text instead. The replacement is a fully-built literal; nothing in it is ever
+// meant as a group reference.
+func TestInjectOGMeta_DollarInDescriptionIsNotExpanded(t *testing.T) {
+	shell := []byte(`<head><!--OG_META
+    <meta property="og:title" content="boomtime" />
+    <!--/OG_META--></head>`)
+	meta := &identity.OGMeta{
+		Title:       "@ada · boomtime",
+		Description: `$0 and ${name} and $1 walk into a bar`,
+		ImageURL:    "https://x.example/og.png",
+		ProfileURL:  "https://x.example/p/ada",
+	}
+	got := string(injectOGMeta(shell, meta))
+
+	if strings.Contains(got, "<!--OG_META") || strings.Contains(got, "<!--/OG_META-->") {
+		t.Fatalf("the matched comment block was re-emitted inside the injected tags (a `$0` expansion):\n%s", got)
+	}
+	want := `content="$0 and ${name} and $1 walk into a bar"`
+	if !strings.Contains(got, want) {
+		t.Errorf("tagline was not injected literally — `$` sequences were expanded as capture-group references.\n  want substring: %s\n  got: %s", want, got)
+	}
+	// The og:title after the description must still be intact; a broken-out
+	// attribute would have swallowed it.
+	if !strings.Contains(got, `name="twitter:title" content="@ada · boomtime"`) {
+		t.Errorf("markup after the corrupted description is malformed:\n%s", got)
+	}
+}
+
 func TestInjectOGMeta_NoMarkerLeavesShellUnchanged(t *testing.T) {
 	shell := []byte(`<head><title>x</title></head>`)
 	got := injectOGMeta(shell, &identity.OGMeta{Title: "t"})

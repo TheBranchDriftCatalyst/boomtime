@@ -45,7 +45,7 @@ func TestHeartbeatBumps(t *testing.T) {
 		t.Fatalf("backdate: %v", err)
 	}
 	before := heartbeatAt(t, s, ctx, id)
-	if err := s.Heartbeat(ctx, id); err != nil {
+	if err := s.Heartbeat(ctx, id, "w1"); err != nil {
 		t.Fatalf("Heartbeat: %v", err)
 	}
 	after := heartbeatAt(t, s, ctx, id)
@@ -57,11 +57,11 @@ func TestHeartbeatBumps(t *testing.T) {
 	}
 
 	// Heartbeat on a non-running (done) job is a guarded no-op (no error, no bump).
-	if err := s.Complete(ctx, id); err != nil {
-		t.Fatalf("Complete: %v", err)
+	if ok, err := s.Complete(ctx, id, "w1"); err != nil || !ok {
+		t.Fatalf("Complete: ok=%v err=%v", ok, err)
 	}
 	doneHB := heartbeatAt(t, s, ctx, id)
-	if err := s.Heartbeat(ctx, id); err != nil {
+	if err := s.Heartbeat(ctx, id, "w1"); err != nil {
 		t.Fatalf("Heartbeat(done): %v", err)
 	}
 	if got := heartbeatAt(t, s, ctx, id); !got.Equal(*doneHB) {
@@ -233,8 +233,8 @@ func TestSchedulerCoalesce(t *testing.T) {
 	if !ok {
 		t.Fatal("expected to claim the seeded cron job")
 	}
-	if err := s.Complete(ctx, j.ID); err != nil {
-		t.Fatalf("Complete: %v", err)
+	if ok, err := s.Complete(ctx, j.ID, j.LockedBy); err != nil || !ok {
+		t.Fatalf("Complete: ok=%v err=%v", ok, err)
 	}
 	forceDue()
 	sched.fire(ctx)

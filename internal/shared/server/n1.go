@@ -94,10 +94,45 @@ func userCtxMiddleware(database *db.DB) echo.MiddlewareFunc {
 				return next(c)
 			}
 			apihelpers.SetIdentity(c, ident)
+			// Second consumer of the SAME single resolution: the rate limiter,
+			// which runs immediately after this middleware and used to issue its
+			// own token→user DB round-trip to pick a bucket. It reads this stash
+			// instead. Kept as a plain owner string in the server package rather
+			// than reaching into apihelpers' identity key, so the limiter has no
+			// dependency on the auth substrate's internals.
+			stashOwner(c, ident.Username)
 			// Keep the pgx-tracer owner attribution (db.WithUser) that this
 			// middleware has always provided for observability.
 			c.SetRequest(req.WithContext(db.WithUser(req.Context(), ident.Username)))
 			return next(c)
 		}
 	}
+}
+
+// ownerCtxKey is the echo per-request store key under which userCtxMiddleware
+// publishes the owner it resolved, for other middleware in this package to reuse
+// (today: the rate limiter's bucket key). Namespaced to avoid colliding with
+// apihelpers' own identity key or any handler's c.Set.
+const ownerCtxKey = "boomtime.server.resolved_owner"
+
+// stashOwner records a SUCCESSFULLY resolved owner for this request.
+func stashOwner(c *echo.Context, owner string) {
+	if owner == "" {
+		return
+	}
+	c.Set(ownerCtxKey, owner)
+}
+
+// stashedOwner returns the owner userCtxMiddleware resolved for this request.
+// ok=false means no resolution was stashed — either the middleware did not run
+// (bare-context unit tests) or the request carried no resolvable bearer token —
+// and the caller must fall back to its own identity resolution so behaviour is
+// unchanged for those requests.
+func stashedOwner(c *echo.Context) (string, bool) {
+	if v := c.Get(ownerCtxKey); v != nil {
+		if owner, ok := v.(string); ok && owner != "" {
+			return owner, true
+		}
+	}
+	return "", false
 }

@@ -51,6 +51,9 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, logHub *loggi
 // the label-images worker.
 func NewWithHandler(database *db.DB, cfg *config.Config, logger *slog.Logger, logHub *logging.LogHub, reg *catalyst.Registry) (*echo.Echo, *handler.Handler) {
 	e := echo.New()
+	// Client-IP resolution for c.RealIP() (the rate limiter's IP bucket key).
+	// MUST be set before any middleware runs — see configureIPExtractor.
+	configureIPExtractor(e, logger)
 
 	e.Use(middleware.Recover())
 	// OpenTelemetry server spans (TALOS-kvg1). Registered early so every
@@ -101,6 +104,21 @@ func NewWithHandler(database *db.DB, cfg *config.Config, logger *slog.Logger, lo
 	if cfg.DBN1Threshold > 0 || cfg.DBN1DupThresh > 0 {
 		e.Use(n1Middleware(logger, cfg.DBN1Threshold, cfg.DBN1DupThresh))
 	}
+	// boom-ar7: stash resolved owner in ctx so the pgx tracer can tag its DEBUG
+	// SQL records with "user" — LogHub's FilterForUser then gates them per tenant.
+	//
+	// Ordered BEFORE the rate limiter (it used to run after): both middlewares
+	// need to know who the caller is, and the limiter used to answer that with
+	// its OWN token→user DB round-trip, so every authenticated request paid two
+	// identity lookups on the hottest path. Now this one resolves the bearer
+	// once and stashes the owner (stashOwner); the limiter reads that stash and
+	// only falls back to its own lookup when nothing was stashed — i.e. when the
+	// token did not resolve (identical bucket to before, same two lookups) or
+	// when this middleware isn't installed at all (bare-context unit tests).
+	// Requests with no Authorization header short-circuit both without touching
+	// the DB, exactly as before, so a flood of anonymous traffic is still
+	// throttled at zero query cost.
+	e.Use(userCtxMiddleware(database))
 	// Universal rate limit (boom-jk6 / boom-ddp / boom-awh.1). Installed
 	// AFTER CORS (so preflight can short-circuit inside the middleware
 	// without ever counting against a bucket) and BEFORE the handler
@@ -109,9 +127,6 @@ func NewWithHandler(database *db.DB, cfg *config.Config, logger *slog.Logger, lo
 	// bucket sizing, testing hook (BOOM_DISABLE_RATE_LIMIT=1), and TTL /
 	// cleanup notes.
 	installRateLimit(e, logger, database)
-	// boom-ar7: stash resolved owner in ctx so the pgx tracer can tag its DEBUG
-	// SQL records with "user" — LogHub's FilterForUser then gates them per tenant.
-	e.Use(userCtxMiddleware(database))
 
 	// GET /metrics — the Prometheus scrape endpoint (internal/metrics.Registry).
 	// Deliberately unauthenticated and off the rate-limit + request-log paths:
@@ -318,7 +333,15 @@ func injectOGMeta(shell []byte, meta *identity.OGMeta) []byte {
 	fmt.Fprintf(&b, `<meta name="twitter:title" content="%s" />`, esc(meta.Title))
 	fmt.Fprintf(&b, `<meta name="twitter:description" content="%s" />`, esc(meta.Description))
 	fmt.Fprintf(&b, `<meta name="twitter:image" content="%s" />`, esc(meta.ImageURL))
-	return ogMetaBlockRe.ReplaceAll(shell, []byte(b.String()))
+	// ReplaceAllLiteral, NOT ReplaceAll: b is a fully-built literal replacement,
+	// so no `$` in it is ever meant as a capture-group reference. With ReplaceAll,
+	// a user-controlled tagline containing `$0` (it flows into meta.Description via
+	// BuildOGMeta → buildStatsHeadline, and htmlAttr escapes &<>"' but NOT `$`)
+	// expanded to the ENTIRE matched <!--OG_META…--> block — quotes and all —
+	// inside the og:description content attribute, breaking out of the attribute
+	// and emitting malformed <head> markup that kills the Discord/Slack/Twitter
+	// unfurl. (`$1` silently deleted text instead.)
+	return ogMetaBlockRe.ReplaceAllLiteral(shell, []byte(b.String()))
 }
 
 // htmlAttr escapes a string for safe inclusion inside a double-quoted HTML
