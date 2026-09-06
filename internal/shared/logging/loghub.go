@@ -19,8 +19,9 @@ type LogEntry struct {
 	// "worker". Publish backfills the zero value to "server" so every
 	// pre-existing caller (the server's own teeHandler) keeps working
 	// unchanged — only the worker-pod log relay tags "worker" explicitly.
-	// See redis_relay.go (RelayHubToRedis / SubscribeRedisIntoHub), wired
-	// under the split worker-topology (role=worker/server + broker=rabbitmq).
+	// See redis_relay.go (RelayHubToRedis / SubscribeRedisIntoHub) — that pair
+	// is CURRENTLY UNWIRED (its cmd/boomtime wiring went away with the RabbitMQ
+	// broker arm), so in practice every entry here is Source="server" today.
 	Source string `json:"source"`
 	// Host is the emitting worker pod's os.Hostname(), set only on
 	// Source=="worker" records so an operator running multiple worker
