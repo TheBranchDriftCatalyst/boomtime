@@ -379,7 +379,10 @@ export const NONADMIN_PASSWORD =
 /** True when the browser tests can hit a running boomtime dev/prod stack. */
 export function stackReachableFromEnv(): boolean {
   // Vite dev server on :5173 is the default target from playwright.config.ts;
-  // BOOMTIME_BASE_URL / PLAYWRIGHT_BASE_URL let CI point at a remote host.
+  // E2E_BASE_URL (and E2E_BACKEND_URL for the Go side) let CI point at a remote
+  // host — see consts.ts, which is where both are actually read. This comment
+  // used to name BOOMTIME_BASE_URL / PLAYWRIGHT_BASE_URL, which nothing has ever
+  // read; setting either silently did nothing.
   // We can't fetch synchronously here, so the actual liveness check happens
   // in globalSetup — if it failed the whole suite would already have aborted.
   // This predicate is used by the AVATAR + BACKFILL + SWAGGER specs to

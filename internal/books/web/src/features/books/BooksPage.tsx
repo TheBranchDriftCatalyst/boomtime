@@ -268,7 +268,16 @@ export function BooksPage() {
   // into the explorer's `where` + resetKey, so typing would otherwise re-query
   // (dropping the explorer's caches) on every keystroke. The <Input> stays fully
   // responsive on `search`; only the debounced value drives the config/resetKey.
-  const [debouncedSearch, setDebouncedSearch] = useState("");
+  //
+  // SEEDED FROM ?q, like `search` itself. Starting it at "" made a deep link
+  // (/app/books?q=Sanderson) transiently drop its own filter: the first hero +
+  // explorer queries ran unfiltered, and the URL-writeback effect below fired on
+  // mount with debouncedSearch="" and replaceState-stripped ?q out of the address
+  // bar — so a reload or a copied URL inside that 300ms window lost the search
+  // entirely, and the restore 300ms later forced a second full refetch.
+  const [debouncedSearch, setDebouncedSearch] = useState(() =>
+    (initialParams.get("q") ?? "").trim(),
+  );
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
     return () => clearTimeout(t);

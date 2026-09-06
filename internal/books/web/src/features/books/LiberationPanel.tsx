@@ -1,10 +1,13 @@
 // LiberationPanel — the per-book liberation control in the detail sheet, and the
 // library-wide sweep button (boom-w20s.16). The Libation rebuild's UI surface.
 //
-// AVAILABILITY. Every liberation route 404s when the feature is off, so rather
-// than threading a flag through the app the components probe the status endpoint
-// once and render nothing on failure. That keeps the books UI byte-identical for
-// anyone who has not enabled liberation, with no config plumbing.
+// AVAILABILITY. The liberation routes are only REGISTERED when the feature is
+// on, so rather than threading a flag through the app the components probe the
+// status endpoint once and render nothing when the probe does not come back
+// shaped like a status. That keeps the books UI byte-identical for anyone who
+// has not enabled liberation, with no config plumbing. See
+// isLiberationStatus below for why "the request did not error" is NOT a usable
+// availability signal on this server.
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Download, Loader2, RotateCw, Trash2, TriangleAlert } from "lucide-react";
@@ -48,6 +51,34 @@ export function LiberationBadge({ status }: { status?: string | null }) {
   );
 }
 
+/** The GET /api/v1/books/liberation/status wire shape, pinned to the api client. */
+type LiberationStatus = Awaited<ReturnType<typeof api.getLiberationStatus>>;
+
+/**
+ * isLiberationStatus — availability is proven by the response SHAPE, never by
+ * "the request resolved".
+ *
+ * WHY THIS EXISTS. The Go SPA catch-all (internal/shared/server/server.go) claims
+ * every unmatched GET and only 404s paths whose last segment contains a dot, so
+ * with liberation OFF this extensionless path does not 404 — it answers
+ * 200 text/html with the SPA index. The shared api client, in turn, falls back to
+ * handing back the raw response TEXT when JSON.parse fails on an ok response. A
+ * plain `!!q.data` availability test therefore reads a truthy HTML STRING as
+ * "the feature is on" and renders the entire liberation surface on every
+ * liberation-off install: a Liberate menu item and an enabled Liberate button
+ * whose POST 405s against the catch-all, plus a "Liberate all" disabled with the
+ * false tooltip "Every book is already liberated" (`(htmlString).pending` is
+ * undefined → 0). web/e2e/books-liberation.spec.ts's own probe checks the shape
+ * for exactly this reason; the hook has to hold the same line, independently of
+ * whatever the api client decides to do with non-JSON bodies.
+ */
+function isLiberationStatus(v: unknown): v is LiberationStatus {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
+  // `counts` may be an empty object on a library with no Audible titles, so its
+  // presence — not its contents — is the marker; `pending` pins the type.
+  return "counts" in v && typeof (v as { pending?: unknown }).pending === "number";
+}
+
 /** useLiberationAvailable probes the status endpoint; false when the feature is off. */
 export function useLiberationAvailable() {
   const q = useQuery({
@@ -58,7 +89,53 @@ export function useLiberationAvailable() {
     staleTime: 5 * 60_000,
     retry: false,
   });
-  return { available: !q.isError && !!q.data, status: q.data };
+  // Anything that is not a status payload (the SPA index, an error envelope) is
+  // treated as "feature off" — and is never handed on as `status`, so no consumer
+  // can read `.pending`/`.excluded` off a non-status value.
+  const status = isLiberationStatus(q.data) ? q.data : undefined;
+  return { available: !q.isError && status !== undefined, status };
+}
+
+/**
+ * Banner — a mutation outcome line, carrying whether it is a FAILURE.
+ *
+ * Before this the success and error branches of every liberation mutation set
+ * the same plain string into the same muted line, so "Queued (job 42)" and
+ * "liberation is not enabled" were typographically identical — a failed sweep
+ * read as an informational status update. The tone travels with the message so
+ * a failure cannot be rendered as neutral prose.
+ */
+type Banner = { text: string; error: boolean };
+
+const ok = (text: string): Banner => ({ text, error: false });
+const failed = (text: string): Banner => ({
+  // An ApiError with no message (a bare network drop) must still say something.
+  text: text || "Request failed.",
+  error: true,
+});
+
+function BannerLine({
+  banner,
+  className,
+  as = "p",
+}: {
+  banner: Banner;
+  className?: string;
+  as?: "p" | "span";
+}) {
+  const Tag = as;
+  return (
+    <Tag
+      // role=alert so the failure is announced, not just coloured.
+      role={banner.error ? "alert" : undefined}
+      className={
+        (className ? className + " " : "") +
+        (banner.error ? "text-destructive" : "text-muted-foreground")
+      }
+    >
+      {banner.text}
+    </Tag>
+  );
 }
 
 /** Per-book control, rendered inside the detail sheet. */
@@ -79,24 +156,24 @@ export function LiberationPanel({
 }) {
   const { available } = useLiberationAvailable();
   const qc = useQueryClient();
-  const [banner, setBanner] = useState<string | null>(null);
+  const [banner, setBanner] = useState<Banner | null>(null);
 
   const liberate = useMutation({
     mutationFn: (force: boolean) => api.liberateBook(externalId, force),
     onSuccess: (r) => {
-      setBanner(`Queued (job ${r.jobId}). This runs in the background.`);
+      setBanner(ok(`Queued (job ${r.jobId}). This runs in the background.`));
       void qc.invalidateQueries({ queryKey: ["liberation"] });
     },
-    onError: (e: Error) => setBanner(e.message),
+    onError: (e: Error) => setBanner(failed(e.message)),
   });
 
   const forget = useMutation({
     mutationFn: (deleteFile: boolean) => api.forgetLiberation(externalId, deleteFile),
     onSuccess: (r) => {
-      setBanner(r.fileDeleted ? "File deleted and state cleared." : "State cleared; file kept.");
+      setBanner(ok(r.fileDeleted ? "File deleted and state cleared." : "State cleared; file kept."));
       void qc.invalidateQueries({ queryKey: ["liberation"] });
     },
-    onError: (e: Error) => setBanner(e.message),
+    onError: (e: Error) => setBanner(failed(e.message)),
   });
 
   // Liberation is Audible-only: a Kindle ebook has no audiobook to liberate.
@@ -164,7 +241,7 @@ export function LiberationPanel({
         )}
       </div>
 
-      {banner && <p className="text-xs text-muted-foreground">{banner}</p>}
+      {banner && <BannerLine banner={banner} className="text-xs" />}
     </div>
   );
 }
@@ -174,18 +251,18 @@ export function LiberateAllButton() {
   const { available, status } = useLiberationAvailable();
   const qc = useQueryClient();
   const [confirming, setConfirming] = useState(false);
-  const [banner, setBanner] = useState<string | null>(null);
+  const [banner, setBanner] = useState<Banner | null>(null);
 
   const sweep = useMutation({
     mutationFn: () => api.sweepLiberation({}),
     onSuccess: (r) => {
       setConfirming(false);
-      setBanner(`Queued ${r.pending} book${r.pending === 1 ? "" : "s"}.`);
+      setBanner(ok(`Queued ${r.pending} book${r.pending === 1 ? "" : "s"}.`));
       void qc.invalidateQueries({ queryKey: ["liberation"] });
     },
     onError: (e: Error) => {
       setConfirming(false);
-      setBanner(e.message);
+      setBanner(failed(e.message));
     },
   });
 
@@ -226,7 +303,7 @@ export function LiberateAllButton() {
         Liberate all{pending > 0 ? ` (${pending})` : ""}
       </Button>
       <SkippedList count={status?.excluded ?? 0} />
-      {banner && <span className="text-xs text-muted-foreground">{banner}</span>}
+      {banner && <BannerLine banner={banner} className="text-xs" as="span" />}
     </div>
   );
 }
@@ -246,6 +323,7 @@ export function LiberateAllButton() {
  */
 function SkippedList({ count }: { count: number }) {
   const [open, setOpen] = useState(false);
+  const [retryBanner, setRetryBanner] = useState<Banner | null>(null);
   const qc = useQueryClient();
 
   const q = useQuery({
@@ -260,7 +338,16 @@ function SkippedList({ count }: { count: number }) {
   // quietly not.
   const retry = useMutation({
     mutationFn: (asin: string) => api.forgetLiberation(asin, false),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["liberation"] }),
+    onMutate: () => setRetryBanner(null),
+    onSuccess: () => {
+      setRetryBanner(null);
+      void qc.invalidateQueries({ queryKey: ["liberation"] });
+    },
+    // A silent failure here recreates the EXACT blind spot this list exists to
+    // fix: without onError the row simply stays put — indistinguishable from a
+    // successful retry whose invalidation has not landed yet — and the user
+    // walks away believing a title Amazon keeps refusing is back in the sweep.
+    onError: (e: Error) => setRetryBanner(failed(`Retry failed: ${e.message || "request failed"}`)),
   });
 
   if (count === 0) return null;
@@ -281,6 +368,7 @@ function SkippedList({ count }: { count: number }) {
         <div className="mt-2 space-y-1.5 border-l border-border pl-3">
           {q.isPending && <p className="text-muted-foreground">Loading…</p>}
           {q.isError && <p className="text-destructive">Could not load the skipped list.</p>}
+          {retryBanner && <BannerLine banner={retryBanner} />}
           {q.data?.items.map((it) => (
             <div key={it.asin} className="flex items-start justify-between gap-3">
               <div className="min-w-0">

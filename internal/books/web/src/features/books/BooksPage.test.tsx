@@ -231,6 +231,43 @@ describe("BooksPage (merged groupable view)", () => {
     expect(await screen.findByText("/16")).toBeInTheDocument();
   });
 
+  // boom-l827: deep-linking ?q=<term> used to transiently drop its own filter.
+  // `search` was seeded from the URL but `debouncedSearch` started at "", so the
+  // first hero/explorer queries ran UNFILTERED and the URL-writeback effect fired
+  // on mount with an empty search and replaceState-stripped ?q out of the address
+  // bar — a reload or a copied URL inside that 300ms window lost the filter, and
+  // the restore 300ms later forced a second full refetch.
+  it("honours ?q= on the very first render, without stripping it from the URL", async () => {
+    stubConfig(true);
+    window.history.replaceState(null, "", "/app/books?q=Dune");
+
+    renderWithProviders(<BooksPage />, { withRouter: true });
+    await screen.findByText("Dune");
+
+    // The URL still carries the search the user shared. (The writeback effect has
+    // already run at this point — findByText awaited a full render+effect cycle.)
+    expect(window.location.search).toBe("?q=Dune");
+
+    // …and EVERY leaf (rows-mode) query fired so far carries the search
+    // predicate. Without the fix the mount-time leaf query goes out with no
+    // `where` at all — the full library flashes — and a second wave repeats it
+    // once the debounce catches up. (The whole-library hero specs are
+    // deliberately unfiltered, so they are excluded here by design.)
+    const leafCalls = runQueryMock.mock.calls.filter(
+      (c) => (c[0] as QuerySpec).rows === true,
+    );
+    expect(leafCalls.length).toBeGreaterThan(0);
+    for (const c of leafCalls) {
+      expect(JSON.stringify((c[0] as QuerySpec).where ?? null)).toContain("Dune");
+    }
+
+    // The input itself shows the term (it always did — this pins that the fix
+    // did not desync the visible box from the debounced value).
+    expect(screen.getByPlaceholderText(/Search title or author/)).toHaveValue(
+      "Dune",
+    );
+  });
+
   it("keeps search, source, status, group-by and connect in one control bar", async () => {
     stubConfig(true);
     renderWithProviders(<BooksPage />, { withRouter: true });
