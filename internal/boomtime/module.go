@@ -110,6 +110,19 @@ func (m *Module) SetLabelImagesWorker(w *labelimages.Worker) {
 
 // SetJobs late-binds the catalyst-go-jobs Store + Enqueuer (read by the per-label
 // BOOM_JOBS_UNIFIED status poll). Nil-safe on worker roles.
+// HasJobs reports whether the stashed admin handler currently holds the jobs
+// store + enqueuer. Exists for the same reason books.Module.HasJobEnqueuer does:
+// so a test can prove late-wired state survives a second registration pass.
+//
+// When this is false with the feature enabled, POST /api/v1/admin/label-images/
+// regenerate answers 503 "label-images feature is disabled — set
+// BOOM_FEATURE_LABEL_IMAGES=on and BOOM_COMFYUI_SHIM_URL, then restart" — an
+// error that blames configuration which is in fact already correct — and the
+// status list silently returns empty rather than erroring.
+func (m *Module) HasJobs() bool {
+	return m.admin != nil && m.admin.JobStore != nil && m.admin.JobEnqueuer != nil
+}
+
 func (m *Module) SetJobs(store *jobs.Store, enq jobs.Enqueuer) {
 	if m.admin != nil {
 		m.admin.SetJobs(store, enq)

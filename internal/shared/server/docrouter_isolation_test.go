@@ -46,17 +46,29 @@ func TestDocumentationRouterDoesNotClobberLiveModuleWiring(t *testing.T) {
 		Cfg: &config.Config{FeatureBooks: true},
 	}, live.Registry)
 	live.Books.WireJobEnqueuer(stubEnqueuer{})
+	// boomtime.Module stashes m.admin the same way and is late-wired the same
+	// way, so it is vulnerable to the identical clobber. Asserting only books
+	// would have left that half of the bug uncovered — which it was, until this.
+	live.Boomtime.SetJobs(&jobs.Store{}, stubEnqueuer{})
 
 	if !live.Books.HasJobEnqueuer() {
 		t.Fatal("precondition failed: the enqueuer did not land on the live books handler at all")
+	}
+	if !live.Boomtime.HasJobs() {
+		t.Fatal("precondition failed: the jobs store/enqueuer did not land on the live boomtime admin handler at all")
 	}
 
 	// Building the documentation router must not disturb any of that.
 	_ = DocumentationRouter()
 
 	if !live.Books.HasJobEnqueuer() {
-		t.Fatal("building the documentation router DISCARDED the live books handler's jobs enqueuer — " +
+		t.Error("building the documentation router DISCARDED the live books handler's jobs enqueuer — " +
 			"every background-job enqueue would answer 'background jobs are not available on this server' " +
 			"while the jobs page still looks healthy")
+	}
+	if !live.Boomtime.HasJobs() {
+		t.Error("building the documentation router DISCARDED the live boomtime admin handler's jobs wiring — " +
+			"label-image regenerate would answer 503 'label-images feature is disabled' even with the flags " +
+			"correctly set, and the status list would silently return empty")
 	}
 }
