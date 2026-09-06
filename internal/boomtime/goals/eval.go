@@ -11,7 +11,11 @@
 //   - GoalCacheTTL — single constant for "stale after".
 //
 // The evaluator queries hb_rollup_daily directly, mirroring the fast-path
-// used by the Overview stats. Case-fold on the aggregation axis follows
+// used by the Overview stats. A leaf's axis VALUE is a display name, so it is
+// expanded through the owner's exact rename rules before it hits SQL
+// (boom-l827, see sourcesFor) — otherwise a goal authored against a renamed /
+// merged project or language would report 0 forever while every dashboard
+// showed real hours. Case-fold on the aggregation axis follows
 // the same `lower(col) = lower($n)` convention boom-5db locked in for
 // curation/rename queries — a leaf `time` predicate targeting
 // value="Python" MUST also count "python" / "PYTHON" rows, otherwise
@@ -51,6 +55,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/query"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -346,7 +351,7 @@ func Evaluate(ctx context.Context, pool *pgxpool.Pool, owner string, p *Predicat
 	if p == nil {
 		return nil, errors.New("Evaluate: nil predicate")
 	}
-	e := &evaluator{pool: pool, owner: owner, now: now}
+	e := &evaluator{pool: pool, owner: owner, now: now, renames: &renameCache{}}
 	hit, prog, err := e.walk(ctx, p)
 	if err != nil {
 		return nil, err
@@ -359,6 +364,59 @@ type evaluator struct {
 	owner string
 	now   time.Time
 	subs  []SubCondition
+	// renames is the owner's query-time rename map, loaded at most ONCE per
+	// Evaluate call and shared by pointer with the per-day evaluators
+	// evalStreak spawns (a 365-day streak must not mean 365 curation_rules
+	// reads). Never nil for evaluators built by Evaluate; a zero-value
+	// evaluator (tests) lazily allocates one on first use.
+	renames *renameCache
+}
+
+// renameCache memoizes db.LoadRenameSets for one owner for the lifetime of a
+// single Evaluate call. Goals are authored against the name the dashboards
+// DISPLAY, which for a renamed/merged axis value is not the raw value stored
+// in hb_rollup_daily — see sourcesFor.
+type renameCache struct {
+	loaded bool
+	sets   db.RenameSets
+	err    error
+}
+
+// sourcesFor returns the RAW axis values a goal's display value must also match:
+// the value itself plus every raw value the owner's EXACT rename rules map onto
+// it (boom-l827; the same expansion widget links got in boom-xuc via
+// db.ProjectMemberSetWithRenames). Without it a goal authored against
+// "MyRepo" — the only name any FE surface shows once a rename rule merges
+// "myrepo-v2" into it — matches nothing in hb_rollup_daily and reports 0%
+// forever.
+//
+// All returned values are lowercased; the caller compares with lower(col), so
+// case variants of the raw rows collapse the same way the dashboards do.
+// Regex/template renames are deliberately not expanded (reverse-engineering a
+// pattern's inputs is unreliable) — exactly the ExactSourcesFor contract.
+func (e *evaluator) sourcesFor(ctx context.Context, axis, value string) ([]string, error) {
+	if e.renames == nil {
+		e.renames = &renameCache{}
+	}
+	if !e.renames.loaded {
+		// db.DB is a one-field wrapper around the pool (db.DB{Pool}); the
+		// evaluator is constructed from a *pgxpool.Pool by every caller and
+		// test, so borrow the pool here rather than churn Evaluate's exported
+		// signature across ~30 call sites.
+		e.renames.sets, e.renames.err = (&db.DB{Pool: e.pool}).LoadRenameSets(ctx, e.owner)
+		e.renames.loaded = true
+	}
+	if e.renames.err != nil {
+		return nil, e.renames.err
+	}
+	out := []string{strings.ToLower(value)}
+	for _, src := range e.renames.sets.ExactSourcesFor(axis, value) {
+		low := strings.ToLower(src)
+		if low != out[0] {
+			out = append(out, low)
+		}
+	}
+	return out, nil
 }
 
 // walk returns (hit, progress) for one node and accumulates leaves
@@ -440,11 +498,28 @@ func (e *evaluator) evalTime(ctx context.Context, p *Predicate) (bool, float64, 
 		     WHERE sender = $1 AND day >= $2::date AND day <= $3::date`
 		args = []any{e.owner, start, end}
 	} else {
-		q = `SELECT COALESCE(SUM(total_seconds), 0)
-		     FROM hb_rollup_daily
-		     WHERE sender = $1 AND day >= $2::date AND day <= $3::date
-		       AND lower(` + col + `) = lower($4)`
-		args = []any{e.owner, start, end, *p.Value}
+		// boom-l827: the authored value is a DISPLAY name. Expand it through
+		// the owner's exact rename rules so a goal on a renamed/merged axis
+		// value also counts the raw rows it was renamed FROM. With no rename
+		// rules this is a one-element list and the predicate is the same
+		// case-folded equality as before.
+		vals, rerr := e.sourcesFor(ctx, p.Axis, *p.Value)
+		if rerr != nil {
+			return false, 0, fmt.Errorf("evalTime rename load: %w", rerr)
+		}
+		if len(vals) == 1 {
+			q = `SELECT COALESCE(SUM(total_seconds), 0)
+			     FROM hb_rollup_daily
+			     WHERE sender = $1 AND day >= $2::date AND day <= $3::date
+			       AND lower(` + col + `) = lower($4)`
+			args = []any{e.owner, start, end, *p.Value}
+		} else {
+			q = `SELECT COALESCE(SUM(total_seconds), 0)
+			     FROM hb_rollup_daily
+			     WHERE sender = $1 AND day >= $2::date AND day <= $3::date
+			       AND lower(` + col + `) = ANY($4)`
+			args = []any{e.owner, start, end, vals}
+		}
 	}
 	if err := e.pool.QueryRow(ctx, q, args...).Scan(&current); err != nil {
 		return false, 0, fmt.Errorf("evalTime query: %w", err)
@@ -579,7 +654,9 @@ func (e *evaluator) evalStreak(ctx context.Context, p *Predicate) (bool, float64
 		daySpec = *rewriteWindowToDay(&daySpec)
 		// Anchor time = now - i days.
 		anchor := e.now.AddDate(0, 0, -i)
-		nested := &evaluator{pool: e.pool, owner: e.owner, now: anchor}
+		// Shares e.renames by pointer: one curation_rules read for the whole
+		// backward walk, not one per day.
+		nested := &evaluator{pool: e.pool, owner: e.owner, now: anchor, renames: e.renames}
 		hit, _, err := nested.walk(ctx, &daySpec)
 		if err != nil {
 			return false, 0, fmt.Errorf("evalStreak day-%d: %w", i, err)

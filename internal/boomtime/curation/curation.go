@@ -105,6 +105,21 @@ func (h *Handler) CreateCuration(c *echo.Context, req curationRequest) (createCu
 			newValue = &normalized
 		}
 	}
+	// boom-l827: `day` (time_sent::date) and `isWrite` (boolean) are the only
+	// Explorer axes whose heartbeats column is not text. EVERY curation code
+	// path case-folds with lower(<col>) or matches with `<col> ~*`, and
+	// Postgres defines neither lower(date)/lower(boolean) nor a text-regex
+	// operator for them — so a rule stored on these axes can only misbehave
+	// later: GET /curation/:id/affected 500s (`function lower(date) does not
+	// exist`), and apply/purge reject it. It would not even do anything in the
+	// meantime: LoadHiddenSets/LoadRenameSets/LoadPinnedSet only ever read the
+	// registry axes (plus the DSL group dimensions), none of which is day or
+	// isWrite. Reject at authoring time rather than persisting an inert rule
+	// whose only observable effect is a 500 on the audit view.
+	if nonTextCurationAxis(req.Axis) {
+		return out, apierr.New(http.StatusBadRequest,
+			"the "+req.Axis+" axis cannot be curated: it is not a text column, so no rule can match on it", nil)
+	}
 
 	ctx := c.Request().Context()
 	// For a regex rule, validate the pattern compiles (Postgres regex) up front.
@@ -247,6 +262,15 @@ type curationAffectedResponse struct {
 	Truncated bool `json:"truncated"`
 }
 
+// nonTextCurationAxis reports whether an Explorer axis maps to a heartbeats
+// column that is NOT text (`day` -> time_sent::date, `isWrite` -> is_write).
+// Kept as a tiny explicit set rather than probing db: the two axes are a
+// property of the heartbeats schema (see db.ExploreColumn), and this handler
+// only needs to know "no curation SQL can fold case or regex-match here".
+func nonTextCurationAxis(axis string) bool {
+	return axis == "day" || axis == "isWrite"
+}
+
 func (h *Handler) CurationAffected(c *echo.Context) (curationAffectedResponse, error) {
 	var out curationAffectedResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
@@ -265,6 +289,18 @@ func (h *Handler) CurationAffected(c *echo.Context) (curationAffectedResponse, e
 	}
 	if rule == nil || ruleOwner != owner {
 		return out, apierr.New(http.StatusNotFound, "Curation rule not found", nil)
+	}
+
+	// boom-l827: a rule stored on a non-text axis (day / isWrite) predates the
+	// authoring-time guard in CreateCuration. CurationAffectedValues would
+	// build lower(time_sent::date) / lower(is_write) and Postgres would raise
+	// 42883, which apierr.Generic() reports as an opaque 500 plus an
+	// error-level log for what is really a well-understood client-side
+	// impossibility. Answer 400 with the reason instead, matching the preview
+	// endpoint's treatment of an un-inspectable rule.
+	if nonTextCurationAxis(rule.Axis) {
+		return out, apierr.New(http.StatusBadRequest,
+			"the "+rule.Axis+" axis has no text column to inspect; delete this rule (it can never match)", nil)
 	}
 
 	values, truncated, err := h.DB.CurationAffectedValues(ctx, owner, rule, 200)
@@ -293,6 +329,31 @@ func (h *Handler) resolveCurationRule(c *echo.Context, ctx context.Context, owne
 		return nil, apierr.New(http.StatusNotFound, "Curation rule not found", nil)
 	}
 	return rule, nil
+}
+
+// rejectUnwritableAxis returns a 400 for a rule whose axis has no column on the
+// raw heartbeats table that apply/purge can write (entity, day, type,
+// userAgent, isWrite — the Explorer-only axes outside db.RollupAxes).
+//
+// boom-l827: without it, db.ApplyRenameRule / db.PurgeHiddenRule return their
+// "axis %q has no raw column" error, the handler funnels EVERY error through
+// apierr.Generic(), and a well-formed client mistake surfaces as an opaque 500
+// plus an error-level log that monitoring counts as a server fault — while the
+// PREVIEW of the very same rule already answers a clean 400 with the reason.
+// This is a pre-check rather than an error translation so the 400 does not
+// depend on matching a DB error string.
+//
+// db.RollupAxes is the exported view of the axis registry, and every registry
+// axis has a raw heartbeats column (that is what makes it an axis), so
+// "not in RollupAxes" == "no raw column" for the axis set the whitelist
+// admits. The DB-side check stays as the real gate: if the two ever disagree
+// the query still fails closed, it just fails as a 500 again.
+func rejectUnwritableAxis(axis, verb string) *apierr.Error {
+	if db.RollupAxes[axis] {
+		return nil
+	}
+	return apierr.New(http.StatusBadRequest,
+		"rules on the "+axis+" axis cannot be "+verb+": it has no raw heartbeats column", nil)
 }
 
 // --- preview payload, DECLARED for the spec only -----------------------------
@@ -478,6 +539,11 @@ func (h *Handler) ApplyRename(c *echo.Context) (applyRenameResponse, error) {
 	if !rule.Enabled {
 		return out, apierr.New(http.StatusBadRequest, "cannot apply a disabled rule; enable it first", nil)
 	}
+	// Checked LAST of the 400s so every gate that already answered 400 keeps
+	// its exact message; this one only replaces what used to be a 500.
+	if aerr := rejectUnwritableAxis(rule.Axis, "applied"); aerr != nil {
+		return out, aerr
+	}
 
 	rows, sqlUpd, sqlDel, err := h.DB.ApplyRenameRule(ctx, owner, rule)
 	if err != nil {
@@ -543,6 +609,11 @@ func (h *Handler) PurgeHidden(c *echo.Context) (purgeHiddenResponse, error) {
 	// as the apply guard, and purge is the more dangerous of the two.
 	if !rule.Enabled {
 		return out, apierr.New(http.StatusBadRequest, "cannot purge a disabled rule; enable it first", nil)
+	}
+	// Checked LAST of the 400s so every gate that already answered 400 keeps
+	// its exact message; this one only replaces what used to be a 500.
+	if aerr := rejectUnwritableAxis(rule.Axis, "purged"); aerr != nil {
+		return out, aerr
 	}
 
 	rows, sqlDelRows, sqlDelRule, err := h.DB.PurgeHiddenRule(ctx, owner, rule)

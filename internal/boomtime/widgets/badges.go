@@ -1,6 +1,7 @@
 package widgets
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -60,6 +61,53 @@ func applyBadgeCuration(hidden model.HiddenSets, project string) string {
 	return project
 }
 
+// badgeTotalSeconds sums the badge subject's tracked seconds over the window.
+//
+// boom-l827: the raw query matches `project = $3` against heartbeats, but a
+// badge is minted from the name the FE DISPLAYS — and once a rename rule
+// merges "myrepo-v2" into "MyRepo", "MyRepo" is the only name any surface
+// shows while every stored heartbeat still says "myrepo-v2". The badge then
+// rendered "MyRepo | 0" forever next to a widget link showing real hours,
+// because widget links got the rename expansion in boom-xuc
+// (db.ProjectMemberSetWithRenames) and badges did not. So: add the subject's
+// own total to the total of every raw project an EXACT rename rule maps onto
+// it. Regex/template renames are deliberately not expanded — same contract as
+// db.RenameSets.ExactSourcesFor, which cannot enumerate a pattern's inputs.
+//
+// Curation still wins: a source project the owner has hidden contributes
+// nothing, so a rename can never smuggle a hidden project's time back into a
+// public badge (boom-6jm.3).
+//
+// Known limitation, inherited from ExactSourcesFor + the exact-match SQL: the
+// returned source names are lowercased, and get_total_project_time.sql compares
+// `project = $3` case-sensitively, so a raw project stored with capitals is
+// only counted when the badge's own name matches it exactly. Making that
+// case-insensitive means changing the shared query, which is out of scope here.
+func (h *Handler) badgeTotalSeconds(ctx context.Context, owner, project string, days int64, hidden model.HiddenSets) (int64, error) {
+	total, err := h.DB.GetTotalActivityTime(ctx, owner, days, project)
+	if err != nil {
+		return 0, err
+	}
+	renames, err := h.DB.LoadRenameSets(ctx, owner)
+	if err != nil {
+		return 0, err
+	}
+	for _, src := range renames.ExactSourcesFor("project", project) {
+		if strings.EqualFold(src, project) {
+			continue // the subject itself, already counted
+		}
+		if applyBadgeCuration(hidden, src) == "hidden" {
+			continue // a hidden source stays hidden, even behind a rename
+		}
+		sub, err := h.DB.GetTotalActivityTime(ctx, owner, days, src)
+		if err != nil {
+			return 0, err
+		}
+		total += sub
+	}
+	return total, nil
+}
+
 // BadgeSvg: GET /badge/svg/:uuid?days (public) -> proxied SVG from shields.io.
 func (h *Handler) BadgeSvg(c *echo.Context) error {
 	id, err := uuid.Parse(c.Param("svg"))
@@ -89,7 +137,7 @@ func (h *Handler) BadgeSvg(c *echo.Context) error {
 	}
 
 	days := apihelpers.QueryInt64(c, "days", 7)
-	total, err := h.DB.GetTotalActivityTime(ctx, user, days, project)
+	total, err := h.badgeTotalSeconds(ctx, user, project, days, hidden)
 	if err != nil {
 		return apihelpers.InternalErr(h.Logger, c, "badge activity query failed", err)
 	}

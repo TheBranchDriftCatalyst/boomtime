@@ -159,13 +159,31 @@ func (h *Handler) AwardsStreaks(c *echo.Context) (map[string]int, error) {
 
 // PublicAwardsStreaks: GET /api/public/profile/:slug/awards/streaks
 // — same shape, target user derived from the public slug.
+//
+// Sharing gate: resolving the slug is NOT enough. SetPublicProfile with
+// enabled=false deliberately keeps public_slug intact (so toggling sharing
+// back on reuses the same URL), and LookupUsernameBySlug explicitly does not
+// look at public_profile_enabled — so without the second check below, anyone
+// who ever saw the URL could keep polling an opted-OUT owner's streak map and
+// watch their daily activity. Mirrors PublicAwards (eval.go), which has always
+// re-checked the flag. Both the "no such slug" and the "slug exists but
+// sharing is off" branches answer with the SAME 404 body so the endpoint is
+// not an oracle for which slugs exist.
 func (h *Handler) PublicAwardsStreaks(c *echo.Context) (map[string]int, error) {
 	slug := c.Param("slug")
 	if slug == "" {
 		return nil, apierr.BadRequest("slug is required")
 	}
-	owner, err := h.DB.LookupUsernameBySlug(c.Request().Context(), slug)
+	ctx := c.Request().Context()
+	owner, err := h.DB.LookupUsernameBySlug(ctx, slug)
 	if err != nil || owner == "" {
+		return nil, apierr.New(http.StatusNotFound, "profile not found", nil)
+	}
+	enabled, _, err := h.DB.GetPublicProfile(ctx, owner)
+	if err != nil {
+		return nil, fmt.Errorf("public streaks enabled check failed: %w", err)
+	}
+	if !enabled {
 		return nil, apierr.New(http.StatusNotFound, "profile not found", nil)
 	}
 	return h.awardsStreaksFor(c, owner)

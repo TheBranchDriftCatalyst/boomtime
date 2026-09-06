@@ -86,11 +86,13 @@ func Register(e *echo.Echo, h *Handler) {
 		Doc("Label streak counts (public)",
 			"The same flat label-id-to-streak-count map as the owner endpoint, for the user "+
 				"behind a public profile slug, so a visitor sees the same streak badges the "+
-				"owner does. The target user is resolved from the slug; an unknown slug is "+
-				"404 (\"profile not found\"). Note this route gates on the slug EXISTING "+
-				"only — unlike /api/public/profile/{slug}/awards it does not re-check the "+
-				"public_profile_enabled flag. Streak counts are computed in the profile "+
-				"OWNER's timezone, not the viewer's. Sends Cache-Control: private, "+
+				"owner does. The target user is resolved from the slug AND the owner must "+
+				"still have public sharing enabled — an unknown slug and a slug whose owner "+
+				"turned sharing off are the same 404 (\"profile not found\"), so the "+
+				"endpoint reveals neither which slugs exist nor which were switched off "+
+				"(the slug survives an opt-out so it can be reused). Same gate as "+
+				"/api/public/profile/{slug}/awards. Streak counts are computed in the "+
+				"profile OWNER's timezone, not the viewer's. Sends Cache-Control: private, "+
 				"max-age=60.")
 
 	// boom-hc6.3: server-side award evaluation. Replaces the client-side

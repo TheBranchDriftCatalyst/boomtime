@@ -549,34 +549,66 @@ var _ = Describe("PublicAwardsStreaks (boom-mwp-streaks)", func() {
 			"public streaks body must not include an `owner` field; body=%s", body)
 	})
 
-	// boom-d6x.handler critique: PublicAwardsStreaks has no test for the
-	// `enabled=false` disabled-profile branch, unlike PublicAwards (line
-	// 536-553). The current handler does NOT check enabled (unlike
-	// PublicAwards which does — see awards_eval.go:96-102); this spec
-	// documents that current-behavior gap so a future consistency fix
-	// (adding the enabled check) can flip the assertion and this test
-	// still names the invariant clearly. If it starts 404-ing that's
-	// probably an intentional fix, not a regression.
-	It("known gap: disabled profile currently 200s on /awards/streaks (unlike PublicAwards)", func() {
+	// boom-l827 (audit 2026-09-06): a profile the owner turned OFF kept
+	// serving its streak map through the OLD slug, because
+	// LookupUsernameBySlug deliberately ignores public_profile_enabled and
+	// SetPublicProfile(enabled=false) deliberately keeps the slug. Anyone
+	// who ever saw the URL could keep polling it and watch the owner's
+	// daily activity after they opted out. PublicAwards always re-checked
+	// the flag; this endpoint now does too.
+	//
+	// The spec seeds a REAL streak first so a passing 404 cannot be an
+	// artifact of an empty ledger, and asserts the label id is absent from
+	// the body — not just the status code.
+	It("404s (and emits no streak data) once the owner disables public sharing", func() {
 		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "publicstreaks"))
 		e := awardsAuxRouter(hz)
-		user, _ := hz.MintUser("pubstreak_off")
+		user, token := hz.MintUser("pubstreak_off")
+		ensureLabels(hz, "optedoutlabel")
 
 		slug := "off-slug-streak-" + strings.ToLower(strings.ReplaceAll(user[len(user)-8:], ".", ""))
-		// Enable + slug, then flip enabled=false (leaves slug intact).
+		// Enable + slug, log a real award so the streak map is non-empty.
 		Expect(hz.DB.SetPublicProfile(context.Background(), user, true, slug)).To(Succeed())
+		Expect(doPostJSONG(e, "/api/v1/users/current/awards/log", token, map[string]any{
+			"items": []map[string]any{{"labelId": "optedoutlabel", "periodType": "daily"}},
+		})).To(testutil.HaveStatus(http.StatusOK))
+
+		// While sharing is ON the visitor sees the streak — proves the
+		// slug resolves and the label really is in the payload.
+		on := getJSONG(e, "/api/public/profile/"+slug+"/awards/streaks", "")
+		Expect(on).To(testutil.HaveStatus(http.StatusOK))
+		Expect(on.Body.String()).To(ContainSubstring("optedoutlabel"))
+
+		// Owner opts out. SetPublicProfile(false, "") leaves public_slug
+		// intact on purpose, so the old URL still resolves to this user.
 		Expect(hz.DB.SetPublicProfile(context.Background(), user, false, "")).To(Succeed())
 
 		rec := getJSONG(e, "/api/public/profile/"+slug+"/awards/streaks", "")
-		// Current asymmetric behavior: streaks returns 200 for disabled
-		// profiles because LookupUsernameBySlug ignores enabled. Accept
-		// either 200 (current) or 404 (post-fix) — but log the current
-		// value so a regression from an intended 404 fix is visible.
-		Expect(rec.Code).To(Or(
-			Equal(http.StatusOK),
-			Equal(http.StatusNotFound),
-		), "disabled-profile streaks: got %d — expected 200 (current asymmetric behavior) or 404 (post-fix); body=%s",
+		Expect(rec).To(testutil.HaveStatus(http.StatusNotFound),
+			"a disabled public profile must not keep serving streaks through its old slug; got %d body=%s",
 			rec.Code, rec.Body.String())
+		Expect(rec.Body.String()).NotTo(ContainSubstring("optedoutlabel"),
+			"opted-out streak data leaked in the 404 body: %s", rec.Body.String())
+	})
+
+	// Companion to the above: the opted-out 404 must be byte-identical to
+	// the never-existed 404, otherwise the endpoint is an oracle for
+	// "this slug exists but sharing is off".
+	It("uses the same 404 body for a disabled profile as for an unknown slug (no oracle)", func() {
+		hz := testutil.NewHarnessWithDB(GinkgoT(), testutil.OpenIsolatedDB(GinkgoT(), "publicstreaks"))
+		e := awardsAuxRouter(hz)
+		user, _ := hz.MintUser("pubstreak_oracle")
+
+		slug := "oracle-slug-strk-" + strings.ToLower(strings.ReplaceAll(user[len(user)-8:], ".", ""))
+		Expect(hz.DB.SetPublicProfile(context.Background(), user, true, slug)).To(Succeed())
+		Expect(hz.DB.SetPublicProfile(context.Background(), user, false, "")).To(Succeed())
+
+		off := getJSONG(e, "/api/public/profile/"+slug+"/awards/streaks", "")
+		unknown := getJSONG(e, "/api/public/profile/no-such-slug-at-all/awards/streaks", "")
+		Expect(off.Code).To(Equal(unknown.Code))
+		Expect(off.Body.String()).To(Equal(unknown.Body.String()),
+			"disabled-profile 404 body %q differs from unknown-slug 404 body %q — that difference is an existence oracle",
+			off.Body.String(), unknown.Body.String())
 	})
 })
 
