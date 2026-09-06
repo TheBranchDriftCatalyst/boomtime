@@ -203,6 +203,26 @@ under an unknown symmetric key.
 
 ## Beads Notes
 
+Workspace-wide findings and recovery procedures: `../BEADS.md`.
+
+**NEVER run `pkill -f "dolt sql-server"`.** That pattern kills every repo's beads
+server across the whole workspace, not just this one — it is the confirmed cause of
+cross-repo tracker breakage. Use `bd dolt stop` (or the repo-scoped
+`bd dolt killall`) from inside the target repo instead.
+
+**If the tracker suddenly looks empty, do NOT recreate issues.** The usual cause is
+`dolt_mode` flipping to `server` without a matching data dir, which silently
+repoints bd at an empty directory while the real database sits elsewhere:
+
+```bash
+git diff .beads/metadata.json           # is dolt_mode flipped and uncommitted?
+du -sh .beads/dolt .beads/embeddeddolt  # which one actually holds data?
+```
+
+A Dolt directory looks near-empty to `ls` because content lives under `.dolt/noms`;
+never conclude "the database is empty" from a directory listing. This repo is
+healthy: server mode, data in `.beads/dolt`, no `dolt_data_dir` key.
+
 `bd` runs clean here with **no environment overrides** — do not prefix calls
 with `BD_IGNORE_SCHEMA_SKEW=1`. If `bd doctor` reports a schema-version skew,
 run `bd migrate status` (it updates the Dolt metadata in place); if it reports

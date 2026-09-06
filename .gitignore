@@ -73,3 +73,7 @@ hardcover.key
 # Screenshots dropped in the repo root are scratch, never artifacts.
 # docs/screenshots/ and app asset catalogs are tracked and unaffected.
 /*.png
+.beads.gate.lock
+.beads.backup-pre-recovery/
+.beads.legacy-sqlite-archived-*/
+.beads-archive/
