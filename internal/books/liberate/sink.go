@@ -114,7 +114,8 @@ func (s *FSSink) Commit(ctx context.Context, workPath, relPath string) (string, 
 	}
 	// The source is now redundant. A failure to clean it up is not a failure to
 	// commit — the book IS in the library — so it is swallowed here and the work
-	// dir's own sweep deals with the leftover.
+	// dir's own sweep deals with the leftover (Service.sweepStaleWorkDirs, plus
+	// the per-run RemoveAll in LiberateBook).
 	_ = os.Remove(workPath)
 	return relPath, nil
 }

@@ -477,7 +477,16 @@ func Register(reg *corejobs.Registry, database *db.DB, cfg *config.Config, notif
 				if merr != nil {
 					continue
 				}
-				if _, eerr := svcs.libEnq.Enqueue(jctx, liberate.LiberateBookKind, payload, corejobs.Owner(p.Owner)); eerr != nil {
+				// MaxAttempts(1) SPELLED OUT, matching the HTTP handler
+				// (books_liberation.go LiberateBook) rather than inheriting the
+				// enqueue default: an automatic retry re-downloads the whole
+				// 600 MB book, so it is deliberately not on. Recovery from an
+				// interrupted run comes from the row itself — LiberateBook
+				// records the interruption under a detached context and does not
+				// spend the give-up budget on it (Service.recordFailure), so the
+				// next sweep picks the title up again.
+				if _, eerr := svcs.libEnq.Enqueue(jctx, liberate.LiberateBookKind, payload,
+					corejobs.Owner(p.Owner), corejobs.MaxAttempts(1)); eerr != nil {
 					// One book failing to enqueue must not abandon the rest of
 					// the library; the next sweep picks it up again.
 					logger.Warn("liberate sweep: enqueue failed", "owner", p.Owner, "asin", asin, "err", eerr)

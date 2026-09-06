@@ -207,6 +207,53 @@ func (s *Store) MarkFailed(ctx context.Context, owner, asin, status, reason, con
 	return nil
 }
 
+// MarkInterrupted records a run killed by its own context — a deploy, a KEDA
+// drain pod's termination, an eviction — rather than by anything about the title.
+//
+// Identical to MarkFailed EXCEPT that it deliberately does NOT touch
+// liberation_attempts. That counter is a verdict about the TITLE (see MarkFailed),
+// and three deploys landing on the same 600 MB download must not retire a book the
+// sweep never actually got to judge. The row still leaves its in-flight status, so
+// the UI stops showing a phantom download and the API's 409 in-flight guard stops
+// blocking a manual retry.
+func (s *Store) MarkInterrupted(ctx context.Context, owner, asin, reason string) error {
+	const q = `
+		UPDATE public.reading_items
+		SET liberation_status = 'failed',
+		    liberation_error  = $3
+		WHERE owner = $1 AND external_id = $2 AND source = 'audible'`
+	_, err := s.Pool.Exec(ctx, q, owner, asin, truncate(reason, 2000))
+	if err != nil {
+		return fmt.Errorf("liberate: mark interrupted: %w", err)
+	}
+	return nil
+}
+
+// PathClaimant reports which OTHER library row has already recorded relPath as
+// its liberated audio file, if any.
+//
+// Deliberately NOT owner-scoped, unlike every other query here: the sink root is
+// one shared filesystem tree, so two owners who each bought the same title render
+// the same relative path and would overwrite each other exactly as two rows of one
+// owner would. The exclusion is the (owner, asin) IDENTITY of the row being
+// liberated, so a re-liberation of a book over its own file stays legal — that is
+// the idempotency contract, not a collision.
+func (s *Store) PathClaimant(ctx context.Context, relPath, owner, asin string) (claimOwner, claimASIN string, found bool, err error) {
+	const q = `
+		SELECT owner, external_id
+		FROM public.reading_items
+		WHERE audio_path = $1 AND NOT (owner = $2 AND external_id = $3)
+		LIMIT 1`
+	err = s.Pool.QueryRow(ctx, q, relPath, owner, asin).Scan(&claimOwner, &claimASIN)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", "", false, nil
+	}
+	if err != nil {
+		return "", "", false, fmt.Errorf("liberate: path claimant: %w", err)
+	}
+	return claimOwner, claimASIN, true, nil
+}
+
 // ClearLiberation forgets a local file (the "forget" endpoint), returning the
 // row to an unliberated state so a later sweep picks it up again.
 //

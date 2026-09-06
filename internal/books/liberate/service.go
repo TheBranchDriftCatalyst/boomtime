@@ -28,6 +28,26 @@ const EventLiberated = "book.liberated"
 // a JPEG.
 const coverTimeout = 30 * time.Second
 
+// recordTimeout bounds the detached writes that record a run's OUTCOME. Short,
+// because these run while the process may already be shutting down: a few seconds
+// is enough for two UPDATEs and does not delay a SIGTERM meaningfully.
+const recordTimeout = 10 * time.Second
+
+// workDirPrefix names every scratch directory this package creates, so
+// sweepStaleWorkDirs can recognise its own leftovers and nothing else.
+const workDirPrefix = "liberate-"
+
+// staleWorkDirAge is how long a scratch directory must sit untouched before the
+// sweep treats it as abandoned. Generous on purpose: a live 600 MB download over
+// a slow CDN is hours at worst, never a day, so nothing in range can still be in
+// use — and the cost of being wrong is deleting a running job's work.
+const staleWorkDirAge = 24 * time.Hour
+
+// ErrPathCollision means the rendered library path already belongs to a DIFFERENT
+// library item and no disambiguated path was free either. Committing anyway would
+// overwrite another book's audio, so the run fails instead.
+var ErrPathCollision = errors.New("liberate: library path already belongs to another title")
+
 // CredentialLoader is the narrow slice of the Amazon credential store this
 // package needs. *amazon.Store satisfies it. Depending on the interface rather
 // than the concrete store keeps liberation testable without standing up
@@ -135,15 +155,27 @@ func (s *Service) LiberateBook(ctx context.Context, owner, asin string, opts Opt
 		// History is diagnostics, not correctness — never block a liberation on it.
 		log.Warn("could not open attempt row", "err", aerr)
 	}
-	// finish records the outcome on both the item row and the attempt row.
+	// finish records the outcome on the attempt row. It runs under a context
+	// DETACHED from the job's (recordCtx) for the same reason recordFailure does:
+	// the outcome most worth recording is the one caused by that context being
+	// cancelled.
 	finish := func(status, reason string) {
 		res.Status = status
 		res.Duration = time.Since(started)
 		if attemptID > 0 {
-			if ferr := s.Store.FinishAttempt(ctx, attemptID, status, res.Bytes, res.Duration, res.ContentFormat, reason); ferr != nil {
+			rctx, cancel := recordCtx(ctx)
+			defer cancel()
+			if ferr := s.Store.FinishAttempt(rctx, attemptID, status, res.Bytes, res.Duration, res.ContentFormat, reason); ferr != nil {
 				log.Warn("could not close attempt row", "err", ferr)
 			}
 		}
+	}
+	// fail records one failed outcome on BOTH the item row and the attempt row
+	// and returns the values LiberateBook hands back to its caller.
+	fail := func(status string, cause error) (Result, error) {
+		status, reason := s.recordFailure(ctx, owner, asin, status, cause, res.ContentFormat)
+		finish(status, reason)
+		return res, cause
 	}
 
 	// --- 1. license -------------------------------------------------------
@@ -163,9 +195,7 @@ func (s *Service) LiberateBook(ctx context.Context, owner, asin string, opts Opt
 			// them and a re-sweep stops re-requesting them forever.
 			status = StatusUnsupportedFormat
 		}
-		_ = s.Store.MarkFailed(ctx, owner, asin, status, lerr.Error(), "")
-		finish(status, lerr.Error())
-		return res, lerr
+		return fail(status, lerr)
 	}
 	ref := lic.ContentLicense.ContentMetadata.ContentReference
 	res.ContentFormat = ref.ContentFormat
@@ -173,18 +203,14 @@ func (s *Service) LiberateBook(ctx context.Context, owner, asin string, opts Opt
 	// --- 2. voucher -------------------------------------------------------
 	key, verr := DecryptVoucher(cred, asin, lic.ContentLicense.LicenseResponse)
 	if verr != nil {
-		_ = s.Store.MarkFailed(ctx, owner, asin, StatusFailed, verr.Error(), res.ContentFormat)
-		finish(StatusFailed, verr.Error())
-		return res, verr
+		return fail(StatusFailed, verr)
 	}
 
-	// Work files live in a per-ASIN directory so a failed run cleans up in one
-	// call and two concurrent books cannot collide on a temp name.
+	// Work files live in a per-RUN directory so a failed run cleans up in one
+	// call and no two runs can collide on a temp name.
 	workDir, werr := s.makeWorkDir(asin)
 	if werr != nil {
-		_ = s.Store.MarkFailed(ctx, owner, asin, StatusFailed, werr.Error(), res.ContentFormat)
-		finish(StatusFailed, werr.Error())
-		return res, werr
+		return fail(StatusFailed, werr)
 	}
 	defer os.RemoveAll(workDir)
 
@@ -193,9 +219,7 @@ func (s *Service) LiberateBook(ctx context.Context, owner, asin string, opts Opt
 	srcPath := filepath.Join(workDir, asin+".aaxc")
 	n, ferr := s.fetcher()(ctx, cred, lic.ContentLicense.ContentMetadata.ContentURL.OfflineURL, srcPath, opts.Progress)
 	if ferr != nil {
-		_ = s.Store.MarkFailed(ctx, owner, asin, StatusFailed, ferr.Error(), res.ContentFormat)
-		finish(StatusFailed, ferr.Error())
-		return res, ferr
+		return fail(StatusFailed, ferr)
 	}
 	log.Info("downloaded", "bytes", n, "contentFormat", res.ContentFormat)
 
@@ -227,26 +251,42 @@ func (s *Service) LiberateBook(ctx context.Context, owner, asin string, opts Opt
 	}
 
 	if derr := s.Decryptor.Decrypt(ctx, req); derr != nil {
-		status := s.classifyRemuxFailure(res.ContentFormat)
-		_ = s.Store.MarkFailed(ctx, owner, asin, status, derr.Error(), res.ContentFormat)
-		finish(status, derr.Error())
-		return res, derr
+		return fail(s.classifyRemuxFailure(res.ContentFormat), derr)
 	}
 
 	// --- 5. commit --------------------------------------------------------
 	relPath, rerr := RenderPath(s.Template, meta.BookMeta())
 	if rerr != nil {
-		_ = s.Store.MarkFailed(ctx, owner, asin, StatusFailed, rerr.Error(), res.ContentFormat)
-		finish(StatusFailed, rerr.Error())
-		return res, rerr
+		return fail(StatusFailed, rerr)
 	}
+	// The template carries no guaranteed-unique discriminator, and Commit
+	// overwrites — so a path another book already owns must be resolved BEFORE
+	// the rename, not discovered afterwards from a destroyed audiobook.
+	relPath, rerr = s.resolvePathCollision(ctx, owner, asin, relPath)
+	if rerr != nil {
+		return fail(StatusFailed, rerr)
+	}
+	// Measure the remux output while it still exists locally: Commit renames (or
+	// copies and unlinks) it, so this is the last moment it can be sized without
+	// the sink. It is the fallback when the post-commit Stat cannot answer.
+	localSize := localFileSize(req.DstPath)
 	stored, cerr := s.Sink.Commit(ctx, req.DstPath, relPath)
 	if cerr != nil {
-		_ = s.Store.MarkFailed(ctx, owner, asin, StatusFailed, cerr.Error(), res.ContentFormat)
-		finish(StatusFailed, cerr.Error())
-		return res, cerr
+		return fail(StatusFailed, cerr)
 	}
-	size, _, _ := s.Sink.Stat(ctx, stored)
+	size, ok, serr := s.Sink.Stat(ctx, stored)
+	if serr != nil || !ok {
+		// Discarding this used to record audio_bytes=0, which permanently
+		// disables the size-mismatch half of the idempotency contract for the
+		// row: a later truncation would then read as "already liberated" on
+		// every sweep, forever.
+		log.Warn("post-commit stat did not answer; falling back to the remux output size",
+			"path", stored, "present", ok, "err", serr, "fallbackBytes", localSize)
+		size = localSize
+	}
+	if size <= 0 {
+		return fail(StatusFailed, fmt.Errorf("liberate: committed %q but could not determine its size", stored))
+	}
 
 	res.RelPath, res.Bytes = stored, size
 	if merr := s.Store.MarkLiberated(ctx, owner, asin, stored, size, res.ContentFormat); merr != nil {
@@ -318,18 +358,199 @@ func (s *Service) metadataFor(item Item) Metadata {
 	return m
 }
 
-// makeWorkDir creates a per-ASIN scratch directory.
+// makeWorkDir creates a per-RUN scratch directory, and opportunistically clears
+// scratch left behind by runs that never got to clean up after themselves.
+//
+// PER-RUN, NOT PER-ASIN. The directory used to be "liberate-<asin>", which is
+// stable across runs — and two runs for the SAME ASIN are entirely reachable: the
+// API's 409 guard reads liberation_status, which a queued-but-unstarted job has
+// not set yet, so a double-click enqueues two jobs, and a sweep re-enqueues ASINs
+// whose per-book jobs are still queued. With the per-kind cap at 2 both are
+// claimed together on one pod, and then they share srcPath: run B's O_TRUNC
+// create (fetch.go streamToFile) zeroes run A's half-downloaded AAXC mid-write,
+// so A can remux a partially-zeroed file and commit a corrupt M4B marked
+// liberated — or whichever run finishes first deletes the other's files from
+// under it via the deferred RemoveAll. MkdirTemp gives every run its own dir, so
+// the concurrency is simply harmless.
+//
+// The name keeps the "liberate-<asin>-" prefix so a directory is still
+// identifiable by eye and by sweepStaleWorkDirs.
 func (s *Service) makeWorkDir(asin string) (string, error) {
 	base := s.WorkDir
 	if strings.TrimSpace(base) == "" {
 		base = os.TempDir()
 	}
+	if err := os.MkdirAll(base, 0o700); err != nil {
+		return "", fmt.Errorf("liberate: work dir base: %w", err)
+	}
+	s.sweepStaleWorkDirs(base)
 	// The ASIN is external data; sanitise it before it becomes a directory name.
-	dir := filepath.Join(base, "liberate-"+SanitizeSegment(asin))
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	dir, err := os.MkdirTemp(base, workDirPrefix+SanitizeSegment(asin)+"-")
+	if err != nil {
 		return "", fmt.Errorf("liberate: work dir: %w", err)
 	}
 	return dir, nil
+}
+
+// sweepStaleWorkDirs removes scratch directories abandoned by runs that died
+// without their deferred cleanup — an OOM kill, a hard eviction, a SIGKILL.
+//
+// Nothing else collects them. Each one holds up to ~1.5 GB (the AAXC, the M4B and
+// a cover), and on a scratch PVC shared by the drain fleet they accumulate across
+// incidents until the volume fills — at which point every subsequent liberation
+// fails at download with a disk-full error that classifies as a generic retryable
+// failure. sink.go's Commit comment already promised this sweep existed.
+//
+// Age, not ownership, is the criterion, because the pod that owns a directory
+// leaves no marker a different pod could read. staleWorkDirAge is generous enough
+// that a live run is never in range, and the newest mtime is taken across the
+// directory's ENTRIES too, so a long download (whose dir mtime stopped moving
+// when the .aaxc was created, but whose file mtime has not) is not mistaken for
+// abandoned scratch.
+//
+// Best-effort by design: this is disk hygiene, never a reason to fail a book.
+func (s *Service) sweepStaleWorkDirs(base string) {
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		return
+	}
+	cutoff := time.Now().Add(-staleWorkDirAge)
+	for _, e := range entries {
+		if !e.IsDir() || !strings.HasPrefix(e.Name(), workDirPrefix) {
+			continue
+		}
+		full := filepath.Join(base, e.Name())
+		touched, ok := newestMTime(full)
+		if !ok || !touched.Before(cutoff) {
+			continue
+		}
+		if rerr := os.RemoveAll(full); rerr != nil {
+			s.log().Warn("could not remove stale liberation work dir", "dir", full, "err", rerr)
+			continue
+		}
+		s.log().Info("removed stale liberation work dir", "dir", full,
+			"idle", time.Since(touched).Round(time.Minute).String())
+	}
+}
+
+// newestMTime reports the most recent modification time of dir or anything
+// directly inside it.
+func newestMTime(dir string) (time.Time, bool) {
+	info, err := os.Stat(dir)
+	if err != nil {
+		return time.Time{}, false
+	}
+	newest := info.ModTime()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return newest, true
+	}
+	for _, e := range entries {
+		ei, ierr := e.Info()
+		if ierr != nil {
+			// An entry we cannot stat might be live; refuse to judge the dir.
+			return time.Time{}, false
+		}
+		if ei.ModTime().After(newest) {
+			newest = ei.ModTime()
+		}
+	}
+	return newest, true
+}
+
+// resolvePathCollision returns the path this book should commit to, given that
+// another library row may already own the rendered one.
+//
+// The default template has no unique discriminator, so two items with the same
+// author and sanitised title (a re-recording, abridged vs unabridged, a
+// plus-catalog duplicate) render the SAME path — and Commit is documented to
+// overwrite. Left alone that silently replaces book A's audio with book B's while
+// A's row still says liberated at A's size; the next run of A then sees a size
+// mismatch, re-liberates, and clobbers B, and the two rows flip-flop over one
+// file indefinitely.
+//
+// A claimed path is retried once with the ASIN appended (DisambiguatePath). If
+// that is claimed too, the run FAILS rather than overwriting: losing one book to
+// a visible, retryable error is strictly better than losing a different book's
+// audio silently.
+func (s *Service) resolvePathCollision(ctx context.Context, owner, asin, relPath string) (string, error) {
+	claimOwner, claimASIN, found, err := s.Store.PathClaimant(ctx, relPath, owner, asin)
+	if err != nil {
+		return "", err
+	}
+	if !found {
+		return relPath, nil
+	}
+	alt := DisambiguatePath(relPath, asin)
+	if alt == relPath {
+		return "", fmt.Errorf("%w: %q is already the liberated file of %s/%s", ErrPathCollision, relPath, claimOwner, claimASIN)
+	}
+	_, altASIN, altFound, err := s.Store.PathClaimant(ctx, alt, owner, asin)
+	if err != nil {
+		return "", err
+	}
+	if altFound {
+		return "", fmt.Errorf("%w: %q and %q are both taken (%s, %s)", ErrPathCollision, relPath, alt, claimASIN, altASIN)
+	}
+	s.log().Warn("liberation path collision; committing to a disambiguated path",
+		"owner", owner, "asin", asin, "collidesWith", claimASIN, "path", alt)
+	return alt, nil
+}
+
+// localFileSize returns the size of a local file, or 0 when it cannot be read.
+func localFileSize(path string) int64 {
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0
+	}
+	return info.Size()
+}
+
+// recordCtx returns a context for RECORDING an outcome, detached from the job's
+// cancellation.
+//
+// The outcome most worth recording is the one caused by the job context being
+// cancelled — a deploy, an eviction, a KEDA drain pod's termination. Under the
+// job's own context every one of those writes is a no-op, which is how a row ends
+// up stranded at 'downloading' with a 'pending' attempt row forever: the UI shows
+// a phantom in-flight download and POST /liberate answers 409 indefinitely.
+// The timeout keeps a detached write from outliving the shutdown it is racing.
+func recordCtx(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
+}
+
+// wasInterrupted reports whether a failure is the job being killed rather than
+// anything about the title. Checks the context itself as well as the error,
+// because a cancelled HTTP or pgx call does not always wrap context.Canceled.
+func wasInterrupted(ctx context.Context, cause error) bool {
+	return ctx.Err() != nil ||
+		errors.Is(cause, context.Canceled) ||
+		errors.Is(cause, context.DeadlineExceeded)
+}
+
+// recordFailure writes a failed outcome to the item row and returns the status
+// and reason actually recorded.
+//
+// An INTERRUPTION is recorded as a plain retryable failure that does NOT count
+// against the give-up budget (Store.MarkInterrupted): the classification the
+// caller computed describes the title, and a job killed mid-download has said
+// nothing about the title at all.
+func (s *Service) recordFailure(ctx context.Context, owner, asin, status string, cause error, contentFormat string) (string, string) {
+	rctx, cancel := recordCtx(ctx)
+	defer cancel()
+
+	if wasInterrupted(ctx, cause) {
+		reason := "interrupted: " + cause.Error()
+		if err := s.Store.MarkInterrupted(rctx, owner, asin, reason); err != nil {
+			s.log().Warn("could not record an interrupted liberation", "owner", owner, "asin", asin, "err", err)
+		}
+		return StatusFailed, reason
+	}
+	reason := cause.Error()
+	if err := s.Store.MarkFailed(rctx, owner, asin, status, reason, contentFormat); err != nil {
+		s.log().Warn("could not record a failed liberation", "owner", owner, "asin", asin, "err", err)
+	}
+	return status, reason
 }
 
 // fetchCover downloads the cover image. Unauthenticated: product images are on a

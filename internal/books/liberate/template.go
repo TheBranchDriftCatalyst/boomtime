@@ -40,6 +40,13 @@ const DefaultTemplate = "{author}/[{series}/]{title}/{title}.m4b"
 // for eCryptfs/encrypted homes which roughly halve the usable length.
 const maxSegmentBytes = 120
 
+// maxExtBytes bounds what splitExt is willing to treat as a file extension,
+// dot included. Audio extensions are 4-5 bytes (".m4b", ".flac"); anything
+// longer is a dot inside a TITLE ("Star Wars: Episode IV. A New Hope"), and
+// mistaking one for an extension would let a title's own tail dodge the
+// filename byte cap.
+const maxExtBytes = 8
+
 // ErrEscapesRoot is returned when a rendered path would land outside the library
 // root. It is a hard failure, never a sanitise-and-continue: if we got here the
 // input was actively hostile and the right move is to refuse and record it.
@@ -114,7 +121,8 @@ func (b BookMeta) values() map[string]string {
 //     "m4b").
 //  5. split on "/" — by construction these are template-authored separators only.
 //  6. sanitise each segment again, for junk contributed by template LITERALS, and
-//     drop segments that came out empty.
+//     drop segments that came out empty. The LAST segment goes through
+//     sanitizeFilename instead, which protects the extension from the byte cap.
 //  7. verify no segment is "." or ".." and the result is relative.
 func RenderPath(tmpl string, meta BookMeta) (string, error) {
 	if strings.TrimSpace(tmpl) == "" {
@@ -144,8 +152,14 @@ func RenderPath(tmpl string, meta BookMeta) (string, error) {
 
 	// (5) + (6)
 	segments := make([]string, 0, len(rawSegments))
-	for _, seg := range rawSegments {
+	for i, seg := range rawSegments {
+		// The filename is the ONE segment assembled by concatenation (a capped
+		// value plus the template's extension), so it is the one that can lose
+		// its extension to the cap. See sanitizeFilename.
 		s := SanitizeSegment(seg)
+		if i == len(rawSegments)-1 {
+			s = sanitizeFilename(seg)
+		}
 		if s == "" {
 			continue
 		}
@@ -230,10 +244,130 @@ func SanitizeSegment(seg string) string {
 	return truncateUTF8(out, maxSegmentBytes)
 }
 
+// sanitizeFilename is SanitizeSegment for the LAST path component — the one that
+// carries the file EXTENSION.
+//
+// WHY IT EXISTS. SanitizeSegment caps a component at maxSegmentBytes, and the
+// filename is the only component built by CONCATENATING an already-capped value
+// with template text ("{title}" + ".m4b"). A title that sanitises to the cap
+// therefore yields a 124-byte segment whose LAST four bytes — the extension — are
+// exactly what the cap then amputates, and a title 2 bytes under the cap yields
+// the even sneakier ".m4". The committed file ends up with no audio extension (or
+// a nonsense one), every library scanner skips it as a non-audio file, and the
+// database happily reports the book liberated forever.
+//
+// So the stem is capped with the extension's cost already deducted, and the
+// extension is re-appended AFTER sanitisation rather than riding through it.
+// For any name comfortably under the cap the result is byte-identical to
+// SanitizeSegment.
+func sanitizeFilename(seg string) string {
+	stem, ext := splitExt(seg)
+	if ext == "" {
+		return SanitizeSegment(seg)
+	}
+	stem = truncateUTF8(SanitizeSegment(stem), maxSegmentBytes-len(ext))
+	if stem == "" {
+		// Nothing usable in front of the extension. Fall back to the plain rule
+		// rather than committing a hidden dotfile named ".m4b".
+		return SanitizeSegment(seg)
+	}
+	return stem + ext
+}
+
+// splitExt splits a filename into its stem and its extension (dot included),
+// returning an empty extension when the segment does not end in one.
+//
+// The test is deliberately STRICTER than filepath.Ext, which just finds the last
+// dot: filepath.Ext("Vol. 2") is ". 2" and filepath.Ext("St. James") is
+// ". James". Treating either as an extension would let the stem/extension split
+// rewrite ordinary titles ("St.James"), so an extension here must be a short run
+// of ASCII letters and digits — which is what every audio container uses and what
+// a library scanner actually matches on.
+func splitExt(seg string) (string, string) {
+	dot := strings.LastIndexByte(seg, '.')
+	if dot < 0 {
+		return seg, ""
+	}
+	ext := seg[dot:]
+	if len(ext) < 2 || len(ext) > maxExtBytes {
+		return seg, ""
+	}
+	for i := 1; i < len(ext); i++ {
+		c := ext[i]
+		if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' {
+			continue
+		}
+		return seg, ""
+	}
+	return seg[:dot], ext
+}
+
+// DisambiguatePath returns rel with the ASIN tagged onto the filename, and onto
+// the book folder when that folder is named for the same stem (the shape the
+// default template produces).
+//
+// This is the collision escape hatch. The default template carries NO unique
+// discriminator — two library items with the same author and title (a re-recorded
+// edition, abridged vs unabridged, a plus-catalog duplicate) render the SAME path,
+// and FSSink.Commit is documented to overwrite, so the second liberation silently
+// destroys the first book's audio while both rows still claim to be liberated.
+// The ASIN is the one value Amazon guarantees unique per title.
+//
+//	Matt Dinniman/Carl/Carl.m4b  ->  Matt Dinniman/Carl [B09X]/Carl [B09X].m4b
+//
+// Idempotent: tagging an already-tagged path returns it unchanged, which is what
+// lets the caller detect "there is no distinct path to move to" and refuse rather
+// than overwrite.
+func DisambiguatePath(rel, asin string) string {
+	tag := SanitizeSegment(asin)
+	if rel == "" || tag == "" {
+		return rel
+	}
+	dir, file := filepath.Split(rel)
+	stem, _ := splitExt(file)
+	if strings.HasSuffix(stem, tagSuffix(tag)) {
+		return rel // already disambiguated
+	}
+	tagged := appendTag(file, tag)
+	if tagged == file {
+		return rel
+	}
+	segments := strings.Split(strings.TrimSuffix(dir, string(filepath.Separator)), string(filepath.Separator))
+	if last := len(segments) - 1; dir != "" && segments[last] == stem {
+		// The default template names the book FOLDER for the title too. Leaving
+		// two different books in one folder would make Audiobookshelf treat them
+		// as one multi-file book, so the folder gets the same tag.
+		segments[last] = appendTag(segments[last], tag)
+		return filepath.Join(append(segments, tagged)...)
+	}
+	return filepath.Join(dir, tagged)
+}
+
+// appendTag inserts " [tag]" before name's extension, making room inside the byte
+// cap by shortening the STEM — never the tag, which is the whole point of the
+// exercise.
+func appendTag(name, tag string) string {
+	stem, ext := splitExt(name)
+	suffix := tagSuffix(tag)
+	stem = truncateUTF8(SanitizeSegment(stem), maxSegmentBytes-len(suffix)-len(ext))
+	if stem == "" {
+		return name
+	}
+	return stem + suffix + ext
+}
+
+func tagSuffix(tag string) string { return " [" + tag + "]" }
+
 // truncateUTF8 caps s at n BYTES without splitting a rune. Byte-based because
 // filesystem limits are byte limits, not rune limits — a 100-rune CJK title is
 // 300 bytes and would blow a 255-byte component limit.
 func truncateUTF8(s string, n int) string {
+	if n <= 0 {
+		// A caller whose fixed suffix already exceeds the cap has no budget left.
+		// Returning "" makes that a visible empty-stem fallback rather than a
+		// negative slice bound.
+		return ""
+	}
 	if len(s) <= n {
 		return s
 	}
