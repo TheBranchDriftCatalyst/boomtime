@@ -3,7 +3,6 @@ package api
 import (
 	"fmt"
 
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/amazon"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/pipeline"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/jobs"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
@@ -37,8 +36,11 @@ func (h *Handler) SyncAllBooks(c *echo.Context) (enqueuedJobResponse, error) {
 	// UI gets an immediate, clear error instead of a job that no-ops later. (The
 	// pipeline's ingest stages need it; Hardcover match/pull are no-ops without a
 	// Hardcover token, which is fine — the ingests still run.)
-	if _, lerr := amazon.NewStore(h.DB).Load(c.Request().Context(), owner); lerr != nil {
-		return out, apierr.BadRequest("connect Amazon before running a full sync")
+	// Not-registered is the 400; a decrypt/DB failure is a 500, not a bogus
+	// "connect Amazon" (see requireAmazonCredential).
+	if cerr := requireAmazonCredential(c.Request().Context(), h.DB, owner,
+		"connect Amazon before running a full sync"); cerr != nil {
+		return out, cerr
 	}
 	id, eerr := h.JobEnqueuer.Enqueue(c.Request().Context(), pipeline.BooksSyncAllKind, nil,
 		jobs.Owner(owner), jobs.MaxAttempts(1))

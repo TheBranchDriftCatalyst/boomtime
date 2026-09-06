@@ -257,17 +257,21 @@ func Register(e *echo.Echo, h *Handler) {
 						"database row rather than a multi-hundred-megabyte re-download. "+
 						"fileDeleted reports which of the two happened. 404 when the caller owns "+
 						"no title with that ASIN, 400 when liberation is not configured.")
-			// Accepted (not AcceptedBody): the sweep's optional body must keep its
-			// tolerate-anything binding — see SweepLiberation's comment.
+			// Accepted (not AcceptedBody): the sweep's OPTIONAL body has to be
+			// bound in the handler — see SweepLiberation / bindSweepBody.
 			apiroute.Accepted(e, http.MethodPost, "/api/v1/books/liberate/sweep", h.SweepLiberation).
 				Doc("Sweep the whole library",
 					"Queues the whole-library liberation sweep, answering 202 {enqueued, jobId, "+
 						"pending} — pending is how many titles the sweep is about to take on, so "+
 						"the UI can state roughly how many gigabytes the user just committed to. "+
-						"The optional body {limit, force} is bound leniently IN the handler and a "+
-						"malformed or absent body deliberately means \"everything, unforced\" "+
-						"rather than a 400 (the web client double-encodes it, so a strict bind "+
-						"would reject every sweep); no request schema is generated for it. 400 "+
+						"The body {limit, force} is OPTIONAL and is bound in the handler, not by "+
+						"the seam: an absent body means \"everything, unforced\", which a binding "+
+						"registrar would reject outright, and a legacy double-encoded body (a JSON "+
+						"string wrapping the object, which cached pre-fix web bundles still send) "+
+						"is unwrapped rather than refused. A "+
+						"body that is present but genuinely unparseable — or a negative limit — is "+
+						"a 400, because silently reading it as \"everything\" turned a typo into a "+
+						"full-library download behind a 202. No request schema is generated. 400 "+
 						"when background jobs or liberation are not configured.")
 			// Typed seam (internal/shared/apiroute): the response TYPE is
 			// captured here, so the OpenAPI schema is generated from Go rather

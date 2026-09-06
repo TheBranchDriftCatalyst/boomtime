@@ -1,10 +1,13 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 
 	"github.com/labstack/echo/v5"
 
@@ -149,15 +152,84 @@ type sweepLiberationResponse struct {
 	Pending int `json:"pending"`
 }
 
+// sweepBody is the OPTIONAL {limit, force} body of POST /books/liberate/sweep.
+// Absent means "everything, unforced" — the sweep's documented default.
+type sweepBody struct {
+	Limit int  `json:"limit"`
+	Force bool `json:"force"`
+}
+
+// sweepBodyLimit caps the optional sweep body. It is two scalars, so the seam's
+// own default for bodies (apihelpers.BodyLimitSmall) is already generous;
+// apiroute.Accepted installs no cap of its own because it registers no binder.
+const sweepBodyLimit = apihelpers.BodyLimitSmall
+
+// bindSweepBody decodes the optional sweep body, distinguishing the three cases
+// the old `_ = c.Bind(&body)` collapsed into one:
+//
+//   - ABSENT / empty body        → the zero value: everything, unforced. OK.
+//   - a JSON object              → bound normally. {"limit":10,"force":true}
+//     now actually takes effect instead of being silently discarded.
+//   - a JSON *string* wrapping   → unwrapped once and re-decoded. The web client
+//     an object                    used to double-encode this body (api.ts passed
+//     an already-JSON.stringify'd string into request(), whose doRequest
+//     stringifies again), so it arrived as "\"{\\\"force\\\":true}\"". api.ts now
+//     passes the object, but a browser holding a CACHED pre-fix bundle still
+//     sends the old shape across a deploy — rejecting it would 400 their
+//     "Liberate all" button, so it is accepted and unwrapped.
+//   - anything else              → 400. A malformed body (e.g. {"limit":"10"})
+//     used to mean "liberate the ENTIRE library, unforced" — hundreds of GB
+//     behind a 202 that looked like success. It is now an error the caller sees.
+//
+// A negative limit is rejected for the same reason: liberate.ListUnliberated
+// only applies `LIMIT` when limit > 0, so {"limit":-5} silently meant
+// "everything" too.
+func bindSweepBody(c *echo.Context) (sweepBody, error) {
+	var body sweepBody
+	req := c.Request()
+	if req == nil || req.Body == nil {
+		return body, nil
+	}
+	raw, rerr := io.ReadAll(io.LimitReader(req.Body, sweepBodyLimit+1))
+	if rerr != nil {
+		return body, apierr.BadRequest("could not read the sweep body")
+	}
+	if int64(len(raw)) > sweepBodyLimit {
+		return body, apierr.New(http.StatusRequestEntityTooLarge, "payload too large", nil)
+	}
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || string(raw) == "null" {
+		return body, nil // absent body: everything, unforced
+	}
+	if err := json.Unmarshal(raw, &body); err != nil {
+		// Legacy double-encoded client: a JSON string whose CONTENT is the object.
+		var inner string
+		if serr := json.Unmarshal(raw, &inner); serr != nil {
+			return sweepBody{}, apierr.BadRequest(`invalid sweep body: expected {"limit": <number>, "force": <bool>}`)
+		}
+		inner = strings.TrimSpace(inner)
+		if inner == "" {
+			return sweepBody{}, nil
+		}
+		if ierr := json.Unmarshal([]byte(inner), &body); ierr != nil {
+			return sweepBody{}, apierr.BadRequest(`invalid sweep body: expected {"limit": <number>, "force": <bool>}`)
+		}
+	}
+	if body.Limit < 0 {
+		return sweepBody{}, apierr.BadRequest("limit must be zero (everything) or a positive count")
+	}
+	return body, nil
+}
+
 // SweepLiberation enqueues the whole-library sweep.
 //
 // The optional {limit, force} body is bound HERE, not by apiroute.AcceptedBody:
-// a malformed/absent body MUST stay a no-op ("everything, unforced"), and the
-// seam's binding registrars turn any bind failure into a hard 400. The web
-// client double-encodes this body (JSON.stringify of an already-stringified
-// object), so it arrives as a JSON *string* that fails to bind — moving it onto
-// the seam would 400 every sweep. Registered through apiroute.Accepted instead,
-// which captures the 202 + response type and leaves the body alone.
+// an ABSENT body must stay a no-op ("everything, unforced"), and the seam's
+// binding registrars turn every bind failure — a missing body included — into a
+// hard 400. bindSweepBody handles the absent, plain and legacy double-encoded
+// shapes; a body that is genuinely unparseable is a 400 rather than a silent
+// full-library sweep. Registered through apiroute.Accepted, which captures the
+// 202 + response type and leaves the body to us.
 func (h *Handler) SweepLiberation(c *echo.Context) (sweepLiberationResponse, error) {
 	var out sweepLiberationResponse
 	owner, aerr := apihelpers.IdentifyOwner(h.DB, c)
@@ -173,12 +245,10 @@ func (h *Handler) SweepLiberation(c *echo.Context) (sweepLiberationResponse, err
 	}
 	ctx := c.Request().Context()
 
-	var body struct {
-		Limit int  `json:"limit"`
-		Force bool `json:"force"`
+	body, berr := bindSweepBody(c)
+	if berr != nil {
+		return out, berr
 	}
-	// A malformed/absent body is fine — it means "everything, unforced".
-	_ = c.Bind(&body)
 
 	pending, perr := svc.LiberateAll(ctx, owner, body.Limit)
 	if perr != nil {

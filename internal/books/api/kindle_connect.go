@@ -90,8 +90,11 @@ func (h *Handler) BackfillKindle(c *echo.Context) (enqueuedJobResponse, error) {
 	}
 	// Confirm the user actually has an Amazon credential before enqueueing, so the
 	// UI gets an immediate, clear error instead of a job that fails later.
-	if _, lerr := amazon.NewStore(h.DB).Load(c.Request().Context(), owner); lerr != nil {
-		return out, apierr.BadRequest("connect Amazon before running a backfill")
+	// Not-registered is the 400; a decrypt/DB failure is a 500, not a bogus
+	// "connect Amazon" (see requireAmazonCredential).
+	if cerr := requireAmazonCredential(c.Request().Context(), h.DB, owner,
+		"connect Amazon before running a backfill"); cerr != nil {
+		return out, cerr
 	}
 	id, eerr := h.JobEnqueuer.Enqueue(c.Request().Context(), kindle.KindleBackfillKind, nil,
 		jobs.Owner(owner), jobs.MaxAttempts(1))
@@ -122,8 +125,11 @@ func (h *Handler) ReconcileKindle(c *echo.Context) (enqueuedJobResponse, error) 
 	}
 	// Confirm the user actually has an Amazon credential before enqueueing, so the
 	// UI gets an immediate, clear error instead of a job that fails later.
-	if _, lerr := amazon.NewStore(h.DB).Load(c.Request().Context(), owner); lerr != nil {
-		return out, apierr.BadRequest("connect Amazon before reconciling Kindle status")
+	// Not-registered is the 400; a decrypt/DB failure is a 500, not a bogus
+	// "connect Amazon" (see requireAmazonCredential).
+	if cerr := requireAmazonCredential(c.Request().Context(), h.DB, owner,
+		"connect Amazon before reconciling Kindle status"); cerr != nil {
+		return out, cerr
 	}
 	id, eerr := h.JobEnqueuer.Enqueue(c.Request().Context(), kindle.KindleStatusReconcileKind, nil,
 		jobs.Owner(owner), jobs.MaxAttempts(1))

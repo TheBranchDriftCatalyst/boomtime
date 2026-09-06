@@ -1,6 +1,9 @@
 package amazon
 
 import (
+	"context"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -183,6 +186,88 @@ func TestClampPercentInt(t *testing.T) {
 	for in, want := range cases {
 		if got := clampPercentInt(in); got != want {
 			t.Fatalf("clampPercentInt(%v) = %d, want %d", in, got, want)
+		}
+	}
+}
+
+// ── Cloud Reader marketplace guard (audit boom-l827) ─────────────────────────
+//
+// Registration accepts eleven marketplaces, but the Cloud Reader transport is
+// hard-wired to the US hosts (www.amazon.com for the cookie exchange,
+// read.amazon.com for the library). A UK/DE credential used to sail past the
+// guardless exchange and come back as {synced: 0} — a half-working Amazon
+// connect (Audible fine, Kindle silently empty) that is close to undiagnosable
+// from the UI. It must now be refused, with a message that names the cause.
+
+// TestCloudReaderMarketplaceErr_RefusesEveryNonUSMarketplace walks the SAME
+// marketplaces map registration accepts, so a newly supported marketplace can't
+// be added without deciding what the Cloud Reader does with it.
+func TestCloudReaderMarketplaceErr_RefusesEveryNonUSMarketplace(t *testing.T) {
+	for mk := range marketplaces {
+		err := cloudReaderMarketplaceErr(mk)
+		if mk == MarketplaceUS {
+			if err != nil {
+				t.Fatalf("marketplace %q (US) must be accepted, got %v", mk, err)
+			}
+			continue
+		}
+		if err == nil {
+			t.Fatalf("marketplace %q reached the US-only Cloud Reader transport unrefused", mk)
+		}
+		if !strings.Contains(err.Error(), strconv.Quote(string(mk))) {
+			t.Fatalf("refusal for %q does not name the marketplace: %v", mk, err)
+		}
+	}
+	// An empty marketplace is the documented US default (BuildAuthorizeURL and
+	// AudibleAPIHost both substitute US), including for credentials written
+	// before the field existed — it must NOT be refused.
+	if err := cloudReaderMarketplaceErr(""); err != nil {
+		t.Fatalf(`empty marketplace must default to US, got %v`, err)
+	}
+}
+
+// TestExchangeWebsiteCookies_NonUSMarketplaceRefusedBeforeTheWire pins WHERE the
+// guard sits. The context is already cancelled, so any request that reaches
+// httpClient.Do fails with "context canceled": seeing the marketplace refusal
+// instead proves nothing was sent, and seeing the context error proves the
+// UK refresh_token was on its way to the US auth portal.
+func TestExchangeWebsiteCookies_NonUSMarketplaceRefusedBeforeTheWire(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	cred := &DeviceCredential{
+		RefreshToken: "Atnr|not-a-real-token",
+		Marketplace:  MarketplaceUK,
+	}
+	_, err := ExchangeWebsiteCookies(ctx, cred)
+	if err == nil {
+		t.Fatal("a uk-marketplace credential was accepted by the US-only cookie exchange")
+	}
+	if strings.Contains(err.Error(), "context canceled") {
+		t.Fatalf("cookie exchange hit the wire before checking the marketplace: %v", err)
+	}
+	if !strings.Contains(err.Error(), "US") || !strings.Contains(err.Error(), `"uk"`) {
+		t.Fatalf("refusal does not explain the marketplace mismatch: %v", err)
+	}
+}
+
+// TestExchangeWebsiteCookies_USCredentialStillReachesTheWire is the other half:
+// the guard must not have turned the US path (the only one that ever worked)
+// into a refusal. With the same pre-cancelled context, a US/unset credential is
+// expected to fail at the TRANSPORT, not at the marketplace check.
+func TestExchangeWebsiteCookies_USCredentialStillReachesTheWire(t *testing.T) {
+	for _, mk := range []Marketplace{"", MarketplaceUS} {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		_, err := ExchangeWebsiteCookies(ctx, &DeviceCredential{
+			RefreshToken: "Atnr|not-a-real-token",
+			Marketplace:  mk,
+		})
+		if err == nil {
+			t.Fatalf("marketplace %q: expected the cancelled context to fail the call", mk)
+		}
+		if strings.Contains(err.Error(), "marketplace") {
+			t.Fatalf("marketplace %q must be treated as US, but was refused: %v", mk, err)
 		}
 	}
 }

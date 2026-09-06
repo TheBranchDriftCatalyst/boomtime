@@ -45,9 +45,16 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/metrics"
 )
 
-// Cloud Reader hosts. Both are marketplace-independent for the US account we
-// authenticate; the exchange lives on the auth-portal host, the library on the
-// reader host.
+// Cloud Reader hosts. These are US (.com) hosts — NOT marketplace-derived like
+// the Audible API host (AudibleAPIHost in client.go builds api.audible.<tld>
+// from the credential's marketplace). Amazon accounts are region-siloed: a
+// .co.uk account's refresh_token is not valid at www.amazon.com, and a .co.uk
+// library is not served by read.amazon.com. Registration accepts eleven
+// marketplaces (see the marketplaces map in register.go), so this transport is
+// only correct for the US one — which is why ExchangeWebsiteCookies REFUSES a
+// non-US credential up front (cloudReaderMarketplaceErr) instead of shipping a
+// UK/DE refresh_token to the .com auth portal and reporting the resulting empty
+// library as a successful sync of zero books.
 const (
 	// CookieExchangeHost serves the refresh_token -> website-cookies exchange.
 	CookieExchangeHost = "www.amazon.com"
@@ -127,6 +134,37 @@ func (c *CloudReaderClient) KindleCloudLibrary(ctx context.Context, cookies map[
 	return KindleCloudLibrary(ctx, cookies)
 }
 
+// cloudReaderMarketplaceErr reports why the Cloud Reader transport cannot serve
+// a credential, or nil when it can.
+//
+// Registration accepts eleven marketplaces and the Audible half of the same
+// credential is fully marketplace-aware (AudibleAPIHost), so a UK/DE/JP user
+// connects Amazon successfully, watches Audible sync work, and then gets an
+// empty Kindle library forever: the cookie exchange ships their refresh_token to
+// the US auth portal (www.amazon.com, asking for .amazon.com cookies) and the
+// library search hits read.amazon.com, neither of which serves their account.
+// The old behaviour reported that as {synced: 0} — a half-working connect that
+// is close to undiagnosable from the UI.
+//
+// An EMPTY marketplace means US: it is the documented default everywhere else in
+// this package (BuildAuthorizeURL substitutes MarketplaceUS for "", AudibleAPIHost
+// falls back to US for anything unknown), and credentials predating the field
+// carry it.
+//
+// Making the Cloud Reader marketplace-aware for real needs the marketplace
+// threaded to KindleCloudLibrary/FetchKindleInsights, which take only the cookie
+// jar — and the regional reader hosts verified live, which this transport's
+// endpoint map was built from. Until then, an explicit refusal beats a silent
+// empty sync.
+func cloudReaderMarketplaceErr(mk Marketplace) error {
+	if mk == "" || mk == MarketplaceUS {
+		return nil
+	}
+	return fmt.Errorf("amazon cloud reader: Kindle sync supports the US (amazon.com) marketplace only, "+
+		"but this Amazon account is registered on the %q marketplace — read.amazon.com does not serve it. "+
+		"Audible sync is unaffected", string(mk))
+}
+
 // ExchangeWebsiteCookies POSTs the refresh_token to /ap/exchangetoken/cookies
 // and returns the resulting .amazon.com cookie jar (name -> value). It is a
 // package-level function so it can be called without an instance; the method on
@@ -137,6 +175,11 @@ func ExchangeWebsiteCookies(ctx context.Context, cred *DeviceCredential) (map[st
 	}
 	if strings.TrimSpace(cred.RefreshToken) == "" {
 		return nil, fmt.Errorf("amazon cloud reader: device credential has no refresh_token")
+	}
+	// Refuse a non-US credential HERE — the single choke point both Cloud Reader
+	// flows (library sync + reading insights) pass through before any wire call.
+	if err := cloudReaderMarketplaceErr(cred.Marketplace); err != nil {
+		return nil, err
 	}
 
 	form := url.Values{}

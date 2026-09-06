@@ -191,6 +191,14 @@ func (h *Handler) DeleteReadingEvent(c *echo.Context) (deleteReadingEventRespons
 	return deleteReadingEventResponse{Deleted: true, HardcoverDeleted: hardcoverDeleted}, nil
 }
 
+// minCurationRating / maxCurationRating bound the rating override to Hardcover's
+// star scale (0..5; 0 and null both read as "no rating"). Anything outside it is
+// rejected at the edge rather than persisted and pushed.
+const (
+	minCurationRating = 0.0
+	maxCurationRating = 5.0
+)
+
 // toPatch converts the request body into a db.ReadingItemCurationPatch, decoding
 // each present field and validating the status enum. A present field is written
 // (Set*=true); an explicit null clears the override; an absent field is left alone.
@@ -217,6 +225,17 @@ func (b curationBody) toPatch() (db.ReadingItemCurationPatch, error) {
 			var r float64
 			if err := json.Unmarshal(*b.Rating, &r); err != nil {
 				return p, errors.New("rating must be a number")
+			}
+			// Range-check alongside the status enum above. rating_override is a
+			// bare numeric column with no CHECK, so {"rating": 100} used to answer
+			// 200, become the row's EFFECTIVE rating (rendered by the Books table),
+			// and enqueue a CurationPushKind job that Hardcover rejects — three
+			// failed attempts per edit and a permanently diverged mirror, with the
+			// bogus value shown locally as accepted. Bound is Hardcover's own
+			// 0..5 star scale; null (handled above) is how a rating is cleared.
+			if r < minCurationRating || r > maxCurationRating {
+				return p, fmt.Errorf("rating must be between %g and %g (or null to clear it)",
+					minCurationRating, maxCurationRating)
 			}
 			p.Rating = &r
 		}

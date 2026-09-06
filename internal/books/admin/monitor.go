@@ -153,6 +153,16 @@ func (h *Handler) AdminBooksReadingMonitorWS(c *echo.Context) error {
 // "most-recently-active"). A book with no ASIN (external_id) can't be polled and
 // is dropped. reading_items rows arrive ORDER BY finished,title, so we re-sort by
 // SyncedAt desc before capping.
+//
+// "In progress" is the EFFECTIVE status (curation override ?? Amazon-derived),
+// which is what the rest of the books surface treats as authoritative — the
+// Books table renders it (toReadingItemDTO) and the Hardcover push mirrors it.
+// Filtering on the raw derived it.Status instead made the monitor disagree with
+// the page that sends users to it: a book the user marked 'reading' (Amazon
+// still says 'want' because they read it on another device profile) was never
+// polled — open the socket, read the book, see no samples, conclude the
+// whispersync probe is broken — while a derived-'reading' book overridden to
+// 'dnf' burned a sidecar call every cycle.
 func (h *Handler) listInProgressKindle(ctx context.Context, owner string, limit int) ([]db.ReadingItem, error) {
 	items, err := h.DB.ListReadingItems(ctx, owner, "kindle")
 	if err != nil {
@@ -160,7 +170,7 @@ func (h *Handler) listInProgressKindle(ctx context.Context, owner string, limit 
 	}
 	inProgress := make([]db.ReadingItem, 0, len(items))
 	for _, it := range items {
-		if it.Status == "reading" && it.ExternalID != "" {
+		if it.EffectiveStatus() == "reading" && it.ExternalID != "" {
 			inProgress = append(inProgress, it)
 		}
 	}

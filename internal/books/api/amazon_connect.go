@@ -1,8 +1,10 @@
 package api
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -203,6 +205,35 @@ func (h *Handler) SyncAudible(c *echo.Context) (ingestSyncResponse, error) {
 	return ingestSyncResponse{Synced: n, Source: "audible"}, nil
 }
 
+// requireAmazonCredential confirms the caller has a USABLE Amazon device
+// credential before a trigger enqueues work, and — unlike the inline
+// `if _, err := Load(...); err != nil { 400 }` it replaces — keeps the two
+// failure modes Store.Load conflates apart:
+//
+//   - amazon.ErrNotRegistered → 400 notConnectedMsg. The user genuinely has no
+//     credential; "connect Amazon" is the correct remedy.
+//   - anything else (a DB error, or an auth.Decrypt failure after a
+//     BOOM_ENCRYPTION_KEY rotation or a restore under the wrong key) → the
+//     wrapped error, which the apiroute seam LOGS and renders as a generic 500.
+//
+// Conflating them was actively harmful, not just imprecise: GET /api/v1/amazon
+// answers connected:true off Info() (a presence check that never decrypts), so
+// an undecryptable credential produced a "connected" card whose every action
+// said "connect Amazon before …" — and the natural user response, reconnecting,
+// DESTROYS the ciphertext that is the only evidence of the key mismatch. A
+// transient DB blip read the same way. The error text never reaches the client
+// (Generic 500 envelope) and carries no key material: auth.Decrypt deliberately
+// returns a fixed "authentication failed" string rather than the GCM error.
+func requireAmazonCredential(ctx context.Context, database *db.DB, owner, notConnectedMsg string) error {
+	if _, lerr := amazon.NewStore(database).Load(ctx, owner); lerr != nil {
+		if errors.Is(lerr, amazon.ErrNotRegistered) {
+			return apierr.BadRequest(notConnectedMsg)
+		}
+		return fmt.Errorf("amazon credential load failed for %q: %w", owner, lerr)
+	}
+	return nil
+}
+
 // BackfillAudible enqueues the one-shot, all-time Audible backfill for the
 // caller (full library sweep + finished sweep + monthly listening aggregates).
 // It runs on the jobs worker — the endpoint returns the enqueued job id
@@ -219,8 +250,11 @@ func (h *Handler) BackfillAudible(c *echo.Context) (enqueuedJobResponse, error) 
 	}
 	// Confirm the user actually has an Amazon credential before enqueueing, so
 	// the UI gets an immediate, clear error instead of a job that fails later.
-	if _, lerr := amazon.NewStore(h.DB).Load(c.Request().Context(), owner); lerr != nil {
-		return out, apierr.BadRequest("connect Amazon before running a backfill")
+	// Not-registered is the 400; a decrypt/DB failure is a 500, not a bogus
+	// "connect Amazon" (see requireAmazonCredential).
+	if cerr := requireAmazonCredential(c.Request().Context(), h.DB, owner,
+		"connect Amazon before running a backfill"); cerr != nil {
+		return out, cerr
 	}
 	id, eerr := h.JobEnqueuer.Enqueue(c.Request().Context(), audible.AudibleBackfillKind, nil,
 		jobs.Owner(owner), jobs.MaxAttempts(1))
