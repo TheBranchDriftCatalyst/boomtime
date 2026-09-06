@@ -44,19 +44,6 @@ internal/boomtime/web/node_modules
 
 # Playwright verification artifacts
 .playwright-mcp/
-/*-council-*.png
-/overview-*.png
-/projects-*.png
-/tour-*.png
-/calendar-fix-*.png
-/change-password-*.png
-/public-profile-*.png
-/wakatime-key-*.png
-/theme-switcher.png
-/widgets-panel.png
-/login.png
-/overview.png
-/dracula.png
 web/calendar-fix-*.png
 
 # fixturegen --raw output (REAL values; never commit)
@@ -66,8 +53,6 @@ internal/db/testdata/*.local.json
 # stray built binaries
 /fixturegen
 /boomtime
-/audit-*.png
-/fixed-*.png
 
 # Generated artifacts
 web/coverage/
@@ -84,3 +69,7 @@ hardcover.key
 
 # Beads / Dolt files (added by bd init)
 *.gate.lock*
+
+# Screenshots dropped in the repo root are scratch, never artifacts.
+# docs/screenshots/ and app asset catalogs are tracked and unaffected.
+/*.png
