@@ -13,7 +13,11 @@ package logging
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -140,6 +144,55 @@ var _ = Describe("decodeWorkerLogRecord (Redis -> server hub subscribe)", func()
 		Expect(all).To(HaveLen(1))
 		Expect(all[0].Source).To(Equal("worker"))
 		Expect(all[0].ID).To(BeEquivalentTo(1))
+	})
+})
+
+// Regression (audit 2026-09-06, composition-config low): the relay's
+// publish-failure path used to call a bare slog.Warn. In a real process the
+// default logger IS a teeHandler feeding the very LogHub the relay subscribes
+// to, so that warn was re-delivered to the relay, re-published, failed again,
+// and warned again — an unbounded warn/publish storm for as long as Redis was
+// unreachable. The rate limiter caps the cycle at one extra publish per
+// interval, so the loop terminates.
+var _ = Describe("RelayHubToRedis publish-failure self-feedback (audit 2026-09-06)", func() {
+	It("does not spin when Redis is down and the failure log is teed back into the same hub", func() {
+		hub := NewLogHub(1000)
+
+		// Reproduce the production wiring: the default slog logger tees every
+		// record into `hub` (stdout suppressed by asking for ERROR only, so a
+		// storm would not drown the test output either).
+		prev := slog.Default()
+		defer slog.SetDefault(prev)
+		base := slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug})
+		slog.SetDefault(slog.New(&teeHandler{base: base, hub: hub, stdoutLevel: slog.LevelError}))
+
+		var published atomic.Int64
+		erroring := publisherFunc(func(ctx context.Context, _ string, _ interface{}) *redis.IntCmd {
+			published.Add(1)
+			cmd := redis.NewIntCmd(ctx)
+			cmd.SetErr(errBoom) // Redis is down for the whole test
+			return cmd
+		})
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		go RelayHubToRedis(ctx, hub, erroring, "worker-storm")
+
+		// One ordinary worker log line kicks the cycle off.
+		Eventually(func() int64 {
+			hub.Publish(LogEntry{Level: "INFO", Msg: "one worker line"})
+			return published.Load()
+		}).Should(BeNumerically(">=", 1))
+
+		// Let any feedback cycle run. Bound: the seed line, the single warn it
+		// provokes, and the handful of extra hub.Publish calls Eventually made
+		// above. A self-feeding loop reaches thousands here.
+		before := published.Load()
+		time.Sleep(250 * time.Millisecond)
+		grew := published.Load() - before
+		Expect(grew).To(BeNumerically("<", 10),
+			"relay kept publishing with no new input (%d extra publishes in 250ms) — "+
+				"the publish-failure warn is feeding back into the hub the relay subscribes to", grew)
 	})
 })
 

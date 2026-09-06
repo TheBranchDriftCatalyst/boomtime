@@ -33,6 +33,12 @@ func Compile(owner string, q *Query) (string, []any, error) {
 	if !ok {
 		return "", nil, fmt.Errorf("query: unknown domain %q", q.domain)
 	}
+	// Range shape is validated BEFORE the mode split so rows mode inherits it
+	// too: a one-sided between window used to compile into an always-false date
+	// filter and return an empty 200 instead of a 400.
+	if err := q.rng.validate(); err != nil {
+		return "", nil, err
+	}
 
 	// Leaf-rows mode is a distinct shape (no aggregate/measure): defer to the
 	// rows compiler and return its page query for validation. Run issues the same
@@ -124,7 +130,7 @@ func Compile(owner string, q *Query) (string, []any, error) {
 		if ok {
 			// half-open [start, endExclusive): endExclusive = end-date + 1 day so a
 			// same-day timestamptz finish is included regardless of time-of-day.
-			endExcl := time.Date(end.Year(), end.Month(), end.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, 1)
+			endExcl := endExclusive(end)
 			where = append(where, fmt.Sprintf("%s >= $%d AND %s < $%d", m.DateCol, next, m.DateCol, next+1))
 			args = append(args, start, endExcl)
 			next += 2
@@ -201,6 +207,33 @@ func compileRowsSQL(owner string, q *Query, dom Domain) (pageSQL, countSQL strin
 	if q.gran != GranNone {
 		return "", "", nil, fmt.Errorf("query: rows mode cannot be combined with a time granularity")
 	}
+	// Rows mode reads ONLY rng/where/page below. Everything else in the spec is
+	// aggregate-path machinery that this compiler has no expression for, and it
+	// used to be dropped in silence: a client asking for {rows:true, sort:{...},
+	// limit:10} got a 200 whose rows were neither sorted by that field nor
+	// capped at 10, with nothing anywhere saying so. Reject them the same way
+	// group/granularity are already rejected — a wrong 200 is worse than a 400.
+	//
+	// `measure` is deliberately NOT rejected: both books explorer configs send
+	// it alongside rows:true because the FE spec type requires it (see
+	// booksExplorerConfig.tsx / readingEventsExplorerConfig.tsx, "ignored in
+	// rows mode"), so rejecting it would 400 every leaf page in the library.
+	// It is ignored, but it is ignored by documented contract, not by accident.
+	if q.sortSet {
+		return "", "", nil, fmt.Errorf("query: rows mode does not support sort (leaf rows use the row source's fixed ordering)")
+	}
+	if q.limit > 0 {
+		return "", "", nil, fmt.Errorf("query: rows mode does not support limit — use page {number, size}")
+	}
+	if q.having != nil {
+		return "", "", nil, fmt.Errorf("query: rows mode cannot be combined with having (there is no aggregate to filter)")
+	}
+	if q.bucket != nil {
+		return "", "", nil, fmt.Errorf("query: rows mode cannot be combined with a bucket policy")
+	}
+	if len(q.rollups) > 0 {
+		return "", "", nil, fmt.Errorf("query: rows mode cannot be combined with rollups")
+	}
 	if len(rs.Columns) == 0 {
 		return "", "", nil, fmt.Errorf("query: domain %q row source has no columns", q.domain)
 	}
@@ -223,7 +256,7 @@ func compileRowsSQL(owner string, q *Query, dom Domain) (pageSQL, countSQL strin
 	if !q.rng.isZero() {
 		start, end, ok := resolveRange(q.anchor(), q.gran, q.rng)
 		if ok {
-			endExcl := time.Date(end.Year(), end.Month(), end.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, 1)
+			endExcl := endExclusive(end)
 			where = append(where, fmt.Sprintf("%s >= $%d AND %s < $%d", rs.DateCol, next, rs.DateCol, next+1))
 			args = append(args, start, endExcl)
 			next += 2
@@ -299,6 +332,26 @@ func (q *Query) orderBy(grouped, series bool) (string, error) {
 	}
 }
 
+// escapeLikeLiteral makes a user value safe to use as a LITERAL substring
+// inside an ILIKE pattern: it backslash-escapes the two LIKE metacharacters
+// ('%' = any run, '_' = any single char) and the escape character itself.
+//
+// This is NOT an injection defence — the value has always ridden as a
+// positional arg — it is a SEMANTICS fix. `ilike` is documented as "contains
+// this substring", but an unescaped '_' or '%' turned the search into a
+// wildcard match, so searching the books explorer for "catalyst_ui" also
+// returned "catalyst-ui" and "50%" returned every title containing "50".
+// Backslash is Postgres' default LIKE escape character, so the pattern needs
+// no ESCAPE clause (and adding one would hard-code a literal backslash into
+// the SQL text, which is exactly what we're avoiding).
+//
+// Order matters: the backslash must be doubled FIRST, or the backslashes this
+// function introduces would themselves be escaped.
+func escapeLikeLiteral(v string) string {
+	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return r.Replace(v)
+}
+
 // buildPredicate renders a predicate node to SQL, appending args. It resolves
 // every leaf dimension through the domain registry and rejects any the measure
 // does not support (same-table guard). Values are always positional args.
@@ -340,11 +393,19 @@ func buildPredicate(p *Predicate, m Measure, dom Domain, args []any, next int) (
 			// Postgres (`'%' || $n || '%'`) — the % wildcards are literal SQL, the user
 			// value never is, so this is injection-safe exactly like eq/in. Multiple
 			// values OR together ("contains ANY of these substrings").
+			//
+			// The value is ESCAPED first (escapeLikeLiteral): '%' and '_' are LIKE
+			// metacharacters, so an unescaped search for "catalyst_ui" also matched
+			// "catalyst-ui"/"catalystXui" and "50%" matched "50" followed by
+			// anything. Escaping restores the documented "contains this literal
+			// substring" semantics. Postgres' default LIKE escape character is
+			// backslash, so no ESCAPE clause is needed and the SQL shape is
+			// unchanged.
 			exprText := fmt.Sprintf("(%s)::text", d.Expr)
 			ph := make([]string, len(p.Values))
 			for i := range p.Values {
 				ph[i] = fmt.Sprintf("%s ILIKE ('%%' || $%d || '%%')", exprText, next)
-				args = append(args, p.Values[i])
+				args = append(args, escapeLikeLiteral(p.Values[i]))
 				next++
 			}
 			if len(ph) == 1 {
@@ -424,6 +485,22 @@ func resolveRange(now time.Time, gran Granularity, r Range) (time.Time, time.Tim
 		start = end.AddDate(0, 0, -(n - 1))
 	}
 	return start, end, true
+}
+
+// endExclusive turns the caller's INCLUSIVE end bound into the half-open upper
+// bound the WHERE clause uses: the end DATE + 1 day, at UTC midnight.
+//
+// The date is taken in UTC (end.UTC()), not in whatever offset the client's
+// timestamp carried. Both bounds are already compared against a timestamptz
+// column in UTC, so reading Y/M/D out of a non-UTC offset truncated the window:
+// end="2026-01-15T23:00:00-05:00" is the instant 2026-01-16T04:00Z, but the
+// offset-local date is Jan 15, which produced endExcl=Jan 16 00:00Z and dropped
+// every row between 00:00Z and 04:00Z on Jan 16 — rows INSIDE the inclusive
+// window the caller asked for. Normalizing to UTC first keeps the "+1 day"
+// widening honest: the bound is never earlier than the instant requested.
+func endExclusive(end time.Time) time.Time {
+	u := end.UTC()
+	return time.Date(u.Year(), u.Month(), u.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, 1)
 }
 
 // weekStart returns the Monday (ISO week start, matching Postgres date_trunc

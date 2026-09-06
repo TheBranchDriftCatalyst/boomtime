@@ -15,19 +15,31 @@
 // crashes the relay" contract. Kept in this package rather than imagejobs
 // because it's a LogHub concern, not an image-job one.
 //
-// Wiring (cmd/boomtime/main.go) gates strictly on role=="worker" /
-// role=="server" — NOT the inclusive IsWorkerRole()/IsServerRole() helpers,
-// which also match role="all". Under role="all" a single process IS both
-// server and worker sharing one LogHub already; relaying through Redis on
-// top of that would inject every record a second time. Also gated on
-// BrokerRabbit() — under the default inprocess broker there's no separate
-// worker pod to relay from, so this stays completely inert.
+// CURRENTLY UNWIRED (audit 2026-09-06). The cmd/boomtime/main.go wiring this
+// file used to describe was deleted along with the RabbitMQ broker arm in
+// 08f2ecc, and the BrokerRabbit() gate it referenced no longer exists on
+// config.Config. Nothing in the repo calls RelayHubToRedis or
+// SubscribeRedisIntoHub, so worker-pod logs do NOT reach the Admin Logs
+// viewer today — do not read the paragraph below as a description of running
+// behaviour. The pair is kept (rather than deleted) because the split
+// topology it was written for IS deployed (--role=worker + the KEDA drain
+// pods), so re-wiring it is a live option; the self-feedback hazard that
+// would have made that re-wiring dangerous is fixed in publishFailureLogger
+// below.
+//
+// WHEN RE-WIRED, gate strictly on role=="worker" / role=="server" — NOT the
+// inclusive IsWorkerRole()/IsServerRole() helpers, which also match
+// role="all". Under role="all" a single process IS both server and worker
+// sharing one LogHub already; relaying through Redis on top of that would
+// inject every record a second time.
 package logging
 
 import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"sync"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -54,13 +66,16 @@ type redisPublisher interface {
 // "labelimages worker enabled") aren't lost just because this goroutine
 // started after they were logged. Runs until ctx is cancelled.
 //
-// A publish error is logged at Warn and dropped: a Redis hiccup must never
-// slow or block the worker's own logging path, the same non-blocking
-// contract LogHub.Publish itself keeps for a stalled WS subscriber.
+// A publish error is dropped (and reported at most once per
+// publishFailureLogInterval — see publishFailureLogger for why the rate limit
+// is load-bearing rather than cosmetic): a Redis hiccup must never slow or
+// block the worker's own logging path, the same non-blocking contract
+// LogHub.Publish itself keeps for a stalled WS subscriber.
 func RelayHubToRedis(ctx context.Context, hub *LogHub, rdb redisPublisher, hostID string) {
 	sub := hub.Subscribe()
 	defer hub.Unsubscribe(sub)
 
+	reportFailure := publishFailureLogger()
 	publish := func(e LogEntry) {
 		e.Source = "worker"
 		e.Host = hostID
@@ -69,7 +84,7 @@ func RelayHubToRedis(ctx context.Context, hub *LogHub, rdb redisPublisher, hostI
 			return
 		}
 		if perr := rdb.Publish(ctx, LogsChannel, body).Err(); perr != nil {
-			slog.Warn("logging: redis log publish failed", "err", perr)
+			reportFailure(perr)
 		}
 	}
 
@@ -87,6 +102,44 @@ func RelayHubToRedis(ctx context.Context, hub *LogHub, rdb redisPublisher, hostI
 			}
 			publish(e)
 		}
+	}
+}
+
+// publishFailureLogInterval bounds how often a failing relay may log about it.
+// One line a minute is enough to diagnose "Redis is down"; see
+// publishFailureLogger for why any higher rate is unsafe.
+const publishFailureLogInterval = time.Minute
+
+// publishFailureLogger returns a rate-limited reporter for Redis publish
+// failures, and it exists to break a SELF-FEEDBACK LOOP, not to reduce noise.
+//
+// The relay subscribes to the process LogHub. The process's default slog
+// logger is a teeHandler that publishes EVERY record it handles into that same
+// hub. So a bare slog.Warn on a failed publish is re-delivered to the relay,
+// which tries to publish it, which fails (Redis is still down), which logs
+// another Warn — a tight unbounded loop that pins a CPU and floods stdout for
+// as long as Redis is unreachable. Rate-limiting the log caps the cycle: the
+// one warn that does get emitted costs exactly one extra (failed) publish, and
+// every re-entrant record for the next interval is dropped silently, so the
+// loop terminates instead of spinning.
+//
+// Returned closure is used from a single goroutine, but the mutex keeps it
+// safe if a future caller fans out.
+func publishFailureLogger() func(error) {
+	var (
+		mu   sync.Mutex
+		last time.Time
+	)
+	return func(err error) {
+		mu.Lock()
+		now := time.Now()
+		if !last.IsZero() && now.Sub(last) < publishFailureLogInterval {
+			mu.Unlock()
+			return
+		}
+		last = now
+		mu.Unlock()
+		slog.Warn("logging: redis log publish failed (further failures suppressed for a minute)", "err", err)
 	}
 }
 

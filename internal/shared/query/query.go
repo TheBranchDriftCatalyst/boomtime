@@ -1,6 +1,18 @@
 package query
 
-import "time"
+import (
+	"errors"
+	"time"
+)
+
+// Range validation sentinels. Exported-shape errors are unnecessary (queryapi
+// maps every compile error to a 400 by message), but naming them keeps the
+// messages in one place and lets tests assert on identity rather than prose.
+var (
+	errRangeMixed    = errors.New("query: range cannot set both lastN and between")
+	errRangeOneSided = errors.New("query: between range requires BOTH start and end (a one-sided window silently matches nothing)")
+	errRangeReversed = errors.New("query: between range end is before start")
+)
 
 // Granularity is the time-bucketing unit for a series query. "none" means no
 // time axis (the result is a scalar or a grouped listing, not a time series).
@@ -47,6 +59,26 @@ func Between(start, end time.Time) Range { return Range{Start: start, End: end} 
 
 func (r Range) isZero() bool {
 	return r.LastN == 0 && r.Start.IsZero() && r.End.IsZero()
+}
+
+// validate rejects a half-specified explicit window. Compile used to accept
+// {start: <t>} with no end (or the reverse): resolveRange happily returned the
+// ZERO time as the bound, the compiler widened it to 0001-01-02, and the WHERE
+// clause `date >= 2026-01-01 AND date < 0001-01-02` matched nothing — the caller
+// got a silent 200 with an empty result instead of an error naming the typo.
+// A one-sided window is a client bug every time, so it is a hard error (mapped
+// to 400 by queryapi) rather than a silently-lifetime or silently-empty query.
+func (r Range) validate() error {
+	if r.LastN != 0 && (!r.Start.IsZero() || !r.End.IsZero()) {
+		return errRangeMixed
+	}
+	if r.Start.IsZero() != r.End.IsZero() {
+		return errRangeOneSided
+	}
+	if !r.Start.IsZero() && r.End.Before(r.Start) {
+		return errRangeReversed
+	}
+	return nil
 }
 
 // Op is a leaf predicate comparison.

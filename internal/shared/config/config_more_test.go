@@ -14,6 +14,8 @@
 package config
 
 import (
+	"net/url"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -265,6 +267,43 @@ var _ = Describe("DatabaseURL formatting", func() {
 		// or connects to the wrong DB — this pins the exact template.
 		Expect(c.DatabaseURL()).To(Equal(
 			"postgres://boom:s3cret@db.internal:6543/boom_prod?sslmode=disable"))
+	})
+
+	// Regression (audit 2026-09-06, composition-config low): the DSN used to be
+	// built with fmt.Sprintf, so a password containing '/', '%', '#' or '?' —
+	// every one of which `openssl rand -base64 32` or a decent generator can
+	// emit — terminated or re-routed the URL authority. pgx then connected to
+	// the wrong place (or refused to parse) with an error naming neither the
+	// real problem nor BOOM_DB_PASS. The DSN must survive a round-trip through
+	// net/url with the credential intact.
+	It("percent-encodes a password containing URL-authority metacharacters ('/', '%', '#', '?', '+')", func() {
+		clearEnv()
+		setenv("BOOM_DB_HOST", "db.internal")
+		setenv("BOOM_DB_PORT", "6543")
+		setenv("BOOM_DB_NAME", "boom_prod")
+		setenv("BOOM_DB_USER", "boom")
+		// A realistic `openssl rand -base64 24`-shaped secret plus the three
+		// characters that hijack a URL: '/' ends the authority, '?' starts the
+		// query, '#' starts the fragment. '%' must survive as a literal, not
+		// become a malformed escape.
+		const pass = "ab/cd+e=f%gh#ij?kl"
+		setenv("BOOM_DB_PASS", pass)
+
+		dsn := Load().DatabaseURL()
+		u, err := url.Parse(dsn)
+		Expect(err).NotTo(HaveOccurred(), "DSN must be a parseable URL: %s", dsn)
+
+		Expect(u.Host).To(Equal("db.internal:6543"),
+			"password metacharacters leaked into the authority — DSN was %s", dsn)
+		Expect(u.Path).To(Equal("/boom_prod"),
+			"password metacharacters truncated the database name — DSN was %s", dsn)
+		gotUser := u.User.Username()
+		gotPass, hasPass := u.User.Password()
+		Expect(hasPass).To(BeTrue())
+		Expect(gotUser).To(Equal("boom"))
+		Expect(gotPass).To(Equal(pass),
+			"password did not round-trip through the DSN — DSN was %s", dsn)
+		Expect(u.Query().Get("sslmode")).To(Equal("disable"))
 	})
 
 	It("sslmode=disable is ALWAYS present (matches boomtime's local-cluster assumption)", func() {

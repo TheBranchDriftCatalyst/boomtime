@@ -35,12 +35,15 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/openapi"
 )
 
-// Pinned pre-refactor hash — computed on main @ 275ee1c by extracting the
-// inline `const initializerJS = ...` raw literal, resolving the two `+ "`"
-// + ` backtick-splices, and running `shasum -a 256`. If this test fails,
-// EITHER initializer.js drifted (intentional: update this hash) OR the
-// extraction dropped bytes (unintentional: bisect and restore).
-const initializerSHA256 = "997c2ecb1371edb7cf86fd209a3f3472c5fa15618c3e801c892a67a8d33e0073"
+// Pinned hash of the served initializer. Originally the pre-refactor hash
+// (main @ 275ee1c, computed by extracting the inline `const initializerJS =
+// ...` raw literal and resolving the two `+ "`" + ` backtick-splices);
+// re-pinned on 2026-09-06 when the response-history SECRET_KEYS regex was
+// widened to redact bare "token"/"jwt" bodies (see
+// initializer_secrets_test.go). If this test fails, EITHER initializer.js
+// drifted (intentional: update this hash and the byte count) OR the embed
+// dropped bytes (unintentional: bisect and restore).
+const initializerSHA256 = "8955e40a6adea1f35deef4a546c22bbf1748d8db2abaef2429366fba1297fc18"
 
 var _ = Describe("openapi.UIHandler served initializer bytes (boom-8tn.1)", func() {
 	It("serves swagger-initializer.js whose SHA-256 matches the pre-refactor pin", func() {
@@ -61,7 +64,7 @@ var _ = Describe("openapi.UIHandler served initializer bytes (boom-8tn.1)", func
 				"was edited without updating the pinned hash in this test")
 		// Also pin the exact byte count. Byte-identity is what we care about
 		// but a size drift is a faster hint at what changed.
-		Expect(len(body)).To(Equal(49668),
+		Expect(len(body)).To(Equal(50340),
 			"served initializer size drift — check for stray CRLF conversions or extra bytes")
 	})
 })

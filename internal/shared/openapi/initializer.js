@@ -931,7 +931,15 @@ window.onload = function () {
   // simpler + does not touch the actual request path).
   const HIST_KEY = 'boom-response-history';
   const HIST_OPT_IN = 'boom-history-optin';
-  const SECRET_KEYS = /"(api_?token|apiToken|password|secret|refresh_?token|session|cookie|authorization)"/i;
+  // Any body containing one of these keys is redacted rather than persisted.
+  // "token" (bare) is load-bearing: /auth/login and /auth/refresh_token answer
+  // {"token": "<live access token>", ...} — initializer.js itself reads j.token
+  // — and without it the opt-in history stored a working credential in
+  // localStorage, where it survives tab close and is readable by any later XSS
+  // or shared-machine user. That directly contradicts ui.go's stated posture
+  // ("Access tokens live in memory only"). Over-redaction here is free: this
+  // regex only decides whether a response body is KEPT in the history panel.
+  const SECRET_KEYS = /"(api_?token|apiToken|access_?token|accessToken|token|jwt|bearer|password|secret|refresh_?token|session|cookie|authorization)"/i;
   function historyEnabled() { return localStorage.getItem(HIST_OPT_IN) === '1'; }
   function readHistory() { try { return JSON.parse(localStorage.getItem(HIST_KEY) || '{}'); } catch { return {}; } }
   function writeHistory(h) { localStorage.setItem(HIST_KEY, JSON.stringify(h)); }

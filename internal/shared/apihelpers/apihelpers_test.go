@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -227,7 +228,7 @@ var _ = Describe("apihelpers.ResolveOwnerFromCookie failure branches", func() {
 
 var _ = Describe("apihelpers.LoadSpace input guards (spaceParam parsing)", func() {
 	It("returns (empty, false, nil) for an empty spaceParam (unscoped fast path)", func() {
-		ms, req, err := apihelpers.LoadSpace(nil, context.Background(), "")
+		ms, req, err := apihelpers.LoadSpace(nil, context.Background(), "alice", "")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(req).To(BeFalse(),
 			"empty spaceParam MUST return spaceRequested=false — this is what tells stats to skip Space scoping entirely")
@@ -240,7 +241,7 @@ var _ = Describe("apihelpers.LoadSpace input guards (spaceParam parsing)", func(
 		// dashboard still renders on stale bookmarks / typos. The pointer
 		// safety here matters — db is nil, so if the parse guard
 		// FAILED we'd deref-panic on LoadMemberSets.
-		ms, req, err := apihelpers.LoadSpace(nil, context.Background(), "not-an-int")
+		ms, req, err := apihelpers.LoadSpace(nil, context.Background(), "alice", "not-an-int")
 		Expect(err).NotTo(HaveOccurred(),
 			"invalid id MUST NOT surface as an error — dashboards would break for users on stale URLs")
 		Expect(req).To(BeFalse())
@@ -261,7 +262,7 @@ var _ = Describe("apihelpers.LoadSpace input guards (spaceParam parsing)", func(
 			Skip(fmt.Sprintf("live DB required: %v", err))
 		}
 		DeferCleanup(database.Close)
-		ms, req, err := apihelpers.LoadSpace(database, ctx, "9999999")
+		ms, req, err := apihelpers.LoadSpace(database, ctx, "alice", "9999999")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(req).To(BeTrue(),
 			"a numeric spaceParam MUST count as 'requested' even if unknown — otherwise stats fall back to unscoped and leak")
@@ -282,9 +283,86 @@ var _ = Describe("apihelpers.LoadSpace input guards (spaceParam parsing)", func(
 			Skip(fmt.Sprintf("live DB required: %v", err))
 		}
 		database.Close()
-		_, _, err = apihelpers.LoadSpace(database, ctx, "1")
+		_, _, err = apihelpers.LoadSpace(database, ctx, "alice", "1")
 		Expect(err).To(HaveOccurred(),
 			"a broken pool MUST surface the DB error — swallowing it as 'no members' would silently hide dashboard data")
+	})
+})
+
+// -- LoadSpace cross-tenant ownership (audit 2026-09-06) -------------------
+//
+// db.LoadMemberSets selects space_rules BY ID ONLY ("owner is enforced by the
+// caller"), and LoadSpace did not enforce it: GET /users/current/stats?space=<
+// another user's id> loaded THEIR inclusion rules and scoped the requester's
+// dashboard by them, letting B walk small integer ids and infer the contents
+// of A's private rule set from which of B's own projects survive the filter.
+// LoadSpace's own doc claimed the opposite ("an id that isn't the requester's
+// simply yields an empty MemberSets"); these specs make the doc true.
+var _ = Describe("apihelpers.LoadSpace cross-tenant ownership (audit 2026-09-06)", func() {
+	var (
+		database   *db.DB
+		ctx        context.Context
+		alice, bob string
+		aliceSpace int
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		var err error
+		database, err = db.New(ctx, databaseURLFromEnv())
+		if err != nil {
+			Skip(fmt.Sprintf("live DB required: %v", err))
+		}
+		DeferCleanup(database.Close)
+
+		stamp := fmt.Sprintf("%d", time.Now().UnixNano())
+		alice, bob = "ls_alice_"+stamp, "ls_bob_"+stamp
+
+		sp, err := database.CreateSpace(ctx, alice, "alice-private-"+stamp)
+		Expect(err).NotTo(HaveOccurred())
+		aliceSpace = sp.ID
+		// A real inclusion rule — this is the private configuration the probe
+		// would otherwise reveal.
+		_, err = database.AddSpaceRule(ctx, alice, aliceSpace, "project", "alice-secret-project", db.MatchExact)
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() {
+			_, _ = database.DeleteSpace(context.Background(), alice, aliceSpace)
+		})
+	})
+
+	It("does NOT apply another owner's space rules to the requester (cross-tenant read)", func() {
+		ms, req, err := apihelpers.LoadSpace(database, ctx, bob, strconv.Itoa(aliceSpace))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(req).To(BeTrue(),
+			"a numeric spaceParam MUST still count as 'requested' — falling back to unscoped would show bob his FULL data and hide the denial")
+		Expect(ms.AnyMember()).To(BeFalse(),
+			"bob's request scoped by alice's space rules — a foreign space id MUST yield a match-nothing scope, "+
+				"otherwise id-probing reveals which values are in another user's private rule set")
+	})
+
+	It("still applies the requester's OWN space rules (the fix must not break scoping)", func() {
+		ms, req, err := apihelpers.LoadSpace(database, ctx, alice, strconv.Itoa(aliceSpace))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(req).To(BeTrue())
+		Expect(ms.AnyMember()).To(BeTrue(),
+			"the owner's own space no longer scopes their dashboard — the ownership check is too strict")
+	})
+
+	It("a foreign id is indistinguishable from an id that names no space (no oracle)", func() {
+		foreign, _, err := apihelpers.LoadSpace(database, ctx, bob, strconv.Itoa(aliceSpace))
+		Expect(err).NotTo(HaveOccurred())
+		missing, _, err := apihelpers.LoadSpace(database, ctx, bob, "9999999")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(foreign.AnyMember()).To(Equal(missing.AnyMember()),
+			"an existing-but-foreign id must behave exactly like a nonexistent one, or the difference is an existence oracle")
+	})
+
+	It("an empty owner fails closed (never falls through to an id-only load)", func() {
+		ms, req, err := apihelpers.LoadSpace(database, ctx, "", strconv.Itoa(aliceSpace))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(req).To(BeTrue())
+		Expect(ms.AnyMember()).To(BeFalse(),
+			"an unresolved owner MUST NOT load a space by id alone")
 	})
 })
 

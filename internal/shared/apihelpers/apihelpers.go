@@ -458,20 +458,42 @@ func ResolveUserTZ(database *db.DB, logger *slog.Logger, ctx context.Context, ow
 // request. It returns the space's MemberSets, whether a space was
 // requested (spaceParam was a valid id), and any load error. An
 // absent/blank/invalid param means "unscoped" (spaceRequested=false).
-// Membership is loaded by id only; an id that isn't the requester's
-// simply yields an empty MemberSets, which — with spaceRequested=true —
-// scopes the dashboard to nothing (match-nothing), never another owner's
-// data.
+//
+// OWNERSHIP IS ENFORCED HERE (audit 2026-09-06). db.LoadMemberSets selects
+// space_rules BY ID ONLY — its own doc says "owner is enforced by the caller"
+// — and this caller did not. The doc comment below used to promise that "an id
+// that isn't the requester's simply yields an empty MemberSets"; it did not.
+// GET /users/current/stats?space=<another user's id> loaded THEIR inclusion
+// rules and scoped the requester's dashboard by them, so B could walk small
+// integer ids and infer the contents of A's private rule set (which of B's own
+// projects/languages survive the filter). We now resolve the id through
+// GetSpace(owner, id) first; a space the requester does not own resolves to
+// (empty MemberSets, spaceRequested=true) — match-nothing, which is exactly
+// what the contract always claimed — so a foreign id leaks nothing and is
+// indistinguishable from an id that names no space at all.
 //
 // Collapsed from the byte-identical copies previously on *handler.Handler
 // and *stats.Handler.
-func LoadSpace(database *db.DB, ctx context.Context, spaceParam string) (db.MemberSets, bool, error) {
+func LoadSpace(database *db.DB, ctx context.Context, owner, spaceParam string) (db.MemberSets, bool, error) {
 	if spaceParam == "" {
 		return db.MemberSets{}, false, nil
 	}
 	id, err := strconv.Atoi(spaceParam)
 	if err != nil {
 		return db.MemberSets{}, false, nil
+	}
+	// An empty owner can never own a space; fail closed rather than fall
+	// through to the unscoped id-only load.
+	if owner == "" {
+		return db.MemberSets{}, true, nil
+	}
+	sp, _, err := database.GetSpace(ctx, owner, id)
+	if err != nil {
+		return db.MemberSets{}, false, err
+	}
+	if sp == nil {
+		// Not the requester's space (or no such space): scope to nothing.
+		return db.MemberSets{}, true, nil
 	}
 	ms, err := database.LoadMemberSets(ctx, id)
 	if err != nil {

@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -36,6 +37,52 @@ import (
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/queryapi"
 )
 
+// configureProcessGlobals applies the PROCESS-GLOBAL startup gates cmd/boomtime's
+// runCmd applies, and is the reason this file has a seam at all: this binary
+// re-implements main() by hand instead of sharing a bootstrap with the host, so
+// anything the host does to a package-level singleton must be repeated here or
+// the standalone deployment silently behaves differently from the embedded one.
+// Both calls below were missing (audit 2026-09-06).
+//
+// Returns an error instead of calling os.Exit so the boot policy is testable;
+// main() exits on a non-nil result.
+func configureProcessGlobals(cfg *config.Config, logger *slog.Logger) error {
+	// Hardcover dry-run safety gate (default ON): block + log every Hardcover
+	// write until the sync mechanism is trusted. hardcover.Configure sets a
+	// PACKAGE-LEVEL default, so without this call cfg.HardcoverDryRun is parsed
+	// and then thrown away: an operator who set BOOM_HARDCOVER_DRYRUN=false to
+	// activate real writes stayed dry-run forever, with every blocked mutation
+	// reported to the UI as a successful sync. Must run before any
+	// hardcover.Client is built (NewPushService in main).
+	hardcover.Configure(cfg.HardcoverDryRun, logger)
+	if cfg.HardcoverDryRun {
+		logger.Warn("hardcover: DRY-RUN mode ON — all writes are blocked + logged (BOOM_HARDCOVER_DRYRUN=false to enable writes)")
+	}
+
+	// Encryption-at-rest key (boom-6jm.9 semantics, same as the host): the
+	// Amazon device credential and the Hardcover token are both stored as
+	// AES-256-GCM ciphertext, so a standalone deploy without BOOM_ENCRYPTION_KEY
+	// can serve pages but cannot save a single credential. Failing at boot beats
+	// failing at the END of the Amazon OAuth/device-registration dance with an
+	// opaque ErrKeyUnset and no startup log pointing at the cause. Warn in dev
+	// (existing local stacks keep working); refuse to start in prod — which is
+	// what an unset BOOM_ENV defaults to.
+	if err := auth.LoadKeyFromEnv(); err != nil {
+		if cfg.IsProd() {
+			logger.Error("BOOM_ENCRYPTION_KEY is required when BOOM_ENV=prod/production",
+				"err", err,
+				"remediation", "generate with: openssl rand -base64 32 and set BOOM_ENCRYPTION_KEY")
+			return fmt.Errorf("BOOM_ENCRYPTION_KEY required in production: %w", err)
+		}
+		logger.Warn("BOOM_ENCRYPTION_KEY not configured — Amazon/Hardcover credential saves will fail",
+			"err", err,
+			"remediation", "generate with: openssl rand -base64 32 and set BOOM_ENCRYPTION_KEY in .env")
+	} else {
+		logger.Info("BOOM_ENCRYPTION_KEY loaded — AES-256-GCM ready")
+	}
+	return nil
+}
+
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	cfg := config.Load()
@@ -43,6 +90,13 @@ func main() {
 
 	// Books is the whole app here — force the domain on regardless of the env gate.
 	cfg.FeatureBooks = true
+
+	// Process-global boot gates that cmd/boomtime's runCmd also applies. See
+	// configureProcessGlobals — both of these were missing here.
+	if err := configureProcessGlobals(cfg, logger); err != nil {
+		logger.Error("startup gate failed", "err", err)
+		os.Exit(1)
+	}
 
 	// Single fixed owner, no auth. Pin it so apihelpers.Identify* resolves every
 	// caller to this owner with a synthetic all-caps Identity — no tokens/cookies.

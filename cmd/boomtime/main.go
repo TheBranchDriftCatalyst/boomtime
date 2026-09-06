@@ -269,26 +269,31 @@ func runCmd() *cobra.Command {
 				}
 			})
 
-			// boom-93f.27: reap avatar renders orphaned by a restart. The render
-			// runs as an in-process goroutine (identity.RegenerateAvatar), so any
-			// row still 'running' at boot is stale (its goroutine died with the
-			// old process) and the FE would poll it forever. Best-effort — a
-			// failure here must never block startup.
-			if n, rerr := database.ReapOrphanedAvatarRenders(ctx); rerr != nil {
-				logger.Warn("avatar reaper failed", "err", rerr)
-			} else if n > 0 {
-				logger.Info("reaped orphaned avatar renders", "count", n)
-			}
+			// boom-93f.27: reap avatar renders orphaned by a restart. See
+			// reapOrphanedAvatarRenders for why this is no longer unconditional.
+			reapOrphanedAvatarRenders(ctx, cfg, database, jobs.NewStore(database.Pool), logger)
 
 			// boom-awh.5: legacy raw-token backfill now lives in migration
 			// 00030_backfill_hashed_tokens.sql (SQL via pgcrypto.digest).
 			// No boot-time step required.
 
-			// Durability: mark any queued/running jobs left over from a previous
-			// process as failed before accepting new work.
+			// Durability: reclaim import jobs left over from a previous process
+			// before accepting new work.
 			hub := importer.NewHub()
 			worker := importer.NewWorker(ctx, database, logger, hub)
-			worker.RecoverInterrupted(ctx)
+			// boom-inih: the server-wide wakatime key lives on the worker so a
+			// job can be authenticated at run time. It is never marshalled into
+			// import_jobs.value (and therefore never lands in a backup ZIP).
+			worker.ServerAPIKey = cfg.WakatimeAPIKey
+			// boom-1vwl: this sweep used to run on EVERY pod boot and fail ALL
+			// queued/running import jobs fleet-wide — so a KEDA drain pod
+			// (BOOM_JOBS_DRAIN) or a worker restart killed the server pod's
+			// live import mid-run. Imports only ever execute in the server
+			// process, so only a server-role boot may reclaim them; the sweep
+			// itself is additionally lease-scoped (see RecoverInterrupted).
+			if importer.ShouldRecoverInterrupted(cfg.IsServerRole(), cfg.JobsDrain) {
+				worker.RecoverInterrupted(ctx)
+			}
 
 			// boom-myv: label-images generation worker. NewWorker returns nil
 			// when the feature is off (flag unset OR shim URL unset); a
@@ -830,6 +835,64 @@ func labelImageConcurrency() int {
 		return 16
 	}
 	return n
+}
+
+// reapOrphanedAvatarRenders flips user_avatars rows stuck at status='running'
+// to 'error' at boot (boom-93f.27), but ONLY when it can prove they are truly
+// orphaned. Best-effort throughout: a failure here must never block startup.
+//
+// WHY THE GUARDS (audit 2026-09-06). The original call was unconditional and
+// its comment ("the render is an in-process goroutine that cannot survive a
+// restart") described the PRE-JOBS architecture. Today RegenerateAvatar
+// reserves the row 'running' on the SERVER and enqueues an offloaded
+// avatar-render job (SetOffload), which KEDA scales a drain pod up to run. So
+// the drain pod spawned to render an avatar hit this sweep at ITS OWN boot and
+// flipped the very row it was about to render to
+// "render interrupted by a server restart — click RENDER to retry": the FE
+// showed a failure while the render proceeded, and the user re-triggered,
+// producing duplicate renders. A rolling server deploy did the same to a render
+// in flight on the outgoing pod.
+//
+// Two guards, both necessary:
+//
+//  1. Role. Only a server-role, non-drain boot may sweep. Drain pods exist
+//     BECAUSE work is pending — they are the last process that should be
+//     declaring work dead. (Same shape as the label-images reconcile gate.)
+//  2. Liveness. If ANY avatar-render job is queued or running fleet-wide, skip
+//     the sweep entirely: a 'running' row may belong to it, and the job's own
+//     terminal path (RunAvatarRender) already flips the row to ready/error. A
+//     genuinely orphaned row simply gets reaped at a later boot instead — a
+//     one-boot delay in clearing a stale row is strictly better than declaring
+//     a live render dead. This is deliberately coarse rather than per-owner:
+//     it needs no new query, and it can only ever err toward NOT reaping.
+//
+// Residual (accepted): a RENDER click that lands between this check and
+// another pod's SetAvatarStatus/Enqueue pair could still be swept. That window
+// is two DB round-trips wide on a booting process, versus the previous
+// behaviour of reaping every in-flight render on every pod start.
+func reapOrphanedAvatarRenders(ctx context.Context, cfg *config.Config, database *db.DB, jobStore *jobs.Store, logger *slog.Logger) {
+	if !cfg.IsServerRole() || cfg.JobsDrain {
+		logger.Debug("avatar reaper skipped: not a server-role boot",
+			"role", cfg.Role, "jobsDrain", cfg.JobsDrain)
+		return
+	}
+	if jobStore != nil {
+		pending, perr := jobStore.HasPendingKind(ctx, identity.AvatarRenderKind)
+		if perr != nil {
+			// Can't prove the rows are orphaned → don't touch them.
+			logger.Warn("avatar reaper skipped: avatar-render job liveness check failed", "err", perr)
+			return
+		}
+		if pending {
+			logger.Info("avatar reaper skipped: an avatar-render job is queued/running — its own terminal path owns those rows")
+			return
+		}
+	}
+	if n, rerr := database.ReapOrphanedAvatarRenders(ctx); rerr != nil {
+		logger.Warn("avatar reaper failed", "err", rerr)
+	} else if n > 0 {
+		logger.Info("reaped orphaned avatar renders", "count", n)
+	}
 }
 
 // isProdEnv reports whether BOOM_ENV names a production environment. Matches

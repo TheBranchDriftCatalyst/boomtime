@@ -12,13 +12,27 @@
 // Operator workflow:
 //
 //  1. Generate the new key: openssl rand -base64 32
-//  2. Stop boomtime (or scale to zero) — writes during rotation are safe but
-//     any Encrypt call by the running server would use the OLD key and its
-//     blob would decrypt fine after cutover, so this is more of a caution
-//     than a correctness requirement.
+//  2. STOP boomtime (or scale to zero). This is a CORRECTNESS REQUIREMENT, not
+//     a caution — see "Concurrent writers" below.
 //  3. Run: boomtime rotate-encryption-key --old $OLD_B64 --new $NEW_B64
 //  4. Update BOOM_ENCRYPTION_KEY in the environment to the new key.
 //  5. Start boomtime.
+//
+// Concurrent writers (audit 2026-09-06). This doc used to say writes during
+// rotation were safe because a blob encrypted under OLD "would decrypt fine
+// after cutover". That is false, and the failure is silent + permanent:
+// runRotate reads the population with ListEncryptedColumn OUTSIDE any
+// transaction the writer participates in, so a secret a live server encrypts
+// under OLD after that snapshot is either (a) overwritten by the rotation's
+// re-encrypted STALE value — the user's save is lost — or (b) never seen at
+// all, leaving OLD ciphertext behind that no longer decrypts once the env is
+// switched. Exactly the stranding boom-6jm.7 exists to prevent.
+//
+// Since we cannot stop the operator from ignoring step 2, the command DETECTS
+// the case: after the commit it re-reads every registered column and verifies
+// each blob decrypts under --new (verifyDecryptable). Any straggler is
+// reported by table.column + key while the operator still holds BOTH keys and
+// can re-run — instead of surfacing weeks later as an undecryptable secret.
 //
 // Failure model: if ANY row fails to decrypt under --old (the operator
 // supplied the wrong old key, or the row was already re-encrypted, or the
@@ -28,12 +42,14 @@ package main
 
 import (
 	"context"
+	"crypto/cipher"
 	"errors"
 	"fmt"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/auth"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/config"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/domaincols"
 	"github.com/spf13/cobra"
 )
 
@@ -136,6 +152,58 @@ func runRotate(ctx context.Context, databaseURL, oldB64, newB64 string, out inte
 		key := c.Table + "." + c.Column
 		fmt.Fprintf(out, "Rotated %d row(s) for %s (domain %s).\n", counts[key], key, c.Domain)
 	}
+
+	// Post-commit straggler check. See the "Concurrent writers" section in the
+	// package doc: a live server that encrypted a secret under --old after our
+	// ListEncryptedColumn snapshot leaves a blob the rotation never rewrote,
+	// and that blob becomes permanently undecryptable the moment
+	// BOOM_ENCRYPTION_KEY flips. Catch it HERE, while the operator still holds
+	// both keys, rather than weeks later at a failed credential read.
+	stragglers, verr := verifyDecryptable(ctx, database, cols, newAEAD)
+	if verr != nil {
+		return fmt.Errorf("post-rotation verification failed (rotation IS committed; re-run to confirm): %w", verr)
+	}
+	if len(stragglers) > 0 {
+		fmt.Fprintf(out, "\nWARNING: %d row(s) do NOT decrypt under --new:\n", len(stragglers))
+		for _, s := range stragglers {
+			fmt.Fprintf(out, "  - %s\n", s)
+		}
+		return fmt.Errorf(
+			"%d row(s) were written under the OLD key AFTER the rotation snapshot and are NOT rotated "+
+				"(a boomtime process was still running): %v — STOP boomtime and re-run "+
+				"rotate-encryption-key --old <OLD> --new <NEW>; do NOT set BOOM_ENCRYPTION_KEY to the new "+
+				"key until this reports clean, or those secrets become undecryptable",
+			len(stragglers), stragglers)
+	}
+
+	fmt.Fprintln(out, "Verified: every stored secret decrypts under the new key.")
 	fmt.Fprintln(out, "Remember to set BOOM_ENCRYPTION_KEY to the new value before restarting boomtime.")
 	return nil
+}
+
+// verifyDecryptable re-reads every registered encrypted column and reports the
+// rows whose ciphertext does NOT open under aead, as "table.column keycol=key"
+// descriptors.
+//
+// It exists to catch the concurrent-writer hole documented at the top of this
+// file, and deliberately reports only LOCATIONS: never the ciphertext, never
+// the decrypted plaintext, and never the key material. A caller printing this
+// straight to an operator's terminal (runRotate does) must stay safe.
+//
+// A non-nil error means the verification itself could not run (a DB read
+// failed); an empty slice with a nil error means the population is clean.
+func verifyDecryptable(ctx context.Context, database *db.DB, cols []domaincols.EncryptedColumn, aead cipher.AEAD) ([]string, error) {
+	var bad []string
+	for _, c := range cols {
+		rows, err := database.ListEncryptedColumn(ctx, c.Table, c.Column, c.KeyColumn)
+		if err != nil {
+			return nil, fmt.Errorf("re-list %s.%s: %w", c.Table, c.Column, err)
+		}
+		for _, r := range rows {
+			if _, derr := auth.DecryptWith(aead, r.Ciphertext); derr != nil {
+				bad = append(bad, fmt.Sprintf("%s.%s (%s=%q)", c.Table, c.Column, c.KeyColumn, r.Key))
+			}
+		}
+	}
+	return bad, nil
 }

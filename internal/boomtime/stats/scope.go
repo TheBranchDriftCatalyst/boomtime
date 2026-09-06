@@ -43,6 +43,25 @@ type dashboardScope struct {
 	tz string
 }
 
+// maxDashboardSpan bounds how far back a single dashboard read may reach.
+//
+// The dashboard payload builders gap-fill ONE ENTRY PER CALENDAR DAY in the
+// requested range (genDates → ToStatsPayload / ToProjectStatistics /
+// ToSessionsPayload). ?start and ?end are unvalidated client input parsed by
+// the "2006-01-02" layout, so `?start=0001-01-01&end=9999-12-31` asked for
+// ~3.65 MILLION days: an ~88 MB []time.Time, a same-order SessionDaily slice
+// (ToSessionsPayload has no clampStartToData to save it), and a JSON body to
+// match — all of it then stored in the in-process response cache. One
+// authenticated request per pod was enough to matter.
+//
+// Clamping the SPAN (rather than pinning either endpoint) is what keeps the
+// legitimate "All time" case working: it preserves `end`, so the window that
+// survives is the most recent one, which is where every user's data actually
+// is. 25 years is far beyond any real coding history while capping the day
+// series at ~9k entries. StartDate in the response reflects the clamp, so the
+// FE renders a truthful axis rather than a silently truncated one.
+const maxDashboardSpan = 25 * 365 * 24 * time.Hour
+
 // dashboardScope resolves the requesting user and the common dashboard query
 // params. days picks the default range window (7 = week, 30 = month).
 func (h *Handler) dashboardScope(c *echo.Context, days int) (*dashboardScope, *apierr.Error) {
@@ -51,6 +70,9 @@ func (h *Handler) dashboardScope(c *echo.Context, days int) (*dashboardScope, *a
 		return nil, aerr
 	}
 	t0, t1 := apihelpers.DefaultRange(c, days)
+	if t1.Sub(t0) > maxDashboardSpan {
+		t0 = t1.Add(-maxDashboardSpan)
+	}
 	ctx := c.Request().Context()
 	return &dashboardScope{
 		h:          h,
@@ -103,7 +125,9 @@ func (s *dashboardScope) load(sets dashLoad) (dashSets, error) {
 			return out, err
 		}
 	}
-	if out.members, out.spaceRequested, err = apihelpers.LoadSpace(s.h.DB, s.ctx, s.spaceParam); err != nil {
+	// s.owner is threaded through so LoadSpace can reject another user's space
+	// id (audit 2026-09-06: ?space= was applied with no ownership check).
+	if out.members, out.spaceRequested, err = apihelpers.LoadSpace(s.h.DB, s.ctx, s.owner, s.spaceParam); err != nil {
 		return out, err
 	}
 	return out, nil

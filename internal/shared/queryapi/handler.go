@@ -77,11 +77,18 @@ func Register(e *echo.Echo, h *Handler) {
 				"combinator of:[...children]}, with op one of eq, neq, in, ilike. over is "+
 				"{granularity: none|day|week|month, range: {lastN} or {between:{start,end}} — "+
 				"the two are mutually exclusive and setting both is a 400; the unit of lastN is "+
-				"the granularity, days when granularity is none}. bucket is the top-N/pin/Other "+
+				"the granularity, days when granularity is none; a between window must carry BOTH "+
+				"start and end — a one-sided window is a 400, not a silently empty result}. bucket is the top-N/pin/Other "+
 				"roll-up policy {topN, pin?, other?}, having is {op, value} with op one of "+
 				">= <= > < == !=, sort is {field, desc?} where field is \"measure\"/\"value\", "+
 				"\"bucket\", \"key\" or the group dimension, and page is {number, size} "+
 				"(1-based, rows mode only).\n\n"+
+				"ROWS MODE (rows:true) is a leaf-row listing, not an aggregation: it honours only "+
+				"domain, where, over.range and page. group, granularity, sort, limit, having, "+
+				"bucket and rollups are all REJECTED with a 400 rather than silently ignored, so a "+
+				"200 in rows mode always means the request was honoured exactly as sent. measure is "+
+				"the one exception — it is accepted and ignored, because the client spec type "+
+				"requires it.\n\n"+
 				"The result is a DISCRIMINATED UNION: switch on \"kind\" and read exactly one "+
 				"arm — \"scalar\" (scalar), \"series\" (series, one point per RFC3339 UTC "+
 				"bucket), \"groups\" (groups; each carries count + stats when the spec asks for "+

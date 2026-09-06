@@ -3,8 +3,9 @@
 package config
 
 import (
-	"fmt"
 	"log/slog"
+	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -614,15 +615,44 @@ func (c *Config) GithubTokenValue() string { return c.GithubToken }
 func (c *Config) DefaultTimezoneValue() string { return c.DefaultTimezone }
 
 // DatabaseURL returns a pgx-compatible connection string.
+//
+// Built with net/url rather than fmt.Sprintf so the userinfo is PERCENT-ENCODED.
+// A password from `openssl rand -base64 32` routinely contains '/' and '+', and
+// strong generators also emit '%', '#' and '?' — every one of those terminates
+// or re-routes the authority section of a URL. Interpolating them raw yielded
+// either a pgx parse error or, worse, a DSN that silently pointed at a
+// different host/database, with an error message naming neither the real
+// problem nor the offending env var. url.UserPassword escapes the credential,
+// net.JoinHostPort brackets an IPv6 literal, and url.URL escapes the database
+// name in the path.
+//
+// The rendered string is BYTE-IDENTICAL to the old fmt.Sprintf form for values
+// that need no escaping (the overwhelmingly common case), so nothing about the
+// documented `postgres://USER:PASS@HOST:PORT/DBNAME?sslmode=disable` shape
+// changes.
 func (c *Config) DatabaseURL() string {
-	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
-		c.DBUser, c.DBPass, c.DBHost, c.DBPort, c.DBName)
+	u := url.URL{
+		Scheme:   "postgres",
+		User:     url.UserPassword(c.DBUser, c.DBPass),
+		Host:     net.JoinHostPort(c.DBHost, strconv.Itoa(c.DBPort)),
+		Path:     "/" + c.DBName,
+		RawQuery: "sslmode=disable",
+	}
+	return u.String()
 }
 
 // IsDev reports whether the server runs in development mode (text logs).
 func (c *Config) IsDev() bool {
 	return strings.EqualFold(c.Env, "dev")
 }
+
+// IsProd reports whether BOOM_ENV names a production environment
+// ("prod"/"production", case-insensitive). Exported so the standalone
+// catalyst-books binary can apply the SAME fail-fast startup gates
+// cmd/boomtime applies (encryption key, etc.) without re-deriving the
+// classification — a private copy in each main package is exactly how the
+// standalone binary drifted out of step in the first place.
+func (c *Config) IsProd() bool { return isProdEnvName(c.Env) }
 
 // parseAdminUsers splits a comma-separated username list into a set. Empty
 // input returns nil so IsAdmin(u) is a cheap "always false" for the
