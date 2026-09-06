@@ -72,13 +72,18 @@ k8s_resource(
     labels=['db'],
 )
 
-# ── Image-job worker tier (worker-topology decoupling, boom-8bz follow-up) ───
 # ── Cache: Redis-wire (Dragonfly stand-in) ──────────────────────────────────
 # NOT a broker. It backs the fleet-wide per-kind concurrency semaphore and the
 # cross-pod log relay. The boomtime-worker resource and the local RabbitMQ that
 # used to sit here went with the broker (boom-piig phase 3) — local now runs the
 # same single job system as prod: the Postgres queue, executed in-process by the
 # server at role=all.
+#
+# The workload this binds to is k8s/overlays/local/cache.yaml. If you ever drop
+# that file, drop this k8s_resource and the resource_deps entry above with it —
+# Tilt hard-fails at assembly on a k8s_resource with no matching object, so an
+# orphaned block here breaks `tilt up` entirely (boom-iadc). CI guards the pair
+# via .github/scripts/validate-manifests.py.
 k8s_resource(
     'boomtime-cache',
     port_forwards=['6379:6379'],  # redis-cli -p 6379 for MONITOR

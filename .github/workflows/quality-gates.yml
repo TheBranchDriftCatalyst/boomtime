@@ -1,0 +1,170 @@
+# The quality gate that every image publish must pass through (boom-iadc).
+#
+# WHY THIS EXISTS
+# Before this workflow, .github/workflows contained only publish workflows.
+# Every push to main built an image, tagged it sha-<7c>, and the Argo Image
+# Updater CRD in talos-homelab rewrote the prod Application within minutes —
+# so a commit with a failing test, a vet error, or a broken SPA typecheck rolled
+# straight to production. "The Docker build succeeded" was the entire gate, and
+# the Dockerfile builds `./cmd/boomtime` only, so anything that compiles but is
+# wrong (or that lives in a package the image does not build) was structurally
+# invisible to the deploy pipeline.
+#
+# HOW IT IS WIRED
+# This is a REUSABLE workflow (`on: workflow_call`). It never triggers itself —
+# the publish workflows call it as a `gate` job and their build-and-push job
+# declares `needs: gate`, so a red gate means no image and therefore no deploy.
+# .github/scripts/validate-manifests.py enforces exactly that wiring, so a
+# future publish workflow cannot quietly skip it.
+name: quality-gates
+
+on:
+  workflow_call: {}
+  # Manual re-run, e.g. to confirm main is green without pushing anything.
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Go: vet, build every package, run the suite against a real Postgres ────
+  go:
+    name: go (vet + build + test)
+    runs-on: ubuntu-latest
+    services:
+      # The test harness (internal/shared/testutil) provisions an isolated DB
+      # and migrates it. Without a reachable Postgres every DB-backed test
+      # SKIPS — which is most of the meaningful coverage in this repo — so the
+      # gate would be green and empty. Give it a real server.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: boomtime_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go vet
+        run: go vet ./...
+
+      # Build EVERY package, not just the image's entrypoint: cmd/catalyst-books
+      # and the test-only packages are not in the boomtime Dockerfile's build
+      # graph, so a break there is invisible to the publish workflow.
+      - name: go build
+        run: CGO_ENABLED=0 go build ./...
+
+      # -p 1 mirrors `task test`: packages share one database and some tests
+      # assert on global counts / mutate shared catalog rows, so parallel
+      # package execution flakes.
+      - name: go test
+        env:
+          BOOM_TEST_DATABASE_URL: postgres://test:test@localhost:5432/boomtime_test?sslmode=disable
+        run: go test -p 1 ./...
+
+  # ── Frontend: typecheck + unit tests + both production bundles ────────────
+  web:
+    name: web (typecheck + vitest + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: yarn
+          cache-dependency-path: web/yarn.lock
+
+      # Exactly the Dockerfiles' install line. --frozen-lockfile also makes a
+      # package.json/yarn.lock divergence a hard error here rather than a
+      # surprise in the image build.
+      - name: yarn install
+        working-directory: web
+        run: yarn install --frozen-lockfile --ignore-engines
+
+      - name: vitest
+        working-directory: web
+        run: yarn test
+
+      # `yarn build` runs `tsc -b --noEmit --force` first, so this is the
+      # typecheck too. --force matters: a stale tsbuildinfo has masked real TS
+      # errors in this repo before.
+      - name: build boomtime SPA
+        working-directory: web
+        run: yarn build
+
+      # The standalone books bundle is built by Dockerfile.catalyst-books from
+      # the same tree but a different entry + tsconfig pass. It has broken
+      # independently of the host build before (FE imports reaching outside
+      # web/), so gate on it explicitly.
+      - name: build catalyst-books SPA
+        working-directory: web
+        run: yarn build:books
+
+  # ── Deploy surface: every overlay renders + the audit regression checks ────
+  manifests:
+    name: manifests (kustomize + deploy-surface checks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # validate-manifests.py resolves the books image's real dependency
+      # closure with `go list -deps` to prove the publish workflow's paths
+      # filter still covers it.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: install kustomize
+        run: |
+          set -euo pipefail
+          VERSION=v5.4.3
+          curl -sSfL -o kustomize.tar.gz \
+            "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2F${VERSION}/kustomize_${VERSION}_linux_amd64.tar.gz"
+          tar -xzf kustomize.tar.gz
+          sudo install -m 0755 kustomize /usr/local/bin/kustomize
+          kustomize version
+
+      - name: install PyYAML
+        run: python3 -m pip install --quiet pyyaml
+
+      - name: validate deploy surface
+        run: python3 .github/scripts/validate-manifests.py
+
+  # ── Advisory: ESLint ──────────────────────────────────────────────────────
+  # Deliberately non-blocking for now. The finding this workflow answers is
+  # "no tests or lint run at ALL before an auto-deploy"; correctness gates
+  # (vet / build / test / typecheck / manifests) are blocking above, and lint
+  # is reported so the existing backlog is visible without holding prod
+  # deploys hostage to style. Promote it by deleting continue-on-error once
+  # `cd web && yarn lint` is clean.
+  lint:
+    name: eslint (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: yarn
+          cache-dependency-path: web/yarn.lock
+      - name: yarn install
+        working-directory: web
+        run: yarn install --frozen-lockfile --ignore-engines
+      - name: eslint
+        working-directory: web
+        run: yarn lint

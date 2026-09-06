@@ -1,0 +1,86 @@
+---
+# Redis-wire cache for the LOCAL overlay — the stand-in for prod's Dragonfly
+# (talos00-knowledgedump/dragonfly.yaml). Same Service name (`boomtime-cache`)
+# and port (6379), so BOOM_REDIS_ADDR in patch-configmap.yaml is identical in
+# both overlays and the Tiltfile's `boomtime-cache` resource has a workload to
+# bind to.
+#
+# WHY IT EXISTS (boom-iadc): this manifest was deleted alongside the RabbitMQ
+# teardown (boom-piig phase 3), but the cache was never broker-infrastructure —
+# it backs the fleet-wide per-kind concurrency semaphore (internal/jobs/limiter)
+# and the cross-pod log relay, neither of which involve a broker. With the
+# manifest gone, `tilt up` failed at Tiltfile assembly ("resource boomtime-cache
+# specified in k8s_resource but no matching workload") and a direct
+# `kubectl apply -k` left BOOM_REDIS_ADDR pointing at dead DNS. Prod kept its
+# Dragonfly; local lost its stand-in. Restored here.
+#
+# Plain redis:7-alpine rather than the Dragonfly operator CR: the operator is a
+# homelab cluster-wide install that a laptop k3d/kind cluster does not have, and
+# go-redis is wire-agnostic — PUB/SUB and SET NX behave identically. Swap the
+# image for docker.dragonflydb.io/dragonflydb/dragonfly if you ever need to
+# reproduce a Dragonfly-specific behaviour locally.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: boomtime-cache
+  labels:
+    app: boomtime-cache
+    app.kubernetes.io/component: cache
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: boomtime-cache
+  template:
+    metadata:
+      labels:
+        app: boomtime-cache
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          args:
+            # Cache semantics only — nothing here is a source of truth (the jobs
+            # queue is Postgres). No AOF/RDB, capped memory so a runaway log
+            # relay can't balloon the laptop's container.
+            - "--save"
+            - ""
+            - "--appendonly"
+            - "no"
+            - "--maxmemory"
+            - "128mb"
+            - "--maxmemory-policy"
+            - "allkeys-lru"
+          ports:
+            - name: redis
+              containerPort: 6379
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 192Mi
+---
+# Name matches prod's Dragonfly-operator-created Service so BOOM_REDIS_ADDR is
+# portable across overlays.
+apiVersion: v1
+kind: Service
+metadata:
+  name: boomtime-cache
+  labels:
+    app: boomtime-cache
+spec:
+  type: ClusterIP
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+  selector:
+    app: boomtime-cache

@@ -10,12 +10,39 @@ on:
       - main
       - boom-domain-framework
     paths:
-      # only rebuild when books/shared/entrypoint/dockerfile change
+      # EVERY input Dockerfile.catalyst-books consumes must be listed here, or a
+      # change to it ships nothing and the stale image keeps serving — and the
+      # eventual break gets blamed on whatever unrelated commit finally
+      # retriggers the build (boom-iadc). Two classes of input:
+      #
+      # 1. Go — stage 2 is `COPY . .` + `go build ./cmd/catalyst-books`. The
+      #    real closure is `go list -deps ./cmd/catalyst-books`, which today is
+      #    cmd/catalyst-books + internal/{books,jobs,shared}. internal/identity
+      #    is listed defensively (it is one import away). CI enforces that this
+      #    list still covers the live closure — see
+      #    .github/scripts/validate-manifests.py, which fails if a new
+      #    internal/* package enters the dep graph without landing here.
       - "cmd/catalyst-books/**"
       - "internal/books/**"
+      - "internal/jobs/**"
       - "internal/shared/**"
       - "internal/identity/**"
+      - "go.mod"
+      - "go.sum"
+      #
+      # 2. Frontend — stage 1 builds the books SPA with `yarn build:books`,
+      #    which runs `tsc -b` over the WHOLE tsconfig include before vite
+      #    tree-shakes. So the shell (web/shared/books-main.tsx, index.css,
+      #    index.books.html), the lockfile, the vite/tsconfig files, AND the
+      #    boomtime-domain FE that tsc type-checks but the bundle discards are
+      #    all build inputs. internal/books/web is already covered by
+      #    internal/books/** above.
+      - "web/**"
+      - "internal/boomtime/web/**"
+      - "internal/boomtime/widget/specs.json" # the @widget-specs alias target
+      #
       - "Dockerfile.catalyst-books"
+      - ".dockerignore" # gates what `COPY . .` actually lands in the builder
       - ".github/workflows/docker-publish-catalyst-books.yml"
   workflow_dispatch: {}
 
@@ -24,7 +51,14 @@ env:
   IMAGE_NAME: ${{ github.repository_owner }}/catalyst-books
 
 jobs:
+  # Same gate as docker-publish.yml — this workflow pushes unconditionally
+  # (push: true), so without it a red commit ships the standalone books image
+  # (boom-iadc).
+  gate:
+    uses: ./.github/workflows/quality-gates.yml
+
   build-and-push:
+    needs: gate
     runs-on: ubuntu-latest
     permissions:
       contents: read

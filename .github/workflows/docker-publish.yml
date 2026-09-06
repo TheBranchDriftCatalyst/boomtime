@@ -22,7 +22,15 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  # Tests / typecheck / manifest validation. The sha-<7c> tag this workflow
+  # publishes is what Argo Image Updater rolls onto prod, so the gate has to sit
+  # IN FRONT of the publish, not beside it (boom-iadc). PR runs get the same
+  # gate — they just never reach the push.
+  gate:
+    uses: ./.github/workflows/quality-gates.yml
+
   build-and-push:
+    needs: gate
     runs-on: ubuntu-latest
     permissions:
       contents: read

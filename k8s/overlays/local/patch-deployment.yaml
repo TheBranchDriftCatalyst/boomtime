@@ -12,18 +12,29 @@ spec:
         - name: boomtime
           image: boomtime:dev
           imagePullPolicy: Never
-          # boom-8bz follow-up (worker-topology decoupling): flips the
-          # server off the in-process image-job pool now that
-          # to the separate boomtime-worker Deployment instead. BOOM_ROLE
-          # is set as an explicit env var (not a --role flag) because the
-          # local dev image runs via `air` (Dockerfile.dev has no
-          # ENTRYPOINT — CMD is `air -c .air.toml`, which always execs
+          # SINGLE-POD DEV MODE. role=all means jobs.DeriveKindFilter
+          # returns no filter at all, so this one pod claims EVERY kind —
+          # including the offloaded ones (avatar-render, label-image,
+          # books-liberate-book) that main.go SetOffload()s unconditionally.
+          #
+          # It used to say "server" (boom-8bz worker-topology decoupling),
+          # which was correct only while the local overlay still shipped a
+          # boomtime-worker Deployment to drain the offload set. That worker
+          # went away with the broker (boom-piig phase 3) and local has no
+          # KEDA, so role=server left every offloaded kind excluded by the
+          # server AND unclaimed by anyone — label-image regen and avatar
+          # renders sat at status=queued forever, silently killing the very
+          # e2e flow comfyui-mock.yaml exists to serve (boom-iadc).
+          #
+          # BOOM_ROLE is set as an explicit env var (not a --role flag)
+          # because the local dev image runs via `air` (Dockerfile.dev has
+          # no ENTRYPOINT — CMD is `air -c .air.toml`, which always execs
           # `./tmp/boomtime run` with no room for extra flags); env vars
           # reach the binary either way. Merges into the base env list
           # (patchMergeKey: name) alongside BOOM_DB_USER/BOOM_DB_PASS.
           env:
             - name: BOOM_ROLE
-              value: "server"
+              value: "all"
           # Local dev runs `air`, which compiles the WHOLE app in-container on
           # every change. The Go compiler is memory-hungry (~1–2 GB for a cold
           # build); the base 512Mi limit OOM-kills the build (exit 137) →

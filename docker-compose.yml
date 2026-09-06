@@ -51,7 +51,18 @@ services:
     depends_on: [app]
     environment:
       BOOM_BACKEND_URL: http://app:8080   # vite proxy target inside the network
-    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    # yarn, NOT npm (boom-iadc). web/ is a yarn-1 tree with a committed
+    # yarn.lock, and both Dockerfiles install with exactly this line. `npm
+    # install` ignores yarn.lock, resolves its own semver-compatible versions,
+    # and writes a stray package-lock.json into the bind-mounted repo — so the
+    # compose dev server silently runs different FE deps than CI and prod
+    # build, which is the "passes locally, fails the Docker web stage" drift
+    # this project has already been bitten by. --frozen-lockfile makes a
+    # lockfile/package.json mismatch a hard error instead of a silent
+    # re-resolve; --ignore-engines matches the Dockerfiles (a transitive dep
+    # declares node>=24, nothing here needs node 24 semantics).
+    # node:22-alpine ships yarn 1.x, so no extra install step.
+    command: sh -c "yarn install --frozen-lockfile --ignore-engines && yarn dev --host 0.0.0.0"
     volumes:
       - .:/src
       - web_node_modules:/src/web/node_modules

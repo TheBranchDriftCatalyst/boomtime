@@ -47,8 +47,26 @@ spec:
   entryPoints:
     - websecure
   routes:
+    # `!Path(/metrics)` (Traefik v3 NOT operator; cluster runs v3.7 via the
+    # talos-homelab helmrelease) keeps the Prometheus registry off the public
+    # internet — boom-iadc. GET /metrics is deliberately unauthenticated AND
+    # exempt from the rate limiter (shared/server/ratelimit.go) so an
+    # in-cluster scrape is zero-friction; with a bare Host() rule that made the
+    # full registry — route templates, job kinds + failure counts, DB/Redis
+    # pool stats, outbound-host call rates, Go runtime — anonymously readable,
+    # and every read an uncapped registry gather.
+    #
+    # Nothing legitimate loses access: the ServiceMonitor scrapes the
+    # `boomtime` Service endpoints directly (servicemonitor.yaml), never
+    # through Traefik, and the LAN route below/above still exposes /metrics
+    # behind the lan-only middleware for ad-hoc curl. External /metrics now
+    # gets a Traefik 404 (no router matches), leaking nothing about whether
+    # the endpoint exists.
+    #
+    # Exact Path, not PathPrefix: the app registers exactly `/metrics`, and a
+    # prefix match would also swallow any future /metrics-something route.
     - kind: Rule
-      match: Host(`boomtime.knowledgedump.space`)
+      match: Host(`boomtime.knowledgedump.space`) && !Path(`/metrics`)
       middlewares:
         - name: analytics-boomtime # per-subdomain Plausible injection (data-domain=boomtime.knowledgedump.space)
           namespace: traefik

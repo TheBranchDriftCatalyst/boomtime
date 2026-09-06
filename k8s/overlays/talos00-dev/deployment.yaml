@@ -61,6 +61,16 @@ spec:
           # placeholder, not as intent.
           #
           # To deploy a branch:
+          #   # 0. *** PRE-FLIGHT: THIS POD AUTO-MIGRATES THE PROD DATABASE ***
+          #   #    `run` calls db.MigrateURL unconditionally at boot
+          #   #    (cmd/boomtime/main.go) — there is no skip-migrations flag or
+          #   #    env knob. BOOM_DB_* below points at the PROD cluster, so
+          #   #    scaling this up applies the BRANCH's migrations to prod
+          #   #    before that branch has shipped. A later, divergent main
+          #   #    migration then collides. Check first, and if it is non-empty
+          #   #    do not revive this env against prod at all (boom-iadc):
+          #   git diff --stat origin/main...<branch> -- \
+          #     internal/shared/db/migrations internal/books/db/migrations
           #   kubectl set image -n boomtime deploy/boomtime-dev \
           #     boomtime=ghcr.io/thebranchdriftcatalyst/boomtime:<branch-tag>
           #   kubectl scale -n boomtime deploy/boomtime-dev --replicas=1
@@ -91,6 +101,37 @@ spec:
                 name: boomtime-encryption-key
                 optional: true
           env:
+            # ── PROD-SAFETY OVERRIDES (boom-iadc) ─────────────────────────
+            # This pod inherits prod's boomtime-config via envFrom above,
+            # which sets BOOM_HARDCOVER_DRYRUN=false — so an unreviewed
+            # feature branch previewed here would perform REAL writes against
+            # the user's live Hardcover account (shelf moves, read inserts,
+            # date pushes), against prod rows, with no undo. A preview box has
+            # no business making outbound writes; pin dry-run ON here. Delete
+            # this only if you are deliberately testing the write path and
+            # accept it hits the real account.
+            - name: BOOM_HARDCOVER_DRYRUN
+              value: "true"
+            # Same problem one layer down: role=server puts this pod in the
+            # jobs worker pool (main.go runs the provider for IsServerRole too,
+            # because prod's KEDA workers scale to zero), polling the SHARED
+            # prod `jobs` table with FOR UPDATE SKIP LOCKED. It would therefore
+            # execute real prod jobs — audible sync, hardcover push, liberation
+            # — using branch code. BOOM_JOBS_KINDS is the documented operator
+            # escape hatch (jobs.DeriveKindFilter: a non-empty env include wins
+            # entirely); a sentinel kind no handler registers means this pod
+            # claims nothing. Prod's own server/KEDA workers keep draining the
+            # queue exactly as before. main.go logs a loud "env kind-filter
+            # OVERRIDE" warn on boot — that warn is intentional here.
+            #
+            # STILL NOT GUARDED (needs a code-side knob, not a manifest): the
+            # scheduler still runs and Register→UpsertSchedule rewrites
+            # job_schedules.interval_seconds, so a branch that CHANGES a
+            # schedule interval constant rewrites prod's interval. Enqueue
+            # itself is safe — Store.ClaimDueSchedules is a leader-singleton
+            # UPDATE…RETURNING, so a second scheduler cannot double-fire.
+            - name: BOOM_JOBS_KINDS
+              value: "dev-preview-claims-nothing"
             - name: BOOM_S3_ACCESS_KEY
               valueFrom:
                 secretKeyRef:

@@ -27,6 +27,15 @@ resources:
   # feature is a one-line ConfigMap change rather than a storage rollout.
   - audiobook-library.yaml
   - external-secret.yaml
+  # BOOM_ENCRYPTION_KEY (AES-256-GCM key for users.encrypted_* columns). Its own
+  # ExternalSecret so a missing 1P field degrades only this reconciliation, not
+  # boomtime-secrets. Was authored but never listed here (boom-iadc), which left
+  # the key existing ONLY as a hand-created in-cluster Secret that nothing owns,
+  # recreates, or backs up — and DB backups carry the ciphertext but never the
+  # key, so losing it is unrecoverable. The template refuses to write a short /
+  # empty value, so listing it before the 1P field is populated fails the
+  # ExternalSecret loudly instead of clobbering the live key.
+  - external-secret-encryption.yaml
   - ingressroute.yaml
   - servicemonitor.yaml # scrape boomtime's own /metrics (boom-metrics: RED + business counters)
   - comfyui-shim-external.yaml

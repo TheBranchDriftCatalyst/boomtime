@@ -14,6 +14,12 @@ resources:
   # Postgres queue, run in-process by the server (role=all), which is simpler to
   # reason about on a laptop than the old two-transport split.
   #
+  # The Redis-wire cache did NOT go with the broker — it backs the per-kind
+  # concurrency semaphore and the log relay. It was deleted by mistake in that
+  # sweep (boom-iadc), which broke `tilt up` outright; restored as cache.yaml,
+  # the local stand-in for prod's Dragonfly (same Service name + port).
+  - cache.yaml
+  #
   # A no-GPU mock ComfyUI backend so label-image regen still works end-to-end
   # locally — that part was never broker-specific.
   - comfyui-mock.yaml

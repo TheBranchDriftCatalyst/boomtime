@@ -16,7 +16,14 @@ permissions:
   packages: write
 
 jobs:
+  # A semver tag publishes :<version> AND :latest, and the ImageUpdater's
+  # allowTags regex includes `latest` — so an untested tag reaches prod the same
+  # way a main push does. Same gate, same position: in front (boom-iadc).
+  gate:
+    uses: ./.github/workflows/quality-gates.yml
+
   release:
+    needs: gate
     runs-on: ubuntu-latest
     steps:
       # fetch-depth: 0 keeps the full tag history so git-cliff can render
