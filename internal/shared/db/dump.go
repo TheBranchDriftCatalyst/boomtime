@@ -35,7 +35,14 @@ func isEncryptionKeyConfigured() bool {
 
 // dumpFormatVersion is bumped whenever the archive layout/manifest changes
 // incompatibly. Restore requires an exact match (v1 policy).
-const dumpFormatVersion = 1
+//
+// v2 (boom-qs80): the table set grew from the 13-table pre-books core to every
+// non-exempt application table, and several dumped tables gained the columns
+// later migrations had added (users.argon_version/role/capabilities/disabled_at,
+// heartbeats.ai_*/workout_*, import_jobs.drift, hb_rollup_daily.*_missing). A v1
+// archive is rejected up front with a clear message instead of a confusing
+// "backup is missing table award_ledger".
+const dumpFormatVersion = 2
 
 // dumpAppID identifies our archives so a foreign zip can never be restored.
 const dumpAppID = "boomtime"
@@ -50,60 +57,203 @@ type dumpTable struct {
 }
 
 // dumpTables lists every application table in FK-safe load order (parents
-// before children); the dump writes them in the same order. goose_db_version
-// is deliberately absent — schema is owned by the running binary's migrations;
-// the manifest records the version for compatibility checking instead.
+// before children); the dump writes them in the same order.
+//
+// boom-qs80: this list is SAFETY-CRITICAL, not merely a feature list. RestoreAll
+// runs `TRUNCATE <every name here> RESTART IDENTITY CASCADE`, and Postgres
+// CASCADE transitively empties every table that REFERENCES a truncated one. A
+// table that is FK-linked but missing from this list is therefore DESTROYED by a
+// restore and never repopulated. Two guards keep that from happening again:
+//
+//   - dump_schema.go's undumpedCascadeTargets() re-derives the cascade closure
+//     from the LIVE catalog and RestoreAll refuses (before any write) if it
+//     reaches a table this archive does not carry.
+//   - the schema-census test (dump_schema_test.go) fails whenever a migration
+//     adds a table or a column that is neither dumped nor explicitly exempted
+//     in dumpExemptTables.
+//
+// goose_db_version is deliberately absent — schema is owned by the running
+// binary's migrations; the manifest records the version for compatibility
+// checking instead. See dumpExemptTables for the other deliberate omissions.
 var dumpTables = []dumpTable{
 	// boom-awh.3: the users dump MUST include every user-owned column so a
 	// backup → restore round-trip preserves the whole user state. Omitting a
-	// column silently drops it on restore (TRUNCATE + COPY of a subset). The
-	// encrypted_wakatime_key ciphertext is safe to export: it's AES-256-GCM
-	// sealed with BOOM_ENCRYPTION_KEY, which lives in the process env and is
-	// NEVER included in a backup — an attacker with the ZIP still needs the
-	// env key to decrypt (same threat model as hashed_password). The restore
-	// path additionally REFUSES to load a dump containing ciphertext when
-	// BOOM_ENCRYPTION_KEY is unset in the current env, because the restored
-	// rows would be undecryptable.
+	// column silently drops it on restore (TRUNCATE + COPY of a subset) — the
+	// COPY column list means an omitted column lands on its DEFAULT, which for
+	// argon_version (1) silently invalidates every Argon2id v2 password hash and
+	// for disabled_at (NULL) silently RE-ENABLES a killed account. The
+	// encrypted_* ciphertexts are safe to export: they're AES-256-GCM sealed
+	// with BOOM_ENCRYPTION_KEY, which lives in the process env and is NEVER
+	// included in a backup — an attacker with the ZIP still needs the env key to
+	// decrypt (same threat model as hashed_password). The restore path
+	// additionally REFUSES to load a dump containing ciphertext when
+	// BOOM_ENCRYPTION_KEY is unset in the current env, because the restored rows
+	// would be undecryptable.
 	{"users", append([]string{
 		"username", "hashed_password", "salt_used",
 		"encrypted_wakatime_key", "wakatime_key_status", "wakatime_key_checked_at",
 		"public_profile_enabled", "public_slug",
+		// boom-qs80: argon_version gates password verification (a v2 hash read
+		// back as v1 fails forever → full lockout); role/capabilities/disabled_at
+		// carry the authz + kill-switch state; timezone drives day bucketing.
+		"argon_version", "timezone", "role", "capabilities", "disabled_at",
+		"encrypted_github_token", "github_token_status", "github_token_checked_at", "github_login",
 		"public_card_theme", "public_card_tagline",
-		// boom-2ip: encrypted_github_token is intentionally NOT dumped here (see
-		// the domains registry follow-up). New DOMAIN-owned user columns append
-		// from internal/domains so a fresh domain (amazon → books/audiobooks) is
-		// never silently dropped from backups.
+		"reading_monitor_enabled", "reading_monitor_mode", "reading_monitor_calibrating_until",
+		// New DOMAIN-owned user columns append from internal/shared/domaincols so a
+		// fresh domain (amazon → books/audiobooks) is never silently dropped.
 	}, domaincols.UserBackupColumns()...)},
+	// Global award/label catalog. Migration-seeded but runtime-editable
+	// (optimized_prompt), and award_ledger REFERENCES labels(id).
+	{"labels", []string{
+		"id", "kind", "label", "glyph", "description", "optimized_prompt", "rank", "tier",
+		"condition", "created_at", "updated_at", "period_default",
+	}},
+	{"label_gen_config", []string{"singleton", "system_prompt", "updated_at"}},
+	{"label_images", []string{
+		"label_id", "image_bytes", "mime_type", "model", "prompt", "seed", "generated_at",
+	}},
 	{"projects", []string{"name", "description", "owner", "dependencies", "repository"}},
 	// boom-b5x.2: hashed_token / hashed_refresh_token columns are dumped so
 	// hashed-only rows (new sessions minted after migration 00026) survive an
 	// export → import round-trip. Post-v31 only the hashed_* columns exist.
 	{"auth_tokens", []string{"owner", "token_expiry", "last_usage", "token_name", "token_description", "hashed_token"}},
 	{"refresh_tokens", []string{"owner", "token_expiry", "hashed_refresh_token"}},
+	{"oidc_sessions", []string{
+		"hashed_session_id", "username", "id_token_expiry", "hashed_refresh", "created_at",
+		"encrypted_refresh",
+	}},
+	{"user_external_identities", []string{
+		"id", "username", "provider", "sub", "email", "claims", "created_at", "last_seen_at",
+	}},
+	{"user_avatars", []string{
+		"username", "image_bytes", "mime_type", "prompt", "model", "seed", "status",
+		"error_message", "generated_at", "updated_at",
+	}},
+	{"dashboard_layouts", []string{"id", "owner", "scope", "layout", "updated_at"}},
+	{"goals", []string{
+		"id", "owner", "name", "description", "spec", "enabled", "created_at", "updated_at",
+		"last_evaluated_at", "last_progress", "public",
+	}},
+	{"github_stats_cache", []string{
+		"username", "login", "totals_json", "contribution_grid_json", "top_repos_json",
+		"languages_json", "fetched_at",
+	}},
+	{"widget_defs", []string{"def_id", "username", "name", "spec", "created_at", "updated_at"}},
+	{"widget_links", []string{
+		"link_id", "username", "scope_type", "scope_ref", "created_at", "last_used_at", "origins",
+	}},
+	{"award_ledger", []string{
+		"username", "label_id", "period_type", "period_start", "period_end", "logged_at",
+	}},
+	{"notifications", []string{
+		"id", "owner", "type", "title", "body", "data", "created_at", "read_at",
+	}},
+	// boom-qs80: the ai_* (boom-1l9) and workout_* columns were added by later
+	// migrations and were silently NULLed by every restore until they were listed.
 	{"heartbeats", []string{
-		"id", "editor", "plugin", "platform", "machine", "sender", "user_agent",
-		"branch", "category", "cursorpos", "dependencies", "entity", "is_write",
-		"language", "lineno", "file_lines", "project", "ty", "time_sent", "gap_seconds",
+		"id", "editor", "plugin", "platform", "machine", "sender", "user_agent", "branch",
+		"category", "cursorpos", "dependencies", "entity", "is_write", "language", "lineno",
+		"file_lines", "project", "ty", "time_sent", "gap_seconds", "ai_input_tokens",
+		"ai_output_tokens", "ai_line_changes", "human_line_changes", "ai_prompt_length",
+		"ai_session", "ai_subscription_plan", "workout_kind", "workout_duration_s", "workout_kcal",
+		"workout_avg_hr", "workout_distance_m",
 	}},
 	{"badges", []string{"link_id", "username", "project"}},
-	{"hb_rollup_daily", []string{"sender", "day", "project", "language", "editor", "platform", "machine", "category", "plugin", "branch", "total_seconds"}},
+	{"health_samples", []string{
+		"id", "owner", "kind", "unit", "qty", "q_min", "q_avg", "q_max", "ts_start", "ts_end",
+		"meta", "workout_id",
+	}},
+	{"workout_details", []string{"heartbeat_id", "source_uuid", "hr_series", "route"}},
+	{"hb_rollup_daily", []string{
+		"sender", "day", "project", "language", "editor", "platform", "machine", "category",
+		"plugin", "branch", "total_seconds", "language_missing", "project_missing",
+		"editor_missing", "platform_missing", "machine_missing", "category_missing",
+		"plugin_missing", "branch_missing",
+	}},
+	{"health_rollup_daily", []string{
+		"owner", "day", "kind", "total_qty", "avg_qty", "min_qty", "max_qty", "sample_count",
+	}},
 	{"curation_rules", []string{"id", "sender", "axis", "action", "match_value", "new_value", "created_at", "match_type", "enabled", "apply_at_ingest"}},
 	{"spaces", []string{"id", "owner", "name", "position", "created_at"}},
 	{"space_rules", []string{"id", "space_id", "axis", "match_value", "match_type"}},
+	// SECURITY (boom-qs80 neighbour): import_jobs.value is a jsonb job payload.
+	// It must never carry a plaintext API token — the producer side
+	// (internal/boomtime/admin/import.go + internal/boomtime/importer) owns that
+	// invariant. Dropping the column here would only hide it from backups while
+	// leaving it in the DB, so the column stays dumped (restore needs it: it is
+	// NOT NULL) and the scrub belongs upstream.
 	{"import_jobs", []string{
-		"id", "value", "state", "error", "created_at", "updated_at", "owner",
-		"start_date", "end_date", "total_days", "processed_days", "imported_count",
-		"current_day", "started_at", "finished_at",
+		"id", "value", "state", "error", "created_at", "updated_at", "owner", "start_date",
+		"end_date", "total_days", "processed_days", "imported_count", "current_day", "started_at",
+		"finished_at", "drift",
 	}},
 	{"import_job_logs", []string{"id", "job_id", "ts", "level", "message"}},
+	{"reading_items", []string{
+		"id", "owner", "source", "external_id", "title", "authors", "cover_url", "status",
+		"progress_percent", "finished", "started_at", "finished_at", "rating", "raw_meta",
+		"synced_at", "subtitle", "narrators", "series", "runtime_min", "purchase_date", "isbn",
+		"amazon_asin", "genres", "goodreads_rating", "hardcover_book_id", "hardcover_edition_id",
+		"hardcover_status", "hardcover_match_confidence", "hardcover_matched_at",
+		"hardcover_pushed_at", "hardcover_remote_updated_at", "hardcover_pushed_progress",
+		"status_override", "rating_override", "finished_at_override", "curation_updated_at",
+		"hardcover_pushed_status", "hardcover_slug", "match_attempted_at", "hardcover_lists",
+		"hardcover_read_id", "liberation_status", "liberated_at", "audio_path", "audio_bytes",
+		"audio_format", "content_format", "liberation_error", "liberation_attempts",
+	}},
+	{"reading_activity", []string{
+		"id", "owner", "source", "granularity", "bucket_date", "listening_seconds", "pages",
+		"synced_at",
+	}},
+	{"reading_events", []string{
+		"id", "owner", "source", "external_id", "hardcover_book_id", "origin", "external_read_id",
+		"started_at", "finished_at", "progress_pages", "progress_seconds", "created_at",
+		"updated_at",
+	}},
+	{"book_sync_state", []string{
+		"owner", "source", "last_library_cursor", "last_finished_cursor", "last_activity_cursor",
+		"last_backfill_at", "last_forward_at", "updated_at", "last_match_at",
+	}},
+	{"book_liberation_attempts", []string{
+		"id", "owner", "asin", "started_at", "finished_at", "status", "bytes", "duration_ms",
+		"content_format", "error",
+	}},
+	{"kindle_reading_insights", []string{"owner", "raw", "fetched_at"}},
+	{"kindle_reading_monitor_state", []string{
+		"owner", "asin", "last_location", "last_advance_at", "last_polled_at", "active",
+		"updated_at",
+	}},
+	{"kindle_reading_positions", []string{"id", "owner", "asin", "position", "sampled_at"}},
+	{"kindle_reading_monitor_advances", []string{
+		"id", "owner", "source", "interval_secs", "dloc", "at",
+	}},
+	{"hardcover_user_shelf", []string{
+		"owner", "hardcover_book_id", "title", "author", "slug", "status", "updated_at",
+		"synced_at",
+	}},
+	{"hardcover_match_cache", []string{
+		"id_type", "external_id", "hardcover_book_id", "hardcover_edition_id", "method",
+		"matched_at", "book_slug",
+	}},
 }
 
-// serialColumns lists every serial/bigserial PK that must have its sequence
-// repositioned after a COPY of explicit ids (otherwise the next insert
-// collides with a restored row).
-var serialColumns = []string{
-	"heartbeats", "curation_rules", "spaces", "space_rules", "import_jobs", "import_job_logs",
+// dumpExemptTables names every public table deliberately NOT in the backup, with
+// the reason. The census test (dump_schema_test.go) requires each entry to be
+// unreachable by `TRUNCATE <dumpTables> CASCADE`, so an exemption can never
+// become a silent data-destruction hole: if a future migration gives one of
+// these a FK to a dumped table, the census fails and it must be dumped instead.
+var dumpExemptTables = map[string]string{
+	"goose_db_version": "schema-version ledger owned by the running binary's migrations; the archive manifest records the version instead",
+	"jobs":             "internal/jobs queue rows (claim/lease/heartbeat state). Restoring a snapshot would resurrect work whose workers are long gone; enqueuers rebuild it. No FK, so CASCADE never reaches it",
+	"job_schedules":    "leader-singleton scheduler cursors (next_run_at). A cursor from backup time would re-fire or stall every periodic job; the scheduler re-seeds on boot. No FK, so CASCADE never reaches it",
 }
+
+// serialResetTables is DERIVED, not hand-maintained: every dumped table whose
+// `id` column is backed by a sequence needs setval() after a COPY of explicit
+// ids, or the next insert collides with a restored row. It used to be a literal
+// list that froze at six tables while migrations added a dozen more serial-PK
+// tables (boom-qs80); resolveSerialResetTables() in dump_schema.go asks the live
+// catalog instead so it can never drift again.
 
 // dumpManifest is the archive's self-description (manifest.json).
 type dumpManifest struct {
@@ -259,14 +409,22 @@ func validateManifest(m *dumpManifest, zr *zip.Reader, currentGoose int64) error
 	return nil
 }
 
-// usersHasEncryptedRows scans the users COPY-text stream for any non-null
-// encrypted_wakatime_key value. Postgres COPY text format is tab-separated,
-// `\N` marks SQL NULL, newlines terminate rows. We use the column index of
-// encrypted_wakatime_key in the current dump's users column list (defensive:
-// walk dumpTables so the check keeps working if the column order changes).
-// The check is best-effort: a malformed users file will fail the subsequent
-// COPY FROM anyway; here we only care about "does this dump contain
-// ciphertext we would need to decrypt?" so unset-key restores can be blocked.
+// usersHasEncryptedRows scans the users COPY-text stream for ANY non-null
+// ciphertext value, across EVERY encrypted column the domain registry knows
+// about (wakatime, github, amazon, hardcover) that is actually present in this
+// dump's users column list — not just encrypted_wakatime_key.
+//
+// boom-qs80: the single-column version let a dump whose only ciphertext was
+// encrypted_amazon_device / encrypted_hardcover_key slip past the
+// restore-without-BOOM_ENCRYPTION_KEY gate, stranding those secrets under a key
+// nobody has — the exact incident class the gate exists to prevent (boom-awh.3).
+//
+// Postgres COPY text format is tab-separated, `\N` marks SQL NULL, newlines
+// terminate rows. Column indexes come from the current dump's users column list
+// (defensive: walk dumpTables so the check keeps working if the order changes).
+// The check is best-effort: a malformed users file will fail the subsequent COPY
+// FROM anyway; here we only care about "does this dump contain ciphertext we
+// would need to decrypt?" so unset-key restores can be blocked.
 func usersHasEncryptedRows(zr *zip.Reader) (bool, error) {
 	var usersCols []string
 	for _, t := range dumpTables {
@@ -275,14 +433,20 @@ func usersHasEncryptedRows(zr *zip.Reader) (bool, error) {
 			break
 		}
 	}
-	col := -1
-	for i, c := range usersCols {
-		if c == "encrypted_wakatime_key" {
-			col = i
-			break
+	// Every registry-declared encrypted column on `users` that this dump carries.
+	want := make(map[string]bool)
+	for _, ec := range domaincols.EncryptedColumns() {
+		if ec.Table == "users" {
+			want[ec.Column] = true
 		}
 	}
-	if col < 0 {
+	var cols []int
+	for i, c := range usersCols {
+		if want[c] {
+			cols = append(cols, i)
+		}
+	}
+	if len(cols) == 0 {
 		return false, nil
 	}
 	f, err := zr.Open(entryName("users"))
@@ -300,11 +464,13 @@ func usersHasEncryptedRows(zr *zip.Reader) (bool, error) {
 			continue
 		}
 		fields := strings.Split(line, "\t")
-		if col >= len(fields) {
-			continue
-		}
-		if fields[col] != `\N` {
-			return true, nil
+		for _, col := range cols {
+			if col >= len(fields) {
+				continue
+			}
+			if fields[col] != `\N` {
+				return true, nil
+			}
 		}
 	}
 	return false, nil
@@ -336,17 +502,37 @@ func (d *DB) RestoreAll(ctx context.Context, zr *zip.Reader) (RestoreSummary, er
 	if err := validateManifest(m, zr, currentGoose); err != nil {
 		return summary, err
 	}
-	// boom-awh.3: refuse to restore a dump that carries wakatime ciphertext
-	// when this process has no BOOM_ENCRYPTION_KEY configured — the restored
-	// blobs would be undecryptable forever, wiping every user's saved key on
-	// the next read attempt. Better to fail loudly here than after TRUNCATE.
+	// boom-awh.3: refuse to restore a dump that carries ANY per-user ciphertext
+	// (boom-qs80 widened this from wakatime-only to every column in the
+	// domaincols encrypted registry) when this process has no
+	// BOOM_ENCRYPTION_KEY configured — the restored blobs would be
+	// undecryptable forever, wiping every user's saved secret on the next read
+	// attempt. Better to fail loudly here than after TRUNCATE.
 	if hasEnc, err := usersHasEncryptedRows(zr); err != nil {
 		return summary, &RestoreValidationError{Msg: "unreadable users table entry: " + err.Error()}
 	} else if hasEnc && !isEncryptionKeyConfigured() {
 		return summary, &RestoreValidationError{
-			Msg: "backup contains encrypted user secrets but BOOM_ENCRYPTION_KEY is not configured — set it in this environment before restoring, or every user's saved Wakatime key will be unusable",
+			Msg: "backup contains encrypted user secrets but BOOM_ENCRYPTION_KEY is not configured — set it in this environment before restoring, or every encrypted user secret in the archive (Wakatime / GitHub / Amazon device / Hardcover) becomes permanently unreadable",
 		}
 	}
+	// boom-qs80: refuse to restore when `TRUNCATE <dumpTables> CASCADE` would
+	// empty a table this archive does not carry. Postgres cascades a TRUNCATE
+	// into every table that REFERENCES a truncated one, so an FK-linked table
+	// missing from the dump is destroyed by the restore and never repopulated —
+	// silently, inside the committed transaction. The closure is re-derived from
+	// the LIVE catalog on every restore so a migration that adds a table cannot
+	// out-run this check. Runs BEFORE the BEGIN: nothing is touched.
+	if extra, err := undumpedCascadeTargets(ctx, conn); err != nil {
+		return summary, fmt.Errorf("verify backup table coverage: %w", err)
+	} else if len(extra) > 0 {
+		return summary, &RestoreValidationError{Msg: fmt.Sprintf(
+			"refusing to restore: this server's schema has %d table(s) that TRUNCATE ... CASCADE "+
+				"would empty but the backup does not carry (%s) — restoring would permanently "+
+				"destroy their rows. Add them to dumpTables in internal/shared/db/dump.go (or to "+
+				"dumpExemptTables if they truly hold no restorable state).",
+			len(extra), strings.Join(extra, ", "))}
+	}
+
 	summary.GooseVersion = m.GooseVersion
 
 	if _, err := conn.Exec(ctx, "BEGIN"); err != nil {
@@ -383,7 +569,13 @@ func (d *DB) RestoreAll(ctx context.Context, zr *zip.Reader) (RestoreSummary, er
 
 	// Reposition every serial PK sequence past the restored ids; an untouched
 	// (empty-table) sequence yields 1/is_called=false, i.e. the next id is 1.
-	for _, table := range serialColumns {
+	// The set is derived from the live catalog (see serialResetTables) so a
+	// newly-dumped serial-PK table can never be left with a colliding sequence.
+	serialTables, err := resolveSerialResetTables(ctx, conn)
+	if err != nil {
+		return summary, fmt.Errorf("resolve serial sequences: %w", err)
+	}
+	for _, table := range serialTables {
 		q := fmt.Sprintf(
 			`SELECT setval(pg_get_serial_sequence('%s','id'), coalesce(max(id), 1), max(id) IS NOT NULL) FROM %s`,
 			table, table)

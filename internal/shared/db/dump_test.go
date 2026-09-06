@@ -123,11 +123,81 @@ func seedFullStateG(d *DB, f *SenderFixtureG) (runningJobID int) {
 	mustExecG(d, ctx, `INSERT INTO space_rules (space_id, axis, match_value) VALUES ($1,'project','P')`, spaceID)
 
 	err = d.Pool.QueryRow(ctx,
-		`INSERT INTO import_jobs (value, state, owner) VALUES ('{}'::jsonb,'running',$1) RETURNING id`,
+		`INSERT INTO import_jobs (value, state, owner, drift) VALUES ('{}'::jsonb,'running',$1,'{"d":1}'::jsonb) RETURNING id`,
 		sender).Scan(&runningJobID)
 	Expect(err).NotTo(HaveOccurred())
 	mustExecG(d, ctx, `INSERT INTO import_job_logs (job_id, level, message) VALUES ($1,'info','hi')`, runningJobID)
+
+	seedNonCoreTablesG(d, f)
 	return runningJobID
+}
+
+// seedNonCoreTablesG puts at least one row into every dumpTables entry the
+// original pre-books seed did not touch (boom-qs80). The round-trip spec asserts
+// EVERY dumped table is non-empty before the dump, so this is what makes
+// "restore preserves every table" a real claim instead of a claim about twelve
+// tables — and it is what exercises the FK load ORDER of the enlarged
+// dumpTables with actual rows in the child tables.
+func seedNonCoreTablesG(d *DB, f *SenderFixtureG) {
+	ctx := f.Ctx()
+	sender := f.Sender()
+
+	// labels is migration-seeded; borrow a real id for the FK-bearing children.
+	var labelID string
+	Expect(d.Pool.QueryRow(ctx, `SELECT id FROM labels ORDER BY id LIMIT 1`).Scan(&labelID)).To(Succeed())
+
+	mustExecG(d, ctx, `INSERT INTO label_gen_config (singleton, system_prompt) VALUES (true,'seeded')
+		ON CONFLICT (singleton) DO UPDATE SET system_prompt = EXCLUDED.system_prompt`)
+	mustExecG(d, ctx, `INSERT INTO label_images (label_id, image_bytes, mime_type) VALUES ($1,'\x0102','image/png')
+		ON CONFLICT (label_id) DO UPDATE SET image_bytes = EXCLUDED.image_bytes`, labelID)
+
+	// users children
+	mustExecG(d, ctx, `INSERT INTO oidc_sessions (hashed_session_id, username, id_token_expiry)
+		VALUES ($2, $1, now() + interval '1 hour')`, sender, []byte("sess-"+sender))
+	mustExecG(d, ctx, `INSERT INTO user_external_identities (username, provider, sub)
+		VALUES ($1,'oidc','sub-'||$1)`, sender)
+	mustExecG(d, ctx, `INSERT INTO user_avatars (username, image_bytes, status) VALUES ($1,'\x0304','ready')`, sender)
+	mustExecG(d, ctx, `INSERT INTO dashboard_layouts (owner, scope, layout) VALUES ($1,'main','{"g":[]}'::jsonb)`, sender)
+	mustExecG(d, ctx, `INSERT INTO goals (owner, name, spec) VALUES ($1,'g','{"kind":"daily"}'::jsonb)`, sender)
+	mustExecG(d, ctx, `INSERT INTO github_stats_cache (username, login, totals_json, contribution_grid_json, top_repos_json, languages_json)
+		VALUES ($1,'gh','{}'::jsonb,'[]'::jsonb,'[]'::jsonb,'[]'::jsonb)`, sender)
+	mustExecG(d, ctx, `INSERT INTO widget_defs (username, name, spec) VALUES ($1,'w','{}'::jsonb)`, sender)
+	mustExecG(d, ctx, `INSERT INTO widget_links (username, scope_type, scope_ref) VALUES ($1,'user','')`, sender)
+	mustExecG(d, ctx, `INSERT INTO award_ledger (username, label_id, period_type, period_start, period_end)
+		VALUES ($1,$2,'daily', now() - interval '1 day', now())`, sender, labelID)
+	mustExecG(d, ctx, `INSERT INTO notifications (owner, type, title) VALUES ($1,'info','hello')`, sender)
+
+	// heartbeats children — grab a seeded heartbeat id for the FK.
+	var hbID int64
+	Expect(d.Pool.QueryRow(ctx,
+		`SELECT id FROM heartbeats WHERE sender=$1 ORDER BY id LIMIT 1`, sender).Scan(&hbID)).To(Succeed())
+	mustExecG(d, ctx, `INSERT INTO health_samples (owner, kind, unit, qty, ts_start, ts_end, workout_id)
+		VALUES ($1,'heart_rate','count/min',72,now() - interval '1 hour', now(), $2)`, sender, hbID)
+	mustExecG(d, ctx, `INSERT INTO workout_details (heartbeat_id, source_uuid, hr_series)
+		VALUES ($1,'uuid-'||$2,'[]'::jsonb)`, hbID, sender)
+	mustExecG(d, ctx, `INSERT INTO health_rollup_daily (owner, day, kind, total_qty, sample_count)
+		VALUES ($1, current_date, 'heart_rate', 72, 1)`, sender)
+
+	// books / reading domain
+	var itemID int64
+	Expect(d.Pool.QueryRow(ctx,
+		`INSERT INTO reading_items (owner, source, external_id, title) VALUES ($1,'audible','ext-'||$1,'T') RETURNING id`,
+		sender).Scan(&itemID)).To(Succeed())
+	mustExecG(d, ctx, `INSERT INTO reading_activity (owner, source, granularity, bucket_date, listening_seconds)
+		VALUES ($1,'audible','day', current_date, 120)`, sender)
+	mustExecG(d, ctx, `INSERT INTO reading_events (owner, source, external_id, origin, external_read_id)
+		VALUES ($1,'audible','ext-'||$1,'boomtime','rd-'||$1)`, sender)
+	mustExecG(d, ctx, `INSERT INTO book_sync_state (owner, source) VALUES ($1,'audible')`, sender)
+	mustExecG(d, ctx, `INSERT INTO book_liberation_attempts (owner, asin, status) VALUES ($1,'ASIN1','ok')`, sender)
+	mustExecG(d, ctx, `INSERT INTO kindle_reading_insights (owner, raw) VALUES ($1,'{}'::jsonb)`, sender)
+	mustExecG(d, ctx, `INSERT INTO kindle_reading_monitor_state (owner, asin, last_location) VALUES ($1,'ASIN1',10)`, sender)
+	mustExecG(d, ctx, `INSERT INTO kindle_reading_positions (owner, asin, position) VALUES ($1,'ASIN1',10)`, sender)
+	mustExecG(d, ctx, `INSERT INTO kindle_reading_monitor_advances (owner, source, interval_secs, dloc)
+		VALUES ($1,'kindle',60,5)`, sender)
+	mustExecG(d, ctx, `INSERT INTO hardcover_user_shelf (owner, hardcover_book_id, status) VALUES ($1,4242,'read')`, sender)
+	mustExecG(d, ctx, `INSERT INTO hardcover_match_cache (id_type, external_id, hardcover_book_id, method)
+		VALUES ('asin','ASIN-'||$1, 4242, 'exact')
+		ON CONFLICT DO NOTHING`, sender)
 }
 
 // buildArchiveG assembles an in-memory zip from name -> content.
@@ -271,11 +341,14 @@ var _ = ginkgo.Describe("dump + restore", func() {
 			finalEntries := make(map[string]string, len(entries))
 			for k, v := range entries {
 				if v == "__CURRENT_GOOSE__" {
-					finalEntries[k] = mkManifest(dumpAppID, 1, currentGoose)
+					finalEntries[k] = mkManifest(dumpAppID, dumpFormatVersion, currentGoose)
 				} else if v == "__GOOSE_PLUS_7__" {
-					finalEntries[k] = mkManifest(dumpAppID, 1, currentGoose+7)
+					// Must carry the CURRENT format version, otherwise the
+					// format check short-circuits before the goose check and
+					// this case stops testing what it names.
+					finalEntries[k] = mkManifest(dumpAppID, dumpFormatVersion, currentGoose+7)
 				} else if v == "__FOREIGN_APP__" {
-					finalEntries[k] = mkManifest("otherapp", 1, currentGoose)
+					finalEntries[k] = mkManifest("otherapp", dumpFormatVersion, currentGoose)
 				} else if v == "__FUTURE_FORMAT__" {
 					finalEntries[k] = mkManifest(dumpAppID, 99, currentGoose)
 				} else {
