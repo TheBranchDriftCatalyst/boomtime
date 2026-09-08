@@ -57,6 +57,40 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # The Go build EMBEDS the built SPAs (go:embed dist in
+      # internal/shared/server/server.go and internal/books/web/embed.go), and
+      # both dist/ directories are gitignored — so `go vet ./...` cannot even
+      # typecheck without building the frontend first. It fails with
+      # "pattern dist: no matching files found". The Dockerfiles already do this
+      # in an earlier stage; this gate has to do it too.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: yarn
+          cache-dependency-path: web/yarn.lock
+
+      - name: yarn install
+        working-directory: web
+        run: yarn install --frozen-lockfile --ignore-engines
+
+      - name: build SPAs for the embeds
+        working-directory: web
+        run: |
+          yarn build
+          yarn build:books
+
+      # Place the bundles where the embeds look for them. Vite writes to
+      # web/dist and web/dist-books; the go:embed directives read
+      # internal/shared/server/dist and internal/books/web/dist. The Dockerfiles
+      # bridge that with a COPY between stages (Dockerfile:61,
+      # Dockerfile.catalyst-books:55) — mirror it here, or `go vet` still fails
+      # on "pattern dist: no matching files found" even after a successful build.
+      - name: stage the bundles for go:embed
+        run: |
+          rm -rf internal/shared/server/dist internal/books/web/dist
+          cp -r web/dist internal/shared/server/dist
+          cp -r web/dist-books internal/books/web/dist
+
       - name: go vet
         run: go vet ./...
 

@@ -9,6 +9,7 @@
     "shared/main.tsx"
   ],
   "scripts": {
+    "postinstall": "node scripts/link-colocated-deps.mjs",
     "dev": "vite",
     "build": "tsc -b --noEmit --force && vite build",
     "build:books": "tsc -b --noEmit --force && vite build --config vite.books.config.ts",
