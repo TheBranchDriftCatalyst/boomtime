@@ -79,7 +79,11 @@ func TestHardcoverPull_ReEditBackToPushedValueIsAdopted(t *testing.T) {
 	seedLinkedItem(t, d, ctx, owner, externalID, bookID, "reading")
 
 	// t0 — we pushed 'read'. Well outside the echo-skew window by t1/t3.
-	t0 := time.Now().Add(-3 * time.Hour)
+	// Truncated to MICROSECONDS: Postgres stores microsecond precision, so a Go
+	// time with a nanosecond tail never survives the round trip and an exact
+	// comparison against the stored value fails. This passed on macOS only
+	// because darwin's clock commonly yields a zero nanosecond tail.
+	t0 := time.Now().Add(-3 * time.Hour).Truncate(time.Microsecond)
 	stampPush(t, d, ctx, owner, externalID, "read", t0)
 
 	// t1 — a genuine Hardcover edit to 'dnf' (a value we never pushed).
@@ -148,7 +152,7 @@ func TestHardcoverPull_EchoStillSuppressed(t *testing.T) {
 	seedLinkedItem(t, d, ctx, owner, externalID, bookID, "reading")
 
 	// We pushed 'read' 10 seconds ago; the user's curation stamp is 10 seconds old.
-	pushedAt := time.Now().Add(-10 * time.Second)
+	pushedAt := time.Now().Add(-10 * time.Second).Truncate(time.Microsecond)
 	stampPush(t, d, ctx, owner, externalID, "read", pushedAt)
 
 	// Hardcover reports the same status with its own (slightly later) updated_at.
@@ -186,7 +190,7 @@ func TestHardcoverPull_RatingEditWithUnchangedStatusIsAdopted(t *testing.T) {
 	const bookID = int64(90003)
 	seedLinkedItem(t, d, ctx, owner, externalID, bookID, "read")
 
-	t0 := time.Now().Add(-2 * time.Hour)
+	t0 := time.Now().Add(-2 * time.Hour).Truncate(time.Microsecond)
 	stampPush(t, d, ctx, owner, externalID, "read", t0)
 
 	// An hour later the user rates the book 4.5 and records a finish date on
@@ -227,7 +231,7 @@ func TestHardcoverPull_DifferentStatusInsideSkewWindowIsAdopted(t *testing.T) {
 	const bookID = int64(90004)
 	seedLinkedItem(t, d, ctx, owner, externalID, bookID, "reading")
 
-	pushedAt := time.Now().Add(-30 * time.Second)
+	pushedAt := time.Now().Add(-30 * time.Second).Truncate(time.Microsecond)
 	stampPush(t, d, ctx, owner, externalID, "read", pushedAt)
 
 	inWindow := pushedAt.Add(5 * time.Second) // well inside hardcoverEchoSkew

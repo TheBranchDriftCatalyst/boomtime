@@ -248,14 +248,18 @@ func TestUpdateHardcoverLinkFromPull_LWW(t *testing.T) {
 	const bookID = int64(7788)
 	seed("B0LWW0001", bookID)
 	// User sets dnf at T1.
-	t1 := time.Now().Add(-2 * time.Hour)
+	// Truncated to MICROSECONDS: Postgres stores microsecond precision, so a Go
+	// time with a nanosecond tail never survives the round trip and an exact
+	// comparison against the stored value fails. This passed on macOS only
+	// because darwin's clock commonly yields a zero nanosecond tail.
+	t1 := time.Now().Add(-2 * time.Hour).Truncate(time.Microsecond)
 	if _, err := d.Pool.Exec(ctx,
 		`UPDATE reading_items SET status_override='dnf', curation_updated_at=$3
 		   WHERE owner=$1 AND source='kindle' AND external_id=$2`, owner, "B0LWW0001", t1); err != nil {
 		t.Fatalf("seed override: %v", err)
 	}
 	// Hardcover genuinely changes to reading at T2 > T1 (not our echo).
-	t2 := time.Now().Add(-1 * time.Hour)
+	t2 := time.Now().Add(-1 * time.Hour).Truncate(time.Microsecond)
 	n, err := d.UpdateHardcoverLinkFromPull(ctx, owner, HardcoverUserBookLink{
 		BookID: bookID, Status: "reading", RemoteUpdatedAt: t2, Rating: fptr(3),
 	})
@@ -275,14 +279,14 @@ func TestUpdateHardcoverLinkFromPull_LWW(t *testing.T) {
 
 	// --- (b) local-newer keeps ------------------------------------------------
 	seed("B0LWW0002", 7789)
-	tNew := time.Now()
+	tNew := time.Now().Truncate(time.Microsecond)
 	if _, err := d.Pool.Exec(ctx,
 		`UPDATE reading_items SET status_override='dnf', curation_updated_at=$3
 		   WHERE owner=$1 AND source='kindle' AND external_id=$2`, owner, "B0LWW0002", tNew); err != nil {
 		t.Fatalf("seed override: %v", err)
 	}
 	// A stale remote change (older than our override) must NOT be adopted.
-	tOld := time.Now().Add(-3 * time.Hour)
+	tOld := time.Now().Add(-3 * time.Hour).Truncate(time.Microsecond)
 	if _, err := d.UpdateHardcoverLinkFromPull(ctx, owner, HardcoverUserBookLink{
 		BookID: 7789, Status: "reading", RemoteUpdatedAt: tOld,
 	}); err != nil {
@@ -295,7 +299,7 @@ func TestUpdateHardcoverLinkFromPull_LWW(t *testing.T) {
 
 	// --- (c) echo-suppressed --------------------------------------------------
 	seed("B0LWW0003", 7790)
-	tUser := time.Now().Add(-2 * time.Hour)
+	tUser := time.Now().Add(-2 * time.Hour).Truncate(time.Microsecond)
 	if _, err := d.Pool.Exec(ctx,
 		`UPDATE reading_items SET status_override='dnf', curation_updated_at=$3,
 		        hardcover_pushed_status='dnf', hardcover_pushed_at=now()
@@ -304,7 +308,7 @@ func TestUpdateHardcoverLinkFromPull_LWW(t *testing.T) {
 	}
 	// Hardcover echoes our own push back (status equals hardcover_pushed_status)
 	// with a newer updated_at — it must NOT be adopted as a remote edit.
-	tEcho := time.Now()
+	tEcho := time.Now().Truncate(time.Microsecond)
 	if _, err := d.UpdateHardcoverLinkFromPull(ctx, owner, HardcoverUserBookLink{
 		BookID: 7790, Status: "dnf", RemoteUpdatedAt: tEcho,
 	}); err != nil {
