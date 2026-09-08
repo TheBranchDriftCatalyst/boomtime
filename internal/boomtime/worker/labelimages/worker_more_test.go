@@ -381,15 +381,9 @@ var _ = Describe("Worker.RegenerateOne DB-first (boom-d6x)", func() {
 			Description:     "db-desc",
 			Condition:       json.RawMessage(`{}`),
 		}
+		preserveSeededLabel(d, ctx, baseline.ID)
 		Expect(d.UpsertLabel(ctx, dbLabel)).To(Succeed())
-		DeferCleanup(func() {
-			// Restore the baseline-shipped row via re-upsert with the
-			// baseline's prompt so we don't leak DB-WINS-PROMPT to other tests.
-			restored := dbLabel
-			restored.OptimizedPrompt = baseline.Prompt
-			_ = d.UpsertLabel(ctx, restored)
-			cleanupTestRowsGinkgo(d, baseline.ID)
-		})
+		DeferCleanup(func() { cleanupTestRowsGinkgo(d, baseline.ID) })
 		cleanupTestRowsGinkgo(d, baseline.ID)
 
 		var lastReq *shimReq
@@ -615,6 +609,7 @@ var _ = Describe("Worker.RegenerateOne fallback (boom-d6x)", func() {
 
 		// Pick a baseline id and ensure it is NOT in the DB catalog.
 		baseline := labelcatalog.Entries[0]
+		preserveSeededLabel(d, ctx, baseline.ID)
 		_ = d.DeleteLabel(ctx, baseline.ID)
 		cleanupTestRowsGinkgo(d, baseline.ID)
 		DeferCleanup(func() { cleanupTestRowsGinkgo(d, baseline.ID) })
@@ -643,6 +638,7 @@ var _ = Describe("Worker.RegenerateOne fallback (boom-d6x)", func() {
 		ctx := context.Background()
 
 		baseline := labelcatalog.Entries[0]
+		preserveSeededLabel(d, ctx, baseline.ID)
 		// Remove the DB row so the baseline path is taken (proves compile-
 		// baseline-then-delete-fail path).
 		_ = d.DeleteLabel(ctx, baseline.ID)
@@ -1056,3 +1052,35 @@ var _ = Describe("Worker.systemPrompt cache refresh + mutex (boom-d6x)", func() 
 			"sysFetched MUST be advanced past zero-time exactly once")
 	})
 })
+
+// preserveSeededLabel snapshots a REAL catalog row and restores it verbatim when
+// the spec ends.
+//
+// Several specs in this file deliberately reuse an id from
+// labelcatalog.Entries — that id collision IS what they are testing — and then
+// delete or rewrite the row. But `labels` is a GLOBAL catalog with no owner
+// column, and the whole `go test -p 1 ./...` run shares ONE database, so a spec
+// that leaves a seeded row deleted (or rewritten with condition '{}') corrupts
+// every package that runs after it. That is exactly what broke
+// internal/shared/db's "ListLabels returns the seeded ids with valid condition
+// JSONB": it failed in CI and under a full -p 1 run, yet passed every time that
+// package was run on its own, because the corruption came from a different
+// package entirely.
+//
+// The cleanup opens its OWN handle rather than reusing the caller's: one of
+// these specs closes its pool mid-spec on purpose, so restoring through it would
+// silently fail and leave the catalog broken.
+func preserveSeededLabel(d *db.DB, ctx context.Context, id string) {
+	seeded, err := d.GetLabel(ctx, id)
+	Expect(err).NotTo(HaveOccurred(), "snapshot seeded label %s", id)
+	DeferCleanup(func() {
+		fresh := openTestDBGinkgo()
+		defer fresh.Close()
+		if seeded == nil {
+			// It was not seeded to begin with; leave nothing behind.
+			_ = fresh.DeleteLabel(ctx, id)
+			return
+		}
+		_ = fresh.UpsertLabel(ctx, *seeded)
+	})
+}
