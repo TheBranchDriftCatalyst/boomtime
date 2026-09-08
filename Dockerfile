@@ -7,6 +7,13 @@ COPY web/package.json web/yarn.lock ./
 # node 24 semantics. npm ci ignored engine mismatches silently; yarn 1's
 # --frozen-lockfile treats them as fatal, so the pragma stays until we
 # bump the base image (or the dep drops the requirement).
+# web/package.json runs scripts/link-colocated-deps.mjs on postinstall (it links
+# node_modules into the colocated FE trees for the non-Docker CI gates, which
+# have no parent monorepo to hoist from). This stage installs BEFORE copying
+# web/, so the script has to be present or `yarn install` dies with
+# MODULE_NOT_FOUND. It is a no-op here — the colocated trees do not exist yet at
+# this point, and this stage links them explicitly further down anyway.
+COPY web/scripts ./scripts
 RUN yarn install --frozen-lockfile --ignore-engines
 COPY web/ ./
 # Part B Stage 2: the widget catalog spec is ONE committed file,

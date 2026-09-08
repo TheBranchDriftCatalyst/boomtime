@@ -15,6 +15,13 @@ WORKDIR /web
 COPY web/package.json web/yarn.lock ./
 # --ignore-engines: a transitive dep declares node>=24 but nothing here needs
 # node 24 semantics (see the host Dockerfile for the full rationale).
+# web/package.json runs scripts/link-colocated-deps.mjs on postinstall (it links
+# node_modules into the colocated FE trees for the non-Docker CI gates, which
+# have no parent monorepo to hoist from). This stage installs BEFORE copying
+# web/, so the script has to be present or `yarn install` dies with
+# MODULE_NOT_FOUND. It is a no-op here — the colocated trees do not exist yet at
+# this point, and this stage links them explicitly further down anyway.
+COPY web/scripts ./scripts
 RUN yarn install --frozen-lockfile --ignore-engines
 COPY web/ ./
 # The "@widget-specs" alias resolves to ../internal/boomtime/widget/specs.json;
