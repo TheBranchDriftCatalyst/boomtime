@@ -80,12 +80,41 @@ background-job enqueue path for a day while the Jobs page looked healthy.
 cannot be passed to it.
 
 **Migrations live in two trees** and both need the change:
-`internal/shared/db/migrations/` (host — FK to `users`) and
-`internal/books/db/migrations/` (standalone books — no `users` table, so a
-plain `owner` column). Goose, numerically ordered.
+`internal/shared/db/migrations/` (host) and `internal/books/db/migrations/`
+(standalone books). Goose, numerically ordered — **the two trees are numbered
+independently**, and the host sequence has gaps (there is no `00084`), so check
+`ls` rather than assuming the next number.
+
+The standalone tree **does have a `users` table** (`00001_books_baseline.sql`), and
+per-user books tables keep the same `owner text NOT NULL REFERENCES
+public.users(username) ON DELETE CASCADE` FK there as on the host. A new table is
+therefore byte-identical across the two trees. (`book_liberation_attempts`
+(`00004`) uses a plain `owner` column and its comment claims there is no users
+table — it is the outlier, and the claim is wrong. Do not copy it.)
+
+Adding a table also means: `dumpTables` in `internal/shared/db/dump.go`
+(FK-parents first — `TestDumpSchemaCensus` enforces it), the hardcoded list in
+`internal/books/db/migrate_standalone_test.go`, and a seed row in the dump
+round-trip spec (it refuses a dumped table it cannot round-trip). Then **drop
+every `boomtime_test*` database**, including `boomtime_books_schema_test`.
 
 ## Conventions & Patterns
 
+- **Change detection has four named strategies, and they fail differently.**
+  Before adding a source or an event type, read
+  `docs/design/change-detection-patterns.md`. In short: `scalar-delta` (sample a
+  number, diff consecutive samples) fails by *aliasing*; `set-reconcile` (diff the
+  fetched key set against stored) fails by *absence-as-deletion*; `push` fails by
+  delivery; `replicated` fails by echo loops. No single defence covers two of
+  them. Set-reconcile sources go through `internal/books/reconcile`, whose one
+  hard rule is that **a fetch returning nothing retires nothing**.
+- **Event types are declared, and the declaration is enforced.**
+  `internal/books/events` registers every event the extraction layer produces,
+  mirroring `internal/shared/query/domains.go` on the read side. Declare `Time`
+  honestly: `events.Validate` REJECTS an event carrying a timestamp on a type
+  declared `TimeUnknown`. **Never fabricate an event time** — a Kindle highlight
+  has none, so `captured_at` stays NULL rather than being stamped with sync time,
+  which would date the whole corpus to the first sync.
 - **The OpenAPI spec is derived, never hand-written.** Register routes through
   the typed seam in `internal/shared/apiroute` so request/response schemas come
   from the Go types. `openapi_quality_test.go` is a **ratchet**: its ceilings

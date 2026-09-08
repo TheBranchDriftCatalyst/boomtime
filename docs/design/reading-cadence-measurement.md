@@ -1,6 +1,9 @@
 # Reading-Cadence Measurement — the epistemology & confirmation procedure
 
-**Companion to** [`catalyst-books-domain-architecture.md`](./catalyst-books-domain-architecture.md).
+**Companion to** [`catalyst-books-domain-architecture.md`](./catalyst-books-domain-architecture.md)
+and [`change-detection-patterns.md`](./change-detection-patterns.md) — this doc is the
+deep treatment of ONE of the four extraction strategies named there
+(`scalar-delta`), the one whose failure mode is aliasing.
 That doc specifies the *mechanism* (§5 the reading-heartbeat model, §5.1 the
 two-level poll + persistent monitor, §6.4 the settled reading-time findings).
 This doc goes deeper on the *measurement problem* underneath it: what we can
