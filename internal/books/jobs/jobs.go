@@ -19,6 +19,7 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/amazon"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/connect/hardcover"
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/ingest/annotations"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/ingest/audible"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/ingest/kindle"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/books/liberate"
@@ -205,6 +206,37 @@ func Register(reg *corejobs.Registry, database *db.DB, cfg *config.Config, notif
 		SetNotify(notifyHub). // persistent reading-monitor toasts
 		SetMonitorConfig(rmCfg)
 
+	// The annotation corpus (boom-siwi.5). Built ONLY when the flag is on, and
+	// left nil otherwise so both the job kind and the pipeline step stay unwired
+	// — RunPipeline skips a nil step, which is what makes flag-off byte-identical
+	// to before the stage existed.
+	var annSvc *annotations.Service
+	if cfg.AnnotationsEnabled() {
+		annSvc = annotations.New(database, amazon.NewStore(database), logger)
+
+		// Dual-mode, like the Kindle insights kind: an owner-scoped job sweeps one
+		// user, an owner-less (scheduled/batch) job fans over every connected user
+		// with a per-user error logged and skipped so one moved DOM or one non-US
+		// credential cannot fail the batch.
+		reg.Register(annotations.KindleAnnotationsKind, corejobs.HandlerFunc(func(jctx context.Context, job corejobs.Job) error {
+			if job.Owner != "" {
+				_, aerr := annSvc.SyncKindleAnnotations(jctx, job.Owner)
+				return aerr
+			}
+			users, uerr := database.ListUsersWithAmazonDevice(jctx)
+			if uerr != nil {
+				return uerr
+			}
+			for _, u := range users {
+				if _, serr := annSvc.SyncKindleAnnotations(jctx, u); serr != nil {
+					logger.Warn("kindle annotations: user sweep failed", "user", u, "err", serr)
+				}
+			}
+			logger.Info("kindle annotations: batch complete", "users", len(users))
+			return nil
+		}))
+	}
+
 	// Forward: fan the periodic Kindle sync over every connected user;
 	// a per-user error is logged + skipped so one bad credential
 	// doesn't fail the batch (mirrors AudibleSyncKind).
@@ -383,6 +415,8 @@ func Register(reg *corejobs.Registry, database *db.DB, cfg *config.Config, notif
 			res, rerr := kindleSvc.ReconcileKindleStatus(jctx, owner)
 			return res.MarkedReading, rerr
 		},
+		// nil when the annotations flag is off — RunPipeline skips it.
+		KindleAnnotations: annotationStep(annSvc),
 		Match: func(jctx context.Context, owner string) (int, error) {
 			res, merr := hcPull.MatchUnmatched(jctx, owner, false)
 			return res.Matched, merr
@@ -541,6 +575,12 @@ func Register(reg *corejobs.Registry, database *db.DB, cfg *config.Config, notif
 	reg.SetConcurrency(kindle.ReadingMonitorKind, 1)        // books-reading-monitor (leader-singleton engine)
 	reg.SetConcurrency(hardcover.HardcoverMatchKind, 1)     // hardcover-match (global Hardcover rate limit)
 	reg.SetConcurrency(pipeline.BooksSyncAllKind, 1)        // books-sync-all orchestrator (chains the rate-limited stages)
+	// books-kindle-annotations. Capped at 1 because the notebook shares its
+	// cookie jar with the Cloud Reader library + insights calls: concurrent
+	// sweeps would multiply the throttling risk onto surfaces the whole Kindle
+	// ingest depends on. Deliberately NOT SetOffload — it needs neither the
+	// library mount nor scratch space, so it must not join the KEDA fleet.
+	reg.SetConcurrency(annotations.KindleAnnotationsKind, 1)
 
 	logger.Info("jobs: audiobooks handlers registered", "audibleSyncEnabled", cfg.AudibleSyncEnabled())
 	return svcs
@@ -625,4 +665,15 @@ func RegisterSchedules(ctx context.Context, sched *corejobs.Scheduler, cfg *conf
 			logger.Warn("jobs: hardcover match schedule register failed", "err", serr)
 		}
 	}
+}
+
+// annotationStep adapts the annotation service onto the pipeline's StepFunc,
+// returning nil when the service was not built. Returning a typed nil method
+// value here instead would produce a non-nil StepFunc wrapping a nil receiver —
+// the stage would run and panic rather than being skipped.
+func annotationStep(svc *annotations.Service) pipeline.StepFunc {
+	if svc == nil {
+		return nil
+	}
+	return svc.SyncKindleAnnotations
 }

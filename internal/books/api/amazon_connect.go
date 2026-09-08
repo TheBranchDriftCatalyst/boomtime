@@ -411,6 +411,14 @@ func (h *Handler) DeleteReadingItemsHandler(c *echo.Context) (deleteReadingItems
 			h.Logger.Warn("kindle insights snapshot delete failed", "user", owner, "err", derr)
 		}
 	}
+	// The annotation corpus is per-source and hangs off the same books, so a
+	// "delete my book data" that left highlights behind would be a lie. There is
+	// no registry that would catch this omission — the ON DELETE CASCADE only
+	// fires when the whole ACCOUNT goes away — so it is wired by hand, as a
+	// best-effort companion that cannot fail the primary wipe.
+	if _, derr := h.DB.DeleteBookAnnotations(c.Request().Context(), owner, source); derr != nil {
+		h.Logger.Warn("book annotations delete failed", "user", owner, "source", source, "err", derr)
+	}
 	h.Logger.Info("reading items deleted", "user", owner, "source", source, "rows", n)
 	return deleteReadingItemsResponse{Deleted: n}, nil
 }

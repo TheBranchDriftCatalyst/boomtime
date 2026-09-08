@@ -27,7 +27,11 @@ func DocumentationFixture() *Config {
 		FeatureBooks: true,
 		// LiberationEnabled() = FeatureBooks && FeatureBooksLiberation && path.
 		FeatureBooksLiberation: true,
-		BooksLibraryPath:       "/documentation-fixture/not-a-real-library",
+		// boom-siwi.5. AnnotationsEnabled() gates GET
+		// /api/v1/books/items/:externalId/annotations; without this the route is
+		// absent from the generated spec even though it ships.
+		FeatureBooksAnnotations: true,
+		BooksLibraryPath:        "/documentation-fixture/not-a-real-library",
 		// GithubConnectEnabled() folds the credentials into the predicate, so
 		// the flag alone is not enough to register the OAuth routes.
 		FeatureGithubStats:      true,

@@ -31,6 +31,7 @@ opts in.
 |---|---|---|---|---|
 | `BOOM_FEATURE_GITHUB_STATS` | Per-user GitHub connect + the `github-stats-refresh` job. Advertised to the FE as `github_connect_enabled` **only when the OAuth creds are also present** | `false` | ✅ `true` | `:426` |
 | `BOOM_FEATURE_BOOKS` | catalyst-books / audiobooks domains + the shared Connect-Amazon settings surface. FE hides the whole card when false | `false` | ✅ `true` | `:427` |
+| `BOOM_FEATURE_BOOKS_ANNOTATIONS` | The annotation corpus (boom-siwi.5): the `books-kindle-annotations` job kind + its pipeline stage, and `GET /api/v1/books/items/:externalId/annotations`. Nested under `BOOM_FEATURE_BOOKS` — see `AnnotationsEnabled()`. Off leaves the pipeline step nil, which `RunPipeline` skips | `false` | — off | `:478` |
 | `BOOM_FEATURE_LABEL_IMAGES` | Label-artwork generation (ComfyUI worker + the `label-image` job kind) | `false` | ✅ `on` | `:457` |
 | `BOOM_FEATURE_USER_MODEL` | The user-demarcation substrate. **Off = every request gets an all-capability identity** and no gate ever fires. On = real roles/capabilities, fails closed on disabled accounts | `false` | ✅ `true` | `:436` |
 | `BOOM_FEATURE_ADMIN_CLI` | The admin CLI-runner HTTP surface (`/api/v1/admin/cli/*`). When off the routes are never registered, so they 404 like any unknown path | `false` | ✅ `true` | `:438` |

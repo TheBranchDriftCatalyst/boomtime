@@ -14,6 +14,7 @@ func init() {
 	registerCoding()
 	registerReading()
 	registerReadingEvents()
+	registerAnnotations()
 }
 
 // registerCoding wires the coding domain over hb_rollup_daily. One measure —
@@ -284,6 +285,84 @@ func registerReadingEvents() {
 				{Name: "finishedAt", Expr: "finished_at"},
 				{Name: "progressPages", Expr: "progress_pages"},
 				{Name: "progressSeconds", Expr: "progress_seconds"},
+			},
+		},
+	})
+}
+
+// registerAnnotations wires the ANNOTATION-CAPTURE domain over the
+// book_annotations_enriched VIEW (migration 00087 / books 00007): each highlight,
+// note, bookmark or clip LEFT JOIN LATERAL its book row for title/author/series/
+// genre/status.
+//
+// It is a DISTINCT domain rather than a measure on `reading` or `readingEvents`,
+// for the same reason readingEvents is distinct from reading: a query domain has
+// exactly ONE leaf-rows RowSource, and each of those is already spent —
+// `reading` on reading_items (one row per BOOK) and `readingEvents` on
+// reading_events (one row per completed READ). An annotation is a third leaf
+// shape entirely: one row per CAPTURE.
+//
+// Folding captures into readingEvents would also corrupt its `reads` measure,
+// which counts completed readings. A highlight is not a read; it is a
+// timestamped ACT of reading — which is exactly why it earns its own domain
+// bucketed on captured_at, chartable alongside coding heartbeats.
+//
+// `kind` is the axis that matters: it separates highlight / note / bookmark /
+// clip, so "highlights captured" and "clips captured" are one query apart.
+func registerAnnotations() {
+	const view = "book_annotations_enriched"
+
+	dims := map[string]Dimension{
+		// kind: highlight | note | bookmark | clip — the annotations-only axis.
+		"kind":   {Name: "kind", Table: view, Expr: "kind"},
+		"source": {Name: "source", Table: view, Expr: "source"},
+		"series": {Name: "series", Table: view, Expr: "series"},
+		"author": {Name: "author", Table: view, Expr: "authors"},
+		"genre":  {Name: "genre", Table: view, Expr: "genres->>0"},
+		// EFFECTIVE status, resolving exactly as it does on reading_items.
+		"status": {Name: "status", Table: view, Expr: "COALESCE(status_override, status)"},
+		"title":  {Name: "title", Table: view, Expr: "title"},
+	}
+
+	Register(Domain{
+		Name: "annotations",
+		Measures: map[string]Measure{
+			// captures: how many annotations were MADE in a group/window.
+			"captures": {
+				Name:     "captures",
+				Table:    view,
+				Expr:     "count(*)",
+				DateCol:  "captured_at",
+				OwnerCol: "owner",
+				Dims:     []string{"kind", "source", "series", "author", "genre", "status", "title"},
+			},
+		},
+		Dimensions: dims,
+
+		// Leaf rows: one row per annotation. transcript is exposed alongside body
+		// so a consumer can tell Amazon's words from ours without a second query;
+		// transcriptSource names the model that produced it.
+		Rows: &RowSource{
+			Table:       view,
+			OwnerCol:    "owner",
+			DateCol:     "captured_at",
+			DefaultSort: "captured_at DESC NULLS LAST",
+			Columns: []RowColumn{
+				{Name: "source", Expr: "source"},
+				{Name: "externalId", Expr: "external_id"},
+				{Name: "kind", Expr: "kind"},
+				{Name: "title", Expr: "title"},
+				{Name: "authors", Expr: "authors"},
+				{Name: "series", Expr: "series"},
+				{Name: "status", Expr: "status_effective"},
+				{Name: "positionUnit", Expr: "position_unit"},
+				{Name: "positionStart", Expr: "position_start"},
+				{Name: "positionEnd", Expr: "position_end"},
+				{Name: "body", Expr: "body"},
+				{Name: "note", Expr: "note"},
+				{Name: "transcript", Expr: "transcript"},
+				{Name: "transcriptSource", Expr: "transcript_source"},
+				{Name: "capturedAt", Expr: "captured_at"},
 			},
 		},
 	})

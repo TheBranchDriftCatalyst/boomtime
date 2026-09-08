@@ -134,6 +134,7 @@ func TestBooksOnlyMigrationSchema(t *testing.T) {
 	for _, tbl := range []string{
 		"users", "reading_items", "reading_activity", "book_sync_state",
 		"kindle_reading_insights", "kindle_reading_positions", "reading_events",
+		"book_annotations",
 	} {
 		if !tableExists(tbl) {
 			t.Errorf("books schema is missing expected table %q", tbl)

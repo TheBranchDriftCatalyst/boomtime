@@ -16,6 +16,7 @@ import {
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/sheet";
 import { api } from "@shared/lib/api";
 import { LiberationPanel } from "./LiberationPanel";
+import { BookAnnotationsPanel } from "./BookAnnotationsPanel";
 import { qk } from "@shared/lib/queryKeys";
 import {
   SourceBadge,
@@ -160,6 +161,13 @@ export function BookDetailSheet({
               liberationError={head.liberationError}
               audioPath={head.audioPath}
               audioBytes={head.audioBytes}
+            />
+
+            {/* Annotations (boom-siwi.5) — highlights + notes, and clips once
+                phase 2 lands. Renders nothing when the feature is off or the
+                book has none; the panel owns its own feature detection. */}
+            <BookAnnotationsPanel
+              asin={head.amazonAsin || head.externalId}
             />
 
             {/* Read history — a book can be read more than once (migration 00078). */}

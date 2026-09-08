@@ -93,6 +93,15 @@ type Config struct {
 	// Ships off: a first sweep of a large library is hundreds of GB, so it must
 	// be a deliberate act rather than a side effect of enabling books.
 	FeatureBooksLiberation bool
+
+	// FeatureBooksAnnotations (BOOM_FEATURE_BOOKS_ANNOTATIONS, default false)
+	// gates the annotation corpus (boom-siwi.5): the Kindle notebook sweep that
+	// pulls highlights + notes into book_annotations, and the read endpoint that
+	// serves them. NESTED under FeatureBooks — see AnnotationsEnabled(), which is
+	// the only predicate callers should use. Off, the job kinds do not register,
+	// the pipeline steps stay nil (and RunPipeline skips nil steps), and the
+	// route is not mounted: byte-identical to before the flag existed.
+	FeatureBooksAnnotations bool
 	// BooksLibraryPath (BOOM_BOOKS_LIBRARY_PATH) is the library ROOT liberated
 	// M4Bs are written under — a PVC or NFS mount that a media scanner
 	// (Audiobookshelf/Plex/Jellyfin) also reads. Empty disables liberation even
@@ -466,6 +475,7 @@ func Load() *Config {
 		FeatureGithubStats:      getEnvBool("BOOM_FEATURE_GITHUB_STATS", false),
 		FeatureBooks:            getEnvBool("BOOM_FEATURE_BOOKS", false),
 		FeatureBooksLiberation:  getEnvBool("BOOM_FEATURE_BOOKS_LIBERATION", false),
+		FeatureBooksAnnotations: getEnvBool("BOOM_FEATURE_BOOKS_ANNOTATIONS", false),
 		HardcoverDryRun:         getEnvBool("BOOM_HARDCOVER_DRYRUN", true),
 		GithubOAuthClientID:     getEnv("BOOM_GITHUB_OAUTH_CLIENT_ID", ""),
 		GithubOAuthClientSecret: getEnv("BOOM_GITHUB_OAUTH_CLIENT_SECRET", ""),
@@ -837,6 +847,14 @@ func (c *Config) BooksEnabled() bool { return c.FeatureBooks }
 // next deploy), so "configured" and "enabled" are deliberately the same question.
 func (c *Config) LiberationEnabled() bool {
 	return c.FeatureBooks && c.FeatureBooksLiberation && c.BooksLibraryPath != ""
+}
+
+// AnnotationsEnabled reports whether the annotation corpus is live: the books
+// feature is on AND the annotations flag is set. Unlike LiberationEnabled there
+// is no "configured" term to fold in — the ingest needs nothing beyond the
+// Amazon credential the books domain already requires.
+func (c *Config) AnnotationsEnabled() bool {
+	return c.FeatureBooks && c.FeatureBooksAnnotations
 }
 
 // AudibleSyncEnabled reports whether the periodic catalyst-audiobooks forward

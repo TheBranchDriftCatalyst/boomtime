@@ -107,6 +107,25 @@ var (
 		Help: "Amazon/Audible/Kindle calls by boomtime transport (signed|cookie).",
 	}, []string{"transport"})
 
+	// BookAnnotationsTotal counts annotations persisted by the annotation ingest,
+	// by source and kind. Bounded cardinality: two sources x four kinds. NEVER
+	// per-title or per-ASIN.
+	BookAnnotationsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "boomtime_book_annotations_total",
+		Help: "Book annotations persisted, by source (kindle|audible) and kind (highlight|note|bookmark|clip).",
+	}, []string{"source", "kind"})
+
+	// BookAnnotationParseFailuresTotal counts annotation fetches that could not be
+	// understood, by reason. This is the ALERTABLE half of the silent-zero
+	// defence: the Kindle notebook is scraped HTML, and a DOM change makes every
+	// book return nothing while every request still returns 200. A rise in
+	// reason="shape-unknown" is that event, and it is the only signal that does
+	// not require someone to notice the corpus stopped growing.
+	BookAnnotationParseFailuresTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "boomtime_book_annotation_parse_failures_total",
+		Help: "Annotation fetches that could not be parsed, by source and reason (shape-unknown|transport).",
+	}, []string{"source", "reason"})
+
 	// HeartbeatsIngestedTotal counts heartbeats successfully persisted by the
 	// ingest hot path — the app's core throughput signal. Unlabelled to keep it
 	// a single cheap series (per-owner would be unbounded).
@@ -228,6 +247,7 @@ func init() {
 		HTTPRequestsTotal, HTTPRequestDuration,
 		HTTPClientRequestsTotal, HTTPClientRequestDuration,
 		JobLimiterTotal, HardcoverCallsTotal, AmazonCallsTotal,
+		BookAnnotationsTotal, BookAnnotationParseFailuresTotal,
 		HeartbeatsIngestedTotal, JobsRunTotal,
 		JobLimiterInflight, JobLimiterMax, JobDurationSeconds,
 		HTTPRatelimitDecisionsTotal, CacheRequestsTotal,

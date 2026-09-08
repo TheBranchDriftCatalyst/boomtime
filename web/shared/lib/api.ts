@@ -78,6 +78,7 @@ import type {
   HardcoverConnection,
   HardcoverCandidate,
   NotificationDTO,
+  BookAnnotationDTO,
   ReadEvent,
   GithubStatsPayload,
   WidgetLinkPayload,
@@ -1480,6 +1481,17 @@ export const api = {
             : undefined,
       }),
     ),
+
+  // One book's annotations — highlights + notes from the Kindle notebook, and
+  // (phase 2) clips from the Audible sidecar. Keyed by ASIN; ?source narrows to
+  // one ingest. The endpoint is feature-gated, so callers must SHAPE-CHECK the
+  // payload rather than treating a resolved request as "the feature is on" —
+  // see useBookAnnotations in BookAnnotationsPanel.
+  getBookAnnotations: (asin: string, source?: string) =>
+    request<{
+      annotations: BookAnnotationDTO[];
+      counts: Record<string, number>;
+    }>(buildUrl(`/api/v1/books/items/${encodeURIComponent(asin)}/annotations`, { source })),
 
   // Manual match-fixer. hardcoverSearch live-queries Hardcover's catalog (Typesense)
   // for the autocomplete; setBookManualMatch applies a chosen candidate to the row

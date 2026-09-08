@@ -195,6 +195,15 @@ func seedNonCoreTablesG(d *DB, f *SenderFixtureG) {
 	mustExecG(d, ctx, `INSERT INTO kindle_reading_monitor_advances (owner, source, interval_secs, dloc)
 		VALUES ($1,'kindle',60,5)`, sender)
 	mustExecG(d, ctx, `INSERT INTO hardcover_user_shelf (owner, hardcover_book_id, status) VALUES ($1,4242,'read')`, sender)
+	// book_annotations (migration 00086): seed BOTH layers on one row — the Amazon
+	// body/note and the derived transcript — so the byte-for-byte comparison
+	// actually covers the transcript columns rather than round-tripping empty
+	// strings past them.
+	mustExecG(d, ctx, `INSERT INTO book_annotations
+	    (owner, source, external_id, kind, annotation_key, position_unit, position_start, position_end,
+	     body, note, transcript, transcript_source, transcript_at, captured_at, raw_meta)
+	  VALUES ($1,'kindle','ASIN1','highlight','highlight:10:20','location',10,20,
+	     'the highlighted passage','a margin note','a transcript','whisper:large-v3',now(),now(),'{"parserVersion":1}'::jsonb)`, sender)
 	mustExecG(d, ctx, `INSERT INTO hardcover_match_cache (id_type, external_id, hardcover_book_id, method)
 		VALUES ('asin','ASIN-'||$1, 4242, 'exact')
 		ON CONFLICT DO NOTHING`, sender)

@@ -258,6 +258,30 @@ export interface ReadEvent {
   progressSeconds?: number;
 }
 
+// One annotation on one book (boom-siwi.5): a Kindle highlight or note, or —
+// from phase 2 — an Audible clip or bookmark. Mirrors bookAnnotationDTO.
+//
+// `body` and `transcript` are separate on purpose. body is the passage as Amazon
+// reported it; transcript is text derived from audio we cut from the liberated
+// file ourselves. A UI that merged them could not tell the user which words are
+// theirs and which are a speech model's guess.
+//
+// `positionUnit` is carried per-annotation rather than inferred from source,
+// because Kindle is not one unit: a reflowable book reports a location and a
+// print replica reports a page.
+export interface BookAnnotationDTO {
+  kind: string; // highlight | note | bookmark | clip
+  source: string; // kindle | audible
+  positionUnit: string; // location | page | millis
+  positionStart: number;
+  positionEnd?: number;
+  body?: string;
+  note?: string;
+  transcript?: string;
+  transcriptSource?: string;
+  capturedAt?: string; // absent when the source reports no capture time
+}
+
 // One ENRICHED reading-event row (leaf of the Reading Events explorer tab,
 // boom-z5dz). Mirrors the `readingEvents` domain RowSource projection over the
 // reading_events_enriched view: the event fields (origin/source/finished) plus the

@@ -159,6 +159,26 @@ func Register(e *echo.Echo, h *Handler) {
 					"miss is logged and reported as false rather than failing the call. 400 on "+
 					"a non-numeric or non-positive id, 404 when no such read belongs to the "+
 					"caller.")
+		// Annotations (boom-siwi.5): one book's highlights + notes, in reading
+		// order. Gated separately from the rest of the books surface — the corpus
+		// only exists where the annotations ingest has run.
+		if h.Cfg.AnnotationsEnabled() {
+			apiroute.GET(e, "/api/v1/books/items/:externalId/annotations", h.GetBookAnnotations).
+				Doc("List one book's annotations",
+					"Returns the caller's highlights, notes, bookmarks and clips for one book, "+
+						"ordered by position — reading order within the book — plus a per-kind "+
+						"count. The book is keyed by :externalId (the ASIN); the optional "+
+						"?source= (kindle|audible) narrows to one ingest, and omitting it returns "+
+						"both. Each annotation declares its own positionUnit (location or page "+
+						"for Kindle, millis for an Audible clip) because Kindle reports a "+
+						"location for a reflowable book and a page for a print replica, so the "+
+						"unit cannot be inferred from the source. body carries the passage as "+
+						"Amazon reported it while transcript carries text derived from audio we "+
+						"cut ourselves — they are separate fields precisely because their "+
+						"provenance differs. capturedAt is absent when the source reports no "+
+						"capture time, which the Kindle notebook does not. Retired annotations "+
+						"are excluded. 400 on a missing book id or an unknown source.")
+		}
 		// Curation override: set the effective status/rating/finish for one row
 		// (boom-books, migration 00069) + enqueue the Hardcover push.
 		apiroute.PATCH(e, "/api/v1/books/items/:externalId/curation", h.SetBookCuration).

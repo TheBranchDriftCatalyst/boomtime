@@ -13,10 +13,15 @@
 //  4. Kindle reconcile — set honest 'reading' status on non-read kindle books
 //     with a CDE last-page-read record (must run AFTER
 //     insights so it only touches genuinely-non-read rows)
-//  5. Hardcover match  — resolve every now-ingested reading_item to a Hardcover
+//  5. Kindle annotations — pull the notebook's highlights + notes. Must run
+//     AFTER the Kindle ingest so the books it annotates
+//     already have reading_items rows to hang off. It has
+//     no relationship to the Hardcover stages, so it sits
+//     at the end of the Amazon block.
+//  6. Hardcover match  — resolve every now-ingested reading_item to a Hardcover
 //     book/edition (must run AFTER both ingests so it sees
 //     the freshly-added rows)
-//  6. Hardcover pull   — reconcile the remote shelf's status/updated_at onto the
+//  7. Hardcover pull   — reconcile the remote shelf's status/updated_at onto the
 //     now-matched linkage (must run AFTER match)
 //
 // Each step is best-effort: a per-step error is logged and recorded in the
@@ -56,8 +61,12 @@ type Steps struct {
 	KindleSync      StepFunc // 2. Kindle forward-sync
 	KindleInsights  StepFunc // 3. Kindle finish-date backfill (after Kindle sync)
 	KindleReconcile StepFunc // 4. Kindle honest-status reconcile (after insights)
-	Match           StepFunc // 5. Hardcover match-unmatched (after both ingests)
-	Pull            StepFunc // 6. Hardcover shelf pull (after match)
+	// 5. Kindle notebook highlights/notes (boom-siwi.5). Nil when the annotations
+	// flag is off, which RunPipeline skips — that is what keeps flag-off
+	// byte-identical to before the stage existed.
+	KindleAnnotations StepFunc
+	Match             StepFunc // 6. Hardcover match-unmatched (after both ingests)
+	Pull              StepFunc // 7. Hardcover shelf pull (after match)
 }
 
 // Summary aggregates what one RunPipeline call did for a single owner. Counts
@@ -67,6 +76,7 @@ type Summary struct {
 	KindleSynced       int      `json:"kindleSynced"`
 	InsightsBackfilled int      `json:"insightsBackfilled"`
 	StatusReconciled   int      `json:"statusReconciled"`
+	KindleAnnotations  int      `json:"kindleAnnotations"`
 	Matched            int      `json:"matched"`
 	Pulled             int      `json:"pulled"`
 	Errors             []string `json:"errors,omitempty"`
@@ -106,6 +116,7 @@ func (p *Pipeline) RunPipeline(ctx context.Context, owner string) (Summary, erro
 		{"kindle-sync", p.steps.KindleSync, &sum.KindleSynced},
 		{"kindle-insights", p.steps.KindleInsights, &sum.InsightsBackfilled},
 		{"kindle-status-reconcile", p.steps.KindleReconcile, &sum.StatusReconciled},
+		{"kindle-annotations", p.steps.KindleAnnotations, &sum.KindleAnnotations},
 		{"hardcover-match", p.steps.Match, &sum.Matched},
 		{"hardcover-pull", p.steps.Pull, &sum.Pulled},
 	}

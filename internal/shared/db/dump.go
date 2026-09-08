@@ -235,6 +235,18 @@ var dumpTables = []dumpTable{
 		"id_type", "external_id", "hardcover_book_id", "hardcover_edition_id", "method",
 		"matched_at", "book_slug",
 	}},
+	// book_annotations (migration 00086): the annotation corpus. Dumped in FULL,
+	// including body/note — highlight text is stored plaintext, the same treatment
+	// reading_items titles get, so a backup restores a user's highlights intact.
+	// deleted_at rides along so a restore preserves tombstones rather than
+	// resurrecting annotations the reconcile had already retired.
+	{"book_annotations", []string{
+		"id", "owner", "source", "external_id", "kind", "annotation_key",
+		"position_unit", "position_start", "position_end",
+		"body", "note", "transcript", "transcript_source", "transcript_at",
+		"captured_at", "source_updated_at", "raw_meta", "deleted_at",
+		"created_at", "updated_at",
+	}},
 }
 
 // dumpExemptTables names every public table deliberately NOT in the backup, with

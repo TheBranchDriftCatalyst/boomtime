@@ -353,4 +353,6 @@ export const qk = {
   hardcoverSearch: (q: string) => ["hardcover-search", q] as const,
   // A Work's editions for the Book detail panel, keyed by the Work identity.
   bookWork: (key: string) => ["book-work", key] as const,
+  // One book's annotation corpus, keyed by ASIN.
+  bookAnnotations: (asin: string) => ["book-annotations", asin] as const,
 };
