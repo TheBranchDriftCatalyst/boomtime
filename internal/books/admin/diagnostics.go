@@ -98,6 +98,19 @@ func (h *Handler) AdminBooksDiagnostics(c *echo.Context) (diagnosticsResponse, e
 	switch c.QueryParam("source") {
 	case "kindle":
 		probes = kindleProbes(ctx, cred)
+	case "annotations":
+		// boom-siwi.1. Unlike the audible/kindle dumps, these probes answer a
+		// specific question — does this surface carry annotations? — so they
+		// carry a verdict, and the census (record types + field keys) rides in
+		// Body. Bodies are NOT captured: highlight text is the user's own prose
+		// and this response is a JSON API, not a local dump file. Use the CLI
+		// (boomtime books probe-annotations --dump) when the raw payload is
+		// actually needed.
+		probes = annotationProbes(amazon.RunAnnotationProbes(ctx, cred, amazon.AnnotationProbeOpts{
+			EbookASINs:     csvParam(c.QueryParam("ebookAsin")),
+			AudiobookASINs: csvParam(c.QueryParam("audiobookAsin")),
+			Cookies:        c.QueryParam("cookies") != "false",
+		}))
 	case "liberation":
 		// boom-w20s.19. Verifies the liberation protocol assumptions live and
 		// reports which voucher key derivation actually works. Optionally scoped
@@ -187,4 +200,53 @@ func firstNonEmpty(a, b string) string {
 		return a
 	}
 	return b
+}
+
+// annotationProbes adapts the annotation sweep onto the shared diagProbe shape
+// so it renders through the SAME admin panel as the Audible/Kindle dumps. The
+// census + field keys are marshalled into Body — they are counts and key names,
+// never content — and the roll-up verdict is prepended as a synthetic first
+// probe so the answer is visible without reading every row.
+func annotationProbes(r amazon.AnnotationReport) []diagProbe {
+	out := make([]diagProbe, 0, len(r.Probes)+1)
+	out = append(out, diagProbe{
+		Name:    "VERDICT",
+		OK:      r.Verdict == amazon.AnnotationPass,
+		Verdict: string(r.Verdict),
+		Detail:  r.Summary,
+	})
+	for _, p := range r.Probes {
+		d := diagProbe{
+			Name:     p.Name,
+			Endpoint: p.Endpoint,
+			Status:   p.Status,
+			OK:       p.OK,
+			Error:    p.Error,
+			Verdict:  string(p.Verdict),
+			Detail:   p.Detail,
+		}
+		if p.Census != nil || p.Fields != nil || len(p.Samples) > 0 {
+			if blob, err := json.Marshal(struct {
+				Transport string              `json:"transport"`
+				Census    map[string]int      `json:"census,omitempty"`
+				Fields    map[string][]string `json:"fields,omitempty"`
+				Samples   []string            `json:"samples,omitempty"`
+			}{p.Transport, p.Census, p.Fields, p.Samples}); err == nil {
+				d.Body = json.RawMessage(blob)
+			}
+		}
+		out = append(out, d)
+	}
+	return out
+}
+
+// csvParam splits a comma-separated query param into trimmed, non-empty values.
+func csvParam(v string) []string {
+	var out []string
+	for _, part := range strings.Split(v, ",") {
+		if s := strings.TrimSpace(part); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }

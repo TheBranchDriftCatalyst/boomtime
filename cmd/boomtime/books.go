@@ -17,5 +17,6 @@ func booksCmd() *cobra.Command {
 	}
 	cmd.AddCommand(books.NewLiberateCmd())
 	cmd.AddCommand(books.NewLiberationStatusCmd())
+	cmd.AddCommand(books.NewProbeAnnotationsCmd())
 	return cmd
 }
