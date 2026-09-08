@@ -38,8 +38,15 @@ var _ = ginkgo.Describe("ListSourceHealth", func() {
 			Expect(err).NotTo(HaveOccurred())
 		}
 
-		recent := time.Now().UTC().Add(-2 * time.Hour)
-		old := time.Now().UTC().Add(-40 * 24 * time.Hour)
+		// Truncate to MICROSECONDS: Postgres timestamps carry microsecond
+		// precision, so a Go time with a non-zero nanosecond tail never survives
+		// the round trip and LastSeen.Equal(recent) fails. This passed on macOS
+		// only because darwin's clock commonly yields a zero nanosecond tail; on
+		// Linux CI it failed on the first run, comparing .030410 against
+		// .030410793. Truncating here keeps the assertion exact rather than
+		// loosening it to a tolerance.
+		recent := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Microsecond)
+		old := time.Now().UTC().Add(-40 * 24 * time.Hour).Truncate(time.Microsecond)
 		vscodePlugin := "vscode-wakatime"
 		vimPlugin := "vim-wakatime"
 		laptop := "laptop"
