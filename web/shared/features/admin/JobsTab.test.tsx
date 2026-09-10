@@ -159,50 +159,133 @@ function renderJobsTab() {
   );
 }
 
-describe("JobsTab — Run a reading step panel", () => {
-  beforeEach(() => stubReads([], () => []));
-
-  it("renders the 4 reading triggers when books_enabled", async () => {
-    config(true);
-    renderJobsTab();
-
-    await waitFor(() =>
-      expect(screen.getByText(/run a reading step/i)).toBeInTheDocument(),
-    );
-    expect(screen.getByRole("button", { name: /audible backfill/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /kindle backfill/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /hardcover match/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /hardcover pull/i })).toBeInTheDocument();
+// The reading-step panel was five HARDCODED books buttons sitting as a peer of
+// the generic job machinery, so a new job kind was unrunnable from the UI until
+// someone added a sixth. It is gone: every registered kind now renders its own
+// run button, driven off /queues (which unions in registry.Kinds()). These specs
+// pin that, plus the two things the restructure added.
+describe("JobsTab — every registered kind is runnable, with no hardcoded list", () => {
+  const q = (over: Record<string, unknown> = {}) => ({
+    kind: "books-kindle-annotations",
+    queued: 0,
+    running: 0,
+    maxConcurrency: 1,
+    doneLastHour: 0,
+    failedLastHour: 0,
+    avgDurationMs: 0,
+    lastRunAt: null,
+    lastStatus: "",
+    ...over,
   });
 
-  it("hides the reading panel when books are disabled (rest of tab intact)", async () => {
-    config(false);
-    renderJobsTab();
-
-    // The Schedules panel still renders — the tab isn't broken.
-    await waitFor(() => expect(screen.getByText(/schedules/i)).toBeInTheDocument());
-    expect(screen.queryByText(/run a reading step/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /hardcover match/i })).not.toBeInTheDocument();
-  });
-
-  it("triggers Kindle backfill → POST /kindle/backfill + toast with jobId", async () => {
-    config(true);
-    let hit = 0;
+  it("renders a run button for a kind nothing hardcodes, and triggers it generically", async () => {
+    stubReads([q()], () => []);
+    let body: unknown = null;
     server.use(
-      http.post("/api/v1/kindle/backfill", () => {
-        hit += 1;
-        return HttpResponse.json({ enqueued: true, jobId: 91 });
+      http.post("/api/v1/admin/jobs/trigger", async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({ id: 42 });
       }),
     );
 
     const user = userEvent.setup();
     renderJobsTab();
 
-    await user.click(await screen.findByRole("button", { name: /kindle backfill/i }));
-    await waitFor(() => expect(hit).toBe(1));
-    await waitFor(() =>
-      expect(toastSuccess).toHaveBeenCalledWith("Kindle backfill started (job #91)"),
+    // This kind is not named anywhere in the component — it arrives from the API.
+    await user.click(
+      await screen.findByRole("button", { name: /run books-kindle-annotations/i }),
     );
+    await waitFor(() => expect(body).toEqual({ kind: "books-kindle-annotations" }));
+    await waitFor(() =>
+      expect(toastSuccess).toHaveBeenCalledWith(
+        "Enqueued books-kindle-annotations — job #42",
+      ),
+    );
+  });
+
+  // A schedule is a property of a KIND. It used to live in its own table, so
+  // answering "when does this next run?" meant cross-referencing two lists.
+  it("shows the kind's cadence inline instead of in a separate table", async () => {
+    server.use(
+      http.get("/api/v1/admin/jobs/queues", () =>
+        HttpResponse.json({ queues: [q({ kind: "books-audible-sync" })] }),
+      ),
+      http.get("/api/v1/admin/jobs/schedules", () =>
+        HttpResponse.json({
+          schedules: [
+            {
+              kind: "books-audible-sync",
+              intervalSeconds: 3600,
+              nextRun: new Date(Date.now() + 12 * 60_000).toISOString(),
+              lastRun: null,
+            },
+          ],
+        }),
+      ),
+      http.get("/api/v1/admin/jobs", () => HttpResponse.json({ jobs: [] })),
+    );
+    renderJobsTab();
+
+    const chip = await screen.findByTestId("job-group-schedule-books-audible-sync");
+    expect(chip).toHaveTextContent("1h");
+  });
+
+  // An unscheduled kind shows nothing — most kinds are enqueue-on-demand, so
+  // labelling the absence would be noise on nearly every row.
+  it("shows no cadence for an unscheduled kind", async () => {
+    stubReads([q()], () => []);
+    renderJobsTab();
+    await screen.findByRole("button", { name: /run books-kindle-annotations/i });
+    expect(
+      screen.queryByTestId("job-group-schedule-books-kindle-annotations"),
+    ).not.toBeInTheDocument();
+  });
+});
+
+// The page's first question — "is anything broken?" — previously had no answer
+// above the fold; failures were per-kind badges you had to read every row to find.
+describe("JobsTab — health strip", () => {
+  const q = (over: Record<string, unknown>) => ({
+    kind: "k",
+    queued: 0,
+    running: 0,
+    maxConcurrency: 1,
+    doneLastHour: 0,
+    failedLastHour: 0,
+    avgDurationMs: 0,
+    lastRunAt: null,
+    lastStatus: "",
+    ...over,
+  });
+
+  it("names the failing kinds when something is failing", async () => {
+    stubReads([q({ kind: "a", failedLastHour: 3 }), q({ kind: "b" })], () => []);
+    renderJobsTab();
+
+    const strip = await screen.findByTestId("jobs-health-strip");
+    expect(strip).toHaveTextContent(/1 kind failing/i);
+    expect(strip).toHaveTextContent(/\ba\b/);
+  });
+
+  it("stays calm when nothing is wrong", async () => {
+    stubReads([q({ kind: "a", running: 1, maxConcurrency: 4 })], () => []);
+    renderJobsTab();
+
+    const strip = await screen.findByTestId("jobs-health-strip");
+    expect(strip).toHaveTextContent(/no failures in the last hour/i);
+    expect(strip).not.toHaveTextContent(/failing/i);
+  });
+
+  // At capacity with an EMPTY queue is a saturated worker doing its job, not a
+  // problem — the same distinction KindStats draws per kind. Only a backlog
+  // behind the cap is worth an operator's attention.
+  it("does not cry backed-up when a kind is at cap with nothing waiting", async () => {
+    stubReads([q({ kind: "a", running: 2, maxConcurrency: 2, queued: 0 })], () => []);
+    renderJobsTab();
+
+    const strip = await screen.findByTestId("jobs-health-strip");
+    expect(strip).toHaveTextContent(/no failures in the last hour/i);
+    expect(strip).not.toHaveTextContent(/backed up/i);
   });
 });
 

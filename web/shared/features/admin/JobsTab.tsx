@@ -20,17 +20,14 @@ import { usePageActions } from "@shared/layout/PageActionsSlot";
 import {
   AlertTriangle,
   Ban,
-  BookOpen,
   CalendarClock,
   ChevronDown,
   ChevronRight,
-  DownloadCloud,
   Gauge,
-  Headphones,
+  Layers,
   ListChecks,
   Play,
   RotateCcw,
-  Search,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -38,8 +35,6 @@ import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import {
   Card,
   CardContent,
-  CardHeader,
-  CardTitle,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import {
   Sheet,
@@ -59,11 +54,15 @@ import {
 import { EmptyState } from "@shared/components/EmptyState";
 import { JobLogStream } from "@shared/features/logs/JobLogStream";
 import { api, ApiError } from "@shared/lib/api";
-import { usePublicConfig } from "@shared/lib/usePublicConfig";
 import { qk } from "@shared/lib/queryKeys";
 import { relativeTime } from "@shared/lib/sourceStatus";
 import { cn } from "@shared/lib/utils";
-import type { AdminJob, AdminJobQueue, AdminJobStatus } from "@shared/types/api";
+import type {
+  AdminJob,
+  AdminJobQueue,
+  AdminJobSchedule,
+  AdminJobStatus,
+} from "@shared/types/api";
 
 // ── formatting helpers ──────────────────────────────────────────────────────
 
@@ -123,6 +122,71 @@ function StatusBadge({ status }: { status: AdminJobStatus }) {
     >
       {status}
     </span>
+  );
+}
+
+// ── health strip ────────────────────────────────────────────────────────────
+
+// The one thing an operator opening this page during an incident needs to know,
+// answered before they scan anything: is something broken, is something stuck.
+//
+// Previously that question had no answer above the fold — failure counts existed
+// only as small per-kind badges inside the list, so "is anything failing?"
+// required reading every row. This states it once, in words, and says nothing
+// when there is nothing to say.
+//
+// Derived entirely from the queues payload already on screen; no extra request.
+function HealthStrip({ queues }: { queues: AdminJobQueue[] }) {
+  const failing = queues.filter((q) => q.failedLastHour > 0);
+  const atCap = queues.filter((q) => q.maxConcurrency > 0 && q.running >= q.maxConcurrency);
+  const queued = queues.reduce((n, q) => n + q.queued, 0);
+  const running = queues.reduce((n, q) => n + q.running, 0);
+
+  // Backed up = at capacity AND waiting. At capacity alone is a saturated
+  // worker doing its job; only a backlog behind it is worth an operator's
+  // attention, which is the same distinction KindStats draws per kind.
+  const backedUp = atCap.filter((q) => q.queued > 0);
+  const healthy = failing.length === 0 && backedUp.length === 0;
+
+  return (
+    <div
+      data-testid="jobs-health-strip"
+      className={cn(
+        "flex flex-wrap items-center gap-x-4 gap-y-1.5 border-b px-3 py-2.5 text-sm",
+        healthy ? "border-border/60 text-muted-foreground" : "border-destructive/30 bg-destructive/5",
+      )}
+    >
+      {healthy ? (
+        <span className="flex items-center gap-2">
+          <span className="h-2 w-2 rounded-full bg-muted-foreground/40" />
+          {running > 0 ? `${running} running` : "Idle"}
+          {queued > 0 && <span className="opacity-70">· {queued} queued</span>}
+          <span className="opacity-70">· no failures in the last hour</span>
+        </span>
+      ) : (
+        <>
+          {failing.length > 0 && (
+            <span className="flex items-center gap-1.5 font-medium text-destructive">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              {failing.length} kind{failing.length === 1 ? "" : "s"} failing
+              <span className="font-normal opacity-80">
+                ({failing.map((q) => q.kind).slice(0, 3).join(", ")}
+                {failing.length > 3 ? ` +${failing.length - 3}` : ""})
+              </span>
+            </span>
+          )}
+          {backedUp.length > 0 && (
+            <span className="flex items-center gap-1.5 text-foreground">
+              <Layers className="h-3.5 w-3.5" />
+              {backedUp.length} backed up
+            </span>
+          )}
+          <span className="text-muted-foreground">
+            {running} running · {queued} queued
+          </span>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -324,9 +388,11 @@ function KindStats({ q }: { q: AdminJobQueue }) {
 
 function KindGroup({
   q,
+  schedule,
   onSelect,
 }: {
   q: AdminJobQueue;
+  schedule?: AdminJobSchedule;
   onSelect: (job: AdminJob) => void;
 }) {
   const qc = useQueryClient();
@@ -345,6 +411,26 @@ function KindGroup({
   });
 
   const invalidate = () => qc.invalidateQueries({ queryKey: qk.adminJobsPrefix() });
+
+  // Trigger THIS kind. Driven off q.kind rather than a hardcoded list, so every
+  // registered kind gets a run button for free — /queues already unions in
+  // registry.Kinds(), which is why an idle kind still shows a card at zero
+  // depth. A new job kind needs no UI change to become runnable.
+  //
+  // Enqueues OWNER-LESS, which is what the generic admin trigger does. For a
+  // dual-mode handler that means the fleet-wide branch: it fans over every
+  // eligible user rather than just the admin who clicked. That is the right
+  // semantic for an operator control, and it is what a scheduled run would do.
+  const trigger = useMutation({
+    mutationFn: () => api.triggerAdminJob(q.kind),
+    onSuccess: (res) => {
+      toast.success(`Enqueued ${q.kind} — job #${res.id}`);
+      invalidate();
+      setExpanded(true); // so the run they just started is visible
+    },
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : `Could not enqueue ${q.kind}`),
+  });
 
   const retry = useMutation({
     mutationFn: (id: number) => api.retryAdminJob(id),
@@ -436,8 +522,33 @@ function KindGroup({
             )}
           />
           <span className="truncate font-mono text-sm font-medium text-foreground">{q.kind}</span>
+          {/* The kind's cadence, inline. An unscheduled kind shows nothing
+              rather than "manual" — most kinds are enqueue-on-demand, so the
+              absence is the norm and labelling it would be noise on every row. */}
+          {schedule && (
+            <span
+              data-testid={`job-group-schedule-${q.kind}`}
+              className="hidden shrink-0 items-center gap-1 whitespace-nowrap text-[11px] text-muted-foreground sm:flex"
+              title={`Runs every ${humanizeInterval(schedule.intervalSeconds)}; next ${relativeFuture(schedule.nextRun)}`}
+            >
+              <CalendarClock className="h-3 w-3" />
+              {humanizeInterval(schedule.intervalSeconds)}
+              <span className="opacity-60">· next {relativeFuture(schedule.nextRun)}</span>
+            </span>
+          )}
         </button>
         <KindStats q={q} />
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 shrink-0 px-2 text-muted-foreground hover:text-foreground"
+          onClick={() => trigger.mutate()}
+          disabled={trigger.isPending}
+          title={`Run ${q.kind} now`}
+          aria-label={`run ${q.kind}`}
+        >
+          <Play className={cn("h-3.5 w-3.5", trigger.isPending && "animate-pulse")} />
+        </Button>
         <Button
           variant="ghost"
           size="sm"
@@ -542,6 +653,25 @@ function GroupedJobs() {
     refetchInterval: 5000,
   });
 
+  // Schedules used to be their own panel, which meant answering "when does
+  // books-kindle-sync next run?" required cross-referencing two tables. A
+  // schedule is a PROPERTY OF A KIND, so it belongs on the kind's row. Both
+  // payloads key on `kind`, so the join is a lookup.
+  //
+  // Polls slower than the queues (30s vs 5s): an interval and a next-run time
+  // move on the order of minutes, and there is no reason to refetch them at
+  // queue-depth cadence.
+  const { data: schedules } = useQuery({
+    queryKey: qk.adminJobSchedules(),
+    queryFn: () => api.getAdminJobSchedules(),
+    refetchInterval: 30_000,
+  });
+  const scheduleByKind = useMemo(() => {
+    const m = new Map<string, AdminJobSchedule>();
+    for (const s of schedules ?? []) m.set(s.kind, s);
+    return m;
+  }, [schedules]);
+
   const clearAll = useMutation({
     mutationFn: () => api.clearJobLogs(),
     onSuccess: (res) => {
@@ -610,8 +740,14 @@ function GroupedJobs() {
             />
           ) : (
             <div>
+              <HealthStrip queues={queues} />
               {queues.map((q) => (
-                <KindGroup key={q.kind} q={q} onSelect={setSelected} />
+                <KindGroup
+                  key={q.kind}
+                  q={q}
+                  schedule={scheduleByKind.get(q.kind)}
+                  onSelect={setSelected}
+                />
               ))}
             </div>
           )}
@@ -620,197 +756,6 @@ function GroupedJobs() {
 
       <JobDetailSheet job={selected} onOpenChange={(open) => !open && setSelected(null)} />
     </section>
-  );
-}
-
-// ── reading-steps panel ─────────────────────────────────────────────────────
-
-// On-demand triggers for the catalyst-books pipeline kinds, scoped to the
-// current (admin) user. Each enqueues a worker job and returns a jobId; we
-// surface it via toast. Gated on books_enabled — the whole panel is inert per
-// deployment, mirroring the settings cards. Invalidates the jobs prefix so the
-// table above reflects the freshly-queued run.
-function ReadingStepsPanel() {
-  const qc = useQueryClient();
-  const { config } = usePublicConfig();
-
-  const onStepSuccess = (label: string) => (res: { jobId: number }) => {
-    toast.success(`${label} started (job #${res.jobId})`);
-    qc.invalidateQueries({ queryKey: qk.adminJobsPrefix() });
-  };
-  const onStepError = (label: string) => (e: unknown) =>
-    toast.error(
-      e instanceof ApiError ? `Couldn't run ${label}: ${e.message}` : `Couldn't run ${label}`,
-    );
-
-  const audibleBackfill = useMutation({
-    mutationFn: () => api.backfillAudible(),
-    onSuccess: onStepSuccess("Audible backfill"),
-    onError: onStepError("Audible backfill"),
-  });
-  const kindleBackfill = useMutation({
-    mutationFn: () => api.backfillKindle(),
-    onSuccess: onStepSuccess("Kindle backfill"),
-    onError: onStepError("Kindle backfill"),
-  });
-  const hardcoverMatch = useMutation({
-    mutationFn: (force?: boolean) => api.matchHardcover({ force }),
-    onSuccess: onStepSuccess("Hardcover match"),
-    onError: onStepError("Hardcover match"),
-  });
-  const hardcoverPull = useMutation({
-    mutationFn: () => api.pullHardcover(),
-    onSuccess: onStepSuccess("Hardcover pull"),
-    onError: onStepError("Hardcover pull"),
-  });
-  const syncAll = useMutation({
-    mutationFn: () => api.syncAllBooks(),
-    onSuccess: onStepSuccess("Sync all"),
-    onError: onStepError("Sync all"),
-  });
-  // When checked, a Hardcover match run re-checks EVERY book (?force=1), ignoring
-  // the 30-day negative-cache skip — for after you curate on Hardcover.
-  const [forceMatch, setForceMatch] = useState(false);
-
-  if (!config.books_enabled) return null;
-
-  const triggers = [
-    { key: "all", label: "Sync all", icon: Play, m: syncAll },
-    { key: "audible", label: "Audible backfill", icon: Headphones, m: audibleBackfill },
-    { key: "kindle", label: "Kindle backfill", icon: BookOpen, m: kindleBackfill },
-    { key: "match", label: "Hardcover match", icon: Search, m: hardcoverMatch },
-    { key: "pull", label: "Hardcover pull", icon: DownloadCloud, m: hardcoverPull },
-  ];
-
-  return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 font-mono text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          <BookOpen className="h-4 w-4 text-primary" />
-          Run a reading step
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="flex flex-wrap items-center gap-2">
-          {triggers.map(({ key, label, icon: Icon, m }) => (
-            <Button
-              key={key}
-              variant="outline"
-              size="sm"
-              onClick={() => (key === "match" ? hardcoverMatch.mutate(forceMatch) : m.mutate())}
-              disabled={m.isPending}
-              title={`Queue a ${label} run for your account`}
-            >
-              <Icon className="h-3.5 w-3.5" />
-              {m.isPending ? "Starting…" : label}
-            </Button>
-          ))}
-          <label
-            className="flex cursor-pointer select-none items-center gap-1.5 pl-1 text-xs text-muted-foreground"
-            title="Force: re-check every book, ignoring the 30-day 'no confident match' skip window. Use after curating on Hardcover."
-          >
-            <input
-              type="checkbox"
-              className="h-3.5 w-3.5 accent-primary"
-              checked={forceMatch}
-              onChange={(e) => setForceMatch(e.target.checked)}
-            />
-            force re-match
-          </label>
-        </div>
-        <p className="mt-3 text-xs text-muted-foreground">
-          On-demand pipeline steps for your own account. Each queues a background job — watch it
-          land in the table above.
-        </p>
-      </CardContent>
-    </Card>
-  );
-}
-
-// ── schedules panel ─────────────────────────────────────────────────────────
-
-function SchedulesPanel() {
-  const qc = useQueryClient();
-  const { data: schedules, isLoading, isError } = useQuery({
-    queryKey: qk.adminJobSchedules(),
-    queryFn: () => api.getAdminJobSchedules(),
-    refetchInterval: 5000,
-  });
-
-  const trigger = useMutation({
-    mutationFn: (kind: string) => api.triggerAdminJob(kind),
-    onSuccess: (res, kind) => {
-      toast.success(`Queued ${kind} (#${res.id})`);
-      qc.invalidateQueries({ queryKey: qk.adminJobsPrefix() });
-    },
-    onError: (e, kind) =>
-      toast.error(
-        e instanceof ApiError ? `Couldn't run ${kind}: ${e.message}` : `Couldn't run ${kind}`,
-      ),
-  });
-
-  return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 font-mono text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          <CalendarClock className="h-4 w-4 text-primary" />
-          Schedules
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="p-0">
-        {isError ? (
-          <p className="px-4 pb-4 text-sm text-destructive">Failed to load schedules.</p>
-        ) : isLoading || !schedules ? (
-          <div className="space-y-2 px-4 pb-4" aria-busy="true">
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="h-10 animate-pulse rounded-md bg-muted/50" />
-            ))}
-          </div>
-        ) : schedules.length === 0 ? (
-          <p className="px-4 pb-4 text-sm text-muted-foreground">
-            No recurring jobs are registered.
-          </p>
-        ) : (
-          <ul className="divide-y divide-border/60">
-            {schedules.map((s) => (
-              <li
-                key={s.kind}
-                className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3"
-              >
-                <div className="min-w-0">
-                  <div className="truncate font-mono text-sm font-medium text-foreground">
-                    {s.kind}
-                  </div>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-                    <span className="rounded bg-muted/60 px-1.5 py-0.5 font-medium text-foreground/80">
-                      {humanizeInterval(s.intervalSeconds)}
-                    </span>
-                    <span title={new Date(s.nextRun).toLocaleString()}>
-                      next {relativeFuture(s.nextRun)}
-                    </span>
-                    <span
-                      title={s.lastRun ? new Date(s.lastRun).toLocaleString() : undefined}
-                    >
-                      last {s.lastRun ? relativeTime(s.lastRun) : "never"}
-                    </span>
-                  </div>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => trigger.mutate(s.kind)}
-                  disabled={trigger.isPending}
-                  title={`Queue a ${s.kind} run right now`}
-                >
-                  <Play className="h-3.5 w-3.5" />
-                  Run now
-                </Button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </CardContent>
-    </Card>
   );
 }
 
@@ -870,14 +815,19 @@ function JobDetailSheet({
 // ── tab ─────────────────────────────────────────────────────────────────────
 
 export function JobsTab() {
-  // Renders through the shared AdminTabShell base (boom-zp2s). Each sub-panel
-  // owns its own load/error state, so the shell here provides the consistent
-  // admin-tab wrapper only.
+  // ONE panel, keyed on the job KIND — which is already the organising unit in
+  // the data model (/queues unions in registry.Kinds(), so a registered-but-idle
+  // kind still gets a row).
+  //
+  // This used to be three co-equal stacked tables: grouped jobs, a hardcoded
+  // five-button books panel, and a separate schedules table. That forced an
+  // operator to learn three row idioms and to cross-reference two of them to
+  // answer one question. The schedule now rides on its kind's row, and the
+  // books panel is gone: every kind gets a run button generated from the
+  // registry, so a new job kind is runnable with no UI change at all.
   return (
     <AdminTabShell bodyClassName="space-y-6">
       <GroupedJobs />
-      <ReadingStepsPanel />
-      <SchedulesPanel />
     </AdminTabShell>
   );
 }
