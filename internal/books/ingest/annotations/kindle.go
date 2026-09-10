@@ -81,11 +81,32 @@ func (s *Service) SyncKindleAnnotations(ctx context.Context, owner string) (int,
 		}
 	}
 
-	// The all-books-failed guard. Every book unparseable is a parser that has
-	// stopped understanding Amazon's DOM; it must go red.
-	if shapeFails == len(books) {
-		return total, fmt.Errorf("kindle annotations: every one of %d books failed to parse — the notebook DOM has moved: %w",
-			len(books), amazon.ErrNotebookShapeUnknown)
+	// The all-books-failed guard. If NOT ONE book came back usable, the sweep has
+	// learned nothing and must not report success — otherwise it returns
+	// (0, nil), the caller records a clean run, and the corpus silently stops
+	// growing. That is the same silent-zero this whole design exists to prevent.
+	//
+	// It counts BOTH failure kinds on purpose. An earlier version tested only
+	// shapeFails, which left a hole exactly as bad as the one it was guarding:
+	// every book failing on transport — expired cookies, a 500, rate limiting —
+	// left shapeFails at 0, so the guard never fired and the sweep reported
+	// success having written nothing.
+	//
+	// The two are still distinguished in the message, because they call for
+	// different responses: a parse failure means the DOM moved and the parser
+	// needs work, while a transport failure means the credential or the endpoint
+	// needs attention.
+	if failed := shapeFails + otherFails; failed == len(books) {
+		switch {
+		case shapeFails == len(books):
+			return total, fmt.Errorf("kindle annotations: every one of %d books failed to parse — the notebook DOM has moved: %w",
+				len(books), amazon.ErrNotebookShapeUnknown)
+		case otherFails == len(books):
+			return total, fmt.Errorf("kindle annotations: every one of %d books failed to fetch — the cookie jar or the endpoint is broken", len(books))
+		default:
+			return total, fmt.Errorf("kindle annotations: all %d books failed (%d unparseable, %d unreachable)",
+				len(books), shapeFails, otherFails)
+		}
 	}
 
 	s.logInfo(ctx, "kindle annotations: sweep complete",

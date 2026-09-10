@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -127,6 +128,60 @@ func TestSweepEveryBookUnparseableTurnsRed(t *testing.T) {
 	}
 	if !errors.Is(err, amazon.ErrNotebookShapeUnknown) {
 		t.Fatalf("error should name the shape failure, got %v", err)
+	}
+}
+
+// ⚠ THE OTHER HALF OF THE SILENT-ZERO GUARD. Every book failing on TRANSPORT —
+// expired cookies, a 500, rate limiting — is just as much a failed sweep as a
+// moved DOM, and must not report success.
+//
+// The first version of the guard tested only shapeFails, so this case returned
+// (0, nil): a clean run that wrote nothing, with the corpus silently frozen.
+// Mutation: narrow the guard back to `shapeFails == len(books)` → red.
+func TestSweepEveryBookUnreachableTurnsRed(t *testing.T) {
+	boom := errors.New("HTTP 500 from the notebook")
+	nb := &fakeNotebook{
+		books: []amazon.NotebookBook{{ASIN: "B01"}, {ASIN: "B02"}},
+		bookErr: map[string]error{
+			"B01": boom,
+			"B02": boom,
+		},
+	}
+	svc, owner, ctx := newSweepFixture(t, nb)
+
+	n, err := svc.SyncKindleAnnotations(ctx, owner)
+	if err == nil {
+		t.Fatalf("a sweep that could not fetch any of %d books must fail, got n=%d err=nil", len(nb.books), n)
+	}
+	// A transport failure is NOT a parser failure — the message has to send the
+	// reader at the credential, not at the DOM.
+	if errors.Is(err, amazon.ErrNotebookShapeUnknown) {
+		t.Fatalf("transport failure misreported as a parse failure: %v", err)
+	}
+	if !strings.Contains(err.Error(), "failed to fetch") {
+		t.Fatalf("error should name the fetch failure plainly, got: %v", err)
+	}
+}
+
+// A MIX of both failure kinds, with nothing succeeding, still has to go red —
+// this is the case a guard written as `shapeFails == len(books)` OR
+// `otherFails == len(books)` would let through.
+func TestSweepMixedTotalFailureTurnsRed(t *testing.T) {
+	nb := &fakeNotebook{
+		books: []amazon.NotebookBook{{ASIN: "B01"}, {ASIN: "B02"}},
+		bookErr: map[string]error{
+			"B01": amazon.ErrNotebookShapeUnknown,
+			"B02": errors.New("HTTP 500"),
+		},
+	}
+	svc, owner, ctx := newSweepFixture(t, nb)
+
+	_, err := svc.SyncKindleAnnotations(ctx, owner)
+	if err == nil {
+		t.Fatal("no book succeeded, so the sweep must fail even with mixed causes")
+	}
+	if !strings.Contains(err.Error(), "1 unparseable") || !strings.Contains(err.Error(), "1 unreachable") {
+		t.Fatalf("a mixed failure should account for both causes, got: %v", err)
 	}
 }
 
