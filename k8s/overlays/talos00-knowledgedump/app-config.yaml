@@ -99,6 +99,32 @@ data:
   # API calls. The near-real-time reading monitor (30s) is separate (live sessions).
   BOOM_AUDIBLE_SYNC_INTERVAL: "1h"
 
+  # ── annotation corpus (boom-siwi.5) ────────────────────────────────────────
+  # ENABLED 2026-09-10. Kindle highlights + notes, read from
+  # read.amazon.com/notebook over the exchanged website cookies and stored in
+  # book_annotations (migrations 00086/00087, already live since 2026-09-08 —
+  # this flip only turns on the code that fills the table).
+  #
+  # SCOPE OF THE FLIP: registers ONE job kind (books-kindle-annotations), mounts
+  # ONE route (GET /api/v1/books/items/:externalId/annotations), and wires a
+  # previously-nil pipeline step. It writes only to book_annotations, a table
+  # nothing else reads, so it cannot disturb reading_items or any existing data.
+  # Rolling back is flipping this back to "false"; there is no migration to undo.
+  #
+  # THE ONE LIVE RISK is the cookie jar. The notebook shares it with
+  # KindleCloudLibrary and FetchKindleInsights, so being throttled there would
+  # affect the whole Kindle ingest, not just this. Hence the 250ms per-book pace
+  # (5x the sidecar's) and NO schedule — the sweep runs only when enqueued, or
+  # as a stage of books-sync-all.
+  #
+  # FIRST RUN: the read-only probe (Admin > Books > diagnostics ?source=annotations,
+  # or `boomtime books probe-annotations`) reported 14 highlights / 7 notes for
+  # this account. A sweep landing those counts confirms the parser against the
+  # real DOM. A sweep landing ZERO while the probe still reports 14 means the
+  # notebook DOM moved — the ingest is built to fail loudly on that rather than
+  # report a clean run of nothing.
+  BOOM_FEATURE_BOOKS_ANNOTATIONS: "true"
+
   # ── catalyst-books liberation (boom-w20s) ─────────────────────────────────
   # RE-ENABLED 2026-08-25 after the 403 incident was root-caused and fixed.
   #
