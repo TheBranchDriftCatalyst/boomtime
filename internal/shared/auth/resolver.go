@@ -16,6 +16,7 @@ package auth
 
 import (
 	"context"
+	"sync"
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
@@ -97,12 +98,27 @@ func resolveIdentity(ctx context.Context, database *db.DB, owner string) (*Ident
 // before; main() calls SetResolver at boot per BOOM_AUTH_PROVIDER.
 var currentResolver IdentityResolver = LocalPasswordResolver{}
 
-// SetResolver swaps the active provider (called once at boot).
+// resolverMu guards currentResolver. This used to be an unsynchronised global
+// written once at boot, which was safe only because nothing ever swapped it
+// afterwards. OIDC discovery can now be retried in the BACKGROUND and install
+// the real resolver mid-flight (see PendingOIDCResolver), so the write races
+// every in-flight request's CurrentResolver() read without this.
+var resolverMu sync.RWMutex
+
+// SetResolver swaps the active provider. Called at boot, and again by the
+// background OIDC discovery retry when a degraded start later succeeds.
 func SetResolver(r IdentityResolver) {
-	if r != nil {
-		currentResolver = r
+	if r == nil {
+		return
 	}
+	resolverMu.Lock()
+	defer resolverMu.Unlock()
+	currentResolver = r
 }
 
 // CurrentResolver returns the active provider (never nil).
-func CurrentResolver() IdentityResolver { return currentResolver }
+func CurrentResolver() IdentityResolver {
+	resolverMu.RLock()
+	defer resolverMu.RUnlock()
+	return currentResolver
+}

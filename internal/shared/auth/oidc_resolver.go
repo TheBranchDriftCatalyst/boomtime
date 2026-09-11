@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -114,6 +115,14 @@ func (r *OIDCResolver) ResolveBearer(ctx context.Context, database *db.DB, token
 
 // ResolveCookie: the web session cookie is an opaque id → oidc_sessions → user.
 func (r *OIDCResolver) ResolveCookie(ctx context.Context, database *db.DB, sessionID string) (*Identity, *apierr.Error) {
+	return resolveOIDCSession(ctx, database, sessionID)
+}
+
+// resolveOIDCSession is the session-cookie path, factored out so
+// PendingOIDCResolver serves it IDENTICALLY while discovery is still failing.
+// It is a pure database lookup — it never touches the issuer — which is why an
+// unreachable IdP does not have to log existing sessions out.
+func resolveOIDCSession(ctx context.Context, database *db.DB, sessionID string) (*Identity, *apierr.Error) {
 	username, ok, err := database.GetOIDCSessionUser(ctx, sessionID)
 	if err != nil {
 		return nil, apierr.Generic()
@@ -390,9 +399,21 @@ func localpart(email string) string {
 // SetResolver (which sets the active login provider).
 var oidcInstance *OIDCResolver
 
+// oidcMu guards oidcInstance for the same reason resolverMu guards
+// currentResolver: the background discovery retry installs it after boot.
+var oidcMu sync.RWMutex
+
 // SetOIDCResolver stores the constructed OIDC resolver for the link flow.
-func SetOIDCResolver(r *OIDCResolver) { oidcInstance = r }
+func SetOIDCResolver(r *OIDCResolver) {
+	oidcMu.Lock()
+	defer oidcMu.Unlock()
+	oidcInstance = r
+}
 
 // OIDCResolverInstance returns the constructed OIDC resolver (nil if OIDC isn't
 // configured). Used by the /auth/link/oidc + /auth/login/oidc handlers.
-func OIDCResolverInstance() *OIDCResolver { return oidcInstance }
+func OIDCResolverInstance() *OIDCResolver {
+	oidcMu.RLock()
+	defer oidcMu.RUnlock()
+	return oidcInstance
+}

@@ -150,10 +150,22 @@ func runCmd() *cobra.Command {
 					cfg.OIDCRedirectURL, cfg.OIDCGroupToRole, cfg.OIDCAutoprovision)
 				if oerr != nil {
 					if cfg.OIDCEnabled() {
-						logger.Error("BOOM_AUTH_PROVIDER=oidc but OIDC discovery failed", "err", oerr, "issuer", cfg.OIDCIssuer)
-						return fmt.Errorf("oidc init: %w", oerr)
+						// Discovery failure used to be fatal here, which meant an
+						// unreachable issuer took the ENTIRE application down —
+						// heartbeat ingest, badges, public profiles, all of it —
+						// for a dependency that only the login callback actually
+						// needs. Start DEGRADED instead: PendingOIDCResolver keeps
+						// API tokens and established sessions working while new
+						// logins 503, and the retry below upgrades us in place the
+						// moment the issuer answers. Still loud (ERROR, and
+						// /healthz keeps reporting provider=oidc), just not fatal.
+						logger.Error("BOOM_AUTH_PROVIDER=oidc but OIDC discovery failed — starting DEGRADED: API tokens and existing sessions keep working, NEW LOGINS ARE UNAVAILABLE until discovery succeeds",
+							"err", oerr, "issuer", cfg.OIDCIssuer)
+						auth.SetResolver(auth.PendingOIDCResolver{})
+						go retryOIDCDiscovery(ctx, cfg, logger)
+					} else {
+						logger.Warn("OIDC configured but discovery failed; account-linking unavailable", "err", oerr, "issuer", cfg.OIDCIssuer)
 					}
-					logger.Warn("OIDC configured but discovery failed; account-linking unavailable", "err", oerr, "issuer", cfg.OIDCIssuer)
 				} else {
 					auth.SetOIDCResolver(oidcResolver)
 					if cfg.OIDCEnabled() {
