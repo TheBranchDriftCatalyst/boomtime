@@ -441,7 +441,11 @@ export function registerCoreDomain(): void {
   });
   registerAdminTab({
     id: "jobs", label: "Jobs", to: "/app/admin/jobs", group: "core", order: 2,
-    icon: ListChecks, width: "wide",
+    // full, not wide: the console is a dense data table with six columns plus a
+    // drill-down tree. The "wide" clamp is a READING measure meant for prose, and
+    // under it the table wasted a third of the viewport while truncating error
+    // text — the one column an operator is actually here to read.
+    icon: ListChecks, width: "full",
     description: "Background queues, schedules, and run history.",
   });
   registerAdminTab({

@@ -342,6 +342,10 @@ export type AdminJobStatus =
 export interface AdminJob {
   id: number;
   kind: string;
+  // The user this run is for, or "" for a FLEET-WIDE run that fans over every
+  // eligible user. Every kind is dual-mode: owner-scoped when enqueued with one,
+  // fleet-wide when not.
+  owner: string;
   status: AdminJobStatus;
   attempts: number;
   maxAttempts: number;
@@ -385,6 +389,17 @@ export interface AdminJobQueue {
 }
 export interface AdminJobQueuesPayload {
   queues: AdminJobQueue[];
+  chains: AdminJobChain[];
+}
+
+// One COMPOSED kind: a pipeline that internally runs other kinds in order.
+// books-sync-all is one job that runs seven stages, each itself a registered
+// kind — so a chain is an ordering over things that already exist, and the
+// console can render it (and run any single step) without knowing any pipeline
+// by name. Declared server-side via Registry.SetChain.
+export interface AdminJobChain {
+  kind: string;
+  steps: string[];
 }
 
 // Rate-metric registry — GET /api/v1/admin/metrics (boom-metrics). Mirrors

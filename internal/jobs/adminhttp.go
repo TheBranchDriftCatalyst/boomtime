@@ -231,8 +231,13 @@ func declare[Resp any](s *adminSpec, method, rel string, h echo.HandlerFunc) *ap
 // ── DTOs ────────────────────────────────────────────────────────────────────
 
 type jobDTO struct {
-	ID          int64   `json:"id"`
-	Kind        string  `json:"kind"`
+	ID   int64  `json:"id"`
+	Kind string `json:"kind"`
+	// Owner is the user the job runs for, or "" for a FLEET-WIDE run that fans
+	// over every eligible user. Exposed because "whose work is this" is a
+	// first-class question in the console — without it a shared instance cannot
+	// tell one user's backlog from another's, and cannot group by it.
+	Owner       string  `json:"owner"`
 	Status      string  `json:"status"`
 	Attempts    int     `json:"attempts"`
 	MaxAttempts int     `json:"maxAttempts"`
@@ -286,6 +291,22 @@ type jobListResponse struct {
 // queueOverviewResponse is the GET /queues envelope, most-active kind first.
 type queueOverviewResponse struct {
 	Queues []queueKindDTO `json:"queues"`
+	// Chains are the kinds COMPOSED of other kinds, in run order — a pipeline
+	// like books-sync-all that internally runs several stages, each of which is
+	// itself a registered kind. Sent alongside the queues because the console
+	// renders both from one poll, and because a chain is meaningless without the
+	// per-kind state its steps are drawn from.
+	//
+	// Empty when nothing declares a composition. The admin UI enumerates whatever
+	// is here rather than knowing any pipeline by name.
+	Chains []chainDTO `json:"chains"`
+}
+
+// chainDTO is one composition: the kind that runs the chain, and the kinds it
+// runs in order.
+type chainDTO struct {
+	Kind  string   `json:"kind"`
+	Steps []string `json:"steps"`
 }
 
 // scheduleListResponse is the GET /schedules envelope, ordered by kind.
@@ -343,7 +364,7 @@ func rfcPtr(t *time.Time) *string {
 
 func toJobDTO(j Job) jobDTO {
 	return jobDTO{
-		ID: j.ID, Kind: j.Kind, Status: string(j.Status),
+		ID: j.ID, Kind: j.Kind, Owner: j.Owner, Status: string(j.Status),
 		Attempts: j.Attempts, MaxAttempts: j.MaxAttempts, Error: j.Error,
 		RunAt: rfc(j.RunAt), CreatedAt: rfc(j.CreatedAt),
 		StartedAt: rfcPtr(j.StartedAt), FinishedAt: rfcPtr(j.FinishedAt),
@@ -460,7 +481,15 @@ func (a *adminAPI) queues(c *echo.Context) error {
 		}
 		return x.Kind < y.Kind
 	})
-	return c.JSON(http.StatusOK, queueOverviewResponse{Queues: out})
+	// Chains ride along on the same poll (see the field comment).
+	chains := make([]chainDTO, 0)
+	if reg := a.d.Registry(); reg != nil {
+		for kind, steps := range reg.Chains() {
+			chains = append(chains, chainDTO{Kind: kind, Steps: steps})
+		}
+		sort.Slice(chains, func(i, j int) bool { return chains[i].Kind < chains[j].Kind })
+	}
+	return c.JSON(http.StatusOK, queueOverviewResponse{Queues: out, Chains: chains})
 }
 
 // schedules: GET /schedules

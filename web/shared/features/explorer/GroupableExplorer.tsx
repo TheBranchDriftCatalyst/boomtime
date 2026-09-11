@@ -1,3 +1,4 @@
+import type React from "react";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Card, CardContent } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { TableRowsSkeleton } from "@shared/components/Skeletons";
@@ -24,6 +25,14 @@ interface GroupableExplorerProps<Row> {
   // take control; omitted → the table owns its sort locally (default).
   sort?: LeafSort | null;
   onSortChange?: (s: LeafSort | null) => void;
+  // Render WITHOUT the Card chrome, for a caller that already owns a surface and
+  // wants the table flush inside it alongside its own toolbars. Default false
+  // keeps every existing caller pixel-identical.
+  //
+  // Exists because nesting this component's Card inside a caller's Card inside
+  // the page shell produced three concentric borders around one table — a lot of
+  // chrome and padding spent saying nothing.
+  bare?: boolean;
 }
 
 /**
@@ -41,6 +50,7 @@ export function GroupableExplorer<Row>({
   hideGroupByBar = false,
   sort,
   onSortChange,
+  bare = false,
 }: GroupableExplorerProps<Row>) {
   const { labels } = config;
   const requireAxis = groupBy.length === 0 && labels.addAxisHint != null;
@@ -50,6 +60,8 @@ export function GroupableExplorer<Row>({
     resetKey,
     flatWhenEmpty: labels.addAxisHint == null,
   });
+
+  const wrap = wrapWith(bare);
 
   return (
     <>
@@ -65,9 +77,8 @@ export function GroupableExplorer<Row>({
         </Card>
       )}
 
-      <Card>
-        <CardContent className="py-3">
-          {requireAxis ? (
+      {wrap(
+          requireAxis ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
               {labels.addAxisHint}
             </p>
@@ -101,11 +112,28 @@ export function GroupableExplorer<Row>({
                 leafMode={leafMode}
                 sort={sort}
                 onSortChange={onSortChange}
+                bare={bare}
               />
             </>
-          )}
-        </CardContent>
-      </Card>
+          ),
+      )}
     </>
   );
+}
+
+// wrap puts the table on a Card unless the caller already owns a surface.
+//
+// A plain function, NOT a component defined in the render body: an inline
+// component gets a fresh identity every render, so React unmounts and remounts
+// the entire subtree each time — which silently resets the table's expansion and
+// paging state. The explorer's own tests caught exactly that.
+function wrapWith(bare: boolean) {
+  return (children: React.ReactNode) =>
+    bare ? (
+      <>{children}</>
+    ) : (
+      <Card>
+        <CardContent className="py-3">{children}</CardContent>
+      </Card>
+    );
 }

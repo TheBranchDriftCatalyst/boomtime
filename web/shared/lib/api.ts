@@ -63,6 +63,7 @@ import type {
   AdminUsersPayload,
   AdminJob,
   AdminJobSchedule,
+  AdminJobChain,
   AdminJobQueue,
   ServerLogEntry,
   MetricFamily,
@@ -1268,8 +1269,13 @@ export const api = {
   // boom-hney: per-kind queue overview — live depth, running/max headroom,
   // trailing-hour throughput + fail ratio. Backs the queue cards atop the Jobs
   // tab; polled so the limiter's back-pressure is visible in real time.
+  // Returns the WHOLE overview, not just the queues: chains ride along on the
+  // same response so the console renders compositions and per-kind state from
+  // one poll.
   getJobQueues: () =>
-    unwrap<AdminJobQueue[]>("/api/v1/admin/jobs/queues", "queues", []),
+    request<{ queues: AdminJobQueue[]; chains: AdminJobChain[] }>(
+      "/api/v1/admin/jobs/queues",
+    ).then((p) => ({ queues: p.queues ?? [], chains: p.chains ?? [] })),
   triggerAdminJob: (kind: string) =>
     request<{ id: number }>("/api/v1/admin/jobs/trigger", {
       method: "POST",

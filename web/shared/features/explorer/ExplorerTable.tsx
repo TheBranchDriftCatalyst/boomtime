@@ -46,9 +46,20 @@ interface Props<TRow> {
   // Optional controlled sort (e.g. persisted in the URL). Omitted → local state.
   sort?: LeafSort | null;
   onSortChange?: (s: LeafSort | null) => void;
+  // Drop this table's own rounded border — the caller already owns the surface
+  // it sits on, so drawing another one nests a box inside a box. Propagated from
+  // GroupableExplorer's `bare`. Default false keeps existing callers identical.
+  bare?: boolean;
 }
 
-export function ExplorerTable<TRow>({ ctrl, config, leafMode, sort, onSortChange }: Props<TRow>) {
+export function ExplorerTable<TRow>({
+  ctrl,
+  config,
+  leafMode,
+  sort,
+  onSortChange,
+  bare = false,
+}: Props<TRow>) {
   // Seed the flat-root leaf group expanded so the zero-axis "Table" view shows
   // its rows (and the shared leaf pager) immediately. Inert when grouped — no
   // rendered row carries this id.
@@ -176,7 +187,7 @@ export function ExplorerTable<TRow>({ ctrl, config, leafMode, sort, onSortChange
         />
       </div>
 
-      <div className="overflow-x-auto rounded-md border">
+      <div className={cn("overflow-x-auto", !bare && "rounded-md border")}>
         <table className="w-full text-sm">
           <thead className="bg-muted/50 text-xs text-muted-foreground">
             <tr>

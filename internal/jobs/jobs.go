@@ -108,11 +108,26 @@ type Registry struct {
 	// scheduled/server-resident kind is server-only by DEFAULT and can never be
 	// silently orphaned by a worker scaling down mid-run. Policy, like concurrency.
 	offload map[string]bool
+	// chains records that a kind is COMPOSED of other kinds, run in order — a
+	// pipeline, not a queue entry. books-sync-all is one job that internally runs
+	// seven stages in dependency order, and every stage happens to be a
+	// registered kind in its own right.
+	//
+	// Declared here rather than hardcoded in the admin UI, for the same reason
+	// Kinds() is: the console renders whatever is registered, so a new pipeline
+	// (or a new stage in an existing one) shows up and becomes runnable with no
+	// frontend change. Policy, like concurrency and offload.
+	chains map[string][]string
 }
 
 // NewRegistry returns an empty registry.
 func NewRegistry() *Registry {
-	return &Registry{handlers: map[string]Handler{}, concurrency: map[string]int{}, offload: map[string]bool{}}
+	return &Registry{
+		handlers:    map[string]Handler{},
+		concurrency: map[string]int{},
+		offload:     map[string]bool{},
+		chains:      map[string][]string{},
+	}
 }
 
 // Register binds a handler to a kind (last write wins).
@@ -184,6 +199,31 @@ func (r *Registry) OffloadKinds() []string {
 		out = append(out, k)
 	}
 	sort.Strings(out)
+	return out
+}
+
+// SetChain declares that `kind` runs `steps` in order. The steps are themselves
+// registered kinds, so each is independently triggerable and the composition is
+// just an ordering over things that already exist.
+//
+// Call it next to SetConcurrency — it is policy about a kind, not wiring. A
+// pipeline that adds a stage declares it here and the admin console picks it up;
+// nothing in the frontend enumerates stages.
+func (r *Registry) SetChain(kind string, steps ...string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.chains[kind] = append([]string(nil), steps...)
+}
+
+// Chains returns the registered compositions, keyed by the composing kind. The
+// step slices are copies, so a caller cannot mutate the registry through them.
+func (r *Registry) Chains() map[string][]string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make(map[string][]string, len(r.chains))
+	for k, steps := range r.chains {
+		out[k] = append([]string(nil), steps...)
+	}
 	return out
 }
 

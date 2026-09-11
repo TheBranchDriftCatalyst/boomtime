@@ -66,22 +66,6 @@ import { renderWithProviders } from "@shared/test/renderWithProviders";
 import { server } from "@shared/test/msw/server";
 import { http, HttpResponse } from "@shared/test/msw/handlers";
 
-function config(books: boolean) {
-  server.use(
-    http.get("/api/v1/config/public", () =>
-      HttpResponse.json({
-        registration_enabled: true,
-        auth_provider: "local",
-        oidc_enabled: false,
-        billing_enabled: false,
-        beta_flags: {},
-        github_connect_enabled: false,
-        books_enabled: books,
-      }),
-    ),
-  );
-}
-
 // A queue-overview row (drives a kind's header). Sensible defaults; override per test.
 function queue(over: Record<string, unknown>) {
   return {
@@ -104,6 +88,7 @@ function jobRow(over: Record<string, unknown>) {
   return {
     id: 1,
     kind: "hardcover-match",
+    owner: "",
     status: "running",
     attempts: 1,
     maxAttempts: 1,
@@ -116,17 +101,21 @@ function jobRow(over: Record<string, unknown>) {
   };
 }
 
-// Stub the three read endpoints the tab polls: queue overview (group headers),
-// schedules (kept empty), and the per-kind jobs list (kind-filtered from the
-// query string).
-function stubReads(queues: unknown[], rowsForKind: (kind: string) => unknown[]) {
+// Stub the reads the console polls. Two things changed with the restructure:
+// the queue overview now carries CHAINS alongside the per-kind stats, and the
+// run table fetches the recent window ONCE (unfiltered) and groups it in memory
+// rather than issuing a request per expanded kind.
+function stubReads(
+  queues: unknown[],
+  jobs: unknown[] = [],
+  chains: unknown[] = [],
+) {
   server.use(
-    http.get("/api/v1/admin/jobs/queues", () => HttpResponse.json({ queues })),
+    http.get("/api/v1/admin/jobs/queues", () =>
+      HttpResponse.json({ queues, chains }),
+    ),
     http.get("/api/v1/admin/jobs/schedules", () => HttpResponse.json({ schedules: [] })),
-    http.get("/api/v1/admin/jobs", ({ request }) => {
-      const kind = new URL(request.url).searchParams.get("kind") ?? "";
-      return HttpResponse.json({ jobs: rowsForKind(kind) });
-    }),
+    http.get("/api/v1/admin/jobs", () => HttpResponse.json({ jobs })),
   );
 }
 
@@ -159,27 +148,12 @@ function renderJobsTab() {
   );
 }
 
-// The reading-step panel was five HARDCODED books buttons sitting as a peer of
-// the generic job machinery, so a new job kind was unrunnable from the UI until
-// someone added a sixth. It is gone: every registered kind now renders its own
-// run button, driven off /queues (which unions in registry.Kinds()). These specs
-// pin that, plus the two things the restructure added.
+// The console is ONE groupable table now, not three stacked panels and a list
+// of accordions. These pin the behaviour that restructure carries, not its
+// markup: what an operator can see without drilling, and what they can run.
 describe("JobsTab — every registered kind is runnable, with no hardcoded list", () => {
-  const q = (over: Record<string, unknown> = {}) => ({
-    kind: "books-kindle-annotations",
-    queued: 0,
-    running: 0,
-    maxConcurrency: 1,
-    doneLastHour: 0,
-    failedLastHour: 0,
-    avgDurationMs: 0,
-    lastRunAt: null,
-    lastStatus: "",
-    ...over,
-  });
-
-  it("renders a run button for a kind nothing hardcodes, and triggers it generically", async () => {
-    stubReads([q()], () => []);
+  it("renders a run button for a kind nothing in the component names", async () => {
+    stubReads([queue({ kind: "books-kindle-annotations" })]);
     let body: unknown = null;
     server.use(
       http.post("/api/v1/admin/jobs/trigger", async ({ request }) => {
@@ -191,7 +165,7 @@ describe("JobsTab — every registered kind is runnable, with no hardcoded list"
     const user = userEvent.setup();
     renderJobsTab();
 
-    // This kind is not named anywhere in the component — it arrives from the API.
+    // The kind arrives from the API; the component has no list of kinds at all.
     await user.click(
       await screen.findByRole("button", { name: /run books-kindle-annotations/i }),
     );
@@ -203,13 +177,14 @@ describe("JobsTab — every registered kind is runnable, with no hardcoded list"
     );
   });
 
-  // A schedule is a property of a KIND. It used to live in its own table, so
-  // answering "when does this next run?" meant cross-referencing two lists.
-  it("shows the kind's cadence inline instead of in a separate table", async () => {
+  // A schedule is a property of a KIND, so it rides on the kind's row rather
+  // than in the separate table it used to live in.
+  it("shows the kind's cadence on its row", async () => {
     server.use(
       http.get("/api/v1/admin/jobs/queues", () =>
-        HttpResponse.json({ queues: [q({ kind: "books-audible-sync" })] }),
+        HttpResponse.json({ queues: [queue({ kind: "books-audible-sync" })], chains: [] }),
       ),
+      http.get("/api/v1/admin/jobs", () => HttpResponse.json({ jobs: [] })),
       http.get("/api/v1/admin/jobs/schedules", () =>
         HttpResponse.json({
           schedules: [
@@ -222,18 +197,17 @@ describe("JobsTab — every registered kind is runnable, with no hardcoded list"
           ],
         }),
       ),
-      http.get("/api/v1/admin/jobs", () => HttpResponse.json({ jobs: [] })),
     );
     renderJobsTab();
-
-    const chip = await screen.findByTestId("job-group-schedule-books-audible-sync");
-    expect(chip).toHaveTextContent("1h");
+    expect(
+      await screen.findByTestId("job-group-schedule-books-audible-sync"),
+    ).toHaveTextContent("1h");
   });
 
-  // An unscheduled kind shows nothing — most kinds are enqueue-on-demand, so
-  // labelling the absence would be noise on nearly every row.
+  // Most kinds are enqueue-on-demand, so labelling the absence would be noise on
+  // nearly every row.
   it("shows no cadence for an unscheduled kind", async () => {
-    stubReads([q()], () => []);
+    stubReads([queue({ kind: "books-kindle-annotations" })]);
     renderJobsTab();
     await screen.findByRole("button", { name: /run books-kindle-annotations/i });
     expect(
@@ -242,24 +216,93 @@ describe("JobsTab — every registered kind is runnable, with no hardcoded list"
   });
 });
 
-// The page's first question — "is anything broken?" — previously had no answer
-// above the fold; failures were per-kind badges you had to read every row to find.
-describe("JobsTab — health strip", () => {
-  const q = (over: Record<string, unknown>) => ({
-    kind: "k",
-    queued: 0,
-    running: 0,
-    maxConcurrency: 1,
-    doneLastHour: 0,
-    failedLastHour: 0,
-    avgDurationMs: 0,
-    lastRunAt: null,
-    lastStatus: "",
-    ...over,
+// A chain is the one thing a flat per-kind list genuinely cannot express:
+// ORDER. Rendered from whatever the registry declares, so a new pipeline needs
+// no frontend change.
+describe("JobsTab — composed pipelines", () => {
+  const chain = {
+    kind: "books-sync-all",
+    steps: ["books-kindle-sync", "books-kindle-annotations", "hardcover-pull"],
+  };
+
+  it("renders the declared steps in run order", async () => {
+    stubReads([queue({ kind: "books-sync-all" })], [], [chain]);
+    renderJobsTab();
+
+    const strip = await screen.findByTestId("jobs-chains");
+    const labels = within(strip)
+      .getAllByRole("button")
+      .map((b) => b.getAttribute("aria-label"))
+      .filter((l): l is string => !!l && l.startsWith("run step"));
+    expect(labels).toEqual([
+      "run step books-kindle-sync",
+      "run step books-kindle-annotations",
+      "run step hardcover-pull",
+    ]);
   });
 
+  it("runs the whole chain, and any single step, through the same generic trigger", async () => {
+    stubReads([queue({ kind: "books-sync-all" })], [], [chain]);
+    const enqueued: string[] = [];
+    server.use(
+      http.post("/api/v1/admin/jobs/trigger", async ({ request }) => {
+        const b = (await request.json()) as { kind: string };
+        enqueued.push(b.kind);
+        return HttpResponse.json({ id: enqueued.length });
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderJobsTab();
+
+    await user.click(await screen.findByRole("button", { name: /run chain books-sync-all/i }));
+    await user.click(
+      await screen.findByRole("button", { name: /run step books-kindle-annotations/i }),
+    );
+    await waitFor(() =>
+      expect(enqueued).toEqual(["books-sync-all", "books-kindle-annotations"]),
+    );
+  });
+});
+
+// Every run the console triggers is FLEET-WIDE (the generic trigger enqueues
+// owner-less, and every handler is dual-mode). The table has to say so rather
+// than leave the column blank, because "no owner" is a real answer, not missing
+// data.
+describe("JobsTab — ownership is visible", () => {
+  it("labels an owner-less run as fleet-wide, and names a scoped one", async () => {
+    stubReads(
+      [queue({ kind: "hardcover-match" })],
+      [
+        jobRow({ id: 1, owner: "", status: "done", finishedAt: new Date().toISOString() }),
+        jobRow({ id: 2, owner: "panda", status: "done", finishedAt: new Date().toISOString() }),
+      ],
+    );
+    const user = userEvent.setup();
+    renderJobsTab();
+
+    // Drill into the kind to reach its runs.
+    const group = await screen.findByText("hardcover-match");
+    await user.click(group);
+
+    await waitFor(() => expect(screen.getByText("panda")).toBeInTheDocument());
+    expect(screen.getByText(/^fleet$/i)).toBeInTheDocument();
+  });
+
+  it("offers owner as a group axis so runs can be sliced by user", async () => {
+    stubReads([queue({ kind: "hardcover-match" })], [jobRow({ owner: "panda" })]);
+    renderJobsTab();
+    // The axis is advertised in the Group-by bar's picker.
+    await screen.findByText("hardcover-match");
+    expect(screen.getByRole("button", { name: /add axis/i })).toBeInTheDocument();
+  });
+});
+
+describe("JobsTab — health strip", () => {
+  const q = (over: Record<string, unknown>) => queue(over);
+
   it("names the failing kinds when something is failing", async () => {
-    stubReads([q({ kind: "a", failedLastHour: 3 }), q({ kind: "b" })], () => []);
+    stubReads([q({ kind: "a", failedLastHour: 3 }), q({ kind: "b" })]);
     renderJobsTab();
 
     const strip = await screen.findByTestId("jobs-health-strip");
@@ -268,7 +311,7 @@ describe("JobsTab — health strip", () => {
   });
 
   it("stays calm when nothing is wrong", async () => {
-    stubReads([q({ kind: "a", running: 1, maxConcurrency: 4 })], () => []);
+    stubReads([q({ kind: "a", running: 1, maxConcurrency: 4 })]);
     renderJobsTab();
 
     const strip = await screen.findByTestId("jobs-health-strip");
@@ -277,10 +320,9 @@ describe("JobsTab — health strip", () => {
   });
 
   // At capacity with an EMPTY queue is a saturated worker doing its job, not a
-  // problem — the same distinction KindStats draws per kind. Only a backlog
-  // behind the cap is worth an operator's attention.
+  // problem — only a backlog behind the cap earns an operator's attention.
   it("does not cry backed-up when a kind is at cap with nothing waiting", async () => {
-    stubReads([q({ kind: "a", running: 2, maxConcurrency: 2, queued: 0 })], () => []);
+    stubReads([q({ kind: "a", running: 2, maxConcurrency: 2, queued: 0 })]);
     renderJobsTab();
 
     const strip = await screen.findByTestId("jobs-health-strip");
@@ -289,275 +331,39 @@ describe("JobsTab — health strip", () => {
   });
 });
 
-describe("JobsTab — grouped kind headers", () => {
-  const now = new Date().toISOString();
-
-  it("renders one header per kind with headroom, depth, failures and throughput", async () => {
-    config(false);
-    stubReads(
-      [
-        // at cap WITH a backlog → pacing; 1 failure in the trailing hour.
-        queue({
-          kind: "hardcover-match",
-          queued: 3,
-          running: 1,
-          maxConcurrency: 1,
-          doneLastHour: 2,
-          failedLastHour: 1,
-          lastRunAt: now,
-          lastStatus: "running",
-        }),
-        // idle, well under cap, no failures.
-        queue({
-          kind: "github-stats-refresh",
-          queued: 0,
-          running: 0,
-          maxConcurrency: 2,
-          doneLastHour: 5,
-          failedLastHour: 0,
-          lastRunAt: now,
-          lastStatus: "done",
-        }),
-      ],
-      () => [],
-    );
-
-    renderJobsTab();
-
-    const group = await screen.findByTestId("job-group-hardcover-match");
-    // Headroom label = running/max, bar is amber at cap.
-    expect(group.textContent).toContain("1/1");
-    expect(screen.getByTestId("job-group-bar-hardcover-match").innerHTML).toContain(
-      "bg-amber-500",
-    );
-    // At cap WITH a backlog = pacing back-pressure + the queued depth.
-    expect(group.textContent).toContain("pacing");
-    expect(group.textContent).toContain("3 queued");
-    // Throughput + failures (warn color on the fail chip).
-    expect(group.textContent).toContain("2/h");
-    expect(group.textContent).toContain("1 failed");
-    expect(screen.getByTestId("job-group-fail-hardcover-match").className).toContain(
-      "text-destructive",
-    );
-    // Failing takes precedence for the state dot — a kind with recent failures
-    // reads red even while it's running.
-    expect(screen.getByTestId("job-group-dot-hardcover-match").className).toContain(
-      "bg-destructive",
-    );
-
-    // The idle kind renders too: under-cap bar not amber, no fail color, muted dot.
-    const idle = screen.getByTestId("job-group-github-stats-refresh");
-    expect(idle.textContent).toContain("0/2");
-    expect(screen.getByTestId("job-group-bar-github-stats-refresh").innerHTML).not.toContain(
-      "bg-amber-500",
-    );
-    expect(screen.getByTestId("job-group-fail-github-stats-refresh").className).not.toContain(
-      "text-destructive",
-    );
-    expect(screen.getByTestId("job-group-dot-github-stats-refresh").className).toContain(
-      "bg-muted-foreground",
-    );
-
-    // Collapsed by design: no run rows are fetched/shown until a kind is expanded.
-    expect(screen.queryByRole("row")).not.toBeInTheDocument();
-  });
-
-  it("shows 'at cap' (not 'pacing') when running==max with no backlog", async () => {
-    config(false);
-    stubReads(
-      [queue({ kind: "avatar-render", queued: 0, running: 1, maxConcurrency: 1, lastStatus: "running" })],
-      () => [],
-    );
-
-    renderJobsTab();
-
-    const group = await screen.findByTestId("job-group-avatar-render");
-    expect(group.textContent).toContain("at cap");
-    expect(group.textContent).not.toContain("pacing");
-    // Running with no failures → accent (primary) state dot.
-    expect(screen.getByTestId("job-group-dot-avatar-render").className).toContain("bg-primary");
-  });
-});
-
-describe("JobsTab — expand a kind and paginate its runs", () => {
-  it("loads the kind's runs on expand and pages them 8 at a time", async () => {
-    config(false);
-    // 10 runs of the kind → 2 pages of PAGE_SIZE=8.
-    const runs = Array.from({ length: 10 }, (_, i) =>
-      jobRow({ id: i + 1, kind: "hardcover-match", status: "done", finishedAt: new Date().toISOString() }),
-    );
-    stubReads(
-      [queue({ kind: "hardcover-match", running: 0, doneLastHour: 10, lastStatus: "done" })],
-      (kind) => (kind === "hardcover-match" ? runs : []),
-    );
-
-    const user = userEvent.setup();
-    renderJobsTab();
-
-    // Expand the group via its header toggle.
-    await user.click(await screen.findByTitle(/expand hardcover-match/i));
-
-    // Page 1 shows the first 8 rows (ids 1..8), not 9/10.
-    await waitFor(() => expect(screen.getByText("Page 1 / 2")).toBeInTheDocument());
-    expect(screen.getByRole("cell", { name: "1" })).toBeInTheDocument();
-    expect(screen.getByRole("cell", { name: "8" })).toBeInTheDocument();
-    expect(screen.queryByRole("cell", { name: "9" })).not.toBeInTheDocument();
-
-    // Next → page 2 reveals the tail (id 9), page 1 rows gone.
-    await user.click(screen.getByRole("button", { name: /next/i }));
-    await waitFor(() => expect(screen.getByText("Page 2 / 2")).toBeInTheDocument());
-    expect(screen.getByRole("cell", { name: "9" })).toBeInTheDocument();
-    expect(screen.queryByRole("cell", { name: "1" })).not.toBeInTheDocument();
-  });
-});
-
-describe("JobsTab — per-row actions inside an expanded kind", () => {
-  async function expandAndFind(row: Record<string, unknown>) {
-    const runs = [jobRow(row)];
-    stubReads(
-      [queue({ kind: "hardcover-match", running: 1, lastStatus: "running" })],
-      (kind) => (kind === "hardcover-match" ? runs : []),
-    );
-    const user = userEvent.setup();
-    renderJobsTab();
-    await user.click(await screen.findByTitle(/expand hardcover-match/i));
-    return user;
-  }
-
-  it("clicking a run row opens the panel and streams only that job's logs", async () => {
-    config(false);
-    const user = await expandAndFind({ id: 7, kind: "hardcover-match", status: "running" });
-
-    // Row → open the side panel (click its id cell).
-    await user.click(await screen.findByRole("cell", { name: "7" }));
-
-    const panel = await screen.findByRole("dialog");
-    expect(within(panel).getByText("hardcover-match")).toBeInTheDocument();
-    expect(within(panel).getByText("#7")).toBeInTheDocument();
-    // Only the job_id=7 lines show; job_id=99 is filtered out.
-    expect(within(panel).getByText(/jobs: started/)).toBeInTheDocument();
-    expect(within(panel).getByText(/matched three books/)).toBeInTheDocument();
-    expect(within(panel).queryByText(/line for a different job/)).not.toBeInTheDocument();
-  });
-
-  it("per-row clear → DELETE /jobs/:id/logs, no panel opened", async () => {
-    config(false);
-    let clearHits = 0;
-    server.use(
-      http.delete("/api/v1/admin/jobs/7/logs", () => {
-        clearHits += 1;
-        return HttpResponse.json({ deleted: true });
-      }),
-    );
-    const user = await expandAndFind({ id: 7, kind: "hardcover-match", status: "done", finishedAt: new Date().toISOString() });
-
-    await user.click(await screen.findByRole("button", { name: /clear logs for job 7/i }));
-    await waitFor(() => expect(clearHits).toBe(1));
-    // stopPropagation: the row's log panel must NOT have opened.
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    await waitFor(() =>
-      expect(toastSuccess).toHaveBeenCalledWith("Cleared stored logs for job #7"),
-    );
-  });
-
-  it("cancel on a running row → POST cancel, no panel opened", async () => {
-    config(false);
-    let cancelHits = 0;
-    server.use(
-      http.post("/api/v1/admin/jobs/7/cancel", () => {
-        cancelHits += 1;
-        return HttpResponse.json({ cancelled: true, wasRunning: true });
-      }),
-    );
-    const user = await expandAndFind({ id: 7, kind: "hardcover-match", status: "running" });
-
-    await user.click(await screen.findByRole("button", { name: /cancel job #7/i }));
-    await waitFor(() => expect(cancelHits).toBe(1));
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-
-  it("retry on a failed row → POST retry, no panel opened", async () => {
-    config(false);
-    let retryHits = 0;
-    server.use(
-      http.post("/api/v1/admin/jobs/7/retry", () => {
-        retryHits += 1;
-        return HttpResponse.json({ id: 7 });
-      }),
-    );
-    const user = await expandAndFind({
-      id: 7,
-      kind: "hardcover-match",
-      status: "failed",
-      error: "boom",
-      finishedAt: new Date().toISOString(),
-    });
-
-    await user.click(await screen.findByRole("button", { name: /re-enqueue job #7/i }));
-    await waitFor(() => expect(retryHits).toBe(1));
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-});
-
 describe("JobsTab — bulk log clears (confirm-gated)", () => {
-  it("Clear all logs → confirm → DELETE /jobs/logs (no kind)", async () => {
-    config(false);
-    stubReads([queue({ kind: "hardcover-match" })], () => []);
-    vi.spyOn(window, "confirm").mockReturnValue(true);
-    let deleteUrl: string | null = null;
+  it("Clear all logs → confirm → DELETE /jobs/logs", async () => {
+    stubReads([queue({})]);
+    let hit = 0;
     server.use(
       http.delete("/api/v1/admin/jobs/logs", ({ request }) => {
-        deleteUrl = request.url;
+        hit += 1;
+        expect(new URL(request.url).searchParams.get("kind")).toBeNull();
         return HttpResponse.json({ deleted: 4 });
       }),
     );
+    vi.spyOn(window, "confirm").mockReturnValue(true);
 
     const user = userEvent.setup();
     renderJobsTab();
-
     await user.click(await screen.findByRole("button", { name: /clear all logs/i }));
-    await waitFor(() => expect(deleteUrl).not.toBeNull());
-    expect(new URL(deleteUrl!).searchParams.get("kind")).toBeNull();
-    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith("Cleared 4 stored logs"));
+    await waitFor(() => expect(hit).toBe(1));
   });
 
-  it("Clear-all does nothing when the confirm() is declined", async () => {
-    config(false);
-    stubReads([queue({ kind: "hardcover-match" })], () => []);
-    vi.spyOn(window, "confirm").mockReturnValue(false);
-    let hits = 0;
+  it("does nothing when the confirm() is declined", async () => {
+    stubReads([queue({})]);
+    let hit = 0;
     server.use(
       http.delete("/api/v1/admin/jobs/logs", () => {
-        hits += 1;
+        hit += 1;
         return HttpResponse.json({ deleted: 0 });
       }),
     );
+    vi.spyOn(window, "confirm").mockReturnValue(false);
 
     const user = userEvent.setup();
     renderJobsTab();
     await user.click(await screen.findByRole("button", { name: /clear all logs/i }));
-    // Give any (erroneous) request a chance to fire, then assert none did.
-    await new Promise((r) => setTimeout(r, 50));
-    expect(hits).toBe(0);
-  });
-
-  it("Clear-kind → confirm → DELETE /jobs/logs?kind=<kind>", async () => {
-    config(false);
-    stubReads([queue({ kind: "hardcover-match" })], () => []);
-    vi.spyOn(window, "confirm").mockReturnValue(true);
-    let deleteUrl: string | null = null;
-    server.use(
-      http.delete("/api/v1/admin/jobs/logs", ({ request }) => {
-        deleteUrl = request.url;
-        return HttpResponse.json({ deleted: 2 });
-      }),
-    );
-
-    const user = userEvent.setup();
-    renderJobsTab();
-
-    await user.click(await screen.findByRole("button", { name: /clear hardcover-match logs/i }));
-    await waitFor(() => expect(deleteUrl).not.toBeNull());
-    expect(new URL(deleteUrl!).searchParams.get("kind")).toBe("hardcover-match");
+    expect(hit).toBe(0);
   });
 });

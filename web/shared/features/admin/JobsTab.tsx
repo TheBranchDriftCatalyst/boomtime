@@ -17,15 +17,20 @@ import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AdminTabShell } from "@shared/shared/admin/AdminTabShell";
 import { usePageActions } from "@shared/layout/PageActionsSlot";
+import { GroupableExplorer } from "@shared/features/explorer/GroupableExplorer";
+import { GroupByBar } from "@shared/features/explorer/GroupByBar";
+import type { Column } from "@shared/features/explorer/types";
+import {
+  JOB_AXES,
+  JOB_WINDOW,
+  makeJobsExplorerConfig,
+} from "@shared/features/admin/jobsExplorerConfig";
 import {
   AlertTriangle,
   Ban,
-  CalendarClock,
-  ChevronDown,
   ChevronRight,
   Gauge,
   Layers,
-  ListChecks,
   Play,
   RotateCcw,
   Trash2,
@@ -34,7 +39,6 @@ import { toast } from "sonner";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import {
   Card,
-  CardContent,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import {
   Sheet,
@@ -43,14 +47,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/sheet";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@thebranchdriftcatalyst/catalyst-ui/ui/table";
 import { EmptyState } from "@shared/components/EmptyState";
 import { JobLogStream } from "@shared/features/logs/JobLogStream";
 import { api, ApiError } from "@shared/lib/api";
@@ -59,35 +55,28 @@ import { relativeTime } from "@shared/lib/sourceStatus";
 import { cn } from "@shared/lib/utils";
 import type {
   AdminJob,
+  AdminJobChain,
   AdminJobQueue,
-  AdminJobSchedule,
   AdminJobStatus,
 } from "@shared/types/api";
 
 // ── formatting helpers ──────────────────────────────────────────────────────
 
-// "every 8h" / "every 30m" / "every 2d" — picks the coarsest exact unit, else
-// falls back to raw seconds.
-function humanizeInterval(sec: number): string {
-  if (!Number.isFinite(sec) || sec <= 0) return "—";
-  if (sec % 86400 === 0) return `every ${sec / 86400}d`;
-  if (sec % 3600 === 0) return `every ${sec / 3600}h`;
-  if (sec % 60 === 0) return `every ${sec / 60}m`;
-  return `every ${sec}s`;
-}
-
 // Forward-looking relative label, e.g. "in 6h", "in 30m", "now" (for a fire
 // time already elapsed — the scheduler just hasn't ticked yet).
-function relativeFuture(ts: string): string {
-  const diff = new Date(ts).getTime() - Date.now();
-  if (!Number.isFinite(diff) || diff <= 0) return "now";
-  const sec = Math.floor(diff / 1000);
-  if (sec < 60) return `in ${sec}s`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `in ${min}m`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `in ${hr}h`;
-  return `in ${Math.floor(hr / 24)}d`;
+// Compact past-relative stamp for the run log. Deliberately terse — this sits
+// in a dense table column, so "3m" beats "3 minutes ago" at a glance and the
+// exact timestamp is one hover away in the title attribute.
+function relativePast(ts: string): string {
+  const ms = Date.now() - new Date(ts).getTime();
+  if (!Number.isFinite(ms)) return "—";
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.round(h / 24)}d`;
 }
 
 // Wall-clock duration between start and finish. "—" until both are present.
@@ -195,241 +184,117 @@ function HealthStrip({ queues }: { queues: AdminJobQueue[] }) {
 // The runs table inside an expanded kind. Newest-first, and page it here in the
 // FE so an active kind can't balloon the tab — mirrors the Books explorer's
 // leaf-page pagination (a bounded fetch, sliced Prev/Next).
-const PAGE_SIZE = 8;
+// ── chains ──────────────────────────────────────────────────────────────────
 
-function RunRow({
-  job,
-  onSelect,
-  onRetry,
-  retrying,
-  onCancel,
-  cancelling,
-  onClearLogs,
-  clearing,
+// A chain is a kind COMPOSED of other kinds: books-sync-all is one job that
+// internally runs seven stages in dependency order, and every stage is itself a
+// registered kind. Deleting the old hardcoded books panel lost the ability to
+// SEE that composition, which is the one thing a flat per-kind list genuinely
+// cannot express — ordering.
+//
+// Rendered from whatever the registry declares (Registry.SetChain), so a new
+// pipeline, or a new stage in an existing one, appears here with no frontend
+// change. Nothing below names a pipeline.
+function ChainsStrip({
+  chains,
+  onRun,
+  running,
 }: {
-  job: AdminJob;
-  onSelect: () => void;
-  onRetry: () => void;
-  retrying: boolean;
-  onCancel: () => void;
-  cancelling: boolean;
-  onClearLogs: () => void;
-  clearing: boolean;
+  chains: AdminJobChain[];
+  onRun: (kind: string) => void;
+  running: string | null;
 }) {
-  // Cancellable while pending (queued) or in flight (running); terminal rows
-  // (done/failed/cancelled) offer Retry only on failure. Clicking the row opens
-  // the log side panel; the action buttons stopPropagation so they act alone.
-  const cancellable = job.status === "running" || job.status === "queued";
+  if (chains.length === 0) return null;
   return (
-    <TableRow
-      onClick={onSelect}
-      className="cursor-pointer transition-colors hover:bg-muted/40"
-      title={`View logs for job #${job.id}`}
-    >
-      <TableCell className="font-mono text-xs text-muted-foreground">{job.id}</TableCell>
-      <TableCell>
-        <StatusBadge status={job.status} />
-      </TableCell>
-      <TableCell className="tabular-nums text-muted-foreground">
-        {job.attempts}
-        <span className="text-muted-foreground/50">/{job.maxAttempts}</span>
-      </TableCell>
-      <TableCell
-        className="tabular-nums text-muted-foreground"
-        title={new Date(job.createdAt).toLocaleString()}
-      >
-        {relativeTime(job.createdAt)}
-      </TableCell>
-      <TableCell className="tabular-nums text-muted-foreground">
-        {jobDuration(job.startedAt, job.finishedAt)}
-      </TableCell>
-      <TableCell className="text-right">
-        <div className="flex items-center justify-end gap-1">
-          {job.error && (
-            <span
-              className="mr-1 hidden max-w-[14rem] truncate text-xs text-destructive md:inline"
-              title={job.error}
-            >
-              {job.error}
-            </span>
-          )}
-          {job.status === "failed" && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2"
-              onClick={(e) => {
-                e.stopPropagation();
-                onRetry();
-              }}
-              disabled={retrying}
-              title={`Re-enqueue job #${job.id}`}
-            >
-              <RotateCcw className={cn("h-3.5 w-3.5", retrying && "animate-spin")} />
-            </Button>
-          )}
-          {cancellable && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2"
-              onClick={(e) => {
-                e.stopPropagation();
-                onCancel();
-              }}
-              disabled={cancelling}
-              title={`Cancel job #${job.id}`}
-            >
-              <Ban className={cn("h-3.5 w-3.5", cancelling && "animate-pulse")} />
-            </Button>
-          )}
+    <div data-testid="jobs-chains" className="border-b border-border/60 px-3 py-2.5">
+      {chains.map((c) => (
+        <div key={c.kind} className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 px-2 text-muted-foreground hover:text-destructive"
-            onClick={(e) => {
-              e.stopPropagation();
-              onClearLogs();
-            }}
-            disabled={clearing}
-            title={`Clear stored logs for job #${job.id}`}
-            aria-label={`clear logs for job ${job.id}`}
+            className="h-7 shrink-0 gap-1.5 px-2 font-mono text-xs"
+            onClick={() => onRun(c.kind)}
+            disabled={running === c.kind}
+            title={`Run the whole ${c.kind} chain — FLEET-WIDE, for every eligible user`}
+            aria-label={`run chain ${c.kind}`}
           >
-            <Trash2 className={cn("h-3.5 w-3.5", clearing && "animate-pulse")} />
+            <Play className={cn("h-3.5 w-3.5", running === c.kind && "animate-pulse")} />
+            {c.kind}
           </Button>
+          {/* The steps, in run order. Each is a registered kind, so each is
+              independently runnable — which is what the old panel's per-step
+              buttons were for, minus the hardcoding. */}
+          <div className="flex flex-wrap items-center gap-1">
+            {c.steps.map((step, i) => (
+              <span key={step} className="flex items-center gap-1">
+                {i > 0 && <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground/50" />}
+                <button
+                  type="button"
+                  onClick={() => onRun(step)}
+                  disabled={running === step}
+                  title={`Run just ${step} — FLEET-WIDE, for every eligible user`}
+                  aria-label={`run step ${step}`}
+                  className={cn(
+                    "rounded border border-border/60 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors",
+                    "hover:border-border hover:bg-muted hover:text-foreground",
+                    running === step && "animate-pulse opacity-60",
+                  )}
+                >
+                  {step.replace(/^books-/, "")}
+                </button>
+              </span>
+            ))}
+          </div>
         </div>
-      </TableCell>
-    </TableRow>
-  );
-}
-
-// A single kind's stat chips + headroom bar (the header's right side), read
-// straight off the queue-overview row — no recompute.
-function KindStats({ q }: { q: AdminJobQueue }) {
-  const unlimited = q.maxConcurrency <= 0;
-  const atCap = !unlimited && q.running >= q.maxConcurrency;
-  const backPressure = atCap && q.queued > 0;
-  const hasFails = q.failedLastHour > 0;
-  const fillPct = unlimited
-    ? q.running > 0
-      ? 100
-      : 0
-    : Math.min(100, (q.running / q.maxConcurrency) * 100);
-
-  return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-      {/* running / max headroom */}
-      <span className="flex items-center gap-1.5" title="running / max concurrency">
-        <span
-          data-testid={`job-group-bar-${q.kind}`}
-          className="h-1.5 w-14 overflow-hidden rounded-full bg-muted"
-        >
-          <span
-            className={cn(
-              "block h-full rounded-full transition-all",
-              atCap ? "bg-amber-500" : "bg-primary",
-            )}
-            style={{ width: `${fillPct}%` }}
-          />
-        </span>
-        <span
-          className={cn("font-mono tabular-nums", atCap ? "text-amber-400" : "text-foreground/80")}
-        >
-          {q.running}/{unlimited ? "∞" : q.maxConcurrency}
-        </span>
-        <span className="text-muted-foreground/70">running</span>
-      </span>
-
-      {/* back-pressure flag: at cap + backlog = pacing */}
-      {backPressure ? (
-        <span className="inline-flex items-center gap-1 rounded border border-amber-500/40 bg-amber-500/15 px-1.5 py-0.5 font-semibold uppercase tracking-wide text-amber-400">
-          <Gauge className="h-3 w-3" />
-          pacing
-        </span>
-      ) : atCap ? (
-        <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 font-semibold uppercase tracking-wide text-amber-400">
-          at cap
-        </span>
-      ) : null}
-
-      {/* queue depth */}
-      <span
-        className={cn("tabular-nums", q.queued > 0 ? "text-foreground/80" : "text-muted-foreground/50")}
-        title="queued depth"
-      >
-        {q.queued} queued
-      </span>
-
-      {/* trailing-hour failures (warn color when > 0) */}
-      <span
-        data-testid={`job-group-fail-${q.kind}`}
-        className={cn("inline-flex items-center gap-1 tabular-nums", hasFails && "text-destructive")}
-        title="failed in the last hour"
-      >
-        {hasFails && <AlertTriangle className="h-3 w-3" />}
-        {q.failedLastHour} failed
-      </span>
-
-      {/* trailing-hour throughput */}
-      <span className="tabular-nums" title="completed in the last hour">
-        {q.doneLastHour}/h
-      </span>
-
-      {/* last activity */}
-      <span
-        className="tabular-nums"
-        title={q.lastRunAt ? new Date(q.lastRunAt).toLocaleString() : undefined}
-      >
-        last {q.lastRunAt ? relativeTime(q.lastRunAt) : "never"}
-      </span>
+      ))}
     </div>
   );
 }
 
-function KindGroup({
-  q,
-  schedule,
-  onSelect,
-}: {
-  q: AdminJobQueue;
-  schedule?: AdminJobSchedule;
-  onSelect: (job: AdminJob) => void;
-}) {
+// ── the console ─────────────────────────────────────────────────────────────
+
+function GroupedJobs() {
   const qc = useQueryClient();
-  const [expanded, setExpanded] = useState(false);
-  const [page, setPage] = useState(1);
+  const [selected, setSelected] = useState<AdminJob | null>(null);
+  const [groupBy, setGroupBy] = useState<string[]>(["kind"]);
 
   const {
-    data: rows,
-    isLoading,
+    data: overview,
+    isLoading: overviewLoading,
     isError,
   } = useQuery({
-    queryKey: qk.adminJobs("any", q.kind, 200),
-    queryFn: () => api.getAdminJobs({ kind: q.kind, limit: 200 }),
-    enabled: expanded,
-    refetchInterval: expanded ? 5000 : false,
+    queryKey: qk.adminJobQueues(),
+    queryFn: () => api.getJobQueues(),
+    refetchInterval: 5000,
   });
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: qk.adminJobsPrefix() });
+  // ONE fetch of recent runs feeds the whole table; grouping happens in memory
+  // (see jobsExplorerConfig). Polls on the same cadence as the queue stats so
+  // the strip and the rows never disagree about what just happened.
+  const { data: jobs, isLoading: jobsLoading } = useQuery({
+    queryKey: qk.adminJobs("any", "", JOB_WINDOW),
+    queryFn: () => api.getAdminJobs({ limit: JOB_WINDOW }),
+    refetchInterval: 5000,
+  });
 
-  // Trigger THIS kind. Driven off q.kind rather than a hardcoded list, so every
-  // registered kind gets a run button for free — /queues already unions in
-  // registry.Kinds(), which is why an idle kind still shows a card at zero
-  // depth. A new job kind needs no UI change to become runnable.
-  //
-  // Enqueues OWNER-LESS, which is what the generic admin trigger does. For a
-  // dual-mode handler that means the fleet-wide branch: it fans over every
-  // eligible user rather than just the admin who clicked. That is the right
-  // semantic for an operator control, and it is what a scheduled run would do.
+  const invalidate = useCallback(
+    () => qc.invalidateQueries({ queryKey: qk.adminJobsPrefix() }),
+    [qc],
+  );
+
+  const [runningKind, setRunningKind] = useState<string | null>(null);
   const trigger = useMutation({
-    mutationFn: () => api.triggerAdminJob(q.kind),
-    onSuccess: (res) => {
-      toast.success(`Enqueued ${q.kind} — job #${res.id}`);
-      invalidate();
-      setExpanded(true); // so the run they just started is visible
+    mutationFn: (kind: string) => {
+      setRunningKind(kind);
+      return api.triggerAdminJob(kind);
     },
-    onError: (e) =>
-      toast.error(e instanceof Error ? e.message : `Could not enqueue ${q.kind}`),
+    onSuccess: (res, kind) => {
+      toast.success(`Enqueued ${kind} — job #${res.id}`);
+      invalidate();
+    },
+    onError: (e, kind) =>
+      toast.error(e instanceof Error ? e.message : `Could not enqueue ${kind}`),
+    onSettled: () => setRunningKind(null),
   });
 
   const retry = useMutation({
@@ -438,253 +303,28 @@ function KindGroup({
       toast.success(`Re-enqueued job #${res.id}`);
       invalidate();
     },
-    onError: (e) =>
-      toast.error(e instanceof ApiError ? `Retry failed: ${e.message}` : "Retry failed"),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Retry failed"),
   });
 
   const cancel = useMutation({
     mutationFn: (id: number) => api.cancelJob(id),
-    onSuccess: (res, id) => {
-      toast.success(
-        res.cancelled
-          ? res.wasRunning
-            ? `Cancelling job #${id}…`
-            : `Cancelled job #${id}`
-          : `Job #${id} already finished`,
-      );
+    onSuccess: () => {
+      toast.success("Job cancelled");
       invalidate();
     },
-    onError: (e) =>
-      toast.error(e instanceof ApiError ? `Cancel failed: ${e.message}` : "Cancel failed"),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Cancel failed"),
   });
-
-  const clearOne = useMutation({
-    mutationFn: (id: number) => api.deleteJobLogs(id),
-    onSuccess: (_res, id) => {
-      toast.success(`Cleared stored logs for job #${id}`);
-      invalidate();
-    },
-    onError: (e) =>
-      toast.error(e instanceof ApiError ? `Clear failed: ${e.message}` : "Clear failed"),
-  });
-
-  const clearKind = useMutation({
-    mutationFn: () => api.clearJobLogs({ kind: q.kind }),
-    onSuccess: (res) => {
-      toast.success(`Cleared ${res.deleted} stored ${q.kind} log${res.deleted === 1 ? "" : "s"}`);
-      invalidate();
-    },
-    onError: (e) =>
-      toast.error(e instanceof ApiError ? `Clear failed: ${e.message}` : "Clear failed"),
-  });
-
-  const onClearKind = () => {
-    if (
-      window.confirm(
-        `Delete stored logs for every ${q.kind} job? Job history is kept — only the saved log streams are removed.`,
-      )
-    ) {
-      clearKind.mutate();
-    }
-  };
-
-  const total = rows?.length ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const safePage = Math.min(page, totalPages);
-  const pageRows = rows ? rows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE) : [];
-
-  const failing = q.failedLastHour > 0;
-  const running = q.running > 0;
-
-  return (
-    <div data-testid={`job-group-${q.kind}`} className="border-b border-border/60 last:border-b-0">
-      {/* Header row: expand toggle + kind + inline stats + clear-kind. */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5">
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="flex min-w-0 flex-1 items-center gap-2 text-left"
-          aria-expanded={expanded}
-          title={expanded ? `Collapse ${q.kind}` : `Expand ${q.kind}`}
-        >
-          <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground">
-            {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-          </span>
-          <span
-            data-testid={`job-group-dot-${q.kind}`}
-            className={cn(
-              "h-2 w-2 shrink-0 rounded-full",
-              failing
-                ? "bg-destructive"
-                : running
-                  ? "bg-primary animate-pulse"
-                  : "bg-muted-foreground/40",
-            )}
-          />
-          <span className="truncate font-mono text-sm font-medium text-foreground">{q.kind}</span>
-          {/* The kind's cadence, inline. An unscheduled kind shows nothing
-              rather than "manual" — most kinds are enqueue-on-demand, so the
-              absence is the norm and labelling it would be noise on every row. */}
-          {schedule && (
-            <span
-              data-testid={`job-group-schedule-${q.kind}`}
-              className="hidden shrink-0 items-center gap-1 whitespace-nowrap text-[11px] text-muted-foreground sm:flex"
-              title={`Runs every ${humanizeInterval(schedule.intervalSeconds)}; next ${relativeFuture(schedule.nextRun)}`}
-            >
-              <CalendarClock className="h-3 w-3" />
-              {humanizeInterval(schedule.intervalSeconds)}
-              <span className="opacity-60">· next {relativeFuture(schedule.nextRun)}</span>
-            </span>
-          )}
-        </button>
-        <KindStats q={q} />
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 shrink-0 px-2 text-muted-foreground hover:text-foreground"
-          onClick={() => trigger.mutate()}
-          disabled={trigger.isPending}
-          title={`Run ${q.kind} now`}
-          aria-label={`run ${q.kind}`}
-        >
-          <Play className={cn("h-3.5 w-3.5", trigger.isPending && "animate-pulse")} />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 shrink-0 px-2 text-muted-foreground hover:text-destructive"
-          onClick={onClearKind}
-          disabled={clearKind.isPending}
-          title={`Clear stored logs for all ${q.kind} jobs`}
-          aria-label={`clear ${q.kind} logs`}
-        >
-          <Trash2 className={cn("h-3.5 w-3.5", clearKind.isPending && "animate-pulse")} />
-        </Button>
-      </div>
-
-      {/* Expanded: this kind's recent runs, paginated in place. */}
-      {expanded && (
-        <div className="bg-muted/20 px-3 pb-3">
-          {isError ? (
-            <p className="py-4 text-center text-sm text-destructive">Failed to load runs.</p>
-          ) : isLoading || !rows ? (
-            <div className="space-y-1.5 py-3" aria-busy="true">
-              {[0, 1, 2].map((i) => (
-                <div key={i} className="h-6 animate-pulse rounded bg-muted/60" />
-              ))}
-            </div>
-          ) : rows.length === 0 ? (
-            <EmptyState
-              icon={ListChecks}
-              title="No runs yet"
-              description={`Nothing of kind ${q.kind} has been queued. Trigger one from the Schedules panel below.`}
-            />
-          ) : (
-            <div className="overflow-x-auto rounded-md border border-border/60 bg-card">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-16">ID</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Attempts</TableHead>
-                    <TableHead>Created</TableHead>
-                    <TableHead>Duration</TableHead>
-                    <TableHead className="text-right" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {pageRows.map((job) => (
-                    <RunRow
-                      key={job.id}
-                      job={job}
-                      onSelect={() => onSelect(job)}
-                      retrying={retry.isPending && retry.variables === job.id}
-                      onRetry={() => retry.mutate(job.id)}
-                      cancelling={cancel.isPending && cancel.variables === job.id}
-                      onCancel={() => cancel.mutate(job.id)}
-                      clearing={clearOne.isPending && clearOne.variables === job.id}
-                      onClearLogs={() => clearOne.mutate(job.id)}
-                    />
-                  ))}
-                </TableBody>
-              </Table>
-              {total > PAGE_SIZE && (
-                <div className="flex items-center justify-end gap-2 border-t border-border/60 px-3 py-2 text-xs text-muted-foreground">
-                  <span className="tabular-nums">
-                    Page {safePage} / {totalPages}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-6"
-                    disabled={safePage <= 1}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  >
-                    Prev
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-6"
-                    disabled={safePage >= totalPages}
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  >
-                    Next
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// The grouped jobs section: the queue overview + job history fused into one
-// collapsible-by-kind table. Server sorts kinds most-active first.
-function GroupedJobs() {
-  const qc = useQueryClient();
-  const [selected, setSelected] = useState<AdminJob | null>(null);
-
-  const { data: queues, isLoading, isError } = useQuery({
-    queryKey: qk.adminJobQueues(),
-    queryFn: () => api.getJobQueues(),
-    refetchInterval: 5000,
-  });
-
-  // Schedules used to be their own panel, which meant answering "when does
-  // books-kindle-sync next run?" required cross-referencing two tables. A
-  // schedule is a PROPERTY OF A KIND, so it belongs on the kind's row. Both
-  // payloads key on `kind`, so the join is a lookup.
-  //
-  // Polls slower than the queues (30s vs 5s): an interval and a next-run time
-  // move on the order of minutes, and there is no reason to refetch them at
-  // queue-depth cadence.
-  const { data: schedules } = useQuery({
-    queryKey: qk.adminJobSchedules(),
-    queryFn: () => api.getAdminJobSchedules(),
-    refetchInterval: 30_000,
-  });
-  const scheduleByKind = useMemo(() => {
-    const m = new Map<string, AdminJobSchedule>();
-    for (const s of schedules ?? []) m.set(s.kind, s);
-    return m;
-  }, [schedules]);
 
   const clearAll = useMutation({
     mutationFn: () => api.clearJobLogs(),
     onSuccess: (res) => {
       toast.success(`Cleared ${res.deleted} stored log${res.deleted === 1 ? "" : "s"}`);
-      qc.invalidateQueries({ queryKey: qk.adminJobsPrefix() });
+      invalidate();
     },
     onError: (e) =>
       toast.error(e instanceof ApiError ? `Clear failed: ${e.message}` : "Clear failed"),
   });
 
-  // useCallback, not a bare arrow: this is a dependency of the memoized header
-  // node below, and a fresh identity every render would defeat that memo and
-  // re-run the slot effect on every render.
   const onClearAll = useCallback(() => {
     if (
       window.confirm(
@@ -695,12 +335,8 @@ function GroupedJobs() {
     }
   }, [clearAll]);
 
-  // boom-9e9k: "Clear all logs" belongs to the TAB, not to this panel — it is
-  // the tab-level destructive action. It rides the page-actions slot up into
-  // the header the section shell already renders, so this panel no longer
-  // hand-rolls a title row (the shell titles the page "Jobs" from the registry,
-  // which is where the duplicate heading came from). Memoized because the node
-  // is the slot effect's dependency.
+  // "Clear all logs" is the TAB's destructive action, so it rides the
+  // page-actions slot into the shell header rather than sitting in the body.
   const headerActions = useMemo(
     () => (
       <Button
@@ -708,7 +344,7 @@ function GroupedJobs() {
         size="sm"
         onClick={onClearAll}
         disabled={clearAll.isPending}
-        title="Delete every stored job-log stream (job history is kept)"
+        className="gap-1.5"
       >
         <Trash2 className={cn("h-3.5 w-3.5", clearAll.isPending && "animate-pulse")} />
         Clear all logs
@@ -718,40 +354,204 @@ function GroupedJobs() {
   );
   usePageActions(headerActions);
 
-  return (
-    <section className="space-y-3">
-      <Card>
-        <CardContent className="p-0">
-          {isError ? (
-            <p className="p-6 text-sm text-muted-foreground">
-              Queue stats are unavailable (the jobs subsystem may be disabled).
-            </p>
-          ) : isLoading || !queues ? (
-            <div className="space-y-px p-3" aria-busy="true">
-              {[0, 1, 2, 3].map((i) => (
-                <div key={i} className="h-10 animate-pulse rounded bg-muted/40" />
-              ))}
-            </div>
-          ) : queues.length === 0 ? (
-            <EmptyState
-              icon={Gauge}
-              title="No job kinds registered"
-              description="Nothing is wired to the background-job subsystem yet."
-            />
+  // Leaf columns. Defined here rather than in the config because they need the
+  // presentation helpers and the row actions need this component's mutations;
+  // the config owns grouping, this owns how a run looks.
+  const columns = useMemo<Column<AdminJob>[]>(
+    () => [
+      {
+        id: "id",
+        header: "#",
+        get: (r) => r.id,
+        render: (r) => <span className="font-mono text-xs text-muted-foreground">#{r.id}</span>,
+      },
+      {
+        id: "status",
+        header: "Status",
+        get: (r) => r.status,
+        render: (r) => <StatusBadge status={r.status} />,
+      },
+      {
+        id: "owner",
+        header: "Owner",
+        get: (r) => r.owner,
+        render: (r) =>
+          r.owner ? (
+            <span className="font-mono text-xs text-muted-foreground">{r.owner}</span>
           ) : (
-            <div>
-              <HealthStrip queues={queues} />
-              {queues.map((q) => (
-                <KindGroup
-                  key={q.kind}
-                  q={q}
-                  schedule={scheduleByKind.get(q.kind)}
-                  onSelect={setSelected}
-                />
-              ))}
+            // Not missing data — a fleet-wide run genuinely has no single owner.
+            <span className="text-[11px] uppercase tracking-wide text-muted-foreground/60">
+              fleet
+            </span>
+          ),
+      },
+      {
+        id: "attempts",
+        header: "Attempts",
+        get: (r) => r.attempts,
+        render: (r) => (
+          <span
+            className={cn(
+              "font-mono text-xs",
+              r.attempts >= r.maxAttempts && r.status === "failed"
+                ? "text-destructive"
+                : "text-muted-foreground",
+            )}
+          >
+            {r.attempts}/{r.maxAttempts}
+          </span>
+        ),
+      },
+      {
+        id: "duration",
+        header: "Duration",
+        get: (r) =>
+          r.startedAt && r.finishedAt
+            ? new Date(r.finishedAt).getTime() - new Date(r.startedAt).getTime()
+            : 0,
+        render: (r) => (
+          <span className="font-mono text-xs text-muted-foreground">
+            {jobDuration(r.startedAt, r.finishedAt)}
+          </span>
+        ),
+      },
+      {
+        id: "when",
+        header: "When",
+        get: (r) => r.createdAt,
+        render: (r) => (
+          <span className="text-xs text-muted-foreground" title={new Date(r.createdAt).toLocaleString()}>
+            {relativePast(r.createdAt)}
+          </span>
+        ),
+      },
+      {
+        id: "error",
+        header: "Error",
+        get: (r) => r.error,
+        cellClassName: "max-w-[36rem]",
+        cellTitle: (r) => r.error || undefined,
+        render: (r) =>
+          r.error ? (
+            <span className="line-clamp-1 text-xs text-destructive">{r.error}</span>
+          ) : (
+            <span className="text-xs text-muted-foreground/40">—</span>
+          ),
+      },
+    ],
+    [],
+  );
+
+  const rowActions = useCallback(
+    (r: AdminJob) => (
+      <div className="flex items-center gap-0.5">
+        {r.status === "failed" && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              retry.mutate(r.id);
+            }}
+            title={`Re-enqueue job #${r.id}`}
+            aria-label={`retry job ${r.id}`}
+            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+          </button>
+        )}
+        {(r.status === "running" || r.status === "queued") && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              cancel.mutate(r.id);
+            }}
+            title={`Cancel job #${r.id}`}
+            aria-label={`cancel job ${r.id}`}
+            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-destructive"
+          >
+            <Ban className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+    ),
+    [retry, cancel],
+  );
+
+  const queues = overview?.queues ?? [];
+
+  const config = useMemo(
+    () =>
+      makeJobsExplorerConfig({
+        rows: jobs ?? [],
+        knownKinds: queues.map((q) => q.kind),
+        columns,
+        onRowSelect: setSelected,
+        rowActions,
+        empty: (
+          <EmptyState
+            icon={Gauge}
+            title="No runs yet"
+            description="Nothing has been queued. Run a kind from its row, or a whole chain above."
+          />
+        ),
+      }),
+    [jobs, queues, columns, rowActions],
+  );
+
+  const chains = overview?.chains ?? [];
+
+  return (
+    // h-full + flex so the run log FILLS the viewport instead of floating in it.
+    // A console that stops two-thirds up the page wastes exactly the space an
+    // operator wants for history.
+    <section className="flex h-full min-h-0 flex-col">
+      {/* ONE surface. Health, chain, controls and table used to be three
+          concentric bordered boxes inside the page shell — a lot of chrome and
+          padding spent saying nothing. They are now bands on a single panel,
+          separated by hairlines. */}
+      <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {isError ? (
+          <p className="p-6 text-sm text-muted-foreground">
+            Queue stats are unavailable (the jobs subsystem may be disabled).
+          </p>
+        ) : overviewLoading || jobsLoading ? (
+          <div className="space-y-px p-3" aria-busy="true">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="h-10 animate-pulse rounded bg-muted/40" />
+            ))}
+          </div>
+        ) : (
+          <>
+            <HealthStrip queues={queues} />
+            <ChainsStrip
+              chains={chains}
+              onRun={(k) => trigger.mutate(k)}
+              running={runningKind}
+            />
+            {/* Controls inline on one band rather than in their own box. */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/60 px-3 py-2">
+              <GroupByBar axes={JOB_AXES} groupBy={groupBy} onChange={setGroupBy} />
             </div>
-          )}
-        </CardContent>
+            {/* The table is the only thing that scrolls, so the bands above stay
+                pinned while history runs long. */}
+            <div className="min-h-0 flex-1 overflow-auto px-3 pb-2">
+              <GroupableExplorer
+                config={config}
+                groupBy={groupBy}
+                onGroupByChange={setGroupBy}
+                resetKey={`jobs:${jobs?.length ?? 0}`}
+                hideGroupByBar
+                bare
+              />
+            </div>
+            {(jobs?.length ?? 0) >= JOB_WINDOW && (
+              <p className="border-t border-border/60 px-3 py-1.5 text-[11px] text-muted-foreground">
+                Showing the most recent {JOB_WINDOW} runs.
+              </p>
+            )}
+          </>
+        )}
       </Card>
 
       <JobDetailSheet job={selected} onOpenChange={(open) => !open && setSelected(null)} />

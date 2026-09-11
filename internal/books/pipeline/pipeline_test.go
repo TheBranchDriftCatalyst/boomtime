@@ -198,3 +198,28 @@ func TestRunPipeline_NilAnnotationsStepIsInvisible(t *testing.T) {
 		t.Fatalf("a nil stage must not be an error: %v", sum.Errors)
 	}
 }
+
+// StageNames() is consumed by the jobs wiring to declare books-sync-all's chain
+// on the registry, which the admin console renders. If a stage is added to
+// RunPipeline and not to StageNames, the console shows an operator a chain that
+// is missing a step — so pin them to each other.
+func TestStageNamesMatchesRunPipelineOrder(t *testing.T) {
+	var order []string
+	all := func(name string) StepFunc { return mkStep(name, 1, nil, &order) }
+	p := New(Steps{
+		AudibleSync:       all("audible-sync"),
+		KindleSync:        all("kindle-sync"),
+		KindleInsights:    all("kindle-insights"),
+		KindleReconcile:   all("kindle-status-reconcile"),
+		KindleAnnotations: all("kindle-annotations"),
+		Match:             all("hardcover-match"),
+		Pull:              all("hardcover-pull"),
+	}, nil)
+	if _, err := p.RunPipeline(context.Background(), "alice"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !reflect.DeepEqual(order, StageNames()) {
+		t.Fatalf("StageNames() = %v\nbut RunPipeline ran  %v\n(a stage was added to one and not the other)",
+			StageNames(), order)
+	}
+}

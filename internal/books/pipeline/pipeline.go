@@ -47,6 +47,27 @@ import (
 // no owner fans the pipeline over every user with a connected Amazon device.
 const BooksSyncAllKind = "books-sync-all"
 
+// StageNames returns the pipeline's stage names in the order RunPipeline runs
+// them. Exported so the composition declared on the jobs registry
+// (Registry.SetChain) can be pinned against the real stage list — a chain that
+// drifts from the pipeline would mislead an operator in exactly the place they
+// go to understand a run.
+//
+// Names, not kinds: a stage is a StepFunc, and the mapping from stage to job
+// kind lives in the jobs wiring that supplies those funcs. Count parity is what
+// this guards.
+func StageNames() []string {
+	return []string{
+		"audible-sync",
+		"kindle-sync",
+		"kindle-insights",
+		"kindle-status-reconcile",
+		"kindle-annotations",
+		"hardcover-match",
+		"hardcover-pull",
+	}
+}
+
 // StepFunc is one owner-scoped pipeline stage: it does its work for owner and
 // returns a count of what it processed (interpretation is per-stage) plus an
 // error. A returned error is captured in the Summary and does not abort the
@@ -120,6 +141,8 @@ func (p *Pipeline) RunPipeline(ctx context.Context, owner string) (Summary, erro
 		{"hardcover-match", p.steps.Match, &sum.Matched},
 		{"hardcover-pull", p.steps.Pull, &sum.Pulled},
 	}
+
+	// StageNames() must describe exactly this slice — see the parity test.
 
 	// Resolve the job-scoped logger from ctx (job_id/kind/owner attrs) so every
 	// pipeline line carries the running job's id in the Admin viewer; fall back to

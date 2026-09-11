@@ -117,14 +117,31 @@ func Register(reg *corejobs.Registry, database *db.DB, cfg *config.Config, notif
 		return nil
 	}))
 
-	// Backfill: one-shot per user (owner-scoped payload), enqueued
-	// on demand from the connect flow / admin. Single attempt — an
-	// all-time sweep is heavy and re-runnable by hand.
+	// Backfill: a one-shot all-time sweep. Single attempt — it is heavy and
+	// re-runnable by hand.
+	//
+	// DUAL-MODE, like every other books kind: an owner-scoped job backfills that
+	// user, an owner-less one fans over everybody with a connected device. It
+	// used to REQUIRE an owner and error without one, which made it the odd kind
+	// out — and unrunnable from the admin console, whose generic trigger
+	// deliberately enqueues owner-less so one button means "run this everywhere".
+	// A per-user error is logged and skipped so one bad credential cannot fail
+	// the batch (mirrors AudibleSyncKind).
 	reg.Register(audible.AudibleBackfillKind, corejobs.HandlerFunc(func(jctx context.Context, job corejobs.Job) error {
-		if job.Owner == "" {
-			return fmt.Errorf("audible backfill: missing owner")
+		if job.Owner != "" {
+			return audioSvc.BackfillUser(jctx, job.Owner)
 		}
-		return audioSvc.BackfillUser(jctx, job.Owner)
+		users, uerr := database.ListUsersWithAmazonDevice(jctx)
+		if uerr != nil {
+			return uerr
+		}
+		for _, u := range users {
+			if berr := audioSvc.BackfillUser(jctx, u); berr != nil {
+				logger.Warn("audible backfill: user failed", "user", u, "err", berr)
+			}
+		}
+		logger.Info("audible backfill: batch complete", "users", len(users))
+		return nil
 	}))
 
 	// hardcover-push kind: mirror ONE finished book to Hardcover.
@@ -254,14 +271,24 @@ func Register(reg *corejobs.Registry, database *db.DB, cfg *config.Config, notif
 		return nil
 	}))
 
-	// Backfill: one-shot per user (owner-scoped payload), enqueued on
-	// demand from the connect flow / admin (mirrors AudibleBackfillKind).
+	// Backfill: a one-shot all-time sweep (mirrors AudibleBackfillKind, including
+	// its dual-mode shape — see the note there on why neither requires an owner).
 	reg.Register(kindle.KindleBackfillKind, corejobs.HandlerFunc(func(jctx context.Context, job corejobs.Job) error {
-		if job.Owner == "" {
-			return fmt.Errorf("kindle backfill: missing owner")
+		if job.Owner != "" {
+			_, berr := kindleSvc.BackfillUser(jctx, job.Owner)
+			return berr
 		}
-		_, berr := kindleSvc.BackfillUser(jctx, job.Owner)
-		return berr
+		users, uerr := database.ListUsersWithAmazonDevice(jctx)
+		if uerr != nil {
+			return uerr
+		}
+		for _, u := range users {
+			if _, berr := kindleSvc.BackfillUser(jctx, u); berr != nil {
+				logger.Warn("kindle backfill: user failed", "user", u, "err", berr)
+			}
+		}
+		logger.Info("kindle backfill: batch complete", "users", len(users))
+		return nil
 	}))
 
 	// books-kindle-insights kind: backfill per-book finish DATES
@@ -575,6 +602,28 @@ func Register(reg *corejobs.Registry, database *db.DB, cfg *config.Config, notif
 	reg.SetConcurrency(kindle.ReadingMonitorKind, 1)        // books-reading-monitor (leader-singleton engine)
 	reg.SetConcurrency(hardcover.HardcoverMatchKind, 1)     // hardcover-match (global Hardcover rate limit)
 	reg.SetConcurrency(pipeline.BooksSyncAllKind, 1)        // books-sync-all orchestrator (chains the rate-limited stages)
+
+	// Declare what books-sync-all is COMPOSED of, in the order RunPipeline runs
+	// them. Every stage is a registered kind in its own right, so the admin
+	// console can render the chain and run either the whole thing or any single
+	// step without the frontend knowing a thing about books.
+	//
+	// MUST stay in the same order as the `stages` slice in RunPipeline, and must
+	// include the annotations stage on exactly the same condition the pipeline
+	// wires it (annSvc != nil) — a chain that claims a stage the pipeline skips
+	// would be a lie in the one place an operator goes to understand the run.
+	// TestSyncAllChainMatchesPipelineStages pins the count.
+	chain := []string{
+		audible.AudibleSyncKind,
+		kindle.KindleSyncKind,
+		kindle.KindleInsightsKind,
+		kindle.KindleStatusReconcileKind,
+	}
+	if annSvc != nil {
+		chain = append(chain, annotations.KindleAnnotationsKind)
+	}
+	chain = append(chain, hardcover.HardcoverMatchKind, hardcover.PullJobKind)
+	reg.SetChain(pipeline.BooksSyncAllKind, chain...)
 	// books-kindle-annotations. Capped at 1 because the notebook shares its
 	// cookie jar with the Cloud Reader library + insights calls: concurrent
 	// sweeps would multiply the throttling risk onto surfaces the whole Kindle
