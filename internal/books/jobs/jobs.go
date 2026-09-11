@@ -603,6 +603,31 @@ func Register(reg *corejobs.Registry, database *db.DB, cfg *config.Config, notif
 	reg.SetConcurrency(hardcover.HardcoverMatchKind, 1)     // hardcover-match (global Hardcover rate limit)
 	reg.SetConcurrency(pipeline.BooksSyncAllKind, 1)        // books-sync-all orchestrator (chains the rate-limited stages)
 
+	// The kinds that mean something for ONE user: every dual-mode handler above,
+	// which runs a single owner when given one and fans over everybody when not.
+	// The admin console shows a user picker only for these.
+	//
+	// Deliberately EXCLUDED: ReadingMonitorKind is a leader-singleton engine loop
+	// that ignores the job entirely (its handler takes `_ corejobs.Job`), and the
+	// payload-driven kinds — LiberateBookKind, HardcoverPushKind, CurationPushKind
+	// — take their subject from the payload, so an owner would be decoration.
+	userScoped := []string{
+		audible.AudibleSyncKind,
+		audible.AudibleBackfillKind,
+		kindle.KindleSyncKind,
+		kindle.KindleBackfillKind,
+		kindle.KindleInsightsKind,
+		kindle.KindleStatusReconcileKind,
+		kindle.KindleReadingTimeKind,
+		hardcover.PullJobKind,
+		hardcover.HardcoverMatchKind,
+		pipeline.BooksSyncAllKind,
+	}
+	if annSvc != nil {
+		userScoped = append(userScoped, annotations.KindleAnnotationsKind)
+	}
+	reg.SetUserScoped(userScoped...)
+
 	// Declare what books-sync-all is COMPOSED of, in the order RunPipeline runs
 	// them. Every stage is a registered kind in its own right, so the admin
 	// console can render the chain and run either the whole thing or any single

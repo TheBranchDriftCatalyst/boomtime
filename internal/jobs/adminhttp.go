@@ -27,6 +27,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/labstack/echo/v5"
@@ -253,10 +254,14 @@ type jobDTO struct {
 // throughput window; maxConcurrency (0 = unlimited) comes from the registry so
 // the FE can render running/max headroom and flag at-cap back-pressure.
 type queueKindDTO struct {
-	Kind           string  `json:"kind"`
-	Queued         int     `json:"queued"`
-	Running        int     `json:"running"`
-	MaxConcurrency int     `json:"maxConcurrency"`
+	Kind           string `json:"kind"`
+	Queued         int    `json:"queued"`
+	Running        int    `json:"running"`
+	MaxConcurrency int    `json:"maxConcurrency"`
+	// UserScoped reports whether this kind means anything for a SINGLE user, so
+	// the console knows whether to offer a "run for…" picker. Per-kind policy,
+	// like MaxConcurrency, declared via Registry.SetUserScoped.
+	UserScoped     bool    `json:"userScoped"`
 	DoneLastHour   int     `json:"doneLastHour"`
 	FailedLastHour int     `json:"failedLastHour"`
 	AvgDurationMs  float64 `json:"avgDurationMs"`
@@ -304,6 +309,9 @@ type queueOverviewResponse struct {
 
 // chainDTO is one composition: the kind that runs the chain, and the kinds it
 // runs in order.
+// userScopedDTO is unnecessary — the flag rides on each queue row instead, next
+// to the other per-kind policy (concurrency).
+
 type chainDTO struct {
 	Kind  string   `json:"kind"`
 	Steps []string `json:"steps"`
@@ -350,6 +358,11 @@ type logsClearResponse struct {
 // triggerRequest is the POST /trigger body: the registered job kind to enqueue.
 type triggerRequest struct {
 	Kind string `json:"kind"`
+	// Owner targets the run at ONE user. Omitted (or "") enqueues owner-less,
+	// which for a dual-mode handler means fleet-wide — every eligible user. That
+	// stays the default because an operator control should act on the system, not
+	// quietly on whoever happens to be logged in.
+	Owner string `json:"owner,omitempty"`
 }
 
 func rfc(t time.Time) string { return t.UTC().Format(time.RFC3339) }
@@ -433,9 +446,13 @@ func (a *adminAPI) queues(c *echo.Context) error {
 	// the registry isn't wired).
 	var caps map[string]int
 	var known []string
+	scoped := map[string]bool{}
 	if reg := a.d.Registry(); reg != nil {
 		caps = reg.Concurrency()
 		known = reg.Kinds()
+		for _, k := range reg.UserScopedKinds() {
+			scoped[k] = true
+		}
 	}
 
 	// Index the DB aggregates by kind, then union in every registered kind so a
@@ -447,6 +464,7 @@ func (a *adminAPI) queues(c *echo.Context) error {
 			Queued:         ks.Queued,
 			Running:        ks.Running,
 			MaxConcurrency: caps[ks.Kind],
+			UserScoped:     scoped[ks.Kind],
 			DoneLastHour:   ks.DoneRecent,
 			FailedLastHour: ks.FailedRecent,
 			AvgDurationMs:  ks.AvgDurationMs,
@@ -456,7 +474,7 @@ func (a *adminAPI) queues(c *echo.Context) error {
 	}
 	for _, k := range known {
 		if _, seen := byKind[k]; !seen {
-			byKind[k] = queueKindDTO{Kind: k, MaxConcurrency: caps[k]}
+			byKind[k] = queueKindDTO{Kind: k, MaxConcurrency: caps[k], UserScoped: scoped[k]}
 		}
 	}
 
@@ -537,7 +555,12 @@ func (a *adminAPI) trigger(c *echo.Context) error {
 	if req.Kind == "" {
 		return apihelpers.RespondErr(c, apierr.BadRequest("kind is required"))
 	}
-	id, err := enq.Enqueue(c.Request().Context(), req.Kind, nil)
+	// Owner-less unless the caller named a target — see triggerRequest.Owner.
+	opts := []EnqueueOption{}
+	if owner := strings.TrimSpace(req.Owner); owner != "" {
+		opts = append(opts, Owner(owner))
+	}
+	id, err := enq.Enqueue(c.Request().Context(), req.Kind, nil, opts...)
 	if err != nil {
 		return apihelpers.InternalErr(a.d.Logger, c, "jobs trigger failed", err)
 	}

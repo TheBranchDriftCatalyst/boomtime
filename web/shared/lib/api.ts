@@ -1276,10 +1276,12 @@ export const api = {
     request<{ queues: AdminJobQueue[]; chains: AdminJobChain[] }>(
       "/api/v1/admin/jobs/queues",
     ).then((p) => ({ queues: p.queues ?? [], chains: p.chains ?? [] })),
-  triggerAdminJob: (kind: string) =>
+  // owner omitted → FLEET-WIDE (every eligible user), which is the default an
+  // operator control should have. Naming one targets a single user.
+  triggerAdminJob: (kind: string, owner?: string) =>
     request<{ id: number }>("/api/v1/admin/jobs/trigger", {
       method: "POST",
-      body: { kind },
+      body: owner ? { kind, owner } : { kind },
     }),
   retryAdminJob: (id: number) =>
     request<{ id: number }>(`/api/v1/admin/jobs/${id}/retry`, {

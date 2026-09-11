@@ -16,7 +16,16 @@
 import type React from "react";
 import { useCallback, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarClock, Play } from "lucide-react";
+import { CalendarClock, Play, UserRound } from "lucide-react";
+import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@thebranchdriftcatalyst/catalyst-ui/ui/dropdown-menu";
 import { toast } from "sonner";
 import { cn } from "@shared/lib/utils";
 
@@ -250,16 +259,39 @@ export function useJobGroupDecorator(): GroupAction {
     refetchInterval: 30_000,
   });
 
+  // Which kinds are targetable, declared server-side (Registry.SetUserScoped).
+  // Same query key the tab already polls, so this is a cache read, not a request.
+  const { data: overview } = useQuery({
+    queryKey: qk.adminJobQueues(),
+    queryFn: () => api.getJobQueues(),
+    refetchInterval: 5000,
+  });
+
+  // The candidate targets. Disabled accounts are filtered out — enqueueing work
+  // for someone who cannot log in is never what an operator meant.
+  const { data: usersPayload } = useQuery({
+    queryKey: qk.adminUsers(),
+    queryFn: () => api.getAdminUsers(),
+    staleTime: 60_000,
+  });
+  const users = (usersPayload?.users ?? []).filter((u) => !u.disabled);
+
   const trigger = useMutation({
-    mutationFn: (kind: string) => {
+    mutationFn: ({ kind, owner }: { kind: string; owner?: string }) => {
       setRunning(kind);
-      return api.triggerAdminJob(kind);
+      return api.triggerAdminJob(kind, owner);
     },
-    onSuccess: (res, kind) => {
-      toast.success(`Enqueued ${kind} — job #${res.id}`);
+    // The toast says WHO it ran for, because fleet-wide and single-user are very
+    // different things to have just done and the button for each is 20px apart.
+    onSuccess: (res, { kind, owner }) => {
+      toast.success(
+        owner
+          ? `Enqueued ${kind} for ${owner} — job #${res.id}`
+          : `Enqueued ${kind} fleet-wide — job #${res.id}`,
+      );
       qc.invalidateQueries({ queryKey: qk.adminJobsPrefix() });
     },
-    onError: (e, kind) =>
+    onError: (e, { kind }) =>
       toast.error(e instanceof Error ? e.message : `Could not enqueue ${kind}`),
     onSettled: () => setRunning(null),
   });
@@ -269,6 +301,8 @@ export function useJobGroupDecorator(): GroupAction {
       if (node.axis !== "kind" || !node.value) return {};
       const kind = node.value;
       const sched = (schedules ?? []).find((s) => s.kind === kind);
+      const targetable =
+        (overview?.queues ?? []).find((q) => q.kind === kind)?.userScoped ?? false;
       return {
         // An unscheduled kind shows nothing rather than "manual": most kinds are
         // enqueue-on-demand, so labelling the absence would be noise on nearly
@@ -285,22 +319,58 @@ export function useJobGroupDecorator(): GroupAction {
           </span>
         ) : undefined,
         actions: (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              trigger.mutate(kind);
-            }}
-            disabled={running === kind}
-            title={`Run ${kind} now — FLEET-WIDE, for every eligible user`}
-            aria-label={`run ${kind}`}
-            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <Play className={cn("h-3.5 w-3.5", running === kind && "animate-pulse")} />
-          </button>
+          <span className="flex items-center gap-0.5">
+            {/* Fleet-wide stays the PRIMARY action: an operator control should
+                act on the system by default, not quietly on one account. */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                trigger.mutate({ kind });
+              }}
+              disabled={running === kind}
+              title={`Run ${kind} now — FLEET-WIDE, for every eligible user`}
+              aria-label={`run ${kind}`}
+              className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <Play className={cn("h-3.5 w-3.5", running === kind && "animate-pulse")} />
+            </button>
+
+            {/* Targeting only where it MEANS something. A leader-singleton loop
+                or a payload-driven kind ignores the owner, so a picker there
+                would be a control that silently does nothing. */}
+            {targetable && users.length > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-auto rounded p-1 text-muted-foreground hover:text-foreground"
+                    onClick={(e) => e.stopPropagation()}
+                    title={`Run ${kind} for one user`}
+                    aria-label={`run ${kind} for a user`}
+                  >
+                    <UserRound className="h-3.5 w-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                  <DropdownMenuLabel className="font-mono text-xs">{kind}</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {users.map((u) => (
+                    <DropdownMenuItem
+                      key={u.username}
+                      onClick={() => trigger.mutate({ kind, owner: u.username })}
+                    >
+                      {u.username}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </span>
         ),
       };
     },
-    [schedules, trigger, running],
+    [schedules, overview, users, trigger, running],
   );
 }

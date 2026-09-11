@@ -381,6 +381,10 @@ export interface AdminJobQueue {
   queued: number;
   running: number;
   maxConcurrency: number; // 0 = unlimited
+  // Whether this kind means anything for a SINGLE user. Only these get a
+  // "run for…" picker; a leader-singleton engine loop or a payload-driven kind
+  // would ignore an owner, so offering one would be decoration.
+  userScoped: boolean;
   doneLastHour: number;
   failedLastHour: number;
   avgDurationMs: number; // 0 when nothing finished this hour

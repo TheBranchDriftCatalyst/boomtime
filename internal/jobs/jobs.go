@@ -118,6 +118,16 @@ type Registry struct {
 	// (or a new stage in an existing one) shows up and becomes runnable with no
 	// frontend change. Policy, like concurrency and offload.
 	chains map[string][]string
+	// userScoped marks the kinds that MEAN something for a single user — the
+	// dual-mode handlers that run one owner when given one and fan over every
+	// eligible user when not.
+	//
+	// Not every kind qualifies. A leader-singleton engine loop ignores the job
+	// entirely, and a payload-driven kind takes its subject from the payload, so
+	// targeting either at a user would be a no-op dressed up as a control. The
+	// admin console offers a user picker only where this is set, which is why it
+	// is declared rather than inferred. Policy, like concurrency and offload.
+	userScoped map[string]bool
 }
 
 // NewRegistry returns an empty registry.
@@ -127,6 +137,7 @@ func NewRegistry() *Registry {
 		concurrency: map[string]int{},
 		offload:     map[string]bool{},
 		chains:      map[string][]string{},
+		userScoped:  map[string]bool{},
 	}
 }
 
@@ -224,6 +235,28 @@ func (r *Registry) Chains() map[string][]string {
 	for k, steps := range r.chains {
 		out[k] = append([]string(nil), steps...)
 	}
+	return out
+}
+
+// SetUserScoped marks a kind as targetable at a single user. Call it beside
+// SetConcurrency; see the userScoped field for what qualifies.
+func (r *Registry) SetUserScoped(kinds ...string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, k := range kinds {
+		r.userScoped[k] = true
+	}
+}
+
+// UserScopedKinds returns the user-targetable kinds, sorted.
+func (r *Registry) UserScopedKinds() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]string, 0, len(r.userScoped))
+	for k := range r.userScoped {
+		out = append(out, k)
+	}
+	sort.Strings(out)
 	return out
 }
 

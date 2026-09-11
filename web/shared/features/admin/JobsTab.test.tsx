@@ -73,6 +73,7 @@ function queue(over: Record<string, unknown>) {
     queued: 0,
     running: 0,
     maxConcurrency: 1,
+    userScoped: false,
     doneLastHour: 0,
     failedLastHour: 0,
     avgDurationMs: 0,
@@ -116,6 +117,11 @@ function stubReads(
     ),
     http.get("/api/v1/admin/jobs/schedules", () => HttpResponse.json({ schedules: [] })),
     http.get("/api/v1/admin/jobs", () => HttpResponse.json({ jobs })),
+    // The group decorator asks who the candidate targets are. Stubbed empty by
+    // default so only the targeting specs opt into a user list.
+    http.get("/api/v1/admin/users", () =>
+      HttpResponse.json({ capabilities: [], roles: {}, users: [] }),
+    ),
   );
 }
 
@@ -172,7 +178,7 @@ describe("JobsTab — every registered kind is runnable, with no hardcoded list"
     await waitFor(() => expect(body).toEqual({ kind: "books-kindle-annotations" }));
     await waitFor(() =>
       expect(toastSuccess).toHaveBeenCalledWith(
-        "Enqueued books-kindle-annotations — job #42",
+        "Enqueued books-kindle-annotations fleet-wide — job #42",
       ),
     );
   });
@@ -295,6 +301,90 @@ describe("JobsTab — ownership is visible", () => {
     // The axis is advertised in the Group-by bar's picker.
     await screen.findByText("hardcover-match");
     expect(screen.getByRole("button", { name: /add axis/i })).toBeInTheDocument();
+  });
+});
+
+// Targeting exists only where it MEANS something. Every kind accepts an owner
+// now, but a leader-singleton engine loop ignores the job entirely and a
+// payload-driven kind takes its subject from the payload — so the server
+// declares which kinds are targetable and the console obeys that rather than
+// guessing.
+describe("JobsTab — targeting a single user", () => {
+  const withUsers = () =>
+    server.use(
+      http.get("/api/v1/admin/users", () =>
+        HttpResponse.json({
+          capabilities: [],
+          roles: {},
+          users: [
+            { username: "panda", role: "admin", disabled: false, capabilities: {} },
+            { username: "ghost", role: "user", disabled: true, capabilities: {} },
+          ],
+        }),
+      ),
+    );
+
+  it("offers no picker for a kind the server did not declare targetable", async () => {
+    stubReads([queue({ kind: "books-reading-monitor", userScoped: false })]);
+    withUsers();
+    renderJobsTab();
+
+    await screen.findByRole("button", { name: /run books-reading-monitor/i });
+    expect(
+      screen.queryByRole("button", { name: /run books-reading-monitor for a user/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("targets one user, and says so — while the plain run stays fleet-wide", async () => {
+    stubReads([queue({ kind: "books-kindle-sync", userScoped: true })]);
+    withUsers();
+    const posted: unknown[] = [];
+    server.use(
+      http.post("/api/v1/admin/jobs/trigger", async ({ request }) => {
+        posted.push(await request.json());
+        return HttpResponse.json({ id: posted.length });
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderJobsTab();
+
+    // Fleet-wide: no owner on the wire at all.
+    await user.click(await screen.findByRole("button", { name: /run books-kindle-sync$/i }));
+    await waitFor(() => expect(posted).toEqual([{ kind: "books-kindle-sync" }]));
+    await waitFor(() =>
+      expect(toastSuccess).toHaveBeenCalledWith(
+        "Enqueued books-kindle-sync fleet-wide — job #1",
+      ),
+    );
+
+    // Targeted: owner named.
+    await user.click(
+      await screen.findByRole("button", { name: /run books-kindle-sync for a user/i }),
+    );
+    await user.click(await screen.findByRole("menuitem", { name: "panda" }));
+    await waitFor(() =>
+      expect(posted[1]).toEqual({ kind: "books-kindle-sync", owner: "panda" }),
+    );
+    await waitFor(() =>
+      expect(toastSuccess).toHaveBeenCalledWith(
+        "Enqueued books-kindle-sync for panda — job #2",
+      ),
+    );
+  });
+
+  // Enqueueing work for someone who cannot log in is never what was meant.
+  it("does not offer disabled accounts as targets", async () => {
+    stubReads([queue({ kind: "books-kindle-sync", userScoped: true })]);
+    withUsers();
+    const user = userEvent.setup();
+    renderJobsTab();
+
+    await user.click(
+      await screen.findByRole("button", { name: /run books-kindle-sync for a user/i }),
+    );
+    expect(await screen.findByRole("menuitem", { name: "panda" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "ghost" })).not.toBeInTheDocument();
   });
 });
 
