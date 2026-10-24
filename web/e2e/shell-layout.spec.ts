@@ -52,7 +52,7 @@ async function measureShell(page: Page): Promise<ShellMetrics> {
     if (!header) throw new Error("no header rendered");
     const rect = header.getBoundingClientRect();
     // The right-hand control cluster is the header's last child (search, bell,
-    // devtools, avatar menu). Its right edge is what actually went off-screen.
+    // avatar menu). Its right edge is what actually went off-screen.
     const controls = header.lastElementChild;
     return {
       viewport: window.innerWidth,

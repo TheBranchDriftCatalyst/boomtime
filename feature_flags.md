@@ -140,14 +140,13 @@ logged in**, by design — you can walk the new signup UX without logging out.
 | `boomtime.widgets-panel.width` | local | Widgets panel width | — |
 | `boomtime.amazon.session` | session | In-flight Connect-Amazon handshake | — |
 | `boomtime:chunk-reload-at` | session | Guard against a chunk-reload loop after a deploy | — |
-| `catalyst-ui-annotations` / `-autosync` | local | Devtools annotation subsystem. **localStorage-only — boomtime has no sync endpoint** | — |
 
 ### Build-time
 
 | Flag | What it gates | Notes |
 |---|---|---|
 | `VITE_GA_MEASUREMENT_ID` | Google Analytics page-view reporting | Baked in at `yarn build`; absent = no analytics |
-| `import.meta.env.DEV` | Dev-console logging in the annotation subsystem | **Not** the devtools visibility gate — that is admin-only via `useIsAdmin()` |
+| `import.meta.env.DEV` | Verbose error detail in `RouteErrorBoundary` | Dev builds only; production shows the generic recovery UI |
 
 > The `/catalog` public widget gallery has **no flag at all** — it's unauthed, renders 40
 > widgets on seeded sample data, and is always on. See [DEMO.md](DEMO.md).

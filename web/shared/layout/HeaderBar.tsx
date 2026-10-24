@@ -29,8 +29,6 @@ import {
   THEME_REGISTRY,
 } from "@thebranchdriftcatalyst/catalyst-ui/contexts/Theme";
 import { UserAvatarImage } from "@shared/features/publicprofile/UserAvatarImage";
-import { useIsAdmin } from "@shared/features/auth/useIsAdmin";
-import { DevModeToggle } from "@shared/features/devtools";
 import { useHeaderSlotNode } from "@shared/layout/HeaderSlot";
 import { MobileNav } from "@shared/layout/MobileNav";
 import { ReadingDiagnosticIndicator } from "@shared/layout/ReadingDiagnosticIndicator";
@@ -95,10 +93,6 @@ export function HeaderBar({ username, onLogout, onCreateSpace }: HeaderBarProps)
   const pageTitle = pageTitleFromPath(pathname);
   const { theme, setTheme, variant, setVariant, effects, updateEffect } =
     useTheme();
-  // boom-1im: admin-only devtools (annotation subsystem + component inspector).
-  // Invisible to normal users — the toggle renders nothing unless the current
-  // user is an admin.
-  const { isAdmin } = useIsAdmin();
   const isDark = variant === "dark";
   const greeting = greetingFor(new Date().getHours());
 
@@ -187,9 +181,6 @@ export function HeaderBar({ username, onLogout, onCreateSpace }: HeaderBarProps)
 
         {/* Durable-notification bell + side panel (book finishes land here). */}
         <NotificationBell />
-
-        {/* Admin-only dev utilities — renders nothing for normal users. */}
-        {isAdmin && <DevModeToggle variant="ghost" size="icon" />}
 
         <DropdownMenu>
         <DropdownMenuTrigger asChild>

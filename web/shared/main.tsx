@@ -8,7 +8,6 @@ import { RouteErrorBoundary } from "@shared/app/RouteErrorBoundary";
 import { reloadOnceForStaleChunk } from "@shared/lib/chunkReload";
 import { CatalystProvider } from "@thebranchdriftcatalyst/catalyst-ui/contexts/CatalystProvider";
 import { TooltipProvider } from "@thebranchdriftcatalyst/catalyst-ui/ui/tooltip";
-import { DevProviders } from "@shared/features/devtools";
 import { authStore } from "@shared/features/auth/auth";
 import { registerHostDomains } from "@shared/app/registerDomains";
 import "@shared/index.css";
@@ -85,17 +84,10 @@ createRoot(document.getElementById("root")!).render(
         (labels are dense, want the explainer to appear quickly).
       */}
       <TooltipProvider delayDuration={200}>
-        {/*
-          boom-1im: admin-only devtools annotation subsystem. DevProviders is a
-          cheap localStorage-backed AnnotationProvider — safe to mount for every
-          user; the actual UI (<DevModeToggle/>) is admin-gated in HeaderBar.
-        */}
-        <DevProviders>
-          <QueryClientProvider client={queryClient}>
-            <RouterProvider router={router} />
-            <Toaster position="top-right" richColors />
-          </QueryClientProvider>
-        </DevProviders>
+        <QueryClientProvider client={queryClient}>
+          <RouterProvider router={router} />
+          <Toaster position="top-right" richColors />
+        </QueryClientProvider>
       </TooltipProvider>
     </CatalystProvider>
   </StrictMode>,
