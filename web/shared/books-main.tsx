@@ -1,7 +1,7 @@
 // Standalone catalyst-books entry (boom-zp2s). BYTE-FOR-BYTE identical to
 // main.tsx — same providers (QueryClient, CatalystProvider, TooltipProvider,
-// DevProviders, Toaster), same RootLayout, same createBrowserRouter shape, same
-// theme ("boomtime" default + legacy migration) — EXCEPT it composes only the
+// Toaster), same RootLayout, same createBrowserRouter shape, same theme
+// ("boomtime" default + legacy migration) — EXCEPT it composes only the
 // core + books domains (registerBooksAppDomains) instead of every host domain.
 // Because registerBoomtimeDomain is never imported, the boomtime page modules
 // never enter this entry's module graph and tree-shake away.
@@ -15,7 +15,6 @@ import { RouteErrorBoundary } from "@shared/app/RouteErrorBoundary";
 import { reloadOnceForStaleChunk } from "@shared/lib/chunkReload";
 import { CatalystProvider } from "@thebranchdriftcatalyst/catalyst-ui/contexts/CatalystProvider";
 import { TooltipProvider } from "@thebranchdriftcatalyst/catalyst-ui/ui/tooltip";
-import { DevProviders } from "@shared/features/devtools";
 import { authStore } from "@shared/features/auth/auth";
 import { registerBooksAppDomains } from "@shared/app/registerBooksApp";
 import "@shared/index.css";
@@ -67,12 +66,10 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <CatalystProvider defaultTheme="boomtime" legacyStorageKey="boomtime-theme">
       <TooltipProvider delayDuration={200}>
-        <DevProviders>
-          <QueryClientProvider client={queryClient}>
-            <RouterProvider router={router} />
-            <Toaster position="top-right" richColors />
-          </QueryClientProvider>
-        </DevProviders>
+        <QueryClientProvider client={queryClient}>
+          <RouterProvider router={router} />
+          <Toaster position="top-right" richColors />
+        </QueryClientProvider>
       </TooltipProvider>
     </CatalystProvider>
   </StrictMode>,
