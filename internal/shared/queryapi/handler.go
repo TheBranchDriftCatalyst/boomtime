@@ -149,14 +149,22 @@ func (h *Handler) RunQuery(c *echo.Context) error {
 		return apihelpers.RespondErr(c, aerr)
 	}
 
-	// Gate the books-owned domains exactly like the other books routes: when the
-	// feature is off, the domain does not exist as far as the API is concerned
-	// (404, no oracle). Both the reading library ("reading") and the reading-events
-	// table ("readingEvents") are books surfaces. Coding is always available.
-	if (spec.Domain == "reading" || spec.Domain == "readingEvents") &&
-		(h.Cfg == nil || !h.Cfg.BooksEnabled()) {
-		return apihelpers.RespondErr(c, apierr.NotFound("unknown domain"))
-	}
+	// UN-GATED 2026-11-20 (boom-sire). The "reading" and "readingEvents" domains
+	// used to 404 unless BooksEnabled(), on the reasoning that they were books
+	// surfaces. They are not — they are READING-DATA surfaces, and the data
+	// outlived the domain that first populated it.
+	//
+	// reading.seconds sums reading_activity.listening_seconds grouped by `source`
+	// (internal/shared/query/domains.go). Those rows persist after the books cut,
+	// and the BookOrbit connector (boom-ksvt) writes new ones under
+	// source='bookorbit'. Gating them on the deprecated books flag would 404 the
+	// fused reading surfaces precisely when the fusion starts working — the
+	// dashboards, widgets and awards that read them would go blank while the data
+	// sat in the table.
+	//
+	// Nothing leaks by removing the gate: every reading query is owner-scoped
+	// downstream, so a caller with no reading rows gets an empty result rather
+	// than another user's. Coding was always available on the same terms.
 
 	// Canonical entities: transparently merge the caller's persisted pins for
 	// the grouped axis into the spec's bucket policy so their canonical values

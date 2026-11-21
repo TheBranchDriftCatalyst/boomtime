@@ -230,6 +230,24 @@ the current process has no `BOOM_ENCRYPTION_KEY` set (400 error, no TRUNCATE
 runs) — better to fail loudly than silently orphan every user's saved key
 under an unknown symmetric key.
 
+## The books domain is DEPRECATED (2026-11-19)
+
+`internal/books/` and `cmd/catalyst-books` are frozen: bug fixes only, **no new
+features**. Books/reading work now happens in the BookOrbit fork at
+`../bookorbit` (<https://forge.knowledgedump.space/panda/bookorbit>), whose
+`docs/catalyst/` holds the port plan and design.
+
+Nothing here is being deleted — `connect/amazon/signing.go`, `liberate/voucher.go`,
+`liberate/fetch.go` and `liberate/ffmpeg.go` are the only written record of
+several reverse-engineered Amazon protocols, and their comments explain why each
+constant is what it is. Read them as documentation first, code second.
+
+Boomtime's likely end state is a **small read-only connector** pulling aggregates
+from the fork into the stats surfaces. It is neither built nor designed — do not
+assume it exists.
+
+Full detail: `docs/design/books-domain-deprecated.md`.
+
 ## Beads Notes
 
 Workspace-wide findings and recovery procedures: `../BEADS.md`.

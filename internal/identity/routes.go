@@ -328,33 +328,37 @@ func Register(e *echo.Echo, h *Handler) {
 			Tag("Public Profile")
 	}
 
-	// catalyst-books HTTP surface (Amazon/Kindle/Audible + Hardcover + reading
-	// items/work/curation/match) is registered separately by internal/books.Register
-	// on the shared books.Handler (boom-zp2s Phase 2). It's mounted by the composition
-	// root; book paths never overlap the identity paths, so relative order is immaterial.
+	// The catalyst-books HTTP surface used to be registered separately here by
+	// internal/books.Register. It is gone (boom-sire) — the domain is deprecated and
+	// its surfaces were removed; see docs/design/books-domain-deprecated.md.
 
-	// Durable notifications (migration 00079) live on identity.Handler (domain-agnostic),
-	// but stay gated on BooksEnabled() to preserve the pre-extraction registration exactly.
-	// TODO(boom-zp2s): un-gate from BooksEnabled once notifications has its own gate.
-	if h != nil && h.Cfg != nil && h.Cfg.BooksEnabled() {
-		apiroute.GET(e, "/api/v1/notifications", h.ListNotifications).
-			Doc("Recent durable notifications",
-				"The caller's stored notifications, newest first, plus the current unread count "+
-					"— fetched on mount to seed the notification panel so an event that fired "+
-					"while the user was offline (a finished book, a completed render) is replayed "+
-					"rather than lost. ?limit defaults to 50 and accepts any positive integer; a "+
-					"non-numeric or non-positive value falls back to the default rather than "+
-					"erroring. `notifications` is null (not []) when there are none. Registered "+
-					"only while the books feature gate is on.").
-			Tag("Notifications")
-		apiroute.POSTNoBody(e, "/api/v1/notifications/read", h.MarkNotificationsRead).
-			Doc("Mark all notifications read",
-				"Flips every unread notification for the caller to read and returns {marked}, "+
-					"the number of rows that actually changed. Takes no request body and is "+
-					"idempotent — a second call returns marked=0. Registered only while the books "+
-					"feature gate is on.").
-			Tag("Notifications")
-	}
+	// Durable notifications (migration 00079). UN-GATED 2026-11-20 (boom-sire),
+	// resolving TODO(boom-zp2s).
+	//
+	// These are domain-agnostic and always have been — they live on
+	// identity.Handler and replay any stored event (a finished render, an import
+	// completing). They were gated on BooksEnabled() only to preserve the
+	// pre-extraction registration byte-for-byte, with that TODO asking for exactly
+	// this change. Books was a PRODUCER of notifications, never their owner.
+	//
+	// Leaving the gate in place would have made turning the deprecated books flag
+	// off take the notification bell dark across the whole app — a host feature
+	// disabled by a dead domain's switch. The gate was the bug, not the flag.
+	apiroute.GET(e, "/api/v1/notifications", h.ListNotifications).
+		Doc("Recent durable notifications",
+			"The caller's stored notifications, newest first, plus the current unread count "+
+				"— fetched on mount to seed the notification panel so an event that fired "+
+				"while the user was offline (a completed render, a finished import) is replayed "+
+				"rather than lost. ?limit defaults to 50 and accepts any positive integer; a "+
+				"non-numeric or non-positive value falls back to the default rather than "+
+				"erroring. `notifications` is null (not []) when there are none.").
+		Tag("Notifications")
+	apiroute.POSTNoBody(e, "/api/v1/notifications/read", h.MarkNotificationsRead).
+		Doc("Mark all notifications read",
+			"Flips every unread notification for the caller to read and returns {marked}, "+
+				"the number of rows that actually changed. Takes no request body and is "+
+				"idempotent — a second call returns marked=0.").
+		Tag("Notifications")
 
 	// User IANA timezone (boom-dg7). GET reports the raw stored value
 	// (''=unset) alongside the server's 3-level-resolved effectiveTimezone

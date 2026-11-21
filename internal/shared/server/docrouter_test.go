@@ -24,7 +24,12 @@ func routeKeys(e *echo.Echo) map[string]bool {
 // (LiberationEnabled also needs a library path, GithubConnectEnabled also needs
 // three OAuth values), and dropping one hides a whole route family with no error
 // anywhere. Raise it when the surface grows meaningfully.
-const minDocRoutes = 185
+// Lowered 185 -> 155 on 2026-11-20 (boom-sire) when the books HTTP + admin
+// surfaces were deleted. This floor may only ever come DOWN for a DELIBERATE
+// removal recorded here, never to make a red run green — a drop with no
+// corresponding deletion means a feature predicate came unsatisfied, which is
+// exactly what this floor exists to catch.
+const minDocRoutes = 155
 
 // The documentation router must be a strict SUPERSET of what a zero-value
 // handler registers. Superset rather than equality because the entire point is
@@ -63,17 +68,23 @@ func TestDocumentationRouterIsStrictSuperset(t *testing.T) {
 func TestDocumentationRouterCoversEveryGatedFamily(t *testing.T) {
 	docSet := routeKeys(DocumentationRouter())
 
+	// The five books families — books items, liberation, books admin, kindle and
+	// hardcover — were removed on 2026-11-20 (boom-sire) along with the surfaces
+	// themselves. They are not "temporarily unasserted": those routes no longer
+	// exist anywhere, so asserting them would pin a surface we deliberately
+	// deleted.
+	//
+	// Notifications moved here from "gated on BooksEnabled" to ungated in the same
+	// change: it is a host feature that was only ever wired through the books gate
+	// to preserve a registration order. Keeping it asserted is the point — it is
+	// the one family whose gate we CHANGED rather than deleted, so if it ever
+	// silently falls out of the router again this is what catches it.
 	for _, tc := range []struct{ family, route string }{
-		{"books (BooksEnabled)", "GET /api/v1/books/items"},
-		{"liberation (LiberationEnabled — compound, needs BooksLibraryPath)", "GET /api/v1/books/liberation/status"},
 		{"github connect (GithubConnectEnabled — compound, needs 3 OAuth values)", "GET /auth/github/connect"},
-		{"notifications (gated on BooksEnabled)", "GET /api/v1/notifications"},
+		{"notifications (ungated — host feature, boom-sire)", "GET /api/v1/notifications"},
 		{"admin CLI (FeatureAdminCLI)", "POST /api/v1/admin/cli/run"},
 		{"admin jobs (gated on DB availability, not a flag)", "GET /api/v1/admin/jobs"},
 		{"admin metrics (gated on DB availability)", "GET /api/v1/admin/metrics"},
-		{"books admin (reading monitor)", "GET /api/v1/admin/books/reading-monitor"},
-		{"kindle", "POST /api/v1/kindle/sync"},
-		{"hardcover", "POST /api/v1/hardcover/pull"},
 	} {
 		if !docSet[tc.route] {
 			t.Errorf("%s: %q missing from the documentation router — that family is invisible to the spec", tc.family, tc.route)

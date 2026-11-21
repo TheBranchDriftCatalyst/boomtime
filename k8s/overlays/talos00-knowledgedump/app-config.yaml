@@ -92,7 +92,19 @@ data:
   # temporarily, not permanently.
 
   # ── catalyst-books / catalyst-audiobooks master gate (boom-books) ───────────
-  BOOM_FEATURE_BOOKS: "true"
+  # TURNED OFF 2026-11-20 (boom-hltn). The books domain is deprecated; books work
+  # moved to the BookOrbit fork, which is now registered as its OWN device on the
+  # SAME Amazon account and runs its own Audible sweeps.
+  #
+  # Leaving this "true" means two independent device registrations polling
+  # /1.0/library and two liberation sweepers against one account. liberate's own
+  # license.go says it plainly: "a retry loop on Denied is how you get an account
+  # flagged." One sweeper, not two.
+  #
+  # This gate is the whole switch — LiberationEnabled() and the annotations
+  # ingest both nest under it, so the flags further down are left exactly as they
+  # were. Flipping this back restores the previous behaviour unchanged.
+  BOOM_FEATURE_BOOKS: "false"
   # Audible library forward-sync cadence (finish detection: is_finished / ≥95% →
   # "read"). Code default is 6h; dropped to 1h so a finished audiobook promotes
   # reading→read within the hour without a manual "Sync now". Trade: more Audible

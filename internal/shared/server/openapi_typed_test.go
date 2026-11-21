@@ -42,8 +42,14 @@ func TestTypedSeamProducesRealSchemas(t *testing.T) {
 		path  string
 		props []string
 	}{
-		{"/api/v1/books/liberation/status", []string{"counts", "pending", "excluded", "libraryPath"}},
-		{"/api/v1/books/liberation/excluded", []string{"items"}},
+		// Retargeted 2026-11-20 (boom-sire): these used the books liberation
+		// routes, which were deleted with the domain. The PROPERTY under test is
+		// unchanged — a typed-seam route must carry named properties rather than
+		// the bare {"type":"object"} stub — so this needs a live typed route, not
+		// deletion. listNotificationsResponse (internal/identity/notifications.go)
+		// is the natural stand-in: registered through apiroute, ungated, and it
+		// has both scalar and nested-slice fields.
+		{"/api/v1/notifications", []string{"notifications", "unreadCount"}},
 	} {
 		item := doc.Paths.Value(tc.path)
 		if item == nil || item.Get == nil {
@@ -78,17 +84,22 @@ func TestTypedSeamProducesRealSchemas(t *testing.T) {
 }
 
 // The nested type must be reflected too, not flattened to a bare array of
-// objects — ExcludedItem's fields are the entire value of that endpoint.
+// objects — the element struct's fields are the entire value of such an endpoint.
+//
+// Retargeted 2026-11-20 (boom-sire) from the deleted books liberation route to
+// GET /api/v1/notifications, whose `notifications` field is []db.Notification.
+// Same property under test: openapi3gen must reflect the SLICE ELEMENT, not stop
+// at "array of object".
 func TestTypedSeamReflectsNestedTypes(t *testing.T) {
 	doc := specForDocs(t)
-	item := doc.Paths.Value("/api/v1/books/liberation/excluded")
+	item := doc.Paths.Value("/api/v1/notifications")
 	if item == nil || item.Get == nil {
 		t.Fatal("route missing")
 	}
 	sch := resolve(doc, item.Get.Responses.Value("200").Value.Content["application/json"].Schema)
-	items := sch.Properties["items"]
+	items := sch.Properties["notifications"]
 	if items == nil || items.Value == nil {
-		t.Fatal("items property missing")
+		t.Fatal("notifications property missing")
 	}
 	if items.Value.Type == nil || !items.Value.Type.Is("array") {
 		t.Fatalf("items is %v, want array", items.Value.Type)
@@ -97,10 +108,16 @@ func TestTypedSeamReflectsNestedTypes(t *testing.T) {
 	if elem == nil || len(elem.Properties) == 0 {
 		t.Fatal("array element has no properties — the nested struct was not reflected")
 	}
-	for _, want := range []string{"asin", "title", "status", "attempts", "retryable"} {
+	// db.Notification's JSON fields. `owner` is deliberately absent — it is
+	// tagged `json:"-"`, so asserting these four also pins that the reflector
+	// honours tags rather than dumping Go field names.
+	for _, want := range []string{"id", "type", "title", "at"} {
 		if _, ok := elem.Properties[want]; !ok {
-			t.Errorf("ExcludedItem schema missing %q (got %v)", want, keysOf(elem.Properties))
+			t.Errorf("db.Notification schema missing %q (got %v)", want, keysOf(elem.Properties))
 		}
+	}
+	if _, leaked := elem.Properties["owner"]; leaked {
+		t.Error("db.Notification schema exposes `owner`, which is tagged json:\"-\" — the reflector ignored the tag")
 	}
 }
 

@@ -36,6 +36,18 @@ func (stubEnqueuer) Enqueue(context.Context, string, []byte, ...jobs.EnqueueOpti
 //
 // The fix is structural (DocumentationRouter builds its own registry, so the live
 // one cannot be passed). This asserts the property that fix exists to protect.
+//
+// BOOKS NO LONGER PARTICIPATES (boom-sire, 2026-11-20). The books domain was
+// deprecated in favour of the BookOrbit fork, and books.Module is now STATELESS —
+// it stashes no handler and has no Set*/Wire* setters, so it cannot be clobbered.
+// The books assertions were removed for THAT reason, not because the property
+// stopped mattering.
+//
+// boomtime.Module still stashes m.admin and is still late-wired the same way, so
+// it remains vulnerable to the identical clobber and is still asserted below. The
+// books half of the bug is kept in the comment above because it is the clearest
+// description of the failure mode, and because any future stateful module
+// reintroduces exactly this exposure.
 func TestDocumentationRouterDoesNotClobberLiveModuleWiring(t *testing.T) {
 	live := domainreg.Build()
 
@@ -45,15 +57,8 @@ func TestDocumentationRouterDoesNotClobberLiveModuleWiring(t *testing.T) {
 		DB:  &db.DB{},
 		Cfg: &config.Config{FeatureBooks: true},
 	}, live.Registry)
-	live.Books.WireJobEnqueuer(stubEnqueuer{})
-	// boomtime.Module stashes m.admin the same way and is late-wired the same
-	// way, so it is vulnerable to the identical clobber. Asserting only books
-	// would have left that half of the bug uncovered — which it was, until this.
 	live.Boomtime.SetJobs(&jobs.Store{}, stubEnqueuer{})
 
-	if !live.Books.HasJobEnqueuer() {
-		t.Fatal("precondition failed: the enqueuer did not land on the live books handler at all")
-	}
 	if !live.Boomtime.HasJobs() {
 		t.Fatal("precondition failed: the jobs store/enqueuer did not land on the live boomtime admin handler at all")
 	}
@@ -61,11 +66,6 @@ func TestDocumentationRouterDoesNotClobberLiveModuleWiring(t *testing.T) {
 	// Building the documentation router must not disturb any of that.
 	_ = DocumentationRouter()
 
-	if !live.Books.HasJobEnqueuer() {
-		t.Error("building the documentation router DISCARDED the live books handler's jobs enqueuer — " +
-			"every background-job enqueue would answer 'background jobs are not available on this server' " +
-			"while the jobs page still looks healthy")
-	}
 	if !live.Boomtime.HasJobs() {
 		t.Error("building the documentation router DISCARDED the live boomtime admin handler's jobs wiring — " +
 			"label-image regenerate would answer 503 'label-images feature is disabled' even with the flags " +

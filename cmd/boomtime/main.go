@@ -76,7 +76,11 @@ func main() {
 		Short:   "Wakatime-compatible coding-time tracker",
 		Version: version,
 	}
-	root.AddCommand(runCmd(), runMigrationsCmd(), createUserCmd(), createTokenCmd(), userCmd(), rotateEncryptionKeyCmd(), labelImagesCmd(), backfillCmd(), seedReadingDemoCmd(), hardcoverCmd(), booksCmd())
+	// hardcoverCmd() and booksCmd() were removed with the books surfaces
+	// (boom-sire). rotateEncryptionKeyCmd still covers the Amazon/Hardcover
+	// ciphertext — those columns come from the books Module, which stays
+	// registered in internal/domainreg precisely for that.
+	root.AddCommand(runCmd(), runMigrationsCmd(), createUserCmd(), createTokenCmd(), userCmd(), rotateEncryptionKeyCmd(), labelImagesCmd(), backfillCmd(), seedReadingDemoCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -587,13 +591,10 @@ func runCmd() *cobra.Command {
 					logger.Info("jobs: log persistence enabled", "bucket", cfg.S3Bucket)
 				}
 
-				// boom-zp2s: wire the jobs provider (a jobs.Enqueuer) onto the books
-				// domain NOW that `provider` exists — onto the audiobooks service
-				// (finished-book Hardcover pushes route to the capped queue) on every
-				// role, and onto the books HTTP handler (server role only, nil-safe
-				// otherwise). Byte-identical to the old audioSvc.SetEnqueuer(provider)
-				// (any role) + h.Books.SetJobEnqueuer(provider) (server role) forwards.
-				domainSet.Books.WireJobEnqueuer(provider)
+				// The books domain had its jobs enqueuer late-wired here. It
+				// registers no jobs any more (boom-sire removed internal/books/jobs),
+				// so there is nothing to wire — books.Module is now stateless and
+				// contributes only encrypted/backup columns.
 
 				// The HTTP Handler only exists on server roles (line ~271). Worker
 				// / ScaledJob-drain pods have h == nil — they need the provider +
@@ -639,12 +640,11 @@ func runCmd() *cobra.Command {
 							logger.Warn("jobs: schedule register failed", "err", serr)
 						}
 					}
-					// boom-zp2s: the books leader-singleton schedules (audible forward
-					// sync + persistent reading-monitor + periodic Hardcover pull/match)
-					// are registered by books.Module → internal/books/jobs, each gated
-					// exactly as before. The host still owns the outer "build a scheduler
-					// at all" condition + go sched.Run.
-					domainSet.Books.RegisterSchedules(ctx, sched, cfg, logger)
+					// The books leader-singleton schedules (audible forward sync,
+					// persistent reading-monitor, periodic Hardcover pull/match) were
+					// registered here. All of them are gone with internal/books/jobs
+					// (boom-sire) — the BookOrbit fork owns that work now, and running
+					// both against one Amazon account is the thing we were avoiding.
 					go sched.Run(ctx)
 				}
 				// Run the jobs worker on the always-on SERVER (not just the worker

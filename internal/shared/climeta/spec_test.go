@@ -38,7 +38,12 @@ func paramByName(t *testing.T, spec climeta.CommandSpec, name string) climeta.Cm
 
 func TestRegistryExactPhase1Surface(t *testing.T) {
 	reg := climeta.Registry()
-	want := []string{"backfill last-context", "backfill github-stats", "hardcover dedup-reads", "user list", "user show"}
+	// "hardcover dedup-reads" dropped out on 2026-11-20 (boom-sire): it was
+	// registered by internal/books/dedup_reads.go, which went with the books
+	// surfaces. The EXACT count is the point of this test — a command appearing
+	// or vanishing unnoticed is what it exists to catch — so the expectation
+	// moves deliberately rather than the assertion loosening to >=.
+	want := []string{"backfill last-context", "backfill github-stats", "user list", "user show"}
 	if len(reg) != len(want) {
 		t.Fatalf("registry has %d entries, want exactly %d: %v", len(reg), len(want), reg)
 	}
@@ -63,11 +68,12 @@ func TestRegistryExactPhase1Surface(t *testing.T) {
 
 func TestBuildSpecsAnnotatedIntersectionAndAvailability(t *testing.T) {
 	// FeatureGithubStats off (zero config) → github-stats is unavailable. The
-	// always-available set is: backfill last-context, hardcover dedup-reads,
-	// user list, user show = 4.
+	// always-available set is: backfill last-context, user list, user show = 3.
+	// Was 4 until boom-sire removed "hardcover dedup-reads" with the books
+	// surfaces.
 	specs := climeta.BuildSpecs(&config.Config{})
-	if len(specs) != 4 {
-		t.Fatalf("with github-stats off want 4 specs, got %d: %v", len(specs), specs)
+	if len(specs) != 3 {
+		t.Fatalf("with github-stats off want 3 specs, got %d: %v", len(specs), specs)
 	}
 	for _, s := range specs {
 		if s.Command == "backfill github-stats" {
@@ -75,16 +81,16 @@ func TestBuildSpecsAnnotatedIntersectionAndAvailability(t *testing.T) {
 		}
 	}
 
-	// Flag on → github-stats joins them = 5.
+	// Flag on → github-stats joins them = 4 (was 5 before boom-sire).
 	specs = climeta.BuildSpecs(&config.Config{FeatureGithubStats: true})
-	if len(specs) != 5 {
-		t.Fatalf("with github-stats on want 5 specs, got %d: %v", len(specs), specs)
+	if len(specs) != 4 {
+		t.Fatalf("with github-stats on want 4 specs, got %d: %v", len(specs), specs)
 	}
 
 	// A nil cfg must not panic and keeps availability-gated commands hidden.
 	specs = climeta.BuildSpecs(nil)
-	if len(specs) != 4 {
-		t.Fatalf("nil cfg want 4 specs, got %d", len(specs))
+	if len(specs) != 3 {
+		t.Fatalf("nil cfg want 3 specs, got %d", len(specs))
 	}
 }
 
