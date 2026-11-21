@@ -81,9 +81,10 @@ func QueryInt64(c *echo.Context, name string, def int64) int64 {
 	return n
 }
 
-// TimeLimit reads the optional timeLimit param (minutes), defaulting to 15.
+// TimeLimit reads the optional timeLimit param (minutes), defaulting to the
+// canonical app default (db.DefaultTimeLimitMinutes).
 func TimeLimit(c *echo.Context) int64 {
-	return QueryInt64(c, "timeLimit", 15)
+	return QueryInt64(c, "timeLimit", db.DefaultTimeLimitMinutes)
 }
 
 // BindJSONWithLimit wraps c.Bind with a http.MaxBytesReader cap on the request

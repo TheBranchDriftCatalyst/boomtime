@@ -231,14 +231,10 @@ func (h *Handler) WidgetDefSvg(c *echo.Context) error {
 		// render must reflect the owner's local dow/hour buckets.
 		tz := apihelpers.ResolveUserTZ(h.DB, h.Logger, ctx, owner, h.Cfg.DefaultTimezone)
 
-		// v1: user scope. Reuse the same rollup-vs-raw gate as WidgetSvg.
-		var rows []db.StatRow
+		// v1: user scope. db.UserActivity owns the rollup-vs-raw gate — the
+		// same single path WidgetSvg uses.
 		var members db.MemberSets
-		if !hidden.HasHiddenOutside(db.RollupAxes) {
-			rows, err = h.DB.GetUserActivityRollup(ctx, owner, t0, t1, hidden, renames, members, false)
-		} else {
-			rows, err = h.DB.GetUserActivity(ctx, owner, t0, t1, widgetTimeLimit, tz, hidden, renames, members, false)
-		}
+		rows, err := h.DB.UserActivity(ctx, owner, t0, t1, widgetTimeLimit, tz, hidden, renames, members, false)
 		if err != nil {
 			return nil, err
 		}
@@ -274,7 +270,7 @@ func (h *Handler) WidgetDefSvg(c *echo.Context) error {
 			data.Punchcard = &pc
 		}
 		if needs.Momentum {
-			mrows, err := h.DB.GetMomentum(ctx, owner, t0, t1, widgetTimeLimit, tz, hidden, renames, members, false)
+			mrows, err := h.DB.Momentum(ctx, owner, t0, t1, widgetTimeLimit, tz, hidden, renames, members, false)
 			if err != nil {
 				return nil, err
 			}

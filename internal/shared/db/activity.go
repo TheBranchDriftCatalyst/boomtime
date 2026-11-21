@@ -15,11 +15,12 @@ import (
 // ---- Stats queries ----
 
 // GetUserActivityRollup reads the pre-aggregated hb_rollup_daily (fast path for
-// the Overview at the default 15-min limit). $1 user, $2 start, $3 end. Excludes
+// the Overview at the default limit). $1 user, $2 start, $3 end. Excludes
 // the sender's hidden values and includes a Space scope's members for the axes
 // the rollup stores (project, language, editor, platform, machine, category,
-// plugin, branch). Callers must not use this path when a hide or Space rule is
-// active on an axis the rollup lacks (entity today) — use the raw path.
+// plugin, branch). Handlers reach this only through the UserActivity dispatcher
+// (rollup_path.go), which owns the eligibility gate — this path must not serve
+// a request with a hide or Space rule on an axis the rollup lacks (entity today).
 // A rename needs NO rollup fallback: rename only RELABELS output columns (it
 // never removes rows), and the rollup's OUTPUT columns are still project/
 // language/editor/platform/machine — the finer stored axes (category/plugin/
@@ -168,18 +169,19 @@ const timeTodayRangeAnchor = "AND time_sent < (((((now() AT TIME ZONE $2)::date)
 // "today" per boom-dg7), excluding the sender's hidden axis values so the
 // statusbar total matches the hidden dashboards.
 func (d *DB) GetTotalTimeToday(ctx context.Context, user, tz string, hs HiddenSets) (int64, error) {
-	// $1 user, $2 tz, then hide predicates start at $3.
+	// $1 user, $2 tz, $3 gap cutoff seconds, then hide predicates start at $4.
 	query, args, _ := applyScopes(qGetTimeToday, timeTodayRangeAnchor,
-		hs, MemberSets{}, false, rawHeartbeatCols, []any{user, tz}, 3)
+		hs, MemberSets{}, false, rawHeartbeatCols, []any{user, tz, defaultGapCutoffSeconds}, 4)
 	var total int64
 	err := d.Pool.QueryRow(ctx, query, args...).Scan(&total)
 	return total, err
 }
 
-// GetTotalActivityTime runs get_total_project_time.sql ($1 user,$2 days,$3 project).
+// GetTotalActivityTime runs get_total_project_time.sql ($1 user,$2 days,
+// $3 project,$4 gap cutoff seconds).
 func (d *DB) GetTotalActivityTime(ctx context.Context, user string, days int64, project string) (int64, error) {
 	var total int64
-	err := d.Pool.QueryRow(ctx, qGetTotalProject, user, days, project).Scan(&total)
+	err := d.Pool.QueryRow(ctx, qGetTotalProject, user, days, project, defaultGapCutoffSeconds).Scan(&total)
 	return total, err
 }
 
@@ -204,7 +206,7 @@ func (d *DB) GetTotalActivityTime(ctx context.Context, user string, days int64, 
 // edit to the .sql reintroduces row-dropping, callers must not silently
 // mis-attribute — they must see an error.
 func (d *DB) GetTotalTimeBetween(ctx context.Context, users, projects []string, mins, maxs []time.Time) ([]int64, error) {
-	rows, err := d.Pool.Query(ctx, qGetTimeBetween, users, projects, mins, maxs)
+	rows, err := d.Pool.Query(ctx, qGetTimeBetween, users, projects, mins, maxs, defaultGapCutoffSeconds)
 	if err != nil {
 		return nil, err
 	}

@@ -5,7 +5,6 @@ import (
 
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apierr"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/apihelpers"
-	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/model"
 	"github.com/labstack/echo/v5"
 )
@@ -23,26 +22,10 @@ func (h *Handler) Stats(c *echo.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		var rows []db.StatRow
-		switch {
-		case s.limit == 15 &&
-			!l.hidden.HasHiddenOutside(db.RollupAxes) &&
-			(!l.spaceRequested || !l.members.HasMemberOutside(db.RollupAxes)):
-			// Fast path: pre-aggregated rollup (default 15-min limit, no rollup-
-			// external hide, and no rollup-external Space rule). The rollup stores
-			// project/language/editor/platform/machine + category/plugin/branch, so
-			// only a Space rule on entity (or a future non-rollup axis) forces raw.
-			// spaceRequested is passed through — the rollup query splices the same
-			// inclusion predicate (or ` AND FALSE` for a rule-less requested space).
-			// Rename needs no rollup fallback: rename relabels output columns without
-			// removing rows, and the rollup's output columns match the remappable set.
-			rows, err = h.DB.GetUserActivityRollup(s.ctx, s.owner, s.t0, s.t1, l.hidden, l.renames, l.members, l.spaceRequested)
-		default:
-			// Raw gap_seconds scan (non-default limit, a hide the rollup can't
-			// apply — impossible today, all hiddenAxes are rollup axes — or a Space
-			// rule on entity/other non-rollup axis).
-			rows, err = h.DB.GetUserActivity(s.ctx, s.owner, s.t0, s.t1, s.limit, s.tz, l.hidden, l.renames, l.members, l.spaceRequested)
-		}
+		// Rollup-vs-raw selection lives in db.UserActivity (rollup_path.go):
+		// pre-aggregated rollup at the default timeLimit when the hide/Space
+		// rules stay within the rollup axes, raw heartbeats scan otherwise.
+		rows, err := h.DB.UserActivity(s.ctx, s.owner, s.t0, s.t1, s.limit, s.tz, l.hidden, l.renames, l.members, l.spaceRequested)
 		if err != nil {
 			return nil, err
 		}
@@ -52,20 +35,10 @@ func (h *Handler) Stats(c *echo.Context) error {
 		// rename remap + timeLimit + space. boom-dg7: same tz as the activity
 		// scan so both series bucket on the same day boundary.
 		//
-		// boom-o4m: same rollup fast-path gate as the activity scan above — at
-		// the default 15-min limit with no hide / no Space rule outside
-		// RollupAxes, serve the pre-aggregated hb_rollup_daily instead of scanning
-		// raw heartbeats. Category IS a rollup axis so the pie's output shape is
-		// unchanged (day, category, total_seconds, pct, daily_pct).
-		var categories []db.CategoryDailyRow
-		switch {
-		case s.limit == 15 &&
-			!l.hidden.HasHiddenOutside(db.RollupAxes) &&
-			(!l.spaceRequested || !l.members.HasMemberOutside(db.RollupAxes)):
-			categories, err = h.DB.GetCategoryDailyRollup(s.ctx, s.owner, s.t0, s.t1, l.hidden, l.renames, l.members, l.spaceRequested)
-		default:
-			categories, err = h.DB.GetCategoryDaily(s.ctx, s.owner, s.t0, s.t1, s.limit, s.tz, l.hidden, l.renames, l.members, l.spaceRequested)
-		}
+		// boom-o4m: db.CategoryDaily applies the same rollup gate. Category IS
+		// a rollup axis so the pie's output shape is unchanged (day, category,
+		// total_seconds, pct, daily_pct).
+		categories, err := h.DB.CategoryDaily(s.ctx, s.owner, s.t0, s.t1, s.limit, s.tz, l.hidden, l.renames, l.members, l.spaceRequested)
 		if err != nil {
 			return nil, err
 		}

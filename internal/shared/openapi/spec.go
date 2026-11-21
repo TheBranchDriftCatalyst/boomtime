@@ -33,12 +33,14 @@ package openapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"reflect"
 	"regexp"
 	"strings"
 	"sync"
 
+	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/db"
 	"github.com/TheBranchDriftCatalyst/boomtime/internal/shared/model"
 	"github.com/getkin/kin-openapi/openapi3"
 
@@ -314,7 +316,7 @@ func build(e *echo.Echo) (*openapi3.T, error) {
 
 	comps.Parameters["QueryStart"] = dateTimeParam("start", "RFC3339 UTC start of the query range. Together with `end` selects the reported window; omit both for a default trailing window.")
 	comps.Parameters["QueryEnd"] = dateTimeParam("end", "RFC3339 UTC end of the query range.")
-	comps.Parameters["QueryTimeLimit"] = intParam("timeLimit", "query", "Gap cutoff in minutes for attributed time (default 15).", false)
+	comps.Parameters["QueryTimeLimit"] = intParam("timeLimit", "query", fmt.Sprintf("Gap cutoff in minutes for attributed time (default %d).", db.DefaultTimeLimitMinutes), false)
 	comps.Parameters["QuerySpace"] = intParam("space", "query", "Optional Space id to scope the dashboard by that Space's inclusion rules.", false)
 	comps.Parameters["QueryDays"] = intParam("days", "query", "Trailing window in days (default varies per endpoint).", false)
 	comps.Parameters["QueryTheme"] = strParam("theme", "query", "SVG theme (`dark`|`light`, else server default).", false)

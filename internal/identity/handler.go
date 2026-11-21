@@ -117,12 +117,13 @@ func New(database *db.DB, cfg *config.Config, logger *slog.Logger, cch *cache.TT
 // missing on the awards mirror (boom-hc6.3 invariant).
 const PublicProfilePayloadDays = 60
 
-// PublicProfileTimeLimit locks the aggregation to the app default (15-min
-// gap). Exported so awards reads the SAME cap. The public payload does
+// PublicProfileTimeLimit locks the aggregation to the app default gap
+// cutoff. Exported so awards reads the SAME cap. The public payload does
 // not accept a timeLimit override — it would fragment the (currently
 // uncached) response space and expose a knob a public dashboard doesn't
-// need.
-const PublicProfileTimeLimit int64 = 15
+// need. Derived, never restated: the one source of truth is
+// db.DefaultTimeLimitMinutes.
+const PublicProfileTimeLimit = db.DefaultTimeLimitMinutes
 
 // requireAdmin: 401 without a token, 403 when not on the admin allowlist.
 // Returns the resolved owner on success. Mirror of the same method on

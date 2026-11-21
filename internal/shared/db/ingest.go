@@ -313,7 +313,8 @@ func refreshRollup(ctx context.Context, q execer, sender string, since time.Time
 	// Workouts contribute their authoritative workout_duration_s, bypassing
 	// gap-inference entirely — a 45-minute run counts as 2700s regardless of
 	// whether HR samples were dense enough to close gaps. Regular editor
-	// heartbeats keep the gap-bounded time-spent semantics (gap<=900s).
+	// heartbeats keep the gap-bounded time-spent semantics (gap within the
+	// default cutoff, $4 — bound from defaultGapCutoffSeconds).
 	//
 	// heartbeats.time_sent is `timestamp without time zone` stored as UTC
 	// (unixToTime in ingest.go), so to get the local date we chain
@@ -343,7 +344,7 @@ SELECT sender, (((time_sent AT TIME ZONE 'UTC') AT TIME ZONE $3)::date),
     coalesce(category, 'Other'), coalesce(plugin, 'Other'), coalesce(branch, 'Other'),
     sum(CASE
         WHEN workout_duration_s IS NOT NULL THEN workout_duration_s
-        WHEN gap_seconds <= 900 THEN gap_seconds
+        WHEN gap_seconds <= $4 THEN gap_seconds
         ELSE 0
     END),
     bool_and(project IS NULL), bool_and(language IS NULL), bool_and(editor IS NULL),
@@ -354,7 +355,7 @@ WHERE sender = $1
   AND time_sent >= ((($2::timestamptz AT TIME ZONE $3)::date) AT TIME ZONE $3 AT TIME ZONE 'UTC')
 GROUP BY sender, (((time_sent AT TIME ZONE 'UTC') AT TIME ZONE $3)::date), coalesce(project, 'Other'), coalesce(language, 'Other'),
     coalesce(editor, 'Other'), coalesce(platform, 'Other'), coalesce(machine, 'Other'),
-    coalesce(category, 'Other'), coalesce(plugin, 'Other'), coalesce(branch, 'Other')`, sender, since, tz)
+    coalesce(category, 'Other'), coalesce(plugin, 'Other'), coalesce(branch, 'Other')`, sender, since, tz, defaultGapCutoffSeconds)
 	return err
 }
 
@@ -595,11 +596,11 @@ func (d *DB) GetDerivedStatus(ctx context.Context, sender string) (DerivedStatus
 		  (SELECT count(*) - count(gap_seconds) FROM heartbeats WHERE sender = $1),
 		  (SELECT count(*) FROM hb_rollup_daily WHERE sender = $1),
 		  (SELECT coalesce(sum(total_seconds), 0) FROM hb_rollup_daily WHERE sender = $1),
-		  (SELECT coalesce(sum(CASE WHEN gap_seconds <= 900 THEN gap_seconds ELSE 0 END), 0) FROM heartbeats WHERE sender = $1),
+		  (SELECT coalesce(sum(CASE WHEN gap_seconds <= $2 THEN gap_seconds ELSE 0 END), 0) FROM heartbeats WHERE sender = $1),
 		  pg_total_relation_size('heartbeats'),
 		  pg_total_relation_size('hb_rollup_daily'),
 		  pg_database_size(current_database())
-	`, sender).Scan(&s.Heartbeats, &s.GapPopulated, &s.GapMissing, &s.RollupRows, &s.RollupSeconds, &s.RawSeconds,
+	`, sender, defaultGapCutoffSeconds).Scan(&s.Heartbeats, &s.GapPopulated, &s.GapMissing, &s.RollupRows, &s.RollupSeconds, &s.RawSeconds,
 		&s.HeartbeatsBytes, &s.RollupBytes, &s.DBBytes)
 	if err != nil {
 		return s, err

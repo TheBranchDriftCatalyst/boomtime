@@ -34,7 +34,7 @@ WITH input_table AS (
             max_date,
             ordinality))
 SELECT
-    CAST(COALESCE(SUM(CASE WHEN heartbeats.gap_seconds <= (15 * 60) THEN heartbeats.gap_seconds ELSE 0 END), 0) AS bigint)
+    CAST(COALESCE(SUM(CASE WHEN heartbeats.gap_seconds <= $5 THEN heartbeats.gap_seconds ELSE 0 END), 0) AS bigint)
 FROM
     input_table
     LEFT JOIN heartbeats ON heartbeats.sender = input_table.username

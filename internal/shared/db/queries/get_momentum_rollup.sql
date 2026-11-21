@@ -7,9 +7,10 @@
 -- mirror the raw path's `AND project IS NOT NULL` — otherwise browsing time
 -- (null project) would surface as a fake "Other" project bump.
 --
--- $1 sender, $2 start, $3 end. (Limit is fixed at 15 minutes because the
--- rollup itself was built with a hardcoded gap_seconds <= 900 cutoff; the Go
--- handler falls back to raw for non-default limits.)
+-- $1 sender, $2 start, $3 end. (Limit is fixed at the app default because the
+-- rollup itself was built at the default gap cutoff — db.DefaultTimeLimitMinutes,
+-- bound into the refresh SQL; the db.Momentum dispatcher falls back to raw for
+-- non-default limits.)
 SELECT
     project,
     (date_trunc('week', day))::date AS week_start,

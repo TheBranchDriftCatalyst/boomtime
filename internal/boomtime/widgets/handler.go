@@ -52,10 +52,11 @@ const (
 	widgetDaysMax     = 366
 )
 
-// widgetTimeLimit is locked to the app default (15-min gap). Public widgets do
+// widgetTimeLimit is locked to the app default gap cutoff. Public widgets do
 // not accept a timeLimit override — it would fragment the cache and expose a
-// knob nobody needs on an embed.
-const widgetTimeLimit int64 = 15
+// knob nobody needs on an embed. Derived, never restated: the one source of
+// truth is db.DefaultTimeLimitMinutes.
+const widgetTimeLimit = db.DefaultTimeLimitMinutes
 
 // WidgetLink: GET /api/v1/users/current/widgets/link?scopeType=&scopeRef= (auth).
 // Upserts the (owner, scope) link after validating the requester owns the scope.
@@ -303,13 +304,9 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 			scoped = true
 		}
 
-		// Same rollup-vs-raw gate as the dashboard Stats handler.
-		var rows []db.StatRow
-		if !hidden.HasHiddenOutside(db.RollupAxes) && (!scoped || !members.HasMemberOutside(db.RollupAxes)) {
-			rows, err = h.DB.GetUserActivityRollup(ctx, owner, t0, t1, hidden, renames, members, scoped)
-		} else {
-			rows, err = h.DB.GetUserActivity(ctx, owner, t0, t1, widgetTimeLimit, tz, hidden, renames, members, scoped)
-		}
+		// Rollup-vs-raw selection lives in db.UserActivity (rollup_path.go) —
+		// the same single gate the dashboard Stats handler uses.
+		rows, err := h.DB.UserActivity(ctx, owner, t0, t1, widgetTimeLimit, tz, hidden, renames, members, scoped)
 		if err != nil {
 			return nil, err
 		}
@@ -333,14 +330,11 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 		// Part B Stage 1: the Categories segment isn't derivable from the
 		// StatRow set (the activity queries don't project a category column),
 		// so it needs its own fetch — gated on Needs so only categories-chart
-		// pays for it. Same rollup-vs-raw gate as the activity fetch above.
+		// pays for it. db.CategoryDaily applies the same rollup gate as the
+		// activity fetch above.
 		var catRows []db.CategoryDailyRow
 		if needs.Categories {
-			if !hidden.HasHiddenOutside(db.RollupAxes) && (!scoped || !members.HasMemberOutside(db.RollupAxes)) {
-				catRows, err = h.DB.GetCategoryDailyRollup(ctx, owner, t0, t1, hidden, renames, members, scoped)
-			} else {
-				catRows, err = h.DB.GetCategoryDaily(ctx, owner, t0, t1, widgetTimeLimit, tz, hidden, renames, members, scoped)
-			}
+			catRows, err = h.DB.CategoryDaily(ctx, owner, t0, t1, widgetTimeLimit, tz, hidden, renames, members, scoped)
 			if err != nil {
 				return nil, err
 			}
@@ -368,7 +362,7 @@ func (h *Handler) WidgetSvg(c *echo.Context) error {
 			data.Punchcard = &pc
 		}
 		if needs.Momentum {
-			mrows, err := h.DB.GetMomentum(ctx, owner, t0, t1, widgetTimeLimit, tz, hidden, renames, members, scoped)
+			mrows, err := h.DB.Momentum(ctx, owner, t0, t1, widgetTimeLimit, tz, hidden, renames, members, scoped)
 			if err != nil {
 				return nil, err
 			}

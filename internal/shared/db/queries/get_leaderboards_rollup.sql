@@ -1,8 +1,8 @@
 -- Fast path for Leaderboards: read the pre-aggregated hb_rollup_daily instead
--- of scanning raw heartbeats. The raw query uses a hardcoded gap_seconds <=
--- (15 * 60) filter, which is exactly what the rollup captured at ingest
--- (workout_duration_s OR gap_seconds <= 900), so summing rollup total_seconds
--- reproduces the raw sum byte-for-byte at the 15-min limit.
+-- of scanning raw heartbeats. The raw query binds the default gap cutoff
+-- (db.defaultGapCutoffSeconds), which is exactly what the rollup captured at
+-- ingest (workout_duration_s OR gap within the same bound cutoff), so summing
+-- rollup total_seconds reproduces the raw sum byte-for-byte at the default limit.
 --
 -- boom-6ci: project_missing / language_missing propagate the raw-NULL
 -- discriminator so ToLeaderboardsPayload can build per-language sub-

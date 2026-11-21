@@ -100,6 +100,17 @@ func synthesize(cond labels.Condition, sender string) synthResult {
 	// Anchor all seeded time to a recent WEEKDAY MIDDAY. Some primitives
 	// (streak, punchcard-*) override the timestamps. Landing 7 days back
 	// puts us safely inside the 60-day payload window.
+	//
+	// Block-building primitives anchor their blocks to END at `base`
+	// (growing BACKWARD in time), never forward from it. Forward-anchored
+	// blocks made the sweep time-of-run dependent: a 2000h block is 8002
+	// one-minute beats = 5d13h — started at base it overran `now` whenever
+	// the weekend shift moved base to now-5d (every Saturday run), and the
+	// evaluator's t1 (now, day-granular on the rollup read) clipped the
+	// overrun, so the *-legend labels missed their threshold ONLY on those
+	// days. Ending at base keeps every beat in the past on every run day
+	// while staying far inside the 60-day window (max block ≈ 5.6d, so the
+	// oldest beat is ≈ now-13d).
 	base := time.Now().UTC().Add(-7 * 24 * time.Hour)
 	base = time.Date(base.Year(), base.Month(), base.Day(), 12, 0, 0, 0, time.UTC)
 	if base.Weekday() == time.Saturday {
@@ -118,45 +129,53 @@ func synthesize(cond labels.Condition, sender string) synthResult {
 			return synthResult{skip: "unknown axis " + string(c.Axis)}
 		}
 		n := beatsForHours(c.Hours)
-		beats := makeBlock(base, n, setter)
-		return synthResult{beats: beats, at: base}
+		start := base.Add(-time.Duration(n+1) * time.Minute)
+		beats := makeBlock(start, n, setter)
+		return synthResult{beats: beats, at: start}
 
 	case labels.AxisTimeSumCond:
 		if c.Op != labels.OpGE {
 			return synthResult{skip: "axis-time-sum <= not synthesizable"}
 		}
 		perValue := c.Hours / float64(len(c.Values))
+		// End the whole run of per-value blocks at `base`: size it first,
+		// then build forward from base-minus-span.
+		n := beatsForHours(perValue) + 1 // +1 safety per value
+		span := time.Duration(len(c.Values)*(n+1)) * time.Minute
+		start := base.Add(-span)
 		var beats []testutil.HB
-		anchor := base
+		anchor := start
 		for _, v := range c.Values {
 			setter := axisFieldSetter(c.Axis, v)
 			if setter == nil {
 				return synthResult{skip: "unknown axis " + string(c.Axis)}
 			}
-			n := beatsForHours(perValue) + 1 // +1 safety per value
 			beats = append(beats, makeBlock(anchor, n, setter)...)
 			anchor = anchor.Add(time.Duration(n+1) * time.Minute)
 		}
-		return synthResult{beats: beats, at: base}
+		return synthResult{beats: beats, at: start}
 
 	case labels.DistinctCountCond:
 		if c.Op != labels.OpGE {
 			return synthResult{skip: "distinct-count <= not synthesizable"}
 		}
+		// Generate c.N distinct values with each ≥ minHoursEach hours,
+		// ending the run at `base` (see the anchor comment above).
+		n := beatsForHours(c.MinHoursEach + 0.1) // safety cushion
+		span := time.Duration(c.N*(n+1)) * time.Minute
+		start := base.Add(-span)
 		var beats []testutil.HB
-		anchor := base
-		// Generate c.N distinct values with each ≥ minHoursEach hours.
+		anchor := start
 		for i := 0; i < c.N; i++ {
 			val := fmt.Sprintf("distinctval%d", i)
 			setter := axisFieldSetter(c.Axis, val)
 			if setter == nil {
 				return synthResult{skip: "unknown axis " + string(c.Axis)}
 			}
-			n := beatsForHours(c.MinHoursEach + 0.1) // safety cushion
 			beats = append(beats, makeBlock(anchor, n, setter)...)
 			anchor = anchor.Add(time.Duration(n+1) * time.Minute)
 		}
-		return synthResult{beats: beats, at: base}
+		return synthResult{beats: beats, at: start}
 
 	case labels.DailyAvgCond:
 		if c.Op != labels.OpGE {
@@ -172,8 +191,9 @@ func synthesize(cond labels.Condition, sender string) synthResult {
 			return synthResult{skip: "daily-avg threshold too high to seed cheaply"}
 		}
 		setter := func(h *testutil.HB) bool { return true } // baseHB already has language=go
-		beats := makeBlock(base, n, setter)
-		return synthResult{beats: beats, at: base}
+		start := base.Add(-time.Duration(n+1) * time.Minute)
+		beats := makeBlock(start, n, setter)
+		return synthResult{beats: beats, at: start}
 
 	case labels.StreakCond:
 		if c.Op != labels.OpGE {

@@ -56,8 +56,9 @@ var rawHeartbeatCols = func() map[string]string {
 // RollupAxes are the hide/scope axes the pre-aggregated hb_rollup_daily table
 // can exclude or include (it stores these columns). Today that's every axis
 // except entity, so only an entity hide (impossible — not a hiddenAxis) or an
-// entity Space rule forces the raw path — see HasHiddenOutside/HasMemberOutside;
-// the stats handler falls back accordingly.
+// entity Space rule forces the raw path — see HasHiddenOutside/HasMemberOutside,
+// consulted ONLY by rollupEligible (rollup_path.go), which every dispatcher
+// shares.
 var RollupAxes = func() map[string]bool {
 	m := map[string]bool{}
 	for _, a := range axes {

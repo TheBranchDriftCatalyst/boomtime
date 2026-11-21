@@ -74,8 +74,8 @@ var reservedSlugs = map[string]struct{}{
 // this file reads as it did pre-collapse (60 / 15). Awards imports the
 // exported form (identity.PublicProfilePayloadDays).
 const (
-	publicProfilePayloadDays       = PublicProfilePayloadDays
-	publicProfileTimeLimit   int64 = PublicProfileTimeLimit
+	publicProfilePayloadDays = PublicProfilePayloadDays
+	publicProfileTimeLimit   = PublicProfileTimeLimit
 )
 
 // getProfileResponse is GET /api/v1/users/current/profile. CardTheme /
@@ -433,16 +433,14 @@ func (h *Handler) loadPublicActivity(ctx context.Context, username string, t0, t
 	tz := apihelpers.ResolveUserTZ(h.DB, h.Logger, ctx, username, h.Cfg.DefaultTimezone)
 
 	// No Space scoping for public profile — it's an account-level view.
-	var rows []db.StatRow
-	if !hidden.HasHiddenOutside(db.RollupAxes) {
-		rows, err = h.DB.GetUserActivityRollup(ctx, username, t0, t1, hidden, renames, members, false)
-	} else {
-		rows, err = h.DB.GetUserActivity(ctx, username, t0, t1, publicProfileTimeLimit, tz, hidden, renames, members, false)
-	}
+	// db.UserActivity/db.CategoryDaily own the rollup-vs-raw selection
+	// (rollup_path.go); at the locked default limit with no Space scope they
+	// always serve the pre-aggregated rollup.
+	rows, err := h.DB.UserActivity(ctx, username, t0, t1, publicProfileTimeLimit, tz, hidden, renames, members, false)
 	if err != nil {
 		return nil, hidden, "", members, err
 	}
-	categories, err := h.DB.GetCategoryDaily(ctx, username, t0, t1, publicProfileTimeLimit, tz, hidden, renames, members, false)
+	categories, err := h.DB.CategoryDaily(ctx, username, t0, t1, publicProfileTimeLimit, tz, hidden, renames, members, false)
 	if err != nil {
 		return nil, hidden, "", members, err
 	}

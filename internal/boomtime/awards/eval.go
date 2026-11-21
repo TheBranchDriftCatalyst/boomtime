@@ -147,17 +147,14 @@ func (h *Handler) buildAwardsPayloadAt(ctx echoContext, username string, at time
 	}
 	tz := apihelpers.ResolveUserTZ(h.DB, h.Logger, ctx, username, h.Cfg.DefaultTimezone)
 
+	// db.UserActivity/db.CategoryDaily own the rollup-vs-raw selection
+	// (rollup_path.go) — the same single path the public-profile handler uses.
 	var members db.MemberSets
-	var rows []db.StatRow
-	if !hidden.HasHiddenOutside(db.RollupAxes) {
-		rows, err = h.DB.GetUserActivityRollup(ctx, username, t0, t1, hidden, renames, members, false)
-	} else {
-		rows, err = h.DB.GetUserActivity(ctx, username, t0, t1, publicProfileTimeLimit, tz, hidden, renames, members, false)
-	}
+	rows, err := h.DB.UserActivity(ctx, username, t0, t1, publicProfileTimeLimit, tz, hidden, renames, members, false)
 	if err != nil {
 		return nil, err
 	}
-	categories, err := h.DB.GetCategoryDaily(ctx, username, t0, t1, publicProfileTimeLimit, tz, hidden, renames, members, false)
+	categories, err := h.DB.CategoryDaily(ctx, username, t0, t1, publicProfileTimeLimit, tz, hidden, renames, members, false)
 	if err != nil {
 		return nil, err
 	}
