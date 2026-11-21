@@ -7,8 +7,9 @@
 //   - a scalar coding query sums the seeded seconds — the scalar arm works;
 //   - an unknown measure / unknown domain is rejected 400 by Compile's
 //     whitelist BEFORE any SQL runs (no panic, no 500);
-//   - the reading domain is 404 when BooksEnabled is off (the default harness
-//     config) — gated exactly like the other books routes, no oracle;
+//   - the reading domain is reachable with BooksEnabled both OFF and ON — the
+//     gate was removed in boom-sire because reading data outlived the books
+//     domain, and the pair pins the flag as irrelevant in both directions;
 //   - a bad credential is 401 (fail-closed) before the body is even parsed;
 //   - owner scoping holds: alice's query never sees bob's seeded rows.
 package queryapi_test
@@ -177,10 +178,22 @@ var _ = Describe("POST /api/v1/query (boom-174.q)", func() {
 		Expect(rec).To(testutil.HaveStatus(http.StatusBadRequest), "body=%s", rec.Body.String())
 	})
 
-	It("gates the reading domain behind BooksEnabled (404 when off)", func() {
+	// UN-GATED 2026-11-20 (boom-sire). This spec used to assert the opposite —
+	// 404 when BooksEnabled() was off. The reading domain is a reading-DATA
+	// domain, not a books domain, and the data outlived the deprecated domain
+	// that first populated it: reading_activity rows persist and the BookOrbit
+	// connector (boom-ksvt) writes new ones under source='bookorbit'. Keeping
+	// the gate would have 404'd the fused surfaces exactly when the fusion
+	// started working.
+	//
+	// Inverted rather than deleted on purpose. The pair below pins that the
+	// books flag is IRRELEVANT in BOTH directions, which is what would catch
+	// someone re-adding the gate — deleting the spec would have left that
+	// regression uncovered.
+	It("serves the reading domain with BooksEnabled OFF (the gate was removed)", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		e := hz.Router()
-		_, token := hz.MintUser("q_reading_gated")
+		_, token := hz.MintUser("q_reading_ungated")
 
 		// The default harness config leaves FeatureBooks off → BooksEnabled()==false.
 		Expect(hz.Cfg.BooksEnabled()).To(BeFalse(), "precondition: books feature should default off")
@@ -189,10 +202,15 @@ var _ = Describe("POST /api/v1/query (boom-174.q)", func() {
 			"domain":  "reading",
 			"measure": "books",
 		})
-		Expect(rec).To(testutil.HaveStatus(http.StatusNotFound), "body=%s", rec.Body.String())
+		Expect(rec).To(testutil.HaveStatus(http.StatusOK), "body=%s", rec.Body.String())
+		var resp queryResponse
+		Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+		Expect(resp.Kind).To(Equal("scalar"))
+		Expect(resp.Scalar).NotTo(BeNil())
+		Expect(*resp.Scalar).To(Equal(float64(0)))
 	})
 
-	It("serves the reading domain when BooksEnabled is on", func() {
+	It("serves the reading domain when BooksEnabled is on too (the flag is irrelevant)", func() {
 		hz := testutil.NewHarness(GinkgoT())
 		hz.Cfg.FeatureBooks = true // flip the gate on for this harness
 		e := hz.Router()
