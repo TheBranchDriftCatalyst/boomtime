@@ -103,9 +103,23 @@ func TestPollReadingTime_CleanMissRecomposesSeededSamples(t *testing.T) {
 	asin := "B0POLL01"
 	seedInProgressBook(t, hz.DB, owner, asin)
 
-	// Pre-seed two advancing samples 5 min apart on 2026-08-10 → 300s reading.
+	// Pre-seed two advancing samples 5 min apart → 300s reading.
+	//
+	// base is DERIVED FROM now, not hardcoded. It used to be
+	// time.Date(2026, 8, 10, 9, 0, 0, 0, time.UTC), which quietly rotted out of
+	// cfg.ReadingTimeLookback (90d by default, monitorconfig.go:157) around
+	// 2026-11-08 and turned this into a permanent red: PollReadingTime only
+	// recomposes from samples newer than now-lookback, so
+	// ListKindleReadingPositions stopped returning the seeded pair, nothing was
+	// recomposed, and the assertion below saw an empty reading_activity. An
+	// absolute date in a window-relative test is a time bomb.
+	//
+	// Truncated to a whole UTC day before the offset so the pair and the day
+	// bucket cannot straddle midnight, and to a microsecond because time.Now()
+	// is microsecond-granular on darwin but nanosecond on linux - an
+	// untruncated timestamp fixture compares equal locally and unequal in CI.
 	ctx := context.Background()
-	base := time.Date(2026, 8, 10, 9, 0, 0, 0, time.UTC)
+	base := time.Now().UTC().AddDate(0, 0, -10).Truncate(24 * time.Hour).Add(9 * time.Hour).Truncate(time.Microsecond)
 	if _, err := hz.DB.InsertKindleReadingPosition(ctx, owner, asin, 100, base); err != nil {
 		t.Fatalf("seed sample 1: %v", err)
 	}
@@ -121,7 +135,7 @@ func TestPollReadingTime_CleanMissRecomposesSeededSamples(t *testing.T) {
 		t.Errorf("captured = %d, want 0 (shape pending → no new samples)", captured)
 	}
 
-	day := time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC)
+	day := base.Truncate(24 * time.Hour)
 	rows, err := hz.DB.ListReadingActivity(ctx, owner, "kindle", day, day)
 	if err != nil {
 		t.Fatalf("list activity: %v", err)
