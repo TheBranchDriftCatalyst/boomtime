@@ -57,9 +57,9 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # The Go build EMBEDS the built SPAs (go:embed dist in
-      # internal/shared/server/server.go and internal/books/web/embed.go), and
-      # both dist/ directories are gitignored — so `go vet ./...` cannot even
+      # The Go build EMBEDS the built SPA (go:embed dist in
+      # internal/shared/server/server.go), and dist/ is gitignored — so
+      # `go vet ./...` cannot even
       # typecheck without building the frontend first. It fails with
       # "pattern dist: no matching files found". The Dockerfiles already do this
       # in an earlier stage; this gate has to do it too.
@@ -75,28 +75,30 @@ jobs:
 
       - name: build SPAs for the embeds
         working-directory: web
-        run: |
-          yarn build
-          yarn build:books
+        run: yarn build
 
-      # Place the bundles where the embeds look for them. Vite writes to
-      # web/dist and web/dist-books; the go:embed directives read
-      # internal/shared/server/dist and internal/books/web/dist. The Dockerfiles
-      # bridge that with a COPY between stages (Dockerfile:61,
-      # Dockerfile.catalyst-books:55) — mirror it here, or `go vet` still fails
-      # on "pattern dist: no matching files found" even after a successful build.
-      - name: stage the bundles for go:embed
+      # Place the bundle where the embed looks for it. Vite writes to web/dist;
+      # the go:embed directive reads internal/shared/server/dist. The Dockerfile
+      # bridges that with a COPY between stages (Dockerfile:61) — mirror it
+      # here, or `go vet` still fails on "pattern dist: no matching files found"
+      # even after a successful build.
+      #
+      # The books half (web/dist-books -> internal/books/web/dist) was dropped
+      # with internal/books/web/embed.go, which served the standalone books SPA
+      # for cmd/catalyst-books. Both are gone; internal/books/web/src stays only
+      # because the host app still imports it via the @books alias.
+      - name: stage the bundle for go:embed
         run: |
-          rm -rf internal/shared/server/dist internal/books/web/dist
+          rm -rf internal/shared/server/dist
           cp -r web/dist internal/shared/server/dist
-          cp -r web/dist-books internal/books/web/dist
 
       - name: go vet
         run: go vet ./...
 
-      # Build EVERY package, not just the image's entrypoint: cmd/catalyst-books
-      # and the test-only packages are not in the boomtime Dockerfile's build
-      # graph, so a break there is invisible to the publish workflow.
+      # Build EVERY package, not just the image's entrypoint: the test-only
+      # packages are not in the boomtime Dockerfile's build graph, so a break
+      # there is invisible to the publish workflow. (cmd/catalyst-books used to
+      # be the headline example; it was deleted with the books surfaces.)
       - name: go build
         run: CGO_ENABLED=0 go build ./...
 
@@ -139,13 +141,14 @@ jobs:
         working-directory: web
         run: yarn build
 
-      # The standalone books bundle is built by Dockerfile.catalyst-books from
-      # the same tree but a different entry + tsconfig pass. It has broken
-      # independently of the host build before (FE imports reaching outside
-      # web/), so gate on it explicitly.
-      - name: build catalyst-books SPA
-        working-directory: web
-        run: yarn build:books
+      # The standalone books SPA build was dropped with Dockerfile.catalyst-books
+      # and cmd/catalyst-books — nothing consumes web/dist-books any more, so
+      # gating on it would gate on an artifact we do not ship.
+      #
+      # The @books FE code it used to exercise is still covered: it lives under
+      # internal/books/web/src, which web/tsconfig.app.json pulls into the host
+      # build via `include` and the @books/* path mapping. When that alias goes
+      # (boom-hg8j) this comment goes with it.
 
   # ── Deploy surface: every overlay renders + the audit regression checks ────
   manifests:
@@ -153,14 +156,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      # validate-manifests.py resolves the books image's real dependency
-      # closure with `go list -deps` to prove the publish workflow's paths
-      # filter still covers it.
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
 
       - name: install kustomize
         run: |

@@ -13,7 +13,7 @@ docker-compose.yml, and the publish workflows.
 Usage:
     python3 .github/scripts/validate-manifests.py        # from the repo root
 
-Requires: kustomize on PATH, PyYAML, and (for the books dep-closure check) go.
+Requires: kustomize on PATH and PyYAML.
 The go check downgrades to a skip when go is unavailable so the script still
 runs on a bare machine.
 """
@@ -314,74 +314,13 @@ def check_dev_preview_prod_safety() -> None:
     ok(check, "dry-run pinned + claims no prod jobs")
 
 
-# ── 8. the books publish workflow triggers on every input it builds ────────
-# boom-iadc: the paths filter omitted web/** and internal/boomtime/web/** (both
-# COPY'd and type-checked by Dockerfile.catalyst-books) and internal/jobs/**
-# (a real Go dependency), so edits to them shipped nothing and the stale image
-# kept serving.
-BOOKS_WORKFLOW = REPO / ".github" / "workflows" / "docker-publish-catalyst-books.yml"
-BOOKS_REQUIRED_FE_PATHS = [
-    "web/**",
-    "internal/boomtime/web/**",
-    "internal/boomtime/widget/specs.json",
-]
-
-
-def check_books_workflow_paths() -> None:
-    check = "books-workflow-paths"
-    wf = yaml.safe_load(BOOKS_WORKFLOW.read_text())
-    # PyYAML parses the bare `on:` key as the boolean True.
-    triggers = wf.get("on", wf.get(True, {}))
-    paths = triggers["push"].get("paths")
-    if paths is None:
-        ok(check, "no paths filter — every push builds")
-        return
-
-    for want in BOOKS_REQUIRED_FE_PATHS:
-        if want not in paths:
-            fail(
-                check,
-                f"Dockerfile.catalyst-books consumes {want} (the books SPA "
-                f"shell / the tsc include / the @widget-specs alias target) but "
-                f"the workflow's paths filter omits it — edits there publish "
-                f"nothing and the stale image serves on",
-            )
-            return
-
-    if not shutil.which("go"):
-        skip(check + "[go-deps]", "go not on PATH")
-    else:
-        proc = subprocess.run(
-            ["go", "list", "-deps", "./cmd/catalyst-books"],
-            capture_output=True,
-            text=True,
-            cwd=REPO,
-            env={**os.environ, "CGO_ENABLED": "0"},
-        )
-        if proc.returncode != 0:
-            skip(check + "[go-deps]", "go list failed")
-        else:
-            prefix = "github.com/TheBranchDriftCatalyst/boomtime/"
-            pkgdirs = {
-                "/".join(line[len(prefix):].split("/")[:2])
-                for line in proc.stdout.split()
-                if line.startswith(prefix)
-            }
-            for d in sorted(pkgdirs):
-                if f"{d}/**" not in paths:
-                    fail(
-                        check,
-                        f"{d} is in `go list -deps ./cmd/catalyst-books` (the "
-                        f"binary this image builds) but {d}/** is not in the "
-                        f"workflow's paths filter — a change there would not "
-                        f"rebuild the image",
-                    )
-                    return
-    for want in ("go.mod", "go.sum", "Dockerfile.catalyst-books"):
-        if want not in paths:
-            fail(check, f"{want} is a build input but is not in the paths filter")
-            return
-    ok(check, f"{len(paths)} patterns cover every input")
+# ── 8. (retired) the books publish workflow's paths filter ────────────────
+# Removed with docker-publish-catalyst-books.yml and cmd/catalyst-books. The
+# check read that workflow and resolved `go list -deps ./cmd/catalyst-books`;
+# both are gone, so it could only fail. The property it protected — a publish
+# workflow whose paths filter misses a real build input ships nothing while a
+# stale image keeps serving — still applies to docker-publish.yml, and is
+# worth re-adding generically rather than per-image.
 
 
 # ── 9. compose installs with yarn, not npm ─────────────────────────────────
@@ -471,7 +410,6 @@ CHECKS = [
     check_encryption_key_externalsecret,
     check_metrics_not_public,
     check_dev_preview_prod_safety,
-    check_books_workflow_paths,
     check_compose_uses_yarn,
     check_publish_workflows_gated,
 ]
